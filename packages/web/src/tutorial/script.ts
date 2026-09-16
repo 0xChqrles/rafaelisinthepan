@@ -49,7 +49,7 @@ export interface LessonStage {
   // word (a 1, the chip fills) while `alt` becomes the secret the bot will land; type `alt`
   // and nothing changes. Once the letter is out there is no swap. The goal is only that the
   // first letter is seen before the sentence is solved (user-decided 2026-09-16).
-  pair?: { alt: Word };
+  pair?: { alt: Word; hint: UiKey }; // `hint`: the coach's hint once `alt` is the secret
   // One hint per hole, in `puzzle.holes` order — what the coach says once a hole has resisted
   // long enough (coach.ts `STUCK`), before it gives the answer.
   hints: UiKey[];

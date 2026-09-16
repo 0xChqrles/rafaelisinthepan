@@ -446,9 +446,13 @@ const STRINGS = {
   // THE METER STAGE (#301 taught; scripted, user-decided 2026-09-16): the bot has half
   // played the sentence. Its lines follow the player's acts — the tap, the first close
   // guess, one more try — and it names the answer as if it had found it.
-  tutMeterIntro: {
+  tutMeterIntroTap: {
     en: 'I already played a bit. Tap {word} to see my tries.',
     fr: "J'ai déjà un peu joué. Touche {word} pour voir mes essais.",
+  },
+  tutMeterIntroClick: {
+    en: 'I already played a bit. Click {word} to see my tries.',
+    fr: "J'ai déjà un peu joué. Clique sur {word} pour voir mes essais.",
   },
   tutMeterTapped: {
     en: 'Close tries fill the word up. Once full, its first letter shows. Try one!',
@@ -461,10 +465,6 @@ const STRINGS = {
   tutMeterFound: {
     en: 'You found it! You are ready for the real game.',
     fr: 'Trouvé ! Tu es prêt pour le vrai jeu.',
-  },
-  tutMeterBot: {
-    en: 'Got it, it was {answer}! You are ready for the real game.',
-    fr: "Ça y est, c'était {answer} ! Tu es prêt pour le vrai jeu.",
   },
   tutAway: {
     en: '{guess} is the {n} closest word to the secret. {start} is the {m}.',
@@ -492,15 +492,18 @@ const STRINGS = {
   // Each board's own hint about its word — what the coach says once a hole has resisted long
   // enough, before it gives the answer (scripts/<lang>.ts names them per hole).
   tutHintOcean: { en: 'A very large body of water.', fr: 'Une très grande étendue d’eau.' },
-  tutHintMountain: { en: 'It is very high, and you climb it.', fr: 'C’est très haut, et ça se grimpe.' },
-  tutHintMontagne: { en: 'It is very high, and you climb it.', fr: 'C’est très haut, et ça se grimpe.' },
+  // REALLY easy (user-decided 2026-09-16: montagne "is a bit hard to guess").
+  tutHintMountain: { en: 'Very high, with a peak and snow on top.', fr: 'Très haut, avec un sommet et de la neige.' },
+  tutHintMontagne: { en: 'Very high, with a peak and snow on top.', fr: 'Très haut, avec un sommet et de la neige.' },
   tutHintDog: { en: 'Man’s best friend.', fr: 'Le meilleur ami de l’homme.' },
   tutHintMoon: { en: 'It lights the night.', fr: 'Elle éclaire la nuit.' },
   tutHintChien: { en: 'Man’s best friend.', fr: 'Le meilleur ami de l’homme.' },
   tutHintCat: { en: 'It purrs.', fr: 'Il ronronne.' },
   tutHintChat: { en: 'It purrs.', fr: 'Il ronronne.' },
-  tutHintLiberty: { en: 'Being free.', fr: 'Être libre.' },
-  tutHintSentier: { en: 'A narrow path.', fr: 'Un petit chemin.' },
+  tutHintLiberty: { en: 'Being free, with a capital L.', fr: 'Être libre, avec un grand L.' },
+  tutHintFreedom: { en: 'Being free, with a capital F.', fr: 'Être libre, avec un grand F.' },
+  tutHintSentier: { en: 'A narrow path through the woods.', fr: 'Un petit chemin dans les bois.' },
+  tutHintChemin: { en: 'A small road, or a way.', fr: 'Une petite route, ou une voie.' },
   tutHintLune: { en: 'It lights the night.', fr: 'Elle éclaire la nuit.' },
   // The lesson's wordless ending: the solved sentence stands, and PLAY graduates into the game.
   tutPlay: { en: 'PLAY', fr: 'JOUER' },

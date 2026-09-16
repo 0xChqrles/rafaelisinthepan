@@ -133,6 +133,7 @@ for (const lang of ['en', 'fr'] as const) {
         const { puzzle } = meter;
         const played = meter.played ?? [];
         expect(played.length).toBeGreaterThan(0);
+        expect(played.length).toBeLessThanOrEqual(6); // few tries (user-decided 2026-09-16)
         for (const typed of played) expect(fold(typed)).toBe(typed);
         const fresh = puzzle.holes.map((h) => ({
           pos: h.pos,
@@ -143,7 +144,8 @@ for (const lang of ['en', 'fr'] as const) {
         }));
         const holes = replayHoles(fresh, puzzle.ranks, played);
         expect(holes[0].rank).toBe(0);
-        expect(holes[1].rank).toBeGreaterThanOrEqual(15);
+        expect(holes[1].rank).toBeGreaterThanOrEqual(5);
+        expect(holes[1].word.length).toBeGreaterThanOrEqual(6); // long enough for the fill to read
         const [, meterB] = replayCharge(fresh, puzzle.ranks, played);
         expect(meterB.revealed).toBe(false);
         expect(meterB.charge).toBeGreaterThanOrEqual(65);
@@ -156,6 +158,7 @@ for (const lang of ['en', 'fr'] as const) {
         expect(entry.rank).toBe(1);
         expect(entry.word).toBe(alt.word);
         expect(played).not.toContain(alt.slug);
+        expect(t(puzzle.lang, meter.pair!.hint).length).toBeGreaterThan(0);
         expect(meterB.charge + chargeForRank(entry.rank)).toBeGreaterThanOrEqual(CHARGE_TARGET);
       });
     });

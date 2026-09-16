@@ -11,8 +11,8 @@
 //     done, and never while a hint or the answer is due; the away / miss lines belong to the
 //     single-word stages; solved, the bot counts the tries;
 //   - the meter stage, scripted: the bot has played — tap to see its tries, then what they
-//     did; near until the chip fills; the letter and the player's turn; the end, found by the
-//     player or named by the bot.
+//     did; near until the chip fills; the letter and the player's turn; a failed try after it
+//     earns the hint, never the word; the end, found.
 //   Every line is written for someone who has never heard of the game: it names the HIDDEN
 //   WORD the numbers are about (coachCopy below).
 import { describe, it, expect } from 'vitest';
@@ -65,7 +65,7 @@ describe('the reveal', () => {
     expect(coachLine(b.state())).toEqual({ kind: 'away', guess: expect.objectContaining({ rank: 29 }), hole: expect.objectContaining({ rank: 1 }) });
     b.guess('boat', [45]);
     expect(coachLine(b.state())).toEqual({ kind: 'near', hole: expect.objectContaining({ rank: 1 }) });
-    expect(STUCK.reveal[0]).toBeLessThan(STUCK.word[0]);
+    expect(STUCK.reveal[1]).toBeLessThanOrEqual(STUCK.word[1]);
   });
 });
 
@@ -85,7 +85,9 @@ describe('the word stage', () => {
       guess: expect.objectContaining({ word: 'boat', rank: 45 }),
       hole: expect.objectContaining({ word: 'start0', rank: 10 }),
     });
-    b.guess('ship', [24]);
+    b.guess('sea', [3]); // it moved: silence
+    expect(coachLine(b.state())).toBeNull();
+    b.guess('ship', [24]); // farther again, but the number was explained once
     expect(coachLine(b.state())).toBeNull();
   });
 
@@ -93,8 +95,9 @@ describe('the word stage', () => {
     const b = board('word', [10]);
     b.guess('islands', [10]); // the clue itself: ranks where it stands
     expect(coachLine(b.state())).toBeNull();
+    b.guess('sea', [3]); // it moved: silence
     b.guess('boat', [45]);
-    expect(coachLine(b.state())).toEqual({ kind: 'away', guess: expect.objectContaining({ rank: 45 }), hole: expect.objectContaining({ rank: 10 }) });
+    expect(coachLine(b.state())).toEqual({ kind: 'away', guess: expect.objectContaining({ rank: 45 }), hole: expect.objectContaining({ rank: 3 }) });
   });
 
   it('names the first MISS, once', () => {
@@ -106,12 +109,14 @@ describe('the word stage', () => {
     expect(coachLine(b.state())).toBeNull(); // the second miss says nothing new
   });
 
-  it('climbs the ladder while the hole resists: near, then the hint, then the answer', () => {
+  it('climbs the ladder while the hole resists: the hint after two misses in a row, then the answer', () => {
     const [near, hint, answer] = STUCK.word;
+    expect(hint).toBe(2); // user-decided 2026-09-16: two failed tries earn the (really easy) hint
+    expect(near).toBeLessThanOrEqual(hint);
     const b = board('word', [10]);
-    for (let i = 0; i < near; i += 1) b.guess(`w${i}`, [40 + i]);
-    expect(coachLine(b.state())).toEqual({ kind: 'near', hole: expect.objectContaining({ rank: 10 }) });
-    for (let i = near; i < hint; i += 1) b.guess(`w${i}`, [null]);
+    b.guess('w0', [40]);
+    expect(coachLine(b.state())).toEqual({ kind: 'away', guess: expect.objectContaining({ rank: 40 }), hole: expect.objectContaining({ rank: 10 }) });
+    b.guess('w1', [null]);
     expect(coachLine(b.state())).toEqual({ kind: 'hint', holeIndex: 0 });
     for (let i = hint; i < answer; i += 1) b.guess(`w${i}`, [40 + i]);
     expect(coachLine(b.state())).toEqual({ kind: 'answer', holeIndex: 0 });
@@ -176,18 +181,18 @@ describe('ordinal', () => {
 });
 
 describe('the meter stage — the bot has half played it', () => {
-  it('asks for the tap, explains once tapped, nudges until the chip fills, hands the turn over, and ends either way', () => {
+  it('asks for the tap, explains once tapped, nudges until the chip fills, hands the turn over, hints on a failed try, and ends found', () => {
     const b = board('meter', [0, 24]); // the bot found the first word; the second stands at its best try
     expect(coachLine(b.state())).toEqual({ kind: 'introMeter', hole: expect.objectContaining({ rank: 24 }) });
     expect(coachLine(b.state(true))).toEqual({ kind: 'meterTapped' });
     b.guess('x', [null, null], { charged: false, filled: null });
     expect(coachLine(b.state(true))).toEqual({ kind: 'near', hole: expect.objectContaining({ rank: 24 }) });
-    b.guess('liberty', [null, 1], { charged: true, filled: 1 });
+    b.guess('freedom', [null, 1], { charged: true, filled: 1 });
     expect(coachLine(b.state(true))).toEqual({ kind: 'letter', holeIndex: 1 });
     b.guess('y', [null, null], { charged: false, filled: null });
-    expect(coachLine(b.state(true))).toEqual({ kind: 'letter', holeIndex: 1 }); // the turn stands until the board acts
-    const bot: CoachState = { ...b.state(true, false, true), botFound: true };
-    expect(coachLine(bot)).toEqual({ kind: 'botFound', holeIndex: 1 });
+    expect(coachLine(b.state(true))).toEqual({ kind: 'hint', holeIndex: 1 }); // a failed try: the hint, never the word
+    b.guess('z', [null, 300], { charged: true, filled: null });
+    expect(coachLine(b.state(true))).toEqual({ kind: 'hint', holeIndex: 1 });
     expect(coachLine(b.state(true, false, true))).toEqual({ kind: 'found' });
   });
 });
@@ -236,8 +241,8 @@ describe('coachCopy', () => {
     expect(coachCopy('en', { kind: 'introMeter', hole }, stage, true)).toBe(
       'I already played a bit. Tap [[w:islands^10]] to see my tries.',
     );
-    expect(coachCopy('en', { kind: 'botFound', holeIndex: 0 }, stage, true)).toBe(
-      'Got it, it was [[b:ocean]]! You are ready for the real game.',
+    expect(coachCopy('en', { kind: 'introMeter', hole }, stage, false)).toBe(
+      'I already played a bit. Click [[w:islands^10]] to see my tries.',
     );
     expect(coachCopy('en', { kind: 'tap' }, stage, false)).toMatch(/^Click/);
   });

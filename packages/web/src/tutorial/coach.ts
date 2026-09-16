@@ -33,7 +33,6 @@ export interface CoachState {
   tapped: boolean; // the player has opened a word's tries at least once
   revealed: boolean; // the reveal stage's secret is still on screen (nothing to guess yet)
   finished: boolean; // every hole reads 0 — the stage is over
-  botFound?: boolean; // the meter stage ended on the BOT's guess, not the player's
 }
 
 export type CoachLine =
@@ -64,17 +63,15 @@ export type CoachLine =
   | { kind: 'tap' }
   // The sentence solved: the tries it took — the score, said once.
   | { kind: 'solved'; tries: number }
-  // The meter stage: a chip filled to the top and the letter it revealed; the end — found by
-  // the player, or named by the bot as if it had.
+  // The meter stage: a chip filled to the top and the letter it revealed; the end, found.
   | { kind: 'letter'; holeIndex: number }
-  | { kind: 'found' }
-  | { kind: 'botFound'; holeIndex: number };
+  | { kind: 'found' };
 
 // Guesses a hole may resist before each rung of the ladder. The sentence gets more room:
 // two holes are in play, and a guess that moves one is progress the other cannot show.
 export const STUCK: Record<Stage, readonly [number, number, number]> = {
   reveal: [2, 4, 6], // the answer was just on screen: nudge early
-  word: [3, 6, 9],
+  word: [2, 2, 9], // two misses in a row earn the (really easy) hint outright — user-decided 2026-09-16
   sentence: [4, 8, 12],
   meter: [1, Infinity, Infinity], // its own script below: the bot names the answer itself
 };
@@ -94,16 +91,20 @@ function stuckPerHole({ holes, events }: CoachState): (number | null)[] {
 }
 
 export function coachLine(state: CoachState): CoachLine | null {
-  const { stage, holes, events, tapped, revealed, finished, botFound } = state;
+  const { stage, holes, events, tapped, revealed, finished } = state;
   if (stage === 'reveal' && revealed) return { kind: 'reveal', holeIndex: 0 };
   const open = holes.findIndex((h) => h.rank !== 0);
   // THE METER STAGE IS SCRIPTED (user-decided 2026-09-16): the bot has half played it.
   if (stage === 'meter') {
-    if (finished) return botFound ? { kind: 'botFound', holeIndex: open < 0 ? holes.length - 1 : open } : { kind: 'found' };
+    if (finished) return { kind: 'found' };
     if (events.length === 0) return tapped ? { kind: 'meterTapped' } : { kind: 'introMeter', hole: holes[open] };
-    // The letter is out: the player's turn stands until their next try (the board acts on it).
+    // The letter is out: the player's turn — and a failed try after it earns the HINT, never
+    // the word (user-decided 2026-09-16).
     const filledAt = events.findIndex((e) => e.filled != null);
-    if (filledAt >= 0) return { kind: 'letter', holeIndex: events[filledAt].filled as number };
+    if (filledAt >= 0) {
+      const holeIndex = events[filledAt].filled as number;
+      return filledAt === events.length - 1 ? { kind: 'letter', holeIndex } : { kind: 'hint', holeIndex };
+    }
     // Not full yet: look near the word it shows.
     return { kind: 'near', hole: holes[open] };
   }
@@ -186,7 +187,10 @@ export function coachCopy(
     case 'introSentence':
       return t(lang, 'tutSentenceIntro');
     case 'introMeter':
-      return t(lang, 'tutMeterIntro').replace('{word}', chip(line.hole.word, line.hole.rank));
+      return t(lang, coarsePointer ? 'tutMeterIntroTap' : 'tutMeterIntroClick').replace(
+        '{word}',
+        chip(line.hole.word, line.hole.rank),
+      );
     case 'meterTapped':
       return t(lang, 'tutMeterTapped');
     case 'letter':
@@ -196,11 +200,6 @@ export function coachCopy(
       );
     case 'found':
       return t(lang, 'tutMeterFound');
-    case 'botFound':
-      return t(lang, 'tutMeterBot').replace(
-        '{answer}',
-        `[[b:${stage.puzzle.holes[line.holeIndex].secret.word}]]`,
-      );
     case 'away':
       return t(lang, 'tutAway')
         .replace('{guess}', chip(line.guess.word, line.guess.rank))

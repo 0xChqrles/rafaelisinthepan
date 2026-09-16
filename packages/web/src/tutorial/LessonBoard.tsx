@@ -76,9 +76,6 @@ function hasCoarsePointer(): boolean {
 
 // Hold on a solved board before the next stage takes over.
 const STAGE_HOLD_MS = 600;
-// The bot's closing guess (the meter stage): how long after the player's last try has had
-// its moment it lands its own.
-const BOT_TURN_MS = 700;
 
 export default function LessonBoard({
   lang,
@@ -125,12 +122,11 @@ export default function LessonBoard({
   const stageView = useMemo<LessonStage>(() => {
     if (!swapped || !script.pair) return script;
     const alt = script.pair.alt;
+    const last = puzzleHoles.length - 1;
     return {
       ...script,
-      puzzle: {
-        ...puzzle,
-        holes: puzzleHoles.map((h, i) => (i === puzzleHoles.length - 1 ? { ...h, secret: alt } : h)),
-      },
+      puzzle: { ...puzzle, holes: puzzleHoles.map((h, i) => (i === last ? { ...h, secret: alt } : h)) },
+      hints: script.hints.map((key, i) => (i === last ? script.pair!.hint : key)),
     };
   }, [swapped, script, puzzle, puzzleHoles]);
   const viewHoles = stageView.puzzle.holes;
@@ -166,7 +162,6 @@ export default function LessonBoard({
   // reads those).
   const [tried, setTried] = useState<string[]>(seed);
   const [events, setEvents] = useState<GuessEvent[]>([]);
-  const [botFound, setBotFound] = useState(false);
   // The closing guess runs off a timer, after the player's own has settled: read the board
   // as it stands then, not as the closure saw it.
   const triedRef = useRef(tried);
@@ -371,18 +366,8 @@ export default function LessonBoard({
             ),
           ) +
           250;
-        if (byBot) setBotFound(true);
         setPhase('settling');
         later(() => setPhase('done'), settleMs);
-      } else if (withMeters && !byBot && isNew && letterOut) {
-        // The bot's turn: it names the answer as if it had found it, once the player's try
-        // has had its moment on the board.
-        if (open) {
-          // The answer under the current view: `alt` once swapped, the secret otherwise.
-          const answer = Object.entries(ranks[open.secret]).find(([, e]) => e.rank === 0)?.[0] ?? open.secret;
-          setPhase('settling');
-          later(() => land(answer, true), fadeDelayMs + HIT_FADE_MS + BOT_TURN_MS);
-        }
       }
     },
     [withMeters, swapped, script.pair, meters, lang, say, later],
@@ -432,11 +417,13 @@ export default function LessonBoard({
   const [historyHole, setHistoryHole] = useState<number | null>(null);
   const [picked, setPicked] = useState<Record<number, { word: string; rank: number; at: number }>>({});
   const exploreLabels = useMemo(() => holes.map((_, i) => ariaHoleHistory(lang, i + 1)), [holes, lang]);
-  const openHistory = useCallback((index: number) => {
-    setHistoryHole(index);
+  const openHistory = useCallback((index: number) => setHistoryHole(index), []);
+  // `tapped` lands on CLOSE (user-decided 2026-09-16): the line that follows the tap must
+  // not type on behind the wheel.
+  const closeHistory = useCallback(() => {
+    setHistoryHole(null);
     setTapped(true);
   }, []);
-  const closeHistory = useCallback(() => setHistoryHole(null), []);
   const wheelOpen = historyHole !== null && holes[historyHole]?.rank !== 0 && phase === 'play' && !revealed;
   const shownHoles = useMemo(
     () =>
@@ -471,8 +458,8 @@ export default function LessonBoard({
   // --- the coach: the one line the board's state calls for, or nothing ---
   const line = useMemo(
     () =>
-      coachLine({ stage, holes, events, tapped, revealed, finished: phase !== 'play', botFound }),
-    [phase, stage, holes, events, tapped, revealed, botFound],
+      coachLine({ stage, holes, events, tapped, revealed, finished: phase !== 'play' }),
+    [phase, stage, holes, events, tapped, revealed],
   );
   const coach = line ? coachCopy(lang, line, stageView, coarse) : null;
   // THE BOX NEVER DISAPPEARS (user-decided 2026-09-16): a beat with nothing new to say keeps
@@ -527,7 +514,9 @@ export default function LessonBoard({
               fewer tries is the score, and the number says so without a word. */}
           {sentenceLike && (
             <div className="progress-background" aria-hidden="true">
-              <CellDigits value={events.length} />
+              {/* The whole log — the bot's tries included on the meter stage (user-decided
+                  2026-09-16): the count the day would show for this board. */}
+              <CellDigits value={tried.length} />
             </div>
           )}
           <Phrase

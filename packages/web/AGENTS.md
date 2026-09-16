@@ -2810,7 +2810,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     at the moon." from `coyote^55` / `stars^62`; fr « un chien aboie à la lune. » from
     `loup^52` / `pénombre^63`), the try count printed behind it as the day does, CENTRED on
     the game's full column so a wide screen shows it on one line (the word stages keep the
-    680px cap). One new
+    680px cap), and in the MIDDLE of the room between the coach and the prompt (two auto
+    margins; hard against the box the watermark rode into it, user-reported 2026-09-16). One new
     thing at a time: one guess lands on every hole (the two floats say so), a tap opens the
     tries (wheel / grid, picking included), fewer tries is the score. Solving it drops the
     keyboard (`kb-drop`, `KB_EXIT_FALLBACK_MS`) and offers **PLAY** in its place, the
@@ -2831,26 +2832,33 @@ it to the local store — see `packages/backend/AGENTS.md`).
     and every rank-1 entry reads 0 (`ranks` view in `LessonBoard`), and the board, the
     meters, the wheel and every later guess replay against it. Once the letter is out there
     is no swap: the goal is only that the letter is seen before the solve. `played` is the
-    bot's log (en: cat, justice, truth, unity, happiness, honor, religion; fr masculine tries
-    so « le » holds), replayed onto the board, the meters and the tries wheel exactly as a
+    bot's log — FEW tries, five (en: cat, dignity, prosperity, respect, happiness, justice; fr
+    masculine tries so « le » holds; user-decided 2026-09-16) — replayed onto the board, the meters and the tries wheel exactly as a
     round's log would be, chosen so the open word's meter stands at ABOUT THREE QUARTERS
-    (~74 en / ~74 fr, the day's own `replayCharge` — no lesson boost; "almost full, we don't
+    (~79 en / ~77 fr, the day's own `replayCharge` — no lesson boost; "almost full, we don't
     see it getting filled") with a best try that is no giveaway AND LONG ENOUGH for the fill
-    to read on its chip (`happiness^48` / `randonneur^29` — `col` "was too short to understand
+    to read on its chip (`dignity^7` / `belvédère^15` — `col` "was too short to understand
     the notion of progression", 2026-09-16;
-    the test wants ≥ 15, 65–80, `alt` at rank 1, untried, and filling it alone).
+    the test wants rank ≥ 5 and ≥ 6 letters, 65–80, ≤ 6 tries, `alt` at rank 1, untried, and
+    filling it alone). THE WATERMARK COUNTS THE WHOLE LOG, the bot's tries included.
     THE KEYBOARD IS HELD BACK UNTIL THE TAP (user-decided 2026-09-16): the stage opens with
     the prompt retired and the tray empty, so the bot's tries are the first thing to look
-    at; the keys arrive with the line that hands the turn over.
+    at; the keys arrive with the line that hands the turn over — which types only once the
+    WHEEL IS CLOSED (`tapped` lands on close, same day).
     that a rank-200 guess still fills it). The beats, each on the player's act: "I already
-    played a bit. Tap happiness⁴⁸ to see my tries." → tapped: "Close tries fill the word up.
+    played a bit. Tap dignity⁷ to see my tries." (CLICK on a fine pointer — every tap line
+    has its click twin) → tapped: "Close tries fill the word up.
     Once full, its first letter shows. Try one!" → a guess that does not fill:
     `tutNear` → the obvious guess FILLS IT — no progress needed — and the L lands: "Full!
-    Here is the first letter: the secret word starts with L. One more try." → ONE MORE TRY, then THE BOT LANDS THE
-    ANSWER ITSELF (`land(answer, true)`, `BOT_TURN_MS` after the try's moment; not a player
-    event): "Got it, it was liberty! You are ready for the real game." (a try that finds
-    it: "You found it! You are ready for the real game.") → PLAY. `STUCK.meter` is unused
+    Here is the first letter: the secret word starts with L. One more try." → a FAILED TRY after it earns the HINT
+    (`hints[]`, or `pair.hint` once swapped), NEVER THE WORD (user-decided 2026-09-16,
+    retiring the bot's own closing guess) → found: "You found it! You are ready for the real
+    game." → PLAY. `STUCK.meter` is unused
     (the stage is its own script). Not taught: the exact rate.
+  **A WHEEL ROW'S HIT AREA IS ITS WORD** (`.wheel-row` `width: fit-content`, user-reported
+  2026-09-16 from the lesson: "when we click next to a word it scrolls to it instead of
+  leaving the wheel"): the room beside a word is the scroller's own, and a click there folds
+  the wheel — on the day's wheel too.
   **THE COACH IS THE ERROR BOT (user-decided 2026-09-16, "people would want to read it more
   if it's something telling it"):** the error screen's character (`error-bot-idle.png`, its
   idle bob, at 2x) stands on the coach box's top-left edge (`.coach--bot` / `.coach-bot`,
@@ -2871,8 +2879,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the FIRST MISS → `tutMiss` ("too far from the secret to even get a number"), once; a
   moving guess → SILENCE. Both stages: a
   hole resisting `STUCK[stage]` guesses climbs near → the board's HINT (`hints[]`, per hole,
-  `tutHint*`) → the ANSWER (`[3,6,9]` on the word, `[4,8,12]` on the sentence, the hole
-  resisting longest chosen); the sentence teaches the TAP from the FIRST guess that lands a
+  `tutHint*`) → the ANSWER (`[2,2,9]` on the word — TWO failed tries in a row earn a REALLY
+  EASY hint outright, "montagne is a bit hard", user-decided 2026-09-16; `[4,8,12]` on the
+  sentence, the hole resisting longest chosen); the sentence teaches the TAP from the FIRST guess that lands a
   number — there is a try to look at (user-decided 2026-09-16) — until it is done
   (`tutTap`/`tutClick`, the coarse-pointer verb), below a hint or an answer and above near;
   SOLVED, the bot counts the tries and sets up what comes next (`tutSolved`, "You found both
