@@ -435,11 +435,12 @@ const STRINGS = {
     en: 'Now a sentence, with two secret words. Find them.',
     fr: 'Maintenant une phrase, avec deux mots secrets. Trouve-les.',
   },
-  // The sentence solved: the bot counts the tries — the score, said once (user-decided
-  // 2026-09-16).
+  // The sentence solved: the bot counts the tries — the score, said once — and says this one
+  // was easy where the daily sentences are harder (user-decided 2026-09-16): the hook the
+  // first-letter lesson will hang from.
   tutSolved: {
-    en: 'You found both in {n} tries.',
-    fr: 'Tu as trouvé les deux en {n} essais.',
+    en: 'You found both in {n} tries. This one was easy: the daily sentences are harder.',
+    fr: 'Trouvés en {n} essais ! Celle-ci était facile, les vraies phrases sont plus dures.',
   },
   tutAway: {
     en: '{guess} is the {n} closest word to the secret. {start} is the {m}.',

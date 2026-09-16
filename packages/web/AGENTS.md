@@ -2833,8 +2833,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   resisting longest chosen); the sentence teaches the TAP from the FIRST guess that lands a
   number — there is a try to look at (user-decided 2026-09-16) — until it is done
   (`tutTap`/`tutClick`, the coarse-pointer verb), below a hint or an answer and above near;
-  SOLVED, the bot counts the tries (`tutSolved`, "You found both in 7 tries." — the score,
-  said once; a found single word still says nothing). The `{braces}` are filled from the board itself, so a line can never
+  SOLVED, the bot counts the tries and sets up what comes next (`tutSolved`, "You found both
+  in 7 tries. This one was easy: the daily sentences are harder." — the score, said once,
+  and the hook the FIRST-LETTER lesson (#301's meter, not taught yet) will hang from,
+  user-decided 2026-09-16; a found single word still says nothing). The `{braces}` are filled from the board itself, so a line can never
   name a word the map does not rank. The three-line coach box and its copy budget stand.
   **The invitation is unchanged** (`tutorial/Invite.tsx`, no header): a first visit (no
   `onboarded`) lands on it; TUTORIAL navigates to level 1 (the lesson's PLAY or a header exit

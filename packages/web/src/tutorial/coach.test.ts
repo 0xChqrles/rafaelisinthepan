@@ -199,7 +199,9 @@ describe('coachCopy', () => {
     );
     expect(coachCopy('en', { kind: 'answer', holeIndex: 0 }, stage, true)).toBe('The secret word is [[b:ocean]]. Type it.');
     expect(coachCopy('en', { kind: 'tap' }, stage, true)).toMatch(/^Tap/);
-    expect(coachCopy('en', { kind: 'solved', tries: 7 }, stage, true)).toBe('You found both in 7 tries.');
+    expect(coachCopy('en', { kind: 'solved', tries: 7 }, stage, true)).toBe(
+      'You found both in 7 tries. This one was easy: the daily sentences are harder.',
+    );
     expect(coachCopy('en', { kind: 'tap' }, stage, false)).toMatch(/^Click/);
   });
 });
