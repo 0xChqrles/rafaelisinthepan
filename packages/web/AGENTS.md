@@ -2775,7 +2775,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **LEVEL 1 (`tutorial/LevelOne.tsx` over `LessonBoard.tsx`, one screen, TWO STAGES,
   `scripts/<lang>.ts`):**
   - **THE WORD** — one hole with its start word a FEW ranks out (en OCEAN from `islands^10`,
-    fr OCÉAN from `île^12` — TROPIQUES was "way too hard", user feedback 2026-09-16;
+    fr OCÉAN from `plage^28` — TROPIQUES was "way too hard" and `île` "not the easiest word
+    to start with", user feedback 2026-09-16; the start is an EVERYDAY word;
     `scripts.test.ts` caps the start at 30): an EASY board by design, so the number falls
     fast and the hole moves on the first good guesses. The real keyboard and the real
     vocabulary from the first frame, one line of copy at most (`tutIntro`, the goal). NO
