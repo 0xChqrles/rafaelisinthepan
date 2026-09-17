@@ -1014,7 +1014,9 @@ input {
   align-items: center;
   justify-content: center;
   width: var(--hud-height);
-  height: var(--hud-height);
+  /* A phone's key is TALLER than it is wide (`--key-h`, set with the phone step-downs at
+     the bottom of this file); everywhere else it is the `--hud-height` square. */
+  height: var(--key-h, var(--hud-height));
   padding: 0;
   background: transparent;
   border: 0;
@@ -1049,7 +1051,9 @@ input {
   --hk-size: 4px;
   position: absolute;
   left: 0;
-  bottom: calc((var(--hud-height) - var(--hk-icon)) / 2 - var(--hk-gap) - var(--hk-size));
+  bottom: calc(
+    (var(--key-h, var(--hud-height)) - var(--hk-icon)) / 2 - var(--hk-gap) - var(--hk-size)
+  );
   width: var(--hk-size);
   height: var(--hk-size);
   background: var(--fg);
@@ -3833,6 +3837,34 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     margin-left: 3px;
   }
 }
+/* THE KEYS' HITBOX ON A PHONE (user-asked 2026-09-17: "the header icons are a bit hard to
+   target"). The icons stay 20px — the next integer scale is 30px, and five of those do not
+   fit beside the account area's French titles — so what grows is the BOX.
+   HEIGHT is free: the row is 50px tall whatever the keys do, so a phone's key is 44px high
+   at every width. The dot and the badge are stated off the DRAWING, so neither moves.
+   WIDTH is the narrow-phone budget above, and the tightest row sets it — SAUVEGARDE and
+   VIE PRIVÉE beside the five keys, measured: 17px spare at 375, 4px at 341. So from 375 up
+   the keys go to 36px with the gaps back at 2px (5 × 4 − 2 × 2 = 16 of the 17); below 375
+   they keep the widths above, where there is nothing left to give. */
+@media (max-width: 640px) {
+  .topbar {
+    --key-h: 44px;
+    /* The badge keeps its place over the DRAWING's corner (2px above a 20px icon — where a
+       32px key's `top: 4px` put it), not the taller box's. `.hk-badge` reads it. */
+    --hk-badge-top: calc((var(--key-h) - 20px) / 2 - 2px);
+  }
+}
+@media (min-width: 375px) and (max-width: 400px) {
+  .topbar {
+    --hud-height: 36px;
+  }
+  .topbar-right {
+    gap: 2px;
+  }
+  .account-key {
+    margin-left: 2px;
+  }
+}
 @media (max-width: 340px) {
   .topbar {
     --hud-height: 30px;
@@ -3946,6 +3978,19 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .tutorial--word .phrase {
   font-size: clamp(28px, 7vw, 48px);
+}
+/* THE LESSON'S SENTENCE IS BIGGER ON A PHONE (user-asked 2026-09-17: "really short sentences
+   on 2 lines"). The game's phone size (13–19px) is cut for a real day's long sentence; the
+   lesson's is five or six words, so it can afford the room — and stays on its two lines. The
+   prompt follows, on every stage: `.phrase` and `.word-input` move together, and a prompt
+   that changed size between the word stages and the sentence would be a jump. */
+@media (max-width: 640px) {
+  .tutorial:not(.tutorial--word) .phrase {
+    font-size: clamp(16px, 5vw, 24px);
+  }
+  .tutorial .word-input {
+    font-size: clamp(16px, 5vw, 24px); /* = the lesson's phone .phrase */
+  }
 }
 
 /* The explanation box: app background + surface border (a dialog, not a modal),
@@ -4799,6 +4844,21 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      is a literal: `--hud-height` lives on `.topbar` and naming it in a `calc()` out here
      voids the whole declaration. No side padding: the column IS the button's width. */
   padding: 48px 0 24px;
+}
+/* THE ACCOUNT PAGE DOES NOT CENTRE, ON ANY SCREEN (user-reported 2026-09-17: "I aim, then
+   it moves"). Its content ARRIVES — the address and the devices with the summary, the rows
+   with their own read, the call once the screen knows it is unsaved — and a centred column
+   re-centres on every arrival: measured at 1280×800, EDIT jumped 56px and then 42px more
+   under the pointer. So above the phone breakpoint it takes the phone's own grammar: ONE
+   start line, and the free space accumulates at the bottom, where arrivals land without
+   moving what is already there. 22vh puts a saved account with two devices about where the
+   centring put it. The flow's STEPS keep the centring: nothing arrives late on them. */
+@media (min-width: 641px) {
+  .account-screen:not(.link-step) {
+    align-self: flex-start;
+    margin: 0;
+    padding-top: clamp(96px, 22vh, 240px);
+  }
 }
 .link-step {
   display: flex;
@@ -7142,7 +7202,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .hk-badge {
   position: absolute;
-  top: 4px;
+  top: var(--hk-badge-top, 4px);
   right: 2px;
   min-width: 12px;
   height: 12px;
