@@ -170,6 +170,12 @@ export default function LessonBoard({
   // as it stands then, not as the closure saw it.
   const triedRef = useRef(tried);
   triedRef.current = tried;
+  // What the METERS read: the log as of the last RELEASE beat, the twin of Game's
+  // `shownCharge`. Hole's contract is that a meter's value changes when the floating hit
+  // fades (`fadeDelayMs`) and then waits for the drops to land; read off `tried`, it changed
+  // at the submit — the very render that remounts the struck word, so the new canvas was
+  // born already full and the blood flew back to a chip that had nothing left to fill.
+  const [shownTried, setShownTried] = useState<string[]>(seed);
   const ranksRef = useRef(ranks);
   ranksRef.current = ranks;
   const eventsRef = useRef(events);
@@ -332,8 +338,10 @@ export default function LessonBoard({
         );
       }
       if (isNew) {
-        triedRef.current = [...tried, typed];
-        setTried(triedRef.current);
+        const next = [...tried, typed];
+        triedRef.current = next;
+        setTried(next);
+        if (withMeters) later(() => setShownTried(next), fadeDelayMs);
         if (!byBot) {
           const filled =
             before && after ? after.findIndex((c, i) => c.revealed && !before[i].revealed) : -1;
@@ -484,13 +492,13 @@ export default function LessonBoard({
   // once revealed, and the sr-only description in the meter's place (#301).
   const charges = useMemo(() => {
     if (!withMeters) return undefined;
-    return meters(tried).map((c, i) => {
+    return meters(shownTried).map((c, i) => {
       const initial = c.revealed ? initialOf(viewHoles[i].secret.word) : null;
       const hint =
         holes[i].rank === 0 ? '' : initial !== null ? srHoleInitial(lang, initial) : srHoleCharge(lang, c.charge);
       return { value: c.charge, initial, hint };
     });
-  }, [withMeters, meters, tried, viewHoles, holes, lang]);
+  }, [withMeters, meters, shownTried, viewHoles, holes, lang]);
 
   return (
     // tutorial--word: the word stage is deliberately CLEAN — one big centered word in the
