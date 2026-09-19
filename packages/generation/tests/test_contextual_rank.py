@@ -16,6 +16,7 @@
 """
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -164,6 +165,76 @@ def test_replay_rebuilds_the_same_order_and_never_guesses(tmp_path):
     other = cr.Context(CTX.sentence, "chien", "chien")
     with pytest.raises(cr.ContextualError):
         cr.rerank(other, _cands(list(scores)), replay, pairwise_top=0)
+
+
+@pytest.mark.parametrize("change", [
+    {"sentence": "le chat est une conversation en ligne."},
+    {"before": ("Un autre contexte.",)},
+    {"after": ("Une autre suite.",)},
+    {"secret_label": "chatter"},
+])
+def test_replay_refuses_changed_context_for_scores_and_pairs(tmp_path, change):
+    candidates = _cands(["chien", "félin"])
+    judge = FakeJudge({"chien": 1.0, "félin": 3.0})
+    _, record = cr.rerank(CTX, candidates, judge)
+    path = cr.write_sidecar(str(tmp_path / "scores.json"), model="fake",
+                            sentence=CTX.sentence, before=(), after=(),
+                            records=[record], usage=judge.usage)
+    replay = cr.ReplayJudge(cr.load_sidecar(path))
+    changed = replace(CTX, **change)
+    with pytest.raises(cr.ContextualError, match="diffère"):
+        replay.score(changed, candidates)
+    with pytest.raises(cr.ContextualError, match="diffère"):
+        replay.compare(changed, [(candidates[0], candidates[1])])
+
+
+@pytest.mark.parametrize("with_resolver", [False, True])
+def test_interactive_contextual_selection_without_inflection(monkeypatch, capsys,
+                                                            with_resolver):
+    import termios
+    import tty
+    from types import SimpleNamespace
+
+    words = ["chat", "chien", "tigre"]
+    ranking = [("félin", 0, .9), ("minou", 1, .8), ("loup", 2, .7)]
+    cfg = gen_phrase.CONFIG["fr"].copy()
+    cfg["module"] = SimpleNamespace(closest=lambda *a, **kw: ranking)
+    judge = FakeJudge({"félin": 1.0, "minou": 3.0, "loup": .5})
+    ranker = _ranker(judge)
+    forms = gen_phrase.FormResolver(None, interactive=True) if with_resolver else None
+    monkeypatch.setattr(gen_phrase.sys, "stdin", SimpleNamespace(fileno=lambda: 0))
+    monkeypatch.setattr(termios, "tcgetattr", lambda fd: None)
+    monkeypatch.setattr(termios, "tcsetattr", lambda *a: None)
+    monkeypatch.setattr(tty, "setcbreak", lambda fd: None)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
+    bands = []
+
+    def band(secret, merged, bounds):
+        bands.append(bounds)
+        return [(w, r) for w, r, _ in merged]
+
+    monkeypatch.setattr(gen_phrase, "start_band", band)
+    # Hover another word before selecting; cancel a start choice and return to
+    # it to verify that selection, not hovering, triggers one judge call per hole.
+    keys = iter(["RIGHT", "LEFT", "ENTER", "ESC", "ENTER", "1", "ENTER"]
+                + ["ENTER", "1", "ENTER"] * 2)
+
+    def key(fd):
+        value = next(keys)
+        if value in ("RIGHT", "LEFT"):
+            assert judge.calls == []
+        return value
+
+    monkeypatch.setattr(gen_phrase, "_read_key", key)
+    holes, ranks = gen_phrase.select_holes_interactive(
+        words, cfg, "fr", kv=None, V=words, M=None, Vset=set(words),
+        lemma_table={}, forms_by_lemma={}, forms=forms, contextual=ranker)
+    assert len(holes) == 3
+    assert len([c for c in judge.calls if c[0] == "score"]) == 3
+    assert bands.count(ranker.band) == 3
+    assert all(h["start"]["word"] == "minou" for h in holes)
+    assert all(rmap["minou"]["rank"] == 1 for rmap in ranks.values())
+    assert len(ranker.records) == 3
 
 
 # --- through gen_phrase ------------------------------------------------------------

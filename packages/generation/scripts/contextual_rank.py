@@ -215,16 +215,26 @@ class ReplayJudge:
     pair it never judged is a hard error, never a guess."""
 
     def __init__(self, sidecar):
+        self.sentence = sidecar["sentence"]
+        self.before = tuple(sidecar["before"])
+        self.after = tuple(sidecar["after"])
         self.holes = {h["secret"]: h for h in sidecar["holes"]}
         self.model = sidecar.get("model", "replay")
         self.usage = {"input_tokens": 0, "output_tokens": 0}
         self.requests = 0
 
     def _hole(self, context):
+        if (context.sentence != self.sentence or tuple(context.before) != self.before
+                or tuple(context.after) != self.after):
+            raise ContextualError("rejeu : la phrase ou son contexte diffère des scores enregistrés")
         try:
-            return self.holes[context.secret]
+            hole = self.holes[context.secret]
         except KeyError:
             raise ContextualError(f"rejeu : aucun score enregistré pour « {context.secret} »")
+        if context.secret_label != hole["secret_label"]:
+            raise ContextualError(f"rejeu : le lexème de « {context.secret} » diffère "
+                                  "des scores enregistrés")
+        return hole
 
     def score(self, context, candidates):
         scores = self._hole(context)["scores"]

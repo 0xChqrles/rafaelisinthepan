@@ -2490,6 +2490,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
     # rank map (lemma groups collapsed, aliases expanded), the start-word band on the
     # MERGED ranks, and display->merged-rank (0 = secret).
     cache = {}
+    confirmed_secrets = set()
 
     def donor_of(secret):
         """The vector source already known for a hovered word (itself when it has one),
@@ -2586,13 +2587,15 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
         (feature_for caches per slug), outside raw mode, BEFORE the start band
         renders — its answer names the hole's lexeme, so the band the author picks
         from is drawn on the map that ships."""
-        if forms is None:
-            return
-        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
-        try:
-            forms.feature_for(secret)
-        finally:
-            tty.setcbreak(fd)
+        if forms is not None:
+            termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+            try:
+                forms.feature_for(secret)
+            finally:
+                tty.setcbreak(fd)
+        # Selecting a secret also commits its contextual ranking when agreement
+        # is disabled and the form resolver has no answer to record.
+        confirmed_secrets.add(slug(secret))
 
     def ask_display(secret, entry, start, start_rank):
         """Leave raw mode for the free-text questions of the flow (#119 + addendum 2).
@@ -2641,9 +2644,8 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                 cells = donors.donor_lines(secret, dcands)
             else:
                 dcands = []
-                # Confirmed once the commit step has asked (feature_for caches per
-                # slug), provisional while merely hovering — see prep.
-                confirmed = forms is not None and slug(secret) in forms.answered
+                # Selection confirmation is independent of optional agreement.
+                confirmed = slug(secret) in confirmed_secrets
                 entry = prep(secret, donor, confirmed)
                 band, rbd = entry["band"], entry["rbd"]
                 title = f"  Mots de départ pour « {secret} »"
