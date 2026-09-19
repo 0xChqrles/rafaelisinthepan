@@ -128,7 +128,8 @@ from build_forms import (CITATION_FEATURE, FORM_LANGS, feature_pos, forms_path,
 from build_lemmas import lemmas_path, load_lemmas  # en form→lemma table (#104)
 from distances import quantize_dq  # dq annotations (#115)
 from slug import path_slug, slug, write_vocab  # slug/fold contract, dir names, vocab
-from start_word import pick_start, start_band
+from start_word import CONTEXT_BAND, STATIC_BAND, pick_start, start_band
+import contextual_rank  # #308: the hosted judge behind one small boundary
 
 # --- Vocabulary ----------------------------------------------------------------
 # V is the WHOLE reduced vocabulary: scripts/reduce_embedding.py already capped and
@@ -367,7 +368,7 @@ def rank_lexemes(ranking, lemma_table):
 
 
 def build_merged_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, Vset,
-                          top_k=TOP_K, secret_lemmas=None):
+                          top_k=TOP_K, secret_lemmas=None, entities=None):
     """One secret's complete rank map under word-group ranking (#134/#146).
 
     Group 0 is the secret: its slug plus every reduced-vocab form of its claimed
@@ -393,6 +394,12 @@ def build_merged_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
     With an empty lemma_table every surface is its own clean singleton lexeme and
     the walk reproduces the ungrouped ranking (slug-collision losers now compacted
     away instead of holding empty ranks).
+
+    `entities` overrides the group ORDER the assembly walks — rank_lexemes(ranking)
+    by default (static geometry); a contextual rerank (#308) hands back the same
+    groups re-ordered with its own similarities. Keys are still assigned
+    closest-first in THAT order, so an ambiguous surface attaches to the group the
+    shipped ranking says is closer.
 
     Returns (merged, rmap, groups):
       merged: [(display, rank_index, sim)] — survivors, compacted, ascending;
@@ -444,7 +451,9 @@ def build_merged_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
     open_group(secret_display, 0, secret_lemmas)  # the secret always keys its slug
     groups = [(secret_display, 0, secret_lemmas, True, secret_display)]
     merged = []
-    for lex, rep, sim, _pos, clean in rank_lexemes(ranking, lemma_table):
+    if entities is None:
+        entities = rank_lexemes(ranking, lemma_table)
+    for lex, rep, sim, _pos, clean in entities:
         if lex in secret_lemmas:
             continue  # the secret's own family: already keyed at rank 0
         display = open_group(rep, len(merged) + 1, (lex,))
@@ -489,8 +498,15 @@ def annotate_rank_map(rmap, merged, secret=""):
     return rmap
 
 
+def lexeme_label(lex):
+    """The lemma a judge reads for an opaque group key: `voler:v` -> «voler»; a
+    table-less singleton (the surface itself) or an en lemma is already the word."""
+    lemma, sep, _pos = lex.rpartition(":")
+    return lemma if sep else lex
+
+
 def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, Vset,
-                          secret_lemmas=None):
+                          secret_lemmas=None, contextual=None):
     """One secret's rank map AS SHIPPED: lexeme-ranked, keyed, dq-annotated.
 
     The one entry point both authoring paths use, so a puzzle can never be written
@@ -500,12 +516,81 @@ def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
     `ranking` may have been walked from a DONOR's vector (#119) while `secret_display`
     stays the true sentence form: the similarities are the donor's either way, which is
     the whole point — the donor is the geometry source, so the dq scale is the one the
-    borrowed vector describes."""
+    borrowed vector describes.
+
+    With `contextual` (a ContextualRanker, #308) the static walk only RETRIEVES: its
+    TOP_K surviving groups are handed to the judge as lemmas, come back in
+    contextual order with contextual similarities, and the map is re-assembled in
+    that order — same groups, same keys rule, `dq` quantized from the judge's
+    geometry. gen_word never passes one: a single word has no sentence."""
     merged, rmap, groups = build_merged_rank_map(
         secret_display, ranking, lemma_table, forms_by_lemma, Vset, TOP_K,
         secret_lemmas)
+    if contextual is not None and merged:
+        entities = contextual.reorder(secret_display, secret_lemmas, merged, groups)
+        merged, rmap, groups = build_merged_rank_map(
+            secret_display, ranking, lemma_table, forms_by_lemma, Vset, TOP_K,
+            secret_lemmas, entities=entities)
+        contextual.note(secret_display, merged)
     annotate_rank_map(rmap, merged, secret=secret_display)
     return merged, rmap, groups
+
+
+class ContextualRanker:
+    """The sentence-bound glue between the walk and contextual_rank (#308).
+
+    Built once per run from the sentence, its excerpt and the judge; `reorder`
+    turns one hole's static groups into the judge's order (the same groups, new
+    similarities), `note` records what shipped, and main() prints the reports and
+    writes the sidecar after the selector has restored the terminal. `band` is the
+    start band a contextual map uses (start_word.CONTEXT_BAND)."""
+
+    band = CONTEXT_BAND
+
+    def __init__(self, judge, sentence, before=(), after=(), foreign=None, model=None):
+        self.judge, self.sentence = judge, sentence
+        self.before, self.after = tuple(before), tuple(after)
+        self.foreign = foreign
+        self.model = model or getattr(judge, "model", "?")
+        self.records = []   # sidecar entries, one per reranked secret
+        self.reports = []   # printed after the selector, in authoring order
+        self._ranked = {}
+
+    def reorder(self, secret_display, secret_lemmas, merged, groups):
+        """The static survivors (`merged`/`groups` of build_merged_rank_map) as the
+        judge orders them: entities for a second assembly."""
+        secret_lemmas = tuple(secret_lemmas or ())
+        secret_label = lexeme_label(secret_lemmas[0]) if secret_lemmas else secret_display
+        context = contextual_rank.Context(self.sentence, secret_display, secret_label,
+                                          self.before, self.after)
+        by_rank = {rank: (claims[0], clean, rep)
+                   for _display, rank, claims, clean, rep in groups if rank}
+        candidates = []
+        for display, idx, _sim in merged:
+            lex, _clean, _rep = by_rank[idx + 1]
+            candidates.append(contextual_rank.Candidate(lex, lexeme_label(lex), idx))
+        try:
+            ranked, record = contextual_rank.rerank(context, candidates, self.judge,
+                                                   foreign=self.foreign)
+        except contextual_rank.ContextualError as exc:
+            die(f"classement contextuel impossible pour « {secret_display} » : {exc}")
+        self.records.append(record)
+        self._ranked[secret_display] = (ranked, record)
+        return [(r.key, by_rank[r.static_pos + 1][2], r.similarity, r.static_pos,
+                 by_rank[r.static_pos + 1][1]) for r in ranked]
+
+    def note(self, secret_display, merged):
+        ranked, record = self._ranked[secret_display]
+        self.reports.append(contextual_rank.format_report(
+            secret_display, ranked, record, model=self.model))
+        record["kept"] = len(merged)
+
+    def print(self):
+        for report in self.reports:
+            print(report)
+        usage = self.judge.usage
+        print(f"\n  juge : {self.judge.requests} requêtes, "
+              f"{usage['input_tokens']} jetons en entrée, {usage['output_tokens']} en sortie")
 
 
 def group_lexeme_map(groups):
@@ -1039,7 +1124,7 @@ def secret_claim(secret, donor, lemma_table, donors=None, forms=None):
 
 
 def walk_secret(secret, donor, cfg, kv, V, M, Vset, lemma_table, forms_by_lemma,
-                donors=None, forms=None):
+                donors=None, forms=None, contextual=None):
     """One word's ranked neighborhood, from its identity to its shipped rank map.
 
     The per-secret pipeline, in the one order that is load-bearing: settle what
@@ -1052,13 +1137,16 @@ def walk_secret(secret, donor, cfg, kv, V, M, Vset, lemma_table, forms_by_lemma,
     `donor` is the vector source — the secret itself, or the form lending it one
     (#119); `secret` stays the true form the artifact displays and keys either way.
 
+    `contextual` (#308, sentence paths only) reranks the walk's survivors with the
+    judge; None keeps the static order (gen_word always).
+
     Returns build_puzzle_rank_map's (merged, rank_map, groups)."""
     secret_lemmas = secret_claim(secret, donor, lemma_table, donors, forms)
     # The walk needs the FULL raw ranking: merging collapses inflections, so reaching
     # TOP_K distinct groups can consume well over TOP_K raw neighbors.
     ranking = cfg["module"].closest(donor, kv, V, M, n=None)
     return build_puzzle_rank_map(secret, ranking, lemma_table, forms_by_lemma, Vset,
-                                 secret_lemmas=secret_lemmas)
+                                 secret_lemmas=secret_lemmas, contextual=contextual)
 
 
 class DonorResolver:
@@ -1301,7 +1389,7 @@ def build_lang_vocab(kv, cfg):
     return cfg["module"].build_vocab(kv)
 
 
-def choose_start(secret, ranking, rank_map, rank_by_display):
+def choose_start(secret, ranking, rank_map, rank_by_display, band=STATIC_BAND):
     """Pick the start (hint) word for ONE hole, interactively when on a terminal.
 
     The random default is exactly what pick_start would choose, so nothing about
@@ -1317,14 +1405,14 @@ def choose_start(secret, ranking, rank_map, rank_by_display):
     Returns a DISPLAY word that is a key of rank_by_display, so start_rank and the
     {word, slug} object built downstream stay exactly as before.
     """
-    default = pick_start(secret, ranking)
+    default = pick_start(secret, ranking, band)
 
     # No terminal attached (piped stdin / batch generation): keep the random
     # default silently, so automated runs never block on input().
     if not sys.stdin.isatty():
         return default
 
-    band = start_band(secret, ranking)
+    band = start_band(secret, ranking, band)
     print(f"\nMot de départ pour « {secret} » "
           f"(Entrée = {default}^{rank_by_display[default]}) :")
     for i, (w, _r) in enumerate(band, 1):
@@ -2351,7 +2439,7 @@ def _read_key(fd):
 
 def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                              lemma_table, forms_by_lemma, donors=None, forms=None,
-                             reporter=None):
+                             reporter=None, contextual=None):
     """Pick three distinct secret groups on a TTY; return holes sorted by position.
 
     Full-screen loop: ←/→ move between the sentence's selectable content words (see
@@ -2375,7 +2463,12 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
     group 0 claims, so the band the author picks from is drawn on the map that
     ships. The HOVER preview deliberately runs on the provisional (surface-derived)
     claim — browsing must not open questions — so committing a homographic secret
-    can shift the band slightly once its identity is confirmed."""
+    can shift the band slightly once its identity is confirmed.
+
+    With `contextual` (#308) the HOVER preview stays static too — browsing must not
+    spend a judge call per word — and the commit step's confirmed rebuild is the one
+    that reranks, so the band the author picks from (CONTEXT_BAND) is the map that
+    ships."""
     import shutil
     import termios
     import tty
@@ -2397,6 +2490,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
     # rank map (lemma groups collapsed, aliases expanded), the start-word band on the
     # MERGED ranks, and display->merged-rank (0 = secret).
     cache = {}
+    confirmed_secrets = set()
 
     def donor_of(secret):
         """The vector source already known for a hovered word (itself when it has one),
@@ -2415,18 +2509,25 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
         secret_slug = slug(secret)
         claim = secret_claim(secret, donor, lemma_table, donors,
                              forms if confirmed else None)
+        ranker = contextual if confirmed else None
         entry = cache.get(secret_slug)
-        if entry is None or entry["claim"] != claim:
+        if entry is None or entry["claim"] != claim or entry["ranker"] is not ranker:
             ranking = entry["ranking"] if entry is not None \
                 else cfg["module"].closest(donor, kv, V, M, n=None)
+            if ranker is not None:  # the judge takes a minute or two: say so
+                sys.stdout.write(f"\n  classement contextuel de « {secret} » par le "
+                                 "juge (quelques minutes)…\n")
+                sys.stdout.flush()
             merged, rank_map, groups = build_puzzle_rank_map(
                 secret, ranking, lemma_table, forms_by_lemma, Vset,
-                secret_lemmas=claim)
+                secret_lemmas=claim, contextual=ranker)
             rbd = {secret: 0}
             for w, r, _ in merged:
                 rbd.setdefault(w, r + 1)
-            entry = {"ranking": ranking, "claim": claim,
-                     "rank_map": rank_map, "band": start_band(secret, merged),
+            band = start_band(secret, merged,
+                              ranker.band if ranker is not None else STATIC_BAND)
+            entry = {"ranking": ranking, "claim": claim, "ranker": ranker,
+                     "rank_map": rank_map, "band": band,
                      "rbd": rbd, "groups": groups}
             cache[secret_slug] = entry
         return entry
@@ -2486,13 +2587,15 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
         (feature_for caches per slug), outside raw mode, BEFORE the start band
         renders — its answer names the hole's lexeme, so the band the author picks
         from is drawn on the map that ships."""
-        if forms is None:
-            return
-        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
-        try:
-            forms.feature_for(secret)
-        finally:
-            tty.setcbreak(fd)
+        if forms is not None:
+            termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+            try:
+                forms.feature_for(secret)
+            finally:
+                tty.setcbreak(fd)
+        # Selecting a secret also commits its contextual ranking when agreement
+        # is disabled and the form resolver has no answer to record.
+        confirmed_secrets.add(slug(secret))
 
     def ask_display(secret, entry, start, start_rank):
         """Leave raw mode for the free-text questions of the flow (#119 + addendum 2).
@@ -2541,9 +2644,8 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                 cells = donors.donor_lines(secret, dcands)
             else:
                 dcands = []
-                # Confirmed once the commit step has asked (feature_for caches per
-                # slug), provisional while merely hovering — see prep.
-                confirmed = forms is not None and slug(secret) in forms.answered
+                # Selection confirmation is independent of optional agreement.
+                confirmed = slug(secret) in confirmed_secrets
                 entry = prep(secret, donor, confirmed)
                 band, rbd = entry["band"], entry["rbd"]
                 title = f"  Mots de départ pour « {secret} »"
@@ -2676,7 +2778,7 @@ def filename_slugs_from_holes(holes):
 
 def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                      lemma_table, forms_by_lemma, donors=None, forms=None,
-                     reporter=None, starts=None):
+                     reporter=None, starts=None, contextual=None):
     """Resolve three distinct ``--words`` selectors into all matching holes.
 
     Matching is slug-based. Each selected slug gets one ranking and one start hint, then
@@ -2743,7 +2845,7 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
         # walk (#134), because its answer names the lexeme group 0 claims.
         merged, rank_map, groups = walk_secret(
             canonical_secret, donor, cfg, kv, V, M, Vset, lemma_table,
-            forms_by_lemma, donors, forms)
+            forms_by_lemma, donors, forms, contextual)
         rank_by_display = {canonical_secret: 0}
         for w, r, _ in merged:
             rank_by_display.setdefault(w, r + 1)
@@ -2759,6 +2861,9 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                     f"pour « {canonical_secret} » (absent du vocabulaire du trou, ou le "
                     f"secret lui-même).")
             start = entry["word"]
+        elif contextual is not None:
+            start = choose_start(canonical_secret, merged, rank_map, rank_by_display,
+                                 band=contextual.band)
         else:
             start = choose_start(canonical_secret, merged, rank_map, rank_by_display)
         start_rank = rank_map[slug(start)]["rank"]
@@ -3119,11 +3224,50 @@ def parse_args():
     p.add_argument("--after", action="append", metavar="PHRASE",
                    help="une phrase du texte APRÈS la phrase du jeu (répétable ; #270)")
     p.add_argument("--url", help="page du morceau pour un jour musique (#270)")
+    p.add_argument("--contextual", action="store_true",
+                   help="classe chaque trou par le SENS que la phrase donne au secret "
+                        "(#308) : le juge hébergé Jev (TypeSafe, clé JEV_API_KEY) "
+                        "réordonne les TOP_K groupes de l'embedding statique ; fr "
+                        "seulement ; aucun repli statique en cas d'échec")
+    p.add_argument("--contextual-model", default=contextual_rank.JEV_MODEL,
+                   metavar="MODELE", help="identifiant du modèle juge (défaut : "
+                                          f"{contextual_rank.JEV_MODEL})")
+    p.add_argument("--contextual-replay", metavar="FICHIER",
+                   help="rejoue les scores contextuels d'un fichier "
+                        "<puzzle>.contextual.json d'une génération précédente au "
+                        "lieu d'appeler le juge (même phrase, mêmes secrets) — "
+                        "reconstruit la même carte à l'identique, sans réseau")
     p.add_argument("--out-dir", default=os.path.join(GEN_OUTPUT, "word"), dest="out_dir",
                    help="racine de sortie des puzzles ; le fichier est classé dessous "
                         "en <lang>/<type>/<auteur>/<œuvre>/ (défaut : "
                         "packages/generation/output/word)")
     return p.parse_args()
+
+
+def build_contextual_ranker(args, lang, sentence, V):
+    """The #308 judge for this run: Jev through JEV_API_KEY, or a replay of a
+    previous run's sidecar. French only (the rubric and the lexeme labels are
+    French; another language brings its own template, a separate decision). The
+    English-dominance demotion reads the two corpora's frequency orders: the fr
+    reduced vocabulary already loaded (V) and the en reduced vectors' order."""
+    if lang != "fr":
+        die("--contextual : le classement contextuel n'existe qu'en français (#308).")
+    try:
+        if args.contextual_replay:
+            judge = contextual_rank.ReplayJudge(
+                contextual_rank.load_sidecar(args.contextual_replay))
+        else:
+            judge = contextual_rank.JevJudge(contextual_rank.read_api_key(os.environ),
+                                             model=args.contextual_model)
+    except (contextual_rank.ContextualError, OSError, ValueError) as exc:
+        die(f"--contextual : {exc}")
+    fr_rank = {w: i for i, w in enumerate(V)}
+    en_rank = {w: i for i, w in enumerate(gn.load_vectors().index_to_key)}
+    return ContextualRanker(judge, sentence, before=args.before or (),
+                            after=args.after or (),
+                            foreign=contextual_rank.english_dominance(fr_rank, en_rank),
+                            model=args.contextual_model if not args.contextual_replay
+                            else f"rejeu de {args.contextual_replay}")
 
 
 def main():
@@ -3166,6 +3310,11 @@ def main():
     lemma_table, forms_by_lemma = run.lemma_table, run.forms_by_lemma
     donors, forms, reporter = run.donors, run.forms, run.reporter
 
+    # #308: the judge, bound to this sentence and its excerpt, before any walk — a
+    # missing key or an unsupported language dies here, ahead of the first hole.
+    contextual = build_contextual_ranker(args, lang, sentence, V) \
+        if args.contextual or args.contextual_replay else None
+
     # DISPLAY tokens of the sentence: lowercased, but accents AND punctuation /
     # apostrophes KEPT (see display_token), so words[] reproduces the sentence. Each
     # secret is located INSIDE its token by slug (locate_core), so a blanked word keeps
@@ -3184,15 +3333,19 @@ def main():
         holes, ranks = holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                                         lemma_table, forms_by_lemma, donors, forms,
                                         reporter=reporter,
-                                        starts=parse_start_args(args.start))
+                                        starts=parse_start_args(args.start),
+                                        contextual=contextual)
     else:
         holes, ranks = select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                                                 lemma_table, forms_by_lemma, donors,
-                                                forms, reporter=reporter)
+                                                forms, reporter=reporter,
+                                                contextual=contextual)
 
     # #135 is a report only: print after every selected map exists (and after raw
     # mode has restored the terminal), before metadata/file authoring continues.
     reporter.print()
+    if contextual is not None:
+        contextual.print()
 
     # --- Optional source metadata (#5) ----------------------------------------
     # Flags win; otherwise ask on a TTY (any flag already given is not re-prompted);
@@ -3231,9 +3384,21 @@ def main():
     out_path = os.path.join(out_dir, fname)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(phrase, f, ensure_ascii=False)
+    # #308: the scores the contextual map was built from, beside the puzzle — never
+    # inside it. A later run replays them (--contextual-replay) to rebuild the same
+    # map without a judge call.
+    sidecar = None
+    if contextual is not None:
+        sidecar = contextual_rank.write_sidecar(
+            out_path[:-len(".json")] + ".contextual.json", model=contextual.model,
+            sentence=sentence, before=contextual.before, after=contextual.after,
+            records=contextual.records, usage=contextual.judge.usage,
+            replayed_from=args.contextual_replay)
 
     # --- Preview ---------------------------------------------------------------
     print(f"\nPhrase ({lang}) écrite dans {out_path} :")
+    if sidecar:
+        print(f"  scores contextuels : {sidecar}")
     for h in holes:
         print(f"  {h['start']['word']}^{h['start_rank']} -> {h['secret']['word']}")
     # Substitutions, agreement, #134's curator marks and --form typo warnings — the
