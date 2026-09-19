@@ -28,8 +28,12 @@ relative to `packages/generation/` unless prefixed.
       embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
       glove_neighbors.py      en paths + derived .kv cache (thin wrapper over the above)
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
-      start_word.py           start/hint-word selection (rank band 100-150)
+      start_word.py           start/hint-word selection (rank band 100-150; 250-400 on a
+                              contextual map, #308)
       distances.py            stdlib-only: dq quantization (#115)
+      contextual_rank.py      stdlib-only: the #308 judge boundary — Jev (TypeSafe) pass 1
+                              Score + pass 2 pairwise, English-dominance demotion, sidecar
+                              + replay; gen_phrase hands it lemmas, never tensors or HTTP
       gen_phrase.py           one sentence -> one self-contained puzzle JSON; also owns the
                               per-secret pipeline (walk_secret) both entry points share
       gen_word.py             one word -> one single-word artifact JSON (#154); imports the
@@ -43,6 +47,8 @@ relative to `packages/generation/` unless prefixed.
     output/word/<lang>/<kind>/<author>/<work>/<start1>_<start2>_<start3>.json   generated puzzles
                               filed under their source (#137), NAMED AFTER THE START WORDS (never
                               the secrets, 2026-09-07); gitignored; publish to store/S3
+    output/word/.../<s1>_<s2>_<s3>.contextual.json   the judge's scores a contextual
+                              puzzle was built from (#308): rejoué par --contextual-replay
     output/single-word/<lang>/<slug>.json   generated single-word artifacts (#154);
                               gitignored; one flat directory per language
     pyproject.toml, uv.lock   Python project (uv)
@@ -207,6 +213,64 @@ Consequences that are load-bearing:
   carries a `#` provenance header (release, URL, digest, licence). Don't distribute
   the table without them.
 
+### Contextual ranks: the static walk retrieves, a hosted judge orders (#308, user-decided 2026-09-19)
+
+- **`--contextual` (fr sentence puzzles only) keeps the static walk as RETRIEVAL and
+  makes TypeSafe's Jev model the ranking engine.** Per hole: the walk's `TOP_K` surviving
+  groups (all 10 000, nothing cut — user-decided: the map keeps every group it scores)
+  go to the judge as LEMMAS (`lexeme_label`, the group key's lemma; a table-less
+  singleton is its surface), with the REAL sentence, the secret and the `--before` /
+  `--after` excerpt as the shared state. **Pass 1** is one independent `Score` per
+  candidate on `SCORE_LEVELS` (0–4); **pass 2** is a full pairwise round-robin
+  (`Choice`) over the `PAIRWISE_TOP = 200` best of pass 1 — every pair once, orientation
+  seeded, a word's score is its mean win probability — whose order replaces the front,
+  its win rates mapped affinely onto the pass-1 span they replace. Then the map is
+  RE-ASSEMBLED by `build_merged_rank_map` in that order (same groups, keys closest-first
+  in the CONTEXTUAL order, so an ambiguous surface attaches to the group the shipped
+  ranking says is closer), and **`dq` is quantized from the judge's similarities**. The
+  static cosine picks the candidates and breaks exact ties — it is never blended in.
+- **The rubric is the cloze guard and the leak guard, in words** (`SCORE_INSTRUCTIONS`,
+  `RUBRIC_VERSION = 2`): sense only, grammar/agreement/substitutability excluded, a
+  candidate's presence in the sentence or its describing what the sentence does to the
+  secret counts for nothing. The rubric travels ONCE per request in the shared state
+  (≈ half the tokens of one copy per question, same order measured); the level
+  descriptions stay in each question (moving them too shifts the scale).
+- **English-dominant labels are demoted by CODE** (`english_dominance`): a label past
+  French rank `EN_DOMINANCE_FLOOR = 8000` whose French frequency rank exceeds
+  `EN_DOMINANCE_RATIO = 3` × its English rank (the two reduced vocabularies' orders) is
+  scored 0 — the rubric's "not French → lowest level" line was ignored (`retirement`,
+  `feeling`), Morphalou lists loanwords, and this is what separated them. Known misfires:
+  rare French words that are common English ones (`affect`, `laid`); the report names
+  the first eight so the curator sees them. Non-English foreign words (`cucaracha`) pass.
+- **The judge is HOSTED — the one decided exception to offline generation** (quality
+  over cost; ≈ 10 M input tokens ≈ $0.40 per puzzle at the published price, measured).
+  Consequences: `JEV_API_KEY` from the environment (never a flag, never logged); a
+  missing key, an unsupported language, a refused request or an unreachable service
+  is a HARD ERROR — **never a static fallback** (an artifact must say what built it);
+  429/529 and transport errors retry with capped backoff. **Reproducibility is the
+  SIDECAR**: `<puzzle>.contextual.json` beside the puzzle records model, rubric
+  version, sentence, excerpt, and per secret the scores and judged pairs KEYED BY
+  GROUP (two groups can share a lemma string) plus usage; `--contextual-replay
+  <sidecar>` rebuilds the same map byte-for-byte without a call (verified), so a
+  start-word or metadata correction never rescore. `--contextual-model` names the
+  judge (`jev-latest` today; pin a version there when the API offers one).
+- **The start band of a contextual map is `CONTEXT_BAND = (250, 400)`**
+  (`start_word.py`): its near field packs far tighter, so the static 100–150 hint
+  gives the game away (the first reranked days played "much easier"; user-decided
+  farther, 250–500 by hand, the width bounded by what the selector can list). The
+  hover preview of the interactive selector stays STATIC (browsing spends no judge
+  call); the commit step's confirmed rebuild is the one that reranks, with a
+  "quelques minutes" notice, so the band picked from is the map that ships.
+- **`gen_word` stays static** — no sentence, no judge (`walk_secret(contextual=None)`).
+  The two artifacts still share every downstream rank-map rule, but no longer promise
+  the same lexical group the same neighborhood (root `AGENTS.md`).
+- Known limits, deliberately not addressed here: a plain concrete noun ranks as its
+  category (`bureau` → rooms, `pigeons` → `oiseau`) where static gave its world; word
+  families crowd the first ranks; the tail past ≈ rank 300 is tied in bands (its order
+  is the static tie-break, `dq` ≈ 0 there); the judge commits hard to ONE sense.
+  Rejected: blending static and contextual scores (the issue's rule stands), a local
+  hidden-state cosine (measured worse: lookalikes, noisy tops, prompt-fragile).
+
 ### Generation outputs
 
 - **Two outputs, two homes (by purpose):**
@@ -295,6 +359,8 @@ Consequences that are load-bearing:
   opt out explicitly); and don't re-filter against the wordlist anywhere downstream.
 - **Don't skip the cache mtime check** in `load_vectors`.
 - **Don't inject a missing target word** into the vocab in `gen_phrase` — error out.
+- **Don't fall back to the static order when the judge fails** (`--contextual`), and
+  don't blend static similarity into a contextual score — retrieval and tie-break only.
 
 (Cross-package Do-NOTs — slug/fold divergence, fold/display separation, lemma-merge
 containment — live in the root `AGENTS.md`.)
@@ -369,7 +435,13 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json + shared/src/vocab.
 #    sentences around the line into `source.excerpt` (#270) — blanks dropped, no key
 #    without a sentence, both arrays present when there is one; --url the track page
 #    into `source.url`. Neither is asked on a TTY: an excerpt is copied, not typed.
+#    --contextual (#308, fr only): rerank every hole by the sense the sentence gives the
+#    secret with the Jev judge (JEV_API_KEY in the environment; hard error without it, no
+#    static fallback); writes <puzzle>.contextual.json beside the puzzle, which
+#    --contextual-replay FICHIER rebuilds from without a call; --contextual-model MODELE
+#    names the judge. The hint band is 250-400 on such a map.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
+pnpm gen:phrase "<sentence>" --lang fr --words a b c --contextual --before "…" --after "…"
 
 # 4. Generate a SINGLE-WORD artifact (#154): one word + its ranked neighborhood, no
 #    sentence — the source the onboarding tutorial's board is pruned from
@@ -396,7 +468,9 @@ output filename contains the three distinct secret slugs in sentence order.
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 10000` / curator report window `PLAYABILITY_TOP = 150` (gen),
-  start-rank band `100–150` (`start_word.py`, user-decided 2026-09-07; was 50–150).
+  start-rank band `100–150` (`start_word.py`, user-decided 2026-09-07; was 50–150),
+  `CONTEXT_BAND = (250, 400)` for a contextual map (#308), `PAIRWISE_TOP = 200` /
+  `SCORE_BATCH = 50` / `PAIR_BATCH = 40` / `WORKERS = 6` (`contextual_rank.py`).
   `PLAYABILITY_TOP` is a curator report window sized for a sentence hole's near field.
 - **Playability report (#135):** `build_playability_report` reads (never mutates)
   the final groups at ranks 1..`PLAYABILITY_TOP`; both `--words` and the raw-mode

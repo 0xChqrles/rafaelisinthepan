@@ -432,7 +432,7 @@ def test_same_group_selected_secrets_rejected(monkeypatch):
             ("porte", 0, .9), ("chien", 1, .8), ("jardin", 2, .5)],
     )
     monkeypatch.setitem(cfg, "module", fake)
-    monkeypatch.setattr(gen_phrase, "pick_start", lambda secret, ranking: "porte")
+    monkeypatch.setattr(gen_phrase, "pick_start", lambda secret, ranking, *_band: "porte")
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False, raising=False)
 
     words = ["la", "vermine", "et", "les", "vermines", "du", "chien"]
@@ -467,7 +467,7 @@ def test_batch_authoring_confirms_the_secret_before_the_walk(monkeypatch):
             ("doucement", 3, .4), ("grande", 4, .3)],
     )
     monkeypatch.setitem(cfg, "module", fake)
-    monkeypatch.setattr(gen_phrase, "pick_start", lambda s, r: "écarlate")
+    monkeypatch.setattr(gen_phrase, "pick_start", lambda s, r, *_band: "écarlate")
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False, raising=False)
 
     forms = gen_phrase.FormResolver(table, explicit={
@@ -510,7 +510,7 @@ def test_batch_authoring_holes_a_homograph_without_letting_it_claim_a_lexeme(
             ("moi", 0, .9), ("jardin", 1, .8), ("sombre", 2, .5)],
     )
     monkeypatch.setitem(cfg, "module", fake)
-    monkeypatch.setattr(gen_phrase, "pick_start", lambda secret, ranking: "sombre")
+    monkeypatch.setattr(gen_phrase, "pick_start", lambda secret, ranking, *_band: "sombre")
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False, raising=False)
 
     holes, ranks = gen_phrase.holes_from_words(

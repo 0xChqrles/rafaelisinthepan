@@ -315,7 +315,7 @@ def test_selector_asks_for_the_donor_before_ranking(monkeypatch, capsys):
     import tty
 
     calls = _stub_closest(monkeypatch)
-    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking: [("vermine", 1)])
+    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking, *_band: [("vermine", 1)])
 
     fd = os.open(os.devnull, os.O_RDONLY)
     monkeypatch.setattr(gen_phrase.sys, "stdin",
@@ -408,7 +408,7 @@ def test_selector_reports_no_substitution_for_a_word_it_never_holed(monkeypatch)
 
     _stub_closest(monkeypatch)
     monkeypatch.setattr(gen_phrase, "start_band",
-                        lambda _s, merged: [(w, r + 1) for w, r, _ in merged][:1])
+                        lambda _s, merged, *_band: [(w, r + 1) for w, r, _ in merged][:1])
 
     fd = os.open(os.devnull, os.O_RDONLY)
     monkeypatch.setattr(gen_phrase.sys, "stdin",
@@ -463,7 +463,7 @@ def test_selector_will_not_hole_a_donors_lemma_twice(monkeypatch):
     import tty
 
     _stub_closest(monkeypatch)
-    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking: [("vermine", 1)])
+    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking, *_band: [("vermine", 1)])
 
     fd = os.open(os.devnull, os.O_RDONLY)
     monkeypatch.setattr(gen_phrase.sys, "stdin",
@@ -633,7 +633,7 @@ def test_selector_asks_for_the_display_form_too(monkeypatch):
 
     monkeypatch.setattr(FR["module"], "closest",
                         lambda _w, _kv, _v, _m, *, n: START_RANKING, raising=False)
-    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking: [("amuse", 1)])
+    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking, *_band: [("amuse", 1)])
 
     fd = os.open(os.devnull, os.O_RDONLY)
     monkeypatch.setattr(gen_phrase.sys, "stdin",
@@ -675,7 +675,7 @@ def test_selector_ships_the_geometry_on_every_hole_it_commits(monkeypatch):
 
     monkeypatch.setattr(FR["module"], "closest",
                         lambda _w, _kv, _v, _m, *, n: START_RANKING, raising=False)
-    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking: [("amuse", 1)])
+    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking, *_band: [("amuse", 1)])
 
     fd = os.open(os.devnull, os.O_RDONLY)
     monkeypatch.setattr(gen_phrase.sys, "stdin",
