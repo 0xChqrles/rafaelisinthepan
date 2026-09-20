@@ -46,8 +46,10 @@
 pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <shelf file | puzzle.json>] [--blind]
 #   Needs JEV_API_KEY in the environment (#308): the judge pre-filters and orders the
 #   sentences the model reads, and gen_phrase — contextual by default — needs it too.
-#   Picks a work (the model, off the shelf minus the archive minus index.json minus the
-#   artist cooldown; --work forces one; --retry <shelf file> erases a previous attempt on
+#   Picks a work BY RULE (2026-09-20; the model no longer picks: `curate.pick_work` —
+#   off the shelf minus the archive minus index.json minus the artist cooldown, a song
+#   when no music day is within MUSIC_EVERY_DAYS = 4, else a book, the author never
+#   used or proposed first, then the one left longest ago, then the file name; --work forces one; --retry <shelf file> erases a previous attempt on
 #   a work — its index entry and the candidate puzzle(s) it wrote under the generation
 #   output — then runs on it), mines it, and writes the first sentence that
 #   survives every rule as a puzzle under packages/generation/output/word/fr/... via
@@ -85,7 +87,8 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 ## Stable invariants
 
 - **The judge removes what the model should not have to read, and orders the rest
-  (#308, user-decided 2026-09-20).** After the mechanical filter and `rich_enough`,
+  (#308, user-decided 2026-09-20).** After the mechanical filter and BEFORE
+  `rich_enough` (the parser then reads only what the judge kept — a third of a novel),
   `curate.judge_sentences` scores EVERY candidate with Jev (`contextual_rank
   .score_sentences`: stands alone / carries an image / not a famous line), drops what
   fails the loose `sentence_passes` (thresholds in `generation/scripts/contextual_rank.py`,
@@ -95,7 +98,10 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   sample any more (`--seed` is gone). A filter only removes: the model still shortlists,
   the curator still decides. The key is the one `gen_phrase` needs anyway (contextual by
   default since 2026-09-20); a run without it dies before any model call, never a
-  static or unfiltered fallback. Cost: a few cents per work.
+  static or unfiltered fallback. Cost: a few cents per work. **A rerun never pays the
+  judge twice**: `generate` replays the previous run's sidecar (`--contextual-replay`)
+  when it regenerates with the model's start words, and `--retry <puzzle.json>` keeps the
+  erased draft's scores for the same trio (another trio runs the judge again).
 - **The LLM never sees an invalid option.** `rules.initial_candidates` builds the list it
   picks from; `rules.prune` shrinks it after every pick; a pick off the list is ignored.
   The model chooses, code enforces. Tunables live at the top of `rules.py`:

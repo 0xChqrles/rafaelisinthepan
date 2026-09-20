@@ -60,3 +60,52 @@ def test_a_rerun_replays_the_previous_sidecar_instead_of_paying_the_judge(monkey
     assert seen[0][seen[0].index("--contextual-replay") + 1] == "/out/x_y_z.contextual.json"
     curate.run_gen_phrase("une phrase", ["a", "b", "c"], {}, {}, "fr")
     assert "--contextual-replay" not in seen[1]
+
+
+# --- the work is picked by rule, not by the model (user-decided 2026-09-20) --------------
+from datetime import date
+
+
+def _work(file, kind="book", author="A"):
+    return {"file": file, "kind": kind, "author": author, "title": file}
+
+
+def test_pick_work_prefers_never_used_authors_then_the_longest_left():
+    archive = {"last_used": {"a": date(2026, 9, 1), "b": date(2026, 9, 10)}, "last_music": date(2026, 9, 19)}
+    index = {"books": {}}
+    fresh = [_work("b.epub", author="B"), _work("a.epub", author="A"), _work("c.epub", author="C")]
+    work, why = curate.pick_work(fresh, archive, index, date(2026, 9, 20))
+    assert work["file"] == "c.epub" and "never used" in why
+    fresh = fresh[:2]
+    work, why = curate.pick_work(fresh, archive, index, date(2026, 9, 20))
+    assert work["file"] == "a.epub" and "2026-09-01" in why
+
+
+def test_pick_work_takes_a_song_when_no_music_day_is_recent():
+    archive = {"last_used": {}, "last_music": date(2026, 9, 10)}
+    fresh = [_work("book.epub"), _work("song.txt", kind="music", author="S")]
+    work, why = curate.pick_work(fresh, archive, {"books": {}}, date(2026, 9, 20))
+    assert work["kind"] == "music" and "music day" in why
+    archive["last_music"] = date(2026, 9, 19)
+    work, _why = curate.pick_work(fresh, archive, {"books": {}}, date(2026, 9, 20))
+    assert work["kind"] == "book"
+
+
+def test_pick_work_counts_a_run_that_proposed_the_author_as_seen():
+    archive = {"last_used": {}, "last_music": date(2026, 9, 19)}
+    index = {"books": {"a.epub": {"author": "A", "read": "2026-09-15T10:00:00"}}}
+    fresh = [_work("a2.epub", author="A"), _work("b.epub", author="B")]
+    work, _ = curate.pick_work(fresh, archive, index, date(2026, 9, 20))
+    assert work["file"] == "b.epub"
+
+
+def test_a_replay_that_covers_another_trio_is_dropped(tmp_path, monkeypatch):
+    side = tmp_path / "x.contextual.json"
+    side.write_text('{"holes": [{"secret": "chat"}, {"secret": "chien"}, {"secret": "loup"}]}', encoding="utf-8")
+    seen = []
+    monkeypatch.setattr(curate, "run_gen_phrase",
+                        lambda *a, **k: (seen.append(k.get("replay")), (type("C", (), {"returncode": 1, "stdout": "", "stderr": "boom"})(), []))[1])
+    monkeypatch.setattr(curate, "MAX_GEN_RUNS", 0)
+    log = Log()
+    curate.generate(object(), log, "s", ["chat", "chien", "ours"], {}, "fr", replay=str(side))
+    assert seen[0] is None and not side.exists() and any("another trio" in l for l in log)
