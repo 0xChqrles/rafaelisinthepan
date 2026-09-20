@@ -1,6 +1,12 @@
 """The judge's sentence pre-filter and shortlist order (#308, 2026-09-20): a filter
 only removes, the survivors are ordered by image, the model reads the best."""
 
+import json
+from types import SimpleNamespace
+
+import pytest
+
+import contextual_rank
 import curate
 
 
@@ -109,3 +115,40 @@ def test_a_replay_that_covers_another_trio_is_dropped(tmp_path, monkeypatch):
     log = Log()
     curate.generate(object(), log, "s", ["chat", "chien", "ours"], {}, "fr", replay=str(side))
     assert seen[0] is None and not side.exists() and any("another trio" in l for l in log)
+
+
+@pytest.mark.parametrize("change", [None, "sentence", "before", "after"])
+def test_retry_reuses_scores_only_for_unchanged_context(tmp_path, monkeypatch, change):
+    sentence = "Le chat regarde le chien et le loup."
+    words = ["chat", "chien", "loup"]
+    excerpt = {"before": ["Avant."], "after": ["Après."]}
+    sidecar = tmp_path / "draft.contextual.json"
+    sidecar.write_text(json.dumps({
+        "sentence": sentence, **excerpt,
+        "holes": [{"secret": w, "secret_label": w, "scores": {}, "pairs": {}}
+                  for w in words],
+    }), encoding="utf-8")
+    if change == "sentence":
+        sentence = "Un chat regarde le chien et le loup."
+    elif change:
+        excerpt[change] = ["Une autre page."]
+    seen = []
+    output = str(tmp_path / "new.json")
+
+    def run(sentence, words, source, forms, lang, starts, replay=None):
+        seen.append(replay)
+        if replay:
+            # Use the generator's validator: a stale replay must never reach it.
+            judge = contextual_rank.ReplayJudge(contextual_rank.load_sidecar(replay))
+            context = contextual_rank.Context(sentence, "chat", "chat",
+                                               tuple(excerpt["before"]), tuple(excerpt["after"]))
+            judge.score(context, [])
+        return SimpleNamespace(returncode=0, stderr="", stdout=f"écrite dans {output} :"), []
+
+    monkeypatch.setattr(curate, "run_gen_phrase", run)
+    monkeypatch.setattr(curate, "choose_starts", lambda *a: {})
+    monkeypatch.setattr(curate, "check_starts", lambda *a: {})
+    result = curate.generate(object(), Log(), sentence, words, {"excerpt": excerpt}, "fr",
+                             replay=str(sidecar))
+    assert result == output
+    assert seen == [str(sidecar) if change is None else None]

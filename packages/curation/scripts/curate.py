@@ -191,13 +191,19 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
     forms: dict[str, str] = {}
     starts: dict[str, str] = {}
     tried: dict[str, set[str]] = {}  # every start a hole has shown, secret slug -> words
-    if replay:  # an erased draft's scores apply only to the same trio
+    if replay:  # an erased draft's scores require the same trio AND context
         try:
-            scored = {slug(h["secret"]) for h in json.loads(Path(replay).read_text(encoding="utf-8"))["holes"]}
+            recorded = json.loads(Path(replay).read_text(encoding="utf-8"))
+            scored = {slug(h["secret"]) for h in recorded["holes"]}
+            excerpt = source.get("excerpt") or {}
+            same_context = (recorded["sentence"] == sentence
+                            and recorded["before"] == excerpt.get("before", [])
+                            and recorded["after"] == excerpt.get("after", []))
         except (OSError, ValueError, KeyError, TypeError):
             scored = set()
-        if scored != {slug(w) for w in words}:
-            log("- the erased draft's scores cover another trio: the judge runs again")
+            same_context = False
+        if scored != {slug(w) for w in words} or not same_context:
+            log("- the erased draft's scores cover another trio or context: the judge runs again")
             Path(replay).unlink(missing_ok=True)
             replay = None
     chosen = False

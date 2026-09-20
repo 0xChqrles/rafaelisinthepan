@@ -189,8 +189,9 @@ def test_replay_refuses_changed_context_for_scores_and_pairs(tmp_path, change):
 
 
 @pytest.mark.parametrize("with_resolver", [False, True])
+@pytest.mark.parametrize("repeated", [False, True])
 def test_interactive_contextual_selection_without_inflection(monkeypatch, capsys,
-                                                            with_resolver):
+                                                            with_resolver, repeated):
     import termios
     import tty
     from types import SimpleNamespace
@@ -201,6 +202,11 @@ def test_interactive_contextual_selection_without_inflection(monkeypatch, capsys
     cfg["module"] = SimpleNamespace(closest=lambda *a, **kw: ranking)
     judge = FakeJudge({"félin": 1.0, "minou": 3.0, "loup": .5})
     ranker = _ranker(judge)
+    if repeated:
+        words.append("chat.")
+        # One occurrence is rejected, but selecting the other must hide BOTH.
+        monkeypatch.setattr(ranker, "filter_candidates",
+                            lambda _words, cands: [c for c in cands if c["pos"] != 3])
     forms = gen_phrase.FormResolver(None, interactive=True) if with_resolver else None
     monkeypatch.setattr(gen_phrase.sys, "stdin", SimpleNamespace(fileno=lambda: 0))
     monkeypatch.setattr(termios, "tcgetattr", lambda fd: None)
@@ -229,12 +235,71 @@ def test_interactive_contextual_selection_without_inflection(monkeypatch, capsys
     holes, ranks = gen_phrase.select_holes_interactive(
         words, cfg, "fr", kv=None, V=words, M=None, Vset=set(words),
         lemma_table={}, forms_by_lemma={}, forms=forms, contextual=ranker)
-    assert len(holes) == 3
+    assert len(holes) == (4 if repeated else 3)
+    if repeated:
+        assert [(h["pos"], h.get("suffix", "")) for h in holes
+                if h["secret"]["slug"] == "chat"] == [(0, ""), (3, ".")]
     assert len([c for c in judge.calls if c[0] == "score"]) == 3
     assert bands.count(ranker.band) == 3
     assert all(h["start"]["word"] == "minou" for h in holes)
     assert all(rmap["minou"]["rank"] == 1 for rmap in ranks.values())
     assert len(ranker.records) == 3
+
+
+@pytest.mark.parametrize("authoring", ["interactive", "batch", "explicit"])
+def test_start_judge_reads_realized_forms_in_each_authoring_path(monkeypatch, authoring):
+    import termios
+    import tty
+    from types import SimpleNamespace
+    from test_inflect import TABLE
+
+    words = ["grands", "évidents", "rouges"]
+    vocab = words + ["jardin", "jardins", "lent", "pensée", "pensées"]
+    lemmas = {"grands": ("grand:adj",), "évidents": ("évident:adj",),
+              "rouges": ("rouge:nc",), "jardin": ("jardin:nc",),
+              "jardins": ("jardin:nc",), "lent": ("lent:adj",),
+              "pensée": ("pensée:nc",), "pensées": ("pensée:nc",)}
+    families = gen_phrase.invert_lemmas(lemmas)
+    donors = gen_phrase.DonorResolver(lemmas, families, vocab, set(vocab), "fr")
+    forms = gen_phrase.FormResolver(
+        TABLE, explicit={gen_phrase.slug(w): "adj:m:p" for w in words},
+        typable=donors.typable)
+    ranking = [("jardin", 0, .9), ("lent", 1, .8), ("pensée", 2, .7)]
+    cfg = gen_phrase.CONFIG["fr"].copy()
+    cfg["module"] = SimpleNamespace(closest=lambda *a, **kw: ranking)
+    judge = FakeJudge({"jardin": 3., "lent": 1., "pensée": .5})
+    judged = []
+
+    def noul(state, questions):
+        if "variantes" in state and "phrase" not in state:
+            judged.extend(state["variantes"])
+            return {f"v{i}": 0.9 if "jardins" in sentence.split() else 0.1
+                    for i, sentence in enumerate(state["variantes"])}
+        return {k: 0.9 if k.startswith("v") else 0.1 for k in questions}
+
+    monkeypatch.setattr(judge, "noul", noul, raising=False)
+    ranker = gen_phrase.ContextualRanker(judge, " ".join(words), model="fake")
+    monkeypatch.setattr(gen_phrase, "start_band",
+                        lambda _s, merged, _band: [(w, r) for w, r, _ in merged])
+    monkeypatch.setattr(gen_phrase.sys, "stdin", SimpleNamespace(fileno=lambda: 0, isatty=lambda: False))
+    if authoring == "interactive":
+        monkeypatch.setattr(termios, "tcgetattr", lambda _fd: None)
+        monkeypatch.setattr(termios, "tcsetattr", lambda *a: None)
+        monkeypatch.setattr(tty, "setcbreak", lambda _fd: None)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "")
+        keys = iter(["ENTER", "1", "ENTER"] * 3)
+        monkeypatch.setattr(gen_phrase, "_read_key", lambda _fd: next(keys))
+        holes, ranks = gen_phrase.select_holes_interactive(
+            words, cfg, "fr", None, vocab, None, set(vocab), lemmas, families,
+            donors, forms, contextual=ranker)
+    else:
+        holes, ranks = gen_phrase.holes_from_words(
+            words, words, cfg, "fr", None, vocab, None, set(vocab), lemmas, families,
+            donors, forms, contextual=ranker,
+            starts={gen_phrase.slug(w): "jardin" for w in words} if authoring == "explicit" else None)
+    assert judged and all("jardin" not in sentence.split() for sentence in judged)
+    assert all(h["start"]["word"] == "jardins" for h in holes)
+    assert all(ranks[h["secret"]["slug"]]["jardins"]["rank"] == h["start_rank"] for h in holes)
 
 
 # --- through gen_phrase ------------------------------------------------------------

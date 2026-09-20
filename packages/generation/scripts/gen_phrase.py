@@ -590,16 +590,19 @@ class ContextualRanker:
     def filters(self):
         return contextual_rank.can_filter(self.judge)
 
-    def start_band_filter(self, words, occurrences, secret="?"):
+    def start_band_filter(self, words, occurrences, secret="?", display_words=None):
         """A callable for choose_start / the selector: band -> the band words that
         read as French shown at this hole's occurrences. An emptied band is handed
-        back whole (the curator still needs something to pick from) with a note."""
+        back whole (the curator still needs something to pick from) with a note.
+        `display_words` carries agreement rewrites; selection keeps the original
+        group representatives while the judge reads the realized forms."""
         if not self.filters:
             return None
         def apply(band):
+            shown = [((display_words or {}).get(w, w), r) for w, r in band]
             try:
                 kept, removed = contextual_rank.filter_start_band(
-                    self.judge, words, occurrences, band)
+                    self.judge, words, occurrences, shown)
             except contextual_rank.ContextualError as exc:
                 die(f"filtre des mots de départ impossible : {exc}")
             if removed:
@@ -612,7 +615,8 @@ class ContextualRanker:
                 self.reports.append(f"  (aucun départ retenu pour « {secret} » : bande "
                                     "entière proposée)")
                 return band
-            return kept
+            kept_ranks = {r for _w, r in kept}
+            return [(w, r) for w, r in band if r in kept_ranks]
         return apply
 
     def filter_candidates(self, words, cands):
@@ -2586,7 +2590,9 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
     import termios
     import tty
 
-    cands = extract_candidates(words, cfg, Vset, donors)
+    # Filtering controls selection, never which occurrences a selected slug hides.
+    all_cands = extract_candidates(words, cfg, Vset, donors)
+    cands = all_cands
     if contextual is not None:  # #308 pre-filter: unreadable-when-blanked words are not offered
         cands = contextual.filter_candidates(words, cands)
     blocked = set()  # positions naming one concept with a committed secret (#308)
@@ -2642,15 +2648,19 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                 rbd.setdefault(w, r + 1)
             band = start_band(secret, merged,
                               ranker.band if ranker is not None else STATIC_BAND)
+            agreed = None
             if ranker is not None:
+                agreed = forms.apply(rank_map, secret, donors,
+                                     lexemes=group_lexeme_map(groups)) if forms is not None else {}
                 occ = [(c["pos"], c["prefix"], c["suffix"])
-                       for c in candidates_for_slug(cands, secret_slug)]
-                band_filter = ranker.start_band_filter(words, occ, secret)
+                       for c in candidates_for_slug(all_cands, secret_slug)]
+                band_filter = ranker.start_band_filter(
+                    words, occ, secret, display_words=dict(agreed.values()))
                 if band_filter is not None:
                     band = band_filter(band)
             entry = {"ranking": ranking, "claim": claim, "ranker": ranker,
                      "rank_map": rank_map, "band": band,
-                     "rbd": rbd, "groups": groups}
+                     "rbd": rbd, "groups": groups, "agreed": agreed}
             cache[secret_slug] = entry
         return entry
 
@@ -2730,13 +2740,16 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
         line prompts. The next frame clears the screen, so the detour leaves nothing
         behind.
 
-        The agreement pass runs here (the form itself was confirmed before the band,
-        so feature_for answers from its cache)."""
+        Static maps are agreed here; contextual maps were already agreed before
+        their start band was judged. The form itself was confirmed before the band,
+        so feature_for answers from its cache."""
         termios.tcsetattr(fd, termios.TCSADRAIN, saved)
         try:
-            agreed = forms.apply(entry["rank_map"], secret, donors,
-                                 lexemes=group_lexeme_map(entry["groups"])) \
-                if forms is not None else {}
+            agreed = entry["agreed"]
+            if agreed is None:
+                agreed = forms.apply(entry["rank_map"], secret, donors,
+                                     lexemes=group_lexeme_map(entry["groups"])) \
+                    if forms is not None else {}
             if reporter is not None:
                 feature = forms.feature_for(secret) if forms is not None else None
                 reporter.capture(secret, entry["groups"], entry["rank_map"], feature)
@@ -2828,7 +2841,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                         alias_start_display(rank_map, start, display, start_rank)
                         secret_slug = slug(secret)
                         ranks[secret_slug] = rank_map
-                        for occurrence in candidates_for_slug(cands, secret_slug):
+                        for occurrence in candidates_for_slug(all_cands, secret_slug):
                             holes.append(_make_hole(
                                 occurrence["secret"], occurrence["prefix"],
                                 occurrence["suffix"], occurrence["pos"], display,
@@ -2990,35 +3003,40 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
             rank_by_display.setdefault(w, r + 1)
 
         ranks[target_slug] = rank_map
+        # Keep selection tied to the original group keys while the judge reads
+        # the agreed forms that will actually be displayed in the puzzle.
+        selection_map = rank_map
+        agreed = None
+        if contextual is not None:
+            selection_map = {key: dict(entry) for key, entry in rank_map.items()}
+            agreed = forms.apply(rank_map, canonical_secret, donors,
+                                 lexemes=group_lexeme_map(groups)) if forms is not None else {}
         explicit_start = (starts or {}).get(target_slug)
         if explicit_start is not None:
             # --start names the hint outright (the typed-word branch of the prompt,
             # off a TTY): a word of this hole's vocabulary, never its secret.
-            entry = rank_map.get(slug(explicit_start))
+            entry = selection_map.get(slug(explicit_start))
             if entry is None or entry["rank"] == 0:
                 die(f"--start : « {explicit_start} » n'est pas un mot de départ possible "
                     f"pour « {canonical_secret} » (absent du vocabulaire du trou, ou le "
                     f"secret lui-même).")
             start = entry["word"]
-            if contextual is not None:  # an explicit start is judged too, but only WARNED
-                contextual.warn_start(
-                    words, [(pos, pre, suf) for pos, (_s, pre, suf) in occurrences],
-                    canonical_secret, start)
         elif contextual is not None:
             start = choose_start(
-                canonical_secret, merged, rank_map, rank_by_display, band=contextual.band,
+                canonical_secret, merged, selection_map, rank_by_display, band=contextual.band,
                 band_filter=contextual.start_band_filter(
                     words, [(pos, pre, suf) for pos, (_s, pre, suf) in occurrences],
-                    canonical_secret))
+                    canonical_secret, display_words=dict(agreed.values())))
         else:
             start = choose_start(canonical_secret, merged, rank_map, rank_by_display)
-        start_rank = rank_map[slug(start)]["rank"]
+        start_rank = selection_map[slug(start)]["rank"]
         # Agree the whole map with the sentence (#133), the start word included — it
         # is just the rank == start_rank group. Realization is keyed by each group's
         # LEXEME (#134), which the walk just settled.
-        agreed = forms.apply(rank_map, canonical_secret, donors,
-                             lexemes=group_lexeme_map(groups)) \
-            if forms is not None else {}
+        if agreed is None:
+            agreed = forms.apply(rank_map, canonical_secret, donors,
+                                 lexemes=group_lexeme_map(groups)) \
+                if forms is not None else {}
         if reporter is not None:
             feature = forms.feature_for(canonical_secret) if forms is not None else None
             reporter.capture(canonical_secret, groups, rank_map, feature)
@@ -3030,6 +3048,10 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
         start_display = choose_start_display(
             start, start_rank, donors, default=agreed.get(start_rank, (start, start))[1])
         alias_start_display(rank_map, start, start_display, start_rank)
+        if contextual is not None and explicit_start is not None:
+            contextual.warn_start(
+                words, [(pos, pre, suf) for pos, (_s, pre, suf) in occurrences],
+                canonical_secret, start_display)
 
         for pos, (secret, prefix, suffix) in occurrences:
             holes.append(_make_hole(secret, prefix, suffix, pos, start_display,
