@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import _paths  # noqa: F401 — puts generation/scripts on sys.path (contextual_rank)
 import contextual_rank
 import curate
 
