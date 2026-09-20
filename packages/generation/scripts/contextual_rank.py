@@ -491,7 +491,8 @@ def read_api_key(env):
     key = env.get("JEV_API_KEY", "").strip()
     if not key:
         raise ContextualError("JEV_API_KEY absente de l'environnement (le juge Jev de "
-                              "TypeSafe) : exporte-la, ou génère sans --contextual.")
+                              "TypeSafe) : exporte-la, ou passe --static pour un "
+                              "classement statique de référence.")
     return key
 
 

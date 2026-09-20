@@ -652,6 +652,20 @@ class ContextualRanker:
                                 + ", ".join(names))
         return blocked
 
+    def warn_start(self, words, occurrences, secret, start):
+        """Headless path: an explicit --start that does not read as French at the hole
+        is reported, never refused (the curator named it)."""
+        if not self.filters:
+            return
+        try:
+            _kept, removed = contextual_rank.filter_start_band(
+                self.judge, words, occurrences, [(start, 0)])
+        except contextual_rank.ContextualError as exc:
+            die(f"vérification du mot de départ impossible : {exc}")
+        for w, _r, p in removed:
+            self.reports.append(f"  ATTENTION : le départ « {w} » se lit mal dans la phrase "
+                                f"pour « {secret} » ({p:.2f})")
+
     def warn_holes(self, words, occurrences_by_secret):
         """Headless path: the checks the selector enforces are only REPORTED here —
         --words is an explicit choice, and the curator reads the report."""
@@ -2975,6 +2989,10 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                     f"pour « {canonical_secret} » (absent du vocabulaire du trou, ou le "
                     f"secret lui-même).")
             start = entry["word"]
+            if contextual is not None:  # an explicit start is judged too, but only WARNED
+                contextual.warn_start(
+                    words, [(pos, pre, suf) for pos, (_s, pre, suf) in occurrences],
+                    canonical_secret, start)
         elif contextual is not None:
             start = choose_start(
                 canonical_secret, merged, rank_map, rank_by_display, band=contextual.band,
@@ -3347,11 +3365,13 @@ def parse_args():
     p.add_argument("--after", action="append", metavar="PHRASE",
                    help="une phrase du texte APRÈS la phrase du jeu (répétable ; #270)")
     p.add_argument("--url", help="page du morceau pour un jour musique (#270)")
-    p.add_argument("--contextual", action="store_true",
-                   help="classe chaque trou par le SENS que la phrase donne au secret "
-                        "(#308) : le juge hébergé Jev (TypeSafe, clé JEV_API_KEY) "
-                        "réordonne les TOP_K groupes de l'embedding statique ; fr "
-                        "seulement ; aucun repli statique en cas d'échec")
+    p.add_argument("--static", action="store_true",
+                   help="classement statique seul (référence / expérience) : sans ce "
+                        "flag, un puzzle fr est classé par le SENS que la phrase donne "
+                        "au secret (#308) — le juge hébergé Jev (TypeSafe, clé "
+                        "JEV_API_KEY) réordonne les TOP_K groupes de l'embedding et "
+                        "filtre les départs et les mots à trouer ; aucun repli "
+                        "statique en cas d'échec")
     p.add_argument("--contextual-model", default=contextual_rank.JEV_MODEL,
                    metavar="MODELE", help="identifiant du modèle juge (défaut : "
                                           f"{contextual_rank.JEV_MODEL})")
@@ -3374,7 +3394,7 @@ def build_contextual_ranker(args, lang, sentence, V):
     English-dominance demotion reads the two corpora's frequency orders: the fr
     reduced vocabulary already loaded (V) and the en reduced vectors' order."""
     if lang != "fr":
-        die("--contextual : le classement contextuel n'existe qu'en français (#308).")
+        die("--contextual-replay : le classement contextuel n'existe qu'en français (#308).")
     try:
         if args.contextual_replay:
             judge = contextual_rank.ReplayJudge(
@@ -3383,7 +3403,7 @@ def build_contextual_ranker(args, lang, sentence, V):
             judge = contextual_rank.JevJudge(contextual_rank.read_api_key(os.environ),
                                              model=args.contextual_model)
     except (contextual_rank.ContextualError, OSError, ValueError) as exc:
-        die(f"--contextual : {exc}")
+        die(f"classement contextuel (#308) : {exc}")
     fr_rank = {w: i for i, w in enumerate(V)}
     en_rank = {w: i for i, w in enumerate(gn.load_vectors().index_to_key)}
     return ContextualRanker(judge, sentence, before=args.before or (),
@@ -3433,10 +3453,14 @@ def main():
     lemma_table, forms_by_lemma = run.lemma_table, run.forms_by_lemma
     donors, forms, reporter = run.donors, run.forms, run.reporter
 
-    # #308: the judge, bound to this sentence and its excerpt, before any walk — a
-    # missing key or an unsupported language dies here, ahead of the first hole.
-    contextual = build_contextual_ranker(args, lang, sentence, V) \
-        if args.contextual or args.contextual_replay else None
+    # #308: the judge is the DEFAULT for a French sentence (user-decided 2026-09-20),
+    # bound to this sentence and its excerpt before any walk — a missing key dies here,
+    # ahead of the first hole. --static is the explicit opt-out; en has no judge.
+    if args.static and args.contextual_replay:
+        die("--static et --contextual-replay s'excluent.")
+    contextual = None
+    if args.contextual_replay or (lang == "fr" and not args.static):
+        contextual = build_contextual_ranker(args, lang, sentence, V)
 
     # DISPLAY tokens of the sentence: lowercased, but accents AND punctuation /
     # apostrophes KEPT (see display_token), so words[] reproduces the sentence. Each

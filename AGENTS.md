@@ -162,8 +162,8 @@ is applied only to the player's raw keystrokes.
   semantics:** secret = `0`; nearest group = `1`; larger = farther. Alias keys share their
   group's rank.
 - **The RANKING PROVIDER may differ by artifact (#308, user-decided 2026-09-19):** a
-  single-word artifact ranks by the static embedding; a French SENTENCE puzzle generated
-  with `--contextual` keeps the static walk as retrieval and ORDERS its `TOP_K` groups by
+  single-word artifact ranks by the static embedding; a French SENTENCE puzzle (BY
+  DEFAULT since 2026-09-20; `--static` opts out) keeps the static walk as retrieval and ORDERS its `TOP_K` groups by
   the sense the sentence gives the secret, judged by TypeSafe's hosted Jev model (one
   Score per candidate, then a pairwise round-robin over the front; `dq` from the judge's
   geometry; no blend). Same groups, same keys rule, same schema — the web and the

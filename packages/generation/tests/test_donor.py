@@ -504,7 +504,7 @@ def test_main_writes_the_puzzle_and_names_the_substitution(monkeypatch, tmp_path
     monkeypatch.setattr(gen_phrase, "load_lemma_table", lambda _lang, disabled=False: TABLE)
     monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False, raising=False)
     monkeypatch.setattr(gen_phrase.sys, "argv", [
-        "gen_phrase.py", SENTENCE, "--lang", "fr",
+        "gen_phrase.py", SENTENCE, "--lang", "fr", "--static",
         "--words", "accoutumes", "doucement", "jardin",
         "--donor", "accoutumes=accoutume",
         # #133 makes a fr batch run without --form a hard error; this test is about

@@ -406,3 +406,22 @@ def test_choose_start_draws_its_default_from_the_filtered_band(monkeypatch):
                                       band_filter=lambda band: [b for b in band if b[0] != "courir"])
               for _ in range(20)}
     assert picked <= {"chien", "beau"}
+
+
+# --- the judge is the DEFAULT for a French sentence (user-decided 2026-09-20) ---------
+def test_a_french_run_without_a_key_dies_before_any_walk_unless_static(monkeypatch, capsys):
+    monkeypatch.delenv("JEV_API_KEY", raising=False)
+    args = type("A", (), {"contextual_replay": None, "contextual_model": "jev-latest",
+                          "before": None, "after": None})()
+    with pytest.raises(SystemExit):
+        gen_phrase.build_contextual_ranker(args, "fr", "une phrase", ["a"])
+    assert "JEV_API_KEY" in capsys.readouterr().err
+    # --static is the explicit opt-out; en never builds a judge (main's rule)
+
+
+def test_a_replay_on_english_is_refused(capsys):
+    args = type("A", (), {"contextual_replay": "x.json", "contextual_model": "jev-latest",
+                          "before": None, "after": None})()
+    with pytest.raises(SystemExit):
+        gen_phrase.build_contextual_ranker(args, "en", "a sentence", ["a"])
+    assert "français" in capsys.readouterr().err

@@ -215,8 +215,12 @@ Consequences that are load-bearing:
 
 ### Contextual ranks: the static walk retrieves, a hosted judge orders (#308, user-decided 2026-09-19)
 
-- **`--contextual` (fr sentence puzzles only) keeps the static walk as RETRIEVAL and
-  makes TypeSafe's Jev model the ranking engine.** Per hole: the walk's `TOP_K` surviving
+- **The judge is the DEFAULT for a French sentence puzzle (user-decided 2026-09-20; no
+  flag): the static walk is RETRIEVAL and TypeSafe's Jev model the ranking engine.**
+  `--static` is the explicit opt-out (a reference/experiment map — the static tests
+  pass it); `en` has no judge and stays static. `JEV_API_KEY` must be in the environment
+  of every fr generation, the curation package's subprocess included (it inherits the
+  curator's shell). Per hole: the walk's `TOP_K` surviving
   groups (all 10 000, nothing cut — user-decided: the map keeps every group it scores)
   go to the judge as LEMMAS (`lexeme_label`, the group key's lemma; a table-less
   singleton is its surface), with the REAL sentence, the secret and the `--before` /
@@ -274,7 +278,8 @@ Consequences that are load-bearing:
   blocked (`SAME_CONCEPT_MAX = 0.6`; published pairs: max 0.48). Off a TTY (`--words`,
   the curation package) (2) and (3) only WARN in the report — an explicit choice is
   the curator's. A REPLAY judge answers no yes/no question, so the filters step aside
-  under `--contextual-replay`. **Rejected as filters**: "the context fixes the meaning"
+  under `--contextual-replay`. An explicit `--start` (what the curation package passes)
+  is judged and WARNED, never refused. **Rejected as filters**: "the context fixes the meaning"
   (the curator deliberately picks words the context does NOT give away — published
   holes scored LOWER than the words left out) and a register line (it scored the
   darkest published lines lowest). A SENTENCE filter (stands alone / carries an image
@@ -454,16 +459,19 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json + shared/src/vocab.
 #    sentences around the line into `source.excerpt` (#270) — blanks dropped, no key
 #    without a sentence, both arrays present when there is one; --url the track page
 #    into `source.url`. Neither is asked on a TTY: an excerpt is copied, not typed.
-#    --contextual (#308, fr only): rerank every hole by the sense the sentence gives the
-#    secret with the Jev judge (JEV_API_KEY in the environment; hard error without it, no
-#    static fallback); writes <puzzle>.contextual.json beside the puzzle, which
-#    --contextual-replay FICHIER rebuilds from without a call; --contextual-model MODELE
-#    names the judge. The hint band is 250-400 on such a map, pre-filtered by the judge
-#    (a start must read as French shown in the sentence); on a TTY the selector also
-#    withholds words whose blanking breaks the sentence and blocks a candidate naming
-#    one concept with a chosen hole; off a TTY those two only warn.
+#    A fr puzzle is CONTEXTUAL BY DEFAULT (#308): every hole is reranked by the sense the
+#    sentence gives the secret with the Jev judge (JEV_API_KEY in the environment; hard
+#    error without it, no static fallback; --static opts out for a reference map); the
+#    judge also pre-filters the hint band (a start must read as French shown in the
+#    sentence; an explicit --start is judged and only warned), and on a TTY the selector
+#    withholds words whose blanking breaks the sentence and blocks a candidate naming one
+#    concept with a chosen hole (off a TTY those two only warn). Writes
+#    <puzzle>.contextual.json beside the puzzle, which --contextual-replay FICHIER
+#    rebuilds from without a call; --contextual-model MODELE names the judge. The hint
+#    band is 250-400 on a contextual map.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
-pnpm gen:phrase "<sentence>" --lang fr --words a b c --contextual --before "…" --after "…"
+pnpm gen:phrase "<sentence>" --lang fr --words a b c --before "…" --after "…"   # the excerpt feeds the judge too
+pnpm gen:phrase "<sentence>" --lang fr --words a b c --static   # reference map, no judge
 
 # 4. Generate a SINGLE-WORD artifact (#154): one word + its ranked neighborhood, no
 #    sentence — the source the onboarding tutorial's board is pruned from
