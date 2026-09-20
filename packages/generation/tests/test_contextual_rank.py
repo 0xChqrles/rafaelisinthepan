@@ -311,3 +311,98 @@ def test_lexeme_label_reads_the_lemma_off_an_opaque_key():
     assert gen_phrase.lexeme_label("voler:v") == "voler"
     assert gen_phrase.lexeme_label("chat") == "chat"
     assert gen_phrase.lexeme_label("dog") == "dog"
+
+
+# --- the curator's pre-filters (#308, recall-checked 2026-09-20) --------------------
+class FilteringJudge(FakeJudge):
+    """A judge that also answers yes/no: P(yes) looked up by the words in the question
+    (the variant text or the pair), so a test states each verdict outright."""
+
+    def __init__(self, yes):
+        super().__init__({})
+        self.yes = yes          # substring of the question/variant -> probability
+        self.noul_calls = []
+
+    def noul(self, state, questions):
+        self.noul_calls.append((state, questions))
+        out = {}
+        for key, (instructions, _t, _f) in questions.items():
+            text = instructions
+            if "variantes[" in instructions:
+                i = int(instructions.split("variantes[")[1].split("]")[0])
+                text = state["variantes"][i] + " " + instructions
+            out[key] = next((p for needle, p in self.yes.items() if needle in text), 0.9)
+        return out
+
+
+WORDS = ["il", "prit", "un", "chat", "avant", "de", "partir."]
+
+
+def test_shown_sentence_places_the_word_at_every_occurrence_with_its_affixes():
+    assert cr.shown_sentence(["le", "chat.", "le", "chat"], [(1, "", "."), (3, "", "")], "____") \
+        == "le ____. le ____"
+
+
+def test_start_band_filter_drops_what_does_not_read_as_french_and_keeps_the_rest():
+    judge = FilteringJudge({"un chien avant": 0.9, "un courir avant": 0.2, "un beau avant": 0.55})
+    band = [("chien", 250), ("courir", 251), ("beau", 252)]
+    kept, removed = cr.filter_start_band(judge, WORDS, [(3, "", "")], band)
+    assert kept == [("chien", 250), ("beau", 252)]      # 0.55 >= START_FIT_MIN (0.5)
+    assert removed == [("courir", 251, 0.2)]
+    # the variants are the sentence with each candidate shown at the hole
+    state = judge.noul_calls[0][0]
+    assert state["variantes"][1] == "il prit un courir avant de partir."
+
+
+def test_hole_candidate_filter_removes_words_whose_blank_breaks_the_sentence():
+    judge = FilteringJudge({"mot retiré : « prit »": 0.3, "mot retiré : « chat »": 0.95})
+    cands = [{"pos": 1, "secret": "prit", "prefix": "", "suffix": ""},
+             {"pos": 3, "secret": "chat", "prefix": "", "suffix": ""}]
+    kept, removed = cr.filter_hole_candidates(judge, WORDS, cands)
+    assert [c["secret"] for c in kept] == ["chat"]
+    assert removed == [("prit", 0.3)]
+    assert judge.noul_calls[0][0]["variantes"][0] == "il _____ un chat avant de partir."
+
+
+def test_same_concept_returns_one_probability_per_pair():
+    judge = FilteringJudge({"« jardin » et « royaume »": 0.48, "« vide » et « refuge »": 0.7})
+    probs = cr.same_concept(judge, " ".join(WORDS), [("jardin", "royaume"), ("vide", "refuge")])
+    assert probs == {("jardin", "royaume"): 0.48, ("vide", "refuge"): 0.7}
+
+
+def test_a_replay_judge_cannot_filter_and_the_ranker_steps_aside():
+    replay = cr.ReplayJudge({"sentence": "s", "before": [], "after": [], "holes": []})
+    assert not cr.can_filter(replay)
+    ranker = gen_phrase.ContextualRanker(replay, "s", model="fake")
+    assert ranker.start_band_filter(WORDS, [(3, "", "")]) is None
+    cands = [{"pos": 3, "secret": "chat", "prefix": "", "suffix": ""}]
+    assert ranker.filter_candidates(WORDS, cands) == cands
+    assert ranker.blocked_by(["chien"], cands) == set()
+
+
+def test_the_ranker_blocks_a_candidate_naming_a_committed_secrets_concept():
+    judge = FilteringJudge({"« matou » et « chat »": 0.8, "« avant » et « chat »": 0.05})
+    ranker = gen_phrase.ContextualRanker(judge, " ".join(WORDS), model="fake")
+    cands = [{"pos": 3, "secret": "matou", "prefix": "", "suffix": ""},
+             {"pos": 4, "secret": "avant", "prefix": "", "suffix": ""}]
+    assert ranker.blocked_by(["chat"], cands) == {3}
+    assert any("bloqués" in r and "matou" in r for r in ranker.reports)
+
+
+def test_an_emptied_band_is_handed_back_whole_with_a_note():
+    judge = FilteringJudge({"il prit": 0.1})  # everything reads badly
+    ranker = gen_phrase.ContextualRanker(judge, " ".join(WORDS), model="fake")
+    band = [("chien", 250), ("courir", 251)]
+    assert ranker.start_band_filter(WORDS, [(3, "", "")])(band) == band
+    assert any("bande entière" in r for r in ranker.reports)
+
+
+def test_choose_start_draws_its_default_from_the_filtered_band(monkeypatch):
+    monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False, raising=False)
+    monkeypatch.setattr(gen_phrase, "start_band",
+                        lambda _s, merged, *_b: [(w, r + 1) for w, r, _ in merged])
+    merged = [("chien", 0, 0.9), ("courir", 1, 0.8), ("beau", 2, 0.7)]
+    picked = {gen_phrase.choose_start("chat", merged, {}, {}, band=(1, 3),
+                                      band_filter=lambda band: [b for b in band if b[0] != "courir"])
+              for _ in range(20)}
+    assert picked <= {"chien", "beau"}

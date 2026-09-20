@@ -585,6 +585,95 @@ class ContextualRanker:
             secret_display, ranked, record, model=self.model))
         record["kept"] = len(merged)
 
+    # -- the curator's pre-filters (a filter only removes; nothing is chosen here) --
+    @property
+    def filters(self):
+        return contextual_rank.can_filter(self.judge)
+
+    def start_band_filter(self, words, occurrences, secret="?"):
+        """A callable for choose_start / the selector: band -> the band words that
+        read as French shown at this hole's occurrences. An emptied band is handed
+        back whole (the curator still needs something to pick from) with a note."""
+        if not self.filters:
+            return None
+        def apply(band):
+            try:
+                kept, removed = contextual_rank.filter_start_band(
+                    self.judge, words, occurrences, band)
+            except contextual_rank.ContextualError as exc:
+                die(f"filtre des mots de départ impossible : {exc}")
+            if removed:
+                self.reports.append(
+                    f"  départs écartés pour « {secret} » ({len(removed)}/{len(band)}, "
+                    f"mal placés dans la phrase) : "
+                    + ", ".join(f"{w}^{r} {p:.2f}" for w, r, p in removed[:10])
+                    + (" …" if len(removed) > 10 else ""))
+            if not kept:
+                self.reports.append(f"  (aucun départ retenu pour « {secret} » : bande "
+                                    "entière proposée)")
+                return band
+            return kept
+        return apply
+
+    def filter_candidates(self, words, cands):
+        """The selector's content words minus those whose blanking leaves the sentence
+        unreadable."""
+        if not self.filters:
+            return cands
+        try:
+            kept, removed = contextual_rank.filter_hole_candidates(self.judge, words, cands)
+        except contextual_rank.ContextualError as exc:
+            die(f"filtre des mots à trouer impossible : {exc}")
+        if removed:
+            self.reports.append("  mots non proposés (phrase illisible sans eux) : "
+                                + ", ".join(f"{w} {p:.2f}" for w, p in removed))
+        return kept
+
+    def same_concept(self, pairs):
+        """{(a, b): P} for pairs of words of this sentence; {} without a filtering judge."""
+        if not self.filters or not pairs:
+            return {}
+        try:
+            return contextual_rank.same_concept(self.judge, self.sentence, pairs)
+        except contextual_rank.ContextualError as exc:
+            die(f"vérification des concepts partagés impossible : {exc}")
+
+    def blocked_by(self, chosen, cands):
+        """The candidates that name one concept with a committed secret (never offered
+        beside it)."""
+        pairs = [(c["secret"], s) for c in cands for s in chosen if c["secret"] != s]
+        probs = self.same_concept(pairs)
+        blocked = {c["pos"] for c in cands
+                   if any(probs.get((c["secret"], s), 0) > contextual_rank.SAME_CONCEPT_MAX
+                          for s in chosen)}
+        if blocked:
+            names = sorted({c["secret"] for c in cands if c["pos"] in blocked})
+            self.reports.append("  mots bloqués (même concept qu'un trou choisi) : "
+                                + ", ".join(names))
+        return blocked
+
+    def warn_holes(self, words, occurrences_by_secret):
+        """Headless path: the checks the selector enforces are only REPORTED here —
+        --words is an explicit choice, and the curator reads the report."""
+        if not self.filters:
+            return
+        cands = [{"pos": pos, "secret": s, "prefix": pre, "suffix": suf}
+                 for s, occ in occurrences_by_secret.items() for pos, pre, suf in occ[:1]]
+        try:
+            _kept, removed = contextual_rank.filter_hole_candidates(self.judge, words, cands)
+            secrets = list(occurrences_by_secret)
+            probs = contextual_rank.same_concept(
+                self.judge, self.sentence,
+                [(a, b) for i, a in enumerate(secrets) for b in secrets[i + 1:]])
+        except contextual_rank.ContextualError as exc:
+            die(f"vérification des trous impossible : {exc}")
+        for w, p in removed:
+            self.reports.append(f"  ATTENTION : la phrase se lit mal sans « {w} » ({p:.2f})")
+        for (a, b), p in probs.items():
+            if p > contextual_rank.SAME_CONCEPT_MAX:
+                self.reports.append(f"  ATTENTION : « {a} » et « {b} » semblent nommer un "
+                                    f"même concept ({p:.2f})")
+
     def print(self):
         for report in self.reports:
             print(report)
@@ -1389,7 +1478,8 @@ def build_lang_vocab(kv, cfg):
     return cfg["module"].build_vocab(kv)
 
 
-def choose_start(secret, ranking, rank_map, rank_by_display, band=STATIC_BAND):
+def choose_start(secret, ranking, rank_map, rank_by_display, band=STATIC_BAND,
+                 band_filter=None):
     """Pick the start (hint) word for ONE hole, interactively when on a terminal.
 
     The random default is exactly what pick_start would choose, so nothing about
@@ -1405,14 +1495,23 @@ def choose_start(secret, ranking, rank_map, rank_by_display, band=STATIC_BAND):
     Returns a DISPLAY word that is a key of rank_by_display, so start_rank and the
     {word, slug} object built downstream stay exactly as before.
     """
-    default = pick_start(secret, ranking, band)
+    band_spec = band
+    if band_filter is None:
+        default = pick_start(secret, ranking, band_spec)
+        band = None
+    else:
+        # #308's judge removes the band words that do not read as French at this
+        # hole; the random default is drawn from what remains.
+        band = band_filter(start_band(secret, ranking, band_spec))
+        default = random.choice(band)[0] if band else secret
 
     # No terminal attached (piped stdin / batch generation): keep the random
     # default silently, so automated runs never block on input().
     if not sys.stdin.isatty():
         return default
 
-    band = start_band(secret, ranking, band)
+    if band is None:
+        band = start_band(secret, ranking, band_spec)
     print(f"\nMot de départ pour « {secret} » "
           f"(Entrée = {default}^{rank_by_display[default]}) :")
     for i, (w, _r) in enumerate(band, 1):
@@ -2474,6 +2573,9 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
     import tty
 
     cands = extract_candidates(words, cfg, Vset, donors)
+    if contextual is not None:  # #308 pre-filter: unreadable-when-blanked words are not offered
+        cands = contextual.filter_candidates(words, cands)
+    blocked = set()  # positions naming one concept with a committed secret (#308)
 
     # Feasibility pre-check, on the table's own groups. A word still waiting for a donor
     # counts as its own group here — its group is only decided by that choice (#119) —
@@ -2526,6 +2628,12 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                 rbd.setdefault(w, r + 1)
             band = start_band(secret, merged,
                               ranker.band if ranker is not None else STATIC_BAND)
+            if ranker is not None:
+                occ = [(c["pos"], c["prefix"], c["suffix"])
+                       for c in candidates_for_slug(cands, secret_slug)]
+                band_filter = ranker.start_band_filter(words, occ, secret)
+                if band_filter is not None:
+                    band = band_filter(band)
             entry = {"ranking": ranking, "claim": claim, "ranker": ranker,
                      "rank_map": rank_map, "band": band,
                      "rbd": rbd, "groups": groups}
@@ -2538,8 +2646,10 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
     used_lemmas = set()  # lemmas claimed by committed groups: their forms block too
 
     def taken_word(c):
-        """A candidate is spent when its group is already holed (see spent_candidate)."""
-        return spent_candidate(c["secret"], used_slugs, used_lemmas, lemma_table, donors)
+        """A candidate is spent when its group is already holed (see spent_candidate),
+        or blocked beside a committed secret it shares a concept with (#308)."""
+        return c["pos"] in blocked or \
+            spent_candidate(c["secret"], used_slugs, used_lemmas, lemma_table, donors)
 
     def available():
         return [i for i, c in enumerate(cands) if not taken_word(c)]
@@ -2715,6 +2825,10 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
                             group_lemmas(secret, donor, lemma_table))
                         if donors is not None:  # the hole exists now: the borrow is real
                             donors.note_used(secret, donor)
+                        if contextual is not None:  # #308: same-concept words step aside
+                            chosen = [c["secret"] for c in cands if slug(c["secret"]) in used_slugs]
+                            blocked |= contextual.blocked_by(
+                                chosen, [c for c in cands if not taken_word(c)])
                         mode, numbuf = "nav", ""
                         if len(used_slugs) < 3:
                             remaining = available()
@@ -2862,8 +2976,11 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                     f"secret lui-même).")
             start = entry["word"]
         elif contextual is not None:
-            start = choose_start(canonical_secret, merged, rank_map, rank_by_display,
-                                 band=contextual.band)
+            start = choose_start(
+                canonical_secret, merged, rank_map, rank_by_display, band=contextual.band,
+                band_filter=contextual.start_band_filter(
+                    words, [(pos, pre, suf) for pos, (_s, pre, suf) in occurrences],
+                    canonical_secret))
         else:
             start = choose_start(canonical_secret, merged, rank_map, rank_by_display)
         start_rank = rank_map[slug(start)]["rank"]
@@ -2889,6 +3006,12 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
             holes.append(_make_hole(secret, prefix, suffix, pos, start_display,
                                     start_rank))
 
+    if contextual is not None:
+        by_secret = {}
+        for h in holes:
+            by_secret.setdefault(h["secret"]["word"], []).append(
+                (h["pos"], h.get("prefix", ""), h.get("suffix", "")))
+        contextual.warn_holes(words, by_secret)
     # Holes follow sentence order, not --words order. Filename construction dedupes the
     # repeated occurrence slugs separately via filename_slugs_from_holes().
     holes.sort(key=lambda h: h["pos"])

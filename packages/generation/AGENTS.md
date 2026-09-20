@@ -261,6 +261,25 @@ Consequences that are load-bearing:
   hover preview of the interactive selector stays STATIC (browsing spends no judge
   call); the commit step's confirmed rebuild is the one that reranks, with a
   "quelques minutes" notice, so the band picked from is the map that ships.
+- **The same judge runs THREE PRE-FILTERS for the curator (user-decided 2026-09-20,
+  recall-checked on every published day: nothing the curator chose is removed).** A
+  filter only ever REMOVES; whatever passes is shown unchanged and the curator chooses.
+  (1) **Start band**: a candidate shown at the hole must read as correct French
+  (`START_FIT_MIN = 0.5` — at 0.4 «la rutilent» passed; the band loses ≈ 20 %, mostly
+  wrong number/category, and 3/157 published picks sat just below); the random default
+  is drawn from what remains, an emptied band is offered whole with a note. (2) **Hole
+  candidates**: the selector does not offer a word whose blanking leaves the sentence
+  unreadable (`HOLE_READABLE_MIN = 0.6`; published holes: min 0.66). (3) **Shared
+  concept**: after a commit, a candidate naming one concept with a chosen secret is
+  blocked (`SAME_CONCEPT_MAX = 0.6`; published pairs: max 0.48). Off a TTY (`--words`,
+  the curation package) (2) and (3) only WARN in the report — an explicit choice is
+  the curator's. A REPLAY judge answers no yes/no question, so the filters step aside
+  under `--contextual-replay`. **Rejected as filters**: "the context fixes the meaning"
+  (the curator deliberately picks words the context does NOT give away — published
+  holes scored LOWER than the words left out) and a register line (it scored the
+  darkest published lines lowest). A SENTENCE filter (stands alone / carries an image
+  / not a famous line) passed recall only at loose thresholds and is not wired: it
+  still has to run over a whole book to show what it clears.
 - **`gen_word` stays static** — no sentence, no judge (`walk_secret(contextual=None)`).
   The two artifacts still share every downstream rank-map rule, but no longer promise
   the same lexical group the same neighborhood (root `AGENTS.md`).
@@ -439,7 +458,10 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json + shared/src/vocab.
 #    secret with the Jev judge (JEV_API_KEY in the environment; hard error without it, no
 #    static fallback); writes <puzzle>.contextual.json beside the puzzle, which
 #    --contextual-replay FICHIER rebuilds from without a call; --contextual-model MODELE
-#    names the judge. The hint band is 250-400 on such a map.
+#    names the judge. The hint band is 250-400 on such a map, pre-filtered by the judge
+#    (a start must read as French shown in the sentence); on a TTY the selector also
+#    withholds words whose blanking breaks the sentence and blocks a candidate naming
+#    one concept with a chosen hole; off a TTY those two only warn.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
 pnpm gen:phrase "<sentence>" --lang fr --words a b c --contextual --before "…" --after "…"
 
@@ -470,7 +492,9 @@ output filename contains the three distinct secret slugs in sentence order.
   `TOP_K = 10000` / curator report window `PLAYABILITY_TOP = 150` (gen),
   start-rank band `100–150` (`start_word.py`, user-decided 2026-09-07; was 50–150),
   `CONTEXT_BAND = (250, 400)` for a contextual map (#308), `PAIRWISE_TOP = 200` /
-  `SCORE_BATCH = 50` / `PAIR_BATCH = 40` / `WORKERS = 6` (`contextual_rank.py`).
+  `SCORE_BATCH = 50` / `PAIR_BATCH = 40` / `NOUL_BATCH = 40` / `WORKERS = 6`, filter
+  thresholds `START_FIT_MIN = 0.5` / `HOLE_READABLE_MIN = 0.6` / `SAME_CONCEPT_MAX = 0.6`
+  (`contextual_rank.py`).
   `PLAYABILITY_TOP` is a curator report window sized for a sentence hole's near field.
 - **Playability report (#135):** `build_playability_report` reads (never mutates)
   the final groups at ranks 1..`PLAYABILITY_TOP`; both `--words` and the raw-mode

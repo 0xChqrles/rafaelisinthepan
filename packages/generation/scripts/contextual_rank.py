@@ -28,6 +28,15 @@ similarities change; gen_phrase re-assembles keys closest-first in the new order
 No blend of static and contextual scores exists here — static similarity only picks
 the candidates and breaks exact ties.
 
+The same judge also runs three PRE-FILTERS for the curator (recall-checked on every
+published day, 2026-09-20 — a filter only ever REMOVES, the curator still chooses):
+a START candidate must read as correct French shown in the sentence
+(`START_FIT_MIN`); a HOLE candidate must leave a readable sentence when blanked
+(`HOLE_READABLE_MIN`); two holes must not name one concept (`SAME_CONCEPT_MAX`).
+Rejected as a filter: "the context fixes the meaning" — the curator picks words the
+context does NOT give away — and a register line, which scored the darkest published
+lines lowest.
+
 Stdlib only (json/urllib/threads) so the contract tests run with a fake judge and
 no network. The hosted judge is the ONE decided exception to offline generation
 (user-decided 2026-09-19): a puzzle records the scores it was built from in a
@@ -53,6 +62,12 @@ PAIR_BATCH = 40             # pairs per pass-2 request
 WORKERS = 6                 # concurrent requests
 EN_DOMINANCE_RATIO = 3      # a label whose fr rank > ratio x en rank ...
 EN_DOMINANCE_FLOOR = 8000   # ... and past this fr rank is demoted
+NOUL_BATCH = 40             # yes/no questions per filter request
+START_FIT_MIN = 0.5         # a start shown in the sentence must read as French: the band
+                            # loses ~20 % here (wrong number/category), 3/157 published picks
+                            # sat below (0.34-0.47) and were borderline; 0.4 let «la rutilent» through
+HOLE_READABLE_MIN = 0.6     # blanked sentence still readable (published holes: min 0.66)
+SAME_CONCEPT_MAX = 0.6      # two holes naming one concept (published pairs: max 0.48)
 
 SCORE_INSTRUCTIONS = (
     "Dans la phrase `phrase`, le mot secret `secret` (lexème `lexeme_secret`) est employé "
@@ -83,6 +98,22 @@ PAIR_INSTRUCTIONS = (
     "dans la phrase ; une ressemblance d'orthographe sans lien de sens ne compte pas. "
     "Seul le sens compte."
 )
+
+
+START_FIT_QUESTION = (
+    "Avec ce mot affiché à cette place, la phrase est-elle du français correct et naturel "
+    "(accord, catégorie grammaticale) ?",
+    "Elle se lit comme une vraie phrase, même si le sens est étrange",
+    "Faute d'accord, mauvaise catégorie, ou illisible")
+HOLE_READABLE_QUESTION = (
+    "Avec ce mot retiré (le blanc), la phrase reste-t-elle une phrase française correcte, "
+    "lisible, dont on devine la structure ?",
+    "Elle se lit naturellement avec un blanc à cet endroit",
+    "Le blanc rend la phrase incompréhensible ou agrammaticale")
+SAME_CONCEPT_QUESTION = (
+    "Dans cette phrase, « {a} » et « {b} » désignent-ils le même concept, ou sont-ils "
+    "synonymes l'un de l'autre ?",
+    "Même notion, ou synonymes", "Deux idées distinctes")
 
 
 class ContextualError(Exception):
@@ -206,6 +237,18 @@ class JevJudge:
             answers = self._call(state, questions)
             return [float(answers[f"p{i}"]["probabilities"]["A"]) for i in range(len(batch))]
         return self._batched(list(pairs), PAIR_BATCH, work)
+
+    def noul(self, state, questions):
+        """Yes/no probabilities: `questions` = {key: (instructions, true, false)} over
+        one shared `state`; returns {key: P(yes)}. Batched, keys preserved."""
+        keys = list(questions)
+        def work(batch):
+            qs = {k: {"type": "noul", "instructions": questions[k][0],
+                      "criteria": {"true": questions[k][1], "false": questions[k][2]}}
+                  for k in batch}
+            answers = self._call(state, qs)
+            return [(k, float(answers[k]["noul"])) for k in batch]
+        return dict(self._batched(keys, NOUL_BATCH, work))
 
 
 class ReplayJudge:
@@ -340,6 +383,75 @@ def rerank(context, candidates, judge, *, pairwise_top=PAIRWISE_TOP, foreign=Non
         "timing": {"score_s": round(t1 - t0, 1), "pairs_s": round(t2 - t1, 1)},
     }
     return ranked, record
+
+
+# --- the curator's pre-filters ---------------------------------------------------
+def shown_sentence(words, occurrences, word):
+    """The sentence with `word` displayed at every occurrence (pos, prefix, suffix) —
+    what a player sees when it is a hole's start, what a curator reads when it is
+    blanked ("_____")."""
+    out = list(words)
+    for pos, prefix, suffix in occurrences:
+        out[pos] = f"{prefix}{word}{suffix}"
+    return " ".join(out)
+
+
+def can_filter(judge):
+    """A replay carries no yes/no answers: the filters step aside (the map itself is
+    what a replay reproduces; the curator's choices are explicit there)."""
+    return hasattr(judge, "noul")
+
+
+def filter_start_band(judge, words, occurrences, band, threshold=START_FIT_MIN):
+    """`band` = [(word, rank)] -> (kept, removed) where removed = [(word, rank, p)]:
+    a start that does not read as French shown in the sentence is dropped."""
+    if not band:
+        return [], []
+    variants = [shown_sentence(words, occurrences, w) for w, _r in band]
+    state = {"variantes": variants}
+    q, yes, no = START_FIT_QUESTION
+    probs = judge.noul(state, {f"v{i}": (f"Pour la phrase `variantes[{i}]` : {q}", yes, no)
+                               for i in range(len(band))})
+    kept, removed = [], []
+    for i, (w, r) in enumerate(band):
+        p = probs[f"v{i}"]
+        if p >= threshold:
+            kept.append((w, r))
+        else:
+            removed.append((w, r, p))
+    return kept, removed
+
+
+def filter_hole_candidates(judge, words, cands, threshold=HOLE_READABLE_MIN):
+    """`cands` = [{pos, secret, prefix, suffix}] -> (kept, removed) where removed =
+    [(secret, p)]: a word whose blanking leaves the sentence unreadable is not
+    offered as a hole."""
+    if not cands:
+        return [], []
+    sentence = " ".join(words)
+    variants = [shown_sentence(words, [(c["pos"], c["prefix"], c["suffix"])], "_____")
+                for c in cands]
+    state = {"phrase": sentence, "variantes": variants}
+    q, yes, no = HOLE_READABLE_QUESTION
+    probs = judge.noul(state, {f"v{i}": (f"Pour `variantes[{i}]` (mot retiré : « {c['secret']} ») : {q}", yes, no)
+                               for i, c in enumerate(cands)})
+    kept, removed = [], []
+    for i, c in enumerate(cands):
+        if probs[f"v{i}"] >= threshold:
+            kept.append(c)
+        else:
+            removed.append((c["secret"], probs[f"v{i}"]))
+    return kept, removed
+
+
+def same_concept(judge, sentence, pairs):
+    """{(a, b): P(same concept)} for word pairs of one sentence."""
+    if not pairs:
+        return {}
+    q, yes, no = SAME_CONCEPT_QUESTION
+    probs = judge.noul({"phrase": sentence},
+                       {f"p{i}": (q.format(a=a, b=b), yes, no) for i, (a, b) in enumerate(pairs)})
+    return {pair: probs[f"p{i}"] for i, pair in enumerate(pairs)}
 
 
 def english_dominance(fr_rank, en_rank, ratio=EN_DOMINANCE_RATIO, floor=EN_DOMINANCE_FLOOR):
