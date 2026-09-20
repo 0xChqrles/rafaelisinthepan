@@ -14,13 +14,14 @@ generation's output directory.
 import argparse
 from datetime import date, datetime, timezone
 import json
+import os
 from pathlib import Path
-import random
 import re
 import subprocess
 import sys
 
 import _paths
+import contextual_rank  # the #308 judge: sentence pre-filter + shortlist order (generation/scripts)
 from slug import slug
 
 import llm
@@ -34,7 +35,8 @@ from parse import parse, parse_many
 from sentences import EXCERPT_SENTENCES, EXCERPT_WINDOW, candidate_sentences, cut_excerpt, excerpt_around
 
 LANGS = ("fr",)
-# Candidate sentences shown to the model per book (a random sample above this).
+# Candidate sentences shown to the model per book: the BEST by the judge's image score
+# (#308, 2026-09-20; was a random sample) after its loose sentence filter.
 MAX_SENTENCES = 600
 CHUNK = 150
 PICKS_PER_CHUNK = 6
@@ -446,13 +448,42 @@ def rich_enough(log: Log, sentences: list[str], lang: str, in_vocab, past_secret
     return kept
 
 
-def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str], seed: int) -> list[dict]:
+def judge_sentences(log: Log, sentences: list[str], judge=None) -> list[str]:
+    """The judge's sentence pre-filter and order (#308, 2026-09-20): every candidate is
+    scored — stands alone, carries an image, not a famous line — the loose filter
+    removes what the model should not have to read (about half a novel: lines hanging
+    on a name or a pronoun, the flat ones), and the rest is ordered by image score so
+    the MAX_SENTENCES the model reads are the best of the whole work, not a random
+    sample. A filter only removes; the model still shortlists and the curator still
+    decides. The key is the one gen_phrase needs anyway; without it this dies here,
+    before any model call."""
+    if not sentences:
+        return []
+    if judge is None:
+        try:
+            judge = contextual_rank.JevJudge(contextual_rank.read_api_key(os.environ))
+        except contextual_rank.ContextualError as exc:
+            die(f"sentence judge: {exc}")
+    try:
+        scores = contextual_rank.score_sentences(judge, sentences)
+    except contextual_rank.ContextualError as exc:
+        die(f"sentence judge: {exc}")
+    kept = [(s, sc) for s, sc in zip(sentences, scores) if contextual_rank.sentence_passes(sc)]
+    kept.sort(key=lambda item: (-item[1]["image"], -item[1]["autonome"]))
+    log(f"- judged by Jev: {len(kept)} of {len(sentences)} pass the sentence filter "
+        f"(stand alone ≥ {contextual_rank.SENTENCE_ALONE_MIN}, image ≥ "
+        f"{contextual_rank.SENTENCE_IMAGE_MIN}, famous ≤ {contextual_rank.SENTENCE_FAMOUS_MAX}); "
+        f"ordered by image ({judge.usage['input_tokens']} input tokens)")
+    return [s for s, _sc in kept]
+
+
+def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str]) -> list[dict]:
     sentences = [s for s in mined if shelf_mod.sentence_key(s) not in exclude]
     if not sentences:
         die("no candidate sentence in this work")
     if len(sentences) > MAX_SENTENCES:
-        sentences = random.Random(seed).sample(sentences, MAX_SENTENCES)
-        log(f"- sampled {MAX_SENTENCES} of them")
+        sentences = sentences[:MAX_SENTENCES]
+        log(f"- kept the {MAX_SENTENCES} best by image")
     picks: list[dict] = []
     for start in range(0, len(sentences), CHUNK):
         picks.extend(llm.pick_from_chunk(claude, sentences[start:start + CHUNK], PICKS_PER_CHUNK))
@@ -591,7 +622,6 @@ def main():
                         "entry and candidate puzzles) and run on it again — or ONE SENTENCE — a "
                         "candidate puzzle file: erase it and rerun its sentence (the work read off "
                         "the puzzle's source), skipping the mining, shortlist and ranking")
-    p.add_argument("--seed", type=int, default=None, help="sample seed (default: today)")
     args = p.parse_args()
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
@@ -633,10 +663,10 @@ def main():
     else:
         proposed = {shelf_mod.sentence_key(s) for s in index["books"].get(book["file"], {}).get("sentences", ())}
         proposed |= archive["sentences"]
-        seed = args.seed if args.seed is not None else int(stamp[:10].replace("-", ""))
         mined = rich_enough(log, mine(book, text, log), args.lang, vocab.__contains__, archive["secrets"],
                             frequency_rank)
-        ranked = shortlist(claude, log, mined, proposed, seed)
+        mined = judge_sentences(log, [s for s in mined if shelf_mod.sentence_key(s) not in proposed])
+        ranked = shortlist(claude, log, mined, proposed)
 
     # The work's quoted lines (the quotation test): fetched onto the shelf by
     # `pnpm shelf:quotes`, read here offline. A missing file skips the test, loudly.

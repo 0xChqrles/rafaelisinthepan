@@ -43,7 +43,9 @@
 ## Commands
 
 ```bash
-pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <shelf file | puzzle.json>] [--blind] [--seed N]
+pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <shelf file | puzzle.json>] [--blind]
+#   Needs JEV_API_KEY in the environment (#308): the judge pre-filters and orders the
+#   sentences the model reads, and gen_phrase — contextual by default — needs it too.
 #   Picks a work (the model, off the shelf minus the archive minus index.json minus the
 #   artist cooldown; --work forces one; --retry <shelf file> erases a previous attempt on
 #   a work — its index entry and the candidate puzzle(s) it wrote under the generation
@@ -51,8 +53,7 @@ pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <shelf file | puzz
 #   survives every rule as a puzzle under packages/generation/output/word/fr/... via
 #   gen_phrase — headless, the start word is the band's random pick, the #133 form question
 #   is answered by the model from the sentence. Exit 0 = a candidate was written (publish it
-#   yourself), 2 = every shortlisted sentence was rejected (rerun: another sample, or
-#   another work). The log is runs/<stamp>.md. --blind withholds the winning sentence,
+#   yourself), 2 = every shortlisted sentence was rejected (rerun: another work). The log is runs/<stamp>.md. --blind withholds the winning sentence,
 #   its secrets and their handling from the log and stdout (a failed attempt is still
 #   logged in full; the puzzle file is named after its START words, so its path spoils
 #   nothing): the main log gets the player's view, the start words, the source and the
@@ -83,6 +84,18 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 
 ## Stable invariants
 
+- **The judge removes what the model should not have to read, and orders the rest
+  (#308, user-decided 2026-09-20).** After the mechanical filter and `rich_enough`,
+  `curate.judge_sentences` scores EVERY candidate with Jev (`contextual_rank
+  .score_sentences`: stands alone / carries an image / not a famous line), drops what
+  fails the loose `sentence_passes` (thresholds in `generation/scripts/contextual_rank.py`,
+  chosen so every published day passes; about half a novel goes — lines hanging on a
+  name or a pronoun, the flat ones), and the survivors are ordered by IMAGE score, so the
+  `MAX_SENTENCES` (600) the model reads are the best of the whole work — no random
+  sample any more (`--seed` is gone). A filter only removes: the model still shortlists,
+  the curator still decides. The key is the one `gen_phrase` needs anyway (contextual by
+  default since 2026-09-20); a run without it dies before any model call, never a
+  static or unfiltered fallback. Cost: a few cents per work.
 - **The LLM never sees an invalid option.** `rules.initial_candidates` builds the list it
   picks from; `rules.prune` shrinks it after every pick; a pick off the list is ignored.
   The model chooses, code enforces. Tunables live at the top of `rules.py`:
