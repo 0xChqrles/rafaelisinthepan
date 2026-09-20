@@ -83,6 +83,10 @@ MAX_OFF_LIST = 2
 CONTEXT_GUESSES = 6
 OBVIOUS_MAX = 2
 TWIN_RANK = 3
+# A secret is REACHABLE when a reader's filler sits within this rank of it in the game's
+# own ranking (user-decided 2026-09-18, the Hrabal day: « presse » — readers put table,
+# chaise, place, ranks 1094+ — was a wall; « gracieux » — beau at 175 — played fine).
+REACH_RANK = 500
 PLAIN_WORD_RANK = 40000
 # Secrets per puzzle (the sentence schema: exactly three distinct slugs).
 TRIO = 3
@@ -168,8 +172,11 @@ def open_candidates(
     (`is_twin`) and the word is a plain one (`frequency_rank` at or under
     PLAIN_WORD_RANK; None = unknown, taken as plain) — or when the reader can name at
     most OBVIOUS_MAX words for it, the secret included (a twin is the secret again; a
-    named word that is not the secret is one of the alternatives). One judgement per
-    distinct slug; the order of the list is kept."""
+    named word that is not the secret is one of the alternatives) — or when it is
+    UNREACHABLE: every filler a reader puts sits past REACH_RANK in the secret's own
+    ranking (`neighbour_rank`; unknown ranks are ignored, all unknown = no verdict), so
+    the sentence carries none of the secret's concept. One judgement per distinct slug;
+    the order of the list is kept."""
     log = log or SearchLog()
     verdict: dict[str, bool] = {}
     out = []
@@ -182,11 +189,16 @@ def open_candidates(
             others = {slug(g) for g in [*guesses, *([named] if named else [])]
                       if slug(g) and not is_twin(c, g, neighbour_rank)}
             possible = len(others) + 1  # the secret itself is always one of them
-            verdict[c.slug] = expected or possible <= OBVIOUS_MAX
+            reach = [r for r in (neighbour_rank(c, g) for g in others) if r is not None]
+            unreachable = bool(reach) and min(reach) > REACH_RANK
+            verdict[c.slug] = expected or possible <= OBVIOUS_MAX or unreachable
             shown = ", ".join(guesses) or "none"
             agreed = f"most readers write « {named} »" if named else "readers split"
             if expected:
                 log.note(f"'{c.text}' is the EXPECTED word — {agreed} (a reader puts: {shown}) — struck")
+            elif unreachable:
+                log.note(f"'{c.text}' is UNREACHABLE — the reader's nearest filler is rank {min(reach)} "
+                         f"(a reader puts: {shown}) — struck")
             elif verdict[c.slug]:
                 log.note(f"'{c.text}' is obvious — {possible} possible word(s) (a reader puts: {shown}) — struck")
             elif rare:

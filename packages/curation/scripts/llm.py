@@ -160,6 +160,24 @@ Return {{"ranked": [<index>, ...]}}, best first, at most {limit} entries.""")
     return ranked or picks[:limit]
 
 
+def stands_alone(claude: Claude, sentence: str) -> dict:
+    """Does the sentence make complete sense on its own, SOLVED, without its page? The
+    user's rule of 2026-09-18 (the Svevo day: « c'étaient donc des nerfs parfaits »
+    meant nothing even solved). A STRIKE, applied by code on the model's verdict; the
+    rule is read from the skill file."""
+    answer = claude.json(f"""A French word game shows ONE sentence from a book, alone — the reader never sees the
+page around it. Judge this sentence by the rule below, reading it with no context at all.
+
+{skill_section("## Stands alone")}
+
+« {sentence} »
+
+Return {{"about": "<one line: what the sentence says, from the sentence alone>",
+"stands_alone": true/false, "why": "<one line: what leans on the page, or empty>"}}.""")
+    return {"ok": bool(answer.get("stands_alone")), "why": str(answer.get("why") or ""),
+            "about": str(answer.get("about") or "")}
+
+
 def widely_known(claude: Claude, sentence: str, author: str, work: str) -> dict:
     """Would a reader who has NOT read the book know this line? An ANNOTATION for the
     reviewer, never a strike (user-decided 2026-09-08): the model has memorised every

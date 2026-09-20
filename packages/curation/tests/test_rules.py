@@ -304,3 +304,26 @@ def test_the_expected_strike_spares_a_rare_word_the_count_rule_still_judges():
     fillers = lambda t: ([t.text, "ronde"], t.text)  # noqa: E731
     assert "chat" not in {t.text for t in open_candidates(cands, fillers=fillers, neighbour_rank=no_rank, frequency_rank=rank)}
 
+
+
+def test_open_candidates_strike_an_unreachable_word():
+    from rules import REACH_RANK
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    # « près de ma [presse] »: readers put table, chaise, place — all far from the secret
+    # in the game's ranking — the sentence carries none of its concept, a wall.
+    fillers = lambda t: (["table", "chaise", "place"], "table") if t.text == "chat" else (["autre", t.text, "encore"], None)  # noqa: E731
+    far = lambda t, w: REACH_RANK + 600 if t.text == "chat" else None  # noqa: E731
+    log = SearchLog()
+    kept = open_candidates(cands, fillers=fillers, neighbour_rank=far, log=log)
+    assert "chat" not in {t.text for t in kept}
+    assert any("'chat' is UNREACHABLE" in e and f"rank {REACH_RANK + 600}" in e for e in log.events)
+
+
+def test_open_candidates_keep_a_word_one_filler_reaches():
+    from rules import REACH_RANK
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    # « un [gracieux] jeune homme »: readers put beau — rank 175 — the hole is reachable.
+    fillers = lambda t: (["beau", "grand", "mince"], "beau") if t.text == "chat" else (["autre", t.text, "encore"], None)  # noqa: E731
+    ranks = lambda t, w: {"beau": 175, "grand": 4390}.get(w, REACH_RANK + 1) if t.text == "chat" else None  # noqa: E731
+    kept = open_candidates(cands, fillers=fillers, neighbour_rank=ranks)
+    assert [t.text for t in kept] == [t.text for t in cands]

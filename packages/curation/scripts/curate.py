@@ -563,6 +563,11 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
     if hit:
         log(f"- rejected: a quoted line — « {hit} »")
         return None
+    alone = llm.stands_alone(claude, sentence)
+    if not alone["ok"]:
+        log(f"- rejected: does not stand alone — {alone['why'] or 'the model names no reason'}")
+        return None
+    log(f"- stands alone: {alone['about']}" if alone["about"] else "- stands alone")
     known = llm.widely_known(claude, sentence, book.get("author", ""), book.get("title", ""))
     log("- known-line check (annotation): "
         + ("the model thinks a reader would know it" if known["known"] else "not known off the page")
