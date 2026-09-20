@@ -283,8 +283,15 @@ Consequences that are load-bearing:
   (the curator deliberately picks words the context does NOT give away — published
   holes scored LOWER than the words left out) and a register line (it scored the
   darkest published lines lowest). A SENTENCE filter (stands alone / carries an image
-  / not a famous line) passed recall only at loose thresholds and is not wired: it
-  still has to run over a whole book to show what it clears.
+  / not a famous line — `score_sentences`, `sentence_passes`, thresholds
+  `SENTENCE_ALONE_MIN = 0.35` / `SENTENCE_IMAGE_MIN = 0.3` / `SENTENCE_FAMOUS_MAX = 0.6`)
+  passed recall on every published day and, run over one whole novel (Bukowski, 1 608
+  candidates, 2026-09-20), clears ≈ 46 % — lines hanging on a name or a pronoun, and
+  the flat ones — while its `image` score orders the rest the way a curator would (the
+  administrative letters last). It lives here, tested, and is NOT WIRED into the
+  curation package yet (its hook is in `curate.py`, which has other work in flight):
+  the intended use is filter + shortlist order in place of the random 600-sentence
+  sample the model reads.
 - **`gen_word` stays static** — no sentence, no judge (`walk_secret(contextual=None)`).
   The two artifacts still share every downstream rank-map rule, but no longer promise
   the same lexical group the same neighborhood (root `AGENTS.md`).

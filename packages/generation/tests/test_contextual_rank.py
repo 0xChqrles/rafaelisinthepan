@@ -425,3 +425,20 @@ def test_a_replay_on_english_is_refused(capsys):
     with pytest.raises(SystemExit):
         gen_phrase.build_contextual_ranker(args, "en", "a sentence", ["a"])
     assert "français" in capsys.readouterr().err
+
+
+# --- the sentence pre-filter (scored on one whole book, 2026-09-20; not yet wired) ------
+def test_score_sentences_asks_the_three_questions_per_sentence_and_keeps_order():
+    judge = FilteringJudge({"phrases[0]` : La phrase se comprend": 0.2, "phrases[1]` : La phrase porte": 0.95})
+    scores = cr.score_sentences(judge, ["a b c", "d e f", "g h i"], per_request=2)
+    assert len(scores) == 3 and set(scores[0]) == {"autonome", "image", "celebre"}
+    assert scores[0]["autonome"] == 0.2 and scores[1]["image"] == 0.95
+    assert len(judge.noul_calls) == 2 and judge.noul_calls[1][0]["phrases"] == ["g h i"]
+
+
+def test_sentence_filter_is_loose_and_removes_only_the_unreadable_the_flat_and_the_famous():
+    ok = {"autonome": 0.4, "image": 0.31, "celebre": 0.5}
+    assert cr.sentence_passes(ok)
+    assert not cr.sentence_passes({**ok, "autonome": 0.3})
+    assert not cr.sentence_passes({**ok, "image": 0.2})
+    assert not cr.sentence_passes({**ok, "celebre": 0.7})

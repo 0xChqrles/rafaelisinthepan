@@ -68,6 +68,10 @@ START_FIT_MIN = 0.5         # a start shown in the sentence must read as French:
                             # sat below (0.34-0.47) and were borderline; 0.4 let «la rutilent» through
 HOLE_READABLE_MIN = 0.6     # blanked sentence still readable (published holes: min 0.66)
 SAME_CONCEPT_MAX = 0.6      # two holes naming one concept (published pairs: max 0.48)
+SENTENCE_ALONE_MIN = 0.35   # a candidate sentence must stand without its page (published
+                            # days: min 0.39; clears ~46 % of a novel's candidates)
+SENTENCE_IMAGE_MIN = 0.3    # ... and carry an image or a turn (published days: min 0.31)
+SENTENCE_FAMOUS_MAX = 0.6   # ... and not be a famous line (published days: max 0.5)
 
 SCORE_INSTRUCTIONS = (
     "Dans la phrase `phrase`, le mot secret `secret` (lexème `lexeme_secret`) est employé "
@@ -114,6 +118,18 @@ SAME_CONCEPT_QUESTION = (
     "Dans cette phrase, « {a} » et « {b} » désignent-ils le même concept, ou sont-ils "
     "synonymes l'un de l'autre ?",
     "Même notion, ou synonymes", "Deux idées distinctes")
+
+
+SENTENCE_QUESTIONS = {
+    "autonome": ("La phrase se comprend-elle seule, sans le texte qui l'entoure ?",
+                 "On saisit la scène ou l'idée sans rien d'autre",
+                 "Elle dépend d'un antécédent, d'un nom propre ou d'un fait absent"),
+    "image": ("La phrase porte-t-elle une image concrète ou un retournement ?",
+              "Une image, une chute ou une tension qu'on a envie de partager",
+              "Plate, abstraite ou purement descriptive"),
+    "celebre": ("Est-ce une citation célèbre, largement connue et reprise ?",
+                "Une phrase-culte qu'un lecteur reconnaît", "Une phrase ordinaire de l'œuvre"),
+}
 
 
 class ContextualError(Exception):
@@ -452,6 +468,25 @@ def same_concept(judge, sentence, pairs):
     probs = judge.noul({"phrase": sentence},
                        {f"p{i}": (q.format(a=a, b=b), yes, no) for i, (a, b) in enumerate(pairs)})
     return {pair: probs[f"p{i}"] for i, pair in enumerate(pairs)}
+
+
+def score_sentences(judge, sentences, per_request=NOUL_BATCH // len(SENTENCE_QUESTIONS)):
+    """[{autonome, image, celebre}] per candidate sentence — the curator's sentence
+    pre-filter and its shortlist order (`image`), a few sentences per request."""
+    out = []
+    for start in range(0, len(sentences), per_request):
+        chunk = sentences[start:start + per_request]
+        questions = {f"{k}{i}": (f"Pour la phrase `phrases[{i}]` : {q}", yes, no)
+                     for i in range(len(chunk)) for k, (q, yes, no) in SENTENCE_QUESTIONS.items()}
+        probs = judge.noul({"phrases": list(chunk)}, questions)
+        out.extend({k: probs[f"{k}{i}"] for k in SENTENCE_QUESTIONS} for i in range(len(chunk)))
+    return out
+
+
+def sentence_passes(scores):
+    """The loose sentence filter: what the curator should not have to read."""
+    return (scores["autonome"] >= SENTENCE_ALONE_MIN and scores["image"] >= SENTENCE_IMAGE_MIN
+            and scores["celebre"] <= SENTENCE_FAMOUS_MAX)
 
 
 def english_dominance(fr_rank, en_rank, ratio=EN_DOMINANCE_RATIO, floor=EN_DOMINANCE_FLOOR):
