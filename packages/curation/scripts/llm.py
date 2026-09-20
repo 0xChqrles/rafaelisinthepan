@@ -165,8 +165,8 @@ def stands_alone(claude: Claude, sentence: str) -> dict:
     user's rule of 2026-09-18 (the Svevo day: « c'étaient donc des nerfs parfaits »
     meant nothing even solved). A STRIKE, applied by code on the model's verdict; the
     rule is read from the skill file."""
-    answer = claude.json(f"""A French word game shows ONE sentence from a book, alone — the reader never sees the
-page around it. Judge this sentence by the rule below, reading it with no context at all.
+    answer = claude.json(f"""A French word game shows ONE sentence from a book or song, alone. The surrounding
+page is available only after solving. Judge the complete sentence below with no context at all.
 
 {skill_section("## Stands alone")}
 
@@ -174,8 +174,15 @@ page around it. Judge this sentence by the rule below, reading it with no contex
 
 Return {{"about": "<one line: what the sentence says, from the sentence alone>",
 "stands_alone": true/false, "why": "<one line: what leans on the page, or empty>"}}.""")
-    return {"ok": bool(answer.get("stands_alone")), "why": str(answer.get("why") or ""),
-            "about": str(answer.get("about") or "")}
+    if (not isinstance(answer, dict) or type(answer.get("stands_alone")) is not bool
+            or not isinstance(answer.get("about"), str)
+            or not isinstance(answer.get("why"), str)):
+        raise LLMError("standalone check requires a boolean verdict and string about/why fields")
+    ok = answer["stands_alone"]
+    about, why = answer["about"].strip(), answer["why"].strip()
+    if not (about if ok else why):
+        raise LLMError("standalone check requires a summary when accepted or a reason when rejected")
+    return {"ok": ok, "why": why, "about": about}
 
 
 def widely_known(claude: Claude, sentence: str, author: str, work: str) -> dict:

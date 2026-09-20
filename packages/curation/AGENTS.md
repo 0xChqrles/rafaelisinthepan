@@ -114,7 +114,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   forced one, every trio worth keeping came from 8+), `MIN_GAP` (3 tokens), `COSINE_MAX`
   (0.40), `MODIFIER_DEPS`, `MAX_RESTARTS` (2), `MAX_OFF_LIST` (2), `CONTEXT_GUESSES` (3,
   the most fillers the obviousness filter asks a reader for), `OBVIOUS_MAX` (2),
-  `TWIN_RANK` (3), `REACH_RANK` (500), `PLAIN_WORD_RANK` (40000, ONE boundary with `starts.MAX_START_FREQ_RANK`);
+  `TWIN_RANK` (3), `PLAIN_WORD_RANK` (40000, ONE boundary with `starts.MAX_START_FREQ_RANK`);
   and at the top of `curate.py`: `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK`
   (6), `SHORTLIST` (20). The mechanical filter (`sentences.is_candidate`) also refuses a
   unit that OPENS on a quotation mark (reported speech, or an argument with a line the
@@ -207,14 +207,6 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   The open holes' fillers are shown to the start-word prompt. The skill's trio rules
   carry the user's INTERACTION rule of the same day (a hole another visible word
   narrows, never a bare list item); the pick prompt reads it from there.
-- **A secret must be REACHABLE from the sentence (user-decided 2026-09-18, the Hrabal
-  day: « près de ma [presse] » and « ma quatrième [cruche] de bière » were walls,
-  « un [gracieux] jeune homme » played fine).** The same obviousness call's fillers are
-  ranked in the secret's own game ranking (`neighbour_rank`); when the NEAREST filler
-  sits past `REACH_RANK` (500) the sentence carries none of the secret's concept and
-  code strikes the word (`rules.open_candidates`, logged `UNREACHABLE` with the rank).
-  Measured: « presse » — table 1094, place 1094+ ; « gracieux » — beau 175. Unknown
-  ranks are ignored; all unknown is no verdict.
 - **A dead end restarts the sentence with its first pick struck**, `MAX_RESTARTS` times,
   then the next sentence. No smarter backtracking.
 - **The taste profile and the secret rules have ONE home, the `find-sentences` skill

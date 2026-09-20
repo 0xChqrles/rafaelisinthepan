@@ -1,6 +1,8 @@
 """The pure parts of the LLM layer: JSON extraction and the answers' validation."""
 
-from llm import parse_json
+import pytest
+
+from llm import LLMError, parse_json, stands_alone
 
 
 def test_parse_json_reads_fenced_and_trailing_text():
@@ -17,6 +19,28 @@ class _Canned:
     def json(self, prompt):
         self.calls += 1
         return self.answer
+
+
+@pytest.mark.parametrize("ok", [True, False])
+def test_stands_alone_preserves_the_boolean_verdict(ok):
+    answer = {"stands_alone": ok, "about": " Une promenade. ",
+              "why": "" if ok else " Le lieu dépend de la page précédente. "}
+    result = stands_alone(_Canned(answer), "Il marche dans ce lieu.")
+    assert result == {"ok": ok, "about": answer["about"].strip(), "why": answer["why"].strip()}
+
+
+@pytest.mark.parametrize("answer", [
+    None, [], {},
+    {"stands_alone": "false", "about": "Une promenade.", "why": "Lieu inconnu."},
+    {"stands_alone": 1, "about": "Une promenade.", "why": ""},
+    {"stands_alone": True, "about": " ", "why": ""},
+    {"stands_alone": False, "about": "", "why": " "},
+    {"stands_alone": True, "about": ["Une promenade."], "why": ""},
+    {"stands_alone": False, "about": "", "why": None},
+])
+def test_stands_alone_refuses_malformed_verdicts(answer):
+    with pytest.raises(LLMError, match="standalone check"):
+        stands_alone(_Canned(answer), "Il marche dans ce lieu.")
 
 
 def test_choose_excerpt_takes_two_integers_and_nothing_else():

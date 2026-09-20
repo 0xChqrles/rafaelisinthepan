@@ -58,6 +58,27 @@ def test_an_empty_list_asks_the_judge_nothing():
     assert curate.judge_sentences(Log(), [], judge=None) == []
 
 
+@pytest.mark.parametrize("stands_alone", [True, False])
+def test_attempt_checks_standalone_readability_before_further_curation(monkeypatch, stands_alone):
+    seen = []
+    monkeypatch.setattr(curate.llm, "stands_alone", lambda _c, sentence: {
+        "ok": stands_alone, "about": "Une promenade.", "why": "Un lieu sans référent.",
+    })
+
+    def known(*args):
+        seen.append("known")
+        return {"known": False, "why": ""}
+
+    monkeypatch.setattr(curate.llm, "widely_known", known)
+    monkeypatch.setattr(curate, "parse", lambda *a: seen.append("parse") or [])
+    log = Log()
+    curate.attempt(object(), log, "Il marche dans ce lieu.", {}, {"secrets": set()},
+                   lambda _w: True, lambda _a, _b: None, lambda _t: None, "fr")
+    assert seen == (["known", "parse"] if stands_alone else [])
+    if not stands_alone:
+        assert any("rejected: does not stand alone — Un lieu sans référent." in line for line in log)
+
+
 def test_a_rerun_replays_the_previous_sidecar_instead_of_paying_the_judge(monkeypatch):
     seen = []
     monkeypatch.setattr(curate.subprocess, "run", lambda cmd, **_k: seen.append(cmd) or type("C", (), {"returncode": 1, "stdout": "", "stderr": ""})())
