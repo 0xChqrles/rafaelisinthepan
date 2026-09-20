@@ -2924,6 +2924,13 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
     holes = []
     ranks = {}
     used_lemmas = {}  # lemma -> the earlier selector that claimed it
+    # PASS 1 — every question before any walk (#308): a secret's donor and form are
+    # settled for all three selectors first, so that off a TTY a missing --form dies
+    # before the first ranking — with a hosted judge, a walk is minutes and money,
+    # and a batch caller answering one question per run would otherwise pay for the
+    # holes already ranked on every rerun. secret_claim caches nothing itself, but
+    # the resolvers do (feature_for / donor_for per slug), so pass 2 re-asks nothing.
+    resolved = []
     for raw, target_slug in selectors:
         # Resolve every occurrence by slug. A repeated selected word is one authoring
         # selection but produces one hole per matching sentence token.
@@ -2956,7 +2963,11 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
         # The GEOMETRY source: the secret itself when it has a vector, else its donor.
         # Everything else below keeps using the true sentence form.
         donor = donors.donor_for(canonical_secret) if donors is not None else canonical_secret
+        secret_claim(canonical_secret, donor, lemma_table, donors, forms)  # asks now
+        resolved.append((raw, target_slug, occurrences, canonical_secret, donor))
 
+    # PASS 2 — the walks, in the same order.
+    for raw, target_slug, occurrences, canonical_secret, donor in resolved:
         # Two selected secrets in one lemma group would be one word holed twice. A
         # borrowed vector carries the donor's lemmas too, so a sibling of the donor is
         # "the same word" as well (#119). This test weighs the FULL identity, while

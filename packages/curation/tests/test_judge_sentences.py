@@ -49,3 +49,14 @@ def test_shortlist_reads_the_best_not_a_sample(monkeypatch):
 
 def test_an_empty_list_asks_the_judge_nothing():
     assert curate.judge_sentences(Log(), [], judge=None) == []
+
+
+def test_a_rerun_replays_the_previous_sidecar_instead_of_paying_the_judge(monkeypatch):
+    seen = []
+    monkeypatch.setattr(curate.subprocess, "run", lambda cmd, **_k: seen.append(cmd) or type("C", (), {"returncode": 1, "stdout": "", "stderr": ""})())
+    curate.run_gen_phrase("une phrase", ["a", "b", "c"], {}, {}, "fr", {"a": "x"},
+                          replay=curate._sidecar("/out/x_y_z.json"))
+    assert "--contextual-replay" in seen[0]
+    assert seen[0][seen[0].index("--contextual-replay") + 1] == "/out/x_y_z.contextual.json"
+    curate.run_gen_phrase("une phrase", ["a", "b", "c"], {}, {}, "fr")
+    assert "--contextual-replay" not in seen[1]

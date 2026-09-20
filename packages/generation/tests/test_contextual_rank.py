@@ -442,3 +442,26 @@ def test_sentence_filter_is_loose_and_removes_only_the_unreadable_the_flat_and_t
     assert not cr.sentence_passes({**ok, "autonome": 0.3})
     assert not cr.sentence_passes({**ok, "image": 0.2})
     assert not cr.sentence_passes({**ok, "celebre": 0.7})
+
+
+# --- every question before any walk (#308: a walk is minutes and money) --------------
+def test_a_question_that_dies_on_the_second_secret_precedes_the_first_walk(monkeypatch):
+    from test_donor import FORMS, FR, KV, START_SENTENCE, TABLE, VOCAB, VSET, _resolver, _words
+    walked, asked = [], []
+    monkeypatch.setattr(FR["module"], "closest",
+                        lambda w, *_a, **_k: walked.append(w) or [], raising=False)
+    monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False, raising=False)
+
+    def claim(secret, *_a, **_k):  # the #133 question: the second secret has no answer
+        asked.append(secret)
+        if len(asked) == 2:
+            gen_phrase.die("la forme de « x » doit être explicite hors mode interactif")
+        return ()
+    monkeypatch.setattr(gen_phrase, "secret_claim", claim)
+    with pytest.raises(SystemExit):
+        gen_phrase.holes_from_words(
+            ["doucement", "jardin", "amuse"], _words(START_SENTENCE), FR, "fr",
+            kv=KV, V=VOCAB, M=object(), Vset=VSET, lemma_table=TABLE,
+            forms_by_lemma=FORMS, donors=_resolver(interactive=False))
+    assert asked == ["doucement", "jardin"]
+    assert walked == []  # no ranking was computed: no judge call would have been paid

@@ -148,8 +148,10 @@ _WRITTEN = re.compile(r"écrite dans (\S+) :")
 
 
 def run_gen_phrase(sentence: str, words: list[str], source: dict, forms: dict[str, str], lang: str,
-                   starts: dict[str, str] | None = None):
+                   starts: dict[str, str] | None = None, replay: str | None = None):
     cmd = ["uv", "run", "scripts/gen_phrase.py", sentence, "--lang", lang, "--words", *words]
+    if replay:  # #308: a rerun rebuilds the same contextual map from the first run's sidecar
+        cmd += ["--contextual-replay", replay]
     for key in ("kind", "author", "work"):
         if source.get(key):
             cmd += [f"--{key}", source[key]]
@@ -169,6 +171,11 @@ def run_gen_phrase(sentence: str, words: list[str], source: dict, forms: dict[st
     return completed, cmd
 
 
+def _sidecar(puzzle_path: str) -> str:
+    """The judge's scores gen_phrase writes beside a puzzle (#308)."""
+    return puzzle_path[:-len(".json")] + ".contextual.json"
+
+
 def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], source: dict, lang: str,
              context: dict[str, str] | None = None, frequency_rank=lambda t: None,
              pairs: dict[str, set[str]] | None = None):
@@ -185,12 +192,16 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
     rounds = 0
     prev = None
     for _ in range(MAX_GEN_RUNS + st.START_ROUNDS + 1):
-        completed, cmd = run_gen_phrase(sentence, words, source, forms, lang, starts)
+        # A rerun (new starts) never pays the judge again: it replays the scores the
+        # previous run wrote beside its puzzle (#308).
+        completed, cmd = run_gen_phrase(sentence, words, source, forms, lang, starts,
+                                        replay=_sidecar(prev) if prev else None)
         if completed.returncode == 0:
             m = _WRITTEN.search(completed.stdout)
             path = m.group(1) if m else None
             if path and prev and path != prev:  # the file is named after its starts: a rerun leaves no orphan
                 Path(prev).unlink(missing_ok=True)
+                Path(_sidecar(prev)).unlink(missing_ok=True)
             prev = path or prev
             if path and not chosen:
                 chosen = True
