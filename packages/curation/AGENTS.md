@@ -102,6 +102,23 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   judge twice**: `generate` replays the previous run's sidecar (`--contextual-replay`)
   when it regenerates with the model's start words, and `--retry <puzzle.json>` keeps the
   erased draft's scores for the same trio (another trio runs the judge again).
+- **The judge strikes the holes the sentence hands over (#308, user-decided 2026-09-22,
+  calibrated on REAL play).** After the reader's obviousness filter, `curate.strike_giveaways`
+  asks Jev three yes/no questions per open word on the blanked sentence (would a reader
+  write it · it or a direct synonym · does a fixed expression call for it —
+  `contextual_rank.giveaway`, their mean) and strikes a word at `GIVEAWAY_MAX = 0.45`. The
+  threshold comes from the round logs: every published hole labelled by the share of
+  players who typed the secret within three guesses (84 holes; "too easy" ≥ 35 %); the
+  measure has AUC 0.73 and at 0.45 strikes 11 of the 20 easy holes for 8 good ones lost
+  of 64 — a lost good hole is cheap here, a given-away day is not. It exists because the
+  2026-09-21 day was over in 5 tries: the reader had judged « silence » and « enseignant »
+  open, and a third of the players typed a secret as their first word. The same guesses
+  replayed on a STATIC map of that puzzle landed just as close, so the contextual ranking
+  was not the cause. The sentence is rendered exactly as it was calibrated (lowercase,
+  one `_____` glyph). **Measured and rejected**: striking a hole whose reader's fillers
+  are close synonyms of it (AUC ≈ 0.5 on the 36 holes with logged fillers — « douceur »
+  had a rank-1 filler and played well). Known limit: about half the easy holes are not
+  predicted by these questions.
 - **The LLM never sees an invalid option.** `rules.initial_candidates` builds the list it
   picks from; `rules.prune` shrinks it after every pick; a pick off the list is ignored.
   The model chooses, code enforces. Tunables live at the top of `rules.py`:

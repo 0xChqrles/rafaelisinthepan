@@ -174,3 +174,30 @@ def test_retry_reuses_scores_only_for_unchanged_context(tmp_path, monkeypatch, c
                              replay=str(sidecar))
     assert result == output
     assert seen == [str(sidecar) if change is None else None]
+
+
+# --- the giveaway gate (calibrated on real play, 2026-09-22) ------------------------------
+class _Tok:
+    def __init__(self, i, text):
+        self.i, self.text, self.slug = i, text, text.lower()
+
+
+def test_strike_giveaways_removes_what_the_sentence_hands_over_and_judges_each_word_once():
+    toks = [_Tok(0, "le"), _Tok(1, "silence"), _Tok(2, "se"), _Tok(3, "faisait"), _Tok(4, "silence")]
+    cands = [toks[1], toks[3], toks[4]]
+    occ = {"silence": {1, 4}, "faisait": {3}}
+    asked = []
+
+    class J:
+        usage = {"input_tokens": 0, "output_tokens": 0}
+
+        def noul(self, state, questions):
+            asked.append(state)
+            p = 0.8 if state["mot"] == "silence" else 0.2
+            return {k: p for k in questions}
+    log = Log()
+    kept = curate.strike_giveaways(log, toks, cands, occ, judge=J())
+    assert [t.text for t in kept] == ["faisait"]
+    assert len(asked) == 2                                   # one judgement per distinct word
+    assert asked[0]["phrase_a_trou"].count("____") == 2      # every occurrence blanked
+    assert any("GIVEN AWAY" in line and "silence" in line for line in log)

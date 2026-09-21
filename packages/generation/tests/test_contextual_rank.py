@@ -97,6 +97,34 @@ def test_pairwise_orientation_is_seeded_and_deterministic():
     assert judge.calls[0] == judge.calls[1] and a == b
 
 
+def test_flat_front_keeps_pairwise_order_and_replays_with_unchanged_geometry():
+    scores = {"a": 3.0, "b": 3.0, "c": 3.0, "tied_tail": 3.0, "tail": 0.0}
+    candidates = _cands(list(scores))
+    judge = FakeJudge(scores, {"a": 1, "b": 2, "c": 3})
+    ranked, record = cr.rerank(CTX, candidates, judge, pairwise_top=3)
+    assert [r.label for r in ranked] == ["c", "b", "a", "tied_tail", "tail"]
+    assert [r.similarity for r in ranked] == [3.0, 3.0, 3.0, 3.0, 0.0]
+    replay = cr.ReplayJudge({"sentence": CTX.sentence, "before": [], "after": [],
+                             "holes": [record]})
+    again, _ = cr.rerank(CTX, candidates, replay, pairwise_top=3)
+    assert again == ranked
+
+
+def test_flat_front_equal_pairwise_verdicts_keep_static_tie_break():
+    judge = FakeJudge({"a": 3.0, "b": 3.0, "c": 3.0, "tail": 0.0})
+    ranked, _ = cr.rerank(CTX, _cands(list(judge.scores)), judge, pairwise_top=3)
+    assert [r.label for r in ranked] == ["a", "b", "c", "tail"]
+
+
+def test_flat_front_demotions_do_not_keep_pairwise_priority():
+    scores = {"a": 3.0, "b": 3.0, "c": 3.0, "tail": 0.0}
+    judge = FakeJudge(scores, {"a": 1, "b": 2, "c": 3})
+    ranked, _ = cr.rerank(CTX, _cands(list(scores)), judge, pairwise_top=3,
+                          foreign=lambda w: w in {"b", "c"})
+    assert [r.label for r in ranked] == ["a", "b", "c", "tail"]
+    assert [r.similarity for r in ranked] == [3.0, 0.0, 0.0, 0.0]
+
+
 def test_english_dominant_labels_are_demoted_to_the_tail():
     fr = {"retirement": 74904, "pension": 5350, "feeling": 17261, "cotiser": 20000}
     en = {"retirement": 2280, "pension": 4031, "feeling": 2302}
@@ -530,3 +558,17 @@ def test_a_question_that_dies_on_the_second_secret_precedes_the_first_walk(monke
             forms_by_lemma=FORMS, donors=_resolver(interactive=False))
     assert asked == ["doucement", "jardin"]
     assert walked == []  # no ranking was computed: no judge call would have been paid
+
+
+# --- the giveaway measure (threshold calibrated on real play, 2026-09-22) ------------------
+def test_giveaway_is_the_mean_of_the_three_questions_on_the_blanked_sentence():
+    seen = []
+
+    class J:
+        def noul(self, state, questions):
+            seen.append((state, questions))
+            return {"exact": 0.9, "syn": 0.6, "colloc": 0.3}
+    assert cr.giveaway(J(), "le ____ se faisait", "silence") == pytest.approx(0.6)
+    assert seen[0][0] == {"phrase_a_trou": "le ____ se faisait", "mot": "silence"}
+    assert set(seen[0][1]) == {"exact", "syn", "colloc"}
+    assert 0 < cr.GIVEAWAY_MAX < 1

@@ -72,6 +72,13 @@ SENTENCE_ALONE_MIN = 0.35   # a candidate sentence must stand without its page (
                             # days: min 0.39; clears ~46 % of a novel's candidates)
 SENTENCE_IMAGE_MIN = 0.3    # ... and carry an image or a turn (published days: min 0.31)
 SENTENCE_FAMOUS_MAX = 0.6   # ... and not be a famous line (published days: max 0.5)
+GIVEAWAY_MAX = 0.45         # a hole the sentence hands over (mean of GIVEAWAY_QUESTIONS). Calibrated
+                            # 2026-09-22 on 84 published holes labelled by REAL play (share of players
+                            # typing the secret within 3 guesses; "too easy" = >= 35 %, 20 holes):
+                            # AUC 0.73; at 0.45 it strikes 19 holes, 11 truly easy, 8 good ones lost
+                            # of 64 (0.5: 8 easy / 6 lost; 0.4: 11 / 13) — in curation a lost good
+                            # hole is cheap, a given-away day is not. It catches about HALF the easy
+                            # holes: the rest are not predicted by these questions
 
 SCORE_INSTRUCTIONS = (
     "Dans la phrase `phrase`, le mot secret `secret` (lexème `lexeme_secret`) est employé "
@@ -129,6 +136,22 @@ SENTENCE_QUESTIONS = {
               "Plate, abstraite ou purement descriptive"),
     "celebre": ("Est-ce une citation célèbre, largement connue et reprise ?",
                 "Une phrase-culte qu'un lecteur reconnaît", "Une phrase ordinaire de l'œuvre"),
+}
+
+
+GIVEAWAY_QUESTIONS = {
+    "exact": ("Un lecteur qui lit `phrase_a_trou` sans aucun autre indice écrirait-il spontanément "
+              "le mot `mot` (ou une de ses formes) dans le blanc ?",
+              "La plupart des lecteurs écriraient ce mot",
+              "Les lecteurs écriraient autre chose, ou hésiteraient entre des mots très différents"),
+    "syn": ("Un lecteur qui lit `phrase_a_trou` sans aucun autre indice écrirait-il spontanément "
+            "le mot `mot` OU un synonyme direct de ce mot dans le blanc ?",
+            "La plupart des lecteurs écriraient ce mot ou un synonyme direct",
+            "Les lecteurs écriraient des mots d'un autre sens, ou hésiteraient entre des idées différentes"),
+    "colloc": ("Dans `phrase_a_trou`, les mots voisins du blanc forment-ils avec `mot` une expression "
+               "figée ou une association très fréquente qui le rend presque automatique ?",
+               "Oui, l'expression ou l'association appelle ce mot",
+               "Non, beaucoup de mots différents iraient aussi bien"),
 }
 
 
@@ -387,9 +410,13 @@ def rerank(context, candidates, judge, *, pairwise_top=PAIRWISE_TOP, foreign=Non
             if foreign(labels[i]):
                 sim[i] = 0.0
                 demoted.append(labels[i])
-    # final order: similarity desc, static position asc
+    # A flat pass-1 span collapses distinct win rates onto one similarity.
+    # Preserve the pairwise verdict there (and ahead of tied tail candidates);
+    # only equal verdicts fall back to static position. Demotions still tie at 0.
     final = sorted(front + order[n_front:],
-                   key=lambda i: (-sim[i], candidates[i].static_pos))
+                   key=lambda i: (-sim[i],
+                                  -win.get(i, -1.0) if labels[i] not in demoted else 1.0,
+                                  candidates[i].static_pos))
     ranked = [Ranked(candidates[i].key, labels[i], sim[i], candidates[i].static_pos,
                      scores[i], win.get(i), labels[i] in demoted) for i in final]
     record = {
@@ -487,6 +514,15 @@ def sentence_passes(scores):
     """The loose sentence filter: what the curator should not have to read."""
     return (scores["autonome"] >= SENTENCE_ALONE_MIN and scores["image"] >= SENTENCE_IMAGE_MIN
             and scores["celebre"] <= SENTENCE_FAMOUS_MAX)
+
+
+def giveaway(judge, blanked, word):
+    """How strongly the sentence hands a hole over, 0..1: the mean of three yes/no
+    probabilities on the sentence with the word blanked — would a reader write it, would
+    they write it or a direct synonym, does a fixed expression call for it. One request
+    per word, the state shaped exactly as it was when GIVEAWAY_MAX was calibrated."""
+    probs = judge.noul({"phrase_a_trou": blanked, "mot": word}, GIVEAWAY_QUESTIONS)
+    return sum(probs[k] for k in GIVEAWAY_QUESTIONS) / len(GIVEAWAY_QUESTIONS)
 
 
 def english_dominance(fr_rank, en_rank, ratio=EN_DOMINANCE_RATIO, floor=EN_DOMINANCE_FLOOR):

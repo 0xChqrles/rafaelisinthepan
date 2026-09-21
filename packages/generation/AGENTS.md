@@ -508,7 +508,8 @@ output filename contains the three distinct secret slugs in sentence order.
   start-rank band `100–150` (`start_word.py`, user-decided 2026-09-07; was 50–150),
   `CONTEXT_BAND = (250, 400)` for a contextual map (#308), `PAIRWISE_TOP = 200` /
   `SCORE_BATCH = 50` / `PAIR_BATCH = 40` / `NOUL_BATCH = 40` / `WORKERS = 6`, filter
-  thresholds `START_FIT_MIN = 0.5` / `HOLE_READABLE_MIN = 0.6` / `SAME_CONCEPT_MAX = 0.6`
+  thresholds `START_FIT_MIN = 0.5` / `HOLE_READABLE_MIN = 0.6` / `SAME_CONCEPT_MAX = 0.6`,
+  the curator's `GIVEAWAY_MAX = 0.45` (calibrated on real play, 2026-09-22; curation `AGENTS.md`)
   (`contextual_rank.py`).
   `PLAYABILITY_TOP` is a curator report window sized for a sentence hole's near field.
 - **Playability report (#135):** `build_playability_report` reads (never mutates)

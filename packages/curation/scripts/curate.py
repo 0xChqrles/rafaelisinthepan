@@ -535,6 +535,39 @@ def judge_sentences(log: Log, sentences: list[str], judge=None) -> list[str]:
     return [s for s, _sc in kept]
 
 
+def strike_giveaways(log: Log, tokens, candidates, occurrences, judge=None):
+    """The candidates the sentence does not hand over, by the judge's measure
+    (`contextual_rank.giveaway`, threshold `GIVEAWAY_MAX`, calibrated on how fast real
+    players found every published hole). Each distinct word is judged once, every
+    occurrence blanked, the rest of the sentence intact and no start word — the reader's
+    own view. A filter only removes; the order is kept."""
+    if not candidates:
+        return candidates
+    if judge is None:
+        try:
+            judge = contextual_rank.JevJudge(contextual_rank.read_api_key(os.environ))
+        except contextual_rank.ContextualError as exc:
+            die(f"giveaway judge: {exc}")
+    verdict: dict[str, float] = {}
+    kept = []
+    for t in candidates:
+        if t.slug not in verdict:
+            try:
+                # rendered EXACTLY as the threshold was calibrated: lowercase, one blank glyph
+                shown = llm.holed(tokens, occurrences[t.slug] - {t.i}, t.i)
+                shown = shown.replace("[____]", "\0").replace("____", "_____").replace("\0", "_____").lower()
+                verdict[t.slug] = contextual_rank.giveaway(judge, shown, t.text.lower())
+            except contextual_rank.ContextualError as exc:
+                die(f"giveaway judge: {exc}")
+            if verdict[t.slug] >= contextual_rank.GIVEAWAY_MAX:
+                log(f"- '{t.text}' is GIVEN AWAY by the sentence (judge {verdict[t.slug]:.2f} ≥ "
+                    f"{contextual_rank.GIVEAWAY_MAX}) — struck")
+        if verdict[t.slug] < contextual_rank.GIVEAWAY_MAX:
+            kept.append(t)
+    log("- judge, given away: " + ", ".join(f"{s} {v:.2f}" for s, v in verdict.items()))
+    return kept
+
+
 def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str]) -> list[dict]:
     sentences = [s for s in mined if shelf_mod.sentence_key(s) not in exclude]
     if not sentences:
@@ -599,6 +632,10 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
                                        frequency_rank=frequency_rank, log=filter_log)
     for event in filter_log.events:
         log(f"- {event}")
+    # The judge's second opinion (#308, 2026-09-22): the reader above misjudged the
+    # 2026-09-21 day (« silence », « enseignant » typed by 13 players of 31 within three
+    # guesses). A word the sentence hands over is struck, on a threshold set from real play.
+    candidates = strike_giveaways(log, tokens, candidates, occurrences)
     if len({t.slug for t in candidates}) < rules.TRIO:
         log(f"- rejected: fewer than {rules.TRIO} words the context leaves open")
         return None
