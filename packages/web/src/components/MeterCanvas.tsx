@@ -13,20 +13,21 @@ import { T0, noise3 } from './noise';
 //
 // AND THE SEA (user-decided 2026-09-22, the activated hole: "a new kind of hole design…
 // something between the full blue hole and the empty white one, with moving waves maybe,
-// some perlin noise"): once the meter is full and the hole ACTIVE, the same cells and the
-// same thresholds are driven by a FIELD instead of a ramp — one octave of value noise
-// scrolled sideways through the word, so WHITE cells drift through the COBALT ground like
-// swell passing under it (the colours REVERSED on the user's review, 2026-09-22, "for a
-// better word readability": the dark ink sits mostly on the solve ink, as the full meter
-// already showed it, and the white is the wave). Cells on or off, never alpha: the noise
-// thresholded through the dither reads as pixel art, where a smooth wash would read as
-// the gradient the rebrand banned. STEPPED at the strike sheets' own rate, not 60fps, and
-// slow: this is a permanent animation on the sentence, and the word's ink has to stay
-// readable over it, so the field holds around half coverage. Reduced motion holds one
-// frame of it. The sea is ONE clock (`performance.now()`) on every surface that draws it,
-// and EVERY HOLE ITS OWN FIELD (`seed`, user-decided 2026-09-22: "each hole should have a
-// different seed") — the same material, not the same picture, from one chip to the next
-// and from one given word to the next.
+// some perlin noise"): once the meter is full and the hole ACTIVE, the chip is a FIELD —
+// one octave of value noise scrolled sideways through the word, cobalt swell drifting
+// through the white ground under the dark ink. SMOOTH, NOT DITHERED (the user's third
+// pass the same day: the dither, in both colour orders, was "still hard to read… let's
+// try something smooth just to see"): the field is painted at cell resolution into an
+// offscreen bitmap as the solve ink at the wave's own alpha and drawn up to the chip
+// through bilinear smoothing — a wash, deliberately, the one the rebrand otherwise bans,
+// because a hole that has activated has to "hit different". Biased to white (`SEA_BIAS`)
+// so the ink sits on white more often than not, never bare cobalt (`SEA_FLOOR`). STEPPED
+// at the strike sheets' own rate, not 60fps, and slow: this is a permanent animation on
+// the sentence. Reduced motion holds one frame of it. The sea is ONE clock
+// (`performance.now()`) on every surface that draws it, and EVERY HOLE ITS OWN FIELD
+// (`seed`, user-decided 2026-09-22: "each hole should have a different seed") — the same
+// material, not the same picture, from one chip to the next and from one given word to
+// the next. The GLOW that goes with it on the sentence's chip is CSS (`.hole-meter.sea`).
 //
 // A canvas, because CSS cannot threshold a gradient through a pattern. It fills the meter's
 // box (the chip's, `.hole-meter`), follows the box's size — the word's width changes as it
@@ -70,7 +71,7 @@ const SEA_FRAME_MS = 80;
 // field (the burst, and the recede, are for the moment it happens, not for history).
 const SEA_RECEDE_MS = 700;
 
-// The WHITE coverage at a cell: the noise, read at this seed's own place in the field.
+// The WHITE at a cell, 0–1: the noise, read at this seed's own place in the field.
 function seaDensity(cx: number, cy: number, seconds: number, seed: number): number {
   const n = noise3(
     cx / SEA_CELLS_X - seconds * SEA_DRIFT + seed * 101.7,
@@ -104,17 +105,15 @@ export default function MeterCanvas({
   const drewRamp = useRef(false);
   const seaLoop = useRef<{ timer: number; raf: number }>({ timer: 0, raf: 0 });
 
-  // One painting for both readings: every cell whose Bayer threshold is under the density
-  // at its place is inked — in the meter's colour on the ramp; on the sea, REVERSED: the
-  // canvas is the solve ink edge to edge and the inked cells are CLEARED, so the chip's
-  // white shows through them as the wave.
-  const paint = useCallback((density: (cx: number, cy: number) => number, reversed = false) => {
+  // The canvas, sized to its box at the device's resolution, with a 2d context ready to
+  // draw in CSS pixels; null while the box has no size.
+  const prepare = useCallback(() => {
     const canvas = ref.current;
     const box = canvas?.parentElement;
-    if (!canvas || !box) return;
+    if (!canvas || !box) return null;
     const w = box.clientWidth;
     const h = box.clientHeight;
-    if (!w || !h) return;
+    if (!w || !h) return null;
     const dpr = window.devicePixelRatio || 1;
     const bw = Math.round(w * dpr);
     const bh = Math.round(h * dpr);
@@ -123,24 +122,65 @@ export default function MeterCanvas({
       canvas.height = bh;
     }
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) return null;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = getComputedStyle(canvas).color;
-    if (reversed) ctx.fillRect(0, 0, w, h);
-    const cols = Math.ceil(w / CELL_PX);
-    const rows = Math.ceil(h / CELL_PX);
-    for (let cx = 0; cx < cols; cx += 1) {
-      for (let cy = 0; cy < rows; cy += 1) {
-        const d = density(cx, cy);
-        if (d <= 0) continue;
-        if (BAYER_8[(cy & 7) * 8 + (cx & 7)] < d * 64) {
-          if (reversed) ctx.clearRect(cx * CELL_PX, cy * CELL_PX, CELL_PX, CELL_PX);
-          else ctx.fillRect(cx * CELL_PX, cy * CELL_PX, CELL_PX, CELL_PX);
+    return { canvas, ctx, w, h, cols: Math.ceil(w / CELL_PX), rows: Math.ceil(h / CELL_PX) };
+  }, []);
+
+  // The RAMP's painting: every cell whose Bayer threshold is under the density at its
+  // place is inked in the meter's colour.
+  const paint = useCallback(
+    (density: (cx: number, cy: number) => number) => {
+      const p = prepare();
+      if (!p) return;
+      const { canvas, ctx, cols, rows } = p;
+      ctx.fillStyle = getComputedStyle(canvas).color;
+      for (let cx = 0; cx < cols; cx += 1) {
+        for (let cy = 0; cy < rows; cy += 1) {
+          const d = density(cx, cy);
+          if (d <= 0) continue;
+          if (BAYER_8[(cy & 7) * 8 + (cx & 7)] < d * 64) ctx.fillRect(cx * CELL_PX, cy * CELL_PX, CELL_PX, CELL_PX);
         }
       }
-    }
-  }, []);
+    },
+    [prepare],
+  );
+
+  // The SEA's painting: the solve ink at each cell's own alpha, on a bitmap one pixel a
+  // cell, drawn up to the chip through the browser's bilinear smoothing.
+  const bitmap = useRef<HTMLCanvasElement | null>(null);
+  const wash = useCallback(
+    (alpha: (cx: number, cy: number) => number) => {
+      const p = prepare();
+      if (!p) return;
+      const { canvas, ctx, w, h, cols, rows } = p;
+      const off = (bitmap.current ??= document.createElement('canvas'));
+      if (off.width !== cols || off.height !== rows) {
+        off.width = cols;
+        off.height = rows;
+      }
+      const octx = off.getContext('2d');
+      if (!octx) return;
+      const [r, g, b] = (getComputedStyle(canvas).color.match(/\d+/g) ?? ['74', '106', '255']).map(Number);
+      const img = octx.createImageData(cols, rows);
+      const d = img.data;
+      for (let cy = 0; cy < rows; cy += 1) {
+        for (let cx = 0; cx < cols; cx += 1) {
+          const i = (cy * cols + cx) * 4;
+          d[i] = r;
+          d[i + 1] = g;
+          d[i + 2] = b;
+          d[i + 3] = Math.round(255 * Math.min(1, Math.max(0, alpha(cx, cy))));
+        }
+      }
+      octx.putImageData(img, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(off, 0, 0, w, h);
+    },
+    [prepare],
+  );
 
   // The ramp: the fill's density falls from solid to nothing over about a chip's height of
   // cells ahead of the front; the front runs past the right edge by the ramp's length so
@@ -157,16 +197,16 @@ export default function MeterCanvas({
     [paint],
   );
 
-  // The sea at this instant: the white field over the solve ink, held down toward the
-  // solid chip while the recede runs.
+  // The sea at this instant: the ink's alpha is what the wave leaves of the white, held
+  // toward the solid chip while the recede runs.
   const drawSea = useCallback(
     (now: number) => {
       const seconds = now / 1000;
       const since = seaSince.current;
       const risen = since === null ? 1 : Math.min(1, (now - since) / SEA_RECEDE_MS);
-      paint((cx, cy) => risen * seaDensity(cx, cy, seconds, seed), true);
+      wash((cx, cy) => 1 - risen * seaDensity(cx, cy, seconds, seed));
     },
-    [paint, seed],
+    [wash, seed],
   );
 
   // What the canvas shows right now, whichever reading it is on.

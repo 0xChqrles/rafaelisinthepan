@@ -1576,6 +1576,29 @@ input {
   color: var(--accent);
   image-rendering: pixelated;
 }
+/* THE ACTIVE HOLE GLOWS (user-asked 2026-09-22, "some subtle glow, we really need to feel
+   like this hole hits different, without being too much"): a soft cobalt light around the
+   sentence's chip, breathing slowly. The one lit thing on the board, by the user's call
+   over the rebrand's no-glow rule — and only on the sentence: a listed given word carries
+   the sea without the light. Drawn by the meter box (a box-shadow paints outside its own
+   overflow), so it sits exactly on the chip and moves with the shake. */
+.phrase .hole-meter.sea {
+  animation: sea-glow 3.2s ease-in-out infinite alternate;
+}
+@keyframes sea-glow {
+  from {
+    box-shadow: 0 0 10px 1px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  to {
+    box-shadow: 0 0 18px 4px color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .phrase .hole-meter.sea {
+    animation: none;
+    box-shadow: 0 0 14px 2px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+}
 /* THE LOOT IS BLOOD (user-decided 2026-09-15, in three passes: "a bit shy" → "drops
    particles around the hole, then gathers them on the bar" → "it should feel like blood…
    the hole is an enemy, you hit it, blood around it, a short pause, then gathered on the

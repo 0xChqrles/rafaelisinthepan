@@ -322,7 +322,7 @@ export default function Hole({
               the shaking word, not the static wrap, for the chip's own reason: it is part
               of the chip. */}
           {!solving && charge ? (
-            <span className="hole-meter" aria-hidden="true">
+            <span className={`hole-meter${seaShown ? ' sea' : ''}`} aria-hidden="true">
               <MeterCanvas
                 value={charge.value}
                 delayMs={meterDelayMs}

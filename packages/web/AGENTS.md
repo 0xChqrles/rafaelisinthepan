@@ -255,13 +255,19 @@ These are decided and verified against the code. Treat them as load-bearing.
   wears once found); and then **THE SEA — THE ACTIVE HOLE'S OWN DRESS (user-decided
   2026-09-22: "a new kind of hole design… something between the full blue hole and the
   empty white one, with moving waves maybe, some perlin noise")**: the full chip RECEDES
-  into a FIELD — the same 2px cells and Bayer thresholds driven by one octave of value
-  noise (`components/noise.ts`, shared with `AccountMark`) scrolled sideways through the
-  word: COBALT swell drifting through the WHITE ground under the dark ink (the colours
-  reversed on the user's review the same day "for a better word readability" — the canvas
-  is the solve ink with the white cells CLEARED out of it, biased to white, `SEA_BIAS`),
-  never bare cobalt (`SEA_FLOOR`) and never alpha (cells on or off: the dither reads as
-  pixel art where a wash would read as the banned gradient), STEPPED at `SEA_FRAME_MS` = 80
+  into a FIELD — one octave of value noise (`components/noise.ts`, shared with
+  `AccountMark`) scrolled sideways through the word: COBALT swell drifting through the
+  WHITE ground under the dark ink, biased to white (`SEA_BIAS`), never bare cobalt
+  (`SEA_FLOOR`). **SMOOTH, WITH A GLOW (user-asked 2026-09-22, the third pass of the day,
+  after a dither in both colour orders was "still hard to read": "let's try something
+  smooth just to see, and with maybe some subtle glow, we really need to feel like this
+  hole hits different, without being too much")**: the field is painted at cell
+  resolution as the solve ink at the wave's alpha and drawn up through bilinear smoothing
+  — a WASH, the one the rebrand otherwise bans, by the user's call — and the SENTENCE's
+  chip alone wears a soft cobalt box-shadow that breathes (`.hole-meter.sea`, `sea-glow`,
+  3.2s; static under reduced motion): the one lit thing on the board. A listed given word
+  carries the sea without the light. (The dithered sea — Bayer cells on or off, first
+  cobalt on white, then reversed — is what it replaced.) STEPPED at `SEA_FRAME_MS` = 80
   and slow (`SEA_DRIFT`/`SEA_EVOLVE`), ONE clock on every surface and **EVERY HOLE ITS OWN
   FIELD** (`seed` — the hole's index, a listed word's rank; user-decided the same day:
   "each hole should have a different seed"); it stands until the hole is inked in. A hole
