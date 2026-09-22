@@ -304,3 +304,11 @@ def test_the_expected_strike_spares_a_rare_word_the_count_rule_still_judges():
     fillers = lambda t: ([t.text, "ronde"], t.text)  # noqa: E731
     assert "chat" not in {t.text for t in open_candidates(cands, fillers=fillers, neighbour_rank=no_rank, frequency_rank=rank)}
 
+
+def test_static_distance_does_not_reject_an_otherwise_open_hole():
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    # These raw static ranks cannot say whether a filler is close in the shipped
+    # contextual map. Multiple distinct alternatives still leave an open hole.
+    kept = open_candidates(cands, fillers=lambda _t: (["table", "chaise", "place"], None),
+                           neighbour_rank=lambda _t, _w: 1100)
+    assert kept == cands

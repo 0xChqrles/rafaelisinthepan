@@ -14,13 +14,14 @@ generation's output directory.
 import argparse
 from datetime import date, datetime, timezone
 import json
+import os
 from pathlib import Path
-import random
 import re
 import subprocess
 import sys
 
 import _paths
+import contextual_rank  # the #308 judge: sentence pre-filter + shortlist order (generation/scripts)
 from slug import slug
 
 import llm
@@ -34,11 +35,15 @@ from parse import parse, parse_many
 from sentences import EXCERPT_SENTENCES, EXCERPT_WINDOW, candidate_sentences, cut_excerpt, excerpt_around
 
 LANGS = ("fr",)
-# Candidate sentences shown to the model per book (a random sample above this).
+# Candidate sentences shown to the model per book: the BEST by the judge's image score
+# (#308, 2026-09-20; was a random sample) after its loose sentence filter.
 MAX_SENTENCES = 600
 CHUNK = 150
 PICKS_PER_CHUNK = 6
 SHORTLIST = 20
+# The music stream: a song is picked when the archive shows no music day within this
+# many days (one or two a week; user-decided 2026-09-20, a rule in code, no model call).
+MUSIC_EVERY_DAYS = 4
 # gen_phrase runs per sentence (one per form question the LLM answers).
 MAX_GEN_RUNS = 6
 
@@ -146,8 +151,10 @@ _WRITTEN = re.compile(r"écrite dans (\S+) :")
 
 
 def run_gen_phrase(sentence: str, words: list[str], source: dict, forms: dict[str, str], lang: str,
-                   starts: dict[str, str] | None = None):
+                   starts: dict[str, str] | None = None, replay: str | None = None):
     cmd = ["uv", "run", "scripts/gen_phrase.py", sentence, "--lang", lang, "--words", *words]
+    if replay:  # #308: a rerun rebuilds the same contextual map from the first run's sidecar
+        cmd += ["--contextual-replay", replay]
     for key in ("kind", "author", "work"):
         if source.get(key):
             cmd += [f"--{key}", source[key]]
@@ -167,9 +174,14 @@ def run_gen_phrase(sentence: str, words: list[str], source: dict, forms: dict[st
     return completed, cmd
 
 
+def _sidecar(puzzle_path: str) -> str:
+    """The judge's scores gen_phrase writes beside a puzzle (#308)."""
+    return puzzle_path[:-len(".json")] + ".contextual.json"
+
+
 def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], source: dict, lang: str,
              context: dict[str, str] | None = None, frequency_rank=lambda t: None,
-             pairs: dict[str, set[str]] | None = None):
+             pairs: dict[str, set[str]] | None = None, replay: str | None = None):
     """Returns the written puzzle path, or None with the reason logged. The forms are
     answered by the model as gen_phrase asks. The first successful run only supplies the
     rank maps: the START WORDS are then chosen by the model, the three together, from
@@ -179,16 +191,38 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
     forms: dict[str, str] = {}
     starts: dict[str, str] = {}
     tried: dict[str, set[str]] = {}  # every start a hole has shown, secret slug -> words
+    if replay:  # an erased draft's scores require the same trio AND context
+        try:
+            recorded = json.loads(Path(replay).read_text(encoding="utf-8"))
+            scored = {slug(h["secret"]) for h in recorded["holes"]}
+            excerpt = source.get("excerpt") or {}
+            same_context = (recorded["sentence"] == sentence
+                            and recorded["before"] == excerpt.get("before", [])
+                            and recorded["after"] == excerpt.get("after", []))
+        except (OSError, ValueError, KeyError, TypeError):
+            scored = set()
+            same_context = False
+        if scored != {slug(w) for w in words} or not same_context:
+            log("- the erased draft's scores cover another trio or context: the judge runs again")
+            Path(replay).unlink(missing_ok=True)
+            replay = None
     chosen = False
     rounds = 0
     prev = None
     for _ in range(MAX_GEN_RUNS + st.START_ROUNDS + 1):
-        completed, cmd = run_gen_phrase(sentence, words, source, forms, lang, starts)
+        # A rerun (new starts) never pays the judge again: it replays the scores the
+        # previous run wrote beside its puzzle (#308).
+        completed, cmd = run_gen_phrase(sentence, words, source, forms, lang, starts,
+                                        replay=_sidecar(prev) if prev else replay)
         if completed.returncode == 0:
             m = _WRITTEN.search(completed.stdout)
             path = m.group(1) if m else None
             if path and prev and path != prev:  # the file is named after its starts: a rerun leaves no orphan
                 Path(prev).unlink(missing_ok=True)
+                Path(_sidecar(prev)).unlink(missing_ok=True)
+            if path and replay and _sidecar(path) != replay:  # the erased draft's scores, now copied
+                Path(replay).unlink(missing_ok=True)
+                replay = None
             prev = path or prev
             if path and not chosen:
                 chosen = True
@@ -414,9 +448,35 @@ def choose_work(claude: llm.Claude, log: Log, args, archive: dict, index: dict, 
     if not fresh:
         die("every work on the shelf was mined, is in the archive, or is inside the artist cooldown "
             "(--retry <file> erases an attempt)")
-    work = llm.pick_book(claude, fresh, archive["works"])
-    log(f"- work: {work.get('author')} — {work.get('title')} ({work['kind']}, {work['file']}): {work.get('why', '')}")
+    work, why = pick_work(fresh, archive, index, today)
+    log(f"- work: {work.get('author')} — {work.get('title')} ({work['kind']}, {work['file']}): {why}")
     return work
+
+
+def pick_work(fresh: list[dict], archive: dict, index: dict, today: date) -> tuple[dict, str]:
+    """The next work, by rule (user-decided 2026-09-20; the model no longer picks):
+    a song when no music day is within MUSIC_EVERY_DAYS, else a book; within the
+    kind, the author never used or proposed first, then the one left longest ago, then
+    the file name — deterministic, so two runs on one shelf pick the same work."""
+    music = [w for w in fresh if w["kind"] == "music"]
+    last_music = archive.get("last_music")
+    want_music = bool(music) and (last_music is None or (today - last_music).days >= MUSIC_EVERY_DAYS)
+    pool = music if want_music else ([w for w in fresh if w["kind"] != "music"] or fresh)
+
+    def last_seen(w):
+        dates = [d for d in (archive["last_used"].get(slug(w.get("author", ""))),
+                             shelf_mod.last_proposed(index, w.get("author", ""))) if d]
+        return max(dates) if dates else None
+
+    def order(w):
+        last = last_seen(w)
+        return (last is not None, last or date.min, w["file"])
+    work = min(pool, key=order)
+    last = last_seen(work)
+    why = ("music day: none within the last "
+           f"{MUSIC_EVERY_DAYS} days; " if want_music else "") + \
+        ("author never used" if last is None else f"author last seen {last.isoformat()}")
+    return work, why
 
 
 def mine(work: dict, text: str, log: Log) -> list[str]:
@@ -446,13 +506,75 @@ def rich_enough(log: Log, sentences: list[str], lang: str, in_vocab, past_secret
     return kept
 
 
-def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str], seed: int) -> list[dict]:
+def judge_sentences(log: Log, sentences: list[str], judge=None) -> list[str]:
+    """The judge's sentence pre-filter and order (#308, 2026-09-20): every candidate is
+    scored — stands alone, carries an image, not a famous line — the loose filter
+    removes what the model should not have to read (about half a novel: lines hanging
+    on a name or a pronoun, the flat ones), and the rest is ordered by image score so
+    the MAX_SENTENCES the model reads are the best of the whole work, not a random
+    sample. A filter only removes; the model still shortlists and the curator still
+    decides. The key is the one gen_phrase needs anyway; without it this dies here,
+    before any model call."""
+    if not sentences:
+        return []
+    if judge is None:
+        try:
+            judge = contextual_rank.JevJudge(contextual_rank.read_api_key(os.environ))
+        except contextual_rank.ContextualError as exc:
+            die(f"sentence judge: {exc}")
+    try:
+        scores = contextual_rank.score_sentences(judge, sentences)
+    except contextual_rank.ContextualError as exc:
+        die(f"sentence judge: {exc}")
+    kept = [(s, sc) for s, sc in zip(sentences, scores) if contextual_rank.sentence_passes(sc)]
+    kept.sort(key=lambda item: (-item[1]["image"], -item[1]["autonome"]))
+    log(f"- judged by Jev: {len(kept)} of {len(sentences)} pass the sentence filter "
+        f"(stand alone ≥ {contextual_rank.SENTENCE_ALONE_MIN}, image ≥ "
+        f"{contextual_rank.SENTENCE_IMAGE_MIN}, famous ≤ {contextual_rank.SENTENCE_FAMOUS_MAX}); "
+        f"ordered by image ({judge.usage['input_tokens']} input tokens)")
+    return [s for s, _sc in kept]
+
+
+def strike_giveaways(log: Log, tokens, candidates, occurrences, judge=None):
+    """The candidates the sentence does not hand over, by the judge's measure
+    (`contextual_rank.giveaway`, threshold `GIVEAWAY_MAX`, calibrated on how fast real
+    players found every published hole). Each distinct word is judged once, every
+    occurrence blanked, the rest of the sentence intact and no start word — the reader's
+    own view. A filter only removes; the order is kept."""
+    if not candidates:
+        return candidates
+    if judge is None:
+        try:
+            judge = contextual_rank.JevJudge(contextual_rank.read_api_key(os.environ))
+        except contextual_rank.ContextualError as exc:
+            die(f"giveaway judge: {exc}")
+    verdict: dict[str, float] = {}
+    kept = []
+    for t in candidates:
+        if t.slug not in verdict:
+            try:
+                # rendered EXACTLY as the threshold was calibrated: lowercase, one blank glyph
+                shown = llm.holed(tokens, occurrences[t.slug] - {t.i}, t.i)
+                shown = shown.replace("[____]", "\0").replace("____", "_____").replace("\0", "_____").lower()
+                verdict[t.slug] = contextual_rank.giveaway(judge, shown, t.text.lower())
+            except contextual_rank.ContextualError as exc:
+                die(f"giveaway judge: {exc}")
+            if verdict[t.slug] >= contextual_rank.GIVEAWAY_MAX:
+                log(f"- '{t.text}' is GIVEN AWAY by the sentence (judge {verdict[t.slug]:.2f} ≥ "
+                    f"{contextual_rank.GIVEAWAY_MAX}) — struck")
+        if verdict[t.slug] < contextual_rank.GIVEAWAY_MAX:
+            kept.append(t)
+    log("- judge, given away: " + ", ".join(f"{s} {v:.2f}" for s, v in verdict.items()))
+    return kept
+
+
+def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str]) -> list[dict]:
     sentences = [s for s in mined if shelf_mod.sentence_key(s) not in exclude]
     if not sentences:
         die("no candidate sentence in this work")
     if len(sentences) > MAX_SENTENCES:
-        sentences = random.Random(seed).sample(sentences, MAX_SENTENCES)
-        log(f"- sampled {MAX_SENTENCES} of them")
+        sentences = sentences[:MAX_SENTENCES]
+        log(f"- kept the {MAX_SENTENCES} best by image")
     picks: list[dict] = []
     for start in range(0, len(sentences), CHUNK):
         picks.extend(llm.pick_from_chunk(claude, sentences[start:start + CHUNK], PICKS_PER_CHUNK))
@@ -464,7 +586,7 @@ def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str],
 
 def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: dict,
             in_vocab, similarity, frequency_rank, lang: str, window: dict | None = None,
-            quotes: list[str] = (), neighbour_rank=lambda t, w: None):
+            quotes: list[str] = (), neighbour_rank=lambda t, w: None, replay: str | None = None):
     """One sentence through the quotation test, trio search and generation. `window` is
     the raw text around it (#270), which the model CUTS into the page once the trio is
     found — so a rejected sentence never spends the call. `quotes` are the work's quoted
@@ -474,6 +596,11 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
     if hit:
         log(f"- rejected: a quoted line — « {hit} »")
         return None
+    alone = llm.stands_alone(claude, sentence)
+    if not alone["ok"]:
+        log(f"- rejected: does not stand alone — {alone['why'] or 'the model names no reason'}")
+        return None
+    log(f"- stands alone: {alone['about']}" if alone["about"] else "- stands alone")
     known = llm.widely_known(claude, sentence, book.get("author", ""), book.get("title", ""))
     log("- known-line check (annotation): "
         + ("the model thinks a reader would know it" if known["known"] else "not known off the page")
@@ -505,6 +632,10 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
                                        frequency_rank=frequency_rank, log=filter_log)
     for event in filter_log.events:
         log(f"- {event}")
+    # The judge's second opinion (#308, 2026-09-22): the reader above misjudged the
+    # 2026-09-21 day (« silence », « enseignant » typed by 13 players of 31 within three
+    # guesses). A word the sentence hands over is struck, on a threshold set from real play.
+    candidates = strike_giveaways(log, tokens, candidates, occurrences)
     if len({t.slug for t in candidates}) < rules.TRIO:
         log(f"- rejected: fewer than {rules.TRIO} words the context leaves open")
         return None
@@ -532,7 +663,8 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
     excerpt = choose_page(claude, log, sentence, window) if window else None
     if excerpt:
         source["excerpt"] = excerpt
-    return generate(claude, log, sentence, words, source, lang, context, frequency_rank, archive["pairs"])
+    return generate(claude, log, sentence, words, source, lang, context, frequency_rank, archive["pairs"],
+                    replay=replay)
 
 
 def choose_page(claude: llm.Claude, log: Log, sentence: str, window: dict) -> dict | None:
@@ -565,8 +697,10 @@ def retry_target(args, log: Log, index: dict) -> str | None:
         if work is None:
             die(f"{given.name} names no work on the shelf (source: {puzzle.get('source')})")
         args.work = work["file"]
+        sidecar = Path(_sidecar(str(given.resolve())))
+        args.replay = str(sidecar) if sidecar.is_file() else None  # its scores are reused (#308)
         shelf_mod.erase_puzzle(given.resolve())
-        log(f"- erased: {given}")
+        log(f"- erased: {given}" + (" (its contextual scores kept for the rerun)" if args.replay else ""))
         return " ".join(words)
     work = next((w for w in shelf_mod.list_works() if w["file"] == args.retry), None)
     if work is None:
@@ -591,7 +725,6 @@ def main():
                         "entry and candidate puzzles) and run on it again — or ONE SENTENCE — a "
                         "candidate puzzle file: erase it and rerun its sentence (the work read off "
                         "the puzzle's source), skipping the mining, shortlist and ranking")
-    p.add_argument("--seed", type=int, default=None, help="sample seed (default: today)")
     args = p.parse_args()
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
@@ -633,10 +766,11 @@ def main():
     else:
         proposed = {shelf_mod.sentence_key(s) for s in index["books"].get(book["file"], {}).get("sentences", ())}
         proposed |= archive["sentences"]
-        seed = args.seed if args.seed is not None else int(stamp[:10].replace("-", ""))
-        mined = rich_enough(log, mine(book, text, log), args.lang, vocab.__contains__, archive["secrets"],
-                            frequency_rank)
-        ranked = shortlist(claude, log, mined, proposed, seed)
+        # The judge first (cents, a minute), the parser only on what it keeps.
+        mined = judge_sentences(log, [s for s in mine(book, text, log)
+                                      if shelf_mod.sentence_key(s) not in proposed])
+        mined = rich_enough(log, mined, args.lang, vocab.__contains__, archive["secrets"], frequency_rank)
+        ranked = shortlist(claude, log, mined, proposed)
 
     # The work's quoted lines (the quotation test): fetched onto the shelf by
     # `pnpm shelf:quotes`, read here offline. A missing file skips the test, loudly.
@@ -661,7 +795,8 @@ def main():
         # licensed product — the line is the whole quotation).
         window = excerpt_around(text, pick["sentence"], EXCERPT_WINDOW) if book["kind"] == "book" else None
         result = attempt(claude, log, pick["sentence"], book, archive, vocab.__contains__,
-                         similarity, frequency_rank, args.lang, window, quotes, neighbour_rank)
+                         similarity, frequency_rank, args.lang, window, quotes, neighbour_rank,
+                         replay=getattr(args, "replay", None) if n == 1 else None)
         log.end_attempt(bool(result), player_view(result, book) if result else ())
         if result:
             break

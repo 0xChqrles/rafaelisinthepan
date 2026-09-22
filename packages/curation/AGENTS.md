@@ -43,16 +43,19 @@
 ## Commands
 
 ```bash
-pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <shelf file | puzzle.json>] [--blind] [--seed N]
-#   Picks a work (the model, off the shelf minus the archive minus index.json minus the
-#   artist cooldown; --work forces one; --retry <shelf file> erases a previous attempt on
+pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <shelf file | puzzle.json>] [--blind]
+#   Needs JEV_API_KEY in the environment (#308): the judge pre-filters and orders the
+#   sentences the model reads, and gen_phrase — contextual by default — needs it too.
+#   Picks a work BY RULE (2026-09-20; the model no longer picks: `curate.pick_work` —
+#   off the shelf minus the archive minus index.json minus the artist cooldown, a song
+#   when no music day is within MUSIC_EVERY_DAYS = 4, else a book, the author never
+#   used or proposed first, then the one left longest ago, then the file name; --work forces one; --retry <shelf file> erases a previous attempt on
 #   a work — its index entry and the candidate puzzle(s) it wrote under the generation
 #   output — then runs on it), mines it, and writes the first sentence that
 #   survives every rule as a puzzle under packages/generation/output/word/fr/... via
 #   gen_phrase — headless, the start word is the band's random pick, the #133 form question
 #   is answered by the model from the sentence. Exit 0 = a candidate was written (publish it
-#   yourself), 2 = every shortlisted sentence was rejected (rerun: another sample, or
-#   another work). The log is runs/<stamp>.md. --blind withholds the winning sentence,
+#   yourself), 2 = every shortlisted sentence was rejected (rerun: another work). The log is runs/<stamp>.md. --blind withholds the winning sentence,
 #   its secrets and their handling from the log and stdout (a failed attempt is still
 #   logged in full; the puzzle file is named after its START words, so its path spoils
 #   nothing): the main log gets the player's view, the start words, the source and the
@@ -83,6 +86,39 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 
 ## Stable invariants
 
+- **The judge removes what the model should not have to read, and orders the rest
+  (#308, user-decided 2026-09-20).** After the mechanical filter and BEFORE
+  `rich_enough` (the parser then reads only what the judge kept — a third of a novel),
+  `curate.judge_sentences` scores EVERY candidate with Jev (`contextual_rank
+  .score_sentences`: stands alone / carries an image / not a famous line), drops what
+  fails the loose `sentence_passes` (thresholds in `generation/scripts/contextual_rank.py`,
+  chosen so every published day passes; about half a novel goes — lines hanging on a
+  name or a pronoun, the flat ones), and the survivors are ordered by IMAGE score, so the
+  `MAX_SENTENCES` (600) the model reads are the best of the whole work — no random
+  sample any more (`--seed` is gone). A filter only removes: the model still shortlists,
+  the curator still decides. The key is the one `gen_phrase` needs anyway (contextual by
+  default since 2026-09-20); a run without it dies before any model call, never a
+  static or unfiltered fallback. Cost: a few cents per work. **A rerun never pays the
+  judge twice**: `generate` replays the previous run's sidecar (`--contextual-replay`)
+  when it regenerates with the model's start words, and `--retry <puzzle.json>` keeps the
+  erased draft's scores for the same trio (another trio runs the judge again).
+- **The judge strikes the holes the sentence hands over (#308, user-decided 2026-09-22,
+  calibrated on REAL play).** After the reader's obviousness filter, `curate.strike_giveaways`
+  asks Jev three yes/no questions per open word on the blanked sentence (would a reader
+  write it · it or a direct synonym · does a fixed expression call for it —
+  `contextual_rank.giveaway`, their mean) and strikes a word at `GIVEAWAY_MAX = 0.45`. The
+  threshold comes from the round logs: every published hole labelled by the share of
+  players who typed the secret within three guesses (84 holes; "too easy" ≥ 35 %); the
+  measure has AUC 0.73 and at 0.45 strikes 11 of the 20 easy holes for 8 good ones lost
+  of 64 — a lost good hole is cheap here, a given-away day is not. It exists because the
+  2026-09-21 day was over in 5 tries: the reader had judged « silence » and « enseignant »
+  open, and a third of the players typed a secret as their first word. The same guesses
+  replayed on a STATIC map of that puzzle landed just as close, so the contextual ranking
+  was not the cause. The sentence is rendered exactly as it was calibrated (lowercase,
+  one `_____` glyph). **Measured and rejected**: striking a hole whose reader's fillers
+  are close synonyms of it (AUC ≈ 0.5 on the 36 holes with logged fillers — « douceur »
+  had a rank-1 filler and played well). Known limit: about half the easy holes are not
+  predicted by these questions.
 - **The LLM never sees an invalid option.** `rules.initial_candidates` builds the list it
   picks from; `rules.prune` shrinks it after every pick; a pick off the list is ignored.
   The model chooses, code enforces. Tunables live at the top of `rules.py`:
@@ -117,6 +153,14 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   within `MIN_GAP` tokens ("the same part of the sentence"); lemma/morphological
   variants; anything above `COSINE_MAX` to a pick ("too similar"). `conj` siblings stay
   (a list of nouns is a good spread).
+- **The sentence must STAND ALONE, solved (user-decided 2026-09-18, on the Svevo day:
+  « c'étaient donc des nerfs parfaits » meant nothing even solved — the page is shown
+  after the solve, never during play).** One call per shortlisted sentence, before the
+  known-line annotation (`llm.stands_alone`, the rule read from the skill's `## Stands
+  alone` section): the model says in one line what the sentence is about from the
+  sentence alone and whether it stands; code STRIKES on a refusal and the log names what
+  leaned on the page. The shortlist prompts' "self-contained" wording stays as taste;
+  this is the gate.
 - **The FAMOUS LINE is a QUOTATION test, never a memory test (user-decided 2026-09-08,
   replacing the two-probe MEMORIZATION test — author + completion from the first half).**
   The model has memorised every line of a canonical book, so what it remembers says

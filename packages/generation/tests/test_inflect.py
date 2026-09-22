@@ -1533,7 +1533,7 @@ def test_no_lemmas_without_no_inflect_is_rejected(monkeypatch, capsys):
     monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False,
                         raising=False)
     monkeypatch.setattr(gen_phrase.sys, "argv", [
-        "gen_phrase.py", "la scie coupe le bois sec", "--lang", "fr",
+        "gen_phrase.py", "la scie coupe le bois sec", "--lang", "fr", "--static",
         "--words", "scie", "bois", "sec", "--no-lemmas"])
     with pytest.raises(SystemExit):
         gen_phrase.main()

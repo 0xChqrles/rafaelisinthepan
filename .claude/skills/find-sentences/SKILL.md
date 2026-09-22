@@ -42,6 +42,22 @@ the same rules headlessly; this skill is the interactive version.
    Good example: "un monde de fausses places, de fausses rues, d'avenues _fantômes_" —
    dozens of nouns fit each slot.
 
+## Stands alone (user rule 2026-09-18)
+
+**The sentence must make complete sense on its own, SOLVED, to a reader who has only
+the sentence.** The page is shown after the solve, never during play, so a line that
+leans on it is a riddle with no answer. Reject a sentence when, read alone:
+- a phrase means nothing without the page: « c'étaient donc des nerfs parfaits et ils
+  présentaient l'unique inconvénient… » (Svevo) — whose nerves, perfect at what? The
+  solved line still says nothing;
+- it concludes or contradicts an argument the reader cannot see (« donc », « pourtant »,
+  « mais » carrying the weight of the previous paragraph);
+- a pronoun or demonstrative has no referent inside the sentence and the sentence needs
+  it (« ils », « cela », « cette femme ») — « il » for an unnamed narrator is fine when
+  the line is complete without knowing who he is.
+A sentence passes when a reader can say in one line what it is about, from the sentence
+alone. The automated curator asks the model exactly that and strikes on a refusal.
+
 ## The trio rules (learned from months of player feedback)
 
 The target is a median of 10–20 tries, with the struggle spread over the SENTENCE, never

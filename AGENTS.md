@@ -161,6 +161,16 @@ is applied only to the player's raw keystrokes.
   accented display form (what the front displays, not necessarily what was typed). **Rank
   semantics:** secret = `0`; nearest group = `1`; larger = farther. Alias keys share their
   group's rank.
+- **The RANKING PROVIDER may differ by artifact (#308, user-decided 2026-09-19):** a
+  single-word artifact ranks by the static embedding; a French SENTENCE puzzle (BY
+  DEFAULT since 2026-09-20; `--static` opts out) keeps the static walk as retrieval and ORDERS its `TOP_K` groups by
+  the sense the sentence gives the secret, judged by TypeSafe's hosted Jev model (one
+  Score per candidate, then a pairwise round-robin over the front; `dq` from the judge's
+  geometry; no blend). Same groups, same keys rule, same schema — the web and the
+  backend cannot tell a contextual map from a static one, and a puzzle carries no model
+  name or score; the judge's scores live in a gitignored sidecar beside the puzzle that
+  replays byte-for-byte. The two artifacts therefore no longer promise the same lexical
+  group the same neighborhood. Rules and constants: generation `AGENTS.md`.
 - **A ranked GROUP is a playable word identity (#104/#134/#146; lemma-merged ONLY in
   `gen_phrase`'s merge walk):** inflected forms of one word are one group; the consumer key is
   opaque (a `:pos` suffix names the source entry that donated it). A group is ranked by its
@@ -204,7 +214,8 @@ in `shared/src/types.ts`, pruned into `web/src/tutorial/scripts/<lang>.word.json
 
 - **Inner rank-map semantics are the sentence schema's, unchanged**, produced by the ONE
   shared per-secret pipeline (`gen_phrase.walk_secret`): merge walk, #133 confirmation,
-  donors, `TOP_K`, `dq`, collisions. Rank 0 carries no `dq`.
+  donors, `TOP_K`, `dq`, collisions. Rank 0 carries no `dq`. Always the STATIC order:
+  a word has no sentence, so #308's contextual rerank never applies here.
 - **One flat `ranks`**; no `words`/`holes`/`start`/`start_rank`/`source`.
 
 ### Vocab metadata (#200/#201)

@@ -128,6 +128,7 @@ def archive(lang: str, today: date | None = None) -> dict:
     works, secrets, sentences = [], set(), set()
     pairs: dict[str, set[str]] = {}
     last_used: dict[str, date] = {}
+    last_music: date | None = None  # the music stream's clock (one or two days a week)
     seen = set()
     # The PAIRS come off EVERY line, a corrected day's earlier start included: it was
     # played until the correction, and the blacklist is "ever played" (PR-274 review).
@@ -153,8 +154,10 @@ def archive(lang: str, today: date | None = None) -> dict:
         if src and key[0]:
             if key[0] not in last_used or day > last_used[key[0]]:
                 last_used[key[0]] = day
+        if src.get("kind") == "music" and (last_music is None or day > last_music):
+            last_music = day
     return {"works": works, "secrets": secrets, "pairs": pairs, "sentences": sentences,
-            "last_used": last_used}
+            "last_used": last_used, "last_music": last_music}
 
 
 def in_archive(book: dict, works: list[dict]) -> bool:

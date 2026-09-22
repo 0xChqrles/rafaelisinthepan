@@ -114,31 +114,6 @@ def page_rules() -> str:
 # ---------------------------------------------------------------------------
 # Questions
 
-def pick_book(claude: Claude, books: list[dict], archive_works: list[dict]) -> dict:
-    listing = "\n".join(f"{i}. [{b.get('kind', 'book')}] {b.get('author') or '?'} — {b.get('title') or b['file']}"
-                        + (f" ({b['album']})" if b.get('album') else "")
-                        for i, b in enumerate(books))
-    used = "\n".join(f"- {w['author']} — {w['work']}" for w in archive_works) or "- (none yet)"
-    answer = claude.json(f"""You curate a daily French word game: one sentence from a book or a song, three
-words removed, the player rediscovers them. Pick the next work to mine from the shelf
-below, following this editorial line:
-
-{taste_profile()}
-
-Works already used in the archive (never the same work twice; vary authors, artists
-and eras — music is a minority stream, one or two days a week):
-{used}
-
-The shelf (index. [kind] author — title):
-{listing}
-
-Return {{"index": <int>, "why": "<one line>"}}.""")
-    idx = int(answer["index"])
-    if not 0 <= idx < len(books):
-        raise LLMError(f"book index out of range: {idx}")
-    return {**books[idx], "why": answer.get("why", "")}
-
-
 def pick_from_chunk(claude: Claude, sentences: list[str], limit: int) -> list[dict]:
     listing = "\n".join(f"{i}. {s}" for i, s in enumerate(sentences))
     answer = claude.json(f"""You curate a daily French word game: one sentence, three words removed, the
@@ -183,6 +158,31 @@ Return {{"ranked": [<index>, ...]}}, best first, at most {limit} entries.""")
         if 0 <= n < len(picks) and picks[n] not in ranked:
             ranked.append(picks[n])
     return ranked or picks[:limit]
+
+
+def stands_alone(claude: Claude, sentence: str) -> dict:
+    """Does the sentence make complete sense on its own, SOLVED, without its page? The
+    user's rule of 2026-09-18 (the Svevo day: « c'étaient donc des nerfs parfaits »
+    meant nothing even solved). A STRIKE, applied by code on the model's verdict; the
+    rule is read from the skill file."""
+    answer = claude.json(f"""A French word game shows ONE sentence from a book or song, alone. The surrounding
+page is available only after solving. Judge the complete sentence below with no context at all.
+
+{skill_section("## Stands alone")}
+
+« {sentence} »
+
+Return {{"about": "<one line: what the sentence says, from the sentence alone>",
+"stands_alone": true/false, "why": "<one line: what leans on the page, or empty>"}}.""")
+    if (not isinstance(answer, dict) or type(answer.get("stands_alone")) is not bool
+            or not isinstance(answer.get("about"), str)
+            or not isinstance(answer.get("why"), str)):
+        raise LLMError("standalone check requires a boolean verdict and string about/why fields")
+    ok = answer["stands_alone"]
+    about, why = answer["about"].strip(), answer["why"].strip()
+    if not (about if ok else why):
+        raise LLMError("standalone check requires a summary when accepted or a reason when rejected")
+    return {"ok": ok, "why": why, "about": about}
 
 
 def widely_known(claude: Claude, sentence: str, author: str, work: str) -> dict:

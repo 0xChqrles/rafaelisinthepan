@@ -117,6 +117,7 @@ def test_main_writes_one_three_slug_filename_for_repeated_holes(
             "Le chat, poursuit le chat dans le jardin.",
             "--lang",
             "fr",
+            "--static",  # the static reference: these tests assert its behaviours
             "--words",
             "jardin",
             "chat",
