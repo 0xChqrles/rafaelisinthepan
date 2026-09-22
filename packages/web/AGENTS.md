@@ -2924,8 +2924,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     on a coarse pointer — every tap line has its click twin) → tapped: "The 1000 closest words to the
     secret fill its meter. Once full, you earn a clue." → a guess that does not fill:
     `tutNear` → the obvious guess FILLS IT — no progress needed — and the hole ACTIVATES:
-    "The meter is full! 10 words close to the secret joined my tries. Click freedom¹ to
-    read them." (`tutActivatedTap`/`Click`; the tap teaches the wheel a second time) → a
+    "The meter is full! 10 new words close to the secret are revealed. Click freedom¹ to
+    read them." (`tutActivatedTap`/`Click` — fr « ont été révélés », the user's wording
+    over « ont rejoint mes essais », 2026-09-22; the tap teaches the wheel a second time) → a
     FAILED TRY after it earns the HINT
     (`hints[]`, or `pair.hint` once swapped), NEVER THE WORD (user-decided 2026-09-16,
     retiring the bot's own closing guess) → found: "You found it! You are ready for the real

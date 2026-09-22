@@ -230,10 +230,10 @@ describe('coachCopy', () => {
       'You found both in 7 tries. This one was easy: the daily sentences are harder.',
     );
     expect(coachCopy('en', { kind: 'activated', word: 'sea', rank: 1 }, stage, true)).toBe(
-      'The meter is full! 10 words close to the secret joined my tries. Tap [[w:sea^1]] to read them.',
+      'The meter is full! 10 new words close to the secret are revealed. Tap [[w:sea^1]] to read them.',
     );
     expect(coachCopy('fr', { kind: 'activated', word: 'mer', rank: 1 }, stage, false)).toBe(
-      'Jauge pleine ! 10 mots proches du secret ont rejoint mes essais. Clique sur [[w:mer^1]] pour les lire.',
+      'Jauge pleine ! 10 nouveaux mots proches du secret ont été révélés. Clique sur [[w:mer^1]] pour les lire.',
     );
     expect(coachCopy('en', { kind: 'introMeter', hole }, stage, true)).toMatch(/last word\. Tap \[\[w:islands\^10\]\] to see my tries\.$/);
     expect(coachCopy('en', { kind: 'introMeter', hole }, stage, false)).toMatch(/last word\. Click \[\[w:islands\^10\]\] to see my tries\.$/);

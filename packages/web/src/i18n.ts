@@ -463,12 +463,12 @@ const STRINGS = {
   // The activation (user-decided 2026-09-22, replacing the first letter): the given words
   // are in the word's tries, and the tap is the way to read them.
   tutActivatedTap: {
-    en: 'The meter is full! {n} words close to the secret joined my tries. Tap {word} to read them.',
-    fr: 'Jauge pleine ! {n} mots proches du secret ont rejoint mes essais. Touche {word} pour les lire.',
+    en: 'The meter is full! {n} new words close to the secret are revealed. Tap {word} to read them.',
+    fr: 'Jauge pleine ! {n} nouveaux mots proches du secret ont été révélés. Touche {word} pour les lire.',
   },
   tutActivatedClick: {
-    en: 'The meter is full! {n} words close to the secret joined my tries. Click {word} to read them.',
-    fr: 'Jauge pleine ! {n} mots proches du secret ont rejoint mes essais. Clique sur {word} pour les lire.',
+    en: 'The meter is full! {n} new words close to the secret are revealed. Click {word} to read them.',
+    fr: 'Jauge pleine ! {n} nouveaux mots proches du secret ont été révélés. Clique sur {word} pour les lire.',
   },
   tutMeterFound: {
     en: 'You found it! You are ready for the real game.',
