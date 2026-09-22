@@ -2975,8 +2975,40 @@ input {
   text-shadow: none;
 }
 /* A MASKED hint (user-decided 2026-09-22): the foil under a fixed run of `?` whatever the
-   word's length — the wheel's `MASK` — so a masked row and a masked slot read as a sealed
-   card, and say so. */
+   word's length — `MASK` — so a masked row and a masked slot read as a sealed card, and
+   say so. THE REVEAL BUTTON stands beside the slot row while it holds one: the app's
+   button at a row's size in the accent — the one act in the wheel that spends a try, so
+   it is the one drawn control in it. Positioned by the wheel off the slot row's own box. */
+.wheel-reveal {
+  --btn: var(--accent);
+  --wash: 14%;
+  position: fixed;
+  translate: 0 -50%;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1;
+  color: var(--btn);
+  background: color-mix(in srgb, var(--btn) var(--wash), transparent);
+  border: 1px solid var(--btn);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  animation: wheel-row-in 120ms ease-out both;
+}
+.wheel-reveal:hover {
+  --wash: 24%;
+}
+.wheel-reveal:active {
+  --wash: 34%;
+}
 /* Every plain row's exponent steps clear of its box's right overhang, and a few pixels
    more (user-reported 2026-09-22: "it touches it", then "a few pixel more detached"): the
    sentence chip's own nudge, in the exponent's 0.55em, plus a gap of its own. */

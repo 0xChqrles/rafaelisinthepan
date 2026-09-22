@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { rankHeatColor } from '@whippin/shared';
 import { capitalize } from '../game/sentenceCase';
-import type { HistoryModel, HistoryStop } from '../game/history';
+import { MASK, type HistoryModel, type HistoryStop } from '../game/history';
 import { wheelOrder } from '../game/wordWheel';
 import { holeTitle, srRouteStop, t } from '../i18n';
 import useDrum from '../hooks/useDrum';
@@ -53,15 +53,18 @@ import MeterCanvas from './MeterCanvas';
 // wears the regular white chip, foil or not ("when wheel focused, a word should not have
 // a moving background, just the regular white for a better UX").
 //
-// THE HINTS ARE MASKED, AND A TAP ON A MASKED SLOT REVEALS ONE — AT THE PRICE OF A GUESS
+// THE HINTS ARE MASKED, AND A REVEAL BUTTON OPENS ONE — AT THE PRICE OF A GUESS
 // (user-decided 2026-09-22: "making the hint words masked, and you can just select them
-// with the wheel, it counts as a guess… you manage your own pace"): a masked stop is a
-// foil block of fixed width — never the word's length — with its exponent, so the player
-// can choose which distance to spend a try on. It is REVEALED BY A DELIBERATE TAP ON THE
-// SLOT ROW ALONE (`onReveal`, which submits the stop's key as a guess); the fold — a tap
-// outside, Escape — closes without revealing, and never picks a masked row, so scrolling
-// past one can cost nothing. The guess lands in the log and the model re-renders the row
-// with its word; the wheel stays open. It stays a native <dialog>
+// with the wheel, it counts as a guess… you manage your own pace"): a masked stop is
+// `MASK` (`?????`) on the foil — never the word's length — with its exponent, so the
+// player can choose which distance to spend a try on. A masked row turns through the slot
+// like any row and IS PICKED LIKE ANY ROW (the sentence then shows `?????` on the hole:
+// the slot is what the hole shows, masks included — the first cut, where the fold could
+// not pick a mask and the hole snapped back to its best word, "felt weird"); while the
+// slot holds a mask, a REVEAL BUTTON stands beside it (`.wheel-reveal`, "REVEAL · 1 TRY"),
+// the one act that spends a try: `onReveal` submits the stop's key as a guess, the hits
+// land on the sentence under the dim, and the model re-renders the row with its word —
+// the wheel stays open. The slot row's own tap, a tap outside and Escape close, as ever. It stays a native <dialog>
 // because the sentence and the keyboard under it must be inert; it is the PuzzleSelect's
 // kind (a thing hanging off a control that stays on screen), so a tap outside closes it.
 
@@ -80,9 +83,8 @@ const MIN_COLUMN = 160;
 // of the word, quieter than it (user feedback 2026-09-01: same-size rows read too big).
 const ROW_SCALE = 0.8;
 const ROW_MIN_PX = 9;
-// A masked hint: this many question marks, whatever the word (the length is never given
-// away) — a sealed card says what it is (user-asked 2026-09-22: "????? instead of nothing").
-const MASK = '?????';
+// The air between the slot row's exponent and the REVEAL button.
+const REVEAL_GAP = 14;
 
 interface Anchor {
   wrap: { x: number; y: number; w: number; h: number }; // the word — the slot's place
@@ -149,8 +151,8 @@ export default function HistoryWheel({
   lang: string;
   // Absent once the round is over: the solved stage's words are trophies, not slots.
   onPick?: (stop: HistoryStop) => void;
-  // A masked hint in the slot, tapped: submit its key as a guess. Absent, a masked slot
-  // row is inert.
+  // The REVEAL button's act on the masked hint in the slot: submit its key as a guess.
+  // Absent (the solved stage), no button.
   onReveal?: (stop: HistoryStop) => void;
   onClose: () => void;
 }) {
@@ -235,8 +237,8 @@ export default function HistoryWheel({
   }, [anchor, drum, hubIndex]);
 
   // What the fold reads, as it is now — the fold closes over nothing stale.
-  const live = useRef({ rows, hubRank: hub.rank, onPick, onReveal });
-  live.current = { rows, hubRank: hub.rank, onPick, onReveal };
+  const live = useRef({ rows, hubRank: hub.rank, hubWord: hub.word, onPick, onReveal });
+  live.current = { rows, hubRank: hub.rank, hubWord: hub.word, onPick, onReveal };
 
   // The pick lands on the FOLD: whatever the slot holds as the dialog closes — by the
   // slot's tap, a tap outside, or Escape, one door for all three — becomes the hole's
@@ -247,10 +249,11 @@ export default function HistoryWheel({
   const fold = useCallback(() => {
     if (folded.current) return;
     folded.current = true;
-    const { rows: r, hubRank, onPick: pick } = live.current;
+    const { rows: r, hubRank, hubWord, onPick: pick } = live.current;
     const stop = r[drum.peek()];
-    // A masked hint is never picked by the fold: revealing is the slot's own tap.
-    if (pick && stop && stop.rank !== 0 && stop.rank !== hubRank && !stop.masked) pick(stop);
+    // A pick where the slot differs from what the hole shows — by rank, or by WORD at the
+    // same rank: a mask picked earlier and revealed since is the same stop with its word.
+    if (pick && stop && stop.rank !== 0 && (stop.rank !== hubRank || stop.display !== hubWord)) pick(stop);
     onClose();
   }, [drum, onClose]);
   // THE FOLD LANDS IN THE SAME TASK THAT CLOSES THE DIALOG (user-reported 2026-09-02, "the
@@ -289,21 +292,33 @@ export default function HistoryWheel({
     [drum],
   );
 
-  // A tapped row glides into the slot; the row already there is the way out — or, when it
-  // is a masked hint, the REVEAL. A drag that ended on a row is not a tap.
+  // A tapped row glides into the slot; the row already there is the way out. A drag that
+  // ended on a row is not a tap.
   const turnTo = useCallback(
     (i: number) => {
-      if (drum.tap(i) !== 'slot') return;
-      const { rows: r, onReveal: reveal } = live.current;
-      const stop = r[i];
-      if (stop?.masked) {
-        if (reveal) reveal(stop);
-        return;
-      }
-      beginClose();
+      if (drum.tap(i) === 'slot') beginClose();
     },
     [beginClose, drum],
   );
+
+  // THE REVEAL BUTTON: beside the slot row while it holds a masked hint — measured off the
+  // slot row itself once the drum settles on it, on the column's open side.
+  const [revealAt, setRevealAt] = useState<{ left: number; right: number; y: number } | null>(null);
+  const slotMasked = rows[current]?.masked === true && onReveal !== undefined;
+  useLayoutEffect(() => {
+    const el = slotRef.current;
+    if (!slotMasked || !el) {
+      setRevealAt(null);
+      return;
+    }
+    const r = el.getBoundingClientRect();
+    setRevealAt({ left: r.left, right: r.right, y: r.top + r.height / 2 });
+  }, [slotMasked, current, shift]);
+  const reveal = useCallback(() => {
+    const { rows: r, onReveal: act } = live.current;
+    const stop = r[drum.peek()];
+    if (act && stop?.masked) act(stop);
+  }, [drum]);
 
   if (!anchor) {
     return createPortal(
@@ -450,11 +465,7 @@ export default function HistoryWheel({
                 stop.best && !inSlot ? ' wheel-row-best' : ''
               }`}
               style={rowStyle(stop, inSlot, i)}
-              aria-label={
-                inSlot
-                  ? t(lang, stop.masked ? 'ariaReveal' : 'ariaClose')
-                  : srRouteStop(lang, { ...stop, word: stop.masked ? null : stop.word })
-              }
+              aria-label={inSlot ? t(lang, 'ariaClose') : srRouteStop(lang, { ...stop, word: stop.masked ? null : stop.word })}
               aria-current={inSlot ? 'true' : undefined}
               // The wheel's ONE tab stop is the row in the slot (#267): the arrows turn it.
               tabIndex={inSlot ? 0 : -1}
@@ -467,6 +478,23 @@ export default function HistoryWheel({
 
         <div className="wheel-trail" style={{ height: trailing }} />
       </div>
+      {revealAt && !closing && (
+        <button
+          type="button"
+          className="wheel-reveal"
+          style={
+            flip
+              ? { top: revealAt.y, right: anchor.width - revealAt.left + REVEAL_GAP }
+              : { top: revealAt.y, left: revealAt.right + REVEAL_GAP }
+          }
+          onClick={(e) => {
+            e.stopPropagation();
+            reveal();
+          }}
+        >
+          {t(lang, 'reveal')} · 1 {t(lang, 'try')}
+        </button>
+      )}
     </dialog>,
     document.body,
   );

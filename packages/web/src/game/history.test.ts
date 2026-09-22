@@ -12,7 +12,7 @@
 //   - SOLVING names the whole walked stretch (departure → word), flagging what the player
 //     never reached as `revealed`; a live hole names nothing it has not been to — EXCEPT
 //     what the meter GIVES (user-decided 2026-09-22): a given rank is a stop flagged
-//     `given` — MASKED (no word, its rank alone, a key to reveal it by) until the player
+//     `given` — MASKED (no word, the MASK to display, its rank, a key to reveal it by) until the player
 //     consumes it, when it stands as their typed stop wearing `given`; the solve unmasks
 //     the rest, still given, apart from what it merely names;
 //   - what stays retired: no censored census while the round is LIVE.
@@ -20,7 +20,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { RankEntry, RuntimeHole } from '@whippin/shared';
-import { buildHistory } from './history';
+import { MASK, buildHistory } from './history';
 
 const RANKS: Record<string, RankEntry> = {
   foret: { word: 'forêt', rank: 0 },
@@ -159,8 +159,8 @@ describe('buildHistory', () => {
     const live = build(['bois'], 1, [untaken(3), untaken(5), untaken(40)]);
     expect(live.stops.map((s) => [s.rank, s.word, s.display, s.given, s.masked])).toEqual([
       [1, 'bois', 'bois', false, false],
-      [3, '', '', true, true],
-      [40, '', '', true, true],
+      [3, '', MASK, true, true],
+      [40, '', MASK, true, true],
       [87, 'prairie', 'prairie', false, false],
     ]);
     expect(live.stops.find((s) => s.rank === 3)!.slug).toBe('arbre');

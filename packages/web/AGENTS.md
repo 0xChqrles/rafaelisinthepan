@@ -241,13 +241,20 @@ These are decided and verified against the code. Treat them as load-bearing.
   manage your own pace")**: a masked hint is a foil block of FIXED width (the wheel's
   `MASK`, `?????` — never the word's length; "????? instead of nothing", same day) wearing
   its EXPONENT, so the player
-  chooses which distance to spend a try on; a DELIBERATE TAP ON THE WHEEL'S SLOT ROW
-  reveals it — `HistoryWheel`'s `onReveal`, which SUBMITS the stop's key (`HistoryStop.slug`)
-  through the game's own `submit`: the word enters the play log like any typed guess,
-  counts as a try, charges the other holes, syncs, and can hit another hole — and the
-  wheel stays open with the word in place. The fold (a tap outside, Escape) closes without
-  revealing and never picks a masked row, so scrolling past one costs nothing. A given rank
-  the player had ALREADY reached is never given (they knew the word). **THE HINTS TAKEN are
+  chooses which distance to spend a try on. **A mask turns through the wheel and is PICKED
+  like any row** — fold on it and the sentence shows `?????²` on the hole's foil, display
+  only (user-decided 2026-09-22 on the first cut, where the fold could not pick a mask
+  and the hole snapped back to its best word: "it feels weird to have the closest word
+  being back") — and **while the slot holds a mask a REVEAL BUTTON stands beside it**
+  (`.wheel-reveal`, "REVEAL · 1 TRY" / "RÉVÉLER · 1 ESSAI", the one drawn control in the
+  wheel), the one act that spends a try: `HistoryWheel`'s `onReveal` SUBMITS the stop's
+  key (`HistoryStop.slug`) through the game's own `submit`, so the word enters the play
+  log like any typed guess, counts as a try, charges the other holes, syncs, can hit
+  another hole (its floats land on the sentence under the dim, which is the point: "we
+  could see the hits on other words") — and the wheel stays open with the word in the
+  slot; the fold then picks it (a re-pick at the same rank, by word). The slot row's own
+  tap, a tap outside and Escape close as ever. A given rank the player had ALREADY
+  reached is never given (they knew the word). **THE HINTS TAKEN are
   derived from the log** (`GivenRank.consumed`: a given rank guessed after it was given —
   typed by hand counts the same, "it's on them"; `hintsTaken` sums them over the distinct
   secrets) and NAMED ON THE RESULT under the tries, zero included (`.solved-score-hints`,
@@ -314,7 +321,7 @@ These are decided and verified against the code. Treat them as load-bearing.
   MOVES**: the word the wheel holds wears the regular white chip, active hole or given
   word ("when wheel focused, a word should not have a moving background, just the regular
   white for a better UX") — except a MASKED hint in the slot, which keeps its foil: it is
-  the thing to reveal (`ariaReveal`).
+  the thing the REVEAL button beside it opens.
   RETIRED with it: `.hole-initial` (the first-cell tile), `initialOf`, `srHoleInitial`, the
   `.spent` fade. Retired the same day, each on the
   user's review: a line along the chip's bottom edge and the band the chip grew for it (a
@@ -2942,9 +2949,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     secret fill its meter. Once full, you earn a clue." → a guess that does not fill:
     `tutNear` → the obvious guess FILLS IT — no progress needed — and the hole ACTIVATES:
     "The meter is full! 10 words close to the secret are masked in its tries. Click
-    freedom¹, then a masked word to reveal it — it costs a try." (`tutActivatedTap`/`Click`,
-    2026-09-22; the tap teaches the wheel a second time and the price once) → a hint
-    REVEALED from the wheel: "equality² is revealed, for one try. Now find the secret word."
+    freedom¹, choose a masked word and reveal it — it costs a try." (`tutActivatedTap`/
+    `Click`, 2026-09-22; the tap teaches the wheel a second time and the price once) → a
+    hint REVEALED with the button: "equality² is revealed, for one try. Now find the secret word."
     (`tutRevealed`, off the event's `revealed` flag) → a FAILED TRY typed after it earns the HINT
     (`hints[]`, or `pair.hint` once swapped), NEVER THE WORD (user-decided 2026-09-16,
     retiring the bot's own closing guess) → found: "You found it! You are ready for the real

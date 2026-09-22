@@ -233,10 +233,10 @@ describe('coachCopy', () => {
       'You found both in 7 tries. This one was easy: the daily sentences are harder.',
     );
     expect(coachCopy('en', { kind: 'activated', word: 'sea', rank: 1 }, stage, true)).toBe(
-      'The meter is full! 10 words close to the secret are masked in its tries. Tap [[w:sea^1]], then a masked word to reveal it — it costs a try.',
+      'The meter is full! 10 words close to the secret are masked in its tries. Tap [[w:sea^1]], choose a masked word and reveal it — it costs a try.',
     );
     expect(coachCopy('fr', { kind: 'activated', word: 'mer', rank: 1 }, stage, false)).toBe(
-      'Jauge pleine ! 10 mots proches du secret sont masqués dans ses essais. Clique sur [[w:mer^1]], puis sur un mot masqué pour le révéler, contre un essai.',
+      'Jauge pleine ! 10 mots proches du secret sont masqués dans ses essais. Clique sur [[w:mer^1]], choisis un mot masqué et révèle-le, contre un essai.',
     );
     expect(coachCopy('fr', { kind: 'revealedHint', word: 'rive', rank: 3 }, stage, true)).toBe(
       '[[w:rive^3]] est révélé, pour un essai. À toi de trouver le mot secret.',

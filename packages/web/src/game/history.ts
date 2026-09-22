@@ -17,6 +17,11 @@
 import type { RankEntry, RuntimeHole } from '@whippin/shared';
 import type { GivenRank } from './charge';
 
+// What a MASKED hint displays — in the wheel, and in the sentence when it is picked: this
+// many question marks, whatever the word's length (the length is never given away;
+// user-asked 2026-09-22: "????? instead of nothing").
+export const MASK = '?????';
+
 // One place on the line the player has actually been: a ranked group they typed, or the
 // start word they were given. Aliases collapse — a group reached through any of its
 // inflections (#104) is ONE stop.
@@ -28,7 +33,10 @@ export interface HistoryStop {
   dq: number | null;
   // What the SENTENCE would show if this stop were swapped into the hole (the net's pick,
   // 2026-09-01): the group's canonical accented form — the hole never displays a typed
-  // form, and a pick is the hole showing one of its own words.
+  // form, and a pick is the hole showing one of its own words. `MASK` on a masked hint:
+  // picking one shows the mask in the sentence (user-decided 2026-09-22 — the slot is what
+  // the hole shows, masks included; the alternative, a fold that could not pick a mask,
+  // snapped the hole back to its best word and "felt weird").
   display: string;
   // How the stop is NAMED: the form the PLAYER TYPED wherever a typed form reached it —
   // their log, their words (answering `sables` with the group's `sable` reads as a
@@ -61,7 +69,7 @@ export interface HistoryStop {
   // GIVEN by the meter (user-decided 2026-09-22): a hint the hole's activation handed over
   // — one of the `GIVEN` just above the best word, at the activation and at every later
   // improvement (`game/charge.ts`) — never withdrawn. MASKED until the player takes it: a
-  // masked stop has no word (`word` and `display` empty), only its rank; taking it —
+  // masked stop has no word (`word` empty, `display` the MASK), only its rank; taking it —
   // revealing it from the wheel, or typing it — is a guess, and the stop is then a hint
   // CONSUMED: given, unmasked, wearing the foil. The solve unmasks what was never taken.
   given: boolean;
@@ -179,7 +187,7 @@ export function buildHistory({
     byRank.set(entry.rank, {
       rank: entry.rank,
       dq: entry.dq ?? null,
-      display: masked ? '' : entry.word,
+      display: masked ? MASK : entry.word,
       word: masked ? '' : (typed ?? entry.word),
       slug: key,
       start,
