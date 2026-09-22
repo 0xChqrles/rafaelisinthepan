@@ -1,14 +1,15 @@
 // CONTRACT (#301, user-decided 2026-09-15; the activation user-decided 2026-09-22): every
 // counted guess charges every unsolved hole by its rank in that secret's map, best word or
 // not; the meter caps at 100 and a full meter ACTIVATES the hole — the GIVEN ranks just
-// above its best word are given, and every later improvement of the best gives the window
-// above the new best, the windows accumulating; rank 0 is the solve and pays nothing;
+// above its best word are given, and every later improvement of the best gives the
+// GIVEN_LATER rank(s) above the new best, the windows accumulating; rank 0 is the solve
+// and pays nothing;
 // repeated occurrences of one secret share one meter; charge is DERIVED from the play log,
 // so a replay reconstructs it exactly.
 
 import { describe, expect, it } from 'vitest';
 import type { RankMap, RuntimeHole } from '@whippin/shared';
-import { CHARGE_TARGET, GIVEN, chargeForRank, replayCharge } from './charge';
+import { CHARGE_TARGET, GIVEN, GIVEN_LATER, chargeForRank, replayCharge } from './charge';
 import type { HoleCharge } from './charge';
 import { replayHoles } from './scoring';
 
@@ -46,8 +47,8 @@ function holes(): RuntimeHole[] {
   ];
 }
 
-// The ranks best+1 … best+GIVEN.
-const above = (best: number) => Array.from({ length: GIVEN }, (_, i) => best + 1 + i);
+// The ranks best+1 … best+count.
+const above = (best: number, count = GIVEN) => Array.from({ length: count }, (_, i) => best + 1 + i);
 
 // Four near guesses that leave the meter just under full, and the fifth that fills it.
 const FOUR = ['honnete1', 'honnete5', 'honnete10', 'honnete11'];
@@ -193,14 +194,20 @@ describe('the given words — the window above the best word, from the activatio
     expect(meter.given).toEqual(above(1));
   });
 
-  it('each later improvement gives the window above the new best; earlier windows stay', () => {
-    // Active at best 10 (window 11 … 20); then the best moves to 3 (window 4 … 13): the
-    // union, ascending, without repeats.
+  it('each later improvement gives ONE word above the new best; earlier windows stay', () => {
+    // Active at best 10 (window 11 … 20); then the best moves to 3: rank 4 alone joins,
+    // then to 1: rank 2 — the union, ascending, without repeats.
+    expect(GIVEN_LATER).toBe(1);
     const log = ['honnete50', 'honnete51', 'honnete100', 'honnete21', 'honnete14', 'honnete11', 'honnete10'];
     const before = replayCharge(holes(), RANKS, log)[0];
     expect(before.given).toEqual(above(10));
     const after = replayCharge(holes(), RANKS, [...log, 'honnete3'])[0];
-    expect(after.given).toEqual([...new Set([...above(10), ...above(3)])].sort((a, b) => a - b));
+    expect(after.given).toEqual([...above(3, GIVEN_LATER), ...above(10)]);
+    expect(replayCharge(holes(), RANKS, [...log, 'honnete3', 'honnete1'])[0].given).toEqual([
+      ...above(1, GIVEN_LATER),
+      ...above(3, GIVEN_LATER),
+      ...above(10),
+    ]);
     // A guess that does not move the hole gives nothing more, near or far.
     expect(replayCharge(holes(), RANKS, [...log, 'honnete3', 'honnete5', 'honnete999'])[0].given).toEqual(after.given);
   });

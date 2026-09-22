@@ -2960,6 +2960,11 @@ input {
 .wheel-row .wheel-given .wheel-word {
   text-shadow: none;
 }
+/* The exponent steps clear of the box's right overhang (the sentence chip's own nudge,
+   in the exponent's 0.55em; user-reported 2026-09-22: "it touches it"). */
+.wheel-given .wheel-rank {
+  translate: calc(0.25em / 0.55) 0;
+}
 /* The exponent of a plain row: the hole's own superscript, in the shared heat colour. */
 .wheel-rank {
   display: inline-block;

@@ -229,10 +229,12 @@ These are decided and verified against the code. Treat them as load-bearing.
   letter — "it goes against the game core logic which is to guess with meaning not
   letters"): **the `GIVEN` = 10 words just above the hole's BEST word (ranks best+1 …
   best+10) are GIVEN — named in the hole's tries, the wheel and the words grid — and every
-  later guess that improves the best gives the window above the new best; windows
-  accumulate and nothing given is ever withdrawn** ("10 words above your closest", over
-  "everything between your closest and the start"; the user checked the play data: "10
-  more words actually always give a better idea of the concept"). A full meter takes no
+  later guess that improves the best gives `GIVEN_LATER` = 1 word, the one just above the
+  new best (calibrated the same day: "10 words everytime is maybe too much… for the next
+  words it should be one word only"); windows accumulate and nothing given is ever
+  withdrawn** ("10 words above your closest", over "everything between your closest and
+  the start"; the user checked the play data: "10 more words actually always give a
+  better idea of the concept"). A full meter takes no
   more charge. **A given word typed is a try like any other** — no scoring exemption, "if a
   user types it, it's on them" (an exemption would need the server to re-derive what was
   given when, and a given word can be a hit on another hole). No separate try/time gate, no
@@ -282,8 +284,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   WEAR THE SAME SEA WHEREVER THEY ARE LISTED** (user-decided 2026-09-22, "the given words
   should have the same effect on the guess list"): a `.wheel-given` row and a `.hw-given`
   word stand on the chip's white with the sea over it, dark ink, no print — ON THE WORD
-  ALONE, the exponent standing clear on the ground ("the exponent should be out of the
-  background") — so three grounds say three things with no label: the surface (typed),
+  ALONE, the exponent standing clear on the ground, nudged past the box's overhang ("the
+  exponent should be out of the background"; "it touches it") — so three grounds say three
+  things with no label: the surface (typed),
   the sea (given), the plain word (named by the solve). **THE WHEEL'S SLOT ROW NEVER
   MOVES**: the word the wheel holds wears the regular white chip, active hole or given
   word ("when wheel focused, a word should not have a moving background, just the regular
