@@ -80,9 +80,9 @@ const MIN_COLUMN = 160;
 // of the word, quieter than it (user feedback 2026-09-01: same-size rows read too big).
 const ROW_SCALE = 0.8;
 const ROW_MIN_PX = 9;
-// A masked hint's width: this many blank cells, whatever the word (the length is never
-// given away).
-const MASK = '\u00a0'.repeat(5);
+// A masked hint: this many question marks, whatever the word (the length is never given
+// away) — a sealed card says what it is (user-asked 2026-09-22: "????? instead of nothing").
+const MASK = '?????';
 
 interface Anchor {
   wrap: { x: number; y: number; w: number; h: number }; // the word — the slot's place
@@ -344,7 +344,7 @@ export default function HistoryWheel({
   // chip and the exponent are the sentence's own; every other row is the word, plain,
   // with its exponent raised the same way.
   const shown = (stop: HistoryStop) => (capital ? capitalize(stop.display) : stop.display);
-  // The foil a hint wears, on its word or on its mask; the mask's cells are blank.
+  // The foil a hint wears, on its word or on its mask.
   const foil = (stop: HistoryStop) => (
     <span className="wheel-sea" aria-hidden="true">
       <MeterCanvas value={100} delayMs={0} durationMs={0} sea seed={stop.rank} />

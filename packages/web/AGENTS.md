@@ -239,7 +239,8 @@ These are decided and verified against the code. Treat them as load-bearing.
   select them with the wheel, it counts as a guess, but this way users who don't want help
   don't get penalized, and those who need help just increase their score in return… you
   manage your own pace")**: a masked hint is a foil block of FIXED width (the wheel's
-  `MASK`, five blank cells — never the word's length) wearing its EXPONENT, so the player
+  `MASK`, `?????` — never the word's length; "????? instead of nothing", same day) wearing
+  its EXPONENT, so the player
   chooses which distance to spend a try on; a DELIBERATE TAP ON THE WHEEL'S SLOT ROW
   reveals it — `HistoryWheel`'s `onReveal`, which SUBMITS the stop's key (`HistoryStop.slug`)
   through the game's own `submit`: the word enters the play log like any typed guess,
@@ -309,7 +310,7 @@ These are decided and verified against the code. Treat them as load-bearing.
   ALONE, the exponent standing clear on the ground, nudged past the box's overhang ("the
   exponent should be out of the background"; "it touches it") — so three grounds say three
   things with no label: the surface (typed), the foil (given — a masked hint is the foil
-  with nothing on it), the plain word (named by the solve). **THE WHEEL'S SLOT ROW NEVER
+  under `?????`), the plain word (named by the solve). **THE WHEEL'S SLOT ROW NEVER
   MOVES**: the word the wheel holds wears the regular white chip, active hole or given
   word ("when wheel focused, a word should not have a moving background, just the regular
   white for a better UX") — except a MASKED hint in the slot, which keeps its foil: it is

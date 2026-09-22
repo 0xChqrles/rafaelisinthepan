@@ -2974,12 +2974,9 @@ input {
 .wheel-row .wheel-given .wheel-word {
   text-shadow: none;
 }
-/* A MASKED hint (user-decided 2026-09-22): the foil with nothing on it, a fixed run of
-   blank cells whatever the word's length — the wheel's `MASK` — so a masked row and a
-   masked slot read as a sealed card. */
-.wheel-mask {
-  white-space: pre;
-}
+/* A MASKED hint (user-decided 2026-09-22): the foil under a fixed run of `?` whatever the
+   word's length — the wheel's `MASK` — so a masked row and a masked slot read as a sealed
+   card, and say so. */
 /* Every plain row's exponent steps clear of its box's right overhang, and a few pixels
    more (user-reported 2026-09-22: "it touches it", then "a few pixel more detached"): the
    sentence chip's own nudge, in the exponent's 0.55em, plus a gap of its own. */
