@@ -183,7 +183,7 @@ describe('the meter stage — the bot has half played it', () => {
     b.guess('x', [null, null], { charged: false, filled: null });
     expect(coachLine(b.state(true))).toEqual({ kind: 'near', hole: expect.objectContaining({ rank: 24 }) });
     b.guess('freedom', [null, 1], { charged: true, filled: 1 });
-    expect(coachLine(b.state(true))).toEqual({ kind: 'activated', hole: expect.objectContaining({ word: 'freedom', rank: 1 }) });
+    expect(coachLine(b.state(true))).toEqual({ kind: 'activated', word: 'freedom', rank: 1 });
     b.guess('y', [null, null], { charged: false, filled: null });
     expect(coachLine(b.state(true))).toEqual({ kind: 'hint', holeIndex: 1 }); // a failed try: the hint, never the word
     b.guess('z', [null, 300], { charged: true, filled: null });
@@ -229,10 +229,10 @@ describe('coachCopy', () => {
     expect(coachCopy('en', { kind: 'solved', tries: 7 }, stage, true)).toBe(
       'You found both in 7 tries. This one was easy: the daily sentences are harder.',
     );
-    expect(coachCopy('en', { kind: 'activated', hole: { ...hole, word: 'sea', rank: 1 } }, stage, true)).toBe(
+    expect(coachCopy('en', { kind: 'activated', word: 'sea', rank: 1 }, stage, true)).toBe(
       'The meter is full! 10 words close to the secret joined my tries. Tap [[w:sea^1]] to read them.',
     );
-    expect(coachCopy('fr', { kind: 'activated', hole: { ...hole, word: 'mer', rank: 1 } }, stage, false)).toBe(
+    expect(coachCopy('fr', { kind: 'activated', word: 'mer', rank: 1 }, stage, false)).toBe(
       'Jauge pleine ! 10 mots proches du secret ont rejoint mes essais. Clique sur [[w:mer^1]] pour les lire.',
     );
     expect(coachCopy('en', { kind: 'introMeter', hole }, stage, true)).toMatch(/last word\. Tap \[\[w:islands\^10\]\] to see my tries\.$/);

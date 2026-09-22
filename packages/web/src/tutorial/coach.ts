@@ -62,8 +62,11 @@ export type CoachLine =
   // The sentence solved: the tries it took — the score, said once.
   | { kind: 'solved'; tries: number }
   // The meter stage: a chip filled to the top and the words it gave — tap the word to read
-  // them; the end, found.
-  | { kind: 'activated'; hole: RuntimeHole }
+  // them; the end, found. The word named is READ OFF THE FILLING GUESS, never the live hole:
+  // the hole swaps its word on the floating hit's beat, after the line is already on
+  // screen, and a line that changes under the typewriter restarts it (user-reported
+  // 2026-09-22: "Jauge pleine ! 1" typed, erased, typed again).
+  | { kind: 'activated'; word: string; rank: number }
   | { kind: 'found' };
 
 // Guesses a hole may resist before each rung of the ladder. The sentence gets more room:
@@ -101,8 +104,17 @@ export function coachLine(state: CoachState): CoachLine | null {
     // the word (user-decided 2026-09-16).
     const filledAt = events.findIndex((e) => e.filled != null);
     if (filledAt >= 0) {
-      const holeIndex = events[filledAt].filled as number;
-      return filledAt === events.length - 1 ? { kind: 'activated', hole: holes[holeIndex] } : { kind: 'hint', holeIndex };
+      const filling = events[filledAt];
+      const holeIndex = filling.filled as number;
+      if (filledAt !== events.length - 1) return { kind: 'hint', holeIndex };
+      // The word the hole shows once the guess lands: the guess itself where it improved
+      // the hole, else the word the hole already held.
+      const entry = filling.entries[holeIndex];
+      const shown =
+        filling.improved[holeIndex] && entry
+          ? { word: entry.word, rank: entry.rank }
+          : { word: holes[holeIndex].word, rank: holes[holeIndex].rank };
+      return { kind: 'activated', ...shown };
     }
     // Not full yet: look near the word it shows.
     return { kind: 'near', hole: holes[open] };
@@ -191,7 +203,7 @@ export function coachCopy(
     case 'activated':
       return t(lang, coarsePointer ? 'tutActivatedTap' : 'tutActivatedClick')
         .replace('{n}', String(GIVEN))
-        .replace('{word}', chip(line.hole.word, line.hole.rank));
+        .replace('{word}', chip(line.word, line.rank));
     case 'found':
       return t(lang, 'tutMeterFound');
     case 'away':
