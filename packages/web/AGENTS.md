@@ -2117,10 +2117,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   edge. The scroller hides its scrollbar and fades both ends (a mask). **A PLAIN ROW
   STANDS ON ITS OWN GROUND** (user-decided 2026-09-02: at the quarter dim the rows printed
   over the sentence's words — "you don't have wheel items over sentence text"): `.wheel-plain`
-  boxes the word and its exponent on the `--surface` tone, drawn as the chip is drawn (an
-  absolutely positioned em-sized pseudo, no layout, so the letters keep the slot's x), a
-  little taller than the chip — 1.5em against 1.267 (user-asked the same day, "a few more
-  pixels of vertical padding"). **The
+  boxes the WORD on the `--surface` tone, drawn as the chip is drawn (an absolutely
+  positioned em-sized pseudo, no layout, so the letters keep the slot's x), a little
+  taller than the chip — 1.5em against 1.267 (user-asked the same day, "a few more pixels
+  of vertical padding") — and since 2026-09-22 the EXPONENT stands OUTSIDE it on the
+  ground, a clear gap past the box's overhang, on every plain row, given or typed
+  (user-decided in three passes: "out of the background", "it touches it", "a few pixel
+  more detached… the same for non holo words"). Buttons carry `font-variant-ligatures:
+  none` app-wide since the same day: the UA's `font` shorthand on a button reset the body's
+  rule, and the plain rows' one-text-node words grew `fi`/`fl` back (user-reported). **The
   column is INSET by the chip's overhang on the word's own side** (`OVERHANG_EM`, 0.2em of
   the sentence plus a pixel, as padding inside the scroller's box — user-reported the same
   day: "when you click on a hole word, the left padding disappears"; the scroller began

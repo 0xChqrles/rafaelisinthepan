@@ -178,6 +178,12 @@ button * {
    copy of this line; they are the same rule said three times and are gone. */
 button {
   -webkit-tap-highlight-color: transparent;
+  /* The body's `font-variant-ligatures: none` (above) does NOT reach a button: the user
+     agent sets the `font` SHORTHAND on buttons, which resets every font-variant
+     sub-property, so a button's pixel text grew the fi/fl ligatures back (user-reported
+     2026-09-22 on the wheel's plain rows: "glyph contractions in the font, eg: fi"). Said
+     again here, once, for every button. */
+  font-variant-ligatures: none;
 }
 /* NO DOUBLE-TAP ZOOM ON A CONTROL (user-reported 2026-09-09: on a phone "when you click
    on a button or select an input… the page gets zoomed in"). Two taps in quick succession
@@ -2908,12 +2914,17 @@ input {
    quarter, the rows printed over the sentence's own words — "you don't have wheel items
    over sentence text"). The surface tone, drawn exactly as the hole's chip is — an
    absolutely positioned pseudo sized in `em`, so it takes no layout and the row's letters
-   keep the slot's x — around the word AND its exponent, one box per row. */
+   keep the slot's x — around the WORD ALONE, its exponent standing outside on the ground
+   (user-decided 2026-09-22, first for the given rows, then "the same for non holo words"),
+   one box per row. */
 .wheel-plain {
+  position: relative;
+}
+.wheel-plain .wheel-word {
   position: relative;
   isolation: isolate;
 }
-.wheel-plain::before {
+.wheel-plain .wheel-word::before {
   content: '';
   position: absolute;
   left: -0.2em;
@@ -2926,20 +2937,15 @@ input {
   z-index: -1;
   background: var(--surface);
 }
-/* A GIVEN row (user-decided 2026-09-22) stands on the SEA — ON THE WORD ALONE, so its
-   exponent stands clear on the ground with the print (user-reviewed the same day): the
-   plain row's ground is dropped, the WORD carries the chip's white box (the same drawn
-   pseudo, the plain row's 1.5em) and the sea over it (`.wheel-sea`, the pseudo's exact
-   box, painted after it), the ink dark as on the chip, no print. */
-.wheel-given::before {
-  display: none;
-}
+/* A GIVEN row (user-decided 2026-09-22) stands on the FOIL: the word's box is the chip's
+   white with the foil over it (`.wheel-sea`, the pseudo's exact box, painted after it),
+   the ink dark as on the chip, no print. */
 .wheel-given .wheel-word {
-  position: relative;
-  isolation: isolate;
   color: var(--bg);
 }
-.wheel-given .wheel-word::before,
+.wheel-given .wheel-word::before {
+  background: var(--fg);
+}
 .wheel-sea {
   position: absolute;
   left: -0.2em;
@@ -2948,22 +2954,17 @@ input {
   height: 1.5em;
   translate: 0 -50%;
   z-index: -1;
-}
-.wheel-given .wheel-word::before {
-  content: '';
-  background: var(--fg);
-}
-.wheel-sea {
   overflow: hidden;
   pointer-events: none;
 }
 .wheel-row .wheel-given .wheel-word {
   text-shadow: none;
 }
-/* The exponent steps clear of the box's right overhang (the sentence chip's own nudge,
-   in the exponent's 0.55em; user-reported 2026-09-22: "it touches it"). */
-.wheel-given .wheel-rank {
-  translate: calc(0.25em / 0.55) 0;
+/* Every plain row's exponent steps clear of its box's right overhang, and a few pixels
+   more (user-reported 2026-09-22: "it touches it", then "a few pixel more detached"): the
+   sentence chip's own nudge, in the exponent's 0.55em, plus a gap of its own. */
+.wheel-plain .wheel-rank {
+  translate: calc(0.2em / 0.55 + 0.25em) 0;
 }
 /* The exponent of a plain row: the hole's own superscript, in the shared heat colour. */
 .wheel-rank {
