@@ -31,9 +31,10 @@ import { T0, hash3, noise3 } from './noise';
 //   4. THE SPARKLES: pixel-art four-point stars (a plus of 2px cells, a few of them
 //      longer-armed) at hashed cells — the glitter in the foil. EACH ON ITS OWN CLOCK
 //      (user-asked 2026-09-22: "each star be independant, it should not be a batch of
-//      stars… appear fast and disappear in 200 or 300ms with a fade out"): a cell's clock
-//      is offset by its own hash, a star lights in one frame and fades out over the rest
-//      of its short life, arms first, centre last.
+//      stars", then "the stars should stay a bit before fading out… it's supposed to be
+//      chill, you're on a word game not an FPS"): a cell's clock is offset by its own
+//      hash; a star rises in, HOLDS, then fades out slowly, arms first, centre last — few
+//      at a time.
 // STEPPED at the strike sheets' own rate, not 60fps: a foil turning in a hand, not a
 // shader. Reduced motion holds one frame. ONE clock (`performance.now()`) on every surface
 // that draws it, and EVERY HOLE ITS OWN FOIL (`seed`, user-decided 2026-09-22: "each hole
@@ -110,12 +111,27 @@ const SHEEN_WIDTH = 0.28;
 const SHEEN_ALPHA = 0.5;
 const SHEEN_PERIOD_S = 4.5;
 // The sparkles: every cell runs its own SPARKLE_PERIOD_S cycle, offset by its hash; in a
-// cycle it is a star with probability SPARKLE_SHARE, lit for SPARKLE_LIFE_S — full at once
-// (one frame), then fading; SPARKLE_LONG of the stars have two-cell arms.
-const SPARKLE_PERIOD_S = 1.8;
-const SPARKLE_SHARE = 0.03;
-const SPARKLE_LIFE_S = 0.32;
+// cycle it is a star with probability SPARKLE_SHARE. A star's life: it rises over
+// SPARKLE_RISE_S, holds for SPARKLE_HOLD_S, fades over SPARKLE_FADE_S — a slow breath, not
+// a flash; SPARKLE_LONG of the stars have two-cell arms. About five stars stand on a
+// sentence chip at any moment.
+const SPARKLE_PERIOD_S = 2.4;
+const SPARKLE_SHARE = 0.01;
+const SPARKLE_RISE_S = 0.16;
+const SPARKLE_HOLD_S = 0.3;
+const SPARKLE_FADE_S = 0.55;
+const SPARKLE_LIFE_S = SPARKLE_RISE_S + SPARKLE_HOLD_S + SPARKLE_FADE_S;
 const SPARKLE_LONG = 0.25;
+// Where a star is in its life, 0–1: eased in, held, eased out.
+function sparkleAt(age: number): number {
+  if (age < SPARKLE_RISE_S) {
+    const k = age / SPARKLE_RISE_S;
+    return k * k * (3 - 2 * k);
+  }
+  if (age < SPARKLE_RISE_S + SPARKLE_HOLD_S) return 1;
+  const k = 1 - (age - SPARKLE_RISE_S - SPARKLE_HOLD_S) / SPARKLE_FADE_S;
+  return k * k * k;
+}
 // Pixel art has nothing to gain from 60fps: the sheets' 50ms, a touch slower.
 const SEA_FRAME_MS = 80;
 // A meter filled on screen RECEDES into the foil rather than cutting to it: the solid ink
@@ -273,18 +289,17 @@ export default function MeterCanvas({
           const age = local - cycle * SPARKLE_PERIOD_S;
           if (age >= SPARKLE_LIFE_S) continue;
           if (hash3(cx + seed * 977, cy, cycle) >= SPARKLE_SHARE) continue;
-          // Lit at once, then an eased fade — the arms go with the alpha, the centre holds
-          // brighter and leaves last.
-          const left = 1 - age / SPARKLE_LIFE_S;
-          const fade = left * left;
+          // In, held, out — the arms go with the alpha, the centre holds brighter and
+          // leaves last.
+          const fade = sparkleAt(age);
           const long = hash3(cx, cy + 5, cycle) < SPARKLE_LONG;
           const arm = (long ? 2 : 1) * CELL_PX;
           const x = cx * CELL_PX;
           const y = cy * CELL_PX;
-          ctx.fillStyle = `rgba(255,255,255,${0.9 * fade})`;
+          ctx.fillStyle = `rgba(255,255,255,${0.85 * fade})`;
           ctx.fillRect(x - arm, y, 2 * arm + CELL_PX, CELL_PX);
           ctx.fillRect(x, y - arm, CELL_PX, 2 * arm + CELL_PX);
-          ctx.fillStyle = `rgba(255,255,255,${Math.min(1, 1.8 * fade)})`;
+          ctx.fillStyle = `rgba(255,255,255,${Math.min(1, 1.6 * fade)})`;
           ctx.fillRect(x, y, CELL_PX, CELL_PX);
         }
       }

@@ -273,10 +273,11 @@ These are decided and verified against the code. Treat them as load-bearing.
   shared with `AccountMark`) scrolled through the word so it pools and swirls instead of
   sliding flat (the shimmer, `SHIMMER_*`, never below `SHIMMER_FLOOR` of `HOLO_ALPHA`), a
   white SHEEN sweeping the diagonal every `SHEEN_PERIOD_S`, and pixel-art four-point
-  SPARKLES at hashed cells, EACH ON ITS OWN CLOCK — lit in one frame, faded out over
-  `SPARKLE_LIFE_S` = 320ms, arms first, centre last, a quarter of them long-armed
-  (user-asked the same day: "each star be independant, it should not be a batch of
-  stars… appear fast and disappear in 200 or 300ms with a fade out") — and the
+  SPARKLES at hashed cells, EACH ON ITS OWN CLOCK — rising over 160ms, HELD 300ms, faded
+  out over 550ms with an ease, arms first, centre last, a quarter of them long-armed,
+  about five on a chip at a time (user-asked the same day: "each star be independant, it
+  should not be a batch of stars", then "the stars should stay a bit before fading out…
+  it's supposed to be chill, you're on a word game not an FPS") — and the
   SENTENCE's chip alone wears an IRIDESCENT box-shadow turning through the same inks —
   cyan → cobalt → orchid → coral — over 7s (`.hole-meter.sea`, `sea-glow`; static cobalt
   under reduced motion): the
