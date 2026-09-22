@@ -12,6 +12,7 @@ import type { RankMap, RuntimeHole } from '@whippin/shared';
 import { CHARGE_TARGET, GIVEN, chargeForRank, hintsTaken, replayCharge } from './charge';
 import type { HoleCharge } from './charge';
 import { replayHoles } from './scoring';
+import { buildHistory } from './history';
 
 // A meter's reading, its charge compared with a float's tolerance: the pay is continuous.
 function expectMeter(meter: HoleCharge, charge: number, active: boolean) {
@@ -216,12 +217,26 @@ describe('the given words — GIVEN of them, drawn once, at the activation', () 
   });
 
   it('the words are walked through the ranks the map holds, fewer only when it runs out', () => {
-    // A map with gaps: past the five nearest, only 40, 41 and 900 remain.
+    // A map with gaps: past the five nearest, only 40 and 41 are unknown; 900 is the start.
     const sparse: RankMap = { lune: mapAt('lune', [1, 2, 3, 4, 5, 40, 41, 900]) };
     const hole: RuntimeHole[] = [{ pos: 0, secret: 'lune', word: 'lune900', rank: 900, startRank: 900 }];
     const meter = replayCharge(hole, sparse, [1, 2, 3, 4, 5].map((r) => `lune${r}`))[0];
     expect(meter.active).toBe(true);
-    expect(ranksOf(meter)).toEqual([40, 41, 900]);
+    expect(ranksOf(meter)).toEqual([40, 41]);
+  });
+
+  it('the visible start never takes a masked hint slot or counts as help later', () => {
+    const log = [40, 60, 61, 62, 63, 64, 65, 66, 67].map((r) => `honnete${r}`);
+    const meter = replayCharge(holes(), RANKS, log)[0];
+    expect(meter.active).toBe(true);
+    expect(ranksOf(meter)).toEqual([41, 42, 43, 44, 45, 46, 47, 48, 49, 51]);
+    const model = buildHistory({
+      rankMap: RANKS.honnete, tried: log, hole: replayHoles(holes(), RANKS, log)[0],
+      startRank: 50, secretWord: 'honnête', given: meter.given,
+    });
+    expect(model.stops.filter((s) => s.masked)).toHaveLength(GIVEN);
+    expect(model.stops.find((s) => s.start)).toMatchObject({ given: false, masked: false });
+    expect(hintsTaken(holes(), replayCharge(holes(), RANKS, [...log, 'honnete50']))).toBe(0);
   });
 
   it('nothing is given before the activation, whatever the hole did', () => {

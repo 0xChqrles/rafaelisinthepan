@@ -116,13 +116,13 @@ export function replayCharge(
     charge: number;
     solved: boolean;
     best: number;
-    guessed: Set<number>; // every rank the log has reached in this map, so far
+    guessed: Set<number>; // the visible start and every rank the log has reached so far
     given: Map<number, boolean>; // rank -> consumed
   }
   const meters = new Map<string, Meter>();
   for (const h of freshHoles) {
     if (!meters.has(h.secret)) {
-      meters.set(h.secret, { charge: 0, solved: false, best: h.rank, guessed: new Set(), given: new Map() });
+      meters.set(h.secret, { charge: 0, solved: false, best: h.rank, guessed: new Set([h.rank]), given: new Map() });
     }
   }
   // Give the GIVEN nearest ranks farther than the best, skipping any the player has

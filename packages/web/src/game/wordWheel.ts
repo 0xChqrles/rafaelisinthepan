@@ -11,9 +11,52 @@
 //
 // Pure and tested; rendering is components/HistoryWheel.
 
+import type { RuntimeHole } from '@whippin/shared';
+import type { HoleCharge } from './charge';
 import type { HistoryStop } from './history';
 
 // Top to bottom: farthest first, closest last.
 export function wheelOrder(stops: readonly HistoryStop[]): HistoryStop[] {
   return [...stops].sort((a, b) => b.rank - a.rank);
+}
+
+export interface WordPick {
+  word: string;
+  rank: number;
+  at: number;
+  slug?: string;
+  order: number;
+}
+
+// Keep selection order separately from sentence order. Each hole retains its display pick.
+export function selectWord(
+  picks: Record<number, WordPick>,
+  index: number,
+  stop: HistoryStop,
+  at: number,
+): Record<number, WordPick> {
+  const order = Math.max(0, ...Object.values(picks).map((p) => p.order)) + 1;
+  return {
+    ...picks,
+    [index]: { word: stop.display, rank: stop.rank, at, slug: stop.masked ? stop.slug : undefined, order },
+  };
+}
+
+// Enter reveals the latest still-valid masked selection; consumed or displaced picks retire.
+export function latestMaskedPick(
+  picks: Record<number, WordPick>,
+  holes: readonly RuntimeHole[],
+  charges: readonly HoleCharge[],
+): { index: number; slug: string } | null {
+  let latest: { index: number; slug: string; order: number } | null = null;
+  for (let index = 0; index < holes.length; index += 1) {
+    const h = holes[index];
+    const p = picks[index];
+    if (!p?.slug || h.rank === 0 || p.at !== h.rank) continue;
+    if (charges[index]?.given.some((g) => g.rank === p.rank && g.consumed)) continue;
+    if (!latest || p.order > latest.order) latest = { index, slug: p.slug, order: p.order };
+  }
+  if (!latest) return null;
+  const { index, slug } = latest;
+  return { index, slug };
 }

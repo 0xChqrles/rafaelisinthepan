@@ -11,6 +11,7 @@ import { guessKey, replayHoles } from '../game/scoring';
 import { playLogFor, withoutDeferred } from '../game/playLog';
 import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
+import { latestMaskedPick, selectWord, type WordPick } from '../game/wordWheel';
 import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import useRoundSync from '../hooks/useRoundSync';
@@ -276,9 +277,7 @@ function Round({
   const [deferred, setDeferred] = useState<string[]>([]);
   // The wheel's PICKS, by hole index — see `shownHoles` below.
   // A pick of a MASKED hint carries the key the reveal submits (`slug`).
-  const [picked, setPicked] = useState<Record<number, { word: string; rank: number; at: number; slug?: string }>>(
-    {},
-  );
+  const [picked, setPicked] = useState<Record<number, WordPick>>({});
   const holes = useMemo(
     () => replayHoles(freshHoles, ranks, withoutDeferred(ranks, playLog, deferred)),
     [freshHoles, ranks, playLog, deferred],
@@ -692,10 +691,7 @@ function Round({
     (index: number, stop: HistoryStop) => {
       const at = holes[index]?.rank;
       if (at === undefined || at === 0) return;
-      setPicked((cur) => ({
-        ...cur,
-        [index]: { word: stop.display, rank: stop.rank, at, slug: stop.masked ? stop.slug : undefined },
-      }));
+      setPicked((cur) => selectWord(cur, index, stop, at));
     },
     [holes],
   );
@@ -703,17 +699,10 @@ function Round({
   // empty ENTER submits. The latest such pick, should two holes hold one. Read off the
   // FULL log (`chargeState`): the ghost is spent the instant the guess is in, while the
   // hole (`shownHoles`, the deferred view) keeps its mask until the release.
-  const ghost = useMemo((): { index: number; slug: string } | null => {
-    let found: { index: number; slug: string } | null = null;
-    for (let i = 0; i < holes.length; i += 1) {
-      const h = holes[i];
-      const p = picked[i];
-      if (!p?.slug || h.rank === 0 || p.at !== h.rank) continue;
-      if (chargeState[i].given.some((g) => g.rank === p.rank && g.consumed)) continue;
-      found = { index: i, slug: p.slug };
-    }
-    return found;
-  }, [holes, picked, chargeState]);
+  const ghost = useMemo(
+    () => latestMaskedPick(picked, holes, chargeState),
+    [holes, picked, chargeState],
+  );
   // THE DECODE (user-decided 2026-09-23, the second cut of it): ENTER on the ghost SENDS
   // THE GUESS AT ONCE — the log, the server, the count — and the prompt UNCYPHERS the
   // word meanwhile: the marks churn into it (`useScramble`, the hole's own settle) as a

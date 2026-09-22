@@ -14,6 +14,7 @@ import CoachText, { richToPlain } from './CoachText';
 import { coachCopy, coachLine, type GuessEvent } from './coach';
 import type { LessonStage } from './script';
 import { canExtend } from '../game/keyboard';
+import { latestMaskedPick, selectWord, type WordPick } from '../game/wordWheel';
 import { MASK, buildHistory, type HistoryStop } from '../game/history';
 import { guessKey, replayHoles } from '../game/scoring';
 import { chargeForRank, replayCharge } from '../game/charge';
@@ -450,7 +451,7 @@ export default function LessonBoard({
 
   // --- the tries: a tap on a word (the wheel while open, the grid once found) ---
   const [historyHole, setHistoryHole] = useState<number | null>(null);
-  const [picked, setPicked] = useState<Record<number, { word: string; rank: number; at: number; slug?: string }>>({});
+  const [picked, setPicked] = useState<Record<number, WordPick>>({});
   const exploreLabels = useMemo(() => holes.map((_, i) => ariaHoleHistory(lang, i + 1)), [holes, lang]);
   const openHistory = useCallback((index: number) => setHistoryHole(index), []);
   // `tapped` lands on CLOSE (user-decided 2026-09-16): the line that follows the tap must
@@ -480,26 +481,17 @@ export default function LessonBoard({
     (index: number, stop: HistoryStop) => {
       const at = holes[index]?.rank;
       if (at === undefined || at === 0) return;
-      setPicked((cur) => ({
-        ...cur,
-        [index]: { word: stop.display, rank: stop.rank, at, slug: stop.masked ? stop.slug : undefined },
-      }));
+      setPicked((cur) => selectWord(cur, index, stop, at));
     },
     [holes],
   );
   // THE GHOST (Game's): the picked, unrevealed mask an empty ENTER submits — spent the
   // instant the guess is in the FULL log.
   const fullMeters = useMemo(() => (withMeters ? meters(tried) : undefined), [withMeters, meters, tried]);
-  const ghost = useMemo((): { index: number; slug: string } | null => {
-    let found: { index: number; slug: string } | null = null;
-    for (let i = 0; i < holes.length; i += 1) {
-      const p = picked[i];
-      if (!p?.slug || holes[i].rank === 0 || p.at !== holes[i].rank) continue;
-      if (fullMeters?.[i].given.some((g) => g.rank === p.rank && g.consumed)) continue;
-      found = { index: i, slug: p.slug };
-    }
-    return found;
-  }, [holes, picked, fullMeters]);
+  const ghost = useMemo(
+    () => latestMaskedPick(picked, holes, fullMeters ?? []),
+    [holes, picked, fullMeters],
+  );
   ghostRef.current = ghost;
   const historyModel = useMemo(() => {
     if (historyHole === null) return null;

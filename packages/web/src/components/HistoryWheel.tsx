@@ -248,7 +248,8 @@ export default function HistoryWheel({
     const stop = r[drum.peek()];
     // A pick where the slot differs from what the hole shows — by rank, or by WORD at the
     // same rank: a mask picked earlier and revealed since is the same stop with its word.
-    if (pick && stop && stop.rank !== 0 && (stop.rank !== hubRank || stop.display !== hubWord)) pick(stop);
+    // Confirming a held mask also makes it the latest selection for the prompt's Enter.
+    if (pick && stop && stop.rank !== 0 && (stop.masked || stop.rank !== hubRank || stop.display !== hubWord)) pick(stop);
     onClose();
   }, [drum, onClose]);
   // THE FOLD LANDS IN THE SAME TASK THAT CLOSES THE DIALOG (user-reported 2026-09-02, "the
