@@ -547,10 +547,9 @@ class ContextualRanker:
 
     band = CONTEXT_BAND
 
-    def __init__(self, judge, sentence, before=(), after=(), foreign=None, model=None):
+    def __init__(self, judge, sentence, before=(), after=(), model=None):
         self.judge, self.sentence = judge, sentence
         self.before, self.after = tuple(before), tuple(after)
-        self.foreign = foreign
         self.model = model or getattr(judge, "model", "?")
         self.records = []   # sidecar entries, one per reranked secret
         self.reports = []   # printed after the selector, in authoring order
@@ -570,8 +569,7 @@ class ContextualRanker:
             lex, _clean, _rep = by_rank[idx + 1]
             candidates.append(contextual_rank.Candidate(lex, lexeme_label(lex), idx))
         try:
-            ranked, record = contextual_rank.rerank(context, candidates, self.judge,
-                                                   foreign=self.foreign)
+            ranked, record = contextual_rank.rerank(context, candidates, self.judge)
         except contextual_rank.ContextualError as exc:
             die(f"classement contextuel impossible pour « {secret_display} » : {exc}")
         self.records.append(record)
@@ -3424,8 +3422,8 @@ def build_contextual_ranker(args, lang, sentence, V):
     """The #308 judge for this run: Jev through JEV_API_KEY, or a replay of a
     previous run's sidecar. French only (the rubric and the lexeme labels are
     French; another language brings its own template, a separate decision). The
-    English-dominance demotion reads the two corpora's frequency orders: the fr
-    reduced vocabulary already loaded (V) and the en reduced vectors' order."""
+    A front label that is not a French word is demoted by the judge itself (a
+    frequency rule threw out «apparent» and «laid», 2026-09-22)."""
     if lang != "fr":
         die("--contextual-replay : le classement contextuel n'existe qu'en français (#308).")
     try:
@@ -3437,11 +3435,8 @@ def build_contextual_ranker(args, lang, sentence, V):
                                              model=args.contextual_model)
     except (contextual_rank.ContextualError, OSError, ValueError) as exc:
         die(f"classement contextuel (#308) : {exc}")
-    fr_rank = {w: i for i, w in enumerate(V)}
-    en_rank = {w: i for i, w in enumerate(gn.load_vectors().index_to_key)}
     return ContextualRanker(judge, sentence, before=args.before or (),
                             after=args.after or (),
-                            foreign=contextual_rank.english_dominance(fr_rank, en_rank),
                             model=args.contextual_model if not args.contextual_replay
                             else f"rejeu de {args.contextual_replay}")
 

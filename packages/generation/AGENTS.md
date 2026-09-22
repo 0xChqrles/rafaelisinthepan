@@ -239,13 +239,17 @@ Consequences that are load-bearing:
   secret counts for nothing. The rubric travels ONCE per request in the shared state
   (≈ half the tokens of one copy per question, same order measured); the level
   descriptions stay in each question (moving them too shifts the scale).
-- **English-dominant labels are demoted by CODE** (`english_dominance`): a label past
-  French rank `EN_DOMINANCE_FLOOR = 8000` whose French frequency rank exceeds
-  `EN_DOMINANCE_RATIO = 3` × its English rank (the two reduced vocabularies' orders) is
-  scored 0 — the rubric's "not French → lowest level" line was ignored (`retirement`,
-  `feeling`), Morphalou lists loanwords, and this is what separated them. Known misfires:
-  rare French words that are common English ones (`affect`, `laid`); the report names
-  the first eight so the curator sees them. Non-English foreign words (`cucaracha`) pass.
+- **A front label that is not a French word is demoted by the JUDGE** (`FRENCH_QUESTION`,
+  asked on the `PAIRWISE_TOP` front only, `FRENCH_MIN = 0.2`; the verdicts ride in the
+  sidecar and replay). The rubric's "not French → lowest level" line was ignored inside the
+  scoring, and the earlier CODE rule (French rank vs English rank, 2026-09-19) was
+  REPLACED on 2026-09-22 because it threw out «apparent», «suspect», «laid», «partial»,
+  «structural» — French words common in English, at the same French rank as «feeling»;
+  no lexicon separates them either (Morphalou and the hors-dico wordlist list the
+  loanwords). Asked on its own the question does: «apparent» 0.88, «laid» 0.85,
+  «suspect» 0.95 vs «retirement» 0.11, «feeling» 0.11, «desk» 0.16 (measured; «partial»
+  0.31 and «affect» 0.38 are kept). A sidecar written before this has no verdicts and
+  cannot replay: regenerate.
 - **The judge is HOSTED — the one decided exception to offline generation** (quality
   over cost; ≈ 10 M input tokens ≈ $0.40 per puzzle at the published price, measured).
   Consequences: `JEV_API_KEY` from the environment (never a flag, never logged); a
@@ -508,7 +512,8 @@ output filename contains the three distinct secret slugs in sentence order.
   start-rank band `100–150` (`start_word.py`, user-decided 2026-09-07; was 50–150),
   `CONTEXT_BAND = (250, 400)` for a contextual map (#308), `PAIRWISE_TOP = 200` /
   `SCORE_BATCH = 50` / `PAIR_BATCH = 40` / `NOUL_BATCH = 40` / `WORKERS = 6`, filter
-  thresholds `START_FIT_MIN = 0.5` / `HOLE_READABLE_MIN = 0.6` / `SAME_CONCEPT_MAX = 0.6`,
+  thresholds `START_FIT_MIN = 0.5` / `HOLE_READABLE_MIN = 0.6` / `SAME_CONCEPT_MAX = 0.6` /
+  `FRENCH_MIN = 0.2`,
   the curator's `GIVEAWAY_MAX = 0.45` (calibrated on real play, 2026-09-22; curation `AGENTS.md`)
   (`contextual_rank.py`).
   `PLAYABILITY_TOP` is a curator report window sized for a sentence hole's near field.

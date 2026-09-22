@@ -27,12 +27,17 @@ import gen_phrase
 class FakeJudge:
     """Scores from a table; pairwise verdicts from a hidden 'truth' order."""
 
-    def __init__(self, scores, truth=None):
+    def __init__(self, scores, truth=None, english=()):
         self.scores, self.truth = scores, scores if truth is None else truth
+        self.english = set(english)  # labels the judge calls "not French"
         self.usage = {"input_tokens": 0, "output_tokens": 0}
         self.requests = 0
         self.model = "fake"
         self.calls = []
+
+    def french(self, candidates):
+        self.calls.append(("french", [c.label for c in candidates]))
+        return [0.1 if c.label in self.english else 0.9 for c in candidates]
 
     def score(self, context, candidates):
         labels = [c.label for c in candidates]
@@ -118,27 +123,24 @@ def test_flat_front_equal_pairwise_verdicts_keep_static_tie_break():
 
 def test_flat_front_demotions_do_not_keep_pairwise_priority():
     scores = {"a": 3.0, "b": 3.0, "c": 3.0, "tail": 0.0}
-    judge = FakeJudge(scores, {"a": 1, "b": 2, "c": 3})
-    ranked, _ = cr.rerank(CTX, _cands(list(scores)), judge, pairwise_top=3,
-                          foreign=lambda w: w in {"b", "c"})
+    judge = FakeJudge(scores, {"a": 1, "b": 2, "c": 3}, english={"b", "c"})
+    ranked, _ = cr.rerank(CTX, _cands(list(scores)), judge, pairwise_top=3)
     assert [r.label for r in ranked] == ["a", "b", "c", "tail"]
     assert [r.similarity for r in ranked] == [3.0, 0.0, 0.0, 0.0]
 
 
-def test_english_dominant_labels_are_demoted_to_the_tail():
-    fr = {"retirement": 74904, "pension": 5350, "feeling": 17261, "cotiser": 20000}
-    en = {"retirement": 2280, "pension": 4031, "feeling": 2302}
-    foreign = cr.english_dominance(fr, en)
-    assert foreign("retirement") and foreign("feeling")
-    assert not foreign("pension")      # frequent in French
-    assert not foreign("cotiser")      # not an English word
-    assert not foreign("inconnu")      # absent from both: never demoted
-    judge = FakeJudge({"retirement": 4.0, "pension": 3.0, "cotiser": 1.0})
-    ranked, rec = cr.rerank(CTX, _cands(["retirement", "pension", "cotiser"]), judge,
-                            pairwise_top=0, foreign=foreign)
+def test_a_front_label_that_is_not_french_is_demoted_to_the_tail_and_recorded():
+    judge = FakeJudge({"retirement": 4.0, "pension": 3.0, "cotiser": 1.0}, english={"retirement"})
+    ranked, rec = cr.rerank(CTX, _cands(["retirement", "pension", "cotiser"]), judge, pairwise_top=3)
     assert [r.label for r in ranked] == ["pension", "cotiser", "retirement"]
     assert ranked[-1].demoted and ranked[-1].similarity == 0.0
     assert rec["demoted"] == ["retirement"]
+    assert rec["french"] == {"retirement:nc": 0.1, "pension:nc": 0.9, "cotiser:nc": 0.9}
+    # only the front is asked
+    judge = FakeJudge({"a": 3.0, "b": 2.0, "c": 1.0}, english={"c"})
+    ranked, rec = cr.rerank(CTX, _cands(["a", "b", "c"]), judge, pairwise_top=2)
+    assert [c for c in judge.calls if c[0] == "french"] == [("french", ["a", "b"])]
+    assert not ranked[-1].demoted and "c:nc" not in rec["french"]
 
 
 def test_jev_judge_batches_without_changing_scores_and_sends_the_lean_request(monkeypatch):
@@ -160,6 +162,15 @@ def test_jev_judge_batches_without_changing_scores_and_sends_the_lean_request(mo
     assert set(questions) == {"c0", "c1", "c2"}
     assert questions["c1"]["criteria"] == cr.SCORE_LEVELS
     assert "candidats[1]" in questions["c1"]["instructions"]
+
+
+def test_jev_judge_asks_the_french_question_once_per_front_label(monkeypatch):
+    judge = cr.JevJudge("k")
+    seen = []
+    monkeypatch.setattr(judge, "_call", lambda state, qs: seen.append((state, qs)) or
+                        {k: {"type": "noul", "noul": 0.15 if "feeling" in qs[k]["instructions"] else 0.9} for k in qs})
+    assert judge.french(_cands(["apparent", "feeling"])) == [0.9, 0.15]
+    assert seen[0][0] == {"mots": ["apparent", "feeling"]} and len(seen[0][1]) == 2
 
 
 def test_jev_judge_refuses_to_exist_without_a_key():
@@ -185,8 +196,9 @@ def test_replay_rebuilds_the_same_order_and_never_guesses(tmp_path):
                             sentence=CTX.sentence, before=(), after=(), records=[rec],
                             usage=judge.usage)
     replay = cr.ReplayJudge(cr.load_sidecar(path))
-    again, _ = cr.rerank(CTX, _cands(list(scores)), replay, pairwise_top=3)
+    again, rec2 = cr.rerank(CTX, _cands(list(scores)), replay, pairwise_top=3)
     assert [r.label for r in again] == [r.label for r in ranked]
+    assert rec2["french"] == rec["french"]  # the verdicts replay too
     assert [r.similarity for r in again] == pytest.approx([r.similarity for r in ranked])
     with pytest.raises(cr.ContextualError):
         cr.rerank(CTX, _cands(list(scores) + ["loup"]), replay, pairwise_top=0)
@@ -335,9 +347,8 @@ RANKING = [("chien", 0, 0.9), ("félin", 1, 0.8), ("minou", 2, 0.7), ("côté", 
            ("coté", 4, 0.5), ("tigre", 5, 0.4)]
 
 
-def _ranker(judge, foreign=None):
-    return gen_phrase.ContextualRanker(judge, "il prit un chat avant de partir.",
-                                       foreign=foreign, model="fake")
+def _ranker(judge):
+    return gen_phrase.ContextualRanker(judge, "il prit un chat avant de partir.", model="fake")
 
 
 def test_contextual_map_keeps_the_static_groups_and_reorders_them_with_dq_from_the_judge():

@@ -18,10 +18,14 @@ model as the judge, in two passes:
           affinely onto the pass-1 score span they replace, so the merged series
           stays non-increasing and quantizes to `dq` like any similarity.
 
-Then a code rule: an ENGLISH-DOMINANT label (its French corpus rank more than
-EN_DOMINANCE_RATIO times its English rank, past EN_DOMINANCE_FLOOR) is scored 0 —
-the rubric alone did not keep «retirement» or «feeling» off the top. Ties are broken
-by static position, then never by dict order.
+Then one more question, on the front only: is this label a FRENCH word (FRENCH_QUESTION;
+below FRENCH_MIN it is scored 0). The rubric's "not French → lowest level" line was
+ignored inside the scoring, and a frequency rule (French rank vs English rank,
+2026-09-19) threw out «apparent», «suspect», «laid», «partial» — French words common
+in English, which sit at the same French rank as «feeling». Asked on its own the
+question separates them (2026-09-22: «apparent» 0.88, «laid» 0.85 vs «retirement»
+0.11, «feeling» 0.11, «desk» 0.16). Ties are broken by static position, then never
+by dict order.
 
 Contract kept: the map's groups are the static walk's; only their ORDER and their
 similarities change; gen_phrase re-assembles keys closest-first in the new order.
@@ -60,8 +64,10 @@ PAIRWISE_TOP = 200          # pass 2 sorts this many of pass 1's best
 SCORE_BATCH = 50            # candidates per pass-1 request (one shared state)
 PAIR_BATCH = 40             # pairs per pass-2 request
 WORKERS = 6                 # concurrent requests
-EN_DOMINANCE_RATIO = 3      # a label whose fr rank > ratio x en rank ...
-EN_DOMINANCE_FLOOR = 8000   # ... and past this fr rank is demoted
+FRENCH_MIN = 0.2            # P(French word) below which a front label is demoted (English
+                            # loanwords the map should not crown: all true English <= 0.16 and
+                            # every French word >= 0.21 on the 2026-09-22 sample, «partial» 0.31,
+                            # «affect» 0.38, «nervi» 0.25 kept)
 NOUL_BATCH = 40             # yes/no questions per filter request
 START_FIT_MIN = 0.5         # a start shown in the sentence must read as French: the band
                             # loses ~20 % here (wrong number/category), 3/157 published picks
@@ -155,6 +161,13 @@ GIVEAWAY_QUESTIONS = {
 }
 
 
+FRENCH_QUESTION = (
+    "Le mot `mots[{i}]` (« {w} ») est-il un mot de la langue française, courant ou "
+    "littéraire, qu'un dictionnaire français ordinaire enregistre comme mot français ?",
+    "Oui, c'est un mot français (emprunts installés compris)",
+    "Non, c'est un mot anglais ou d'une autre langue, ou un nom propre, une marque, un sigle")
+
+
 class ContextualError(Exception):
     """A judge that cannot answer: no key, a refused request, a replay without the
     needed score. NEVER caught into a static fallback — the caller dies."""
@@ -205,7 +218,7 @@ class JevJudge:
     `score(context, candidates)` -> one float per candidate (the judge reads
     `.label`); `compare(context, pairs)` over (Candidate, Candidate) -> the
     probability that the first of each pair is the closer one. Both retry 429 /
-    529 / transport errors with capped backoff; any other refusal is a ContextualError.
+    529 / 5xx-gateway / transport errors with capped backoff; any other refusal is a ContextualError.
     Usage is accumulated in `usage` (input/output tokens) for the report."""
 
     def __init__(self, api_key, model=JEV_MODEL, workers=WORKERS, timeout=120):
@@ -229,7 +242,7 @@ class JevJudge:
                     answer = json.load(r)
                 break
             except urllib.error.HTTPError as exc:
-                if exc.code in (429, 529) and attempt < tries - 1:
+                if exc.code in (429, 502, 503, 504, 529) and attempt < tries - 1:  # throttled or briefly down
                     time.sleep(min(30, 2 ** attempt) + random.random())
                     continue
                 raise ContextualError(f"juge HTTP {exc.code} : {exc.read()[:300]!r}") from exc
@@ -277,6 +290,14 @@ class JevJudge:
             return [float(answers[f"p{i}"]["probabilities"]["A"]) for i in range(len(batch))]
         return self._batched(list(pairs), PAIR_BATCH, work)
 
+    def french(self, candidates):
+        """P(French word) per candidate label, one batched yes/no question each."""
+        labels = [c.label for c in candidates]
+        q, yes, no = FRENCH_QUESTION
+        probs = self.noul({"mots": labels}, {f"m{i}": (q.format(i=i, w=w), yes, no)
+                                             for i, w in enumerate(labels)})
+        return [probs[f"m{i}"] for i in range(len(labels))]
+
     def noul(self, state, questions):
         """Yes/no probabilities: `questions` = {key: (instructions, true, false)} over
         one shared `state`; returns {key: P(yes)}. Batched, keys preserved."""
@@ -319,12 +340,22 @@ class ReplayJudge:
         return hole
 
     def score(self, context, candidates):
-        scores = self._hole(context)["scores"]
+        hole = self._hole(context)
+        scores = hole["scores"]
+        self._french = hole.get("french", {})
         try:
             return [float(scores[c.key]) for c in candidates]
         except KeyError as exc:
             raise ContextualError(f"rejeu : le groupe {exc.args[0]} n'a pas de score "
                                   f"pour « {context.secret} »") from exc
+
+    def french(self, candidates):
+        probs = self._french
+        try:
+            return [float(probs[c.key]) for c in candidates]
+        except KeyError as exc:
+            raise ContextualError(f"rejeu : le groupe {exc.args[0]} n'a pas de verdict "
+                                  "« mot français »") from exc
 
     def compare(self, context, pairs):
         wins = self._hole(context)["pairs"]
@@ -366,16 +397,14 @@ def pairwise_order(context, front, judge, seed=0):
     return [(i, rate[i]) for i in order], judged
 
 
-def rerank(context, candidates, judge, *, pairwise_top=PAIRWISE_TOP, foreign=None,
-           seed=0):
+def rerank(context, candidates, judge, *, pairwise_top=PAIRWISE_TOP, seed=0):
     """Order `candidates` by contextual similarity to the secret.
 
     Returns (ranked, record): `ranked` best-first with a non-increasing `similarity`
     (pass-2 front mapped onto pass-1's span, demoted labels at 0), `record` the
     sidecar entry (scores, judged pairs, demotions, timings) this order derives from.
     Every candidate comes back; nothing is cut here (TOP_K is the walk's).
-    `foreign(label) -> bool` is the English-dominance rule built by the caller from
-    the two corpora (None = no demotion)."""
+    The front is then asked FRENCH_QUESTION; a label under FRENCH_MIN is demoted."""
     if not candidates:
         return [], {"secret": context.secret, "scores": {}, "pairs": {}, "demoted": []}
     labels = [c.label for c in candidates]
@@ -404,10 +433,12 @@ def rerank(context, candidates, judge, *, pairwise_top=PAIRWISE_TOP, foreign=Non
     t2 = time.time()
     for i in order[n_front:]:
         sim[i] = scores[i]
-    demoted = []
-    if foreign is not None:
-        for i in front + order[n_front:]:
-            if foreign(labels[i]):
+    demoted, french = [], {}
+    if front:
+        probs = judge.french([candidates[i] for i in front])
+        for i, p in zip(front, probs):
+            french[candidates[i].key] = p
+            if p < FRENCH_MIN:
                 sim[i] = 0.0
                 demoted.append(labels[i])
     # A flat pass-1 span collapses distinct win rates onto one similarity.
@@ -422,7 +453,7 @@ def rerank(context, candidates, judge, *, pairwise_top=PAIRWISE_TOP, foreign=Non
     record = {
         "secret": context.secret, "secret_label": context.secret_label,
         "scores": {candidates[i].key: scores[i] for i in range(len(labels))},
-        "pairs": judged, "demoted": demoted,
+        "pairs": judged, "french": french, "demoted": demoted,
         "timing": {"score_s": round(t1 - t0, 1), "pairs_s": round(t2 - t1, 1)},
     }
     return ranked, record
@@ -525,17 +556,6 @@ def giveaway(judge, blanked, word):
     return sum(probs[k] for k in GIVEAWAY_QUESTIONS) / len(GIVEAWAY_QUESTIONS)
 
 
-def english_dominance(fr_rank, en_rank, ratio=EN_DOMINANCE_RATIO, floor=EN_DOMINANCE_FLOOR):
-    """The demotion rule as a predicate over two frequency orders (word -> rank, 0 =
-    most frequent): English-dominant when the word is past `floor` in French and its
-    French rank exceeds `ratio` times its English rank. A word absent from either
-    corpus is never demoted by this rule."""
-    def foreign(label):
-        f, e = fr_rank.get(label), en_rank.get(label)
-        return f is not None and e is not None and f > floor and e * ratio < f
-    return foreign
-
-
 def format_report(secret, ranked, record, *, model, top=25, front=PAIRWISE_TOP):
     """The per-hole report gen_phrase prints: what the judge changed, at a glance.
     The front is the pass-2 window; "deep" counts its members the static walk had
@@ -549,7 +569,7 @@ def format_report(secret, ranked, record, *, model, top=25, front=PAIRWISE_TOP):
              f"score {record['timing']['score_s']}s  paires {record['timing']['pairs_s']}s",
              f"  dans les {len(head)} premiers : {deep} venu(s) d'au-delà du 1000e rang "
              f"statique, le plus lointain du {furthest}e",
-             f"  rétrogradés (anglais dominant) : {len(record['demoted'])}"
+             f"  rétrogradés (pas un mot français) : {len(record['demoted'])}"
              + (f" — {', '.join(record['demoted'][:8])}" if record["demoted"] else ""),
              f"  {'ctx':>5} {'stat':>6} {'score':>5}  mot"]
     for i, r in enumerate(ranked[:top], 1):
