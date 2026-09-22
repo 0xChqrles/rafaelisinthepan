@@ -8,6 +8,7 @@ import type {
 } from 'react';
 import { fold } from '@whippin/shared';
 import { t } from '../i18n';
+import UnlockIcon from '../assets/icons/unlock.svg?react';
 
 // Map a physical key to the slug character(s) it contributes. The on-screen keyboard
 // only exposes [a-z] + dash, but a desktop user can press accented / uppercase keys;
@@ -51,6 +52,16 @@ interface WordInputProps {
   onSubmit: (value: string) => void; // submit the current guess
   onReplace: (value: string) => void; // set the whole value (history recall)
   invalidSignal: number;
+  // THE GHOST (user-decided 2026-09-22): a masked hint picked into the sentence stands
+  // PRE-TYPED here while the field is empty — `?????` in the accent with the OPEN LOCK, a
+  // glyph on the pixel font's own 8-cell grid at 1em (user-decided 2026-09-23: the lock
+  // stays, drawn to the font's weight rather than the 20px header mark that "doesn't work
+  // near the thick and fat question mark glyphs"), ENTER lit — and ENTER submits it as the
+  // guess that reveals it; the marks then UNCYPHER into the word here, EACH LETTER
+  // TURNING `--fg` AS IT SETTLES (`ghostTarget`: a letter is uncyphered once it matches
+  // the word at its place), before the prompt clears. Drawn only; the field stays empty.
+  ghost?: string;
+  ghostTarget?: string; // the word being uncyphered, while it is
   // The caller's handle on the field, so the screen can put the caret back into it after
   // a submit — the one moment the focus may be sitting on the on-screen ENTER instead.
   fieldRef?: MutableRefObject<HTMLInputElement | null>;
@@ -85,6 +96,14 @@ interface WordInputProps {
 // focused prompt's, so a control the player has tabbed to keeps its own Enter. The spans
 // below are the drawing — the field's value said in the pixel face — and are hidden from
 // assistive tech, which reads the field itself.
+// How many letters of a churning ghost are the word's own, from the left — the scramble
+// settles left to right, so the settled run is the longest prefix that matches.
+function settledPrefix(shown: string, target: string): number {
+  let n = 0;
+  while (n < shown.length && n < target.length && shown[n] === target[n]) n += 1;
+  return n;
+}
+
 export default function WordInput({
   value,
   history,
@@ -94,6 +113,8 @@ export default function WordInput({
   onSubmit,
   onReplace,
   invalidSignal,
+  ghost,
+  ghostTarget,
   fieldRef,
   active = true,
 }: WordInputProps) {
@@ -261,7 +282,20 @@ export default function WordInput({
           its own start. It is the field's value DRAWN, so it is hidden from assistive tech:
           the field above is what a screen reader reads the guess from. */}
       <span className="wi-text" aria-hidden="true">
-        <span className="wi-text-run">{value}</span>
+        {value === '' && ghost ? (
+          <span className="wi-text-run wi-ghost">
+            {ghostTarget
+              ? Array.from(ghost).map((ch, i) => (
+                  <span key={i} className={i < settledPrefix(ghost, ghostTarget) ? 'wi-settled' : undefined}>
+                    {ch}
+                  </span>
+                ))
+              : ghost}
+            {!ghostTarget && <UnlockIcon className="wi-lock" aria-hidden="true" />}
+          </span>
+        ) : (
+          <span className="wi-text-run">{value}</span>
+        )}
       </span>
       <span className="wi-cursor" aria-hidden="true">_</span>
     </div>

@@ -11,6 +11,7 @@ import { guessKey, replayHoles } from '../game/scoring';
 import { playLogFor, withoutDeferred } from '../game/playLog';
 import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
+import { latestMaskedPick, selectWord, type WordPick } from '../game/wordWheel';
 import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import useRoundSync from '../hooks/useRoundSync';
@@ -31,12 +32,18 @@ import { PLAY_LEVEL } from '../tutorial/levels';
 import LoadError from '../components/LoadError';
 import FlipCountdown from '../components/FlipCountdown';
 import { earlyLocked } from '../game/earlyPlay';
-import { chargeForRank, initialOf, replayCharge } from '../game/charge';
+import { chargeForRank, hintsTaken, replayCharge } from '../game/charge';
 import { navigate } from '../routing';
 import { pathForDay, pathForGame, pathForLesson } from '../langs';
-import { buildHistory } from '../game/history';
+import { MASK, buildHistory } from '../game/history';
+import { SCRAMBLE_MS, useScramble } from '../hooks/useScramble';
+
+// How long an uncyphered ghost stands in the prompt, as a typed word, ONCE THE LAST
+// LETTER HAS SETTLED, before the prompt clears and the guess's choreography begins.
+export const REVEAL_HOLD_MS = 500;
+
 import type { HistoryStop } from '../game/history';
-import { t, ariaHoleHistory, srHoleCharge, srHoleInitial, srHoleResult } from '../i18n';
+import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
 import { track } from '../analytics';
 import { fold, dateForDayNumber, ROUND_GUESS_CAP } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -269,9 +276,8 @@ function Round({
   // only: the score, the history and the ruler all read the full log.
   const [deferred, setDeferred] = useState<string[]>([]);
   // The wheel's PICKS, by hole index — see `shownHoles` below.
-  const [picked, setPicked] = useState<Record<number, { word: string; rank: number; at: number }>>(
-    {},
-  );
+  // A pick of a MASKED hint carries the key the reveal submits (`slug`).
+  const [picked, setPicked] = useState<Record<number, WordPick>>({});
   const holes = useMemo(
     () => replayHoles(freshHoles, ranks, withoutDeferred(ranks, playLog, deferred)),
     [freshHoles, ranks, playLog, deferred],
@@ -667,24 +673,44 @@ function Round({
   // hole IMPROVES: `at` records the real rank the pick was made against, and the moment that
   // rank moves the new best takes the hole back. A pick at the hole's own rank is simply the
   // hole. Never persisted: a reading aid, not a fact about the round.
+  // A live pick is shown in the hole's place — and a picked MASK shows its WORD the moment
+  // the log holds it (the reveal, or the word typed by hand): derived, so nothing about
+  // the pick has to be rewritten when the guess lands.
   const shownHoles = useMemo(
     () =>
       holes.map((h, i) => {
         const p = picked[i];
-        return p && h.rank > 0 && p.at === h.rank && p.rank !== h.rank
-          ? { ...h, word: p.word, rank: p.rank }
-          : h;
+        if (!p || h.rank === 0 || p.at !== h.rank || p.rank === h.rank) return h;
+        const revealed = p.slug && shownCharge[i].given.some((g) => g.rank === p.rank && g.consumed);
+        const word = revealed ? (ranks[h.secret][p.slug as string]?.word ?? p.word) : p.word;
+        return { ...h, word, rank: p.rank };
       }),
-    [holes, picked],
+    [holes, picked, shownCharge, ranks],
   );
   const pickWord = useCallback(
     (index: number, stop: HistoryStop) => {
       const at = holes[index]?.rank;
       if (at === undefined || at === 0) return;
-      setPicked((cur) => ({ ...cur, [index]: { word: stop.display, rank: stop.rank, at } }));
+      setPicked((cur) => selectWord(cur, index, stop, at));
     },
     [holes],
   );
+  // THE GHOST: the masked hint picked into the sentence and not yet revealed — the one an
+  // empty ENTER submits. The latest such pick, should two holes hold one. Read off the
+  // FULL log (`chargeState`): the ghost is spent the instant the guess is in, while the
+  // hole (`shownHoles`, the deferred view) keeps its mask until the release.
+  const ghost = useMemo(
+    () => latestMaskedPick(picked, holes, chargeState),
+    [holes, picked, chargeState],
+  );
+  // THE DECODE (user-decided 2026-09-23, the second cut of it): ENTER on the ghost SENDS
+  // THE GUESS AT ONCE — the log, the server, the count — and the prompt UNCYPHERS the
+  // word meanwhile: the marks churn into it (`useScramble`, the hole's own settle) as a
+  // TYPED word, in `--fg`, it stands `REVEAL_HOLD_MS`, then the prompt clears the way it
+  // does on any guess; the guess's whole choreography — the hits, the hole's swap, the
+  // count ticking — is delayed by exactly that, so it plays on a word already read.
+  const [decoding, setDecoding] = useState<string | null>(null); // the key being uncyphered
+  const decode = useScramble();
   // Tapping a hole is available during normal play only, since the 2026-08-14 redesign:
   // once the solving beats begin, the sentence belongs to the choreography (and then
   // dissolves), and the tap moves to the result's own secrets in the sentence's page —
@@ -704,22 +730,21 @@ function Round({
     () => holeNumbers.map((n) => ariaHoleHistory(lang, n)),
     [holeNumbers, lang],
   );
-  // The meters as the sentence shows them (#301): the deferred reading, the initial once
-  // revealed, and the description a screen reader gets in the meter's place — nothing for
-  // a hole already found (its chip, and the meter with it, are gone).
+  // The meters as the sentence shows them (#301): the deferred reading, whether the hole is
+  // active, and the description a screen reader gets in the meter's place — nothing for a
+  // hole already found (its chip, and the meter with it, are gone).
   const charges = useMemo(
     () =>
       shownCharge.map((c, i) => {
-        const initial = c.revealed ? initialOf(puzzleHoles[i].secret.word) : null;
         const hint =
           holes[i].rank === 0
             ? ''
-            : initial !== null
-              ? srHoleInitial(lang, initial)
+            : c.active
+              ? srHoleGiven(lang, c.given.filter((g) => !g.consumed).length)
               : srHoleCharge(lang, c.charge);
-        return { value: c.charge, initial, hint };
+        return { value: c.charge, active: c.active, hint };
       }),
-    [shownCharge, puzzleHoles, holes, lang],
+    [shownCharge, holes, lang],
   );
   // The result's own view of the secrets (#266): where each sits in `words[]`, the word
   // and affixes it displays, its own index — the history modal's key, so the tap opens
@@ -751,8 +776,11 @@ function Round({
       hole,
       startRank: puzzleHole.start_rank,
       secretWord: puzzleHole.secret.word,
+      // The given words as the BOARD shows them: they land with the release beat, like the
+      // hole's own swap, so the wheel never names a word the sentence has not caught up to.
+      given: shownCharge[historyHole]?.given,
     });
-  }, [historyHole, holes, puzzleHoles, ranks, history]);
+  }, [historyHole, holes, puzzleHoles, ranks, history, shownCharge]);
   const closeHistory = useCallback(() => {
     setHistoryHole(null);
   }, []);
@@ -797,10 +825,15 @@ function Round({
     (char: string) => {
       if (promptExiting) return;
       setFeedback(null);
+      // A ghost stands, or decodes: the letters are out (the prompt holds a word already).
+      if (decoding !== null || (ghost !== null && input === '')) {
+        setInvalidAt(Date.now());
+        return;
+      }
       if (canExtend(prefixSet, input, char)) setInput(input + char);
       else setInvalidAt(Date.now());
     },
-    [prefixSet, input, promptExiting],
+    [prefixSet, input, promptExiting, ghost, decoding],
   );
 
   const deleteChar = useCallback(() => {
@@ -825,7 +858,31 @@ function Round({
       // The next guess is typed where the last one was: a no-op when the field already has
       // the focus, which is every submit but the on-screen ENTER's own keyboard activation.
       guessField.current?.focus({ preventScroll: true });
-      const typed = fold(raw);
+      // An EMPTY submit with a masked hint picked is THE REVEAL (user-decided 2026-09-22):
+      // the ghost's key goes in as the guess, at once, and the prompt uncyphers it while
+      // the guess's choreography waits `reveal` ms (the decode above). Everything below is
+      // the guess's usual way, shifted by that.
+      if (decoding !== null) return;
+      const revealing = !fold(raw) && ghost !== null;
+      const typed = fold(raw) || ghost?.slug || '';
+      // The settle takes `SCRAMBLE_MS` (nothing under reduced motion), and the hold runs
+      // from the moment it is DONE.
+      const reveal = revealing ? (prefersReducedMotion() ? 0 : SCRAMBLE_MS) + REVEAL_HOLD_MS : 0;
+      if (revealing) {
+        setDecoding(typed);
+        decode.start(
+          typed,
+          MASK.length,
+          () => {
+            const clear = window.setTimeout(() => {
+              pendingTimers.current = pendingTimers.current.filter((t) => t !== clear);
+              setDecoding(null);
+            }, REVEAL_HOLD_MS);
+            pendingTimers.current.push(clear);
+          },
+          0,
+        );
+      }
       if (!typed) {
         setInput('');
         return;
@@ -885,11 +942,11 @@ function Round({
       const parts = impacted.map(({ index, entry }) =>
         srHoleResult(lang, index + 1, entry ? entry.rank : null),
       );
-      // A meter this guess fills says so in the same breath — the initial is news.
+      // Words this guess gives — the activation, or an improvement of an active hole — are
+      // said in the same breath: they are news.
       for (const { index } of impacted) {
-        if (charged[index].revealed && !chargeState[index].revealed) {
-          parts.push(srHoleInitial(lang, initialOf(puzzleHoles[index].secret.word), index + 1));
-        }
+        const gave = charged[index].given.length - chargeState[index].given.length;
+        if (gave > 0) parts.push(srHoleGiven(lang, gave, index + 1));
       }
       say(solvesAll ? [...parts, t(lang, 'srSolvedAll')].join(', ') : parts.join(', '));
 
@@ -904,9 +961,9 @@ function Round({
       // charge (the solve supersedes the cut, the loot and any burst); a guess the charge
       // table pays for is cut, and what it paid flies into the meter as loot. A miss, a
       // repeat and a rank past the table keep the float alone.
-      const fadeDelayMs = Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
+      const fadeDelayMs = reveal + Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
       impacted.forEach(({ index, entry }, step) => {
-        const startDelayMs = step * STAGGER_MS;
+        const startDelayMs = reveal + step * STAGGER_MS;
         const hit = (hitId.current += 1);
         const gained = charged[index].charge - chargeState[index].charge;
         const strike =
@@ -946,6 +1003,9 @@ function Round({
       }
     },
     [
+      ghost,
+      decoding,
+      decode,
       holes,
       playLog,
       ranks,
@@ -1004,6 +1064,7 @@ function Round({
            with the keyboard: nothing left down there to reserve a footprint for. */
         <SolvedScreen
           guessCount={guessCount}
+          hints={hintsTaken(freshHoles, chargeState)}
           trajectory={trajectory}
           dayNumber={dayNumber}
           lang={lang}
@@ -1047,7 +1108,8 @@ function Round({
                 with the round — the count's next appearance is the result's headline. */}
             <div className="phrase-anchor">
               <div className="progress-background" aria-hidden="true">
-                <CellDigits value={guessCount} />
+                {/* A revealing guess is counted once its word is out of the prompt. */}
+                <CellDigits value={guessCount - (decoding !== null ? 1 : 0)} />
               </div>
               {resultUp ? (
                 <DissolvePhrase words={words} puzzleHoles={puzzleHoles} onDone={finishDissolve} />
@@ -1089,6 +1151,8 @@ function Round({
                   onSubmit={submit}
                   onReplace={replaceInput}
                   invalidSignal={invalidAt}
+                  ghost={decoding !== null ? (decode.jumble ?? decoding) : ghost ? MASK : undefined}
+                  ghostTarget={decoding ?? undefined}
                   // The history modal covers the prompt: keystrokes must not build (or submit)
                   // a guess the player cannot see behind it. The gate holds it back the same
                   // way — the prompt arrives with the keyboard, on PLAY. And the RETIRING
@@ -1152,6 +1216,8 @@ function Round({
                   input={input}
                   prefixSet={prefixSet}
                   vocabSet={vocabSet}
+                  submittable={ghost !== null && decoding === null}
+                  locked={decoding !== null || (ghost !== null && input === '')}
                   lang={lang}
                   onType={appendChar}
                   onBackspace={deleteChar}

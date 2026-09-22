@@ -14,7 +14,7 @@
 //     half played (`played`): the first word found, the second's meter around three quarters
 //     (the fill must be SEEN) and its best try no giveaway; the OBVIOUS guess (`pair.alt`) is
 //     the secret's rank-1 word, not the secret, and fills the meter by itself — and the two
-//     swap roles if the secret is typed first, so the letter is never skipped (user-decided
+//     swap roles if the secret is typed first, so the activation is never skipped (user-decided
 //     2026-09-16);
 //   - every board stays byte-compatible with the real per-puzzle schema (parsePuzzle-valid —
 //     they feed the REAL game components), rank 0 is the secret, every key folds to itself
@@ -147,11 +147,11 @@ for (const lang of ['en', 'fr'] as const) {
         expect(holes[1].rank).toBeGreaterThanOrEqual(5);
         expect(holes[1].word.length).toBeGreaterThanOrEqual(6); // long enough for the fill to read
         const [, meterB] = replayCharge(fresh, puzzle.ranks, played);
-        expect(meterB.revealed).toBe(false);
+        expect(meterB.active).toBe(false);
         expect(meterB.charge).toBeGreaterThanOrEqual(65);
         expect(meterB.charge).toBeLessThanOrEqual(80);
         // The obvious guess: the secret's closest word, untried by the bot, and enough on its
-        // own to fill the meter — so it earns the letter, never the solve.
+        // own to fill the meter — so it earns the activation, never the solve.
         const alt = meter.pair!.alt;
         expect(fold(alt.slug)).toBe(alt.slug);
         const entry = puzzle.ranks[puzzle.holes[1].secret.slug][alt.slug];

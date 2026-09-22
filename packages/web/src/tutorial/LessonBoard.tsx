@@ -9,20 +9,21 @@ import HistoryWheel from '../components/HistoryWheel';
 import HistoryModal from '../components/HistoryModal';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
-import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, STAGGER_MS } from '../screens/Game';
+import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, REVEAL_HOLD_MS, STAGGER_MS } from '../screens/Game';
 import CoachText, { richToPlain } from './CoachText';
 import { coachCopy, coachLine, type GuessEvent } from './coach';
 import type { LessonStage } from './script';
 import { canExtend } from '../game/keyboard';
-import { buildHistory, type HistoryStop } from '../game/history';
+import { latestMaskedPick, selectWord, type WordPick } from '../game/wordWheel';
+import { MASK, buildHistory, type HistoryStop } from '../game/history';
 import { guessKey, replayHoles } from '../game/scoring';
-import { chargeForRank, initialOf, replayCharge } from '../game/charge';
+import { chargeForRank, replayCharge } from '../game/charge';
 import { sentenceStarts } from '../game/sentenceCase';
-import { SCRAMBLE_MS } from '../hooks/useScramble';
+import { SCRAMBLE_MS, prefersReducedMotion, useScramble } from '../hooks/useScramble';
 import type { Vocab } from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
 import type { HitState, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
-import { t, ariaHoleHistory, srHoleCharge, srHoleInitial, srHoleResult } from '../i18n';
+import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
 import type { LangCode } from '../langs';
 import playerIdle from '../assets/player-idle.png';
 
@@ -103,9 +104,9 @@ export default function LessonBoard({
 }) {
   const { puzzle, kind: stage } = script;
   const puzzleHoles = puzzle.holes;
-  // THE PAIR SWAP (the meter stage; user-decided 2026-09-16): before the letter is out, typing
-  // the secret makes it the closest word and `pair.alt` the secret — so the letter is always
-  // seen before the solve. ONE map serves both readings: swapped, every rank-0 entry reads 1
+  // THE PAIR SWAP (the meter stage; user-decided 2026-09-16): before the hole is active, typing
+  // the secret makes it the closest word and `pair.alt` the secret — so the activation is
+  // always seen before the solve. ONE map serves both readings: swapped, every rank-0 entry reads 1
   // and every rank-1 entry reads 0, and the board, the meters, the wheel and every later
   // guess replay against that view. The bot then lands `alt`.
   const [swapped, setSwapped] = useState(false);
@@ -225,14 +226,23 @@ export default function LessonBoard({
     setRevealed(false);
   }, [script]);
 
+  // The ghost (derived below, after the picks) as the input handlers read it, and the
+  // decode (Game's): the prompt uncyphers the word while the guess's choreography waits.
+  const ghostRef = useRef<{ index: number; slug: string } | null>(null);
+  const [decoding, setDecoding] = useState<string | null>(null);
+  const decode = useScramble();
   const appendChar = useCallback(
     (char: string) => {
       if (!playing || !prefixSet) return;
       setFeedback(null);
+      if (decoding !== null || (ghostRef.current !== null && input === '')) {
+        setInvalidAt(Date.now());
+        return;
+      }
       if (canExtend(prefixSet, input, char)) setInput(input + char);
       else setInvalidAt(Date.now());
     },
-    [playing, prefixSet, input],
+    [playing, prefixSet, input, decoding],
   );
   const deleteChar = useCallback(() => {
     if (!playing) return;
@@ -254,18 +264,20 @@ export default function LessonBoard({
   // ONE guess landing on the board — the player's (counted, coached) or the bot's closing
   // one (`byBot`: not a player event, no vocabulary check, the answer by construction).
   const land = useCallback(
-    (typed: string, byBot: boolean) => {
+    (typed: string, byBot: boolean, revealed = false) => {
+      // A reveal's choreography waits for the prompt's decode (Game's rule).
+      const reveal = revealed ? (prefersReducedMotion() ? 0 : SCRAMBLE_MS) + REVEAL_HOLD_MS : 0;
       const tried = triedRef.current;
       let ranks = ranksRef.current;
       // Judge against the log immediately, independently of the delayed visual swaps.
       const holes = replayHoles(fresh, ranks, tried);
-      // The letter was already out before this guess: this is the player's "one more try",
+      // The hole was already active before this guess: this is the player's "one more try",
       // and the bot closes after it (unless the try itself lands).
-      const letterOut = eventsRef.current.some((e) => e.filled != null);
-      // THE SWAP: the secret typed before the letter is out becomes the closest word, and the
+      const activeOut = eventsRef.current.some((e) => e.filled != null);
+      // THE SWAP: the secret typed before the hole is active becomes the closest word, and the
       // obvious word the secret. Read the map through that view from this guess on.
       const open = holes.find((h) => h.rank !== 0);
-      if (withMeters && !byBot && !letterOut && !swapped && script.pair && open && ranks[open.secret][typed]?.rank === 0) {
+      if (withMeters && !byBot && !activeOut && !swapped && script.pair && open && ranks[open.secret][typed]?.rank === 0) {
         setSwapped(true);
         const map = ranks[open.secret];
         const dq1 = Object.values(map).find((e) => e.rank === 1)?.dq;
@@ -289,7 +301,7 @@ export default function LessonBoard({
         const entry: RankEntry | undefined = ranks[h.secret][typed];
         return [{ index, entry }];
       });
-      const fadeDelayMs = Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
+      const fadeDelayMs = reveal + Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
       // The meters before and after this guess (the meter stage only): what each chip gains
       // flies into it as loot, exactly as on the day (#301).
       const before = withMeters ? meters(tried, ranks) : null;
@@ -310,12 +322,12 @@ export default function LessonBoard({
                 holeIndex: index,
                 value: entry.rank,
                 id: hit,
-                startDelayMs: step * STAGGER_MS,
+                startDelayMs: reveal + step * STAGGER_MS,
                 fadeDelayMs,
                 strike,
                 charge: strike === 'slash' && gained > 0 ? gained : undefined,
               }
-            : { holeIndex: index, value: 0, id: hit, startDelayMs: step * STAGGER_MS, fadeDelayMs, miss: true },
+            : { holeIndex: index, value: 0, id: hit, startDelayMs: reveal + step * STAGGER_MS, fadeDelayMs, miss: true },
         ]);
       });
 
@@ -344,7 +356,7 @@ export default function LessonBoard({
         if (withMeters) later(() => setShownTried(next), fadeDelayMs);
         if (!byBot) {
           const filled =
-            before && after ? after.findIndex((c, i) => c.revealed && !before[i].revealed) : -1;
+            before && after ? after.findIndex((c, i) => c.active && !before[i].active) : -1;
           setEvents((prev) => [
             ...prev,
             {
@@ -354,6 +366,7 @@ export default function LessonBoard({
               holeRanks: holes.map((h) => h.rank),
               charged: !!before && !!after && after.some((c, i) => c.charge > before[i].charge),
               filled: filled >= 0 ? filled : null,
+              revealed,
             },
           ]);
         }
@@ -391,7 +404,16 @@ export default function LessonBoard({
     (raw: string) => {
       if (!playing || !vocab) return;
       guessField.current?.focus({ preventScroll: true });
-      const typed = fold(raw);
+      // An empty ENTER with a mask picked is the REVEAL: the ghost's key is the guess,
+      // flagged for the coach, the prompt uncyphering it meanwhile.
+      if (decoding !== null) return;
+      const ghost = ghostRef.current;
+      const revealing = !fold(raw) && ghost !== null;
+      const typed = fold(raw) || ghost?.slug || '';
+      if (revealing) {
+        setDecoding(typed);
+        decode.start(typed, MASK.length, () => later(() => setDecoding(null), REVEAL_HOLD_MS), 0);
+      }
       if (!typed) {
         setInput('');
         return;
@@ -406,9 +428,9 @@ export default function LessonBoard({
       }
       setInput('');
       setFeedback(null);
-      land(typed, false);
+      land(typed, false, revealing);
     },
-    [playing, vocab, lang, say, land],
+    [playing, vocab, lang, say, land, decoding, decode, later],
   );
 
   // --- the stage's end ---
@@ -429,7 +451,7 @@ export default function LessonBoard({
 
   // --- the tries: a tap on a word (the wheel while open, the grid once found) ---
   const [historyHole, setHistoryHole] = useState<number | null>(null);
-  const [picked, setPicked] = useState<Record<number, { word: string; rank: number; at: number }>>({});
+  const [picked, setPicked] = useState<Record<number, WordPick>>({});
   const exploreLabels = useMemo(() => holes.map((_, i) => ariaHoleHistory(lang, i + 1)), [holes, lang]);
   const openHistory = useCallback((index: number) => setHistoryHole(index), []);
   // `tapped` lands on CLOSE (user-decided 2026-09-16): the line that follows the tap must
@@ -439,22 +461,38 @@ export default function LessonBoard({
     setTapped(true);
   }, []);
   const wheelOpen = historyHole !== null && holes[historyHole]?.rank !== 0 && phase === 'play' && !revealed;
+  // The meters as of the last RELEASE beat (the meter stage only) — what the sentence and
+  // the wheel read (#301). Declared here: the picks below read the given ranks off them.
+  const shownMeters = useMemo(() => (withMeters ? meters(shownTried) : undefined), [withMeters, meters, shownTried]);
+  // A live pick in the hole's place; a picked MASK shows its word once the log holds it
+  // (Game's rule).
   const shownHoles = useMemo(
     () =>
       holes.map((h, i) => {
         const p = picked[i];
-        return p && h.rank > 0 && p.at === h.rank && p.rank !== h.rank ? { ...h, word: p.word, rank: p.rank } : h;
+        if (!p || h.rank === 0 || p.at !== h.rank || p.rank === h.rank) return h;
+        const revealed = p.slug && shownMeters?.[i].given.some((g) => g.rank === p.rank && g.consumed);
+        const word = revealed ? (ranks[h.secret][p.slug as string]?.word ?? p.word) : p.word;
+        return { ...h, word, rank: p.rank };
       }),
-    [holes, picked],
+    [holes, picked, shownMeters, ranks],
   );
   const pickWord = useCallback(
     (index: number, stop: HistoryStop) => {
       const at = holes[index]?.rank;
       if (at === undefined || at === 0) return;
-      setPicked((cur) => ({ ...cur, [index]: { word: stop.display, rank: stop.rank, at } }));
+      setPicked((cur) => selectWord(cur, index, stop, at));
     },
     [holes],
   );
+  // THE GHOST (Game's): the picked, unrevealed mask an empty ENTER submits — spent the
+  // instant the guess is in the FULL log.
+  const fullMeters = useMemo(() => (withMeters ? meters(tried) : undefined), [withMeters, meters, tried]);
+  const ghost = useMemo(
+    () => latestMaskedPick(picked, holes, fullMeters ?? []),
+    [holes, picked, fullMeters],
+  );
+  ghostRef.current = ghost;
   const historyModel = useMemo(() => {
     if (historyHole === null) return null;
     const hole = holes[historyHole];
@@ -466,8 +504,9 @@ export default function LessonBoard({
       hole,
       startRank: puzzleHole.start_rank,
       secretWord: viewHoles[historyHole].secret.word,
+      given: shownMeters?.[historyHole]?.given,
     });
-  }, [historyHole, holes, puzzleHoles, viewHoles, ranks, tried]);
+  }, [historyHole, holes, puzzleHoles, viewHoles, ranks, tried, shownMeters]);
 
   // --- the coach: the one line the board's state calls for, or nothing ---
   const line = useMemo(
@@ -488,17 +527,16 @@ export default function LessonBoard({
 
   const quiet = playing && historyHole === null && hits.length === 0;
   const starts = sentenceStarts(puzzle.words);
-  // The meters as the sentence shows them (the meter stage only): the reading, the initial
-  // once revealed, and the sr-only description in the meter's place (#301).
+  // The meters as the sentence shows them (the meter stage only): the reading, whether the
+  // hole is active, and the sr-only description in the meter's place (#301).
   const charges = useMemo(() => {
-    if (!withMeters) return undefined;
-    return meters(shownTried).map((c, i) => {
-      const initial = c.revealed ? initialOf(viewHoles[i].secret.word) : null;
+    if (!shownMeters) return undefined;
+    return shownMeters.map((c, i) => {
       const hint =
-        holes[i].rank === 0 ? '' : initial !== null ? srHoleInitial(lang, initial) : srHoleCharge(lang, c.charge);
-      return { value: c.charge, initial, hint };
+        holes[i].rank === 0 ? '' : c.active ? srHoleGiven(lang, c.given.length) : srHoleCharge(lang, c.charge);
+      return { value: c.charge, active: c.active, hint };
     });
-  }, [withMeters, meters, shownTried, viewHoles, holes, lang]);
+  }, [shownMeters, holes, lang]);
 
   return (
     // tutorial--word: the word stage is deliberately CLEAN — one big centered word in the
@@ -532,7 +570,7 @@ export default function LessonBoard({
             <div className="progress-background" aria-hidden="true">
               {/* The whole log — the bot's tries included on the meter stage (user-decided
                   2026-09-16): the count the day would show for this board. */}
-              <CellDigits value={tried.length} />
+              <CellDigits value={tried.length - (decoding !== null ? 1 : 0)} />
             </div>
           )}
           <Phrase
@@ -572,6 +610,8 @@ export default function LessonBoard({
             onSubmit={submit}
             onReplace={replaceInput}
             invalidSignal={invalidAt}
+            ghost={decoding !== null ? (decode.jumble ?? decoding) : ghost ? MASK : undefined}
+            ghostTarget={decoding ?? undefined}
             active={playing && historyHole === null}
           />
           <p className="hint">{feedback || ' '}</p>
@@ -611,6 +651,8 @@ export default function LessonBoard({
               input={input}
               prefixSet={vocab.prefixSet}
               vocabSet={vocab.vocabSet}
+              submittable={ghost !== null && decoding === null}
+              locked={decoding !== null || (ghost !== null && input === '')}
               lang={lang}
               onType={appendChar}
               onBackspace={deleteChar}

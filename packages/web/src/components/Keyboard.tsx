@@ -15,6 +15,12 @@ interface KeyboardProps {
   prefixSet: Set<string>;
   // Exact existence set — decides whether Enter is active (input is a complete word).
   vocabSet: Set<string>;
+  // A masked hint stands pre-typed in the prompt (the ghost): ENTER is lit with an empty
+  // input (`submittable` — it is what reveals it) and EVERY LETTER IS OUT (`locked`;
+  // user-decided 2026-09-22, "no letters should be available on the keyboard at this
+  // point").
+  submittable?: boolean;
+  locked?: boolean;
   // Puzzle language — localizes the control keys' aria labels (letters name themselves).
   lang: string;
   onType: (char: string) => void; // append a letter or dash
@@ -47,6 +53,8 @@ export default function Keyboard({
   onType,
   onBackspace,
   onSubmit,
+  submittable = false,
+  locked = false,
 }: KeyboardProps) {
   const [shake, setShake] = useState<Shake>(null);
   // When a POINTER last pressed a key here — see `activate`.
@@ -84,10 +92,10 @@ export default function Keyboard({
     [],
   );
 
-  const enterActive = vocabSet.has(input);
+  const enterActive = vocabSet.has(input) || (input === '' && submittable);
 
   const renderLetter = (char: string) => {
-    const active = canExtend(prefixSet, input, char);
+    const active = !locked && canExtend(prefixSet, input, char);
     const shaking = shake?.id === char;
     return (
       <button
@@ -105,7 +113,7 @@ export default function Keyboard({
     );
   };
 
-  const dashActive = canExtend(prefixSet, input, '-');
+  const dashActive = !locked && canExtend(prefixSet, input, '-');
   const dashShaking = shake?.id === '-';
   const lastRowIndex = KEYBOARD_ROWS.length - 1;
 

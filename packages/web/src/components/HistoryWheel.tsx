@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { rankHeatColor } from '@whippin/shared';
 import { capitalize } from '../game/sentenceCase';
-import type { HistoryModel, HistoryStop } from '../game/history';
+import { MASK, type HistoryModel, type HistoryStop } from '../game/history';
 import { wheelOrder } from '../game/wordWheel';
 import { holeTitle, srRouteStop, t } from '../i18n';
 import useDrum from '../hooks/useDrum';
@@ -42,7 +42,29 @@ import MeterCanvas from './MeterCanvas';
 // What it keeps: the pure model (`buildHistory`; the order is `wheelOrder`, tested), the
 // `revealed` dress on the solved stage, the hole's TRUE position marked with an LED when
 // the slot holds a pick, the exponent in the shared heat colour — as a real superscript,
-// the hole's own — and the modal contract (`useModalDismiss`). It stays a native <dialog>
+// the hole's own — and the modal contract (`useModalDismiss`).
+//
+// THREE GROUNDS, THREE MEANINGS (user-decided 2026-09-22, with the activated hole): a
+// word the player TYPED stands on the plain surface; a hint the meter GAVE stands on THE
+// FOIL — the activated chip's own holographic dress (`MeterCanvas`), on the WORD ALONE so
+// the exponent stands clear of it on the ground (user-reviewed the same day: "the exponent
+// should be out of the background") — so the list says which words are theirs and which
+// were handed over with no label. THE SLOT ROW NEVER MOVES: the word the wheel holds
+// wears the regular white chip, foil or not ("when wheel focused, a word should not have
+// a moving background, just the regular white for a better UX").
+//
+// THE HINTS ARE MASKED, AND PICKING ONE IS SELECTING IT (user-decided 2026-09-22, in three
+// passes — "you can just select them with the wheel, it counts as a guess… you manage
+// your own pace"; then a REVEAL control in the wheel, first a button, then a lock on the
+// slot, then a lock on every masked row; then "maybe the best would be to display the
+// button when the word has been selected, so you can only unlock it once back on the
+// sentence and you can see the hits on the other words as well then"): a masked stop is
+// `MASK` (`?????`) on the foil — never the word's length — with its exponent, so the
+// player can choose which distance to spend a try on; it turns through the slot and IS
+// PICKED like any row, and the sentence then shows `?????²` on the hole's foil. The
+// reveal happens THERE, from the prompt: the picked mask stands pre-typed in it and
+// ENTER submits it as a guess (`Game`'s ghost). The wheel has no reveal control at all.
+// The slot row's own tap, a tap outside and Escape close, as ever. It stays a native <dialog>
 // because the sentence and the keyboard under it must be inert; it is the PuzzleSelect's
 // kind (a thing hanging off a control that stays on screen), so a tap outside closes it.
 
@@ -61,6 +83,7 @@ const MIN_COLUMN = 160;
 // of the word, quieter than it (user feedback 2026-09-01: same-size rows read too big).
 const ROW_SCALE = 0.8;
 const ROW_MIN_PX = 9;
+
 
 interface Anchor {
   wrap: { x: number; y: number; w: number; h: number }; // the word — the slot's place
@@ -114,8 +137,7 @@ export default function HistoryWheel({
   // What the tapped control SHOWS — the hole's word and rank as the sentence has them
   // (a pick included), or the secret at rank 0 on the solved stage.
   // The meter's reading (#301), so the slot row — the hole as the sentence draws it —
-  // carries it too. NOT the revealed initial: that cell stays where it is, under the veil
-  // (user-decided 2026-09-15 — a copy in the slot row sat a pixel off the sentence's).
+  // carries it too; a full meter (an active hole) draws nothing here: the slot is white.
   hub: { word: string; rank: number; meter?: number };
   // The `data-hole-explore` index of the control the wheel turns through.
   hostIndex: number;
@@ -145,10 +167,14 @@ export default function HistoryWheel({
         dq: null,
         display: model.secret,
         word: model.secret,
+        slug: '',
         start: false,
         best: false,
         behind: false,
         revealed: false,
+        given: false,
+        masked: false,
+        taken: false,
       });
     }
     return order;
@@ -206,8 +232,8 @@ export default function HistoryWheel({
   }, [anchor, drum, hubIndex]);
 
   // What the fold reads, as it is now — the fold closes over nothing stale.
-  const live = useRef({ rows, hubRank: hub.rank, onPick });
-  live.current = { rows, hubRank: hub.rank, onPick };
+  const live = useRef({ rows, hubRank: hub.rank, hubWord: hub.word, onPick });
+  live.current = { rows, hubRank: hub.rank, hubWord: hub.word, onPick };
 
   // The pick lands on the FOLD: whatever the slot holds as the dialog closes — by the
   // slot's tap, a tap outside, or Escape, one door for all three — becomes the hole's
@@ -218,9 +244,12 @@ export default function HistoryWheel({
   const fold = useCallback(() => {
     if (folded.current) return;
     folded.current = true;
-    const { rows: r, hubRank, onPick: pick } = live.current;
+    const { rows: r, hubRank, hubWord, onPick: pick } = live.current;
     const stop = r[drum.peek()];
-    if (pick && stop && stop.rank !== 0 && stop.rank !== hubRank) pick(stop);
+    // A pick where the slot differs from what the hole shows — by rank, or by WORD at the
+    // same rank: a mask picked earlier and revealed since is the same stop with its word.
+    // Confirming a held mask also makes it the latest selection for the prompt's Enter.
+    if (pick && stop && stop.rank !== 0 && (stop.masked || stop.rank !== hubRank || stop.display !== hubWord)) pick(stop);
     onClose();
   }, [drum, onClose]);
   // THE FOLD LANDS IN THE SAME TASK THAT CLOSES THE DIALOG (user-reported 2026-09-02, "the
@@ -290,12 +319,15 @@ export default function HistoryWheel({
   const trailing = Math.max(0, height - slot - rowH);
   const small = anchor.fontSize * ROW_SCALE;
 
+  // A masked stop is drawn MASK_CELLS cells wide whatever its word's length.
+  const widthOf = (stop: HistoryStop, inSlot: boolean) =>
+    stop.masked ? MASK : inSlot ? shown(stop) : stop.word;
   const rowStyle = (stop: HistoryStop, inSlot: boolean, i: number): CSSProperties =>
     ({
       height: rowH,
       lineHeight: `${rowH}px`,
       marginBottom: GAP,
-      fontSize: `${fit(inSlot ? shown(stop) : stop.word, column, inSlot ? anchor.fontSize : small)}px`,
+      fontSize: `${fit(widthOf(stop, inSlot), column, inSlot ? anchor.fontSize : small)}px`,
       '--rank-color': rankHeatColor(stop.rank),
       '--i': Math.abs(i - hubIndex),
     }) as CSSProperties;
@@ -304,18 +336,36 @@ export default function HistoryWheel({
   // chip and the exponent are the sentence's own; every other row is the word, plain,
   // with its exponent raised the same way.
   const shown = (stop: HistoryStop) => (capital ? capitalize(stop.display) : stop.display);
+  // The foil a hint wears, on its word or on its mask.
+  const foil = (stop: HistoryStop) => (
+    <span className="wheel-sea" aria-hidden="true">
+      <MeterCanvas value={100} delayMs={0} durationMs={0} sea seed={stop.rank} />
+    </span>
+  );
   const body = (stop: HistoryStop, inSlot: boolean) =>
     inSlot ? (
       <span className={`hole${stop.rank === 0 ? ' resolved' : ''}`}>
         <span className="hole-word-wrap" data-focus-box>
-          <span className="hole-word">
-            {Array.from(shown(stop)).map((ch, k) => (
-              <span key={k} className="hole-letter">
-                {ch}
+          <span className={`hole-word${stop.masked ? ' wheel-mask' : ''}`}>
+            {stop.masked
+              ? Array.from(MASK).map((ch, k) => (
+                  <span key={k} className="hole-letter">
+                    {ch}
+                  </span>
+                ))
+              : Array.from(shown(stop)).map((ch, k) => (
+                  <span key={k} className="hole-letter">
+                    {ch}
+                  </span>
+                ))}
+            {/* The meter as it stands (drawn at once, no travel); nothing once full — the
+                slot stays the regular white chip, never the foil — except a MASKED hint,
+                whose chip is the foil with nothing on it: the thing to reveal. */}
+            {stop.masked ? (
+              <span className="hole-meter" aria-hidden="true">
+                <MeterCanvas value={100} delayMs={0} durationMs={0} sea seed={stop.rank} />
               </span>
-            ))}
-            {/* The meter as it stands (drawn at once, no travel); spent once full. */}
-            {hub.meter !== undefined && hub.meter < 100 && stop.rank > 0 ? (
+            ) : hub.meter !== undefined && hub.meter < 100 && stop.rank > 0 ? (
               <span className="hole-meter" aria-hidden="true">
                 <MeterCanvas value={hub.meter} delayMs={0} durationMs={0} />
               </span>
@@ -327,9 +377,14 @@ export default function HistoryWheel({
     ) : (
       // A plain row stands on its own GROUND (user-decided 2026-09-02: "you don't have
       // wheel items over sentence text") — one box around the word AND its exponent, drawn
-      // by CSS as the chip is drawn, so the row's letters keep the slot's exact x.
-      <span className="wheel-plain">
-        <span className="wheel-word">{stop.word}</span>
+      // by CSS as the chip is drawn, so the row's letters keep the slot's exact x. A GIVEN
+      // row's ground is the sea, on the word alone (the canvas over the word's own white
+      // box), its exponent standing outside on the ground.
+      <span className={`wheel-plain${stop.given ? ' wheel-given' : ''}`}>
+        <span className={`wheel-word${stop.masked ? ' wheel-mask' : ''}`}>
+          {stop.given && foil(stop)}
+          {stop.masked ? MASK : stop.word}
+        </span>
         {stop.rank > 0 && <sup className="wheel-rank">{stop.rank}</sup>}
       </span>
     );
@@ -387,7 +442,7 @@ export default function HistoryWheel({
                 stop.best && !inSlot ? ' wheel-row-best' : ''
               }`}
               style={rowStyle(stop, inSlot, i)}
-              aria-label={inSlot ? t(lang, 'ariaClose') : srRouteStop(lang, stop)}
+              aria-label={inSlot ? t(lang, 'ariaClose') : srRouteStop(lang, { ...stop, word: stop.masked ? null : stop.word })}
               aria-current={inSlot ? 'true' : undefined}
               // The wheel's ONE tab stop is the row in the slot (#267): the arrows turn it.
               tabIndex={inSlot ? 0 : -1}

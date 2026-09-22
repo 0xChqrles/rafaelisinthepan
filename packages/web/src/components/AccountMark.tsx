@@ -43,33 +43,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AVATAR_PALETTES, AVATAR_SIZE, decodeAvatar } from '@whippin/shared';
 import Avatar from './Avatar';
+import { T0, noise3 } from './noise';
 
-// One octave of value noise in 3D (x, y, TIME), which is all a 10-cell tile can resolve —
-// the gradient noise the request named would cost more code to be indistinguishable here.
-// Integer-hashed, so the field is the same on every device and every visit.
-function hash3(x: number, y: number, z: number): number {
-  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(z, 1442695041);
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
-}
-const smooth = (t: number): number => t * t * (3 - 2 * t);
-const mix = (a: number, b: number, t: number): number => a + (b - a) * t;
-
-function noise3(x: number, y: number, z: number): number {
-  const xi = Math.floor(x);
-  const yi = Math.floor(y);
-  const zi = Math.floor(z);
-  const xf = smooth(x - xi);
-  const yf = smooth(y - yi);
-  const zf = smooth(z - zi);
-  const at = (dx: number, dy: number, dz: number) => hash3(xi + dx, yi + dy, zi + dz);
-  return mix(
-    mix(mix(at(0, 0, 0), at(1, 0, 0), xf), mix(at(0, 1, 0), at(1, 1, 0), xf), yf),
-    mix(mix(at(0, 0, 1), at(1, 0, 1), xf), mix(at(0, 1, 1), at(1, 1, 1), xf), yf),
-    zf,
-  );
-}
-
+// The noise is `components/noise.ts`'s (one octave of 3D value noise, integer-hashed) —
+// shared with the activated hole's sea since 2026-09-22.
 // How the field moves. The INK churns at a readable pace; the PALETTE is a slow drift with
 // almost no spatial term at all, which is what keeps the tile reading as ONE mark rather
 // than as a colour field — see the FRONT constants.
@@ -108,10 +85,6 @@ const FRONT_SPREAD = 1.4;
 const INK_THRESHOLD = 0.57;
 // Pixel art has nothing to gain from 60fps, and this sits above an input.
 const FRAME_MS = 1000 / 16;
-// The field is started AWAY from the lattice origin: an integer-hashed value noise is
-// exactly its own hash at (0, 0, 0), and every corner of that cell is the same one — so t=0
-// paints a degenerate frame, which is the one a still tile would hold forever.
-const T0 = 4.2;
 
 // How long the churn takes to precipitate into the drawing. Long enough to read as the
 // static RESOLVING rather than as a cut, short enough that nobody is waiting on it — and

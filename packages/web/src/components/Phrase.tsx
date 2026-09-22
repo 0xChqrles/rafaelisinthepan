@@ -94,7 +94,7 @@ export default function Phrase({
                   onResolved={onHoleResolved}
                   quiet={quiet}
                   veiled={veiledHole === idx}
-                  charge={charge && { value: charge.value, initial: charge.initial }}
+                  charge={charge && { value: charge.value, active: charge.active }}
                   chargeHintId={charge?.hint ? chargeId(idx) : undefined}
                   explore={
                     exploreLabel && onExplore
@@ -133,7 +133,7 @@ export default function Phrase({
         ),
       )}
     {/* The meters' descriptions (#301), outside the sentence for the same reason: the
-        charge and the revealed initial are the hole's STATE, read as a description of the
+        charge and the given words are the hole's STATE, read as a description of the
         hole, never as words in the prose. */}
     {charges?.map((charge, idx) =>
       charge.hint ? (

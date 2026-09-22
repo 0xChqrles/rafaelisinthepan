@@ -367,6 +367,11 @@ const STRINGS = {
   // takes the headline itself.
   sourceBy: { en: 'by', fr: 'de' },
   ariaClose: { en: 'close', fr: 'fermer' },
+  // A masked hint picked into the sentence: what ENTER does then (the prompt's description).
+  reveal: { en: 'REVEAL', fr: 'RÉVÉLER' },
+  // The hints a round took, beside its tries on the result (user-decided 2026-09-22).
+  hint: { en: 'HINT', fr: 'INDICE' },
+  hints: { en: 'HINTS', fr: 'INDICES' },
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
   // raise a question it can't answer. Pointer-aware: coarse pointers read TAP.
@@ -460,9 +465,20 @@ const STRINGS = {
     en: 'The 1000 closest words to the secret fill its meter. Once full, you earn a clue.',
     fr: 'Les 1000 mots les plus proches du secret remplissent sa jauge. Une fois pleine, on gagne un indice.',
   },
-  tutLetter: {
-    en: 'Great! We just found the secret word’s first letter: it starts with {letter}.',
-    fr: 'Super ! On a la première lettre du mot secret : ça commence par {letter}.',
+  // The activation (user-decided 2026-09-22, replacing the first letter): the given words
+  // are MASKED in the word's tries, and a tap on one reveals it for a try.
+  tutActivatedTap: {
+    en: 'The meter is full! {n} words close to the secret are masked in its tries. Tap {word}, pick a masked word, then press enter to reveal it — it costs a try.',
+    fr: 'Jauge pleine ! {n} mots proches du secret sont masqués dans ses essais. Touche {word}, choisis un mot masqué, puis valide pour le révéler, contre un essai.',
+  },
+  tutActivatedClick: {
+    en: 'The meter is full! {n} words close to the secret are masked in its tries. Click {word}, pick a masked word, then press enter to reveal it — it costs a try.',
+    fr: 'Jauge pleine ! {n} mots proches du secret sont masqués dans ses essais. Clique sur {word}, choisis un mot masqué, puis valide pour le révéler, contre un essai.',
+  },
+  // A hint revealed: named, priced, and the turn handed back.
+  tutRevealed: {
+    en: '{word} is revealed, for one try. Now find the secret word.',
+    fr: '{word} est révélé, pour un essai. À toi de trouver le mot secret.',
   },
   tutMeterFound: {
     en: 'You found it! You are ready for the real game.',
@@ -502,8 +518,10 @@ const STRINGS = {
   tutHintLune: { en: 'A hint: the secret word lights the night.', fr: 'Un indice : le mot secret éclaire la nuit.' },
   tutHintCat: { en: 'A hint: the secret word purrs.', fr: 'Un indice : le mot secret ronronne.' },
   tutHintChat: { en: 'A hint: the secret word purrs.', fr: 'Un indice : le mot secret ronronne.' },
-  tutHintLiberty: { en: 'A hint: the secret word is being free, with a capital L.', fr: 'Un indice : le mot secret, c’est être libre, avec un grand L.' },
-  tutHintFreedom: { en: 'A hint: the secret word is being free, with a capital F.', fr: 'Un indice : le mot secret, c’est être libre, avec un grand F.' },
+  // The pair's two hints tell the twins apart without a letter (the letter left with the
+  // activation, 2026-09-22): the statue's word, and its everyday twin.
+  tutHintLiberty: { en: 'A hint: the secret word is being free — the statue in New York is named for it.', fr: 'Un indice : le mot secret, c’est être libre — la statue de New York porte son nom.' },
+  tutHintFreedom: { en: 'A hint: the secret word is being free — liberty’s everyday twin.', fr: 'Un indice : le mot secret, c’est être libre — le jumeau courant de liberté.' },
   tutHintSentier: { en: 'A hint: the secret word is a narrow path through the woods.', fr: 'Un indice : le mot secret est un petit chemin dans les bois.' },
   tutHintChemin: { en: 'A hint: the secret word is a small road, or a way.', fr: 'Un indice : le mot secret est une petite route, ou une voie.' },
   // The lesson's wordless ending: the solved sentence stands, and PLAY graduates into the game.
@@ -686,13 +704,16 @@ export function srHoleCharge(lang: string, charge: number): string {
   return uiLang(lang) === 'fr' ? `jauge à ${pct} %` : `meter at ${pct}%`;
 }
 
-// The revealed initial (#301): the persistent clue a full meter earns. With `n`, the live
-// announcement the moment it is revealed; without, the hole's standing description.
-export function srHoleInitial(lang: string, letter: string, n?: number): string {
+// The given words (#301; user-decided 2026-09-22, replacing the initial): what a full meter
+// hands over — `count` words near the secret, read in the hole's tries. With `n`, the live
+// announcement the moment they land; without, the hole's standing description.
+export function srHoleGiven(lang: string, count: number, n?: number): string {
   if (uiLang(lang) === 'fr') {
-    return n === undefined ? `commence par ${letter}` : `mot ${n} : commence par ${letter}`;
+    const what = `${count} mots masqués proches du secret dans ses essais, un essai chacun à révéler`;
+    return n === undefined ? what : `mot ${n} : ${what}`;
   }
-  return n === undefined ? `starts with ${letter}` : `word ${n}: starts with ${letter}`;
+  const what = `${count} masked words near the secret in its tries, one try each to reveal`;
+  return n === undefined ? what : `word ${n}: ${what}`;
 }
 
 // The history modal's title (2026-08-10, keeping the route map's naming): a hole is named
