@@ -228,24 +228,39 @@ These are decided and verified against the code. Treat them as load-bearing.
   reaching it ACTIVATES THE HOLE (user-decided 2026-09-22, REPLACING the secret's first
   letter — "it goes against the game core logic which is to guess with meaning not
   letters"): **the `GIVEN` = 10 words just above the hole's BEST word (ranks best+1 …
-  best+10) are GIVEN — named in the hole's tries, the wheel and the words grid — and every
-  later guess that improves the best gives `GIVEN_LATER` = 1 word, the one just above the
-  new best (calibrated the same day: "10 words everytime is maybe too much… for the next
-  words it should be one word only"); windows accumulate and nothing given is ever
-  withdrawn** ("10 words above your closest", over "everything between your closest and
-  the start"; the user checked the play data: "10 more words actually always give a
-  better idea of the concept"). A full meter takes no
-  more charge. **A given word typed is a try like any other** — no scoring exemption, "if a
-  user types it, it's on them" (an exemption would need the server to re-derive what was
-  given when, and a given word can be a hit on another hole). No separate try/time gate, no
-  charge-specific dedup or farming rule: the play log's own canonical identity is what a
-  counted guess is. **DERIVED from the play log, never persisted — THE SERVER STORES
-  NOTHING FOR IT** (the user's "store the closest rank at activation" was declined as a
-  second copy of a fact the log states): `replayCharge` over the same log the board
-  replays, so a reload or another device reconstructs the same meter and the same given
-  words; `buildHistory` takes the given ranks and names them (`HistoryStop.given` —
-  canonical form; TYPED wins over given, given wins over the solve's post-mortem
-  `revealed`). Presentation (user-decided 2026-09-15, the third cut: "try
+  best+10) are GIVEN — MASKED HINTS in the hole's tries — and every later guess that
+  improves the best gives `GIVEN_LATER` = 1 more, the one just above the new best
+  (calibrated the same day: "10 words everytime is maybe too much… for the next words it
+  should be one word only"); windows accumulate and nothing given is ever withdrawn** ("10
+  words above your closest", over "everything between your closest and the start"; the
+  user checked the play data: "10 more words actually always give a better idea of the
+  concept"). A full meter takes no more charge. **THE HINTS ARE MASKED, AND REVEALING ONE
+  IS A GUESS (user-decided 2026-09-22: "making the hint words masked, and you can just
+  select them with the wheel, it counts as a guess, but this way users who don't want help
+  don't get penalized, and those who need help just increase their score in return… you
+  manage your own pace")**: a masked hint is a foil block of FIXED width (the wheel's
+  `MASK`, five blank cells — never the word's length) wearing its EXPONENT, so the player
+  chooses which distance to spend a try on; a DELIBERATE TAP ON THE WHEEL'S SLOT ROW
+  reveals it — `HistoryWheel`'s `onReveal`, which SUBMITS the stop's key (`HistoryStop.slug`)
+  through the game's own `submit`: the word enters the play log like any typed guess,
+  counts as a try, charges the other holes, syncs, and can hit another hole — and the
+  wheel stays open with the word in place. The fold (a tap outside, Escape) closes without
+  revealing and never picks a masked row, so scrolling past one costs nothing. A given rank
+  the player had ALREADY reached is never given (they knew the word). **THE HINTS TAKEN are
+  derived from the log** (`GivenRank.consumed`: a given rank guessed after it was given —
+  typed by hand counts the same, "it's on them"; `hintsTaken` sums them over the distinct
+  secrets) and NAMED ON THE RESULT under the tries, zero included (`.solved-score-hints`,
+  `N HINTS` / `N INDICES`); the share card and token carry no hint count (a v7 token is a
+  separate decision). No separate try/time gate, no charge-specific dedup or farming rule:
+  the play log's own canonical identity is what a counted guess is. **DERIVED from the
+  play log, never persisted — THE SERVER STORES NOTHING FOR IT** (the user's "store the
+  closest rank at activation" was declined as a second copy of a fact the log states):
+  `replayCharge` over the same log the board replays, so a reload or another device
+  reconstructs the same meter, the same masked hints and the same count; `buildHistory`
+  takes the given ranks and names them (`HistoryStop.given` / `masked` / `taken`: masked
+  = no word, its rank and key alone; taken = the player's typed stop wearing the foil; the
+  solve unmasks the untaken, still given — on the words grid a hint TAKEN wears the foil,
+  one left on the table stands plain). Presentation (user-decided 2026-09-15, the third cut: "try
   something else than a progress bar"): THE
   CHIP CONVERTS TO THE SOLVE INK EDGE TO EDGE ACROSS THE WORD — `.hole-meter`, the chip's
   own box and layer: the white ground turns cobalt from the left behind the dark letters,
@@ -290,14 +305,15 @@ These are decided and verified against the code. Treat them as load-bearing.
   and prop are still `sea`, the name of the first cut.) **THE GIVEN WORDS
   WEAR THE SAME SEA WHEREVER THEY ARE LISTED** (user-decided 2026-09-22, "the given words
   should have the same effect on the guess list"): a `.wheel-given` row and a `.hw-given`
-  word stand on the chip's white with the sea over it, dark ink, no print — ON THE WORD
+  word stand on the chip's white with the foil over it, dark ink, no print — ON THE WORD
   ALONE, the exponent standing clear on the ground, nudged past the box's overhang ("the
   exponent should be out of the background"; "it touches it") — so three grounds say three
-  things with no label: the surface (typed),
-  the sea (given), the plain word (named by the solve). **THE WHEEL'S SLOT ROW NEVER
+  things with no label: the surface (typed), the foil (given — a masked hint is the foil
+  with nothing on it), the plain word (named by the solve). **THE WHEEL'S SLOT ROW NEVER
   MOVES**: the word the wheel holds wears the regular white chip, active hole or given
   word ("when wheel focused, a word should not have a moving background, just the regular
-  white for a better UX").
+  white for a better UX") — except a MASKED hint in the slot, which keeps its foil: it is
+  the thing to reveal (`ariaReveal`).
   RETIRED with it: `.hole-initial` (the first-cell tile), `initialOf`, `srHoleInitial`, the
   `.spent` fade. Retired the same day, each on the
   user's review: a line along the chip's bottom edge and the band the chip grew for it (a
@@ -2924,10 +2940,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     on a coarse pointer — every tap line has its click twin) → tapped: "The 1000 closest words to the
     secret fill its meter. Once full, you earn a clue." → a guess that does not fill:
     `tutNear` → the obvious guess FILLS IT — no progress needed — and the hole ACTIVATES:
-    "The meter is full! 10 new words close to the secret are revealed. Click freedom¹ to
-    read them." (`tutActivatedTap`/`Click` — fr « ont été révélés », the user's wording
-    over « ont rejoint mes essais », 2026-09-22; the tap teaches the wheel a second time) → a
-    FAILED TRY after it earns the HINT
+    "The meter is full! 10 words close to the secret are masked in its tries. Click
+    freedom¹, then a masked word to reveal it — it costs a try." (`tutActivatedTap`/`Click`,
+    2026-09-22; the tap teaches the wheel a second time and the price once) → a hint
+    REVEALED from the wheel: "equality² is revealed, for one try. Now find the secret word."
+    (`tutRevealed`, off the event's `revealed` flag) → a FAILED TRY typed after it earns the HINT
     (`hints[]`, or `pair.hint` once swapped), NEVER THE WORD (user-decided 2026-09-16,
     retiring the bot's own closing guess) → found: "You found it! You are ready for the real
     game." → PLAY. `STUCK.meter` is unused

@@ -25,6 +25,8 @@ export interface GuessEvent {
   // FILLED (the hole is active, its given words out), if any.
   charged?: boolean;
   filled?: number | null;
+  // This guess was a masked hint REVEALED from the wheel (the meter stage).
+  revealed?: boolean;
 }
 
 export interface CoachState {
@@ -67,6 +69,8 @@ export type CoachLine =
   // screen, and a line that changes under the typewriter restarts it (user-reported
   // 2026-09-22: "Jauge pleine ! 1" typed, erased, typed again).
   | { kind: 'activated'; word: string; rank: number }
+  // A hint revealed: the word, and the try it cost — the player's turn.
+  | { kind: 'revealedHint'; word: string; rank: number }
   | { kind: 'found' };
 
 // Guesses a hole may resist before each rung of the ladder. The sentence gets more room:
@@ -106,7 +110,13 @@ export function coachLine(state: CoachState): CoachLine | null {
     if (filledAt >= 0) {
       const filling = events[filledAt];
       const holeIndex = filling.filled as number;
-      if (filledAt !== events.length - 1) return { kind: 'hint', holeIndex };
+      const last = events[events.length - 1];
+      // A hint just revealed is named, with its price; a typed try that failed after the
+      // activation earns the board's hint.
+      if (filledAt !== events.length - 1) {
+        const entry = last.revealed ? last.entries[holeIndex] : undefined;
+        return entry ? { kind: 'revealedHint', word: entry.word, rank: entry.rank } : { kind: 'hint', holeIndex };
+      }
       // The word the hole shows once the guess lands: the guess itself where it improved
       // the hole, else the word the hole already held.
       const entry = filling.entries[holeIndex];
@@ -204,6 +214,8 @@ export function coachCopy(
       return t(lang, coarsePointer ? 'tutActivatedTap' : 'tutActivatedClick')
         .replace('{n}', String(GIVEN))
         .replace('{word}', chip(line.word, line.rank));
+    case 'revealedHint':
+      return t(lang, 'tutRevealed').replace('{word}', chip(line.word, line.rank));
     case 'found':
       return t(lang, 'tutMeterFound');
     case 'away':

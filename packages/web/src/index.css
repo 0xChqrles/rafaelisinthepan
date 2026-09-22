@@ -2510,6 +2510,20 @@ input {
   color: var(--fg);
   opacity: 0.8;
 }
+/* THE HINTS TAKEN (user-decided 2026-09-22): a second, quieter unit line under the tries —
+   how many of them were masked words revealed, the price of the help — in the secondary
+   ink, the count in the pixel face like the score it is part of. Zero is drawn. */
+.solved-score-hints {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  color: var(--muted);
+}
+.solved-score-hints-num {
+  font-family: var(--pixel-font);
+  font-size: 12px;
+}
 /* Run ruler — the PER-TRY STEPPED CELLS, restored 2026-08-18 (the gradient filament
    built that day read as a lightstrip and its flat-rule replacement lost the colours —
    "put back the old step by step colors"): one flat cell per counted try at that try's
@@ -2959,6 +2973,12 @@ input {
 }
 .wheel-row .wheel-given .wheel-word {
   text-shadow: none;
+}
+/* A MASKED hint (user-decided 2026-09-22): the foil with nothing on it, a fixed run of
+   blank cells whatever the word's length — the wheel's `MASK` — so a masked row and a
+   masked slot read as a sealed card. */
+.wheel-mask {
+  white-space: pre;
 }
 /* Every plain row's exponent steps clear of its box's right overhang, and a few pixels
    more (user-reported 2026-09-22: "it touches it", then "a few pixel more detached"): the

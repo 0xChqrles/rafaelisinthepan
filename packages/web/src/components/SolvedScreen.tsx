@@ -112,8 +112,12 @@ export default function SolvedScreen({
   start = true,
   onRevealEnd,
   onTomorrow,
+  hints = 0,
 }: {
   guessCount: number;
+  // The hints the round took (#301's masked words revealed, each a try; user-decided
+  // 2026-09-22): named under the tries, zero included — a clean run says so.
+  hints?: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
   solvedAt?: (number | null)[]; // the player's solve moments (ruler ticks)
   dayNumber: number;
@@ -389,6 +393,13 @@ export default function SolvedScreen({
           </span>
           <span className="solved-score-unit">
             {t(lang, !capped && guessCount === 1 ? 'try' : 'tries')}
+          </span>
+          {/* THE HINTS TAKEN (user-decided 2026-09-22): how many of the tries were masked
+              words revealed from the wheel — the price of the help, said with the score,
+              zero included. */}
+          <span className="solved-score-hints">
+            <span className="solved-score-hints-num">{hints}</span>{' '}
+            {t(lang, hints === 1 ? 'hint' : 'hints')}
           </span>
         </span>
 

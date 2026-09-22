@@ -15,11 +15,14 @@ const stop = (rank: number, behind = false, start = false): HistoryStop => ({
   dq: null,
   display: `w${rank}`,
   word: `w${rank}`,
+  slug: `w${rank}`,
   start,
   best: false,
   behind,
   revealed: false,
   given: false,
+  masked: false,
+  taken: false,
 });
 
 describe('wheelOrder', () => {

@@ -367,6 +367,11 @@ const STRINGS = {
   // takes the headline itself.
   sourceBy: { en: 'by', fr: 'de' },
   ariaClose: { en: 'close', fr: 'fermer' },
+  // A masked hint in the wheel's slot: the tap that reveals it, and its price.
+  ariaReveal: { en: 'reveal this word (one try)', fr: 'révéler ce mot (un essai)' },
+  // The hints a round took, beside its tries on the result (user-decided 2026-09-22).
+  hint: { en: 'HINT', fr: 'INDICE' },
+  hints: { en: 'HINTS', fr: 'INDICES' },
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
   // raise a question it can't answer. Pointer-aware: coarse pointers read TAP.
@@ -461,14 +466,19 @@ const STRINGS = {
     fr: 'Les 1000 mots les plus proches du secret remplissent sa jauge. Une fois pleine, on gagne un indice.',
   },
   // The activation (user-decided 2026-09-22, replacing the first letter): the given words
-  // are in the word's tries, and the tap is the way to read them.
+  // are MASKED in the word's tries, and a tap on one reveals it for a try.
   tutActivatedTap: {
-    en: 'The meter is full! {n} new words close to the secret are revealed. Tap {word} to read them.',
-    fr: 'Jauge pleine ! {n} nouveaux mots proches du secret ont été révélés. Touche {word} pour les lire.',
+    en: 'The meter is full! {n} words close to the secret are masked in its tries. Tap {word}, then a masked word to reveal it — it costs a try.',
+    fr: 'Jauge pleine ! {n} mots proches du secret sont masqués dans ses essais. Touche {word}, puis un mot masqué pour le révéler, contre un essai.',
   },
   tutActivatedClick: {
-    en: 'The meter is full! {n} new words close to the secret are revealed. Click {word} to read them.',
-    fr: 'Jauge pleine ! {n} nouveaux mots proches du secret ont été révélés. Clique sur {word} pour les lire.',
+    en: 'The meter is full! {n} words close to the secret are masked in its tries. Click {word}, then a masked word to reveal it — it costs a try.',
+    fr: 'Jauge pleine ! {n} mots proches du secret sont masqués dans ses essais. Clique sur {word}, puis sur un mot masqué pour le révéler, contre un essai.',
+  },
+  // A hint revealed: named, priced, and the turn handed back.
+  tutRevealed: {
+    en: '{word} is revealed, for one try. Now find the secret word.',
+    fr: '{word} est révélé, pour un essai. À toi de trouver le mot secret.',
   },
   tutMeterFound: {
     en: 'You found it! You are ready for the real game.',
@@ -699,10 +709,10 @@ export function srHoleCharge(lang: string, charge: number): string {
 // announcement the moment they land; without, the hole's standing description.
 export function srHoleGiven(lang: string, count: number, n?: number): string {
   if (uiLang(lang) === 'fr') {
-    const what = `${count} mots proches du secret révélés dans ses essais`;
+    const what = `${count} mots masqués proches du secret dans ses essais, un essai chacun à révéler`;
     return n === undefined ? what : `mot ${n} : ${what}`;
   }
-  const what = `${count} words near the secret revealed in its tries`;
+  const what = `${count} masked words near the secret in its tries, one try each to reveal`;
   return n === undefined ? what : `word ${n}: ${what}`;
 }
 

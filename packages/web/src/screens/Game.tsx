@@ -31,7 +31,7 @@ import { PLAY_LEVEL } from '../tutorial/levels';
 import LoadError from '../components/LoadError';
 import FlipCountdown from '../components/FlipCountdown';
 import { earlyLocked } from '../game/earlyPlay';
-import { chargeForRank, replayCharge } from '../game/charge';
+import { chargeForRank, hintsTaken, replayCharge } from '../game/charge';
 import { navigate } from '../routing';
 import { pathForDay, pathForGame, pathForLesson } from '../langs';
 import { buildHistory } from '../game/history';
@@ -714,7 +714,7 @@ function Round({
           holes[i].rank === 0
             ? ''
             : c.active
-              ? srHoleGiven(lang, c.given.length)
+              ? srHoleGiven(lang, c.given.filter((g) => !g.consumed).length)
               : srHoleCharge(lang, c.charge);
         return { value: c.charge, active: c.active, hint };
       }),
@@ -1006,6 +1006,7 @@ function Round({
            with the keyboard: nothing left down there to reserve a footprint for. */
         <SolvedScreen
           guessCount={guessCount}
+          hints={hintsTaken(freshHoles, chargeState)}
           trajectory={trajectory}
           dayNumber={dayNumber}
           lang={lang}
@@ -1208,6 +1209,9 @@ function Round({
           // exactly when the hole does (a sentence opener with no prefix to carry it).
           capital={sentenceStarts(words)[puzzleHoles[historyHole].pos] && !puzzleHoles[historyHole].prefix}
           onPick={exploreDisabled ? undefined : (stop) => pickWord(historyHole, stop)}
+          // A masked hint tapped in the slot is a GUESS of its key — the same door as the
+          // prompt, with the same refusals (the cap, the lock, a finished round).
+          onReveal={exploreDisabled ? undefined : (stop) => submit(stop.slug)}
           onClose={closeHistory}
         />
       )}

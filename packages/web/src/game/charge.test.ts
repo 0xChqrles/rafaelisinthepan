@@ -2,14 +2,15 @@
 // counted guess charges every unsolved hole by its rank in that secret's map, best word or
 // not; the meter caps at 100 and a full meter ACTIVATES the hole — the GIVEN ranks just
 // above its best word are given, and every later improvement of the best gives the
-// GIVEN_LATER rank(s) above the new best, the windows accumulating; rank 0 is the solve
-// and pays nothing;
+// GIVEN_LATER rank(s) above the new best, the windows accumulating — a rank already
+// reached is never given, and a given rank guessed afterwards (typed or revealed) is a hint
+// CONSUMED; rank 0 is the solve and pays nothing;
 // repeated occurrences of one secret share one meter; charge is DERIVED from the play log,
 // so a replay reconstructs it exactly.
 
 import { describe, expect, it } from 'vitest';
 import type { RankMap, RuntimeHole } from '@whippin/shared';
-import { CHARGE_TARGET, GIVEN, GIVEN_LATER, chargeForRank, replayCharge } from './charge';
+import { CHARGE_TARGET, GIVEN, GIVEN_LATER, chargeForRank, hintsTaken, replayCharge } from './charge';
 import type { HoleCharge } from './charge';
 import { replayHoles } from './scoring';
 
@@ -49,6 +50,9 @@ function holes(): RuntimeHole[] {
 
 // The ranks best+1 … best+count.
 const above = (best: number, count = GIVEN) => Array.from({ length: count }, (_, i) => best + 1 + i);
+// The given ranks alone, and the consumed ones.
+const ranksOf = (c: HoleCharge) => c.given.map((g) => g.rank);
+const consumedOf = (c: HoleCharge) => c.given.filter((g) => g.consumed).map((g) => g.rank);
 
 // Four near guesses that leave the meter just under full, and the fifth that fills it.
 const FOUR = ['honnete1', 'honnete5', 'honnete10', 'honnete11'];
@@ -125,8 +129,9 @@ describe('replayCharge — the meter as the play log describes it', () => {
     const full = replayCharge(holes(), RANKS, [...FOUR, FILLS])[0];
     expect(full.charge).toBe(CHARGE_TARGET);
     expect(full.active).toBe(true);
-    // Once full, further near guesses that do not move the hole change nothing.
-    expect(replayCharge(holes(), RANKS, [...FOUR, FILLS, 'honnete3'])[0]).toEqual(full);
+    // Once full, a further guess that neither moves the hole nor takes a hint changes
+    // nothing.
+    expect(replayCharge(holes(), RANKS, [...FOUR, FILLS, 'honnete999'])[0]).toEqual(full);
   });
 
   it('a miss and a rank past 1000 pay nothing', () => {
@@ -172,8 +177,9 @@ describe('replayCharge — the meter as the play log describes it', () => {
 
 describe('the given words — the window above the best word, from the activation on', () => {
   it('the activation gives the GIVEN ranks above the best word as it then stands', () => {
-    // The best after the four is rank 1: the window is 2 … 11.
-    expect(replayCharge(holes(), RANKS, [...FOUR, FILLS])[0].given).toEqual(above(1));
+    // The best after the four is rank 1: the window is 2 … 11 — less the ranks the player
+    // already reached (5, 10, 11), which are no hint to them.
+    expect(ranksOf(replayCharge(holes(), RANKS, [...FOUR, FILLS])[0])).toEqual([2, 3, 4, 6, 7, 8, 9]);
   });
 
   it('a hole nobody has moved gives the window above its start word', () => {
@@ -183,7 +189,13 @@ describe('the given words — the window above the best word, from the activatio
     const meter = replayCharge(holes(), RANKS, log)[0];
     expect(meter.active).toBe(true);
     expect(replayHoles(holes(), RANKS, log)[0].rank).toBe(50);
-    expect(meter.given).toEqual(above(50));
+    // The window is 51 … 60; the meter filled on 57, so 51 … 57 were known — and 58,
+    // guessed right after, is a hint consumed.
+    expect(meter.given).toEqual([
+      { rank: 58, consumed: true },
+      { rank: 59, consumed: false },
+      { rank: 60, consumed: false },
+    ]);
   });
 
   it('the guess that fills the meter and improves the hole at once gives from the NEW best', () => {
@@ -191,25 +203,26 @@ describe('the given words — the window above the best word, from the activatio
     const log = ['honnete5', 'honnete10', 'honnete11', 'honnete14', 'honnete1'];
     const meter = replayCharge(holes(), RANKS, log)[0];
     expect(meter.active).toBe(true);
-    expect(meter.given).toEqual(above(1));
+    expect(ranksOf(meter)).toEqual([2, 3, 4, 6, 7, 8, 9]);
   });
 
   it('each later improvement gives ONE word above the new best; earlier windows stay', () => {
-    // Active at best 10 (window 11 … 20); then the best moves to 3: rank 4 alone joins,
-    // then to 1: rank 2 — the union, ascending, without repeats.
+    // Active at best 10 (window 11 … 20, less the known 11 and 14); then the best moves to
+    // 3: rank 4 alone joins, then to 1: rank 2 — the union, ascending, without repeats.
     expect(GIVEN_LATER).toBe(1);
     const log = ['honnete50', 'honnete51', 'honnete100', 'honnete21', 'honnete14', 'honnete11', 'honnete10'];
+    const window = above(10).filter((r) => r !== 11 && r !== 14);
     const before = replayCharge(holes(), RANKS, log)[0];
-    expect(before.given).toEqual(above(10));
+    expect(ranksOf(before)).toEqual(window);
     const after = replayCharge(holes(), RANKS, [...log, 'honnete3'])[0];
-    expect(after.given).toEqual([...above(3, GIVEN_LATER), ...above(10)]);
-    expect(replayCharge(holes(), RANKS, [...log, 'honnete3', 'honnete1'])[0].given).toEqual([
+    expect(ranksOf(after)).toEqual([...above(3, GIVEN_LATER), ...window]);
+    expect(ranksOf(replayCharge(holes(), RANKS, [...log, 'honnete3', 'honnete1'])[0])).toEqual([
       ...above(1, GIVEN_LATER),
       ...above(3, GIVEN_LATER),
-      ...above(10),
+      ...window,
     ]);
     // A guess that does not move the hole gives nothing more, near or far.
-    expect(replayCharge(holes(), RANKS, [...log, 'honnete3', 'honnete5', 'honnete999'])[0].given).toEqual(after.given);
+    expect(ranksOf(replayCharge(holes(), RANKS, [...log, 'honnete3', 'honnete5', 'honnete999'])[0])).toEqual(ranksOf(after));
   });
 
   it('nothing is given before the activation, whatever the hole did', () => {
@@ -221,6 +234,8 @@ describe('the given words — the window above the best word, from the activatio
     const active = [...FOUR, FILLS];
     const solved = replayCharge(holes(), RANKS, [...active, 'honnete', 'honnete2'])[0];
     expect(solved.given).toEqual(replayCharge(holes(), RANKS, active)[0].given);
+    // A guess after the solve consumes nothing either.
+    expect(consumedOf(solved)).toEqual([]);
   });
 
   it('repeated occurrences share the given words', () => {
@@ -230,6 +245,39 @@ describe('the given words — the window above the best word, from the activatio
     ];
     const meters = replayCharge(twice, RANKS, [...FOUR, FILLS]);
     expect(meters[2]).toEqual(meters[0]);
-    expect(meters[0].given).toEqual(above(1));
+    expect(ranksOf(meters[0])).toEqual([2, 3, 4, 6, 7, 8, 9]);
+    // …and the hints are counted once per secret.
+    expect(hintsTaken(twice, replayCharge(twice, RANKS, [...FOUR, FILLS, 'honnete2']))).toBe(1);
+  });
+});
+
+describe('the hints — masked until guessed, and a guess is what consumes one', () => {
+  it('a given rank guessed after it was given is CONSUMED; before, it was never a hint', () => {
+    // FOUR + FILLS: best 1, given 2 … 11 — but 5, 10 and 11 were already reached by the
+    // player's own guesses, so they are not given at all (they knew those words).
+    const active = replayCharge(holes(), RANKS, [...FOUR, FILLS])[0];
+    expect(ranksOf(active)).toEqual([2, 3, 4, 6, 7, 8, 9]);
+    expect(consumedOf(active)).toEqual([]);
+    // Then rank 2 is guessed — typed or revealed, the log cannot tell: a hint taken.
+    const one = replayCharge(holes(), RANKS, [...FOUR, FILLS, 'honnete2'])[0];
+    expect(consumedOf(one)).toEqual([2]);
+    expect(ranksOf(one)).toEqual(ranksOf(active)); // nothing new given: the hole did not move
+    // A repeat in the log is impossible (the play log dedups); a far guess consumes nothing.
+    expect(consumedOf(replayCharge(holes(), RANKS, [...FOUR, FILLS, 'honnete2', 'honnete999'])[0])).toEqual([2]);
+  });
+
+  it('a rank the player already reached is skipped by a later window too', () => {
+    // Active at best 10 with 11 … 20 given; 14 and 11 were typed before the activation: not
+    // given. Then best 3: rank 4 joins.
+    const log = ['honnete50', 'honnete51', 'honnete100', 'honnete21', 'honnete14', 'honnete11', 'honnete10'];
+    expect(ranksOf(replayCharge(holes(), RANKS, log)[0])).toEqual([12, 13, 15, 16, 17, 18, 19, 20]);
+    expect(ranksOf(replayCharge(holes(), RANKS, [...log, 'honnete3'])[0])).toEqual([4, 12, 13, 15, 16, 17, 18, 19, 20]);
+  });
+
+  it('hintsTaken sums the consumed hints over the distinct secrets', () => {
+    const none = replayCharge(holes(), RANKS, [...FOUR, FILLS]);
+    expect(hintsTaken(holes(), none)).toBe(0);
+    const two = replayCharge(holes(), RANKS, [...FOUR, FILLS, 'honnete2', 'honnete3']);
+    expect(hintsTaken(holes(), two)).toBe(2);
   });
 });

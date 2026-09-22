@@ -83,7 +83,9 @@ export default function HistoryModal({
             {model.stops.map((stop) => (
               <li
                 key={stop.rank}
-                className={`hw-word${stop.given ? ' hw-given' : stop.revealed ? '' : ' hw-found'}`}
+                // Solved, nothing is masked: a hint TAKEN wears the foil, one left on the
+                // table is a word the solve names, plain.
+                className={`hw-word${stop.taken ? ' hw-given' : stop.revealed || stop.given ? '' : ' hw-found'}`}
                 style={
                   {
                     fontSize: `${sizeOf(stop.word)}px`,

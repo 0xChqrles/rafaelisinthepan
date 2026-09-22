@@ -4,18 +4,23 @@
 // guess now CHARGES every unsolved hole by its own rank in that secret's map — whether or
 // not it is a new best — and a full meter ACTIVATES the hole (user-decided 2026-09-22,
 // replacing the secret's first letter): the `GIVEN` words just above the hole's best word
-// are revealed, and as the best word improves, the ONE word above each new best joins
-// them (`GIVEN_LATER`; calibrated the same day: "10 words everytime is maybe too much…
-// for the next words it should be one word only") — nothing given is ever taken back. The
-// letter was a spelling clue in a meaning game; a neighbourhood says what the word IS
-// ("10 more words actually always give a better idea of the concept" — the user, on the
-// play data).
+// are GIVEN — MASKED slots in the hole's tries, each one a hint the player may REVEAL from
+// the wheel at the price of a try — and as the best word improves, the ONE word above each
+// new best joins them (`GIVEN_LATER`; calibrated the same day: "10 words everytime is
+// maybe too much… for the next words it should be one word only") — nothing given is ever
+// taken back. The letter was a spelling clue in a meaning game; a neighbourhood says what
+// the word IS ("10 more words actually always give a better idea of the concept" — the
+// user, on the play data).
 //
-// It is a game mechanic, not a hint button: the guesses that fill the meter are the cost,
-// and they count toward the round score exactly as today. A fast solve never fills it. A
-// given word typed is a try like any other — the log's canonical identity is the only
-// notion of a counted guess, and no exemption is carved out for it (user-decided
-// 2026-09-22: "if a user types it, it's on them").
+// THE HINTS ARE MASKED, AND A REVEAL IS A GUESS (user-decided 2026-09-22: "making the hint
+// words masked, and you can just select them with the wheel, it counts as a guess, but
+// this way users who don't want help don't get penalized, and those who need help just
+// increase their score in return… you manage your own pace"): revealing a masked word is
+// submitting it as a guess — it enters the play log like any typed word, counts as a try,
+// charges the other holes, syncs. So the log alone says what was CONSUMED: a given rank
+// guessed after it was given. A given rank the player had ALREADY guessed is not a hint at
+// all (they knew the word) and is never given. The meter's guesses are the cost of the
+// pool; each hint taken is one more try. A fast solve never fills it.
 //
 // DERIVED FROM THE PLAY LOG, never persisted: replaying the same log reconstructs the same
 // meter and the same given words on any device, exactly like the board — the server stores
@@ -63,13 +68,30 @@ export function chargeForRank(rank: number | undefined): number {
 
 // One hole's meter: its charge in [0, CHARGE_TARGET], whether the hole is ACTIVE (the meter
 // reached its target), and the ranks it has GIVEN — ascending, without repeats, empty until
-// the activation. Repeated occurrences of one secret slug share one meter (one logical
-// target, as reconstruction progress already treats them), so two holes can carry equal
-// readings.
+// the activation — each saying whether the player CONSUMED it (guessed it after it was
+// given: the hint taken, the try spent). Repeated occurrences of one secret slug share one
+// meter (one logical target, as reconstruction progress already treats them), so two holes
+// can carry equal readings.
+export interface GivenRank {
+  rank: number;
+  consumed: boolean;
+}
 export interface HoleCharge {
   charge: number;
   active: boolean;
-  given: number[];
+  given: GivenRank[];
+}
+
+// The hints a round took, over its distinct secrets (repeated occurrences share a meter).
+export function hintsTaken(freshHoles: readonly RuntimeHole[], charges: readonly HoleCharge[]): number {
+  const seen = new Set<string>();
+  let n = 0;
+  freshHoles.forEach((h, i) => {
+    if (seen.has(h.secret)) return;
+    seen.add(h.secret);
+    n += charges[i].given.filter((g) => g.consumed).length;
+  });
+  return n;
 }
 
 // The whole log replayed onto the holes' meters — the meters as the play log describes
@@ -89,12 +111,25 @@ export function replayCharge(
   ranks: RankMap,
   log: readonly string[],
 ): HoleCharge[] {
-  const meters = new Map<string, { charge: number; solved: boolean; best: number; given: Set<number> }>();
-  for (const h of freshHoles) {
-    if (!meters.has(h.secret)) meters.set(h.secret, { charge: 0, solved: false, best: h.rank, given: new Set() });
+  interface Meter {
+    charge: number;
+    solved: boolean;
+    best: number;
+    guessed: Set<number>; // every rank the log has reached in this map, so far
+    given: Map<number, boolean>; // rank -> consumed
   }
-  const give = (meter: { best: number; given: Set<number> }, count: number) => {
-    for (let r = meter.best + 1; r <= meter.best + count; r += 1) meter.given.add(r);
+  const meters = new Map<string, Meter>();
+  for (const h of freshHoles) {
+    if (!meters.has(h.secret)) {
+      meters.set(h.secret, { charge: 0, solved: false, best: h.rank, guessed: new Set(), given: new Map() });
+    }
+  }
+  // Give the `count` ranks above the best — except one the player has already reached,
+  // which is no hint to them.
+  const give = (meter: Meter, count: number) => {
+    for (let r = meter.best + 1; r <= meter.best + count; r += 1) {
+      if (!meter.guessed.has(r) && !meter.given.has(r)) meter.given.set(r, false);
+    }
   };
   for (const typed of log) {
     for (const [secret, meter] of meters) {
@@ -105,6 +140,10 @@ export function replayCharge(
         meter.solved = true;
         continue;
       }
+      // A given rank guessed — typed or revealed from the wheel, the log cannot tell and
+      // need not — is a hint consumed.
+      if (meter.given.has(entry.rank)) meter.given.set(entry.rank, true);
+      meter.guessed.add(entry.rank);
       const wasActive = meter.charge >= CHARGE_TARGET;
       meter.charge = Math.min(CHARGE_TARGET, meter.charge + chargeForRank(entry.rank));
       const improved = entry.rank < meter.best;
@@ -121,7 +160,9 @@ export function replayCharge(
     return {
       charge: meter.charge,
       active: meter.charge >= CHARGE_TARGET,
-      given: [...meter.given].sort((a, b) => a - b),
+      given: [...meter.given]
+        .map(([rank, consumed]) => ({ rank, consumed }))
+        .sort((a, b) => a.rank - b.rank),
     };
   });
 }

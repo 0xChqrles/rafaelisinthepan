@@ -254,7 +254,7 @@ export default function LessonBoard({
   // ONE guess landing on the board — the player's (counted, coached) or the bot's closing
   // one (`byBot`: not a player event, no vocabulary check, the answer by construction).
   const land = useCallback(
-    (typed: string, byBot: boolean) => {
+    (typed: string, byBot: boolean, revealed = false) => {
       const tried = triedRef.current;
       let ranks = ranksRef.current;
       // Judge against the log immediately, independently of the delayed visual swaps.
@@ -354,6 +354,7 @@ export default function LessonBoard({
               holeRanks: holes.map((h) => h.rank),
               charged: !!before && !!after && after.some((c, i) => c.charge > before[i].charge),
               filled: filled >= 0 ? filled : null,
+              revealed,
             },
           ]);
         }
@@ -639,6 +640,9 @@ export default function LessonBoard({
           lang={lang}
           capital={sentenceLike && starts[puzzleHoles[historyHole].pos] && !puzzleHoles[historyHole].prefix}
           onPick={(stop) => pickWord(historyHole, stop)}
+          // A masked hint revealed from the wheel is a guess, the player's, flagged so the
+          // coach can name it.
+          onReveal={playing ? (stop) => land(stop.slug, false, true) : undefined}
           onClose={closeHistory}
         />
       )}

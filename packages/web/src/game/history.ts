@@ -15,6 +15,7 @@
 // components/HistoryModal; this file is pure and tested.
 
 import type { RankEntry, RuntimeHole } from '@whippin/shared';
+import type { GivenRank } from './charge';
 
 // One place on the line the player has actually been: a ranked group they typed, or the
 // start word they were given. Aliases collapse — a group reached through any of its
@@ -34,8 +35,13 @@ export interface HistoryStop {
   // correction; the rule the old trunk stops and the MISSED shelf always followed, legal
   // because this game's input produces folded slug characters only). The canonical form
   // is the fallback for the two stops nobody typed: the departure, and a "you are here"
-  // the hole reached through a deduped guess that never entered the log.
+  // the hole reached through a deduped guess that never entered the log. EMPTY on a
+  // MASKED stop: the word is not the player's yet, and nothing rendered may carry it.
   word: string;
+  // A folded KEY that reaches this stop in the map — what a REVEAL submits as the guess
+  // (never the display form: `fold` of an accented canonical is not always a key). Empty
+  // where no key is known (a stop with no entry).
+  slug: string;
   start: boolean; // the departure: the start word the puzzle handed out
   best: boolean; // "you are here": the hole's current closest word
   // FARTHER than the departure: a guess that went backwards from where the puzzle put the
@@ -52,12 +58,15 @@ export interface HistoryStop {
   // recede. Never true while the hole is live: an unsolved line shows only where the
   // player has been.
   revealed: boolean;
-  // GIVEN by the meter (user-decided 2026-09-22): a word the hole's activation handed over
+  // GIVEN by the meter (user-decided 2026-09-22): a hint the hole's activation handed over
   // — one of the `GIVEN` just above the best word, at the activation and at every later
-  // improvement (`game/charge.ts`). Never typed, and never withdrawn; the one kind of stop
-  // a LIVE hole names that the player has not been to. A given word the player then types
-  // is theirs — typed wins, and the stop wears the typed dress.
+  // improvement (`game/charge.ts`) — never withdrawn. MASKED until the player takes it: a
+  // masked stop has no word (`word` and `display` empty), only its rank; taking it —
+  // revealing it from the wheel, or typing it — is a guess, and the stop is then a hint
+  // CONSUMED: given, unmasked, wearing the foil. The solve unmasks what was never taken.
   given: boolean;
+  masked: boolean;
+  taken: boolean; // a given hint the player consumed (guessed after it was given)
 }
 
 export interface HistoryModel {
@@ -81,21 +90,25 @@ export interface HistoryModel {
 // departure's entry, the hole's current entry, and the solve's reveal).
 //
 // Aliases of a group carry identical values, so the first key found at a rank wins.
+interface Found {
+  entry: RankEntry;
+  key: string; // a folded key that reaches the entry — the one a reveal submits
+}
 interface NearField {
   top: number;
-  byRank: Map<number, RankEntry>;
+  byRank: Map<number, Found>;
 }
 const nearFieldCache = new WeakMap<Record<string, RankEntry>, NearField>();
 
-function nearField(rankMap: Record<string, RankEntry>, top: number): Map<number, RankEntry> {
+function nearField(rankMap: Record<string, RankEntry>, top: number): Map<number, Found> {
   const cached = nearFieldCache.get(rankMap);
   if (cached && cached.top >= top) return cached.byRank;
-  const byRank = new Map<number, RankEntry>();
+  const byRank = new Map<number, Found>();
   for (const key in rankMap) {
     const entry = rankMap[key];
     // rank 0 is the secret — the terminus, never a stop on the axis.
     if (entry.rank === 0 || entry.rank > top) continue;
-    if (!byRank.has(entry.rank)) byRank.set(entry.rank, entry);
+    if (!byRank.has(entry.rank)) byRank.set(entry.rank, { entry, key });
   }
   nearFieldCache.set(rankMap, { top, byRank });
   return byRank;
@@ -116,8 +129,9 @@ export function buildHistory({
   // word's slug, which `fold` can hand to a closer group (the #119 agreed-form case).
   startRank: number;
   secretWord: string; // the destination's accented form, shown only once solved
-  // The ranks the meter has GIVEN (`replayCharge`'s `given`); none before the activation.
-  given?: readonly number[];
+  // The ranks the meter has GIVEN (`replayCharge`'s `given`), each with whether the
+  // player consumed it; none before the activation.
+  given?: readonly GivenRank[];
 }): HistoryModel {
   const solved = hole.rank === 0;
   const byRank = new Map<number, HistoryStop>();
@@ -133,43 +147,62 @@ export function buildHistory({
   // stop on the axis.
   const visit = (
     entry: RankEntry,
+    key: string,
     {
       start = false,
       typed,
       revealed = false,
       given = false,
-    }: { start?: boolean; typed?: string; revealed?: boolean; given?: boolean } = {},
+      masked = false,
+      taken = false,
+    }: {
+      start?: boolean;
+      typed?: string;
+      revealed?: boolean;
+      given?: boolean;
+      masked?: boolean;
+      taken?: boolean;
+    } = {},
   ) => {
     if (entry.rank === 0) return;
     const seen = byRank.get(entry.rank);
     if (seen) {
       if (start) seen.start = true;
+      // A typed stop the meter also gave is a hint CONSUMED: it keeps the typed form and
+      // takes the given dress.
+      if (given) {
+        seen.given = true;
+        seen.taken = taken;
+      }
       return;
     }
     byRank.set(entry.rank, {
       rank: entry.rank,
       dq: entry.dq ?? null,
-      display: entry.word,
-      word: typed ?? entry.word,
+      display: masked ? '' : entry.word,
+      word: masked ? '' : (typed ?? entry.word),
+      slug: key,
       start,
       best: false,
       behind: entry.rank > startRank,
       revealed,
       given,
+      masked,
+      taken,
     });
   };
 
   // The walked stretch, walked once: the departure, "you", the given words and the solve's
   // reveal all read their entries out of it. A window given above an unmoved start reaches
   // past the departure, so the field is walked out to the farthest given rank.
-  const field = nearField(rankMap, Math.max(startRank, ...given));
+  const field = nearField(rankMap, Math.max(startRank, ...given.map((g) => g.rank)));
 
   const startEntry = field.get(startRank);
-  if (startEntry) visit(startEntry, { start: true });
+  if (startEntry) visit(startEntry.entry, startEntry.key, { start: true });
   for (const typed of tried) {
     const entry = rankMap[typed];
     if (!entry) misses.push(typed); // no rank at all: off the line entirely
-    else visit(entry, { typed });
+    else visit(entry, typed, { typed });
   }
 
   // "You are here" is the hole's OWN position, looked up rather than inferred from the
@@ -177,19 +210,20 @@ export function buildHistory({
   // improve another hole, so the current group can be one the history never mentions.
   // A solved hole has reached the terminus, so nothing on the axis carries the marker.
   if (!solved) {
-    const entry = field.get(hole.rank);
-    if (entry) visit(entry);
+    const found = field.get(hole.rank);
+    if (found) visit(found.entry, found.key);
     const here = byRank.get(hole.rank);
     if (here) here.best = true;
   }
 
-  // THE GIVEN WORDS (user-decided 2026-09-22): what the activation handed over, named with
-  // the group's canonical form — nobody typed them. After the typed stops, so a given word
-  // the player also typed keeps the typed dress; before the solve's reveal, so a given word
-  // stays given on the post-mortem (it was known during play, not merely named after it).
-  for (const rank of given) {
-    const entry = field.get(rank);
-    if (entry) visit(entry, { given: true });
+  // THE GIVEN WORDS (user-decided 2026-09-22): the hints the activation handed over. One
+  // the player CONSUMED — guessed after it was given — is in the log already and stands as
+  // a typed stop; visiting it again marks it given (the foil). One not yet taken is MASKED
+  // while the hole is live: a stop with a rank and no word. The solve unmasks it, named
+  // with the canonical form, still given (it was on offer, not merely named afterwards).
+  for (const { rank, consumed } of given) {
+    const found = field.get(rank);
+    if (found) visit(found.entry, found.key, { given: true, masked: !solved && !consumed, taken: consumed });
   }
 
   // SOLVED: the line becomes the post-mortem and NAMES the whole walked stretch — every
@@ -201,8 +235,8 @@ export function buildHistory({
   if (solved) {
     for (let rank = 1; rank <= startRank; rank += 1) {
       if (byRank.has(rank)) continue;
-      const entry = field.get(rank);
-      if (entry) visit(entry, { revealed: true });
+      const found = field.get(rank);
+      if (found) visit(found.entry, found.key, { revealed: true });
     }
   }
 

@@ -41,7 +41,7 @@ function board(stage: Stage, starts: number[]) {
     finished,
   });
   // `ranks[i]` is the guess's rank on hole i, or null for a MISS there.
-  const guess = (typed: string, ranks: (number | null)[], meter?: { charged: boolean; filled: number | null }) => {
+  const guess = (typed: string, ranks: (number | null)[], meter?: { charged: boolean; filled: number | null; revealed?: boolean }) => {
     const entries = holes.map((h, i) => (h.rank === 0 || ranks[i] === null ? undefined : entry(typed, ranks[i] as number)));
     const improved = holes.map((h, i) => entries[i] !== undefined && (entries[i] as RankEntry).rank < h.rank);
     events.push({ typed, entries, improved, holeRanks: holes.map((h) => h.rank), ...meter });
@@ -184,6 +184,9 @@ describe('the meter stage — the bot has half played it', () => {
     expect(coachLine(b.state(true))).toEqual({ kind: 'near', hole: expect.objectContaining({ rank: 24 }) });
     b.guess('freedom', [null, 1], { charged: true, filled: 1 });
     expect(coachLine(b.state(true))).toEqual({ kind: 'activated', word: 'freedom', rank: 1 });
+    // A hint revealed from the wheel: named with its price, the turn handed back.
+    b.guess('rights', [null, 3], { charged: true, filled: null, revealed: true });
+    expect(coachLine(b.state(true))).toEqual({ kind: 'revealedHint', word: 'rights', rank: 3 });
     b.guess('y', [null, null], { charged: false, filled: null });
     expect(coachLine(b.state(true))).toEqual({ kind: 'hint', holeIndex: 1 }); // a failed try: the hint, never the word
     b.guess('z', [null, 300], { charged: true, filled: null });
@@ -230,10 +233,13 @@ describe('coachCopy', () => {
       'You found both in 7 tries. This one was easy: the daily sentences are harder.',
     );
     expect(coachCopy('en', { kind: 'activated', word: 'sea', rank: 1 }, stage, true)).toBe(
-      'The meter is full! 10 new words close to the secret are revealed. Tap [[w:sea^1]] to read them.',
+      'The meter is full! 10 words close to the secret are masked in its tries. Tap [[w:sea^1]], then a masked word to reveal it — it costs a try.',
     );
     expect(coachCopy('fr', { kind: 'activated', word: 'mer', rank: 1 }, stage, false)).toBe(
-      'Jauge pleine ! 10 nouveaux mots proches du secret ont été révélés. Clique sur [[w:mer^1]] pour les lire.',
+      'Jauge pleine ! 10 mots proches du secret sont masqués dans ses essais. Clique sur [[w:mer^1]], puis sur un mot masqué pour le révéler, contre un essai.',
+    );
+    expect(coachCopy('fr', { kind: 'revealedHint', word: 'rive', rank: 3 }, stage, true)).toBe(
+      '[[w:rive^3]] est révélé, pour un essai. À toi de trouver le mot secret.',
     );
     expect(coachCopy('en', { kind: 'introMeter', hole }, stage, true)).toMatch(/last word\. Tap \[\[w:islands\^10\]\] to see my tries\.$/);
     expect(coachCopy('en', { kind: 'introMeter', hole }, stage, false)).toMatch(/last word\. Click \[\[w:islands\^10\]\] to see my tries\.$/);
