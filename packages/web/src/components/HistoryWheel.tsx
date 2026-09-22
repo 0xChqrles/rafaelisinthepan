@@ -62,10 +62,15 @@ import UnlockIcon from '../assets/icons/unlock.svg?react';
 // like any row and IS PICKED LIKE ANY ROW (the sentence then shows `?????` on the hole:
 // the slot is what the hole shows, masks included — the first cut, where the fold could
 // not pick a mask and the hole snapped back to its best word, "felt weird"); while the
-// slot holds a mask, a REVEAL BUTTON stands beside it (`.wheel-reveal`, "REVEAL · 1 TRY"),
-// the one act that spends a try: `onReveal` submits the stop's key as a guess, the hits
-// land on the sentence under the dim, and the model re-renders the row with its word —
-// the wheel stays open. The slot row's own tap, a tap outside and Escape close, as ever. It stays a native <dialog>
+// slot holds a mask, its LOCK stands beside it (`.wheel-cap`), the one act that spends a
+// try: `onReveal` submits the stop's key as a guess, the hits land on the sentence under
+// the dim, and the model re-renders the row with its word — the wheel stays open. The
+// slot row's own tap, a tap outside and Escape close, as ever. EVERY MASKED ROW CARRIES ITS OWN LOCK
+// (user-decided 2026-09-22: "each hole should have its own button tied to it, and when
+// you scroll out, it just fades away"): the lock is the row's, scrolling with it, lit
+// while the row is in the slot and faded out as it leaves; it stands FLUSH on the card's
+// left edge where the screen has room for it, else on its right past the exponent (a
+// word at the start of a phone's line has no left). It stays a native <dialog>
 // because the sentence and the keyboard under it must be inert; it is the PuzzleSelect's
 // kind (a thing hanging off a control that stays on screen), so a tap outside closes it.
 
@@ -301,27 +306,14 @@ export default function HistoryWheel({
     [beginClose, drum],
   );
 
-  // THE REVEAL BUTTON: beside the slot row while it holds a masked hint — measured off the
-  // slot row itself once the drum settles on it, on the column's open side.
-  const [revealAt, setRevealAt] = useState<{ left: number; right: number } | null>(null);
-  const slotMasked = rows[current]?.masked === true && onReveal !== undefined;
-  useLayoutEffect(() => {
-    const el = slotRef.current;
-    if (!slotMasked || !el) {
-      setRevealAt(null);
-      return;
-    }
-    // Only the row's SIDES are read here: `current` lands at the start of a glide, so the
-    // row is still travelling when this runs — its x is settled (a mask is always the same
-    // width), its y is not. The key's line is the slot's own, known from the anchor.
-    const row = el.getBoundingClientRect();
-    setRevealAt({ left: row.left, right: row.right });
-  }, [slotMasked, current, shift]);
-  const reveal = useCallback(() => {
-    const { rows: r, onReveal: act } = live.current;
-    const stop = r[drum.peek()];
-    if (act && stop?.masked) act(stop);
-  }, [drum]);
+  // THE LOCK: every masked row carries its own (below), lit while the row is in the slot.
+  const reveal = useCallback(
+    (stop: HistoryStop) => {
+      const { onReveal: act } = live.current;
+      if (act && stop.masked) act(stop);
+    },
+    [],
+  );
 
   if (!anchor) {
     return createPortal(
@@ -335,6 +327,14 @@ export default function HistoryWheel({
   const flip = anchor.width - EDGE - anchor.wrap.x < MIN_COLUMN;
   const column = flip ? anchor.wrap.x + anchor.wrap.w - EDGE : anchor.width - EDGE - anchor.wrap.x;
   const inset = Math.ceil(anchor.fontSize * OVERHANG_EM) + 1;
+  // The lock: a square the slot chip's height; the room it needs on the card's left is
+  // that plus the chip's overhang, and it takes it only where the screen has it.
+  const cap = Math.round(anchor.fontSize * 1.267);
+  const capRoom = cap + Math.ceil(anchor.fontSize * OVERHANG_EM);
+  const capLeft = flip || anchor.wrap.x - inset - capRoom >= EDGE;
+  // The scroller's left padding grows by the lock's room, so the lock is inside the box
+  // that clips (the rows' text still starts on the word's x).
+  const lead = capLeft && !flip ? capRoom : 0;
   const origin = anchor.top - EDGE;
   const height = anchor.height - origin;
   const rowH = anchor.lineHeight;
@@ -447,8 +447,8 @@ export default function HistoryWheel({
           // chip has room to overhang without being clipped).
           ...(flip
             ? { right: anchor.width - (anchor.wrap.x + anchor.wrap.w) - inset, paddingRight: inset }
-            : { left: anchor.wrap.x - inset, paddingLeft: inset }),
-          width: column + inset,
+            : { left: anchor.wrap.x - inset - lead, paddingLeft: inset + lead }),
+          width: column + inset + lead,
           boxSizing: 'border-box',
           translate: `${shift.x}px ${shift.y}px`,
         }}
@@ -459,7 +459,8 @@ export default function HistoryWheel({
 
         {rows.map((stop, i) => {
           const inSlot = i === current;
-          return (
+          const style = rowStyle(stop, inSlot, i);
+          const row = (
             <button
               key={stop.rank}
               ref={inSlot ? (el) => void (slotRef.current = el) : undefined}
@@ -467,7 +468,7 @@ export default function HistoryWheel({
               className={`wheel-row${inSlot ? ' wheel-row-slot' : ''}${stop.revealed ? ' wheel-row-revealed' : ''}${
                 stop.best && !inSlot ? ' wheel-row-best' : ''
               }`}
-              style={rowStyle(stop, inSlot, i)}
+              style={stop.masked && onReveal ? { ...style, marginBottom: 0 } : style}
               aria-label={inSlot ? t(lang, 'ariaClose') : srRouteStop(lang, { ...stop, word: stop.masked ? null : stop.word })}
               aria-current={inSlot ? 'true' : undefined}
               // The wheel's ONE tab stop is the row in the slot (#267): the arrows turn it.
@@ -477,38 +478,33 @@ export default function HistoryWheel({
               {body(stop, inSlot)}
             </button>
           );
+          if (!stop.masked || !onReveal) return row;
+          // A masked row and ITS LOCK on one line: the line carries the row's geometry, the
+          // lock hangs off the row's box — flush on its left, or past its exponent — lit
+          // in the slot, faded elsewhere (a button beside a button, never inside one).
+          return (
+            <span key={stop.rank} className="wheel-line" style={{ height: rowH, marginBottom: GAP, fontSize: style.fontSize }}>
+              {row}
+              <button
+                type="button"
+                className={`wheel-cap${inSlot ? ' on' : ''}${capLeft ? ' cap-left' : ' cap-right'}`}
+                style={{ width: cap, height: cap }}
+                aria-label={`${t(lang, 'reveal')} · 1 ${t(lang, 'try')}`}
+                aria-hidden={inSlot ? undefined : true}
+                tabIndex={inSlot ? 0 : -1}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  reveal(stop);
+                }}
+              >
+                <UnlockIcon aria-hidden="true" className={cap < 28 ? 'cap-small' : undefined} />
+              </button>
+            </span>
+          );
         })}
 
         <div className="wheel-trail" style={{ height: trailing }} />
       </div>
-      {revealAt && !closing && (
-        <button
-          type="button"
-          className="wheel-reveal"
-          style={{
-            // The slot's line: the tapped word's own, centred (the column's measured shift
-            // moves the rows, not the slot) — and the CHIP'S OWN HEIGHT (1.267em of the
-            // sentence, the chip's box), never under the mark's 20px plus its air, so the
-            // key and the card it opens stand as one height.
-            top: anchor.wrap.y + anchor.wrap.h / 2,
-            height: Math.max(28, Math.round(anchor.fontSize * 1.267)),
-            width: Math.max(28, Math.round(anchor.fontSize * 1.267)),
-            // Flush against the chip's LEFT edge — the chip overhangs the row by 0.2em —
-            // so the exponent keeps the right side; on either side of the screen.
-            right: anchor.width - (revealAt.left - anchor.fontSize * OVERHANG_EM),
-          }}
-          aria-label={`${t(lang, 'reveal')} · 1 ${t(lang, 'try')}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            reveal();
-          }}
-        >
-          {/* The OPEN LOCK, on the header icons' own 10×10 grid at its exact 2px a cell
-              (user-asked 2026-09-22: "an open lock pixel icon in the same style as the
-              other header icons") — the word is the key's description. */}
-          <UnlockIcon aria-hidden="true" />
-        </button>
-      )}
     </dialog>,
     document.body,
   );

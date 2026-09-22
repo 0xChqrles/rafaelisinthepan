@@ -2977,38 +2977,69 @@ input {
 }
 /* A MASKED hint (user-decided 2026-09-22): the foil under a fixed run of `?` whatever the
    word's length — `MASK` — so a masked row and a masked slot read as a sealed card, and
-   say so. THE REVEAL KEY stands beside the slot row while it holds one: THE KEYBOARD'S
-   ENTER KEY, transplanted — a flat solve-cobalt tile (user-reviewed 2026-09-22: the chrome
-   button was "ugly as hell"; a reveal is a guess committed, and ENTER is the app's one
-   coloured key for exactly that) — carrying the OPEN LOCK, a pixel mark on the header
-   icons' own 10×10 grid at its exact 20px (user-asked the same day, over the word REVEAL
-   in the pixel face). A 32px square, so the mark keeps its 2px cells at every row size;
-   a press is a brightness state, the key's own; positioned by the wheel on the slot's
-   line. The price is the key's description, and the score's watermark ticking up. */
-.wheel-reveal {
-  position: fixed;
+   say so. EVERY MASKED ROW CARRIES ITS OWN LOCK (`.wheel-cap`, user-decided 2026-09-22):
+   THE KEYBOARD'S ENTER KEY, transplanted — a flat solve-cobalt square the row's chip's
+   height, sharp, FLUSH on the card's left edge (or past its exponent where a phone's line
+   leaves no left) carrying the OPEN LOCK, a pixel mark on the header icons' own 10×10
+   grid at its exact 20px (10px on a chip too small to hold it) — LIT while the row is in
+   the slot, FADED OUT as it scrolls away, and inert until it is lit. A reveal is a guess
+   committed, and ENTER is the app's one coloured key for exactly that. (The chrome
+   button, the pixel word REVEAL and a tile floating a gap to the right each lived an
+   hour on the user's review.) The price is the key's description, and the score's
+   watermark ticking up. */
+.wheel-line {
+  position: relative;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+}
+.wheel-right .wheel-line {
+  margin-left: auto;
+}
+.wheel-line .wheel-row {
+  margin-bottom: 0;
+}
+.wheel-cap {
+  position: absolute;
+  top: 50%;
   translate: 0 -50%;
-  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* A square the chip's own height (set inline by the wheel, 28px at least), SHARP like
-     the chip, standing FLUSH against the card's left edge — the sealed card and its lock
-     are one object in two inks (user-reviewed 2026-09-22, "the UI is still ugly": a tile
-     floating a gap away from the row read as a stray button). */
   padding: 0;
   color: var(--fg);
   background: var(--solve);
   border: 0;
   border-radius: 0;
   cursor: pointer;
-  animation: wheel-row-in 120ms ease-out both;
-  transition: filter 0.08s linear;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease-out, filter 0.08s linear;
 }
-.wheel-reveal svg {
+.wheel-cap.cap-left {
+  right: calc(100% + 0.2em);
+}
+.wheel-cap.cap-right {
+  left: calc(100% + 0.35em);
+}
+.wheel-cap.on {
+  opacity: 1;
+  pointer-events: auto;
+}
+.wheel-cap:hover {
+  filter: brightness(1.15);
+}
+.wheel-cap:active {
+  filter: brightness(1.35);
+}
+.wheel-cap svg {
   display: block;
   width: 20px;
   height: 20px;
+}
+.wheel-cap svg.cap-small {
+  width: 10px;
+  height: 10px;
 }
 .wheel-reveal:hover {
   filter: brightness(1.15);
