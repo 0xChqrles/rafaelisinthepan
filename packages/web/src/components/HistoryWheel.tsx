@@ -84,8 +84,7 @@ const MIN_COLUMN = 160;
 // of the word, quieter than it (user feedback 2026-09-01: same-size rows read too big).
 const ROW_SCALE = 0.8;
 const ROW_MIN_PX = 9;
-// The air between the slot row's exponent and the REVEAL button.
-const REVEAL_GAP = 14;
+
 
 interface Anchor {
   wrap: { x: number; y: number; w: number; h: number }; // the word — the slot's place
@@ -488,11 +487,15 @@ export default function HistoryWheel({
           className="wheel-reveal"
           style={{
             // The slot's line: the tapped word's own, centred (the column's measured shift
-            // moves the rows, not the slot).
+            // moves the rows, not the slot) — and the CHIP'S OWN HEIGHT (1.267em of the
+            // sentence, the chip's box), never under the mark's 20px plus its air, so the
+            // key and the card it opens stand as one height.
             top: anchor.wrap.y + anchor.wrap.h / 2,
-            ...(flip
-              ? { right: anchor.width - revealAt.left + REVEAL_GAP }
-              : { left: revealAt.right + REVEAL_GAP }),
+            height: Math.max(28, Math.round(anchor.fontSize * 1.267)),
+            width: Math.max(28, Math.round(anchor.fontSize * 1.267)),
+            // Flush against the chip's LEFT edge — the chip overhangs the row by 0.2em —
+            // so the exponent keeps the right side; on either side of the screen.
+            right: anchor.width - (revealAt.left - anchor.fontSize * OVERHANG_EM),
           }}
           aria-label={`${t(lang, 'reveal')} · 1 ${t(lang, 'try')}`}
           onClick={(e) => {

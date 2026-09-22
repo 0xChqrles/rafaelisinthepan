@@ -2960,6 +2960,7 @@ input {
 .wheel-given .wheel-word::before {
   background: var(--fg);
 }
+
 .wheel-sea {
   position: absolute;
   left: -0.2em;
@@ -2991,16 +2992,23 @@ input {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  /* A square the chip's own height (set inline by the wheel, 28px at least), SHARP like
+     the chip, standing FLUSH against the card's left edge — the sealed card and its lock
+     are one object in two inks (user-reviewed 2026-09-22, "the UI is still ugly": a tile
+     floating a gap away from the row read as a stray button). */
   padding: 0;
   color: var(--fg);
   background: var(--solve);
   border: 0;
-  border-radius: var(--r-lg);
+  border-radius: 0;
   cursor: pointer;
   animation: wheel-row-in 120ms ease-out both;
   transition: filter 0.08s linear;
+}
+.wheel-reveal svg {
+  display: block;
+  width: 20px;
+  height: 20px;
 }
 .wheel-reveal:hover {
   filter: brightness(1.15);

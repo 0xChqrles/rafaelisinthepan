@@ -246,11 +246,13 @@ These are decided and verified against the code. Treat them as load-bearing.
   only (user-decided 2026-09-22 on the first cut, where the fold could not pick a mask
   and the hole snapped back to its best word: "it feels weird to have the closest word
   being back") — and **while the slot holds a mask a REVEAL KEY stands beside it**
-  (`.wheel-reveal`: the KEYBOARD'S ENTER KEY transplanted — a flat solve-cobalt 32px tile
-  on the slot's own line carrying the OPEN LOCK, `assets/icons/unlock.svg`, a mark on the
-  header icons' 10×10 grid at its exact 20px; the chrome button of the first cut was
-  "ugly as hell" and the pixel word REVEAL gave way to the icon, both user-reviewed the
-  same day; the price is its description, "REVEAL · 1 TRY"), the one act that spends a try: `HistoryWheel`'s `onReveal` SUBMITS the stop's
+  (`.wheel-reveal`: the KEYBOARD'S ENTER KEY transplanted — a flat solve-cobalt square the
+  CHIP'S OWN HEIGHT, sharp, FLUSH against the sealed card's left edge so card and lock
+  are one object in two inks, carrying the OPEN LOCK, `assets/icons/unlock.svg`, a mark
+  on the header icons' 10×10 grid at its exact 20px; the chrome button of the first cut
+  was "ugly as hell", the pixel word REVEAL gave way to the icon, and a tile floating a
+  gap to the right read as a stray button — all user-reviewed the same day; the price is
+  its description, "REVEAL · 1 TRY"), the one act that spends a try: `HistoryWheel`'s `onReveal` SUBMITS the stop's
   key (`HistoryStop.slug`) through the game's own `submit`, so the word enters the play
   log like any typed guess, counts as a try, charges the other holes, syncs, can hit
   another hole (its floats land on the sentence under the dim, which is the point: "we
