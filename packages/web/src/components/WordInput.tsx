@@ -8,7 +8,6 @@ import type {
 } from 'react';
 import { fold } from '@whippin/shared';
 import { t } from '../i18n';
-import UnlockIcon from '../assets/icons/unlock.svg?react';
 
 // Map a physical key to the slug character(s) it contributes. The on-screen keyboard
 // only exposes [a-z] + dash, but a desktop user can press accented / uppercase keys;
@@ -53,12 +52,11 @@ interface WordInputProps {
   onReplace: (value: string) => void; // set the whole value (history recall)
   invalidSignal: number;
   // THE GHOST (user-decided 2026-09-22): a masked hint picked into the sentence stands
-  // PRE-TYPED here while the field is empty — `?????` in the accent with the open lock —
-  // and ENTER DECODES it: the marks churn into the word (`ghostDecoding`, the lock gone)
-  // and only then is it sent, so the player knows the word before its hits land. Drawn
-  // only; the field stays empty.
+  // PRE-TYPED here while the field is empty — `?????` in the accent, ENTER lit — and
+  // ENTER submits it as the guess that reveals it. Drawn only; the field stays empty.
+  // (A lock beside it, and a decode-then-hold in the prompt, were both reviewed away on
+  // 2026-09-23.)
   ghost?: string;
-  ghostDecoding?: boolean;
   // The caller's handle on the field, so the screen can put the caret back into it after
   // a submit — the one moment the focus may be sitting on the on-screen ENTER instead.
   fieldRef?: MutableRefObject<HTMLInputElement | null>;
@@ -103,7 +101,6 @@ export default function WordInput({
   onReplace,
   invalidSignal,
   ghost,
-  ghostDecoding = false,
   fieldRef,
   active = true,
 }: WordInputProps) {
@@ -272,10 +269,7 @@ export default function WordInput({
           the field above is what a screen reader reads the guess from. */}
       <span className="wi-text" aria-hidden="true">
         {value === '' && ghost ? (
-          <span className="wi-text-run wi-ghost">
-            {ghost}
-            {!ghostDecoding && <UnlockIcon className="wi-lock" aria-hidden="true" />}
-          </span>
+          <span className="wi-text-run wi-ghost">{ghost}</span>
         ) : (
           <span className="wi-text-run">{value}</span>
         )}

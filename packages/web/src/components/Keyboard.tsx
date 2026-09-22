@@ -16,9 +16,9 @@ interface KeyboardProps {
   // Exact existence set — decides whether Enter is active (input is a complete word).
   vocabSet: Set<string>;
   // A masked hint stands pre-typed in the prompt (the ghost): ENTER is lit with an empty
-  // input (`submittable` — it is what reveals it; off again while the ghost DECODES) and
-  // EVERY LETTER IS OUT (`locked`; user-decided 2026-09-22, "no letters should be
-  // available on the keyboard at this point").
+  // input (`submittable` — it is what reveals it) and EVERY LETTER IS OUT (`locked`;
+  // user-decided 2026-09-22, "no letters should be available on the keyboard at this
+  // point").
   submittable?: boolean;
   locked?: boolean;
   // Puzzle language — localizes the control keys' aria labels (letters name themselves).

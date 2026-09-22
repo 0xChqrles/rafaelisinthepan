@@ -9,13 +9,12 @@ import HistoryWheel from '../components/HistoryWheel';
 import HistoryModal from '../components/HistoryModal';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
-import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, REVEAL_HOLD_MS, STAGGER_MS } from '../screens/Game';
+import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, STAGGER_MS } from '../screens/Game';
 import CoachText, { richToPlain } from './CoachText';
 import { coachCopy, coachLine, type GuessEvent } from './coach';
 import type { LessonStage } from './script';
 import { canExtend } from '../game/keyboard';
 import { MASK, buildHistory, type HistoryStop } from '../game/history';
-import { useScramble } from '../hooks/useScramble';
 import { guessKey, replayHoles } from '../game/scoring';
 import { chargeForRank, replayCharge } from '../game/charge';
 import { sentenceStarts } from '../game/sentenceCase';
@@ -226,26 +225,20 @@ export default function LessonBoard({
     setRevealed(false);
   }, [script]);
 
-  // The ghost (derived below, after the picks) as the submit reads it, and the latest
-  // submit, for the decode's landing.
+  // The ghost (derived below, after the picks) as the input handlers read it.
   const ghostRef = useRef<{ index: number; slug: string } | null>(null);
-  const submitRef = useRef<(raw: string, revealing?: boolean) => void>(() => {});
-  // The ghost's decode (Game's): the marks churn into the word, then the guess goes in.
-  const [decoding, setDecoding] = useState<string | null>(null);
-  const decodingRef = useRef<string | null>(null);
-  const decode = useScramble();
   const appendChar = useCallback(
     (char: string) => {
       if (!playing || !prefixSet) return;
       setFeedback(null);
-      if (decoding !== null || (ghostRef.current !== null && input === '')) {
+      if (ghostRef.current !== null && input === '') {
         setInvalidAt(Date.now());
         return;
       }
       if (canExtend(prefixSet, input, char)) setInput(input + char);
       else setInvalidAt(Date.now());
     },
-    [playing, prefixSet, input, decoding],
+    [playing, prefixSet, input],
   );
   const deleteChar = useCallback(() => {
     if (!playing) return;
@@ -402,31 +395,14 @@ export default function LessonBoard({
   );
 
   const submit = useCallback(
-    (raw: string, revealing = false) => {
+    (raw: string) => {
       if (!playing || !vocab) return;
       guessField.current?.focus({ preventScroll: true });
-      // An empty ENTER with a mask picked is the REVEAL: the ghost decodes in the prompt,
-      // then its key comes back through here as the guess, flagged for the coach.
-      if (decodingRef.current !== null) return;
+      // An empty ENTER with a mask picked is the REVEAL: the ghost's key is the guess,
+      // flagged for the coach.
       const ghost = ghostRef.current;
-      if (!fold(raw) && ghost) {
-        const slug = ghost.slug;
-        decodingRef.current = slug;
-        setDecoding(slug);
-        decode.start(
-          slug,
-          MASK.length,
-          () =>
-            later(() => {
-              decodingRef.current = null;
-              setDecoding(null);
-              submitRef.current(slug, true);
-            }, REVEAL_HOLD_MS),
-          0,
-        );
-        return;
-      }
-      const typed = fold(raw);
+      const revealing = !fold(raw) && ghost !== null;
+      const typed = fold(raw) || ghost?.slug || '';
       if (!typed) {
         setInput('');
         return;
@@ -443,9 +419,8 @@ export default function LessonBoard({
       setFeedback(null);
       land(typed, false, revealing);
     },
-    [playing, vocab, lang, say, land, decode],
+    [playing, vocab, lang, say, land],
   );
-  submitRef.current = submit;
 
   // --- the stage's end ---
   const done = phase === 'done';
@@ -631,8 +606,7 @@ export default function LessonBoard({
             onSubmit={submit}
             onReplace={replaceInput}
             invalidSignal={invalidAt}
-            ghost={decoding !== null ? (decode.jumble ?? decoding) : ghost ? MASK : undefined}
-            ghostDecoding={decoding !== null}
+            ghost={ghost ? MASK : undefined}
             active={playing && historyHole === null}
           />
           <p className="hint">{feedback || ' '}</p>
@@ -672,8 +646,8 @@ export default function LessonBoard({
               input={input}
               prefixSet={vocab.prefixSet}
               vocabSet={vocab.vocabSet}
-              submittable={ghost !== null && decoding === null}
-              locked={decoding !== null || (ghost !== null && input === '')}
+              submittable={ghost !== null}
+              locked={ghost !== null && input === ''}
               lang={lang}
               onType={appendChar}
               onBackspace={deleteChar}

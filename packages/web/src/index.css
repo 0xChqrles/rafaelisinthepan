@@ -2045,23 +2045,15 @@ input {
   white-space: pre;
 }
 /* THE GHOST (user-decided 2026-09-22): a masked hint picked into the sentence stands
-   PRE-TYPED in the prompt — `?????` in the accent with the OPEN LOCK (the header icons'
-   pixel grid, `assets/icons/unlock.svg`) — and ENTER, lit, submits it: the reveal is a
-   guess made from the sentence, where its hits land on the other words. (The wheel held
-   the control first — a button, a lock on the slot, a lock on every row — each reviewed
-   away the same day: the side changed with the screen, and the hits played under the
-   dim.) Drawn only: the field stays empty, and the first keystroke types over it. */
+   PRE-TYPED in the prompt — `?????` in the accent — and ENTER, lit, submits it: the
+   reveal is a guess made from the sentence, where the hole uncyphers into the word as
+   the hits land on the others. (The wheel held the control first — a button, a lock on
+   the slot, a lock on every row — each reviewed away the same day: the side changed with
+   the screen, and the hits played under the dim; then a lock beside the marks and a
+   decode-then-hold in the prompt, reviewed away the next: "we don't know if you should
+   hit enter".) Drawn only: the field stays empty. */
 .wi-ghost {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4em;
   color: var(--accent);
-}
-.wi-lock {
-  display: block;
-  width: 20px;
-  height: 20px;
-  flex: 0 0 auto;
 }
 .wi-cursor {
   color: var(--accent);
