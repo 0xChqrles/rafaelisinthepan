@@ -14,7 +14,7 @@ import CoachText, { richToPlain } from './CoachText';
 import { coachCopy, coachLine, type GuessEvent } from './coach';
 import type { LessonStage } from './script';
 import { canExtend } from '../game/keyboard';
-import { buildHistory, type HistoryStop } from '../game/history';
+import { MASK, buildHistory, type HistoryStop } from '../game/history';
 import { guessKey, replayHoles } from '../game/scoring';
 import { chargeForRank, replayCharge } from '../game/charge';
 import { sentenceStarts } from '../game/sentenceCase';
@@ -388,11 +388,17 @@ export default function LessonBoard({
     [withMeters, swapped, script.pair, fresh, meters, lang, say, later],
   );
 
+  // The ghost (derived below, after the picks) as the submit reads it.
+  const ghostRef = useRef<{ index: number; slug: string } | null>(null);
   const submit = useCallback(
     (raw: string) => {
       if (!playing || !vocab) return;
       guessField.current?.focus({ preventScroll: true });
-      const typed = fold(raw);
+      // An empty ENTER with a mask picked is the REVEAL — the ghost's key is the guess, and
+      // the coach is told it was one.
+      const ghost = ghostRef.current;
+      const revealing = !fold(raw) && ghost !== null;
+      const typed = fold(raw) || ghost?.slug || '';
       if (!typed) {
         setInput('');
         return;
@@ -407,7 +413,7 @@ export default function LessonBoard({
       }
       setInput('');
       setFeedback(null);
-      land(typed, false);
+      land(typed, false, revealing);
     },
     [playing, vocab, lang, say, land],
   );
@@ -430,7 +436,7 @@ export default function LessonBoard({
 
   // --- the tries: a tap on a word (the wheel while open, the grid once found) ---
   const [historyHole, setHistoryHole] = useState<number | null>(null);
-  const [picked, setPicked] = useState<Record<number, { word: string; rank: number; at: number }>>({});
+  const [picked, setPicked] = useState<Record<number, { word: string; rank: number; at: number; slug?: string }>>({});
   const exploreLabels = useMemo(() => holes.map((_, i) => ariaHoleHistory(lang, i + 1)), [holes, lang]);
   const openHistory = useCallback((index: number) => setHistoryHole(index), []);
   // `tapped` lands on CLOSE (user-decided 2026-09-16): the line that follows the tap must
@@ -440,25 +446,45 @@ export default function LessonBoard({
     setTapped(true);
   }, []);
   const wheelOpen = historyHole !== null && holes[historyHole]?.rank !== 0 && phase === 'play' && !revealed;
+  // The meters as of the last RELEASE beat (the meter stage only) — what the sentence and
+  // the wheel read (#301). Declared here: the picks below read the given ranks off them.
+  const shownMeters = useMemo(() => (withMeters ? meters(shownTried) : undefined), [withMeters, meters, shownTried]);
+  // A live pick in the hole's place; a picked MASK shows its word once the log holds it
+  // (Game's rule).
   const shownHoles = useMemo(
     () =>
       holes.map((h, i) => {
         const p = picked[i];
-        return p && h.rank > 0 && p.at === h.rank && p.rank !== h.rank ? { ...h, word: p.word, rank: p.rank } : h;
+        if (!p || h.rank === 0 || p.at !== h.rank || p.rank === h.rank) return h;
+        const revealed = p.slug && shownMeters?.[i].given.some((g) => g.rank === p.rank && g.consumed);
+        const word = revealed ? (ranks[h.secret][p.slug as string]?.word ?? p.word) : p.word;
+        return { ...h, word, rank: p.rank };
       }),
-    [holes, picked],
+    [holes, picked, shownMeters, ranks],
   );
   const pickWord = useCallback(
     (index: number, stop: HistoryStop) => {
       const at = holes[index]?.rank;
       if (at === undefined || at === 0) return;
-      setPicked((cur) => ({ ...cur, [index]: { word: stop.display, rank: stop.rank, at } }));
+      setPicked((cur) => ({
+        ...cur,
+        [index]: { word: stop.display, rank: stop.rank, at, slug: stop.masked ? stop.slug : undefined },
+      }));
     },
     [holes],
   );
-  // The meters as of the last RELEASE beat (the meter stage only) — what the sentence and
-  // the wheel read (#301).
-  const shownMeters = useMemo(() => (withMeters ? meters(shownTried) : undefined), [withMeters, meters, shownTried]);
+  // THE GHOST (Game's): the picked, unrevealed mask an empty ENTER submits.
+  const ghost = useMemo((): { index: number; slug: string } | null => {
+    let found: { index: number; slug: string } | null = null;
+    for (let i = 0; i < holes.length; i += 1) {
+      const p = picked[i];
+      if (!p?.slug || holes[i].rank === 0 || p.at !== holes[i].rank) continue;
+      if (shownMeters?.[i].given.some((g) => g.rank === p.rank && g.consumed)) continue;
+      found = { index: i, slug: p.slug };
+    }
+    return found;
+  }, [holes, picked, shownMeters]);
+  ghostRef.current = ghost;
   const historyModel = useMemo(() => {
     if (historyHole === null) return null;
     const hole = holes[historyHole];
@@ -576,6 +602,7 @@ export default function LessonBoard({
             onSubmit={submit}
             onReplace={replaceInput}
             invalidSignal={invalidAt}
+            ghost={ghost ? MASK : undefined}
             active={playing && historyHole === null}
           />
           <p className="hint">{feedback || ' '}</p>
@@ -615,6 +642,7 @@ export default function LessonBoard({
               input={input}
               prefixSet={vocab.prefixSet}
               vocabSet={vocab.vocabSet}
+              submittable={ghost !== null}
               lang={lang}
               onType={appendChar}
               onBackspace={deleteChar}
@@ -640,9 +668,6 @@ export default function LessonBoard({
           lang={lang}
           capital={sentenceLike && starts[puzzleHoles[historyHole].pos] && !puzzleHoles[historyHole].prefix}
           onPick={(stop) => pickWord(historyHole, stop)}
-          // A masked hint revealed from the wheel is a guess, the player's, flagged so the
-          // coach can name it.
-          onReveal={playing ? (stop) => land(stop.slug, false, true) : undefined}
           onClose={closeHistory}
         />
       )}

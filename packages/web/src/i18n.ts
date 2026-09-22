@@ -367,7 +367,7 @@ const STRINGS = {
   // takes the headline itself.
   sourceBy: { en: 'by', fr: 'de' },
   ariaClose: { en: 'close', fr: 'fermer' },
-  // The REVEAL button beside a masked hint in the wheel's slot ("REVEAL · 1 TRY").
+  // A masked hint picked into the sentence: what ENTER does then (the prompt's description).
   reveal: { en: 'REVEAL', fr: 'RÉVÉLER' },
   // The hints a round took, beside its tries on the result (user-decided 2026-09-22).
   hint: { en: 'HINT', fr: 'INDICE' },
@@ -468,12 +468,12 @@ const STRINGS = {
   // The activation (user-decided 2026-09-22, replacing the first letter): the given words
   // are MASKED in the word's tries, and a tap on one reveals it for a try.
   tutActivatedTap: {
-    en: 'The meter is full! {n} words close to the secret are masked in its tries. Tap {word}, choose a masked word and reveal it — it costs a try.',
-    fr: 'Jauge pleine ! {n} mots proches du secret sont masqués dans ses essais. Touche {word}, choisis un mot masqué et révèle-le, contre un essai.',
+    en: 'The meter is full! {n} words close to the secret are masked in its tries. Tap {word}, pick a masked word, then press enter to reveal it — it costs a try.',
+    fr: 'Jauge pleine ! {n} mots proches du secret sont masqués dans ses essais. Touche {word}, choisis un mot masqué, puis valide pour le révéler, contre un essai.',
   },
   tutActivatedClick: {
-    en: 'The meter is full! {n} words close to the secret are masked in its tries. Click {word}, choose a masked word and reveal it — it costs a try.',
-    fr: 'Jauge pleine ! {n} mots proches du secret sont masqués dans ses essais. Clique sur {word}, choisis un mot masqué et révèle-le, contre un essai.',
+    en: 'The meter is full! {n} words close to the secret are masked in its tries. Click {word}, pick a masked word, then press enter to reveal it — it costs a try.',
+    fr: 'Jauge pleine ! {n} mots proches du secret sont masqués dans ses essais. Clique sur {word}, choisis un mot masqué, puis valide pour le révéler, contre un essai.',
   },
   // A hint revealed: named, priced, and the turn handed back.
   tutRevealed: {

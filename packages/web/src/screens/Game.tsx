@@ -34,7 +34,7 @@ import { earlyLocked } from '../game/earlyPlay';
 import { chargeForRank, hintsTaken, replayCharge } from '../game/charge';
 import { navigate } from '../routing';
 import { pathForDay, pathForGame, pathForLesson } from '../langs';
-import { buildHistory } from '../game/history';
+import { MASK, buildHistory } from '../game/history';
 import type { HistoryStop } from '../game/history';
 import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
 import { track } from '../analytics';
@@ -269,7 +269,8 @@ function Round({
   // only: the score, the history and the ruler all read the full log.
   const [deferred, setDeferred] = useState<string[]>([]);
   // The wheel's PICKS, by hole index — see `shownHoles` below.
-  const [picked, setPicked] = useState<Record<number, { word: string; rank: number; at: number }>>(
+  // A pick of a MASKED hint carries the key the reveal submits (`slug`).
+  const [picked, setPicked] = useState<Record<number, { word: string; rank: number; at: number; slug?: string }>>(
     {},
   );
   const holes = useMemo(
@@ -667,24 +668,44 @@ function Round({
   // hole IMPROVES: `at` records the real rank the pick was made against, and the moment that
   // rank moves the new best takes the hole back. A pick at the hole's own rank is simply the
   // hole. Never persisted: a reading aid, not a fact about the round.
+  // A live pick is shown in the hole's place — and a picked MASK shows its WORD the moment
+  // the log holds it (the reveal, or the word typed by hand): derived, so nothing about
+  // the pick has to be rewritten when the guess lands.
   const shownHoles = useMemo(
     () =>
       holes.map((h, i) => {
         const p = picked[i];
-        return p && h.rank > 0 && p.at === h.rank && p.rank !== h.rank
-          ? { ...h, word: p.word, rank: p.rank }
-          : h;
+        if (!p || h.rank === 0 || p.at !== h.rank || p.rank === h.rank) return h;
+        const revealed = p.slug && shownCharge[i].given.some((g) => g.rank === p.rank && g.consumed);
+        const word = revealed ? (ranks[h.secret][p.slug as string]?.word ?? p.word) : p.word;
+        return { ...h, word, rank: p.rank };
       }),
-    [holes, picked],
+    [holes, picked, shownCharge, ranks],
   );
   const pickWord = useCallback(
     (index: number, stop: HistoryStop) => {
       const at = holes[index]?.rank;
       if (at === undefined || at === 0) return;
-      setPicked((cur) => ({ ...cur, [index]: { word: stop.display, rank: stop.rank, at } }));
+      setPicked((cur) => ({
+        ...cur,
+        [index]: { word: stop.display, rank: stop.rank, at, slug: stop.masked ? stop.slug : undefined },
+      }));
     },
     [holes],
   );
+  // THE GHOST: the masked hint picked into the sentence and not yet revealed — the one an
+  // empty ENTER submits. The latest such pick, should two holes hold one.
+  const ghost = useMemo((): { index: number; slug: string } | null => {
+    let found: { index: number; slug: string } | null = null;
+    for (let i = 0; i < holes.length; i += 1) {
+      const h = holes[i];
+      const p = picked[i];
+      if (!p?.slug || h.rank === 0 || p.at !== h.rank) continue;
+      if (shownCharge[i].given.some((g) => g.rank === p.rank && g.consumed)) continue;
+      found = { index: i, slug: p.slug };
+    }
+    return found;
+  }, [holes, picked, shownCharge]);
   // Tapping a hole is available during normal play only, since the 2026-08-14 redesign:
   // once the solving beats begin, the sentence belongs to the choreography (and then
   // dissolves), and the tap moves to the result's own secrets in the sentence's page —
@@ -827,7 +848,9 @@ function Round({
       // The next guess is typed where the last one was: a no-op when the field already has
       // the focus, which is every submit but the on-screen ENTER's own keyboard activation.
       guessField.current?.focus({ preventScroll: true });
-      const typed = fold(raw);
+      // An EMPTY submit with a masked hint picked is THE REVEAL (user-decided 2026-09-22):
+      // the ghost's key goes in as the guess, and everything below is the guess's usual way.
+      const typed = fold(raw) || ghost?.slug || '';
       if (!typed) {
         setInput('');
         return;
@@ -948,6 +971,7 @@ function Round({
       }
     },
     [
+      ghost,
       holes,
       playLog,
       ranks,
@@ -1092,6 +1116,7 @@ function Round({
                   onSubmit={submit}
                   onReplace={replaceInput}
                   invalidSignal={invalidAt}
+                  ghost={ghost ? MASK : undefined}
                   // The history modal covers the prompt: keystrokes must not build (or submit)
                   // a guess the player cannot see behind it. The gate holds it back the same
                   // way — the prompt arrives with the keyboard, on PLAY. And the RETIRING
@@ -1155,6 +1180,7 @@ function Round({
                   input={input}
                   prefixSet={prefixSet}
                   vocabSet={vocabSet}
+                  submittable={ghost !== null}
                   lang={lang}
                   onType={appendChar}
                   onBackspace={deleteChar}
@@ -1209,9 +1235,6 @@ function Round({
           // exactly when the hole does (a sentence opener with no prefix to carry it).
           capital={sentenceStarts(words)[puzzleHoles[historyHole].pos] && !puzzleHoles[historyHole].prefix}
           onPick={exploreDisabled ? undefined : (stop) => pickWord(historyHole, stop)}
-          // A masked hint tapped in the slot is a GUESS of its key — the same door as the
-          // prompt, with the same refusals (the cap, the lock, a finished round).
-          onReveal={exploreDisabled ? undefined : (stop) => submit(stop.slug)}
           onClose={closeHistory}
         />
       )}

@@ -245,27 +245,21 @@ These are decided and verified against the code. Treat them as load-bearing.
   like any row** — fold on it and the sentence shows `?????²` on the hole's foil, display
   only (user-decided 2026-09-22 on the first cut, where the fold could not pick a mask
   and the hole snapped back to its best word: "it feels weird to have the closest word
-  being back") — and **while the slot holds a mask a REVEAL KEY stands beside it**
-  — EVERY MASKED ROW CARRIES ITS OWN (`.wheel-cap`, on a `.wheel-line` beside the row —
-  a button beside a button, never inside one — lit while the row is in the slot, faded
-  out as it scrolls away, inert until lit; user-decided the same day: "each hole should
-  have its own button tied to it, and when you scroll out, it just fades away"): the
-  KEYBOARD'S ENTER KEY transplanted — a flat solve-cobalt square the chip's own height,
-  sharp, FLUSH against the sealed card's left edge so card and lock are one object in two
-  inks — or past its exponent where a phone's line leaves no left (`capLeft`; a word at
-  the start of the line put the lock off screen) — carrying the OPEN LOCK,
-  `assets/icons/unlock.svg`, a mark on the header icons' 10×10 grid at its exact 20px
-  (10px on a chip too small to hold it); the chrome button of the first cut was "ugly as
-  hell", the pixel word REVEAL gave way to the icon, and a tile floating a gap to the
-  right read as a stray button — all user-reviewed the same day; the price is its
-  description, "REVEAL · 1 TRY" — the one act that spends a try: `HistoryWheel`'s `onReveal` SUBMITS the stop's
-  key (`HistoryStop.slug`) through the game's own `submit`, so the word enters the play
-  log like any typed guess, counts as a try, charges the other holes, syncs, can hit
-  another hole (its floats land on the sentence under the dim, which is the point: "we
-  could see the hits on other words") — and the wheel stays open with the word in the
-  slot; the fold then picks it (a re-pick at the same rank, by word). The slot row's own
-  tap, a tap outside and Escape close as ever. A given rank the player had ALREADY
-  reached is never given (they knew the word). **THE HINTS TAKEN are
+  being back") — **and THE REVEAL IS MADE FROM THE SENTENCE: the picked mask stands
+  PRE-TYPED in the prompt — `.wi-ghost`, `?????` in the accent with the OPEN LOCK
+  (`assets/icons/unlock.svg`, a mark on the header icons' 10×10 pixel grid) — ENTER is
+  lit (`Keyboard`'s `submittable`), and an empty ENTER SUBMITS the ghost's key
+  (`HistoryStop.slug`) as the guess** (user-decided 2026-09-22, after three reveal
+  controls in the wheel — a button, a lock on the slot, a lock on every row — were each
+  reviewed away: the side changed with the screen, a lock at a line's start went off a
+  phone, and the hits played under the dim; "maybe the best would be to display the
+  button when the word has been selected, so you can only unlock it once back on the
+  sentence and you can see the hits on the other words as well then"). The word enters
+  the play log like any typed guess, counts as a try, charges the other holes, syncs, can
+  hit another hole — its floats land on the board — and the picked hole shows the WORD
+  the moment the log holds it (`shownHoles` derives it; the pick is never rewritten). The
+  first keystroke types over the ghost; the wheel holds no reveal control at all. A given
+  rank the player had ALREADY reached is never given (they knew the word). **THE HINTS TAKEN are
   derived from the log** (`GivenRank.consumed`: a given rank guessed after it was given —
   typed by hand counts the same, "it's on them"; `hintsTaken` sums them over the distinct
   secrets) and NAMED ON THE RESULT under the tries, zero included (`.solved-score-hints`,
@@ -332,7 +326,7 @@ These are decided and verified against the code. Treat them as load-bearing.
   MOVES**: the word the wheel holds wears the regular white chip, active hole or given
   word ("when wheel focused, a word should not have a moving background, just the regular
   white for a better UX") — except a MASKED hint in the slot, which keeps its foil: it is
-  the thing the REVEAL button beside it opens.
+  the thing to pick, and the prompt's ghost then reveals.
   RETIRED with it: `.hole-initial` (the first-cell tile), `initialOf`, `srHoleInitial`, the
   `.spent` fade. Retired the same day, each on the
   user's review: a line along the chip's bottom edge and the band the chip grew for it (a
@@ -2960,9 +2954,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     secret fill its meter. Once full, you earn a clue." → a guess that does not fill:
     `tutNear` → the obvious guess FILLS IT — no progress needed — and the hole ACTIVATES:
     "The meter is full! 10 words close to the secret are masked in its tries. Click
-    freedom¹, choose a masked word and reveal it — it costs a try." (`tutActivatedTap`/
-    `Click`, 2026-09-22; the tap teaches the wheel a second time and the price once) → a
-    hint REVEALED with the button: "equality² is revealed, for one try. Now find the secret word."
+    freedom¹, pick a masked word, then press enter to reveal it — it costs a try."
+    (`tutActivatedTap`/`Click`, 2026-09-22; the tap teaches the wheel a second time and
+    the price once) → a hint REVEALED by an empty ENTER on the ghost: "equality² is revealed, for one try. Now find the secret word."
     (`tutRevealed`, off the event's `revealed` flag) → a FAILED TRY typed after it earns the HINT
     (`hints[]`, or `pair.hint` once swapped), NEVER THE WORD (user-decided 2026-09-16,
     retiring the bot's own closing guess) → found: "You found it! You are ready for the real
