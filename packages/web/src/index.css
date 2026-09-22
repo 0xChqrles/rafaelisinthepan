@@ -2057,11 +2057,15 @@ input {
   align-items: center;
   color: var(--accent);
 }
-/* THE LOCK: a glyph of the prompt's own font — 8 cells at 1em, the font's grid — a half
-   cell after the marks. */
+/* THE LOCK: drawn as a character of the prompt's own font — 8 rows at 1em, the font's grid,
+   its ink on the cap rows 0–6 like the marks' (row 7 is the face's descender room: ink there
+   hangs below the `?`s), in the font's strokes (2-cell verticals, 1-cell horizontals, the
+   shackle's arch clipped like its `C`): the shackle open, its right leg off the body, over a
+   solid body with a keyhole slot. Its box is its ink plus the face's one blank column; the
+   width follows the file's own 9×8. Half an em after the marks. */
 .wi-lock {
   display: block;
-  width: 1em;
+  width: auto;
   height: 1em;
   margin-left: 0.5em;
   flex: 0 0 auto;
