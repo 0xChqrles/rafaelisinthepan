@@ -35,6 +35,7 @@ import { chargeForRank, hintsTaken, replayCharge } from '../game/charge';
 import { navigate } from '../routing';
 import { pathForDay, pathForGame, pathForLesson } from '../langs';
 import { MASK, buildHistory } from '../game/history';
+import { useScramble } from '../hooks/useScramble';
 import type { HistoryStop } from '../game/history';
 import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
 import { track } from '../analytics';
@@ -694,7 +695,7 @@ function Round({
     [holes],
   );
   // THE GHOST: the masked hint picked into the sentence and not yet revealed — the one an
-  // empty ENTER submits. The latest such pick, should two holes hold one.
+  // empty ENTER DECODES and submits. The latest such pick, should two holes hold one.
   const ghost = useMemo((): { index: number; slug: string } | null => {
     let found: { index: number; slug: string } | null = null;
     for (let i = 0; i < holes.length; i += 1) {
@@ -706,6 +707,14 @@ function Round({
     }
     return found;
   }, [holes, picked, shownCharge]);
+  // THE DECODE (user-decided 2026-09-22, "the text should uncypher from the prompt then get
+  // sent, so when a hit occurs on other words, the user already knows what word it was"):
+  // on ENTER the ghost's marks churn into the word in the prompt (`useScramble`, the
+  // hole's own slot-machine settle), and the guess goes in when the last letter lands.
+  // Nothing typed and nothing submitted meanwhile.
+  const [decoding, setDecoding] = useState<string | null>(null); // the key being decoded
+  const decodingRef = useRef<string | null>(null); // the same, for the closures that land it
+  const decode = useScramble();
   // Tapping a hole is available during normal play only, since the 2026-08-14 redesign:
   // once the solving beats begin, the sentence belongs to the choreography (and then
   // dissolves), and the tap moves to the result's own secrets in the sentence's page —
@@ -820,10 +829,15 @@ function Round({
     (char: string) => {
       if (promptExiting) return;
       setFeedback(null);
+      // A ghost stands: the letters are out (the prompt holds a word already).
+      if (decoding !== null || (ghost !== null && input === '')) {
+        setInvalidAt(Date.now());
+        return;
+      }
       if (canExtend(prefixSet, input, char)) setInput(input + char);
       else setInvalidAt(Date.now());
     },
-    [prefixSet, input, promptExiting],
+    [prefixSet, input, promptExiting, ghost, decoding],
   );
 
   const deleteChar = useCallback(() => {
@@ -840,6 +854,8 @@ function Round({
     setInput(v);
   }, [promptExiting]);
 
+  // The latest `submit`, for the decode's landing (it closes over the one that started it).
+  const submitRef = useRef<(raw: string) => void>(() => {});
   const submit = useCallback(
     (raw: string) => {
       // A board already complete takes no more guesses, and neither does a round the server
@@ -849,8 +865,26 @@ function Round({
       // the focus, which is every submit but the on-screen ENTER's own keyboard activation.
       guessField.current?.focus({ preventScroll: true });
       // An EMPTY submit with a masked hint picked is THE REVEAL (user-decided 2026-09-22):
-      // the ghost's key goes in as the guess, and everything below is the guess's usual way.
-      const typed = fold(raw) || ghost?.slug || '';
+      // the ghost DECODES in the prompt first, and its key comes back through here as the
+      // guess once the word is out; everything below is the guess's usual way.
+      if (decodingRef.current !== null) return;
+      if (!fold(raw) && ghost) {
+        const slug = ghost.slug;
+        decodingRef.current = slug;
+        setDecoding(slug);
+        decode.start(
+          slug,
+          MASK.length,
+          () => {
+            decodingRef.current = null;
+            setDecoding(null);
+            submitRef.current(slug);
+          },
+          0,
+        );
+        return;
+      }
+      const typed = fold(raw);
       if (!typed) {
         setInput('');
         return;
@@ -972,6 +1006,8 @@ function Round({
     },
     [
       ghost,
+      decoding,
+      decode,
       holes,
       playLog,
       ranks,
@@ -989,7 +1025,8 @@ function Round({
       say,
       roundKey,
     ],
-  );
+  );  submitRef.current = submit;
+
 
   // The game is deliberately NETWORK-DEPENDENT at load (#214): the board is replayed from
   // the server's own log, so until that read settles there is nothing honest to show and
@@ -1116,7 +1153,8 @@ function Round({
                   onSubmit={submit}
                   onReplace={replaceInput}
                   invalidSignal={invalidAt}
-                  ghost={ghost ? MASK : undefined}
+                  ghost={decoding !== null ? (decode.jumble ?? decoding) : ghost ? MASK : undefined}
+                  ghostDecoding={decoding !== null}
                   // The history modal covers the prompt: keystrokes must not build (or submit)
                   // a guess the player cannot see behind it. The gate holds it back the same
                   // way — the prompt arrives with the keyboard, on PLAY. And the RETIRING
@@ -1180,7 +1218,8 @@ function Round({
                   input={input}
                   prefixSet={prefixSet}
                   vocabSet={vocabSet}
-                  submittable={ghost !== null}
+                  submittable={ghost !== null && decoding === null}
+                  locked={decoding !== null || (ghost !== null && input === '')}
                   lang={lang}
                   onType={appendChar}
                   onBackspace={deleteChar}

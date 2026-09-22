@@ -54,9 +54,11 @@ interface WordInputProps {
   invalidSignal: number;
   // THE GHOST (user-decided 2026-09-22): a masked hint picked into the sentence stands
   // PRE-TYPED here while the field is empty — `?????` in the accent with the open lock —
-  // and ENTER submits it as the guess that reveals it. Drawn only; the field stays empty,
-  // so the first keystroke simply types over it.
+  // and ENTER DECODES it: the marks churn into the word (`ghostDecoding`, the lock gone)
+  // and only then is it sent, so the player knows the word before its hits land. Drawn
+  // only; the field stays empty.
   ghost?: string;
+  ghostDecoding?: boolean;
   // The caller's handle on the field, so the screen can put the caret back into it after
   // a submit — the one moment the focus may be sitting on the on-screen ENTER instead.
   fieldRef?: MutableRefObject<HTMLInputElement | null>;
@@ -101,6 +103,7 @@ export default function WordInput({
   onReplace,
   invalidSignal,
   ghost,
+  ghostDecoding = false,
   fieldRef,
   active = true,
 }: WordInputProps) {
@@ -271,7 +274,7 @@ export default function WordInput({
         {value === '' && ghost ? (
           <span className="wi-text-run wi-ghost">
             {ghost}
-            <UnlockIcon className="wi-lock" aria-hidden="true" />
+            {!ghostDecoding && <UnlockIcon className="wi-lock" aria-hidden="true" />}
           </span>
         ) : (
           <span className="wi-text-run">{value}</span>

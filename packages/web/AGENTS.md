@@ -248,8 +248,12 @@ These are decided and verified against the code. Treat them as load-bearing.
   being back") — **and THE REVEAL IS MADE FROM THE SENTENCE: the picked mask stands
   PRE-TYPED in the prompt — `.wi-ghost`, `?????` in the accent with the OPEN LOCK
   (`assets/icons/unlock.svg`, a mark on the header icons' 10×10 pixel grid) — ENTER is
-  lit (`Keyboard`'s `submittable`), and an empty ENTER SUBMITS the ghost's key
-  (`HistoryStop.slug`) as the guess** (user-decided 2026-09-22, after three reveal
+  lit (`Keyboard`'s `submittable`) and EVERY LETTER IS OUT (`locked`; "no letters should
+  be available on the keyboard at this point"), and an empty ENTER DECODES THE GHOST —
+  the marks churn into the word in the prompt (`useScramble`, the hole's own settle,
+  `SCRAMBLE_MS`; the lock leaves, ENTER goes out) — and only then SUBMITS its key
+  (`HistoryStop.slug`) as the guess, so the player knows the word before its hits land
+  ("the text should uncypher from the prompt then get sent")** (user-decided 2026-09-22, after three reveal
   controls in the wheel — a button, a lock on the slot, a lock on every row — were each
   reviewed away: the side changed with the screen, a lock at a line's start went off a
   phone, and the hits played under the dim; "maybe the best would be to display the
