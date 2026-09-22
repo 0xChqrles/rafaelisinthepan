@@ -2053,10 +2053,22 @@ input {
    decode-then-hold in the prompt, reviewed away the next: "we don't know if you should
    hit enter".) Drawn only: the field stays empty. */
 .wi-ghost {
+  display: inline-flex;
+  align-items: center;
   color: var(--accent);
 }
-/* Uncyphering: the marks churn into the word AS A TYPED WORD — the prompt's own ink. */
-.wi-ghost.decoding {
+/* THE LOCK: a glyph of the prompt's own font — 8 cells at 1em, the font's grid — a half
+   cell after the marks. */
+.wi-lock {
+  display: block;
+  width: 1em;
+  height: 1em;
+  margin-left: 0.5em;
+  flex: 0 0 auto;
+}
+/* Uncyphering: a letter turns to the prompt's own ink — a TYPED letter — the moment it
+   settles; the rest keep churning in the accent. */
+.wi-ghost .wi-settled {
   color: var(--fg);
 }
 .wi-cursor {

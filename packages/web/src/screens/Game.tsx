@@ -37,9 +37,9 @@ import { pathForDay, pathForGame, pathForLesson } from '../langs';
 import { MASK, buildHistory } from '../game/history';
 import { SCRAMBLE_MS, useScramble } from '../hooks/useScramble';
 
-// How long a decoded ghost stands in the prompt, as a typed word, before the prompt
-// clears and the guess's choreography begins.
-export const REVEAL_HOLD_MS = 300;
+// How long an uncyphered ghost stands in the prompt, as a typed word, ONCE THE LAST
+// LETTER HAS SETTLED, before the prompt clears and the guess's choreography begins.
+export const REVEAL_HOLD_MS = 500;
 
 import type { HistoryStop } from '../game/history';
 import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
@@ -876,15 +876,23 @@ function Round({
       if (decoding !== null) return;
       const revealing = !fold(raw) && ghost !== null;
       const typed = fold(raw) || ghost?.slug || '';
-      const reveal = revealing ? SCRAMBLE_MS + REVEAL_HOLD_MS : 0;
+      // The settle takes `SCRAMBLE_MS` (nothing under reduced motion), and the hold runs
+      // from the moment it is DONE.
+      const reveal = revealing ? (prefersReducedMotion() ? 0 : SCRAMBLE_MS) + REVEAL_HOLD_MS : 0;
       if (revealing) {
         setDecoding(typed);
-        decode.start(typed, MASK.length, undefined, 0);
-        const clear = window.setTimeout(() => {
-          pendingTimers.current = pendingTimers.current.filter((t) => t !== clear);
-          setDecoding(null);
-        }, reveal);
-        pendingTimers.current.push(clear);
+        decode.start(
+          typed,
+          MASK.length,
+          () => {
+            const clear = window.setTimeout(() => {
+              pendingTimers.current = pendingTimers.current.filter((t) => t !== clear);
+              setDecoding(null);
+            }, REVEAL_HOLD_MS);
+            pendingTimers.current.push(clear);
+          },
+          0,
+        );
       }
       if (!typed) {
         setInput('');
@@ -1155,7 +1163,7 @@ function Round({
                   onReplace={replaceInput}
                   invalidSignal={invalidAt}
                   ghost={decoding !== null ? (decode.jumble ?? decoding) : ghost ? MASK : undefined}
-                  ghostDecoding={decoding !== null}
+                  ghostTarget={decoding ?? undefined}
                   // The history modal covers the prompt: keystrokes must not build (or submit)
                   // a guess the player cannot see behind it. The gate holds it back the same
                   // way — the prompt arrives with the keyboard, on PLAY. And the RETIRING

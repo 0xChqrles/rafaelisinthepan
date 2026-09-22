@@ -246,23 +246,26 @@ These are decided and verified against the code. Treat them as load-bearing.
   only (user-decided 2026-09-22 on the first cut, where the fold could not pick a mask
   and the hole snapped back to its best word: "it feels weird to have the closest word
   being back") — **and THE REVEAL IS MADE FROM THE SENTENCE: the picked mask stands
-  PRE-TYPED in the prompt — `.wi-ghost`, `?????` in the accent, nothing else — ENTER is
+  PRE-TYPED in the prompt — `.wi-ghost`, `?????` in the accent with the OPEN LOCK, a
+  glyph on the pixel font's own 8-cell grid at 1em (`assets/icons/unlock.svg`; the
+  20px header-grid mark "doesn't work near the thick and fat question mark glyphs",
+  user-reviewed 2026-09-23, and the lock itself was to stay) — ENTER is
   lit (`Keyboard`'s `submittable`) and EVERY LETTER IS OUT (`locked`; "no letters should
   be available on the keyboard at this point"), and an empty ENTER SUBMITS its key
   (`HistoryStop.slug`) as the guess AT ONCE — the log, the server, the try — while the
   PROMPT UNCYPHERS IT (user-decided 2026-09-23, the settled cut): the marks churn into
-  the word (`useScramble`, the hole's own settle, `SCRAMBLE_MS`) as a TYPED word in
-  `--fg` (`.wi-ghost.decoding`), it stands `REVEAL_HOLD_MS` = 300, then the prompt clears
-  the way it does on any guess, and the guess's whole choreography — the hits, the
-  hole's own `?????²`-into-the-word swap, the watermark's tick — is delayed by exactly
-  that (`reveal` on every hit's `startDelayMs` and the release's `fadeDelayMs`), so it
-  plays on a word already read. The ghost is spent off the FULL log (`chargeState`) the
+  the word (`useScramble`, the hole's own settle, `SCRAMBLE_MS`), EACH LETTER TURNING
+  `--fg` — a typed letter — THE MOMENT IT SETTLES while the rest churn in the accent
+  (`.wi-settled`, off the longest prefix matching the word), the word then stands
+  `REVEAL_HOLD_MS` = 500 FROM THE LAST LETTER'S SETTLE, then the prompt clears the way
+  it does on any guess, and the guess's whole choreography — the hits, the hole's own
+  `?????²`-into-the-word swap, the watermark's tick — is delayed by exactly that
+  (`reveal` = the settle, none under reduced motion, plus the hold, on every hit's
+  `startDelayMs` and the release's `fadeDelayMs`), so it plays on a word already read. The ghost is spent off the FULL log (`chargeState`) the
   instant the guess is in; the hole keeps its mask off the deferred view until the
   release. Never two steps — a decode a player could read and back out of would be a
   hint for free, outside the log. (Reviewed away on the way: a 900ms hold BEFORE the send
-  — "we don't know if you should hit enter, or what" — and an open-lock icon beside the
-  marks — "weird and ugly… near the thick and fat question mark glyphs"; `unlock.svg` is
-  gone.)** (user-decided 2026-09-22, after three reveal
+  — "we don't know if you should hit enter, or what".)** (user-decided 2026-09-22, after three reveal
   controls in the wheel — a button, a lock on the slot, a lock on every row — were each
   reviewed away: the side changed with the screen, a lock at a line's start went off a
   phone, and the hits played under the dim; "maybe the best would be to display the

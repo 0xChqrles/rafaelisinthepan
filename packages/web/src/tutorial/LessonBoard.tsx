@@ -18,7 +18,7 @@ import { MASK, buildHistory, type HistoryStop } from '../game/history';
 import { guessKey, replayHoles } from '../game/scoring';
 import { chargeForRank, replayCharge } from '../game/charge';
 import { sentenceStarts } from '../game/sentenceCase';
-import { SCRAMBLE_MS, useScramble } from '../hooks/useScramble';
+import { SCRAMBLE_MS, prefersReducedMotion, useScramble } from '../hooks/useScramble';
 import type { Vocab } from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
 import type { HitState, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
@@ -265,7 +265,7 @@ export default function LessonBoard({
   const land = useCallback(
     (typed: string, byBot: boolean, revealed = false) => {
       // A reveal's choreography waits for the prompt's decode (Game's rule).
-      const reveal = revealed ? SCRAMBLE_MS + REVEAL_HOLD_MS : 0;
+      const reveal = revealed ? (prefersReducedMotion() ? 0 : SCRAMBLE_MS) + REVEAL_HOLD_MS : 0;
       const tried = triedRef.current;
       let ranks = ranksRef.current;
       // Judge against the log immediately, independently of the delayed visual swaps.
@@ -411,8 +411,7 @@ export default function LessonBoard({
       const typed = fold(raw) || ghost?.slug || '';
       if (revealing) {
         setDecoding(typed);
-        decode.start(typed, MASK.length, undefined, 0);
-        later(() => setDecoding(null), SCRAMBLE_MS + REVEAL_HOLD_MS);
+        decode.start(typed, MASK.length, () => later(() => setDecoding(null), REVEAL_HOLD_MS), 0);
       }
       if (!typed) {
         setInput('');
@@ -620,7 +619,7 @@ export default function LessonBoard({
             onReplace={replaceInput}
             invalidSignal={invalidAt}
             ghost={decoding !== null ? (decode.jumble ?? decoding) : ghost ? MASK : undefined}
-            ghostDecoding={decoding !== null}
+            ghostTarget={decoding ?? undefined}
             active={playing && historyHole === null}
           />
           <p className="hint">{feedback || ' '}</p>
