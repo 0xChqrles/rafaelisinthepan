@@ -369,7 +369,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   meter's, no opacity or tone per drop): the width moves on the guess's RELEASE (the
   deferred-board beat, `shownCharge`) and the fill's transition WAITS for the landing
   (`--meter-delay`, `sparkLandMs`), the burst and the sea waiting with it; at 100 `meter
-  fills → BURST → the sea`, timed off `METER_MS` in `Hole`. The exact hit wears the ULTRA star and takes
+  fills → BURST → the sea`, the BURST striking on the canvas's own SOLID frame (`MeterCanvas`'s
+  `onFull`, a deadline behind it), never on a timer (user-reported 2026-09-23: "the burst
+  animation is played before the filling animation is done. It should actually wait"). The exact hit wears the ULTRA star and takes
   no cut, loot or burst (the solve supersedes); a miss, a repeat and a rank past the table
   keep the float alone; a guess that also improves the hole keeps the word/rank swap
   choreography (charging is additive). The sheets are `components/strikeArt.ts` +

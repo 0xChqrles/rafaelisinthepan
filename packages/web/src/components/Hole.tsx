@@ -46,11 +46,10 @@ export interface HoleChargeView {
   active: boolean;
 }
 
-// How long the meter's fill takes to travel (the CSS transition's length, handed down so
-// the burst that follows a full meter waits for exactly it), and where in the burst the
-// sea begins — on its impact frames, not after the last wisp.
+// How long the meter's fill takes to travel (handed to the canvas's tween), and where in
+// the burst the sea begins — on its impact frames, not after the last wisp.
 const METER_MS = 300;
-const SEA_AT_MS = METER_MS + BURST_ART.ms * 0.6;
+const SEA_IN_BURST_MS = BURST_ART.ms * 0.6;
 
 // A hole: "displayed_word^current_rank" (ex: sailor^87). Rank 0 = solved. The exponent is
 // written WITHOUT a leading minus (user-decided 2026-08-16): it is a distance, and distances
@@ -192,6 +191,16 @@ export default function Hole({
     : 0;
   const meterDelayRef = useRef(meterDelayMs);
   meterDelayRef.current = meterDelayMs;
+  // THE BURST WAITS FOR THE FILL: it strikes when the canvas reports the chip inked SOLID
+  // (`onFull`, the fill's own last frame), never on a timer guessed from the fill's length —
+  // the tween starts on the frame after its delay and its eased tail leaves the chip's end
+  // dithered until that last frame, so a timer at delay + METER_MS struck over a meter
+  // still filling (user-reported 2026-09-23: "the burst animation is played before the
+  // filling animation is done. It should actually wait"). A deadline stands behind the
+  // signal, so a lost report can only make the burst late, never missing; the sea follows
+  // the burst it rides.
+  const fullRef = useRef<(() => void) | null>(null);
+  const onFull = useCallback(() => fullRef.current?.(), []);
   useEffect(() => {
     if (!active || solving) {
       setSeaShown(false);
@@ -203,11 +212,18 @@ export default function Hole({
       setSeaShown(true);
       return undefined;
     }
-    const wait = meterDelayRef.current;
-    const strike = window.setTimeout(() => setBurst((n) => n + 1), wait + METER_MS);
-    const sea = window.setTimeout(() => setSeaShown(true), wait + SEA_AT_MS);
+    let sea = 0;
+    const strike = () => {
+      fullRef.current = null;
+      window.clearTimeout(deadline);
+      setBurst((n) => n + 1);
+      sea = window.setTimeout(() => setSeaShown(true), SEA_IN_BURST_MS);
+    };
+    fullRef.current = strike;
+    const deadline = window.setTimeout(strike, meterDelayRef.current + 2 * METER_MS);
     return () => {
-      window.clearTimeout(strike);
+      fullRef.current = null;
+      window.clearTimeout(deadline);
       window.clearTimeout(sea);
     };
     // A solve cancels both pending timers, including before the board's deferred release.
@@ -329,6 +345,7 @@ export default function Hole({
                 durationMs={METER_MS}
                 sea={seaShown}
                 seed={holeIndex + 1}
+                onFull={onFull}
               />
             </span>
           ) : null}

@@ -162,6 +162,7 @@ export default function MeterCanvas({
   durationMs,
   sea = false,
   seed = 0,
+  onFull,
 }: {
   value: number; // the meter's reading, 0-100
   delayMs: number; // how long a change waits before it travels
@@ -170,8 +171,13 @@ export default function MeterCanvas({
   sea?: boolean;
   // Which sea: every hole, and every given word, reads the field at its own place.
   seed?: number;
+  // Told on the frame the fill inks the chip SOLID — its last — so what follows a full
+  // meter (the hole's burst) waits for the fill itself, never for a guess at its length.
+  onFull?: () => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const onFullRef = useRef(onFull);
+  onFullRef.current = onFull;
   const shown = useRef(value); // what is on the canvas right now
   const pending = useRef<{ timer: number; raf: number }>({ timer: 0, raf: 0 });
   // When the sea began on this canvas, for the recede; null on a canvas born in the sea
@@ -378,6 +384,7 @@ export default function MeterCanvas({
     if (prefersReducedMotion() || durationMs <= 0) {
       shown.current = to;
       drawRamp(to);
+      if (to >= 100) onFullRef.current?.();
       return undefined;
     }
     pending.current.timer = window.setTimeout(() => {
@@ -388,6 +395,7 @@ export default function MeterCanvas({
         shown.current = from + (to - from) * eased;
         drawRamp(shown.current);
         if (k < 1) pending.current.raf = requestAnimationFrame(step);
+        else if (to >= 100) onFullRef.current?.();
       };
       pending.current.raf = requestAnimationFrame(step);
     }, delayMs);
