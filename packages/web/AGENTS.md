@@ -246,10 +246,11 @@ These are decided and verified against the code. Treat them as load-bearing.
   only (user-decided 2026-09-22 on the first cut, where the fold could not pick a mask
   and the hole snapped back to its best word: "it feels weird to have the closest word
   being back") — and **while the slot holds a mask a REVEAL KEY stands beside it**
-  (`.wheel-reveal`: the KEYBOARD'S ENTER KEY transplanted — a flat solve-cobalt tile, the
-  word in the pixel face at the plain rows' size, on the slot's own line; the chrome
-  button of the first cut was "ugly as hell", user-reviewed the same day; the price is
-  its description, "REVEAL · 1 TRY"), the one act that spends a try: `HistoryWheel`'s `onReveal` SUBMITS the stop's
+  (`.wheel-reveal`: the KEYBOARD'S ENTER KEY transplanted — a flat solve-cobalt 32px tile
+  on the slot's own line carrying the OPEN LOCK, `assets/icons/unlock.svg`, a mark on the
+  header icons' 10×10 grid at its exact 20px; the chrome button of the first cut was
+  "ugly as hell" and the pixel word REVEAL gave way to the icon, both user-reviewed the
+  same day; the price is its description, "REVEAL · 1 TRY"), the one act that spends a try: `HistoryWheel`'s `onReveal` SUBMITS the stop's
   key (`HistoryStop.slug`) through the game's own `submit`, so the word enters the play
   log like any typed guess, counts as a try, charges the other holes, syncs, can hit
   another hole (its floats land on the sentence under the dim, which is the point: "we

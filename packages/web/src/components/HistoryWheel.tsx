@@ -9,6 +9,7 @@ import { holeTitle, srRouteStop, t } from '../i18n';
 import useDrum from '../hooks/useDrum';
 import useModalDismiss from '../hooks/useModalDismiss';
 import MeterCanvas from './MeterCanvas';
+import UnlockIcon from '../assets/icons/unlock.svg?react';
 
 // The hole WHEEL (user-decided 2026-09-01 — the day's fifth approach, after the history
 // modal's line, a radial net with lines twice revised, and a plain stack; the brief was
@@ -486,7 +487,6 @@ export default function HistoryWheel({
           type="button"
           className="wheel-reveal"
           style={{
-            fontSize: `${small}px`,
             // The slot's line: the tapped word's own, centred (the column's measured shift
             // moves the rows, not the slot).
             top: anchor.wrap.y + anchor.wrap.h / 2,
@@ -500,7 +500,10 @@ export default function HistoryWheel({
             reveal();
           }}
         >
-          {t(lang, 'reveal')}
+          {/* The OPEN LOCK, on the header icons' own 10×10 grid at its exact 2px a cell
+              (user-asked 2026-09-22: "an open lock pixel icon in the same style as the
+              other header icons") — the word is the key's description. */}
+          <UnlockIcon aria-hidden="true" />
         </button>
       )}
     </dialog>,

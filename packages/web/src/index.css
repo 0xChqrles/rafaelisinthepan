@@ -2977,30 +2977,28 @@ input {
 /* A MASKED hint (user-decided 2026-09-22): the foil under a fixed run of `?` whatever the
    word's length — `MASK` — so a masked row and a masked slot read as a sealed card, and
    say so. THE REVEAL KEY stands beside the slot row while it holds one: THE KEYBOARD'S
-   ENTER KEY, transplanted — a flat solve-cobalt tile with the word in the pixel face
-   (user-reviewed 2026-09-22: the chrome button was "ugly as hell"; a reveal is a guess
-   committed, and ENTER is the app's one coloured key for exactly that). A press is a
-   brightness state, the key's own. Sized to the wheel's plain rows (the font size is set
-   inline by the wheel); positioned by the wheel off the slot row's own box. The price is
-   the key's description, and the score's watermark ticking up. */
+   ENTER KEY, transplanted — a flat solve-cobalt tile (user-reviewed 2026-09-22: the chrome
+   button was "ugly as hell"; a reveal is a guess committed, and ENTER is the app's one
+   coloured key for exactly that) — carrying the OPEN LOCK, a pixel mark on the header
+   icons' own 10×10 grid at its exact 20px (user-asked the same day, over the word REVEAL
+   in the pixel face). A 32px square, so the mark keeps its 2px cells at every row size;
+   a press is a brightness state, the key's own; positioned by the wheel on the slot's
+   line. The price is the key's description, and the score's watermark ticking up. */
 .wheel-reveal {
   position: fixed;
   translate: 0 -50%;
   z-index: 1;
   display: inline-flex;
   align-items: center;
-  height: 1.5em;
-  padding: 0 0.6em;
-  font-family: var(--pixel-font);
-  text-transform: uppercase;
-  white-space: nowrap;
-  line-height: 1;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   color: var(--fg);
   background: var(--solve);
   border: 0;
   border-radius: var(--r-lg);
   cursor: pointer;
-  text-shadow: none;
   animation: wheel-row-in 120ms ease-out both;
   transition: filter 0.08s linear;
 }
