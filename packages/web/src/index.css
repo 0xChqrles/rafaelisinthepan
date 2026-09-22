@@ -2055,6 +2055,10 @@ input {
 .wi-ghost {
   color: var(--accent);
 }
+/* Uncyphering: the marks churn into the word AS A TYPED WORD — the prompt's own ink. */
+.wi-ghost.decoding {
+  color: var(--fg);
+}
 .wi-cursor {
   color: var(--accent);
   flex: 0 0 auto;

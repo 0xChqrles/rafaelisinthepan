@@ -9,7 +9,7 @@ import HistoryWheel from '../components/HistoryWheel';
 import HistoryModal from '../components/HistoryModal';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
-import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, STAGGER_MS } from '../screens/Game';
+import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, REVEAL_HOLD_MS, STAGGER_MS } from '../screens/Game';
 import CoachText, { richToPlain } from './CoachText';
 import { coachCopy, coachLine, type GuessEvent } from './coach';
 import type { LessonStage } from './script';
@@ -18,7 +18,7 @@ import { MASK, buildHistory, type HistoryStop } from '../game/history';
 import { guessKey, replayHoles } from '../game/scoring';
 import { chargeForRank, replayCharge } from '../game/charge';
 import { sentenceStarts } from '../game/sentenceCase';
-import { SCRAMBLE_MS } from '../hooks/useScramble';
+import { SCRAMBLE_MS, useScramble } from '../hooks/useScramble';
 import type { Vocab } from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
 import type { HitState, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
@@ -225,20 +225,23 @@ export default function LessonBoard({
     setRevealed(false);
   }, [script]);
 
-  // The ghost (derived below, after the picks) as the input handlers read it.
+  // The ghost (derived below, after the picks) as the input handlers read it, and the
+  // decode (Game's): the prompt uncyphers the word while the guess's choreography waits.
   const ghostRef = useRef<{ index: number; slug: string } | null>(null);
+  const [decoding, setDecoding] = useState<string | null>(null);
+  const decode = useScramble();
   const appendChar = useCallback(
     (char: string) => {
       if (!playing || !prefixSet) return;
       setFeedback(null);
-      if (ghostRef.current !== null && input === '') {
+      if (decoding !== null || (ghostRef.current !== null && input === '')) {
         setInvalidAt(Date.now());
         return;
       }
       if (canExtend(prefixSet, input, char)) setInput(input + char);
       else setInvalidAt(Date.now());
     },
-    [playing, prefixSet, input],
+    [playing, prefixSet, input, decoding],
   );
   const deleteChar = useCallback(() => {
     if (!playing) return;
@@ -261,6 +264,8 @@ export default function LessonBoard({
   // one (`byBot`: not a player event, no vocabulary check, the answer by construction).
   const land = useCallback(
     (typed: string, byBot: boolean, revealed = false) => {
+      // A reveal's choreography waits for the prompt's decode (Game's rule).
+      const reveal = revealed ? SCRAMBLE_MS + REVEAL_HOLD_MS : 0;
       const tried = triedRef.current;
       let ranks = ranksRef.current;
       // Judge against the log immediately, independently of the delayed visual swaps.
@@ -295,7 +300,7 @@ export default function LessonBoard({
         const entry: RankEntry | undefined = ranks[h.secret][typed];
         return [{ index, entry }];
       });
-      const fadeDelayMs = Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
+      const fadeDelayMs = reveal + Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
       // The meters before and after this guess (the meter stage only): what each chip gains
       // flies into it as loot, exactly as on the day (#301).
       const before = withMeters ? meters(tried, ranks) : null;
@@ -316,12 +321,12 @@ export default function LessonBoard({
                 holeIndex: index,
                 value: entry.rank,
                 id: hit,
-                startDelayMs: step * STAGGER_MS,
+                startDelayMs: reveal + step * STAGGER_MS,
                 fadeDelayMs,
                 strike,
                 charge: strike === 'slash' && gained > 0 ? gained : undefined,
               }
-            : { holeIndex: index, value: 0, id: hit, startDelayMs: step * STAGGER_MS, fadeDelayMs, miss: true },
+            : { holeIndex: index, value: 0, id: hit, startDelayMs: reveal + step * STAGGER_MS, fadeDelayMs, miss: true },
         ]);
       });
 
@@ -399,10 +404,16 @@ export default function LessonBoard({
       if (!playing || !vocab) return;
       guessField.current?.focus({ preventScroll: true });
       // An empty ENTER with a mask picked is the REVEAL: the ghost's key is the guess,
-      // flagged for the coach.
+      // flagged for the coach, the prompt uncyphering it meanwhile.
+      if (decoding !== null) return;
       const ghost = ghostRef.current;
       const revealing = !fold(raw) && ghost !== null;
       const typed = fold(raw) || ghost?.slug || '';
+      if (revealing) {
+        setDecoding(typed);
+        decode.start(typed, MASK.length, undefined, 0);
+        later(() => setDecoding(null), SCRAMBLE_MS + REVEAL_HOLD_MS);
+      }
       if (!typed) {
         setInput('');
         return;
@@ -419,7 +430,7 @@ export default function LessonBoard({
       setFeedback(null);
       land(typed, false, revealing);
     },
-    [playing, vocab, lang, say, land],
+    [playing, vocab, lang, say, land, decoding, decode, later],
   );
 
   // --- the stage's end ---
@@ -477,17 +488,19 @@ export default function LessonBoard({
     },
     [holes],
   );
-  // THE GHOST (Game's): the picked, unrevealed mask an empty ENTER submits.
+  // THE GHOST (Game's): the picked, unrevealed mask an empty ENTER submits — spent the
+  // instant the guess is in the FULL log.
+  const fullMeters = useMemo(() => (withMeters ? meters(tried) : undefined), [withMeters, meters, tried]);
   const ghost = useMemo((): { index: number; slug: string } | null => {
     let found: { index: number; slug: string } | null = null;
     for (let i = 0; i < holes.length; i += 1) {
       const p = picked[i];
       if (!p?.slug || holes[i].rank === 0 || p.at !== holes[i].rank) continue;
-      if (shownMeters?.[i].given.some((g) => g.rank === p.rank && g.consumed)) continue;
+      if (fullMeters?.[i].given.some((g) => g.rank === p.rank && g.consumed)) continue;
       found = { index: i, slug: p.slug };
     }
     return found;
-  }, [holes, picked, shownMeters]);
+  }, [holes, picked, fullMeters]);
   ghostRef.current = ghost;
   const historyModel = useMemo(() => {
     if (historyHole === null) return null;
@@ -566,7 +579,7 @@ export default function LessonBoard({
             <div className="progress-background" aria-hidden="true">
               {/* The whole log — the bot's tries included on the meter stage (user-decided
                   2026-09-16): the count the day would show for this board. */}
-              <CellDigits value={tried.length} />
+              <CellDigits value={tried.length - (decoding !== null ? 1 : 0)} />
             </div>
           )}
           <Phrase
@@ -606,7 +619,8 @@ export default function LessonBoard({
             onSubmit={submit}
             onReplace={replaceInput}
             invalidSignal={invalidAt}
-            ghost={ghost ? MASK : undefined}
+            ghost={decoding !== null ? (decode.jumble ?? decoding) : ghost ? MASK : undefined}
+            ghostDecoding={decoding !== null}
             active={playing && historyHole === null}
           />
           <p className="hint">{feedback || ' '}</p>
@@ -646,8 +660,8 @@ export default function LessonBoard({
               input={input}
               prefixSet={vocab.prefixSet}
               vocabSet={vocab.vocabSet}
-              submittable={ghost !== null}
-              locked={ghost !== null && input === ''}
+              submittable={ghost !== null && decoding === null}
+              locked={decoding !== null || (ghost !== null && input === '')}
               lang={lang}
               onType={appendChar}
               onBackspace={deleteChar}

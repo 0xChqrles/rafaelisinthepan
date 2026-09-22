@@ -249,13 +249,20 @@ These are decided and verified against the code. Treat them as load-bearing.
   PRE-TYPED in the prompt — `.wi-ghost`, `?????` in the accent, nothing else — ENTER is
   lit (`Keyboard`'s `submittable`) and EVERY LETTER IS OUT (`locked`; "no letters should
   be available on the keyboard at this point"), and an empty ENTER SUBMITS its key
-  (`HistoryStop.slug`) as the guess AT ONCE: the hole's own scramble turns `?????²` into
-  the word as the hits land on the other holes. Never two steps — a decode a player could
-  read and back out of would be a hint for free, outside the log — and no wait either: a
-  decode-then-hold in the prompt ("the text should uncypher from the prompt then get
-  sent") was built and reviewed away on 2026-09-23 ("we don't know if you should hit
-  enter, or what… it doesn't work in practice"), as was an open-lock icon beside the marks
-  ("weird and ugly… near the thick and fat question mark glyphs"; `unlock.svg` is gone)** (user-decided 2026-09-22, after three reveal
+  (`HistoryStop.slug`) as the guess AT ONCE — the log, the server, the try — while the
+  PROMPT UNCYPHERS IT (user-decided 2026-09-23, the settled cut): the marks churn into
+  the word (`useScramble`, the hole's own settle, `SCRAMBLE_MS`) as a TYPED word in
+  `--fg` (`.wi-ghost.decoding`), it stands `REVEAL_HOLD_MS` = 300, then the prompt clears
+  the way it does on any guess, and the guess's whole choreography — the hits, the
+  hole's own `?????²`-into-the-word swap, the watermark's tick — is delayed by exactly
+  that (`reveal` on every hit's `startDelayMs` and the release's `fadeDelayMs`), so it
+  plays on a word already read. The ghost is spent off the FULL log (`chargeState`) the
+  instant the guess is in; the hole keeps its mask off the deferred view until the
+  release. Never two steps — a decode a player could read and back out of would be a
+  hint for free, outside the log. (Reviewed away on the way: a 900ms hold BEFORE the send
+  — "we don't know if you should hit enter, or what" — and an open-lock icon beside the
+  marks — "weird and ugly… near the thick and fat question mark glyphs"; `unlock.svg` is
+  gone.)** (user-decided 2026-09-22, after three reveal
   controls in the wheel — a button, a lock on the slot, a lock on every row — were each
   reviewed away: the side changed with the screen, a lock at a line's start went off a
   phone, and the hits played under the dim; "maybe the best would be to display the

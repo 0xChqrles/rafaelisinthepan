@@ -35,6 +35,11 @@ import { chargeForRank, hintsTaken, replayCharge } from '../game/charge';
 import { navigate } from '../routing';
 import { pathForDay, pathForGame, pathForLesson } from '../langs';
 import { MASK, buildHistory } from '../game/history';
+import { SCRAMBLE_MS, useScramble } from '../hooks/useScramble';
+
+// How long a decoded ghost stands in the prompt, as a typed word, before the prompt
+// clears and the guess's choreography begins.
+export const REVEAL_HOLD_MS = 300;
 
 import type { HistoryStop } from '../game/history';
 import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
@@ -695,18 +700,28 @@ function Round({
     [holes],
   );
   // THE GHOST: the masked hint picked into the sentence and not yet revealed — the one an
-  // empty ENTER DECODES and submits. The latest such pick, should two holes hold one.
+  // empty ENTER submits. The latest such pick, should two holes hold one. Read off the
+  // FULL log (`chargeState`): the ghost is spent the instant the guess is in, while the
+  // hole (`shownHoles`, the deferred view) keeps its mask until the release.
   const ghost = useMemo((): { index: number; slug: string } | null => {
     let found: { index: number; slug: string } | null = null;
     for (let i = 0; i < holes.length; i += 1) {
       const h = holes[i];
       const p = picked[i];
       if (!p?.slug || h.rank === 0 || p.at !== h.rank) continue;
-      if (shownCharge[i].given.some((g) => g.rank === p.rank && g.consumed)) continue;
+      if (chargeState[i].given.some((g) => g.rank === p.rank && g.consumed)) continue;
       found = { index: i, slug: p.slug };
     }
     return found;
-  }, [holes, picked, shownCharge]);
+  }, [holes, picked, chargeState]);
+  // THE DECODE (user-decided 2026-09-23, the second cut of it): ENTER on the ghost SENDS
+  // THE GUESS AT ONCE — the log, the server, the count — and the prompt UNCYPHERS the
+  // word meanwhile: the marks churn into it (`useScramble`, the hole's own settle) as a
+  // TYPED word, in `--fg`, it stands `REVEAL_HOLD_MS`, then the prompt clears the way it
+  // does on any guess; the guess's whole choreography — the hits, the hole's swap, the
+  // count ticking — is delayed by exactly that, so it plays on a word already read.
+  const [decoding, setDecoding] = useState<string | null>(null); // the key being uncyphered
+  const decode = useScramble();
   // Tapping a hole is available during normal play only, since the 2026-08-14 redesign:
   // once the solving beats begin, the sentence belongs to the choreography (and then
   // dissolves), and the tap moves to the result's own secrets in the sentence's page —
@@ -821,15 +836,15 @@ function Round({
     (char: string) => {
       if (promptExiting) return;
       setFeedback(null);
-      // A ghost stands: the letters are out (the prompt holds a word already).
-      if (ghost !== null && input === '') {
+      // A ghost stands, or decodes: the letters are out (the prompt holds a word already).
+      if (decoding !== null || (ghost !== null && input === '')) {
         setInvalidAt(Date.now());
         return;
       }
       if (canExtend(prefixSet, input, char)) setInput(input + char);
       else setInvalidAt(Date.now());
     },
-    [prefixSet, input, promptExiting, ghost],
+    [prefixSet, input, promptExiting, ghost, decoding],
   );
 
   const deleteChar = useCallback(() => {
@@ -855,12 +870,22 @@ function Round({
       // the focus, which is every submit but the on-screen ENTER's own keyboard activation.
       guessField.current?.focus({ preventScroll: true });
       // An EMPTY submit with a masked hint picked is THE REVEAL (user-decided 2026-09-22):
-      // the ghost's key goes in as the guess, at once — the word uncyphers ON THE HOLE
-      // (its own scramble, `?????` into the word) as the hits land on the other holes
-      // (user-decided 2026-09-23, after a decode-then-hold in the prompt: "we don't know if
-      // you should hit enter, or what… it doesn't work in practice"). Everything below is
-      // the guess's usual way.
+      // the ghost's key goes in as the guess, at once, and the prompt uncyphers it while
+      // the guess's choreography waits `reveal` ms (the decode above). Everything below is
+      // the guess's usual way, shifted by that.
+      if (decoding !== null) return;
+      const revealing = !fold(raw) && ghost !== null;
       const typed = fold(raw) || ghost?.slug || '';
+      const reveal = revealing ? SCRAMBLE_MS + REVEAL_HOLD_MS : 0;
+      if (revealing) {
+        setDecoding(typed);
+        decode.start(typed, MASK.length, undefined, 0);
+        const clear = window.setTimeout(() => {
+          pendingTimers.current = pendingTimers.current.filter((t) => t !== clear);
+          setDecoding(null);
+        }, reveal);
+        pendingTimers.current.push(clear);
+      }
       if (!typed) {
         setInput('');
         return;
@@ -939,9 +964,9 @@ function Round({
       // charge (the solve supersedes the cut, the loot and any burst); a guess the charge
       // table pays for is cut, and what it paid flies into the meter as loot. A miss, a
       // repeat and a rank past the table keep the float alone.
-      const fadeDelayMs = Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
+      const fadeDelayMs = reveal + Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
       impacted.forEach(({ index, entry }, step) => {
-        const startDelayMs = step * STAGGER_MS;
+        const startDelayMs = reveal + step * STAGGER_MS;
         const hit = (hitId.current += 1);
         const gained = charged[index].charge - chargeState[index].charge;
         const strike =
@@ -982,6 +1007,8 @@ function Round({
     },
     [
       ghost,
+      decoding,
+      decode,
       holes,
       playLog,
       ranks,
@@ -1084,7 +1111,8 @@ function Round({
                 with the round — the count's next appearance is the result's headline. */}
             <div className="phrase-anchor">
               <div className="progress-background" aria-hidden="true">
-                <CellDigits value={guessCount} />
+                {/* A revealing guess is counted once its word is out of the prompt. */}
+                <CellDigits value={guessCount - (decoding !== null ? 1 : 0)} />
               </div>
               {resultUp ? (
                 <DissolvePhrase words={words} puzzleHoles={puzzleHoles} onDone={finishDissolve} />
@@ -1126,7 +1154,8 @@ function Round({
                   onSubmit={submit}
                   onReplace={replaceInput}
                   invalidSignal={invalidAt}
-                  ghost={ghost ? MASK : undefined}
+                  ghost={decoding !== null ? (decode.jumble ?? decoding) : ghost ? MASK : undefined}
+                  ghostDecoding={decoding !== null}
                   // The history modal covers the prompt: keystrokes must not build (or submit)
                   // a guess the player cannot see behind it. The gate holds it back the same
                   // way — the prompt arrives with the keyboard, on PLAY. And the RETIRING
@@ -1190,8 +1219,8 @@ function Round({
                   input={input}
                   prefixSet={prefixSet}
                   vocabSet={vocabSet}
-                  submittable={ghost !== null}
-                  locked={ghost !== null && input === ''}
+                  submittable={ghost !== null && decoding === null}
+                  locked={decoding !== null || (ghost !== null && input === '')}
                   lang={lang}
                   onType={appendChar}
                   onBackspace={deleteChar}
