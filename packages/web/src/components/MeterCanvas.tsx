@@ -408,10 +408,12 @@ export default function MeterCanvas({
     }
     window.clearTimeout(pending.current.timer);
     cancelAnimationFrame(pending.current.raf);
-    seaSince.current = drewRamp.current ? performance.now() : null;
+    const reducedMotion = prefersReducedMotion();
+    // A held frame must show the finished foil, without the recede's solid overlay.
+    seaSince.current = drewRamp.current && !reducedMotion ? performance.now() : null;
     shown.current = 100;
     drawSea(performance.now());
-    if (prefersReducedMotion()) return undefined;
+    if (reducedMotion) return undefined;
     const loop = seaLoop.current;
     const tick = () => {
       loop.timer = window.setTimeout(() => {
