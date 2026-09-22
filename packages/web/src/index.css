@@ -1576,27 +1576,36 @@ input {
   color: var(--accent);
   image-rendering: pixelated;
 }
-/* THE ACTIVE HOLE GLOWS (user-asked 2026-09-22, "some subtle glow, we really need to feel
-   like this hole hits different, without being too much"): a soft cobalt light around the
-   sentence's chip, breathing slowly. The one lit thing on the board, by the user's call
-   over the rebrand's no-glow rule — and only on the sentence: a listed given word carries
-   the sea without the light. Drawn by the meter box (a box-shadow paints outside its own
-   overflow), so it sits exactly on the chip and moves with the shake. */
+/* THE ACTIVE HOLE GLOWS, IRIDESCENT (user-asked 2026-09-22, "some subtle glow, we really
+   need to feel like this hole hits different", then "something more holographic like a
+   pokemon card"): a soft light around the sentence's chip whose colour turns through the
+   foil's own hues — rose, cobalt, cyan, violet — slowly. The one lit thing on the board,
+   by the user's call over the rebrand's no-glow rule — and only on the sentence: a listed
+   given word carries the foil without the light. Drawn by the meter box (a box-shadow
+   paints outside its own overflow), so it sits exactly on the chip and moves with the
+   shake. */
 .phrase .hole-meter.sea {
-  animation: sea-glow 3.2s ease-in-out infinite alternate;
+  animation: sea-glow 7s ease-in-out infinite;
 }
 @keyframes sea-glow {
-  from {
-    box-shadow: 0 0 10px 1px color-mix(in srgb, var(--accent) 45%, transparent);
+  0%,
+  100% {
+    box-shadow: 0 0 14px 3px hsl(330 100% 70% / 0.55);
   }
-  to {
-    box-shadow: 0 0 18px 4px color-mix(in srgb, var(--accent) 70%, transparent);
+  25% {
+    box-shadow: 0 0 18px 4px hsl(225 100% 66% / 0.6);
+  }
+  50% {
+    box-shadow: 0 0 14px 3px hsl(180 100% 62% / 0.5);
+  }
+  75% {
+    box-shadow: 0 0 18px 4px hsl(275 100% 70% / 0.6);
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .phrase .hole-meter.sea {
     animation: none;
-    box-shadow: 0 0 14px 2px color-mix(in srgb, var(--accent) 55%, transparent);
+    box-shadow: 0 0 16px 3px hsl(225 100% 66% / 0.55);
   }
 }
 /* THE LOOT IS BLOOD (user-decided 2026-09-15, in three passes: "a bit shy" → "drops

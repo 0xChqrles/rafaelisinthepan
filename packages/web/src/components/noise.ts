@@ -9,7 +9,7 @@
 // degenerate frame, which is the one a still (reduced-motion) surface would hold forever.
 export const T0 = 4.2;
 
-function hash3(x: number, y: number, z: number): number {
+export function hash3(x: number, y: number, z: number): number {
   let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(z, 1442695041);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
