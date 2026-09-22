@@ -178,11 +178,15 @@ describe('replayCharge — the meter as the play log describes it', () => {
 });
 
 describe('the given words — GIVEN of them, drawn once, at the activation', () => {
+  it('GIVEN is 5 (user-decided 2026-09-23: lower is safer at first)', () => {
+    expect(GIVEN).toBe(5);
+  });
+
   it('the activation gives the GIVEN nearest ranks beyond the best, a known one replaced by a farther one', () => {
     // The best after the four is rank 1; 5, 10, 11 and 14 were reached by the player's own
     // guesses — no hint to them — so the walk goes on past them: still GIVEN words.
     const given = ranksOf(replayCharge(holes(), RANKS, [...FOUR, FILLS])[0]);
-    expect(given).toEqual([2, 3, 4, 6, 7, 8, 9, 12, 13, 15]);
+    expect(given).toEqual([2, 3, 4, 6, 7]);
     expect(given).toHaveLength(GIVEN);
   });
 
@@ -193,7 +197,7 @@ describe('the given words — GIVEN of them, drawn once, at the activation', () 
     const meter = replayCharge(holes(), RANKS, log)[0];
     expect(meter.active).toBe(true);
     expect(replayHoles(holes(), RANKS, log)[0].rank).toBe(50);
-    // The meter filled on 57, so 51 … 57 were known: 58 … 67 are given — and 58, guessed
+    // The meter filled on 57, so 51 … 57 were known: 58 … 62 are given — and 58, guessed
     // right after, is a hint consumed.
     expect(meter.given).toEqual(above(57).map((rank) => ({ rank, consumed: rank === 58 })));
   });
@@ -203,14 +207,14 @@ describe('the given words — GIVEN of them, drawn once, at the activation', () 
     const log = ['honnete5', 'honnete10', 'honnete11', 'honnete14', 'honnete1'];
     const meter = replayCharge(holes(), RANKS, log)[0];
     expect(meter.active).toBe(true);
-    expect(ranksOf(meter)).toEqual([2, 3, 4, 6, 7, 8, 9, 12, 13, 15]);
+    expect(ranksOf(meter)).toEqual([2, 3, 4, 6, 7]);
   });
 
   it('nothing is given after the activation, however far the best moves', () => {
-    // Active at best 10: the ten nearest beyond it, past the known 11, 14 and 21.
+    // Active at best 10: the five nearest beyond it, past the known 11 and 14.
     const log = ['honnete50', 'honnete51', 'honnete100', 'honnete21', 'honnete14', 'honnete11', 'honnete10'];
     const active = ranksOf(replayCharge(holes(), RANKS, log)[0]);
-    expect(active).toEqual([12, 13, 15, 16, 17, 18, 19, 20, 22, 23]);
+    expect(active).toEqual([12, 13, 15, 16, 17]);
     // The best moves to 3, then to 1: the given words stay exactly those.
     expect(ranksOf(replayCharge(holes(), RANKS, [...log, 'honnete3'])[0])).toEqual(active);
     expect(ranksOf(replayCharge(holes(), RANKS, [...log, 'honnete3', 'honnete1'])[0])).toEqual(active);
@@ -226,10 +230,11 @@ describe('the given words — GIVEN of them, drawn once, at the activation', () 
   });
 
   it('the visible start never takes a masked hint slot or counts as help later', () => {
-    const log = [40, 60, 61, 62, 63, 64, 65, 66, 67].map((r) => `honnete${r}`);
+    // Best 46, the start (50) inside the walk: it is stepped over like a known word.
+    const log = [46, 60, 61, 62, 63, 64, 65, 66, 67].map((r) => `honnete${r}`);
     const meter = replayCharge(holes(), RANKS, log)[0];
     expect(meter.active).toBe(true);
-    expect(ranksOf(meter)).toEqual([41, 42, 43, 44, 45, 46, 47, 48, 49, 51]);
+    expect(ranksOf(meter)).toEqual([47, 48, 49, 51, 52]);
     const model = buildHistory({
       rankMap: RANKS.honnete, tried: log, hole: replayHoles(holes(), RANKS, log)[0],
       startRank: 50, secretWord: 'honnête', given: meter.given,
@@ -259,7 +264,7 @@ describe('the given words — GIVEN of them, drawn once, at the activation', () 
     ];
     const meters = replayCharge(twice, RANKS, [...FOUR, FILLS]);
     expect(meters[2]).toEqual(meters[0]);
-    expect(ranksOf(meters[0])).toEqual([2, 3, 4, 6, 7, 8, 9, 12, 13, 15]);
+    expect(ranksOf(meters[0])).toEqual([2, 3, 4, 6, 7]);
     // …and the hints are counted once per secret.
     expect(hintsTaken(twice, replayCharge(twice, RANKS, [...FOUR, FILLS, 'honnete2']))).toBe(1);
   });
@@ -270,7 +275,7 @@ describe('the hints — masked until guessed, and a guess is what consumes one',
     // FOUR + FILLS: best 1 — 5, 10, 11 and 14 were already reached by the player's own
     // guesses, so they are not given at all (they knew those words).
     const active = replayCharge(holes(), RANKS, [...FOUR, FILLS])[0];
-    expect(ranksOf(active)).toEqual([2, 3, 4, 6, 7, 8, 9, 12, 13, 15]);
+    expect(ranksOf(active)).toEqual([2, 3, 4, 6, 7]);
     expect(consumedOf(active)).toEqual([]);
     // Then rank 2 is guessed — typed or revealed, the log cannot tell: a hint taken.
     const one = replayCharge(holes(), RANKS, [...FOUR, FILLS, 'honnete2'])[0];

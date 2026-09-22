@@ -20,8 +20,9 @@
 // charges the other holes, syncs. So the log alone says what was CONSUMED: a given rank
 // guessed after it was given. A rank the player had ALREADY guessed is not a hint at all
 // (they knew the word): it is never given, and the next farther word takes its place, so
-// the activation always gives GIVEN (user-decided 2026-09-23: "if a user already guessed
-// one of these 10 words, then we should find another farther word so it's always 10").
+// the activation always gives GIVEN (user-decided 2026-09-23, when GIVEN was 10: "if a user
+// already guessed one of these 10 words, then we should find another farther word so it's
+// always 10").
 // The meter's guesses are the cost of the pool; each hint taken is one more try. A fast
 // solve never fills it.
 //
@@ -39,8 +40,9 @@ export const CHARGE_TARGET = 100;
 // How many words the ACTIVATION gives: the nearest ones farther than the best (the hole
 // moves only by the player's own guess), enough of them to triangulate the sense
 // (user-decided 2026-09-22: "10 words above your closest", over "everything between your
-// closest and the start").
-export const GIVEN = 10;
+// closest and the start"; LOWERED TO 5 on 2026-09-23 before launch — "lower is safer at
+// first", and raised back only if real rounds show players need it).
+export const GIVEN = 5;
 
 // What a guess's rank in a secret's map pays is a CONTINUOUS FUNCTION of the rank, never a
 // table of bands (user-decided 2026-09-15): CHARGE_NEAR for the nearest word, falling by the
