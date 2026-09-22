@@ -253,7 +253,10 @@ These are decided and verified against the code. Treat them as load-bearing.
   thresholds on 2px cells, the density ramping over about a chip's height ahead of the
   front, cells lighting in threshold order as the front advances — a canvas, tweened in JS
   on the meter's own delay and travel; user-decided 2026-09-15, replacing a hard-edged sweep
-  with a checker fringe, "a basic animation"), a full chip all cobalt (the ink the word
+  with a checker fringe, "a basic animation"; **the front is the reading's exact share of
+  the width and the ramp trails BEHIND it, so a chip short of 100 always ends in white —
+  only 100 inks it solid** (user-reported 2026-09-22: a ramp running past the edge read as
+  full at 95, "some users think that there's a bug")), a full chip all cobalt (the ink the word
   wears once found); and then **THE SEA — THE ACTIVE HOLE'S OWN DRESS (user-decided
   2026-09-22: "a new kind of hole design… something between the full blue hole and the
   empty white one, with moving waves maybe, some perlin noise")**: the full chip RECEDES

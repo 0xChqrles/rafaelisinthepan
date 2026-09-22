@@ -284,15 +284,23 @@ export default function MeterCanvas({
   );
 
   // The ramp: the fill's density falls from solid to nothing over about a chip's height of
-  // cells ahead of the front; the front runs past the right edge by the ramp's length so
-  // that 100% inks the last column solid.
+  // cells BEHIND the front, and the front — where the ink ends and the white begins — is
+  // exactly the reading's share of the width, so a chip short of 100 always shows white at
+  // its end (user-reported 2026-09-22: a front that ran past the edge by the ramp's length
+  // inked the last column ~80% at 95, and "some users think that there's a bug" when the
+  // full-looking chip gives nothing). Only 100 inks it solid, in one step: the fill's own
+  // last frame, the burst on its heels.
   const drawRamp = useCallback(
     (p: number) => {
       const box = ref.current?.parentElement;
       if (!box) return;
       const cols = Math.ceil(box.clientWidth / CELL_PX);
       const ramp = Math.max(4, Math.round(box.clientHeight / CELL_PX));
-      const front = (p / 100) * (cols + ramp);
+      if (p >= 100) {
+        paint(() => 1);
+        return;
+      }
+      const front = (p / 100) * cols;
       paint((cx) => Math.min(1, (front - cx) / ramp));
     },
     [paint],
