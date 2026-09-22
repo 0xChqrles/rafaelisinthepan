@@ -227,14 +227,16 @@ These are decided and verified against the code. Treat them as load-bearing.
   logical secret (repeated occurrences share it), capped at `CHARGE_TARGET` = 100, and
   reaching it ACTIVATES THE HOLE (user-decided 2026-09-22, REPLACING the secret's first
   letter — "it goes against the game core logic which is to guess with meaning not
-  letters"): **the `GIVEN` = 10 words just above the hole's BEST word (ranks best+1 …
-  best+10) are GIVEN — MASKED HINTS in the hole's tries — and every later guess that
-  improves the best gives `GIVEN_LATER` = 1 more, the one just above the new best
-  (calibrated the same day: "10 words everytime is maybe too much… for the next words it
-  should be one word only"); windows accumulate and nothing given is ever withdrawn** ("10
-  words above your closest", over "everything between your closest and the start"; the
-  user checked the play data: "10 more words actually always give a better idea of the
-  concept"). A full meter takes no more charge. **THE HINTS ARE MASKED, AND REVEALING ONE
+  letters"): **the `GIVEN` = 10 nearest words farther than the hole's BEST word are
+  GIVEN — MASKED HINTS in the hole's tries — ONCE, at the activation, and NOTHING after
+  it; a word the player already reached is skipped for the next farther one, so it is
+  always 10 (fewer only where the map runs out); nothing given is ever withdrawn**
+  (user-decided 2026-09-23, retiring the one word each later improvement of the best
+  added, `GIVEN_LATER`: "only the 10 words should be given, and nothing else after
+  that… if a user already guessed one of these 10 words, then we should find another
+  farther word so it's always 10"; "10 words above your closest", over "everything
+  between your closest and the start"; the user checked the play data: "10 more words
+  actually always give a better idea of the concept"). A full meter takes no more charge. **THE HINTS ARE MASKED, AND REVEALING ONE
   IS A GUESS (user-decided 2026-09-22: "making the hint words masked, and you can just
   select them with the wheel, it counts as a guess, but this way users who don't want help
   don't get penalized, and those who need help just increase their score in return… you
@@ -274,8 +276,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   the play log like any typed guess, counts as a try, charges the other holes, syncs, can
   hit another hole — its floats land on the board — and the picked hole shows the WORD
   the moment the log holds it (`shownHoles` derives it; the pick is never rewritten). The
-  first keystroke types over the ghost; the wheel holds no reveal control at all. A given
-  rank the player had ALREADY reached is never given (they knew the word). **THE HINTS TAKEN are
+  first keystroke types over the ghost; the wheel holds no reveal control at all. A rank
+  the player had ALREADY reached is never given (they knew the word) — the next farther
+  one is given in its place. **THE HINTS TAKEN are
   derived from the log** (`GivenRank.consumed`: a given rank guessed after it was given —
   typed by hand counts the same, "it's on them"; `hintsTaken` sums them over the distinct
   secrets) and NAMED ON THE RESULT under the tries, zero included (`.solved-score-hints`,
