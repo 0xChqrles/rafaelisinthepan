@@ -17,9 +17,11 @@ import { T0, hash3, noise3 } from './noise';
 // like a pokemon card… make something really beautiful this time"): once the meter is
 // full and the hole ACTIVE, the chip is HOLOGRAPHIC FOIL — the white chip catching light
 // it is not under. Four layers, every frame, all under the dark ink:
-//   1. THE SPECTRUM: a pastel rainbow band (HSL hues at high lightness, so the ink stays
-//      legible on it) running diagonally through the word and drifting along it — the
-//      angle-dependent rainbow of a foil, with time standing in for the tilt;
+//   1. THE SPECTRUM: a pastel band of THE APP'S OWN INKS — the hole's cyan, the solve
+//      cobalt, the heat ramp's orchid and coral, lifted toward white so the ink stays
+//      legible on every one (user-asked 2026-09-22, "a more whippin AI friendly palette",
+//      replacing the full rainbow) — running diagonally through the word and drifting
+//      along it: the angle-dependent colour of a foil, with time standing in for the tilt;
 //   2. THE SHIMMER: the spectrum is MASKED by one octave of value noise (`noise.ts`)
 //      scrolled through the word, so the rainbow does not slide flat but pools and swirls,
 //      a "cosmos" foil rather than a printed gradient; a bitmap one pixel a cell, drawn up
@@ -56,13 +58,39 @@ const BAYER_8: readonly number[] = [
 ];
 
 // THE FOIL'S SHAPE.
-// The spectrum: HOLO_CYCLES full rainbows across the chip's diagonal, drifting HOLO_DRIFT
-// of a chip a second, at HOLO_LIGHT lightness (pastel: the ink has to read on every hue)
-// and HOLO_ALPHA over the white at its strongest.
-const HOLO_CYCLES = 1.25;
+// The spectrum: the app's inks as one closed loop — cyan (`--hole`), cobalt (`--solve`),
+// orchid and coral (the heat ramp's strange stops) and back the way it came, so the band
+// has no seam — each lifted HOLO_PASTEL of the way to white (the ink has to read on every
+// one); HOLO_CYCLES loops across the chip's diagonal, drifting HOLO_DRIFT of a chip a
+// second, at HOLO_ALPHA over the white at its strongest.
+const HOLO_INKS: readonly [number, number, number][] = [
+  [0, 229, 255], // #00e5ff cyan — the hole
+  [74, 106, 255], // #4a6aff cobalt — the solve
+  [242, 97, 226], // #f261e2 orchid
+  [255, 95, 120], // #ff5f78 coral
+  [242, 97, 226],
+  [74, 106, 255],
+];
+const HOLO_PASTEL = 0.42;
+const HOLO_CYCLES = 1.1;
 const HOLO_DRIFT = 0.09;
-const HOLO_LIGHT = 74;
-const HOLO_ALPHA = 0.72;
+const HOLO_ALPHA = 0.74;
+
+// The loop's colour at `k` in [0, 1): a straight mix between the two inks either side,
+// lifted toward white.
+function holoInk(k: number): string {
+  const n = HOLO_INKS.length;
+  const at = wrap(k) * n;
+  const i = Math.floor(at);
+  const t = at - i;
+  const a = HOLO_INKS[i];
+  const b = HOLO_INKS[(i + 1) % n];
+  const c = a.map((v, j) => {
+    const mixed = v + (b[j] - v) * t;
+    return Math.round(mixed + (255 - mixed) * HOLO_PASTEL);
+  });
+  return `rgb(${c[0]} ${c[1]} ${c[2]})`;
+}
 // The shimmer: a lattice unit is SHIMMER_CELLS cells (a chip is ~15 cells tall at the
 // sentence's size), sliding SHIMMER_DRIFT units a second and evolving SHIMMER_EVOLVE a
 // second in the third dimension — never a loop; the mask spans SHIMMER_FLOOR to 1 of the
@@ -186,11 +214,10 @@ export default function MeterCanvas({
       // 1. THE SPECTRUM, drifting along the diagonal.
       const spectrum = ctx.createLinearGradient(0, 0, dx, dy);
       const shift = wrap(seconds * HOLO_DRIFT + seed * 0.37);
-      const stops = 12;
+      const stops = 18;
       for (let i = 0; i <= stops; i += 1) {
         const at = i / stops;
-        const hue = Math.round(wrap((at - shift) * HOLO_CYCLES) * 360);
-        spectrum.addColorStop(at, `hsl(${hue} 100% ${HOLO_LIGHT}%)`);
+        spectrum.addColorStop(at, holoInk((at - shift) * HOLO_CYCLES));
       }
       ctx.fillStyle = spectrum;
       ctx.fillRect(0, 0, w, h);

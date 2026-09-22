@@ -1587,25 +1587,27 @@ input {
 .phrase .hole-meter.sea {
   animation: sea-glow 7s ease-in-out infinite;
 }
+/* The glow turns through the foil's own inks: cyan (`--hole`), cobalt (`--solve`), the
+   ramp's orchid and coral. */
 @keyframes sea-glow {
   0%,
   100% {
-    box-shadow: 0 0 14px 3px hsl(330 100% 70% / 0.55);
+    box-shadow: 0 0 14px 3px color-mix(in srgb, var(--hole) 50%, transparent);
   }
   25% {
-    box-shadow: 0 0 18px 4px hsl(225 100% 66% / 0.6);
+    box-shadow: 0 0 18px 4px color-mix(in srgb, var(--solve) 60%, transparent);
   }
   50% {
-    box-shadow: 0 0 14px 3px hsl(180 100% 62% / 0.5);
+    box-shadow: 0 0 16px 3px rgb(242 97 226 / 0.55);
   }
   75% {
-    box-shadow: 0 0 18px 4px hsl(275 100% 70% / 0.6);
+    box-shadow: 0 0 14px 3px rgb(255 95 120 / 0.5);
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .phrase .hole-meter.sea {
     animation: none;
-    box-shadow: 0 0 16px 3px hsl(225 100% 66% / 0.55);
+    box-shadow: 0 0 16px 3px color-mix(in srgb, var(--solve) 55%, transparent);
   }
 }
 /* THE LOOT IS BLOOD (user-decided 2026-09-15, in three passes: "a bit shy" → "drops
