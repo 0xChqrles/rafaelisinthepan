@@ -10,7 +10,10 @@
 //   - a stop FARTHER than the departure is flagged `behind` — the journey runs
 //     departure → word, so a backwards guess is a stop but not a step of the walk;
 //   - SOLVING names the whole walked stretch (departure → word), flagging what the player
-//     never reached as `revealed`; a live hole names nothing it has not been to;
+//     never reached as `revealed`; a live hole names nothing it has not been to — EXCEPT
+//     what the meter GIVES (user-decided 2026-09-22): a given rank is a stop flagged
+//     `given`, named with the canonical form; typed wins over given, given wins over the
+//     solve's reveal;
 //   - what stays retired: no censored census while the round is LIVE.
 // Asserted against the spec, not the implementation.
 
@@ -36,15 +39,15 @@ const hole = (rank: number): RuntimeHole => ({
   startRank: 87,
 });
 
-const build = (tried: string[], holeRank = 87) =>
-  buildHistory({ rankMap: RANKS, tried, hole: hole(holeRank), startRank: 87, secretWord: 'forêt' });
+const build = (tried: string[], holeRank = 87, given: number[] = []) =>
+  buildHistory({ rankMap: RANKS, tried, hole: hole(holeRank), startRank: 87, secretWord: 'forêt', given });
 
 describe('buildHistory', () => {
   it('an untouched hole is already a journey: the departure, and the censored target', () => {
     const model = build([]);
     expect(model.secret).toBeNull(); // `???` — the unknown the line is walked toward
     expect(model.stops).toEqual([
-      { rank: 87, dq: 90, display: 'prairie', word: 'prairie', start: true, best: true, behind: false, revealed: false },
+      { rank: 87, dq: 90, display: 'prairie', word: 'prairie', start: true, best: true, behind: false, revealed: false, given: false },
     ]);
     expect(model.misses).toEqual([]);
   });
@@ -128,7 +131,7 @@ describe('buildHistory', () => {
       startRank: 1,
       secretWord: 'mot',
     });
-    expect(model.stops).toEqual([{ rank: 1, dq: null, display: 'proche', word: 'proche', start: true, best: true, behind: false, revealed: false }]);
+    expect(model.stops).toEqual([{ rank: 1, dq: null, display: 'proche', word: 'proche', start: true, best: true, behind: false, revealed: false, given: false }]);
   });
 
   it('states the map\'s farthest rank so the gutter can be reserved up front', () => {
@@ -144,5 +147,31 @@ describe('buildHistory', () => {
       [87, false], // the departure is the boundary, never behind itself
       [812, true], // backwards
     ]);
+  });
+
+  it('a GIVEN rank is a stop on a live hole, canonical, flagged given; typed wins, and the solve keeps it given', () => {
+    // The meter gave ranks 3 and 40 (and 5, which this map does not hold — skipped): a live
+    // hole names them, in the group's own form, apart from what was played.
+    const live = build(['bois'], 1, [3, 5, 40]);
+    expect(live.stops.map((s) => [s.rank, s.word, s.given, s.revealed])).toEqual([
+      [1, 'bois', false, false],
+      [3, 'arbre', true, false],
+      [40, 'branche', true, false],
+      [87, 'prairie', false, false],
+    ]);
+    // A given word the player then TYPES is theirs: the typed dress, the typed form.
+    const typed = build(['bois', 'arbres'], 1, [3, 40]);
+    expect(typed.stops.find((s) => s.rank === 3)).toMatchObject({ word: 'arbres', given: false });
+    // Solved, a given word stays given — known during play, not named after it — while the
+    // rest of the stretch is the post-mortem's.
+    const solved = build(['bois', 'foret'], 0, [40]);
+    expect(solved.stops.map((s) => [s.rank, s.given, s.revealed])).toEqual([
+      [1, false, false],
+      [3, false, true],
+      [40, true, false],
+      [87, false, false],
+    ]);
+    // A window given above an unmoved start reaches past the departure: still named.
+    expect(build([], 87, [812]).stops.find((s) => s.rank === 812)).toMatchObject({ given: true, behind: true });
   });
 });

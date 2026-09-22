@@ -6,6 +6,7 @@ import type { HistoryModel } from '../game/history';
 import { holeTitle, srRouteStop } from '../i18n';
 import ModalHeader from './ModalHeader';
 import useModalDismiss from '../hooks/useModalDismiss';
+import MeterCanvas from './MeterCanvas';
 
 // The WORDS modal (user-decided 2026-09-01): a COMPLETED hole — rank 0, whether or not the
 // rest of the sentence is — opens this instead of the wheel, since there is nothing left
@@ -15,7 +16,9 @@ import useModalDismiss from '../hooks/useModalDismiss';
 // its exponent in the shared heat colour — and the ones the player actually FOUND wearing
 // the held word's own inverted CHIP (user-decided 2026-09-01, superseding a dim on the
 // never-typed ones): the app's one emphasis gesture, so the list reads as the sentence
-// does — a chipped word is one you typed. ONE type
+// does — a chipped word is one you typed — and the ones the meter GAVE (user-decided
+// 2026-09-22) wearing the activated chip's SEA, the same moving dither as the sentence's
+// chip, so a given word reads as given here exactly as it does on the board. ONE type
 // size for every word (user-decided 2026-09-01: "avoid reducing the font size, even if it
 // leads to less columns"): the column is as wide as the LONGEST word needs, so a wide
 // screen takes as many such columns as fit and a phone gets one or two; only a word that
@@ -80,7 +83,7 @@ export default function HistoryModal({
             {model.stops.map((stop) => (
               <li
                 key={stop.rank}
-                className={`hw-word${stop.revealed ? '' : ' hw-found'}`}
+                className={`hw-word${stop.given ? ' hw-given' : stop.revealed ? '' : ' hw-found'}`}
                 style={
                   {
                     fontSize: `${sizeOf(stop.word)}px`,
@@ -90,7 +93,14 @@ export default function HistoryModal({
                 aria-label={srRouteStop(lang, stop)}
               >
                 <span aria-hidden="true">
-                  <span className="hw-text">{stop.word}</span>
+                  <span className="hw-text">
+                    {stop.given && (
+                      <span className="hw-sea">
+                        <MeterCanvas value={100} delayMs={0} durationMs={0} sea />
+                      </span>
+                    )}
+                    {stop.word}
+                  </span>
                   <sup className="hw-rank">{stop.rank}</sup>
                 </span>
               </li>

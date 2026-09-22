@@ -37,19 +37,20 @@ function rankTweenDuration(fromRank: number, toRank: number): number {
   return prefersReducedMotion() ? 0 : rankTransitionDuration(fromRank, toRank);
 }
 
-// THE CHARGE METER (#301): what the hole shows of its meter — the charge, and the initial
-// once the meter is full (null until then). Both are the round's DERIVED reading of the
-// play log; the hole owns only the choreography that lands them.
+// THE CHARGE METER (#301): what the hole shows of its meter — the charge, and whether the
+// hole is ACTIVE (the meter full, the given words out — user-decided 2026-09-22, replacing
+// the revealed initial). Both are the round's DERIVED reading of the play log; the hole
+// owns only the choreography that lands them.
 export interface HoleChargeView {
   value: number;
-  initial: string | null;
+  active: boolean;
 }
 
 // How long the meter's fill takes to travel (the CSS transition's length, handed down so
 // the burst that follows a full meter waits for exactly it), and where in the burst the
-// letter appears — on its impact frames, not after the last wisp.
+// sea begins — on its impact frames, not after the last wisp.
 const METER_MS = 300;
-const INITIAL_AT_MS = METER_MS + BURST_ART.ms * 0.6;
+const SEA_AT_MS = METER_MS + BURST_ART.ms * 0.6;
 
 // A hole: "displayed_word^current_rank" (ex: sailor^87). Rank 0 = solved. The exponent is
 // written WITHOUT a leading minus (user-decided 2026-08-16): it is a distance, and distances
@@ -170,15 +171,16 @@ export default function Hole({
   // not during the exponent drop / scramble that precedes the swap.
   const resolved = hole.rank === 0 && displayWord === hole.word;
 
-  // THE REVEAL (#301): `charge lands → meter fills → burst → first letter`. The initial is
-  // derived state and arrives on the same render that fills the meter; the hole holds it
-  // back for the fill's travel and the burst's impact, then lets it in. A hole MOUNTED
-  // revealed (a reload, a replay on another device) shows the letter at once — a burst is
-  // for the moment it happens, not for history. Under reduced motion everything snaps.
-  const revealed = charge?.initial != null;
+  // THE ACTIVATION (#301; user-decided 2026-09-22): `charge lands → meter fills → burst →
+  // the sea`. The active state is derived and arrives on the same render that fills the
+  // meter; the hole holds it back for the fill's travel and the burst's impact, then lets
+  // the full chip recede into the sea (`MeterCanvas`). A hole MOUNTED active (a reload, a
+  // replay on another device) is on the sea at once — a burst is for the moment it
+  // happens, not for history. Under reduced motion everything snaps.
+  const active = charge?.active === true;
   // An exact hit wins immediately, before the deferred board finishes its word swap.
   const solving = hole.rank === 0 || hit?.strike === 'ultra';
-  const [initialShown, setInitialShown] = useState(revealed);
+  const [seaShown, setSeaShown] = useState(active);
   const [burst, setBurst] = useState(0); // a nonce: >0 keeps a burst strike mounted
   // THE FILL WAITS FOR THE SPARKS: the round releases the guess on the floating hit's beat
   // (`fadeDelayMs`), and the shower lands later, so the meter's transition is delayed by
@@ -191,32 +193,28 @@ export default function Hole({
   const meterDelayRef = useRef(meterDelayMs);
   meterDelayRef.current = meterDelayMs;
   useEffect(() => {
-    if (!revealed || solving) {
-      setInitialShown(false);
+    if (!active || solving) {
+      setSeaShown(false);
       setBurst(0);
       return undefined;
     }
-    if (initialShown) return undefined;
+    if (seaShown) return undefined;
     if (prefersReducedMotion()) {
-      setInitialShown(true);
+      setSeaShown(true);
       return undefined;
     }
     const wait = meterDelayRef.current;
     const strike = window.setTimeout(() => setBurst((n) => n + 1), wait + METER_MS);
-    const letter = window.setTimeout(() => setInitialShown(true), wait + INITIAL_AT_MS);
+    const sea = window.setTimeout(() => setSeaShown(true), wait + SEA_AT_MS);
     return () => {
       window.clearTimeout(strike);
-      window.clearTimeout(letter);
+      window.clearTimeout(sea);
     };
     // A solve cancels both pending timers, including before the board's deferred release.
-    // `initialShown` is what this choreography sets, not a reason to restart it.
+    // `seaShown` is what this choreography sets, not a reason to restart it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revealed, solving]);
+  }, [active, solving]);
   const endBurst = useCallback(() => setBurst(0), []);
-  // SPENT: the meter has done its one job. As the letter lands, the level fades out
-  // (user-decided 2026-09-15, "once the progress bar is full, we can just remove it during
-  // the first letter apparition animation").
-  const spent = revealed && initialShown;
   // Where this hit's sparks gather: the meter after it, fixed per hit (see the loot below).
   const [lootFill, setLootFill] = useState(0);
   const lootHitId = hit?.charge ? hit.id : null;
@@ -297,18 +295,6 @@ export default function Hole({
   // touching it: the floating-hit/scramble choreography keys off this exact structure.
   const body = (
     <>
-      {/* THE REVEALED INITIAL (#301): the one persistent clue a full meter earns — the
-          word's FIRST CELL, a chip-high tile before the chip, drawn out of flow so the
-          hole's width never moves (user-decided 2026-09-15) — the letter alone, never the
-          word's length. Decorative
-          here: the hole's description says it. Gone with the chip once the hole is inked
-          in. */}
-      {!solving && initialShown && charge?.initial ? (
-        <span className="hole-initial" aria-hidden="true">
-          {/* The letter's size is its own, so the cell keeps measuring in the word's em. */}
-          <span className="hole-initial-letter">{charge.initial}</span>
-        </span>
-      ) : null}
       {/* The hit is positioned against this wrapper, which is sized to the WORD
           only (the exponent sits outside it), so the floating number stays centered
           over the word and not the word+exponent. */}
@@ -330,11 +316,14 @@ export default function Hole({
           ))}
           {/* THE METER (#301) rides the chip: the same box as the chip's ground, drawn
               UNDER the ink and OVER the chip — the chip CONVERTING to the solve ink from
-              the left, edge to edge, the hole's unresolved dress visibly filling. On the shaking word, not
-              the static wrap, for the chip's own reason: it is part of the chip. */}
+              the left, edge to edge, the hole's unresolved dress visibly filling — and,
+              once the hole is ACTIVE, THE SEA: the same cells moving as a field, the
+              activated hole's own dress until it is inked in (user-decided 2026-09-22). On
+              the shaking word, not the static wrap, for the chip's own reason: it is part
+              of the chip. */}
           {!solving && charge ? (
-            <span className={`hole-meter${spent ? ' spent' : ''}`} aria-hidden="true">
-              <MeterCanvas value={charge.value} delayMs={meterDelayMs} durationMs={METER_MS} />
+            <span className="hole-meter" aria-hidden="true">
+              <MeterCanvas value={charge.value} delayMs={meterDelayMs} durationMs={METER_MS} sea={seaShown} />
             </span>
           ) : null}
         </span>
@@ -400,7 +389,7 @@ export default function Hole({
           />
         ) : null}
         {/* THE BURST (#301): the meter reached its target — one detonation in the meter's
-            own colour, and the initial appears on its impact. */}
+            own colour, and the sea begins on its impact. */}
         {!solving && burst > 0 && (
           <Strike
             key={`burst-${burst}`}

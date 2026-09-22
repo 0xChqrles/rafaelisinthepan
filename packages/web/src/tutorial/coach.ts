@@ -9,7 +9,7 @@
 import type { RankEntry, RuntimeHole } from '@whippin/shared';
 import { t } from '../i18n';
 import type { LessonStage, StageKind } from './script';
-import { initialOf } from '../game/charge';
+import { GIVEN } from '../game/charge';
 
 export type Stage = StageKind;
 
@@ -22,7 +22,7 @@ export interface GuessEvent {
   improved: boolean[];
   holeRanks: number[]; // each hole's rank BEFORE this guess landed
   // The meter stage: this guess added charge to some hole, and the hole whose meter it
-  // FILLED (its initial is out), if any.
+  // FILLED (the hole is active, its given words out), if any.
   charged?: boolean;
   filled?: number | null;
 }
@@ -61,8 +61,9 @@ export type CoachLine =
   | { kind: 'answer'; holeIndex: number }
   // The sentence solved: the tries it took — the score, said once.
   | { kind: 'solved'; tries: number }
-  // The meter stage: a chip filled to the top and the letter it revealed; the end, found.
-  | { kind: 'letter'; holeIndex: number }
+  // The meter stage: a chip filled to the top and the words it gave — tap the word to read
+  // them; the end, found.
+  | { kind: 'activated'; hole: RuntimeHole }
   | { kind: 'found' };
 
 // Guesses a hole may resist before each rung of the ladder. The sentence gets more room:
@@ -96,12 +97,12 @@ export function coachLine(state: CoachState): CoachLine | null {
   if (stage === 'meter') {
     if (finished) return { kind: 'found' };
     if (events.length === 0) return tapped ? { kind: 'meterTapped' } : { kind: 'introMeter', hole: holes[open] };
-    // The letter is out: the player's turn — and a failed try after it earns the HINT, never
+    // The hole is active: the player's turn — and a failed try after it earns the HINT, never
     // the word (user-decided 2026-09-16).
     const filledAt = events.findIndex((e) => e.filled != null);
     if (filledAt >= 0) {
       const holeIndex = events[filledAt].filled as number;
-      return filledAt === events.length - 1 ? { kind: 'letter', holeIndex } : { kind: 'hint', holeIndex };
+      return filledAt === events.length - 1 ? { kind: 'activated', hole: holes[holeIndex] } : { kind: 'hint', holeIndex };
     }
     // Not full yet: look near the word it shows.
     return { kind: 'near', hole: holes[open] };
@@ -187,11 +188,10 @@ export function coachCopy(
       );
     case 'meterTapped':
       return t(lang, 'tutMeterTapped');
-    case 'letter':
-      return t(lang, 'tutLetter').replace(
-        '{letter}',
-        `[[b:${initialOf(stage.puzzle.holes[line.holeIndex].secret.word)}]]`,
-      );
+    case 'activated':
+      return t(lang, coarsePointer ? 'tutActivatedTap' : 'tutActivatedClick')
+        .replace('{n}', String(GIVEN))
+        .replace('{word}', chip(line.hole.word, line.hole.rank));
     case 'found':
       return t(lang, 'tutMeterFound');
     case 'away':

@@ -31,12 +31,12 @@ import { PLAY_LEVEL } from '../tutorial/levels';
 import LoadError from '../components/LoadError';
 import FlipCountdown from '../components/FlipCountdown';
 import { earlyLocked } from '../game/earlyPlay';
-import { chargeForRank, initialOf, replayCharge } from '../game/charge';
+import { chargeForRank, replayCharge } from '../game/charge';
 import { navigate } from '../routing';
 import { pathForDay, pathForGame, pathForLesson } from '../langs';
 import { buildHistory } from '../game/history';
 import type { HistoryStop } from '../game/history';
-import { t, ariaHoleHistory, srHoleCharge, srHoleInitial, srHoleResult } from '../i18n';
+import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
 import { track } from '../analytics';
 import { fold, dateForDayNumber, ROUND_GUESS_CAP } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -704,22 +704,21 @@ function Round({
     () => holeNumbers.map((n) => ariaHoleHistory(lang, n)),
     [holeNumbers, lang],
   );
-  // The meters as the sentence shows them (#301): the deferred reading, the initial once
-  // revealed, and the description a screen reader gets in the meter's place — nothing for
-  // a hole already found (its chip, and the meter with it, are gone).
+  // The meters as the sentence shows them (#301): the deferred reading, whether the hole is
+  // active, and the description a screen reader gets in the meter's place — nothing for a
+  // hole already found (its chip, and the meter with it, are gone).
   const charges = useMemo(
     () =>
       shownCharge.map((c, i) => {
-        const initial = c.revealed ? initialOf(puzzleHoles[i].secret.word) : null;
         const hint =
           holes[i].rank === 0
             ? ''
-            : initial !== null
-              ? srHoleInitial(lang, initial)
+            : c.active
+              ? srHoleGiven(lang, c.given.length)
               : srHoleCharge(lang, c.charge);
-        return { value: c.charge, initial, hint };
+        return { value: c.charge, active: c.active, hint };
       }),
-    [shownCharge, puzzleHoles, holes, lang],
+    [shownCharge, holes, lang],
   );
   // The result's own view of the secrets (#266): where each sits in `words[]`, the word
   // and affixes it displays, its own index — the history modal's key, so the tap opens
@@ -751,8 +750,11 @@ function Round({
       hole,
       startRank: puzzleHole.start_rank,
       secretWord: puzzleHole.secret.word,
+      // The given words as the BOARD shows them: they land with the release beat, like the
+      // hole's own swap, so the wheel never names a word the sentence has not caught up to.
+      given: shownCharge[historyHole]?.given,
     });
-  }, [historyHole, holes, puzzleHoles, ranks, history]);
+  }, [historyHole, holes, puzzleHoles, ranks, history, shownCharge]);
   const closeHistory = useCallback(() => {
     setHistoryHole(null);
   }, []);
@@ -885,11 +887,11 @@ function Round({
       const parts = impacted.map(({ index, entry }) =>
         srHoleResult(lang, index + 1, entry ? entry.rank : null),
       );
-      // A meter this guess fills says so in the same breath — the initial is news.
+      // Words this guess gives — the activation, or an improvement of an active hole — are
+      // said in the same breath: they are news.
       for (const { index } of impacted) {
-        if (charged[index].revealed && !chargeState[index].revealed) {
-          parts.push(srHoleInitial(lang, initialOf(puzzleHoles[index].secret.word), index + 1));
-        }
+        const gave = charged[index].given.length - chargeState[index].given.length;
+        if (gave > 0) parts.push(srHoleGiven(lang, gave, index + 1));
       }
       say(solvesAll ? [...parts, t(lang, 'srSolvedAll')].join(', ') : parts.join(', '));
 
@@ -1198,6 +1200,7 @@ function Round({
             word: shownHoles[historyHole].word,
             rank: shownHoles[historyHole].rank,
             meter: charges[historyHole]?.value,
+            active: charges[historyHole]?.active,
           }}
           hostIndex={historyHole}
           number={holeNumbers[historyHole]}

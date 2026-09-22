@@ -19,8 +19,10 @@
 //   THE METER     (user-decided 2026-09-16, scripted the same day) a harder sentence the BOT
 //                 has already half played: one word found, the other's #301 meter nearly
 //                 full from its tries (`played`, the pre-played log — tap the word to see
-//                 them). The player's first close guess fills it and the first letter lands;
-//                 they try one more, and the bot names the answer as if it had found it.
+//                 them). The player's first close guess fills it and the hole ACTIVATES —
+//                 the given words join the tries (user-decided 2026-09-22, replacing the
+//                 first letter); they try one more, and the bot names the answer as if it
+//                 had found it.
 //                 Then PLAY: they are ready for the real game.
 //
 // A stage is a Puzzle (the real per-puzzle schema, parsePuzzle-valid, so it feeds the REAL
@@ -47,8 +49,8 @@ export interface LessonStage {
   // (rank 1), which reads in the sentence too — and before the letter is out the two SWAP
   // ROLES on whichever the player types first: type the secret and it becomes the closest
   // word (a 1, the chip fills) while `alt` becomes the secret the bot will land; type `alt`
-  // and nothing changes. Once the letter is out there is no swap. The goal is only that the
-  // first letter is seen before the sentence is solved (user-decided 2026-09-16).
+  // and nothing changes. Once the hole is active there is no swap. The goal is only that the
+  // activation is seen before the sentence is solved (user-decided 2026-09-16).
   pair?: { alt: Word; hint: UiKey }; // `hint`: the coach's hint once `alt` is the secret
   // One hint per hole, in `puzzle.holes` order — what the coach says once a hole has resisted
   // long enough (coach.ts `STUCK`), before it gives the answer.

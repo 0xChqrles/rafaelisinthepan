@@ -16,13 +16,13 @@ import type { LessonStage } from './script';
 import { canExtend } from '../game/keyboard';
 import { buildHistory, type HistoryStop } from '../game/history';
 import { guessKey, replayHoles } from '../game/scoring';
-import { chargeForRank, initialOf, replayCharge } from '../game/charge';
+import { chargeForRank, replayCharge } from '../game/charge';
 import { sentenceStarts } from '../game/sentenceCase';
 import { SCRAMBLE_MS } from '../hooks/useScramble';
 import type { Vocab } from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
 import type { HitState, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
-import { t, ariaHoleHistory, srHoleCharge, srHoleInitial, srHoleResult } from '../i18n';
+import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
 import type { LangCode } from '../langs';
 import playerIdle from '../assets/player-idle.png';
 
@@ -103,9 +103,9 @@ export default function LessonBoard({
 }) {
   const { puzzle, kind: stage } = script;
   const puzzleHoles = puzzle.holes;
-  // THE PAIR SWAP (the meter stage; user-decided 2026-09-16): before the letter is out, typing
-  // the secret makes it the closest word and `pair.alt` the secret — so the letter is always
-  // seen before the solve. ONE map serves both readings: swapped, every rank-0 entry reads 1
+  // THE PAIR SWAP (the meter stage; user-decided 2026-09-16): before the hole is active, typing
+  // the secret makes it the closest word and `pair.alt` the secret — so the activation is
+  // always seen before the solve. ONE map serves both readings: swapped, every rank-0 entry reads 1
   // and every rank-1 entry reads 0, and the board, the meters, the wheel and every later
   // guess replay against that view. The bot then lands `alt`.
   const [swapped, setSwapped] = useState(false);
@@ -259,13 +259,13 @@ export default function LessonBoard({
       let ranks = ranksRef.current;
       // Judge against the log immediately, independently of the delayed visual swaps.
       const holes = replayHoles(fresh, ranks, tried);
-      // The letter was already out before this guess: this is the player's "one more try",
+      // The hole was already active before this guess: this is the player's "one more try",
       // and the bot closes after it (unless the try itself lands).
-      const letterOut = eventsRef.current.some((e) => e.filled != null);
-      // THE SWAP: the secret typed before the letter is out becomes the closest word, and the
+      const activeOut = eventsRef.current.some((e) => e.filled != null);
+      // THE SWAP: the secret typed before the hole is active becomes the closest word, and the
       // obvious word the secret. Read the map through that view from this guess on.
       const open = holes.find((h) => h.rank !== 0);
-      if (withMeters && !byBot && !letterOut && !swapped && script.pair && open && ranks[open.secret][typed]?.rank === 0) {
+      if (withMeters && !byBot && !activeOut && !swapped && script.pair && open && ranks[open.secret][typed]?.rank === 0) {
         setSwapped(true);
         const map = ranks[open.secret];
         const dq1 = Object.values(map).find((e) => e.rank === 1)?.dq;
@@ -344,7 +344,7 @@ export default function LessonBoard({
         if (withMeters) later(() => setShownTried(next), fadeDelayMs);
         if (!byBot) {
           const filled =
-            before && after ? after.findIndex((c, i) => c.revealed && !before[i].revealed) : -1;
+            before && after ? after.findIndex((c, i) => c.active && !before[i].active) : -1;
           setEvents((prev) => [
             ...prev,
             {
@@ -455,6 +455,9 @@ export default function LessonBoard({
     },
     [holes],
   );
+  // The meters as of the last RELEASE beat (the meter stage only) — what the sentence and
+  // the wheel read (#301).
+  const shownMeters = useMemo(() => (withMeters ? meters(shownTried) : undefined), [withMeters, meters, shownTried]);
   const historyModel = useMemo(() => {
     if (historyHole === null) return null;
     const hole = holes[historyHole];
@@ -466,8 +469,9 @@ export default function LessonBoard({
       hole,
       startRank: puzzleHole.start_rank,
       secretWord: viewHoles[historyHole].secret.word,
+      given: shownMeters?.[historyHole]?.given,
     });
-  }, [historyHole, holes, puzzleHoles, viewHoles, ranks, tried]);
+  }, [historyHole, holes, puzzleHoles, viewHoles, ranks, tried, shownMeters]);
 
   // --- the coach: the one line the board's state calls for, or nothing ---
   const line = useMemo(
@@ -488,17 +492,16 @@ export default function LessonBoard({
 
   const quiet = playing && historyHole === null && hits.length === 0;
   const starts = sentenceStarts(puzzle.words);
-  // The meters as the sentence shows them (the meter stage only): the reading, the initial
-  // once revealed, and the sr-only description in the meter's place (#301).
+  // The meters as the sentence shows them (the meter stage only): the reading, whether the
+  // hole is active, and the sr-only description in the meter's place (#301).
   const charges = useMemo(() => {
-    if (!withMeters) return undefined;
-    return meters(shownTried).map((c, i) => {
-      const initial = c.revealed ? initialOf(viewHoles[i].secret.word) : null;
+    if (!shownMeters) return undefined;
+    return shownMeters.map((c, i) => {
       const hint =
-        holes[i].rank === 0 ? '' : initial !== null ? srHoleInitial(lang, initial) : srHoleCharge(lang, c.charge);
-      return { value: c.charge, initial, hint };
+        holes[i].rank === 0 ? '' : c.active ? srHoleGiven(lang, c.given.length) : srHoleCharge(lang, c.charge);
+      return { value: c.charge, active: c.active, hint };
     });
-  }, [withMeters, meters, shownTried, viewHoles, holes, lang]);
+  }, [shownMeters, holes, lang]);
 
   return (
     // tutorial--word: the word stage is deliberately CLEAN — one big centered word in the
@@ -630,6 +633,7 @@ export default function LessonBoard({
             word: shownHoles[historyHole].word,
             rank: shownHoles[historyHole].rank,
             meter: charges?.[historyHole]?.value,
+            active: charges?.[historyHole]?.active,
           }}
           hostIndex={historyHole}
           number={historyHole + 1}

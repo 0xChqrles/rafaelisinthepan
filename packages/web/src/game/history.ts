@@ -10,8 +10,8 @@
 // handed out, the guesses as stops spaced by their REAL distance (`dq`), and the `???`
 // terminus that says the whole game in one token.
 //
-// Everything here is DERIVED — from (ranks[secret], tried, hole state) — so it survives a
-// reload for free and nothing new is persisted. Rendering lives in
+// Everything here is DERIVED — from (ranks[secret], tried, hole state, the meter's given
+// ranks) — so it survives a reload for free and nothing new is persisted. Rendering lives in
 // components/HistoryModal; this file is pure and tested.
 
 import type { RankEntry, RuntimeHole } from '@whippin/shared';
@@ -52,6 +52,12 @@ export interface HistoryStop {
   // recede. Never true while the hole is live: an unsolved line shows only where the
   // player has been.
   revealed: boolean;
+  // GIVEN by the meter (user-decided 2026-09-22): a word the hole's activation handed over
+  // — one of the `GIVEN` just above the best word, at the activation and at every later
+  // improvement (`game/charge.ts`). Never typed, and never withdrawn; the one kind of stop
+  // a LIVE hole names that the player has not been to. A given word the player then types
+  // is theirs — typed wins, and the stop wears the typed dress.
+  given: boolean;
 }
 
 export interface HistoryModel {
@@ -101,6 +107,7 @@ export function buildHistory({
   hole,
   startRank,
   secretWord,
+  given = [],
 }: {
   rankMap: Record<string, RankEntry>;
   tried: readonly string[]; // the round's counted guesses, folded, in try order
@@ -109,6 +116,8 @@ export function buildHistory({
   // word's slug, which `fold` can hand to a closer group (the #119 agreed-form case).
   startRank: number;
   secretWord: string; // the destination's accented form, shown only once solved
+  // The ranks the meter has GIVEN (`replayCharge`'s `given`); none before the activation.
+  given?: readonly number[];
 }): HistoryModel {
   const solved = hole.rank === 0;
   const byRank = new Map<number, HistoryStop>();
@@ -124,7 +133,12 @@ export function buildHistory({
   // stop on the axis.
   const visit = (
     entry: RankEntry,
-    { start = false, typed, revealed = false }: { start?: boolean; typed?: string; revealed?: boolean } = {},
+    {
+      start = false,
+      typed,
+      revealed = false,
+      given = false,
+    }: { start?: boolean; typed?: string; revealed?: boolean; given?: boolean } = {},
   ) => {
     if (entry.rank === 0) return;
     const seen = byRank.get(entry.rank);
@@ -141,12 +155,14 @@ export function buildHistory({
       best: false,
       behind: entry.rank > startRank,
       revealed,
+      given,
     });
   };
 
-  // The walked stretch, walked once: the departure, "you", and the solve's reveal all
-  // read their entries out of it.
-  const field = nearField(rankMap, startRank);
+  // The walked stretch, walked once: the departure, "you", the given words and the solve's
+  // reveal all read their entries out of it. A window given above an unmoved start reaches
+  // past the departure, so the field is walked out to the farthest given rank.
+  const field = nearField(rankMap, Math.max(startRank, ...given));
 
   const startEntry = field.get(startRank);
   if (startEntry) visit(startEntry, { start: true });
@@ -165,6 +181,15 @@ export function buildHistory({
     if (entry) visit(entry);
     const here = byRank.get(hole.rank);
     if (here) here.best = true;
+  }
+
+  // THE GIVEN WORDS (user-decided 2026-09-22): what the activation handed over, named with
+  // the group's canonical form — nobody typed them. After the typed stops, so a given word
+  // the player also typed keeps the typed dress; before the solve's reveal, so a given word
+  // stays given on the post-mortem (it was known during play, not merely named after it).
+  for (const rank of given) {
+    const entry = field.get(rank);
+    if (entry) visit(entry, { given: true });
   }
 
   // SOLVED: the line becomes the post-mortem and NAMES the whole walked stretch — every

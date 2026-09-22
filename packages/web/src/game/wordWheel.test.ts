@@ -19,6 +19,7 @@ const stop = (rank: number, behind = false, start = false): HistoryStop => ({
   best: false,
   behind,
   revealed: false,
+  given: false,
 });
 
 describe('wheelOrder', () => {

@@ -1544,7 +1544,12 @@ input {
    order across the ramp (user-decided 2026-09-15, the fifth cut: a line along the chip's
    bottom edge was a bar; a level rising inside the chip barely moved; a hard-edged sweep
    behind a checker fringe was "a basic animation"). A full chip is all cobalt — the ink the
-   word will wear once found — and the burst and the letter follow. The box is the chip's
+   word will wear once found — and the burst follows; then THE SEA (user-decided 2026-09-22,
+   the ACTIVATED hole, replacing the revealed first letter): the same cells driven by a
+   slow noise field drifting through the word, cobalt swell over the white ground, until
+   the hole is inked in — the third state of a hole, between the held white chip and the
+   solved cobalt word, and the dress of a word the meter GAVE wherever it is listed (the
+   wheel's rows, the words grid — `.wheel-sea`, `.hw-sea`). The box is the chip's
    exact box (same overhang, same height, same centring), in the chip's own stacking layer
    AFTER the `::before` in paint order — over the white ground, under the ink — and clips to
    itself. Nothing is laid out: it is absolute like the chip and rides `.hole-word` like the
@@ -1570,71 +1575,6 @@ input {
   height: 100%;
   color: var(--accent);
   image-rendering: pixelated;
-}
-/* SPENT (user-decided 2026-09-15): once full, the conversion has said everything it will —
-   it fades out on the letter's own arrival (0.4s). A hole mounted revealed (a reload) is
-   spent from its first frame, nothing transitions. */
-.hole-meter.spent {
-  opacity: 0;
-  transition: opacity 0.4s ease-out;
-}
-/* THE REVEALED INITIAL IS THE WORD'S FIRST CELL (user-decided 2026-09-15, after a
-   superscript mark and a corner tag both read as "a left exponent"): a tile the CHIP'S OWN
-   HEIGHT standing right before the chip in the solve ink, the letter in white — the first
-   square of a crossword, given. DRAWN AND NEVER LAID OUT: absolute in the hole, hung off
-   the word's left edge, so the hole's width and the sentence's layout cannot move when it
-   lands. It COVERS THE CHIP'S OWN LEFT OVERHANG (0.6em wide, its right edge 0.04em before
-   the first letter) and takes only 0.4em of the space the sentence already holds between
-   words — flush with the chip, and clear of the word before (a cell standing wholly in the
-   gap crowded it, measured). The letter is the pixel font at half the word's size and never
-   under its native 8px. It slides out from under the chip on the reveal. Where a hole
-   directly precedes this one, its nudged exponent and this cell can overlap by a fraction
-   of an em; accepted (rare). */
-.hole-initial {
-  position: absolute;
-  right: calc(100% + 0.04em);
-  top: 50%;
-  translate: 0 -50%;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 0.6em;
-  height: 1.267em;
-  background: var(--accent);
-  color: var(--fg);
-  pointer-events: none;
-  animation: initial-in 0.4s cubic-bezier(0.2, 1.2, 0.4, 1);
-}
-/* The letter sizes ITSELF (the cell above measures in the word's em, so the size cannot
-   live on the same box) — and it is NUDGED half a cell right and down: Press Start 2P's
-   capitals ink cells 0–6 of their 8 in both directions (measured off the rendered font:
-   one empty column on the right, one empty row at the bottom), so a box-centred glyph sits
-   1/16em up and left of the cell's centre (user-reported 2026-09-15, "the padding around
-   the first letter is evenly distributed"). An accented capital's accent rises above the
-   em box and stays a touch high; accepted. */
-.hole-initial-letter {
-  font-family: var(--pixel-font);
-  font-size: max(8px, 0.5em);
-  line-height: 1;
-  translate: 0.0625em 0.0625em;
-}
-.phrase .hole-btn .hole-initial,
-.phrase .hole-btn .hole-initial-letter {
-  text-shadow: none;
-}
-/* Under the wheel the cell STAYS, dimmed by the veil like the sentence around it, exactly
-   where it is (user-decided 2026-09-15): the veil hides the hole's word for the slot row
-   that stands in, and the cell is not part of what the slot row redraws. */
-@keyframes initial-in {
-  from {
-    opacity: 0;
-    translate: 0.5em -50%;
-  }
-  to {
-    opacity: 1;
-    translate: 0 -50%;
-  }
 }
 /* THE LOOT IS BLOOD (user-decided 2026-09-15, in three passes: "a bit shy" → "drops
    particles around the hole, then gathers them on the bar" → "it should feel like blood…
@@ -1738,18 +1678,12 @@ input {
     opacity: 0;
   }
 }
-/* Reduced motion keeps the STATE — the meter's reading and the initial — and drops the
-   flight: the fill snaps, nothing flies, the letter simply appears. (The strike holds one
-   frame under its own rule.) */
+/* Reduced motion keeps the STATE — the meter's reading, the sea — and drops the flight:
+   the fill snaps, nothing flies, the sea holds one frame (MeterCanvas). (The strike holds
+   one frame under its own rule.) */
 @media (prefers-reduced-motion: reduce) {
-  .hole-meter.spent {
-    transition: none;
-  }
   .charge-spark {
     display: none;
-  }
-  .hole-initial {
-    animation: none;
   }
 }
 /* The wave (#129): a hole ripples its letters, up then down in sequence. EVERY hole runs its
@@ -2746,12 +2680,31 @@ input {
    out here rather than drawn, the grid's gap holding the overhang; the words the solve
    merely NAMED stay plain `--fg`. The chip drops the hard print for the phrase's reason
    (near-black ink on white). */
-.hw-found .hw-text {
+.hw-found .hw-text,
+.hw-given .hw-text {
   padding: 0.133em 0.2em;
   margin: -0.133em 0;
   background: var(--fg);
   color: var(--bg);
   text-shadow: none;
+}
+/* A word the meter GAVE (user-decided 2026-09-22) wears the activated chip's SEA: the
+   chip's white with the moving cobalt dither over it, the canvas filling the chip's own
+   box under the ink. */
+.hw-given .hw-text {
+  /* inline-block, not inline: a negative-z child of a positioned INLINE paints under
+     the inline's own background in Chromium (found on the screen), and the padding and
+     margin already cancel, so the line box is the same height. */
+  display: inline-block;
+  position: relative;
+  isolation: isolate;
+}
+.hw-sea {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 /* ===================== the hole WHEEL ===================== */
@@ -2938,6 +2891,30 @@ input {
   translate: 0 -50%;
   z-index: -1;
   background: var(--surface);
+}
+/* A GIVEN row (user-decided 2026-09-22) stands on the SEA: the activated chip's white
+   ground in the plain row's own box, the moving cobalt dither over it (`.wheel-sea`, the
+   pseudo's exact box, painted after it), the ink dark as on the chip, no print. */
+.wheel-given::before {
+  background: var(--fg);
+}
+.wheel-sea {
+  position: absolute;
+  left: -0.2em;
+  right: -0.2em;
+  top: 50%;
+  height: 1.5em;
+  translate: 0 -50%;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.wheel-row .wheel-given .wheel-word,
+.wheel-row .wheel-given .wheel-rank {
+  text-shadow: none;
+}
+.wheel-given .wheel-word {
+  color: var(--bg);
 }
 /* The exponent of a plain row: the hole's own superscript, in the shared heat colour. */
 .wheel-rank {

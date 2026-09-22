@@ -42,7 +42,13 @@ import MeterCanvas from './MeterCanvas';
 // What it keeps: the pure model (`buildHistory`; the order is `wheelOrder`, tested), the
 // `revealed` dress on the solved stage, the hole's TRUE position marked with an LED when
 // the slot holds a pick, the exponent in the shared heat colour — as a real superscript,
-// the hole's own — and the modal contract (`useModalDismiss`). It stays a native <dialog>
+// the hole's own — and the modal contract (`useModalDismiss`).
+//
+// THREE GROUNDS, THREE MEANINGS (user-decided 2026-09-22, with the activated hole): a
+// word the player TYPED stands on the plain surface; a word the meter GAVE stands on THE
+// SEA — the activated chip's own moving dither (`MeterCanvas`), white ground, dark ink —
+// so the list says which words are theirs and which were handed over with no label; and
+// the slot row is the sentence's chip, on the sea too once the hole is active. It stays a native <dialog>
 // because the sentence and the keyboard under it must be inert; it is the PuzzleSelect's
 // kind (a thing hanging off a control that stays on screen), so a tap outside closes it.
 
@@ -114,9 +120,8 @@ export default function HistoryWheel({
   // What the tapped control SHOWS — the hole's word and rank as the sentence has them
   // (a pick included), or the secret at rank 0 on the solved stage.
   // The meter's reading (#301), so the slot row — the hole as the sentence draws it —
-  // carries it too. NOT the revealed initial: that cell stays where it is, under the veil
-  // (user-decided 2026-09-15 — a copy in the slot row sat a pixel off the sentence's).
-  hub: { word: string; rank: number; meter?: number };
+  // carries it too, and whether the hole is ACTIVE (the slot row is then on the sea).
+  hub: { word: string; rank: number; meter?: number; active?: boolean };
   // The `data-hole-explore` index of the control the wheel turns through.
   hostIndex: number;
   // The hole opens its sentence and carries the capital itself (sentence case, the
@@ -149,6 +154,7 @@ export default function HistoryWheel({
         best: false,
         behind: false,
         revealed: false,
+        given: false,
       });
     }
     return order;
@@ -314,10 +320,11 @@ export default function HistoryWheel({
                 {ch}
               </span>
             ))}
-            {/* The meter as it stands (drawn at once, no travel); spent once full. */}
-            {hub.meter !== undefined && hub.meter < 100 && stop.rank > 0 ? (
+            {/* The meter as it stands (drawn at once, no travel), or the sea of an
+                active hole. */}
+            {hub.meter !== undefined && stop.rank > 0 ? (
               <span className="hole-meter" aria-hidden="true">
-                <MeterCanvas value={hub.meter} delayMs={0} durationMs={0} />
+                <MeterCanvas value={hub.meter} delayMs={0} durationMs={0} sea={hub.active === true} />
               </span>
             ) : null}
           </span>
@@ -327,8 +334,14 @@ export default function HistoryWheel({
     ) : (
       // A plain row stands on its own GROUND (user-decided 2026-09-02: "you don't have
       // wheel items over sentence text") — one box around the word AND its exponent, drawn
-      // by CSS as the chip is drawn, so the row's letters keep the slot's exact x.
-      <span className="wheel-plain">
+      // by CSS as the chip is drawn, so the row's letters keep the slot's exact x. A GIVEN
+      // row's ground is the sea (the canvas in the pseudo's exact box, over its white).
+      <span className={`wheel-plain${stop.given ? ' wheel-given' : ''}`}>
+        {stop.given && (
+          <span className="wheel-sea" aria-hidden="true">
+            <MeterCanvas value={100} delayMs={0} durationMs={0} sea />
+          </span>
+        )}
         <span className="wheel-word">{stop.word}</span>
         {stop.rank > 0 && <sup className="wheel-rank">{stop.rank}</sup>}
       </span>

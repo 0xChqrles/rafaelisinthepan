@@ -10,8 +10,8 @@
 //   - the sentence: silent on every guess (the tap is taught on the meter stage); the away /
 //     miss lines belong to the single-word stages; solved, the bot counts the tries;
 //   - the meter stage, scripted: the bot has played — tap to see its tries, then what they
-//     did; near until the chip fills; the letter and the player's turn; a failed try after it
-//     earns the hint, never the word; the end, found.
+//     did; near until the chip fills; the activation (the given words, tap to read them) and
+//     the player's turn; a failed try after it earns the hint, never the word; the end, found.
 //   Every line is written for someone who has never heard of the game: it names the HIDDEN
 //   WORD the numbers are about (coachCopy below).
 import { describe, it, expect } from 'vitest';
@@ -183,7 +183,7 @@ describe('the meter stage — the bot has half played it', () => {
     b.guess('x', [null, null], { charged: false, filled: null });
     expect(coachLine(b.state(true))).toEqual({ kind: 'near', hole: expect.objectContaining({ rank: 24 }) });
     b.guess('freedom', [null, 1], { charged: true, filled: 1 });
-    expect(coachLine(b.state(true))).toEqual({ kind: 'letter', holeIndex: 1 });
+    expect(coachLine(b.state(true))).toEqual({ kind: 'activated', hole: expect.objectContaining({ word: 'freedom', rank: 1 }) });
     b.guess('y', [null, null], { charged: false, filled: null });
     expect(coachLine(b.state(true))).toEqual({ kind: 'hint', holeIndex: 1 }); // a failed try: the hint, never the word
     b.guess('z', [null, 300], { charged: true, filled: null });
@@ -229,8 +229,11 @@ describe('coachCopy', () => {
     expect(coachCopy('en', { kind: 'solved', tries: 7 }, stage, true)).toBe(
       'You found both in 7 tries. This one was easy: the daily sentences are harder.',
     );
-    expect(coachCopy('en', { kind: 'letter', holeIndex: 0 }, stage, true)).toBe(
-      'Great! We just found the secret word’s first letter: it starts with [[b:O]].',
+    expect(coachCopy('en', { kind: 'activated', hole: { ...hole, word: 'sea', rank: 1 } }, stage, true)).toBe(
+      'The meter is full! 10 words close to the secret joined my tries. Tap [[w:sea^1]] to read them.',
+    );
+    expect(coachCopy('fr', { kind: 'activated', hole: { ...hole, word: 'mer', rank: 1 } }, stage, false)).toBe(
+      'Jauge pleine ! 10 mots proches du secret ont rejoint mes essais. Clique sur [[w:mer^1]] pour les lire.',
     );
     expect(coachCopy('en', { kind: 'introMeter', hole }, stage, true)).toMatch(/last word\. Tap \[\[w:islands\^10\]\] to see my tries\.$/);
     expect(coachCopy('en', { kind: 'introMeter', hole }, stage, false)).toMatch(/last word\. Click \[\[w:islands\^10\]\] to see my tries\.$/);

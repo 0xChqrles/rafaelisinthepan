@@ -126,12 +126,14 @@
       components/Strike.tsx   one blow of one sheet on a game word (was WordSlash)
       components/Loot.tsx     what a hit knocks off a game word: the rank exponent popping up
                               and falling away
-      game/charge.ts          #301's hole CHARGE METER: the rank -> charge table, the replay of
-                              the play log onto every hole's meter, the revealed initial
+      game/charge.ts          #301's hole CHARGE METER: the rank -> charge function, the replay
+                              of the play log onto every hole's meter, the ACTIVATION and the
+                              ranks it GIVES (2026-09-22)
       components/ChargeLoot.tsx  the blood a charging guess knocks out of the hole, gathered
                               onto the meter
       components/MeterCanvas.tsx  the meter's drawing: the chip converting as an ordered
-                              dither, tweened
+                              dither, tweened — and the SEA of an active hole (the same
+                              dither driven by value noise, `components/noise.ts`)
       game/scoring.ts         the SCREEN's reading: applyGuessToHoles + replayHoles +
                               computeProgress over RuntimeHoles (the arithmetic itself is
                               @whippin/shared's since #203)
@@ -220,17 +222,29 @@ These are decided and verified against the code. Treat them as load-bearing.
   maybe ~20%": half the holes a player is stuck on reveal by try ~37. `charge.test.ts` pins
   the stuck-hole mix, so a retune restates it — from production logs, never an assumed mix
   (the last assumed one put 55% of tries inside 250 where real play puts 20%). Keep the top
-  this gentle: a steeper one fires the initial just before solves that were coming anyway;
+  this gentle: a steeper one activates the hole just before solves that were coming anyway;
   the three nearest words pay 77 together.) ONE meter per
   logical secret (repeated occurrences share it), capped at `CHARGE_TARGET` = 100, and
-  reaching it REVEALS THE SECRET'S FIRST LETTER — automatically, once, the initial only
-  (never the length); a full meter takes no more charge. No separate try/time gate, no
+  reaching it ACTIVATES THE HOLE (user-decided 2026-09-22, REPLACING the secret's first
+  letter — "it goes against the game core logic which is to guess with meaning not
+  letters"): **the `GIVEN` = 10 words just above the hole's BEST word (ranks best+1 …
+  best+10) are GIVEN — named in the hole's tries, the wheel and the words grid — and every
+  later guess that improves the best gives the window above the new best; windows
+  accumulate and nothing given is ever withdrawn** ("10 words above your closest", over
+  "everything between your closest and the start"; the user checked the play data: "10
+  more words actually always give a better idea of the concept"). A full meter takes no
+  more charge. **A given word typed is a try like any other** — no scoring exemption, "if a
+  user types it, it's on them" (an exemption would need the server to re-derive what was
+  given when, and a given word can be a hit on another hole). No separate try/time gate, no
   charge-specific dedup or farming rule: the play log's own canonical identity is what a
-  counted guess is. **DERIVED from the play log, never persisted** — `replayCharge` over
-  the same log the board replays, so a reload or another device reconstructs the same
-  meter and the same initial. Presentation (user-decided 2026-09-15, the third cut: "try
-  something else than a progress bar"; "the first letter as a left exponent feels weird…
-  make sure that when you make it appear, it doesn't impact the width of the hole"): THE
+  counted guess is. **DERIVED from the play log, never persisted — THE SERVER STORES
+  NOTHING FOR IT** (the user's "store the closest rank at activation" was declined as a
+  second copy of a fact the log states): `replayCharge` over the same log the board
+  replays, so a reload or another device reconstructs the same meter and the same given
+  words; `buildHistory` takes the given ranks and names them (`HistoryStop.given` —
+  canonical form; TYPED wins over given, given wins over the solve's post-mortem
+  `revealed`). Presentation (user-decided 2026-09-15, the third cut: "try
+  something else than a progress bar"): THE
   CHIP CONVERTS TO THE SOLVE INK EDGE TO EDGE ACROSS THE WORD — `.hole-meter`, the chip's
   own box and layer: the white ground turns cobalt from the left behind the dark letters,
   the chip's whole height, AS AN ORDERED DITHER (`components/MeterCanvas.tsx`: Bayer 8×8
@@ -238,11 +252,23 @@ These are decided and verified against the code. Treat them as load-bearing.
   front, cells lighting in threshold order as the front advances — a canvas, tweened in JS
   on the meter's own delay and travel; user-decided 2026-09-15, replacing a hard-edged sweep
   with a checker fringe, "a basic animation"), a full chip all cobalt (the ink the word
-  wears once found); and THE INITIAL IS THE WORD'S FIRST CELL — `.hole-initial`,
-  a chip-high tile of the solve ink over the chip's left overhang (0.6em, flush with the
-  chip, 0.4em into the word gap) with the letter in white (the pixel font at half the word's size, never under 8px), ABSOLUTE in the hole and
-  never laid out, so the hole's width and the sentence's layout cannot move when it lands.
-  Nothing under the sentence, no `+7.5` parked anywhere. Retired the same day, each on the
+  wears once found); and then **THE SEA — THE ACTIVE HOLE'S OWN DRESS (user-decided
+  2026-09-22: "a new kind of hole design… something between the full blue hole and the
+  empty white one, with moving waves maybe, some perlin noise")**: the full chip RECEDES
+  into a FIELD — the same 2px cells and Bayer thresholds driven by one octave of value
+  noise (`components/noise.ts`, shared with `AccountMark`) scrolled sideways through the
+  word, cobalt swell drifting over the white ground under the dark ink, never bare white
+  (`SEA_FLOOR`) and never alpha (cells on or off: the dither reads as pixel art where a
+  wash would read as the banned gradient), STEPPED at `SEA_FRAME_MS` = 80 and slow
+  (`SEA_DRIFT`/`SEA_EVOLVE`), ONE clock on every surface so the sentence's chip and the
+  lists move as one material; it stands until the hole is inked in. A hole MOUNTED active
+  (a reload) is on the sea at once, no burst, no recede. **THE GIVEN WORDS WEAR THE SAME
+  SEA WHEREVER THEY ARE LISTED** (user-decided 2026-09-22, "the given words should have the
+  same effect on the guess list"): a `.wheel-given` row and a `.hw-given` word stand on the
+  chip's white with the sea over it, dark ink, no print — so three grounds say three things
+  with no label: the surface (typed), the sea (given), the plain word (named by the solve).
+  RETIRED with it: `.hole-initial` (the first-cell tile), `initialOf`, `srHoleInitial`, the
+  `.spent` fade. Retired the same day, each on the
   user's review: a line along the chip's bottom edge and the band the chip grew for it (a
   bar); a level rising inside the chip with a lit surface row ("barely moves… the top
   border feels weird"); a superscript mark before the chip and a 16px tag on its corner
@@ -263,19 +289,19 @@ These are decided and verified against the code. Treat them as load-bearing.
   a trail following their trajectory" — replacing one arc into the bar; ONE colour, the
   meter's, no opacity or tone per drop): the width moves on the guess's RELEASE (the
   deferred-board beat, `shownCharge`) and the fill's transition WAITS for the landing
-  (`--meter-delay`, `sparkLandMs`), the burst and the letter waiting with it; ONCE FULL THE
-  CONVERSION GOES — it fades on the letter's own arrival (`.spent`, user-decided 2026-09-15); at 100 `meter fills → BURST
-  → initial`, timed off `METER_MS` in `Hole`. The exact hit wears the ULTRA star and takes
+  (`--meter-delay`, `sparkLandMs`), the burst and the sea waiting with it; at 100 `meter
+  fills → BURST → the sea`, timed off `METER_MS` in `Hole`. The exact hit wears the ULTRA star and takes
   no cut, loot or burst (the solve supersedes); a miss, a repeat and a rank past the table
   keep the float alone; a guess that also improves the hole keeps the word/rank swap
   choreography (charging is additive). The sheets are `components/strikeArt.ts` +
   `Strike.tsx` (`.strike`, its own integer scales under `.phrase`; see THE HIT ART) —
   never the heat. A11y: the meter and the
-  initial are the hole button's DESCRIPTION (`srHoleCharge` / `srHoleInitial`, sr-only
-  spans outside the sentence like the exploration hints, never words in the prose); the
-  reveal is also announced with the guess. Reduced motion keeps the state and snaps: no
-  sparks, no fill travel, the letter simply appears. Not done, deliberately: second
-  letters, a manual hint button, a hint currency, adaptive thresholds.
+  given words are the hole button's DESCRIPTION (`srHoleCharge` / `srHoleGiven`, sr-only
+  spans outside the sentence like the exploration hints, never words in the prose); words
+  given by a guess are also announced with it. Reduced motion keeps the state and snaps:
+  no sparks, no fill travel, the sea holds one frame. Not done, deliberately: a second
+  payout (the letter as a second fill was proposed and not taken), a manual hint button,
+  a hint currency, adaptive thresholds.
 - **THE PALETTE IS THREE INDEPENDENT AXES (user-decided 2026-08-17): weird/calm +
   hole/solve + accent — in STAMP-INK tones** (retuned the same day against the user's
   /inspiration set — vintage offset stamps, riso posters — after the first calm cut went
@@ -2060,7 +2086,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   Exponents are the hole's own superscript (`.hole-rank` in the slot, `.wheel-rank` on
   plain rows — a flex row had flattened `<sup>`, user-reported). What it keeps: the pure
   model (`buildHistory`, which gained `display`, the canonical form the slot shows), the
-  `revealed` dress (0.55) and the hole's TRUE position wearing an LED in `--hole` when the
+  `revealed` dress (0.55), the `given` dress — THE SEA, see the #301 bullet — and the hole's TRUE position wearing an LED in `--hole` when the
   slot holds a pick, `holeTitle` as the dialog's name, `srRouteStop` per row; on the solved
   stage the secret is appended as the last row (rank 0 is never a stop) and nothing picks.
   A word too near the right edge of a phone (`MIN_COLUMN`) stands the column on its RIGHT
@@ -2826,7 +2852,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     included; user-fixed 2026-09-17).
   - **THE METER (#301 TAUGHT; user-decided 2026-09-16 — "after saying that real sentences
     are harder, the onboarding should continue and explain the first letter concept",
-    SCRIPTED the same day)** — CONTINUE from the sentence's solved line (the line stands
+    SCRIPTED the same day; the letter became the ACTIVATION on 2026-09-22 and the stage's
+    lines with it)** — CONTINUE from the sentence's solved line (the line stands
     until it is pressed) into a harder sentence THE BOT HAS ALREADY HALF PLAYED: en "the cat
     dreams of liberty." (fr « le chat suit le sentier. »), CAT found, with the #301 meters
     SHOWN for the first time. **THE SECRET IS THE CLOSE SYNONYM OF THE OBVIOUS WORD** (user-
@@ -2834,12 +2861,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the word -1"): the sentence begs for FREEDOM / CHEMIN, and that word is the secret's
     rank-1 neighbour (`pair.alt`) — typing it earns a 1 and fills the chip, never the solve;
     both words read in the sentence ("both words relevant, e.g. mer/océan"). **AND THE TWO
-    SWAP ROLES if the secret is typed first, before the letter is out** (user-decided
+    SWAP ROLES if the secret is typed first, before the hole is active** (user-decided
     2026-09-16 after typing « sentier » in one try): the secret reads 1 and `alt` becomes the
     secret the bot lands. ONE map serves both readings — swapped, every rank-0 entry reads 1
     and every rank-1 entry reads 0 (`ranks` view in `LessonBoard`), and the board, the
-    meters, the wheel and every later guess replay against it. Once the letter is out there
-    is no swap: the goal is only that the letter is seen before the solve. `played` is the
+    meters, the wheel and every later guess replay against it. Once the hole is active there
+    is no swap: the goal is only that the activation is seen before the solve. `played` is the
     bot's log — FEW tries, five, the best one an EASY SYNONYM of the obvious word (en: cat,
     independence, respect, happiness, justice, truth; fr: chat, parcours, randonneur, détour,
     hameau, tunnel — masculine so « le » holds; « belvédère » "was way too hard: the goal is
@@ -2860,9 +2887,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     independence⁹ to see my tries." (ONE box, no beat between — user-decided 2026-09-16; TAP
     on a coarse pointer — every tap line has its click twin) → tapped: "The 1000 closest words to the
     secret fill its meter. Once full, you earn a clue." → a guess that does not fill:
-    `tutNear` → the obvious guess FILLS IT — no progress needed — and the L lands: "Great!
-    We just found the secret word's first letter: it starts with L." → a FAILED TRY after it
-    earns the HINT
+    `tutNear` → the obvious guess FILLS IT — no progress needed — and the hole ACTIVATES:
+    "The meter is full! 10 words close to the secret joined my tries. Click freedom¹ to
+    read them." (`tutActivatedTap`/`Click`; the tap teaches the wheel a second time) → a
+    FAILED TRY after it earns the HINT
     (`hints[]`, or `pair.hint` once swapped), NEVER THE WORD (user-decided 2026-09-16,
     retiring the bot's own closing guess) → found: "You found it! You are ready for the real
     game." → PLAY. `STUCK.meter` is unused
