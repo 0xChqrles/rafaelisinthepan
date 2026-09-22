@@ -9,7 +9,7 @@ import HistoryWheel from '../components/HistoryWheel';
 import HistoryModal from '../components/HistoryModal';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
-import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, STAGGER_MS } from '../screens/Game';
+import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, REVEAL_HOLD_MS, STAGGER_MS } from '../screens/Game';
 import CoachText, { richToPlain } from './CoachText';
 import { coachCopy, coachLine, type GuessEvent } from './coach';
 import type { LessonStage } from './script';
@@ -413,11 +413,17 @@ export default function LessonBoard({
         const slug = ghost.slug;
         decodingRef.current = slug;
         setDecoding(slug);
-        decode.start(slug, MASK.length, () => {
-          decodingRef.current = null;
-          setDecoding(null);
-          submitRef.current(slug, true);
-        }, 0);
+        decode.start(
+          slug,
+          MASK.length,
+          () =>
+            later(() => {
+              decodingRef.current = null;
+              setDecoding(null);
+              submitRef.current(slug, true);
+            }, REVEAL_HOLD_MS),
+          0,
+        );
         return;
       }
       const typed = fold(raw);

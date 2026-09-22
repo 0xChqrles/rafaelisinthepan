@@ -36,6 +36,9 @@ import { navigate } from '../routing';
 import { pathForDay, pathForGame, pathForLesson } from '../langs';
 import { MASK, buildHistory } from '../game/history';
 import { useScramble } from '../hooks/useScramble';
+
+// How long a decoded ghost stands in the prompt, readable, before it is sent.
+export const REVEAL_HOLD_MS = 900;
 import type { HistoryStop } from '../game/history';
 import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
 import { track } from '../analytics';
@@ -710,8 +713,11 @@ function Round({
   // THE DECODE (user-decided 2026-09-22, "the text should uncypher from the prompt then get
   // sent, so when a hit occurs on other words, the user already knows what word it was"):
   // on ENTER the ghost's marks churn into the word in the prompt (`useScramble`, the
-  // hole's own slot-machine settle), and the guess goes in when the last letter lands.
-  // Nothing typed and nothing submitted meanwhile.
+  // hole's own slot-machine settle), the word then STANDS for `REVEAL_HOLD_MS` — the time
+  // to read it (user-reviewed 2026-09-23: "otherwise we don't have time to read") — and
+  // only then does the guess go in, its hits landing on holes whose word is already known.
+  // ONE motion, never two steps: a decode that could be read and backed out of would be a
+  // hint for free, outside the log. Nothing typed and nothing submitted meanwhile.
   const [decoding, setDecoding] = useState<string | null>(null); // the key being decoded
   const decodingRef = useRef<string | null>(null); // the same, for the closures that land it
   const decode = useScramble();
@@ -876,9 +882,13 @@ function Round({
           slug,
           MASK.length,
           () => {
-            decodingRef.current = null;
-            setDecoding(null);
-            submitRef.current(slug);
+            const send = window.setTimeout(() => {
+              pendingTimers.current = pendingTimers.current.filter((t) => t !== send);
+              decodingRef.current = null;
+              setDecoding(null);
+              submitRef.current(slug);
+            }, REVEAL_HOLD_MS);
+            pendingTimers.current.push(send);
           },
           0,
         );
