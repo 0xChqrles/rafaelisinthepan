@@ -2892,12 +2892,20 @@ input {
   z-index: -1;
   background: var(--surface);
 }
-/* A GIVEN row (user-decided 2026-09-22) stands on the SEA: the activated chip's white
-   ground in the plain row's own box, the moving cobalt dither over it (`.wheel-sea`, the
-   pseudo's exact box, painted after it), the ink dark as on the chip, no print. */
+/* A GIVEN row (user-decided 2026-09-22) stands on the SEA — ON THE WORD ALONE, so its
+   exponent stands clear on the ground with the print (user-reviewed the same day): the
+   plain row's ground is dropped, the WORD carries the chip's white box (the same drawn
+   pseudo, the plain row's 1.5em) and the sea over it (`.wheel-sea`, the pseudo's exact
+   box, painted after it), the ink dark as on the chip, no print. */
 .wheel-given::before {
-  background: var(--fg);
+  display: none;
 }
+.wheel-given .wheel-word {
+  position: relative;
+  isolation: isolate;
+  color: var(--bg);
+}
+.wheel-given .wheel-word::before,
 .wheel-sea {
   position: absolute;
   left: -0.2em;
@@ -2906,15 +2914,17 @@ input {
   height: 1.5em;
   translate: 0 -50%;
   z-index: -1;
+}
+.wheel-given .wheel-word::before {
+  content: '';
+  background: var(--fg);
+}
+.wheel-sea {
   overflow: hidden;
   pointer-events: none;
 }
-.wheel-row .wheel-given .wheel-word,
-.wheel-row .wheel-given .wheel-rank {
+.wheel-row .wheel-given .wheel-word {
   text-shadow: none;
-}
-.wheel-given .wheel-word {
-  color: var(--bg);
 }
 /* The exponent of a plain row: the hole's own superscript, in the shared heat colour. */
 .wheel-rank {

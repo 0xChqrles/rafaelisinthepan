@@ -257,16 +257,24 @@ These are decided and verified against the code. Treat them as load-bearing.
   empty white one, with moving waves maybe, some perlin noise")**: the full chip RECEDES
   into a FIELD — the same 2px cells and Bayer thresholds driven by one octave of value
   noise (`components/noise.ts`, shared with `AccountMark`) scrolled sideways through the
-  word, cobalt swell drifting over the white ground under the dark ink, never bare white
-  (`SEA_FLOOR`) and never alpha (cells on or off: the dither reads as pixel art where a
-  wash would read as the banned gradient), STEPPED at `SEA_FRAME_MS` = 80 and slow
-  (`SEA_DRIFT`/`SEA_EVOLVE`), ONE clock on every surface so the sentence's chip and the
-  lists move as one material; it stands until the hole is inked in. A hole MOUNTED active
-  (a reload) is on the sea at once, no burst, no recede. **THE GIVEN WORDS WEAR THE SAME
-  SEA WHEREVER THEY ARE LISTED** (user-decided 2026-09-22, "the given words should have the
-  same effect on the guess list"): a `.wheel-given` row and a `.hw-given` word stand on the
-  chip's white with the sea over it, dark ink, no print — so three grounds say three things
-  with no label: the surface (typed), the sea (given), the plain word (named by the solve).
+  word: COBALT swell drifting through the WHITE ground under the dark ink (the colours
+  reversed on the user's review the same day "for a better word readability" — the canvas
+  is the solve ink with the white cells CLEARED out of it, biased to white, `SEA_BIAS`),
+  never bare cobalt (`SEA_FLOOR`) and never alpha (cells on or off: the dither reads as
+  pixel art where a wash would read as the banned gradient), STEPPED at `SEA_FRAME_MS` = 80
+  and slow (`SEA_DRIFT`/`SEA_EVOLVE`), ONE clock on every surface and **EVERY HOLE ITS OWN
+  FIELD** (`seed` — the hole's index, a listed word's rank; user-decided the same day:
+  "each hole should have a different seed"); it stands until the hole is inked in. A hole
+  MOUNTED active (a reload) is on the sea at once, no burst, no recede. **THE GIVEN WORDS
+  WEAR THE SAME SEA WHEREVER THEY ARE LISTED** (user-decided 2026-09-22, "the given words
+  should have the same effect on the guess list"): a `.wheel-given` row and a `.hw-given`
+  word stand on the chip's white with the sea over it, dark ink, no print — ON THE WORD
+  ALONE, the exponent standing clear on the ground ("the exponent should be out of the
+  background") — so three grounds say three things with no label: the surface (typed),
+  the sea (given), the plain word (named by the solve). **THE WHEEL'S SLOT ROW NEVER
+  MOVES**: the word the wheel holds wears the regular white chip, active hole or given
+  word ("when wheel focused, a word should not have a moving background, just the regular
+  white for a better UX").
   RETIRED with it: `.hole-initial` (the first-cell tile), `initialOf`, `srHoleInitial`, the
   `.spent` fade. Retired the same day, each on the
   user's review: a line along the chip's bottom edge and the band the chip grew for it (a

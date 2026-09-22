@@ -633,7 +633,6 @@ export default function LessonBoard({
             word: shownHoles[historyHole].word,
             rank: shownHoles[historyHole].rank,
             meter: charges?.[historyHole]?.value,
-            active: charges?.[historyHole]?.active,
           }}
           hostIndex={historyHole}
           number={historyHole + 1}

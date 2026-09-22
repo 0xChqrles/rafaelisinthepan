@@ -96,7 +96,7 @@ export default function HistoryModal({
                   <span className="hw-text">
                     {stop.given && (
                       <span className="hw-sea">
-                        <MeterCanvas value={100} delayMs={0} durationMs={0} sea />
+                        <MeterCanvas value={100} delayMs={0} durationMs={0} sea seed={stop.rank} />
                       </span>
                     )}
                     {stop.word}

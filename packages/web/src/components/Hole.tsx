@@ -323,7 +323,13 @@ export default function Hole({
               of the chip. */}
           {!solving && charge ? (
             <span className="hole-meter" aria-hidden="true">
-              <MeterCanvas value={charge.value} delayMs={meterDelayMs} durationMs={METER_MS} sea={seaShown} />
+              <MeterCanvas
+                value={charge.value}
+                delayMs={meterDelayMs}
+                durationMs={METER_MS}
+                sea={seaShown}
+                seed={holeIndex + 1}
+              />
             </span>
           ) : null}
         </span>

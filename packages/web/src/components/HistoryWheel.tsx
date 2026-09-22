@@ -46,9 +46,12 @@ import MeterCanvas from './MeterCanvas';
 //
 // THREE GROUNDS, THREE MEANINGS (user-decided 2026-09-22, with the activated hole): a
 // word the player TYPED stands on the plain surface; a word the meter GAVE stands on THE
-// SEA — the activated chip's own moving dither (`MeterCanvas`), white ground, dark ink —
-// so the list says which words are theirs and which were handed over with no label; and
-// the slot row is the sentence's chip, on the sea too once the hole is active. It stays a native <dialog>
+// SEA — the activated chip's own moving dither (`MeterCanvas`), on the WORD ALONE so the
+// exponent stands clear of it on the ground (user-reviewed the same day: "the exponent
+// should be out of the background") — so the list says which words are theirs and which
+// were handed over with no label. THE SLOT ROW NEVER MOVES: the word the wheel holds
+// wears the regular white chip, sea or not ("when wheel focused, a word should not have a
+// moving background, just the regular white for a better UX"). It stays a native <dialog>
 // because the sentence and the keyboard under it must be inert; it is the PuzzleSelect's
 // kind (a thing hanging off a control that stays on screen), so a tap outside closes it.
 
@@ -120,8 +123,8 @@ export default function HistoryWheel({
   // What the tapped control SHOWS — the hole's word and rank as the sentence has them
   // (a pick included), or the secret at rank 0 on the solved stage.
   // The meter's reading (#301), so the slot row — the hole as the sentence draws it —
-  // carries it too, and whether the hole is ACTIVE (the slot row is then on the sea).
-  hub: { word: string; rank: number; meter?: number; active?: boolean };
+  // carries it too; a full meter (an active hole) draws nothing here: the slot is white.
+  hub: { word: string; rank: number; meter?: number };
   // The `data-hole-explore` index of the control the wheel turns through.
   hostIndex: number;
   // The hole opens its sentence and carries the capital itself (sentence case, the
@@ -320,11 +323,11 @@ export default function HistoryWheel({
                 {ch}
               </span>
             ))}
-            {/* The meter as it stands (drawn at once, no travel), or the sea of an
-                active hole. */}
-            {hub.meter !== undefined && stop.rank > 0 ? (
+            {/* The meter as it stands (drawn at once, no travel); nothing once full — the
+                slot stays the regular white chip, never the sea. */}
+            {hub.meter !== undefined && hub.meter < 100 && stop.rank > 0 ? (
               <span className="hole-meter" aria-hidden="true">
-                <MeterCanvas value={hub.meter} delayMs={0} durationMs={0} sea={hub.active === true} />
+                <MeterCanvas value={hub.meter} delayMs={0} durationMs={0} />
               </span>
             ) : null}
           </span>
@@ -335,14 +338,17 @@ export default function HistoryWheel({
       // A plain row stands on its own GROUND (user-decided 2026-09-02: "you don't have
       // wheel items over sentence text") — one box around the word AND its exponent, drawn
       // by CSS as the chip is drawn, so the row's letters keep the slot's exact x. A GIVEN
-      // row's ground is the sea (the canvas in the pseudo's exact box, over its white).
+      // row's ground is the sea, on the word alone (the canvas over the word's own white
+      // box), its exponent standing outside on the ground.
       <span className={`wheel-plain${stop.given ? ' wheel-given' : ''}`}>
-        {stop.given && (
-          <span className="wheel-sea" aria-hidden="true">
-            <MeterCanvas value={100} delayMs={0} durationMs={0} sea />
-          </span>
-        )}
-        <span className="wheel-word">{stop.word}</span>
+        <span className="wheel-word">
+          {stop.given && (
+            <span className="wheel-sea" aria-hidden="true">
+              <MeterCanvas value={100} delayMs={0} durationMs={0} sea seed={stop.rank} />
+            </span>
+          )}
+          {stop.word}
+        </span>
         {stop.rank > 0 && <sup className="wheel-rank">{stop.rank}</sup>}
       </span>
     );
