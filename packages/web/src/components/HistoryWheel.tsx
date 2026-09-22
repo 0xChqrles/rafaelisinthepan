@@ -303,7 +303,7 @@ export default function HistoryWheel({
 
   // THE REVEAL BUTTON: beside the slot row while it holds a masked hint — measured off the
   // slot row itself once the drum settles on it, on the column's open side.
-  const [revealAt, setRevealAt] = useState<{ left: number; right: number; y: number } | null>(null);
+  const [revealAt, setRevealAt] = useState<{ left: number; right: number } | null>(null);
   const slotMasked = rows[current]?.masked === true && onReveal !== undefined;
   useLayoutEffect(() => {
     const el = slotRef.current;
@@ -311,8 +311,11 @@ export default function HistoryWheel({
       setRevealAt(null);
       return;
     }
-    const r = el.getBoundingClientRect();
-    setRevealAt({ left: r.left, right: r.right, y: r.top + r.height / 2 });
+    // Only the row's SIDES are read here: `current` lands at the start of a glide, so the
+    // row is still travelling when this runs — its x is settled (a mask is always the same
+    // width), its y is not. The key's line is the slot's own, known from the anchor.
+    const row = el.getBoundingClientRect();
+    setRevealAt({ left: row.left, right: row.right });
   }, [slotMasked, current, shift]);
   const reveal = useCallback(() => {
     const { rows: r, onReveal: act } = live.current;
@@ -482,17 +485,22 @@ export default function HistoryWheel({
         <button
           type="button"
           className="wheel-reveal"
-          style={
-            flip
-              ? { top: revealAt.y, right: anchor.width - revealAt.left + REVEAL_GAP }
-              : { top: revealAt.y, left: revealAt.right + REVEAL_GAP }
-          }
+          style={{
+            fontSize: `${small}px`,
+            // The slot's line: the tapped word's own, centred (the column's measured shift
+            // moves the rows, not the slot).
+            top: anchor.wrap.y + anchor.wrap.h / 2,
+            ...(flip
+              ? { right: anchor.width - revealAt.left + REVEAL_GAP }
+              : { left: revealAt.right + REVEAL_GAP }),
+          }}
+          aria-label={`${t(lang, 'reveal')} · 1 ${t(lang, 'try')}`}
           onClick={(e) => {
             e.stopPropagation();
             reveal();
           }}
         >
-          {t(lang, 'reveal')} · 1 {t(lang, 'try')}
+          {t(lang, 'reveal')}
         </button>
       )}
     </dialog>,

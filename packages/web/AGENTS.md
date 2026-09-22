@@ -245,9 +245,11 @@ These are decided and verified against the code. Treat them as load-bearing.
   like any row** — fold on it and the sentence shows `?????²` on the hole's foil, display
   only (user-decided 2026-09-22 on the first cut, where the fold could not pick a mask
   and the hole snapped back to its best word: "it feels weird to have the closest word
-  being back") — and **while the slot holds a mask a REVEAL BUTTON stands beside it**
-  (`.wheel-reveal`, "REVEAL · 1 TRY" / "RÉVÉLER · 1 ESSAI", the one drawn control in the
-  wheel), the one act that spends a try: `HistoryWheel`'s `onReveal` SUBMITS the stop's
+  being back") — and **while the slot holds a mask a REVEAL KEY stands beside it**
+  (`.wheel-reveal`: the KEYBOARD'S ENTER KEY transplanted — a flat solve-cobalt tile, the
+  word in the pixel face at the plain rows' size, on the slot's own line; the chrome
+  button of the first cut was "ugly as hell", user-reviewed the same day; the price is
+  its description, "REVEAL · 1 TRY"), the one act that spends a try: `HistoryWheel`'s `onReveal` SUBMITS the stop's
   key (`HistoryStop.slug`) through the game's own `submit`, so the word enters the play
   log like any typed guess, counts as a try, charges the other holes, syncs, can hit
   another hole (its floats land on the sentence under the dim, which is the point: "we

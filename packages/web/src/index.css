@@ -2976,38 +2976,39 @@ input {
 }
 /* A MASKED hint (user-decided 2026-09-22): the foil under a fixed run of `?` whatever the
    word's length — `MASK` — so a masked row and a masked slot read as a sealed card, and
-   say so. THE REVEAL BUTTON stands beside the slot row while it holds one: the app's
-   button at a row's size in the accent — the one act in the wheel that spends a try, so
-   it is the one drawn control in it. Positioned by the wheel off the slot row's own box. */
+   say so. THE REVEAL KEY stands beside the slot row while it holds one: THE KEYBOARD'S
+   ENTER KEY, transplanted — a flat solve-cobalt tile with the word in the pixel face
+   (user-reviewed 2026-09-22: the chrome button was "ugly as hell"; a reveal is a guess
+   committed, and ENTER is the app's one coloured key for exactly that). A press is a
+   brightness state, the key's own. Sized to the wheel's plain rows (the font size is set
+   inline by the wheel); positioned by the wheel off the slot row's own box. The price is
+   the key's description, and the score's watermark ticking up. */
 .wheel-reveal {
-  --btn: var(--accent);
-  --wash: 14%;
   position: fixed;
   translate: 0 -50%;
   z-index: 1;
   display: inline-flex;
   align-items: center;
-  height: 32px;
-  padding: 0 12px;
-  font-family: var(--ui);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
+  height: 1.5em;
+  padding: 0 0.6em;
+  font-family: var(--pixel-font);
   text-transform: uppercase;
   white-space: nowrap;
   line-height: 1;
-  color: var(--btn);
-  background: color-mix(in srgb, var(--btn) var(--wash), transparent);
-  border: 1px solid var(--btn);
-  border-radius: var(--r-sm);
+  color: var(--fg);
+  background: var(--solve);
+  border: 0;
+  border-radius: var(--r-lg);
   cursor: pointer;
+  text-shadow: none;
   animation: wheel-row-in 120ms ease-out both;
+  transition: filter 0.08s linear;
 }
 .wheel-reveal:hover {
-  --wash: 24%;
+  filter: brightness(1.15);
 }
 .wheel-reveal:active {
-  --wash: 34%;
+  filter: brightness(1.35);
 }
 /* Every plain row's exponent steps clear of its box's right overhang, and a few pixels
    more (user-reported 2026-09-22: "it touches it", then "a few pixel more detached"): the
