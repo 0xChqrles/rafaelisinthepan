@@ -22,7 +22,24 @@
 // rendered as a claim). The box BREATHES only while a read is in flight; a failure rests
 // still, since breathing promises an answer that is no longer coming.
 
+import { useEffect, useState } from 'react';
 import { t } from '../i18n';
+import useAnimatedNumber from '../hooks/useAnimatedNumber';
+
+// A value that LANDS COUNTS UP to itself from zero, the result's own tally gesture — so the
+// numbers read as tallied rather than printed. A zero has nothing to count and simply
+// stands; reduced motion prints the value at once.
+const COUNT_MS = 700;
+
+function CountUp({ value }: { value: number }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => setArmed(true), []);
+  const reduced =
+    typeof window !== 'undefined' &&
+    (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
+  const shown = useAnimatedNumber(armed ? value : 0, reduced ? 0 : COUNT_MS);
+  return <>{Math.round(shown)}</>;
+}
 
 export interface AccountStatsValues {
   streak: number;
@@ -57,7 +74,7 @@ export default function AccountStats({
                 aria-hidden="true"
               />
             ) : (
-              cell.value
+              <CountUp value={cell.value} />
             )}
           </span>
           <span className="account-stat-label">{cell.label}</span>

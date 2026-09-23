@@ -85,18 +85,6 @@ export interface HoleCharge {
   given: GivenRank[];
 }
 
-// The hints a round took, over its distinct secrets (repeated occurrences share a meter).
-export function hintsTaken(freshHoles: readonly RuntimeHole[], charges: readonly HoleCharge[]): number {
-  const seen = new Set<string>();
-  let n = 0;
-  freshHoles.forEach((h, i) => {
-    if (seen.has(h.secret)) return;
-    seen.add(h.secret);
-    n += charges[i].given.filter((g) => g.consumed).length;
-  });
-  return n;
-}
-
 // The whole log replayed onto the holes' meters — the meters as the play log describes
 // them, per hole index. A guess charges every secret whose map ranks it above zero and
 // that is not yet solved; the guess that solves a secret pays it nothing (the solve is the

@@ -523,7 +523,7 @@ export default function Profile() {
       )}
       {load === 'ready' && (
         <div className="profile-screen">
-          <div className="profile-editor">
+          <div className="profile-editor arrive">
             <div className="profile-head">
               {/* The live preview: the drawing at the size a board row will wear it —
                   what the grid below is editing, seen as others will see it. */}

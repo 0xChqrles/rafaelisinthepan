@@ -1,11 +1,5 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type {
-  ChangeEvent,
-  ClipboardEvent,
-  FocusEvent,
-  KeyboardEvent,
-  MutableRefObject,
-} from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import type { ChangeEvent, ClipboardEvent, FocusEvent, MutableRefObject } from 'react';
 import { fold } from '@whippin/shared';
 import { t } from '../i18n';
 import UnlockIcon from '../assets/icons/unlock.svg?react';
@@ -19,6 +13,40 @@ function slugChars(key: string): string {
   if (key === '-') return '-';
   return fold(key);
 }
+
+// A KEYSTROKE THAT MISSED THE FIELD STILL TYPES (user-reported 2026-09-23: "when you press
+// tab to select a button or a key of the keyboard, then you cannot type anymore, and you
+// cannot unselect neither, so you have to refresh"). While the prompt is live, a key that
+// landed somewhere else — a CONTROL the player tabbed to, or the PAGE itself after a click
+// on nothing — is sorted here:
+//   'type'  — the prompt takes it: the field is focused again and the key handled as its own.
+//             A letter or Backspace from anywhere (a button has no use for either), and on
+//             the bare page Enter and the history arrows too.
+//   'focus' — Escape: back to the prompt, typing nothing — the way to UNSELECT a control.
+//   null    — the key stays where it landed: a control keeps its own Enter, Space, Tab and
+//             arrows, so a keyboard player still presses what they tabbed to.
+export type StrayKeyTarget = 'control' | 'page';
+export function strayKey(key: string, on: StrayKeyTarget): 'type' | 'focus' | null {
+  if (key === 'Escape') return 'focus';
+  if (key === 'Backspace' || (key.length === 1 && slugChars(key) !== '')) return 'type';
+  if (on === 'page' && (key === 'Enter' || key === 'ArrowUp' || key === 'ArrowDown')) return 'type';
+  return null;
+}
+
+// What a stray key landed on: another text field or anything inside a dialog is none of the
+// prompt's business (a modal over the sentence, the language drums); a button-like element
+// is a CONTROL; anything else — the body, a plain box — is the PAGE.
+const TEXT_ENTRY = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
+const CONTROL = 'button, a[href], summary, [role="button"], [role="tab"], [role="option"]';
+function strayTarget(target: EventTarget | null): StrayKeyTarget | null {
+  if (!(target instanceof Element)) return 'page';
+  if (target.closest('dialog') || target.closest(TEXT_ENTRY)) return null;
+  return target.closest(CONTROL) ? 'control' : 'page';
+}
+
+// The parts of a key event the prompt reads — a React event on the field, or a native one
+// that landed elsewhere and was handed over.
+type KeyInput = Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'preventDefault'>;
 
 // A TOUCH SCREEN is read the way the rest of the app reads it (`Game`'s history-tap rule):
 // the PRIMARY pointer is coarse. Watched rather than read once, because it can change under a
@@ -93,7 +121,9 @@ interface WordInputProps {
 // keys. Opening the phone's own keyboard is #268's NATIVE switch, which lifts this.
 //
 // The keys are read HERE, on the field, rather than on the document: physical typing is the
-// focused prompt's, so a control the player has tabbed to keeps its own Enter. The spans
+// focused prompt's, so a control the player has tabbed to keeps its own Enter — and a key
+// that MISSED the field is sorted by `strayKey` above, so tabbing away never leaves the
+// guess unreachable. The spans
 // below are the drawing — the field's value said in the pixel face — and are hidden from
 // assistive tech, which reads the field itself.
 // How many letters of a churning ghost are the word's own, from the left — the scramble
@@ -127,6 +157,50 @@ export default function WordInput({
   const historyIndexRef = useRef<number | null>(null);
   const draftRef = useRef<string>('');
 
+  // THE WORD IS SENT: when a submitted guess clears the prompt, a copy of it LIFTS OFF the
+  // line toward the sentence and fades (`.wi-launch`), where it used to simply vanish — the
+  // throw that the hits then land. A clear that is not a submission (a recalled entry
+  // stepping back to an empty draft) sends nothing, and neither does reduced motion.
+  // What the line SHOWS is the typed value, or a hint being uncyphered (`ghostTarget`), so a
+  // revealed hint — a guess like any — lifts off too when it clears; the masked `?????`
+  // alone never does. The copy is cropped at the width the line had (`.wi-text` crops a long
+  // guess's head), so it leaves from exactly what was on screen.
+  const textBox = useRef<HTMLSpanElement>(null);
+  const shown = value || ghostTarget || '';
+  const lastShown = useRef(shown);
+  const lastWidth = useRef(0);
+  const recalling = useRef(false);
+  const [launch, setLaunch] = useState<{
+    text: string;
+    n: number;
+    left: number;
+    top: number;
+    width: number;
+  } | null>(null);
+  useLayoutEffect(() => {
+    const prev = lastShown.current;
+    lastShown.current = shown;
+    const box = textBox.current;
+    const width = lastWidth.current;
+    const recalled = recalling.current;
+    recalling.current = false;
+    if (recalled || shown !== '' || prev.length < 2 || !box) return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    setLaunch((last) => ({
+      text: prev,
+      n: (last?.n ?? 0) + 1,
+      left: box.offsetLeft,
+      top: box.offsetTop,
+      width,
+    }));
+  }, [shown]);
+  // The line's width as it last stood — measured AFTER every render (declared after the
+  // effect above, so that one reads the previous frame's): a hint's decode churns at the
+  // mask's width before it reaches the word's.
+  useLayoutEffect(() => {
+    lastWidth.current = textBox.current?.offsetWidth ?? 0;
+  });
+
   // THE PROMPT TAKES THE KEYBOARD when it becomes the surface that answers it: on mount,
   // and again whenever a modal that covered it closes (a native dialog hands focus back to
   // the control that opened it, which is the hole, not the prompt). Never while inactive —
@@ -135,13 +209,14 @@ export default function WordInput({
     if (active) field.current?.focus({ preventScroll: true });
   }, [active]);
 
-  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+  const onKeyDown = (e: KeyInput) => {
     // Leave browser shortcuts (Cmd/Ctrl/Alt combos) alone — Cmd+V included, which is the
     // paste handler's.
     if (e.metaKey || e.ctrlKey || e.altKey) return;
 
     if (e.key === 'Enter') {
       e.preventDefault();
+      recalling.current = false;
       // History is the persisted `tried` list, updated by the submit handler (a valid
       // guess -> recordGuess). Just reset the recall cursor and submit.
       historyIndexRef.current = null;
@@ -166,20 +241,27 @@ export default function WordInput({
       } else {
         historyIndexRef.current = Math.max(0, historyIndexRef.current - 1);
       }
-      onReplace(history[historyIndexRef.current]);
+      const recalled = history[historyIndexRef.current];
+      // Only a recall that CHANGES the line marks it: one that lands on the value already
+      // there renders nothing, and the flag would outlive it onto the next real submit.
+      if (recalled !== value) recalling.current = true;
+      onReplace(recalled);
       return;
     }
 
     if (e.key === 'ArrowDown') {
       if (historyIndexRef.current === null) return;
       e.preventDefault();
+      let recalled: string;
       if (historyIndexRef.current < history.length - 1) {
         historyIndexRef.current += 1;
-        onReplace(history[historyIndexRef.current]);
+        recalled = history[historyIndexRef.current];
       } else {
         historyIndexRef.current = null;
-        onReplace(draftRef.current);
+        recalled = draftRef.current;
       }
+      if (recalled !== value) recalling.current = true;
+      onReplace(recalled);
       return;
     }
 
@@ -195,6 +277,29 @@ export default function WordInput({
       for (const c of chars) onType(c);
     }
   };
+
+  // A key that missed the field (see `strayKey`): only while the prompt is live — an inactive
+  // one has a disabled field and nothing to type into. The handler is read through a ref, so
+  // the listener stays one subscription while the value it types into moves.
+  const keyHandler = useRef(onKeyDown);
+  keyHandler.current = onKeyDown;
+  useEffect(() => {
+    if (!active) return undefined;
+    const onStrayKey = (e: KeyboardEvent) => {
+      const node = field.current;
+      if (!node || e.target === node || e.defaultPrevented || e.isComposing) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const on = strayTarget(e.target);
+      const route = on === null ? null : strayKey(e.key, on);
+      if (route === null) return;
+      node.focus({ preventScroll: true });
+      // Handled as the field's own key, which `preventDefault`s it — so the focus moving
+      // under this keystroke cannot also let the browser insert it into the field.
+      if (route === 'type') keyHandler.current(e);
+    };
+    window.addEventListener('keydown', onStrayKey);
+    return () => window.removeEventListener('keydown', onStrayKey);
+  }, [active]);
 
   const onPaste = (e: ClipboardEvent<HTMLInputElement>) => {
     const text = e.clipboardData.getData('text');
@@ -247,7 +352,14 @@ export default function WordInput({
   }, [invalidSignal]);
 
   return (
-    <div className={`word-input${shaking ? ' invalid' : ''}`} onAnimationEnd={() => setShaking(false)}>
+    <div
+      className={`word-input${shaking ? ' invalid' : ''}`}
+      // Only the line's OWN shake ends it: a letter landing (`.wi-char`) ends its drop inside,
+      // and that end bubbles here too.
+      onAnimationEnd={(e) => {
+        if (e.target === e.currentTarget) setShaking(false);
+      }}
+    >
       <input
         ref={(node) => {
           field.current = node;
@@ -281,7 +393,7 @@ export default function WordInput({
           nesting is what makes that possible — a single element cannot both clip and overflow
           its own start. It is the field's value DRAWN, so it is hidden from assistive tech:
           the field above is what a screen reader reads the guess from. */}
-      <span className="wi-text" aria-hidden="true">
+      <span ref={textBox} className="wi-text" aria-hidden="true">
         {value === '' && ghost ? (
           <span className="wi-text-run wi-ghost">
             {ghostTarget
@@ -294,10 +406,33 @@ export default function WordInput({
             {!ghostTarget && <UnlockIcon className="wi-lock" aria-hidden="true" />}
           </span>
         ) : (
-          <span className="wi-text-run">{value}</span>
+          <span className="wi-text-run">
+            {/* One box a letter, keyed by its place: a letter typed is a NEW box, so it lands
+                (`.wi-char`), and the ones already there never replay. */}
+            {Array.from(value).map((ch, i) => (
+              <span key={i} className="wi-char">
+                {ch}
+              </span>
+            ))}
+          </span>
         )}
       </span>
-      <span className="wi-cursor" aria-hidden="true">_</span>
+      {/* Keyed on the length: every keystroke restarts the blink, so the caret stands SOLID
+          while the player types and only blinks once they stop — a terminal's caret. */}
+      <span key={`caret:${value.length}`} className="wi-cursor" aria-hidden="true">
+        _
+      </span>
+      {launch && (
+        <span
+          key={`launch:${launch.n}`}
+          className="wi-launch"
+          style={{ left: launch.left, top: launch.top, width: launch.width || undefined }}
+          aria-hidden="true"
+          onAnimationEnd={() => setLaunch(null)}
+        >
+          <span className="wi-text-run">{launch.text}</span>
+        </span>
+      )}
     </div>
   );
 }

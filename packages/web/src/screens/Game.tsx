@@ -32,7 +32,7 @@ import { PLAY_LEVEL } from '../tutorial/levels';
 import LoadError from '../components/LoadError';
 import FlipCountdown from '../components/FlipCountdown';
 import { earlyLocked } from '../game/earlyPlay';
-import { chargeForRank, hintsTaken, replayCharge } from '../game/charge';
+import { chargeForRank, replayCharge } from '../game/charge';
 import { navigate } from '../routing';
 import { pathForDay, pathForGame, pathForLesson } from '../langs';
 import { MASK, buildHistory } from '../game/history';
@@ -844,9 +844,12 @@ function Round({
 
   // Replace the whole input (physical-keyboard history recall). Recalled values are
   // past valid words, hence valid prefixes, so no re-validation is needed.
+  // The value a recall just put in the prompt, so the keyboard strikes no key for it.
+  const recalledInput = useRef<string | null>(null);
   const replaceInput = useCallback((v: string) => {
     if (promptExiting) return;
     setFeedback(null);
+    recalledInput.current = v;
     setInput(v);
   }, [promptExiting]);
 
@@ -1064,7 +1067,6 @@ function Round({
            with the keyboard: nothing left down there to reserve a footprint for. */
         <SolvedScreen
           guessCount={guessCount}
-          hints={hintsTaken(freshHoles, chargeState)}
           trajectory={trajectory}
           dayNumber={dayNumber}
           lang={lang}
@@ -1183,7 +1185,7 @@ function Round({
                  is not done, LEARN under it as THE WORD — the pair reads as one action and its
                  alternative. No copy: the sentence with its holes is on screen, and the lesson
                  is one tap away for whoever wants it explained. */
-              <div className="rules-gate">
+              <div className="rules-gate arrive">
                 <button
                   type="button"
                   className="mix-btn"
@@ -1218,6 +1220,7 @@ function Round({
                   vocabSet={vocabSet}
                   submittable={ghost !== null && decoding === null}
                   locked={decoding !== null || (ghost !== null && input === '')}
+                  recalled={recalledInput}
                   lang={lang}
                   onType={appendChar}
                   onBackspace={deleteChar}

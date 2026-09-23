@@ -42,7 +42,7 @@ export default function Invite({
   }, []);
 
   return (
-    <main className="invite" aria-labelledby="tutorial-invite-title">
+    <main className="invite arrive" aria-labelledby="tutorial-invite-title">
       <Logo className="invite-logo" aria-hidden />
       <h1 id="tutorial-invite-title" className="invite-title">
         {(() => {

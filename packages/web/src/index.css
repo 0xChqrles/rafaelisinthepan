@@ -46,6 +46,9 @@
 }
 
 :root {
+  /* Native surfaces the page does not draw itself — scrollbars, a form control's own
+     chrome — take the dark scheme, so nothing flashes light on the flat ground. */
+  color-scheme: dark;
   /* THE REBRAND PALETTE (user-decided 2026-09-01, superseding the 2026-08-17 stamp-ink
      set): simple, clean, basic — a flat NEAR-BLACK ground, PLAIN WHITE foreground, and
      saturated vivid colours only where they mean something (the accents, the heat
@@ -388,6 +391,13 @@ input {
   }
 }
 
+/* Text a reader selects (the page's excerpt, a name) is held in the accent, the app's own
+   emphasis ink, rather than the browser's system blue. */
+::selection {
+  background: var(--accent);
+  color: var(--fg);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -463,9 +473,10 @@ input {
 
 /* One 7-column grid, shared by the weekday header and the day cells so columns align. */
 .cal-grid {
+  --cal-gap: 6px;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
+  gap: var(--cal-gap);
 }
 .cal-weekdays {
   margin-bottom: 6px;
@@ -490,7 +501,8 @@ input {
    surface. */
 .cal-day {
   position: relative;
-  overflow: hidden;
+  /* NOT `overflow: hidden`: the streak chain's link hangs into the gap past the cell's
+     edge. The ripple, the one thing that needed clipping, rounds itself (`inherit`). */
   aspect-ratio: 1;
   display: flex;
   align-items: center;
@@ -563,6 +575,19 @@ input {
 .cal-day.cal-day-solved {
   color: var(--fg);
 }
+/* THE STREAK IS A CHAIN: a solved day linked to the solved day beside it by a solid
+   cobalt LINK across the gap — a run reads as one thing, the way the week tiles of the
+   streak screen do. Square-cut, the gap's own width, a third of the cell tall. */
+.cal-day-chained::before {
+  content: '';
+  position: absolute;
+  left: 100%;
+  top: calc(50% - 4px);
+  width: var(--cal-gap);
+  height: 8px;
+  background: var(--solve);
+  pointer-events: none;
+}
 .cal-day-num {
   position: relative; /* above the ripple */
   z-index: 1;
@@ -586,6 +611,7 @@ input {
 .cal-ripple {
   position: absolute;
   inset: 0;
+  border-radius: inherit;
   --ripple-dur: 1.5s;
   background-image: url('./assets/ultracode.png');
   background-repeat: no-repeat;
@@ -1065,7 +1091,9 @@ input {
   background: var(--fg);
   border-radius: 1px;
   pointer-events: none;
-  transition: transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* The dot ARRIVES: it runs a hair past the key and settles back under it, so a place
+     changing reads as a landing, not a slide. */
+  transition: transform 300ms cubic-bezier(0.25, 1.4, 0.45, 1);
   will-change: transform;
   z-index: 2;
 }
@@ -1075,6 +1103,16 @@ input {
 }
 .home-btn.on {
   cursor: default;
+}
+/* A key answers the finger: its drawing dips the moment it is pressed and comes back over
+   a beat — the buttons' own instant-press, decaying-release rule, in opacity, the one
+   interaction treatment a full-`--fg` icon has room for. */
+.home-btn > * {
+  transition: opacity 0.22s ease-out;
+}
+.home-btn:not(.on):active > * {
+  opacity: 0.5;
+  transition-duration: 0s;
 }
 
 /* WHICH PUZZLE, as the header's left slot (2026-08-30 — the reasoning is in
@@ -1408,6 +1446,52 @@ input {
 }
 /* The global `button *` flattening would otherwise strip the phrase's drop shadow from
    the holes alone, leaving them lighter than every word around them. */
+/* THE SENTENCE DECODES ITSELF IN (`components/PhraseIntro.tsx` holds the why). A plain
+   word's letters are boxes while it runs — the pixel face's 1em advance, so a box IS the
+   letter's room, and `nowrap` keeps the boxes from adding a break the word never had —
+   hidden until the front reaches them, LANDING a few pixels high in whole-pixel steps,
+   churning in the accent and settling into the sentence's ink. Every fill is `backwards`:
+   a held fill would keep a box its own stacking context under a hole's hit art. */
+.dw-run {
+  white-space: nowrap;
+}
+.dw-letter {
+  display: inline-block;
+}
+.dw-letter.dw-wait {
+  visibility: hidden;
+}
+.dw-letter:not(.dw-wait) {
+  animation: dw-land 80ms steps(2, jump-start) backwards;
+}
+@keyframes dw-land {
+  from {
+    translate: 0 -6px;
+  }
+}
+.dw-letter.dw-churn {
+  color: var(--accent);
+}
+/* A HOLE IS STAMPED IN when the front reaches its first letter (`--at`): hidden until then,
+   its chip lands INVERTED for an instant — the hit's own negative — and its exponent pops.
+   The class goes with the intro, so none of it can replay when the hole's own animations
+   (a hit, the wave) come and go. */
+.phrase-intro > .hole-group {
+  animation: intro-wait 1ms step-end backwards;
+  animation-delay: var(--at, 0ms);
+}
+@keyframes intro-wait {
+  from {
+    visibility: hidden;
+  }
+}
+.phrase-intro .hole:not(.resolved) .hole-word {
+  animation: hole-invert 120ms linear var(--at, 0ms);
+}
+.phrase-intro .hole-rank {
+  animation: rank-pop 0.4s ease-out var(--at, 0ms) backwards;
+}
+
 .phrase .hole-btn,
 .phrase .hole-btn * {
   text-shadow: 2px 2px 0 black;
@@ -2044,6 +2128,48 @@ input {
   flex: 0 0 auto;
   white-space: pre;
 }
+/* A typed letter LANDS: struck down onto the line from a few pixels above, in whole-pixel
+   steps (the pixel face never renders between pixels). Its box is the glyph's own 1em
+   advance, so nothing beside it moves. */
+.wi-char {
+  display: inline-block;
+  animation: wi-char-in 90ms steps(3, jump-start) backwards;
+}
+/* A SENT guess lifts off the line toward the sentence and fades, in whole-pixel steps
+   (WordInput's `launch`): drawn over the prompt, out of flow, so the cleared line under it
+   is already the next guess's. */
+.wi-launch {
+  position: absolute;
+  /* The line's own crop window (`.wi-text`): a long guess leaves with its head cut, as it
+     stood. */
+  display: flex;
+  justify-content: flex-end;
+  overflow: hidden;
+  white-space: pre;
+  pointer-events: none;
+  color: var(--fg);
+  animation: wi-launch 240ms steps(6, jump-start) forwards;
+}
+@keyframes wi-launch {
+  from {
+    opacity: 0.85;
+    translate: 0 0;
+  }
+  to {
+    opacity: 0;
+    translate: 0 -18px;
+  }
+}
+@keyframes wi-char-in {
+  from {
+    opacity: 0.35;
+    translate: 0 -6px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
 /* THE GHOST (user-decided 2026-09-22): a masked hint picked into the sentence stands
    PRE-TYPED in the prompt — `?????` in the accent — and ENTER, lit, submits it: the
    reveal is a guess made from the sentence, where the hole uncyphers into the word as
@@ -2218,7 +2344,8 @@ input {
      too close to the bar). Padding INSIDE the scroller rather than a margin on the
      block, so it scrolls away with the score and the sticky credit still meets the
      scroller's top edge. */
-  padding-top: clamp(20px, 4vh, 40px);
+  --stage-top: clamp(20px, 4vh, 40px);
+  padding-top: var(--stage-top);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2269,6 +2396,7 @@ input {
   padding: 12px;
 }
 .card-well {
+  position: relative;
   box-sizing: border-box;
   width: 100%;
   display: flex;
@@ -2278,6 +2406,26 @@ input {
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 16px;
   padding: clamp(22px, 4vh, 34px) clamp(14px, 3vw, 24px);
+}
+/* THE EDITION: the result's day and its number printed in the well's top corners, the way
+   a numbered collectible carries them (the interfaces.dev card; the desktop frame's
+   `N.<day>` serial) — small tracked mono in the secondary ink, in the room the well's top
+   padding already holds, so nothing below it moves. */
+.card-edition {
+  position: absolute;
+  top: 9px;
+  left: 14px;
+  right: 14px;
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--ui);
+  font-size: 9px;
+  font-weight: 550;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  pointer-events: none;
 }
 @media (max-width: 640px) {
   .card {
@@ -2341,7 +2489,11 @@ input {
    app-wide), reset to nothing but its box: the caption inside keeps its own faces. */
 .solved-source {
   position: sticky;
-  top: 0;
+  /* A sticky box sticks INSIDE its scroller's padding, so `top: 0` held the credit a
+     `--stage-top` below the edge and the text scrolled on, fully visible, through that
+     band above it. Pulled up by exactly the padding, the credit meets the scroller's top
+     edge as intended and the text passes under its ground. */
+  top: calc(-1 * var(--stage-top));
   z-index: 1;
   display: block;
   width: 100%;
@@ -2391,6 +2543,17 @@ input {
   letter-spacing: 0;
   text-transform: none;
   color: var(--muted);
+}
+/* THE END MARK: the page closes the way a printed article does, on a small solid square
+   after its last word — the app's LED square in the accent. It says "this is the whole
+   page" without a word. */
+.solved-text::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-left: 0.4em;
+  background: var(--accent);
 }
 .solved-source + .solved-text {
   margin-top: clamp(14px, 2.6vh, 22px);
@@ -2522,6 +2685,28 @@ input {
   inset: 0;
   text-align: right;
 }
+/* THE COUNT LANDS: when the tally reaches its final number the digits STAMP — lifted a few
+   pixels and set back down in whole-pixel steps, the thud of a counter stopping — and the
+   well's edge flashes and settles back to its whisper. Once, on a played reveal only. */
+.solved-numbers.landed .solved-score-live {
+  animation: score-stamp 180ms steps(3, jump-start) backwards;
+}
+@keyframes score-stamp {
+  from {
+    translate: 0 -6px;
+  }
+  to {
+    translate: 0 0;
+  }
+}
+.solved-numbers.landed .card-well {
+  animation: well-flash 520ms ease-out;
+}
+@keyframes well-flash {
+  from {
+    border-color: rgba(255, 255, 255, 0.4);
+  }
+}
 /* The CAPPED round's headline (#214): `∞` where the count would be. Press Start 2P has no
    such glyph, so it is DRAWN from the shared path data — the same path the OG card draws,
    at the same fraction of the font size — and sized in `em` off `.solved-score-num` so it
@@ -2540,20 +2725,6 @@ input {
   line-height: 1;
   color: var(--fg);
   opacity: 0.8;
-}
-/* THE HINTS TAKEN (user-decided 2026-09-22): a second, quieter unit line under the tries —
-   how many of them were masked words revealed, the price of the help — in the secondary
-   ink, the count in the pixel face like the score it is part of. Zero is drawn. */
-.solved-score-hints {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  line-height: 1;
-  color: var(--muted);
-}
-.solved-score-hints-num {
-  font-family: var(--pixel-font);
-  font-size: 12px;
 }
 /* Run ruler — the PER-TRY STEPPED CELLS, restored 2026-08-18 (the gradient filament
    built that day read as a lightstrip and its flat-rule replacement lost the colours —
@@ -3088,9 +3259,16 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   background: color-mix(in srgb, var(--btn) var(--wash), transparent);
   color: var(--fg);
 }
-/* COPIED lands in the accent's own wash: the primary already is. */
+/* COPIED lands in the accent's own wash: the primary already is — and it lands LIT, the
+   wash flashing deep and settling, so the word swapping in reads as the thing happening. */
 .result-action.copied {
   --btn: var(--accent);
+  animation: copied-flash 480ms ease-out;
+}
+@keyframes copied-flash {
+  from {
+    background-color: color-mix(in srgb, var(--accent) 48%, transparent);
+  }
 }
 /* TOMORROW beside SHARE (#273): two actions share the row as equals — each gives up the
    lone button's floor width and its 40px of air, and takes half the row instead, capped so
@@ -3491,6 +3669,17 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   display: flex;
   justify-content: center;
   gap: var(--kb-gap);
+  /* The pad ARRIVES row by row on the app's one "list arriving" gesture — when the round
+     opens (PLAY, a load, a lesson handing the turn over) the keys rise into the tray the
+     way the drop (`kb-drop`) takes them out of it. The rows are keyed by index and never
+     remount, so a keystroke replays nothing. */
+  animation: rung-in 240ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
+}
+.kb-row:nth-child(2) {
+  animation-delay: 45ms;
+}
+.kb-row:nth-child(3) {
+  animation-delay: 90ms;
 }
 .kb-key {
   flex: none;
@@ -3515,10 +3704,13 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   cursor: pointer;
   text-shadow: none;
   touch-action: manipulation;
-  transition: filter 0.08s linear, color 0.08s linear, background-color 0.08s linear;
+  /* A press lands at once and LETS GO slowly: the transition into `:active` is instant, the
+     way out decays, so even a tap too quick to hold the state reads as a strike. */
+  transition: filter 0.18s ease-out, color 0.08s linear, background-color 0.08s linear;
 }
 .kb-key:not(.kb-greyed):active {
   filter: brightness(1.35);
+  transition-duration: 0s;
 }
 /* Control keys (backspace, enter) are the SAME fixed size as letters, so the last row is a
    uniform row of keys that fits the keyboard width exactly (QWERTY's last row is 10 keys —
@@ -3619,7 +3811,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   border-radius: var(--r-sm);
   text-shadow: none;
   cursor: pointer;
-  transition: background-color 0.1s linear, border-color 0.1s linear, color 0.1s linear;
+  /* The press lands at once and lets go over a beat (the key's own rule): the transition
+     into `:active` is instant, the way back decays, so a quick tap still shows its press. */
+  transition: background-color 0.2s ease-out, border-color 0.2s ease-out, color 0.1s linear;
 }
 .btn-primary:hover:not(:disabled),
 .btn-secondary:hover:not(:disabled),
@@ -3630,6 +3824,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .btn-secondary:active:not(:disabled),
 .mix-btn:active:not(:disabled) {
   --wash: 34%;
+  transition-duration: 0s;
 }
 .btn-primary:disabled,
 .btn-secondary:disabled,
@@ -3990,14 +4185,20 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    driven via useScramble, which honors reduce-motion itself by settling instantly.)
    Delays are KEPT on purpose: the floating distance numbers carry real game information
    and their show/hold/clear rhythm is delay-driven, so with zero durations they still
-   appear (statically), hold, and leave on schedule — no motion, no lost information. */
+   appear (statically), hold, and leave on schedule — no motion, no lost information.
+   TRANSITIONS collapse to 0s, not 0.01ms: nothing waits on `transitionend`, and a nonzero
+   duration forced onto EVERY element turns each one's default `transition: all` into a live
+   transition — an inherited `visibility` flip then reads `hidden` for the frame it lands
+   in, and a `focus()` made in that frame is dropped (the guess prompt took no keyboard
+   after PLAY under reduced motion). A zero duration makes no transition at all; a declared
+   delay still holds its value until it passes. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: 0s !important;
   }
 }
 
@@ -4126,12 +4327,29 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   background-repeat: no-repeat;
   background-size: 800% 100%;
   image-rendering: pixelated;
-  animation: player-idle 0.8s steps(8) infinite;
+  /* It idles, and it HOPS when it has something new to say (the sprite is keyed on the
+     line): up two texels and back down, a pose a frame, the way a sprite jumps. */
+  animation:
+    player-idle 0.8s steps(8) infinite,
+    bot-hop 320ms steps(1);
   pointer-events: none;
 }
 @keyframes player-idle {
   to {
     background-position-x: calc(100% * 8 / 7);
+  }
+}
+@keyframes bot-hop {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  25%,
+  75% {
+    translate: 0 -2px;
+  }
+  50% {
+    translate: 0 -4px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -4239,6 +4457,41 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
 }
 
+/* ARRIVAL — a screen's blocks come in on the rung-in gesture, one after another, top to
+   bottom (`.arrive` on the column whose children they are: the account page, the levels,
+   the invitation, the editor, the notice, an empty board, a missing day). The keyframes
+   name only where a block comes FROM and fill backwards, so the block lands on its own
+   opacity (a quiet line at 0.8 stays at 0.8) and nothing is held after the landing. A
+   dialog child is left alone: it arrives in its own dress. Reduced motion keeps the beats
+   and drops the travel (the global rule). */
+.arrive > :not(dialog) {
+  animation: arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
+}
+.arrive > :nth-child(2) {
+  animation-delay: 45ms;
+}
+.arrive > :nth-child(3) {
+  animation-delay: 90ms;
+}
+.arrive > :nth-child(4) {
+  animation-delay: 135ms;
+}
+.arrive > :nth-child(5) {
+  animation-delay: 180ms;
+}
+.arrive > :nth-child(6) {
+  animation-delay: 225ms;
+}
+.arrive > :nth-child(n + 7) {
+  animation-delay: 270ms;
+}
+@keyframes arrive {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+}
+
 /* The tutorial's ONE action button — MIX, then PLAY — standing where the keyboard will land
    ("the mix button moves down, the keyboard moves up"). Full width of the keyboard's
    footprint.
@@ -4327,6 +4580,17 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   padding: 0.04em 0.22em;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
+  /* Once the title has landed, the selection box is DRAWN across its words, left to right,
+     in hard steps — a highlighter, not a fade. */
+  animation: mark-wipe 320ms steps(8, jump-end) 360ms backwards;
+}
+@keyframes mark-wipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
 }
 .invite-text {
   margin: 12px auto 0;
@@ -6327,19 +6591,17 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   display: block;
 }
 .scope-dot {
-  width: 6px;
+  /* `--grow` is the dot's share of the long mark, written by ScopePager off the scroll
+     position: 0 is a plain dot, 1 the page in the middle. No transition — the scroll IS
+     the animation, and the shares always add up to one long dot, so the row holds still. */
+  width: calc(6px + 12px * var(--grow, 0));
   height: 6px;
   padding: 0;
   border: 0;
   border-radius: 1px;
   background: var(--fg);
-  opacity: 0.28;
+  opacity: calc(0.28 + 0.72 * var(--grow, 0));
   cursor: pointer;
-  transition: width 180ms cubic-bezier(0.2, 1, 0.3, 1), opacity 120ms linear;
-}
-.scope-dot.on {
-  width: 18px;
-  opacity: 1;
 }
 @media (max-width: 400px) {
   .scope-title {
@@ -6572,6 +6834,33 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   mask-size: 100% 100%;
   image-rendering: pixelated;
 }
+/* The ghost FLOATS, the way a sprite idles: two frames, one texel (4px at its 4x) apart,
+   held — never a glide between pixels. It arrives with the block first, then bobs. */
+.arrive > .board-ghost {
+  animation:
+    arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards,
+    ghost-bob 1.6s steps(1) 400ms infinite;
+}
+@keyframes ghost-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .arrive > .board-ghost {
+    animation: none;
+  }
+}
+/* The missing day wears the same ghost: nothing here, said by the drawing that says it on
+   an empty board, in its secondary ink. */
+.no-puzzle-ghost {
+  color: var(--muted);
+  margin-bottom: 8px;
+}
 .board-empty > p {
   margin: 0;
   font-family: var(--ui);
@@ -6635,6 +6924,13 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   /* The pixel face rides high off the mono around it (the standing line's rule):
      whole pixels only, via translate. */
   translate: 0 1px;
+}
+/* FIRST PLACE WEARS THE CROWN: the header's own board mark, at its 2px a cell, in the
+   accent — the trophy blue — in place of `#1`. */
+.board-rank.crown {
+  display: flex;
+  color: var(--accent);
+  translate: 0 -1px;
 }
 .board-name {
   font-family: var(--ui);
@@ -6814,6 +7110,13 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font-size: 20px;
   font-weight: 650;
   letter-spacing: 0.03em;
+  /* The group's name is the landing's HEADLINE, so it wears the app's one emphasis
+     gesture — the inverted box of a screen title and of the invitation's last words —
+     with its case kept, an identity rather than chrome. */
+  padding: 0.14em 0.4em 0.1em;
+  line-height: 1.2;
+  background: var(--fg);
+  color: var(--bg);
 }
 /* The members' marks in a row that wraps, each a small framed tile. */
 .invite-marks {

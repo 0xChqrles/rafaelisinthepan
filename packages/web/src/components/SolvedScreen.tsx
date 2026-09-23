@@ -1,6 +1,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { INFINITY_EM_HEIGHT, INFINITY_EM_WIDTH, INFINITY_GLYPH, type Source } from '@whippin/shared';
+import {
+  INFINITY_EM_HEIGHT,
+  INFINITY_EM_WIDTH,
+  INFINITY_GLYPH,
+  dateForDayNumber,
+  type Source,
+} from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareHeadline, shareText, shareUrl } from '../game/share';
 import RunRuler from './RunRuler';
@@ -112,12 +118,8 @@ export default function SolvedScreen({
   start = true,
   onRevealEnd,
   onTomorrow,
-  hints = 0,
 }: {
   guessCount: number;
-  // The hints the round took (#301's masked words revealed, each a try; user-decided
-  // 2026-09-22): named under the tries, zero included — a clean run says so.
-  hints?: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
   solvedAt?: (number | null)[]; // the player's solve moments (ruler ticks)
   dayNumber: number;
@@ -365,11 +367,25 @@ export default function SolvedScreen({
       className={`solved-stage pixel-scroll${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}
     >
       {/* ---- the SCORE block, at the top: how the round went, and what you do with it. */}
-      <div className={`solved-numbers card${scoreIn ? ' in' : ''}`}>
+      {/* `landed`: the tally just reached its final count on a PLAYED reveal — the number
+          stamps down and the well's edge flashes once (a rehydrated or skipped result never
+          plays it: it has no count to land). */}
+      <div
+        className={`solved-numbers card${scoreIn ? ' in' : ''}${animate && countLanded ? ' landed' : ''}`}
+      >
         {/* THE WELL (2026-09-11): the card's inset panel holds the thing the card is
             about — the number and its run — and the actions are the caption row under it,
             the references' own shape (a preview in a well, a title under it). */}
         <div className="card-well">
+        {/* THE EDITION, printed in the well's top corners like a numbered collectible (the
+            interfaces.dev card the device frame's serial comes from): the day in the one
+            spelling the share card, the title and the URL use, and its edition number,
+            `N.<day>`, the desktop frame's own. What day a result is from, said once, where
+            the result is. */}
+        <span className="card-edition" aria-hidden="true">
+          <span>{dateForDayNumber(dayNumber)}</span>
+          <span>{`N.${dayNumber}`}</span>
+        </span>
         {/* The primary sentence metric. The hidden final value reserves the count's width
             so its tally never moves the content below it — a capped round has no tally to
             reserve for, since `∞` is one fixed shape. (The #271 standing line stood beside
@@ -393,13 +409,6 @@ export default function SolvedScreen({
           </span>
           <span className="solved-score-unit">
             {t(lang, !capped && guessCount === 1 ? 'try' : 'tries')}
-          </span>
-          {/* THE HINTS TAKEN (user-decided 2026-09-22): how many of the tries were masked
-              words revealed from the wheel — the price of the help, said with the score,
-              zero included. */}
-          <span className="solved-score-hints">
-            <span className="solved-score-hints-num">{hints}</span>{' '}
-            {t(lang, hints === 1 ? 'hint' : 'hints')}
           </span>
         </span>
 

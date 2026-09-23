@@ -24,7 +24,7 @@ export default function LoadError({
   actionLabel?: string;
 }) {
   return (
-    <div className="load-error">
+    <div className="load-error arrive">
       <p className="status error">{message}</p>
       <Button variant="secondary" onClick={onRetry}>
         {actionLabel ?? t(lang, 'retry')}

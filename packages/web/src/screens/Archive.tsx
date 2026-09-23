@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { activeDate, progressHeatColor } from '@whippin/shared';
 import PuzzleTitle from '../components/PuzzleTitle';
@@ -144,13 +144,22 @@ export default function Archive({ lang }: { lang: LangCode }) {
         </div>
 
         <div className="cal-grid">
-          {cells.map((date, i) =>
+          {cells.map((date, i, all) =>
             date === null ? (
               // eslint-disable-next-line react/no-array-index-key
               <span key={`pad-${i}`} className="cal-pad" aria-hidden="true" />
             ) : (
               <DayCell
                 key={date}
+                wave={Math.floor(i / 7) + (i % 7)}
+                // THE STREAK IS A CHAIN: a solved day whose next day — beside it, in the same
+                // week — is solved too is linked to it, so a run reads as one thing at a glance.
+                chained={
+                  i % 7 !== 6 &&
+                  all[i + 1] != null &&
+                  isSolved(history, date, today) &&
+                  isSolved(history, all[i + 1] as string, today)
+                }
                 date={date}
                 lang={lang}
                 inRange={date >= FIRST_PUZZLE_DATE && date <= today}
@@ -193,6 +202,18 @@ export default function Archive({ lang }: { lang: LangCode }) {
   );
 }
 
+// Whether a day of the grid is SOLVED as the calendar shows it (in range, and the month's
+// summary says so) — the reading the streak chain links on.
+function isSolved(history: Parameters<typeof daySummaryStatus>[0], date: string, today: string): boolean {
+  return date >= FIRST_PUZZLE_DATE && date <= today && daySummaryStatus(history, date).kind === 'solved';
+}
+
+// The calendar's arrival: the arrive gesture (index.css), one diagonal of days a beat. Only
+// where a day comes FROM is named (offset 0): each lands on its own opacity — a dimmed day
+// on its dim, a waiting one on its breath — rather than flashing full before settling.
+const ARRIVE_FRAMES: Keyframe[] = [{ offset: 0, opacity: 0, translate: '0 10px' }];
+const CELL_WAVE_MS = 22;
+
 // One day: a flat key that navigates to that day's game when in range, disabled (dimmed)
 // otherwise. A day with any reconstruction (>0%) is FILLED with its heat-ramp color
 // (solved = 100%), and its number is drawn in the app background color so it reads on the
@@ -201,6 +222,8 @@ export default function Archive({ lang }: { lang: LangCode }) {
 // (.cal-ripple) — so a validated day differs from an in-progress one by MOTION, not only
 // color. The aria-label speaks the full date + status.
 function DayCell({
+  wave,
+  chained,
   date,
   lang,
   inRange,
@@ -208,6 +231,10 @@ function DayCell({
   status,
   longDate,
 }: {
+  // The cell's place on the grid's DIAGONAL (row + column), the beat it arrives on.
+  wave: number;
+  // Solved, and so is the day beside it: the link into the gap between them.
+  chained: boolean;
   date: string;
   lang: LangCode;
   inRange: boolean;
@@ -237,9 +264,31 @@ function DayCell({
     (unknown ? ' cal-day-unknown' : '') +
     (unknown && shown.loading ? ' cal-day-waiting' : '') +
     (filled ? ' cal-day-filled' : '') +
-    (solved ? ' cal-day-solved' : '');
+    (solved ? ' cal-day-solved' : '') +
+    (chained ? ' cal-day-chained' : '');
+  // THE MONTH ARRIVES AS A WAVE: each day rises in on the grid's diagonal, top-left to
+  // bottom-right, when it mounts — the screen's first frame, and every page to another
+  // month (the days are keyed by date, so a new month is new cells). Played through the
+  // Web Animations API rather than a CSS class because a cell's `animation` is already
+  // spoken for — a day whose month is still loading BREATHES — and a class-driven arrival
+  // would replay the moment the month landed and the breathing stopped.
+  const cell = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    const node = cell.current;
+    if (!node || typeof node.animate !== 'function') return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    node.animate(ARRIVE_FRAMES, {
+      duration: 260,
+      delay: wave * CELL_WAVE_MS,
+      easing: 'cubic-bezier(0.2, 1.3, 0.4, 1)',
+      fill: 'backwards',
+    });
+    // Mount only: the wave is the month's arrival, never a re-render's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <button
+      ref={cell}
       type="button"
       className={className}
       aria-label={`${longDate.format(dateObj)}${srStatus(lang, shown)}`}

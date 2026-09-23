@@ -18,7 +18,7 @@ export default function Learn({ lang }: { lang: LangCode }) {
       <HeaderLeft>
         <LangTitle lang={lang} title={t(lang, 'learnTitle')} to={pathForLearn} />
       </HeaderLeft>
-      <ul className="learn-list">
+      <ul className="learn-list arrive">
         {LEVELS.map((level) => {
           const isDone = done.includes(level.level);
           return (

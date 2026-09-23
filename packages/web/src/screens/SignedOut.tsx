@@ -137,7 +137,7 @@ export default function SignedOut({ lang }: { lang: string }) {
   }
 
   return (
-    <div className="signed-out">
+    <div className="signed-out arrive">
       {account !== null && face?.shown != null && (
         <>
           <Avatar avatar={face.shown.avatar ?? defaultAvatar(account.accountId)} size={64} />
