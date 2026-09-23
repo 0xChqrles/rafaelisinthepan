@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { RankMap, RuntimeHole } from '@whippin/shared';
-import { CHARGE_TARGET, GIVEN, chargeForRank, hintsTaken, replayCharge } from './charge';
+import { CHARGE_TARGET, GIVEN, chargeForRank, replayCharge } from './charge';
 import type { HoleCharge } from './charge';
 import { replayHoles } from './scoring';
 import { buildHistory } from './history';
@@ -241,7 +241,7 @@ describe('the given words — GIVEN of them, drawn once, at the activation', () 
     });
     expect(model.stops.filter((s) => s.masked)).toHaveLength(GIVEN);
     expect(model.stops.find((s) => s.start)).toMatchObject({ given: false, masked: false });
-    expect(hintsTaken(holes(), replayCharge(holes(), RANKS, [...log, 'honnete50']))).toBe(0);
+    expect(consumedOf(replayCharge(holes(), RANKS, [...log, 'honnete50'])[0])).toEqual([]);
   });
 
   it('nothing is given before the activation, whatever the hole did', () => {
@@ -265,8 +265,10 @@ describe('the given words — GIVEN of them, drawn once, at the activation', () 
     const meters = replayCharge(twice, RANKS, [...FOUR, FILLS]);
     expect(meters[2]).toEqual(meters[0]);
     expect(ranksOf(meters[0])).toEqual([2, 3, 4, 6, 7]);
-    // …and the hints are counted once per secret.
-    expect(hintsTaken(twice, replayCharge(twice, RANKS, [...FOUR, FILLS, 'honnete2']))).toBe(1);
+    // …and a hint taken is taken on the ONE meter they share.
+    const after = replayCharge(twice, RANKS, [...FOUR, FILLS, 'honnete2']);
+    expect(consumedOf(after[0])).toEqual([2]);
+    expect(after[2]).toEqual(after[0]);
   });
 });
 
@@ -283,12 +285,5 @@ describe('the hints — masked until guessed, and a guess is what consumes one',
     expect(ranksOf(one)).toEqual(ranksOf(active)); // nothing new given: the hole did not move
     // A repeat in the log is impossible (the play log dedups); a far guess consumes nothing.
     expect(consumedOf(replayCharge(holes(), RANKS, [...FOUR, FILLS, 'honnete2', 'honnete999'])[0])).toEqual([2]);
-  });
-
-  it('hintsTaken sums the consumed hints over the distinct secrets', () => {
-    const none = replayCharge(holes(), RANKS, [...FOUR, FILLS]);
-    expect(hintsTaken(holes(), none)).toBe(0);
-    const two = replayCharge(holes(), RANKS, [...FOUR, FILLS, 'honnete2', 'honnete3']);
-    expect(hintsTaken(holes(), two)).toBe(2);
   });
 });

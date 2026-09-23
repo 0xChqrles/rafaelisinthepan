@@ -32,7 +32,7 @@ import { PLAY_LEVEL } from '../tutorial/levels';
 import LoadError from '../components/LoadError';
 import FlipCountdown from '../components/FlipCountdown';
 import { earlyLocked } from '../game/earlyPlay';
-import { chargeForRank, hintsTaken, replayCharge } from '../game/charge';
+import { chargeForRank, replayCharge } from '../game/charge';
 import { navigate } from '../routing';
 import { pathForDay, pathForGame, pathForLesson } from '../langs';
 import { MASK, buildHistory } from '../game/history';
@@ -1067,7 +1067,6 @@ function Round({
            with the keyboard: nothing left down there to reserve a footprint for. */
         <SolvedScreen
           guessCount={guessCount}
-          hints={hintsTaken(freshHoles, chargeState)}
           trajectory={trajectory}
           dayNumber={dayNumber}
           lang={lang}

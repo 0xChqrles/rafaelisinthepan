@@ -72,6 +72,7 @@ export default function ScopePager({
   onNew: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
+  const dots = useRef<HTMLDivElement>(null);
   // The page nearest the middle RIGHT NOW (the dress follows it as the finger moves).
   const [near, setNear] = useState(active);
   const settle = useRef(0);
@@ -127,6 +128,31 @@ export default function ScopePager({
       return Math.round((-away * (width - title.getBoundingClientRect().width)) / 2);
     });
     pages.forEach((page, i) => page.style.setProperty('--lean', `${leans[i]}px`));
+
+    // THE DOTS FOLLOW THE SCROLL, continuously (user-reported 2026-09-23: "when you
+    // navigate between groups it goes crazy during the animation"). The long dot used to
+    // be a CLASS on the nearest page's dot with a width transition: a glide across three
+    // groups flipped it on every page it passed — jumping to the target first, back, then
+    // walking — and the widths animating against each other changed the row's width, so
+    // the centred row slid under them. Now the scroll position, as a FRACTIONAL page, lends
+    // each dot its share of the length (`--grow`, 1 on the page in the middle, 0 a page
+    // away and beyond): the shares always sum to one long dot, so the row never changes
+    // width, and the length flows from dot to dot exactly as far as the pages have moved.
+    const centres = pages.map((page) => centreOf(el, page));
+    let at = 0;
+    if (centres.length > 1 && mid > centres[0]) {
+      const last = centres.length - 1;
+      if (mid >= centres[last]) at = last;
+      else {
+        let i = 0;
+        while (i < last - 1 && mid > centres[i + 1]) i += 1;
+        at = i + (mid - centres[i]) / (centres[i + 1] - centres[i]);
+      }
+    }
+    const marks = dots.current ? (Array.from(dots.current.children) as HTMLElement[]) : [];
+    marks.slice(0, pages.length).forEach((dot, i) => {
+      dot.style.setProperty('--grow', String(Math.max(0, 1 - Math.abs(at - i))));
+    });
   };
 
   // Open ON the held page, before paint; glide there when the caller moves it later (a
@@ -136,7 +162,9 @@ export default function ScopePager({
     held.current = active;
     scrollTo(active, mounted.current && !prefersReducedMotion() ? 'smooth' : 'instant');
     mounted.current = true;
-    setNear(active);
+    // What is in the middle NOW: the held page after a cut, still the page being left at
+    // the start of a glide — whose own scroll then carries the dress across, never ahead.
+    setNear(nearest());
     place();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, scopes.length]);
@@ -227,7 +255,7 @@ export default function ScopePager({
           );
         })}
       </div>
-      <div className="scope-dots" role="tablist" aria-label={t(lang, 'ariaLeaderboard')}>
+      <div className="scope-dots" ref={dots} role="tablist" aria-label={t(lang, 'ariaLeaderboard')}>
         {scopes.map((scope, i) => (
           <button
             key={scope.key}
@@ -236,7 +264,7 @@ export default function ScopePager({
             aria-selected={i === active}
             aria-label={scope.title}
             tabIndex={-1}
-            className={`scope-dot${i === near ? ' on' : ''}`}
+            className="scope-dot"
             onClick={() => onChange(i)}
           />
         ))}

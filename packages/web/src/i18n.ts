@@ -370,8 +370,6 @@ const STRINGS = {
   // A masked hint picked into the sentence: what ENTER does then (the prompt's description).
   reveal: { en: 'REVEAL', fr: 'RÉVÉLER' },
   // The hints a round took, beside its tries on the result (user-decided 2026-09-22).
-  hint: { en: 'HINT', fr: 'INDICE' },
-  hints: { en: 'HINTS', fr: 'INDICES' },
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
   // raise a question it can't answer. Pointer-aware: coarse pointers read TAP.

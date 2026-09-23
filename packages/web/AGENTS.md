@@ -283,10 +283,13 @@ These are decided and verified against the code. Treat them as load-bearing.
   the player had ALREADY reached is never given (they knew the word) — the next farther
   one is given in its place. **THE HINTS TAKEN are
   derived from the log** (`GivenRank.consumed`: a given rank guessed after it was given —
-  typed by hand counts the same, "it's on them"; `hintsTaken` sums them over the distinct
-  secrets) and NAMED ON THE RESULT under the tries, zero included (`.solved-score-hints`,
-  `N HINTS` / `N INDICES`); the share card and token carry no hint count (a v7 token is a
-  separate decision). No separate try/time gate, no charge-specific dedup or farming rule:
+  typed by hand counts the same, "it's on them") and **NO COUNT OF THEM IS DISPLAYED
+  ANYWHERE** (user-decided 2026-09-23: "remove the hint count on the card and anywhere
+  else… on the frontend side, just don't display it anywhere", retiring the `N HINTS` /
+  `N INDICES` line under the tries, `hintsTaken` and `.solved-score-hints`; the server
+  keeps the log, so a count can be derived again the day it returns). The words grid still
+  marks WHICH words were hints (the foil). The share card and token carry no hint count
+  either. No separate try/time gate, no charge-specific dedup or farming rule:
   the play log's own canonical identity is what a counted guess is. **DERIVED from the
   play log, never persisted — THE SERVER STORES NOTHING FOR IT** (the user's "store the
   closest rank at activation" was declined as a second copy of a fact the log states):
