@@ -447,7 +447,11 @@ export default function Hole({
           key={rankPop}
           className={`hole-rank${rankPopActive ? ' rank-pop' : ''}`}
           style={rankStyle}
-          onAnimationEnd={() => setRankPopActive(false)}
+          // Its own pop only: the sparks it throws (`::before`) end first, and ending the pop
+          // on theirs would clip its last frames.
+          onAnimationEnd={(e) => {
+            if (!e.pseudoElement) setRankPopActive(false);
+          }}
         >
           {shownRank}
         </sup>

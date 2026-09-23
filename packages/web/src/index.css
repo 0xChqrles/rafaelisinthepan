@@ -1902,14 +1902,70 @@ input {
 /* Rank decrease: the exponent rolls toward its new value (see useAnimatedNumber)
    and uses the same quick scale/unscale hop as the tutorial. */
 .hole-rank.rank-pop {
+  position: relative;
   animation: rank-pop 0.4s ease-out;
 }
+/* A NEW BEST THROWS SPARKS (2026-09-23, the loot's arrival): seven flat pixel squares out
+   of the exponent as it pops, in its own ink — white at the hit, cooling with it — stepped
+   out and gone. They are the exponent's own pseudo-element, so they ride it when the
+   word's new length rewraps the line under them. Squares by `box-shadow` copies of one
+   invisible square: geometry, not a shadow — no blur, no spread. */
+.hole-rank.rank-pop::before {
+  /* Sized in PIXELS, not off the exponent's own small em (a 2px speck at a phone's size):
+     the thrown number's own pixel scale, and a reach past the exponent's box. */
+  --spark: 4px;
+  --spark-r: 26px;
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--spark);
+  height: var(--spark);
+  translate: -50% -50%;
+  pointer-events: none;
+  animation: rank-spark 380ms steps(5, jump-end) forwards;
+}
+@media (max-width: 640px) {
+  .hole-rank.rank-pop::before {
+    --spark: 3px;
+    --spark-r: 20px;
+  }
+}
+@keyframes rank-spark {
+  from {
+    opacity: 1;
+    box-shadow:
+      0 calc(var(--spark-r) * -0.3) currentColor,
+      calc(var(--spark-r) * 0.25) calc(var(--spark-r) * -0.2) currentColor,
+      calc(var(--spark-r) * 0.3) 0 currentColor,
+      calc(var(--spark-r) * 0.15) calc(var(--spark-r) * 0.25) currentColor,
+      calc(var(--spark-r) * -0.15) calc(var(--spark-r) * 0.25) currentColor,
+      calc(var(--spark-r) * -0.3) 0 currentColor,
+      calc(var(--spark-r) * -0.25) calc(var(--spark-r) * -0.2) currentColor;
+  }
+  to {
+    opacity: 0;
+    box-shadow:
+      0 calc(var(--spark-r) * -1.05) currentColor,
+      calc(var(--spark-r) * 0.8) calc(var(--spark-r) * -0.62) currentColor,
+      calc(var(--spark-r) * 1.02) calc(var(--spark-r) * 0.18) currentColor,
+      calc(var(--spark-r) * 0.42) calc(var(--spark-r) * 0.9) currentColor,
+      calc(var(--spark-r) * -0.5) calc(var(--spark-r) * 0.95) currentColor,
+      calc(var(--spark-r) * -1) calc(var(--spark-r) * 0.2) currentColor,
+      calc(var(--spark-r) * -0.8) calc(var(--spark-r) * -0.7) currentColor;
+  }
+}
 @keyframes rank-pop {
+  /* The exponent takes the hit WHITE at the top of its hop and cools back into its heat
+     (the colour the keyframes leave out is the exponent's own) — the flash every number
+     wears when it lands (2026-09-23). */
   0% {
     transform: translateY(0) scale(1);
+    color: var(--fg);
   }
   30% {
     transform: translateY(-3px) scale(1.6);
+    color: var(--fg);
   }
   100% {
     transform: translateY(0) scale(1);
@@ -2000,6 +2056,8 @@ input {
   55% {
     opacity: 1;
     transform: translate(-50%, calc(-50% - 10px)) scale(1.35) rotate(2deg);
+    /* The hit flash: white at the top of the spring, cooling into its colour. */
+    color: var(--fg);
   }
   100% {
     opacity: 1;
@@ -4840,6 +4898,26 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   letter-spacing: normal;
   pointer-events: none;
   opacity: 0;
+}
+/* On the perch the number IDLES: a two-frame bob, 2px, the way a sprite breathes — alive,
+   and still readable. It starts once the rise has landed (`--bob-at`, Loot's beat). */
+.loot-face {
+  display: inline-block;
+  animation: loot-bob 560ms steps(1) infinite;
+  animation-delay: var(--bob-at, 0ms);
+}
+@keyframes loot-bob {
+  0% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -2px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loot-face {
+    animation: none;
+  }
 }
 @media (max-width: 640px) {
   /* One integer step down here — 4x rather than 5x. At 320px the page leaves 292px of

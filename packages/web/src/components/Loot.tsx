@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { rankHeatColor } from '@whippin/shared';
-import { prefersReducedMotion } from '../hooks/useScramble';
+import { SCRAMBLE_TICK_MS, prefersReducedMotion } from '../hooks/useScramble';
 
 // The LOOT a cut knocks out of a hole (#301, user-decided 2026-09-15, "the same exponent
 // animation"): the guess's rank, in the heat colour every exponent wears, popping out of
@@ -22,6 +22,14 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 //      drops away through the word and fades, the batch leaving together.
 // No `scale` and no tilt: the pixel face renders blurred between pixels (the standing
 // rule), and a rotated number is harder to read, which is this piece's whole job.
+//
+// THE JUICE ON EACH BEAT (user-asked 2026-09-23, "make the exponent animation more juicy"):
+// the POP is a hit — the number comes out WHITE for two frames (the fighting-game hit
+// flash) and its digits ROLL like dice, settling left to right, as it rises (the churn every
+// changing word in this game speaks, in digits); on the perch it IDLES, a two-frame 2px bob,
+// a sprite breathing; and a new best ARRIVES in the exponent, which takes the hit white and
+// throws its sparks (`.hole-rank.rank-pop`, on the exponent itself so they ride it when the
+// word's new length rewraps the line). Each is a state or a whole-pixel step, never a glow.
 const RISE_MS = 260;
 const INTO_MS = 240;
 const DROP_MS = 380;
@@ -33,11 +41,22 @@ const LEAN_MAX_PX = 10;
 const CHIP_HALF_EM = 1.267 / 2;
 
 const POP = 'cubic-bezier(0.2, 1.45, 0.4, 1)';
+// The hit flash: the number's first frames in white.
+const FLASH_MS = 80;
+const DIGITS = '0123456789';
 
 // When the loot is over, from mount: an improving number arrives exactly on the release;
 // any other one leaves on it and drops for DROP_MS.
 export function lootEndMs(releaseMs: number, improves: boolean): number {
   return improves ? releaseMs : releaseMs + DROP_MS;
+}
+
+// A digit string rolling toward `target`: the first `settled` digits are the target's, the
+// rest random — the scramble's own left-to-right settle, in digits.
+function rollFrame(target: string, settled: number): string {
+  let out = target.slice(0, settled);
+  for (let i = settled; i < target.length; i += 1) out += DIGITS[Math.floor(Math.random() * 10)];
+  return out;
 }
 
 export default function Loot({
@@ -59,6 +78,31 @@ export default function Loot({
   onDone?: (id: number) => void;
 }) {
   const node = useRef<HTMLSpanElement>(null);
+  const target = String(rank);
+  // The digits on screen: rolling during the rise, the rank once it perches.
+  const [shown, setShown] = useState(target);
+
+  useEffect(() => {
+    if (prefersReducedMotion() || target.length === 0) return undefined;
+    const steps = Math.max(1, Math.round(RISE_MS / SCRAMBLE_TICK_MS));
+    let step = 0;
+    let interval = 0;
+    const begin = window.setTimeout(() => {
+      setShown(rollFrame(target, 0));
+      interval = window.setInterval(() => {
+        step += 1;
+        if (step >= steps) {
+          window.clearInterval(interval);
+          setShown(target);
+        } else setShown(rollFrame(target, Math.floor((step / steps) * target.length)));
+      }, SCRAMBLE_TICK_MS);
+    }, delayMs);
+    return () => {
+      window.clearTimeout(begin);
+      window.clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   useEffect(() => {
     const t = setTimeout(() => onDone && onDone(id), lootEndMs(releaseMs, improves));
@@ -117,13 +161,20 @@ export default function Loot({
         : { offset: 1, opacity: 0, translate: `${Math.round(lean * 1.6)}px ${Math.round(word * 0.5)}px` },
     ];
     const flight = el.animate(frames, { duration: total, delay: delayMs });
-    return () => flight.cancel();
+    const flash = el.animate([{ color: '#ffffff' }, { color: '#ffffff' }], { duration: FLASH_MS, delay: delayMs });
+    return () => {
+      flight.cancel();
+      flash.cancel();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   return (
     <span ref={node} className="loot" style={{ color: rankHeatColor(rank) }} aria-hidden="true">
-      {String(rank)}
+      {/* The bob starts on the perch, once the rise has landed. */}
+      <span className="loot-face" style={{ '--bob-at': `${delayMs + RISE_MS}ms` } as CSSProperties}>
+        {shown}
+      </span>
     </span>
   );
 }
