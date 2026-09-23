@@ -231,7 +231,9 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   rules` sections into the prompts at run time. Edit the skill, never a prompt copy.
 - **The transport is the benchmark's** (`llm_play._agent_sdk_turn`, the paid-Claude.ai
   guard, the conflict-env scrub): one fresh conversation per question, model
-  `claude-opus-5`, adaptive thinking, effort `high`. No second spelling of it here.
+  `claude-opus-5-5`, adaptive thinking, effort `high` (set explicitly: Opus 5.5 defaults to
+  `medium`). Opus 5.5 needs the Agent SDK >= 0.2.159 (its bundled CLI >= 2.1.280; an older
+  one refuses the model). No second spelling of it here.
 - **`gen_phrase` is the only writer of a puzzle**, run headless from this package with
   `--words` and, when it demands one, `--form` answered by the model from the sentence
   (`curate.generate` parses the #133 error's analysis list). Nothing here publishes.

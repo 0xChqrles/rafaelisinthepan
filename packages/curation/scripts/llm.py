@@ -20,7 +20,7 @@ from llm_play import (
     validate_anthropic_subscription_auth,
 )
 
-MODEL = "claude-opus-5"
+MODEL = "claude-opus-5-5"
 EFFORT = "high"
 
 _JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
