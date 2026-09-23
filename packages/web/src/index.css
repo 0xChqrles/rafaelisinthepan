@@ -1446,23 +1446,50 @@ input {
 }
 /* The global `button *` flattening would otherwise strip the phrase's drop shadow from
    the holes alone, leaving them lighter than every word around them. */
-/* The sentence PRINTS ITSELF on arrival (Phrase's `.phrase-print`): each word fades in on
-   its own beat, left to right — opacity only, so no letter ever moves. Only the top-level
-   words carry `--wi`; a hole's prefix and suffix ride their group's beat. */
-.phrase-print > .word,
-.phrase-print > .hole-group {
-  /* `backwards`, never `both`: a fill held after the print would keep every word its own
-     stacking context, and the later words would paint over a hole's cut, float and loot. */
-  animation: phrase-print 260ms ease-out backwards;
-  animation-delay: calc(var(--wi, 0) * 22ms);
+/* THE SENTENCE DECODES ITSELF IN (`components/PhraseIntro.tsx` holds the why). A plain
+   word's letters are boxes while it runs — the pixel face's 1em advance, so a box IS the
+   letter's room, and `nowrap` keeps the boxes from adding a break the word never had —
+   hidden until the front reaches them, LANDING a few pixels high in whole-pixel steps,
+   churning in the accent and settling into the sentence's ink. Every fill is `backwards`:
+   a held fill would keep a box its own stacking context under a hole's hit art. */
+.dw-run {
+  white-space: nowrap;
 }
-@keyframes phrase-print {
+.dw-letter {
+  display: inline-block;
+}
+.dw-letter.dw-wait {
+  visibility: hidden;
+}
+.dw-letter:not(.dw-wait) {
+  animation: dw-land 80ms steps(2, jump-start) backwards;
+}
+@keyframes dw-land {
   from {
-    opacity: 0;
+    translate: 0 -6px;
   }
-  to {
-    opacity: 1;
+}
+.dw-letter.dw-churn {
+  color: var(--accent);
+}
+/* A HOLE IS STAMPED IN when the front reaches its first letter (`--at`): hidden until then,
+   its chip lands INVERTED for an instant — the hit's own negative — and its exponent pops.
+   The class goes with the intro, so none of it can replay when the hole's own animations
+   (a hit, the wave) come and go. */
+.phrase-intro > .hole-group {
+  animation: intro-wait 1ms step-end backwards;
+  animation-delay: var(--at, 0ms);
+}
+@keyframes intro-wait {
+  from {
+    visibility: hidden;
   }
+}
+.phrase-intro .hole:not(.resolved) .hole-word {
+  animation: hole-invert 120ms linear var(--at, 0ms);
+}
+.phrase-intro .hole-rank {
+  animation: rank-pop 0.4s ease-out var(--at, 0ms) backwards;
 }
 
 .phrase .hole-btn,

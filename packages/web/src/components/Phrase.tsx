@@ -1,5 +1,6 @@
 import { Fragment, type CSSProperties } from 'react';
 import Hole, { type HoleChargeView } from './Hole';
+import { DecodeWord, introPlan, useIntroClock } from './PhraseIntro';
 import { capitalize, sentenceStarts } from '../game/sentenceCase';
 import type { HitState, Hole as PuzzleHole, RuntimeHole } from '@whippin/shared';
 
@@ -57,16 +58,34 @@ export default function Phrase({
   const hintId = (holeIndex: number) => `hole-explore-${holeIndex}`;
   const chargeId = (holeIndex: number) => `hole-charge-${holeIndex}`;
 
-  // THE SENTENCE PRINTS ITSELF when it arrives: every word fades in on its own beat, left
-  // to right (`.phrase-print`, the word's index as `--wi`). Opacity alone — a word is an
-  // inline box, and nothing here may move a letter. Keyed on the words, so a new sentence
-  // (a lesson's next stage) prints again, and nothing else ever replays it. The dissolve's
-  // copy of the sentence (`DissolvePhrase`) wears `.phrase` without it, and stays still.
-  const order = (i: number) => ({ '--wi': i }) as CSSProperties;
+  // THE SENTENCE DECODES ITSELF IN when it arrives (`PhraseIntro` holds the why): a front
+  // sweeps it left to right, a plain word's letters churning into place as it passes, a hole
+  // stamped in at its own letter (`--at`, `.phrase-intro`). Each token's place on that
+  // front is the count of the letters before it. Keyed on the words, so a new sentence (a
+  // lesson's next stage) decodes again and nothing else ever replays it; the dissolve's copy
+  // of the sentence (`DissolvePhrase`) is a component of its own and never decodes.
+  const key = words.join(' ');
+  const shownText = (w: string, i: number) => (starts[i] ? capitalize(w) : w);
+  const tokenText = (w: string, i: number) => {
+    const idx = holeIndexByPos.get(i);
+    if (idx === undefined) return shownText(w, i);
+    const { prefix, suffix } = puzzleHoleByPos.get(i) ?? {};
+    return `${prefix ?? ''}${holes[idx].word}${suffix ?? ''}`;
+  };
+  const firsts: number[] = [];
+  let letters = 0;
+  words.forEach((w, i) => {
+    firsts.push(letters);
+    letters += tokenText(w, i).replace(/\s/g, '').length;
+  });
+  const plan = introPlan(letters);
+  const intro = useIntroClock(key, plan.totalMs);
+  const beat = (i: number) =>
+    intro.running ? ({ '--at': `${Math.round(firsts[i] * plan.charMs)}ms` } as CSSProperties) : undefined;
 
   return (
     <>
-    <p className="phrase phrase-print" key={words.join(' ')}>
+    <p className={`phrase${intro.running ? ' phrase-intro' : ''}`} key={key}>
       {words.map((w, i) => {
         const space = i > 0 ? ' ' : '';
         const idx = holeIndexByPos.get(i);
@@ -88,7 +107,7 @@ export default function Phrase({
           return (
             <Fragment key={i}>
               {space}
-              <span className="hole-group" style={order(i)}>
+              <span className="hole-group" style={beat(i)}>
                 {prefix ? (
                   <span className="word">{starts[i] ? capitalize(prefix) : prefix}</span>
                 ) : null}
@@ -121,8 +140,12 @@ export default function Phrase({
         return (
           <Fragment key={i}>
             {space}
-            <span className="word" style={order(i)}>
-              {starts[i] ? capitalize(w) : w}
+            <span className="word">
+              {intro.running ? (
+                <DecodeWord text={shownText(w, i)} first={firsts[i]} plan={plan} clock={intro} />
+              ) : (
+                shownText(w, i)
+              )}
             </span>
           </Fragment>
         );

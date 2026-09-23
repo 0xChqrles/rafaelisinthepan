@@ -84,6 +84,9 @@ function beatOf(cx: number, cy: number): number {
 // The lit cells of a drawing, keyed by their DOCUMENT position (whole pixels), so the next
 // count can tell which cells it shares with this one.
 type Drawn = { value: number; px: number; cells: Set<string> };
+// The drawing before the first: no cells, and any cell size (`px` -1), so the first count
+// flips in from nothing.
+const ARRIVAL: Drawn = { value: -1, px: -1, cells: new Set() };
 
 let masksPromise: Promise<Mask[]> | null = null;
 
@@ -150,11 +153,12 @@ export default function CellDigits({ value }: { value: number }) {
     const parent = canvas?.parentElement;
     if (!canvas || !parent || !masks) return;
 
-    // A count that MOVED since the last drawing flips from it (never the first drawing, a
-    // remount, or under reduced motion).
-    const from = drawn.current;
+    // A count that MOVED since the last drawing flips from it; the FIRST drawing flips in
+    // from nothing — the number materializing cell by cell with the sentence decoding over
+    // it (`PhraseIntro`). Never under reduced motion.
+    const from = drawn.current ?? ARRIVAL;
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-    let flip = from !== null && from.value !== value && !reduced ? { from, start: performance.now() } : null;
+    let flip = from.value !== value && !reduced ? { from, start: performance.now() } : null;
     let frame = 0;
 
     // draw() is cheap to call speculatively: it recomputes the layout signature and
@@ -251,7 +255,7 @@ export default function CellDigits({ value }: { value: number }) {
       // size): every block in ONE path, filled ONCE.
       const active = flip;
       ctx.fillStyle = color;
-      if (!active || active.from.px !== px || t >= FLIP_STAGGER_MS + FLIP_SETTLE_MS) {
+      if (!active || (active.from.px !== px && active.from.px !== -1) || t >= FLIP_STAGGER_MS + FLIP_SETTLE_MS) {
         flip = null;
         const path = new Path2D();
         for (const [cx, cy] of lit) path.rect(cx, cy, px, px);
