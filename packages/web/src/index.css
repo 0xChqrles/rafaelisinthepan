@@ -46,6 +46,9 @@
 }
 
 :root {
+  /* Native surfaces the page does not draw itself — scrollbars, a form control's own
+     chrome — take the dark scheme, so nothing flashes light on the flat ground. */
+  color-scheme: dark;
   /* THE REBRAND PALETTE (user-decided 2026-09-01, superseding the 2026-08-17 stamp-ink
      set): simple, clean, basic — a flat NEAR-BLACK ground, PLAIN WHITE foreground, and
      saturated vivid colours only where they mean something (the accents, the heat
@@ -388,6 +391,13 @@ input {
   }
 }
 
+/* Text a reader selects (the page's excerpt, a name) is held in the accent, the app's own
+   emphasis ink, rather than the browser's system blue. */
+::selection {
+  background: var(--accent);
+  color: var(--fg);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -463,9 +473,10 @@ input {
 
 /* One 7-column grid, shared by the weekday header and the day cells so columns align. */
 .cal-grid {
+  --cal-gap: 6px;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
+  gap: var(--cal-gap);
 }
 .cal-weekdays {
   margin-bottom: 6px;
@@ -490,7 +501,8 @@ input {
    surface. */
 .cal-day {
   position: relative;
-  overflow: hidden;
+  /* NOT `overflow: hidden`: the streak chain's link hangs into the gap past the cell's
+     edge. The ripple, the one thing that needed clipping, rounds itself (`inherit`). */
   aspect-ratio: 1;
   display: flex;
   align-items: center;
@@ -563,6 +575,19 @@ input {
 .cal-day.cal-day-solved {
   color: var(--fg);
 }
+/* THE STREAK IS A CHAIN: a solved day linked to the solved day beside it by a solid
+   cobalt LINK across the gap — a run reads as one thing, the way the week tiles of the
+   streak screen do. Square-cut, the gap's own width, a third of the cell tall. */
+.cal-day-chained::before {
+  content: '';
+  position: absolute;
+  left: 100%;
+  top: calc(50% - 4px);
+  width: var(--cal-gap);
+  height: 8px;
+  background: var(--solve);
+  pointer-events: none;
+}
 .cal-day-num {
   position: relative; /* above the ripple */
   z-index: 1;
@@ -586,6 +611,7 @@ input {
 .cal-ripple {
   position: absolute;
   inset: 0;
+  border-radius: inherit;
   --ripple-dur: 1.5s;
   background-image: url('./assets/ultracode.png');
   background-repeat: no-repeat;
@@ -2291,7 +2317,8 @@ input {
      too close to the bar). Padding INSIDE the scroller rather than a margin on the
      block, so it scrolls away with the score and the sticky credit still meets the
      scroller's top edge. */
-  padding-top: clamp(20px, 4vh, 40px);
+  --stage-top: clamp(20px, 4vh, 40px);
+  padding-top: var(--stage-top);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2342,6 +2369,7 @@ input {
   padding: 12px;
 }
 .card-well {
+  position: relative;
   box-sizing: border-box;
   width: 100%;
   display: flex;
@@ -2351,6 +2379,26 @@ input {
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 16px;
   padding: clamp(22px, 4vh, 34px) clamp(14px, 3vw, 24px);
+}
+/* THE EDITION: the result's day and its number printed in the well's top corners, the way
+   a numbered collectible carries them (the interfaces.dev card; the desktop frame's
+   `N.<day>` serial) — small tracked mono in the secondary ink, in the room the well's top
+   padding already holds, so nothing below it moves. */
+.card-edition {
+  position: absolute;
+  top: 9px;
+  left: 14px;
+  right: 14px;
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--ui);
+  font-size: 9px;
+  font-weight: 550;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  pointer-events: none;
 }
 @media (max-width: 640px) {
   .card {
@@ -2414,7 +2462,11 @@ input {
    app-wide), reset to nothing but its box: the caption inside keeps its own faces. */
 .solved-source {
   position: sticky;
-  top: 0;
+  /* A sticky box sticks INSIDE its scroller's padding, so `top: 0` held the credit a
+     `--stage-top` below the edge and the text scrolled on, fully visible, through that
+     band above it. Pulled up by exactly the padding, the credit meets the scroller's top
+     edge as intended and the text passes under its ground. */
+  top: calc(-1 * var(--stage-top));
   z-index: 1;
   display: block;
   width: 100%;
@@ -2464,6 +2516,17 @@ input {
   letter-spacing: 0;
   text-transform: none;
   color: var(--muted);
+}
+/* THE END MARK: the page closes the way a printed article does, on a small solid square
+   after its last word — the app's LED square in the accent. It says "this is the whole
+   page" without a word. */
+.solved-text::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-left: 0.4em;
+  background: var(--accent);
 }
 .solved-source + .solved-text {
   margin-top: clamp(14px, 2.6vh, 22px);
@@ -6762,7 +6825,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 /* The ghost FLOATS, the way a sprite idles: two frames, one texel (4px at its 4x) apart,
    held — never a glide between pixels. It arrives with the block first, then bobs. */
-.board-empty.arrive > .board-ghost {
+.arrive > .board-ghost {
   animation:
     arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards,
     ghost-bob 1.6s steps(1) 400ms infinite;
@@ -6777,9 +6840,15 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .board-empty.arrive > .board-ghost {
+  .arrive > .board-ghost {
     animation: none;
   }
+}
+/* The missing day wears the same ghost: nothing here, said by the drawing that says it on
+   an empty board, in its secondary ink. */
+.no-puzzle-ghost {
+  color: var(--muted);
+  margin-bottom: 8px;
 }
 .board-empty > p {
   margin: 0;
@@ -6844,6 +6913,13 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   /* The pixel face rides high off the mono around it (the standing line's rule):
      whole pixels only, via translate. */
   translate: 0 1px;
+}
+/* FIRST PLACE WEARS THE CROWN: the header's own board mark, at its 2px a cell, in the
+   accent — the trophy blue — in place of `#1`. */
+.board-rank.crown {
+  display: flex;
+  color: var(--accent);
+  translate: 0 -1px;
 }
 .board-name {
   font-family: var(--ui);
@@ -7023,6 +7099,13 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font-size: 20px;
   font-weight: 650;
   letter-spacing: 0.03em;
+  /* The group's name is the landing's HEADLINE, so it wears the app's one emphasis
+     gesture — the inverted box of a screen title and of the invitation's last words —
+     with its case kept, an identity rather than chrome. */
+  padding: 0.14em 0.4em 0.1em;
+  line-height: 1.2;
+  background: var(--fg);
+  color: var(--bg);
 }
 /* The members' marks in a row that wraps, each a small framed tile. */
 .invite-marks {

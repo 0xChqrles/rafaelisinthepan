@@ -25,6 +25,7 @@ import {
   readGroup,
 } from '../api';
 import Avatar from '../components/Avatar';
+import CrownIcon from '../assets/icons/board.svg?react';
 import ConfirmScreen from '../components/ConfirmScreen';
 import GroupCreate from '../components/GroupCreate';
 import GroupScreen from '../components/GroupScreen';
@@ -698,6 +699,20 @@ function PeriodList({
   );
 }
 
+// A row's rank: `#N` in the quiet pixel face — and FIRST PLACE WEARS THE CROWN instead, the
+// header's own board mark in the accent (the palette's "every solved word/trophy/terminus"
+// blue). Competition ranks share a first, so a tie crowns every row that holds it. The
+// number stays for a screen reader.
+function BoardRank({ rank }: { rank: number }) {
+  if (rank !== 1) return <span className="board-rank">#{rank}</span>;
+  return (
+    <span className="board-rank crown">
+      <CrownIcon className="ui-icon" aria-hidden />
+      <span className="sr-only">#1</span>
+    </span>
+  );
+}
+
 function PeriodRowItem({
   row,
   me,
@@ -711,7 +726,7 @@ function PeriodRowItem({
 }) {
   return (
     <li className={`board-row period${me ? ' me' : ''}`} style={{ '--i': index } as CSSProperties} aria-current={me || undefined}>
-      <span className="board-rank">#{row.rank}</span>
+      <BoardRank rank={row.rank} />
       <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
       <span className="board-ident">
         <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
@@ -782,7 +797,7 @@ function BoardRowItem({
       style={{ '--i': index } as CSSProperties}
       aria-current={me || undefined}
     >
-      <span className="board-rank">#{row.rank}</span>
+      <BoardRank rank={row.rank} />
       <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
       <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
       <span className="board-score">{row.score}</span>

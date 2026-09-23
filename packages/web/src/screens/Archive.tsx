@@ -144,7 +144,7 @@ export default function Archive({ lang }: { lang: LangCode }) {
         </div>
 
         <div className="cal-grid">
-          {cells.map((date, i) =>
+          {cells.map((date, i, all) =>
             date === null ? (
               // eslint-disable-next-line react/no-array-index-key
               <span key={`pad-${i}`} className="cal-pad" aria-hidden="true" />
@@ -152,6 +152,14 @@ export default function Archive({ lang }: { lang: LangCode }) {
               <DayCell
                 key={date}
                 wave={Math.floor(i / 7) + (i % 7)}
+                // THE STREAK IS A CHAIN: a solved day whose next day — beside it, in the same
+                // week — is solved too is linked to it, so a run reads as one thing at a glance.
+                chained={
+                  i % 7 !== 6 &&
+                  all[i + 1] != null &&
+                  isSolved(history, date, today) &&
+                  isSolved(history, all[i + 1] as string, today)
+                }
                 date={date}
                 lang={lang}
                 inRange={date >= FIRST_PUZZLE_DATE && date <= today}
@@ -194,6 +202,12 @@ export default function Archive({ lang }: { lang: LangCode }) {
   );
 }
 
+// Whether a day of the grid is SOLVED as the calendar shows it (in range, and the month's
+// summary says so) — the reading the streak chain links on.
+function isSolved(history: Parameters<typeof daySummaryStatus>[0], date: string, today: string): boolean {
+  return date >= FIRST_PUZZLE_DATE && date <= today && daySummaryStatus(history, date).kind === 'solved';
+}
+
 // The calendar's arrival: the arrive gesture (index.css), one diagonal of days a beat. Only
 // where a day comes FROM is named (offset 0): each lands on its own opacity — a dimmed day
 // on its dim, a waiting one on its breath — rather than flashing full before settling.
@@ -209,6 +223,7 @@ const CELL_WAVE_MS = 22;
 // color. The aria-label speaks the full date + status.
 function DayCell({
   wave,
+  chained,
   date,
   lang,
   inRange,
@@ -218,6 +233,8 @@ function DayCell({
 }: {
   // The cell's place on the grid's DIAGONAL (row + column), the beat it arrives on.
   wave: number;
+  // Solved, and so is the day beside it: the link into the gap between them.
+  chained: boolean;
   date: string;
   lang: LangCode;
   inRange: boolean;
@@ -247,7 +264,8 @@ function DayCell({
     (unknown ? ' cal-day-unknown' : '') +
     (unknown && shown.loading ? ' cal-day-waiting' : '') +
     (filled ? ' cal-day-filled' : '') +
-    (solved ? ' cal-day-solved' : '');
+    (solved ? ' cal-day-solved' : '') +
+    (chained ? ' cal-day-chained' : '');
   // THE MONTH ARRIVES AS A WAVE: each day rises in on the grid's diagonal, top-left to
   // bottom-right, when it mounts — the screen's first frame, and every page to another
   // month (the days are keyed by date, so a new month is new cells). Played through the

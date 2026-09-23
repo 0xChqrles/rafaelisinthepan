@@ -1,6 +1,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { INFINITY_EM_HEIGHT, INFINITY_EM_WIDTH, INFINITY_GLYPH, type Source } from '@whippin/shared';
+import {
+  INFINITY_EM_HEIGHT,
+  INFINITY_EM_WIDTH,
+  INFINITY_GLYPH,
+  dateForDayNumber,
+  type Source,
+} from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareHeadline, shareText, shareUrl } from '../game/share';
 import RunRuler from './RunRuler';
@@ -375,6 +381,15 @@ export default function SolvedScreen({
             about — the number and its run — and the actions are the caption row under it,
             the references' own shape (a preview in a well, a title under it). */}
         <div className="card-well">
+        {/* THE EDITION, printed in the well's top corners like a numbered collectible (the
+            interfaces.dev card the device frame's serial comes from): the day in the one
+            spelling the share card, the title and the URL use, and its edition number,
+            `N.<day>`, the desktop frame's own. What day a result is from, said once, where
+            the result is. */}
+        <span className="card-edition" aria-hidden="true">
+          <span>{dateForDayNumber(dayNumber)}</span>
+          <span>{`N.${dayNumber}`}</span>
+        </span>
         {/* The primary sentence metric. The hidden final value reserves the count's width
             so its tally never moves the content below it — a capped round has no tally to
             reserve for, since `∞` is one fixed shape. (The #271 standing line stood beside
