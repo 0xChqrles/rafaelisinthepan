@@ -3533,7 +3533,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   keyboard APP to an editable field, and its composition fought the game's rewrites —
   letters doubled and tripled, backspace undone. A read-only field binds no keyboard app and
   still takes the focus and a hardware keyboard's keys; #268's NATIVE switch lifts it.
-  Four rules hold it together:
+  Five rules hold it together:
   - **The keys are read ON THE FIELD**, not on the document, so a control the player tabbed
     to keeps its own Enter. Every key the prompt answers is `preventDefault`ed and the value
     is the folded state — `onChange` exists for text the browser inserts on its own
@@ -3548,7 +3548,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     later, and only if `document.activeElement` is `<body>`): the on-screen keys deliberately
     take no focus, so one stray click on the sentence's margin would otherwise leave physical
     typing silently dead with nothing on screen to click back into. Focus that left for
-    another CONTROL is the player navigating and is never taken back.
+    another CONTROL is the player navigating, and a click never takes it back — a KEY does
+    (next rule).
+  - **A KEY THAT MISSED THE FIELD STILL TYPES** (user-reported 2026-09-23: after Tab "you
+    cannot type anymore, and you cannot unselect neither, so you have to refresh"). While
+    the prompt is live, one window `keydown` listener sorts a key that landed elsewhere
+    (`WordInput`'s `strayKey`, tested): a letter or Backspace from a control or the page
+    refocuses the field and types; on the bare page Enter and the history arrows do too;
+    Escape refocuses the field, typing nothing (the unselect); a CONTROL keeps its own
+    Enter, Space, Tab and arrows. A key inside a dialog or another text field is never
+    touched.
   - **An INACTIVE prompt's field is `disabled`** — out of the tab order, holding no focus —
     which is also what keeps a focusable control from standing inside the `aria-hidden` box a
     retired prompt renders in. `Game`'s `active` therefore includes `!promptExiting`.

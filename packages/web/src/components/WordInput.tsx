@@ -1,11 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type {
-  ChangeEvent,
-  ClipboardEvent,
-  FocusEvent,
-  KeyboardEvent,
-  MutableRefObject,
-} from 'react';
+import type { ChangeEvent, ClipboardEvent, FocusEvent, MutableRefObject } from 'react';
 import { fold } from '@whippin/shared';
 import { t } from '../i18n';
 import UnlockIcon from '../assets/icons/unlock.svg?react';
@@ -19,6 +13,40 @@ function slugChars(key: string): string {
   if (key === '-') return '-';
   return fold(key);
 }
+
+// A KEYSTROKE THAT MISSED THE FIELD STILL TYPES (user-reported 2026-09-23: "when you press
+// tab to select a button or a key of the keyboard, then you cannot type anymore, and you
+// cannot unselect neither, so you have to refresh"). While the prompt is live, a key that
+// landed somewhere else — a CONTROL the player tabbed to, or the PAGE itself after a click
+// on nothing — is sorted here:
+//   'type'  — the prompt takes it: the field is focused again and the key handled as its own.
+//             A letter or Backspace from anywhere (a button has no use for either), and on
+//             the bare page Enter and the history arrows too.
+//   'focus' — Escape: back to the prompt, typing nothing — the way to UNSELECT a control.
+//   null    — the key stays where it landed: a control keeps its own Enter, Space, Tab and
+//             arrows, so a keyboard player still presses what they tabbed to.
+export type StrayKeyTarget = 'control' | 'page';
+export function strayKey(key: string, on: StrayKeyTarget): 'type' | 'focus' | null {
+  if (key === 'Escape') return 'focus';
+  if (key === 'Backspace' || (key.length === 1 && slugChars(key) !== '')) return 'type';
+  if (on === 'page' && (key === 'Enter' || key === 'ArrowUp' || key === 'ArrowDown')) return 'type';
+  return null;
+}
+
+// What a stray key landed on: another text field or anything inside a dialog is none of the
+// prompt's business (a modal over the sentence, the language drums); a button-like element
+// is a CONTROL; anything else — the body, a plain box — is the PAGE.
+const TEXT_ENTRY = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
+const CONTROL = 'button, a[href], summary, [role="button"], [role="tab"], [role="option"]';
+function strayTarget(target: EventTarget | null): StrayKeyTarget | null {
+  if (!(target instanceof Element)) return 'page';
+  if (target.closest('dialog') || target.closest(TEXT_ENTRY)) return null;
+  return target.closest(CONTROL) ? 'control' : 'page';
+}
+
+// The parts of a key event the prompt reads — a React event on the field, or a native one
+// that landed elsewhere and was handed over.
+type KeyInput = Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'preventDefault'>;
 
 // A TOUCH SCREEN is read the way the rest of the app reads it (`Game`'s history-tap rule):
 // the PRIMARY pointer is coarse. Watched rather than read once, because it can change under a
@@ -93,7 +121,9 @@ interface WordInputProps {
 // keys. Opening the phone's own keyboard is #268's NATIVE switch, which lifts this.
 //
 // The keys are read HERE, on the field, rather than on the document: physical typing is the
-// focused prompt's, so a control the player has tabbed to keeps its own Enter. The spans
+// focused prompt's, so a control the player has tabbed to keeps its own Enter — and a key
+// that MISSED the field is sorted by `strayKey` above, so tabbing away never leaves the
+// guess unreachable. The spans
 // below are the drawing — the field's value said in the pixel face — and are hidden from
 // assistive tech, which reads the field itself.
 // How many letters of a churning ghost are the word's own, from the left — the scramble
@@ -179,7 +209,7 @@ export default function WordInput({
     if (active) field.current?.focus({ preventScroll: true });
   }, [active]);
 
-  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+  const onKeyDown = (e: KeyInput) => {
     // Leave browser shortcuts (Cmd/Ctrl/Alt combos) alone — Cmd+V included, which is the
     // paste handler's.
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -247,6 +277,29 @@ export default function WordInput({
       for (const c of chars) onType(c);
     }
   };
+
+  // A key that missed the field (see `strayKey`): only while the prompt is live — an inactive
+  // one has a disabled field and nothing to type into. The handler is read through a ref, so
+  // the listener stays one subscription while the value it types into moves.
+  const keyHandler = useRef(onKeyDown);
+  keyHandler.current = onKeyDown;
+  useEffect(() => {
+    if (!active) return undefined;
+    const onStrayKey = (e: KeyboardEvent) => {
+      const node = field.current;
+      if (!node || e.target === node || e.defaultPrevented || e.isComposing) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const on = strayTarget(e.target);
+      const route = on === null ? null : strayKey(e.key, on);
+      if (route === null) return;
+      node.focus({ preventScroll: true });
+      // Handled as the field's own key, which `preventDefault`s it — so the focus moving
+      // under this keystroke cannot also let the browser insert it into the field.
+      if (route === 'type') keyHandler.current(e);
+    };
+    window.addEventListener('keydown', onStrayKey);
+    return () => window.removeEventListener('keydown', onStrayKey);
+  }, [active]);
 
   const onPaste = (e: ClipboardEvent<HTMLInputElement>) => {
     const text = e.clipboardData.getData('text');

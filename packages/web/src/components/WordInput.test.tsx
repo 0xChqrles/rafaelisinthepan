@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import WordInput from './WordInput';
+import WordInput, { strayKey } from './WordInput';
 
 const noop = () => {};
 
@@ -85,5 +85,36 @@ describe('a touch screen binds no keyboard app to the guess field', () => {
   it('stays editable for a mouse, so dictation and a desktop IME still land', () => {
     primaryPointer(false);
     expect(render()).not.toContain('readonly=""');
+  });
+});
+
+// 2026-09-23 (user-reported: after Tab "you cannot type anymore, and you cannot unselect"): a key
+// that MISSED the field while the prompt is live is sorted, never dropped.
+describe('a keystroke that missed the guess field', () => {
+  it('TYPES a letter or Backspace from anywhere — a button has no use for either', () => {
+    for (const on of ['control', 'page'] as const) {
+      expect(strayKey('a', on)).toBe('type');
+      expect(strayKey('É', on)).toBe('type');
+      expect(strayKey('-', on)).toBe('type');
+      expect(strayKey('Backspace', on)).toBe('type');
+    }
+  });
+
+  it('leaves a CONTROL its own Enter, Space, Tab and arrows', () => {
+    for (const key of ['Enter', ' ', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft']) {
+      expect(strayKey(key, 'control')).toBeNull();
+    }
+  });
+
+  it('on the bare PAGE, Enter submits and the arrows recall — the field’s own keys', () => {
+    expect(strayKey('Enter', 'page')).toBe('type');
+    expect(strayKey('ArrowUp', 'page')).toBe('type');
+    expect(strayKey('ArrowDown', 'page')).toBe('type');
+    expect(strayKey(' ', 'page')).toBeNull();
+  });
+
+  it('UNSELECTS on Escape: back to the prompt, typing nothing', () => {
+    expect(strayKey('Escape', 'control')).toBe('focus');
+    expect(strayKey('Escape', 'page')).toBe('focus');
   });
 });
