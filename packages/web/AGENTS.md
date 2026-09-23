@@ -2095,7 +2095,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     it (Web Animations, measured off its hole); no scale, no tilt. The release itself waits
     `FLOATING_HIT_INTRO_MS` = 800 after the last hole's beat (it was 320). Its juice
     (user-asked the same day, "make the exponent animation more juicy"): the pop is WHITE
-    for two frames and its digits ROLL into the rank; it bobs 2px on the perch; a new best
+    for two frames and its digits ROLL into the rank; it stands STILL on the perch (a 2px
+    idle bob read as a twitch, user-reported the same day); a new best
     lands in the exponent, whose `rank-pop` takes the hit white and throws seven pixel
     SPARKS (its own `::before`, so they ride the exponent through the rewrap). The floats
     (`hit-pop-in`) flash white at their peak too.

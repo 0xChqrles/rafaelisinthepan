@@ -4899,26 +4899,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   pointer-events: none;
   opacity: 0;
 }
-/* On the perch the number IDLES: a two-frame bob, 2px, the way a sprite breathes — alive,
-   and still readable. It starts once the rise has landed (`--bob-at`, Loot's beat). */
-.loot-face {
-  display: inline-block;
-  animation: loot-bob 560ms steps(1) infinite;
-  animation-delay: var(--bob-at, 0ms);
-}
-@keyframes loot-bob {
-  0% {
-    translate: 0 0;
-  }
-  50% {
-    translate: 0 -2px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .loot-face {
-    animation: none;
-  }
-}
 @media (max-width: 640px) {
   /* One integer step down here — 4x rather than 5x. At 320px the page leaves 292px of
      column, and 5x would put a 180px stroke on it: still inside, but reading as a strike

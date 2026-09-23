@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { rankHeatColor } from '@whippin/shared';
 import { SCRAMBLE_TICK_MS, prefersReducedMotion } from '../hooks/useScramble';
 
@@ -26,8 +26,9 @@ import { SCRAMBLE_TICK_MS, prefersReducedMotion } from '../hooks/useScramble';
 // THE JUICE ON EACH BEAT (user-asked 2026-09-23, "make the exponent animation more juicy"):
 // the POP is a hit — the number comes out WHITE for two frames (the fighting-game hit
 // flash) and its digits ROLL like dice, settling left to right, as it rises (the churn every
-// changing word in this game speaks, in digits); on the perch it IDLES, a two-frame 2px bob,
-// a sprite breathing; and a new best ARRIVES in the exponent, which takes the hit white and
+// changing word in this game speaks, in digits); on the perch it stands STILL — nothing moves
+// while it is read (a 2px idle bob was tried and read as a twitch, user-reported the same
+// day); and a new best ARRIVES in the exponent, which takes the hit white and
 // throws its sparks (`.hole-rank.rank-pop`, on the exponent itself so they ride it when the
 // word's new length rewraps the line). Each is a state or a whole-pixel step, never a glow.
 const RISE_MS = 260;
@@ -40,7 +41,15 @@ const LEAN_MAX_PX = 10;
 // The chip is 1.267em of the word tall (`.hole-word::before`), centred on it.
 const CHIP_HALF_EM = 1.267 / 2;
 
-const POP = 'cubic-bezier(0.2, 1.45, 0.4, 1)';
+// THE POP IS STEPPED, never eased (user-reported 2026-09-23: the number "still moves a bit in
+// a weird way"): a springy curve overshot and then crept back ~2px in fractional pixels,
+// smearing the pixel face as it settled. Now it hops up in whole frames (the scramble's own
+// ~40ms), overshoots the perch by OVERSHOOT_PX, and clicks down onto it — then nothing moves
+// until it leaves.
+const UP_MS = 180;
+const UP_STEPS = 'steps(4, jump-start)';
+const SETTLE_STEPS = 'steps(2, jump-end)';
+const OVERSHOOT_PX = 4;
 // The hit flash: the number's first frames in white.
 const FLASH_MS = 80;
 const DIGITS = '0123456789';
@@ -149,11 +158,13 @@ export default function Loot({
     }
     const total = into ? live : live + DROP_MS;
     const at = (ms: number) => Math.min(1, Math.max(0, ms / total));
+    const upEnd = at(UP_MS);
     const riseEnd = at(RISE_MS);
     const hangEnd = Math.max(riseEnd, at(into ? live - INTO_MS : live));
     const frames: Keyframe[] = [
       { offset: 0, opacity: 0, translate: `0px 4px` },
-      { offset: at(1), opacity: 1, translate: `0px 4px`, easing: POP },
+      { offset: at(1), opacity: 1, translate: `0px 4px`, easing: UP_STEPS },
+      { offset: upEnd, opacity: 1, translate: `${lean}px ${apex - OVERSHOOT_PX}px`, easing: SETTLE_STEPS },
       { offset: riseEnd, opacity: 1, translate: perch },
       { offset: hangEnd, opacity: 1, translate: perch, easing: into ? 'cubic-bezier(0.5, 0, 0.6, 1)' : 'cubic-bezier(0.55, 0, 0.9, 0.5)' },
       into
@@ -171,10 +182,7 @@ export default function Loot({
 
   return (
     <span ref={node} className="loot" style={{ color: rankHeatColor(rank) }} aria-hidden="true">
-      {/* The bob starts on the perch, once the rise has landed. */}
-      <span className="loot-face" style={{ '--bob-at': `${delayMs + RISE_MS}ms` } as CSSProperties}>
-        {shown}
-      </span>
+      {shown}
     </span>
   );
 }
