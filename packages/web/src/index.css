@@ -1902,14 +1902,70 @@ input {
 /* Rank decrease: the exponent rolls toward its new value (see useAnimatedNumber)
    and uses the same quick scale/unscale hop as the tutorial. */
 .hole-rank.rank-pop {
+  position: relative;
   animation: rank-pop 0.4s ease-out;
 }
+/* A NEW BEST THROWS SPARKS (2026-09-23, the loot's arrival): seven flat pixel squares out
+   of the exponent as it pops, in its own ink — white at the hit, cooling with it — stepped
+   out and gone. They are the exponent's own pseudo-element, so they ride it when the
+   word's new length rewraps the line under them. Squares by `box-shadow` copies of one
+   invisible square: geometry, not a shadow — no blur, no spread. */
+.hole-rank.rank-pop::before {
+  /* Sized in PIXELS, not off the exponent's own small em (a 2px speck at a phone's size):
+     the thrown number's own pixel scale, and a reach past the exponent's box. */
+  --spark: 4px;
+  --spark-r: 26px;
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--spark);
+  height: var(--spark);
+  translate: -50% -50%;
+  pointer-events: none;
+  animation: rank-spark 380ms steps(5, jump-end) forwards;
+}
+@media (max-width: 640px) {
+  .hole-rank.rank-pop::before {
+    --spark: 3px;
+    --spark-r: 20px;
+  }
+}
+@keyframes rank-spark {
+  from {
+    opacity: 1;
+    box-shadow:
+      0 calc(var(--spark-r) * -0.3) currentColor,
+      calc(var(--spark-r) * 0.25) calc(var(--spark-r) * -0.2) currentColor,
+      calc(var(--spark-r) * 0.3) 0 currentColor,
+      calc(var(--spark-r) * 0.15) calc(var(--spark-r) * 0.25) currentColor,
+      calc(var(--spark-r) * -0.15) calc(var(--spark-r) * 0.25) currentColor,
+      calc(var(--spark-r) * -0.3) 0 currentColor,
+      calc(var(--spark-r) * -0.25) calc(var(--spark-r) * -0.2) currentColor;
+  }
+  to {
+    opacity: 0;
+    box-shadow:
+      0 calc(var(--spark-r) * -1.05) currentColor,
+      calc(var(--spark-r) * 0.8) calc(var(--spark-r) * -0.62) currentColor,
+      calc(var(--spark-r) * 1.02) calc(var(--spark-r) * 0.18) currentColor,
+      calc(var(--spark-r) * 0.42) calc(var(--spark-r) * 0.9) currentColor,
+      calc(var(--spark-r) * -0.5) calc(var(--spark-r) * 0.95) currentColor,
+      calc(var(--spark-r) * -1) calc(var(--spark-r) * 0.2) currentColor,
+      calc(var(--spark-r) * -0.8) calc(var(--spark-r) * -0.7) currentColor;
+  }
+}
 @keyframes rank-pop {
+  /* The exponent takes the hit WHITE at the top of its hop and cools back into its heat
+     (the colour the keyframes leave out is the exponent's own) — the flash every number
+     wears when it lands (2026-09-23). */
   0% {
     transform: translateY(0) scale(1);
+    color: var(--fg);
   }
   30% {
     transform: translateY(-3px) scale(1.6);
+    color: var(--fg);
   }
   100% {
     transform: translateY(0) scale(1);
@@ -2000,6 +2056,8 @@ input {
   55% {
     opacity: 1;
     transform: translate(-50%, calc(-50% - 10px)) scale(1.35) rotate(2deg);
+    /* The hit flash: white at the top of the spring, cooling into its colour. */
+    color: var(--fg);
   }
   100% {
     opacity: 1;
@@ -4793,7 +4851,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 /* The global rule would collapse the frame walk to nothing, which for a sprite sheet means
    the strike never appears at all. Hold ONE frame instead — the fullest, second — for as
    long as the component keeps it mounted: no motion, but the word is still visibly struck.
-   (The loot does not depend on this: it still shows, holds and goes on its kept delays.) */
+   (The loot does not depend on this: under reduced motion it stands on its perch until the
+   release, `Loot`'s own branch.) */
 @media (prefers-reduced-motion: reduce) {
   .strike {
     animation: none;
@@ -4818,117 +4877,27 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
 }
 
-/* --- the LOOT: what a hit knocks OUT of the word (decided 2026-08-10) --------------------
-   The guess's rank exponent pops off the struck word like a drop off a hit enemy, in its
-   heat colour — rises, hangs at the top of the throw, and falls away, fading on the way
-   down. The strike says "hit"; the loot says what the hit was worth, and it is out of the
-   air before the next guess needs the screen, so no readout ever parks anywhere.
-
-   BALLISTICS, not a float: the OUTER box drifts sideways linearly for the whole flight
-   while the INNER one rises on an ease-out and falls on an ease-in — the parabola trick,
-   two elements because one `translate` cannot run two easings at once. No `scale`
-   anywhere: the pop reads off the launch alone, because animating scale on the pixel font
-   renders blurry frames (the standing rule). The tilt is a fixed `rotate` on the inner
-   box — a posture, not motion.
-
-   TIMING comes down from `Loot` (`--loot-rise` / `--loot-fall` / `--loot-delay`), so the
-   JS timer that ends the loot and the flight CSS draws cannot disagree; GEOMETRY (drift,
-   apex, drop, tilt, size) is below, where the phone shortens the throw. Base opacity 0
-   with no backwards fill, the `.strike` rule: the number is invisible until its launch and
-   after its fall. Under reduced motion the global collapse (durations to ~0, delays KEPT)
-   leaves it resting at its apex for the fall's delay — shown, held,
-   gone, the floating numbers' own degradation, so no extra rule is needed. */
+/* --- the LOOT: the number a cut knocks out of its hole (`components/Loot.tsx` holds the
+   why and the beats: POP to a perch over its own chip, HANG until the guess is released,
+   then fly INTO the hole's exponent when it is a new best, or drop away). Its motion is
+   the component's (Web Animations, the beats measured off the hole it came from); what is
+   here is the piece itself: centred on the word's wrap, invisible outside its flight, the
+   heat colour handed down, the pixel face with the float's hard `--bg` print. */
 .loot {
   position: absolute;
   left: 50%;
   top: 50%;
-  /* Loot is hit feedback on the game word: pixel, with the hard shadow the global body
-     rule used to provide (2026-08-18). */
+  transform: translate(-50%, -50%);
   font-family: var(--pixel-font);
-  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+  font-size: 28px;
   line-height: 1;
+  text-shadow: 2px 2px 0 var(--bg);
   white-space: nowrap;
   /* The wrap's breathing animates letter-spacing, which inherits — same opt-out as the
      MISS float's. */
   letter-spacing: normal;
   pointer-events: none;
-  /* The throw, assembled from three owners (decided 2026-08-10, when the flight went
-     random): the SIDE class below gives the sign and the anchor, the CONTENT class the
-     magnitude (where the ≤640px step-down can reach it), and `Loot`'s per-hit dice the
-     `--loot-j*` factors. `--loot-dx0` is the LAUNCH offset the drift starts from — the
-     number leaves the word already off-centre, which is what makes the impact read as a
-     throw. */
-  --loot-dx0: calc(var(--loot-sign, 1) * var(--loot-mag0, 12px));
-  --loot-dx: calc(var(--loot-sign, 1) * var(--loot-mag, 46px) * var(--loot-jx, 1));
-  animation: loot-drift calc(var(--loot-rise, 340ms) + var(--loot-fall, 440ms)) linear
-    var(--loot-delay, 0ms) forwards;
-}
-.loot-lift {
-  display: inline-block;
-  --loot-apex-j: calc(var(--loot-apex, -48px) * var(--loot-jy, 1));
-  --loot-drop-j: calc(var(--loot-drop, 28px) * var(--loot-jd, 1));
-  /* The tilt leans AWAY from the word whichever side the piece flies — the side's sign
-     again, so a swapped piece does not lean back over the centre it just left. */
-  rotate: calc(var(--loot-sign, 1) * var(--loot-tilt, 0deg) * var(--loot-jt, 1));
   opacity: 0;
-  animation:
-    loot-rise var(--loot-rise, 340ms) cubic-bezier(0.18, 0.72, 0.32, 1) var(--loot-delay, 0ms)
-      forwards,
-    loot-fall var(--loot-fall, 440ms) cubic-bezier(0.5, 0, 0.85, 0.45)
-      calc(var(--loot-delay, 0ms) + var(--loot-rise, 340ms)) forwards;
-}
-/* WHICH side is rolled per hit (`Loot`). EDGE-anchored, not centred: a left-flying number's
-   whole box stays left of its anchor and a right-flying one's right of its own. */
-.loot-to-left {
-  --loot-sign: -1;
-  transform: translate(-100%, -50%);
-}
-.loot-to-right {
-  --loot-sign: 1;
-  transform: translate(0, -50%);
-}
-/* The exponent: the rank, written the one way the app writes ranks, in the heat colour
-   every other exponent wears (`Loot` hands it down from the shared rankHeatColor). */
-.loot-exp {
-  --loot-mag0: 12px;
-  --loot-mag: 46px;
-  font-size: 28px;
-}
-.loot-exp .loot-lift {
-  --loot-apex: -58px;
-  --loot-drop: 26px;
-  --loot-tilt: 5deg;
-}
-@keyframes loot-drift {
-  from {
-    translate: var(--loot-dx0, 0px) 0;
-  }
-  to {
-    translate: var(--loot-dx, 0px) 0;
-  }
-}
-@keyframes loot-rise {
-  from {
-    opacity: 1;
-    translate: 0 0;
-  }
-  to {
-    opacity: 1;
-    translate: 0 var(--loot-apex-j, -48px);
-  }
-}
-@keyframes loot-fall {
-  0% {
-    opacity: 1;
-    translate: 0 var(--loot-apex-j, -48px);
-  }
-  45% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-    translate: 0 var(--loot-drop-j, 28px);
-  }
 }
 @media (max-width: 640px) {
   /* One integer step down here — 4x rather than 5x. At 320px the page leaves 292px of
@@ -4953,15 +4922,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     height: 264px;
     transform: translate(-50%, -50%);
   }
-  /* The loot's throw shortens with the strike's own scale-down, so a number flung at the
-     dice's ceiling (`--loot-jx` 1.15) still lands inside a 320px screen. */
-  .loot-exp {
-    --loot-mag0: 10px;
-    --loot-mag: 36px;
+  /* The loot one step down with the strike, the size the phone's sentence reads at. */
+  .loot {
     font-size: 22px;
-  }
-  .loot-exp .loot-lift {
-    --loot-apex: -48px;
   }
 }
 

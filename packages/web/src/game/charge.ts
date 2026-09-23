@@ -69,6 +69,20 @@ export function chargeForRank(rank: number | undefined): number {
   return CHARGE_NEAR + (CHARGE_FAR - CHARGE_NEAR) * far;
 }
 
+// WHICH BLOW a guess lands on a hole it reaches (user-decided 2026-09-23: "only play the
+// slashing animation when the guess give something, either it fills the word, or the guess
+// is closer"). The exact hit wears the ULTRA star. A NEW guess is CUT when it GIVES the hole
+// something — charge on its meter (`gained`), or a rank closer than the hole's best — and
+// nothing else is: a repeat, a far word, a word that fills nothing on a full meter and is no
+// closer all keep the plain float. `best` is the hole's best BEFORE this guess, off the full
+// log (a guess still in the air may already have moved it).
+export type Strike = 'ultra' | 'slash';
+export function strikeFor(rank: number | undefined, isNew: boolean, gained: number, best: number): Strike | undefined {
+  if (rank === 0) return 'ultra';
+  if (rank === undefined || !isNew) return undefined;
+  return gained > 0 || rank < best ? 'slash' : undefined;
+}
+
 // One hole's meter: its charge in [0, CHARGE_TARGET], whether the hole is ACTIVE (the meter
 // reached its target), and the ranks it has GIVEN — ascending, without repeats, empty until
 // the activation — each saying whether the player CONSUMED it (guessed it after it was

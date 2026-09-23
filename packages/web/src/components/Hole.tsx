@@ -2,8 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { CSSProperties } from 'react';
 import FloatingHit, { HIT_FADE_MS } from './FloatingHit';
 import Strike from './Strike';
-import Loot from './Loot';
-import ChargeLoot, { sparkLandMs } from './ChargeLoot';
+import Loot, { lootEndMs } from './Loot';
+import ChargeLoot, { chargeLootMs, sparkLandMs } from './ChargeLoot';
 import MeterCanvas from './MeterCanvas';
 import { BURST_ART, SLASH_ART, STRUCK_MS, ULTRA_ART } from './strikeArt';
 import { MISS_COLOR, rankHeatColor } from '@whippin/shared';
@@ -305,6 +305,20 @@ export default function Hole({
   // `STRUCK_MS`, from the hit's beat, handed to CSS so the two cannot disagree.
   const strikeArt = hit?.strike === 'ultra' ? ULTRA_ART : hit?.strike === 'slash' ? SLASH_ART : null;
   if (strikeArt) wordStyle['--shake-ms'] = `${STRUCK_MS}ms`;
+  // The cut's number (Loot): does it beat the hole's best — read off the board BEFORE the
+  // release, which is what the hole still shows while the number is in the air — and does
+  // it outlast the charge's drops (then it is the one that ends the hit)?
+  // FIXED PER HIT, at its first render: the release lowers `hole.rank` under a number still
+  // in the air, and a reading that flipped then would hand the hit's end from one piece to
+  // the other mid-flight (or to neither).
+  const lootPlan = useRef<{ id: number; improves: boolean } | null>(null);
+  if (hit?.strike === 'slash' && lootPlan.current?.id !== hit.id) {
+    lootPlan.current = { id: hit.id, improves: hit.value < hole.rank };
+  }
+  const lootImproves = hit?.strike === 'slash' && lootPlan.current?.id === hit.id && lootPlan.current.improves;
+  const lootReports =
+    !hit?.charge ||
+    (hit !== null && lootEndMs(hit.fadeDelayMs, lootImproves) >= chargeLootMs(hit.startDelayMs));
   if (waving) Object.assign(wordStyle, WAVE_VARS);
 
   // The word + its exponent. The route button (below) wraps this whole group WITHOUT
@@ -365,8 +379,11 @@ export default function Hole({
             id={hit.id}
             rank={hit.value}
             delayMs={hit.startDelayMs}
-            // The throw outlives the exponent when there is one: it reports the hit done.
-            onDone={hit.charge ? undefined : onHitDone}
+            releaseMs={hit.fadeDelayMs}
+            improves={lootImproves}
+            // Whichever of the number and the charge's drops is in the air LAST reports the
+            // hit done, so neither is cut short by the other.
+            onDone={lootReports ? onHitDone : undefined}
           />
         ) : hit ? (
           <FloatingHit
@@ -408,7 +425,7 @@ export default function Hole({
             charge={hit.charge}
             fill={lootFill}
             startDelayMs={hit.startDelayMs}
-            onDone={onHitDone}
+            onDone={lootReports ? undefined : onHitDone}
           />
         ) : null}
         {/* THE BURST (#301): the meter reached its target — one detonation in the meter's
@@ -430,7 +447,11 @@ export default function Hole({
           key={rankPop}
           className={`hole-rank${rankPopActive ? ' rank-pop' : ''}`}
           style={rankStyle}
-          onAnimationEnd={() => setRankPopActive(false)}
+          // Its own pop only: the sparks it throws (`::before`) end first, and ending the pop
+          // on theirs would clip its last frames.
+          onAnimationEnd={(e) => {
+            if (!e.pseudoElement) setRankPopActive(false);
+          }}
         >
           {shownRank}
         </sup>

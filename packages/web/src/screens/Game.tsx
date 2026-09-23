@@ -32,7 +32,7 @@ import { PLAY_LEVEL } from '../tutorial/levels';
 import LoadError from '../components/LoadError';
 import FlipCountdown from '../components/FlipCountdown';
 import { earlyLocked } from '../game/earlyPlay';
-import { chargeForRank, replayCharge } from '../game/charge';
+import { replayCharge, strikeFor } from '../game/charge';
 import { navigate } from '../routing';
 import { pathForDay, pathForGame, pathForLesson } from '../langs';
 import { MASK, buildHistory } from '../game/history';
@@ -70,7 +70,11 @@ import type {
 // (The tutorial's board is ONE hole, so it staggers nothing — it takes the intro constant
 // below instead, which is what makes its single hit read like a real one.)
 export const STAGGER_MS = 200;
-export const FLOATING_HIT_INTRO_MS = 320;
+// How long the LAST impacted hole's feedback stands before the guess is released into the
+// board (every earlier one stands longer, by the stagger): long enough to read each hole's
+// number over its own hole (user-asked 2026-09-23, "make sure we have the time to see them
+// well"; it was 320).
+export const FLOATING_HIT_INTRO_MS = 800;
 
 const STREAK_AFTER_WORDS_MS = 300;
 
@@ -965,16 +969,14 @@ function Round({
       // table pays for is cut, and what it paid flies into the meter as loot. A miss, a
       // repeat and a rank past the table keep the float alone.
       const fadeDelayMs = reveal + Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
+      // Each hole's best BEFORE this guess, off the FULL log: whether the guess is closer.
+      const bestBefore = replayHoles(freshHoles, ranks, playLog);
       impacted.forEach(({ index, entry }, step) => {
         const startDelayMs = reveal + step * STAGGER_MS;
         const hit = (hitId.current += 1);
         const gained = charged[index].charge - chargeState[index].charge;
-        const strike =
-          entry?.rank === 0
-            ? ('ultra' as const)
-            : isNew && chargeForRank(entry?.rank) > 0
-              ? ('slash' as const)
-              : undefined;
+        // CUT only when the guess gives the hole something (`strikeFor`).
+        const strike = strikeFor(entry?.rank, isNew, gained, bestBefore[index].rank);
         setHits((prev) => [
           ...prev,
           entry != null

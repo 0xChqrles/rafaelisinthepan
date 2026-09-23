@@ -378,8 +378,12 @@ These are decided and verified against the code. Treat them as load-bearing.
   fills → BURST → the sea`, the BURST striking on the canvas's own SOLID frame (`MeterCanvas`'s
   `onFull`, a deadline behind it), never on a timer (user-reported 2026-09-23: "the burst
   animation is played before the filling animation is done. It should actually wait"). The exact hit wears the ULTRA star and takes
-  no cut, loot or burst (the solve supersedes); a miss, a repeat and a rank past the table
-  keep the float alone; a guess that also improves the hole keeps the word/rank swap
+  no cut, loot or burst (the solve supersedes); **A GUESS IS CUT ONLY WHEN IT GIVES THE HOLE
+  SOMETHING** — charge on its meter, or a rank closer than its best (user-decided
+  2026-09-23: "only play the slashing animation when the guess give something, either it
+  fills the word, or the guess is closer"; `strikeFor`, `game/charge.ts`, one rule for the
+  day and the lesson's meter stage) — so a miss, a repeat, a rank past the table and a word
+  that fills nothing on a full meter and is no closer keep the float alone; a guess that also improves the hole keeps the word/rank swap
   choreography (charging is additive). The sheets are `components/strikeArt.ts` +
   `Strike.tsx` (`.strike`, its own integer scales under `.phrase`; see THE HIT ART) —
   never the heat. A11y: the meter and the
@@ -2081,10 +2085,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **The word answers the blow for `STRUCK_MS`**: four frames, one short of the shortest
     sheet, so the sheet's last frame dissipates over a word already at rest; JS and CSS share
     it through `--shake-ms`.
-  - **The LOOT is ballistics, never a float**: an outer box drifts linearly while the inner
-    one rises ease-out and falls ease-in. The side and bounded jitter factors on distance,
-    height, drop and tilt are ROLLED per hit (`--loot-j*`, factors on the CSS geometry so the
-    ≤640px step-down still reaches them); the timing is handed to CSS as variables.
+  - **The LOOT STAYS WITH ITS HOLE, LONG ENOUGH TO READ** (user-asked 2026-09-23: "make
+    sure we have the time to see them well and understand what's going on and to which
+    hole are they related", replacing the random sideways throw that landed over other
+    words and was gone in 780ms): it POPS out of the word to a perch just above its own
+    chip (a small rolled lean), HANGS there until the guess is released — every hole's
+    number over its hole at once — then a new best flies INTO the hole's exponent,
+    arriving as the release lands, and any other drops away. `components/Loot.tsx` drives
+    it (Web Animations, measured off its hole); no scale, no tilt. The release itself waits
+    `FLOATING_HIT_INTRO_MS` = 800 after the last hole's beat (it was 320). Its juice
+    (user-asked the same day, "make the exponent animation more juicy"): the pop is WHITE
+    for two frames and its digits ROLL into the rank; it stands STILL on the perch (a 2px
+    idle bob read as a twitch, user-reported the same day); a new best
+    lands in the exponent, whose `rank-pop` takes the hit white and throws seven pixel
+    SPARKS (its own `::before`, so they ride the exponent through the rewrap). The floats
+    (`hit-pop-in`) flash white at their peak too.
   - **Two rules learned on it, for wherever type lands on type again: NOTHING IN THIS APP
     OUTLINES TYPE, and `scale` IS NEVER ANIMATED ON THE PIXEL FONT** (blurry frames for the
     whole transition, the integer-scale rule).
