@@ -249,10 +249,13 @@ export default function LessonBoard({
     setFeedback(null);
     setInput((cur) => cur.slice(0, -1));
   }, [playing]);
+  // The value a recall just put in the prompt, so the keyboard strikes no key for it.
+  const recalledInput = useRef<string | null>(null);
   const replaceInput = useCallback(
     (v: string) => {
       if (!playing) return;
       setFeedback(null);
+      recalledInput.current = v;
       setInput(v);
     },
     [playing],
@@ -553,9 +556,11 @@ export default function LessonBoard({
       {shownCoach && (
         <div className="coach coach--bot">
           <span className="coach-step">{step}/{totalSteps}</span>
-          {/* Keyed on the line: the character HOPS each time it says something new. */}
+          {/* Keyed on the line: the character HOPS each time it says something new. The key
+              is its own — CoachText beside it is keyed on the same line, and two siblings
+              sharing a key leave the old sprite behind. */}
           <div
-            key={shownCoach}
+            key={`bot:${shownCoach}`}
             className="coach-bot"
             aria-hidden
             style={{ backgroundImage: `url(${playerIdle})` }}
@@ -659,6 +664,7 @@ export default function LessonBoard({
               vocabSet={vocab.vocabSet}
               submittable={ghost !== null && decoding === null}
               locked={decoding !== null || (ghost !== null && input === '')}
+              recalled={recalledInput}
               lang={lang}
               onType={appendChar}
               onBackspace={deleteChar}

@@ -69,8 +69,9 @@ const FLIP_SETTLE_MS = 360;
 const FLIP_PEAK_ALPHA = 0.45;
 // Alphas are bucketed so a frame is still a handful of fills, each a union of blocks (the
 // one-path rule below: separate fills seam at a fractional dpr — tolerated for the flip's
-// half second, never at rest).
-const FLIP_LEVELS = 8;
+// half second, never at rest). NINE levels because 4/9 of the peak IS the ink (0.2): the
+// cells both numbers share paint at exactly INK_ALPHA mid-flip, never a step brighter.
+const FLIP_LEVELS = 9;
 
 // A cell's beat in [0, 1): an integer hash of its grid position, so the order is scattered
 // but the same for the same number.

@@ -844,9 +844,12 @@ function Round({
 
   // Replace the whole input (physical-keyboard history recall). Recalled values are
   // past valid words, hence valid prefixes, so no re-validation is needed.
+  // The value a recall just put in the prompt, so the keyboard strikes no key for it.
+  const recalledInput = useRef<string | null>(null);
   const replaceInput = useCallback((v: string) => {
     if (promptExiting) return;
     setFeedback(null);
+    recalledInput.current = v;
     setInput(v);
   }, [promptExiting]);
 
@@ -1218,6 +1221,7 @@ function Round({
                   vocabSet={vocabSet}
                   submittable={ghost !== null && decoding === null}
                   locked={decoding !== null || (ghost !== null && input === '')}
+                  recalled={recalledInput}
                   lang={lang}
                   onType={appendChar}
                   onBackspace={deleteChar}

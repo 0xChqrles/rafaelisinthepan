@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type MutableRefObject,
+  type PointerEvent,
+} from 'react';
 import { KEYBOARD_ROWS, canExtend } from '../game/keyboard';
 // Inline SVG components (vite-plugin-svgr `?react`): they render into the DOM and paint
 // with `fill="currentColor"`, so each control key's icon inherits its `color` — muted for
@@ -21,6 +29,9 @@ interface KeyboardProps {
   // point").
   submittable?: boolean;
   locked?: boolean;
+  // The value the prompt's history RECALL last wrote (the caller's `replaceInput`): an input
+  // change to exactly that is no keystroke, and strikes no key. Read and cleared here.
+  recalled?: MutableRefObject<string | null>;
   // Puzzle language — localizes the control keys' aria labels (letters name themselves).
   lang: string;
   onType: (char: string) => void; // append a letter or dash
@@ -77,6 +88,7 @@ export default function Keyboard({
   onSubmit,
   submittable = false,
   locked = false,
+  recalled,
 }: KeyboardProps) {
   const [shake, setShake] = useState<Shake>(null);
   // When a POINTER last pressed a key here — see `activate`.
@@ -91,6 +103,11 @@ export default function Keyboard({
   useEffect(() => {
     const prev = lastInput.current;
     lastInput.current = input;
+    // A recall is not typed: matched on the VALUE, so a recall that changed nothing cannot
+    // swallow the next real keystroke's strike.
+    const recall = recalled?.current ?? null;
+    if (recalled) recalled.current = null;
+    if (recall === input) return;
     const id = struckKey(prev, input, vocabSet);
     const node = id === null ? undefined : keys.current.get(id);
     if (!node || typeof node.animate !== 'function') return;

@@ -194,11 +194,10 @@ export default function Archive({ lang }: { lang: LangCode }) {
   );
 }
 
-// The calendar's arrival: the rung-in gesture (index.css), one diagonal of days a beat.
-const ARRIVE_FRAMES: Keyframe[] = [
-  { opacity: 0, translate: '0 10px' },
-  { opacity: 1, translate: '0 0' },
-];
+// The calendar's arrival: the arrive gesture (index.css), one diagonal of days a beat. Only
+// where a day comes FROM is named (offset 0): each lands on its own opacity — a dimmed day
+// on its dim, a waiting one on its breath — rather than flashing full before settling.
+const ARRIVE_FRAMES: Keyframe[] = [{ offset: 0, opacity: 0, translate: '0 10px' }];
 const CELL_WAVE_MS = 22;
 
 // One day: a flat key that navigates to that day's game when in range, disabled (dimmed)

@@ -131,22 +131,45 @@ export default function WordInput({
   // line toward the sentence and fades (`.wi-launch`), where it used to simply vanish — the
   // throw that the hits then land. A clear that is not a submission (a recalled entry
   // stepping back to an empty draft) sends nothing, and neither does reduced motion.
+  // What the line SHOWS is the typed value, or a hint being uncyphered (`ghostTarget`), so a
+  // revealed hint — a guess like any — lifts off too when it clears; the masked `?????`
+  // alone never does. The copy is cropped at the width the line had (`.wi-text` crops a long
+  // guess's head), so it leaves from exactly what was on screen.
   const textBox = useRef<HTMLSpanElement>(null);
-  const lastValue = useRef(value);
+  const shown = value || ghostTarget || '';
+  const lastShown = useRef(shown);
+  const lastWidth = useRef(0);
   const recalling = useRef(false);
-  const [launch, setLaunch] = useState<{ text: string; n: number; left: number; top: number } | null>(
-    null,
-  );
+  const [launch, setLaunch] = useState<{
+    text: string;
+    n: number;
+    left: number;
+    top: number;
+    width: number;
+  } | null>(null);
   useLayoutEffect(() => {
-    const prev = lastValue.current;
-    lastValue.current = value;
+    const prev = lastShown.current;
+    lastShown.current = shown;
+    const box = textBox.current;
+    const width = lastWidth.current;
     const recalled = recalling.current;
     recalling.current = false;
-    const box = textBox.current;
-    if (recalled || value !== '' || prev.length < 2 || !box) return;
+    if (recalled || shown !== '' || prev.length < 2 || !box) return;
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-    setLaunch((last) => ({ text: prev, n: (last?.n ?? 0) + 1, left: box.offsetLeft, top: box.offsetTop }));
-  }, [value]);
+    setLaunch((last) => ({
+      text: prev,
+      n: (last?.n ?? 0) + 1,
+      left: box.offsetLeft,
+      top: box.offsetTop,
+      width,
+    }));
+  }, [shown]);
+  // The line's width as it last stood — measured AFTER every render (declared after the
+  // effect above, so that one reads the previous frame's): a hint's decode churns at the
+  // mask's width before it reaches the word's.
+  useLayoutEffect(() => {
+    lastWidth.current = textBox.current?.offsetWidth ?? 0;
+  });
 
   // THE PROMPT TAKES THE KEYBOARD when it becomes the surface that answers it: on mount,
   // and again whenever a modal that covered it closes (a native dialog hands focus back to
@@ -163,6 +186,7 @@ export default function WordInput({
 
     if (e.key === 'Enter') {
       e.preventDefault();
+      recalling.current = false;
       // History is the persisted `tried` list, updated by the submit handler (a valid
       // guess -> recordGuess). Just reset the recall cursor and submit.
       historyIndexRef.current = null;
@@ -187,22 +211,27 @@ export default function WordInput({
       } else {
         historyIndexRef.current = Math.max(0, historyIndexRef.current - 1);
       }
-      recalling.current = true;
-      onReplace(history[historyIndexRef.current]);
+      const recalled = history[historyIndexRef.current];
+      // Only a recall that CHANGES the line marks it: one that lands on the value already
+      // there renders nothing, and the flag would outlive it onto the next real submit.
+      if (recalled !== value) recalling.current = true;
+      onReplace(recalled);
       return;
     }
 
     if (e.key === 'ArrowDown') {
       if (historyIndexRef.current === null) return;
       e.preventDefault();
-      recalling.current = true;
+      let recalled: string;
       if (historyIndexRef.current < history.length - 1) {
         historyIndexRef.current += 1;
-        onReplace(history[historyIndexRef.current]);
+        recalled = history[historyIndexRef.current];
       } else {
         historyIndexRef.current = null;
-        onReplace(draftRef.current);
+        recalled = draftRef.current;
       }
+      if (recalled !== value) recalling.current = true;
+      onReplace(recalled);
       return;
     }
 
@@ -337,18 +366,18 @@ export default function WordInput({
       </span>
       {/* Keyed on the length: every keystroke restarts the blink, so the caret stands SOLID
           while the player types and only blinks once they stop — a terminal's caret. */}
-      <span key={value.length} className="wi-cursor" aria-hidden="true">
+      <span key={`caret:${value.length}`} className="wi-cursor" aria-hidden="true">
         _
       </span>
       {launch && (
         <span
-          key={launch.n}
+          key={`launch:${launch.n}`}
           className="wi-launch"
-          style={{ left: launch.left, top: launch.top }}
+          style={{ left: launch.left, top: launch.top, width: launch.width || undefined }}
           aria-hidden="true"
           onAnimationEnd={() => setLaunch(null)}
         >
-          {launch.text}
+          <span className="wi-text-run">{launch.text}</span>
         </span>
       )}
     </div>
