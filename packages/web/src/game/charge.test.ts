@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { RankMap, RuntimeHole } from '@whippin/shared';
-import { CHARGE_TARGET, GIVEN, chargeForRank, replayCharge } from './charge';
+import { CHARGE_TARGET, GIVEN, chargeForRank, replayCharge, strikeFor } from './charge';
 import type { HoleCharge } from './charge';
 import { replayHoles } from './scoring';
 import { buildHistory } from './history';
@@ -285,5 +285,31 @@ describe('the hints — masked until guessed, and a guess is what consumes one',
     expect(ranksOf(one)).toEqual(ranksOf(active)); // nothing new given: the hole did not move
     // A repeat in the log is impossible (the play log dedups); a far guess consumes nothing.
     expect(consumedOf(replayCharge(holes(), RANKS, [...FOUR, FILLS, 'honnete2', 'honnete999'])[0])).toEqual([2]);
+  });
+});
+
+// 2026-09-23 (user-decided): "only play the slashing animation when the guess give something,
+// either it fills the word, or the guess is closer".
+describe('the slash plays only for a guess that gives the hole something', () => {
+  it('the exact hit is the ultra, whatever else', () => {
+    expect(strikeFor(0, true, 0, 50)).toBe('ultra');
+  });
+
+  it('a new guess that charges the meter is cut, closer or not', () => {
+    expect(strikeFor(120, true, 4.2, 50)).toBe('slash');
+  });
+
+  it('a new guess closer than the best is cut, even on a full meter', () => {
+    expect(strikeFor(30, true, 0, 50)).toBe('slash');
+  });
+
+  it('a full meter and no closer: no slash — the float alone', () => {
+    expect(strikeFor(80, true, 0, 50)).toBeUndefined();
+    expect(strikeFor(50, true, 0, 50)).toBeUndefined();
+  });
+
+  it('a guess already made never cuts, and neither does a far word', () => {
+    expect(strikeFor(30, false, 0, 50)).toBeUndefined();
+    expect(strikeFor(undefined, true, 0, 50)).toBeUndefined();
   });
 });

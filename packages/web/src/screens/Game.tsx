@@ -32,7 +32,7 @@ import { PLAY_LEVEL } from '../tutorial/levels';
 import LoadError from '../components/LoadError';
 import FlipCountdown from '../components/FlipCountdown';
 import { earlyLocked } from '../game/earlyPlay';
-import { chargeForRank, replayCharge } from '../game/charge';
+import { replayCharge, strikeFor } from '../game/charge';
 import { navigate } from '../routing';
 import { pathForDay, pathForGame, pathForLesson } from '../langs';
 import { MASK, buildHistory } from '../game/history';
@@ -969,16 +969,14 @@ function Round({
       // table pays for is cut, and what it paid flies into the meter as loot. A miss, a
       // repeat and a rank past the table keep the float alone.
       const fadeDelayMs = reveal + Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
+      // Each hole's best BEFORE this guess, off the FULL log: whether the guess is closer.
+      const bestBefore = replayHoles(freshHoles, ranks, playLog);
       impacted.forEach(({ index, entry }, step) => {
         const startDelayMs = reveal + step * STAGGER_MS;
         const hit = (hitId.current += 1);
         const gained = charged[index].charge - chargeState[index].charge;
-        const strike =
-          entry?.rank === 0
-            ? ('ultra' as const)
-            : isNew && chargeForRank(entry?.rank) > 0
-              ? ('slash' as const)
-              : undefined;
+        // CUT only when the guess gives the hole something (`strikeFor`).
+        const strike = strikeFor(entry?.rank, isNew, gained, bestBefore[index].rank);
         setHits((prev) => [
           ...prev,
           entry != null

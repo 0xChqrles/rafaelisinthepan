@@ -378,8 +378,12 @@ These are decided and verified against the code. Treat them as load-bearing.
   fills → BURST → the sea`, the BURST striking on the canvas's own SOLID frame (`MeterCanvas`'s
   `onFull`, a deadline behind it), never on a timer (user-reported 2026-09-23: "the burst
   animation is played before the filling animation is done. It should actually wait"). The exact hit wears the ULTRA star and takes
-  no cut, loot or burst (the solve supersedes); a miss, a repeat and a rank past the table
-  keep the float alone; a guess that also improves the hole keeps the word/rank swap
+  no cut, loot or burst (the solve supersedes); **A GUESS IS CUT ONLY WHEN IT GIVES THE HOLE
+  SOMETHING** — charge on its meter, or a rank closer than its best (user-decided
+  2026-09-23: "only play the slashing animation when the guess give something, either it
+  fills the word, or the guess is closer"; `strikeFor`, `game/charge.ts`, one rule for the
+  day and the lesson's meter stage) — so a miss, a repeat, a rank past the table and a word
+  that fills nothing on a full meter and is no closer keep the float alone; a guess that also improves the hole keeps the word/rank swap
   choreography (charging is additive). The sheets are `components/strikeArt.ts` +
   `Strike.tsx` (`.strike`, its own integer scales under `.phrase`; see THE HIT ART) —
   never the heat. A11y: the meter and the

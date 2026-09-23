@@ -17,7 +17,7 @@ import { canExtend } from '../game/keyboard';
 import { latestMaskedPick, selectWord, type WordPick } from '../game/wordWheel';
 import { MASK, buildHistory, type HistoryStop } from '../game/history';
 import { guessKey, replayHoles } from '../game/scoring';
-import { chargeForRank, replayCharge } from '../game/charge';
+import { replayCharge, strikeFor } from '../game/charge';
 import { sentenceStarts } from '../game/sentenceCase';
 import { SCRAMBLE_MS, prefersReducedMotion, useScramble } from '../hooks/useScramble';
 import type { Vocab } from '../hooks/useVocab';
@@ -312,12 +312,13 @@ export default function LessonBoard({
       impacted.forEach(({ index, entry }, step) => {
         const hit = (hitId.current += 1);
         const gained = before && after ? after[index].charge - before[index].charge : 0;
-        const strike =
-          entry?.rank === 0
+        // The day's own rule (`strikeFor`) on the meter stage; before it there is no meter
+        // to fill, so only the exact hit strikes.
+        const strike = withMeters
+          ? strikeFor(entry?.rank, isNew, gained, holes[index].rank)
+          : entry?.rank === 0
             ? ('ultra' as const)
-            : withMeters && isNew && chargeForRank(entry?.rank) > 0
-              ? ('slash' as const)
-              : undefined;
+            : undefined;
         setHits((prev) => [
           ...prev,
           entry != null
