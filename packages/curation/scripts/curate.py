@@ -3,16 +3,19 @@
     pnpm curate [--lang fr] [--work <file on the shelf>]
     pnpm curate --retry <file on the shelf | candidate puzzle.json>
 
-Greedy and linear: the LLM picks a work off the shelf (an epub, or a song file put
-there by `shelf:lyrics`), then sentences, then the secrets one at a time from a list
-that code keeps valid (`rules.py`); a sentence with no trio is abandoned for the next;
-the first sentence that survives is handed to `gen_phrase` headless. The run's log —
+Linear: a work is picked off the shelf by rule (an epub, or a song file put there by
+`shelf:lyrics`), the model shortlists sentences, code strikes the words the context
+hands over and lists every valid trio of what is left (`rules.py`), and the model
+DESIGNS the day by choosing one as a chain; `gen_phrase` builds its maps headless, a
+hole the readers' guesses cannot reach sends the design back without that word, and
+a sentence with no trio left is abandoned for the next. The run's log —
 every rejection and its rule — is written to `runs/<stamp>.md`, the puzzle to
 generation's output directory.
 """
 
 import argparse
 from datetime import date, datetime, timezone
+from functools import lru_cache
 import json
 import os
 from pathlib import Path
@@ -21,7 +24,7 @@ import subprocess
 import sys
 
 import _paths
-import contextual_rank  # the #308 judge: sentence pre-filter + shortlist order (generation/scripts)
+import contextual_rank  # the #308 judge: sentence pre-filter + shortlist order + giveaways (generation/scripts)
 from slug import slug
 
 import llm
@@ -127,15 +130,20 @@ def load_similarity(lang: str):
         k = key(t)
         return None if k is None else int(kv.key_to_index[k])
 
+    @lru_cache(maxsize=64)
+    def ranking(k: str) -> dict[str, int]:
+        return {cand: r for cand, r, _ in module.closest(k, kv, V, M, n=None)}
+
     def neighbour_rank(t: rules.Token, word: str):
-        """Where `word` stands in the game's own ranking around the token's vector
-        (0 = the nearest other word); None when either is unknown. The twin test of the
-        obviousness filter (`rules.is_twin`)."""
+        """Where `word` stands in the STATIC ranking around the token's vector (0 = the
+        nearest other word); None when either is unknown. The twin test of the
+        obviousness filter (`rules.is_twin`), and the static distance the design
+        prompt is shown."""
         k = key(t)
         w = word.lower()
         if k is None or w not in kv or w == k:
             return None
-        return next((r for cand, r, _ in module.closest(k, kv, V, M, n=None) if cand == w), None)
+        return ranking(k).get(w)
 
     return similarity, frequency_rank, neighbour_rank
 
@@ -174,6 +182,16 @@ def run_gen_phrase(sentence: str, words: list[str], source: dict, forms: dict[st
     return completed, cmd
 
 
+class OutOfReach(Exception):
+    """The day's maps are built and some hole's readers cannot reach it: {secret slug:
+    (nearest filler, its rank or None past the map)}. The design goes back without
+    those words."""
+
+    def __init__(self, holes: dict[str, tuple[str, int | None]]):
+        super().__init__(", ".join(holes))
+        self.holes = holes
+
+
 def _sidecar(puzzle_path: str) -> str:
     """The judge's scores gen_phrase writes beside a puzzle (#308)."""
     return puzzle_path[:-len(".json")] + ".contextual.json"
@@ -181,13 +199,16 @@ def _sidecar(puzzle_path: str) -> str:
 
 def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], source: dict, lang: str,
              context: dict[str, str] | None = None, frequency_rank=lambda t: None,
-             pairs: dict[str, set[str]] | None = None, replay: str | None = None):
+             pairs: dict[str, set[str]] | None = None, replay: str | None = None,
+             chain: list[str] | None = None, reach=None):
     """Returns the written puzzle path, or None with the reason logged. The forms are
     answered by the model as gen_phrase asks. The first successful run only supplies the
-    rank maps: the START WORDS are then chosen by the model, the three together, from
-    each hole's band (`choose_starts`), and the puzzle is regenerated with them; every
-    result is checked (the displayed sentence must be valid French) and a refused start
-    re-picked, at most START_ROUNDS times."""
+    rank maps: `reach(puzzle)` names the holes the readers cannot reach in them (the
+    draft is then erased and OutOfReach raised), else the START WORDS are chosen by the
+    model, the three together, from each hole's band and along the day's `chain`
+    (`choose_starts`), and the puzzle is regenerated with them; every result is checked
+    (the displayed sentence must be valid French) and a refused start re-picked, at most
+    START_ROUNDS times."""
     forms: dict[str, str] = {}
     starts: dict[str, str] = {}
     tried: dict[str, set[str]] = {}  # every start a hole has shown, secret slug -> words
@@ -226,12 +247,17 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
             prev = path or prev
             if path and not chosen:
                 chosen = True
-                picked = choose_starts(claude, log, path, context or {}, forms, frequency_rank, pairs or {})
+                far = reach(json.loads(Path(path).read_text(encoding="utf-8"))) if reach else {}
+                if far:
+                    Path(path).unlink(missing_ok=True)
+                    Path(_sidecar(path)).unlink(missing_ok=True)
+                    raise OutOfReach(far)
+                picked = choose_starts(claude, log, path, context or {}, forms, frequency_rank, pairs or {}, chain)
                 if picked:
                     _adopt(starts, tried, picked)
                     continue
             if path and rounds < st.START_ROUNDS:
-                repick = check_starts(claude, log, path, tried, context or {}, frequency_rank, pairs or {})
+                repick = check_starts(claude, log, path, tried, context or {}, frequency_rank, pairs or {}, chain)
                 if repick:
                     _adopt(starts, tried, repick)
                     rounds += 1
@@ -288,11 +314,12 @@ def _word_rank(frequency_rank):
 
 
 def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, str],
-                  forms: dict[str, str], frequency_rank, pairs: dict[str, set[str]] | None = None) -> dict[str, str]:
+                  forms: dict[str, str], frequency_rank, pairs: dict[str, set[str]] | None = None,
+                  chain: list[str] | None = None) -> dict[str, str]:
     """The model picks the three start words together, from each hole's band (elision-
     clean, not too rare, never a start this secret was played with before — `pairs`,
     the archive's permanent blacklist — nearest first), reading the sentence, each
-    slot's form and the context annotations."""
+    slot's form, the context annotations and the chain the day was designed on."""
     pairs = pairs or {}
     puzzle = json.loads(open(path, encoding="utf-8").read())
     words, holes = puzzle["words"], puzzle["holes"]
@@ -313,7 +340,7 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
                      "slot": f"form {forms.get(h['secret']['word'], '?')}, after « {st.previous_token(words, h) or '—'} »"})
     if not info:
         return {}
-    picked = llm.pick_starts(claude, marked, info)
+    picked = llm.pick_starts(claude, marked, info, chain)
     for h in info:
         word = picked.get(h["slug"])
         rank = next((o["rank"] for o in h["options"] if o["word"] == word), None)
@@ -325,7 +352,8 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
 
 
 def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[str]],
-                 context: dict[str, str], frequency_rank, pairs: dict[str, set[str]] | None = None) -> dict[str, str]:
+                 context: dict[str, str], frequency_rank, pairs: dict[str, set[str]] | None = None,
+                 chain: list[str] | None = None) -> dict[str, str]:
     """The displayed sentence with its start words: a start this secret was already
     played with (`pairs`), the elision rule, then the model's grammar check. Returns
     {secret slug: new start} for every faulty hole (empty = all good, or nothing better
@@ -370,7 +398,7 @@ def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[s
             continue
         marked = st.displayed(words, holes, {key: "[____]"})
         choice = llm.pick_start(claude, marked, h["secret"]["word"], options,
-                                refused=problem, context=context.get(key, "unknown"))
+                                refused=problem, context=context.get(key, "unknown"), chain=chain)
         if choice is None:
             log(f"- the model finds no valid start for « {h['secret']['word']} » — left to the reviewer")
             continue
@@ -587,7 +615,7 @@ def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str])
 def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: dict,
             in_vocab, similarity, frequency_rank, lang: str, window: dict | None = None,
             quotes: list[str] = (), neighbour_rank=lambda t, w: None, replay: str | None = None):
-    """One sentence through the quotation test, trio search and generation. `window` is
+    """One sentence through the quotation test, the trio design and generation. `window` is
     the raw text around it (#270), which the model CUTS into the page once the trio is
     found — so a rejected sentence never spends the call. `quotes` are the work's quoted
     lines on file (`shelf_quotes`); the strike is theirs, and the model only annotates."""
@@ -640,31 +668,68 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
         log(f"- rejected: fewer than {rules.TRIO} words the context leaves open")
         return None
 
-    def choose(remaining, picked):
-        word = llm.pick_secret(claude, tokens, remaining, picked)
-        if word is None:
-            return None
-        key = slug(word)
-        return next((t for t in remaining if t.slug == key), rules.Token(-1, word, "", "", "", -1, key))
+    # The day is DESIGNED, not picked a word at a time (2026-09-23, the user's craft:
+    # "picking a word by knowing that once solved it will help you find this one"): code
+    # lists every trio the rules allow, the model chooses one as a chain. Once the maps
+    # are built, a hole none of whose readers' fillers sits near it in ITS OWN map is out
+    # of reach (`rules.out_of_reach`): the draft is erased and the design goes back
+    # without that word — judged on the shipped map, never the static one, so a word
+    # whose sense the static vector misses stays possible (#308).
+    trios = rules.valid_trios(tokens, candidates, similarity=similarity)
+    notes = {}
+    for t in candidates:
+        heard = fillers_of.get(t.slug, ())
+        near = rules.nearest_filler(t, list(heard), neighbour_rank)
+        notes[t.slug] = (f"{', '.join(heard) or 'nothing'}"
+                         + (f" (nearest in the static ranking: « {near[0]} », rank {near[1]})" if near else ""))
 
-    search_log = rules.SearchLog()
-    trio = rules.search_trio(tokens, candidates, choose=choose, similarity=similarity, log=search_log)
-    for event in search_log.events:
-        log(f"- {event}")
-    if trio is None:
-        return None
-    words = [t.text for t in trio]
-    log(f"- trio: {' · '.join(words)}")
-    # What a reader puts in each hole from the context alone (the filter's fillers, none
-    # of them the secret): shown to the start-word prompt, which must not hand one over.
-    context = {t.slug: f"open — a reader's first fillers: {', '.join(fillers_of.get(t.slug, ())) or 'none'}"
-               for t in trio}
+    def reach(puzzle: dict) -> dict[str, tuple[str, int | None]]:
+        far = {}
+        for key in {h["secret"]["slug"] for h in puzzle["holes"]}:
+            nearest = rules.map_nearest_filler(puzzle["ranks"][key], key, list(fillers_of.get(key, ())))
+            if rules.out_of_reach(nearest):
+                far[key] = nearest
+        return far
+
     source = {"kind": book["kind"], "author": book.get("author", ""), "work": book.get("title", "")}
-    excerpt = choose_page(claude, log, sentence, window) if window else None
-    if excerpt:
-        source["excerpt"] = excerpt
-    return generate(claude, log, sentence, words, source, lang, context, frequency_rank, archive["pairs"],
-                    replay=replay)
+    struck: set[str] = set()
+    paged = False
+    while True:
+        options = [trio for trio in trios if not any(t.slug in struck for t in trio)]
+        if not options:
+            log("- rejected: no three open words can stand together"
+                + (" once the words out of reach are struck" if struck else ""))
+            return None
+        design = llm.design_trio(claude, tokens, options, notes)
+        if design is None:
+            log(f"- rejected: the model finds no good day among {len(options)} valid trio(s)")
+            return None
+        trio = list(design["trio"])
+        words = [t.text for t in trio]
+        log(f"- trio: {' · '.join(words)} (chosen among {len(options)} valid)")
+        for step in design["path"]:
+            log(f"  - chain: {step}")
+        if design["why"]:
+            log(f"  - why: {design['why']}")
+        # What a reader puts in each hole from the context alone (the filter's fillers, none
+        # of them the secret): shown to the start-word prompt, which must not hand one over.
+        context = {t.slug: f"open — a reader's first fillers: {', '.join(fillers_of.get(t.slug, ())) or 'none'}"
+                   for t in trio}
+        if window and not paged:
+            paged = True
+            excerpt = choose_page(claude, log, sentence, window)
+            if excerpt:
+                source["excerpt"] = excerpt
+        try:
+            return generate(claude, log, sentence, words, source, lang, context, frequency_rank, archive["pairs"],
+                            replay=replay, chain=design["path"], reach=reach)
+        except OutOfReach as exc:
+            for key, (word, rank) in exc.holes.items():
+                where = f"rank {rank}" if rank is not None else "past the map"
+                log(f"- '{key}' is OUT OF REACH in its map — the readers' nearest filler « {word} » sits at "
+                    f"{where} (> {rules.FILLER_NEAR_MAX}) — struck, the day is designed again")
+            struck |= set(exc.holes)
+            replay = None  # another trio: the erased draft's scores no longer apply
 
 
 def choose_page(claude: llm.Claude, log: Log, sentence: str, window: dict) -> dict | None:

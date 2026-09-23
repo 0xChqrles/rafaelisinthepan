@@ -45,7 +45,8 @@
 ```bash
 pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <shelf file | puzzle.json>] [--blind]
 #   Needs JEV_API_KEY in the environment (#308): the judge pre-filters and orders the
-#   sentences the model reads, and gen_phrase — contextual by default — needs it too.
+#   sentences the model reads and strikes the giveaway holes, and gen_phrase —
+#   contextual by default — needs it too.
 #   Picks a work BY RULE (2026-09-20; the model no longer picks: `curate.pick_work` —
 #   off the shelf minus the archive minus index.json minus the artist cooldown, a song
 #   when no music day is within MUSIC_EVERY_DAYS = 4, else a book, the author never
@@ -119,9 +120,10 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   are close synonyms of it (AUC ≈ 0.5 on the 36 holes with logged fillers — « douceur »
   had a rank-1 filler and played well). Known limit: about half the easy holes are not
   predicted by these questions.
-- **The LLM never sees an invalid option.** `rules.initial_candidates` builds the list it
-  picks from; `rules.prune` shrinks it after every pick; a pick off the list is ignored.
-  The model chooses, code enforces. Tunables live at the top of `rules.py`:
+- **The LLM never sees an invalid option.** `rules.initial_candidates` builds the
+  candidates, `rules.open_candidates` keeps the ones the context leaves open,
+  `rules.valid_trios` lists every trio whose pairs pass `rules.prune` both ways, and the
+  model chooses one BY NUMBER. The model chooses, code enforces. Tunables live at the top of `rules.py`:
   `ALLOWED_POS`, `MAX_COMMON_RANK` (20) / `MAX_COMMON_RANK_ADV` (500, the frequency
   floors read off the reduced vectors' order), `WEAK_VERBS` (verbs of saying, thinking
   and modality, by lemma — never a secret; user-decided 2026-09-08 on a trio led by
@@ -129,9 +131,10 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   reaches the model — `curate.rich_enough` parses the mined sentences before the
   shortlist; measured 2026-09-08 on 27 attempts: 4–7 candidates gave no trio or a dull
   forced one, every trio worth keeping came from 8+), `MIN_GAP` (3 tokens), `COSINE_MAX`
-  (0.40), `MODIFIER_DEPS`, `MAX_RESTARTS` (2), `MAX_OFF_LIST` (2), `CONTEXT_GUESSES` (3,
+  (0.40), `MODIFIER_DEPS`, `CONTEXT_GUESSES` (3,
   the most fillers the obviousness filter asks a reader for), `OBVIOUS_MAX` (2),
-  `TWIN_RANK` (3), `PLAIN_WORD_RANK` (40000, ONE boundary with `starts.MAX_START_FREQ_RANK`);
+  `TWIN_RANK` (3), `PLAIN_WORD_RANK` (40000, ONE boundary with `starts.MAX_START_FREQ_RANK`),
+  `FILLER_NEAR_MAX` (30);
   and at the top of `curate.py`: `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK`
   (6), `SHORTLIST` (20). The mechanical filter (`sentences.is_candidate`) also refuses a
   unit that OPENS on a quotation mark (reported speech, or an argument with a line the
@@ -147,12 +150,12 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   the permanent blacklist it was, which had « cimetière » off the table forever after one
   Ernaux day; judged on the ledger's game day),
   no same-lemma twin under another slug in the sentence (a same-slug repeat is allowed:
-  one hole per occurrence). After a pick, gone are: every verb if the pick is a verb
-  (at most one verb); the pick's head and dependents and its modifier siblings (a verb
-  and its subject, an adjective and its noun — "describing the same thing"); anything
-  within `MIN_GAP` tokens ("the same part of the sentence"); lemma/morphological
-  variants; anything above `COSINE_MAX` to a pick ("too similar"). `conj` siblings stay
-  (a list of nouns is a good spread).
+  one hole per occurrence). Two words never share a trio (`prune`, checked both ways by
+  `valid_trios`): two verbs (at most one verb); a word and its head, a dependent or a
+  modifier sibling (a verb and its subject, an adjective and its noun — "describing the
+  same thing"); two words within `MIN_GAP` tokens ("the same part of the sentence");
+  lemma/morphological variants; two words above `COSINE_MAX` ("too similar"). `conj`
+  siblings stay (a list of nouns is a good spread).
 - **The sentence must STAND ALONE, solved (user-decided 2026-09-18, on the Svevo day:
   « c'étaient donc des nerfs parfaits » meant nothing even solved — the page is shown
   after the solve, never during play).** One call per shortlisted sentence, before the
@@ -221,11 +224,40 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   words is rejected before any pick. Why this shape: the 2026-09-06 check ran AFTER the trio,
   with all three blanks, as a log note — « il aurait répondu [sûrement] pas » was picked
   from a list of four and the check that would have refused it could change nothing.
-  The open holes' fillers are shown to the start-word prompt. The skill's trio rules
-  carry the user's INTERACTION rule of the same day (a hole another visible word
-  narrows, never a bare list item); the pick prompt reads it from there.
-- **A dead end restarts the sentence with its first pick struck**, `MAX_RESTARTS` times,
-  then the next sentence. No smarter backtracking.
+  The open holes' fillers are shown to the design and start-word prompts. The skill's
+  trio rules carry the user's INTERACTION rule of the same day (a hole another visible
+  word narrows, never a bare list item); the design prompt reads it from there.
+- **NO HOLE OUT OF REACH (2026-09-23, decided by the agent on the user's delegation, for
+  the user's goal: about 80% of players finishing within 30 tries, reached through
+  CURATION ALONE — the game mechanics stay as they are).** The obviousness filter's
+  fillers, read the other way, ON THE HOLE'S OWN BUILT MAP: once the chosen trio's maps
+  exist, `generate` asks `rules.out_of_reach(rules.map_nearest_filler(...))` per hole —
+  the readers' nearest single-word filler past `FILLER_NEAR_MAX` (30) in that map, or
+  past the map — and a hole out of reach erases the draft (`OutOfReach`): the word is
+  struck and the day DESIGNED AGAIN from the trios left. Never judged on the static
+  ranking: that would strike a word whose sense the static vector misses, the words the
+  contextual map exists for (user, 2026-09-24: Jev "allows to pick any word, even if it
+  has homonyms"). A day is as hard as its hardest hole: 09-22 and 09-23, one player in
+  ten within 30 tries. Calibrated on REAL play: the 26 published holes with logged
+  fillers (09-11..23), "hard" = found within 30 tries by under 60% of the players who
+  engaged; at 30 the rule refuses 6 of the 9 hard holes (« lâcher » 661, « héros » 404,
+  « humble » 216, « saluer » 141, « alcoolique » 72, « redoutée » 40) for 3 of 17 good
+  ones. It aims at HARD holes; the close-synonym strike rejected above aimed at easy
+  ones. The judge's low giveaway score predicts hard holes about as well but, as a
+  floor, caught fewer for the same loss: not used.
+- **The day is DESIGNED as a CHAIN, the trio chosen whole (2026-09-23, the user's craft:
+  "picking a word by knowing that once solved it will help you find this one").**
+  `rules.valid_trios` lists every trio of open words the rules let stand together;
+  `llm.design_trio` shows the sentence, what a reader puts in each open blank (with the
+  nearest filler's rank) and the numbered trios, and the model answers ONE number and the
+  PATH — the order players will find the words in and what each found word gives the
+  next, shown the static rank of each word's nearest filler as information. The path is
+  logged and handed to the start-word prompts (`pick_starts`, `pick_start`), which set
+  the starts along it (the skill's `## The start word`). A hole out of reach sends the
+  design back without that word (above); no valid trio left, or the model declining them
+  all, abandons the sentence. It replaced the
+  word-at-a-time pick (`pick_secret`, `search_trio`, `MAX_RESTARTS`, `MAX_OFF_LIST`),
+  which could not plan how the holes help each other.
 - **The taste profile and the secret rules have ONE home, the `find-sentences` skill
   file**; `llm.py` slices its `## Taste profile`, `## The two laws` and `## The trio
   rules` sections into the prompts at run time. Edit the skill, never a prompt copy.
@@ -239,7 +271,9 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   (`curate.generate` parses the #133 error's analysis list). Nothing here publishes.
 - **The START WORDS are CHOSEN by the model, the three together, never at random**
   (user rule 2026-09-07: the start is the user's daily craft — think of the chain of
-  guesses, balance the three, go easier when another hole is hard; sharpened
+  guesses, balance the three, go easier when another hole is hard; set along the day's
+  designed chain since 2026-09-23, from the ONE band 100–200 of every map since
+  2026-09-24; sharpened
   2026-09-10: first strike every candidate that does not fit the slot, then a start that
   CARRIES ONE OBVIOUS CONCEPT of the secret and is NEVER a synonym, a near-synonym or an
   opposite of it; the rules live in the skill's `## The start word` section, read by

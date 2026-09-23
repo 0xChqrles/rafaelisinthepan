@@ -28,8 +28,7 @@ relative to `packages/generation/` unless prefixed.
       embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
       glove_neighbors.py      en paths + derived .kv cache (thin wrapper over the above)
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
-      start_word.py           start/hint-word selection (rank band 100-150; 250-400 on a
-                              contextual map, #308)
+      start_word.py           start/hint-word selection (rank band 100-200 on every map)
       distances.py            stdlib-only: dq quantization (#115)
       contextual_rank.py      stdlib-only: the #308 judge boundary — Jev (TypeSafe) pass 1
                               Score + pass 2 pairwise, English-dominance demotion, sidecar
@@ -262,10 +261,13 @@ Consequences that are load-bearing:
   <sidecar>` rebuilds the same map byte-for-byte without a call (verified), so a
   start-word or metadata correction never rescore. `--contextual-model` names the
   judge (`jev-latest` today; pin a version there when the API offers one).
-- **The start band of a contextual map is `CONTEXT_BAND = (250, 400)`**
-  (`start_word.py`): its near field packs far tighter, so the static 100–150 hint
-  gives the game away (the first reranked days played "much easier"; user-decided
-  farther, 250–500 by hand, the width bounded by what the selector can list). The
+- **ONE start band on every map, `START_BAND` = 100–200** (`start_word.py`,
+  user-decided 2026-09-24, replacing 100–150 static / `CONTEXT_BAND` 250–400
+  contextual): replayed on the Jev days, players' guesses landed as close on the
+  contextual map as on a static rebuild, so a rank means the same distance to a player on
+  either — the deeper band put the start 2–3× farther, past the judge's pairwise-ordered
+  top (`PAIRWISE_TOP`). Do not reintroduce a per-map band on the "tighter near field"
+  premise without new play data. The
   hover preview of the interactive selector stays STATIC (browsing spends no judge
   call); the commit step's confirmed rebuild is the one that reranks, with a
   "quelques minutes" notice, so the band picked from is the map that ships.
@@ -479,7 +481,7 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json + shared/src/vocab.
 #    concept with a chosen hole (off a TTY those two only warn). Writes
 #    <puzzle>.contextual.json beside the puzzle, which --contextual-replay FICHIER
 #    rebuilds from without a call; --contextual-model MODELE names the judge. The hint
-#    band is 250-400 on a contextual map.
+#    band is 100-200, as on a static map.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
 pnpm gen:phrase "<sentence>" --lang fr --words a b c --before "…" --after "…"   # the excerpt feeds the judge too
 pnpm gen:phrase "<sentence>" --lang fr --words a b c --static   # reference map, no judge
@@ -509,8 +511,8 @@ output filename contains the three distinct secret slugs in sentence order.
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 10000` / curator report window `PLAYABILITY_TOP = 150` (gen),
-  start-rank band `100–150` (`start_word.py`, user-decided 2026-09-07; was 50–150),
-  `CONTEXT_BAND = (250, 400)` for a contextual map (#308), `PAIRWISE_TOP = 200` /
+  start-rank band `START_BAND = 100–200` on every map (`start_word.py`, user-decided
+  2026-09-24; was 100–150, and 250–400 on a contextual map), `PAIRWISE_TOP = 200` /
   `SCORE_BATCH = 50` / `PAIR_BATCH = 40` / `NOUL_BATCH = 40` / `WORKERS = 6`, filter
   thresholds `START_FIT_MIN = 0.5` / `HOLE_READABLE_MIN = 0.6` / `SAME_CONCEPT_MAX = 0.6` /
   `FRENCH_MIN = 0.2`,
@@ -553,7 +555,7 @@ output filename contains the three distinct secret slugs in sentence order.
   because reduction already strips stopwords / single letters / non-dictionary tokens,
   "in `V`" **is** the content-word filter (no separate stopword list), so `l'animal` offers
   only `animal` and punctuation/stopwords are non-selectable. ←/→ navigate the content
-  words; the hovered word's **full start-word band** (`start_band`, ranks 100–150) is
+  words; the hovered word's **full start-word band** (`start_band`, ranks 100–200) is
   previewed live (its neighbor ranking computed once per secret slug and **cached**).
   **Enter** commits the hovered occurrence's whole repeated-word group, then a **number +
   Enter** picks its shared start word (**Esc** cancels back to navigation, **Ctrl-C**

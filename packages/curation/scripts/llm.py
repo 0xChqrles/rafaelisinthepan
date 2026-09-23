@@ -216,33 +216,48 @@ def holed(tokens, blanks: set[int], mark: int | None = None) -> str:
     return re.sub(r"\s+([,.;:!?…»)])", r"\1", re.sub(r"([«(]|\w')\s+", r"\1", " ".join(parts)))
 
 
-def pick_secret(claude: Claude, tokens, remaining, picked) -> str | None:
-    blanks = {t.i for t in picked}
-    shown = holed(tokens, blanks)
-    options = ", ".join(f"{t.text} ({t.pos.lower()})" for t in remaining)
-    already = ", ".join(t.text for t in picked) or "none yet"
-    answer = claude.json(f"""You curate a daily French word game: three words of a sentence are hidden and the
-player rediscovers each from embedding-neighbour feedback (a hint word ranked
-{START_RANK_MIN}–{START_RANK_MAX} from the secret, then warm/cold ranks on every guess).
-Pick the NEXT secret word.
+def design_trio(claude: Claude, tokens, trios: list[tuple], notes: dict[str, str]) -> dict | None:
+    """The model designs the day: ONE trio from `trios` (every one valid, code-built by
+    `rules.valid_trios`), chosen as a CHAIN — the order players will find the words in
+    and what each found word gives the next. `notes` holds, per candidate slug, what a
+    reader puts in its blank. Returns {"trio": <the tuple>, "path": [lines], "why": str},
+    or None when the model finds no trio worth a day."""
+    words = {t.slug: t for trio in trios for t in trio}
+    about = "\n".join(f"- {t.text} ({t.pos.lower()}): {notes.get(k, 'no reading')}" for k, t in words.items())
+    listing = "\n".join(f"{n}. {' · '.join(t.text for t in trio)}" for n, trio in enumerate(trios, 1))
+    answer = claude.json(f"""You design today's puzzle for a daily French word game. Three words of a sentence
+are hidden. Each hole first shows a START word (ranked {START_RANK_MIN}–{START_RANK_MAX}
+from its secret); the player then types guesses and reads, for every hole, how close each
+guess lands. A word once found stays revealed in the sentence, so it becomes context for
+the holes still open.
 
-The sentence as the player sees it so far (____ = already hidden):
-{shown}
+The sentence:
+{holed(tokens, set())}
 
-Already hidden: {already}.
+The words the context leaves open — each one has real alternatives and none is out of
+reach. With the rest of the sentence intact around that one blank, a reader puts:
+{about}
 
-Rules (the list below already excludes what the rules forbid mechanically, and every
-word for which the context leaves a reader only one or two possibilities):
+The rules of a good trio:
 {secret_rules()}
 
-Pick ONE word from this list only — the word that makes the best hole: many plausible
-fillers in context, an interesting neighbourhood to explore, a difficulty comparable to
-the other holes. Options: {options}
+Design the day as a CHAIN: choose the trio where finding one word helps find the next —
+an entry word players reach first from the context, a word the found entry word narrows,
+and a last word the other two make findable — rather than three separate lookups. Think
+of the order players will really find them in, and of what each revealed word adds to
+the sentence around the next hole.
 
-Return {{"word": "<exact word from the list>", "why": "<one line>"}} or {{"word": null}}
-if none of the options makes a good hole.""")
-    word = answer.get("word")
-    return word if isinstance(word, str) and word.strip() else None
+Choose ONE trio from this numbered list only (every trio on it respects the mechanical
+rules):
+{listing}
+
+Return {{"trio": <number>, "path": ["<first word>: <why players reach it first>", "<second word>: <what the first gives it>", "<third word>: <what the first two give it>"], "why": "<one line: why this day plays well>"}},
+or {{"trio": null, "why": "<one line>"}} if no trio on the list makes a good day.""")
+    n = answer.get("trio")
+    if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= len(trios):
+        return None
+    path = [str(line) for line in answer.get("path") or [] if isinstance(line, str) and line.strip()]
+    return {"trio": trios[n - 1], "path": path, "why": str(answer.get("why") or "")}
 
 
 def context_guesses(claude: Claude, tokens, blanks: set[int], mark: int, n: int) -> tuple[list[str], str | None]:
@@ -314,11 +329,19 @@ Return {{"valid": true/false, "faulty": [{{"word": "<inserted word that breaks t
     return {"valid": bool(answer.get("valid")) and not faulty, "faulty": faulty}
 
 
-def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict]) -> dict[str, str]:
+def _chain_block(chain: list[str] | None) -> str:
+    if not chain:
+        return ""
+    lines = "\n".join(f"{i}. {step}" for i, step in enumerate(chain, 1))
+    return f"\nThe chain the day was designed on — the order players should find the words in:\n{lines}\n"
+
+
+def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict],
+                chain: list[str] | None = None) -> dict[str, str]:
     """The three start words chosen TOGETHER. `holes`: [{secret, slug, context, options:
-    [{word, rank}]}] — `context` is the context-check annotation (where the model's own
-    guess of the blank landed, or "not guessed"). Returns {slug: word}, only words from
-    the options."""
+    [{word, rank}]}] — `context` is what a reader puts in the blank. `chain` is the path
+    the trio was designed on (`design_trio`): the starts are set along it. Returns
+    {slug: word}, only words from the options."""
     blocks = []
     for h in holes:
         opts = ", ".join(f"{o['word']} ({o['rank']})" for o in h["options"])
@@ -341,7 +364,7 @@ after « un », a verb cut off from its complement.
 
 The sentence, holes marked with the hidden word in brackets:
 {sentence_marked}
-
+{_chain_block(chain)}
 {chr(10).join(blocks)}
 
 Return {{"starts": {{"<hidden word>": "<chosen candidate, exactly>", ...}}, "why": "<one line per hole>"}}.""")
@@ -386,7 +409,7 @@ Return {{"before": <how many B sentences to keep, 0..{len(before)}>, "after": <h
 
 
 def pick_start(claude: Claude, sentence_marked: str, secret: str, options: list[dict],
-               refused: str = "", context: str = "unknown") -> str | None:
+               refused: str = "", context: str = "unknown", chain: list[str] | None = None) -> str | None:
     listing = ", ".join(f"{o['word']} ({o['rank']})" for o in options)
     answer = claude.json(f"""You curate a daily French word game: three words of a sentence are hidden and the
 player rediscovers each from embedding-neighbour feedback. One hole's START word (its
@@ -401,7 +424,7 @@ place before answering. Context check for this hole: {context}.
 
 The sentence, the hole marked [____]:
 {sentence_marked}
-
+{_chain_block(chain)}
 Candidates (word (rank), closest first): {listing}
 
 Return {{"word": "<one candidate, exactly>"}} or {{"word": null}} if none makes valid French.""")

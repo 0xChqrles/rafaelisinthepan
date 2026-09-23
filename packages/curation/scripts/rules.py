@@ -1,9 +1,10 @@
 """The trio rules as pure functions over a parsed sentence.
 
-The LLM never sees an invalid option: `initial_candidates` builds the list it picks
-from, `prune` shrinks the list after every pick, and `search_trio` drives the pick /
-context-test / prune loop with the two LLM judgements injected as callables — so the
-whole search is testable without a parser, a model or a vector file.
+The LLM never sees an invalid option: `initial_candidates` builds the candidate list,
+`open_candidates` keeps the words the context leaves open, and `valid_trios` lists
+every trio whose three words `prune` lets stand together — the model designs the day by
+choosing one of them; `out_of_reach` then judges each hole on its built map. The LLM judgements are injected as callables,
+so the rules are testable without a parser, a model or a vector file.
 
 Tunables live here, in one place (issue #260).
 """
@@ -42,10 +43,6 @@ COSINE_MAX = 0.40
 # a noun and its complement); coordinated siblings (`conj`) are deliberately NOT here —
 # a list of nouns is a good spread (Perec's rideaux · palissades · fantômes).
 MODIFIER_DEPS = frozenset({"amod", "nmod", "appos", "acl", "advmod"})
-# How many times a sentence is retried with its exhausted first pick struck.
-MAX_RESTARTS = 2
-# Consecutive picks off the list before the model is taken to have declined.
-MAX_OFF_LIST = 2
 # The OBVIOUSNESS FILTER (user-decided 2026-09-10, the user's own method: read the
 # context, think of the fillers WITHOUT a start word, and ask "what else can it be?" —
 # only a word with real alternatives can be a hole). Judged BEFORE the pick, one
@@ -84,6 +81,17 @@ CONTEXT_GUESSES = 6
 OBVIOUS_MAX = 2
 TWIN_RANK = 3
 PLAIN_WORD_RANK = 40000
+# NO HOLE OUT OF REACH (2026-09-23, the user's goal "about 80% of players within 30
+# tries", reached through curation alone): the same reader's fillers, read the other way,
+# on the hole's OWN built map (contextual or not — the static vector would strike a word
+# whose sense it misses). A hole none of whose single-word fillers sits within
+# FILLER_NEAR_MAX of it is one players cannot approach — their natural first guesses land
+# cold and stay cold. Calibrated on REAL play: the 26 published holes with logged fillers
+# (2026-09-11..23), "hard" = found within 30 tries by under 60% of the players who
+# engaged; at 30 the rule refuses 6 of the 9 hard holes (« lâcher » 661, « héros » 404,
+# « humble » 216, « saluer » 141, « alcoolique » 72, « redoutée » 40) for 3 of 17 good
+# ones — a lost good hole is cheap, a day nobody finishes is not.
+FILLER_NEAR_MAX = 30
 # Secrets per puzzle (the sentence schema: exactly three distinct slugs).
 TRIO = 3
 
@@ -169,7 +177,8 @@ def open_candidates(
     PLAIN_WORD_RANK; None = unknown, taken as plain) — or when the reader can name at
     most OBVIOUS_MAX words for it, the secret included (a twin is the secret again; a
     named word that is not the secret is one of the alternatives). One judgement per
-    distinct slug; the order of the list is kept."""
+    distinct slug; the order of the list is kept. Whether the fillers can REACH the word
+    is judged later, on its built map (`out_of_reach`)."""
     log = log or SearchLog()
     verdict: dict[str, bool] = {}
     out = []
@@ -197,6 +206,45 @@ def open_candidates(
         if not verdict[c.slug]:
             out.append(c)
     return out
+
+
+def nearest_filler(candidate: Token, words: list[str],
+                    neighbour_rank: Callable[[Token, str], int | None]) -> tuple[str, int] | None:
+    """The reader's filler nearest the candidate in the static ranking, as (word, rank);
+    None when no filler's rank is known. The secret itself and its variants are not
+    fillers. Information for the design prompt, never a strike."""
+    best = None
+    for w in words:
+        s = slug(w)
+        if not s or s == candidate.slug or is_variant(s, candidate.slug):
+            continue
+        rank = neighbour_rank(candidate, w)
+        if rank is not None and (best is None or rank < best[1]):
+            best = (w, rank)
+    return best
+
+
+def map_nearest_filler(rank_map: dict, secret_slug: str, fillers: list[str]) -> tuple[str, int | None] | None:
+    """The reader's filler nearest the secret in the hole's OWN map, as (word, rank); the
+    rank is None for a word past the map (farther than every ranked group). None when the
+    reader named no single-word filler — a multi-word filler cannot be typed, and the
+    secret itself and its variants are not fillers."""
+    best: tuple[str, int | None] | None = None
+    for w in fillers:
+        s = slug(w)
+        if not s or " " in w.strip() or s == secret_slug or is_variant(s, secret_slug):
+            continue
+        entry = rank_map.get(s)
+        rank = entry["rank"] if entry else None
+        if best is None or (rank is not None and (best[1] is None or rank < best[1])):
+            best = (w, rank)
+    return best
+
+
+def out_of_reach(nearest: tuple[str, int | None] | None) -> bool:
+    """A hole players cannot approach: the readers' nearest filler sits past
+    FILLER_NEAR_MAX in its map, or past the map. No filler to judge is not a verdict."""
+    return nearest is not None and (nearest[1] is None or nearest[1] > FILLER_NEAR_MAX)
 
 
 def prune(
@@ -248,57 +296,29 @@ class SearchLog:
         self.events.append(msg)
 
 
-def search_trio(
+def valid_trios(
     tokens: list[Token],
     candidates: list[Token],
     *,
-    choose: Callable[[list[Token], list[Token]], Token | None],
     similarity: Callable[[Token, Token], float | None],
-    log: SearchLog | None = None,
-    max_restarts: int = MAX_RESTARTS,
-) -> list[Token] | None:
-    """Greedy, constraint-propagated search for TRIO secrets.
-
-    `choose(remaining, picked)` is the LLM's pick (None = it declines the list). An
-    empty list before the trio is complete restarts the sentence with the first pick
-    struck, at most `max_restarts` times. Returns the trio, or None when the sentence
-    has no trio."""
-    log = log or SearchLog()
-    banned_first: set[str] = set()
-    for attempt in range(max_restarts + 1):
-        remaining = [c for c in candidates if c.slug not in banned_first]
-        picked: list[Token] = []
-        off_list = 0
-        while len(picked) < TRIO:
-            if not remaining:
-                break
-            pick = choose(remaining, picked)
-            if pick is None:
-                log.note("the model declined every remaining word")
-                break
-            if pick.slug not in {c.slug for c in remaining}:
-                off_list += 1
-                log.note(f"'{pick.text}' is not on the list — ignored")
-                if off_list >= MAX_OFF_LIST:
-                    log.note("the model keeps answering off the list — taken as a decline")
-                    break
-                continue
-            off_list = 0
-            picked.append(pick)
-            before = len(remaining)
-            remaining = prune(remaining, pick, tokens, similarity=similarity)
-            log.note(f"picked '{pick.text}' ({pick.pos.lower()}); {before - 1 - len(remaining)} "
-                     f"word(s) pruned, {len(remaining)} left")
-        if len(picked) == TRIO:
-            return picked
-        if not picked:
-            log.note("no first pick possible")
-            return None
-        banned_first.add(picked[0].slug)
-        if attempt < max_restarts:
-            log.note(f"dead end after {len(picked)} pick(s); restart {attempt + 1}/{max_restarts} "
-                     f"with '{picked[0].text}' struck")
-        else:
-            log.note(f"dead end after {len(picked)} pick(s); no restart left")
-    log.note("no trio for this sentence")
-    return None
+) -> list[tuple[Token, Token, Token]]:
+    """Every trio of distinct candidate words that can stand together: each pair passes
+    `prune` both ways, whichever of the two were picked first (one token per slug, its
+    first occurrence — a repeated slug is one secret with a hole per occurrence). In the
+    candidates' order, so the listing is stable."""
+    firsts: list[Token] = []
+    for c in candidates:
+        if c.slug not in {f.slug for f in firsts}:
+            firsts.append(c)
+    fits = {
+        (a.slug, b.slug)
+        for a in firsts for b in firsts
+        if a.slug != b.slug and prune([b], a, tokens, similarity=similarity)
+    }
+    together = lambda a, b: (a.slug, b.slug) in fits and (b.slug, a.slug) in fits  # noqa: E731
+    n = len(firsts)
+    return [
+        (firsts[i], firsts[j], firsts[k])
+        for i in range(n) for j in range(i + 1, n) for k in range(j + 1, n)
+        if together(firsts[i], firsts[j]) and together(firsts[i], firsts[k]) and together(firsts[j], firsts[k])
+    ]

@@ -280,7 +280,7 @@ def test_interactive_contextual_selection_without_inflection(monkeypatch, capsys
         assert [(h["pos"], h.get("suffix", "")) for h in holes
                 if h["secret"]["slug"] == "chat"] == [(0, ""), (3, ".")]
     assert len([c for c in judge.calls if c[0] == "score"]) == 3
-    assert bands.count(ranker.band) == 3
+    assert bands and set(bands) == {gen_phrase.START_BAND}  # one band on every map (2026-09-24)
     assert all(h["start"]["word"] == "minou" for h in holes)
     assert all(rmap["minou"]["rank"] == 1 for rmap in ranks.values())
     assert len(ranker.records) == 3

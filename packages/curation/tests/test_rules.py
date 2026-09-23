@@ -4,7 +4,7 @@ from rules import (
     COSINE_MAX,
     MAX_COMMON_RANK,
     MAX_COMMON_RANK_ADV,
-    MAX_OFF_LIST,
+    FILLER_NEAR_MAX,
     MIN_GAP,
     OBVIOUS_MAX,
     PLAIN_WORD_RANK,
@@ -14,8 +14,11 @@ from rules import (
     initial_candidates,
     is_twin,
     open_candidates,
+    map_nearest_filler,
+    nearest_filler,
+    out_of_reach,
     prune,
-    search_trio,
+    valid_trios,
 )
 
 
@@ -108,58 +111,36 @@ def test_prune_removes_too_similar_words_and_variants():
     assert "lunes" not in left
 
 
-def test_search_trio_walks_pick_prune_to_three():
+def _pairs_fit(trio):
+    return all(prune([b], a, SENT, similarity=no_sim) and prune([a], b, SENT, similarity=no_sim)
+               for a, b in ((trio[0], trio[1]), (trio[0], trio[2]), (trio[1], trio[2])))
+
+
+def test_valid_trios_lists_every_trio_the_prune_rules_let_stand_together():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
-    order = ["chat", "lune"]
-    choose = lambda rem, picked: next((c for c in rem if c.text in order), rem[0])  # noqa: E731
-    log = SearchLog()
-    trio = search_trio(SENT, cands, choose=choose, similarity=no_sim, log=log)
-    # chat prunes dort (head), vieux/gris (children, neighbours); lune prunes brille
-    # (head) and blanche (child); pierre is the first word left, four tokens away.
-    assert [t.text for t in trio] == ["chat", "lune", "pierre"]
-    assert sum("picked" in e for e in log.events) == 3
+    trios = valid_trios(SENT, cands, similarity=no_sim)
+    names = {tuple(t.text for t in trio) for trio in trios}
+    assert ("chat", "pierre", "lune") in names          # three parts of the sentence
+    assert not any({"chat", "dort"} <= set(n) for n in names)     # a verb and its subject
+    assert not any({"dort", "brille"} <= set(n) for n in names)   # at most one verb
+    assert not any({"lune", "blanche"} <= set(n) for n in names)  # a noun and its adjective
+    assert all(_pairs_fit(trio) for trio in trios)
 
 
-def test_search_trio_restarts_with_the_first_pick_struck_then_gives_up():
+def test_valid_trios_take_one_token_per_slug_and_keep_the_candidates_order():
+    sent = SENT + [tok(14, "et", "CCONJ", "cc", 16, stop=True), tok(15, "la", "DET", "det", 16, stop=True),
+                   tok(16, "pierre", "NOUN", "conj", 7)]
+    cands = initial_candidates(sent, in_vocab=lambda s: True)
+    trios = valid_trios(sent, cands, similarity=no_sim)
+    assert all(len({t.slug for t in trio}) == 3 for trio in trios)
+    assert all(t.i != 16 for trio in trios for t in trio)  # the repeat is the same secret
+    order = [c.slug for c in cands]
+    assert all([order.index(t.slug) for t in trio] == sorted(order.index(t.slug) for t in trio) for trio in trios)
+
+
+def test_valid_trios_is_empty_when_nothing_can_stand_together():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
-    firsts = []
-
-    def choose(rem, picked):
-        if not picked:
-            firsts.append(rem[0].text)
-        return rem[0]
-
-    # Everything is too similar to everything: no second pick ever survives.
-    trio = search_trio(SENT, cands, choose=choose, similarity=lambda a, b: 1.0, max_restarts=2)
-    assert trio is None
-    assert firsts == ["vieux", "chat", "gris"]  # three attempts, a new first each time
-
-
-def test_search_trio_ignores_a_pick_off_the_list():
-    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
-    stray = tok(99, "soleil", "NOUN", "obj", 4)
-    calls = []
-
-    def choose(rem, picked):
-        calls.append(len(rem))
-        return stray if len(calls) == 1 else rem[-1]
-
-    trio = search_trio(SENT, cands, choose=choose, similarity=no_sim)
-    assert trio is not None and stray not in trio
-
-
-def test_search_trio_takes_repeated_off_list_answers_as_a_decline():
-    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
-    stray = tok(99, "soleil", "NOUN", "obj", 4)
-    calls = []
-
-    def choose(rem, picked):
-        calls.append(1)
-        return stray
-
-    trio = search_trio(SENT, cands, choose=choose, similarity=no_sim)
-    assert trio is None
-    assert len(calls) <= MAX_OFF_LIST * (2 + 1)  # never an endless loop
+    assert valid_trios(SENT, cands, similarity=lambda a, b: 1.0) == []
 
 
 
@@ -307,8 +288,43 @@ def test_the_expected_strike_spares_a_rare_word_the_count_rule_still_judges():
 
 def test_static_distance_does_not_reject_an_otherwise_open_hole():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
-    # These raw static ranks cannot say whether a filler is close in the shipped
-    # contextual map. Multiple distinct alternatives still leave an open hole.
+    # The static ranking cannot say whether a filler is close in the shipped map (a
+    # sense the static vector misses): reach is judged on the built map, not here.
     kept = open_candidates(cands, fillers=lambda _t: (["table", "chaise", "place"], None),
                            neighbour_rank=lambda _t, _w: 1100)
     assert kept == cands
+
+
+MAP = {  # a built rank map: slug -> entry (the secret « héros » is rank 0)
+    "heros": {"word": "héros", "rank": 0},
+    "heroine": {"word": "héroïne", "rank": 2},
+    "capitaine": {"word": "capitaine", "rank": FILLER_NEAR_MAX},
+    "garcon": {"word": "garçon", "rank": 404},
+    "type": {"word": "type", "rank": 900},
+}
+
+
+def test_a_hole_whose_readers_land_far_in_its_map_is_out_of_reach():
+    # « héros »: a reader puts garçon, gars, type — nothing near the secret in its map.
+    nearest = map_nearest_filler(MAP, "heros", ["garçon", "gars", "type"])
+    assert nearest == ("garçon", 404) and out_of_reach(nearest)
+    # One filler within reach is enough: the natural guesses can warm up.
+    assert not out_of_reach(map_nearest_filler(MAP, "heros", ["garçon", "capitaine"]))
+
+
+def test_a_filler_past_the_map_is_far_and_one_that_cannot_be_typed_is_no_filler():
+    assert out_of_reach(map_nearest_filler(MAP, "heros", ["gars"]))            # past the map
+    assert map_nearest_filler(MAP, "heros", ["tout exprès", "rien que"]) is None
+    assert not out_of_reach(None)                                               # nothing to judge
+
+
+def test_the_secret_and_its_variants_are_not_their_own_filler_in_the_map():
+    assert map_nearest_filler(MAP, "heros", ["héros", "héroïne", "type"]) == ("héroïne", 2)
+    assert map_nearest_filler(MAP, "heros", ["héros"]) is None
+
+
+def test_the_secret_and_its_variants_are_not_their_own_nearest_filler():
+    chat = next(c for c in initial_candidates(SENT, in_vocab=VOCAB.__contains__) if c.text == "chat")
+    rank = {"chat": 0, "chats": 1, "chien": 70, "tigre": 90}.get
+    assert nearest_filler(chat, ["chat", "chats", "tigre", "chien"], lambda _t, w: rank(w)) == ("chien", 70)
+    assert nearest_filler(chat, ["chat", "chats"], lambda _t, w: rank(w)) is None

@@ -90,6 +90,24 @@ def test_a_rerun_replays_the_previous_sidecar_instead_of_paying_the_judge(monkey
     assert "--contextual-replay" not in seen[1]
 
 
+def test_a_hole_out_of_reach_in_its_built_map_erases_the_draft_and_goes_back(tmp_path, monkeypatch):
+    draft = tmp_path / "x_y_z.json"
+    sidecar = tmp_path / "x_y_z.contextual.json"
+
+    def run(*_a, **_k):
+        draft.write_text(json.dumps({"holes": [], "ranks": {}}), encoding="utf-8")
+        sidecar.write_text("{}", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stderr="", stdout=f"écrite dans {draft} :"), []
+
+    monkeypatch.setattr(curate, "run_gen_phrase", run)
+    monkeypatch.setattr(curate, "choose_starts", lambda *a: pytest.fail("no start is chosen for a lost day"))
+    with pytest.raises(curate.OutOfReach) as caught:
+        curate.generate(object(), Log(), "s", ["chat", "chien", "ours"], {}, "fr",
+                        reach=lambda puzzle: {"ours": ("garçon", 404)})
+    assert caught.value.holes == {"ours": ("garçon", 404)}
+    assert not draft.exists() and not sidecar.exists()
+
+
 # --- the work is picked by rule, not by the model (user-decided 2026-09-20) --------------
 from datetime import date
 

@@ -60,10 +60,23 @@ alone. The automated curator asks the model exactly that and strikes on a refusa
 
 ## The trio rules (learned from months of player feedback)
 
-The target is a median of 10–20 tries, with the struggle spread over the SENTENCE, never
-concentrated on one word.
+The target (2026-09-23): about 80% of players finish within 30 tries, with the struggle
+spread over the SENTENCE, never concentrated on one word. A day is as hard as its hardest
+hole: one hole players cannot approach sinks the whole day (« héros », « redoutée »,
+« superficiellement »: on 09-22 and 09-23 about one player in ten finished within 30).
 
+- **Design the trio as a CHAIN (the user's craft, recorded 2026-09-23: "picking a word by
+  knowing that once solved it will help you find this one").** A found word stays
+  revealed in the sentence, so it becomes context for the holes still open — use it.
+  Choose an ENTRY word players reach first from the context, a word the found entry
+  narrows, and a last word the other two make findable. Three separate lookups waste
+  what the sentence gives back as it fills in.
 - No very easy and no very hard hole. Difficulty should be comparable across the three.
+- **No hole out of reach.** When nothing a reader would put in the blank is near the
+  secret (a reader puts « garçon, gars, type » for « héros », « dire, annoncer » for
+  « lâcher »), players' first guesses land cold and stay cold. Code refuses such a word
+  once the day's map is built (the reader's nearest filler past rank 30 in that map) and
+  the day is designed again without it; keep it in mind when the three are balanced.
 - **The secret is never the EXPECTED word** — the one most readers would put in the
   blank (« quinze [jours] plus tard », « au [crayon] », « la [poste] me retourna »,
   « le [chauffage] »): the days that play well hide **gosses** where a reader expects
@@ -107,7 +120,7 @@ concentrated on one word.
 
 ## The start word (the user's daily craft, recorded 2026-09-07)
 
-Each hole shows a START word, ranked 100–150 from the secret (lower rank = closer =
+Each hole shows a START word, ranked 100–200 from the secret (lower rank = closer =
 easier). Choosing it takes as much taste as the trio, and the three are chosen
 TOGETHER, never one at a time and never at random:
 
@@ -120,8 +133,13 @@ TOGETHER, never one at a time and never at random:
 - Think about the CHAIN OF GUESSES the start sets off: a good start leads by
   association toward the secret in a few natural steps; a start whose neighbourhood
   pulls elsewhere (another sense of the word, a stronger collocation) is a trap.
-- Balance the three: comparable difficulty across holes, the whole puzzle landing
-  around a median of 10–20 tries. One trivial hole or one impossible hole spoils the day.
+- Balance the three: comparable difficulty across holes, the whole puzzle landing where
+  about 80% of players finish within 30 tries. One trivial hole or one impossible hole
+  spoils the day.
+- **Set the starts along the chain.** The ENTRY hole's start must carry its concept
+  plainly — the player has nothing else yet. A hole the chain reaches later already gets
+  help from the words found before it: its start can be the more oblique one, a concept
+  that clicks once the earlier word is revealed.
 - Not too tricky: a plain word a player knows, never an obscure term or a proper noun.
 - The displayed sentence must stay valid French: elision, gender, number, verb form,
   and the CONSTRUCTION — a verb must accept the complement that follows it (« hérité
