@@ -2081,10 +2081,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **The word answers the blow for `STRUCK_MS`**: four frames, one short of the shortest
     sheet, so the sheet's last frame dissipates over a word already at rest; JS and CSS share
     it through `--shake-ms`.
-  - **The LOOT is ballistics, never a float**: an outer box drifts linearly while the inner
-    one rises ease-out and falls ease-in. The side and bounded jitter factors on distance,
-    height, drop and tilt are ROLLED per hit (`--loot-j*`, factors on the CSS geometry so the
-    ≤640px step-down still reaches them); the timing is handed to CSS as variables.
+  - **The LOOT STAYS WITH ITS HOLE, LONG ENOUGH TO READ** (user-asked 2026-09-23: "make
+    sure we have the time to see them well and understand what's going on and to which
+    hole are they related", replacing the random sideways throw that landed over other
+    words and was gone in 780ms): it POPS out of the word to a perch just above its own
+    chip (a small rolled lean), HANGS there until the guess is released — every hole's
+    number over its hole at once — then a new best flies INTO the hole's exponent,
+    arriving as the release lands, and any other drops away. `components/Loot.tsx` drives
+    it (Web Animations, measured off its hole); no scale, no tilt. The release itself waits
+    `FLOATING_HIT_INTRO_MS` = 800 after the last hole's beat (it was 320).
   - **Two rules learned on it, for wherever type lands on type again: NOTHING IN THIS APP
     OUTLINES TYPE, and `scale` IS NEVER ANIMATED ON THE PIXEL FONT** (blurry frames for the
     whole transition, the integer-scale rule).

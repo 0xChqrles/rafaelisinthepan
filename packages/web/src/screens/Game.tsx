@@ -70,7 +70,11 @@ import type {
 // (The tutorial's board is ONE hole, so it staggers nothing — it takes the intro constant
 // below instead, which is what makes its single hit read like a real one.)
 export const STAGGER_MS = 200;
-export const FLOATING_HIT_INTRO_MS = 320;
+// How long the LAST impacted hole's feedback stands before the guess is released into the
+// board (every earlier one stands longer, by the stagger): long enough to read each hole's
+// number over its own hole (user-asked 2026-09-23, "make sure we have the time to see them
+// well"; it was 320).
+export const FLOATING_HIT_INTRO_MS = 800;
 
 const STREAK_AFTER_WORDS_MS = 300;
 
