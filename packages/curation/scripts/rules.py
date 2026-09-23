@@ -167,6 +167,7 @@ def open_candidates(
     neighbour_rank: Callable[[Token, str], int | None] = lambda t, w: None,
     frequency_rank: Callable[[Token], int | None] = lambda t: None,
     log: "SearchLog | None" = None,
+    entries: list[Token] | None = None,
 ) -> list[Token]:
     """The candidates the context does not hand over. `fillers(token)` answers as a
     reader with the sentence blanked on that one word (every occurrence of it, the rest
@@ -178,7 +179,11 @@ def open_candidates(
     most OBVIOUS_MAX words for it, the secret included (a twin is the secret again; a
     named word that is not the secret is one of the alternatives). One judgement per
     distinct slug; the order of the list is kept. Whether the fillers can REACH the word
-    is judged later, on its built map (`out_of_reach`)."""
+    is judged later, on its built map (`out_of_reach`).
+
+    `entries`, when given, collects the EXPECTED words that still have alternatives (more
+    than OBVIOUS_MAX possible words): never a hole of their own, but ONE may be the day's
+    easy ENTRY (`valid_trios`' `easy`). An obvious word is never one."""
     log = log or SearchLog()
     verdict: dict[str, bool] = {}
     out = []
@@ -194,7 +199,11 @@ def open_candidates(
             verdict[c.slug] = expected or possible <= OBVIOUS_MAX
             shown = ", ".join(guesses) or "none"
             agreed = f"most readers write « {named} »" if named else "readers split"
-            if expected:
+            if expected and entries is not None and possible > OBVIOUS_MAX:
+                entries.append(c)
+                log.note(f"'{c.text}' is the EXPECTED word — {agreed} (a reader puts: {shown}) — "
+                         "struck as a hole, kept as a possible ENTRY")
+            elif expected:
                 log.note(f"'{c.text}' is the EXPECTED word — {agreed} (a reader puts: {shown}) — struck")
             elif verdict[c.slug]:
                 log.note(f"'{c.text}' is obvious — {possible} possible word(s) (a reader puts: {shown}) — struck")
@@ -301,11 +310,13 @@ def valid_trios(
     candidates: list[Token],
     *,
     similarity: Callable[[Token, Token], float | None],
+    easy: frozenset[str] | set[str] = frozenset(),
 ) -> list[tuple[Token, Token, Token]]:
     """Every trio of distinct candidate words that can stand together: each pair passes
     `prune` both ways, whichever of the two were picked first (one token per slug, its
-    first occurrence — a repeated slug is one secret with a hole per occurrence). In the
-    candidates' order, so the listing is stable."""
+    first occurrence — a repeated slug is one secret with a hole per occurrence), and at
+    most ONE of the three is `easy` (a slug the context hands over: the day's entry,
+    never two). In the candidates' order, so the listing is stable."""
     firsts: list[Token] = []
     for c in candidates:
         if c.slug not in {f.slug for f in firsts}:
@@ -321,4 +332,5 @@ def valid_trios(
         (firsts[i], firsts[j], firsts[k])
         for i in range(n) for j in range(i + 1, n) for k in range(j + 1, n)
         if together(firsts[i], firsts[j]) and together(firsts[i], firsts[k]) and together(firsts[j], firsts[k])
+        and sum(t.slug in easy for t in (firsts[i], firsts[j], firsts[k])) <= 1
     ]

@@ -216,15 +216,22 @@ def holed(tokens, blanks: set[int], mark: int | None = None) -> str:
     return re.sub(r"\s+([,.;:!?…»)])", r"\1", re.sub(r"([«(]|\w')\s+", r"\1", " ".join(parts)))
 
 
-def design_trio(claude: Claude, tokens, trios: list[tuple], notes: dict[str, str]) -> dict | None:
+def design_trio(claude: Claude, tokens, trios: list[tuple], notes: dict[str, str],
+                easy: frozenset[str] | set[str] = frozenset()) -> dict | None:
     """The model designs the day: ONE trio from `trios` (every one valid, code-built by
     `rules.valid_trios`), chosen as a CHAIN — the order players will find the words in
     and what each found word gives the next. `notes` holds, per candidate slug, what a
-    reader puts in its blank. Returns {"trio": <the tuple>, "path": [lines], "why": str},
-    or None when the model finds no trio worth a day."""
+    reader puts in its blank; an `easy` word (at most one per trio) is listed first, as
+    the entry. Returns {"trio": <the tuple>, "path": [lines], "why": str}, or None when
+    the model finds no trio worth a day."""
     words = {t.slug: t for trio in trios for t in trio}
-    about = "\n".join(f"- {t.text} ({t.pos.lower()}): {notes.get(k, 'no reading')}" for k, t in words.items())
-    listing = "\n".join(f"{n}. {' · '.join(t.text for t in trio)}" for n, trio in enumerate(trios, 1))
+    about = "\n".join(f"- {t.text} ({t.pos.lower()}): {'EASY — ' if k in easy else ''}{notes.get(k, 'no reading')}"
+                       for k, t in words.items())
+
+    def shown(trio):
+        first = [t for t in trio if t.slug in easy]
+        return " · ".join([f"{t.text} (easy entry)" for t in first] + [t.text for t in trio if t.slug not in easy])
+    listing = "\n".join(f"{n}. {shown(trio)}" for n, trio in enumerate(trios, 1))
     answer = claude.json(f"""You design today's puzzle for a daily French word game. Three words of a sentence
 are hidden. Each hole first shows a START word (ranked {START_RANK_MIN}–{START_RANK_MAX}
 from its secret); the player then types guesses and reads, for every hole, how close each
@@ -234,9 +241,13 @@ the holes still open.
 The sentence:
 {holed(tokens, set())}
 
-The words the context leaves open — each one has real alternatives and none is out of
-reach. With the rest of the sentence intact around that one blank, a reader puts:
+The words the context leaves open — each one has real alternatives. With the rest of
+the sentence intact around that one blank, a reader puts:
 {about}
+
+A word marked EASY is one most readers would write straight away, or that the sentence
+hands over: never a hole of its own, but it can OPEN the day — at most one per trio, and
+it is then the chain's first word, the one players find first.
 
 The rules of a good trio:
 {secret_rules()}

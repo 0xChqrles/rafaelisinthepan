@@ -656,16 +656,24 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
         return guesses, expected
 
     filter_log = rules.SearchLog()
+    entries: list[rules.Token] = []
     candidates = rules.open_candidates(candidates, fillers=fillers, neighbour_rank=neighbour_rank,
-                                       frequency_rank=frequency_rank, log=filter_log)
+                                       frequency_rank=frequency_rank, log=filter_log, entries=entries)
     for event in filter_log.events:
         log(f"- {event}")
     # The judge's second opinion (#308, 2026-09-22): the reader above misjudged the
     # 2026-09-21 day (« silence », « enseignant » typed by 13 players of 31 within three
     # guesses). A word the sentence hands over is struck, on a threshold set from real play.
+    opened = candidates
     candidates = strike_giveaways(log, tokens, candidates, occurrences)
-    if len({t.slug for t in candidates}) < rules.TRIO:
-        log(f"- rejected: fewer than {rules.TRIO} words the context leaves open")
+    kept = {t.slug for t in candidates}
+    # ONE EASY ENTRY (user-decided 2026-09-24): a word struck as too easy — the expected
+    # word with alternatives, or one the judge finds handed over — is never a hole of its
+    # own, but one may open the day as the chain's first word; the other two stay open.
+    easy = {t.slug: "most readers would write it" for t in entries}
+    easy.update({t.slug: "the sentence hands it over" for t in opened if t.slug not in kept})
+    if len(kept) < rules.TRIO - 1:
+        log(f"- rejected: fewer than {rules.TRIO - 1} words the context leaves open")
         return None
 
     # The day is DESIGNED, not picked a word at a time (2026-09-23, the user's craft:
@@ -675,12 +683,13 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
     # of reach (`rules.out_of_reach`): the draft is erased and the design goes back
     # without that word — judged on the shipped map, never the static one, so a word
     # whose sense the static vector misses stays possible (#308).
-    trios = rules.valid_trios(tokens, candidates, similarity=similarity)
+    pool = sorted([*candidates, *entries, *(t for t in opened if t.slug not in kept)], key=lambda t: t.i)
+    trios = rules.valid_trios(tokens, pool, similarity=similarity, easy=set(easy))
     notes = {}
-    for t in candidates:
+    for t in pool:
         heard = fillers_of.get(t.slug, ())
         near = rules.nearest_filler(t, list(heard), neighbour_rank)
-        notes[t.slug] = (f"{', '.join(heard) or 'nothing'}"
+        notes[t.slug] = ((f"{easy[t.slug]}; " if t.slug in easy else "") + f"a reader puts {', '.join(heard) or 'nothing'}"
                          + (f" (nearest in the static ranking: « {near[0]} », rank {near[1]})" if near else ""))
 
     def reach(puzzle: dict) -> dict[str, tuple[str, int | None]]:
@@ -700,20 +709,22 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
             log("- rejected: no three open words can stand together"
                 + (" once the words out of reach are struck" if struck else ""))
             return None
-        design = llm.design_trio(claude, tokens, options, notes)
+        design = llm.design_trio(claude, tokens, options, notes, set(easy))
         if design is None:
             log(f"- rejected: the model finds no good day among {len(options)} valid trio(s)")
             return None
         trio = list(design["trio"])
         words = [t.text for t in trio]
-        log(f"- trio: {' · '.join(words)} (chosen among {len(options)} valid)")
+        log(f"- trio: {' · '.join(w + (' (easy entry)' if t.slug in easy else '') for w, t in zip(words, trio))} "
+            f"(chosen among {len(options)} valid)")
         for step in design["path"]:
             log(f"  - chain: {step}")
         if design["why"]:
             log(f"  - why: {design['why']}")
         # What a reader puts in each hole from the context alone (the filter's fillers, none
         # of them the secret): shown to the start-word prompt, which must not hand one over.
-        context = {t.slug: f"open — a reader's first fillers: {', '.join(fillers_of.get(t.slug, ())) or 'none'}"
+        context = {t.slug: (f"EASY ENTRY ({easy[t.slug]}) — a reader's first fillers: " if t.slug in easy
+                            else "open — a reader's first fillers: ") + (', '.join(fillers_of.get(t.slug, ())) or 'none')
                    for t in trio}
         if window and not paged:
             paged = True

@@ -286,6 +286,35 @@ def test_the_expected_strike_spares_a_rare_word_the_count_rule_still_judges():
     assert "chat" not in {t.text for t in open_candidates(cands, fillers=fillers, neighbour_rank=no_rank, frequency_rank=rank)}
 
 
+def test_an_expected_word_with_alternatives_is_kept_as_a_possible_entry():
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    # « chat » is what most readers write, chien/rat/lion behind it: never a hole of its
+    # own, but it may open the day (user-decided 2026-09-24). « lune »: expected with one
+    # alternative only — obvious, never an entry either.
+    def fillers(t):
+        if t.text == "chat":
+            return ["chat", "chien", "rat", "lion"], "chat"
+        if t.text == "lune":
+            return ["lune", "nuit"], "lune"
+        return ["autre", t.text, "encore"], None
+    entries = []
+    log = SearchLog()
+    kept = open_candidates(cands, fillers=fillers, neighbour_rank=no_rank, log=log, entries=entries)
+    assert "chat" not in {t.text for t in kept} and "lune" not in {t.text for t in kept}
+    assert [t.text for t in entries] == ["chat"]
+    assert any("'chat' is the EXPECTED word" in e and "possible ENTRY" in e for e in log.events)
+
+
+def test_a_trio_holds_at_most_one_easy_word():
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    easy = {"chat", "lune"}
+    trios = valid_trios(SENT, cands, similarity=no_sim, easy=easy)
+    assert trios and all(sum(t.slug in easy for t in trio) <= 1 for trio in trios)
+    assert any(sum(t.slug in easy for t in trio) == 1 for trio in trios)
+    everything = valid_trios(SENT, cands, similarity=no_sim)
+    assert any({"chat", "lune"} <= {t.slug for t in trio} for trio in everything)  # what the rule removes
+
+
 def test_static_distance_does_not_reject_an_otherwise_open_hole():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
     # The static ranking cannot say whether a filler is close in the shipped map (a

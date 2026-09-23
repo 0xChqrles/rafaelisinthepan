@@ -107,7 +107,8 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   calibrated on REAL play).** After the reader's obviousness filter, `curate.strike_giveaways`
   asks Jev three yes/no questions per open word on the blanked sentence (would a reader
   write it · it or a direct synonym · does a fixed expression call for it —
-  `contextual_rank.giveaway`, their mean) and strikes a word at `GIVEAWAY_MAX = 0.45`. The
+  `contextual_rank.giveaway`, their mean) and strikes a word at `GIVEAWAY_MAX = 0.45` as
+  a hole (it may still be the day's ONE EASY ENTRY, below). The
   threshold comes from the round logs: every published hole labelled by the share of
   players who typed the secret within three guesses (84 holes; "too easy" ≥ 35 %); the
   measure has AUC 0.73 and at 0.45 strikes 11 of the 20 easy holes for 8 good ones lost
@@ -220,13 +221,24 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   player's — « je lance à la [cantonade] » (rank 68858, the user's call 2026-09-14) is
   an idiom the model completes and a player may not; every word the rule struck on the
   easy days sits under 28000. The count rule still judges a rare word. The log names
-  each verdict with the count and the fillers; a sentence with fewer than `TRIO` open
+  each verdict with the count and the fillers; a sentence with fewer than two open
   words is rejected before any pick. Why this shape: the 2026-09-06 check ran AFTER the trio,
   with all three blanks, as a log note — « il aurait répondu [sûrement] pas » was picked
   from a list of four and the check that would have refused it could change nothing.
   The open holes' fillers are shown to the design and start-word prompts. The skill's
   trio rules carry the user's INTERACTION rule of the same day (a hole another visible
   word narrows, never a bare list item); the design prompt reads it from there.
+- **ONE EASY ENTRY a day (user-decided 2026-09-24, for the target "about 80% of players
+  within 30 tries"; it loosens 2026-09-13's "aim harder").** A word struck as too easy —
+  the EXPECTED word while the reader still names more than `OBVIOUS_MAX` possible words
+  (`open_candidates`' `entries`), or a word the giveaway judge strikes — is never a hole
+  of its own, but ONE may open the day: `valid_trios` admits at most one such `easy`
+  word per trio, the design prompt lists it first as the chain's entry, and its start is
+  chosen not to make it easier still (the skill's `## The start word`). An OBVIOUS word
+  (at most `OBVIOUS_MAX` possible) never is. Why: on a 2026-09-24 run (Dicker, plain
+  prose) 10 of 14 sentences died with fewer than three open words after those two
+  strikes; and the days nearest the target hid expected words (09-10/11/12: 73/65/57% of
+  players within 30) while 09-13, which hid none, had 3%. A sentence needs two open words.
 - **NO HOLE OUT OF REACH (2026-09-23, decided by the agent on the user's delegation, for
   the user's goal: about 80% of players finishing within 30 tries, reached through
   CURATION ALONE — the game mechanics stay as they are).** The obviousness filter's

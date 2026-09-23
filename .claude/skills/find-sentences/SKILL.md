@@ -83,7 +83,10 @@ hole: one hole players cannot approach sinks the whole day (« héros », « red
   *enfants*, **lâcher** where they expect *dire*, **alcoolique** where they expect
   *salaud* (the 2026-09-13 day, median 44; the days that hid an expected word played
   at 6–8; user-decided 2026-09-13, "aim harder"). Code strikes it; keep it in mind
-  when the three are spread.
+  when the three are spread. **One exception, the chain's ENTRY (user-decided
+  2026-09-24):** ONE word a day that most readers would write (with alternatives behind
+  it), or that the sentence hands over, may OPEN the chain — the first word players find,
+  which gives the other two their foothold. Never two; the other two are open words.
 - A secret the context gives away is replaced. When the context helps only a little, a
   harder start word is acceptable (not too tricky); when it helps too much, another word.
 - Two secrets too similar in meaning → replace one. Three secrets from three unrelated
@@ -137,7 +140,8 @@ TOGETHER, never one at a time and never at random:
   about 80% of players finish within 30 tries. One trivial hole or one impossible hole
   spoils the day.
 - **Set the starts along the chain.** The ENTRY hole's start must carry its concept
-  plainly — the player has nothing else yet. A hole the chain reaches later already gets
+  plainly — the player has nothing else yet — unless the entry is an EASY word the
+  context already gives: then its start must not make it easier still (an oblique one). A hole the chain reaches later already gets
   help from the words found before it: its start can be the more oblique one, a concept
   that clicks once the earlier word is revealed.
 - Not too tricky: a plain word a player knows, never an obscure term or a proper noun.
