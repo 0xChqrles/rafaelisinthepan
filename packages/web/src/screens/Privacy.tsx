@@ -86,7 +86,7 @@ export default function Privacy() {
         <HeaderBack label={t(lang, 'ariaBack')} onBack={() => goBack(ACCOUNT_PATH)} />
         <LangTitle lang={lang} title={title} />
       </HeaderLeft>
-      <article className="privacy-screen">
+      <article className="privacy-screen arrive">
         {/* THE HEAD: the document's title is its own first sentence — the header's chip
             names the SCREEN, this names the CLAIM — with the dateline where an article
             keeps one, and the standfirst under both. */}

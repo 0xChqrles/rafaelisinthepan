@@ -59,6 +59,31 @@ const MIN_SIZED_DIGITS = 2;
 
 type Mask = { w: number; rows: Uint8Array };
 
+// THE TICK: when the count moves, the cells that change FLIP rather than the number being
+// swapped — each cell the new number lights comes on bright on its own hashed beat and
+// settles to the ink, each cell it drops goes dark on its own beat (the dissolve's
+// scattered order, cell by cell). Cells both numbers share never move. The flip's whole
+// span is FLIP_STAGGER_MS of beats plus one settle; reduced motion swaps outright.
+const FLIP_STAGGER_MS = 160;
+const FLIP_SETTLE_MS = 360;
+const FLIP_PEAK_ALPHA = 0.45;
+// Alphas are bucketed so a frame is still a handful of fills, each a union of blocks (the
+// one-path rule below: separate fills seam at a fractional dpr — tolerated for the flip's
+// half second, never at rest).
+const FLIP_LEVELS = 8;
+
+// A cell's beat in [0, 1): an integer hash of its grid position, so the order is scattered
+// but the same for the same number.
+function beatOf(cx: number, cy: number): number {
+  let h = Math.imul(cx, 374761393) ^ Math.imul(cy, 668265263);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+// The lit cells of a drawing, keyed by their DOCUMENT position (whole pixels), so the next
+// count can tell which cells it shares with this one.
+type Drawn = { value: number; px: number; cells: Set<string> };
+
 let masksPromise: Promise<Mask[]> | null = null;
 
 // Decode the sheet once per session: alpha is the mask (the art's RGB is ignored, so
@@ -106,6 +131,8 @@ function loadMasks(): Promise<Mask[]> {
 export default function CellDigits({ value }: { value: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [masks, setMasks] = useState<Mask[] | null>(null);
+  // What the canvas last showed — the flip's starting point when the count moves.
+  const drawn = useRef<Drawn | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -121,6 +148,13 @@ export default function CellDigits({ value }: { value: number }) {
     const canvas = ref.current;
     const parent = canvas?.parentElement;
     if (!canvas || !parent || !masks) return;
+
+    // A count that MOVED since the last drawing flips from it (never the first drawing, a
+    // remount, or under reduced motion).
+    const from = drawn.current;
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    let flip = from !== null && from.value !== value && !reduced ? { from, start: performance.now() } : null;
+    let frame = 0;
 
     // draw() is cheap to call speculatively: it recomputes the layout signature and
     // bails when nothing moved, so the interval below can catch anchor shifts that
@@ -176,7 +210,8 @@ export default function CellDigits({ value }: { value: number }) {
       const visW = visRight - visLeft;
       if (visW <= 0) return;
       const color = getComputedStyle(canvas).color;
-      const next = [px, left, top, docLeft, docTop, bw, bh, visLeft, visW, value, color].join();
+      const t = flip ? performance.now() - flip.start : 0;
+      const next = [px, left, top, docLeft, docTop, bw, bh, visLeft, visW, value, color, flip ? t : ''].join();
       if (next === signature) return;
       signature = next;
 
@@ -195,21 +230,79 @@ export default function CellDigits({ value }: { value: number }) {
       // filled ONCE — a `fillRect` per block is a separate composite, so at a fractional dpr
       // (1.5, 2.5) two neighbours each paint a half-covered pixel along the edge they share
       // and a hairline seam shows through the middle of a solid stroke. One fill unions them.
-      const path = new Path2D();
+      const cells = new Set<string>();
+      const lit: [number, number][] = [];
       let gx = 0;
       for (const mask of digits) {
         for (let y = 0; y < GLYPH_ROWS; y++)
           for (let x = 0; x < mask.w; x++)
-            if (mask.rows[y * mask.w + x]) path.rect(gx + x * px, y * px, px, px);
+            if (mask.rows[y * mask.w + x]) {
+              const cx = gx + x * px;
+              const cy = y * px;
+              lit.push([cx, cy]);
+              cells.add(`${left + cx},${top + cy}`);
+            }
         gx += (mask.w + GAP) * px;
       }
+      drawn.current = { value, px, cells };
+
+      // At rest (and whenever the flip cannot be read against this layout — a new cell
+      // size): every block in ONE path, filled ONCE.
+      const active = flip;
       ctx.fillStyle = color;
-      ctx.globalAlpha = INK_ALPHA;
-      ctx.fill(path);
+      if (!active || active.from.px !== px || t >= FLIP_STAGGER_MS + FLIP_SETTLE_MS) {
+        flip = null;
+        const path = new Path2D();
+        for (const [cx, cy] of lit) path.rect(cx, cy, px, px);
+        ctx.globalAlpha = INK_ALPHA;
+        ctx.fill(path);
+        ctx.globalAlpha = 1;
+        return;
+      }
+      // Mid-flip: shared cells at the ink, arriving cells dark until their beat and then
+      // settling from the peak, leaving cells at the ink until their beat.
+      const levels = Array.from({ length: FLIP_LEVELS + 1 }, () => new Path2D());
+      const used = new Array<boolean>(FLIP_LEVELS + 1).fill(false);
+      const put = (alpha: number, cx: number, cy: number) => {
+        const level = Math.round((alpha / FLIP_PEAK_ALPHA) * FLIP_LEVELS);
+        if (level <= 0) return;
+        levels[level].rect(cx, cy, px, px);
+        used[level] = true;
+      };
+      const since = (cx: number, cy: number) =>
+        t - beatOf(Math.round((left + cx) / px), Math.round((top + cy) / px)) * FLIP_STAGGER_MS;
+      for (const [cx, cy] of lit) {
+        const key = `${left + cx},${top + cy}`;
+        if (active.from.cells.has(key)) {
+          put(INK_ALPHA, cx, cy);
+          continue;
+        }
+        const d = since(cx, cy);
+        if (d < 0) continue;
+        const k = Math.min(1, d / FLIP_SETTLE_MS);
+        const ease = 1 - (1 - k) * (1 - k);
+        put(FLIP_PEAK_ALPHA + (INK_ALPHA - FLIP_PEAK_ALPHA) * ease, cx, cy);
+      }
+      for (const key of active.from.cells) {
+        if (cells.has(key)) continue;
+        const [ax, ay] = key.split(',').map(Number);
+        const cx = ax - left;
+        const cy = ay - top;
+        if (since(cx, cy) < 0) put(INK_ALPHA, cx, cy);
+      }
+      for (let level = 1; level <= FLIP_LEVELS; level++) {
+        if (!used[level]) continue;
+        ctx.globalAlpha = (level / FLIP_LEVELS) * FLIP_PEAK_ALPHA;
+        ctx.fill(levels[level]);
+      }
       ctx.globalAlpha = 1;
     };
 
-    draw();
+    const tick = () => {
+      draw();
+      frame = flip ? requestAnimationFrame(tick) : 0;
+    };
+    tick();
     const ro = new ResizeObserver(draw);
     ro.observe(parent);
     window.addEventListener('resize', draw);
@@ -218,6 +311,7 @@ export default function CellDigits({ value }: { value: number }) {
       ro.disconnect();
       window.removeEventListener('resize', draw);
       window.clearInterval(interval);
+      if (frame) cancelAnimationFrame(frame);
     };
   }, [masks, value]);
 

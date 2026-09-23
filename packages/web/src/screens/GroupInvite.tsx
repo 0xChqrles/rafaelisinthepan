@@ -198,9 +198,9 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
   // over JOIN, and PLAY under it as the way out for a reader who wants the game and not
   // the group (a landing with one door is a wall).
   return (
-    <div className="invite-done">
+    <div className="invite-done arrive">
       <span className="invite-done-name">{group.name}</span>
-      <ul className="invite-marks" aria-label={t(lang, 'groupMembers')}>
+      <ul className="invite-marks arrive" aria-label={t(lang, 'groupMembers')}>
         {group.members.map((row) => (
           <li key={row.publicId} title={row.name || anonName(row.publicId)}>
             <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={36} />

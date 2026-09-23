@@ -100,7 +100,7 @@ export default function Account() {
       <HeaderLeft>
         <LangTitle lang={lang} title={t(lang, 'accountTitle')} />
       </HeaderLeft>
-      <div className="account-screen">
+      <div className="account-screen arrive">
         {/* THE ROW — the identity as the page's masthead. The face holds its boxes until
             the read settles rather than flashing a pseudonym it may be about to correct
             (the leaderboard strip's finding). */}

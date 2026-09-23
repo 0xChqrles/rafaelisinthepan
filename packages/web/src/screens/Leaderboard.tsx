@@ -430,7 +430,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
           <LoadError message={t(lang, 'failedBoard')} lang={lang} onRetry={() => loadGroups()} />
         ) : tab === 'group' && onNone ? (
           // No group at all: the ghost and the one call.
-          <div className="board-empty">
+          <div className="board-empty arrive">
             <span className="board-ghost" aria-hidden="true" />
             <button type="button" className="btn btn-primary" disabled={busy !== null} onClick={() => setScreen('create')}>
               {t(lang, 'groupCreate')}
@@ -611,7 +611,7 @@ function BoardList({
     board.waiting.length === 0;
   if (empty) {
     return (
-      <div className="board-empty">
+      <div className="board-empty arrive">
         <span className="board-ghost" aria-hidden="true" />
         <p>{t(lang, tab === 'group' ? 'boardEmptyGroup' : 'boardEmptyGlobal')}</p>
         {onInvite && (
@@ -678,7 +678,7 @@ function PeriodList({
 }) {
   if (board.rows.length === 0) {
     return (
-      <div className="board-empty">
+      <div className="board-empty arrive">
         <span className="board-ghost" aria-hidden="true" />
         <p>{t(lang, 'boardEmptyPeriod')}</p>
       </div>

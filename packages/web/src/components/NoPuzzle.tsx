@@ -44,7 +44,7 @@ export default function NoPuzzle({ lang, date }: { lang: LangCode; date?: string
 
   if (date == null) {
     return (
-      <div className="load-error">
+      <div className="load-error arrive">
         <p className="status error">{t(lang, 'noPuzzle')}</p>
         <p className="no-puzzle-note">{t(lang, 'noPuzzleNote')}</p>
         <Button variant="secondary" onClick={() => setSelecting(true)}>
@@ -57,7 +57,7 @@ export default function NoPuzzle({ lang, date }: { lang: LangCode; date?: string
 
   // Not an error, so not the danger-colored `.status.error` title the today variant uses.
   return (
-    <div className="load-error">
+    <div className="load-error arrive">
       <p className="status">{t(lang, 'noPuzzleDay')}</p>
       <p className="no-puzzle-note">
         {longDate !== null && (

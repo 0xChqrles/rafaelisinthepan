@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type {
   ChangeEvent,
   ClipboardEvent,
@@ -127,6 +127,27 @@ export default function WordInput({
   const historyIndexRef = useRef<number | null>(null);
   const draftRef = useRef<string>('');
 
+  // THE WORD IS SENT: when a submitted guess clears the prompt, a copy of it LIFTS OFF the
+  // line toward the sentence and fades (`.wi-launch`), where it used to simply vanish — the
+  // throw that the hits then land. A clear that is not a submission (a recalled entry
+  // stepping back to an empty draft) sends nothing, and neither does reduced motion.
+  const textBox = useRef<HTMLSpanElement>(null);
+  const lastValue = useRef(value);
+  const recalling = useRef(false);
+  const [launch, setLaunch] = useState<{ text: string; n: number; left: number; top: number } | null>(
+    null,
+  );
+  useLayoutEffect(() => {
+    const prev = lastValue.current;
+    lastValue.current = value;
+    const recalled = recalling.current;
+    recalling.current = false;
+    const box = textBox.current;
+    if (recalled || value !== '' || prev.length < 2 || !box) return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    setLaunch((last) => ({ text: prev, n: (last?.n ?? 0) + 1, left: box.offsetLeft, top: box.offsetTop }));
+  }, [value]);
+
   // THE PROMPT TAKES THE KEYBOARD when it becomes the surface that answers it: on mount,
   // and again whenever a modal that covered it closes (a native dialog hands focus back to
   // the control that opened it, which is the hole, not the prompt). Never while inactive —
@@ -166,6 +187,7 @@ export default function WordInput({
       } else {
         historyIndexRef.current = Math.max(0, historyIndexRef.current - 1);
       }
+      recalling.current = true;
       onReplace(history[historyIndexRef.current]);
       return;
     }
@@ -173,6 +195,7 @@ export default function WordInput({
     if (e.key === 'ArrowDown') {
       if (historyIndexRef.current === null) return;
       e.preventDefault();
+      recalling.current = true;
       if (historyIndexRef.current < history.length - 1) {
         historyIndexRef.current += 1;
         onReplace(history[historyIndexRef.current]);
@@ -247,7 +270,14 @@ export default function WordInput({
   }, [invalidSignal]);
 
   return (
-    <div className={`word-input${shaking ? ' invalid' : ''}`} onAnimationEnd={() => setShaking(false)}>
+    <div
+      className={`word-input${shaking ? ' invalid' : ''}`}
+      // Only the line's OWN shake ends it: a letter landing (`.wi-char`) ends its drop inside,
+      // and that end bubbles here too.
+      onAnimationEnd={(e) => {
+        if (e.target === e.currentTarget) setShaking(false);
+      }}
+    >
       <input
         ref={(node) => {
           field.current = node;
@@ -281,7 +311,7 @@ export default function WordInput({
           nesting is what makes that possible — a single element cannot both clip and overflow
           its own start. It is the field's value DRAWN, so it is hidden from assistive tech:
           the field above is what a screen reader reads the guess from. */}
-      <span className="wi-text" aria-hidden="true">
+      <span ref={textBox} className="wi-text" aria-hidden="true">
         {value === '' && ghost ? (
           <span className="wi-text-run wi-ghost">
             {ghostTarget
@@ -294,10 +324,33 @@ export default function WordInput({
             {!ghostTarget && <UnlockIcon className="wi-lock" aria-hidden="true" />}
           </span>
         ) : (
-          <span className="wi-text-run">{value}</span>
+          <span className="wi-text-run">
+            {/* One box a letter, keyed by its place: a letter typed is a NEW box, so it lands
+                (`.wi-char`), and the ones already there never replay. */}
+            {Array.from(value).map((ch, i) => (
+              <span key={i} className="wi-char">
+                {ch}
+              </span>
+            ))}
+          </span>
         )}
       </span>
-      <span className="wi-cursor" aria-hidden="true">_</span>
+      {/* Keyed on the length: every keystroke restarts the blink, so the caret stands SOLID
+          while the player types and only blinks once they stop — a terminal's caret. */}
+      <span key={value.length} className="wi-cursor" aria-hidden="true">
+        _
+      </span>
+      {launch && (
+        <span
+          key={launch.n}
+          className="wi-launch"
+          style={{ left: launch.left, top: launch.top }}
+          aria-hidden="true"
+          onAnimationEnd={() => setLaunch(null)}
+        >
+          {launch.text}
+        </span>
+      )}
     </div>
   );
 }

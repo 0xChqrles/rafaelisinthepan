@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, type CSSProperties } from 'react';
 import Hole, { type HoleChargeView } from './Hole';
 import { capitalize, sentenceStarts } from '../game/sentenceCase';
 import type { HitState, Hole as PuzzleHole, RuntimeHole } from '@whippin/shared';
@@ -57,9 +57,16 @@ export default function Phrase({
   const hintId = (holeIndex: number) => `hole-explore-${holeIndex}`;
   const chargeId = (holeIndex: number) => `hole-charge-${holeIndex}`;
 
+  // THE SENTENCE PRINTS ITSELF when it arrives: every word fades in on its own beat, left
+  // to right (`.phrase-print`, the word's index as `--wi`). Opacity alone — a word is an
+  // inline box, and nothing here may move a letter. Keyed on the words, so a new sentence
+  // (a lesson's next stage) prints again, and nothing else ever replays it. The dissolve's
+  // copy of the sentence (`DissolvePhrase`) wears `.phrase` without it, and stays still.
+  const order = (i: number) => ({ '--wi': i }) as CSSProperties;
+
   return (
     <>
-    <p className="phrase">
+    <p className="phrase phrase-print" key={words.join(' ')}>
       {words.map((w, i) => {
         const space = i > 0 ? ' ' : '';
         const idx = holeIndexByPos.get(i);
@@ -81,7 +88,7 @@ export default function Phrase({
           return (
             <Fragment key={i}>
               {space}
-              <span className="hole-group">
+              <span className="hole-group" style={order(i)}>
                 {prefix ? (
                   <span className="word">{starts[i] ? capitalize(prefix) : prefix}</span>
                 ) : null}
@@ -114,7 +121,9 @@ export default function Phrase({
         return (
           <Fragment key={i}>
             {space}
-            <span className="word">{starts[i] ? capitalize(w) : w}</span>
+            <span className="word" style={order(i)}>
+              {starts[i] ? capitalize(w) : w}
+            </span>
           </Fragment>
         );
       })}

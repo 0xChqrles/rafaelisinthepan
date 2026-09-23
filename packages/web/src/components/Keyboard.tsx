@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
 import { KEYBOARD_ROWS, canExtend } from '../game/keyboard';
 // Inline SVG components (vite-plugin-svgr `?react`): they render into the DOM and paint
 // with `fill="currentColor"`, so each control key's icon inherits its `color` — muted for
@@ -35,6 +35,28 @@ type Shake = { id: string; nonce: number } | null;
 // How long after a pointerdown a click on the keyboard is still that press's own click.
 const POINTER_CLICK_MS = 1000;
 
+// A key STRIKES when the prompt takes its keystroke: a flash of brightness that decays —
+// a state, never travel (the flat keyboard's rule). Read off the INPUT changing, so a
+// letter typed on a physical keyboard lights its key on the drawn one exactly as a tap
+// does: the pad answers whatever types into it.
+// It starts LIT at full strength and decays to whatever the key now is — the struck letter
+// is often greyed by the very keystroke that struck it (few words double a letter), so the
+// flash names the key's own opacity at the start and lets the key's state take it back.
+// ENTER keeps its cobalt, brighter; every other key flashes a lit tile.
+const STRIKE_MS = 240;
+const STRIKE_FRAMES: Keyframe[] = [{ offset: 0, opacity: 1, backgroundColor: '#3d404e', color: '#ffffff' }];
+const STRIKE_ENTER: Keyframe[] = [{ offset: 0, opacity: 1, filter: 'brightness(1.6)' }];
+
+// Which key an input change is the keystroke of: one char added at the end is that char,
+// one char taken off the end is backspace, a whole word submitted (the prompt clearing) is
+// enter. Anything else — a recalled history entry, a reset — is no single key.
+function struckKey(prev: string, next: string, vocabSet: Set<string>): string | null {
+  if (next.length === prev.length + 1 && next.startsWith(prev)) return next[next.length - 1];
+  if (prev.length === next.length + 1 && prev.startsWith(next)) return 'back';
+  if (next === '' && prev.length > 1 && vocabSet.has(prev)) return 'enter';
+  return null;
+}
+
 // The custom on-screen keyboard (issue #36). It is the keyboard on a phone: the guess
 // field beside it asks for no native one (`inputmode="none"`), so the soft keyboard never
 // opens over the game's own. Letters/dash that cannot extend the current input into any
@@ -59,6 +81,22 @@ export default function Keyboard({
   const [shake, setShake] = useState<Shake>(null);
   // When a POINTER last pressed a key here — see `activate`.
   const pointerAt = useRef(-Infinity);
+  // Every key's button, by id (the char, `enter`, `back`), for the strike.
+  const keys = useRef(new Map<string, HTMLButtonElement>());
+  const keyRef = (id: string) => (node: HTMLButtonElement | null) => {
+    if (node) keys.current.set(id, node);
+    else keys.current.delete(id);
+  };
+  const lastInput = useRef(input);
+  useEffect(() => {
+    const prev = lastInput.current;
+    lastInput.current = input;
+    const id = struckKey(prev, input, vocabSet);
+    const node = id === null ? undefined : keys.current.get(id);
+    if (!node || typeof node.animate !== 'function') return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    node.animate(id === 'enter' ? STRIKE_ENTER : STRIKE_FRAMES, { duration: STRIKE_MS, easing: 'ease-out' });
+  }, [input, vocabSet]);
 
   const triggerShake = useCallback((id: string) => {
     setShake((prev) => ({ id, nonce: (prev?.nonce ?? 0) + 1 }));
@@ -100,6 +138,7 @@ export default function Keyboard({
     return (
       <button
         key={char}
+        ref={keyRef(char)}
         type="button"
         aria-label={char}
         aria-disabled={!active}
@@ -125,6 +164,7 @@ export default function Keyboard({
         <div className="kb-row" key={rowIndex}>
           {rowIndex === lastRowIndex && (
             <button
+              ref={keyRef('enter')}
               type="button"
               aria-label={t(lang, 'ariaEnter')}
               aria-disabled={!enterActive}
@@ -142,6 +182,7 @@ export default function Keyboard({
           {rowIndex === lastRowIndex && (
             <>
               <button
+                ref={keyRef('-')}
                 type="button"
                 aria-label={t(lang, 'ariaDash')}
                 aria-disabled={!dashActive}
@@ -153,6 +194,7 @@ export default function Keyboard({
                 -
               </button>
               <button
+                ref={keyRef('back')}
                 type="button"
                 aria-label={t(lang, 'ariaBackspace')}
                 className="kb-key kb-control"

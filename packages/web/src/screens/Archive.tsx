@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { activeDate, progressHeatColor } from '@whippin/shared';
 import PuzzleTitle from '../components/PuzzleTitle';
@@ -151,6 +151,7 @@ export default function Archive({ lang }: { lang: LangCode }) {
             ) : (
               <DayCell
                 key={date}
+                wave={Math.floor(i / 7) + (i % 7)}
                 date={date}
                 lang={lang}
                 inRange={date >= FIRST_PUZZLE_DATE && date <= today}
@@ -193,6 +194,13 @@ export default function Archive({ lang }: { lang: LangCode }) {
   );
 }
 
+// The calendar's arrival: the rung-in gesture (index.css), one diagonal of days a beat.
+const ARRIVE_FRAMES: Keyframe[] = [
+  { opacity: 0, translate: '0 10px' },
+  { opacity: 1, translate: '0 0' },
+];
+const CELL_WAVE_MS = 22;
+
 // One day: a flat key that navigates to that day's game when in range, disabled (dimmed)
 // otherwise. A day with any reconstruction (>0%) is FILLED with its heat-ramp color
 // (solved = 100%), and its number is drawn in the app background color so it reads on the
@@ -201,6 +209,7 @@ export default function Archive({ lang }: { lang: LangCode }) {
 // (.cal-ripple) — so a validated day differs from an in-progress one by MOTION, not only
 // color. The aria-label speaks the full date + status.
 function DayCell({
+  wave,
   date,
   lang,
   inRange,
@@ -208,6 +217,8 @@ function DayCell({
   status,
   longDate,
 }: {
+  // The cell's place on the grid's DIAGONAL (row + column), the beat it arrives on.
+  wave: number;
   date: string;
   lang: LangCode;
   inRange: boolean;
@@ -238,8 +249,29 @@ function DayCell({
     (unknown && shown.loading ? ' cal-day-waiting' : '') +
     (filled ? ' cal-day-filled' : '') +
     (solved ? ' cal-day-solved' : '');
+  // THE MONTH ARRIVES AS A WAVE: each day rises in on the grid's diagonal, top-left to
+  // bottom-right, when it mounts — the screen's first frame, and every page to another
+  // month (the days are keyed by date, so a new month is new cells). Played through the
+  // Web Animations API rather than a CSS class because a cell's `animation` is already
+  // spoken for — a day whose month is still loading BREATHES — and a class-driven arrival
+  // would replay the moment the month landed and the breathing stopped.
+  const cell = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    const node = cell.current;
+    if (!node || typeof node.animate !== 'function') return;
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    node.animate(ARRIVE_FRAMES, {
+      duration: 260,
+      delay: wave * CELL_WAVE_MS,
+      easing: 'cubic-bezier(0.2, 1.3, 0.4, 1)',
+      fill: 'backwards',
+    });
+    // Mount only: the wave is the month's arrival, never a re-render's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <button
+      ref={cell}
       type="button"
       className={className}
       aria-label={`${longDate.format(dateObj)}${srStatus(lang, shown)}`}

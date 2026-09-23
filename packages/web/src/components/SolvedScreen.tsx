@@ -365,7 +365,12 @@ export default function SolvedScreen({
       className={`solved-stage pixel-scroll${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}
     >
       {/* ---- the SCORE block, at the top: how the round went, and what you do with it. */}
-      <div className={`solved-numbers card${scoreIn ? ' in' : ''}`}>
+      {/* `landed`: the tally just reached its final count on a PLAYED reveal — the number
+          stamps down and the well's edge flashes once (a rehydrated or skipped result never
+          plays it: it has no count to land). */}
+      <div
+        className={`solved-numbers card${scoreIn ? ' in' : ''}${animate && countLanded ? ' landed' : ''}`}
+      >
         {/* THE WELL (2026-09-11): the card's inset panel holds the thing the card is
             about — the number and its run — and the actions are the caption row under it,
             the references' own shape (a preview in a well, a title under it). */}

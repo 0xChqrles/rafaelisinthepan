@@ -553,7 +553,13 @@ export default function LessonBoard({
       {shownCoach && (
         <div className="coach coach--bot">
           <span className="coach-step">{step}/{totalSteps}</span>
-          <div className="coach-bot" aria-hidden style={{ backgroundImage: `url(${playerIdle})` }} />
+          {/* Keyed on the line: the character HOPS each time it says something new. */}
+          <div
+            key={shownCoach}
+            className="coach-bot"
+            aria-hidden
+            style={{ backgroundImage: `url(${playerIdle})` }}
+          />
           <CoachText key={shownCoach} copy={shownCoach} />
         </div>
       )}
