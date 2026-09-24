@@ -34,8 +34,10 @@ def test_short_sentences_join_into_a_unit_within_a_paragraph():
             "C'est une question de détermination et de courage.\n\n"
             "Puis rien. Le silence.")
     units = candidate_sentences(text)
-    # The first sentence alone (13 words) is short; with the next it is a unit.
-    assert units == ["Selon les paroles des anciens, on doit prendre ses décisions en sept respirations. "
+    # The first sentence (13 words) is offered alone — a short line can be the best one —
+    # and, joined with the next, as the micro-story; « Puis rien. Le silence. » is neither.
+    assert units == ["Selon les paroles des anciens, on doit prendre ses décisions en sept respirations.",
+                     "Selon les paroles des anciens, on doit prendre ses décisions en sept respirations. "
                      "C'est une question de détermination et de courage."]
     # A unit never crosses the paragraph break, and a capital opening a joined sentence
     # is not counted as a proper noun.

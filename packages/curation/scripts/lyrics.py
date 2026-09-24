@@ -9,7 +9,7 @@ A song file is `<artist-slug>__<title-slug>.txt`: a header of `key: value` lines
 from datetime import date, timedelta
 import re
 
-from sentences import MAX_WORDS, MIN_WORDS, word_count
+from sentences import MAX_WORDS, MIN_LINE_WORDS, MIN_WORDS, word_count
 
 HEADER_KEYS = ("artist", "title", "album", "year", "pageviews")
 # Top-viewed share of an artist's songs dropped before any lyric is read: the famous
@@ -75,10 +75,11 @@ def _join(lines: list[str]) -> str:
 
 
 def candidate_units(lines: list[str]) -> list[str]:
-    """One unit per starting line: the shortest run of consecutive lines (within a
-    stanza, at most MAX_LINES_PER_UNIT) that reaches MIN_WORDS without passing
-    MAX_WORDS. A rap line alone rarely reaches 14 words; two to four adjacent lines are
-    what the skill calls the micro-story."""
+    """Per starting line, the runs of consecutive lines (within a stanza, at most
+    MAX_LINES_PER_UNIT, never past MAX_WORDS) from the first that reaches MIN_LINE_WORDS
+    — a short punchline, offered alone — to the first that reaches MIN_WORDS. A rap line
+    alone rarely reaches 14 words; two to four adjacent lines are what the skill calls
+    the micro-story."""
     out: list[str] = []
     seen: set[str] = set()
     stanzas: list[list[str]] = [[]]
@@ -97,10 +98,10 @@ def candidate_units(lines: list[str]) -> list[str]:
                 words = word_count(unit)
                 if words > MAX_WORDS:
                     break
+                if words >= MIN_LINE_WORDS and unit not in seen:  # a short punchline, offered alone too
+                    seen.add(unit)
+                    out.append(unit)
                 if words >= MIN_WORDS:
-                    if unit not in seen:
-                        seen.add(unit)
-                        out.append(unit)
                     break
     return out
 

@@ -12,7 +12,6 @@ import tempfile
 
 import _paths  # noqa: F401
 from slug import slug
-from start_word import START_RANK_MAX, START_RANK_MIN
 from llm_play import (
     SUBSCRIPTION_CONFLICT_ENV,
     _agent_sdk_turn,
@@ -85,7 +84,9 @@ def parse_json(reply: str):
 
 
 # ---------------------------------------------------------------------------
-# The skill file is the ONE source of the editorial line: the prompts quote it.
+# TASTE has ONE home, the `taste` skill, read WHOLE by every prompt that chooses a line,
+# a trio or a start word. The `find-sentences` skill keeps the practical laws (the famous
+# line, standing alone, the start word's grammar, the page); the prompts quote them.
 
 def skill_section(heading: str) -> str:
     text = _paths.SKILL_FILE.read_text(encoding="utf-8")
@@ -95,12 +96,13 @@ def skill_section(heading: str) -> str:
     return text[start:end].strip()
 
 
-def taste_profile() -> str:
-    return skill_section("## Taste profile")
+def taste() -> str:
+    text = _paths.TASTE_FILE.read_text(encoding="utf-8")
+    return re.sub(r"\A---\n.*?\n---\n", "", text, flags=re.S).strip()
 
 
-def secret_rules() -> str:
-    return skill_section("## The two laws") + "\n\n" + skill_section("## The trio rules")
+def laws() -> str:
+    return "\n\n".join(skill_section(h) for h in ("## The two laws", "## Stands alone", "## The trio rules"))
 
 
 def start_rules() -> str:
@@ -118,12 +120,11 @@ def pick_from_chunk(claude: Claude, sentences: list[str], limit: int) -> list[di
     listing = "\n".join(f"{i}. {s}" for i, s in enumerate(sentences))
     answer = claude.json(f"""You curate a daily French word game: one sentence, three words removed, the
 player rediscovers them from embedding-neighbour feedback. Below are sentences mined
-from one book. Choose the at most {limit} that best fit this editorial line — they must
-be self-contained (understandable with no context), felt, and DO something (a turn,
-an image carrying a thought, a dry joke). Skip anything flat, abstract, or that merely
-describes.
+from one book. Choose the at most {limit} that would make the best days, by this taste —
+lines that DO something and are built for the game; skip plot, anything flat, anything
+that merely describes. Choose none rather than weak ones.
 
-{taste_profile()}
+{taste()}
 
 Sentences:
 {listing}
@@ -144,9 +145,9 @@ def rank_sentences(claude: Claude, picks: list[dict], limit: int) -> list[dict]:
     listing = "\n".join(f"{i}. {p['sentence']}  ({p['why']})" for i, p in enumerate(picks))
     answer = claude.json(f"""These sentences were shortlisted from one book for a daily French word game
 (three words removed, rediscovered from embedding-neighbour feedback). Rank the best
-{limit} for this editorial line — a sentence must be self-contained and DO something:
+{limit} by this taste — the line that would make the best day first:
 
-{taste_profile()}
+{taste()}
 
 Shortlist:
 {listing}
@@ -216,62 +217,55 @@ def holed(tokens, blanks: set[int], mark: int | None = None) -> str:
     return re.sub(r"\s+([,.;:!?…»)])", r"\1", re.sub(r"([«(]|\w')\s+", r"\1", " ".join(parts)))
 
 
-def choose_trio(claude: Claude, tokens, candidates, refused: list[str],
-                apart: list[tuple[str, str, str]] = ()) -> dict | None:
-    """TASTE FIRST (2026-09-24): the model reads the sentence as the curator does by hand
-    and names the three words worth hiding, in the order players will find them, from the
-    words code allows (`candidates`). `refused` tells it what code already refused and
-    why, and `apart` the pairs code forbids together (`rules.conflicts`). Returns
-    {"words": [3 display words], "path": [lines], "why": str}, or None when it declines
-    the sentence. Code checks the answer (`rules.refusals`)."""
-    allowed = ", ".join(dict.fromkeys(t.text for t in candidates))
-    never = ("\nPairs that can never share a trio (code's rules):\n"
-             + "\n".join(f"- {a} + {b}: {why}" for a, b, why in apart) + "\n") if apart else ""
-    again = ("\nAlready refused by the checks (measured on real play) — propose another trio:\n"
+def choose_day(claude: Claude, lines: list[dict], refused: list[str]) -> dict | None:
+    """The day, chosen by COMPARISON (2026-09-24): `lines` are shortlisted lines, each with
+    the words code allows as its secrets ({"sentence", "allowed"}); the model picks the one
+    that makes the best day and the three words to hide, in the order players will find
+    them. `refused` says what was already turned down and why. Returns {"line": index,
+    "words": [3], "path": [lines], "why": str}, or {"line": None, "why": str} when the
+    model declines (the reason is logged), or None when the answer is unusable."""
+    listing = "\n\n".join(f"{n}. « {line['sentence']} »\n   words that can be hidden: {', '.join(line['allowed'])}"
+                           for n, line in enumerate(lines, 1))
+    again = ("\nAlready turned down — do not choose these again:\n"
              + "\n".join(f"- {r}" for r in refused) + "\n") if refused else ""
-    answer = claude.json(f"""You curate today's puzzle for a daily French word game. Three words of a sentence
-are hidden. Each hole first shows a START word (a word ranked {START_RANK_MIN}–{START_RANK_MAX}
-from its secret, chosen later); the player then types guesses and reads, for every
-hole, how close each guess lands. A word once found stays revealed, so it becomes
-context for the holes still open. The target: about 80% of players find all three
-within 30 tries.
+    answer = claude.json(f"""You choose tomorrow's day for a daily French word game. One line, three words hidden;
+the player rebuilds each from how close every guess lands, starting from a START word
+chosen later. A word once found stays revealed and becomes context for the others.
 
-The game's voice:
-{taste_profile()}
+What makes a day worth playing:
+{taste()}
 
-How a trio is chosen:
-{secret_rules()}
+The game's laws and practical rules:
+{laws()}
 
-The curator's method, done by hand for months — do it yourself, word by word: blank the
-word and read the sentence as a player who has never seen it, with no start word. What
-would you put there? If it is the word you would write first, it is not a hole (except
-ONE easy word that opens the day). If nothing you would put there is anywhere near it,
-players cannot reach it. Then think of the day as a chain: which word players find
-first, and what each found word gives the next.
+The candidate lines, from one work:
 
-The sentence:
-{holed(tokens, set())}
+{listing}
+{again}
+Compare them. For the best one, choose the three words to hide — the punch first among
+them — and play the day out: for each word, how a player reasons toward it from the line,
+and what it does when it lands. Decline only when no line here would make a day worth
+playing.
 
-The words code allows as secrets (word type, frequency and cooldown already checked):
-{allowed}
-{never}{again}
-Think it through, then name the three words in the order players will find them.
-Return {{"words": ["<first>", "<second>", "<third>"], "path": ["<first>: <why players reach it first>", "<second>: <what the first gives it>", "<third>: <what the first two give it>"], "why": "<one line: why this day is worth playing>"}},
-or {{"words": null, "why": "<one line>"}} to decline — only when you cannot find three
-words worth finding in this sentence. A trio of good words is a good day even if the
-sentence could be better.""")
+Return {{"line": <number>, "words": ["<first found>", "<second>", "<third>"], "path": ["<word>: <how players reach it and what it does when it lands>", ...], "why": "<one line: what the player will feel>"}},
+or {{"line": null, "why": "<one line>"}} to decline.""")
+    n = answer.get("line")
     words = answer.get("words")
+    if n is None:
+        return {"line": None, "why": str(answer.get("why") or "")}
+    if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= len(lines):
+        return None
     if not isinstance(words, list) or len(words) != 3 or not all(isinstance(w, str) and w.strip() for w in words):
         return None
-    path = [str(line) for line in answer.get("path") or [] if isinstance(line, str) and line.strip()]
-    return {"words": [w.strip() for w in words], "path": path, "why": str(answer.get("why") or "")}
+    path = [str(x) for x in answer.get("path") or [] if isinstance(x, str) and x.strip()]
+    return {"line": n - 1, "words": [w.strip() for w in words], "path": path, "why": str(answer.get("why") or "")}
 
 
 def context_guesses(claude: Claude, tokens, blanks: set[int], mark: int, n: int) -> tuple[list[str], str | None]:
     """What a reader could really put in ONE blank, the rest of the sentence intact and
     no start word, and the ONE word most readers would write there when readers agree
-    (None when they split) — the obviousness filter's question (`rules.open_candidates`),
-    which counts the list and strikes the expected word. `blanks` holds the other
+    (None when they split) — the reader's question, whose answer becomes a note for the
+    model (`rules.reading`), never a verdict. `blanks` holds the other
     occurrences of the same word, hidden so they cannot give it away. The model is told
     to set the book aside: it has memorised a canonical text, and the true word is not
     what a reader who has never seen it writes — the position of the true word in its
@@ -340,48 +334,62 @@ def _chain_block(chain: list[str] | None) -> str:
     if not chain:
         return ""
     lines = "\n".join(f"{i}. {step}" for i, step in enumerate(chain, 1))
-    return f"\nThe chain the day was designed on — the order players should find the words in:\n{lines}\n"
+    return f"\nHow the day was chosen to play — the order players should find the words in:\n{lines}\n"
 
 
 def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict],
-                chain: list[str] | None = None) -> dict[str, str]:
-    """The three start words chosen TOGETHER. `holes`: [{secret, slug, context, options:
-    [{word, rank}]}] — `context` is what a reader puts in the blank. `chain` is the path
-    the trio was proposed on (`choose_trio`): the starts are set along it. Returns
-    {slug: word}, only words from the options."""
+                chain: list[str] | None = None) -> dict:
+    """The three start words, chosen TOGETHER by playing the day out. `holes`: [{secret,
+    slug, slot, notes, options: [{word, rank}]}] — `notes` is what code measured (what a
+    reader puts in the blank, how much the sentence hands the word over, where the reader's
+    words land in the hole's own map). The model may instead name ONE hidden word to
+    REPLACE, when no start can save it. Returns {"starts": {slug: word}, "replace":
+    {"secret": word, "with": word, "why": str} | None, "play": str}; starts only from the
+    options."""
     blocks = []
     for h in holes:
         opts = ", ".join(f"{o['word']} ({o['rank']})" for o in h["options"])
-        blocks.append(f"Hole « {h['secret']} » (slot: {h.get('slot', 'as the hidden word')}) — "
-                      f"context check: {h['context']}.\n"
-                      f"Candidates (word (rank), closest first): {opts}")
-    answer = claude.json(f"""You curate a daily French word game: three words of a sentence are hidden and the
-player rediscovers each from embedding-neighbour feedback. Each hole shows a START word
-as its first clue, IN PLACE of the hidden word. Choose the three start words, together.
+        blocks.append(f"Hole « {h['secret']} » (slot: {h.get('slot', 'as the hidden word')})\n"
+                      f"  measured: {h.get('notes', 'nothing')}\n"
+                      f"  start candidates (word (rank), closest first): {opts}")
+    answer = claude.json(f"""You choose the START words of a day for a daily French word game: each hole shows a
+start word in place of the hidden word, the first clue; the player then types guesses and
+reads, for every hole, how close each lands.
 
+What makes a day worth playing — the start words included:
+{taste()}
+
+The start word's practical rules:
 {start_rules()}
 
-The start word replaces the hidden word in the sentence: it must be the same part of
-speech, agree with its surroundings (gender, number, verb form, elision) and take the
-SAME CONSTRUCTION — a verb must accept the object or preposition that follows (« hérité
-d'un prénom » cannot become « affublé d'un prénom »: affubler needs an object before
-« de »). Before answering, read the sentence with each choice in place and reject what
-does not read as correct French — an infinitive where a noun stands, a feminine noun
-after « un », a verb cut off from its complement.
+The start word replaces the hidden word in the sentence: same part of speech, agreeing with
+its surroundings (gender, number, verb form, elision), taking the SAME CONSTRUCTION.
 
 The sentence, holes marked with the hidden word in brackets:
 {sentence_marked}
 {_chain_block(chain)}
 {chr(10).join(blocks)}
 
-Return {{"starts": {{"<hidden word>": "<chosen candidate, exactly>", ...}}, "why": "<one line per hole>"}}.""")
+For each hole, play it out: from the start you consider, the guesses a player would type,
+in order, and how many tries to the secret — with the line read and the other words found.
+Choose the three starts so the day lands where the taste says (about 80% of players within
+30 tries), difficulty tuned by the start, never by a duller word. If one hidden word is
+dead or out of reach whatever its start, say so and name ONE replacement from the line
+instead of starts.
+
+Return {{"starts": {{"<hidden word>": "<chosen candidate, exactly>", ...}}, "play": "<one line per hole: the guesses from the start to the word>"}},
+or {{"replace": {{"secret": "<hidden word>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")
+    replace = answer.get("replace")
+    if isinstance(replace, dict) and isinstance(replace.get("secret"), str) and isinstance(replace.get("with"), str):
+        return {"starts": {}, "replace": {"secret": replace["secret"].strip(), "with": replace["with"].strip(),
+                                          "why": str(replace.get("why") or "")}, "play": ""}
     chosen = answer.get("starts", {}) if isinstance(answer.get("starts"), dict) else {}
     out: dict[str, str] = {}
     for h in holes:
         word = chosen.get(h["secret"]) or chosen.get(h["slug"])
         if isinstance(word, str) and word in {o["word"] for o in h["options"]}:
             out[h["slug"]] = word
-    return out
+    return {"starts": out, "replace": None, "play": str(answer.get("play") or "")}
 
 
 def choose_excerpt(claude: Claude, unit: str, window: dict) -> dict | None:
@@ -424,6 +432,9 @@ first clue, shown in place of the hidden word « {secret} ») was refused: {refu
 Choose another, following these rules:
 
 {start_rules()}
+
+And this taste (the start words part above all):
+{taste()}
 
 The start word replaces the hidden word: same part of speech, agreeing with its
 surroundings (gender, number, verb form, elision). Read the sentence with your choice in

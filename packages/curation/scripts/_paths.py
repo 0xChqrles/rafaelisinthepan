@@ -16,6 +16,9 @@ BENCHMARK_SCRIPTS_DIR = REPO_ROOT / "packages" / "benchmark" / "scripts"
 SHELF_DIR = CURATION_DIR / "shelf"
 RUNS_DIR = CURATION_DIR / "runs"
 SKILL_FILE = REPO_ROOT / ".claude" / "skills" / "find-sentences" / "SKILL.md"
+# TASTE has ONE home (2026-09-24): what makes a day worth playing, read whole by every prompt
+# that chooses a line, a trio or a start word.
+TASTE_FILE = REPO_ROOT / ".claude" / "skills" / "taste" / "SKILL.md"
 GENERATION_OUTPUT_DIR = GENERATION_DIR / "output" / "word"
 # The publish LEDGER (user-decided 2026-09-08): one JSON line per sentence puzzle published
 # to S3, appended by `pnpm puzzle:publish --s3` (backend/src/ledger.ts) — the ONE record of

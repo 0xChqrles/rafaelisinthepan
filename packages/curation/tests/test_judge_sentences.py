@@ -1,5 +1,6 @@
-"""The judge's sentence pre-filter and shortlist order (#308, 2026-09-20): a filter
-only removes, the survivors are ordered by image, the model reads the best."""
+"""The curator's flow (2026-09-24): the judge's loose filter keeps reading order and the
+model reads every line left; the day is chosen by comparison, and a refused choice is
+told back; the start-word step may swap a word; the giveaway judge is a note."""
 
 import json
 from types import SimpleNamespace
@@ -30,7 +31,7 @@ class Log(list):
         self.append(line)
 
 
-def test_judge_sentences_removes_the_failing_and_orders_the_rest_by_image():
+def test_judge_sentences_removes_the_failing_and_keeps_reading_order():
     table = {
         "flat": {"autonome": 0.9, "image": 0.1, "celebre": 0.0},
         "dependent": {"autonome": 0.2, "image": 0.9, "celebre": 0.0},
@@ -40,43 +41,61 @@ def test_judge_sentences_removes_the_failing_and_orders_the_rest_by_image():
     }
     log = Log()
     kept = curate.judge_sentences(log, list(table), judge=FakeJudge(table))
-    assert kept == ["better", "good"]
+    assert kept == ["good", "better"]          # reading order, never re-ranked by a score
     assert any("2 of 5" in line for line in log)
 
 
-def test_shortlist_reads_the_best_not_a_sample(monkeypatch):
-    monkeypatch.setattr(curate, "MAX_SENTENCES", 2)
-    seen = []
-    monkeypatch.setattr(curate.llm, "pick_from_chunk", lambda _c, chunk, _n: seen.extend(chunk) or [])
+def test_the_model_reads_every_line_the_judge_keeps(monkeypatch):
+    monkeypatch.setattr(curate, "CHUNK", 2)
+    chunks = []
+    monkeypatch.setattr(curate.llm, "pick_from_chunk", lambda _c, chunk, _n: chunks.append(chunk) or [])
     monkeypatch.setattr(curate.llm, "rank_sentences", lambda _c, picks, _n: picks)
-    log = Log()
-    curate.shortlist(object(), log, ["a", "b", "c"], set())
-    assert seen == ["a", "b"] and any("best by image" in line for line in log)
+    curate.shortlist(object(), Log(), ["a", "b", "c"], set())
+    assert chunks == [["a", "b"], ["c"]]
 
 
 def test_an_empty_list_asks_the_judge_nothing():
     assert curate.judge_sentences(Log(), [], judge=None) == []
 
 
-@pytest.mark.parametrize("stands_alone", [True, False])
-def test_attempt_checks_standalone_readability_before_further_curation(monkeypatch, stands_alone):
-    seen = []
-    monkeypatch.setattr(curate.llm, "stands_alone", lambda _c, sentence: {
-        "ok": stands_alone, "about": "Une promenade.", "why": "Un lieu sans référent.",
-    })
+def _line_tokens(*_a):
+    from rules import Token
+    words = [("le", "DET", True), ("chat", "NOUN", False), ("dort", "VERB", False),
+             ("sur", "ADP", True), ("la", "DET", True), ("pierre", "NOUN", False),
+             ("froide", "ADJ", False)]
+    return [Token(i, w, w, pos, "dep", 0, w, stop) for i, (w, pos, stop) in enumerate(words)]
 
-    def known(*args):
-        seen.append("known")
-        return {"known": False, "why": ""}
 
-    monkeypatch.setattr(curate.llm, "widely_known", known)
-    monkeypatch.setattr(curate, "parse", lambda *a: seen.append("parse") or [])
+def test_a_chosen_line_that_does_not_stand_alone_is_told_back_and_nothing_is_built(monkeypatch):
+    monkeypatch.setattr(curate, "parse", _line_tokens)
+    asked = []
+
+    def choose(_c, lines, refused):
+        asked.append(list(refused))
+        return {"line": 0, "words": ["chat", "pierre", "froide"], "path": [], "why": "w"} if len(asked) == 1 else None
+
+    monkeypatch.setattr(curate.llm, "choose_day", choose)
+    monkeypatch.setattr(curate.llm, "stands_alone", lambda _c, s: {"ok": False, "about": "", "why": "leans on its page"})
+    monkeypatch.setattr(curate, "build_day", lambda *a, **k: pytest.fail("a refused line is never built"))
     log = Log()
-    curate.attempt(object(), log, "Il marche dans ce lieu.", {}, {"secrets": set()},
-                   lambda _w: True, lambda _a, _b: None, lambda _t: None, "fr")
-    assert seen == (["known", "parse"] if stands_alone else [])
-    if not stands_alone:
-        assert any("rejected: does not stand alone — Un lieu sans référent." in line for line in log)
+    path = curate.day(object(), log, [{"sentence": "Le chat dort sur la pierre froide."}], {"kind": "book"},
+                      {"secrets": set(), "pairs": {}}, "", lambda w: True, lambda t: None, lambda t, w: None, "fr")
+    assert path is None
+    assert asked[0] == [] and "does not stand alone" in asked[1][0]
+
+
+def test_words_off_the_line_are_told_back(monkeypatch):
+    monkeypatch.setattr(curate, "parse", _line_tokens)
+    asked = []
+
+    def choose(_c, lines, refused):
+        asked.append(list(refused))
+        return {"line": 0, "words": ["chat", "lune", "pierre"], "path": [], "why": "w"} if len(asked) == 1 else None
+
+    monkeypatch.setattr(curate.llm, "choose_day", choose)
+    curate.day(object(), Log(), [{"sentence": "Le chat dort sur la pierre froide."}], {"kind": "book"},
+               {"secrets": set(), "pairs": {}}, "", lambda w: True, lambda t: None, lambda t, w: None, "fr")
+    assert "distinct words of the line" in asked[1][0]
 
 
 def test_a_rerun_replays_the_previous_sidecar_instead_of_paying_the_judge(monkeypatch):
@@ -90,7 +109,7 @@ def test_a_rerun_replays_the_previous_sidecar_instead_of_paying_the_judge(monkey
     assert "--contextual-replay" not in seen[1]
 
 
-def test_a_hole_out_of_reach_in_its_built_map_erases_the_draft_and_goes_back(tmp_path, monkeypatch):
+def test_a_swap_from_the_start_step_erases_the_draft(tmp_path, monkeypatch):
     draft = tmp_path / "x_y_z.json"
     sidecar = tmp_path / "x_y_z.contextual.json"
 
@@ -99,12 +118,14 @@ def test_a_hole_out_of_reach_in_its_built_map_erases_the_draft_and_goes_back(tmp
         sidecar.write_text("{}", encoding="utf-8")
         return SimpleNamespace(returncode=0, stderr="", stdout=f"écrite dans {draft} :"), []
 
+    def swap(*_a, **_k):
+        raise curate.Replace("ours", "loup", "no start saves it")
+
     monkeypatch.setattr(curate, "run_gen_phrase", run)
-    monkeypatch.setattr(curate, "choose_starts", lambda *a: pytest.fail("no start is chosen for a lost day"))
-    with pytest.raises(curate.OutOfReach) as caught:
-        curate.generate(object(), Log(), "s", ["chat", "chien", "ours"], {}, "fr",
-                        reach=lambda puzzle: {"ours": ("garçon", 404)})
-    assert caught.value.holes == {"ours": ("garçon", 404)}
+    monkeypatch.setattr(curate, "choose_starts", swap)
+    with pytest.raises(curate.Replace) as caught:
+        curate.generate(object(), Log(), "s", ["chat", "chien", "ours"], {}, "fr")
+    assert (caught.value.secret, caught.value.with_) == ("ours", "loup")
     assert not draft.exists() and not sidecar.exists()
 
 
@@ -194,15 +215,15 @@ def test_retry_reuses_scores_only_for_unchanged_context(tmp_path, monkeypatch, c
     assert seen == [str(sidecar) if change is None else None]
 
 
-# --- the giveaway gate (calibrated on real play, 2026-09-22) ------------------------------
+# --- the giveaway judge, a note (calibrated on real play, 2026-09-22) --------------------
 class _Tok:
     def __init__(self, i, text):
         self.i, self.text, self.slug = i, text, text.lower()
 
 
-def test_strike_giveaways_removes_what_the_sentence_hands_over_and_judges_each_word_once():
+def test_giveaway_scores_judge_each_word_once_with_every_occurrence_blanked():
     toks = [_Tok(0, "le"), _Tok(1, "silence"), _Tok(2, "se"), _Tok(3, "faisait"), _Tok(4, "silence")]
-    cands = [toks[1], toks[3], toks[4]]
+    words = [toks[1], toks[3], toks[4]]
     occ = {"silence": {1, 4}, "faisait": {3}}
     asked = []
 
@@ -213,9 +234,7 @@ def test_strike_giveaways_removes_what_the_sentence_hands_over_and_judges_each_w
             asked.append(state)
             p = 0.8 if state["mot"] == "silence" else 0.2
             return {k: p for k in questions}
-    log = Log()
-    kept = curate.strike_giveaways(log, toks, cands, occ, judge=J())
-    assert [t.text for t in kept] == ["faisait"]
+    scores = curate.giveaway_scores(toks, words, occ, judge=J())
+    assert scores == pytest.approx({"silence": 0.8, "faisait": 0.2})  # a note: nothing is struck
     assert len(asked) == 2                                   # one judgement per distinct word
     assert asked[0]["phrase_a_trou"].count("____") == 2      # every occurrence blanked
-    assert any("GIVEN AWAY" in line and "silence" in line for line in log)

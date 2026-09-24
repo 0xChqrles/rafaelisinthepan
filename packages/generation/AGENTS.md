@@ -294,10 +294,9 @@ Consequences that are load-bearing:
   passed recall on every published day and, run over one whole novel (Bukowski, 1 608
   candidates, 2026-09-20), clears ≈ 46 % — lines hanging on a name or a pronoun, and
   the flat ones — while its `image` score orders the rest the way a curator would (the
-  administrative letters last). It lives here, tested, and is NOT WIRED into the
-  curation package yet (its hook is in `curate.py`, which has other work in flight):
-  the intended use is filter + shortlist order in place of the random 600-sentence
-  sample the model reads.
+  administrative letters last). The curation package uses it as a FILTER only
+  (`curate.judge_sentences`): since 2026-09-24 no ordering — the model reads every line
+  it keeps (curation `AGENTS.md`).
 - **`gen_word` stays static** — no sentence, no judge (`walk_secret(contextual=None)`).
   The two artifacts still share every downstream rank-map rule, but no longer promise
   the same lexical group the same neighborhood (root `AGENTS.md`).
@@ -516,7 +515,7 @@ output filename contains the three distinct secret slugs in sentence order.
   `SCORE_BATCH = 50` / `PAIR_BATCH = 40` / `NOUL_BATCH = 40` / `WORKERS = 6`, filter
   thresholds `START_FIT_MIN = 0.5` / `HOLE_READABLE_MIN = 0.6` / `SAME_CONCEPT_MAX = 0.6` /
   `FRENCH_MIN = 0.2`,
-  the curator's `GIVEAWAY_MAX = 0.45` (calibrated on real play, 2026-09-22; curation `AGENTS.md`)
+  `GIVEAWAY_MAX = 0.45` (calibrated on real play, 2026-09-22 — a NOTE the curator shows the model with its meaning, never a strike; curation `AGENTS.md`)
   (`contextual_rank.py`).
   `PLAYABILITY_TOP` is a curator report window sized for a sentence hole's near field.
 - **Playability report (#135):** `build_playability_report` reads (never mutates)

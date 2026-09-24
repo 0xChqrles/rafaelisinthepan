@@ -12,7 +12,7 @@
   curation/                  one work in, one CANDIDATE puzzle out (uv); never publishes
     scripts/
       curate.py              the CLI + the linear pipeline (work -> sentences -> trio -> gen_phrase)
-      rules.py               the trio rules as PURE functions over parsed tokens (+ the tunables)
+      rules.py               the FACTS about a candidate secret, as PURE functions (+ the tunables)
       sentences.py           text -> candidate UNITS: a sentence, or up to 3 consecutive short
                              sentences of one paragraph (length band, self-contained; stdlib)
       epub.py                epub -> text + metadata (stdlib)
@@ -26,8 +26,8 @@
       starts.py              the start-word rule (valid French): displayed sentence, elision,
                              band candidates (stdlib, tested)
       parse.py               spaCy adapter (fr_core_news_md) -> rules.Token
-      llm.py                 the questions asked of Claude + JSON parsing; the taste profile and
-                             the secret rules are READ FROM THE SKILL FILE at run time
+      llm.py                 the questions asked of Claude + JSON parsing; TASTE is read whole from
+                             the `taste` skill, the practical laws from `find-sentences`, at run time
       shelf.py               the shelf, its index, and what the archive already holds (read off
                              the PUBLISH LEDGER, packages/generation/published.jsonl)
       _paths.py              path wiring (generation + benchmark scripts on sys.path)
@@ -44,30 +44,30 @@
 
 ```bash
 pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <shelf file | puzzle.json>] [--blind]
-#   Needs JEV_API_KEY in the environment (#308): the judge pre-filters and orders the
-#   sentences the model reads and strikes the giveaway holes, and gen_phrase —
-#   contextual by default — needs it too.
+#   Needs JEV_API_KEY in the environment (#308): the judge's sentence filter and giveaway
+#   notes, and gen_phrase — contextual by default — need it.
 #   Picks a work BY RULE (2026-09-20; the model no longer picks: `curate.pick_work` —
 #   off the shelf minus the archive minus index.json minus the artist cooldown, a song
 #   when no music day is within MUSIC_EVERY_DAYS = 4, else a book, the author never
-#   used or proposed first, then the one left longest ago, then the file name; --work forces one; --retry <shelf file> erases a previous attempt on
-#   a work — its index entry and the candidate puzzle(s) it wrote under the generation
-#   output — then runs on it), mines it, and writes the first sentence that
-#   survives every rule as a puzzle under packages/generation/output/word/fr/... via
-#   gen_phrase — headless, the start word is the band's random pick, the #133 form question
-#   is answered by the model from the sentence. Exit 0 = a candidate was written (publish it
-#   yourself), 2 = every shortlisted sentence was rejected (rerun: another work). The log is runs/<stamp>.md. --blind withholds the winning sentence,
-#   its secrets and their handling from the log and stdout (a failed attempt is still
-#   logged in full; the puzzle file is named after its START words, so its path spoils
-#   nothing): the main log gets the player's view, the start words, the source and the
-#   path, and everything else goes to runs/<stamp>.spoilers.md — so the run can be read
-#   and the puzzle played before being spoiled (user rule 2026-09-07).
+#   used or proposed first, then the one left longest ago, then the file name; --work
+#   forces one; --retry <shelf file> erases a previous attempt on a work — its index
+#   entry and the candidate puzzle(s) it wrote under the generation output, their judge
+#   scores included — then runs on it), mines it, and — taste choosing, code stating
+#   facts — writes ONE candidate day under packages/generation/output/word/fr/... via
+#   gen_phrase, headless, the #133 form question answered by the model. Exit 0 = a
+#   candidate was written (publish it yourself), 2 = no line of the work made a day
+#   (rerun: another work). The log is runs/<stamp>.md. --blind withholds the chosen day
+#   from the log and stdout (a run with no day is logged in full; the puzzle file is named
+#   after its START words, so its path spoils nothing): the main log gets the player's
+#   view, the start words, the source and the path, and everything else goes to
+#   runs/<stamp>.spoilers.md — so the run can be read and the puzzle played before being
+#   spoiled (user rule 2026-09-07).
 #   --retry <candidate puzzle.json> retries ONE SENTENCE instead (user-decided
 #   2026-09-10: one command, a work or a puzzle): the work is read off the puzzle's
-#   `source`, the file is erased, the sentence is found again among the work's mined
-#   units for its casing; the mining, shortlist and ranking are skipped, everything
-#   from the obviousness filter on runs as in a full run (the page, the quotes test,
-#   the starts). A sentence the ledger holds is refused.
+#   `source`, the file is erased (its judge scores kept and replayed for the same trio),
+#   the sentence is found again among the work's mined units for its casing; the mining,
+#   judge and shortlist are skipped, the day is chosen on that one line. A sentence the
+#   ledger holds is refused.
 pnpm shelf:lyrics [--artists shelf/artists.txt] [--max-songs N]
 #   The music source (#262): for each artist of the user's hand-written list, the songs
 #   from Genius most viewed first, minus the top FAMOUS_SHARE (the singles), minus what
@@ -87,85 +87,71 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 
 ## Stable invariants
 
-- **The judge removes what the model should not have to read, and orders the rest
-  (#308, user-decided 2026-09-20).** After the mechanical filter and BEFORE
-  `rich_enough` (the parser then reads only what the judge kept — a third of a novel),
-  `curate.judge_sentences` scores EVERY candidate with Jev (`contextual_rank
-  .score_sentences`: stands alone / carries an image / not a famous line), drops what
-  fails the loose `sentence_passes` (thresholds in `generation/scripts/contextual_rank.py`,
-  chosen so every published day passes; about half a novel goes — lines hanging on a
-  name or a pronoun, the flat ones), and the survivors are ordered by IMAGE score, so the
-  `MAX_SENTENCES` (600) the model reads are the best of the whole work — no random
-  sample any more (`--seed` is gone). A filter only removes: the model still shortlists,
-  the curator still decides. The key is the one `gen_phrase` needs anyway (contextual by
-  default since 2026-09-20); a run without it dies before any model call, never a
-  static or unfiltered fallback. Cost: a few cents per work. **A rerun never pays the
-  judge twice**: `generate` replays the previous run's sidecar (`--contextual-replay`)
-  when it regenerates with the model's start words, and `--retry <puzzle.json>` keeps the
-  erased draft's scores for the same trio (another trio runs the judge again).
-- **The judge strikes the holes the sentence hands over (#308, user-decided 2026-09-22,
-  calibrated on REAL play).** After the reader's obviousness filter, `curate.strike_giveaways`
-  asks Jev three yes/no questions per open PROPOSED word on the blanked sentence (would a reader
-  write it · it or a direct synonym · does a fixed expression call for it —
-  `contextual_rank.giveaway`, their mean) and strikes a word at `GIVEAWAY_MAX = 0.45` as
-  a hole (it may still be the day's ONE EASY ENTRY, below). The
-  threshold comes from the round logs: every published hole labelled by the share of
-  players who typed the secret within three guesses (84 holes; "too easy" ≥ 35 %); the
-  measure has AUC 0.73 and at 0.45 strikes 11 of the 20 easy holes for 8 good ones lost
-  of 64 — a lost good hole is cheap here, a given-away day is not. It exists because the
-  2026-09-21 day was over in 5 tries: the reader had judged « silence » and « enseignant »
-  open, and a third of the players typed a secret as their first word. The same guesses
-  replayed on a STATIC map of that puzzle landed just as close, so the contextual ranking
-  was not the cause. The sentence is rendered exactly as it was calibrated (lowercase,
-  one `_____` glyph). **Measured and rejected**: striking a hole whose reader's fillers
-  are close synonyms of it (AUC ≈ 0.5 on the 36 holes with logged fillers — « douceur »
-  had a rank-1 filler and played well). Known limit: about half the easy holes are not
-  predicted by these questions.
-- **TASTE FIRST, CHECKS AFTER (user-decided 2026-09-24, replacing "the LLM never sees an
-  invalid option").** `rules.initial_candidates` builds the words code allows (word type,
-  frequency, cooldown, vocab); the model proposes a trio from them with its own taste;
-  `rules.refusals` judges it and says WHY a word is refused, and the model proposes again.
-  The model chooses, code enforces — after the choice, not by shrinking the menu first. Tunables live at the top of `rules.py`:
-  `ALLOWED_POS`, `MAX_COMMON_RANK` (20) / `MAX_COMMON_RANK_ADV` (500, the frequency
-  floors read off the reduced vectors' order), `WEAK_VERBS` (verbs of saying, thinking
-  and modality, by lemma — never a secret; user-decided 2026-09-08 on a trio led by
-  « je crois »), `MIN_CANDIDATES` (8 distinct candidate words, or the sentence never
-  reaches the model — `curate.rich_enough` parses the mined sentences before the
-  shortlist; measured 2026-09-08 on 27 attempts: 4–7 candidates gave no trio or a dull
-  forced one, every trio worth keeping came from 8+), `MIN_GAP` (3 tokens), `COSINE_MAX`
-  (0.40), `MODIFIER_DEPS`, `CONTEXT_GUESSES` (3,
-  the most fillers the obviousness filter asks a reader for), `OBVIOUS_MAX` (2),
-  `TWIN_RANK` (3), `PLAIN_WORD_RANK` (40000, ONE boundary with `starts.MAX_START_FREQ_RANK`),
-  `FILLER_NEAR_MAX` (100);
-  `TRIO_ROUNDS` (5 proposals per sentence); and at the top of `curate.py`: `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK`
-  (6), `SHORTLIST` (20). The mechanical filter (`sentences.is_candidate`) also refuses a
-  unit that OPENS on a quotation mark (reported speech, or an argument with a line the
-  player cannot see — the same day's « “Il sait qu’il meurt” est une pensée profonde »),
-  and the skill's taste rules refuse the REPLY (a line that quotes, answers or corrects
-  what the player cannot see) at the shortlist.
-- **The rules, as code applies them** (from the user's curation feedback, #260):
-  candidates are NOUN/VERB/ADJ/ADV, not stopwords, not among the commonest words (an
-  adverb has the higher floor), slug in the vocab, never a hyphenated compound
-  (« sud-américain »: players type it as two words and grind — user-decided
-  2026-09-10), not a secret still in its
-  `SECRET_COOLDOWN_DAYS` (90, `shelf.py`; user-decided 2026-09-08 — a COOLDOWN, not
-  the permanent blacklist it was, which had « cimetière » off the table forever after one
-  Ernaux day; judged on the ledger's game day),
-  no same-lemma twin under another slug in the sentence (a same-slug repeat is allowed:
-  one hole per occurrence). Two words never share a trio (`prune`, checked both ways by
-  `refusals`, which names the rule — `pair_conflict`): two verbs (at most one verb); a word and its head, a dependent or a
-  modifier sibling (a verb and its subject, an adjective and its noun — "describing the
-  same thing"); two words within `MIN_GAP` tokens ("the same part of the sentence");
-  lemma/morphological variants; two words above `COSINE_MAX` ("too similar"). `conj`
-  siblings stay (a list of nouns is a good spread).
+- **TASTE CHOOSES, CODE STATES FACTS (user-decided 2026-09-24).** Which line, which three
+  words and which start words make a day is the MODEL's call, read off the `taste` skill
+  (the one home of taste: the voice, the line, what is built for the game, the hidden
+  words, the start words, difficulty). Code keeps only FACTS — which words can be hidden,
+  the cooldowns, the famous line, valid French, the puzzle format — and turns everything
+  it MEASURES into notes the model reads; nothing measured refuses a word. Why: replayed
+  on the 16 days the user loved, the code rules it replaces would have rejected three of
+  the lines before any model saw them (`MIN_CANDIDATES`: JeanJass, NeS, Rounhaa) and five
+  of the trios (the pair rules: « éleveur de [pigeons] », « le cafard de l'[homme] »),
+  and the stacked vetoes left the synonym next door — the generic, easy words of slop.
+  **Measured and removed**: the pair rules (one verb, `MIN_GAP`, head/dependent,
+  `COSINE_MAX`), the obviousness and expected-word strikes, the giveaway strike, the
+  reach strike, the menu of valid trios, the one-easy-entry rule, `MIN_CANDIDATES`, the
+  image ordering and the 600-sentence cap.
+- **The judge removes what the model should not have to read (#308, 2026-09-20); the
+  model reads the rest, in reading order (2026-09-24).** `curate.judge_sentences` scores
+  every mined line with Jev (`contextual_rank.score_sentences`: stands alone / carries an
+  image or a turn / not a famous line) and drops what fails the loose `sentence_passes`
+  (thresholds in `generation/scripts/contextual_rank.py`, chosen so every published day
+  passes; about half a novel goes — lines hanging on a name or a pronoun, the flat ones).
+  No ordering, no cap: sorting by the image score favoured description, and on a big
+  book the 600-line cap left hundreds of lines unread. A run without the key dies before
+  any model call. **A rerun never pays the ranking judge twice**: `generate` replays the
+  previous run's sidecar (`--contextual-replay`) when it regenerates with the model's
+  start words, and `--retry <puzzle.json>` keeps the erased draft's scores for the same
+  trio.
+- **The model shortlists with taste, then CHOOSES THE DAY BY COMPARISON.** It reads every
+  kept line, `CHUNK` (150) at a time, picks at most `PICKS_PER_CHUNK` (6) by the taste
+  skill and ranks a `SHORTLIST` (20). `curate.day` then shows it `COMPARE` (5) lines at a
+  time, each with the words code allows (`rules.initial_candidates`), and
+  `llm.choose_day` names the best line and its three words in the order players will
+  find them, playing each out — or declines. Code checks the facts: three distinct words
+  of the line that can be hidden, and the line STANDS ALONE (below); a refusal is told
+  back and it chooses again, `DAY_ROUNDS` (3) times, then the next lines. Every line
+  compared goes to the index as tried.
+- **Code MEASURES each chosen word and hands the notes to the start-word step**
+  (`curate.build_day`): the READER — the user's own method, one call per word
+  (`llm.context_guesses`: the line with that word blanked, the rest intact, no start
+  word; the words that could stand there and the one most readers would write) — becomes
+  a plain note (`rules.reading`: whether most readers would write the secret itself,
+  twins folded — `is_twin`, `TWIN_RANK` 3 — a rare word past `PLAIN_WORD_RANK` never
+  said to be expected); the judge's giveaway score (`curate.giveaway_scores`, with its
+  real-play meaning: at `GIVEAWAY_MAX` 0.45 and above, a third of the players typed the
+  hole within three guesses); and, once the map is built, where the reader's nearest word
+  lands in the hole's own map (`rules.map_nearest_filler`). With those notes and each
+  hole's band, `llm.pick_starts` plays the day out and chooses the three starts — or
+  names ONE hidden word no start can save and another word of the line to hide instead
+  (`Replace`: the draft is erased, the day rebuilt, `REPLACE_ROUNDS` 2).
+- **Which words can be hidden (facts, `rules.initial_candidates`):** NOUN/VERB/ADJ/ADV and
+  PROPN (the parser tags a lowercase brand or rare noun as a proper noun — « rolex »,
+  « zigzag », secrets of a favourite day; a name nobody can reason toward is taste's
+  call), not stopwords, not among the commonest words (`MAX_COMMON_RANK` 20 /
+  `MAX_COMMON_RANK_ADV` 500, read off the reduced vectors' order), not a `WEAK_VERBS` verb
+  (saying, thinking, modality — user-decided 2026-09-08), slug in the vocab, never a
+  hyphenated compound (« sud-américain »: players type it as two words — user-decided
+  2026-09-10; it also keeps out « post-it », a favourite day's secret: the user's call),
+  not a secret still in its `SECRET_COOLDOWN_DAYS` (90, `shelf.py`, judged on the
+  ledger's game day), no same-lemma twin under another slug in the line (a same-slug
+  repeat is one hole per occurrence). A line with fewer than `TRIO` such words is skipped.
 - **The sentence must STAND ALONE, solved (user-decided 2026-09-18, on the Svevo day:
   « c'étaient donc des nerfs parfaits » meant nothing even solved — the page is shown
-  after the solve, never during play).** One call per shortlisted sentence, before the
-  known-line annotation (`llm.stands_alone`, the rule read from the skill's `## Stands
-  alone` section): the model says in one line what the sentence is about from the
-  sentence alone and whether it stands; code STRIKES on a refusal and the log names what
-  leaned on the page. The shortlist prompts' "self-contained" wording stays as taste;
-  this is the gate.
+  after the solve, never during play).** One call per CHOSEN line (`llm.stands_alone`, the
+  rule read from the find-sentences skill's `## Stands alone` section, the REPLY
+  included): the model says in one line what the sentence is about from the sentence
+  alone and whether it stands; code refuses on a refusal and the choice is told back.
 - **The FAMOUS LINE is a QUOTATION test, never a memory test (user-decided 2026-09-08,
   replacing the two-probe MEMORIZATION test — author + completion from the first half).**
   The model has memorised every line of a canonical book, so what it remembers says
@@ -175,114 +161,17 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   the author's fr.wikiquote page, the work's wikiquote page and the work's fr.wikipedia
   article, and `quotes.extract_quotes` writes their quoted lines (`{{citation}}` bodies
   and « … » spans of at least `MIN_QUOTE_WORDS` = 5) to `shelf/quotes/<file>.txt`. The
-  curator, OFFLINE, rejects a unit that shares `QUOTE_MATCH` (0.6) of the shorter side's
-  words, in order, with a quoted line — at least `QUOTE_MIN_WORDS` (4) of them
-  (`quotes.quoted`; a quote can be the first sentence of a two-sentence unit) — and the
-  log names the quote. A book with no file skips the test with a warning; a book whose
-  fetch found no page (`quotes.quote_sources` empty) rejects nothing and says so in the
-  log, which is the point (no French reader quotes it). The mined sentences are parsed
-  in one batched pass (`parse.parse_many`, `nlp.pipe`) before the shortlist. The model's own
+  curator, OFFLINE, removes every mined unit that shares `QUOTE_MATCH` (0.6) of the
+  shorter side's words, in order, with a quoted line — at least `QUOTE_MIN_WORDS` (4) of
+  them (`quotes.quoted`) — before the judge or the model reads it, and the log names the
+  quote. A book with no file skips the test with a warning; a book whose fetch found no
+  page (`quotes.quote_sources` empty) rejects nothing and says so. The model's own
   opinion — would a reader who has not read the book know this line — is logged as an
-  ANNOTATION (`llm.widely_known`), never a strike. Everything else the model is asked is
-  a choice from a list.
-- **The OBVIOUSNESS FILTER judges every PROPOSED word (user-decided 2026-09-10, the
-  user's own method, so a batch can ship without a play-test; it supersedes the
-  2026-09-06 "annotation, never a strike"; since 2026-09-24 it runs on the model's
-  proposal, cached per word across rounds, not on every candidate).** For each word, one
-  call shows the sentence with THAT word blanked (every
-  occurrence of it), the rest intact and NO start word, and asks a reader WHAT ELSE IT
-  COULD BE — the words that could really stand there, at most `CONTEXT_GUESSES`, only
-  what would not surprise a reader; code strikes the word when the reader can name at
-  most `OBVIOUS_MAX` words for it, the secret included (`rules.open_candidates`):
-  « [arrêt] cardiaque » — arrêt or crise — is out, « les clefs du [magasin] » —
-  magasin, camion, bureau — is a hole. A filler that is a TWIN of the secret
-  (`is_twin`: a variant, or a word within `TWIN_RANK` of it in the game's own ranking —
-  `curate.load_similarity` `neighbour_rank`, off `closest`; « clés »/« clefs »,
-  « certainement »/« sûrement », « premier »/« dernier » sit at 0–3, measured
-  2026-09-10) is the secret again, not an alternative. Only the reader's count sees a
-  fixed pair: « crise » is rank 12668 from « arrêt » (the twin-only rule of the same
-  evening let « arrêt » through). **A word a reader GUESSES, with alternatives, stays a
-  hole — that is the game** (user's call 2026-09-10 on « les clefs du [magasin] »,
-  « une [grippe] intestinale », « tant de [cocaïne] »: the first-filler rule of the
-  same morning struck them and left « sciatique »). **The EXPECTED word is never a
-  hole either (user-decided 2026-09-13, "aim harder"): the word most readers would
-  write there, twins folded, is struck even with alternatives behind it.** The reader
-  NAMES it in the same call (`expected`, null when readers would split), told to set
-  the book aside; it is never read off the list's first position — the model has
-  memorised a canonical text and lists the true word first (2026-09-15: that reading
-  struck 32 of 38 words of an Orwell, and flipped the same Houellebecq words between
-  runs). A named word that is not the secret counts as one of the alternatives.
-  Measured on the runs' own logs against the real medians (`/scores`): the curated
-  days of 09-10/11/12 hid one to three expected words (« hérité », « chauffage »,
-  « peau » / « montrer ») and played at 6 / 8 / 8; the 09-13 day hid none (« lâcher »
-  where a reader puts « dire », « gosses » for « enfants ») and played at 44; both
-  Kundera attempts hid three (« quinze [jours] », « au [crayon] », « la [poste] ») and
-  were guessable in three tries. **The strike applies to a PLAIN word only** — corpus
-  rank at or under `PLAIN_WORD_RANK` (40000, the start band's "a word a player knows"
-  boundary): past it the reader's first filler is the model's knowledge, not every
-  player's — « je lance à la [cantonade] » (rank 68858, the user's call 2026-09-14) is
-  an idiom the model completes and a player may not; every word the rule struck on the
-  easy days sits under 28000. The count rule still judges a rare word. The log names
-  each verdict with the count and the fillers. Why this shape: the 2026-09-06 check ran AFTER the trio,
-  with all three blanks, as a log note — « il aurait répondu [sûrement] pas » was picked
-  from a list of four and the check that would have refused it could change nothing.
-  The open holes' fillers are shown to the design and start-word prompts. The skill's
-  trio rules carry the user's INTERACTION rule of the same day (a hole another visible
-  word narrows, never a bare list item); the design prompt reads it from there.
-- **ONE EASY ENTRY a day (user-decided 2026-09-24, for the target "about 80% of players
-  within 30 tries"; it loosens 2026-09-13's "aim harder").** A word struck as too easy —
-  the EXPECTED word while the reader still names more than `OBVIOUS_MAX` possible words
-  (`open_candidates`' `entries`), or a word the giveaway judge strikes — is never a hole
-  of its own, but ONE may open the day: `rules.refusals` refuses an easy word anywhere
-  but FIRST in the model's order (the chain's entry), and its start is chosen not to
-  make it easier still (the skill's `## The start word`). An OBVIOUS word
-  (at most `OBVIOUS_MAX` possible) never is. Why: on a 2026-09-24 run (Dicker, plain
-  prose) 10 of 14 sentences died with fewer than three open words after those two
-  strikes; and the days nearest the target hid expected words (09-10/11/12: 73/65/57% of
-  players within 30) while 09-13, which hid none, had 3%.
-- **NO HOLE OUT OF REACH (2026-09-23, decided by the agent on the user's delegation, for
-  the user's goal: about 80% of players finishing within 30 tries, reached through
-  CURATION ALONE — the game mechanics stay as they are).** The obviousness filter's
-  fillers, read the other way, ON THE HOLE'S OWN BUILT MAP: once the chosen trio's maps
-  exist, `generate` asks `rules.out_of_reach(rules.map_nearest_filler(...))` per hole —
-  the readers' nearest single-word filler past `FILLER_NEAR_MAX` (100) in that map, or
-  past the map — and a hole out of reach erases the draft (`OutOfReach`): the refusal is
-  told back and the model proposes again. Never judged on the static
-  ranking: that would strike a word whose sense the static vector misses, the words the
-  contextual map exists for (user, 2026-09-24: Jev "allows to pick any word, even if it
-  has homonyms"). A day is as hard as its hardest hole: 09-22 and 09-23, one player in
-  ten within 30 tries. Calibrated on REAL play: the 26 published holes with logged
-  fillers (09-11..23), "hard" = found within 30 tries by under 60% of the players who
-  engaged; at 100 the rule refuses the 4 worst of the 9 hard holes (« lâcher » 661,
-  « héros » 404, « humble » 216, « saluer » 141) for 3 of 17 good ones (30, first chosen,
-  struck ten vivid words on one Buzzati run once the model chose with taste — raised
-  2026-09-24). It aims at HARD holes; the close-synonym strike rejected above aimed at easy
-  ones. The judge's low giveaway score predicts hard holes about as well but, as a
-  floor, caught fewer for the same loss: not used.
-- **The model PROPOSES the day as a CHAIN, code checks it (2026-09-23/24; the user's
-  craft: "picking a word by knowing that once solved it will help you find this one").**
-  `llm.choose_trio` is ONE simple prompt: the sentence, the words code allows, the taste
-  profile, the trio rules (among them "a hole is a word WORTH FINDING", user feedback
-  2026-09-24 on « nulle · lisait · beau » — taste, so no code rule: corpus rank does not
-  separate « lisait » 21372 from « allumettes » 22244) and the user's hand method (blank
-  the word, read as a player with no start word, then think of the chain). With room to
-  think, the model names the three words in the order players will find them and the
-  PATH. `rules.refusals` checks them (pair rules → the reader's fillers → the giveaway
-  judge → one easy entry, first only); the pairs code forbids are SHOWN to it up front
-  (`rules.conflicts`, free — on the first two runs 14 of 36 refusals were pair rules it
-  could not see); a refusal is told back and the model proposes again, `TRIO_ROUNDS`
-  times, then the sentence is abandoned; it may also DECLINE a
-  sentence with no three words worth finding. The path goes to the start-word prompts
-  (`pick_starts`, `pick_start`), which set the starts along it. Measured before the
-  switch (side by side, 8 sentences, 42 calls): the user's exact trio on 09-07, two of
-  their three words on 08-01 and 08-14, the pun on Gailly's « chauffer » the menu had
-  missed, the bland Dicker day declined. It replaced the menu of valid trios
-  (`valid_trios`, `design_trio`), itself the successor of the word-at-a-time pick
-  (`pick_secret`, `search_trio`): pre-filtering every candidate stripped the vivid words
-  of plain prose and left the model to choose among leftovers.
-- **The taste profile and the secret rules have ONE home, the `find-sentences` skill
-  file**; `llm.py` slices its `## Taste profile`, `## The two laws` and `## The trio
-  rules` sections into the prompts at run time. Edit the skill, never a prompt copy.
+  ANNOTATION (`llm.widely_known`), never a strike.
+- **Taste has ONE home, the `taste` skill, read WHOLE by every prompt that chooses** (the
+  shortlist, the day, the starts); the `find-sentences` skill keeps the practical laws
+  the prompts quote (`## The two laws`, `## Stands alone`, `## The start word`,
+  `## The page`). Edit the skills, never a prompt copy.
 - **The transport is the benchmark's** (`llm_play._agent_sdk_turn`, the paid-Claude.ai
   guard, the conflict-env scrub): one fresh conversation per question, model
   `claude-opus-5-5`, adaptive thinking, effort `high` (set explicitly: Opus 5.5 defaults to
@@ -291,24 +180,15 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 - **`gen_phrase` is the only writer of a puzzle**, run headless from this package with
   `--words` and, when it demands one, `--form` answered by the model from the sentence
   (`curate.generate` parses the #133 error's analysis list). Nothing here publishes.
-- **The START WORDS are CHOSEN by the model, the three together, never at random**
-  (user rule 2026-09-07: the start is the user's daily craft — think of the chain of
-  guesses, balance the three, go easier when another hole is hard; set along the day's
-  designed chain since 2026-09-23, from the ONE band 100–200 of every map since
-  2026-09-24; sharpened
-  2026-09-10: first strike every candidate that does not fit the slot, then a start that
-  CARRIES ONE OBVIOUS CONCEPT of the secret and is NEVER a synonym, a near-synonym or an
-  opposite of it; the rules live in the skill's `## The start word` section, read by
-  `llm.start_rules`). **A secret/start PAIR is blacklisted for
+- **The START WORDS are CHOSEN by the model, the three together, never at random**, by
+  playing the day out with code's notes (above), from the ONE band 100–200 of every map
+  (`starts.start_candidates`: rank `START_RANK_MIN..MAX`, no variant, elision-clean, not
+  past `MAX_START_FREQ_RANK` = 40000 in the corpus order — « hétéroptère » is out). The
+  first successful gen_phrase run only supplies the rank maps; gen_phrase then reruns
+  with `--start MOT=DEPART` per hole (#260). **A secret/start PAIR is blacklisted for
   good** (user-decided 2026-09-08): `shelf.archive()['pairs']` holds every start each
   secret was ever played with, `choose_starts` and `check_starts` exclude them from the
-  band, and a generated start that repeats a pair is refused and re-picked. The first successful gen_phrase run only
-  supplies the rank maps; `curate.choose_starts` then shows the model, per hole, the
-  slot (form + preceding word), the context-check annotation, and the band candidates
-  with ranks (`starts.start_candidates`: rank `START_RANK_MIN..MAX`, no variant,
-  elision-clean, not past `MAX_START_FREQ_RANK` = 40000 in the corpus order — « hétéroptère »
-  is out), and gen_phrase reruns with `--start MOT=DEPART` per hole — a flag added for
-  this (#260), the headless twin of typing a word at the start prompt.
+  band, and a generated start that repeats a pair is refused and re-picked.
 - **The displayed sentence must be VALID FRENCH** (user rule 2026-09-06: « l'effet »,
   never « le effet »). After every generation `curate.check_starts` applies the one rule
   code can apply with certainty (`starts.elision_problem`: an eliding word before a
@@ -316,9 +196,9 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   whether the displayed sentence is grammatical (`llm.grammar_check`, one reason per
   faulty inserted word) — agreement, elision AND each start's CONSTRUCTION with what
   follows it (« affublé d'un prénom » for « hérité d'un prénom » passed the check on
-  2026-09-10; the start prompt and the check now name it). A refused start is re-picked under the same start rules
-  (`llm.pick_start`) and gen_phrase reruns; at most `START_ROUNDS` (3) rounds; what is
-  still doubtful is logged for the reviewer.
+  2026-09-10). A refused start is re-picked (`llm.pick_start`, taste included) and
+  gen_phrase reruns; at most `START_ROUNDS` (3) rounds; what is still doubtful is logged
+  for the reviewer.
 - **Tests are dependency-free** (`uv run --no-project --with pytest`, like generation and
   benchmark): the rules take plain `Token`s and injected callables, so they run without
   spaCy, vectors or a model.
@@ -334,11 +214,14 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   are skipped (the line belongs to someone else's song).
 - **A puzzle is a UNIT, not necessarily one sentence** (user rule 2026-09-06): a book is
   mined per starting sentence as the shortest run of consecutive sentences of one
-  paragraph (at most `MAX_SENTENCES_PER_UNIT` = 3) that reaches the length band — the
-  micro-story the archive already holds (the Hagakure day is two sentences).
+  paragraph (at most `MAX_SENTENCES_PER_UNIT` = 3) that reaches `MIN_WORDS` (14) — the
+  micro-story the archive already holds (the Hagakure day is two sentences) — and, since
+  2026-09-24, the sentence ALONE when it has at least `MIN_LINE_WORDS` (10): a short
+  punchline is often the best line of all (JeanJass, 16 words), and the model judges it.
 - **A song is mined the same way, over lines** (`lyrics.candidate_units`): per starting
-  line, the shortest run of consecutive lines within a stanza (never across a blank line,
-  at most `MAX_LINES_PER_UNIT` = 4) that reaches the sentence band; lines after the first
+  line, the runs of consecutive lines within a stanza (never across a blank line, at most
+  `MAX_LINES_PER_UNIT` = 4) from the first reaching `MIN_LINE_WORDS` to the first reaching
+  `MIN_WORDS`; lines after the first
   lose their capital and a comma bridges a line with no punctuation. The capital and
   terminal-punctuation rules of the sentence filter do not apply to verse.
 - **Artist cooldown, not "never twice"**: the same artist at most once every
@@ -376,9 +259,9 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 ## Do NOT
 
 - Don't publish, and don't write a puzzle by any path but `gen_phrase`.
-- Don't put a rule in a prompt that code can enforce; don't ask the model "is this
-  valid?" — let code judge its answer and tell it why.
-- Don't copy the taste profile into this package; read the skill.
+- Don't turn a measurement into a veto: code states facts, taste chooses. A new signal
+  goes to the model as a note, with its real-play meaning.
+- Don't write taste into code or a prompt copy; it lives in the `taste` skill.
 - Don't commit the shelf (copyrighted files, the artist list) or the runs.
 - Don't put a Genius token anywhere but the environment.
 
