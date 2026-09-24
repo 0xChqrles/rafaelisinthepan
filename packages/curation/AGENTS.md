@@ -140,10 +140,9 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   « zigzag », secrets of a favourite day; a name nobody can reason toward is taste's
   call), not stopwords, not among the commonest words (`MAX_COMMON_RANK` 20 /
   `MAX_COMMON_RANK_ADV` 500, read off the reduced vectors' order), not a `WEAK_VERBS` verb
-  (saying, thinking, modality — user-decided 2026-09-08), slug in the vocab, never a
-  hyphenated compound (« sud-américain »: players type it as two words — user-decided
-  2026-09-10; it also keeps out « post-it », a favourite day's secret: the user's call),
-  not a secret still in its `SECRET_COOLDOWN_DAYS` (90, `shelf.py`, judged on the
+  (saying, thinking, modality — user-decided 2026-09-08), slug in the vocab — a
+  hyphenated compound included (user-decided 2026-09-24, lifting the 2026-09-10
+  exclusion: « post-it » was a secret of a favourite day), not a secret still in its `SECRET_COOLDOWN_DAYS` (90, `shelf.py`, judged on the
   ledger's game day), no same-lemma twin under another slug in the line (a same-slug
   repeat is one hole per occurrence). A line with fewer than `TRIO` such words is skipped.
 - **The sentence must STAND ALONE, solved (user-decided 2026-09-18, on the Svevo day:

@@ -69,10 +69,11 @@ def initial_candidates(
     frequency_rank: Callable[[Token], int | None] = lambda t: None,
 ) -> list[Token]:
     """The words that CAN be a secret: an allowed POS, not a stopword, a weak verb or one
-    of the commonest words, a slug the game admits and has not used, never a hyphenated
-    compound, and no same-lemma twin under another slug visible in the sentence (a
-    same-slug repeat is fine: one hole per occurrence). `frequency_rank` reads the
-    word's place in the corpus (None = unknown, which is not a reason to drop it)."""
+    of the commonest words, a slug the game admits and has not used (a hyphenated
+    compound included — « post-it »), and no same-lemma twin under another slug visible
+    in the sentence (a same-slug repeat is fine: one hole per occurrence).
+    `frequency_rank` reads the word's place in the corpus (None = unknown, which is not a
+    reason to drop it)."""
     lemma_slugs: dict[str, set[str]] = {}
     for t in tokens:
         if t.lemma:
@@ -84,8 +85,6 @@ def initial_candidates(
         if t.pos == "VERB" and t.lemma in WEAK_VERBS:
             continue
         if len(t.slug) < 2 or not in_vocab(t.slug):
-            continue
-        if "-" in t.slug:  # a compound (« sud-américain »): players type it as two words
             continue
         rank = frequency_rank(t)
         if rank is not None and rank < (MAX_COMMON_RANK_ADV if t.pos == "ADV" else MAX_COMMON_RANK):

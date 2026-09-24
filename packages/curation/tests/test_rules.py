@@ -95,10 +95,12 @@ def test_weak_verbs_are_never_candidates():
     assert [t.text for t in initial_candidates(sent, in_vocab=lambda s: True)] == ["chat", "dort"]
 
 
-def test_initial_candidates_drop_a_hyphenated_compound():
-    sent = SENT + [tok(14, "sud-américain", "ADJ", "amod", 11)]
-    vocab = VOCAB | {"sud-americain"}
-    assert "sud-américain" not in {t.text for t in initial_candidates(sent, in_vocab=vocab.__contains__)}
+def test_a_hyphenated_compound_can_be_hidden():
+    # « les post-it » was a secret of a favourite day (user-decided 2026-09-24, lifting the
+    # 2026-09-10 exclusion).
+    sent = SENT + [tok(14, "post-it", "NOUN", "obl", 13)]
+    vocab = VOCAB | {"post-it"}
+    assert "post-it" in {t.text for t in initial_candidates(sent, in_vocab=vocab.__contains__)}
 
 
 # --- the secret again ---------------------------------------------------------------

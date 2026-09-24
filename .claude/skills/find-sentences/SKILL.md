@@ -70,7 +70,6 @@ practical rules:
 
 - Exactly three distinct words. A word repeated in the sentence makes one hole per
   occurrence sharing one rank map: a feature (the Marx *vermine* day), not a bug.
-- Never a hyphenated compound (« sud-américain »): players type it as two words.
 - In a fixed pair, hide the specific word, not the head: « arrêt [cardiaque] » has many
   fillers, « [arrêt] cardiaque » two.
 - The start words must leave the displayed sentence valid French (below).
