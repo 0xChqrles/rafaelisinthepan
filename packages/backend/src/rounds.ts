@@ -29,6 +29,7 @@ import {
   countTries,
   dayNumber,
   fold,
+  isBonusAddress,
   ROUND_GUESS_CAP,
   VOCAB_BUILDS,
   type Puzzle,
@@ -113,8 +114,9 @@ export async function handleRound(
     );
   }
 
-  // The shared (lang, date) guard pair + future guard (liveRoute.ts).
-  const params = requireDayParams(event, serverDate, responseHeaders);
+  // The shared (lang, date) guard pair + future guard (liveRoute.ts); a BONUS puzzle's id
+  // may stand in for the date, which is then the bonus's address (shared bonus.ts).
+  const params = requireDayParams(event, serverDate, responseHeaders, { bonus: true });
   if (!params.ok) return params.response;
   const { lang, date } = params.value;
 
@@ -255,7 +257,7 @@ export async function handleRound(
   // this is the one place that knows the server's day, so it is where the round is told.
   // Judged on the SERVER's clock, like `onTime`: the client's own reading of the flip is
   // what it locks its input on, and a skewed device is refused here rather than trusted.
-  const early = dayNumber(date) > dayNumber(serverDate);
+  const early = !isBonusAddress(date) && dayNumber(date) > dayNumber(serverDate);
 
   // The atomic store guard checks progress BEFORE this batch. Reject a batch that
   // itself continues past an improvement; otherwise three secrets could solve early.
@@ -505,7 +507,9 @@ async function settleAppend(
 // `activeDate(instant)` IS the `serverDate` the handler guards with — the same function on
 // the same instant — so this asks the day question rather than being told the answer.
 function onTime(date: string, instant: Date): boolean {
-  return date === activeDate(instant);
+  // A BONUS puzzle (shared bonus.ts) is no day: never on time, so it earns no score row and
+  // no streak credit — the one check both rewards pass through.
+  return !isBonusAddress(date) && date === activeDate(instant);
 }
 
 // THE STREAK's own fact (#211): this language's collection of solved game days, credited

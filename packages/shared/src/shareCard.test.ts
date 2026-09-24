@@ -296,3 +296,40 @@ describe('decodeLegacyShareTarget — where an OLD link should still land', () =
     }
   });
 });
+
+// A BONUS puzzle (2026-09-24, `bonus.ts`) is no day: its result is a v7 token naming the
+// bonus's seven-digit id in place of the day, with the same payload after it — so the card
+// draws the same ruler, and a consumer that counts days (the WhatsApp bot) sees no day.
+describe('the BONUS result (v7)', () => {
+  const bonus: ShareResult = { ...sample, dayNumber: undefined, bonusId: 4815162 };
+
+  it('round-trips the bonus id and carries NO day', () => {
+    const d = decodeResult(encodeResult(bonus));
+    expect(d?.bonusId).toBe(4815162);
+    expect(d?.dayNumber).toBeUndefined();
+    expect(d?.lang).toBe('fr');
+  });
+
+  it('carries the same run, ticks and capped flag as a daily result', () => {
+    const day = decodeResult(encodeResult(sample))!;
+    const b = decodeResult(encodeResult(bonus))!;
+    expect(b.score).toBe(day.score);
+    expect(b.trajectory).toEqual(day.trajectory);
+    expect(b.solvedAt).toEqual(day.solvedAt);
+    expect(decodeResult(encodeResult({ ...bonus, capped: true }))?.capped).toBe(true);
+  });
+
+  it('leaves a daily result with a day and no bonus id', () => {
+    const d = decodeResult(encodeResult(sample));
+    expect(d?.dayNumber).toBe(20638);
+    expect(d?.bonusId).toBeUndefined();
+  });
+
+  it('refuses an id no publish could mint (not seven digits)', () => {
+    expect(decodeResult(encodeResult({ ...bonus, bonusId: 42 }))).toBeNull();
+  });
+
+  it('is not a legacy token: no redirect to a day', () => {
+    expect(decodeLegacyShareTarget(encodeResult(bonus))).toBeNull();
+  });
+});

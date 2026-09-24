@@ -14,6 +14,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   useGameStore,
+  roundKeyForBonus,
   roundKeyForDay,
   migratePersisted,
   reconcileGameStateIdentity,
@@ -135,6 +136,16 @@ describe('ensureOutbox — day/language keying, qualified by the published revis
     useGameStore.getState().ensureOutbox('d:5:fr', REV);
     expect(useGameStore.getState().outbox['o:legacy:fr']).toBeUndefined();
     expect(useGameStore.getState().outbox['d:4:fr']?.guesses).toEqual(['y']);
+  });
+
+  it('keeps a BONUS round\'s outbox beside the days\' — it is no legacy key', () => {
+    const { ensureOutbox, appendOutbox } = useGameStore.getState();
+    const bonusKey = roundKeyForBonus(1234567, 'fr');
+    expect(bonusKey).toBe('b:1234567:fr');
+    appendOutbox(bonusKey, REV, 'bois');
+    ensureOutbox('d:5:fr', REV);
+    appendOutbox('d:5:fr', REV, 'foret');
+    expect(useGameStore.getState().outbox[bonusKey]?.guesses).toEqual(['bois']);
   });
 
   it('caps the map: beyond MAX_DAY_ROUNDS the oldest days are evicted, the newest kept', () => {

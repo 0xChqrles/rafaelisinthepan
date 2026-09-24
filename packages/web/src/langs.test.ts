@@ -144,6 +144,19 @@ describe('parseRoute — archive + past-day deep links (#55)', () => {
   });
 });
 
+describe('parseRoute — a bonus puzzle (/<lang>/bonus/<id>)', () => {
+  it('plays the bonus its seven-digit id names', () => {
+    expect(parseRoute('/fr/bonus/1234567')).toEqual({ view: 'game', lang: 'fr', bonusId: 1234567 });
+    expect(parseRoute('/en/bonus/9999999/')).toEqual({ view: 'game', lang: 'en', bonusId: 9999999 });
+  });
+
+  it('sends a broken bonus link home', () => {
+    expect(parseRoute('/fr/bonus')).toEqual({ view: 'home' });
+    expect(parseRoute('/fr/bonus/0123456')).toEqual({ view: 'home' });
+    expect(parseRoute('/fr/bonus/123')).toEqual({ view: 'home' });
+  });
+});
+
 describe('pathForArchive / pathForDay', () => {
   it('builds the archive + dated paths, / for an unknown lang', () => {
     expect(pathForArchive('fr')).toBe('/fr/archive');

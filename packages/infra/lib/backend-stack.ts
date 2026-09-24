@@ -374,8 +374,9 @@ export class BackendStack extends Stack {
     const cachePolicy = new cloudfront.CachePolicy(this, 'PuzzleCachePolicy', {
       cachePolicyName: 'WhippinDailyPuzzle',
       comment:
-        'Daily puzzle: cache key = path + ?lang + ?date; TTL from origin Cache-Control.',
-      queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList('lang', 'date'),
+        'Daily puzzle: cache key = path + ?lang + ?date (or ?bonus); TTL from origin Cache-Control.',
+      // `bonus` (2026-09-24): a BONUS puzzle is addressed by its id instead of a date.
+      queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList('lang', 'date', 'bonus'),
       headerBehavior: cloudfront.CacheHeaderBehavior.none(),
       cookieBehavior: cloudfront.CacheCookieBehavior.none(),
       minTtl: Duration.seconds(0),
@@ -503,14 +504,14 @@ export class BackendStack extends Stack {
       ['lang', 'date', 'id'],
     );
 
-    // `/round` (#201) reads TWO — the same day-addressing pair as /scores, since the guess
-    // log is one item per (date, lang, account). The device token travels in the POST body,
-    // never in a query.
+    // `/round` (#201) reads the same day-addressing pair as /scores, since the guess log is
+    // one item per (date, lang, account) — plus `bonus`, a BONUS puzzle's id standing in for
+    // the date (2026-09-24). The device token travels in the POST body, never in a query.
     const roundOriginRequestPolicy = liveOriginRequestPolicy(
       'RoundOriginRequestPolicy',
       'WhippinRoundOrigin',
-      'Round guess log: forward the two addressing queries and Lambda-URL-safe headers outside cache.',
-      ['lang', 'date'],
+      'Round guess log: forward the addressing queries and Lambda-URL-safe headers outside cache.',
+      ['lang', 'date', 'bonus'],
     );
 
     // `/devices` (#216) reads NO query at all — the device token is the auth and it travels

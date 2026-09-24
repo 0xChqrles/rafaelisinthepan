@@ -17,6 +17,8 @@ import {
   renderCardSvg,
   renderGroupCardSvg,
   shareCardPath,
+  bonusPath,
+  cardPuzzleLabel,
   dateForDayNumber,
   type CardData,
   type GroupCardData,
@@ -107,7 +109,7 @@ export function renderShareHtml(
   // ordinary HTML in the reader's own fonts; the card needs the shared path data because
   // Press Start 2P has no such glyph and the rasterizer loads nothing else.
   const count = result.capped ? '∞' : `${result.score}`;
-  const title = `Whippin AI ${dateForDayNumber(result.dayNumber)} — ${count} ${
+  const title = `Whippin AI ${cardPuzzleLabel(result)} — ${count} ${
     result.capped || result.score !== 1 ? L.many : L.one
   }`;
   // Click-through lands on the SHARED day, not today (#55): the token carries the
@@ -115,7 +117,13 @@ export function renderShareHtml(
   // ARCHIVE result opens that archived date (a shared "today" result opens today's date,
   // which the front routes identically to /<lang>). Safe: base is server-set, lang is
   // /^[a-z]{2}$/, and dateForDayNumber emits only digits + hyphens.
-  const gameUrl = `${base}/${lang}/${dateForDayNumber(result.dayNumber)}`;
+  //
+  // A BONUS result (v7) names no day: it opens the bonus's own page (shared bonus.ts), and
+  // its title and card say "BONUS <id>" where a day would say its date.
+  const gameUrl =
+    result.bonusId !== undefined
+      ? `${base}${bonusPath(lang, result.bonusId)}`
+      : `${base}/${lang}/${dateForDayNumber(result.dayNumber ?? 0)}`;
   return previewPage(
     lang,
     shareTitle(title, by),

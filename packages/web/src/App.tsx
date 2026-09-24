@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
-import { activeDate, dayNumber as dayNumberOf } from '@whippin/shared';
+import { activeDate, dayNumber as dayNumberOf, isBonusRef } from '@whippin/shared';
 import LoadingWave from './components/LoadingWave';
 import usePuzzle from './hooks/usePuzzle';
 import Account from './screens/Account';
@@ -214,6 +214,7 @@ export default function App() {
           <GameRoute
             lang={route.lang}
             date={route.date}
+            bonusId={route.bonusId}
             surface={gameSurface}
             settleOnboarding={setOnboarded}
             startLesson={startOnboardingLesson}
@@ -243,6 +244,8 @@ function headerPlace(route: Route, surface: GameSurface, today: string): HeaderP
       // can just click the house to go back"). HOME unlit is a live key, which is the way
       // back before the night's lock; the locked round's own TODAY button is the way back
       // after it.
+      // A BONUS puzzle is played like an archive day (bonus puzzles, 2026-09-24).
+      if (route.bonusId !== undefined) return 'archive';
       return route.date == null || route.date === today ? 'home' : 'archive';
     case 'archive':
       return 'archive';
@@ -272,6 +275,9 @@ function headerPlace(route: Route, surface: GameSurface, today: string): HeaderP
 function GameRoute({
   lang,
   date,
+  // A BONUS puzzle (shared bonus.ts), in place of a day: no date, never the active day,
+  // never early — played like an archive day, credited nothing.
+  bonusId,
   // WHICH surface is App's call, because the header is (see `headerPlace`); rendering it is
   // this route's, because the puzzle and the callbacks live here.
   surface,
@@ -281,6 +287,7 @@ function GameRoute({
 }: {
   lang: LangCode;
   date?: string;
+  bonusId?: number;
   surface: GameSurface;
   settleOnboarding: () => void;
   startLesson: (lang: LangCode) => void;
@@ -291,7 +298,7 @@ function GameRoute({
     cycleError: () => void;
   };
 }) {
-  const { puzzle, dayNumber, error, loading, noPuzzle, retry } = usePuzzle(lang, date);
+  const { puzzle, ref, error, loading, noPuzzle, retry } = usePuzzle(lang, date, bonusId);
   const setLastLang = useGameStore((s) => s.setLastLang);
 
   // A dated route replays a past day when its date is not today's active game day; the
@@ -300,7 +307,7 @@ function GameRoute({
   // sentence, started tonight, and a tab held open across the 22:00 flip has to see it
   // become the active day — the lock lifts, the streak read starts — without a reload.
   const today = useToday();
-  const isActiveDay = date == null || dayNumberOf(date) === today;
+  const isActiveDay = bonusId === undefined && (date == null || dayNumberOf(date) === today);
   const early = date != null && dayNumberOf(date) > today;
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
@@ -332,7 +339,7 @@ function GameRoute({
           missing-puzzle and the loaded game: which puzzle is a fact of the ROUTE, so it
           never waits on a game to report it. */}
       <HeaderLeft>
-        <PuzzleTitle lang={lang} dayNumber={isActiveDay ? null : dayNumber} />
+        <PuzzleTitle lang={lang} puzzleRef={isActiveDay ? null : ref} />
       </HeaderLeft>
       {loading && (
         <p className="status">
@@ -341,11 +348,11 @@ function GameRoute({
       )}
       {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
       {/* `date` tells NoPuzzle whether this is an archive miss. */}
-      {noPuzzle && <NoPuzzle lang={lang} date={date} />}
+      {noPuzzle && <NoPuzzle lang={lang} date={date} bonus={bonusId !== undefined} />}
       {puzzle && (
         <Game
           puzzle={puzzle}
-          dayNumber={dayNumber}
+          puzzleRef={ref}
           isActiveDay={isActiveDay}
           early={early}
           deferResultsAnimation={preview.streak != null}
@@ -360,10 +367,10 @@ function GameRoute({
           onClose={preview.cycleError}
         />
       )}
-      {preview.streak != null && (
+      {preview.streak != null && !isBonusRef(ref) && (
         <LazyStreakDialog
           lang={lang}
-          solvedDay={dayNumber}
+          solvedDay={ref.dayNumber}
           previewPreviousStreak={preview.streak}
           onDismiss={preview.dismissStreak}
         />

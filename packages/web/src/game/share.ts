@@ -8,10 +8,11 @@
 
 import { applyGuessToHoles, computeProgress } from './scoring';
 import {
-  dateForDayNumber,
+  cardPuzzleLabel,
   encodeResult,
   progressEmoji,
   sharePath,
+  type PuzzleRef,
   type RankMap,
   type RuntimeHole,
   type ShareResult,
@@ -173,12 +174,14 @@ export function emojiRow(trajectory: number[], solvedAt: (number | null)[] = [])
 // sentence round — plain text has no font to be missing the glyph, so the character itself
 // is right here (the CARD and the on-screen result draw the shared path data instead,
 // because Press Start 2P has no such glyph).
+//
+// A BONUS puzzle (shared bonus.ts) is no day: it is named "BONUS <id>", the card's own label.
 export function shareHeadline(
-  dayNumber: number,
+  puzzleRef: PuzzleRef,
   score: number | string,
   unit: string,
 ): string {
-  return `Whippin AI ${dateForDayNumber(dayNumber)} — ${score} ${unit}`;
+  return `Whippin AI ${cardPuzzleLabel(puzzleRef)} — ${score} ${unit}`;
 }
 
 // The shared/copied plain text: the headline, then the emoji row on its own line (attached

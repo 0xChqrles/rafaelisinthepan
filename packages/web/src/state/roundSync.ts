@@ -49,6 +49,8 @@ import { turnstileToken } from '../turnstile';
 export interface RoundSyncContext {
   roundKey: string;
   lang: string;
+  // The puzzle's ADDRESS (shared bonus.ts): the game day, or a BONUS puzzle's `bonus/<id>`,
+  // which the round URL sends as `bonus=<id>`.
   date: string;
   // WHICH PUBLISHED VERSION of this daily is being played — the round's identity everywhere
   // (#203). The hole layout used to play that part and could not tell a corrected puzzle

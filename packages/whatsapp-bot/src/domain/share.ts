@@ -44,8 +44,8 @@ export function findShareTokens(text: string, siteOrigin: string): string[] {
 // squares and the keycaps of the solve moments), a blank line, the link. The bot cannot
 // import the web, so the shape is restated here and pinned by the tests against the web's
 // own output. The alphabets are the web's, verbatim: `progressEmoji`'s four squares and
-// `HOLE_KEYCAPS`.
-const HEADLINE = /^[ \t]*Whippin AI \d{4}-\d{2}-\d{2} — [^\n]*$/u;
+// `HOLE_KEYCAPS`. A BONUS puzzle's headline names `BONUS <id>` where a day names its date.
+const HEADLINE = /^[ \t]*Whippin AI (?:\d{4}-\d{2}-\d{2}|BONUS \d{7}) — [^\n]*$/u;
 const ROW = /^[ \t]*(?:[🟥🟨🟪🟦]|[1-9]\uFE0F?\u20E3)+[ \t]*$/u;
 
 const isRow = (line: string) => ROW.test(line);
@@ -90,9 +90,11 @@ export function withoutShares(text: string, siteOrigin: string): string {
     .trim();
 }
 
+// A BONUS result (share token v7, shared bonus.ts) is no day's: it is never counted, so it
+// is not a share here — only its block is dropped from the text, like any share's.
 export function decodeShare(token: string): DecodedShare | null {
   const result = decodeResult(token);
-  if (!result) return null;
+  if (!result || result.dayNumber === undefined) return null;
   return {
     token,
     lang: result.lang,
