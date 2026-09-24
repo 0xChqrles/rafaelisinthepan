@@ -71,11 +71,21 @@ hole: one hole players cannot approach sinks the whole day (« héros », « red
   Choose an ENTRY word players reach first from the context, a word the found entry
   narrows, and a last word the other two make findable. Three separate lookups waste
   what the sentence gives back as it fills in.
+- **A hole is a word WORTH FINDING (user feedback 2026-09-24, on « nulle · lisait ·
+  beau »: "not very fun words to guess, that's not what I would call taste").** Hide
+  the image (« allumettes », « palissades », « fantômes »), the word the turn lands on
+  (« cocaïne », « banque »), a verb that is a gesture (« résonne », « hérité »,
+  « accoutumes ») — a word a player is glad to have found. Never a GENERIC word: an
+  evaluative adjective (« beau », « nul », « bon »), a flat verb (« lire », « faire »,
+  « voir », « mettre »), a vague noun (« chose », « moment », « façon »). A generic word
+  is dull AND easy: it sits among its synonyms and players walk them to it (« beau »:
+  found at a median of 4 tries, typed first by 3 players of 15). A sentence whose only
+  possible trios are generic is not worth a day: decline it.
 - No very easy and no very hard hole. Difficulty should be comparable across the three.
 - **No hole out of reach.** When nothing a reader would put in the blank is near the
   secret (a reader puts « garçon, gars, type » for « héros », « dire, annoncer » for
   « lâcher »), players' first guesses land cold and stay cold. Code refuses such a word
-  once the day's map is built (the reader's nearest filler past rank 30 in that map) and
+  once the day's map is built (the reader's nearest filler past rank 100 in that map) and
   the day is designed again without it; keep it in mind when the three are balanced.
 - **The secret is never the EXPECTED word** — the one most readers would put in the
   blank (« quinze [jours] plus tard », « au [crayon] », « la [poste] me retourna »,

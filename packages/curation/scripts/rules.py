@@ -1,9 +1,10 @@
 """The trio rules as pure functions over a parsed sentence.
 
-The LLM never sees an invalid option: `initial_candidates` builds the candidate list,
-`open_candidates` keeps the words the context leaves open, and `valid_trios` lists
-every trio whose three words `prune` lets stand together — the model designs the day by
-choosing one of them; `out_of_reach` then judges each hole on its built map. The LLM judgements are injected as callables,
+TASTE FIRST, CHECKS AFTER (2026-09-24): `initial_candidates` builds the list of words
+code allows as secrets; the model proposes a trio from it, with its own taste; `refusals`
+checks that trio — the pair rules (`pair_conflict`), the reader's fillers
+(`open_candidates`), the one easy entry — and says why a word is refused, so the model
+can propose again; `out_of_reach` then judges each hole on its built map. The LLM judgements are injected as callables,
 so the rules are testable without a parser, a model or a vector file.
 
 Tunables live here, in one place (issue #260).
@@ -88,12 +89,17 @@ PLAIN_WORD_RANK = 40000
 # FILLER_NEAR_MAX of it is one players cannot approach — their natural first guesses land
 # cold and stay cold. Calibrated on REAL play: the 26 published holes with logged fillers
 # (2026-09-11..23), "hard" = found within 30 tries by under 60% of the players who
-# engaged; at 30 the rule refuses 6 of the 9 hard holes (« lâcher » 661, « héros » 404,
-# « humble » 216, « saluer » 141, « alcoolique » 72, « redoutée » 40) for 3 of 17 good
-# ones — a lost good hole is cheap, a day nobody finishes is not.
-FILLER_NEAR_MAX = 30
+# engaged; at 100 the rule refuses the 4 worst of the 9 hard holes (« lâcher » 661,
+# « héros » 404, « humble » 216, « saluer » 141) for 3 of 17 good ones. Raised from 30
+# (2026-09-24): at 30 it took two more hard holes but, once the model chose with taste,
+# it struck most vivid words (« stupeur » 341… « malade » 107, « miroir » 57: ten on one
+# Buzzati run), each strike a new contextual map.
+FILLER_NEAR_MAX = 100
 # Secrets per puzzle (the sentence schema: exactly three distinct slugs).
 TRIO = 3
+# How many trios the model may propose for one sentence before it is abandoned: each
+# refusal is told back to it (`refusals`, `out_of_reach`) and it proposes again.
+TRIO_ROUNDS = 3
 
 
 @dataclass(frozen=True)
@@ -183,7 +189,7 @@ def open_candidates(
 
     `entries`, when given, collects the EXPECTED words that still have alternatives (more
     than OBVIOUS_MAX possible words): never a hole of their own, but ONE may be the day's
-    easy ENTRY (`valid_trios`' `easy`). An obvious word is never one."""
+    easy ENTRY (`refusals`). An obvious word is never one."""
     log = log or SearchLog()
     verdict: dict[str, bool] = {}
     out = []
@@ -217,22 +223,6 @@ def open_candidates(
     return out
 
 
-def nearest_filler(candidate: Token, words: list[str],
-                    neighbour_rank: Callable[[Token, str], int | None]) -> tuple[str, int] | None:
-    """The reader's filler nearest the candidate in the static ranking, as (word, rank);
-    None when no filler's rank is known. The secret itself and its variants are not
-    fillers. Information for the design prompt, never a strike."""
-    best = None
-    for w in words:
-        s = slug(w)
-        if not s or s == candidate.slug or is_variant(s, candidate.slug):
-            continue
-        rank = neighbour_rank(candidate, w)
-        if rank is not None and (best is None or rank < best[1]):
-            best = (w, rank)
-    return best
-
-
 def map_nearest_filler(rank_map: dict, secret_slug: str, fillers: list[str]) -> tuple[str, int | None] | None:
     """The reader's filler nearest the secret in the hole's OWN map, as (word, rank); the
     rank is None for a word past the map (farther than every ranked group). None when the
@@ -256,6 +246,37 @@ def out_of_reach(nearest: tuple[str, int | None] | None) -> bool:
     return nearest is not None and (nearest[1] is None or nearest[1] > FILLER_NEAR_MAX)
 
 
+def pair_conflict(pick: Token, c: Token, tokens: list[Token], *,
+                  similarity: Callable[[Token, Token], float | None]) -> str | None:
+    """Why `c` cannot share a trio with `pick` (None = it can): two verbs, a word and its
+    head or a dependent, two modifiers of one head, neighbours within MIN_GAP, lemma or
+    morphological variants, or a cosine above COSINE_MAX. The same slug is one secret,
+    never a conflict."""
+    if c.slug == pick.slug:
+        return None
+    if pick.pos == "VERB" and c.pos == "VERB":
+        return "two verbs (at most one verb)"
+    if c.i == pick.head or c.head == pick.i:
+        return "one describes the other (a word and its head)"
+    head = {t.i: t for t in tokens}.get(pick.head)
+    if (
+        head is not None
+        and c.head == pick.head
+        and c.i != pick.i
+        and _dep_family(c.dep) in MODIFIER_DEPS
+        and _dep_family(pick.dep) in MODIFIER_DEPS
+    ):
+        return "they describe the same thing"
+    if abs(c.i - pick.i) < MIN_GAP:
+        return "the same part of the sentence (too close)"
+    if (c.lemma and c.lemma == pick.lemma) or is_variant(c.slug, pick.slug):
+        return "forms of one word"
+    sim = similarity(c, pick)
+    if sim is not None and sim > COSINE_MAX:
+        return "too similar in meaning"
+    return None
+
+
 def prune(
     candidates: list[Token],
     pick: Token,
@@ -263,37 +284,10 @@ def prune(
     *,
     similarity: Callable[[Token, Token], float | None],
 ) -> list[Token]:
-    """The list after a pick: drop the pick and its other occurrences, every verb when
-    the pick is a verb, the pick's head and dependents, its modifier siblings, its
-    neighbours within MIN_GAP, its lemma / morphological variants, and anything the
-    vectors put above COSINE_MAX to it."""
-    by_index = {t.i: t for t in tokens}
-    head = by_index.get(pick.head)
-    out = []
-    for c in candidates:
-        if c.slug == pick.slug:
-            continue
-        if pick.pos == "VERB" and c.pos == "VERB":
-            continue
-        if c.i == pick.head or c.head == pick.i:
-            continue
-        if (
-            head is not None
-            and c.head == pick.head
-            and c.i != pick.i
-            and _dep_family(c.dep) in MODIFIER_DEPS
-            and _dep_family(pick.dep) in MODIFIER_DEPS
-        ):
-            continue
-        if abs(c.i - pick.i) < MIN_GAP:
-            continue
-        if (c.lemma and c.lemma == pick.lemma) or is_variant(c.slug, pick.slug):
-            continue
-        sim = similarity(c, pick)
-        if sim is not None and sim > COSINE_MAX:
-            continue
-        out.append(c)
-    return out
+    """The list after a pick: drop the pick and its other occurrences and every word in
+    `pair_conflict` with it."""
+    return [c for c in candidates
+            if c.slug != pick.slug and pair_conflict(pick, c, tokens, similarity=similarity) is None]
 
 
 @dataclass
@@ -305,32 +299,44 @@ class SearchLog:
         self.events.append(msg)
 
 
-def valid_trios(
+def refusals(
+    proposal: list[Token],
     tokens: list[Token],
-    candidates: list[Token],
     *,
     similarity: Callable[[Token, Token], float | None],
-    easy: frozenset[str] | set[str] = frozenset(),
-) -> list[tuple[Token, Token, Token]]:
-    """Every trio of distinct candidate words that can stand together: each pair passes
-    `prune` both ways, whichever of the two were picked first (one token per slug, its
-    first occurrence — a repeated slug is one secret with a hole per occurrence), and at
-    most ONE of the three is `easy` (a slug the context hands over: the day's entry,
-    never two). In the candidates' order, so the listing is stable."""
-    firsts: list[Token] = []
-    for c in candidates:
-        if c.slug not in {f.slug for f in firsts}:
-            firsts.append(c)
-    fits = {
-        (a.slug, b.slug)
-        for a in firsts for b in firsts
-        if a.slug != b.slug and prune([b], a, tokens, similarity=similarity)
-    }
-    together = lambda a, b: (a.slug, b.slug) in fits and (b.slug, a.slug) in fits  # noqa: E731
-    n = len(firsts)
-    return [
-        (firsts[i], firsts[j], firsts[k])
-        for i in range(n) for j in range(i + 1, n) for k in range(j + 1, n)
-        if together(firsts[i], firsts[j]) and together(firsts[i], firsts[k]) and together(firsts[j], firsts[k])
-        and sum(t.slug in easy for t in (firsts[i], firsts[j], firsts[k])) <= 1
-    ]
+    fillers: Callable[[Token], tuple[list[str], str | None]],
+    handed_over: Callable[[list[Token]], set[str]],
+    neighbour_rank: Callable[[Token, str], int | None] = lambda t, w: None,
+    frequency_rank: Callable[[Token], int | None] = lambda t: None,
+    log: SearchLog | None = None,
+) -> tuple[list[tuple[str, str]], set[str]]:
+    """Code's verdict on the model's trio, in the ORDER players will find it: the
+    refusals as (words, why) — empty when the trio stands — and the slugs of its EASY
+    words. Checked cheapest first: the pair rules (free), then the reader's fillers
+    (`open_candidates`: an obvious word is refused; an expected one is EASY), then
+    `handed_over` (the giveaway judge: EASY too). ONE easy word may open the day (user-
+    decided 2026-09-24): an easy word anywhere but first is refused."""
+    log = log or SearchLog()
+    out: list[tuple[str, str]] = []
+    for i, a in enumerate(proposal):
+        for b in proposal[i + 1:]:
+            why = (pair_conflict(a, b, tokens, similarity=similarity)
+                   or pair_conflict(b, a, tokens, similarity=similarity))
+            if why:
+                out.append((f"{a.text} + {b.text}", why))
+    if out:
+        return out, set()
+    entries: list[Token] = []
+    opened = open_candidates(proposal, fillers=fillers, neighbour_rank=neighbour_rank,
+                             frequency_rank=frequency_rank, log=log, entries=entries)
+    expected = {t.slug for t in entries}
+    shut = [t for t in proposal if t not in opened and t.slug not in expected]
+    for t in shut:
+        out.append((t.text, "obvious: a reader can put only one or two words there"))
+    given = handed_over([t for t in opened]) if not shut else set()
+    easy = expected | given
+    for t in proposal[1:]:
+        if t.slug in easy:
+            why = "most readers would write it" if t.slug in expected else "the sentence hands it over"
+            out.append((t.text, f"{why} — an easy word may only OPEN the day, as the first word"))
+    return out, easy

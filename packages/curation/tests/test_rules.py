@@ -15,10 +15,10 @@ from rules import (
     is_twin,
     open_candidates,
     map_nearest_filler,
-    nearest_filler,
     out_of_reach,
+    pair_conflict,
     prune,
-    valid_trios,
+    refusals,
 )
 
 
@@ -109,39 +109,6 @@ def test_prune_removes_too_similar_words_and_variants():
     cands = initial_candidates(sent, in_vocab=lambda s: True)
     left = {c.text for c in prune(cands, lune, sent, similarity=no_sim)}
     assert "lunes" not in left
-
-
-def _pairs_fit(trio):
-    return all(prune([b], a, SENT, similarity=no_sim) and prune([a], b, SENT, similarity=no_sim)
-               for a, b in ((trio[0], trio[1]), (trio[0], trio[2]), (trio[1], trio[2])))
-
-
-def test_valid_trios_lists_every_trio_the_prune_rules_let_stand_together():
-    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
-    trios = valid_trios(SENT, cands, similarity=no_sim)
-    names = {tuple(t.text for t in trio) for trio in trios}
-    assert ("chat", "pierre", "lune") in names          # three parts of the sentence
-    assert not any({"chat", "dort"} <= set(n) for n in names)     # a verb and its subject
-    assert not any({"dort", "brille"} <= set(n) for n in names)   # at most one verb
-    assert not any({"lune", "blanche"} <= set(n) for n in names)  # a noun and its adjective
-    assert all(_pairs_fit(trio) for trio in trios)
-
-
-def test_valid_trios_take_one_token_per_slug_and_keep_the_candidates_order():
-    sent = SENT + [tok(14, "et", "CCONJ", "cc", 16, stop=True), tok(15, "la", "DET", "det", 16, stop=True),
-                   tok(16, "pierre", "NOUN", "conj", 7)]
-    cands = initial_candidates(sent, in_vocab=lambda s: True)
-    trios = valid_trios(sent, cands, similarity=no_sim)
-    assert all(len({t.slug for t in trio}) == 3 for trio in trios)
-    assert all(t.i != 16 for trio in trios for t in trio)  # the repeat is the same secret
-    order = [c.slug for c in cands]
-    assert all([order.index(t.slug) for t in trio] == sorted(order.index(t.slug) for t in trio) for trio in trios)
-
-
-def test_valid_trios_is_empty_when_nothing_can_stand_together():
-    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
-    assert valid_trios(SENT, cands, similarity=lambda a, b: 1.0) == []
-
 
 
 def test_initial_candidates_drop_the_commonest_words_and_common_adverbs():
@@ -305,16 +272,6 @@ def test_an_expected_word_with_alternatives_is_kept_as_a_possible_entry():
     assert any("'chat' is the EXPECTED word" in e and "possible ENTRY" in e for e in log.events)
 
 
-def test_a_trio_holds_at_most_one_easy_word():
-    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
-    easy = {"chat", "lune"}
-    trios = valid_trios(SENT, cands, similarity=no_sim, easy=easy)
-    assert trios and all(sum(t.slug in easy for t in trio) <= 1 for trio in trios)
-    assert any(sum(t.slug in easy for t in trio) == 1 for trio in trios)
-    everything = valid_trios(SENT, cands, similarity=no_sim)
-    assert any({"chat", "lune"} <= {t.slug for t in trio} for trio in everything)  # what the rule removes
-
-
 def test_static_distance_does_not_reject_an_otherwise_open_hole():
     cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
     # The static ranking cannot say whether a filler is close in the shipped map (a
@@ -352,8 +309,54 @@ def test_the_secret_and_its_variants_are_not_their_own_filler_in_the_map():
     assert map_nearest_filler(MAP, "heros", ["héros"]) is None
 
 
-def test_the_secret_and_its_variants_are_not_their_own_nearest_filler():
-    chat = next(c for c in initial_candidates(SENT, in_vocab=VOCAB.__contains__) if c.text == "chat")
-    rank = {"chat": 0, "chats": 1, "chien": 70, "tigre": 90}.get
-    assert nearest_filler(chat, ["chat", "chats", "tigre", "chien"], lambda _t, w: rank(w)) == ("chien", 70)
-    assert nearest_filler(chat, ["chat", "chats"], lambda _t, w: rank(w)) is None
+# --- taste first, checks after (2026-09-24): code's verdict on the model's trio ---------
+def _by(text):
+    return next(t for t in SENT if t.text == text)
+
+
+def test_pair_conflict_names_the_rule():
+    assert pair_conflict(_by("dort"), _by("brille"), SENT, similarity=no_sim) == "two verbs (at most one verb)"
+    assert "head" in pair_conflict(_by("chat"), _by("dort"), SENT, similarity=no_sim)
+    assert "too close" in pair_conflict(_by("gris"), _by("dort"), SENT, similarity=no_sim)
+    assert pair_conflict(_by("vieux"), _by("gris"), SENT, similarity=no_sim) == "they describe the same thing"
+    assert pair_conflict(_by("chat"), _by("pierre"), SENT, similarity=no_sim) is None
+    assert pair_conflict(_by("chat"), _by("pierre"), SENT, similarity=lambda a, b: 0.9) == "too similar in meaning"
+
+
+def open_reader(t):
+    return ["autre", t.text, "encore"], None
+
+
+def test_a_trio_that_stands_is_accepted():
+    trio = [_by("chat"), _by("pierre"), _by("lune")]
+    problems, easy = refusals(trio, SENT, similarity=no_sim, fillers=open_reader, handed_over=lambda ws: set())
+    assert problems == [] and easy == set()
+
+
+def test_the_pair_rules_refuse_before_any_reader_is_asked():
+    asked = []
+    trio = [_by("chat"), _by("dort"), _by("lune")]
+    problems, _ = refusals(trio, SENT, similarity=no_sim,
+                           fillers=lambda t: asked.append(t) or open_reader(t), handed_over=lambda ws: set())
+    assert problems and "chat + dort" == problems[0][0] and asked == []
+
+
+def test_one_easy_word_may_open_the_day_never_more():
+    expected_chat = lambda t: (["chat", "chien", "rat", "lion"], "chat") if t.text == "chat" else open_reader(t)  # noqa: E731
+    first = [_by("chat"), _by("pierre"), _by("lune")]
+    problems, easy = refusals(first, SENT, similarity=no_sim, fillers=expected_chat, handed_over=lambda ws: set())
+    assert problems == [] and easy == {"chat"}
+    later = [_by("pierre"), _by("chat"), _by("lune")]
+    problems, _ = refusals(later, SENT, similarity=no_sim, fillers=expected_chat, handed_over=lambda ws: set())
+    assert [w for w, _ in problems] == ["chat"] and "only OPEN the day" in problems[0][1]
+    # A word the judge finds handed over is easy too: with « chat » easy, a second is refused.
+    problems, _ = refusals(first, SENT, similarity=no_sim, fillers=expected_chat, handed_over=lambda ws: {"lune"})
+    assert [w for w, _ in problems] == ["lune"]
+
+
+def test_an_obvious_word_is_refused_even_first():
+    obvious_chat = lambda t: (["chat", "chien"], "chat") if t.text == "chat" else open_reader(t)  # noqa: E731
+    trio = [_by("chat"), _by("pierre"), _by("lune")]
+    problems, _ = refusals(trio, SENT, similarity=no_sim, fillers=obvious_chat, handed_over=lambda ws: set())
+    assert [w for w, _ in problems] == ["chat"] and "obvious" in problems[0][1]
+

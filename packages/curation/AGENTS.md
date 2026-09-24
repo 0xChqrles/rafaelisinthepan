@@ -105,7 +105,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   erased draft's scores for the same trio (another trio runs the judge again).
 - **The judge strikes the holes the sentence hands over (#308, user-decided 2026-09-22,
   calibrated on REAL play).** After the reader's obviousness filter, `curate.strike_giveaways`
-  asks Jev three yes/no questions per open word on the blanked sentence (would a reader
+  asks Jev three yes/no questions per open PROPOSED word on the blanked sentence (would a reader
   write it · it or a direct synonym · does a fixed expression call for it —
   `contextual_rank.giveaway`, their mean) and strikes a word at `GIVEAWAY_MAX = 0.45` as
   a hole (it may still be the day's ONE EASY ENTRY, below). The
@@ -121,10 +121,11 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   are close synonyms of it (AUC ≈ 0.5 on the 36 holes with logged fillers — « douceur »
   had a rank-1 filler and played well). Known limit: about half the easy holes are not
   predicted by these questions.
-- **The LLM never sees an invalid option.** `rules.initial_candidates` builds the
-  candidates, `rules.open_candidates` keeps the ones the context leaves open,
-  `rules.valid_trios` lists every trio whose pairs pass `rules.prune` both ways, and the
-  model chooses one BY NUMBER. The model chooses, code enforces. Tunables live at the top of `rules.py`:
+- **TASTE FIRST, CHECKS AFTER (user-decided 2026-09-24, replacing "the LLM never sees an
+  invalid option").** `rules.initial_candidates` builds the words code allows (word type,
+  frequency, cooldown, vocab); the model proposes a trio from them with its own taste;
+  `rules.refusals` judges it and says WHY a word is refused, and the model proposes again.
+  The model chooses, code enforces — after the choice, not by shrinking the menu first. Tunables live at the top of `rules.py`:
   `ALLOWED_POS`, `MAX_COMMON_RANK` (20) / `MAX_COMMON_RANK_ADV` (500, the frequency
   floors read off the reduced vectors' order), `WEAK_VERBS` (verbs of saying, thinking
   and modality, by lemma — never a secret; user-decided 2026-09-08 on a trio led by
@@ -135,8 +136,8 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   (0.40), `MODIFIER_DEPS`, `CONTEXT_GUESSES` (3,
   the most fillers the obviousness filter asks a reader for), `OBVIOUS_MAX` (2),
   `TWIN_RANK` (3), `PLAIN_WORD_RANK` (40000, ONE boundary with `starts.MAX_START_FREQ_RANK`),
-  `FILLER_NEAR_MAX` (30);
-  and at the top of `curate.py`: `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK`
+  `FILLER_NEAR_MAX` (100);
+  `TRIO_ROUNDS` (3 proposals per sentence); and at the top of `curate.py`: `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK`
   (6), `SHORTLIST` (20). The mechanical filter (`sentences.is_candidate`) also refuses a
   unit that OPENS on a quotation mark (reported speech, or an argument with a line the
   player cannot see — the same day's « “Il sait qu’il meurt” est une pensée profonde »),
@@ -152,7 +153,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   Ernaux day; judged on the ledger's game day),
   no same-lemma twin under another slug in the sentence (a same-slug repeat is allowed:
   one hole per occurrence). Two words never share a trio (`prune`, checked both ways by
-  `valid_trios`): two verbs (at most one verb); a word and its head, a dependent or a
+  `refusals`, which names the rule — `pair_conflict`): two verbs (at most one verb); a word and its head, a dependent or a
   modifier sibling (a verb and its subject, an adjective and its noun — "describing the
   same thing"); two words within `MIN_GAP` tokens ("the same part of the sentence");
   lemma/morphological variants; two words above `COSINE_MAX` ("too similar"). `conj`
@@ -184,10 +185,11 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   opinion — would a reader who has not read the book know this line — is logged as an
   ANNOTATION (`llm.widely_known`), never a strike. Everything else the model is asked is
   a choice from a list.
-- **The OBVIOUSNESS FILTER strikes a candidate BEFORE the pick (user-decided
-  2026-09-10, the user's own method, so a batch can ship without a play-test; it
-  supersedes the 2026-09-06 "annotation, never a strike").** For every candidate word
-  of a shortlisted sentence, one call shows the sentence with THAT word blanked (every
+- **The OBVIOUSNESS FILTER judges every PROPOSED word (user-decided 2026-09-10, the
+  user's own method, so a batch can ship without a play-test; it supersedes the
+  2026-09-06 "annotation, never a strike"; since 2026-09-24 it runs on the model's
+  proposal, cached per word across rounds, not on every candidate).** For each word, one
+  call shows the sentence with THAT word blanked (every
   occurrence of it), the rest intact and NO start word, and asks a reader WHAT ELSE IT
   COULD BE — the words that could really stand there, at most `CONTEXT_GUESSES`, only
   what would not surprise a reader; code strikes the word when the reader can name at
@@ -221,8 +223,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   player's — « je lance à la [cantonade] » (rank 68858, the user's call 2026-09-14) is
   an idiom the model completes and a player may not; every word the rule struck on the
   easy days sits under 28000. The count rule still judges a rare word. The log names
-  each verdict with the count and the fillers; a sentence with fewer than two open
-  words is rejected before any pick. Why this shape: the 2026-09-06 check ran AFTER the trio,
+  each verdict with the count and the fillers. Why this shape: the 2026-09-06 check ran AFTER the trio,
   with all three blanks, as a log note — « il aurait répondu [sûrement] pas » was picked
   from a list of four and the check that would have refused it could change nothing.
   The open holes' fillers are shown to the design and start-word prompts. The skill's
@@ -232,44 +233,51 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   within 30 tries"; it loosens 2026-09-13's "aim harder").** A word struck as too easy —
   the EXPECTED word while the reader still names more than `OBVIOUS_MAX` possible words
   (`open_candidates`' `entries`), or a word the giveaway judge strikes — is never a hole
-  of its own, but ONE may open the day: `valid_trios` admits at most one such `easy`
-  word per trio, the design prompt lists it first as the chain's entry, and its start is
-  chosen not to make it easier still (the skill's `## The start word`). An OBVIOUS word
+  of its own, but ONE may open the day: `rules.refusals` refuses an easy word anywhere
+  but FIRST in the model's order (the chain's entry), and its start is chosen not to
+  make it easier still (the skill's `## The start word`). An OBVIOUS word
   (at most `OBVIOUS_MAX` possible) never is. Why: on a 2026-09-24 run (Dicker, plain
   prose) 10 of 14 sentences died with fewer than three open words after those two
   strikes; and the days nearest the target hid expected words (09-10/11/12: 73/65/57% of
-  players within 30) while 09-13, which hid none, had 3%. A sentence needs two open words.
+  players within 30) while 09-13, which hid none, had 3%.
 - **NO HOLE OUT OF REACH (2026-09-23, decided by the agent on the user's delegation, for
   the user's goal: about 80% of players finishing within 30 tries, reached through
   CURATION ALONE — the game mechanics stay as they are).** The obviousness filter's
   fillers, read the other way, ON THE HOLE'S OWN BUILT MAP: once the chosen trio's maps
   exist, `generate` asks `rules.out_of_reach(rules.map_nearest_filler(...))` per hole —
-  the readers' nearest single-word filler past `FILLER_NEAR_MAX` (30) in that map, or
-  past the map — and a hole out of reach erases the draft (`OutOfReach`): the word is
-  struck and the day DESIGNED AGAIN from the trios left. Never judged on the static
+  the readers' nearest single-word filler past `FILLER_NEAR_MAX` (100) in that map, or
+  past the map — and a hole out of reach erases the draft (`OutOfReach`): the refusal is
+  told back and the model proposes again. Never judged on the static
   ranking: that would strike a word whose sense the static vector misses, the words the
   contextual map exists for (user, 2026-09-24: Jev "allows to pick any word, even if it
   has homonyms"). A day is as hard as its hardest hole: 09-22 and 09-23, one player in
   ten within 30 tries. Calibrated on REAL play: the 26 published holes with logged
   fillers (09-11..23), "hard" = found within 30 tries by under 60% of the players who
-  engaged; at 30 the rule refuses 6 of the 9 hard holes (« lâcher » 661, « héros » 404,
-  « humble » 216, « saluer » 141, « alcoolique » 72, « redoutée » 40) for 3 of 17 good
-  ones. It aims at HARD holes; the close-synonym strike rejected above aimed at easy
+  engaged; at 100 the rule refuses the 4 worst of the 9 hard holes (« lâcher » 661,
+  « héros » 404, « humble » 216, « saluer » 141) for 3 of 17 good ones (30, first chosen,
+  struck ten vivid words on one Buzzati run once the model chose with taste — raised
+  2026-09-24). It aims at HARD holes; the close-synonym strike rejected above aimed at easy
   ones. The judge's low giveaway score predicts hard holes about as well but, as a
   floor, caught fewer for the same loss: not used.
-- **The day is DESIGNED as a CHAIN, the trio chosen whole (2026-09-23, the user's craft:
-  "picking a word by knowing that once solved it will help you find this one").**
-  `rules.valid_trios` lists every trio of open words the rules let stand together;
-  `llm.design_trio` shows the sentence, what a reader puts in each open blank (with the
-  nearest filler's rank) and the numbered trios, and the model answers ONE number and the
-  PATH — the order players will find the words in and what each found word gives the
-  next, shown the static rank of each word's nearest filler as information. The path is
-  logged and handed to the start-word prompts (`pick_starts`, `pick_start`), which set
-  the starts along it (the skill's `## The start word`). A hole out of reach sends the
-  design back without that word (above); no valid trio left, or the model declining them
-  all, abandons the sentence. It replaced the
-  word-at-a-time pick (`pick_secret`, `search_trio`, `MAX_RESTARTS`, `MAX_OFF_LIST`),
-  which could not plan how the holes help each other.
+- **The model PROPOSES the day as a CHAIN, code checks it (2026-09-23/24; the user's
+  craft: "picking a word by knowing that once solved it will help you find this one").**
+  `llm.choose_trio` is ONE simple prompt: the sentence, the words code allows, the taste
+  profile, the trio rules (among them "a hole is a word WORTH FINDING", user feedback
+  2026-09-24 on « nulle · lisait · beau » — taste, so no code rule: corpus rank does not
+  separate « lisait » 21372 from « allumettes » 22244) and the user's hand method (blank
+  the word, read as a player with no start word, then think of the chain). With room to
+  think, the model names the three words in the order players will find them and the
+  PATH. `rules.refusals` checks them (pair rules → the reader's fillers → the giveaway
+  judge → one easy entry, first only); a refusal is told back and the model proposes
+  again, `TRIO_ROUNDS` times, then the sentence is abandoned; it may also DECLINE a
+  sentence with no three words worth finding. The path goes to the start-word prompts
+  (`pick_starts`, `pick_start`), which set the starts along it. Measured before the
+  switch (side by side, 8 sentences, 42 calls): the user's exact trio on 09-07, two of
+  their three words on 08-01 and 08-14, the pun on Gailly's « chauffer » the menu had
+  missed, the bland Dicker day declined. It replaced the menu of valid trios
+  (`valid_trios`, `design_trio`), itself the successor of the word-at-a-time pick
+  (`pick_secret`, `search_trio`): pre-filtering every candidate stripped the vivid words
+  of plain prose and left the model to choose among leftovers.
 - **The taste profile and the secret rules have ONE home, the `find-sentences` skill
   file**; `llm.py` slices its `## Taste profile`, `## The two laws` and `## The trio
   rules` sections into the prompts at run time. Edit the skill, never a prompt copy.
@@ -367,7 +375,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 
 - Don't publish, and don't write a puzzle by any path but `gen_phrase`.
 - Don't put a rule in a prompt that code can enforce; don't ask the model "is this
-  valid?" — give it a valid list.
+  valid?" — let code judge its answer and tell it why.
 - Don't copy the taste profile into this package; read the skill.
 - Don't commit the shelf (copyrighted files, the artist list) or the runs.
 - Don't put a Genius token anywhere but the environment.

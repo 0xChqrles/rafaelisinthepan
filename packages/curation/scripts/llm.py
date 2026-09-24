@@ -216,59 +216,51 @@ def holed(tokens, blanks: set[int], mark: int | None = None) -> str:
     return re.sub(r"\s+([,.;:!?…»)])", r"\1", re.sub(r"([«(]|\w')\s+", r"\1", " ".join(parts)))
 
 
-def design_trio(claude: Claude, tokens, trios: list[tuple], notes: dict[str, str],
-                easy: frozenset[str] | set[str] = frozenset()) -> dict | None:
-    """The model designs the day: ONE trio from `trios` (every one valid, code-built by
-    `rules.valid_trios`), chosen as a CHAIN — the order players will find the words in
-    and what each found word gives the next. `notes` holds, per candidate slug, what a
-    reader puts in its blank; an `easy` word (at most one per trio) is listed first, as
-    the entry. Returns {"trio": <the tuple>, "path": [lines], "why": str}, or None when
-    the model finds no trio worth a day."""
-    words = {t.slug: t for trio in trios for t in trio}
-    about = "\n".join(f"- {t.text} ({t.pos.lower()}): {'EASY — ' if k in easy else ''}{notes.get(k, 'no reading')}"
-                       for k, t in words.items())
+def choose_trio(claude: Claude, tokens, candidates, refused: list[str]) -> dict | None:
+    """TASTE FIRST (2026-09-24): the model reads the sentence as the curator does by hand
+    and names the three words worth hiding, in the order players will find them, from the
+    words code allows (`candidates`). `refused` tells it what code already refused and
+    why. Returns {"words": [3 display words], "path": [lines], "why": str}, or None when
+    it declines the sentence. Code checks the answer (`rules.refusals`)."""
+    allowed = ", ".join(dict.fromkeys(t.text for t in candidates))
+    again = ("\nAlready refused by the checks (measured on real play) — propose another trio:\n"
+             + "\n".join(f"- {r}" for r in refused) + "\n") if refused else ""
+    answer = claude.json(f"""You curate today's puzzle for a daily French word game. Three words of a sentence
+are hidden. Each hole first shows a START word (a word ranked {START_RANK_MIN}–{START_RANK_MAX}
+from its secret, chosen later); the player then types guesses and reads, for every
+hole, how close each guess lands. A word once found stays revealed, so it becomes
+context for the holes still open. The target: about 80% of players find all three
+within 30 tries.
 
-    def shown(trio):
-        first = [t for t in trio if t.slug in easy]
-        return " · ".join([f"{t.text} (easy entry)" for t in first] + [t.text for t in trio if t.slug not in easy])
-    listing = "\n".join(f"{n}. {shown(trio)}" for n, trio in enumerate(trios, 1))
-    answer = claude.json(f"""You design today's puzzle for a daily French word game. Three words of a sentence
-are hidden. Each hole first shows a START word (ranked {START_RANK_MIN}–{START_RANK_MAX}
-from its secret); the player then types guesses and reads, for every hole, how close each
-guess lands. A word once found stays revealed in the sentence, so it becomes context for
-the holes still open.
+The game's voice:
+{taste_profile()}
+
+How a trio is chosen:
+{secret_rules()}
+
+The curator's method, done by hand for months — do it yourself, word by word: blank the
+word and read the sentence as a player who has never seen it, with no start word. What
+would you put there? If it is the word you would write first, it is not a hole (except
+ONE easy word that opens the day). If nothing you would put there is anywhere near it,
+players cannot reach it. Then think of the day as a chain: which word players find
+first, and what each found word gives the next.
 
 The sentence:
 {holed(tokens, set())}
 
-The words the context leaves open — each one has real alternatives. With the rest of
-the sentence intact around that one blank, a reader puts:
-{about}
-
-A word marked EASY is one most readers would write straight away, or that the sentence
-hands over: never a hole of its own, but it can OPEN the day — at most one per trio, and
-it is then the chain's first word, the one players find first.
-
-The rules of a good trio:
-{secret_rules()}
-
-Design the day as a CHAIN: choose the trio where finding one word helps find the next —
-an entry word players reach first from the context, a word the found entry word narrows,
-and a last word the other two make findable — rather than three separate lookups. Think
-of the order players will really find them in, and of what each revealed word adds to
-the sentence around the next hole.
-
-Choose ONE trio from this numbered list only (every trio on it respects the mechanical
-rules):
-{listing}
-
-Return {{"trio": <number>, "path": ["<first word>: <why players reach it first>", "<second word>: <what the first gives it>", "<third word>: <what the first two give it>"], "why": "<one line: why this day plays well>"}},
-or {{"trio": null, "why": "<one line>"}} if no trio on the list makes a good day.""")
-    n = answer.get("trio")
-    if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= len(trios):
+The words code allows as secrets (word type, frequency and cooldown already checked):
+{allowed}
+{again}
+Think it through, then name the three words in the order players will find them.
+Return {{"words": ["<first>", "<second>", "<third>"], "path": ["<first>: <why players reach it first>", "<second>: <what the first gives it>", "<third>: <what the first two give it>"], "why": "<one line: why this day is worth playing>"}},
+or {{"words": null, "why": "<one line>"}} to decline — only when you cannot find three
+words worth finding in this sentence. A trio of good words is a good day even if the
+sentence could be better.""")
+    words = answer.get("words")
+    if not isinstance(words, list) or len(words) != 3 or not all(isinstance(w, str) and w.strip() for w in words):
         return None
     path = [str(line) for line in answer.get("path") or [] if isinstance(line, str) and line.strip()]
-    return {"trio": trios[n - 1], "path": path, "why": str(answer.get("why") or "")}
+    return {"words": [w.strip() for w in words], "path": path, "why": str(answer.get("why") or "")}
 
 
 def context_guesses(claude: Claude, tokens, blanks: set[int], mark: int, n: int) -> tuple[list[str], str | None]:
@@ -351,7 +343,7 @@ def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict],
                 chain: list[str] | None = None) -> dict[str, str]:
     """The three start words chosen TOGETHER. `holes`: [{secret, slug, context, options:
     [{word, rank}]}] — `context` is what a reader puts in the blank. `chain` is the path
-    the trio was designed on (`design_trio`): the starts are set along it. Returns
+    the trio was proposed on (`choose_trio`): the starts are set along it. Returns
     {slug: word}, only words from the options."""
     blocks = []
     for h in holes:

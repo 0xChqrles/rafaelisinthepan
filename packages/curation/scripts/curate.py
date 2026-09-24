@@ -640,91 +640,83 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
     if len({t.slug for t in candidates}) < rules.MIN_CANDIDATES:
         log(f"- rejected: fewer than {rules.MIN_CANDIDATES} distinct candidate words")
         return None
-    # The obviousness filter (user-decided 2026-09-10, the user's own method): every
-    # candidate is judged as a reader would, one word blanked at a time with the rest of
-    # the sentence intact and no start word; a word to which nothing else comes is never
-    # offered to the pick. The reader's fillers are kept for the start-word prompt.
+    # TASTE FIRST, CHECKS AFTER (2026-09-24): the model proposes the trio with its own
+    # taste from the words code allows; code then checks it — the pair rules, the reader's
+    # fillers (the obviousness filter, user-decided 2026-09-10: the user's own method), the
+    # giveaway judge, the one easy entry — and, once the maps are built, each hole's reach
+    # on its own map. A refusal is told back to the model, which proposes again.
     occurrences: dict[str, set[int]] = {}
     for t in candidates:
         occurrences.setdefault(t.slug, set()).add(t.i)
-    fillers_of: dict[str, list[str]] = {}
+    readings: dict[str, tuple[list[str], str | None]] = {}
+    handed: dict[str, bool] = {}
 
     def fillers(t: rules.Token) -> tuple[list[str], str | None]:
-        guesses, expected = llm.context_guesses(claude, tokens, occurrences[t.slug] - {t.i}, t.i,
-                                                rules.CONTEXT_GUESSES)
-        fillers_of[t.slug] = guesses
-        return guesses, expected
+        if t.slug not in readings:
+            readings[t.slug] = llm.context_guesses(claude, tokens, occurrences[t.slug] - {t.i}, t.i,
+                                                   rules.CONTEXT_GUESSES)
+        return readings[t.slug]
 
-    filter_log = rules.SearchLog()
-    entries: list[rules.Token] = []
-    candidates = rules.open_candidates(candidates, fillers=fillers, neighbour_rank=neighbour_rank,
-                                       frequency_rank=frequency_rank, log=filter_log, entries=entries)
-    for event in filter_log.events:
-        log(f"- {event}")
-    # The judge's second opinion (#308, 2026-09-22): the reader above misjudged the
-    # 2026-09-21 day (« silence », « enseignant » typed by 13 players of 31 within three
-    # guesses). A word the sentence hands over is struck, on a threshold set from real play.
-    opened = candidates
-    candidates = strike_giveaways(log, tokens, candidates, occurrences)
-    kept = {t.slug for t in candidates}
-    # ONE EASY ENTRY (user-decided 2026-09-24): a word struck as too easy — the expected
-    # word with alternatives, or one the judge finds handed over — is never a hole of its
-    # own, but one may open the day as the chain's first word; the other two stay open.
-    easy = {t.slug: "most readers would write it" for t in entries}
-    easy.update({t.slug: "the sentence hands it over" for t in opened if t.slug not in kept})
-    if len(kept) < rules.TRIO - 1:
-        log(f"- rejected: fewer than {rules.TRIO - 1} words the context leaves open")
-        return None
-
-    # The day is DESIGNED, not picked a word at a time (2026-09-23, the user's craft:
-    # "picking a word by knowing that once solved it will help you find this one"): code
-    # lists every trio the rules allow, the model chooses one as a chain. Once the maps
-    # are built, a hole none of whose readers' fillers sits near it in ITS OWN map is out
-    # of reach (`rules.out_of_reach`): the draft is erased and the design goes back
-    # without that word — judged on the shipped map, never the static one, so a word
-    # whose sense the static vector misses stays possible (#308).
-    pool = sorted([*candidates, *entries, *(t for t in opened if t.slug not in kept)], key=lambda t: t.i)
-    trios = rules.valid_trios(tokens, pool, similarity=similarity, easy=set(easy))
-    notes = {}
-    for t in pool:
-        heard = fillers_of.get(t.slug, ())
-        near = rules.nearest_filler(t, list(heard), neighbour_rank)
-        notes[t.slug] = ((f"{easy[t.slug]}; " if t.slug in easy else "") + f"a reader puts {', '.join(heard) or 'nothing'}"
-                         + (f" (nearest in the static ranking: « {near[0]} », rank {near[1]})" if near else ""))
+    def handed_over(words: list[rules.Token]) -> set[str]:
+        # The judge's second opinion (#308, 2026-09-22): the reader misjudged the
+        # 2026-09-21 day (« silence », « enseignant » typed by 13 players of 31 within
+        # three guesses). A word the sentence hands over is EASY, on a threshold set
+        # from real play. Each word judged once.
+        fresh = [t for t in words if t.slug not in handed]
+        if fresh:
+            kept = {t.slug for t in strike_giveaways(log, tokens, fresh, occurrences)}
+            handed.update({t.slug: t.slug not in kept for t in fresh})
+        return {t.slug for t in words if handed[t.slug]}
 
     def reach(puzzle: dict) -> dict[str, tuple[str, int | None]]:
         far = {}
         for key in {h["secret"]["slug"] for h in puzzle["holes"]}:
-            nearest = rules.map_nearest_filler(puzzle["ranks"][key], key, list(fillers_of.get(key, ())))
+            nearest = rules.map_nearest_filler(puzzle["ranks"][key], key, list(readings.get(key, ([], None))[0]))
             if rules.out_of_reach(nearest):
                 far[key] = nearest
         return far
 
+    first_of = {}
+    for t in candidates:
+        first_of.setdefault(t.slug, t)
     source = {"kind": book["kind"], "author": book.get("author", ""), "work": book.get("title", "")}
-    struck: set[str] = set()
+    refused: list[str] = []
     paged = False
-    while True:
-        options = [trio for trio in trios if not any(t.slug in struck for t in trio)]
-        if not options:
-            log("- rejected: no three open words can stand together"
-                + (" once the words out of reach are struck" if struck else ""))
+    for n in range(1, rules.TRIO_ROUNDS + 1):
+        proposal = llm.choose_trio(claude, tokens, candidates, refused)
+        if proposal is None:
+            log("- rejected: the model finds no three words worth finding")
             return None
-        design = llm.design_trio(claude, tokens, options, notes, set(easy))
-        if design is None:
-            log(f"- rejected: the model finds no good day among {len(options)} valid trio(s)")
-            return None
-        trio = list(design["trio"])
-        words = [t.text for t in trio]
-        log(f"- trio: {' · '.join(w + (' (easy entry)' if t.slug in easy else '') for w, t in zip(words, trio))} "
-            f"(chosen among {len(options)} valid)")
-        for step in design["path"]:
+        trio = [first_of.get(slug(w)) for w in proposal["words"]]
+        log(f"- proposal {n}: {' · '.join(proposal['words'])}")
+        for step in proposal["path"]:
             log(f"  - chain: {step}")
-        if design["why"]:
-            log(f"  - why: {design['why']}")
-        # What a reader puts in each hole from the context alone (the filter's fillers, none
-        # of them the secret): shown to the start-word prompt, which must not hand one over.
-        context = {t.slug: (f"EASY ENTRY ({easy[t.slug]}) — a reader's first fillers: " if t.slug in easy
-                            else "open — a reader's first fillers: ") + (', '.join(fillers_of.get(t.slug, ())) or 'none')
+        if proposal["why"]:
+            log(f"  - why: {proposal['why']}")
+        off = [w for w, t in zip(proposal["words"], trio) if t is None]
+        if off or len({t.slug for t in trio}) < rules.TRIO:
+            why = f"not among the allowed words: {', '.join(off)}" if off else "the same word twice"
+            log(f"- refused: {why}")
+            refused.append(f"« {' · '.join(proposal['words'])} » — {why}")
+            continue
+        check_log = rules.SearchLog()
+        problems, easy = rules.refusals(trio, tokens, similarity=similarity, fillers=fillers,
+                                        handed_over=handed_over, neighbour_rank=neighbour_rank,
+                                        frequency_rank=frequency_rank, log=check_log)
+        for event in check_log.events:
+            log(f"- {event}")
+        if problems:
+            for words, why in problems:
+                log(f"- refused: « {words} » — {why}")
+                refused.append(f"« {words} » — {why}")
+            continue
+        words = [t.text for t in trio]
+        if easy:
+            log(f"- easy entry: {trio[0].text}")
+        # What a reader puts in each hole from the context alone: shown to the start-word
+        # prompt, which must not hand one over.
+        context = {t.slug: ("EASY ENTRY — a reader's first fillers: " if t.slug in easy
+                            else "open — a reader's first fillers: ") + (', '.join(fillers(t)[0]) or 'none')
                    for t in trio}
         if window and not paged:
             paged = True
@@ -733,14 +725,17 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
                 source["excerpt"] = excerpt
         try:
             return generate(claude, log, sentence, words, source, lang, context, frequency_rank, archive["pairs"],
-                            replay=replay, chain=design["path"], reach=reach)
+                            replay=replay, chain=proposal["path"], reach=reach)
         except OutOfReach as exc:
             for key, (word, rank) in exc.holes.items():
                 where = f"rank {rank}" if rank is not None else "past the map"
-                log(f"- '{key}' is OUT OF REACH in its map — the readers' nearest filler « {word} » sits at "
-                    f"{where} (> {rules.FILLER_NEAR_MAX}) — struck, the day is designed again")
-            struck |= set(exc.holes)
+                why = (f"out of reach: the readers' nearest filler « {word} » sits at {where} in its map "
+                       f"(> {rules.FILLER_NEAR_MAX})")
+                log(f"- refused: « {key} » — {why}")
+                refused.append(f"« {first_of[key].text} » — {why}")
             replay = None  # another trio: the erased draft's scores no longer apply
+    log(f"- rejected: no trio stands after {rules.TRIO_ROUNDS} proposals")
+    return None
 
 
 def choose_page(claude: llm.Claude, log: Log, sentence: str, window: dict) -> dict | None:
