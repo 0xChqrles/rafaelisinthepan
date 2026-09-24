@@ -7,7 +7,7 @@
 // from quietly drifting between routes.
 
 import { isIP } from 'node:net';
-import { dayNumber, isValidDeviceToken, VIEWER_IP_HEADER, VOCAB_BUILDS } from '@whippin/shared';
+import { bonusAddress, dayNumber, isBonusId, isValidDeviceToken, VIEWER_IP_HEADER, VOCAB_BUILDS } from '@whippin/shared';
 import { isValidDate } from './layout';
 import {
   deviceTokenHash,
@@ -223,14 +223,26 @@ export function requireLangParams(
 
 // The protocol guards the day-addressed live routes share (/scores, /board, /round): which
 // language, plus a real date no further than one day ahead of the server's own active day.
+// With `bonus` (the round route only), a BONUS puzzle's id stands in for the date and the
+// returned `date` is its ADDRESS (shared bonus.ts) — no day, so no future guard.
 export function requireDayParams(
   event: FnUrlEvent,
   serverDate: string,
   headers: Record<string, string>,
+  { bonus = false }: { bonus?: boolean } = {},
 ): Guarded<DayParams> {
   const game = requireLangParams(event, headers);
   if (!game.ok) return game;
   const { lang } = game.value;
+  const bonusId = bonus ? event.queryStringParameters?.bonus : undefined;
+  if (bonusId !== undefined) {
+    if (!isBonusId(bonusId)) {
+      return refuse(
+        errorResponse(400, 'bad_request', 'Query parameter "bonus" must be a bonus id (seven digits).', headers),
+      );
+    }
+    return { ok: true, value: { lang, date: bonusAddress(bonusId) } };
+  }
   const date = event.queryStringParameters?.date;
   if (!date || !isValidDate(date)) {
     return refuse(

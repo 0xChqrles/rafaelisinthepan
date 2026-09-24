@@ -69,7 +69,13 @@ describe('score production boundary (#169)', () => {
 
     // CloudFront rejects custom cache policies with every TTL at zero when they also
     // include cache-key values. Only the puzzle behavior should need a custom policy.
-    expect(Object.values(template.findResources('AWS::CloudFront::CachePolicy'))).toHaveLength(1);
+    const cachePolicies = Object.values(template.findResources('AWS::CloudFront::CachePolicy'));
+    expect(cachePolicies).toHaveLength(1);
+    // …and its cache key IS what reaches the Lambda: every query the puzzle route reads.
+    expect(
+      cachePolicies[0].Properties.CachePolicyConfig.ParametersInCacheKeyAndForwardedToOrigin
+        .QueryStringsConfig,
+    ).toEqual({ QueryStringBehavior: 'whitelist', QueryStrings: ['lang', 'date', 'bonus'] });
 
     const policies = Object.values(
       template.findResources('AWS::CloudFront::OriginRequestPolicy'),
@@ -212,12 +218,12 @@ describe('score production boundary (#169)', () => {
     const roundPolicy = policies.find(
       (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinRoundOrigin',
     );
-    // The TWO addressing queries — the same pair /scores forwards; the secret never
-    // travels in a query. The header mode is still the Lambda-URL-safe one, since it is
-    // what carries the OAC-signed body hash.
+    // The addressing queries — the pair /scores forwards, plus a bonus puzzle's id; the
+    // secret never travels in a query. The header mode is still the Lambda-URL-safe one,
+    // since it is what carries the OAC-signed body hash.
     expect(roundPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
       QueryStringBehavior: 'whitelist',
-      QueryStrings: ['lang', 'date'],
+      QueryStrings: ['lang', 'date', 'bonus'],
     });
     expect(roundPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
       HeaderBehavior: 'allExcept',

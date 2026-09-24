@@ -43,7 +43,8 @@ existence set into `packages/web/public/vocab/<lang>.json` plus its metadata int
 PUBLISH LEDGER (user-decided 2026-09-08): one JSON line per SENTENCE puzzle published to
 S3 — `day` (the game day served), `lang`, `publishedAt`, `revision`, `source`, `sentence`
 (`words[]` joined) and `holes` as `{secret, word, start, startRank}` — appended by
-`pnpm puzzle:publish --s3` and by nothing else (a local publish is a test bed),
+`pnpm puzzle:publish --s3` and by nothing else (a local publish is a test bed, a bonus is
+no day),
 GITIGNORED — the BUCKET is the truth and the file its local,
 readable copy, rebuilt on any machine by `pnpm puzzle:ledger --s3` — and the ONE record
 the curator's archive (secret cooldown, secret/start pair blacklist, works, sentences,
@@ -255,10 +256,10 @@ packages agree on each list; `backend:dev` has no CDN and cannot show a drift.
 
 | Route | Forwarded query | Policy |
 | --- | --- | --- |
-| `/` (puzzle) | `lang`, `date` | **CACHE POLICY** allowList: the cache key, and — with no origin-request policy — exactly what reaches the Lambda |
+| `/` (puzzle) | `lang`, `date`, `bonus` | **CACHE POLICY** allowList: the cache key, and — with no origin-request policy — exactly what reaches the Lambda |
 | `/scores` | `lang`, `date`, `id` | origin-request allowList, **caching DISABLED** |
 | `/board` | `lang`, `date`, `id` | same |
-| `/round` | `lang`, `date` | same |
+| `/round` | `lang`, `date`, `bonus` | same |
 | `/history` | `lang`, `month` | same |
 | `/profile` | `id` | same |
 | `/groups` | `id` | same |
@@ -411,7 +412,8 @@ The live routes then share:
   the cap spends no request. The `∞` glyph is pixel-art SVG path data in `shared/glyphs.ts`
   (Press Start 2P has none; the OG card loads no system fonts), used by `cardSvg.ts` and the web.
 - **Share token v6** is the result format (capped flag + numeric score + trajectory +
-  ticks; a capped token carries no ticks). `decodeLegacyShareTarget` recognizes ONLY
+  ticks; a capped token carries no ticks); **v7** is a BONUS puzzle's (below): the bonus id
+  in the day's place, the same payload. `decodeLegacyShareTarget` recognizes ONLY
   versions 1 and 2 (a named list); every other version — the retired Word mode's 3–5
   included — is a flat 404.
 - **EARLY PLAY (#273, user-decided 2026-09-08): after today's result, TOMORROW opens the
@@ -438,6 +440,31 @@ The live routes then share:
   rows' `score#<date>#<lang>#sentence` likewise), attributes `guesses`,
   `puzzle`, `createdAt`, `lastWriteAt`, `progress`, `solved`, `version`. Per PLAYER, not per
   day: one hot day partition cannot be split. Nothing reads across players.
+
+### Bonus puzzles (user-decided 2026-09-24)
+
+- **A BONUS is a test puzzle outside the calendar, shared by link only** — for friends and
+  beta testers: played like an archive day (the rules gate's PLAY deploys the account),
+  shareable with its own card, and credited NOTHING (no score row, no streak day, no board,
+  no podium). `shared/src/bonus.ts` is the one spelling: the id is **seven digits, no
+  leading zero** (`BONUS_ID_PATTERN`); a puzzle's ADDRESS is its day's date or
+  **`bonus/<id>`**, which takes the date's slot in the store key (`bonus/<id>.<lang>.json`
+  + its slice), in the round row's sort key, and in `PuzzleRef` (`{dayNumber} | {bonusId}`).
+- **Wire**: `?bonus=<id>` stands in for `date` on `/` and `/round` (both CloudFront lists
+  name it); a malformed id is 400; no future guard (a bonus is out when published). The
+  page is `/<lang>/bonus/<id>`.
+- **Nothing reads a bonus address as a date**: the round route's EARLY lock and `onTime`
+  ask `isBonusAddress` first, so a bonus is never early and never on time — the one check
+  both rewards pass through. The history month query and the ledger's key pattern never
+  meet one.
+- **Publish**: `pnpm puzzle:publish <file> --bonus [--s3]` mints a fresh id (never one the
+  store holds) and prints the link; `--bonus <id>` republishes it (a correction keeps the
+  link). Exclusive with `--day`; never a ledger line.
+- **Share token v7** (`BONUS_SHARE_VERSION`) carries the bonus id (24 bits) in place of
+  the day; the card, the share page and the headline say `BONUS <id>`, and the click opens
+  the bonus. The WhatsApp bot never counts a v7 share.
+- **The web**: its own round key (`b:<id>:<lang>`, kept by the outbox cap), never the
+  active day, no TOMORROW, and no `solve`/`share` analytics (the share rate is a day's).
 
 ### Server-backed player history (#211, decided 2026-08-23)
 

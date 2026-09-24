@@ -1,5 +1,11 @@
 import { create } from 'zustand';
-import { generatePublicId, GROUP_ID_PATTERN, PUBLIC_ID_PATTERN } from '@whippin/shared';
+import {
+  generatePublicId,
+  GROUP_ID_PATTERN,
+  isBonusRef,
+  PUBLIC_ID_PATTERN,
+  type PuzzleRef,
+} from '@whippin/shared';
 import { isLang } from '../langs';
 import {
   GameStateDatabase,
@@ -86,6 +92,20 @@ export function roundKeyForDay(dayNumber: number, lang: string): string {
   return `d:${dayNumber}:${lang}`;
 }
 
+// A BONUS puzzle's round (shared bonus.ts): `b:<id>:<lang>`, apart from every day's.
+export function roundKeyForBonus(bonusId: number, lang: string): string {
+  return `b:${bonusId}:${lang}`;
+}
+
+// The round key of either kind of puzzle.
+export function roundKeyFor(ref: PuzzleRef, lang: string): string {
+  return isBonusRef(ref) ? roundKeyForBonus(ref.bonusId, lang) : roundKeyForDay(ref.dayNumber, lang);
+}
+
+function isBonusKey(key: string): boolean {
+  return /^b:\d+:/.test(key);
+}
+
 // The dayNumber a day-keyed round belongs to, or null for a legacy non-day key. Orders
 // day rounds newest-first for the retention cap, and marks legacy rounds for dropping.
 function dayNumberOf(key: string): number | null {
@@ -99,8 +119,9 @@ function dayNumberOf(key: string): number | null {
 const MAX_DAY_ROUNDS = 800;
 
 // Bound a day-keyed map: with more than MAX_DAY_ROUNDS entries, drop the oldest (lowest
-// dayNumber), always keeping `activeKey`. Anything that is not a day key (a legacy round
-// left by an older blob) is dropped outright.
+// dayNumber), always keeping `activeKey`. A BONUS round's key is kept outright (a bonus is
+// played by link, a handful at most, and an entry lives only while it owes the server a
+// guess). Anything else (a legacy round left by an older blob) is dropped outright.
 function capDayKeyed<T>(entries: Record<string, T>, activeKey: string): Record<string, T> {
   const dayKeys = Object.keys(entries).filter((k) => dayNumberOf(k) !== null);
   const survivors = new Set<string>();
@@ -114,7 +135,7 @@ function capDayKeyed<T>(entries: Record<string, T>, activeKey: string): Record<s
   }
   const out: Record<string, T> = {};
   for (const [k, v] of Object.entries(entries)) {
-    if (survivors.has(k)) out[k] = v;
+    if (survivors.has(k) || isBonusKey(k)) out[k] = v;
   }
   return out;
 }

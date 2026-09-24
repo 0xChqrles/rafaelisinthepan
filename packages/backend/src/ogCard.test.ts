@@ -106,3 +106,23 @@ describe('GET /s/<token>', () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+// A BONUS result (share token v7, bonus puzzles 2026-09-24) names no day: its page is titled
+// "BONUS <id>" and opens the bonus's own page, never a date.
+describe('GET /s/<token> — a bonus result', () => {
+  const bonusToken = encodeResult({ lang: 'fr', bonusId: 1234567, ...run });
+
+  it('titles the bonus and opens its page', async () => {
+    const res = await handler(get(`/s/${bonusToken}`, { host: 'whippin.ai', 'x-forwarded-proto': 'https' }));
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('Whippin AI BONUS 1234567 — 12 essais');
+    expect(res.body).toContain(`location.replace("https://whippin.ai/fr/bonus/1234567")`);
+    expect(res.body).not.toContain(dateForDayNumber(0));
+  });
+
+  it('draws its card', async () => {
+    const res = await handler(get(`/og/${bonusToken}.png`));
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['Content-Type']).toBe('image/png');
+  });
+});

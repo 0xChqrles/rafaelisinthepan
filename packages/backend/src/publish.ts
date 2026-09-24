@@ -1,6 +1,12 @@
 // Publish a generated puzzle into the store the backend serves (issue #17 / #4).
 //
-//   pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3] [--store DIR]
+//   pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD | --bonus [ID]] [--s3] [--store DIR]
+//
+// `--bonus` publishes a BONUS puzzle (shared bonus.ts, 2026-09-24) instead of a day: a test
+// puzzle outside the calendar, played by link only, credited nothing. Alone it MINTS a
+// fresh seven-digit id (never one already in the store); `--bonus <id>` republishes that
+// bonus (a correction keeps its link). A bonus is never written to the ledger — it is no
+// day, and its sentence stays free for one. The command prints the bonus's link.
 //
 // Destination is chosen EXPLICITLY and defaults to LOCAL — the local path never needs
 // AWS creds. `--day` targets the GAME DAY (defaults to the active 22:00-ET day, so the
@@ -12,11 +18,19 @@
 // name from the `PuzzleBucketName` output of `WhippinBackendStack` — the infra code is the
 // single source of truth, so there is no bucket flag/env. Looking it up needs AWS creds
 // (already required to upload) + `cloudformation:DescribeStacks`.
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash, randomInt } from 'node:crypto';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { activeDate, type Puzzle } from '@whippin/shared';
+import {
+  activeDate,
+  bonusAddress,
+  bonusPath,
+  isBonusId,
+  BONUS_ID_MAX,
+  BONUS_ID_MIN,
+  type Puzzle,
+} from '@whippin/shared';
 import { defaultLocalStoreRoot, isValidDate, sliceKey, storeKey } from './layout';
 import { buildSlice, encodeSlice } from './slice';
 import { appendPublished, ledgerEntry, publishLedgerPath } from './ledger';
@@ -25,6 +39,8 @@ import { STACK_REGION, stackOutputs } from './stack';
 interface Args {
   file?: string;
   day?: string;
+  // `--bonus`: true to mint a fresh id, or the id to republish.
+  bonus?: true | string;
   s3: boolean;
   store?: string;
 }
@@ -42,6 +58,11 @@ function parseArgs(argv: string[]): Args {
         break;
       case '--day':
         args.day = argv[++i];
+        break;
+      case '--bonus':
+        // An id right after the flag republishes that bonus; otherwise one is minted.
+        if (argv[i + 1] !== undefined && isBonusId(argv[i + 1])) args.bonus = argv[++i];
+        else args.bonus = true;
         break;
       case '--store':
         args.store = argv[++i];
@@ -61,7 +82,10 @@ function die(msg: string): never {
 }
 
 interface PublishPlan {
-  day: string; // the GAME DAY this puzzle is served as (22:00-ET day of #2/#6)
+  // WHERE it is served: the GAME DAY (22:00-ET day of #2/#6), or a bonus's ADDRESS
+  // (`bonus/<id>`, shared bonus.ts) — `bonusId` then says which.
+  day: string;
+  bonusId?: string;
   key: string; // storeKey(day, lang) — the SAME key the readers GetObject/readFile
   // #203's derivation slice, published BESIDE the puzzle. The backend has NO fallback for a
   // missing one, so it is part of the same publish rather than a follow-up: a day whose
@@ -78,21 +102,51 @@ interface PublishPlan {
 // stack output) is REQUIRED — never a silent local fallback. The (impure, AWS) lookup is
 // kept in main so this stays pure. Throws on an invalid day or `--s3` with no bucket; the
 // CLI turns that into a clean `die`.
+//
+// A BONUS (`bonusId`, already minted or named) is addressed by `bonus/<id>` instead of a
+// day, through the same key functions — the readers select it exactly the same way.
 export function planPublish(
-  args: Pick<Args, 's3' | 'day'>,
+  args: Pick<Args, 's3' | 'day'> & { bonusId?: string },
   lang: string,
   now: Date,
   bucket?: string,
 ): PublishPlan {
-  const day = args.day ?? activeDate(now);
-  if (!isValidDate(day)) throw new Error(`invalid --day "${day}" (expected YYYY-MM-DD).`);
+  if (args.bonusId !== undefined && args.day !== undefined) {
+    throw new Error('--bonus and --day are exclusive: a bonus is no day.');
+  }
+  if (args.bonusId !== undefined && !isBonusId(args.bonusId)) {
+    throw new Error(`invalid bonus id "${args.bonusId}" (expected seven digits).`);
+  }
+  const day = args.bonusId !== undefined ? bonusAddress(args.bonusId) : (args.day ?? activeDate(now));
+  if (args.bonusId === undefined && !isValidDate(day)) {
+    throw new Error(`invalid --day "${day}" (expected YYYY-MM-DD).`);
+  }
   const key = storeKey(day, lang);
   const slice = sliceKey(day, lang);
+  const bonus = args.bonusId !== undefined ? { bonusId: args.bonusId } : {};
   if (args.s3) {
     if (!bucket) throw new Error('--s3 requires the deployed bucket (no stack output resolved).');
-    return { day, key, slice, target: { kind: 's3', bucket } };
+    return { day, ...bonus, key, slice, target: { kind: 's3', bucket } };
   }
-  return { day, key, slice, target: { kind: 'local' } };
+  return { day, ...bonus, key, slice, target: { kind: 'local' } };
+}
+
+// A fresh bonus id, never one already published: `taken(id)` probes the store (the local
+// dir or the bucket). Random over the seven-digit range, so a link is the only way in.
+export async function mintBonusId(taken: (id: string) => Promise<boolean>): Promise<string> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const id = String(randomInt(BONUS_ID_MIN, BONUS_ID_MAX + 1));
+    if (!(await taken(id))) return id;
+  }
+  throw new Error('could not mint a free bonus id (20 draws taken).');
+}
+
+// Where a player opens it: the site's own origin (SITE_ORIGIN, as the backend is
+// configured — the production apex by default) for an S3 publish, the bare path for a
+// local one (open it on the dev server).
+function bonusLink(lang: string, id: string, s3: boolean): string {
+  const origin = s3 ? (process.env.SITE_ORIGIN ?? 'https://whippin.ai') : '';
+  return `${origin}${bonusPath(lang, id)}`;
 }
 
 // WHICH PUBLISHED VERSION this is (#203, user-decided 2026-08-22). A hash of the puzzle's
@@ -132,7 +186,7 @@ function puzzleLang(raw: unknown, file: string): string {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.file) {
-    die('usage: puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3] [--store DIR]');
+    die('usage: puzzle:publish <puzzle.json> [--day YYYY-MM-DD | --bonus [ID]] [--s3] [--store DIR]');
   }
 
   const file = resolveInput(args.file);
@@ -145,10 +199,31 @@ async function main() {
 
   // For S3, the destination is always the deployed bucket, discovered from the stack output.
   const deployed = args.s3 ? await stackOutputs() : undefined;
+  const rootArg = args.store ?? process.env.PUZZLE_STORE;
+  const root = rootArg ? resolveInput(rootArg) : defaultLocalStoreRoot();
+
+  let bonusId: string | undefined;
+  if (args.bonus === true) {
+    bonusId = await mintBonusId(async (id) => {
+      const key = storeKey(bonusAddress(id), lang);
+      if (!deployed) return access(path.join(root, key)).then(() => true, () => false);
+      const { S3Client, HeadObjectCommand } = await import('@aws-sdk/client-s3');
+      const { isNotFound } = await import('./store');
+      try {
+        await new S3Client({ region: STACK_REGION }).send(new HeadObjectCommand({ Bucket: deployed.bucket, Key: key }));
+        return true;
+      } catch (err) {
+        if (isNotFound(err)) return false;
+        throw err;
+      }
+    });
+  } else if (typeof args.bonus === 'string') {
+    bonusId = args.bonus;
+  }
 
   let plan: PublishPlan;
   try {
-    plan = planPublish(args, lang, new Date(), deployed?.bucket);
+    plan = planPublish({ s3: args.s3, day: args.day, bonusId }, lang, new Date(), deployed?.bucket);
   } catch (err) {
     die(err instanceof Error ? err.message : String(err));
   }
@@ -225,15 +300,18 @@ async function main() {
     // THE LEDGER (user-decided 2026-09-08): an S3 publish is recorded — day, instant,
     // revision, source, sentence, the secret/start pairs — in
     // packages/generation/published.jsonl, the one record the curator's archive reads.
-    // A local publish never writes it (the local store is a test bed). Gitignored: the
-    // bucket is the truth.
+    // A local publish never writes it (the local store is a test bed), and neither does a
+    // BONUS: it is no day, and its sentence stays free for one. Gitignored: the bucket is
+    // the truth.
+    if (plan.bonusId !== undefined) {
+      console.log(`[publish] bonus ${plan.bonusId}: ${bonusLink(lang, plan.bonusId, true)}  (no ledger line)`);
+      return;
+    }
     await appendPublished(ledgerEntry(raw as unknown as Puzzle, plan.day, new Date()));
     console.log(`[publish] ledger: ${publishLedgerPath()}  (+1 line)`);
     return;
   }
 
-  const rootArg = args.store ?? process.env.PUZZLE_STORE;
-  const root = rootArg ? resolveInput(rootArg) : defaultLocalStoreRoot();
   const dest = path.join(root, plan.key);
   await mkdir(path.dirname(dest), { recursive: true });
   // The slice first, the puzzle second — the S3 ordering above, for its reason.
@@ -241,7 +319,10 @@ async function main() {
   await writeFile(sliceDest, slice);
   console.log(`[publish] ${sliceDest}  (${slice.byteLength} bytes gzipped)`);
   await writeFile(dest, text);
-  console.log(`[publish] ${dest}  (${lang}, day ${plan.day})`);
+  console.log(`[publish] ${dest}  (${lang}, ${plan.bonusId !== undefined ? plan.day : `day ${plan.day}`})`);
+  if (plan.bonusId !== undefined) {
+    console.log(`[publish] bonus ${plan.bonusId}: open ${bonusLink(lang, plan.bonusId, false)} on the dev server`);
+  }
 }
 
 // Run as a CLI only when executed directly (`tsx src/publish.ts ...`), NOT when this

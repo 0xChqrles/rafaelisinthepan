@@ -16,7 +16,7 @@ import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import useRoundSync from '../hooks/useRoundSync';
 import { notifyGuess, retryRoundSync } from '../state/roundSync';
-import { useGameStore, roundKeyForDay } from '../state/gameStore';
+import { useGameStore, roundKeyFor } from '../state/gameStore';
 import { noteSolvedDay, usePlayerHistory } from '../state/history';
 import Phrase from '../components/Phrase';
 import CellDigits from '../components/CellDigits';
@@ -45,7 +45,14 @@ export const REVEAL_HOLD_MS = 500;
 import type { HistoryStop } from '../game/history';
 import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
 import { track } from '../analytics';
-import { fold, dateForDayNumber, ROUND_GUESS_CAP } from '@whippin/shared';
+import {
+  fold,
+  dateForDayNumber,
+  isBonusRef,
+  puzzleAddress,
+  ROUND_GUESS_CAP,
+  type PuzzleRef,
+} from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { sentenceStarts } from '../game/sentenceCase';
 import { prefetchTurnstileTokens } from '../turnstile';
@@ -99,13 +106,15 @@ export const KB_EXIT_FALLBACK_MS = 1_200;
 // day's DATE in the header's left slot (2026-08-16, replacing the progress counter).
 export default function Game({
   puzzle,
-  dayNumber,
+  puzzleRef,
   isActiveDay = true,
   early = false,
   deferResultsAnimation = false,
 }: {
   puzzle: Puzzle;
-  dayNumber: number;
+  // WHICH puzzle: a game day, or a BONUS (shared bonus.ts) — no day, so never the active
+  // day, never early, and never a streak or an analytics beat.
+  puzzleRef: PuzzleRef;
   // Whether this is the client's active day (false when replaying an archive day, #55):
   // gates the fresh-solve streak celebration and tags solve analytics as archive/live.
   isActiveDay?: boolean;
@@ -140,7 +149,7 @@ export default function Game({
       prefixSet={vocab.prefixSet}
       lang={puzzle.lang}
       revision={puzzle.revision}
-      dayNumber={dayNumber}
+      puzzleRef={puzzleRef}
       isActiveDay={isActiveDay}
       early={early}
       deferResultsAnimation={deferResultsAnimation}
@@ -159,7 +168,7 @@ function Round({
   prefixSet,
   lang,
   revision,
-  dayNumber,
+  puzzleRef,
   isActiveDay,
   early,
   deferResultsAnimation,
@@ -173,7 +182,7 @@ function Round({
   lang: string;
   // WHICH PUBLISHED VERSION this puzzle is (#203) — the round's identity everywhere.
   revision: string;
-  dayNumber: number;
+  puzzleRef: PuzzleRef;
   isActiveDay: boolean;
   early: boolean;
   deferResultsAnimation: boolean;
@@ -192,8 +201,8 @@ function Round({
     [puzzleHoles],
   );
 
-  // Identity of this round: the server day + language.
-  const roundKey = useMemo(() => roundKeyForDay(dayNumber, lang), [dayNumber, lang]);
+  // Identity of this round: the server day (or the bonus) + language.
+  const roundKey = useMemo(() => roundKeyFor(puzzleRef, lang), [puzzleRef, lang]);
 
   const ensureOutbox = useGameStore((s) => s.ensureOutbox);
   const appendOutbox = useGameStore((s) => s.appendOutbox);
@@ -249,7 +258,7 @@ function Round({
   const load = useRoundSync({
     roundKey,
     lang,
-    date: dateForDayNumber(dayNumber),
+    date: puzzleAddress(puzzleRef),
     // The round's identity on the wire (#203): the version this puzzle was published as.
     revision,
     ranks,
@@ -400,8 +409,9 @@ function Round({
   // TOMORROW (#273): the result screen's one onward action, from today's result only —
   // the next day's sentence, on the dated route the server serves inside its skew window.
   const goTomorrow = useCallback(() => {
-    navigate(pathForDay(lang, dateForDayNumber(dayNumber + 1)));
-  }, [lang, dayNumber]);
+    if (isBonusRef(puzzleRef)) return;
+    navigate(pathForDay(lang, dateForDayNumber(puzzleRef.dayNumber + 1)));
+  }, [lang, puzzleRef]);
 
   // The pre-round GATE (2026-08-11; the #216 triggers 2026-08-24; an INVITATION since #269,
   // user-decided 2026-09-16). Two reasons to hold the round back, one tray:
@@ -451,7 +461,7 @@ function Round({
     }
     const id = window.setTimeout(() => preloadStreakDialog(), 1_500);
     return () => window.clearTimeout(id);
-  }, [dayNumber, isActiveDay, roundKey, finished]);
+  }, [isActiveDay, roundKey, finished]);
 
   // This round replayed: the per-guess reconstruction-% trajectory (the run ruler's cells,
   // and what the share token carries) plus the solve moments (its ticks), from ONE walk of
@@ -543,7 +553,10 @@ function Round({
     // The one analytics beat for "did the player finish a puzzle": fired ONLY on the
     // play-solve transition (never on the rehydration branch above). `archive`
     // distinguishes a replayed past day ('yes', #55) from the live daily puzzle ('no').
-    track('solve', { lang, tries: guessCount, day: dayNumber, archive: isActiveDay ? 'no' : 'yes' });
+    // A BONUS solve is no day's: it stays out of the analytics the share rate is read off.
+    if (!isBonusRef(puzzleRef)) {
+      track('solve', { lang, tries: guessCount, day: puzzleRef.dayNumber, archive: isActiveDay ? 'no' : 'yes' });
+    }
     // Streak (#56): ON TIME means ON THE DAY (user-decided 2026-08-23), and since the
     // PR-218 review the verdict is the SERVER's, carried on the confirming append's answer
     // (`credited`) — one predicate on one clock. Re-making the comparison here on the
@@ -557,7 +570,8 @@ function Round({
     // reports whether the day was genuinely new the same way `recordSolve` did — plus one
     // new refusal: a collection that never arrived cannot say what the previous streak was,
     // so it celebrates nothing rather than printing a guess.
-    const didAdvanceStreak = noteSolvedDay(lang, dayNumber, server?.credited === true);
+    const didAdvanceStreak =
+      !isBonusRef(puzzleRef) && noteSolvedDay(lang, puzzleRef.dayNumber, server?.credited === true);
     setAnimateResults(true);
     setStreakAdvanced(didAdvanceStreak);
     if (didAdvanceStreak) preloadStreakDialog();
@@ -1070,7 +1084,7 @@ function Round({
         <SolvedScreen
           guessCount={guessCount}
           trajectory={trajectory}
-          dayNumber={dayNumber}
+          puzzleRef={puzzleRef}
           lang={lang}
           // A capped round has no solve to tick and no count to name: it ends at `∞`
           // (#214), with the sentence, its answer and the credit shown like any other
@@ -1245,8 +1259,8 @@ function Round({
         />
       )}
 
-      {showStreakDialog && (
-        <LazyStreakDialog lang={lang} solvedDay={dayNumber} onDismiss={dismissStreakDialog} />
+      {showStreakDialog && !isBonusRef(puzzleRef) && (
+        <LazyStreakDialog lang={lang} solvedDay={puzzleRef.dayNumber} onDismiss={dismissStreakDialog} />
       )}
 
       {/* One hole's found words (2026-09-01): a COMPLETED hole opens them as a plain grid in

@@ -336,6 +336,13 @@ const STRINGS = {
     en: 'This day was never published.',
     fr: "Ce jour n'a jamais été publié.",
   },
+  // A BONUS link (bonus puzzles, 2026-09-24) that names no puzzle in this language — a
+  // mistyped id, or the other language's link.
+  noBonus: { en: 'NO SUCH BONUS', fr: 'BONUS INTROUVABLE' },
+  noBonusNote: {
+    en: 'This link names no puzzle in this language.',
+    fr: 'Ce lien ne mène à aucun puzzle dans cette langue.',
+  },
   backToArchive: { en: 'BACK TO ARCHIVE', fr: "RETOUR À L'ARCHIVE" },
   changeLanguage: { en: 'CHANGE LANGUAGE', fr: 'CHANGER DE LANGUE' },
   srLangSolved: { en: 'solved', fr: 'résolu' },

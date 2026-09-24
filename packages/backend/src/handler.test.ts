@@ -226,6 +226,33 @@ describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
 // CONTRACT: a puzzle is megabytes of rank maps, and the Lambda runtime refuses a response
 // envelope over LAMBDA_MAX_RESPONSE_BYTES with a 413 the caller only ever sees as a 502.
 // Compression is what keeps a real puzzle answerable; these pin the negotiation.
+// CONTRACT (bonus puzzles, 2026-09-24): `?bonus=<id>` stands in for `date` and serves the
+// store's `bonus/<id>` puzzle — no day, so no future guard; a malformed id is a 400.
+describe('puzzle endpoint — a bonus puzzle (GET /?lang=&bonus=)', () => {
+  const bonusHandler = () =>
+    makeHandler({
+      store: {
+        async getPuzzle(address, lang) { return address === 'bonus/1234567' && lang === 'fr' ? PUZZLE : null; },
+        async getSlice() { return null; },
+      },
+    });
+
+  it('serves the bonus by its address, cached like a day', async () => {
+    const res = await bonusHandler()(event({ query: { lang: 'fr', bonus: '1234567' } }));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual(PUZZLE);
+  });
+
+  it('404s an unpublished bonus and 400s a malformed id', async () => {
+    const missing = await bonusHandler()(event({ query: { lang: 'fr', bonus: '7654321' } }));
+    expect(missing.statusCode).toBe(404);
+    for (const bonus of ['123456', '0123456', '1234567/../x']) {
+      const res = await bonusHandler()(event({ query: { lang: 'fr', bonus } }));
+      expect(res.statusCode).toBe(400);
+    }
+  });
+});
+
 describe('puzzle response compression — staying under the runtime envelope cap', () => {
   // The oversize guard writes to console.error. Capture it so the suite output stays clean
   // and so the log line itself can be asserted.

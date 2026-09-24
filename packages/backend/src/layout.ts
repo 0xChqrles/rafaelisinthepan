@@ -11,6 +11,8 @@
 // - listable by a date PREFIX (ListObjects "2026-" for a year, "2026-06" for a month);
 // - <date> is the GAME DAY this puzzle is served as ("YYYY-MM-DD", the 22:00-ET day of
 //   #2/#6), NOT the day it was generated. The puzzle's words live in the file, not the key.
+// - A BONUS puzzle (shared bonus.ts) takes its ADDRESS, `bonus/<id>`, in the day's slot:
+//   `bonus/<id>.<lang>.json`, one prefix apart, so no day listing ever meets it.
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 

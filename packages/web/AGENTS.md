@@ -2385,7 +2385,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   date-shaped segment → `home` redirect, while a **non-date** second segment keeps the old
   tolerance (`/<lang>/xyz` → today's game). `parseRoute` takes the range bounds as an
   injected arg (App passes the client `activeDate`) so parsing stays pure/testable.
-  `usePuzzle(lang, date?)` fetches the given date, else the active day (unchanged); the
+  A BONUS puzzle (root `AGENTS.md`, 2026-09-24) is `/<lang>/bonus/<id>` → the game with
+  `bonusId` (a broken id → `home`); `usePuzzle(lang, date?, bonusId?)` answers a
+  `PuzzleRef`, which `Game`/`SolvedScreen`/`PuzzleTitle` take in place of a day number.
+  `usePuzzle` fetches the given date, else the active day (unchanged); the
   404→`noPuzzle` path is reused as-is. The calendar reads each SENTENCE day's status
   from the **private server summary** (#211's month read, `state/history.ts`) through
   `state/status.ts` `statusOf`. It was the persisted rounds

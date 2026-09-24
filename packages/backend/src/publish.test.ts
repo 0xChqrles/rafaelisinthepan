@@ -10,7 +10,7 @@
 // The stack-output lookup itself is impure (AWS) and lives outside this pure function.
 
 import { describe, it, expect } from 'vitest';
-import { planPublish } from './publish';
+import { mintBonusId, planPublish } from './publish';
 import { activeDate } from '@whippin/shared';
 import { sliceKey, storeKey } from './layout';
 
@@ -64,5 +64,37 @@ describe('planPublish — the derivation slice beside the puzzle (#203)', () => 
     const plan = planPublish({ s3: true, day: '2026-07-01' }, 'fr', NOON_UTC, 'deployed-bucket');
     expect(plan.target).toEqual({ kind: 's3', bucket: 'deployed-bucket' });
     expect(plan.slice).toBe(sliceKey('2026-07-01', 'fr'));
+  });
+});
+
+// CONTRACT (bonus puzzles, 2026-09-24): `--bonus` publishes a test puzzle OUTSIDE the
+// calendar, keyed by its address `bonus/<id>` through the same key functions the readers
+// use; it is exclusive with `--day`, and a minted id is never one the store already holds.
+describe('planPublish — a bonus puzzle', () => {
+  it('keys the puzzle and its slice by the bonus address, locally and on S3', () => {
+    const local = planPublish({ s3: false, bonusId: '1234567' }, 'fr', NOON_UTC);
+    expect(local.bonusId).toBe('1234567');
+    expect(local.key).toBe('bonus/1234567.fr.json');
+    expect(local.slice).toBe('bonus/1234567.fr.slice.json.gz');
+    const s3 = planPublish({ s3: true, bonusId: '1234567' }, 'fr', NOON_UTC, 'deployed-bucket');
+    expect(s3.target).toEqual({ kind: 's3', bucket: 'deployed-bucket' });
+    expect(s3.key).toBe(storeKey('bonus/1234567', 'fr'));
+  });
+
+  it('refuses a bonus that is also a day, or a malformed id', () => {
+    expect(() => planPublish({ s3: false, day: '2026-07-01', bonusId: '1234567' }, 'fr', NOON_UTC)).toThrow(/exclusive/);
+    expect(() => planPublish({ s3: false, bonusId: '0123456' }, 'fr', NOON_UTC)).toThrow();
+  });
+
+  it('mints a seven-digit id the store does not hold', async () => {
+    const seen: string[] = [];
+    const id = await mintBonusId(async (candidate) => {
+      seen.push(candidate);
+      return seen.length < 3; // the first two draws are taken
+    });
+    expect(id).toMatch(/^[1-9][0-9]{6}$/);
+    expect(seen).toHaveLength(3);
+    expect(id).toBe(seen[2]);
+    await expect(mintBonusId(async () => true)).rejects.toThrow();
   });
 });
