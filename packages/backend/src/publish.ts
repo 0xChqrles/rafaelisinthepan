@@ -29,6 +29,7 @@ import {
   isBonusId,
   BONUS_ID_MAX,
   BONUS_ID_MIN,
+  VOCAB_BUILDS,
   type Puzzle,
 } from '@whippin/shared';
 import { defaultLocalStoreRoot, isValidDate, sliceKey, storeKey } from './layout';
@@ -131,12 +132,14 @@ export function planPublish(
   return { day, ...bonus, key, slice, target: { kind: 'local' } };
 }
 
-// A fresh bonus id, never one already published: `taken(id)` probes the store (the local
-// dir or the bucket). Random over the seven-digit range, so a link is the only way in.
-export async function mintBonusId(taken: (id: string) => Promise<boolean>): Promise<string> {
+// A fresh bonus id, never one already published in ANY supported language: `taken(id,
+// lang)` probes the store (the local dir or the bucket). Random over the seven-digit range,
+// so a link is the only way in.
+export async function mintBonusId(taken: (id: string, lang: string) => Promise<boolean>): Promise<string> {
   for (let attempt = 0; attempt < 20; attempt++) {
     const id = String(randomInt(BONUS_ID_MIN, BONUS_ID_MAX + 1));
-    if (!(await taken(id))) return id;
+    const occupied = await Promise.all(Object.keys(VOCAB_BUILDS).map((lang) => taken(id, lang)));
+    if (occupied.every((exists) => !exists)) return id;
   }
   throw new Error('could not mint a free bonus id (20 draws taken).');
 }
@@ -204,8 +207,8 @@ async function main() {
 
   let bonusId: string | undefined;
   if (args.bonus === true) {
-    bonusId = await mintBonusId(async (id) => {
-      const key = storeKey(bonusAddress(id), lang);
+    bonusId = await mintBonusId(async (id, candidateLang) => {
+      const key = storeKey(bonusAddress(id), candidateLang);
       if (!deployed) return access(path.join(root, key)).then(() => true, () => false);
       const { S3Client, HeadObjectCommand } = await import('@aws-sdk/client-s3');
       const { isNotFound } = await import('./store');

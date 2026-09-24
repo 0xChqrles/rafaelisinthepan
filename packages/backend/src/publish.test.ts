@@ -11,7 +11,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { mintBonusId, planPublish } from './publish';
-import { activeDate } from '@whippin/shared';
+import { activeDate, VOCAB_BUILDS } from '@whippin/shared';
 import { sliceKey, storeKey } from './layout';
 
 // Noon UTC = mid-morning in New York, well before the 22:00-ET active-day reset.
@@ -86,15 +86,18 @@ describe('planPublish — a bonus puzzle', () => {
     expect(() => planPublish({ s3: false, bonusId: '0123456' }, 'fr', NOON_UTC)).toThrow();
   });
 
-  it('mints a seven-digit id the store does not hold', async () => {
-    const seen: string[] = [];
-    const id = await mintBonusId(async (candidate) => {
-      seen.push(candidate);
-      return seen.length < 3; // the first two draws are taken
+  it('rejects an id held in another language before minting a fresh one', async () => {
+    const langs = Object.keys(VOCAB_BUILDS);
+    const otherLang = langs.at(-1)!;
+    const seen: { id: string; lang: string }[] = [];
+    const id = await mintBonusId(async (candidate, lang) => {
+      seen.push({ id: candidate, lang });
+      return seen.length <= langs.length && lang === otherLang; // only the first draw is taken
     });
     expect(id).toMatch(/^[1-9][0-9]{6}$/);
-    expect(seen).toHaveLength(3);
-    expect(id).toBe(seen[2]);
-    await expect(mintBonusId(async () => true)).rejects.toThrow();
+    expect(seen).toHaveLength(2 * langs.length);
+    expect(new Set(seen.slice(0, langs.length).map(({ lang }) => lang))).toEqual(new Set(langs));
+    expect(new Set(seen.slice(langs.length).map(({ lang }) => lang))).toEqual(new Set(langs));
+    await expect(mintBonusId(async () => true)).rejects.toThrow(/could not mint/);
   });
 });
