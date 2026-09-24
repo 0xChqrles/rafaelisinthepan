@@ -205,7 +205,7 @@ def _three_hole_draft(tmp_path):
 def _two_of_three(shown):
     def pick(_claude, _marked, info, _chain):
         shown.extend(info)
-        return {"starts": {"chat": "lapin", "chien": "loup"}, "replace": None, "play": ""}
+        return {"starts": {"chat": "lapin", "chien": "loup"}, "replace": None, "why": ""}
     return pick
 
 

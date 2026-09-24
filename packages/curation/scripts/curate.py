@@ -9,7 +9,7 @@ model reads every one that is left with the `taste` skill and shortlists the bes
 it COMPARES the best lines and chooses the day — the line and its three words, in the
 order players will find them. Code measures what a reader puts in each blank, how much
 the sentence hands a word over and where the reader's words land in the hole's map, and
-hands those notes to the model, which chooses the start words by playing the day out (or
+hands those notes to the model, which chooses the start words by the taste (or
 swaps a word no start can save). `gen_phrase` writes the puzzle headless. The run's log
 — every choice and its reason — goes to `runs/<stamp>.md`, the puzzle to generation's
 output directory.
@@ -320,7 +320,7 @@ def _word_rank(frequency_rank):
 def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, str],
                   forms: dict[str, str], frequency_rank, pairs: dict[str, set[str]] | None = None,
                   chain: list[str] | None = None, fillers: dict[str, list[str]] | None = None) -> dict[str, str] | None:
-    """The model picks the three start words together, playing the day out, from each
+    """The model picks the three start words together, by the taste, from each
     hole's band (elision-clean, not too rare, never a start this secret was played with
     before — `pairs`, the archive's permanent blacklist — nearest first), reading the
     sentence, each slot's form, code's notes and the chain the day was chosen on. The
@@ -376,8 +376,8 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
         word = picked[h["slug"]]
         rank = next((o["rank"] for o in h["options"] if o["word"] == word), None)
         log(f"- start for « {h['secret']} »: « {word} » (rank {rank})")
-    if answer["play"]:
-        log(f"  - played out: {answer['play']}")
+    if answer.get("why"):
+        log(f"  - why: {answer['why']}")
     return picked
 
 
@@ -686,7 +686,7 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
               text: str, source_base: dict, frequency_rank, neighbour_rank, lang: str, replay: str | None):
     """One chosen day, built: code measures each hidden word — what a reader puts in its
     blank, how much the sentence hands it over — the page is cut (a book), and
-    `generate` writes the puzzle, the start words chosen by playing the day out. A word
+    `generate` writes the puzzle, the start words chosen by the taste. A word
     the start step swaps (Replace) is replaced by another word of the line that can be
     hidden, REPLACE_ROUNDS times."""
     sentence, tokens = line["sentence"], line["tokens"]
