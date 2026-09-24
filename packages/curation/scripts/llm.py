@@ -102,7 +102,7 @@ def taste() -> str:
 
 
 def laws() -> str:
-    return "\n\n".join(skill_section(h) for h in ("## The two laws", "## Stands alone", "## The trio rules"))
+    return "\n\n".join(skill_section(h) for h in ("## The quotation rule", "## Stands alone", "## The trio rules"))
 
 
 def start_rules() -> str:
@@ -140,7 +140,7 @@ Return {{"picks": [{{"n": <index>, "why": "<one line>"}}, ...]}}, best first."""
 
 
 def rank_sentences(claude: Claude, picks: list[dict], limit: int) -> list[dict]:
-    if len(picks) <= limit:
+    if len(picks) <= 1:
         return picks
     listing = "\n".join(f"{i}. {p['sentence']}  ({p['why']})" for i, p in enumerate(picks))
     answer = claude.json(f"""These sentences were shortlisted from one book for a daily French word game
@@ -158,7 +158,7 @@ Return {{"ranked": [<index>, ...]}}, best first, at most {limit} entries.""")
         n = int(n)
         if 0 <= n < len(picks) and picks[n] not in ranked:
             ranked.append(picks[n])
-    return ranked or picks[:limit]
+    return ranked
 
 
 def stands_alone(claude: Claude, sentence: str) -> dict:

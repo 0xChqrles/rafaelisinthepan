@@ -9,38 +9,19 @@ You are sourcing material for the daily sentence-reconstruction game. A puzzle =
 short text + 3 secret words the player rediscovers via embedding-neighbor feedback. "A
 sentence" here means the puzzle's text: one sentence, or a few short consecutive ones
 read as one (a micro-story, ≤ ~33 words) — what matters is a short run of words with a
-meaning. It must survive having its three best words removed WITHOUT the remaining
-context giving them back, to a human or to an LLM. The automated curator (#260) applies
-the same rules headlessly; this skill is the interactive version.
+meaning. The `taste` skill judges the line and the three words; the checks below keep
+the result playable. The automated curator (#260) applies them headlessly; this skill
+is the interactive version.
 
-## The two laws
+## The quotation rule
 
-1. **Only the widely quoted LINE is out; the book is never out.** A sentence an LLM
-   has memorized is dead (it lands the secrets in ~3 tries): the lines readers copy
-   onto Babelio, quote sites, essays and bac anthologies. Famous authors and famous
-   books are fine, *L'Étranger* included; *Aujourd'hui, maman est morte* is not. Decide
-   per sentence: a mid-narrative line from a canonical novel is as good as one from a
-   mid-list novel. Always source from the primary text (epub, .srt, lyrics page) and
-   verify there: quote sites carry misattributions (a Babelio "Perec" line did not exist
-   in the book), so they serve as discovery leads only.
-
-2. **Every secret must pass the substitutability test.** In the holed sentence, each
-   blank must admit many plausible fillers. Reject a secret when it is:
-   - collocation-forced: "un dernier _verre_ au comptoir", "faire l'_amour_", "tuer le
-     _temps_", "l'_horloge_ parlante", "avoir _envie_";
-   - antithesis/parallel-forced: "belle comme le jour … belles comme la _nuit_"; mirror
-     structures complete themselves;
-   - context-forced: the context leaves a reader ONE or TWO possible words — « [arrêt]
-     cardiaque » (arrêt or crise, nothing else), the May-68 tear-gas anecdote handing
-     you _grenade_. A word the context merely HELPS toward, with several possible
-     fillers — « il prenait tant de [cocaïne] qu'il avait hérité d'un prénom
-     sud-américain » — is not a fault, it is the game (the user's rule, 2026-09-10:
-     the goal is to guess WITH the context);
-   - given away by a visible sibling: same-lemma twin visible in the sentence
-     (_appartenaient_/_appartiendraient_), or a near-synonym visible (_amour_ visible →
-     _amoureux_ secret is warm on try one).
-   Good example: "un monde de fausses places, de fausses rues, d'avenues _fantômes_" —
-   dozens of nouns fit each slot.
+**Only the widely quoted LINE is out; the book is never out.** The lines readers copy
+onto Babelio, quote sites, essays and bac anthologies are out. Famous authors and famous
+books are fine, *L'Étranger* included; *Aujourd'hui, maman est morte* is not. Decide
+per sentence: a mid-narrative line from a canonical novel is as good as one from a
+mid-list novel. Always source from the primary text (epub, .srt, lyrics page) and
+verify there: quote sites carry misattributions (a Babelio "Perec" line did not exist
+in the book), so they serve as discovery leads only.
 
 ## Stands alone (user rule 2026-09-18)
 
@@ -64,16 +45,12 @@ alone. The automated curator asks the model exactly that and strikes on a refusa
 
 ## The trio rules
 
-Which words are worth hiding — the punch, the image, the exact word, the chain, how hard
-a hole plays in its line — is TASTE, and taste lives in the `taste` skill: read it. The
-practical rules:
+Which words are worth hiding is TASTE, and taste lives in the `taste` skill: read it.
+The practical rules:
 
 - Exactly three distinct words. A word repeated in the sentence makes one hole per
   occurrence sharing one rank map: a feature (the Marx *vermine* day), not a bug.
-- In a fixed pair, hide the specific word, not the head: « arrêt [cardiaque] » has many
-  fillers, « [arrêt] cardiaque » two.
 - The start words must leave the displayed sentence valid French (below).
-- No trio worth playing → next sentence. Never bend the taste to save a sentence you like.
 
 ## The start word
 
@@ -184,13 +161,13 @@ can act on:
    micro-stories (2–4 short sentences, ≤ ~30 words total) are often the best
    candidates. Grepping alone missed every winner at least once.
 3. **Select candidates**: right length, self-contained, felt; then pick a secret trio
-   under the trio rules above, each secret passing the substitutability test.
-4. **Screen the LINE for memorization** (WebSearch, exact quoted phrase):
+   with the `taste` skill and the playable facts in the trio rules above.
+4. **Screen the LINE for quotation** (WebSearch, exact quoted phrase):
    - zero hits, or hits only on full-text scans → clean;
    - hits on quote pages, essays, bac/anthology PDFs, song samples → REJECT the line
      (not the book: keep mining it);
-   - subtler: if the search result summary *recognizes the source from the phrase
-     alone*, an LLM knows it → reject (this killed "se pâmaient devant les soldats").
+   - a model's memory of an unquoted line is not a strike; verify any apparent quote
+     against the primary text and where readers would have met it.
 5. **Check the game data** (never skip):
    - every secret's slug ∈ `packages/web/public/vocab/fr.json` (slug = lowercase,
      ligatures expanded, accents stripped, keep `[a-z-]`);
@@ -198,7 +175,7 @@ can act on:
      `packages/generation/output/word/fr/**/*.json`.
 6. **Deliver 3–5 candidates**, each with: the exact sentence (accents/punctuation
    kept), recommended trio + alternates, source metadata (`kind` book/music/poem/movie
-   + author + work), memorization-risk flag, and a ready command:
+   + author + work), quotation-risk flag, and a ready command:
    `pnpm gen:phrase "<sentence>" --lang fr --words a b c --kind K --author "A" --work "W"`
    (no `--` separator; exactly 3 distinct words). For .srt sources suggest an ear-check
    against the scene.

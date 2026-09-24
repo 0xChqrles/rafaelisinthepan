@@ -251,6 +251,12 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
                     Path(path).unlink(missing_ok=True)
                     Path(_sidecar(path)).unlink(missing_ok=True)
                     raise
+                if picked is None:
+                    # A partial or unusable answer cannot leave gen_phrase's random
+                    # band pick in a candidate day. The model must choose all three.
+                    Path(path).unlink(missing_ok=True)
+                    Path(_sidecar(path)).unlink(missing_ok=True)
+                    return None
                 if picked:
                     _adopt(starts, tried, picked)
                     continue
@@ -313,13 +319,14 @@ def _word_rank(frequency_rank):
 
 def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, str],
                   forms: dict[str, str], frequency_rank, pairs: dict[str, set[str]] | None = None,
-                  chain: list[str] | None = None, fillers: dict[str, list[str]] | None = None) -> dict[str, str]:
+                  chain: list[str] | None = None, fillers: dict[str, list[str]] | None = None) -> dict[str, str] | None:
     """The model picks the three start words together, playing the day out, from each
     hole's band (elision-clean, not too rare, never a start this secret was played with
     before — `pairs`, the archive's permanent blacklist — nearest first), reading the
     sentence, each slot's form, code's notes and the chain the day was chosen on. The
     notes add where the reader's words land in the hole's own map. Raises Replace when the
-    model names a hidden word no start can save."""
+    model names a hidden word no start can save. Returns None when the model gives no
+    complete trio of valid starts; a random generator pick must not become the day."""
     pairs, fillers = pairs or {}, fillers or {}
     puzzle = json.loads(open(path, encoding="utf-8").read())
     words, holes = puzzle["words"], puzzle["holes"]
@@ -333,8 +340,7 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
                                       exclude=pairs.get(key, ()),
                                       frequency_rank=_word_rank(frequency_rank))[:st.START_OPTIONS]
         if not options:
-            log(f"- no elision-clean start in the band for « {h['secret']['word']} »; the band pick stays")
-            continue
+            log(f"- no elision-clean start in the band for « {h['secret']['word']} »; the model must replace it")
         nearest = rules.map_nearest_filler(puzzle["ranks"][key], key, fillers.get(key, []))
         land = ("" if nearest is None else
                 f"; the reader's nearest word « {nearest[0]} » sits at rank "
@@ -343,14 +349,16 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
         log(f"- notes for « {h['secret']['word']} »: {notes}")
         info.append({"secret": h["secret"]["word"], "slug": key, "options": options, "notes": notes,
                      "slot": f"form {forms.get(h['secret']['word'], '?')}, after « {st.previous_token(words, h) or '—'} »"})
-    if not info:
-        return {}
     answer = llm.pick_starts(claude, marked, info, chain)
     if answer["replace"]:
         swap = answer["replace"]
         log(f"- the start words can't save « {swap['secret']} »: swap for « {swap['with']} » — {swap['why']}")
         raise Replace(swap["secret"], swap["with"], swap["why"])
     picked = answer["starts"]
+    if set(picked) != set(by_secret):
+        missing = [h["secret"]["word"] for key, h in by_secret.items() if key not in picked]
+        log(f"- no complete trio of valid start words (missing: {', '.join(missing)}); the draft is refused")
+        return None
     for h in info:
         word = picked.get(h["slug"])
         rank = next((o["rank"] for o in h["options"] if o["word"] == word), None)

@@ -115,7 +115,8 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   trio.
 - **The model shortlists with taste, then CHOOSES THE DAY BY COMPARISON.** It reads every
   kept line, `CHUNK` (150) at a time, picks at most `PICKS_PER_CHUNK` (6) by the taste
-  skill and ranks a `SHORTLIST` (20). `curate.day` then shows it `COMPARE` (5) lines at a
+  skill and ranks a `SHORTLIST` (20), even when fewer than 20 lines were picked (one line
+  needs no ordering). `curate.day` then shows it `COMPARE` (5) lines at a
   time, each with the words code allows (`rules.initial_candidates`), and
   `llm.choose_day` names the best line and its three words in the order players will
   find them, playing each out — or declines. Code checks the facts: three distinct words
@@ -169,7 +170,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   ANNOTATION (`llm.widely_known`), never a strike.
 - **Taste has ONE home, the `taste` skill, read WHOLE by every prompt that chooses** (the
   shortlist, the day, the starts); the `find-sentences` skill keeps the practical laws
-  the prompts quote (`## The two laws`, `## Stands alone`, `## The start word`,
+  the prompts quote (`## The quotation rule`, `## Stands alone`, `## The start word`,
   `## The page`). Edit the skills, never a prompt copy.
 - **The transport is the benchmark's** (`llm_play._agent_sdk_turn`, the paid-Claude.ai
   guard, the conflict-env scrub): one fresh conversation per question, model
@@ -184,7 +185,8 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   (`starts.start_candidates`: rank `START_RANK_MIN..MAX`, no variant, elision-clean, not
   past `MAX_START_FREQ_RANK` = 40000 in the corpus order — « hétéroptère » is out). The
   first successful gen_phrase run only supplies the rank maps; gen_phrase then reruns
-  with `--start MOT=DEPART` per hole (#260). **A secret/start PAIR is blacklisted for
+  with `--start MOT=DEPART` per hole (#260). An incomplete model choice refuses and erases
+  the draft, never keeping a random generator pick. **A secret/start PAIR is blacklisted for
   good** (user-decided 2026-09-08): `shelf.archive()['pairs']` holds every start each
   secret was ever played with, `choose_starts` and `check_starts` exclude them from the
   band, and a generated start that repeats a pair is refused and re-picked.

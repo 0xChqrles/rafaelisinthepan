@@ -54,6 +54,47 @@ def test_the_model_reads_every_line_the_judge_keeps(monkeypatch):
     assert chunks == [["a", "b"], ["c"]]
 
 
+def test_a_short_shortlist_is_ranked_before_comparing_batches():
+    class Claude:
+        calls = 0
+
+        def json(self, prompt):
+            self.calls += 1
+            assert "Shortlist:" in prompt
+            return {"ranked": list(range(7, -1, -1))}
+
+    claude = Claude()
+    picks = [{"sentence": str(i), "why": ""} for i in range(8)]
+    ranked = curate.llm.rank_sentences(claude, picks, curate.SHORTLIST)
+    assert claude.calls == 1
+    assert [p["sentence"] for p in ranked] == [str(i) for i in range(7, -1, -1)]
+
+
+def test_an_empty_ranking_declines_the_shortlist_instead_of_using_reading_order():
+    class Claude:
+        def json(self, _prompt):
+            return {"ranked": []}
+
+    picks = [{"sentence": str(i), "why": ""} for i in range(8)]
+    assert curate.llm.rank_sentences(Claude(), picks, curate.SHORTLIST) == []
+
+
+def test_day_choice_prompt_has_no_hard_substitutability_veto():
+    class Claude:
+        prompt = ""
+
+        def json(self, prompt):
+            self.prompt = prompt
+            return {"line": None, "why": "none"}
+
+    claude = Claude()
+    curate.llm.choose_day(claude, [{"sentence": "Le chat dort.", "allowed": ["chat", "dort", "lit"]}], [])
+    assert "## The quotation rule" in claude.prompt
+    assert "Exactly three distinct words" in claude.prompt
+    assert "Every secret must pass the substitutability test" not in claude.prompt
+    assert "Reject a secret when" not in claude.prompt
+
+
 def test_an_empty_list_asks_the_judge_nothing():
     assert curate.judge_sentences(Log(), [], judge=None) == []
 
@@ -127,6 +168,47 @@ def test_a_swap_from_the_start_step_erases_the_draft(tmp_path, monkeypatch):
         curate.generate(object(), Log(), "s", ["chat", "chien", "ours"], {}, "fr")
     assert (caught.value.secret, caught.value.with_) == ("ours", "loup")
     assert not draft.exists() and not sidecar.exists()
+
+
+def test_an_incomplete_start_choice_erases_the_draft(tmp_path, monkeypatch):
+    draft = tmp_path / "x_y_z.json"
+    sidecar = tmp_path / "x_y_z.contextual.json"
+
+    def run(*_a, **_k):
+        draft.write_text("{}", encoding="utf-8")
+        sidecar.write_text("{}", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stderr="", stdout=f"écrite dans {draft} :"), []
+
+    monkeypatch.setattr(curate, "run_gen_phrase", run)
+    monkeypatch.setattr(curate, "choose_starts", lambda *_a: None)
+    monkeypatch.setattr(curate, "check_starts", lambda *_a: pytest.fail("an incomplete choice is not checked"))
+    assert curate.generate(object(), Log(), "s", ["chat", "chien", "ours"], {}, "fr") is None
+    assert not draft.exists() and not sidecar.exists()
+
+
+def test_start_choice_requires_all_three_valid_candidates(tmp_path, monkeypatch):
+    puzzle = {
+        "words": ["un", "chat", "un", "chien", "une", "pierre"],
+        "holes": [
+            {"pos": i, "secret": {"word": word, "slug": word}, "start": {"word": "départ"}}
+            for i, word in ((1, "chat"), (3, "chien"), (5, "pierre"))
+        ],
+        "ranks": {word: {start: {"word": start, "rank": 120}} for word, start in
+                  (("chat", "lapin"), ("chien", "loup"), ("pierre", "brique"))},
+    }
+    path = tmp_path / "draft.json"
+    path.write_text(json.dumps(puzzle), encoding="utf-8")
+    shown = []
+
+    def pick(_claude, _marked, info, _chain):
+        shown.extend(info)
+        return {"starts": {"chat": "lapin", "chien": "loup"}, "replace": None, "play": ""}
+
+    monkeypatch.setattr(curate.llm, "pick_starts", pick)
+    log = Log()
+    assert curate.choose_starts(object(), log, str(path), {}, {}, lambda _t: None) is None
+    assert len(shown) == 3
+    assert any("missing: pierre" in line for line in log)
 
 
 # --- the work is picked by rule, not by the model (user-decided 2026-09-20) --------------
@@ -207,11 +289,11 @@ def test_retry_reuses_scores_only_for_unchanged_context(tmp_path, monkeypatch, c
         return SimpleNamespace(returncode=0, stderr="", stdout=f"écrite dans {output} :"), []
 
     monkeypatch.setattr(curate, "run_gen_phrase", run)
-    monkeypatch.setattr(curate, "choose_starts", lambda *a: {})
-    monkeypatch.setattr(curate, "check_starts", lambda *a: {})
+    monkeypatch.setattr(curate, "choose_starts", lambda *a: None)
+    monkeypatch.setattr(curate, "check_starts", lambda *a: pytest.fail("an incomplete choice is not checked"))
     result = curate.generate(object(), Log(), sentence, words, {"excerpt": excerpt}, "fr",
                              replay=str(sidecar))
-    assert result == output
+    assert result is None
     assert seen == [str(sidecar) if change is None else None]
 
 
