@@ -219,6 +219,9 @@ def forget(index: dict, work: dict, lang: str) -> list[str]:
         except (OSError, ValueError):
             continue
         if slug(src.get("author", "")) == author and slug(src.get("work", "")) == title:
+            # A retried WORK starts over, so the judge's scores beside it go too (a
+            # retried SENTENCE keeps them: `curate.retry_target` replays them).
+            path.with_name(path.stem + ".contextual.json").unlink(missing_ok=True)
             erase_puzzle(path)
             deleted.append(str(path))
     return deleted
