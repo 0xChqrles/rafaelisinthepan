@@ -16,6 +16,7 @@ from rules import (
     open_candidates,
     map_nearest_filler,
     out_of_reach,
+    conflicts,
     pair_conflict,
     prune,
     refusals,
@@ -359,4 +360,13 @@ def test_an_obvious_word_is_refused_even_first():
     trio = [_by("chat"), _by("pierre"), _by("lune")]
     problems, _ = refusals(trio, SENT, similarity=no_sim, fillers=obvious_chat, handed_over=lambda ws: set())
     assert [w for w, _ in problems] == ["chat"] and "obvious" in problems[0][1]
+
+
+def test_conflicts_list_every_forbidden_pair_once_with_its_rule():
+    cands = initial_candidates(SENT, in_vocab=VOCAB.__contains__)
+    pairs = conflicts(cands, SENT, similarity=no_sim)
+    assert ("dort", "brille", "two verbs (at most one verb)") in pairs
+    assert any({a, b} == {"chat", "dort"} for a, b, _ in pairs)
+    assert not any({a, b} == {"chat", "pierre"} for a, b, _ in pairs)
+    assert len({frozenset((a, b)) for a, b, _ in pairs}) == len(pairs)
 

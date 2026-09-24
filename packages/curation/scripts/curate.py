@@ -681,9 +681,10 @@ def attempt(claude: llm.Claude, log: Log, sentence: str, book: dict, archive: di
         first_of.setdefault(t.slug, t)
     source = {"kind": book["kind"], "author": book.get("author", ""), "work": book.get("title", "")}
     refused: list[str] = []
+    apart = rules.conflicts(candidates, tokens, similarity=similarity)
     paged = False
     for n in range(1, rules.TRIO_ROUNDS + 1):
-        proposal = llm.choose_trio(claude, tokens, candidates, refused)
+        proposal = llm.choose_trio(claude, tokens, candidates, refused, apart)
         if proposal is None:
             log("- rejected: the model finds no three words worth finding")
             return None

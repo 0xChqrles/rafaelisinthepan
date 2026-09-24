@@ -137,7 +137,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   the most fillers the obviousness filter asks a reader for), `OBVIOUS_MAX` (2),
   `TWIN_RANK` (3), `PLAIN_WORD_RANK` (40000, ONE boundary with `starts.MAX_START_FREQ_RANK`),
   `FILLER_NEAR_MAX` (100);
-  `TRIO_ROUNDS` (3 proposals per sentence); and at the top of `curate.py`: `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK`
+  `TRIO_ROUNDS` (5 proposals per sentence); and at the top of `curate.py`: `MAX_SENTENCES` (600), `CHUNK` (150), `PICKS_PER_CHUNK`
   (6), `SHORTLIST` (20). The mechanical filter (`sentences.is_candidate`) also refuses a
   unit that OPENS on a quotation mark (reported speech, or an argument with a line the
   player cannot see — the same day's « “Il sait qu’il meurt” est une pensée profonde »),
@@ -268,8 +268,10 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   the word, read as a player with no start word, then think of the chain). With room to
   think, the model names the three words in the order players will find them and the
   PATH. `rules.refusals` checks them (pair rules → the reader's fillers → the giveaway
-  judge → one easy entry, first only); a refusal is told back and the model proposes
-  again, `TRIO_ROUNDS` times, then the sentence is abandoned; it may also DECLINE a
+  judge → one easy entry, first only); the pairs code forbids are SHOWN to it up front
+  (`rules.conflicts`, free — on the first two runs 14 of 36 refusals were pair rules it
+  could not see); a refusal is told back and the model proposes again, `TRIO_ROUNDS`
+  times, then the sentence is abandoned; it may also DECLINE a
   sentence with no three words worth finding. The path goes to the start-word prompts
   (`pick_starts`, `pick_start`), which set the starts along it. Measured before the
   switch (side by side, 8 sentences, 42 calls): the user's exact trio on 09-07, two of

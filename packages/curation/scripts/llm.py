@@ -216,13 +216,17 @@ def holed(tokens, blanks: set[int], mark: int | None = None) -> str:
     return re.sub(r"\s+([,.;:!?…»)])", r"\1", re.sub(r"([«(]|\w')\s+", r"\1", " ".join(parts)))
 
 
-def choose_trio(claude: Claude, tokens, candidates, refused: list[str]) -> dict | None:
+def choose_trio(claude: Claude, tokens, candidates, refused: list[str],
+                apart: list[tuple[str, str, str]] = ()) -> dict | None:
     """TASTE FIRST (2026-09-24): the model reads the sentence as the curator does by hand
     and names the three words worth hiding, in the order players will find them, from the
     words code allows (`candidates`). `refused` tells it what code already refused and
-    why. Returns {"words": [3 display words], "path": [lines], "why": str}, or None when
-    it declines the sentence. Code checks the answer (`rules.refusals`)."""
+    why, and `apart` the pairs code forbids together (`rules.conflicts`). Returns
+    {"words": [3 display words], "path": [lines], "why": str}, or None when it declines
+    the sentence. Code checks the answer (`rules.refusals`)."""
     allowed = ", ".join(dict.fromkeys(t.text for t in candidates))
+    never = ("\nPairs that can never share a trio (code's rules):\n"
+             + "\n".join(f"- {a} + {b}: {why}" for a, b, why in apart) + "\n") if apart else ""
     again = ("\nAlready refused by the checks (measured on real play) — propose another trio:\n"
              + "\n".join(f"- {r}" for r in refused) + "\n") if refused else ""
     answer = claude.json(f"""You curate today's puzzle for a daily French word game. Three words of a sentence
@@ -250,7 +254,7 @@ The sentence:
 
 The words code allows as secrets (word type, frequency and cooldown already checked):
 {allowed}
-{again}
+{never}{again}
 Think it through, then name the three words in the order players will find them.
 Return {{"words": ["<first>", "<second>", "<third>"], "path": ["<first>: <why players reach it first>", "<second>: <what the first gives it>", "<third>: <what the first two give it>"], "why": "<one line: why this day is worth playing>"}},
 or {{"words": null, "why": "<one line>"}} to decline — only when you cannot find three

@@ -98,8 +98,10 @@ FILLER_NEAR_MAX = 100
 # Secrets per puzzle (the sentence schema: exactly three distinct slugs).
 TRIO = 3
 # How many trios the model may propose for one sentence before it is abandoned: each
-# refusal is told back to it (`refusals`, `out_of_reach`) and it proposes again.
-TRIO_ROUNDS = 3
+# refusal is told back to it (`refusals`, `out_of_reach`) and it proposes again. 5, not
+# 3 (2026-09-24): on the first two taste-first runs, 3 rounds ran out on refusals the
+# model could not foresee.
+TRIO_ROUNDS = 5
 
 
 @dataclass(frozen=True)
@@ -297,6 +299,26 @@ class SearchLog:
 
     def note(self, msg: str) -> None:
         self.events.append(msg)
+
+
+def conflicts(candidates: list[Token], tokens: list[Token], *,
+              similarity: Callable[[Token, Token], float | None]) -> list[tuple[str, str, str]]:
+    """Every pair of candidate words that can never share a trio, as (word, word, why) —
+    `pair_conflict` both ways, one token per slug. Free to compute, so the model is SHOWN
+    them before it proposes: on the first two taste-first runs (2026-09-24), 14 of 36
+    refusals were pair rules it could not see."""
+    firsts: list[Token] = []
+    for c in candidates:
+        if c.slug not in {f.slug for f in firsts}:
+            firsts.append(c)
+    out = []
+    for i, a in enumerate(firsts):
+        for b in firsts[i + 1:]:
+            why = (pair_conflict(a, b, tokens, similarity=similarity)
+                   or pair_conflict(b, a, tokens, similarity=similarity))
+            if why:
+                out.append((a.text, b.text, why))
+    return out
 
 
 def refusals(
