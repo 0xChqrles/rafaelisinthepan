@@ -158,7 +158,9 @@ Return {{"ranked": [<index>, ...]}}, best first, at most {limit} entries.""")
         n = int(n)
         if 0 <= n < len(picks) and picks[n] not in ranked:
             ranked.append(picks[n])
-    return ranked
+    # The question asks for an ORDER, never a refusal: an empty or unreadable answer is no
+    # judgement, and the reading's picks keep their reading order rather than being lost.
+    return ranked or picks[:limit]
 
 
 def stands_alone(claude: Claude, sentence: str) -> dict:
@@ -348,7 +350,10 @@ def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict],
     options."""
     blocks = []
     for h in holes:
-        opts = ", ".join(f"{o['word']} ({o['rank']})" for o in h["options"])
+        # A hole with no candidate cannot get a start: say so, so the model names a
+        # replacement instead of leaving the hole out.
+        opts = (", ".join(f"{o['word']} ({o['rank']})" for o in h["options"])
+                or "NONE — no start fits this slot; name a replacement for this word")
         blocks.append(f"Hole « {h['secret']} » (slot: {h.get('slot', 'as the hidden word')})\n"
                       f"  measured: {h.get('notes', 'nothing')}\n"
                       f"  start candidates (word (rank), closest first): {opts}")

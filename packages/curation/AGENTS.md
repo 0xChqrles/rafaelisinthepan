@@ -116,7 +116,8 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 - **The model shortlists with taste, then CHOOSES THE DAY BY COMPARISON.** It reads every
   kept line, `CHUNK` (150) at a time, picks at most `PICKS_PER_CHUNK` (6) by the taste
   skill and ranks a `SHORTLIST` (20), even when fewer than 20 lines were picked (one line
-  needs no ordering). `curate.day` then shows it `COMPARE` (5) lines at a
+  needs no ordering; an empty or unreadable ranking keeps the reading order — the question
+  asks for an order, never a refusal). `curate.day` then shows it `COMPARE` (5) lines at a
   time, each with the words code allows (`rules.initial_candidates`), and
   `llm.choose_day` names the best line and its three words in the order players will
   find them, playing each out — or declines. Code checks the facts: three distinct words
@@ -185,8 +186,10 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   (`starts.start_candidates`: rank `START_RANK_MIN..MAX`, no variant, elision-clean, not
   past `MAX_START_FREQ_RANK` = 40000 in the corpus order — « hétéroptère » is out). The
   first successful gen_phrase run only supplies the rank maps; gen_phrase then reruns
-  with `--start MOT=DEPART` per hole (#260). An incomplete model choice refuses and erases
-  the draft, never keeping a random generator pick. **A secret/start PAIR is blacklisted for
+  with `--start MOT=DEPART` per hole (#260). A hole the answer leaves without a valid start
+  is asked again, alone, once (`llm.pick_start`); a hole with NO candidate is shown as such,
+  so the model names a replacement; still incomplete, the draft is refused and erased —
+  never a random generator pick. **A secret/start PAIR is blacklisted for
   good** (user-decided 2026-09-08): `shelf.archive()['pairs']` holds every start each
   secret was ever played with, `choose_starts` and `check_starts` exclude them from the
   band, and a generated start that repeats a pair is refused and re-picked.

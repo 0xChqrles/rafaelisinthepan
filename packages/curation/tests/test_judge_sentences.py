@@ -70,13 +70,14 @@ def test_a_short_shortlist_is_ranked_before_comparing_batches():
     assert [p["sentence"] for p in ranked] == [str(i) for i in range(7, -1, -1)]
 
 
-def test_an_empty_ranking_declines_the_shortlist_instead_of_using_reading_order():
+def test_an_empty_ranking_keeps_the_reading_order_instead_of_losing_the_shortlist():
+    # The question asks for an order, never a refusal: an empty answer is no judgement.
     class Claude:
         def json(self, _prompt):
             return {"ranked": []}
 
     picks = [{"sentence": str(i), "why": ""} for i in range(8)]
-    assert curate.llm.rank_sentences(Claude(), picks, curate.SHORTLIST) == []
+    assert curate.llm.rank_sentences(Claude(), picks, curate.SHORTLIST) == picks
 
 
 def test_day_choice_prompt_has_no_hard_substitutability_veto():
@@ -186,7 +187,7 @@ def test_an_incomplete_start_choice_erases_the_draft(tmp_path, monkeypatch):
     assert not draft.exists() and not sidecar.exists()
 
 
-def test_start_choice_requires_all_three_valid_candidates(tmp_path, monkeypatch):
+def _three_hole_draft(tmp_path):
     puzzle = {
         "words": ["un", "chat", "un", "chien", "une", "pierre"],
         "holes": [
@@ -198,17 +199,57 @@ def test_start_choice_requires_all_three_valid_candidates(tmp_path, monkeypatch)
     }
     path = tmp_path / "draft.json"
     path.write_text(json.dumps(puzzle), encoding="utf-8")
-    shown = []
+    return path
 
+
+def _two_of_three(shown):
     def pick(_claude, _marked, info, _chain):
         shown.extend(info)
         return {"starts": {"chat": "lapin", "chien": "loup"}, "replace": None, "play": ""}
+    return pick
 
-    monkeypatch.setattr(curate.llm, "pick_starts", pick)
+
+def test_a_hole_left_without_a_start_is_asked_again_alone(tmp_path, monkeypatch):
+    # A slip on one hole (a word not written as listed) costs one more question, not the
+    # day and its map; the re-asked sentence shows the starts already chosen.
+    path = _three_hole_draft(tmp_path)
+    shown, asked = [], []
+    monkeypatch.setattr(curate.llm, "pick_starts", _two_of_three(shown))
+
+    def pick_one(_claude, marked, secret, options, **_k):
+        asked.append((marked, secret, [o["word"] for o in options]))
+        return "brique"
+
+    monkeypatch.setattr(curate.llm, "pick_start", pick_one)
+    picked = curate.choose_starts(object(), Log(), str(path), {}, {}, lambda _t: None)
+    assert picked == {"chat": "lapin", "chien": "loup", "pierre": "brique"}
+    assert asked == [("un lapin un loup une [____]", "pierre", ["brique"])]
+
+
+def test_start_choice_requires_all_three_valid_candidates(tmp_path, monkeypatch):
+    path = _three_hole_draft(tmp_path)
+    shown = []
+    monkeypatch.setattr(curate.llm, "pick_starts", _two_of_three(shown))
+    monkeypatch.setattr(curate.llm, "pick_start", lambda *_a, **_k: None)
     log = Log()
     assert curate.choose_starts(object(), log, str(path), {}, {}, lambda _t: None) is None
     assert len(shown) == 3
     assert any("missing: pierre" in line for line in log)
+
+
+def test_a_hole_with_no_candidate_asks_for_a_replacement():
+    class Claude:
+        prompt = ""
+
+        def json(self, prompt):
+            self.prompt = prompt
+            return {"replace": {"secret": "pierre", "with": "une", "why": "no start fits"}}
+
+    claude = Claude()
+    holes = [{"secret": "pierre", "slug": "pierre", "options": [], "notes": ""}]
+    answer = curate.llm.pick_starts(claude, "une [pierre]", holes, None)
+    assert "NONE — no start fits this slot; name a replacement" in claude.prompt
+    assert answer["replace"]["secret"] == "pierre"
 
 
 # --- the work is picked by rule, not by the model (user-decided 2026-09-20) --------------

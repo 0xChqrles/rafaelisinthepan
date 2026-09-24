@@ -354,18 +354,28 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
         swap = answer["replace"]
         log(f"- the start words can't save « {swap['secret']} »: swap for « {swap['with']} » — {swap['why']}")
         raise Replace(swap["secret"], swap["with"], swap["why"])
-    picked = answer["starts"]
+    picked = dict(answer["starts"])
+    # A hole the answer left without a valid start — usually a word not written exactly as
+    # listed — is asked again, ALONE, once, with the other starts in place: the day and its
+    # map are worth one more question. Only a hole still without a model-chosen start
+    # refuses the draft; gen_phrase's random band pick never stays.
+    for h in info:
+        if h["slug"] in picked or not h["options"]:
+            continue
+        log(f"- no valid start named for « {h['secret']} »; asked again")
+        marked_one = st.displayed(words, holes, {**picked, h["slug"]: "[____]"})
+        choice = llm.pick_start(claude, marked_one, h["secret"], h["options"],
+                                refused="the answer named no candidate for it", context=h["notes"], chain=chain)
+        if choice is not None:
+            picked[h["slug"]] = choice
     if set(picked) != set(by_secret):
         missing = [h["secret"]["word"] for key, h in by_secret.items() if key not in picked]
         log(f"- no complete trio of valid start words (missing: {', '.join(missing)}); the draft is refused")
         return None
     for h in info:
-        word = picked.get(h["slug"])
+        word = picked[h["slug"]]
         rank = next((o["rank"] for o in h["options"] if o["word"] == word), None)
-        if word:
-            log(f"- start for « {h['secret']} »: « {word} » (rank {rank})")
-        else:
-            log(f"- the model named no valid start for « {h['secret']} »; the band pick stays")
+        log(f"- start for « {h['secret']} »: « {word} » (rank {rank})")
     if answer["play"]:
         log(f"  - played out: {answer['play']}")
     return picked
