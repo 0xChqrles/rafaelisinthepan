@@ -50,6 +50,11 @@ describe('backend routing URLs', () => {
     expect(puzzleUrl('en', '2026-07-06', base)).toBe('https://api.example/?lang=en&date=2026-07-06');
   });
 
+  it('puzzleUrl names a BONUS puzzle by its id in the date\'s place', () => {
+    expect(puzzleUrl('fr', 'bonus/1234567', base)).toBe('https://api.example/?lang=fr&bonus=1234567');
+    expect(roundUrl('fr', 'bonus/1234567', base)).toBe('https://api.example/round?lang=fr&bonus=1234567');
+  });
+
   it('puzzleUrl encodes the lang and date query values', () => {
     expect(puzzleUrl('a b', 'x/y"', base)).toBe('https://api.example/?lang=a%20b&date=x%2Fy%22');
   });

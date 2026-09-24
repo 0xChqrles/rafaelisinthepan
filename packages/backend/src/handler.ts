@@ -1,5 +1,7 @@
 import {
   activeDate,
+  bonusAddress,
+  isBonusId,
   dateForDayNumber,
   dayNumber,
   decodeLegacyShareTarget,
@@ -432,42 +434,59 @@ export function createHandler(deps: HandlerDeps) {
 
       // The puzzle endpoint is DATE-addressed: the client computes the active 22:00-ET
       // day (shared day.ts) and names it explicitly, so what is served is exactly what
-      // was asked. A missing or malformed date is a protocol violation.
-      const requestedDate = event.queryStringParameters?.date;
-      if (!requestedDate || !isValidDate(requestedDate)) {
-        return errorResponse(
-          400,
-          'bad_request',
-          'Query parameter "date" is required (the active game day, "YYYY-MM-DD").',
-          cors,
-        );
+      // was asked. A missing or malformed date is a protocol violation. A BONUS puzzle
+      // (shared bonus.ts) is addressed by its id instead — no day, so no future guard:
+      // a bonus is out the moment it is published, and only its link reaches it.
+      const bonus = event.queryStringParameters?.bonus;
+      let address: string;
+      if (bonus !== undefined) {
+        if (!isBonusId(bonus)) {
+          return errorResponse(
+            400,
+            'bad_request',
+            'Query parameter "bonus" must be a bonus id (seven digits).',
+            cors,
+          );
+        }
+        address = bonusAddress(bonus);
+      } else {
+        const requestedDate = event.queryStringParameters?.date;
+        if (!requestedDate || !isValidDate(requestedDate)) {
+          return errorResponse(
+            400,
+            'bad_request',
+            'Query parameter "date" is required (the active game day, "YYYY-MM-DD").',
+            cors,
+          );
+        }
+
+        // Guard only the FUTURE: any PAST day is servable (the archive is date-addressed),
+        // but a day more than DATE_SKEW_DAYS ahead of the server's active day is not — that
+        // keeps clock-skew tolerance around the flip (+1 is served) while a pre-published
+        // buffer day never leaks early. Out-of-window is a 404 like a missing puzzle (same
+        // graceful front-end path), with the short negative TTL so a corrected clock recovers
+        // quickly.
+        if (dayNumber(requestedDate) - dayNumber(date) > DATE_SKEW_DAYS) {
+          return errorResponse(
+            404,
+            'not_found',
+            `"${requestedDate}" is not released yet (active day: ${date}).`,
+            { ...cors, 'Cache-Control': NOT_FOUND_CACHE_CONTROL },
+            { date, lang },
+          );
+        }
+        address = requestedDate;
       }
 
-      // Guard only the FUTURE: any PAST day is servable (the archive is date-addressed),
-      // but a day more than DATE_SKEW_DAYS ahead of the server's active day is not — that
-      // keeps clock-skew tolerance around the flip (+1 is served) while a pre-published
-      // buffer day never leaks early. Out-of-window is a 404 like a missing puzzle (same
-      // graceful front-end path), with the short negative TTL so a corrected clock recovers
-      // quickly.
-      if (dayNumber(requestedDate) - dayNumber(date) > DATE_SKEW_DAYS) {
-        return errorResponse(
-          404,
-          'not_found',
-          `"${requestedDate}" is not released yet (active day: ${date}).`,
-          { ...cors, 'Cache-Control': NOT_FOUND_CACHE_CONTROL },
-          { date, lang },
-        );
-      }
-
-      const puzzle = await deps.store.getPuzzle(requestedDate, lang);
+      const puzzle = await deps.store.getPuzzle(address, lang);
       if (puzzle == null) {
         // Missing puzzle is a clean 404, never a 500.
         return errorResponse(
           404,
           'not_found',
-          `No puzzle for ${requestedDate} (${lang}).`,
+          `No puzzle for ${address} (${lang}).`,
           { ...cors, 'Cache-Control': NOT_FOUND_CACHE_CONTROL },
-          { date: requestedDate, lang },
+          { date: address, lang },
         );
       }
 
@@ -493,7 +512,7 @@ export function createHandler(deps: HandlerDeps) {
         // Errors metric stays 0 and the log group shows a clean request — the same blind spot
         // the bare 502 had. This line is what actually puts the diagnosis in CloudWatch.
         console.error(
-          `[puzzle] payload_too_large: ${requestedDate} (${lang}) serialized to ${envelope} bytes` +
+          `[puzzle] payload_too_large: ${address} (${lang}) serialized to ${envelope} bytes` +
             ` as ${response.headers['Content-Encoding'] ?? 'identity'}` +
             ` (accept-encoding: ${event.headers?.['accept-encoding'] ?? 'absent'}),` +
             ` over the ${ENVELOPE_BUDGET_BYTES}-byte budget / ${LAMBDA_MAX_RESPONSE_BYTES}-byte runtime cap.`,
@@ -503,7 +522,7 @@ export function createHandler(deps: HandlerDeps) {
           'payload_too_large',
           // The BUDGET, not the runtime cap: the guard deliberately fires below the cap, so
           // citing the cap would tell the caller it exceeded a number it may not have.
-          `The puzzle for ${requestedDate} (${lang}) exceeds the ${ENVELOPE_BUDGET_BYTES}-byte response budget.`,
+          `The puzzle for ${address} (${lang}) exceeds the ${ENVELOPE_BUDGET_BYTES}-byte response budget.`,
           cors,
         );
       }

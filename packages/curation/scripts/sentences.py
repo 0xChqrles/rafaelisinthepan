@@ -10,7 +10,13 @@ call of proper nouns. Taste is the LLM's job afterwards.
 
 import re
 
+# Length band of a unit, in words: consecutive sentences are joined until the unit
+# reaches MIN_WORDS (the Hagakure day is two sentences). A single sentence of at least
+# MIN_LINE_WORDS is ALSO offered alone (2026-09-24): a short punchline is often the best
+# line of all (« on différencie de moins en moins le cafard de l'homme »), and the model
+# judges it, not a count.
 MIN_WORDS = 14
+MIN_LINE_WORDS = 10
 MAX_WORDS = 33
 # A sentence with this many capitalised words after its first is a roll call of names,
 # not a line a player can reconstruct.
@@ -118,10 +124,17 @@ def is_candidate(sentence: str, *, min_words: int = MIN_WORDS, max_words: int = 
 
 def candidate_sentences(text: str, **kwargs) -> list[str]:
     """Distinct candidate UNITS of a text, in reading order: per starting sentence, the
-    shortest run of consecutive sentences of its paragraph (at most
-    MAX_SENTENCES_PER_UNIT) that reaches the length band and passes the filter."""
+    sentence alone when it has at least MIN_LINE_WORDS, and the shortest run of
+    consecutive sentences of its paragraph (at most MAX_SENTENCES_PER_UNIT) that reaches
+    the length band — each passing the filter."""
     seen: set[str] = set()
     out: list[str] = []
+
+    def keep(unit: str) -> None:
+        if unit not in seen:
+            seen.add(unit)
+            out.append(unit)
+
     for paragraph in paragraph_sentences(text):
         for start in range(len(paragraph)):
             for n in range(1, MAX_SENTENCES_PER_UNIT + 1):
@@ -130,9 +143,9 @@ def candidate_sentences(text: str, **kwargs) -> list[str]:
                 unit = " ".join(paragraph[start:start + n])
                 if word_count(unit) > kwargs.get("max_words", MAX_WORDS):
                     break
+                if n == 1 and is_candidate(unit, **{**kwargs, "min_words": MIN_LINE_WORDS}):
+                    keep(unit)
                 if is_candidate(unit, **kwargs):
-                    if unit not in seen:
-                        seen.add(unit)
-                        out.append(unit)
+                    keep(unit)
                     break
     return out

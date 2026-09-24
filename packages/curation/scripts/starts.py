@@ -6,7 +6,7 @@ judgement itself is the model's (`llm.grammar_check`).
 
 import _paths  # noqa: F401
 from slug import slug
-from start_word import CONTEXT_BAND, is_variant
+from start_word import START_BAND, is_variant
 from rules import PLAIN_WORD_RANK
 
 # Words that elide before a vowel: « le effet » is never French.
@@ -62,15 +62,13 @@ def elision_problem(prev: str, word: str) -> str | None:
 
 def start_candidates(rank_map: dict, secret_slug: str, prev: str, exclude=(),
                      frequency_rank=lambda word: None) -> list[dict]:
-    """The band's words for one hole (rank CONTEXT_BAND — a curated fr map is
-    contextual by default since #308, and its near field is far tighter than the
-    static 100-150 — one per display word,
-    no variant of the secret, not too rare) that pass the elision rule, nearest first:
-    [{word, rank}]. `frequency_rank(word)` reads the corpus order (None = unknown,
-    kept)."""
+    """The band's words for one hole (rank START_BAND, 100-200 on every map since
+    2026-09-24 — one per display word, no variant of the secret, not too rare) that
+    pass the elision rule, nearest first: [{word, rank}].
+    `frequency_rank(word)` reads the corpus order (None = unknown, kept)."""
     seen: set[str] = set()
     out = []
-    lo, hi = CONTEXT_BAND
+    lo, hi = START_BAND
     for key, entry in rank_map.items():
         rank = entry.get("rank", 0)
         word = entry.get("word", key)

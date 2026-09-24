@@ -1,22 +1,26 @@
-"""The trio rules as pure functions over a parsed sentence.
+"""The FACTS code keeps about a candidate secret, as pure functions over a parsed sentence.
 
-The LLM never sees an invalid option: `initial_candidates` builds the list it picks
-from, `prune` shrinks the list after every pick, and `search_trio` drives the pick /
-context-test / prune loop with the two LLM judgements injected as callables — so the
-whole search is testable without a parser, a model or a vector file.
-
-Tunables live here, in one place (issue #260).
+TASTE CHOOSES, CODE STATES FACTS (2026-09-24): which line, which three words and which
+start words make a day is the model's call, read off the `taste` skill. Code only says
+which words CAN be a secret (`initial_candidates`: a content word the game admits, not
+in its cooldown) and turns what it measures into plain notes the model reads — what a
+reader would put in a blank (`reading`), where the reader's words land in the hole's own
+map (`map_nearest_filler`). Nothing here refuses a trio. The judgements are injected as
+callables, so everything is testable without a parser, a model or a vector file.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 import _paths  # noqa: F401  (generation's scripts on sys.path)
 from slug import slug
 from start_word import is_variant
 
-# Parts of speech a secret may carry (spaCy Universal POS tags).
-ALLOWED_POS = frozenset({"NOUN", "VERB", "ADJ", "ADV"})
+# Parts of speech a secret may carry (spaCy Universal POS tags). PROPN too: the parser
+# tags a lowercase brand or a rare noun as a proper noun (« les rolex », « en zigzag »,
+# both secrets of a favourite day); a character's name nobody can reason toward is
+# taste's call, not code's.
+ALLOWED_POS = frozenset({"NOUN", "VERB", "ADJ", "ADV", "PROPN"})
 # Frequency floors (0-based rank in the reduced vectors' frequency order): a secret is
 # never one of the commonest words (`bien` 3, `très` 4, `tout` 1 — `temps` 21 was a
 # secret), and an adverb, the function-like class, must be a real word (`encore` 24,
@@ -29,60 +33,17 @@ WEAK_VERBS = frozenset({
     "dire", "croire", "penser", "savoir", "sembler", "paraître", "vouloir", "pouvoir",
     "devoir", "falloir", "trouver", "avoir", "être", "faire", "aller",
 })
-# A sentence with fewer DISTINCT candidate words than this never reaches the model: the
-# trio search needs a choice, and a thin sentence forces a dull trio. Measured on 27
-# attempts (2026-09-08): 4–7 candidates gave no trio or « faim · crois · pensée »;
-# every trio worth keeping came from 8 or more.
-MIN_CANDIDATES = 8
-# Two secrets closer than this many tokens are "the same part of the sentence".
-MIN_GAP = 3
-# Two secrets above this cosine similarity are "too similar".
-COSINE_MAX = 0.40
-# Sibling dependents of one head that describe the same thing (ADJ + ADJ on one noun,
-# a noun and its complement); coordinated siblings (`conj`) are deliberately NOT here —
-# a list of nouns is a good spread (Perec's rideaux · palissades · fantômes).
-MODIFIER_DEPS = frozenset({"amod", "nmod", "appos", "acl", "advmod"})
-# How many times a sentence is retried with its exhausted first pick struck.
-MAX_RESTARTS = 2
-# Consecutive picks off the list before the model is taken to have declined.
-MAX_OFF_LIST = 2
-# The OBVIOUSNESS FILTER (user-decided 2026-09-10, the user's own method: read the
-# context, think of the fillers WITHOUT a start word, and ask "what else can it be?" —
-# only a word with real alternatives can be a hole). Judged BEFORE the pick, one
-# candidate at a time with the rest of the sentence intact and no start word: the model
-# answers as a reader with the words that could really stand there (at most
-# CONTEXT_GUESSES, only what would not surprise a reader), and code strikes the word
-# when the reader can name at most OBVIOUS_MAX words for it, the secret included
-# (« arrêt cardiaque »: arrêt or crise — two, out; « les clefs du magasin »: magasin,
-# camion, bureau — three, a hole). A filler that is a TWIN of the secret — a variant,
-# or a word within TWIN_RANK of it in the game's own ranking (« clés »/« clefs » 0,
-# « certainement »/« sûrement » 0, « premier »/« dernier » 0, measured 2026-09-10) — is
-# the secret again, not an alternative. Only the reader's count can see a fixed pair:
-# « crise » sits at rank 12668 from « arrêt ». A word a reader GUESSES, with
-# alternatives, stays a hole: that is the game. Supersedes the 2026-09-06 annotation
-# (three blanks, after the trio, never a strike), which could refuse nothing.
-#
-# THE EXPECTED WORD IS NEVER A HOLE (user-decided 2026-09-13, "aim harder"): the
-# reader's FIRST filler — the word most readers put there, twins folded — is struck
-# even with alternatives behind it. Measured on the days' own logs and real medians:
-# the curated days of 09-10/11/12 hid one to three expected words (« hérité »,
-# « chauffage », « peau » / « montrer ») and played at 6 / 8 / 8; the 09-13 day hid
-# none (« lâcher » where a reader puts « dire », « gosses » for « enfants ») and played
-# at 44; both Kundera attempts (« quinze [jours] », « au [crayon] », « la [poste] ») hid
-# three and were "guessable in 3 tries". The expected word is what the reader NAMES as
-# the one most readers would write (None when readers split), never the first of the
-# list: the model has memorised a canonical text and lists the true word first — the
-# list-position reading struck 32 of 38 words of an Orwell and flipped the same
-# Houellebecq words between runs (2026-09-15). The strike applies to a PLAIN word only — one
-# at or under PLAIN_WORD_RANK in the corpus order, the boundary the start band uses for
-# "a word a player knows" (« hétéroptère » out, « bestiole » in): past it the reader's
-# first filler is the model's knowledge, not every player's — « je lance à la
-# [cantonade] » (rank 68858) is an idiom the model completes and a player may not (the
-# user's call 2026-09-14); every word the rule struck on the easy days sits under 28000.
-# The count rule still judges a rare word.
+# The READER (the user's own method, 2026-09-10): blank one word, the rest of the line
+# intact and no start word, and ask what else could stand there — at most
+# CONTEXT_GUESSES words — and which ONE word most readers would write. A filler that is
+# a TWIN of the secret — a variant, or a word within TWIN_RANK of it in the game's own
+# ranking (« clés »/« clefs », « certainement »/« sûrement ») — is the secret again, not
+# an alternative. What the reader says is a NOTE for the model (`reading`), not a verdict.
 CONTEXT_GUESSES = 6
-OBVIOUS_MAX = 2
 TWIN_RANK = 3
+# A word past this corpus rank is not "a word a player knows" (the start band's boundary,
+# `starts.MAX_START_FREQ_RANK`): a reader's expected word there is the model's
+# knowledge, not every player's.
 PLAIN_WORD_RANK = 40000
 # Secrets per puzzle (the sentence schema: exactly three distinct slugs).
 TRIO = 3
@@ -100,10 +61,6 @@ class Token:
     stop: bool = False
 
 
-def _dep_family(dep: str) -> str:
-    return dep.split(":", 1)[0]
-
-
 def initial_candidates(
     tokens: list[Token],
     *,
@@ -111,11 +68,12 @@ def initial_candidates(
     past_secrets: frozenset[str] | set[str] = frozenset(),
     frequency_rank: Callable[[Token], int | None] = lambda t: None,
 ) -> list[Token]:
-    """Tokens the LLM may pick first: an allowed POS, not a stopword, a weak verb or one
-    of the commonest words, a slug the game admits and has not used, and no same-lemma twin
-    under another slug visible in the sentence (a same-slug repeat is fine: one hole
-    per occurrence). `frequency_rank` reads the word's place in the corpus (None =
-    unknown, which is not a reason to drop it)."""
+    """The words that CAN be a secret: an allowed POS, not a stopword, a weak verb or one
+    of the commonest words, a slug the game admits and has not used (a hyphenated
+    compound included — « post-it »), and no same-lemma twin under another slug visible
+    in the sentence (a same-slug repeat is fine: one hole per occurrence).
+    `frequency_rank` reads the word's place in the corpus (None = unknown, which is not a
+    reason to drop it)."""
     lemma_slugs: dict[str, set[str]] = {}
     for t in tokens:
         if t.lemma:
@@ -127,8 +85,6 @@ def initial_candidates(
         if t.pos == "VERB" and t.lemma in WEAK_VERBS:
             continue
         if len(t.slug) < 2 or not in_vocab(t.slug):
-            continue
-        if "-" in t.slug:  # a compound (« sud-américain »): players type it as two words
             continue
         rank = frequency_rank(t)
         if rank is not None and rank < (MAX_COMMON_RANK_ADV if t.pos == "ADV" else MAX_COMMON_RANK):
@@ -152,153 +108,44 @@ def is_twin(candidate: Token, word: str, neighbour_rank: Callable[[Token, str], 
     return rank is not None and rank <= TWIN_RANK
 
 
-def open_candidates(
-    candidates: list[Token],
+def reading(
+    candidate: Token,
+    guesses: list[str],
+    expected: str | None,
     *,
-    fillers: Callable[[Token], tuple[list[str], str | None]],
     neighbour_rank: Callable[[Token, str], int | None] = lambda t, w: None,
     frequency_rank: Callable[[Token], int | None] = lambda t: None,
-    log: "SearchLog | None" = None,
-) -> list[Token]:
-    """The candidates the context does not hand over. `fillers(token)` answers as a
-    reader with the sentence blanked on that one word (every occurrence of it, the rest
-    intact, no start word): the words that could really stand there, and the ONE word
-    most readers would write when they agree (None when they split). A word is struck
-    when it is the EXPECTED word — the reader's named word is the secret or a twin of it
-    (`is_twin`) and the word is a plain one (`frequency_rank` at or under
-    PLAIN_WORD_RANK; None = unknown, taken as plain) — or when the reader can name at
-    most OBVIOUS_MAX words for it, the secret included (a twin is the secret again; a
-    named word that is not the secret is one of the alternatives). One judgement per
-    distinct slug; the order of the list is kept."""
-    log = log or SearchLog()
-    verdict: dict[str, bool] = {}
-    out = []
-    for c in candidates:
-        if c.slug not in verdict:
-            guesses, named = fillers(c)
-            rank = frequency_rank(c)
-            rare = rank is not None and rank > PLAIN_WORD_RANK
-            expected = named is not None and is_twin(c, named, neighbour_rank) and not rare
-            others = {slug(g) for g in [*guesses, *([named] if named else [])]
-                      if slug(g) and not is_twin(c, g, neighbour_rank)}
-            possible = len(others) + 1  # the secret itself is always one of them
-            verdict[c.slug] = expected or possible <= OBVIOUS_MAX
-            shown = ", ".join(guesses) or "none"
-            agreed = f"most readers write « {named} »" if named else "readers split"
-            if expected:
-                log.note(f"'{c.text}' is the EXPECTED word — {agreed} (a reader puts: {shown}) — struck")
-            elif verdict[c.slug]:
-                log.note(f"'{c.text}' is obvious — {possible} possible word(s) (a reader puts: {shown}) — struck")
-            elif rare:
-                log.note(f"'{c.text}' is open — rare (rank {rank}), the reader's expected word is not every "
-                         f"player's — {possible} possible words ({agreed}; a reader puts: {shown})")
-            else:
-                log.note(f"'{c.text}' is open — {possible} possible words ({agreed}; a reader puts: {shown})")
-        if not verdict[c.slug]:
-            out.append(c)
-    return out
+) -> str:
+    """What the reader's answer means for this hole, in one plain line for the model: the
+    other words a reader could put there (twins folded into the secret), and whether
+    most readers would write the secret itself — a word the context hands over — which
+    only counts for a word players know (`frequency_rank` at or under PLAIN_WORD_RANK)."""
+    others = list(dict.fromkeys(g for g in [*guesses, *([expected] if expected else [])]
+                                if slug(g) and not is_twin(candidate, g, neighbour_rank)))
+    rank = frequency_rank(candidate)
+    known = rank is None or rank <= PLAIN_WORD_RANK
+    if expected and is_twin(candidate, expected, neighbour_rank) and known:
+        lead = "most readers would write the secret itself"
+    elif expected:
+        lead = f"most readers would write « {expected} »"
+    else:
+        lead = "readers would split"
+    alternatives = ", ".join(others) if others else "nothing else"
+    return f"{lead}; other words a reader puts there: {alternatives}"
 
 
-def prune(
-    candidates: list[Token],
-    pick: Token,
-    tokens: list[Token],
-    *,
-    similarity: Callable[[Token, Token], float | None],
-) -> list[Token]:
-    """The list after a pick: drop the pick and its other occurrences, every verb when
-    the pick is a verb, the pick's head and dependents, its modifier siblings, its
-    neighbours within MIN_GAP, its lemma / morphological variants, and anything the
-    vectors put above COSINE_MAX to it."""
-    by_index = {t.i: t for t in tokens}
-    head = by_index.get(pick.head)
-    out = []
-    for c in candidates:
-        if c.slug == pick.slug:
+def map_nearest_filler(rank_map: dict, secret_slug: str, fillers: list[str]) -> tuple[str, int | None] | None:
+    """The reader's filler nearest the secret in the hole's OWN map, as (word, rank); the
+    rank is None for a word past the map (farther than every ranked group). None when the
+    reader named no single-word filler — a multi-word filler cannot be typed, and the
+    secret itself and its variants are not fillers."""
+    best: tuple[str, int | None] | None = None
+    for w in fillers:
+        s = slug(w)
+        if not s or " " in w.strip() or s == secret_slug or is_variant(s, secret_slug):
             continue
-        if pick.pos == "VERB" and c.pos == "VERB":
-            continue
-        if c.i == pick.head or c.head == pick.i:
-            continue
-        if (
-            head is not None
-            and c.head == pick.head
-            and c.i != pick.i
-            and _dep_family(c.dep) in MODIFIER_DEPS
-            and _dep_family(pick.dep) in MODIFIER_DEPS
-        ):
-            continue
-        if abs(c.i - pick.i) < MIN_GAP:
-            continue
-        if (c.lemma and c.lemma == pick.lemma) or is_variant(c.slug, pick.slug):
-            continue
-        sim = similarity(c, pick)
-        if sim is not None and sim > COSINE_MAX:
-            continue
-        out.append(c)
-    return out
-
-
-@dataclass
-class SearchLog:
-    """What happened, for the run log: every strike names its rule."""
-    events: list[str] = field(default_factory=list)
-
-    def note(self, msg: str) -> None:
-        self.events.append(msg)
-
-
-def search_trio(
-    tokens: list[Token],
-    candidates: list[Token],
-    *,
-    choose: Callable[[list[Token], list[Token]], Token | None],
-    similarity: Callable[[Token, Token], float | None],
-    log: SearchLog | None = None,
-    max_restarts: int = MAX_RESTARTS,
-) -> list[Token] | None:
-    """Greedy, constraint-propagated search for TRIO secrets.
-
-    `choose(remaining, picked)` is the LLM's pick (None = it declines the list). An
-    empty list before the trio is complete restarts the sentence with the first pick
-    struck, at most `max_restarts` times. Returns the trio, or None when the sentence
-    has no trio."""
-    log = log or SearchLog()
-    banned_first: set[str] = set()
-    for attempt in range(max_restarts + 1):
-        remaining = [c for c in candidates if c.slug not in banned_first]
-        picked: list[Token] = []
-        off_list = 0
-        while len(picked) < TRIO:
-            if not remaining:
-                break
-            pick = choose(remaining, picked)
-            if pick is None:
-                log.note("the model declined every remaining word")
-                break
-            if pick.slug not in {c.slug for c in remaining}:
-                off_list += 1
-                log.note(f"'{pick.text}' is not on the list — ignored")
-                if off_list >= MAX_OFF_LIST:
-                    log.note("the model keeps answering off the list — taken as a decline")
-                    break
-                continue
-            off_list = 0
-            picked.append(pick)
-            before = len(remaining)
-            remaining = prune(remaining, pick, tokens, similarity=similarity)
-            log.note(f"picked '{pick.text}' ({pick.pos.lower()}); {before - 1 - len(remaining)} "
-                     f"word(s) pruned, {len(remaining)} left")
-        if len(picked) == TRIO:
-            return picked
-        if not picked:
-            log.note("no first pick possible")
-            return None
-        banned_first.add(picked[0].slug)
-        if attempt < max_restarts:
-            log.note(f"dead end after {len(picked)} pick(s); restart {attempt + 1}/{max_restarts} "
-                     f"with '{picked[0].text}' struck")
-        else:
-            log.note(f"dead end after {len(picked)} pick(s); no restart left")
-    log.note("no trio for this sentence")
-    return None
+        entry = rank_map.get(s)
+        rank = entry["rank"] if entry else None
+        if best is None or (rank is not None and (best[1] is None or rank < best[1])):
+            best = (w, rank)
+    return best

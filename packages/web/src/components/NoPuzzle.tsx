@@ -17,12 +17,23 @@ import { t } from '../i18n';
 //     backfilled later, simply was never published; apologizing for it would be a lie.
 //     It says so plainly and sends the player back to the calendar they came from.
 //
+//   a BONUS link (bonus puzzles, 2026-09-24) — a mistyped id or the other language's link:
+//     it says so, and offers the language.
+//
 // Neither is a failure to RETRY (nothing transient to re-fetch), so both offer only
 // navigation. Renders WITHOUT the HUD, on the shared .load-error surface — which is why
 // CHANGE LANGUAGE opens the header's own selection drum (`PuzzleSelect`, folding onto
 // today's puzzle in the picked language) right here: the `/select` screen it used to send
 // the player to was retired 2026-09-05 (user-decided) for exactly that dialog.
-export default function NoPuzzle({ lang, date }: { lang: LangCode; date?: string }) {
+export default function NoPuzzle({
+  lang,
+  date,
+  bonus = false,
+}: {
+  lang: LangCode;
+  date?: string;
+  bonus?: boolean;
+}) {
   const [selecting, setSelecting] = useState(false);
   const select = selecting && (
     <PuzzleSelect
@@ -41,6 +52,20 @@ export default function NoPuzzle({ lang, date }: { lang: LangCode; date?: string
       ? null
       : new Intl.DateTimeFormat(lang, { dateStyle: 'long', timeZone: 'UTC' }).format(day);
   }, [lang, date]);
+
+  if (bonus) {
+    return (
+      <div className="load-error arrive">
+        <span className="board-ghost no-puzzle-ghost" aria-hidden="true" />
+        <p className="status">{t(lang, 'noBonus')}</p>
+        <p className="no-puzzle-note">{t(lang, 'noBonusNote')}</p>
+        <Button variant="secondary" onClick={() => setSelecting(true)}>
+          {t(lang, 'changeLanguage')}
+        </Button>
+        {select}
+      </div>
+    );
+  }
 
   if (date == null) {
     return (

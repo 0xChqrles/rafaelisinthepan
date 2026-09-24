@@ -1034,3 +1034,50 @@ describe('early play: tomorrow\'s sentence tonight (#273)', () => {
     expect(rows[0].score).toBe(5);
   });
 });
+
+// CONTRACT (bonus puzzles, 2026-09-24): a BONUS is a test puzzle outside the calendar,
+// addressed by its seven-digit id (shared bonus.ts). Its round is an ordinary server-owned
+// log — the same guards, the same derived score — but it is NO DAY: never early (the
+// night's lock cannot apply), never on time (no score row, no streak day, `credited`
+// false), and its log is its own, apart from every day's.
+describe('a bonus round (bonus puzzles)', () => {
+  const BONUS_ID = '1234567';
+  const bonus = (guesses?: string[]) =>
+    event({ query: { lang: 'fr', bonus: BONUS_ID }, body: body(guesses ? { guesses } : {}) });
+
+  it('refuses a malformed bonus id', async () => {
+    for (const id of ['123456', '0123456', '12345678', 'abcdefg']) {
+      const response = await makeHandler()(event({ query: { lang: 'fr', bonus: id } }));
+      expect(response.statusCode).toBe(400);
+    }
+  });
+
+  it('is never early: progress and guesses past the night cap are accepted', async () => {
+    const handler = makeHandler();
+    const batches = [['mer'], ...Array.from({ length: EARLY_GUESS_CAP }, (_, i) => [`zz${'z'.repeat(i)}`])];
+    let last = await handler(bonus(batches[0]));
+    for (const batch of batches.slice(1)) {
+      handler.advance(ROUND_WRITE_MIN_MS + 1);
+      last = await handler(bonus(batch));
+    }
+    expect(last.statusCode).toBe(200);
+    expect(parsed(last).guesses).toHaveLength(EARLY_GUESS_CAP + 1);
+  });
+
+  it('solves like a day but earns nothing: no score row, no streak day', async () => {
+    const handler = makeHandler();
+    const solved = parsed(await handler(bonus(['phare', 'nuit'])));
+    expect(solved.solved).toBe(true);
+    expect(solved.credited).toBe(false);
+    await expect(handler.scoreStore.list({ date: `bonus/${BONUS_ID}`, lang: 'fr' })).resolves.toEqual([]);
+    await expect(handler.scoreStore.list({ date: ACTIVE_DATE, lang: 'fr' })).resolves.toEqual([]);
+    await expect(handler.historyStore.solvedDays(ME.accountId, 'fr')).resolves.toEqual([]);
+  });
+
+  it('keeps its own log, apart from the day\'s', async () => {
+    const handler = makeHandler();
+    await handler(bonus(['zzz']));
+    expect(parsed(await handler(bonus())).guesses).toEqual(['zzz']);
+    expect((await handler(event())).statusCode).toBe(404);
+  });
+});

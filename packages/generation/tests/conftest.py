@@ -35,6 +35,5 @@ if "start_word" not in sys.modules:
     _sw = types.ModuleType("start_word")
     _sw.pick_start = lambda *a, **k: None
     _sw.start_band = lambda *a, **k: []
-    _sw.STATIC_BAND = (100, 150)
-    _sw.CONTEXT_BAND = (250, 400)
+    _sw.START_BAND = (100, 200)
     sys.modules["start_word"] = _sw

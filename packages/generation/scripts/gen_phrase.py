@@ -128,7 +128,7 @@ from build_forms import (CITATION_FEATURE, FORM_LANGS, feature_pos, forms_path,
 from build_lemmas import lemmas_path, load_lemmas  # en form→lemma table (#104)
 from distances import quantize_dq  # dq annotations (#115)
 from slug import path_slug, slug, write_vocab  # slug/fold contract, dir names, vocab
-from start_word import CONTEXT_BAND, STATIC_BAND, pick_start, start_band
+from start_word import START_BAND, pick_start, start_band
 import contextual_rank  # #308: the hosted judge behind one small boundary
 
 # --- Vocabulary ----------------------------------------------------------------
@@ -542,10 +542,7 @@ class ContextualRanker:
     Built once per run from the sentence, its excerpt and the judge; `reorder`
     turns one hole's static groups into the judge's order (the same groups, new
     similarities), `note` records what shipped, and main() prints the reports and
-    writes the sidecar after the selector has restored the terminal. `band` is the
-    start band a contextual map uses (start_word.CONTEXT_BAND)."""
-
-    band = CONTEXT_BAND
+    writes the sidecar after the selector has restored the terminal."""
 
     def __init__(self, judge, sentence, before=(), after=(), model=None):
         self.judge, self.sentence = judge, sentence
@@ -1494,7 +1491,7 @@ def build_lang_vocab(kv, cfg):
     return cfg["module"].build_vocab(kv)
 
 
-def choose_start(secret, ranking, rank_map, rank_by_display, band=STATIC_BAND,
+def choose_start(secret, ranking, rank_map, rank_by_display, band=START_BAND,
                  band_filter=None):
     """Pick the start (hint) word for ONE hole, interactively when on a terminal.
 
@@ -2582,7 +2579,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
 
     With `contextual` (#308) the HOVER preview stays static too — browsing must not
     spend a judge call per word — and the commit step's confirmed rebuild is the one
-    that reranks, so the band the author picks from (CONTEXT_BAND) is the map that
+    that reranks, so the band the author picks from (START_BAND) is the map that
     ships."""
     import shutil
     import termios
@@ -2644,8 +2641,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
             rbd = {secret: 0}
             for w, r, _ in merged:
                 rbd.setdefault(w, r + 1)
-            band = start_band(secret, merged,
-                              ranker.band if ranker is not None else STATIC_BAND)
+            band = start_band(secret, merged, START_BAND)
             agreed = None
             if ranker is not None:
                 agreed = forms.apply(rank_map, secret, donors,
@@ -3021,7 +3017,7 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
             start = entry["word"]
         elif contextual is not None:
             start = choose_start(
-                canonical_secret, merged, selection_map, rank_by_display, band=contextual.band,
+                canonical_secret, merged, selection_map, rank_by_display, band=START_BAND,
                 band_filter=contextual.start_band_filter(
                     words, [(pos, pre, suf) for pos, (_s, pre, suf) in occurrences],
                     canonical_secret, display_words=dict(agreed.values())))

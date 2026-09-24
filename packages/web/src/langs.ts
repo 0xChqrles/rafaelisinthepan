@@ -1,4 +1,11 @@
-import { dayNumber, GROUP_ID_PATTERN, GROUP_LANDING_SEGMENT, GROUP_SEGMENT } from '@whippin/shared';
+import {
+  BONUS_SEGMENT,
+  dayNumber,
+  GROUP_ID_PATTERN,
+  GROUP_LANDING_SEGMENT,
+  GROUP_SEGMENT,
+  isBonusId,
+} from '@whippin/shared';
 import { FIRST_PUZZLE_DATE } from './config';
 import { levelOf } from './tutorial/levels';
 
@@ -131,9 +138,10 @@ export { groupInvitePath as pathForGroupInvite } from '@whippin/shared';
 // A parsed route. The game IS the home: /<lang> plays today's puzzle, /<lang>/<date>
 // plays a past day (archive, #55), /<lang>/archive is the calendar, /privacy is the data
 // notice, /join/g/<groupId> the group invite landing (#271), and anything else (/, unknown paths) is
-// a `home` redirect that bounces to the user's language (see resolveHomeLang).
+// a `home` redirect that bounces to the user's language (see resolveHomeLang). A BONUS
+// puzzle (shared bonus.ts) is a game too, at /<lang>/bonus/<id>: no day, link only.
 export type Route =
-  | { view: 'game'; lang: LangCode; date?: string }
+  | { view: 'game'; lang: LangCode; date?: string; bonusId?: number }
   | { view: 'archive'; lang: LangCode }
   | { view: 'board'; lang: LangCode }
   | { view: 'learn'; lang: LangCode }
@@ -218,6 +226,10 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   if (second === LEARN_SEGMENT) {
     const level = third && /^\d+$/.test(third) ? Number(third) : NaN;
     return levelOf(level)?.built ? { view: 'lesson', lang: seg, level } : { view: 'learn', lang: seg };
+  }
+  // /<lang>/bonus/<id> — a bonus puzzle. A broken id is a broken deep link: home.
+  if (second === BONUS_SEGMENT) {
+    return third && isBonusId(third) ? { view: 'game', lang: seg, bonusId: Number(third) } : { view: 'home' };
   }
   // /<lang>/<YYYY-MM-DD> — a past day.
   const date = dateOf(second);

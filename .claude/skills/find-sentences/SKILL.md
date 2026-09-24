@@ -9,38 +9,19 @@ You are sourcing material for the daily sentence-reconstruction game. A puzzle =
 short text + 3 secret words the player rediscovers via embedding-neighbor feedback. "A
 sentence" here means the puzzle's text: one sentence, or a few short consecutive ones
 read as one (a micro-story, ≤ ~33 words) — what matters is a short run of words with a
-meaning. It must survive having its three best words removed WITHOUT the remaining
-context giving them back, to a human or to an LLM. The automated curator (#260) applies
-the same rules headlessly; this skill is the interactive version.
+meaning. The `taste` skill judges the line and the three words; the checks below keep
+the result playable. The automated curator (#260) applies them headlessly; this skill
+is the interactive version.
 
-## The two laws
+## The quotation rule
 
-1. **Only the widely quoted LINE is out; the book is never out.** A sentence an LLM
-   has memorized is dead (it lands the secrets in ~3 tries): the lines readers copy
-   onto Babelio, quote sites, essays and bac anthologies. Famous authors and famous
-   books are fine, *L'Étranger* included; *Aujourd'hui, maman est morte* is not. Decide
-   per sentence: a mid-narrative line from a canonical novel is as good as one from a
-   mid-list novel. Always source from the primary text (epub, .srt, lyrics page) and
-   verify there: quote sites carry misattributions (a Babelio "Perec" line did not exist
-   in the book), so they serve as discovery leads only.
-
-2. **Every secret must pass the substitutability test.** In the holed sentence, each
-   blank must admit many plausible fillers. Reject a secret when it is:
-   - collocation-forced: "un dernier _verre_ au comptoir", "faire l'_amour_", "tuer le
-     _temps_", "l'_horloge_ parlante", "avoir _envie_";
-   - antithesis/parallel-forced: "belle comme le jour … belles comme la _nuit_"; mirror
-     structures complete themselves;
-   - context-forced: the context leaves a reader ONE or TWO possible words — « [arrêt]
-     cardiaque » (arrêt or crise, nothing else), the May-68 tear-gas anecdote handing
-     you _grenade_. A word the context merely HELPS toward, with several possible
-     fillers — « il prenait tant de [cocaïne] qu'il avait hérité d'un prénom
-     sud-américain » — is not a fault, it is the game (the user's rule, 2026-09-10:
-     the goal is to guess WITH the context);
-   - given away by a visible sibling: same-lemma twin visible in the sentence
-     (_appartenaient_/_appartiendraient_), or a near-synonym visible (_amour_ visible →
-     _amoureux_ secret is warm on try one).
-   Good example: "un monde de fausses places, de fausses rues, d'avenues _fantômes_" —
-   dozens of nouns fit each slot.
+**Only the widely quoted LINE is out; the book is never out.** The lines readers copy
+onto Babelio, quote sites, essays and bac anthologies are out. Famous authors and famous
+books are fine, *L'Étranger* included; *Aujourd'hui, maman est morte* is not. Decide
+per sentence: a mid-narrative line from a canonical novel is as good as one from a
+mid-list novel. Always source from the primary text (epub, .srt, lyrics page) and
+verify there: quote sites carry misattributions (a Babelio "Perec" line did not exist
+in the book), so they serve as discovery leads only.
 
 ## Stands alone (user rule 2026-09-18)
 
@@ -55,77 +36,35 @@ leans on it is a riddle with no answer. Reject a sentence when, read alone:
 - a pronoun or demonstrative has no referent inside the sentence and the sentence needs
   it (« ils », « cela », « cette femme ») — « il » for an unnamed narrator is fine when
   the line is complete without knowing who he is.
+- it is a REPLY: it quotes, answers or corrects a sentence the player cannot see — an
+  opening quotation, a « cependant » or a « donc » that continues an argument, a colon
+  that completes one (« “Il sait qu'il meurt” est une pensée profonde ; je crois
+  cependant que la mienne est plus profonde » is wit about Pascal, not a line).
 A sentence passes when a reader can say in one line what it is about, from the sentence
 alone. The automated curator asks the model exactly that and strikes on a refusal.
 
-## The trio rules (learned from months of player feedback)
+## The trio rules
 
-The target is a median of 10–20 tries, with the struggle spread over the SENTENCE, never
-concentrated on one word.
+Which words are worth hiding is TASTE, and taste lives in the `taste` skill: read it.
+The practical rules:
 
-- No very easy and no very hard hole. Difficulty should be comparable across the three.
-- **The secret is never the EXPECTED word** — the one most readers would put in the
-  blank (« quinze [jours] plus tard », « au [crayon] », « la [poste] me retourna »,
-  « le [chauffage] »): the days that play well hide **gosses** where a reader expects
-  *enfants*, **lâcher** where they expect *dire*, **alcoolique** where they expect
-  *salaud* (the 2026-09-13 day, median 44; the days that hid an expected word played
-  at 6–8; user-decided 2026-09-13, "aim harder"). Code strikes it; keep it in mind
-  when the three are spread.
-- A secret the context gives away is replaced. When the context helps only a little, a
-  harder start word is acceptable (not too tricky); when it helps too much, another word.
-- Two secrets too similar in meaning → replace one. Three secrets from three unrelated
-  semantic fields (three weather words or three anatomy words warm each other).
-- Three secrets in the same part of the sentence, or describing the same thing (a verb
-  and its subject) → replace one. Spread them across the sentence.
-- At most one verb.
-- **A hole must INTERACT with the words around it (the user's rule, 2026-09-10).** The
-  game is guessing WITH the context: prefer a word another visible word narrows —
-  « une [grippe] intestinale », « une pose d'[implants] dentaires », « les clefs du
-  [magasin] » — over a bare item of a list or a word nothing in the sentence touches.
-  Guessing a disease name on its own (« … et une [sciatique] ») is a lookup, not fun;
-  a word the context lets the player REASON toward, with real alternatives, is the hole.
-  The user's own trio on « Arrêt cardiaque. Pedro s'appelait Pierre, mais il prenait
-  tant de cocaïne qu'il avait hérité d'un prénom sud-américain. » (2026-09-10):
-  **cardiaque · cocaïne · hérité** — in a fixed pair hide the specific word, not the
-  head (« arrêt [cardiaque] » has many fillers, « [arrêt] cardiaque » two); the word the
-  joke turns on, which the context helps toward; the verb. Starts: « syncopal »,
-  « créatine », « voulu » — one concept each, no synonym. Not « sud-américain »: a
-  hyphenated compound is never a hole (players type it as two words; code drops them).
-- **Play the TURN (recorded 2026-09-08).** The part that makes the line worth playing —
-  its comparison, its image, its punch — must carry at least one hole; a trio that
-  hides three words of the set-up and leaves the turn intact plays the dull half of
-  the sentence. « je les conduisis au cimetière, comme on porte de l'argent à une
-  banque » wants a hole in the banque half, not three in the deaths before it. Spread
-  the three over the sentence's parts before spreading them over its words.
-- **The start word must leave the displayed sentence valid French**: elision (« l'effet »,
-  never « le effet »), gender, number, verb form. A hint that breaks the grammar is
-  replaced by another band word, never kept.
-- No trio possible under these rules → next sentence. Never bend a rule to save a
-  sentence you like.
-- A slug repeated in the sentence makes one hole per occurrence sharing one rank map: a
-  feature the user likes (their Marx *vermine* day), not a bug.
+- Exactly three distinct words. A word repeated in the sentence makes one hole per
+  occurrence sharing one rank map: a feature (the Marx *vermine* day), not a bug.
+- The start words must leave the displayed sentence valid French (below).
 
-## The start word (the user's daily craft, recorded 2026-09-07)
+## The start word
 
-Each hole shows a START word, ranked 100–150 from the secret (lower rank = closer =
-easier). Choosing it takes as much taste as the trio, and the three are chosen
-TOGETHER, never one at a time and never at random:
+Each hole shows a START word, ranked 100–200 from the secret (lower rank = closer =
+easier), and the three are chosen TOGETHER, by playing the day out — the craft is in the
+`taste` skill. The practical rules:
 
-- First strike every candidate that does not fit the slot (elision, gender, number,
-  verb form); choose only among what is left (the user's rule, 2026-09-10).
-- The start carries at least ONE obvious concept of the secret — something the two
-  plainly share, that leads the player toward it — and is NEVER an exact synonym, a
-  near-synonym or an opposite of it (« agence » for « boutique » is a near-synonym:
-  out). When another hole is already hard, go easier (closer) within that rule.
-- Think about the CHAIN OF GUESSES the start sets off: a good start leads by
-  association toward the secret in a few natural steps; a start whose neighbourhood
-  pulls elsewhere (another sense of the word, a stronger collocation) is a trap.
-- Balance the three: comparable difficulty across holes, the whole puzzle landing
-  around a median of 10–20 tries. One trivial hole or one impossible hole spoils the day.
-- Not too tricky: a plain word a player knows, never an obscure term or a proper noun.
-- The displayed sentence must stay valid French: elision, gender, number, verb form,
-  and the CONSTRUCTION — a verb must accept the complement that follows it (« hérité
-  d'un prénom » cannot become « affublé d'un prénom »; 2026-09-10).
+- First strike every candidate that does not fit the slot; choose only among what is
+  left. The displayed sentence must stay valid French: elision (« l'effet », never « le
+  effet »), gender, number, verb form, and the CONSTRUCTION — a verb must accept the
+  complement that follows it (« hérité d'un prénom » cannot become « affublé d'un
+  prénom »).
+- A plain word a player knows, never an obscure term or a proper noun.
+- A start that breaks the grammar is replaced by another band word, never kept.
 
 ## The page (recorded 2026-09-08)
 
@@ -144,66 +83,25 @@ verbatim.
   by someone who just rebuilt the line and wants to know where it led.
 - Never rewrite, never summarise: the two counts are the whole answer.
 
-## Taste profile
+## Taste
 
-The canonical references are **Houellebecq, Murakami, and Kundera**. The editorial
-line: cynicism toward the modern Western world, disenchantment, melancholy, the
-unbearable lightness of living, quiet sadness, perhaps a touch of anhedonia — but also
-contemplation, and sometimes love and empathy for people, held against a real contempt
-for human nature. The register is double-sided and BOTH sides must be present: lucidity
-without bile, tenderness without lyricism. Reject anything one-sided, and anything that
-lectures. This is the game's voice and it does not move.
+What makes a day worth playing — the voice, the line, the hidden words, the start words,
+difficulty — lives in the `taste` skill, its one home. Read it before choosing anything.
 
-### What players love inside that voice (measured)
+## Sources
 
-Share rate = unique shares / unique solves per day, 58 days (2026-07-08 → 09-05), mean
-0.63, noise about ±0.15 on one day. Each line was coded by hand on a few features:
-
-| Feature of the line | Share rate with | without |
-| --- | --- | --- |
-| **Unexpected source** (Darwin, Marx, a documentary, a president, the *Hagakure*) | **0.77** | 0.61 |
-| **Wit** — irony, a dry joke, a cruel-precise comparison | **0.70** | 0.59 |
-| **A turn** — the line lands on a reversal or a punch | **0.69** | 0.59 |
-| An image carrying a thought | 0.68 | — |
-| An image and nothing else (pure description) | **0.55** | 0.65 |
-| Despair with no wit and no tenderness | **0.54** | 0.65 |
-| Abstract nouns without wit (*néant, âme, ineffable, réalité*) | **0.51** | 0.65 |
-| A verdict on the reader ("tu t'accoutumes à la médiocrité") | **0.25** | 0.64 |
-
-What does NOT matter: the kind (book 0.61, music 0.66, movie 0.67 — rap is never
-penalized), the length (28+ words scored highest), and difficulty inside the 10–20 band.
-The one difficulty effect is the outlier: the day with a median of 42 tries was the
-least-shared day of the run (0.31) — the trio rules exist for that reason.
-
-The rule that follows, and it keeps the voice: **a sentence must DO something.** The
-disenchantment is welcome when it arrives with a joke, a tenderness, or a concrete scene
-that turns; alone, it is the game's weakest material. So, when choosing between two
-sentences of equal register:
-
-- prefer the line that lands — a reversal, a punch, a comparison that bites ("comme la
-  lèpre fait tomber la chair", "mammifères intelligents, qui auraient pu s'aimer");
-- prefer a scene where something happens (the match thrown at the swan, the dog that
-  could be killed as easily as caressed) over a landscape, however beautiful;
-- reject the meditation made of abstract nouns, and the line whose only content is
-  despair or a verdict on people — the top of the archive is never one-sided;
-- reject the REPLY (recorded 2026-09-08): a line that quotes, answers or corrects a
-  sentence the player cannot see — an opening quotation, a « cependant » or a « donc »
-  that continues an argument, a colon that completes one. « “Il sait qu’il meurt” est
-  une pensée profonde ; je crois cependant que la mienne est plus profonde » is wit
-  about Pascal, not a line that stands on its own. A reply is never self-contained,
-  however clever;
-- and use the SOURCE as a lever: the solved screen reveals it, so an unexpected
-  provenance is itself the turn. Aim for one day in seven or so from outside literature —
-  a naturalist, an economist, a speech, a documentary, a manual, a court record — chosen
-  for a line that reads like fiction.
+Use the SOURCE as a lever: the solved screen reveals it, so an unexpected provenance is
+itself a turn. Aim for one day in seven or so from outside literature — a naturalist, an
+economist, a speech, a documentary, a manual, a court record — chosen for a line that
+reads like fiction.
 
 Names that fit, beyond the three references: Carver, Tabucchi, Perec, Pessoa, Izzo,
 Mouawad, Dubois, Bove, Simenon, Márai; translated kin (Zweig, Dazai, Pavese, Ogawa,
 Ishiguro) when the line has its turn; witty non-fiction with a scene (Darwin, Marx's
 rats, the *Hagakure*). French rap deep cuts (Népal, Alpha Wann, Josman, Rounhaa, Laylow,
 Stupeflip, Hugo TSR, Jazzy Bazz, Lucio Bukowski lane — never the famous single), poems
-(Darwich, Thiago de Mello lane), films and documentaries via subtitles. Length ~15–30
-words (14 ok if dense; >33 is too long).
+(Darwich, Thiago de Mello lane), films and documentaries via subtitles. Length ~10–30
+words (>33 is too long).
 
 **Variety across the archive.** Never the same book or album twice. Several books from
 one author are fine when each earns its place and they are not redundant (a second
@@ -221,7 +119,7 @@ for artist IDEAS, the lane is wider than rap — writers in rap beyond the curre
 Dinos, Ichon, Prince Waly, Zamdane, Luv Resval, Lala &ce) and the prose-like lane outside
 it (Odezenne, Mendelson, Diabologum, Programme, Arm, Dominique A, Bashung, Miossec,
 Brigitte Fontaine, Daniel Darc, Flavien Berger, Bonnie Banane, Feu! Chatterton). A lyric
-candidate is two to four adjacent lines of one stanza read as one sentence. Music is a
+candidate is one to four adjacent lines of one stanza read as one sentence. Music is a
 minority stream, one or two days a week. Movies are out of scope.
 
 ## Request 1 — pick books for the shelf
@@ -263,13 +161,13 @@ can act on:
    micro-stories (2–4 short sentences, ≤ ~30 words total) are often the best
    candidates. Grepping alone missed every winner at least once.
 3. **Select candidates**: right length, self-contained, felt; then pick a secret trio
-   under the trio rules above, each secret passing the substitutability test.
-4. **Screen the LINE for memorization** (WebSearch, exact quoted phrase):
+   with the `taste` skill and the playable facts in the trio rules above.
+4. **Screen the LINE for quotation** (WebSearch, exact quoted phrase):
    - zero hits, or hits only on full-text scans → clean;
    - hits on quote pages, essays, bac/anthology PDFs, song samples → REJECT the line
      (not the book: keep mining it);
-   - subtler: if the search result summary *recognizes the source from the phrase
-     alone*, an LLM knows it → reject (this killed "se pâmaient devant les soldats").
+   - a model's memory of an unquoted line is not a strike; verify any apparent quote
+     against the primary text and where readers would have met it.
 5. **Check the game data** (never skip):
    - every secret's slug ∈ `packages/web/public/vocab/fr.json` (slug = lowercase,
      ligatures expanded, accents stripped, keep `[a-z-]`);
@@ -277,7 +175,7 @@ can act on:
      `packages/generation/output/word/fr/**/*.json`.
 6. **Deliver 3–5 candidates**, each with: the exact sentence (accents/punctuation
    kept), recommended trio + alternates, source metadata (`kind` book/music/poem/movie
-   + author + work), memorization-risk flag, and a ready command:
+   + author + work), quotation-risk flag, and a ready command:
    `pnpm gen:phrase "<sentence>" --lang fr --words a b c --kind K --author "A" --work "W"`
    (no `--` separator; exactly 3 distinct words). For .srt sources suggest an ear-check
    against the scene.

@@ -342,10 +342,14 @@ describe('emojiRow — the bounded row in plain text (fallback where no card ima
 describe('shareHeadline — the message\'s first line', () => {
   it('names the day by its CALENDAR DATE, never the internal index', () => {
     const day = dayNumber('2026-08-11');
-    expect(shareHeadline(day, 12, 'essais')).toBe('Whippin AI 2026-08-11 — 12 essais');
+    expect(shareHeadline({ dayNumber: day }, 12, 'essais')).toBe('Whippin AI 2026-08-11 — 12 essais');
     // The index says nothing to a reader, and the archive URL the link resolves to spells
     // the date — so the message has to spell it too.
-    expect(shareHeadline(day, 12, 'essais')).not.toContain(String(day));
+    expect(shareHeadline({ dayNumber: day }, 12, 'essais')).not.toContain(String(day));
+  });
+
+  it('names a BONUS puzzle by its id — it is no day', () => {
+    expect(shareHeadline({ bonusId: 1234567 }, 12, 'essais')).toBe('Whippin AI BONUS 1234567 — 12 essais');
   });
 });
 

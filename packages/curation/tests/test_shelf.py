@@ -27,6 +27,16 @@ def test_forget_deletes_the_work_s_puzzles_only(tmp_path, monkeypatch):
     assert other.exists() and sourceless.exists() and kind_only.exists()
 
 
+def test_forget_deletes_the_judge_scores_beside_a_work_s_puzzle(tmp_path, monkeypatch):
+    monkeypatch.setattr(_paths, "GENERATION_OUTPUT_DIR", tmp_path)
+    mine = _write(tmp_path, "fr/book/hugo/les-miserables/a_b_c.json",
+                  {"source": {"kind": "book", "author": "Victor Hugo", "work": "Les Misérables"}})
+    scores = _write(tmp_path, "fr/book/hugo/les-miserables/a_b_c.contextual.json", {"holes": []})
+    work = {"file": "hugo.epub", "author": "Victor Hugo", "title": "Les misérables"}
+    assert shelf.forget({"books": {}}, work, "fr") == [str(mine)]
+    assert not scores.exists() and not mine.parent.exists()
+
+
 def test_forget_of_an_untitled_work_deletes_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(_paths, "GENERATION_OUTPUT_DIR", tmp_path)
     sourceless = _write(tmp_path, "fr/g_h_i.json", {"words": ["un", "mot"]})

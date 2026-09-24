@@ -35,12 +35,12 @@ def test_start_candidates_are_the_band_minus_variants_and_elision_failures():
     ranks = {
         "savoir": {"word": "savoir", "rank": 0},
         "savoirs": {"word": "savoirs", "rank": 3},
-        "usage": {"word": "usage", "rank": 310},
-        "esprit": {"word": "esprit", "rank": 305},
-        "monde": {"word": "monde", "rank": 320},
-        "effet": {"word": "effet", "rank": 304},
-        "proche": {"word": "proche", "rank": 120},   # the STATIC band: too close on a contextual map
-        "loin": {"word": "loin", "rank": 900},
+        "usage": {"word": "usage", "rank": 110},
+        "esprit": {"word": "esprit", "rank": 105},
+        "monde": {"word": "monde", "rank": 120},
+        "effet": {"word": "effet", "rank": 104},
+        "proche": {"word": "proche", "rank": 60},    # closer than the band
+        "loin": {"word": "loin", "rank": 300},       # the old contextual band: too far
     }
     words = [e["word"] for e in start_candidates(ranks, "savoir", "le", exclude={"effet"})]
     assert words == ["monde"]        # usage/esprit elide after « le », savoirs is a variant, proche/loin are off-band
@@ -53,4 +53,4 @@ def test_start_candidates_are_the_band_minus_variants_and_elision_failures():
 def test_y_initial_is_the_models_call_like_h():
     assert elision_problem("le", "yaourt") is None       # « le yaourt » is right; « l'yeuse » too
     assert elision_problem("l’", "yeuse") is None
-    assert [e["word"] for e in start_candidates({"yoga": {"word": "yoga", "rank": 320}}, "savoir", "le")] == ["yoga"]
+    assert [e["word"] for e in start_candidates({"yoga": {"word": "yoga", "rank": 120}}, "savoir", "le")] == ["yoga"]

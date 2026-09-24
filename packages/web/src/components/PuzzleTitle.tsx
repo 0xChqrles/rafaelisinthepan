@@ -18,7 +18,7 @@
 // a dropdown. The code wears no chip: the mark is the title's one emphasis, and a white chip
 // beside it would be a second one. (A screen that is not a puzzle keeps its NAME in the chip
 // and the code as a quiet tag — `LangTitle`.)
-import { dateForDayNumber } from '@whippin/shared';
+import { dateForDayNumber, isBonusRef, type PuzzleRef } from '@whippin/shared';
 import { useState } from 'react';
 import ChevronDownIcon from '../assets/icons/chevron-down.svg?react';
 import PuzzleSelect from './PuzzleSelect';
@@ -47,17 +47,19 @@ function shortDay(dayNumber: number): string {
 
 export default function PuzzleTitle({
   lang,
-  // Present only on an archive route: the day being played, or null on today.
-  dayNumber = null,
+  // Present only on an archive route: the day being played (or a BONUS puzzle, tagged
+  // BONUS — its id is the result card's), or null on today.
+  puzzleRef = null,
   surface = 'game',
 }: {
   lang: LangCode;
-  dayNumber?: number | null;
+  puzzleRef?: PuzzleRef | null;
   surface?: TitleSurface;
 }) {
   const [open, setOpen] = useState(false);
   const name = (LANGS.find((l) => l.code === lang)?.native ?? lang).toUpperCase();
-  const day = dayNumber === null ? null : shortDay(dayNumber);
+  const day =
+    puzzleRef === null ? null : isBonusRef(puzzleRef) ? 'BONUS' : shortDay(puzzleRef.dayNumber);
   return (
     <>
       <button

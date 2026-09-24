@@ -52,6 +52,17 @@ describe('share links are deterministic input (#236)', () => {
     expect(share?.capped).toBe(true);
   });
 
+  // A BONUS result (share token v7, shared bonus.ts) is a test puzzle outside the calendar:
+  // no day to group it under, so it is never counted — and its generated block leaves the
+  // text like any share's.
+  it('never counts a BONUS result, and strips its block', () => {
+    const t = encodeResult({ lang: 'fr', bonusId: 1234567, score: 7, trajectory: [10, 100], solvedAt: [1, 2, 2] });
+    const text = `Whippin AI BONUS 1234567 — 7 essais\n🟥🟦\n\nhttps://whippin.ai/s/${t}\ntrop dur`;
+    expect(findShareTokens(text, ORIGIN)).toEqual([t]);
+    expect(sharesIn(text, ORIGIN)).toEqual([]);
+    expect(withoutShares(text, ORIGIN)).toBe('trop dur');
+  });
+
   it('ignores garbage', () => {
     expect(sharesIn('https://whippin.ai/s/not-a-token!!', ORIGIN)).toEqual([]);
     expect(sharesIn('no link here', ORIGIN)).toEqual([]);

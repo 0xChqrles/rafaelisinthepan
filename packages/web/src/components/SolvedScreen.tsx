@@ -5,6 +5,8 @@ import {
   INFINITY_EM_WIDTH,
   INFINITY_GLYPH,
   dateForDayNumber,
+  isBonusRef,
+  type PuzzleRef,
   type Source,
 } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -107,7 +109,7 @@ export default function SolvedScreen({
   guessCount,
   trajectory,
   solvedAt,
-  dayNumber,
+  puzzleRef,
   lang,
   source,
   words,
@@ -122,7 +124,9 @@ export default function SolvedScreen({
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
   solvedAt?: (number | null)[]; // the player's solve moments (ruler ticks)
-  dayNumber: number;
+  // WHICH puzzle — a day, or a BONUS (shared bonus.ts), whose result is a v7 token, a card
+  // that says BONUS, and no analytics beat.
+  puzzleRef: PuzzleRef;
   lang: string; // packed into the share token (drives the link's click-through target)
   source?: Source;
   words: string[]; // the sentence's full display tokens (the puzzle's own `words[]`)
@@ -325,7 +329,7 @@ export default function SolvedScreen({
 
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
   // this screen only composes the sentence result's text.
-  const { share, copied } = useShare();
+  const { share, copied } = useShare({ tracked: !isBonusRef(puzzleRef) });
   // The stage is the scroller; the sticky credit is its way back to the top (the score,
   // SHARE) once the reader has scrolled them away.
   const stageRef = useRef<HTMLDivElement>(null);
@@ -342,7 +346,7 @@ export default function SolvedScreen({
       origin,
       {
         lang,
-        dayNumber,
+        ...puzzleRef,
         score: guessCount,
         trajectory,
         solvedAt: solvedAt ?? [],
@@ -354,12 +358,12 @@ export default function SolvedScreen({
     // round names no count — `∞` stands where the number would, exactly as the card draws
     // it — and the unit stays plural, since there is no "1" to agree with.
     const unit = t(lang, !capped && guessCount === 1 ? 'try' : 'tries').toLowerCase();
-    const headline = shareHeadline(dayNumber, capped ? '∞' : guessCount, unit);
+    const headline = shareHeadline(puzzleRef, capped ? '∞' : guessCount, unit);
     // The card (via the token) draws the run in full; the plain-text row is the bounded
     // summary of that SAME run — trajectory and solve moments both — so the link and its
     // fallback can't disagree.
     await share(shareText(headline, trajectory, solvedAt ?? [], url));
-  }, [lang, dayNumber, guessCount, trajectory, solvedAt, capped, share, by]);
+  }, [lang, puzzleRef, guessCount, trajectory, solvedAt, capped, share, by]);
 
   return (
     <div
@@ -381,10 +385,19 @@ export default function SolvedScreen({
             interfaces.dev card the device frame's serial comes from): the day in the one
             spelling the share card, the title and the URL use, and its edition number,
             `N.<day>`, the desktop frame's own. What day a result is from, said once, where
-            the result is. */}
+            the result is. A BONUS is no day: BONUS, and its id as the edition. */}
         <span className="card-edition" aria-hidden="true">
-          <span>{dateForDayNumber(dayNumber)}</span>
-          <span>{`N.${dayNumber}`}</span>
+          {isBonusRef(puzzleRef) ? (
+            <>
+              <span>BONUS</span>
+              <span>{`N.${puzzleRef.bonusId}`}</span>
+            </>
+          ) : (
+            <>
+              <span>{dateForDayNumber(puzzleRef.dayNumber)}</span>
+              <span>{`N.${puzzleRef.dayNumber}`}</span>
+            </>
+          )}
         </span>
         {/* The primary sentence metric. The hidden final value reserves the count's width
             so its tally never moves the content below it — a capped round has no tally to

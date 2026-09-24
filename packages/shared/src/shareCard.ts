@@ -34,8 +34,17 @@
 // bit is what keeps a long game's link short: reconstruction only moves on an IMPROVING
 // guess, and a long game is long precisely because most of its guesses don't improve.
 // A perfect game packs to ~11 chars, a typical dozen-try game to ~15.
+//
+// **v7 (2026-09-24)** is a BONUS puzzle's result (`bonus.ts`): the same payload after a
+// header that names the bonus instead of a day —
+//   version 4b | lang 2b | bonusId 24b | …the v6 payload…
+// A bonus is no day, so a v7 result carries NO `dayNumber`: every consumer that counts a
+// day (the WhatsApp bot's podium) has to see it is not one.
+
+import { BONUS_ID_MAX, BONUS_ID_MIN } from './bonus';
 
 const SHARE_VERSION = 6;
+const BONUS_SHARE_VERSION = 7;
 
 // The RETIRED sentence formats — the ones `decodeLegacyShareTarget` still recovers a
 // language and a day from. Named EXPLICITLY rather than as "anything older than the
@@ -48,6 +57,7 @@ const LEGACY_SENTENCE_VERSIONS: readonly number[] = [1, 2];
 const VERSION_BITS = 4;
 const LANG_BITS = 2; // room for 4 languages before a version bump
 const DAY_BITS = 15; // days since ID_EPOCH -> ~89 years of headroom
+const BONUS_ID_BITS = 24; // a seven-digit bonus id (<= 9 999 999 < 2^24)
 const SCORE_LEN_BITS = 4; // holds the bit-length of the score (0..15)
 const SCORE_MAX = 0x7fff; // 15-bit scores (32767) — far above any real game
 const CELL_BITS = 5;
@@ -64,7 +74,11 @@ const SHARE_LANGS = ['en', 'fr'];
 
 export interface ShareResult {
   lang: string; // 2-letter code; drives the click-through redirect, not shown on the card
-  dayNumber: number; // the puzzle's stable ID (server-owned day), shown as its calendar date
+  // WHICH PUZZLE — exactly one of the two: a daily's stable ID (server-owned day, shown as
+  // its calendar date), or a BONUS puzzle's id (v7). A consumer that counts days must
+  // check `dayNumber` is there: a bonus is no day.
+  dayNumber?: number;
+  bonusId?: number;
   score: number; // unique tries — ALSO the ruler's cell count (one cell per counted try)
   trajectory: number[]; // reconstruction % (0..100) after each counted try -> the bar's cells
   // Per DISTINCT secret, in sentence order (so the index IS the number under the tick): the
@@ -161,9 +175,11 @@ const dequant = (level: number) => (level / QUANT_MAX) * 100;
 
 export function encodeResult(r: ShareResult): string {
   const w = new BitWriter();
-  w.write(SHARE_VERSION, VERSION_BITS);
+  const bonus = r.bonusId !== undefined;
+  w.write(bonus ? BONUS_SHARE_VERSION : SHARE_VERSION, VERSION_BITS);
   w.write(Math.max(0, SHARE_LANGS.indexOf(r.lang)), LANG_BITS); // unknown -> 0 (en)
-  w.write(clamp(Math.round(r.dayNumber) - ID_EPOCH, 0, (1 << DAY_BITS) - 1), DAY_BITS);
+  if (bonus) w.write(clamp(Math.round(r.bonusId!), 0, (1 << BONUS_ID_BITS) - 1), BONUS_ID_BITS);
+  else w.write(clamp(Math.round(r.dayNumber ?? ID_EPOCH) - ID_EPOCH, 0, (1 << DAY_BITS) - 1), DAY_BITS);
   const capped = r.capped === true;
   w.write(capped ? 1 : 0, 1);
 
@@ -253,10 +269,17 @@ export function decodeResult(token: string): ShareResult | null {
   if (!bytes) return null;
   try {
     const rd = new BitReader(bytes);
-    if (rd.read(VERSION_BITS) !== SHARE_VERSION) return null;
+    const version = rd.read(VERSION_BITS);
+    if (version !== SHARE_VERSION && version !== BONUS_SHARE_VERSION) return null;
     const lang = SHARE_LANGS[rd.read(LANG_BITS)];
     if (!lang) return null;
-    const dayNumber = rd.read(DAY_BITS) + ID_EPOCH;
+    const which: Pick<ShareResult, 'dayNumber' | 'bonusId'> =
+      version === BONUS_SHARE_VERSION
+        ? { bonusId: rd.read(BONUS_ID_BITS) }
+        : { dayNumber: rd.read(DAY_BITS) + ID_EPOCH };
+    if (which.bonusId !== undefined && (which.bonusId < BONUS_ID_MIN || which.bonusId > BONUS_ID_MAX)) {
+      return null; // not a bonus id any publish could have minted
+    }
     const capped = rd.read(1) === 1;
     const scoreLen = rd.read(SCORE_LEN_BITS);
     const score = scoreLen === 0 ? 0 : rd.read(scoreLen);
@@ -288,7 +311,7 @@ export function decodeResult(token: string): ShareResult | null {
     // Only the final byte's padding bits (0..7) may remain; a whole extra byte means the
     // token was tampered/extended.
     if (rd.remainingBits >= 8) return null;
-    return { lang, dayNumber, score, trajectory, solvedAt, capped };
+    return { lang, ...which, score, trajectory, solvedAt, capped };
   } catch {
     return null; // bit overrun (truncated token)
   }

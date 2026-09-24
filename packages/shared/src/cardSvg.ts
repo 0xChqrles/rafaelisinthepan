@@ -262,8 +262,14 @@ function scoreLockup(score: number, capped: boolean, unit: { one: string; many: 
   );
 }
 
+// The card's bottom line: the day as its calendar date, or — a BONUS puzzle is no day
+// (`bonus.ts`) — "BONUS" and its id.
+export function cardPuzzleLabel({ dayNumber, bonusId }: Pick<CardData, 'dayNumber' | 'bonusId'>): string {
+  return bonusId !== undefined ? `BONUS ${bonusId}` : dateForDayNumber(dayNumber ?? 0);
+}
+
 export function renderCardSvg(
-  { lang, dayNumber, score, trajectory, solvedAt, capped = false }: CardData,
+  { lang, dayNumber, bonusId, score, trajectory, solvedAt, capped = false }: CardData,
   by: CardFace | null = null,
 ): string {
   const n = Math.max(1, trajectory.length);
@@ -325,7 +331,7 @@ export function renderCardSvg(
     // card that lower is better. Localized by the token's lang (#59). A capped round
     // draws `∞ TRIES` instead — same band, same unit, no number (#214).
     scoreLockup(score, capped, unit),
-    `<text x="${cx}" y="500" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${dateForDayNumber(dayNumber)}</text>`,
+    `<text x="${cx}" y="500" text-anchor="middle" font-family="${CARD_FONT}" font-size="30" fill="${MUTED}">${cardPuzzleLabel({ dayNumber, bonusId })}</text>`,
     `</g>`,
     `</svg>`,
   ].join('');
