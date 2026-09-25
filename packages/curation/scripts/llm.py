@@ -245,11 +245,11 @@ The candidate lines, from one work:
 {listing}
 {again}
 Compare them. For the best one, choose the three words to hide — the punch first among
-them — and play the day out: for each word, how a player reasons toward it from the line,
-and what it does when it lands. Decline only when no line here would make a day worth
-playing.
+them — in the order players should find them: for each word, what in the line (and in
+the words found before it) leads toward it, and what it does when it lands. Decline only
+when no line here would make a day worth playing.
 
-Return {{"line": <number>, "words": ["<first found>", "<second>", "<third>"], "path": ["<word>: <how players reach it and what it does when it lands>", ...], "why": "<one line: what the player will feel>"}},
+Return {{"line": <number>, "words": ["<first found>", "<second>", "<third>"], "path": ["<word>: <what leads toward it and what it does when it lands>", ...], "why": "<one line: what the player will feel>"}},
 or {{"line": null, "why": "<one line>"}} to decline.""")
     n = answer.get("line")
     words = answer.get("words")
@@ -341,12 +341,12 @@ def _chain_block(chain: list[str] | None) -> str:
 
 def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict],
                 chain: list[str] | None = None) -> dict:
-    """The three start words, chosen TOGETHER by playing the day out. `holes`: [{secret,
+    """The three start words, chosen TOGETHER by the taste. `holes`: [{secret,
     slug, slot, notes, options: [{word, rank}]}] — `notes` is what code measured (what a
     reader puts in the blank, how much the sentence hands the word over, where the reader's
     words land in the hole's own map). The model may instead name ONE hidden word to
     REPLACE, when no start can save it. Returns {"starts": {slug: word}, "replace":
-    {"secret": word, "with": word, "why": str} | None, "play": str}; starts only from the
+    {"secret": word, "with": word, "why": str} | None, "why": str}; starts only from the
     options."""
     blocks = []
     for h in holes:
@@ -375,26 +375,24 @@ The sentence, holes marked with the hidden word in brackets:
 {_chain_block(chain)}
 {chr(10).join(blocks)}
 
-For each hole, play it out: from the start you consider, the guesses a player would type,
-in order, and how many tries to the secret — with the line read and the other words found.
-Choose the three starts so the day lands where the taste says (about 80% of players within
-30 tries), difficulty tuned by the start, never by a duller word. If one hidden word is
-dead or out of reach whatever its start, say so and name ONE replacement from the line
-instead of starts.
+Choose the three starts together, by the taste's start words and its difficulty, so the
+day lands where the taste says (about 80% of players within 30 tries), difficulty tuned
+by the start, never by a duller word. If one hidden word is dead or out of reach whatever
+its start, say so and name ONE replacement from the line instead of starts.
 
-Return {{"starts": {{"<hidden word>": "<chosen candidate, exactly>", ...}}, "play": "<one line per hole: the guesses from the start to the word>"}},
+Return {{"starts": {{"<hidden word>": "<chosen candidate, exactly>", ...}}, "why": "<one line per hole: what ties the start to the word>"}},
 or {{"replace": {{"secret": "<hidden word>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")
     replace = answer.get("replace")
     if isinstance(replace, dict) and isinstance(replace.get("secret"), str) and isinstance(replace.get("with"), str):
         return {"starts": {}, "replace": {"secret": replace["secret"].strip(), "with": replace["with"].strip(),
-                                          "why": str(replace.get("why") or "")}, "play": ""}
+                                          "why": str(replace.get("why") or "")}, "why": ""}
     chosen = answer.get("starts", {}) if isinstance(answer.get("starts"), dict) else {}
     out: dict[str, str] = {}
     for h in holes:
         word = chosen.get(h["secret"]) or chosen.get(h["slug"])
         if isinstance(word, str) and word in {o["word"] for o in h["options"]}:
             out[h["slug"]] = word
-    return {"starts": out, "replace": None, "play": str(answer.get("play") or "")}
+    return {"starts": out, "replace": None, "why": str(answer.get("why") or "")}
 
 
 def choose_excerpt(claude: Claude, unit: str, window: dict) -> dict | None:

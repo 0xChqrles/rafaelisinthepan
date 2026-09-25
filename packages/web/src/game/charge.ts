@@ -3,14 +3,21 @@
 // until now it looked like a failure because the visible hole did not move. Every counted
 // guess now CHARGES every unsolved hole by its own rank in that secret's map — whether or
 // not it is a new best — and a full meter ACTIVATES the hole (user-decided 2026-09-22,
-// replacing the secret's first letter): the `GIVEN` words just above the hole's best word
-// are GIVEN — MASKED slots in the hole's tries, each one a hint the player may REVEAL from
-// the wheel at the price of a try — ONCE: nothing is given after the activation, and
-// nothing given is ever taken back (user-decided 2026-09-23, retiring the one word each
-// later improvement of the best used to add: "only the 10 words should be given, and
-// nothing else after that"). The letter was a spelling clue in a meaning game; a
-// neighbourhood says what the word IS ("10 more words actually always give a better idea
-// of the concept" — the user, on the play data).
+// replacing the secret's first letter): words are GIVEN — MASKED slots in the hole's
+// tries, each one a hint the player may REVEAL from the wheel at the price of a try. The
+// letter was a spelling clue in a meaning game; a neighbourhood says what the word IS
+// ("10 more words actually always give a better idea of the concept" — the user, on the
+// play data).
+//
+// THE GIVEN WORDS FOLLOW THE PLAYER'S OWN WORDS (user-decided 2026-09-25, replacing the
+// five drawn ONCE from the best word at the activation, a player stuck on a joke they had
+// not seen): once the meter is full, every word the hole holds — the visible start, every
+// rank the log reached, every hint revealed — opens the nearest word FARTHER than it that
+// the player does not have ("if I found 4 and 6, let's give 5 and 7, and if I unlock 7 and
+// find 2, let's give 8 and 3"), and the hole shows the `GIVEN` openings nearest the secret
+// ("max 5 available words at the same time"), recomputed after every guess: a revealed
+// hint opens the next, and a closer word can push the farthest unrevealed mask out. A
+// hint TAKEN stays given for good. Never a word closer than one the player has.
 //
 // THE HINTS ARE MASKED, AND A REVEAL IS A GUESS (user-decided 2026-09-22: "making the hint
 // words masked, and you can just select them with the wheel, it counts as a guess, but
@@ -20,9 +27,7 @@
 // charges the other holes, syncs. So the log alone says what was CONSUMED: a given rank
 // guessed after it was given. A rank the player had ALREADY guessed is not a hint at all
 // (they knew the word): it is never given, and the next farther word takes its place, so
-// the activation always gives GIVEN (user-decided 2026-09-23, when GIVEN was 10: "if a user
-// already guessed one of these 10 words, then we should find another farther word so it's
-// always 10").
+// the next word the player does not have is opened in its place.
 // The meter's guesses are the cost of the pool; each hint taken is one more try. A fast
 // solve never fills it.
 //
@@ -37,11 +42,8 @@ import type { RankMap, RuntimeHole } from '@whippin/shared';
 // The meter's target; charge caps here and the activation fires the moment it is reached.
 export const CHARGE_TARGET = 100;
 
-// How many words the ACTIVATION gives: the nearest ones farther than the best (the hole
-// moves only by the player's own guess), enough of them to triangulate the sense
-// (user-decided 2026-09-22: "10 words above your closest", over "everything between your
-// closest and the start"; LOWERED TO 5 on 2026-09-23 before launch — "lower is safer at
-// first", and raised back only if real rounds show players need it).
+// How many masked words an active hole shows AT ONCE (user-decided 2026-09-23: 5, "lower is
+// safer at first"; 2026-09-25: "max 5 available words at the same time").
 export const GIVEN = 5;
 
 // What a guess's rank in a secret's map pays is a CONTINUOUS FUNCTION of the rank, never a
@@ -85,8 +87,8 @@ export function strikeFor(rank: number | undefined, isNew: boolean, gained: numb
 
 // One hole's meter: its charge in [0, CHARGE_TARGET], whether the hole is ACTIVE (the meter
 // reached its target), and the ranks it has GIVEN — ascending, without repeats, empty until
-// the activation — each saying whether the player CONSUMED it (guessed it after it was
-// given: the hint taken, the try spent). Repeated occurrences of one secret slug share one
+// the activation: the hints TAKEN (CONSUMED: guessed while masked, the try spent) and the
+// masks it shows now. Repeated occurrences of one secret slug share one
 // meter (one logical target, as reconstruction progress already treats them), so two holes
 // can carry equal readings.
 export interface GivenRank {
@@ -104,13 +106,12 @@ export interface HoleCharge {
 // that is not yet solved; the guess that solves a secret pays it nothing (the solve is the
 // reward), and nothing after the solve touches it either.
 //
-// THE GIVEN WORDS are drawn ONCE, the moment the meter fills, from the best word AS IT
-// STANDS AFTER THAT GUESS (a guess can fill the meter and improve the hole at once — the
-// words are drawn from where the hole then shows): the GIVEN nearest ranks farther than
-// it that the player has not reached, walked outward through the ranks the map holds —
-// fewer only when the map runs out. Nothing is given after that, whatever the best does.
-// A hole solved before its meter fills gives nothing; the post-mortem names its stretch
-// anyway.
+// THE GIVEN WORDS, from the guess that fills the meter on (the guess that fills it opens
+// its own word too): after every guess the hole holds, each word it holds opens the
+// nearest rank farther than it that the player has not reached, walked through the ranks
+// the map holds, and the GIVEN openings nearest the secret are its masks — fewer only when
+// the map runs out. A mask guessed is a hint taken, and stays given. A hole solved before
+// its meter fills gives nothing; the post-mortem names its stretch anyway.
 export function replayCharge(
   freshHoles: readonly RuntimeHole[],
   ranks: RankMap,
@@ -119,24 +120,45 @@ export function replayCharge(
   interface Meter {
     charge: number;
     solved: boolean;
-    best: number;
     guessed: Set<number>; // the visible start and every rank the log has reached so far
-    given: Map<number, boolean>; // rank -> consumed
+    masked: number[]; // the masks the hole shows now, ascending
+    taken: Set<number>; // the hints guessed while masked
   }
   const meters = new Map<string, Meter>();
   for (const h of freshHoles) {
     if (!meters.has(h.secret)) {
-      meters.set(h.secret, { charge: 0, solved: false, best: h.rank, guessed: new Set([h.rank]), given: new Map() });
+      meters.set(h.secret, { charge: 0, solved: false, guessed: new Set([h.rank]), masked: [], taken: new Set() });
     }
   }
-  // Give the GIVEN nearest ranks farther than the best, skipping any the player has
-  // already reached — no hint to them — for the next farther one the map holds.
-  const give = (meter: Meter, secret: string) => {
-    const farther = new Set<number>();
-    for (const entry of Object.values(ranks[secret] ?? {})) {
-      if (entry.rank > meter.best && !meter.guessed.has(entry.rank)) farther.add(entry.rank);
+  // Each secret's map as its distinct ranks, ascending — the walk outward from a word.
+  const ladders = new Map<string, number[]>();
+  const ladder = (secret: string): number[] => {
+    let rungs = ladders.get(secret);
+    if (!rungs) {
+      rungs = [...new Set(Object.values(ranks[secret] ?? {}).map((e) => e.rank))]
+        .filter((r) => r > 0)
+        .sort((a, b) => a - b);
+      ladders.set(secret, rungs);
     }
-    for (const rank of [...farther].sort((a, b) => a - b).slice(0, GIVEN)) meter.given.set(rank, false);
+    return rungs;
+  };
+  // Every word held opens the nearest rank farther than it that the player has not
+  // reached; the GIVEN openings nearest the secret are the masks.
+  const masksOf = (meter: Meter, secret: string): number[] => {
+    const rungs = ladder(secret);
+    const openings = new Set<number>();
+    for (const held of meter.guessed) {
+      let lo = 0;
+      let hi = rungs.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (rungs[mid] <= held) lo = mid + 1;
+        else hi = mid;
+      }
+      while (lo < rungs.length && meter.guessed.has(rungs[lo])) lo += 1;
+      if (lo < rungs.length) openings.add(rungs[lo]);
+    }
+    return [...openings].sort((a, b) => a - b).slice(0, GIVEN);
   };
   for (const typed of log) {
     for (const [secret, meter] of meters) {
@@ -147,15 +169,12 @@ export function replayCharge(
         meter.solved = true;
         continue;
       }
-      // A given rank guessed — typed or revealed from the wheel, the log cannot tell and
-      // need not — is a hint consumed.
-      if (meter.given.has(entry.rank)) meter.given.set(entry.rank, true);
+      // A mask guessed — typed or revealed from the wheel, the log cannot tell and need
+      // not — is a hint consumed.
+      if (meter.masked.includes(entry.rank)) meter.taken.add(entry.rank);
       meter.guessed.add(entry.rank);
-      const wasActive = meter.charge >= CHARGE_TARGET;
       meter.charge = Math.min(CHARGE_TARGET, meter.charge + chargeForRank(entry.rank));
-      if (entry.rank < meter.best) meter.best = entry.rank;
-      // The activation gives its words from the best as it now stands, and only then.
-      if (!wasActive && meter.charge >= CHARGE_TARGET) give(meter, secret);
+      if (meter.charge >= CHARGE_TARGET) meter.masked = masksOf(meter, secret);
     }
   }
   return freshHoles.map((h) => {
@@ -163,9 +182,10 @@ export function replayCharge(
     return {
       charge: meter.charge,
       active: meter.charge >= CHARGE_TARGET,
-      given: [...meter.given]
-        .map(([rank, consumed]) => ({ rank, consumed }))
-        .sort((a, b) => a.rank - b.rank),
+      given: [
+        ...[...meter.taken].map((rank) => ({ rank, consumed: true })),
+        ...meter.masked.map((rank) => ({ rank, consumed: false })),
+      ].sort((a, b) => a.rank - b.rank),
     };
   });
 }

@@ -42,6 +42,21 @@ export function selectWord(
   };
 }
 
+// A mask that leaves the active five is no longer a pick. Remove it from state so it
+// cannot reappear later if another guess makes that rank available again.
+export function retireDisplacedPicks(
+  picks: Record<number, WordPick>,
+  charges: readonly HoleCharge[],
+): Record<number, WordPick> {
+  let next = picks;
+  for (const [index, pick] of Object.entries(picks)) {
+    if (!pick.slug || charges[Number(index)]?.given.some((g) => g.rank === pick.rank)) continue;
+    if (next === picks) next = { ...picks };
+    delete next[Number(index)];
+  }
+  return next;
+}
+
 // Enter reveals the latest still-valid masked selection; consumed or displaced picks retire.
 export function latestMaskedPick(
   picks: Record<number, WordPick>,
@@ -53,7 +68,7 @@ export function latestMaskedPick(
     const h = holes[index];
     const p = picks[index];
     if (!p?.slug || h.rank === 0 || p.at !== h.rank) continue;
-    if (charges[index]?.given.some((g) => g.rank === p.rank && g.consumed)) continue;
+    if (!charges[index]?.given.some((g) => g.rank === p.rank && !g.consumed)) continue;
     if (!latest || p.order > latest.order) latest = { index, slug: p.slug, order: p.order };
   }
   if (!latest) return null;

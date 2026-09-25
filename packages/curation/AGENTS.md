@@ -119,8 +119,8 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   needs no ordering; an empty or unreadable ranking keeps the reading order — the question
   asks for an order, never a refusal). `curate.day` then shows it `COMPARE` (5) lines at a
   time, each with the words code allows (`rules.initial_candidates`), and
-  `llm.choose_day` names the best line and its three words in the order players will
-  find them, playing each out — or declines. Code checks the facts: three distinct words
+  `llm.choose_day` names the best line and its three words in the order players should
+  find them, each with what in the line leads toward it — or declines. Code checks the facts: three distinct words
   of the line that can be hidden, and the line STANDS ALONE (below); a refusal is told
   back and it chooses again, `DAY_ROUNDS` (3) times, then the next lines. Every line
   compared goes to the index as tried.
@@ -134,7 +134,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   real-play meaning: at `GIVEAWAY_MAX` 0.45 and above, a third of the players typed the
   hole within three guesses); and, once the map is built, where the reader's nearest word
   lands in the hole's own map (`rules.map_nearest_filler`). With those notes and each
-  hole's band, `llm.pick_starts` plays the day out and chooses the three starts — or
+  hole's band, `llm.pick_starts` chooses the three starts by the taste — or
   names ONE hidden word no start can save and another word of the line to hide instead
   (`Replace`: the draft is erased, the day rebuilt, `REPLACE_ROUNDS` 2).
 - **Which words can be hidden (facts, `rules.initial_candidates`):** NOUN/VERB/ADJ/ADV and
@@ -182,7 +182,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   `--words` and, when it demands one, `--form` answered by the model from the sentence
   (`curate.generate` parses the #133 error's analysis list). Nothing here publishes.
 - **The START WORDS are CHOSEN by the model, the three together, never at random**, by
-  playing the day out with code's notes (above), from the ONE band 100–200 of every map
+  the taste with code's notes (above), from the ONE band 100–200 of every map
   (`starts.start_candidates`: rank `START_RANK_MIN..MAX`, no variant, elision-clean, not
   past `MAX_START_FREQ_RANK` = 40000 in the corpus order — « hétéroptère » is out). The
   first successful gen_phrase run only supplies the rank maps; gen_phrase then reruns
@@ -266,6 +266,12 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 - Don't turn a measurement into a veto: code states facts, taste chooses. A new signal
   goes to the model as a note, with its real-play meaning.
 - Don't write taste into code or a prompt copy; it lives in the `taste` skill.
+- Don't ask a model to PLAY the puzzle — to guess its way to a secret, count the tries or
+  simulate a player (user-decided 2026-09-25): LLMs don't play like people (on real
+  puzzles they beat them most days and miss what people find easily, and the result moves
+  with the model, the run and the prompt). Difficulty is read off real play: the taste
+  skill's examples and code's calibrated notes. The reader, filling a blank the way the
+  user reads, is not play.
 - Don't commit the shelf (copyrighted files, the artist list) or the runs.
 - Don't put a Genius token anywhere but the environment.
 

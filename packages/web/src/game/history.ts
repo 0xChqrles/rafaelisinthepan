@@ -66,9 +66,9 @@ export interface HistoryStop {
   // recede. Never true while the hole is live: an unsolved line shows only where the
   // player has been.
   revealed: boolean;
-  // GIVEN by the meter (user-decided 2026-09-22): a hint the hole's activation handed over
-  // — one of the `GIVEN` just above the best word, at the activation and at every later
-  // improvement (`game/charge.ts`) — never withdrawn. MASKED until the player takes it: a
+  // GIVEN by the meter (user-decided 2026-09-22): a hint the active hole shows — the next
+  // word past one the player holds, at most `GIVEN` masked at once (2026-09-25,
+  // `game/charge.ts`); a mask not taken can give way to a nearer one. MASKED until the player takes it: a
   // masked stop has no word (`word` empty, `display` the MASK), only its rank; taking it —
   // revealing it from the wheel, or typing it — is a guess, and the stop is then a hint
   // CONSUMED: given, unmasked, wearing the foil. The solve unmasks what was never taken.
@@ -224,7 +224,7 @@ export function buildHistory({
     if (here) here.best = true;
   }
 
-  // THE GIVEN WORDS (user-decided 2026-09-22): the hints the activation handed over. One
+  // THE GIVEN WORDS (user-decided 2026-09-22; 2026-09-25): the hints the active hole shows. One
   // the player CONSUMED — guessed after it was given — is in the log already and stands as
   // a typed stop; visiting it again marks it given (the foil). One not yet taken is MASKED
   // while the hole is live: a stop with a rank and no word. The solve unmasks it, named

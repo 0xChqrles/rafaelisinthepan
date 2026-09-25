@@ -231,10 +231,6 @@ them:
 
 It can fail the other way too: a clue with no path to the secret at all.
 
-Ask: play it out. From the start word, write the guesses a player would type, in order.
-One or two to the secret: it gave it away. No path at all: it is broken. A few real
-steps, each a small discovery: that is the game.
-
 ## Difficulty is part of taste
 
 Difficulty belongs to the HOLE, not to the word: the word, the line around it and its
