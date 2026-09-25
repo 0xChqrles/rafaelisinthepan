@@ -11,7 +11,7 @@ import { guessKey, replayHoles } from '../game/scoring';
 import { playLogFor, withoutDeferred } from '../game/playLog';
 import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
-import { latestMaskedPick, selectWord, type WordPick } from '../game/wordWheel';
+import { latestMaskedPick, retireDisplacedPicks, selectWord, type WordPick } from '../game/wordWheel';
 import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import useRoundSync from '../hooks/useRoundSync';
@@ -303,6 +303,9 @@ function Round({
     () => replayCharge(freshHoles, ranks, withoutDeferred(ranks, playLog, deferred)),
     [freshHoles, ranks, playLog, deferred],
   );
+  useLayoutEffect(() => {
+    setPicked((current) => retireDisplacedPicks(current, shownCharge));
+  }, [shownCharge]);
   // Score = number of unique tries. A try is a submitted word that exists in the
   // vocabulary, including misses; repeats and inflections of an already-played word are
   // one try (#104), which is exactly what the projection collapsed.
@@ -699,7 +702,9 @@ function Round({
       holes.map((h, i) => {
         const p = picked[i];
         if (!p || h.rank === 0 || p.at !== h.rank || p.rank === h.rank) return h;
-        const revealed = p.slug && shownCharge[i].given.some((g) => g.rank === p.rank && g.consumed);
+        const hint = p.slug ? shownCharge[i].given.find((g) => g.rank === p.rank) : undefined;
+        if (p.slug && !hint) return h;
+        const revealed = hint?.consumed;
         const word = revealed ? (ranks[h.secret][p.slug as string]?.word ?? p.word) : p.word;
         return { ...h, word, rank: p.rank };
       }),
@@ -963,10 +968,12 @@ function Round({
       const parts = impacted.map(({ index, entry }) =>
         srHoleResult(lang, index + 1, entry ? entry.rank : null),
       );
-      // Words this guess gives — the activation, or an improvement of an active hole — are
-      // said in the same breath: they are news.
+      // Words this guess gives — the masks it opens on an active hole — are said in the
+      // same breath: they are news. Counted as masks that were not there before, since a
+      // nearer opening can take the place of the farthest one.
       for (const { index } of impacted) {
-        const gave = charged[index].given.length - chargeState[index].given.length;
+        const before = new Set(chargeState[index].given.map((g) => g.rank));
+        const gave = charged[index].given.filter((g) => !g.consumed && !before.has(g.rank)).length;
         if (gave > 0) parts.push(srHoleGiven(lang, gave, index + 1));
       }
       say(solvesAll ? [...parts, t(lang, 'srSolvedAll')].join(', ') : parts.join(', '));

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Phrase from '../components/Phrase';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
@@ -14,7 +14,7 @@ import CoachText, { richToPlain } from './CoachText';
 import { coachCopy, coachLine, type GuessEvent } from './coach';
 import type { LessonStage } from './script';
 import { canExtend } from '../game/keyboard';
-import { latestMaskedPick, selectWord, type WordPick } from '../game/wordWheel';
+import { latestMaskedPick, retireDisplacedPicks, selectWord, type WordPick } from '../game/wordWheel';
 import { MASK, buildHistory, type HistoryStop } from '../game/history';
 import { guessKey, replayHoles } from '../game/scoring';
 import { replayCharge, strikeFor } from '../game/charge';
@@ -468,6 +468,9 @@ export default function LessonBoard({
   // The meters as of the last RELEASE beat (the meter stage only) — what the sentence and
   // the wheel read (#301). Declared here: the picks below read the given ranks off them.
   const shownMeters = useMemo(() => (withMeters ? meters(shownTried) : undefined), [withMeters, meters, shownTried]);
+  useLayoutEffect(() => {
+    setPicked((current) => retireDisplacedPicks(current, shownMeters ?? []));
+  }, [shownMeters]);
   // A live pick in the hole's place; a picked MASK shows its word once the log holds it
   // (Game's rule).
   const shownHoles = useMemo(
@@ -475,7 +478,9 @@ export default function LessonBoard({
       holes.map((h, i) => {
         const p = picked[i];
         if (!p || h.rank === 0 || p.at !== h.rank || p.rank === h.rank) return h;
-        const revealed = p.slug && shownMeters?.[i].given.some((g) => g.rank === p.rank && g.consumed);
+        const hint = p.slug ? shownMeters?.[i].given.find((g) => g.rank === p.rank) : undefined;
+        if (p.slug && !hint) return h;
+        const revealed = hint?.consumed;
         const word = revealed ? (ranks[h.secret][p.slug as string]?.word ?? p.word) : p.word;
         return { ...h, word, rank: p.rank };
       }),
@@ -537,7 +542,7 @@ export default function LessonBoard({
     if (!shownMeters) return undefined;
     return shownMeters.map((c, i) => {
       const hint =
-        holes[i].rank === 0 ? '' : c.active ? srHoleGiven(lang, c.given.length) : srHoleCharge(lang, c.charge);
+        holes[i].rank === 0 ? '' : c.active ? srHoleGiven(lang, c.given.filter((g) => !g.consumed).length) : srHoleCharge(lang, c.charge);
       return { value: c.charge, active: c.active, hint };
     });
   }, [shownMeters, holes, lang]);
