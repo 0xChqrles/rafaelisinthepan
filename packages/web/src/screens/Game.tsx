@@ -963,10 +963,12 @@ function Round({
       const parts = impacted.map(({ index, entry }) =>
         srHoleResult(lang, index + 1, entry ? entry.rank : null),
       );
-      // Words this guess gives — the activation, or an improvement of an active hole — are
-      // said in the same breath: they are news.
+      // Words this guess gives — the masks it opens on an active hole — are said in the
+      // same breath: they are news. Counted as masks that were not there before, since a
+      // nearer opening can take the place of the farthest one.
       for (const { index } of impacted) {
-        const gave = charged[index].given.length - chargeState[index].given.length;
+        const before = new Set(chargeState[index].given.map((g) => g.rank));
+        const gave = charged[index].given.filter((g) => !g.consumed && !before.has(g.rank)).length;
         if (gave > 0) parts.push(srHoleGiven(lang, gave, index + 1));
       }
       say(solvesAll ? [...parts, t(lang, 'srSolvedAll')].join(', ') : parts.join(', '));

@@ -537,7 +537,7 @@ export default function LessonBoard({
     if (!shownMeters) return undefined;
     return shownMeters.map((c, i) => {
       const hint =
-        holes[i].rank === 0 ? '' : c.active ? srHoleGiven(lang, c.given.length) : srHoleCharge(lang, c.charge);
+        holes[i].rank === 0 ? '' : c.active ? srHoleGiven(lang, c.given.filter((g) => !g.consumed).length) : srHoleCharge(lang, c.charge);
       return { value: c.charge, active: c.active, hint };
     });
   }, [shownMeters, holes, lang]);
