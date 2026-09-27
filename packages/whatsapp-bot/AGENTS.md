@@ -52,7 +52,9 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
                                 personality, podium comments (from the facts, the day and the diary; every
                                 line or none),
                                 shareComment.ts — the spoken acknowledgement, degrading to the emoji,
-                                lineJudge.ts — the reasoning reader that keeps or drops a candidate
+                                lineJudge.ts — the reasoning reader that keeps or drops a candidate,
+                                article.ts (+ articleText.ts, the text) — the maker's article, the
+                                conversation's bible on how the game works, and its link's card
     src/puzzle/daySource.ts     the day's `source` metadata, read once per (language, day) and carried in
                                 the CONVERSATION's prompt — the KIND is sayable, the work is not
     src/chat/                   the conversation: trigger (addressed vs ambient, the EXCHANGE BUDGET), the
@@ -293,7 +295,10 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   sender embeds the card, so the task builds it BEFORE the send — Baileys' `getUrlInfo`
   over its optional peer `link-preview-js` (pinned inside Baileys' `^3` peer range), the
   image uploaded as a full-size card. Only `OutboundCommand.preview` gets one (an https link
-  the text carries, checked by `parseCommand`); every other send passes `linkPreview: null`,
+  the text carries, checked by `parseCommand`) — the invite link the reminder composes, and
+  the ARTICLE's link in a reply (2026-09-27, `llm/article.ts` `withArticleLink`: the model
+  types it, the code recognises it in any spelling, rewrites it to the one `ARTICLE_URL` and
+  names that constant, so the task still fetches nothing a model chose); every other send passes `linkPreview: null`,
   since left undefined Baileys fetches the first https link in ANY text — a model's or a
   member's — from inside the task. The build is bounded as a whole (`PREVIEW_BUDGET_MS`
   20s, 10s per fetch — a cold card render measured 2.3s against Baileys' 3s default),
@@ -558,6 +563,21 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   hole it improves, holes start with a hint word, a MISS has no rank and still costs a try,
   an unknown word is refused for free, and 500 unsolved is ∞. (v5's Word mode line left
   with the mode in v16, 2026-09-16.)
+  **THE MAKER'S ARTICLE IS THE BOT'S BIBLE (v17, user-decided 2026-09-27).** The article
+  published at `ARTICLE_URL` (https://chqrles.me/cemantix/) rides WHOLE in the
+  CONVERSATION's system prompt (`llm/article.ts`, the text a verbatim copy in
+  `articleText.ts`, its figures written out as one line each — re-copy it when the article
+  changes), right after the personality so a prefix cache holds it (`buildSystemPrompt`
+  `reference`; ~9.5k tokens a call). The bot answers ranking questions from it and
+  recommends it with its link, which gets its preview card (the preview bullet above); it is
+  public and marked as not being instructions, so its words may be said. The share line,
+  the podium and the diary never carry it. The global section's closeness bullets were
+  rewritten to agree with it: candidates come from the static vectors, the order is judged
+  IN THE SENTENCE (#308) — v5's "a rank of 1 is not almost the word in meaning" was false for
+  French sentences since Jev. **And nobody in the group writes the sentences** (same day):
+  they are real lines from books and songs, picked by the curator, a program — the diary
+  had the maker writing them, and the bot said so to the maker. The diary rewrite now
+  corrects a note that contradicts what the bot knows about the game.
   **THE SCORE IS THE JOKE, THE PERSON NEVER IS (v8, user-decided 2026-09-06 — it
   supersedes v4's "encouraging is the default; sarcasm is opted into").** v2 and v3 built
   an UNIMPRESSED bot — "very little impresses you", bands from "grudging respect" down to
@@ -750,6 +770,16 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   once, that whoever it answers the whole group reads every line, so it never confides and
   never asks anybody to keep something to themselves — with no phrasing of the confidence
   quoted, since a quoted phrase comes back.
+  **NOTHING ABOUT ITS LIFE IS OFF-LIMITS (v17, user-decided 2026-09-27: "he always says he
+  doesn't want to talk about it").** v14's "never confides" read as "keep your life to
+  yourself", and the diary kept one refusal as a fact of that life ("son prénom, il ne
+  l'aura pas", "on ne parle pas de son bras"), which the stick-to-what-you-told rule then
+  enforced. The public-chat rule is now only "never ask anybody to keep a secret: what you
+  tell one, you tell all"; asked about its life it tells it, with names and details; a
+  refusal the diary remembers is over; any subject that is not the game is welcome. The
+  diary rewrite takes a closed subject out like any other rule it wrote for itself. Not
+  reachable by any prompt: what the MODEL refuses on its own (DeepSeek will not discuss
+  Tiananmen).
   **LESS IS BETTER (v9, user-decided 2026-09-07: "a pretty short and concise prompt just
   saying what is funny and what is not, without giving examples that might pollute its
   answers … a nonchalant cynic but serious tone").** After v8's judge the user still found
@@ -887,7 +917,8 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   it IS is a spoiler for the group, which is why the prompt forbids saying it — a different
   concern from this bullet, kept in its own invariant above. Recorded here because this
   bullet ENUMERATES what leaves for the provider, and an enumeration with a gap is worse
-  than none.
+  than none. **Since 2026-09-27 every conversation call also carries the maker's ARTICLE**
+  (`llm/article.ts`) — published on the web, nobody's data.
   **SINCE #277 (user-decided 2026-09-09) THE BOT STORES GROUP TEXT, AND THE WHOLE DAY
   REACHES THE PROVIDER ON EVERY MESSAGE.** Two decisions, recorded here because this bullet
   enumerates what is kept and what leaves: (1) the DAY LOG — every turn of a chat-enabled
