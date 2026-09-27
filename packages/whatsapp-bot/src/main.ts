@@ -387,6 +387,8 @@ async function main(): Promise<void> {
           group: group.id,
           text: outcome.text,
           replyTo: { id: message.id, participant: message.participant, text: message.text },
+          // The article's card, waited for before the send (`llm/article.ts`).
+          ...(outcome.preview ? { preview: outcome.preview } : {}),
         });
       } catch (error) {
         log.error({ event: 'outbound.enqueue_failed', group: tag(group.id), error: (error as Error).message }, 'the answer was not queued; nothing recorded');

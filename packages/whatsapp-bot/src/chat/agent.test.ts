@@ -4,6 +4,7 @@ import { parseGroupConfig } from '../config/groupConfig';
 import { memoryDeclarationStore } from '../domain/declarations';
 import type { InboundMessage } from '../domain/message';
 import { createLog } from '../log';
+import { ARTICLE_URL } from '../llm/article';
 import { LlmUnavailable, type LlmProvider, type LlmRequest, type LlmResponse } from '../llm/types';
 import { ANSWERING, DEFAULT_REACTION, createAgent, fromOwner, plainReply, reactionIn } from './agent';
 import { DayLog, memoryDayLogStore, type Turn } from './dayLog';
@@ -367,6 +368,19 @@ describe('the bot knows its own schedule in this group (user-decided 2026-09-05)
     await agentWith(again.provider, { dayLog })(message('@33700000000 et le rappel ?'), reminding, identity, TODAY, asked());
     expect(again.requests[0].system).toContain('no daily podium');
     expect(again.requests[0].system).toContain('Every morning at 08:30');
+  });
+});
+
+describe("the maker's article rides in the conversation's prompt (2026-09-27)", () => {
+  it('is in the system prompt, and a reply giving its link names the card', async () => {
+    const { provider, requests } = scripted([() => ({ text: 'Tout est là : chqrles.me/cemantix' })]);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'comment il classe les mots ?');
+    const out = await agentWith(provider, { dayLog })(message('@33700000000 comment il classe les mots ?'), group, identity, TODAY, asked());
+    expect(out).toEqual({ kind: 'reply', text: `Tout est là : ${ARTICLE_URL}`, preview: ARTICLE_URL });
+    expect(requests[0].system).toContain('<article>');
+    // Ahead of everything that changes per group or per message: the prefix a cache holds.
+    expect(requests[0].system.indexOf('<article>')).toBeLessThan(requests[0].system.indexOf('On se chambre.'));
   });
 });
 
