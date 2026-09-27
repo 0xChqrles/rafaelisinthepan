@@ -831,7 +831,7 @@ bot:start/pair/cli/groups (whatsapp-bot) — are documented in the owning packag
   (`shared`/`infra`/root deps fan out to all; `generation` deploys nothing). Web build reads
   `VITE_API_BASE_URL` from the committed `.env.production`, requires the public
   `VITE_TURNSTILE_SITE_KEY` variable (`vite.config.ts` rejects a production build without it),
-  optional `VITE_PLAUSIBLE_DOMAIN`. The backend deploy needs `OPERATOR_EMAIL` and
+  optional `VITE_UMAMI_WEBSITE_ID`. The backend deploy needs `OPERATOR_EMAIL` and
   **invalidates `/*` on the API distribution** after `cdk deploy` (puzzle responses carry a
   year-long `s-maxage`; needs `cloudfront:CreateInvalidation` on the human-deployed
   `deploy-role-stack.ts` — `pnpm --filter @whippin/infra deploy:auth`). `deploy-bot` runs

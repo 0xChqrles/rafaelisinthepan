@@ -27,7 +27,7 @@
 // the HMAC-of-IP dedup and its 48h TTL (`SCORE_DEDUP_TTL_SECONDS`), the 10-minute code
 // (`LINK_CODE_TTL_SECONDS`), the inbound-mail buffer and its 30 days (#230,
 // `infra/lib/mail.ts` `INBOUND_RETENTION_DAYS`), the us-east-1 stacks (`infra/bin/app.ts`), Turnstile
-// (`turnstile.ts`) and Plausible's three events (`analytics.ts`). A change to any of those is
+// (`turnstile.ts`) and Umami's three events (`analytics.ts`). A change to any of those is
 // a change to this file. Two values here are NOT in the code and are read off the world
 // instead — the host's legal entity and the mailbox provider, both below.
 
@@ -61,13 +61,13 @@ export const PRIVACY_HOST = 'Amazon Web Services EMEA SARL, 38 avenue John F. Ke
 // WHERE A MESSAGE TO US ENDS UP. Mail to `hello@` is forwarded (#230) to the operator's own
 // inbox — `OPERATOR_EMAIL`, a CI variable, so the code cannot know who hosts it — and that
 // provider receives and stores the whole message, which makes it a recipient this page has
-// to name beside AWS, Cloudflare and Plausible. The name is read off the address CI is
+// to name beside AWS, Cloudflare and Umami. The name is read off the address CI is
 // configured with; the day that inbox moves, this line moves with it.
 export const PRIVACY_MAILBOX_PROVIDER = 'Google';
 
 // WHEN THIS WAS LAST TRUE. An ISO instant rather than a sentence per language: the two would
 // drift, and a date reads differently in the two locales anyway (the screen formats it).
-export const PRIVACY_UPDATED = '2026-09-03';
+export const PRIVACY_UPDATED = '2026-09-28';
 
 // A NAMED THING and what is true of it — the shape four of the six sections take, because the
 // question this page answers is "what, and why" and a bare paragraph buries the "what".
@@ -163,8 +163,8 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
             body: 'Runs the invisible "are you a robot?" check when an account or a round is created. Cloudflare sees your IP address and some basic information about your browser, and may leave a cookie of its own for that check. It never sees your games.',
           },
           {
-            term: 'Plausible',
-            body: 'Counts visits and three simple events (a puzzle solved, a result shared, the tutorial opened). No cookies, and nothing that can be traced back to you.',
+            term: 'Umami',
+            body: 'Counts visits and three simple events (a puzzle solved and in how many tries, a result shared, the tutorial opened). No cookies. Umami sees your IP address and some basic information about your browser without keeping them: it keeps only a code made from them, renewed every month, which tells your visits apart from other people\'s without saying who you are. It is an American company, and what it counts is stored in the European Union.',
           },
           {
             term: PRIVACY_MAILBOX_PROVIDER,
@@ -251,8 +251,8 @@ export const PRIVACY: Record<UiLang, PrivacyDoc> = {
             body: "Effectue la vérification invisible « êtes-vous un robot ? » quand un compte ou une partie est créé. Cloudflare voit votre adresse IP et quelques informations de base sur votre navigateur, et peut y déposer un cookie pour cette vérification. Il ne voit jamais vos parties.",
           },
           {
-            term: 'Plausible',
-            body: "Compte les visites et trois événements simples (une grille résolue, un résultat partagé, le tutoriel ouvert). Pas de cookies, et rien qui permette de remonter jusqu'à vous.",
+            term: 'Umami',
+            body: "Compte les visites et trois événements simples (une grille résolue et en combien d'essais, un résultat partagé, le tutoriel ouvert). Pas de cookies. Umami voit votre adresse IP et quelques informations de base sur votre navigateur sans les garder : il n'en garde qu'un code, renouvelé chaque mois, qui distingue vos visites de celles des autres sans dire qui vous êtes. C'est une entreprise américaine, et ce qu'elle compte est stocké dans l'Union européenne.",
           },
           {
             term: PRIVACY_MAILBOX_PROVIDER,

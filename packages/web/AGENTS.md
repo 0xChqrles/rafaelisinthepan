@@ -1372,7 +1372,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     Every claim is checked against something: the account row's stored address, the device
     item's hashed token and coarse user-agent (#216), the round rows' folded guesses (#201),
     the HMAC-of-IP rows and their TTLs, the 10-minute code, the us-east-1 stacks, Turnstile
-    and Plausible's three events. The TTLs are stated as an upper BOUND, never an instant —
+    and Umami's three events. The TTLs are stated as an upper BOUND, never an instant —
     DynamoDB's sweep is best-effort and the two rows expire at different lengths.
   - **It is SET LIKE AN ARTICLE (user-decided 2026-09-03: "a bit more beautiful, like a blog
     post", and wider — at the account column's 430px "on desktop it feels like you're on a
@@ -3608,30 +3608,39 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the keyboard width exactly. The two control keys render `assets/icons/{enter,back}.svg` as
   inline SVG components (see **SVG icons** below), not text; the button `aria-label`
   (`enter` / `backspace`) is what names them.
-- **Analytics (#60, decided 2026-07-07):** privacy-first, cookieless **Plausible** — no
-  cookies, no consent banner (the developer is in France, GDPR-relevant).
+- **Analytics (#60, decided 2026-07-07; UMAMI since 2026-09-28, user-decided):**
+  privacy-first, cookieless **Umami Cloud** (Pro plan, EU data region) — no cookies, no
+  consent banner (the developer is in France, GDPR-relevant). It REPLACED Plausible, which
+  the user cancelled: the same needs (event properties in the dashboard + a read API)
+  cost Plausible's Business plan, and Umami Pro covers them flat up to 1M events a month.
   An explicit, **user-approved EXCEPTION** to the no-third-party-origin stance (same
-  rationale that self-hosts the pixel font); proxying the endpoint through our own domain
-  is a possible later step. **`web/src/analytics.ts` is the ONLY module that knows
-  Plausible exists:** it uses the official `@plausible-analytics/tracker` package
-  (follow-up decision 2026-07-07, replacing manual `script.js` injection) and
-  `initAnalytics()` (called once from `main.tsx`) loads/initializes the tracker **only
-  when `VITE_PLAUSIBLE_DOMAIN` is set** (else nothing). `track(event, props)` initializes
-  the same tracker if needed, stringifies low-cardinality props at the Plausible boundary,
-  and is a **silent, never-throwing no-op** when unconfigured. **Env-gated:**
-  `VITE_PLAUSIBLE_DOMAIN` is a GitHub **repo variable**
-  (like `VITE_API_BASE_URL`) set ONLY on the CI prod deploy (`deploy.yml` web build) and
-  deliberately **NOT** in `.env.production`, so dev/preview/local `pnpm build` stay fully
-  inert. The web CloudFront CSP (`infra/lib/web-stack.ts`) allows `https://plausible.io`
-  in `connect-src` for the tracker endpoint; `script-src` stays `'self'` because the
-  tracker is bundled. **Exactly three events** (low-cardinality props only — **NEVER** a typed
-  word/guess): `solve {lang, tries, day, archive}` — the play-solve transition in
-  `Game.tsx` (NOT rehydration; `archive` is `'yes'`
-  when replaying a past archive day (#55), `'no'` for the live daily puzzle);
-  `share {method:'native'|'clipboard'}` — `SolvedScreen`
-  success paths; `tutorial {action:'start'|'finish'|'skip'}` — invite accept / the ending's
-  PLAY / skip (fast-forward or invite SKIP). Plus automatic
-  pageviews.
+  rationale that self-hosts the pixel font). **`web/src/analytics.ts` is the ONLY module
+  that knows Umami exists:** Umami ships no npm tracker, so `initAnalytics()` (called once
+  from `main.tsx`) injects its official `https://cloud.umami.is/script.js` with
+  `data-website-id` **only when `VITE_UMAMI_WEBSITE_ID` is set** (else nothing); the
+  script records the landing page and every URL change made through
+  pushState/replaceState on its own. **Where Umami differs from Plausible, the module
+  restates Plausible's behaviour** (each verified against the real script): a
+  `popstate` listener replaces the entry with itself so Back/Forward are counted and
+  Umami's idea of the current page never goes stale; and a `data-before-send` hook
+  (`whippinUmamiBeforeSend`) drops a SAME-SITE referrer — a signed share's
+  `/s/<token>/<publicId>` would otherwise hand Umami the sharer's player id — and counts
+  a pageview once per PATH (a replace or a query-only change is not a page).
+  `track(event, props)` waits for that same script and calls `window.umami.track`, and
+  is a **silent, never-throwing no-op** when unconfigured or blocked (a failed load stays
+  failed for the page, never re-injected). **Env-gated:**
+  `VITE_UMAMI_WEBSITE_ID` is a GitHub **repo variable** set ONLY on the CI prod deploy
+  (`deploy.yml` web build) and deliberately **NOT** in `.env.production`, so
+  dev/preview/local `pnpm build` stay fully inert. The web CloudFront CSP
+  (`infra/lib/web-stack.ts`) allows `https://cloud.umami.is` in `script-src` and the
+  collection endpoint `https://gateway.umami.is` in `connect-src`. **Umami bills every
+  stored event PROPERTY as an event**, so a prop is never free. **Exactly three events**
+  (low-cardinality props only — **NEVER** a typed word/guess): `solve {lang, tries, day,
+  archive}` — the play-solve transition in `Game.tsx` (NOT rehydration; `archive` is
+  `'yes'` when replaying a past archive day (#55), `'no'` for the live daily puzzle);
+  `share {method:'native'|'clipboard'}` — `SolvedScreen` success paths; `tutorial
+  {action:'start'|'finish'|'skip'}` — invite accept / the ending's PLAY / skip
+  (fast-forward or invite SKIP). Plus automatic pageviews.
 - **Stale-tab auto-reload (user-decided 2026-08-16):** a deployed release must reach tabs
   already open — an SPA loads its JS once, and the deploy's `prune: false` deliberately
   keeps old chunks alive, so nothing ever forces a stale tab to refresh (and under the

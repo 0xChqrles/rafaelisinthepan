@@ -83,7 +83,8 @@ shipped bundle. Web deploys read two repo **variables**:
   interactive challenge can never be completed — it times out and silently shuts out
   exactly the players Cloudflare doubts (no identity, no round, no sync).
   Nothing in code or CI can detect the widget type, so it is checked when the key is issued.
-- `VITE_PLAUSIBLE_DOMAIN` is optional (#60): unset means analytics stay inert.
+- `VITE_UMAMI_WEBSITE_ID` is optional (#60): the Umami Cloud website id; unset means
+  analytics stay inert.
 
 The BACKEND deploy reads one more repo **variable**:
 
