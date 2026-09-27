@@ -221,7 +221,7 @@ jobs:
     # key is a REQUIRED repo variable: unlike optional analytics, a missing value must stop
     # deployment rather than silently ship score collection disabled (#170).
     env:
-      VITE_PLAUSIBLE_DOMAIN: ${{ vars.VITE_PLAUSIBLE_DOMAIN }}
+      VITE_UMAMI_WEBSITE_ID: ${{ vars.VITE_UMAMI_WEBSITE_ID }}
       VITE_TURNSTILE_SITE_KEY: ${{ vars.VITE_TURNSTILE_SITE_KEY }}
     steps:
       - uses: actions/checkout@v4

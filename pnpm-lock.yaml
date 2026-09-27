@@ -100,9 +100,6 @@ importers:
 
   packages/web:
     dependencies:
-      '@plausible-analytics/tracker':
-        specifier: ^0.4.5
-        version: 0.4.5
       '@react-spring/web':
         specifier: ^9.7.5
         version: 9.7.5(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -1030,9 +1027,6 @@ packages:
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
-
-  '@plausible-analytics/tracker@0.4.5':
-    resolution: {integrity: sha512-6BfAGejXY+YA3Cw6LYT2Zpn4hTxDtPQAawFsYUsQCOg78wIS5C4deAGXTfJffa5VleMWITv5lpJ/EYuQBl1tPA==}
 
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
@@ -3087,8 +3081,6 @@ snapshots:
   '@keyv/serialize@1.1.1': {}
 
   '@pinojs/redact@0.4.0': {}
-
-  '@plausible-analytics/tracker@0.4.5': {}
 
   '@protobufjs/aspromise@1.1.2': {}
 

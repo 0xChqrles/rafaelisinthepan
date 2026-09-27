@@ -74,7 +74,7 @@ async function mount(): Promise<void> {
   const removeGameStoreSync = installGameStoreSync();
   if (import.meta.hot) import.meta.hot.dispose(removeGameStoreSync);
 
-  // Env-gated (VITE_PLAUSIBLE_DOMAIN): a no-op unless the production deploy configured it.
+  // Env-gated (VITE_UMAMI_WEBSITE_ID): a no-op unless the production deploy configured it.
   initAnalytics();
 
   // Prod only: dev serves no version.json, and HMR already delivers new code to open tabs.
