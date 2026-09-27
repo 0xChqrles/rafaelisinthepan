@@ -578,6 +578,16 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   they are real lines from books and songs, picked by the curator, a program — the diary
   had the maker writing them, and the bot said so to the maker. The diary rewrite now
   corrects a note that contradicts what the bot knows about the game.
+  **AND IT IS THE BOT'S FAVOURITE TEXT EVER, BY WHIPPIN'S MAKER (v18, user-decided
+  2026-09-27, after trying v17 live):** asked for something to read — a book, an article,
+  its favourite text — it names the article with its link and nothing else (v17 recommended
+  a novel and invented a favourite manual). Unasked it gives the link once a day at most;
+  asked, every time. The favourite is one sentence of the GLOBAL personality too, since the
+  diary rewrite never sees the article and would otherwise keep an invented favourite as a
+  fact of its life. The article section says outright that its author is Whippin's maker
+  and not Cémantix's, AND GIVES IT THE WORDS ("le créateur de Whippin"): the title improves
+  Cémantix, the link says `cemantix` and the text never names Whippin, so v17 credited "le
+  type qui a fabriqué Cémantix" — and told only the fact, it still did one time in ten.
   **THE SCORE IS THE JOKE, THE PERSON NEVER IS (v8, user-decided 2026-09-06 — it
   supersedes v4's "encouraging is the default; sarcasm is opted into").** v2 and v3 built
   an UNIMPRESSED bot — "very little impresses you", bands from "grudging respect" down to
