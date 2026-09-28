@@ -50,10 +50,11 @@ function firstDayOfWeek(lang: string): number {
 // claim, and a false one. A month that could not be read says so and offers to ask again;
 // there is no local fallback to fall back to.
 export default function Archive({ lang }: { lang: LangCode }) {
-  // The window of playable days: [FIRST_PUZZLE_DATE, the client's active game day]. Both
-  // are ISO labels, so cells compare against them by string order (offset-free).
+  // The window of playable days: [the language's first day, the client's active game day].
+  // Both are ISO labels, so cells compare against them by string order (offset-free).
   const today = useMemo(() => activeDate(new Date()), []);
-  const firstMonth = useMemo<YearMonth>(() => yearMonthOf(FIRST_PUZZLE_DATE), []);
+  const firstDate = FIRST_PUZZLE_DATE[lang];
+  const firstMonth = useMemo<YearMonth>(() => yearMonthOf(firstDate), [firstDate]);
   const activeMonth = useMemo<YearMonth>(() => yearMonthOf(today), [today]);
 
   // The month on screen, clamped into range (start on the current month).
@@ -157,12 +158,12 @@ export default function Archive({ lang }: { lang: LangCode }) {
                 chained={
                   i % 7 !== 6 &&
                   all[i + 1] != null &&
-                  isSolved(history, date, today) &&
-                  isSolved(history, all[i + 1] as string, today)
+                  isSolved(history, date, firstDate, today) &&
+                  isSolved(history, all[i + 1] as string, firstDate, today)
                 }
                 date={date}
                 lang={lang}
-                inRange={date >= FIRST_PUZZLE_DATE && date <= today}
+                inRange={date >= firstDate && date <= today}
                 isToday={date === today}
                 // A day the month does not name has NO round on the server, which is
                 // exactly "not started". A MONTH that has not arrived is a different thing,
@@ -204,8 +205,13 @@ export default function Archive({ lang }: { lang: LangCode }) {
 
 // Whether a day of the grid is SOLVED as the calendar shows it (in range, and the month's
 // summary says so) — the reading the streak chain links on.
-function isSolved(history: Parameters<typeof daySummaryStatus>[0], date: string, today: string): boolean {
-  return date >= FIRST_PUZZLE_DATE && date <= today && daySummaryStatus(history, date).kind === 'solved';
+function isSolved(
+  history: Parameters<typeof daySummaryStatus>[0],
+  date: string,
+  firstDate: string,
+  today: string,
+): boolean {
+  return date >= firstDate && date <= today && daySummaryStatus(history, date).kind === 'solved';
 }
 
 // The calendar's arrival: the arrive gesture (index.css), one diagonal of days a beat. Only

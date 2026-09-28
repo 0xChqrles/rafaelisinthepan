@@ -2382,8 +2382,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (`web/src/langs.ts`) grew two language-scoped routes beyond `/<lang>`:
   `/<lang>/archive` → the calendar screen (`screens/Archive.tsx`), and
   `/<lang>/<YYYY-MM-DD>` → that past day's game (deep-linkable/shareable). A date is
-  honored only when it is a **real calendar date within `[FIRST_PUZZLE_DATE, activeDate]`**
-  (`web/src/config.ts`, a launch placeholder the user pins); a malformed or out-of-range
+  honored only when it is a **real calendar date within `[FIRST_PUZZLE_DATE[lang],
+  activeDate]`** (`web/src/config.ts`, one first day PER LANGUAGE since #317 — the languages
+  are independent and English starts later: en 2026-10-01, its planned launch, fr
+  2026-08-01; the user pins them); the calendar's earliest month is its language's first
+  (keyed by language, so a switch re-clamps the month on screen); a malformed or out-of-range
   date-shaped segment → `home` redirect, while a **non-date** second segment keeps the old
   tolerance (`/<lang>/xyz` → today's game). `parseRoute` takes the range bounds as an
   injected arg (App passes the client `activeDate`) so parsing stays pure/testable.
@@ -2937,9 +2940,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     openings that each read as too hard or too abstract (TROPIQUES, `île^12`, `plage^28`,
     `atlantique^7`, then `mer^1` under an ordinal line).
   - **THE WORD** — another secret, never shown, its stand-in a dozen ranks out (en MOUNTAIN
-    behind `snow^13`, fr MONTAGNE behind `ski^14`; the test wants 2–20): a real search that
+    behind `ski^17` since the fastText maps (#317), fr MONTAGNE behind `ski^14`; the test wants 2–20): a real search that
     stays easy, the coach reacting to the guesses ("Now find another secret word. I give you
-    its 13th closest word, snow¹³." — user-decided 2026-09-16). The real keyboard
+    its 17th closest word, ski¹⁷." — user-decided 2026-09-16). The real keyboard
     and the real vocabulary from the first frame. **A LONE WORD IS NOT TAPPABLE** (same day):
     the wheel is the sentences' own. NO CAPITAL on a lone word (`Phrase`'s `capital={false}`: a word is not
     a sentence), and the PROMPT sits just above the keyboard on the LEFT (`.tutorial--word
@@ -2950,7 +2953,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     2026-09-16). Finding it ends the stage wordless and
     rolls into the sentence.
   - **THE SENTENCE** — two holes, start words in the game's own 50–150 band (en "a dog barks
-    at the moon." from `coyote^55` / `stars^62`; fr « un chien aboie à la lune. » from
+    at the moon." from `coyote^63` / `star^69`; fr « un chien aboie à la lune. » from
     `loup^52` / `pénombre^63`), the try count printed behind it as the day does, CENTRED on
     the game's full column so a wide screen shows it on one line (the word stages keep the
     680px cap), and in the MIDDLE of the room between the coach and the prompt (two auto
@@ -2967,7 +2970,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     SCRIPTED the same day; the letter became the ACTIVATION on 2026-09-22 and the stage's
     lines with it)** — CONTINUE from the sentence's solved line (the line stands
     until it is pressed) into a harder sentence THE BOT HAS ALREADY HALF PLAYED: en "the cat
-    dreams of liberty." (fr « le chat suit le sentier. »), CAT found, with the #301 meters
+    dreams of liberty." shown as "the stray dreams of peace." (`stray^80` / `peace^107`; fr
+    « le chat suit le sentier. »), CAT found, with the #301 meters
     SHOWN for the first time. **THE SECRET IS THE CLOSE SYNONYM OF THE OBVIOUS WORD** (user-
     decided 2026-09-16 after solving it in one try: "if you type the word 0 it should become
     the word -1"): the sentence begs for FREEDOM / CHEMIN, and that word is the secret's
@@ -2980,13 +2984,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     meters, the wheel and every later guess replay against it. Once the hole is active there
     is no swap: the goal is only that the activation is seen before the solve. `played` is the
     bot's log — FEW tries, five, the best one an EASY SYNONYM of the obvious word (en: cat,
-    independence, respect, happiness, justice, truth; fr: chat, parcours, randonneur, détour,
+    independence, equality, happiness, justice, dignity — on the fastText map (#317) the
+    synonyms sit past rank 40 and five of them cannot reach the ~72 FREEDOM needs to fill the
+    meter alone, so en's best try is the easy word EQUALITY, an exception for the user to
+    re-judge; fr: chat, parcours, randonneur, détour,
     hameau, tunnel — masculine so « le » holds; « belvédère » "was way too hard: the goal is
     easy guesses that teach the other mechanics", user-decided 2026-09-16) — replayed onto the board, the meters and the tries wheel exactly as a
     round's log would be, chosen so the open word's meter stands at ABOUT THREE QUARTERS
-    (~74 en / ~74 fr, the day's own `replayCharge` — no lesson boost; "almost full, we don't
+    (~73 en / ~74 fr, the day's own `replayCharge` — no lesson boost; "almost full, we don't
     see it getting filled") with a best try that is no giveaway AND LONG ENOUGH for the fill
-    to read on its chip (`independence^9` / `parcours^8` — `col` "was too short to understand
+    to read on its chip (`equality^11` / `parcours^8` — `col` "was too short to understand
     the notion of progression", 2026-09-16;
     the test wants rank ≥ 5 and ≥ 6 letters, 65–80, ≤ 6 tries, `alt` at rank 1, untried, and
     filling it alone). THE WATERMARK COUNTS THE WHOLE LOG, the bot's tries included.
@@ -2996,14 +3003,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     WHEEL IS CLOSED (`tapped` lands on close, same day).
     that a rank-200 guess still fills it). The beats, each on the player's act: "I already
     made some progress on this sentence, but I cannot find the last word. Click
-    independence⁹ to see my tries." (ONE box, no beat between — user-decided 2026-09-16; TAP
+    equality¹¹ to see my tries." (ONE box, no beat between — user-decided 2026-09-16; TAP
     on a coarse pointer — every tap line has its click twin) → tapped: "The 1000 closest words to the
     secret fill its meter. Once full, you earn a clue." → a guess that does not fill:
     `tutNear` → the obvious guess FILLS IT — no progress needed — and the hole ACTIVATES:
     "The meter is full! 10 words close to the secret are masked in its tries. Click
     freedom¹, pick a masked word, then press enter to reveal it — it costs a try."
     (`tutActivatedTap`/`Click`, 2026-09-22; the tap teaches the wheel a second time and
-    the price once) → a hint REVEALED by an empty ENTER on the ghost: "equality² is revealed, for one try. Now find the secret word."
+    the price once) → a hint REVEALED by an empty ENTER on the ghost: "unalienable² is revealed, for one try. Now find the secret word."
     (`tutRevealed`, off the event's `revealed` flag) → a FAILED TRY typed after it earns the HINT
     (`hints[]`, or `pair.hint` once swapped), NEVER THE WORD (user-decided 2026-09-16,
     retiring the bot's own closing guess) → found: "You found it! You are ready for the real

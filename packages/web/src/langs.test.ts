@@ -5,6 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { groupLandingPath } from '@whippin/shared';
+import { FIRST_PUZZLE_DATE } from './config';
 import {
   ACCOUNT_EMAIL_PATH,
   ACCOUNT_PATH,
@@ -92,6 +93,16 @@ describe('parseRoute — archive + past-day deep links (#55)', () => {
   // A wide, deterministic range so the shape/range logic is tested independently of the
   // launch FIRST_PUZZLE_DATE const.
   const bounds = { firstDate: '2026-01-01', activeDate: '2026-06-30' };
+
+  it("bounds each language by ITS first day (#317: the languages are independent)", () => {
+    const activeDate = '2026-12-31';
+    for (const lang of ['fr', 'en'] as const) {
+      const first = FIRST_PUZZLE_DATE[lang];
+      expect(parseRoute(`/${lang}/${first}`, { activeDate })).toEqual({ view: 'game', lang, date: first });
+      const before = new Date(Date.parse(`${first}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+      expect(parseRoute(`/${lang}/${before}`, { activeDate })).toEqual({ view: 'home' });
+    }
+  });
 
   it('routes /<lang>/archive to the calendar', () => {
     expect(parseRoute('/fr/archive')).toEqual({ view: 'archive', lang: 'fr' });
