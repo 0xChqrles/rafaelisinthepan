@@ -40,7 +40,7 @@ def test_judge_sentences_removes_the_failing_and_keeps_reading_order():
         "better": {"autonome": 0.5, "image": 0.9, "celebre": 0.1},
     }
     log = Log()
-    kept = curate.judge_sentences(log, list(table), judge=FakeJudge(table))
+    kept = curate.judge_sentences(log, list(table), "fr", judge=FakeJudge(table))
     assert kept == ["good", "better"]          # reading order, never re-ranked by a score
     assert any("2 of 5" in line for line in log)
 
@@ -48,9 +48,9 @@ def test_judge_sentences_removes_the_failing_and_keeps_reading_order():
 def test_the_model_reads_every_line_the_judge_keeps(monkeypatch):
     monkeypatch.setattr(curate, "CHUNK", 2)
     chunks = []
-    monkeypatch.setattr(curate.llm, "pick_from_chunk", lambda _c, chunk, _n: chunks.append(chunk) or [])
-    monkeypatch.setattr(curate.llm, "rank_sentences", lambda _c, picks, _n: picks)
-    curate.shortlist(object(), Log(), ["a", "b", "c"], set())
+    monkeypatch.setattr(curate.llm, "pick_from_chunk", lambda _c, chunk, _n, lang: chunks.append(chunk) or [])
+    monkeypatch.setattr(curate.llm, "rank_sentences", lambda _c, picks, _n, lang: picks)
+    curate.shortlist(object(), Log(), ["a", "b", "c"], set(), "fr")
     assert chunks == [["a", "b"], ["c"]]
 
 
@@ -65,7 +65,7 @@ def test_a_short_shortlist_is_ranked_before_comparing_batches():
 
     claude = Claude()
     picks = [{"sentence": str(i), "why": ""} for i in range(8)]
-    ranked = curate.llm.rank_sentences(claude, picks, curate.SHORTLIST)
+    ranked = curate.llm.rank_sentences(claude, picks, curate.SHORTLIST, lang="fr")
     assert claude.calls == 1
     assert [p["sentence"] for p in ranked] == [str(i) for i in range(7, -1, -1)]
 
@@ -77,7 +77,7 @@ def test_an_empty_ranking_keeps_the_reading_order_instead_of_losing_the_shortlis
             return {"ranked": []}
 
     picks = [{"sentence": str(i), "why": ""} for i in range(8)]
-    assert curate.llm.rank_sentences(Claude(), picks, curate.SHORTLIST) == picks
+    assert curate.llm.rank_sentences(Claude(), picks, curate.SHORTLIST, lang="fr") == picks
 
 
 def test_day_choice_prompt_has_no_hard_substitutability_veto():
@@ -89,7 +89,7 @@ def test_day_choice_prompt_has_no_hard_substitutability_veto():
             return {"line": None, "why": "none"}
 
     claude = Claude()
-    curate.llm.choose_day(claude, [{"sentence": "Le chat dort.", "allowed": ["chat", "dort", "lit"]}], [])
+    curate.llm.choose_day(claude, [{"sentence": "Le chat dort.", "allowed": ["chat", "dort", "lit"]}], [], lang="fr")
     assert "## The quotation rule" in claude.prompt
     assert "Exactly three distinct words" in claude.prompt
     assert "Every secret must pass the substitutability test" not in claude.prompt
@@ -97,7 +97,7 @@ def test_day_choice_prompt_has_no_hard_substitutability_veto():
 
 
 def test_an_empty_list_asks_the_judge_nothing():
-    assert curate.judge_sentences(Log(), [], judge=None) == []
+    assert curate.judge_sentences(Log(), [], "fr", judge=None) == []
 
 
 def _line_tokens(*_a):
@@ -112,12 +112,12 @@ def test_a_chosen_line_that_does_not_stand_alone_is_told_back_and_nothing_is_bui
     monkeypatch.setattr(curate, "parse", _line_tokens)
     asked = []
 
-    def choose(_c, lines, refused):
+    def choose(_c, lines, refused, lang):
         asked.append(list(refused))
         return {"line": 0, "words": ["chat", "pierre", "froide"], "path": [], "why": "w"} if len(asked) == 1 else None
 
     monkeypatch.setattr(curate.llm, "choose_day", choose)
-    monkeypatch.setattr(curate.llm, "stands_alone", lambda _c, s: {"ok": False, "about": "", "why": "leans on its page"})
+    monkeypatch.setattr(curate.llm, "stands_alone", lambda _c, s, lang: {"ok": False, "about": "", "why": "leans on its page"})
     monkeypatch.setattr(curate, "build_day", lambda *a, **k: pytest.fail("a refused line is never built"))
     log = Log()
     path = curate.day(object(), log, [{"sentence": "Le chat dort sur la pierre froide."}], {"kind": "book"},
@@ -130,7 +130,7 @@ def test_words_off_the_line_are_told_back(monkeypatch):
     monkeypatch.setattr(curate, "parse", _line_tokens)
     asked = []
 
-    def choose(_c, lines, refused):
+    def choose(_c, lines, refused, lang):
         asked.append(list(refused))
         return {"line": 0, "words": ["chat", "lune", "pierre"], "path": [], "why": "w"} if len(asked) == 1 else None
 
@@ -181,8 +181,8 @@ def test_an_incomplete_start_choice_erases_the_draft(tmp_path, monkeypatch):
         return SimpleNamespace(returncode=0, stderr="", stdout=f"écrite dans {draft} :"), []
 
     monkeypatch.setattr(curate, "run_gen_phrase", run)
-    monkeypatch.setattr(curate, "choose_starts", lambda *_a: None)
-    monkeypatch.setattr(curate, "check_starts", lambda *_a: pytest.fail("an incomplete choice is not checked"))
+    monkeypatch.setattr(curate, "choose_starts", lambda *_a, **_k: None)
+    monkeypatch.setattr(curate, "check_starts", lambda *_a, **_k: pytest.fail("an incomplete choice is not checked"))
     assert curate.generate(object(), Log(), "s", ["chat", "chien", "ours"], {}, "fr") is None
     assert not draft.exists() and not sidecar.exists()
 
@@ -203,7 +203,7 @@ def _three_hole_draft(tmp_path):
 
 
 def _two_of_three(shown):
-    def pick(_claude, _marked, info, _chain):
+    def pick(_claude, _marked, info, _chain, lang):
         shown.extend(info)
         return {"starts": {"chat": "lapin", "chien": "loup"}, "replace": None, "why": ""}
     return pick
@@ -221,7 +221,7 @@ def test_a_hole_left_without_a_start_is_asked_again_alone(tmp_path, monkeypatch)
         return "brique"
 
     monkeypatch.setattr(curate.llm, "pick_start", pick_one)
-    picked = curate.choose_starts(object(), Log(), str(path), {}, {}, lambda _t: None)
+    picked = curate.choose_starts(object(), Log(), str(path), {}, {}, lambda _t: None, lang="fr")
     assert picked == {"chat": "lapin", "chien": "loup", "pierre": "brique"}
     assert asked == [("un lapin un loup une [____]", "pierre", ["brique"])]
 
@@ -232,7 +232,7 @@ def test_start_choice_requires_all_three_valid_candidates(tmp_path, monkeypatch)
     monkeypatch.setattr(curate.llm, "pick_starts", _two_of_three(shown))
     monkeypatch.setattr(curate.llm, "pick_start", lambda *_a, **_k: None)
     log = Log()
-    assert curate.choose_starts(object(), log, str(path), {}, {}, lambda _t: None) is None
+    assert curate.choose_starts(object(), log, str(path), {}, {}, lambda _t: None, lang="fr") is None
     assert len(shown) == 3
     assert any("missing: pierre" in line for line in log)
 
@@ -247,7 +247,7 @@ def test_a_hole_with_no_candidate_asks_for_a_replacement():
 
     claude = Claude()
     holes = [{"secret": "pierre", "slug": "pierre", "options": [], "notes": ""}]
-    answer = curate.llm.pick_starts(claude, "une [pierre]", holes, None)
+    answer = curate.llm.pick_starts(claude, "une [pierre]", holes, None, lang="fr")
     assert "NONE — no start fits this slot; name a replacement" in claude.prompt
     assert answer["replace"]["secret"] == "pierre"
 
@@ -325,13 +325,13 @@ def test_retry_reuses_scores_only_for_unchanged_context(tmp_path, monkeypatch, c
             # Use the generator's validator: a stale replay must never reach it.
             judge = contextual_rank.ReplayJudge(contextual_rank.load_sidecar(replay))
             context = contextual_rank.Context(sentence, "chat", "chat",
-                                               tuple(excerpt["before"]), tuple(excerpt["after"]))
+                                               tuple(excerpt["before"]), tuple(excerpt["after"]), lang="fr")
             judge.score(context, [])
         return SimpleNamespace(returncode=0, stderr="", stdout=f"écrite dans {output} :"), []
 
     monkeypatch.setattr(curate, "run_gen_phrase", run)
-    monkeypatch.setattr(curate, "choose_starts", lambda *a: None)
-    monkeypatch.setattr(curate, "check_starts", lambda *a: pytest.fail("an incomplete choice is not checked"))
+    monkeypatch.setattr(curate, "choose_starts", lambda *a, **k: None)
+    monkeypatch.setattr(curate, "check_starts", lambda *a, **k: pytest.fail("an incomplete choice is not checked"))
     result = curate.generate(object(), Log(), sentence, words, {"excerpt": excerpt}, "fr",
                              replay=str(sidecar))
     assert result is None
@@ -357,7 +357,118 @@ def test_giveaway_scores_judge_each_word_once_with_every_occurrence_blanked():
             asked.append(state)
             p = 0.8 if state["mot"] == "silence" else 0.2
             return {k: p for k in questions}
-    scores = curate.giveaway_scores(toks, words, occ, judge=J())
+    scores = curate.giveaway_scores(toks, words, occ, "fr", judge=J())
     assert scores == pytest.approx({"silence": 0.8, "faisait": 0.2})  # a note: nothing is struck
     assert len(asked) == 2                                   # one judgement per distinct word
     assert asked[0]["phrase_a_trou"].count("____") == 2      # every occurrence blanked
+
+
+# --- #317: the day's language reaches the judge and every question ----------------------
+
+def test_the_judge_is_asked_in_the_line_s_language(monkeypatch):
+    seen = []
+
+    def score(judge, sentences, *, lang):
+        seen.append(lang)
+        return [{"autonome": 0.9, "image": 0.9, "celebre": 0.0} for _ in sentences]
+
+    monkeypatch.setattr(contextual_rank, "score_sentences", score)
+    assert curate.judge_sentences(Log(), ["A line.", "Another."], "en", judge=FakeJudge({})) == ["A line.", "Another."]
+    assert seen == ["en"]
+
+
+def test_the_giveaway_judge_reads_an_english_line_as_written(monkeypatch):
+    from rules import Token
+    seen = []
+
+    def giveaway(judge, blanked, word, *, lang):
+        seen.append((blanked, word, lang))
+        return 0.1
+
+    monkeypatch.setattr(contextual_rank, "giveaway", giveaway)
+    toks = [Token(0, "The", "the", "DET", "det", 1, "the", True), Token(1, "dog", "dog", "NOUN", "nsubj", 3, "dog", False, ""),
+            Token(2, "'s", "'s", "PART", "case", 1, "s", True), Token(3, "bone", "bone", "NOUN", "ROOT", 3, "bone", False, ""),
+            Token(4, ".", ".", "PUNCT", "punct", 3, "", False, "")]
+    curate.giveaway_scores(toks, [toks[1]], {"dog": {1}}, "en", judge=FakeJudge({}))
+    assert seen == [("the _____'s bone.", "dog", "en")]
+
+
+def _english_tokens(*_a):
+    from rules import Token
+    words = [("I", "i", "PRON", True), ("think", "think", "VERB", False), ("the", "the", "DET", True),
+             ("old", "old", "ADJ", False), ("cat", "cat", "NOUN", False), ("sleeps", "sleep", "VERB", False),
+             ("on", "on", "ADP", True), ("cold", "cold", "ADJ", False), ("stone", "stone", "NOUN", False)]
+    return [Token(i, w, lemma, pos, "dep", 0, w.lower(), stop) for i, (w, lemma, pos, stop) in enumerate(words)]
+
+
+def test_an_english_day_is_chosen_in_english_from_english_facts(monkeypatch):
+    monkeypatch.setattr(curate, "parse", _english_tokens)
+    seen = []
+
+    def choose(_c, lines, refused, lang):
+        seen.append((lang, lines[0]["allowed"]))
+        return None
+
+    monkeypatch.setattr(curate.llm, "choose_day", choose)
+    curate.day(object(), Log(), [{"sentence": "I think the old cat sleeps on cold stone."}], {"kind": "book"},
+               {"secrets": set(), "pairs": {}}, "", lambda w: True, lambda t: None, lambda t, w: None, "en")
+    assert seen == [("en", ["old", "cat", "sleeps", "cold", "stone"])]   # « think » is an English weak verb
+
+
+def test_the_form_question_for_an_english_secret_is_asked_in_english(monkeypatch):
+    # gen_phrase's #133 error keeps its French format for English; English cells parse the same.
+    error = ("Erreur : la forme de « leaves » doit être explicite hors mode interactif (#133 : jamais "
+             "déduite, même sans ambiguïté).\n"
+             "         Analyses connues :\n"
+             "           1) n:p  — nom, pluriel (leaf, leaves)\n"
+             "           2) ind:pre:3s  — indicatif présent, 3e personne du singulier (leave, leaves)\n"
+             "         Passe --form leaves=TRAIT (ou leaves=LEXÈME/TRAIT pour un trait partagé) — ex. "
+             "--form leaves=n:p — ou --no-inflect pour désactiver l'accord.")
+    runs = []
+
+    def run(sentence, words, source, forms, lang, starts=None, replay=None):
+        runs.append(dict(forms))
+        return SimpleNamespace(returncode=1, stdout="", stderr=error if len(runs) == 1 else "boom"), []
+
+    asked = []
+    monkeypatch.setattr(curate, "run_gen_phrase", run)
+    monkeypatch.setattr(curate.llm, "pick_form", lambda _c, sentence, word, choices, lang: asked.append((word, choices, lang)) or 2)
+    curate.generate(object(), Log(), "She leaves at dawn.", ["leaves", "dawn", "she"], {}, "en")
+    assert asked == [("leaves", ["n:p — nom, pluriel (leaf, leaves)",
+                                 "ind:pre:3s — indicatif présent, 3e personne du singulier (leave, leaves)"], "en")]
+    assert runs[1] == {"leaves": "ind:pre:3s"}
+
+
+def _no_analysis_error(word):
+    # gen_phrase's #133 error for a word the forms table has no analysis for
+    return (f"Erreur : la forme de « {word} » doit être explicite hors mode interactif (#133 : jamais "
+            "déduite, même sans ambiguïté).\n"
+            "         Aucune analyse connue dans la table.\n"
+            f"         Passe --form {word}=TRAIT (ou {word}=LEXÈME/TRAIT pour un trait partagé) — ex. "
+            f"--form {word}=cit — ou --no-inflect pour désactiver l'accord.")
+
+
+def test_a_word_with_no_analysis_takes_the_citation_form_without_a_question(monkeypatch):
+    # an -ly adverb, « famous »: nothing inflects, so no agreement — a fact, not a choice
+    runs = []
+
+    def run(sentence, words, source, forms, lang, starts=None, replay=None):
+        runs.append(dict(forms))
+        stderr = _no_analysis_error("famous") if len(runs) == 1 else "boom"
+        return SimpleNamespace(returncode=1, stdout="", stderr=stderr), []
+
+    monkeypatch.setattr(curate, "run_gen_phrase", run)
+    monkeypatch.setattr(curate.llm, "pick_form", lambda *a, **k: pytest.fail("no analysis, no question"))
+    log = Log()
+    curate.generate(object(), log, "A famous man slept.", ["famous", "man", "slept"], {}, "en")
+    assert runs[1] == {"famous": curate.CITATION_FEATURE} == {"famous": "cit"}
+    assert any("form of « famous »: cit" in line for line in log)
+
+
+def test_a_citation_form_refused_again_gives_the_line_up(monkeypatch):
+    runs = []
+    monkeypatch.setattr(curate, "run_gen_phrase", lambda *a, **k: (
+        runs.append(1), (SimpleNamespace(returncode=1, stdout="", stderr=_no_analysis_error("famous")), []))[1])
+    log = Log()
+    assert curate.generate(object(), log, "A famous man slept.", ["famous", "man", "slept"], {}, "en") is None
+    assert len(runs) == 2 and any("even as cit" in line for line in log)

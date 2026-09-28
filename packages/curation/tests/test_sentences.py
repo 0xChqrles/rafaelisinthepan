@@ -5,12 +5,12 @@ LONG = "Il aimait ce moment où la ville s'apaise, et le gémissement étrange d
 
 def test_split_on_terminal_punctuation_and_paragraphs():
     text = "Il partit. Elle resta là… Puis rien.\n\nUn nouveau paragraphe sans point"
-    assert split_sentences(text) == ["Il partit.", "Elle resta là…", "Puis rien.",
+    assert split_sentences(text, lang="fr") == ["Il partit.", "Elle resta là…", "Puis rien.",
                                      "Un nouveau paragraphe sans point"]
 
 
 def test_abbreviation_without_capital_does_not_split():
-    assert split_sentences("M. Dupont vint le soir. Il dormit.") == ["M. Dupont vint le soir.", "Il dormit."]
+    assert split_sentences("M. Dupont vint le soir. Il dormit.", lang="fr") == ["M. Dupont vint le soir.", "Il dormit."]
 
 
 def test_candidate_filters():
@@ -26,14 +26,14 @@ def test_candidate_filters():
 
 def test_candidate_sentences_dedup_in_order():
     text = f"{LONG} {LONG} Court. "
-    assert candidate_sentences(text) == [LONG]
+    assert candidate_sentences(text, lang="fr") == [LONG]
 
 
 def test_short_sentences_join_into_a_unit_within_a_paragraph():
     text = ("Selon les paroles des anciens, on doit prendre ses décisions en sept respirations. "
             "C'est une question de détermination et de courage.\n\n"
             "Puis rien. Le silence.")
-    units = candidate_sentences(text)
+    units = candidate_sentences(text, lang="fr")
     # The first sentence (13 words) is offered alone — a short line can be the best one —
     # and, joined with the next, as the micro-story; « Puis rien. Le silence. » is neither.
     assert units == ["Selon les paroles des anciens, on doit prendre ses décisions en sept respirations.",
@@ -51,12 +51,12 @@ def test_excerpt_around_a_unit_crosses_paragraphs_and_stops_at_the_edges():
     text = ("Un. Deux. Trois.\n\n"
             "Quatre. Cinq. Six. Sept.\n\n"
             "Huit. Neuf.")
-    assert excerpt_around(text, "Cinq. Six.", n=3) == {"before": ["Deux.", "Trois.", "Quatre."],
+    assert excerpt_around(text, "Cinq. Six.", n=3, lang="fr") == {"before": ["Deux.", "Trois.", "Quatre."],
                                                       "after": ["Sept.", "Huit.", "Neuf."]}
-    assert excerpt_around(text, "Un.", n=2) == {"before": [], "after": ["Deux.", "Trois."]}
-    assert excerpt_around(text, "Neuf.", n=2) == {"before": ["Sept.", "Huit."], "after": []}
-    assert excerpt_around(text, "Trois. Quatre.", n=2) is None  # a unit never crosses a paragraph
-    assert excerpt_around(text, "Dix.") is None
+    assert excerpt_around(text, "Un.", n=2, lang="fr") == {"before": [], "after": ["Deux.", "Trois."]}
+    assert excerpt_around(text, "Neuf.", n=2, lang="fr") == {"before": ["Sept.", "Huit."], "after": []}
+    assert excerpt_around(text, "Trois. Quatre.", n=2, lang="fr") is None  # a unit never crosses a paragraph
+    assert excerpt_around(text, "Dix.", lang="fr") is None
 
 
 def test_cut_excerpt_clamps_the_counts_into_the_window():
@@ -66,3 +66,32 @@ def test_cut_excerpt_clamps_the_counts_into_the_window():
     assert cut_excerpt(window, 9, 9) == window            # never past the window
     assert cut_excerpt(window, 0, 0) == {"before": [], "after": []}
     assert cut_excerpt(window, -3, -1) == {"before": [], "after": []}
+
+
+# English prose (#317): titles, quotation marks, the pronoun « I ».
+def test_an_english_title_never_ends_a_sentence():
+    assert split_sentences("It was Mr. Smith who called Dr. Jekyll from St. Louis. He hung up.", lang="en") == \
+        ["It was Mr. Smith who called Dr. Jekyll from St. Louis.", "He hung up."]
+    assert split_sentences("“Do you mean Mrs. Dalloway?” She nodded.", lang="en") == ["“Do you mean Mrs. Dalloway?”", "She nodded."]
+
+
+def test_a_closing_quote_stays_with_its_sentence():
+    assert split_sentences('He called it "the end." Then he left.', lang="en") == ['He called it "the end."', "Then he left."]
+    assert split_sentences("‘I am tired.’ ‘So am I.’", lang="en") == ["‘I am tired.’", "‘So am I.’"]
+
+
+def test_the_pronoun_i_is_no_proper_noun():
+    line = "When I was young I thought I knew what I wanted, and I was wrong about all of it."
+    assert is_candidate(line)
+    assert not is_candidate("When I met Tom, Dick and Harry in the square I knew what the evening would bring.")
+
+
+def test_english_i_ends_a_sentence_and_initials_still_do_not():
+    # the French guard read « I. » as an initial; in English it is the pronoun
+    assert split_sentences("Nobody was more surprised than I. She had always been the clever one.", lang="en") == \
+        ["Nobody was more surprised than I.", "She had always been the clever one."]
+    assert split_sentences("It was written by J. K. Jerome. He was funny.", lang="en") == \
+        ["It was written by J. K. Jerome.", "He was funny."]
+    # a French « I. » is an initial, as before
+    assert split_sentences("Il le tenait de I. Kant lui-même. Puis rien.", lang="fr") == \
+        ["Il le tenait de I. Kant lui-même.", "Puis rien."]

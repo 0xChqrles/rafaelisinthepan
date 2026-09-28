@@ -1,6 +1,6 @@
 ---
 name: find-sentences
-description: Source French puzzle material for Whippin. Two requests — (1) pick books for the shelf (a list of N works matching the taste profile, for the user to download into packages/curation/shelf/), and (2) find candidate puzzle sentences from a source (epub, .srt subtitles, lyrics, or a proposed author/artist), returning 3–5 candidates with recommended secret trios. Use when the user asks for books to source, new puzzle sentences, sentence ideas, or to mine a book/film/album.
+description: Source puzzle material for Whippin, in the day's language. Two requests — (1) pick books for the shelf (a list of N works matching the taste profile, for the user to download into packages/curation/shelf/<lang>/), and (2) find candidate puzzle sentences from a source (epub, .srt subtitles, lyrics, or a proposed author/artist), returning 3–5 candidates with recommended secret trios. Use when the user asks for books to source, new puzzle sentences, sentence ideas, or to mine a book/film/album.
 ---
 
 # Find puzzle sentences
@@ -50,7 +50,7 @@ The practical rules:
 
 - Exactly three distinct words. A word repeated in the sentence makes one hole per
   occurrence sharing one rank map: a feature (the Marx *vermine* day), not a bug.
-- The start words must leave the displayed sentence valid French (below).
+- The start words must leave the displayed sentence valid in its language (below).
 
 ## The start word
 
@@ -59,10 +59,10 @@ easier), and the three are chosen TOGETHER, by playing the day out — the craft
 `taste` skill. The practical rules:
 
 - First strike every candidate that does not fit the slot; choose only among what is
-  left. The displayed sentence must stay valid French: elision (« l'effet », never « le
-  effet »), gender, number, verb form, and the CONSTRUCTION — a verb must accept the
-  complement that follows it (« hérité d'un prénom » cannot become « affublé d'un
-  prénom »).
+  left. The displayed sentence must stay valid in its language: elision (« l'effet »,
+  never « le effet »; in English, the article: « a » or « an »), gender, number, verb
+  form, and the CONSTRUCTION — a verb must accept the complement that follows it
+  (« hérité d'un prénom » cannot become « affublé d'un prénom »).
 - A plain word a player knows, never an obscure term or a proper noun.
 - A start that breaks the grammar is replaced by another band word, never kept.
 
@@ -124,32 +124,33 @@ minority stream, one or two days a week. Movies are out of scope.
 
 ## Request 1 — pick books for the shelf
 
-The user asks for N works (typically 100) to download into `packages/curation/shelf/`
-(gitignored; the user obtains the files, you only name them). Deliver a list the user
-can act on:
+The user asks for N works (typically 100) to download into
+`packages/curation/shelf/<lang>/` (gitignored; the user obtains the files, you only name
+them; a work goes on the shelf of its EDITION's language — a day's language is its
+text's, translations included). Deliver a list the user can act on:
 
-- **One line per work**: author · French edition title (the game is French; for a
+- **One line per work**: author · edition title in the shelf's language (for a
   translated work give the original title too, and the translator when a translation is
   the reference one) · year · one clause on why it fits the profile.
 - **Grouped by author**, a few works per author at most; ~60–70% of the list on distinct
   authors so the archive stays varied.
-- **Mix**: French-language originals and translations; classics and mid-list; novels
+- **Mix**: originals and translations; classics and mid-list; novels
   first, with a few short-story collections, diaries and essays if the register fits,
   and about one in seven from OUTSIDE literature (natural history, economics, speeches,
   manuals, documentaries) — the unexpected-source lever above. Fame does not exclude a
   book (see law 1); what excludes is a wrong register, poetry the vocab cannot carry, or
   a text so short it holds no sentence.
 - **Exclude** works already in the archive (`source.work` across
-  `packages/generation/output/word/fr/`, the record of every generated puzzle; the
+  `packages/generation/output/word/<lang>/`, the record of every generated puzzle; the
   backend's local store is a test bed, never a reference) and already on the shelf.
   Check both before delivering.
-- Prefer works that exist as a French epub; no self-published or out-of-print
-  obscurities the user cannot find.
+- Prefer works that exist as an epub in the shelf's language; no self-published or
+  out-of-print obscurities the user cannot find.
 
 ## Request 2 — find sentences from a source
 
 1. **Get the primary text.** Ask the user for the file if needed (the shelf is
-   `packages/curation/shelf/`; subtitles in `~/Desktop/movies`).
+   `packages/curation/shelf/<lang>/`; subtitles in `~/Desktop/movies`).
    - epub: `unzip` to the job tmp dir, strip tags from `**/*.*html`, join whitespace.
    - .srt/.vtt: drop indices/timestamps/`<tags>`, join; try utf-8 then cp1252/latin-1.
    - Rap lyrics: `curl` paroles.net/genius raw HTML and extract around keywords —
@@ -169,14 +170,14 @@ can act on:
    - a model's memory of an unquoted line is not a strike; verify any apparent quote
      against the primary text and where readers would have met it.
 5. **Check the game data** (never skip):
-   - every secret's slug ∈ `packages/web/public/vocab/fr.json` (slug = lowercase,
+   - every secret's slug ∈ `packages/web/public/vocab/<lang>.json` (slug = lowercase,
      ligatures expanded, accents stripped, keep `[a-z-]`);
    - secret not already used: inspect `holes[].secret.slug` across
-     `packages/generation/output/word/fr/**/*.json`.
+     `packages/generation/output/word/<lang>/**/*.json`.
 6. **Deliver 3–5 candidates**, each with: the exact sentence (accents/punctuation
    kept), recommended trio + alternates, source metadata (`kind` book/music/poem/movie
    + author + work), quotation-risk flag, and a ready command:
-   `pnpm gen:phrase "<sentence>" --lang fr --words a b c --kind K --author "A" --work "W"`
+   `pnpm gen:phrase "<sentence>" --lang <lang> --words a b c --kind K --author "A" --work "W"`
    (no `--` separator; exactly 3 distinct words). For .srt sources suggest an ear-check
    against the scene.
 

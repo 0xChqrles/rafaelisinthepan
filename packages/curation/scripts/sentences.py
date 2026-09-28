@@ -33,38 +33,57 @@ EXCERPT_WINDOW = 8
 EXCERPT_SENTENCES = 3
 
 _TERMINAL = ".!?…"
-# A boundary is terminal punctuation (with optional closing quotes) followed by
-# whitespace and an opening capital, quote or dash.
-# A single capital letter before the period is an initial or a title (M. Dupont), not an end.
-_BOUNDARY = re.compile(r"(?<=[.!?…])(?<!\b[A-Z]\.)[»”\"']?\s+(?=[«“\"'\-–—]?\s*[A-ZÀ-ÝŒÆ])")
+# The closing quotation marks, French and English (« … », “…”, ‘…’, "…").
+_CLOSING = "»”\"'’"
+# A boundary is terminal punctuation (with an optional closing quote, kept with its
+# sentence: « he called it "the end." ») followed by whitespace and an opening capital,
+# quote or dash. A single capital letter before the period is an initial or a title
+# (M. Dupont, J. K. Jerome), not an end — but for English's « I. », the pronoun ending a
+# sentence (« nobody was more surprised than I. »). Per language: the initials guarded.
+def _boundary(initials: str) -> re.Pattern:
+    return re.compile(rf"(?:(?<=[.!?…])|(?<=[.!?…][»”\"'’]))(?<!\b[{initials}]\.)\s+(?=[«“‘\"'\-–—]?\s*[A-ZÀ-ÝŒÆ])")
+
+
+_BOUNDARY = {"fr": _boundary("A-Z"), "en": _boundary("A-HJ-Z")}
+# An English title before a name ends on a period and never ends a sentence (« Mr. Hyde »,
+# « Dr. Jekyll », « St. Petersburg », #317): the split after one is undone.
+_TITLE_END = re.compile(r"(?:^|[\s«“‘\"'(—–-])(?:Mr|Mrs|Ms|Messrs|Dr|St|Mt|Prof|Rev|Capt|Col|Gen|Lt|Sgt)\.$")
+# English's « I » is a capital and never a name (« I », « I'm », « I’d »).
+_PRONOUN_I = re.compile(r"I(?:['’][a-z]+)?\W*$")
 _WS = re.compile(r"\s+")
 _DIALOGUE = re.compile(r"^[«\"“]?\s*[-–—]")
 
 
-def paragraph_sentences(text: str) -> list[list[str]]:
+def paragraph_sentences(text: str, *, lang: str) -> list[list[str]]:
     """The text as paragraphs of sentences; a paragraph break is always a boundary."""
     out: list[list[str]] = []
     for paragraph in re.split(r"\n\s*\n|\n", text):
         paragraph = _WS.sub(" ", paragraph).strip()
         if not paragraph:
             continue
-        sentences = [part.strip() for part in _BOUNDARY.split(paragraph) if part.strip()]
+        sentences: list[str] = []
+        for part in _BOUNDARY[lang].split(paragraph):
+            if part.strip():
+                if sentences and _TITLE_END.search(sentences[-1]):
+                    sentences[-1] += " " + part.strip()
+                else:
+                    sentences.append(part.strip())
         if sentences:
             out.append(sentences)
     return out
 
 
-def split_sentences(text: str) -> list[str]:
-    return [s for paragraph in paragraph_sentences(text) for s in paragraph]
+def split_sentences(text: str, *, lang: str) -> list[str]:
+    return [s for paragraph in paragraph_sentences(text, lang=lang) for s in paragraph]
 
 
-def excerpt_around(text: str, unit: str, n: int = EXCERPT_WINDOW) -> dict | None:
+def excerpt_around(text: str, unit: str, n: int = EXCERPT_WINDOW, *, lang: str) -> dict | None:
     """{before, after}: the n sentences before and after `unit` in `text`, the unit
     being a run of consecutive sentences of one paragraph exactly as candidate_sentences
     builds it. Raw text, never the unit itself. None when the unit is not in the text."""
     flat: list[str] = []
     span = None
-    for paragraph in paragraph_sentences(text):
+    for paragraph in paragraph_sentences(text, lang=lang):
         if span is None:
             for start in range(len(paragraph)):
                 for k in range(1, MAX_SENTENCES_PER_UNIT + 1):
@@ -107,22 +126,23 @@ def is_candidate(sentence: str, *, min_words: int = MIN_WORDS, max_words: int = 
         return False
     if not sentence[0].isupper():
         return False
-    if sentence.rstrip("»”\"'")[-1:] not in _TERMINAL:
+    if sentence.rstrip(_CLOSING)[-1:] not in _TERMINAL:
         return False
     if _DIALOGUE.match(sentence):
         return False
     if re.search(r"\d", sentence):
         return False
     words = sentence.split()
-    # A capital that opens a sentence inside the unit is not a proper noun.
+    # A capital that opens a sentence inside the unit is not a proper noun, nor is « I ».
     inner_capitals = sum(1 for prev, w in zip(words, words[1:])
-                         if w[:1].isupper() and prev.rstrip("»”\"'")[-1:] not in _TERMINAL)
+                         if w[:1].isupper() and not _PRONOUN_I.match(w)
+                         and prev.rstrip(_CLOSING)[-1:] not in _TERMINAL)
     if inner_capitals > MAX_INNER_CAPITALS:
         return False
     return True
 
 
-def candidate_sentences(text: str, **kwargs) -> list[str]:
+def candidate_sentences(text: str, *, lang: str, **kwargs) -> list[str]:
     """Distinct candidate UNITS of a text, in reading order: per starting sentence, the
     sentence alone when it has at least MIN_LINE_WORDS, and the shortest run of
     consecutive sentences of its paragraph (at most MAX_SENTENCES_PER_UNIT) that reaches
@@ -135,7 +155,7 @@ def candidate_sentences(text: str, **kwargs) -> list[str]:
             seen.add(unit)
             out.append(unit)
 
-    for paragraph in paragraph_sentences(text):
+    for paragraph in paragraph_sentences(text, lang=lang):
         for start in range(len(paragraph)):
             for n in range(1, MAX_SENTENCES_PER_UNIT + 1):
                 if start + n > len(paragraph):

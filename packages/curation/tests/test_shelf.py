@@ -110,3 +110,27 @@ def test_list_works_reports_a_file_it_cannot_open(tmp_path):
     works = shelf.list_works(tmp_path)
     assert [w["file"] for w in works] == ["broken.epub"]
     assert works[0]["error"] and works[0]["title"] == "broken" and works[0]["author"] == ""
+
+
+# --- one shelf per language (#317) ---------------------------------------------------
+
+def test_each_language_has_its_own_shelf_index_and_quotes(tmp_path, monkeypatch):
+    import quotes
+    monkeypatch.setattr(_paths, "SHELF_ROOT", tmp_path)
+    assert shelf.LANGS == ("fr", "en")
+    assert _paths.shelf_dir("en") == tmp_path / "en" and _paths.shelf_dir("fr") == tmp_path / "fr"
+    assert shelf.index_file("en") == tmp_path / "en" / "index.json"
+    assert quotes.quotes_dir("en") == tmp_path / "en" / "quotes"
+    # an index written for one language is not the other's
+    shelf.save_index({"books": {"slaughterhouse.epub": {"read": "x", "sentences": []}}}, "en")
+    assert shelf.load_index("fr") == {"books": {}}
+    assert "slaughterhouse.epub" in shelf.load_index("en")["books"]
+
+
+def test_list_works_reads_one_language_s_shelf(tmp_path, monkeypatch):
+    monkeypatch.setattr(_paths, "SHELF_ROOT", tmp_path)
+    for lang, name in (("fr", "etranger.epub"), ("en", "stranger.epub")):
+        _paths.shelf_dir(lang).mkdir(parents=True)
+        (_paths.shelf_dir(lang) / name).write_bytes(b"not a zip")
+    assert [w["file"] for w in shelf.list_works(_paths.shelf_dir("en"))] == ["stranger.epub"]
+    assert [w["file"] for w in shelf.list_works(_paths.shelf_dir("fr"))] == ["etranger.epub"]

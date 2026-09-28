@@ -28,11 +28,18 @@ ALLOWED_POS = frozenset({"NOUN", "VERB", "ADJ", "ADV", "PROPN"})
 MAX_COMMON_RANK = 20
 MAX_COMMON_RANK_ADV = 500
 # Verbs of saying, thinking and modality — function-like, never a clever secret
-# (user-decided 2026-09-08, on a trio led by « je crois »). By spaCy lemma.
-WEAK_VERBS = frozenset({
-    "dire", "croire", "penser", "savoir", "sembler", "paraître", "vouloir", "pouvoir",
-    "devoir", "falloir", "trouver", "avoir", "être", "faire", "aller",
-})
+# (user-decided 2026-09-08, on a trio led by « je crois »). By spaCy lemma, per language:
+# the English list is the French one translated, word for word (#317).
+WEAK_VERBS = {
+    "fr": frozenset({
+        "dire", "croire", "penser", "savoir", "sembler", "paraître", "vouloir", "pouvoir",
+        "devoir", "falloir", "trouver", "avoir", "être", "faire", "aller",
+    }),
+    "en": frozenset({
+        "say", "believe", "think", "know", "seem", "appear", "want", "can",
+        "must", "need", "find", "have", "be", "do", "make", "go",
+    }),
+}
 # The READER (the user's own method, 2026-09-10): blank one word, the rest of the line
 # intact and no start word, and ask what else could stand there — at most
 # CONTEXT_GUESSES words — and which ONE word most readers would write. A filler that is
@@ -59,11 +66,15 @@ class Token:
     head: int
     slug: str
     stop: bool = False
+    # The whitespace after the token in the source (spaCy's `whitespace_`): an English
+    # line is rebuilt with it (« don't », « the dog's »), never with a space per token.
+    space: str = " "
 
 
 def initial_candidates(
     tokens: list[Token],
     *,
+    lang: str,
     in_vocab: Callable[[str], bool],
     past_secrets: frozenset[str] | set[str] = frozenset(),
     frequency_rank: Callable[[Token], int | None] = lambda t: None,
@@ -82,7 +93,7 @@ def initial_candidates(
     for t in tokens:
         if t.pos not in ALLOWED_POS or t.stop:
             continue
-        if t.pos == "VERB" and t.lemma in WEAK_VERBS:
+        if t.pos == "VERB" and t.lemma in WEAK_VERBS[lang]:
             continue
         if len(t.slug) < 2 or not in_vocab(t.slug):
             continue

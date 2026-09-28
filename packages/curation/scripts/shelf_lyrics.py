@@ -1,9 +1,9 @@
 """Fetch an artist list's deep cuts from Genius onto the shelf (#262).
 
-    pnpm shelf:lyrics [--artists shelf/artists.txt] [--max-songs N]
+    pnpm shelf:lyrics [--lang fr] [--artists shelf/<lang>/artists.txt] [--max-songs N]
 
-The artist list is the user's, by hand, one name per line: it is the whole whitelist,
-nothing outside it is ever fetched. Per artist: the songs from the API, most viewed
+The artist list is the user's, by hand, one name per line, on the language's shelf: it
+is the whole whitelist, nothing outside it is ever fetched. Per artist: the songs from the API, most viewed
 first, minus the top-viewed FAMOUS_SHARE (the singles), minus what is on the shelf
 already; each remaining song is written as one `.txt` with a header. Needs
 `GENIUS_ACCESS_TOKEN` (a free client access token, genius.com/api-clients), never a
@@ -19,8 +19,7 @@ import _paths
 from slug import slug
 
 import lyrics as lyr
-
-ARTISTS_FILE = _paths.SHELF_DIR / "artists.txt"
+from shelf import LANGS
 
 
 def die(msg: str) -> None:
@@ -65,9 +64,11 @@ def artist_songs(genius, artist_id: int, max_songs: int) -> list[dict]:
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--artists", default=str(ARTISTS_FILE))
+    p.add_argument("--lang", choices=LANGS, default="fr", help="the shelf the songs go to")
+    p.add_argument("--artists", help="the artist list (default: the shelf's artists.txt)")
     p.add_argument("--max-songs", type=int, default=lyr.MAX_SONGS_PER_ARTIST)
     args = p.parse_args()
+    shelf = _paths.shelf_dir(args.lang)
 
     token = os.environ.get("GENIUS_ACCESS_TOKEN")
     if not token:
@@ -77,8 +78,9 @@ def main():
     genius = Genius(token, remove_section_headers=True, skip_non_songs=True, retries=2, timeout=15)
     genius.verbose = False
 
-    artists = read_artists(Path(args.artists) if os.path.isabs(args.artists) else _paths.CURATION_DIR / args.artists)
-    _paths.SHELF_DIR.mkdir(parents=True, exist_ok=True)
+    path = Path(args.artists) if args.artists else shelf / "artists.txt"
+    artists = read_artists(path if path.is_absolute() else _paths.CURATION_DIR / path)
+    shelf.mkdir(parents=True, exist_ok=True)
     written = 0
     for name in artists:
         artist = find_artist(genius, name)
@@ -89,7 +91,7 @@ def main():
         kept = lyr.famous_cut(songs)
         print(f"- {artist['name']}: {len(songs)} songs, {len(songs) - len(kept)} most viewed dropped", flush=True)
         for song in kept:
-            path = _paths.SHELF_DIR / lyr.song_filename(artist["name"], song["title"], slug)
+            path = shelf / lyr.song_filename(artist["name"], song["title"], slug)
             if path.exists():
                 continue
             text = genius.lyrics(song_id=song["id"], remove_section_headers=True)
@@ -105,7 +107,7 @@ def main():
             }
             path.write_text(lyr.format_song(header, text), encoding="utf-8")
             written += 1
-    print(f"{written} song(s) written to {_paths.SHELF_DIR}")
+    print(f"{written} song(s) written to {shelf}")
 
 
 if __name__ == "__main__":
