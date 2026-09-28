@@ -1007,8 +1007,7 @@ def test_no_inflect_leaves_the_map_exactly_as_it_was():
                                        lexemes=None) == {}
     assert rmap == before
     assert gen_phrase.load_form_table("fr", disabled=True) is None
-    # en has no inventory at all — a decided non-goal, not a missing file.
-    assert gen_phrase.load_form_table("en") is None
+    assert gen_phrase.load_form_table("en", disabled=True) is None
 
 
 def test_a_rewritten_hole_is_reported():
@@ -1461,7 +1460,7 @@ def test_a_fresh_build_reproduces_the_committed_artifact_exactly():
 
     with zipfile.ZipFile(archive) as z:
         csv_text = z.read(build_forms.MORPHALOU_MEMBER).decode("utf-8")
-    rows, stats = build_forms.build_rows("fr", csv_text, lexique)
+    rows, stats = build_forms.build_rows_fr(csv_text, lexique)
     # The source measurements that motivated #146 are pinned to the digest-pinned
     # release: a parser or merge-rule drift must be reviewed, not silently blessed.
     assert stats["twin_groups"] == 5_712

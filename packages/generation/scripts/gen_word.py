@@ -38,13 +38,15 @@ republishing a web asset.
 
 On a terminal the script is interactive: the word and the language are asked when not
 supplied as flags. Off a TTY they are flags, and the never-infer rule holds here
-exactly as it does for a sentence secret: --form MOT=TRAIT is required for an fr word
-(--no-inflect opts out), and a word with no vector needs --donor MANQUANT=DONNEUR.
+exactly as it does for a sentence secret: --form MOT=TRAIT is required for every word,
+fr or en (--no-inflect opts out), and a word with no vector needs --donor
+MANQUANT=DONNEUR.
 
 Usage :
     uv run scripts/gen_word.py                      # interactive
     uv run scripts/gen_word.py phare --lang fr --form phare=n:s
     pnpm gen:word phare --lang fr --form phare=n:s
+    pnpm gen:word ocean --lang en --form ocean=n:s
 """
 
 import argparse
@@ -209,7 +211,7 @@ def main():
     # Substitutions, agreement, #134's curator marks and --form typo warnings — the
     # shared reporting block (#154). A lone word is not a secret, so it is named
     # plainly, and an unused --form named another word rather than another hole.
-    report_run_adjustments(run.donors, run.forms, run.explicit_forms, lang,
+    report_run_adjustments(run.donors, run.forms, run.explicit_forms,
                            args.no_inflect, subject_fmt="« {} »",
                            unused_form_msg="ne concerne pas ce mot")
 

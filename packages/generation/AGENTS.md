@@ -16,33 +16,34 @@ relative to `packages/generation/` unless prefixed.
       reduce_embedding.py     raw .vec/.txt -> *_reduced file (the ONLY filter+cap stage) + vocab
                               (+ its shared/ metadata, #200)
       build_wordlist.py       offline builder: sources -> wordlist/<lang>.txt.gz (hors-dico ref, #38)
-      build_lemmas.py         offline builder: AGID -> wordlist/en.lemmas.tsv.gz (en form→lemma, #104;
-                              en ONLY since #132 — the fr grouping ships in the word-group inventory)
-      build_forms.py          offline builder: Morphalou 3.1 -> wordlist/fr.forms.tsv.gz (the fr
-                              WORD-GROUP INVENTORY, #132/#146: duplicate-entry merge + all-POS
-                              grouping, homography and display morphology)
+      build_forms.py          offline builder of each language's WORD-GROUP INVENTORY: Morphalou 3.1
+                              -> wordlist/fr.forms.tsv.gz (#132/#146), AGID + VarCon + OANC ->
+                              wordlist/en.forms.tsv.gz (#317): duplicate-entry merge, grouping,
+                              homography and display morphology
       build_vocab.py          reduced vectors -> web/public/vocab/<lang>.json + its metadata
                               (escape hatch; no re-reduce)
       slug.py                 stdlib-only: slug() contract + path_slug() dir names + write_vocab
                               (existence set + shared/src/vocab.generated.json, #200)
       embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
-      glove_neighbors.py      en paths + derived .kv cache (thin wrapper over the above)
+      english_neighbors.py    en paths + derived .kv cache (thin wrapper over the above)
       french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
       start_word.py           start/hint-word selection (rank band 100-200 on every map)
       distances.py            stdlib-only: dq quantization (#115)
       contextual_rank.py      stdlib-only: the #308 judge boundary — Jev (TypeSafe) pass 1
-                              Score + pass 2 pairwise, English-dominance demotion, sidecar
-                              + replay; gen_phrase hands it lemmas, never tensors or HTTP
+                              Score + pass 2 pairwise, word-of-the-language demotion, sidecar
+                              + replay, ONE template per language (#317); gen_phrase hands it
+                              lemmas, never tensors or HTTP
       gen_phrase.py           one sentence -> one self-contained puzzle JSON; also owns the
                               per-secret pipeline (walk_secret) both entry points share
       gen_word.py             one word -> one single-word artifact JSON (#154); imports the
                               per-secret machinery from gen_phrase, never re-implements it
     embedding/<lang>/...      raw + *_reduced vectors + derived .kv caches
     wordlist/<lang>.txt.gz    versioned hors-dico reference wordlist (#38); .cache/ gitignored
-    wordlist/en.lemmas.tsv.gz versioned en form→lemma table (lemma grouping, #104)
     wordlist/fr.forms.tsv.gz  versioned fr word-group inventory (#132/#146): source entries +
-                              playable grouping + homography + display agreement; fr only
+                              playable grouping + homography + display agreement
     wordlist/fr.forms.LICENSE the LGPL-LR text governing the Morphalou data it derives from
+    wordlist/en.forms.tsv.gz  versioned en word-group inventory (#317), the same columns
+    wordlist/en.forms.LICENSE the AGID and VarCon copyright notices, verbatim from the releases
     output/word/<lang>/<kind>/<author>/<work>/<start1>_<start2>_<start3>.json   generated puzzles
                               filed under their source (#137), NAMED AFTER THE START WORDS (never
                               the secrets, 2026-09-07); gitignored; publish to store/S3
@@ -87,7 +88,7 @@ These are decided and verified against the code. Treat them as load-bearing.
   stopwords are real words. They run before hors-dico so attribution stays clean.
 - Output is `<input>_reduced.<ext>` (extension preserved). If the source had a
   `"<count> <dim>"` header, the output header is **recalculated** to the kept count;
-  if it had none (GloVe `.txt`), the output has none. The source is never modified.
+  if it had none (a header-less `.txt`), the output has none. The source is never modified.
 - **The `*_reduced` file is the single source of truth downstream — already filtered,
   already capped.** Nothing after it re-filters.
 - **`build_vocab` is a pure pass-through:** `V = list(kv.index_to_key)` — every word
@@ -124,8 +125,7 @@ decided, not provisional:
   internal feature vocabulary — verbs keep #119's cells, nouns carry number (gender
   is lexical), adjectives gender×number, every other POS the citation cell `cit` —
   and an unnamed dimension expands across all its values, never into an opaque
-  feature. **fr only** (en keeps AGID grouping and has no forms table — a decided
-  non-goal).
+  feature.
 - **Lexique383 is POS-frequency evidence ONLY** (its exactly one remaining job for
   this artifact): it decides which reading of a homographic surface is dominant (the
   `dom` column) and which of two spellings a cell prefers. It contributes no
@@ -147,7 +147,7 @@ Consequences that are load-bearing:
   `moi`/`mois`) or masculine/feminine noun derivations (`cafetier`/`cafetière`). On
   the pinned Morphalou 3.1 source the guarded measurements are 5,712 identical-form
   sets / 11,472 entries, 1,496 contained entries, 147,868 resulting groups and
-  994,497 artifact rows; `build_rows` hard-fails when any of the five moves.
+  994,497 artifact rows; `build_rows_fr` hard-fails when any of the five moves.
 
 - **The POS gate has two cases**, unchanged in meaning from #119: with Lexique
   frequency for the surface, the row's class (VER **and** AUX merge — an auxiliary is
@@ -212,35 +212,118 @@ Consequences that are load-bearing:
   carries a `#` provenance header (release, URL, digest, licence). Don't distribute
   the table without them.
 
+### The en word-group inventory: English made like French (#317, user-decided 2026-09-25)
+
+`wordlist/en.forms.tsv.gz` is English's ONE word-group inventory, the same artifact as
+French's (same columns, same loader, the same grouping + agreement roles in `gen_phrase`),
+built by `build_forms.py --lang en` (`pnpm forms:en`) from three PINNED sources (URL +
+sha256, verified before reading), one responsibility each:
+
+- **AGID 2016.01.19 is THE authority for the lexeme** — chosen by the #317 A/B against
+  the reduced vocabulary over UniMorph (plurals corrupted to «countable», one spelling a
+  cell, «bear → beared») and Wiktionary/kaikki (3–5 % more realizable cells, but half of
+  what it alone states is a rare-POS paradigm on the right lemma — «boys» as a verb,
+  «governs» as a noun plural — which agreement would DISPLAY, with no flag to clean it;
+  and no pinnable release). Rejected, don't re-propose without a new measurement.
+- **VarCon 2020.12.07 (SCOWL rel tag) gives the American/British spellings** — both are
+  one word (user-decided): each form's pure spelling variants join its cell, so «colour»
+  and «color» become one group by #146's identical-form rule. A line restricted to a
+  SENSE (`check / cheque | bank`, `tire / tyre | wheel`, `| :1`, `(-)`) never joins; a POS
+  tag or a note restricts nothing. Only A/B/Z spellings at level «», «.» or «v» count.
+- **OANC (ANC-all-count, second release) is POS-frequency evidence ONLY** — Lexique's
+  twin: the `dom` column, and the tie-break of a cell's spelling order (the American
+  spelling before the British one a VarCon merge brings). Chosen over the
+  issue's SUBTLEX-US because that list is CC BY-NC-SA and its terms would bind the
+  committed table; OANC is unrestricted.
+
+Consequences that are load-bearing:
+
+- **AGID's own doubts are honoured — holes beat wrong forms.** Spellings marked `<` (a
+  good chance — in the vocabulary nearly always another word's form: belief → «believes»,
+  fax → «faces»), `~` (a slight chance), `!` (likely a similar word's inflection) or `?`
+  (not in its word list) and variant level ≥ 2 (archaic / obscure / unverified) drop;
+  capitalised lemmas are
+  proper names and stay out; the named special paradigms (`be`, `wit`, `may`, `shall`,
+  `methinks`, `only`) are skipped BY NAME, and any other line outside the README's
+  grammar is a hard error (the parser fails closed).
+- **A GUESSED entry keeps only what no trusted entry states** (`corroborate_agid`, the
+  twin of Morphalou's mixed-entry rule): AGID's `POS?` entries («POS not in its
+  database, inflections found in the word list») carry its wrong attachments — «pars V?:
+  parsed», «lowe A?: lower | lowest», «newspaper V?: newspapers». Their forms a trusted
+  entry states are dropped; an entry left with its citation alone, or whose lemma is
+  another trusted word's form, disappears. The guessed entries with words of their own
+  stay («socialise», «scammers», «bartended»).
+- **An adjective needs both degrees attested** (AGID files agent nouns as comparatives:
+  «travel → traveler», «see → seer»), checked BEFORE corroboration (so such a comparative
+  never outranks the real word's guessed entry: «stoner», «lander») and after it.
+- **A cell's spellings ship in AGID's own preference** (variant level, then place in its
+  slot: «people, persons», «dreamed, dreamt», «forbade, forbad»), OANC frequency only
+  breaking ties; a spelling equal to the lemma itself stays in another cell only where
+  AGID prefers it (level 0, no sense note: «sheep», «fish», «run»), never as a variant
+  («duck {:1}», «cannon 1», «beat 1») — else a plural map would show «duck».
+- **A noun and a verb of one spelling are ONE group** (`merge_entries(same_lemma=True)`,
+  English only): English converts freely (a walk / to walk) and the embedding holds one
+  vector; it also joins the homonyms AGID cannot tell apart («bear»), as the embedding
+  cannot either. French keeps its #146 rules unchanged.
+- **English cells**: nouns `n:s`/`n:p`; verbs `base` (infinitive, imperative, present but
+  3s), `ind:pre:3s`, `ind:pas`, `par:pas`, `par:pre`; adjectives `adj:pos`/`adj:cmp`/
+  `adj:sup`. No gender (`build_forms.GENDERED_LANGS`: the #133 prompt asks an English
+  noun its number, never a gender). **Agreement is number (nouns) and tense (verbs)** —
+  an adjective's degree is confirmed like any form and transferred to nobody (AGID's
+  comparatives carry ≈ 10 % agent nouns: «arch → archer»), and a group whose DOMINANT
+  reading (its lemma's `dom`, OANC) is an adjective keeps its form beside any secret
+  (`gen_phrase._AGREEING_READINGS`: «brief», never «briefs» beside a plural — the noun +
+  verb + adjective merge would otherwise re-inflect it). French agreement is ungated.
+- **`cit` answers for any word** (`--form MOT=cit`, or typed at the prompt): AGID lists
+  only what inflects, so an English adverb («slowly») or a non-comparable adjective
+  («famous») has no analysis, and «no agreement» is its one answer — the #133 error says
+  so off a TTY.
+- **The audit is pinned** like #131/#132's: `EXPECTED_CELLS_EN` (irregular verbs and
+  plurals, variant levels, the US/UK merge and its spelling order),
+  `EXPECTED_INVENTORY_CELLS_EN` (a noun + verb group), `EXPECTED_SURFACE_LEXEMES_EN`
+  (homographs; the cleanup's removed attachments; sense-restricted pairs kept apart) and
+  `EXPECTED_MERGE_STATS_EN` (every cleanup count, 84,182 groups, 245,654 rows); the build
+  fails when one moves, and the committed artifact is contract-tested against them.
+- **Licensing travels with the artifact**: the header names the three releases and
+  digests; `en.forms.LICENSE` is AGID's «COPYRIGHT AND SOURCE» and VarCon's «Copyright»
+  sections, verbatim.
+
 ### Contextual ranks: the static walk retrieves, a hosted judge orders (#308, user-decided 2026-09-19)
 
-- **The judge is the DEFAULT for a French sentence puzzle (user-decided 2026-09-20; no
-  flag): the static walk is RETRIEVAL and TypeSafe's Jev model the ranking engine.**
-  `--static` is the explicit opt-out (a reference/experiment map — the static tests
-  pass it); `en` has no judge and stays static. `JEV_API_KEY` must be in the environment
-  of every fr generation, the curation package's subprocess included (it inherits the
-  curator's shell). Per hole: the walk's `TOP_K` surviving
+- **The judge is the DEFAULT for a sentence puzzle (user-decided 2026-09-20 for French,
+  2026-09-25 for English, #317; no flag): the static walk is RETRIEVAL and TypeSafe's Jev
+  model the ranking engine.** `--static` is the explicit opt-out (a reference/experiment
+  map — the static tests pass it). `JEV_API_KEY` must be in the environment of every
+  generation, the curation package's subprocess included (it inherits the curator's
+  shell). **Every question is asked in the sentence's language** (`contextual_rank.
+  LANGUAGES`: one `Language` template holding the rubric, the pairwise question, the
+  filters, the sentence and giveaway questions, the word check and the state keys they
+  name): French is the calibrated original, its requests byte-identical to the ones every
+  threshold was measured on; English is its twin and carries the same thresholds until
+  English play exists to re-tune them (the issue's calibration caveat). Per hole: the walk's `TOP_K` surviving
   groups (all 10 000, nothing cut — user-decided: the map keeps every group it scores)
   go to the judge as LEMMAS (`lexeme_label`, the group key's lemma; a table-less
   singleton is its surface), with the REAL sentence, the secret and the `--before` /
   `--after` excerpt as the shared state. **Pass 1** is one independent `Score` per
-  candidate on `SCORE_LEVELS` (0–4); **pass 2** is a full pairwise round-robin
-  (`Choice`) over the `PAIRWISE_TOP = 200` best of pass 1 — every pair once, orientation
+  candidate on the rubric's levels (`Language.score_levels`, 0–4); **pass 2** is a full
+  pairwise round-robin (`Choice`) over the `PAIRWISE_TOP = 200` best of pass 1 — every
+  pair once, orientation
   seeded, a word's score is its mean win probability — whose order replaces the front,
   its win rates mapped affinely onto the pass-1 span they replace. Then the map is
   RE-ASSEMBLED by `build_merged_rank_map` in that order (same groups, keys closest-first
   in the CONTEXTUAL order, so an ambiguous surface attaches to the group the shipped
   ranking says is closer), and **`dq` is quantized from the judge's similarities**. The
   static cosine picks the candidates and breaks exact ties — it is never blended in.
-- **The rubric is the cloze guard and the leak guard, in words** (`SCORE_INSTRUCTIONS`,
-  `RUBRIC_VERSION = 2`): sense only, grammar/agreement/substitutability excluded, a
+- **The rubric is the cloze guard and the leak guard, in words** (`Language.
+  score_instructions`; its version `Language.rubric` rides in the sidecar — French 2,
+  English 1): sense only, grammar/agreement/substitutability excluded, a
   candidate's presence in the sentence or its describing what the sentence does to the
   secret counts for nothing. The rubric travels ONCE per request in the shared state
   (≈ half the tokens of one copy per question, same order measured); the level
   descriptions stay in each question (moving them too shifts the scale).
-- **A front label that is not a French word is demoted by the JUDGE** (`FRENCH_QUESTION`,
-  asked on the `PAIRWISE_TOP` front only, `FRENCH_MIN = 0.2`; the verdicts ride in the
-  sidecar and replay). The rubric's "not French → lowest level" line was ignored inside the
+- **A front label that is not a word of the puzzle's language is demoted by the JUDGE**
+  (`Language.word_question`, asked on the `PAIRWISE_TOP` front only, `LANGUAGE_MIN = 0.2`;
+  the verdicts ride in the sidecar under `french` / `english` and replay). The rubric's "not French → lowest level" line was ignored inside the
   scoring, and the earlier CODE rule (French rank vs English rank, 2026-09-19) was
   REPLACED on 2026-09-22 because it threw out «apparent», «suspect», «laid», «partial»,
   «structural» — French words common in English, at the same French rank as «feeling»;
@@ -274,7 +357,7 @@ Consequences that are load-bearing:
 - **The same judge runs THREE PRE-FILTERS for the curator (user-decided 2026-09-20,
   recall-checked on every published day: nothing the curator chose is removed).** A
   filter only ever REMOVES; whatever passes is shown unchanged and the curator chooses.
-  (1) **Start band**: a candidate shown at the hole must read as correct French
+  (1) **Start band**: a candidate shown at the hole must read as correct French (English)
   (`START_FIT_MIN = 0.5` — at 0.4 «la rutilent» passed; the band loses ≈ 20 %, mostly
   wrong number/category, and 3/157 published picks sat just below); the random default
   is drawn from what remains, an emptied band is offered whole with a note. (2) **Hole
@@ -416,14 +499,9 @@ through and breaks `gen_phrase.py`'s arg parsing).
 #    Needs `unmunch` (hunspell-tools; `brew install hunspell`) for the Hunspell union, or
 #    pass --skip-hunspell for the Lexique/SCOWL-only union.
 pnpm wordlist:fr      # Lexique ∪ Hunspell fr  -> wordlist/fr.txt.gz
-pnpm wordlist:en      # SCOWL   ∪ Hunspell en  -> wordlist/en.txt.gz
+pnpm wordlist:en      # SCOWL (US + British) ∪ Hunspell en_US -> wordlist/en.txt.gz
 
-# 0bis. (Re)build the en form→lemma table ONCE (offline, #104; en ONLY since #132 —
-#    the fr grouping ships in the word-group inventory below). The committed
-#    wordlist/en.lemmas.tsv.gz is already versioned — only rerun to refresh sources.
-pnpm lemmas:en        # AGID infl.txt (inverted) -> wordlist/en.lemmas.tsv.gz
-
-# 0ter. (Re)build the fr WORD-GROUP INVENTORY, fr ONLY (offline, #132/#146): duplicate-
+# 0bis. (Re)build the fr WORD-GROUP INVENTORY (offline, #132/#146): duplicate-
 #    entry normalization + all-POS grouping, homography and display morphology in one
 #    artifact. The committed wordlist/fr.forms.tsv.gz is already versioned — only rerun
 #    to refresh sources. Source entries come from the PINNED
@@ -433,13 +511,19 @@ pnpm lemmas:en        # AGID infl.txt (inverted) -> wordlist/en.lemmas.tsv.gz
 #    validated loudly. Also writes wordlist/fr.forms.LICENSE from the archive's LISEZ-MOI.
 pnpm forms:fr         # Morphalou 3.1 -> wordlist/fr.forms.tsv.gz (+ .LICENSE)
 
+# 0ter. (Re)build the en WORD-GROUP INVENTORY (offline, #317): AGID (lexemes, cleaned by
+#    its own confidence marks, guessed entries corroborated), VarCon (US/UK spellings as
+#    one word), OANC (POS frequency), all digest-pinned; the #317 audit validated loudly.
+#    Also writes wordlist/en.forms.LICENSE from the two releases' READMEs.
+pnpm forms:en         # AGID + VarCon + OANC -> wordlist/en.forms.tsv.gz (+ .LICENSE)
+
 # 1. Reduce ONCE per language (slow, offline). Build the *_reduced source of truth AND,
 #    in the same pass, web/public/vocab/<lang>.json (the front's existence set) plus
 #    shared/src/vocab.generated.json (its metadata, #200) — commit BOTH.
 #    Reads wordlist/<lang>.txt.gz for the hors-dico rule (--no-dico to skip; --no-vocab
 #    to skip both writes). This is the one command for a language's derived data.
 pnpm reduce:fr        # embedding/fr/cc.fr.300.vec -> cc.fr.300_reduced.vec + vocab/fr.json
-pnpm reduce:en        # embedding/en/glove.6B.300d.txt -> glove.6B.300d_reduced.txt + vocab/en.json
+pnpm reduce:en        # embedding/en/cc.en.300.vec -> cc.en.300_reduced.vec + vocab/en.json
 
 # 2. (Escape hatch) Rebuild ONLY the vocab + its metadata from an existing reduced file,
 #    without a slow re-reduce — e.g. if the committed vocab/<lang>.json got lost.
@@ -451,12 +535,12 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json + shared/src/vocab.
 #    `pnpm puzzle:publish` it.
 #    NOTE: gen:phrase ALSO rewrites web/public/vocab/<lang>.json (and its #200 metadata)
 #    as a side effect.
-#    Reads the grouping table for lemma grouping (#104) — fr: the word-group inventory
-#    wordlist/fr.forms.tsv.gz (#132), en: wordlist/en.lemmas.tsv.gz (missing table =
-#    hard error, --no-lemmas to skip). The secret's form is never inferred (#133): a
-#    TTY run asks morphology (gender/number/conjugation), then a complete-form identity
-#    only for a real remaining ambiguity; off a TTY --form MOT=TRAIT is required per fr
-#    secret (hard error otherwise; --no-inflect opts out). A shared cell with different
+#    Reads the language's word-group inventory for lemma grouping (#104) —
+#    wordlist/<lang>.forms.tsv.gz (#132, #317; missing table = hard error, --no-lemmas to
+#    skip). The secret's form is never inferred (#133): a TTY run asks morphology
+#    (gender/number/conjugation — an English noun its number only), then a complete-form
+#    identity only for a real remaining ambiguity; off a TTY --form MOT=TRAIT is required
+#    per secret, fr and en (hard error otherwise; --no-inflect opts out). A shared cell with different
 #    typable families needs qualified --form MOT=LEXÈME/TRAIT, ex. fils=fils:nc/n:p.
 #    The confirmed answer names group 0, so the question fires before the walk and an
 #    inflection of a confirmed secret solves its hole (#134/#146); groups are playable
@@ -471,7 +555,7 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json + shared/src/vocab.
 #    sentences around the line into `source.excerpt` (#270) — blanks dropped, no key
 #    without a sentence, both arrays present when there is one; --url the track page
 #    into `source.url`. Neither is asked on a TTY: an excerpt is copied, not typed.
-#    A fr puzzle is CONTEXTUAL BY DEFAULT (#308): every hole is reranked by the sense the
+#    A puzzle is CONTEXTUAL BY DEFAULT (#308, en since #317): every hole is reranked by the sense the
 #    sentence gives the secret with the Jev judge (JEV_API_KEY in the environment; hard
 #    error without it, no static fallback; --static opts out for a reference map); the
 #    judge also pre-filters the hint band (a start must read as French shown in the
@@ -494,7 +578,7 @@ pnpm gen:phrase "<sentence>" --lang fr --words a b c --static   # reference map,
 #    slug collisions. One difference: the output has one flat `ranks` map with no
 #    words/holes/start/source. Unlike gen:phrase it does NOT rewrite
 #    web/public/vocab/<lang>.json (that is reduce's output).
-pnpm gen:word phare --lang fr --form phare=n:s   # --form required per fr word off a TTY
+pnpm gen:word phare --lang fr --form phare=n:s   # --form required per word off a TTY
 ```
 
 `gen_phrase.py` requires **exactly 3 distinct** `--words` selectors after slug
@@ -514,7 +598,7 @@ output filename contains the three distinct secret slugs in sentence order.
   2026-09-24; was 100–150, and 250–400 on a contextual map), `PAIRWISE_TOP = 200` /
   `SCORE_BATCH = 50` / `PAIR_BATCH = 40` / `NOUL_BATCH = 40` / `WORKERS = 6`, filter
   thresholds `START_FIT_MIN = 0.5` / `HOLE_READABLE_MIN = 0.6` / `SAME_CONCEPT_MAX = 0.6` /
-  `FRENCH_MIN = 0.2`,
+  `LANGUAGE_MIN = 0.2` (French-calibrated, carried over to English),
   `GIVEAWAY_MAX = 0.45` (calibrated on real play, 2026-09-22 — a NOTE the curator shows the model with its meaning, never a strike; curation `AGENTS.md`)
   (`contextual_rank.py`).
   `PLAYABILITY_TOP` is a curator report window sized for a sentence hole's near field.
@@ -579,16 +663,16 @@ output filename contains the three distinct secret slugs in sentence order.
   it is in that hole's rank map (matched by slug) else reprompts. The band logic, schema,
   and downstream `start`/`start_rank` are unchanged; non-TTY (piped/batch) runs silently
   keep the random default, so generation output is identical to before when not interacting.
-- **Data present:** `generation/embedding/fr/cc.fr.300_reduced.vec` (+ `.kv` cache
-  built), `generation/embedding/en/glove.6B.300d_reduced.txt` (+ `.kv` cache built).
+- **Data present:** `generation/embedding/fr/cc.fr.300_reduced.vec` and
+  `generation/embedding/en/cc.en.300_reduced.vec` (+ `.kv` caches built; en 85,355 words —
+  the cased source keeps only its lowercase tokens: «apple» no longer blends «Apple»).
   `web/public/vocab/{en,fr}.json` exist.
-- **en lemma table (#104):** `generation/wordlist/en.lemmas.tsv.gz` is committed —
-  AGID `infl.txt` inverted (~260k pairs), filtered by the language token rule, every
-  lemma registered as a form of itself. Built by `build_lemmas.py` (downloads cache
-  in `wordlist/.cache/`); `gen_phrase` reads it at startup for en (hard error when
-  missing; `--no-lemmas` opts out and reproduces the ungrouped walk). The old
-  `fr.lemmas.tsv.gz` was REMOVED by #132 — the fr grouping now comes from the word-group
-  inventory below, and `pnpm lemmas:fr` no longer exists.
+- **en word-group inventory (#317):** `generation/wordlist/en.forms.tsv.gz` is committed —
+  245,654 rows, 84,182 playable groups, ~1.6 MB gzipped — beside `en.forms.LICENSE`. The
+  cleanup counts are
+  pinned in `EXPECTED_MERGE_STATS_EN`; 1,772 groups join more than one lemma spelling, all
+  US/UK variants (largest VarCon class 5). The per-language AGID lemma table
+  (`en.lemmas.tsv.gz`, `build_lemmas.py`, `pnpm lemmas:en`) was REMOVED by #317.
 - **fr word-group inventory (#132/#146, Morphalou-sourced, superseding the Lefff
   verb table):** `generation/wordlist/fr.forms.tsv.gz` is committed — 994,497 rows
   over every POS and 147,868 playable groups (13,716 verb / 98,917 noun / 36,341
@@ -608,11 +692,11 @@ output filename contains the three distinct secret slugs in sentence order.
   lemmas (Lefff had 7,777, Lexique 1,901). The mixed-entry cleanup dropped 5,346
   uncorroborated rows across 1,314 entries; the #131-enumerated cells are pinned in
   `EXPECTED_CELLS`, with 6 all-POS cell + 3 homography sentinels for #132, and all are
-  re-validated on every build and by independent contract tests. No `en` inventory —
-  a decided non-goal, not a missing file.
+  re-validated on every build and by independent contract tests.
 - **Hors-dico wordlists (#38):** `generation/wordlist/{fr,en}.txt.gz` are committed —
-  `fr` = Lexique ∪ Hunspell fr (~169k forms), `en` = SCOWL(≤60,US) ∪ Hunspell en_US
-  (~91k). Built by `build_wordlist.py`; source downloads cache in `wordlist/.cache/`
+  `fr` = Lexique ∪ Hunspell fr (~169k forms), `en` = SCOWL(≤60, US + British GBs/GBz,
+  #317) ∪ Hunspell en_US (93,557). Hunspell en_GB is not unmunched: its affix rules
+  expand into ~245k non-words («outeurocentrismativeness»). Built by `build_wordlist.py`; source downloads cache in `wordlist/.cache/`
   (gitignored). Tests use the small fixture `tests/fixtures/dico.fr.txt`.
 - **Single-word artifacts (#154):** `gen_word.py` is a thin entry point over
   `gen_phrase`'s machinery — it imports `walk_secret` (claim → walk → keyed, dq-stamped

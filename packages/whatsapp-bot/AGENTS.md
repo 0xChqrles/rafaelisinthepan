@@ -549,7 +549,7 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   2026-09-04).** The first thing a new group asked was how the words are ranked, and the bot
   could not say — it knew the rules of scoring and nothing about the SEMANTICS. The global
   personality now carries it: ranks come from usage over an enormous corpus (the web and
-  Wikipedia — fastText's Common Crawl build for fr, GloVe's Wikipedia + news for en), so
+  Wikipedia — fastText's Common Crawl builds, cc.fr.300 and cc.en.300 since #317), so
   closeness is the company a word keeps and not synonymy or spelling, and a rank of 1 is
   the word most often found in the same company, not "almost the word". It explains this
   right and briefly when asked — since v13 bored like everything about the game, no longer

@@ -16,7 +16,7 @@ import builds from './vocab.generated.json';
 
 export interface VocabBuild {
   // The corpus build the vocabulary was reduced from, named without the `_reduced`
-  // suffix or extension ("cc.fr.300", "glove.6B.300d"): both sides of the reduction
+  // suffix or extension ("cc.fr.300", "cc.en.300"): both sides of the reduction
   // name the same build, so whichever command refreshed the set recorded the same one.
   // Worth keeping because so much of the design is calibrated against corpus properties
   // (the measured en-vs-fr gap) — a retune reads as evidence only if you know which corpus
