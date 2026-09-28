@@ -55,13 +55,23 @@ _NAME_PARTICLES = frozenset({"de", "du", "la", "le", "les", "von", "van", "der",
 
 
 def same_person(a: str, b: str) -> bool:
-    """Two author strings name the same person when they share a real name part
-    (`Camus, Albert` / `Albert Camus`; never on a particle alone)."""
+    """Two author strings name the same person when every real name part of the shorter
+    one is in the longer (`Camus, Albert` / `Albert Camus`, `Machado de Assis` / `Joaquim
+    Maria Machado de Assis`; particles and initials aside), or — a given name
+    transliterated two ways, `Fiodor` / `Fédor Dostoïevski`, `Léon` / `Lev Tolstoï` — when
+    the family names (the last part, natural order) are one and the given names share
+    their initial. One shared part is not a person: `Charles Parish` is not `Charles
+    Dickens`, `Jean Rolin` not `Jean Racine`."""
 
-    def parts(text: str) -> set[str]:
-        return {slug(w) for w in re.split(r"[\s,()\-]+", text)} - {""} - _NAME_PARTICLES
+    def parts(text: str) -> list[str]:
+        words = [slug(w) for w in re.split(r"[\s,()\-.]+", text)]
+        return [w for w in words if len(w) >= 3 and w not in _NAME_PARTICLES]
 
-    return bool({p for p in parts(a) if len(p) >= 3} & parts(b))
+    la, lb = parts(a), parts(b)
+    shorter, longer = sorted((set(la), set(lb)), key=len)
+    if shorter and shorter <= longer:
+        return True
+    return bool(la and lb) and la[-1] == lb[-1] and la[0][0] == lb[0][0]
 
 
 # ---------------------------------------------------------------------------

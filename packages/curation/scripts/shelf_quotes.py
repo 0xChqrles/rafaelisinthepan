@@ -61,7 +61,14 @@ def page_wikitext(host: str, title: str) -> str | None:
 
 
 def title_words(title: str) -> list[str]:
-    return [slug(w) for w in _TITLE_NOISE.sub(" ", title).split() if slug(w)]
+    """A title as comparable words. A word keeps its DIGITS (`slug` drops them): «
+    American Psycho 2 » is not « American Psycho », « Vernon Subutex 2 » not « … 1 »."""
+    words = []
+    for w in _TITLE_NOISE.sub(" ", title).split():
+        key = slug(w) + "".join(ch for ch in w if ch.isdigit())
+        if key:
+            words.append(key)
+    return words
 
 
 def main_title(title: str) -> str:
@@ -75,7 +82,11 @@ def same_title(hit: str, title: str) -> bool:
     Tartares` is `Le Désert des Tartares`, `Mes amis (roman)` is `Mes amis`, and
     `Chimpanzee Politics` is `Chimpanzee Politics: Power and Sex among Apes`."""
     a = title_words(hit)
-    return bool(a) and a in (title_words(title), title_words(main_title(title)))
+    own = title_words(title)
+    # a numbered volume is its series' page (« Vernon Subutex 1 » / « Vernon Subutex »),
+    # never the other way round (« American Psycho 2 » is not « American Psycho »)
+    series = own[:-1] if len(own) > 1 and own[-1].isdigit() else own
+    return bool(a) and a in (own, title_words(main_title(title)), series)
 
 
 def author_page(host: str, author: str) -> str | None:

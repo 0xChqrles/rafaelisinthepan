@@ -75,6 +75,21 @@ def test_same_person_compares_name_parts_in_any_order():
     assert not same_person("", "Pessoa Fernando")
 
 
+def test_one_shared_name_part_is_not_the_same_person():
+    # every real part of the shorter name must be in the longer: a shared first name
+    # sent the fetch to the wrong author's page (Charles Parish -> Charles Dickens)
+    assert not same_person("Charles Dickens", "Charles Parish")
+    assert not same_person("Jean Racine", "Jean Rolin")
+    assert same_person("Machado de Assis", "Joaquim Maria Machado de Assis")
+    assert same_person("J. G. Ballard", "J. G. Ballard")
+    assert same_person("Amélie Nothomb", "Nothomb")
+    assert same_person("Kōbō Abe", "Kôbô Abé")
+    # a given name transliterated two ways is still the man, the family name deciding
+    assert same_person("Fedor Dostoïevski", "Fiodor Dostoïevski")
+    assert same_person("Lev Tolstoï", "Léon Tolstoï")
+    assert not same_person("Gilbert & George", "Gilbert White")
+
+
 def test_quotes_file_round_trips_and_none_when_never_fetched(tmp_path):
     assert load_quotes("x.epub", tmp_path) is None
     save_quotes("x.epub", ["Une   ligne citée.", "Une autre."], ["https://fr.wikiquote.org/wiki/X"], tmp_path)
@@ -179,6 +194,11 @@ def test_an_edition_subtitle_does_not_hide_the_work_s_article(monkeypatch):
     assert shelf_quotes.same_title("Chimpanzee Politics", "Chimpanzee Politics: Power and Sex among Apes")
     assert shelf_quotes.same_title("Severance (Ma novel)", "Severance: A Novel")
     assert not shelf_quotes.same_title("Star Wars: A New Hope", "Star Wars")
+    # digits are part of a title: the sequel is not the book, one volume not another
+    assert not shelf_quotes.same_title("American Psycho 2", "American Psycho")
+    assert not shelf_quotes.same_title("Vernon Subutex 2", "Vernon Subutex 1")
+    assert shelf_quotes.same_title("Catch-22", "Catch-22")
+    assert shelf_quotes.same_title("Vernon Subutex", "Vernon Subutex 1")   # a volume: its series
     queries = []
     monkeypatch.setattr(shelf_quotes, "search", lambda host, query, limit=5: queries.append(query) or
                         ["Severance (TV series)", "Severance (Ma novel)"])
