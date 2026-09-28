@@ -472,3 +472,30 @@ def test_a_citation_form_refused_again_gives_the_line_up(monkeypatch):
     log = Log()
     assert curate.generate(object(), log, "A famous man slept.", ["famous", "man", "slept"], {}, "en") is None
     assert len(runs) == 2 and any("even as cit" in line for line in log)
+
+
+def test_a_stale_replay_runs_the_judge_again_instead_of_losing_the_line(tmp_path, monkeypatch):
+    # A retried draft's saved judge scores predate a change of the word tables (#317):
+    # gen_phrase's replay refuses a group it never scored. The line is rebuilt with a
+    # fresh judge run, never given up, and the stale scores are dropped.
+    sidecar = tmp_path / "old.contextual.json"
+    sidecar.write_text(json.dumps({"sentence": "s", "before": [], "after": [],
+                                   "holes": [{"secret": w} for w in ("chat", "chien", "ours")]}),
+                       encoding="utf-8")
+    replays = []
+
+    def run(sentence, words, source, forms, lang, starts=None, replay=None):
+        replays.append(replay)
+        if replay:
+            return SimpleNamespace(returncode=1, stdout="", stderr=(
+                "Erreur : classement contextuel impossible pour « chat » : rejeu : le groupe "
+                "felin:nc n'a pas de score pour « chat »")), []
+        return SimpleNamespace(returncode=1, stdout="", stderr="boom"), []
+
+    monkeypatch.setattr(curate, "run_gen_phrase", run)
+    log = Log()
+    assert curate.generate(object(), log, "s", ["chat", "chien", "ours"], {}, "fr",
+                           replay=str(sidecar)) is None  # "boom" afterwards: refused
+    assert replays == [str(sidecar), None]
+    assert not sidecar.exists()
+    assert any("the judge runs again" in line for line in log)

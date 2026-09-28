@@ -310,6 +310,15 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
             forms[word] = feature
             log(f"- form of « {word} »: {feature}")
             continue
+        if replay and "rejeu :" in err:
+            # The erased draft's scores no longer cover the map — the word tables moved
+            # since they were paid (a group they never scored): judge it again rather
+            # than lose the line; the replay only ever saves money.
+            log("- the erased draft's scores no longer cover the map (the word tables "
+                "changed): the judge runs again")
+            Path(replay).unlink(missing_ok=True)
+            replay = None
+            continue
         log(f"- gen:phrase refused: {err.splitlines()[0] if err else completed.stdout[-300:]}")
         return None
     log("- gen:phrase: too many form rounds")

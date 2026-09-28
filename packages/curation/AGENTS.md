@@ -118,7 +118,8 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   any model call. **A rerun never pays the ranking judge twice**: `generate` replays the
   previous run's sidecar (`--contextual-replay`) when it regenerates with the model's
   start words, and `--retry <puzzle.json>` keeps the erased draft's scores for the same
-  trio.
+  trio — unless they no longer cover the map (the word tables changed since, #317): the
+  replay's refusal drops them and the judge runs again, never losing the line.
 - **The model shortlists with taste, then CHOOSES THE DAY BY COMPARISON.** It reads every
   kept line, `CHUNK` (150) at a time, picks at most `PICKS_PER_CHUNK` (6) by the taste
   skill and ranks a `SHORTLIST` (20), even when fewer than 20 lines were picked (one line
