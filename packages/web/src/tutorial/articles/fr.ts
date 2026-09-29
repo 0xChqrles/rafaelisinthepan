@@ -2,12 +2,14 @@
 // une IA qui ne peut pas parler » (chqrles.me/cemantix, 2026-09-25), cut into four levels with
 // its story taken out — its own sentences wherever they explain, its examples, its jokes. What
 // changed on the way, so a later edit does not undo it:
-//   - facts follow the CODE where the article and the pipeline differ: the game's vectors are
-//     fastText's, learned by guessing a word from its neighbours (CBOW — the article tells
-//     skip-gram, kept in one line); past the tournament's 200 the order is Jev's grade (the
-//     embedding only breaks ties), not the embedding's from rank 300; a foreign word is sent
-//     down by a yes/no question to Jev, not by a frequency rule; the rubric block quotes the
-//     code's own levels; a sentence's rank is Jev's order, the embedding's only for a lone word;
+//   - the embedding is taught as the article tells it, SKIP-GRAM (from a word, guess the words
+//     around it), and the game's own is said to have learned "de la même façon" — fastText's
+//     CBOW is the same idea the other way round, not worth a detour (user-decided 2026-09-29);
+//   - facts follow the CODE where the article and the pipeline differ: past the tournament's
+//     200 the order is Jev's grade (the embedding only breaks ties), not the embedding's from
+//     rank 300; a foreign word is sent down by a yes/no question to Jev, not by a frequency
+//     rule; the rubric block quotes the code's own levels; a sentence's rank is Jev's order,
+//     the embedding's only for a lone word;
 //   - measurements are the ones the data holds: `étouffer` went from 27th to 1 182nd (the
 //     article joined two entries), a 0,1 wobble moves a tail word by thousands of ranks, not a
 //     hundred; the tournament rows are real Jev output (the spike's froidement run, whose note
@@ -22,7 +24,7 @@ import { frenchSpaces, typesetArticle } from './typeset';
 import chat from '../scripts/fr.chat.json';
 
 const SOURCE = {
-  text: 'L’histoire complète : « J’ai amélioré Cémantix avec une IA qui ne peut pas parler »',
+  text: '« J’ai amélioré Cémantix avec une IA qui ne peut pas parler »',
   href: 'https://chqrles.me/cemantix/',
 };
 
@@ -33,7 +35,7 @@ const distance: Article = {
     {
       blocks: [
         {
-          p: 'Si le mot secret est `chat`, `chien^4` veut dire que `chien` est son quatrième plus proche voisin. Une distance, c’est une valeur numérique, donc il faut réussir à exprimer le sens des mots sous une forme numérique également. En gros, exprimer des informations complexes sous forme de nombres, ça a un nom, ça s’appelle un **embedding**. On pourrait par exemple donner des coordonnées aux mots, ce qui permettrait ensuite de mesurer facilement à quel point deux mots sont proches.',
+          p: 'Si le mot secret est `chat^0`, `chien^4` veut dire que `chien` est son quatrième plus proche voisin. Une distance, c’est une valeur numérique, donc il faut réussir à exprimer le sens des mots sous une forme numérique également. En gros, exprimer des informations complexes sous forme de nombres, ça a un nom, ça s’appelle un **embedding**. On pourrait par exemple donner des coordonnées aux mots, ce qui permettrait ensuite de mesurer facilement à quel point deux mots sont proches.',
         },
         {
           fig: {
@@ -59,14 +61,10 @@ const distance: Article = {
       ],
     },
     {
-      heading: 'Deviner le mot caché',
+      heading: 'Deviner les voisins',
       blocks: [
         {
-          p: 'On commence par attribuer un vecteur aléatoire à chaque mot. À ce stade, nos coordonnées ne veulent absolument rien dire. Pour leur donner un sens, on fait jouer un réseau de neurones à un jeu qui devrait te dire quelque chose : deviner un mot caché à partir des mots qui l’entourent. Prenons une phrase ambitieuse :',
-        },
-        { sentence: ['Le `___` mange une souris'] },
-        {
-          p: 'Le réseau se sert des coordonnées des mots autour du trou et attribue une probabilité à chacun des mots qu’il connaît. Comme ces coordonnées sont encore aléatoires, ses premières réponses ressemblent à ça :',
+          p: 'On commence par attribuer un vecteur aléatoire à chaque mot. À ce stade, nos coordonnées ne veulent absolument rien dire, et pour leur donner un sens, on demande à un réseau de neurones quelque chose d’assez simple : à partir d’un mot, prédire ceux qui ont des chances d’apparaître autour. On lui donne `chat`, et il attribue une probabilité à tous les mots qu’il connaît. Comme tout est encore plus ou moins aléatoire, ses premières réponses ressemblent à ça :',
         },
         {
           fig: {
@@ -80,10 +78,14 @@ const distance: Article = {
               ['gratin', 4.3],
             ],
           },
-          caption: 'Les premiers paris du réseau sur le mot caché, quand ses coordonnées ne veulent encore rien dire.',
+          caption: 'Les premières prédictions du réseau autour de `chat`, quand ses vecteurs ne veulent encore rien dire.',
         },
         {
-          p: 'Il faut maintenant trouver un moyen de lui expliquer qu’il raconte n’importe quoi. Pour ça, on constitue un grand corpus de référence, des milliards de phrases écrites par des humains, et on compare ses paris au vrai mot. Ici, le mot caché est `chat` : s’il juge `moteur` beaucoup plus probable, il s’est manifestement trompé. Reste à quantifier à quel point : on résume l’ensemble de ses erreurs dans un score qu’on appelle la **loss**. Plus elle est élevée, plus ses prédictions sont mauvaises.',
+          p: 'Il faut maintenant trouver un moyen de lui expliquer qu’il raconte n’importe quoi. Pour ça, on constitue un grand corpus de référence, des milliards de phrases écrites par des humains. Prenons une phrase ambitieuse de ce corpus :',
+        },
+        { sentence: ['Le `chat` mange une souris'] },
+        {
+          p: 'On choisit `chat` et on regarde ce qui apparaît autour : `le`, `mange`, `une`. Voilà ce que le réseau est censé prédire. S’il juge `moteur` beaucoup plus probable que `mange`, il s’est manifestement trompé. Reste à quantifier à quel point : on résume l’ensemble de ses erreurs dans un score qu’on appelle la **loss**. Plus elle est élevée, plus ses prédictions sont mauvaises.',
         },
         {
           p: 'On sait maintenant mesurer le problème, mais pas encore le corriger. Le réseau contient énormément de **paramètres**, des nombres qu’il peut ajuster, parmi lesquels les coordonnées de nos mots, et il faut savoir lesquels bouger et dans quel sens. Pour chacun, on calcule donc l’effet qu’aurait une toute petite modification sur la loss. En gros, on répond à la question :',
@@ -97,10 +99,10 @@ const distance: Article = {
             kind: 'loop',
             steps: [
               'prédiction',
-              'comparaison avec le vrai mot',
+              'comparaison avec le vrai contexte',
               'calcul de la loss',
               'calcul des gradients',
-              'légère correction des coordonnées',
+              'légère modification des vecteurs',
             ],
           },
           caption: 'Et on recommence, quelques milliards de fois.',
@@ -124,7 +126,7 @@ const distance: Article = {
           ],
         },
         {
-          p: '`chat` et `chien` vivent manifestement des vies assez similaires. Ils dorment, mangent, courent, donc ils apparaissent entourés de mots comparables. Pour réussir son jeu, le réseau finit par leur donner des coordonnées qui se ressemblent. Personne ne lui a expliqué qu’un chat et un chien étaient deux animaux domestiques relativement proches. D’ailleurs, il ne sait toujours pas ce qu’est un chat. Il a simplement constaté que `chat` traîne souvent avec les mêmes mots que `chien`, et ça suffit.',
+          p: '`chat` et `chien` vivent manifestement des vies assez similaires. Ils dorment, mangent, courent, donc ils apparaissent entourés de mots comparables. Pour réussir à prédire leurs contextes, le réseau finit donc par leur attribuer des vecteurs qui se ressemblent. Personne ne lui a expliqué qu’un chat et un chien étaient deux animaux domestiques relativement proches. D’ailleurs, il ne sait toujours pas ce qu’est un chat. Il a simplement constaté que `chat` traîne souvent avec les mêmes mots que `chien`, et ça suffit.',
         },
         {
           p: 'À force de corrections, les vecteurs aléatoires du départ s’organisent : les mots employés dans des contextes similaires occupent des régions similaires de l’espace à 300 dimensions. À la fin de l’entraînement, on garde ces coordonnées : on vient de créer un embedding.',
@@ -135,7 +137,7 @@ const distance: Article = {
       heading: 'Ton rang',
       blocks: [
         {
-          p: 'Celui du jeu vient de **fastText**, qui a appris exactement comme ça, sur des milliards de mots tirés du web et de Wikipédia. (L’autre recette classique, **skip-gram**, fait l’inverse : elle devine les voisins à partir du mot.)',
+          p: 'Celui du jeu a appris de la même façon, sur des milliards de mots tirés du web et de Wikipédia.',
         },
         {
           p: 'Pour mesurer la proximité de deux mots, le jeu ne regarde pas la distance entre leurs points, mais l’angle entre leurs vecteurs : deux vecteurs qui pointent dans la même direction désignent des mots très proches, peu importe leur longueur. C’est la **similarité cosinus**.',
@@ -150,7 +152,7 @@ const distance: Article = {
         {
           p: 'Les formes d’un même mot comptent pour un seul rang : `chien`, `chiens` et `chienne` sont tous `chien^4`. Et pas besoin de taper les accents : `felin` compte comme `félin^5`.',
         },
-        { p: 'Cet embedding a pourtant un défaut de naissance.' },
+        { p: 'Cet embedding a pourtant un défaut de naissance que nous allons voir dans le niveau suivant.' },
       ],
     },
   ],
@@ -264,7 +266,7 @@ const meanings: Article = {
           caption: 'Parmi les plus proches voisins de `nerfs`, seul puis dans sa phrase. On parle de tempérament, pas d’anatomie.',
         },
         {
-          p: 'Pour jouer, une seule chose compte : le sens que la phrase donne au mot, pas le mot tout seul. Reste à comprendre comment une machine peut lire une phrase.',
+          p: 'Pour jouer, une seule chose compte : le sens que la phrase donne au mot, pas le mot tout seul. Reste à comprendre comment une machine peut lire une phrase : c’est l’objet du niveau suivant.',
         },
       ],
     },
@@ -400,7 +402,7 @@ const attention: Article = {
         {
           p: 'Le plan devient simple. L’embedding trouve les 10 000 candidats. On écrit 10 000 versions de la phrase, en remplaçant le mot caché par chacun d’eux, on les fait lire au LLM, et on compare le hidden state de chaque candidat à celui du mot caché. On ne compare plus `voler` et `tuer` dans le vide : on les laisse d’abord lire leur phrase, puis on compare ce qu’ils sont devenus.',
         },
-        { p: 'En théorie, l’idée est parfaite.' },
+        { p: 'En théorie, l’idée est parfaite. Le niveau suivant montre ce que la théorie avait oublié.' },
       ],
     },
   ],

@@ -8,7 +8,7 @@ import { useArticleLang } from './lang';
 // face, as the coach quotes its own — a rank wearing the sentence's heat exponent, a hidden
 // word as an empty hole, and the terms a paragraph defines. Everything else is plain text.
 // In an example SENTENCE (`mode="sentence"`, set whole in the pixel face like the game's
-// own), a quoted word is the one the sentence is about: the held chip.
+// own), a quoted word is the one the sentence is about: its secret, shown found.
 const TOKEN_RE = /`([^`]+)`|\*\*([^*]+)\*\*/g;
 
 function word(payload: string, key: number, mode: 'prose' | 'sentence', lang: string) {
@@ -17,16 +17,22 @@ function word(payload: string, key: number, mode: 'prose' | 'sentence', lang: st
   }
   const at = payload.lastIndexOf('^');
   const rank = at > 0 ? Number(payload.slice(at + 1)) : NaN;
-  if (Number.isInteger(rank) || mode === 'sentence') {
-    const text = Number.isInteger(rank) ? payload.slice(0, at) : payload;
+  // The secret itself — `mot^0`, or the word an example sentence is about — reads as the game
+  // shows a word once found: the solve's cobalt ink, no chip, no exponent.
+  if (rank === 0 || (mode === 'sentence' && !Number.isInteger(rank))) {
+    return (
+      <span key={key} className="ar-solved">
+        {rank === 0 ? payload.slice(0, at) : payload}
+      </span>
+    );
+  }
+  if (Number.isInteger(rank)) {
     return (
       <span key={key} className="ar-held">
-        <span className="ar-held-text">{text}</span>
-        {Number.isInteger(rank) && (
-          <sup className="ar-rank" style={{ '--rank-color': rankHeatColor(rank) } as CSSProperties}>
-            {rank}
-          </sup>
-        )}
+        <span className="ar-held-text">{payload.slice(0, at)}</span>
+        <sup className="ar-rank" style={{ '--rank-color': rankHeatColor(rank) } as CSSProperties}>
+          {rank}
+        </sup>
       </span>
     );
   }

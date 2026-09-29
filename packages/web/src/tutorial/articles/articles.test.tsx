@@ -84,6 +84,8 @@ describe('the inline markup', () => {
   it('renders a quoted word in the pixel face, a ranked one as the held chip with its exponent', () => {
     const html = renderToStaticMarkup(<Rich text="le mot `chat` et `chien^4`" />);
     expect(html).toContain('<span class="ar-word">chat</span>');
+    // The secret itself reads found: `chat^0` is the solve's ink, no chip, no exponent.
+    expect(renderToStaticMarkup(<Rich text="`chat^0`" />)).toBe('<span class="ar-solved">chat</span>');
     expect(html).toContain('<span class="ar-held-text">chien</span>');
     expect(html).toMatch(/<sup class="ar-rank"[^>]*>4<\/sup>/);
   });
@@ -92,9 +94,9 @@ describe('the inline markup', () => {
     expect(html).toContain('class="ar-blank"');
     expect(html).toContain('<strong class="ar-term">embedding</strong>');
   });
-  it('makes every quoted word of a sentence the held chip', () => {
+  it('shows the word a sentence is about as found', () => {
     const html = renderToStaticMarkup(<Rich text="Le pigeon `vole`" mode="sentence" />);
-    expect(html).toContain('<span class="ar-held-text">vole</span>');
+    expect(html).toContain('<span class="ar-solved">vole</span>');
   });
   it('strips to plain text', () => {
     expect(plain('`chien^4` est un **mot**')).toBe('chien est un mot');

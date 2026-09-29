@@ -3,6 +3,8 @@ import type { ComponentProps, ComponentType } from 'react';
 import type ArticleLevel from './ArticleLevel';
 import { t } from '../i18n';
 import LoadingWave from '../components/LoadingWave';
+// Imported for its listener: it must be listening before the key that opens an article.
+import './keyboardLast';
 
 type ArticleProps = ComponentProps<typeof ArticleLevel>;
 type ArticleComponent = ComponentType<ArticleProps>;

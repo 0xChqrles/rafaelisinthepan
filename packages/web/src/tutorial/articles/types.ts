@@ -5,6 +5,7 @@
 // INLINE MARKUP, in every string below (`Rich.tsx` renders it):
 //   `mot`      a word as the game shows one — the pixel face, as the coach quotes its words
 //   `mot^12`   the same word wearing its rank, the heat-coloured exponent of the sentence
+//   `mot^0`    the secret itself, SOLVED — the game's cobalt ink, as a found word reads
 //   `___`      a hidden word: an empty hole
 //   **terme**  a term being defined
 import type { WordPuzzle } from '@whippin/shared';

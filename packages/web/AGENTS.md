@@ -2923,7 +2923,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   article cut into four, its own sentences and examples, figures redrawn in the app's style
   (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **Facts follow the CODE
   where the article and the pipeline differ** (the header of `articles/fr.ts` lists each
-  departure). **Written in French first** (user-decided 2026-09-29: "wait for the article
+  departure) — **except the embedding's training, told as the article tells it, SKIP-GRAM**
+  (from a word, guess the words around it; user-decided 2026-09-29: fastText's CBOW is not
+  worth a detour, the game's embedding "learned the same way"). **A secret next to ranked
+  words shows FOUND** — the solve's cobalt, as the game inks a hole in (`mot^0`, and the
+  word an example sentence is about) — never the held chip, which is a guess's. Every level
+  ends on a hook into the next one. The end is three bands: NEXT LEVEL, PLAY, then the
+  credit to the article apart. On a wide screen the list and an article scroll the WHOLE
+  VIEWPORT, so the scrollbar stands on the screen's edge (user-decided 2026-09-29). **Written in French first** (user-decided 2026-09-29: "wait for the article
   translation… for the moment just create the french version"): a level is READY in a
   language when its lesson exists there (`Level.duration`, which also carries the reading
   time the card prints — `levels.test.ts` holds it to the text); elsewhere its card is grey

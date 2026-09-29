@@ -550,6 +550,7 @@ const STRINGS = {
   levelOf: { en: 'LEVEL {n} OF {total}', fr: 'NIVEAU {n} SUR {total}' },
   levelNext: { en: 'NEXT LEVEL', fr: 'NIVEAU SUIVANT' },
   levelFigure: { en: 'FIG.', fr: 'FIG.' },
+  levelSource: { en: 'The full story', fr: 'L’histoire complète' },
   // What an article's figures say in words, for a screen reader: a hidden word, the table's
   // word column, what a marked word is, and a duration spoken (the card prints 4′50″).
   levelBlank: { en: 'hidden word', fr: 'mot caché' },

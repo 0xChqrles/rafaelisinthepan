@@ -7853,6 +7853,17 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font-size: 0.82em;
   white-space: nowrap;
 }
+/* The secret, found: the solve's cobalt ink, as the game inks a hole in. */
+.ar-solved {
+  font-family: var(--pixel-font);
+  color: var(--solve);
+  white-space: nowrap;
+}
+.article-p .ar-solved,
+.article-lead .ar-solved,
+.ar-fig-caption .ar-solved {
+  font-size: 0.82em;
+}
 .ar-blank {
   display: inline-block;
   width: 4.5em;
@@ -8247,13 +8258,15 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   background: var(--muted);
   vertical-align: 1px;
 }
-/* THE END: the next level as a card with its picture, the game, and a quiet source line. */
+/* THE END, in three bands: the NEXT LEVEL as a card with its picture (the way on), the GAME
+   under it as a full-width secondary (or the primary, after the last level), and — set apart
+   by a hairline and air — the CREDIT: a small label over the article's title. */
 .article-end {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  margin-top: 44px;
-  padding-top: 28px;
+  gap: 12px;
+  margin-top: 56px;
+  padding-top: 32px;
   border-top: 1px solid var(--line);
 }
 .article-next {
@@ -8313,16 +8326,27 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--muted);
 }
 .article-play {
-  align-self: center;
+  width: 100%;
 }
 .article-source {
-  margin: 6px 0 0;
-  font-size: 12px;
-  line-height: 1.6;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 36px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.article-source-label {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 .article-source a {
-  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--fg);
   text-decoration: underline;
   text-decoration-color: var(--line-strong);
   text-underline-offset: 3px;
@@ -8373,6 +8397,27 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   .ar-tourney th {
     padding-left: 4px;
     padding-right: 4px;
+  }
+}
+/* On a wide screen the list and an article SCROLL THE WHOLE VIEWPORT: each is a fixed box
+   over the screen, its column centred by its side padding, so the scrollbar stands on the
+   screen's own edge and not beside the column (user-decided 2026-09-29). The header stays
+   above it (z-index), the device frame's furniture over it (pointer-events none). */
+@media (min-width: 641px) {
+  .article-screen,
+  .learn {
+    position: fixed;
+    inset: 0;
+    width: auto;
+    max-height: none;
+  }
+  .article-screen {
+    padding-left: max(52px, calc((100% - 680px) / 2));
+    padding-right: max(52px, calc((100% - 680px) / 2));
+  }
+  .learn {
+    padding-left: max(52px, calc((100% - 900px) / 2));
+    padding-right: max(52px, calc((100% - 900px) / 2));
   }
 }
 /* The narrowest phones: the next-level card's picture yields to its title, and the

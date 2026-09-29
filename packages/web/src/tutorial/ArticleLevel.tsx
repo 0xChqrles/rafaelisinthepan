@@ -14,6 +14,7 @@ import FigureBody from './articles/figures/Figure';
 import useSeen from './articles/figures/useSeen';
 import type { Block } from './articles/types';
 import Duration from './Duration';
+import { keyboardLast } from './keyboardLast';
 import { LEVELS, levelOf, nextReady } from './levels';
 
 // AN ARTICLE LEVEL (levels 2+, 2026-09-29): the level read, not played — set like the
@@ -109,13 +110,13 @@ export default function ArticleLevel({ lang, level }: { lang: LangCode; level: n
     if (read) markLessonDone(level);
   }, [read, level, markLessonDone]);
   // A new level opens at its top: the phone's page scrolls as a whole, and navigating keeps
-  // its offset otherwise (routing.ts resets nothing). And it takes the FOCUS: on a wide screen
-  // the article is its own scroller, which the keyboard can only scroll once it holds focus —
-  // without it the first Tab jumps past all the text to the end's buttons.
+  // its offset otherwise (routing.ts resets nothing). The article is a focusable scroller (a
+  // wide screen scrolls it, not the page), and a player who came by the KEYBOARD — a card or
+  // NEXT LEVEL pressed with Enter — lands in it, so the arrows scroll the text at once.
   useEffect(() => {
     window.scrollTo(0, 0);
     scroller.current?.scrollTo(0, 0);
-    scroller.current?.focus({ preventScroll: true });
+    if (keyboardLast()) scroller.current?.focus({ preventScroll: true });
   }, [level]);
 
   if (!meta || !article) return null;
@@ -196,6 +197,7 @@ export default function ArticleLevel({ lang, level }: { lang: LangCode; level: n
           </Button>
           {article.source && (
             <p className="article-source">
+              <span className="article-source-label">{t(lang, 'levelSource')}</span>
               <a href={article.source.href} target="_blank" rel="noopener noreferrer">
                 {article.source.text}
               </a>

@@ -30,9 +30,7 @@ export default function Ranks({ board, take, more }: { board: WordPuzzle; take: 
   return (
     <div className="ar-ranks">
       <p className="ar-ranks-secret">
-        <span className="ar-held">
-          <span className="ar-held-text">{board.word.word}</span>
-        </span>
+        <span className="ar-solved">{board.word.word}</span>
       </p>
       <ol className="ar-ranks-list">{first.map(row)}</ol>
       {far.length > 0 && (
