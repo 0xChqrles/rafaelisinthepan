@@ -44,8 +44,10 @@ it('offers CONTINUE after two fast solving guesses', async () => {
       vocabError={null}
       retryVocab={() => {}}
       final={false}
+      clearedBefore={false}
       onComplete={() => {}}
       onPlay={() => {}}
+      onCleared={() => {}}
     />,
   ));
   await act(async () => observed.submit('dog'));

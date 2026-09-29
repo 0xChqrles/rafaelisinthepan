@@ -14,9 +14,11 @@
 // Only a READY level counts toward the header's badge and the game's LEARN / PLAY invitation:
 // a badge for something nobody can do is a nag.
 //
-// Completion is DEVICE-LOCAL. Level 1 is done once its run ends on PLAY — or once ANY real
-// round holds a guess, since a person who has played has learned what the run teaches; an
-// article is done once it has been read to its end. Nothing is stored on the account.
+// Completion is DEVICE-LOCAL. Level 1 is done once its run is over — its last sentence
+// dissolved into the level's card, which turns DONE on screen (PLAY records it too) — or once
+// ANY real round holds a guess, since a person who has played has learned what the run
+// teaches; an article is done once it has been read to its end. Nothing is stored on the
+// account.
 import type { UiKey } from '../i18n';
 
 // The illustration each level wears, on the list and at the head of its lesson (art/).

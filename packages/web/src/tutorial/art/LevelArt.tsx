@@ -13,6 +13,10 @@ import type { Raster, Scene } from './scenes';
 // and only while it is on screen and the page is visible; reduced motion (or `still`) holds
 // one composed frame. The ground is left transparent: the box's own background shows.
 //
+// `from` starts the picture's clock at that scene time when it mounts (level 1's finale opens
+// its page typing itself in); without it the clock is the page's, so every card on the list
+// runs free.
+//
 // `foot` keeps the bottom of the box (CSS pixels) for words laid over it — a card's title:
 // the scene composes above it, and the art is DITHERED OUT across the band where the two
 // meet — the ordered dither's own fade, never a smooth gradient over pixels.
@@ -40,6 +44,13 @@ function loadScenes(): Promise<ScenesModule> {
   return scenesLoad;
 }
 
+// Warm the chunk ahead of a picture that must appear on time (level 1's finale).
+export function preloadScenes(): void {
+  loadScenes().catch(() => {
+    // Decoration: the picture's box keeps its ground.
+  });
+}
+
 function hexToAbgr(hex: string): number {
   const v = parseInt(hex.slice(1), 16);
   const r = (v >> 16) & 255;
@@ -53,12 +64,14 @@ export default function LevelArt({
   cell = 3,
   still = false,
   foot = 0,
+  from,
   className = '',
 }: {
   name: LevelArtName;
   cell?: number;
   still?: boolean;
   foot?: number;
+  from?: number;
   className?: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -110,7 +123,13 @@ export default function LevelArt({
       }
       ctx.putImageData(image, 0, 0);
     };
-    const now = () => (moving ? performance.now() / 1000 : (mod?.STILL_T[name] ?? 0));
+    const t0 = performance.now();
+    const now = () =>
+      !moving
+        ? (mod?.STILL_T[name] ?? 0)
+        : from === undefined
+          ? performance.now() / 1000
+          : from + (performance.now() - t0) / 1000;
 
     const layout = () => {
       if (!mod) return;
@@ -185,7 +204,7 @@ export default function LevelArt({
       document.removeEventListener('visibilitychange', wake);
       window.clearTimeout(timer);
     };
-  }, [name, cell, still, foot]);
+  }, [name, cell, still, foot, from]);
 
   return (
     <div ref={box} className={`level-art ${className}`} aria-hidden="true">

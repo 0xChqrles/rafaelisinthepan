@@ -63,10 +63,14 @@ interface Token {
 export default function DissolvePhrase({
   words,
   puzzleHoles,
+  capital = true,
   onDone,
 }: {
   words: string[];
   puzzleHoles: PuzzleHole[];
+  // Phrase's own `capital`: the tutorial's lone word is a word, not a sentence, and takes
+  // none — the swap would otherwise capitalize it on its first frame.
+  capital?: boolean;
   onDone: () => void;
 }) {
   // The letter plan is rolled ONCE at mount (both dice — start and churn length), so a
@@ -76,7 +80,7 @@ export default function DissolvePhrase({
     const holeByPos = new Map(puzzleHoles.map((h) => [h.pos, h]));
     // The same capitals Phrase drew (`game/sentenceCase.ts`), or the swap would not be
     // pixel-identical: the prefix's when the hole has one, else the secret's.
-    const starts = sentenceStarts(words);
+    const starts = capital ? sentenceStarts(words) : words.map(() => false);
     const plan = (text: string): Letter[] =>
       Array.from(text).map((ch) => ({
         ch,

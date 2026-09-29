@@ -737,6 +737,15 @@ input {
 .tray.kb-leaving {
   overflow: clip;
 }
+/* …and the tutorial's keyboard RISES into the tray when it arrives mid-stage (the reveal's
+   CONTINUE, the meter stage's tap): kb-drop's travel reversed, live from its first frame. The
+   tray clips only while it plays. */
+.kb-exit.rising {
+  animation: kb-rise 240ms cubic-bezier(0.2, 1, 0.4, 1) backwards;
+}
+.tray.kb-rising {
+  overflow: clip;
+}
 /* The pre-game GATE's stack (2026-08-11): the rules in the shared `.coach-rules` dialog +
    the tutorial's own full-width button (PLAY), in the keyboard's footprint, so the button swaps what the tray
    holds and moves nothing else. */
@@ -765,6 +774,11 @@ input {
 @keyframes kb-drop {
   to {
     /* Past its own height + the safe-area pad, so the last row fully leaves the clip. */
+    transform: translateY(calc(100% + env(safe-area-inset-bottom, 0px) + 8px));
+  }
+}
+@keyframes kb-rise {
+  from {
     transform: translateY(calc(100% + env(safe-area-inset-bottom, 0px) + 8px));
   }
 }
@@ -2046,6 +2060,10 @@ input {
    as a footnote. `1em` off the wrap it is positioned in — the word's size — keeps it 28
    on a phone, where the word is. The game's own hits stay fixed: their words are one size. */
 .tutorial .floating-hit {
+  font-size: 1em;
+}
+/* …and so is the cut's number (the loot), for the same reason. */
+.tutorial--word .loot {
   font-size: 1em;
 }
 @keyframes hit-pop-in {
@@ -4570,6 +4588,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      screen. */
   max-width: 430px;
   min-height: 52px;
+}
+/* In the lesson the tray's button ARRIVES — the reveal's CONTINUE, then CONTINUE or PLAY
+   where the keyboard dropped away: the app's own `arrive` gesture. */
+.tutorial .tray > .mix-btn {
+  animation: arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
 }
 @media (max-width: 640px) {
   .coach {
@@ -7582,6 +7605,50 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 .learn-card.soon .learn-title {
   color: var(--muted);
+}
+/* LEVEL 1, CLEARED (2026-09-30): the run's last sentence dissolves into the level's own
+   card, in the play area, at the coach box's width so the two edges line up. It lands in
+   its NEXT dress — its title in the selection box — and the box is then wiped off, left to
+   right, uncovering the plain title: the level turns DONE (the number inks, the done mark
+   takes the chip). A picture to look at, not a door: nothing to press. */
+.learn-card.level-clear {
+  flex: 1 1 0;
+  width: min(560px, calc(100vw - 32px)); /* the coach box's own width */
+  min-height: 150px;
+  max-height: 360px;
+  margin: 12px 0;
+  cursor: default;
+  animation: arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
+}
+.learn-card.level-clear:hover {
+  border-color: var(--line);
+}
+.level-clear .learn-title {
+  position: relative;
+  font-size: 22px;
+}
+/* The NEXT box, as a copy laid over the plain title, and wiped off 600ms after the card
+   lands (280 + 600; LessonBoard's CLEAR_FLIP_MS). The clip reaches past the box's own
+   overhang, so its first frame is the whole box. */
+.level-clear-mark {
+  position: absolute;
+  inset: 0;
+  white-space: nowrap;
+  animation: mark-unwipe 320ms steps(8, jump-end) 880ms forwards;
+}
+.level-clear-mark .learn-title-text {
+  background: var(--fg);
+  color: var(--bg);
+  padding: 0.04em 0.22em;
+  margin-left: -0.22em;
+}
+@keyframes mark-unwipe {
+  from {
+    clip-path: inset(-0.3em -0.3em -0.3em -0.3em);
+  }
+  to {
+    clip-path: inset(-0.3em -0.3em -0.3em 100%);
+  }
 }
 
 /* ONE LEVEL'S ILLUSTRATION: its canvas is the grid of cells, blown up by an exact integer

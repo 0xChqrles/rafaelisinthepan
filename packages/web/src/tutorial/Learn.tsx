@@ -5,8 +5,7 @@ import { useGameStore } from '../state/gameStore';
 import { t } from '../i18n';
 import { pathForLearn, pathForLesson, type LangCode } from '../langs';
 import { navigate } from '../routing';
-import LevelArt from './art/LevelArt';
-import Duration from './Duration';
+import LevelCard from './LevelCard';
 import { LEVELS, PLAY_LEVEL, isReady } from './levels';
 
 // THE TUTORIAL PAGE (#269; re-dressed 2026-09-29): the levels as CARDS, each wearing its
@@ -18,10 +17,6 @@ import { LEVELS, PLAY_LEVEL, isReady } from './levels';
 // duration for the done mark; a level not ready in this language holds a still, grey picture
 // and says SOON — the road ahead, not a target. No gating between cards: any ready level can
 // be opened, done or not.
-const pad2 = (n: number) => String(n).padStart(2, '0');
-// The card's foot, under its title and subtitle, where the picture dithers out.
-const FOOT_PX = 80;
-
 export default function Learn({ lang }: { lang: LangCode }) {
   const done = useGameStore((s) => s.lessonsDone);
   const next = LEVELS.find((l) => isReady(l, lang) && !done.includes(l.level));
@@ -39,7 +34,6 @@ export default function Learn({ lang }: { lang: LangCode }) {
         {LEVELS.map((level) => {
           const ready = isReady(level, lang);
           const isDone = done.includes(level.level);
-          const seconds = level.duration[lang];
           const state = !ready ? 'soon' : isDone ? 'done' : level === next ? 'next' : 'todo';
           return (
             <li key={level.level} className={`learn-cell${level.level === PLAY_LEVEL ? ' hero' : ''}`}>
@@ -49,30 +43,7 @@ export default function Learn({ lang }: { lang: LangCode }) {
                 disabled={!ready}
                 onClick={() => navigate(pathForLesson(lang, level.level))}
               >
-                <LevelArt name={level.art} still={!ready} foot={FOOT_PX} className="learn-art" />
-                <span className="learn-card-top">
-                  <span className="learn-no">{pad2(level.level)}</span>
-                  {!ready ? (
-                    <span className="learn-meta">{t(lang, 'levelSoon')}</span>
-                  ) : isDone ? (
-                    <span className="learn-meta">
-                      <span className="learn-mark" aria-hidden="true" />
-                      {t(lang, 'levelDone')}
-                    </span>
-                  ) : (
-                    seconds !== undefined && (
-                      <span className="learn-meta">
-                        <Duration lang={lang} seconds={seconds} />
-                      </span>
-                    )
-                  )}
-                </span>
-                <span className="learn-card-foot">
-                  <span className="learn-title">
-                    <span className="learn-title-text">{t(lang, level.titleKey)}</span>
-                  </span>
-                  <span className="learn-sub">{t(lang, level.subKey)}</span>
-                </span>
+                <LevelCard level={level} lang={lang} state={state} />
               </button>
             </li>
           );

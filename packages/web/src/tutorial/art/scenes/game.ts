@@ -137,7 +137,9 @@ const game: SceneMaker = (cols, rows, stage) => {
   const nLines = nCtx + nSent;
   const lastSent = nBefore + nSent - 1;
   const blockH = (nLines - 1) * M.pitch + promptGap + box;
-  const band0 = top + Math.round((avail - blockH) / 2) + M.asc; // line 0's x-height band
+  // Centred in its room — and on a card too short to hold it, hung from the top, so it runs
+  // down into the fading foot and never up under the labels.
+  const band0 = top + Math.max(0, Math.round((avail - blockH) / 2)) + M.asc; // line 0's x-height band
   const bandY = (line: number) => band0 + line * M.pitch;
   const promptBand = bandY(nLines - 1) + promptGap;
   const mx = Math.max(8, Math.round(cols * 0.1));
