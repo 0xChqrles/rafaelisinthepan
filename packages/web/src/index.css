@@ -7622,7 +7622,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     gap: 10px;
   }
   .learn-cell {
-    aspect-ratio: 16 / 10;
+    aspect-ratio: 3 / 2;
   }
   .learn-cell.hero {
     aspect-ratio: 4 / 3.3;

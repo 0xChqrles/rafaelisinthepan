@@ -20,7 +20,7 @@ import { LEVELS, PLAY_LEVEL, isReady } from './levels';
 // be opened, done or not.
 const pad2 = (n: number) => String(n).padStart(2, '0');
 // The card's foot, under its title and subtitle, where the picture dithers out.
-const FOOT_PX = 92;
+const FOOT_PX = 80;
 
 export default function Learn({ lang }: { lang: LangCode }) {
   const done = useGameStore((s) => s.lessonsDone);

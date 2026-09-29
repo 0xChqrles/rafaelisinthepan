@@ -30,7 +30,7 @@ const SOURCE = {
 
 const distance: Article = {
   lead:
-    'Le jeu est un chaud-froid sémantique : chaque mot que tu tapes reçoit un numéro, sa place parmi les voisins du mot secret. Pour ranger des mots par proximité, il faut d’abord savoir mesurer la distance entre deux mots.',
+    'Le jeu est un chaud-froid sémantique : chaque mot tapé reçoit un numéro, sa place parmi les voisins du mot secret. Pour ranger des mots par proximité, il faut d’abord savoir mesurer la distance entre deux mots.',
   sections: [
     {
       blocks: [
@@ -134,7 +134,7 @@ const distance: Article = {
       ],
     },
     {
-      heading: 'Ton rang',
+      heading: 'Le rang',
       blocks: [
         {
           p: 'Celui du jeu a appris de la même façon, sur des milliards de mots tirés du web et de Wikipédia.',
@@ -143,7 +143,7 @@ const distance: Article = {
           p: 'Pour mesurer la proximité de deux mots, le jeu ne regarde pas la distance entre leurs points, mais l’angle entre leurs vecteurs : deux vecteurs qui pointent dans la même direction désignent des mots très proches, peu importe leur longueur. C’est la **similarité cosinus**.',
         },
         {
-          p: 'Pour chaque mot secret, le jeu mesure cet angle avec chacun des quelque 130 000 mots qu’il connaît, les trie du plus proche au plus lointain et garde les 10 000 premiers. Un mot qui n’y figure pas n’a pas de rang : c’est un MISS. Pour un mot seul, ton rang, c’est ta place dans cette liste. Voici le début de celle de `chat` :',
+          p: 'Pour chaque mot secret, le jeu mesure cet angle avec chacun des quelque 130 000 mots qu’il connaît, les trie du plus proche au plus lointain et garde les 10 000 premiers. Un mot qui n’y figure pas n’a pas de rang : c’est un MISS. Pour un mot seul, le rang, c’est la place dans cette liste. Voici le début de celle de `chat` :',
         },
         {
           fig: { kind: 'ranks', board: chat, take: 12, more: ['renard', 'souris', 'loup'] },
@@ -166,7 +166,7 @@ const meanings: Article = {
     {
       blocks: [
         {
-          p: 'Le jeu prend une jolie phrase dans un livre ou une chanson, cache trois mots, et tu dois les retrouver. Sauf que l’embedding a un défaut de naissance : il est **statique**. Il attribue un seul vecteur à chaque mot, quelle que soit la phrase. Or un mot n’a pas qu’un seul sens.',
+          p: 'Le jeu prend une jolie phrase dans un livre ou une chanson, cache trois mots, et il faut les retrouver. Sauf que l’embedding a un défaut de naissance : il est **statique**. Il attribue un seul vecteur à chaque mot, quelle que soit la phrase. Or un mot n’a pas qu’un seul sens.',
         },
         {
           p: 'Pendant l’entraînement, `voler` a traîné aussi souvent avec des avions qu’avec des cambrioleurs, et son vecteur a fini quelque part entre les deux, dans un endroit qui n’est ni tout à fait le ciel ni tout à fait la poche des autres.',
@@ -237,7 +237,7 @@ const meanings: Article = {
           caption: 'Parmi les plus proches voisins de `traite` selon l’embedding.',
         },
         {
-          p: 'L’embedding a compris « traiter un sujet ». La phrase, elle, parle de traiter quelqu’un. Si tu tapes `ménager` ou `dorloter`, tu as parfaitement compris la phrase. Pourtant, avec l’embedding seul, le jeu te répondrait `ménager^2037` et `dorloter^2096`. De cette injustice naît la frustration, et la frustration, ça mène à la guerre.',
+          p: 'L’embedding a compris « traiter un sujet ». La phrase, elle, parle de traiter quelqu’un. Le joueur qui tape `ménager` ou `dorloter` a parfaitement compris la phrase. Pourtant, avec l’embedding seul, le jeu lui répondrait `ménager^2037` et `dorloter^2096`. De cette injustice naît la frustration, et la frustration, ça mène à la guerre.',
         },
         { p: 'Donner une phrase au joueur ne suffit donc pas. Il faut que le classement, lui aussi, lise la phrase.' },
       ],
@@ -306,7 +306,7 @@ const attention: Article = {
         },
         { quote: 'Quelles informations du contexte sont importantes pour comprendre mon rôle ici ?' },
         {
-          p: 'Les autres mots possèdent chacun une key. Pour savoir lesquels sont intéressants, le Transformer compare la query de `vole` à chaque key grâce à un **produit scalaire**. Tu l’as déjà croisé sans le savoir : la similarité cosinus du niveau 2, c’est un produit scalaire entre deux vecteurs ramenés à une longueur de 1.',
+          p: 'Les autres mots possèdent chacun une key. Pour savoir lesquels sont intéressants, le Transformer compare la query de `vole` à chaque key grâce à un **produit scalaire**. On l’a déjà croisé sans le dire : la similarité cosinus du niveau 2, c’est un produit scalaire entre deux vecteurs ramenés à une longueur de 1.',
         },
         {
           p: 'Ici, la longueur compte aussi. Mais à longueur égale, plus deux vecteurs pointent dans la même direction, plus le résultat est grand ; perpendiculaires, il vaut zéro ; opposés, il devient négatif. On s’en sert donc comme d’un score de compatibilité entre une query et une key, et ces scores sont ensuite ramenés à des pourcentages dont la somme fait 100 % (grâce à un softmax, pour les experts).',
@@ -417,7 +417,7 @@ const judge: Article = {
       heading: 'Trois détails',
       blocks: [
         {
-          p: 'La théorie avait omis trois détails. Le premier, tu le connais : le masque causal. Quand le modèle calcule `vole` dans « Le pigeon vole de l’argent », la fin de la phrase ne lui est pas encore arrivée.',
+          p: 'La théorie avait omis trois détails. Le premier, on l’a vu : le masque causal. Quand le modèle calcule `vole` dans « Le pigeon vole de l’argent », la fin de la phrase ne lui est pas encore arrivée.',
         },
         {
           p: 'Deuxième détail : depuis le début, on fait comme si un LLM lisait des mots. C’est faux. Il lit des **tokens**, des morceaux de texte choisis pour être réutilisables. Un mot courant tient dans un seul token, un mot plus rare est découpé en plusieurs, avec un hidden state par morceau. On prend le dernier : il a au moins vu tous les morceaux précédents du même mot. Chez Qwen 3, par exemple, `cafard` devient `caf` et `ard`, et voici les plus proches voisins de `ard` :',
@@ -505,7 +505,7 @@ const judge: Article = {
           ],
         },
         {
-          p: 'Jev répond avec des décimales : un candidat obtient 3,26 plutôt que 3. La consigne est écrite en français ordinaire : seul le sens compte, pas la grammaire, pas l’orthographe, pas le fait que le candidat puisse remplacer le mot dans la phrase. Pour toi, ça veut dire : ne cherche pas ce qui irait bien dans le trou, cherche ce qui veut dire la même chose.',
+          p: 'Jev répond avec des décimales : un candidat obtient 3,26 plutôt que 3. La consigne est écrite en français ordinaire : seul le sens compte, pas la grammaire, pas l’orthographe, pas le fait que le candidat puisse remplacer le mot dans la phrase. Pour jouer, ça veut dire qu’il ne faut pas chercher ce qui irait bien dans le trou, mais ce qui veut dire la même chose.',
         },
         {
           p: 'Jev fait pourtant lui aussi des erreurs. Dans « la force de fixer froidement le malheur, d’étouffer mes émotions », il classait `étouffer` 27e voisin d’`émotions`. Or `étouffer` n’est pas un mot proche d’`émotions`, c’est un mot de la phrase. Alors on ajoute une ligne à la consigne :',
@@ -526,7 +526,7 @@ const judge: Article = {
       heading: 'Un tournoi',
       blocks: [
         {
-          p: 'Jev n’est pas parfaitement stable. Si on lui demande plusieurs fois de noter le même candidat, sa réponse varie d’environ 0,1 point. Au fond du classement, ça ne change pas grand-chose : le 7 400e mot peut devenir le 5 000e, et personne ne joue là-bas. En haut, c’est différent : c’est là que se joue ta partie. Les notes y sont si serrées qu’une telle variation suffit à envoyer le 150e mot au 100e rang, ou au 200e. Jev sait donc assez bien quels mots méritent d’entrer dans les 200 premiers, mais beaucoup moins bien dans quel ordre les ranger.',
+          p: 'Jev n’est pas parfaitement stable. Si on lui demande plusieurs fois de noter le même candidat, sa réponse varie d’environ 0,1 point. Au fond du classement, ça ne change pas grand-chose : le 7 400e mot peut devenir le 5 000e, et personne ne joue là-bas. En haut, c’est différent : c’est là que se joue la partie. Les notes y sont si serrées qu’une telle variation suffit à envoyer le 150e mot au 100e rang, ou au 200e. Jev sait donc assez bien quels mots méritent d’entrer dans les 200 premiers, mais beaucoup moins bien dans quel ordre les ranger.',
         },
         {
           p: 'Alors on organise un tournoi. Les 200 meilleurs candidats s’affrontent tous deux à deux, soit 19 900 duels, avec une seule question :',
@@ -557,9 +557,9 @@ const judge: Article = {
       ],
     },
     {
-      heading: 'Ton rang, dans une phrase',
+      heading: 'Le rang, dans une phrase',
       blocks: [
-        { p: 'Quand tu tapes un mot dans une phrase du jour, son rang sort donc de cette chaîne :' },
+        { p: 'Quand on tape un mot dans une phrase du jour, son rang sort donc de cette chaîne :' },
         {
           steps: [
             'l’embedding rabat les 10 000 plus proches voisins du mot caché ; hors de cette liste, c’est un MISS, même si la phrase rend le mot proche ;',
@@ -571,7 +571,7 @@ const judge: Article = {
           ],
         },
         {
-          p: 'Tout ça une fois pour toutes, avant la sortie de la phrase : pendant ta partie, les rangs sont déjà écrits. Personne ne s’en rendra compte, mais maintenant tu le sais.',
+          p: 'Tout ça une fois pour toutes, avant la sortie de la phrase : pendant la partie, les rangs sont déjà écrits. Personne ne s’en rendra compte, mais maintenant vous le savez.',
         },
       ],
     },
