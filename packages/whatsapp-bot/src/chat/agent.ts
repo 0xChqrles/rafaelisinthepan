@@ -31,7 +31,7 @@ import { dateForDayNumber } from '@whippin/shared';
 import type { GroupConfig } from '../config/groupConfig';
 import type { DeclarationStore } from '../domain/declarations';
 import type { InboundMessage } from '../domain/message';
-import { weekdayOf } from '../domain/shareContext';
+import { languageName, weekdayOf } from '../domain/shareContext';
 import { articleSection, withArticleLink } from '../llm/article';
 import { buildSystemPrompt } from '../llm/personality';
 import { LlmUnavailable, type LlmMessage, type LlmProvider } from '../llm/types';
@@ -146,7 +146,7 @@ export function reactionIn(raw: string | null): string | null {
 // config states them in the group's zone), which is exactly how the group reads them.
 export function scheduleContext(group: GroupConfig): string {
   const podium = group.podium.enabled
-    ? `Every day at ${group.podium.time} (this group's own local time) you post the group's podium: the day's sentence results ranked from the shares posted here — fewest tries first, equal scores on one line, ∞ runs listed after the places. It is posted once; a share arriving later is recorded but the podium is not posted again.`
+    ? `Every day at ${group.podium.time} (this group's own local time) you post the group's podium: the day's ${languageName(group.language)} sentence results ranked from the shares posted here — fewest tries first, one player per line, equal scores sharing the place, ∞ runs listed after the places — and, when somebody also shared the other language's puzzle, one closing line with those results, unranked. It is posted once; a share arriving later is recorded but the podium is not posted again.`
     : 'This group has no daily podium.';
   const reminder = group.reminder.enabled
     ? ` Every morning at ${group.reminder.time} you post one line saying the day's puzzle is up, with the link.`

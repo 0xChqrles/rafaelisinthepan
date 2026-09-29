@@ -26,7 +26,7 @@ import { fold } from '@whippin/shared';
 import type { GroupConfig } from '../config/groupConfig';
 import type { Podium } from '../domain/podium';
 import { medianScore, type PodiumContext } from '../domain/shareContext';
-import { CAPPED_LINE_ID, lineId, type Comments } from '../domain/podiumText';
+import { podiumRows, type Comments } from '../domain/podiumText';
 import type { Log } from '../log';
 import { FACT_JUDGE_SYSTEM, JUDGE_TIMEOUT_MS, chooseLine } from './lineJudge';
 import { buildSystemPrompt } from './personality';
@@ -65,37 +65,29 @@ export interface PodiumCommentLine {
   id: string;
   position: number;
   score: number | '∞';
-  names: string[];
-  jids: string[];
+  name: string;
+  jid: string;
+  sameScore: string[]; // the other players on this score tonight, by name
 }
 
-// EVERY line the renderer prints, the ∞ one included (PR-278 review): it is printed under
-// the places and read as one of them, so leaving it the only bare slot is the snub this
-// path exists to stop. It has no score and no position of its own — `place` is the one
-// after the last, which is exactly where it is printed.
+// EVERY line the renderer prints, the ∞ ones included (PR-278 review): they are printed
+// under the places and read as places, so leaving them the only bare slots is the snub
+// this path exists to stop.
 export function podiumCommentLines(podium: Podium): PodiumCommentLine[] {
-  const lines: PodiumCommentLine[] = podium.lines.map((line) => ({
-    id: lineId(line),
-    position: line.position,
-    score: line.score,
-    names: line.players.map((p) => p.name),
-    jids: line.players.map((p) => p.jid),
+  const rows = podiumRows(podium);
+  return rows.map((row) => ({
+    id: row.id,
+    position: row.position,
+    score: row.score,
+    name: row.player.name,
+    jid: row.player.jid,
+    sameScore: rows.filter((r) => r.score === row.score && r.id !== row.id).map((r) => r.player.name),
   }));
-  if (podium.capped.length > 0) {
-    lines.push({
-      id: CAPPED_LINE_ID,
-      position: podium.lines.length + 1,
-      score: '∞',
-      names: podium.capped.map((p) => p.name),
-      jids: podium.capped.map((p) => p.jid),
-    });
-  }
-  return lines;
 }
 
-const TASK = `Task: one short comment under ONE line of tonight's podium, from the FACTS given and nothing else. Every number, name, position and comparison you write must come from the facts; you never invent or round one. The line's own names and score are printed right above your comment, so you do not repeat them — the others' names, and every number, are yours to use.
+const TASK = `Task: one short comment under ONE line of tonight's podium, from the FACTS given and nothing else. Every number, name, position and comparison you write must come from the facts; you never invent or round one. The line's own name and score are printed right above your comment, so you do not repeat them — the others' names, and every number, are yours to use.
 
-A score is worth what the others made of the same sentence tonight, never what another day cost. What brings value: where this line lands among tonight's players and how the others did; how that compares with where these players usually land against the others — how many of the others they usually beat, their recent places, their record against the people just above and below; and, when the day's conversation or your diary holds something about this player that is genuinely worth a callback — a promise, a bet, a running joke, something they said today — that, in passing. Every number comes from the facts: the conversation and the diary are for what people said and did, never for a score, a place or a best, and tonight's score is never held against another day's. This line is about the result: your own life stays out of it. Pick the ONE thing that is news about this line and say only that: one comparison, or one callback, never a list. Speak to the player as "tu" ("vous" when the line holds more than one name), never about them. Plain text only, no quotes, ONE short sentence of about fifteen words; a line with nothing notable gets a plain short acknowledgement.`;
+A score is worth what the others made of the same sentence tonight, never what another day cost. What brings value: where this line lands among tonight's players and how the others did; how that compares with where these players usually land against the others — how many of the others they usually beat, their recent places, their record against the people just above and below; and, when the day's conversation or your diary holds something about this player that is genuinely worth a callback — a promise, a bet, a running joke, something they said today — that, in passing. Every number comes from the facts: the conversation and the diary are for what people said and did, never for a score, a place or a best, and tonight's score is never held against another day's. This line is about the result: your own life stays out of it. Pick the ONE thing that is news about this line and say only that: one comparison, or one callback, never a list. Speak to the player as "tu", never about them; a line is ONE player, even when others made the same score. Plain text only, no quotes, ONE short sentence of about fifteen words; a line with nothing notable gets a plain short acknowledgement.`;
 
 const MAX_TOKENS = 4000;
 // COUNTS NOW THAT THINKING IS OFF (DeepSeek ignores it while thinking). 1.1 was the
@@ -178,22 +170,22 @@ export async function writeCandidate(
 
 // THE FACTS OF ONE LINE, picked from the podium's context. Neutral field names: the model
 // writes with whatever vocabulary is in front of it, and these are words it may borrow
-// (`typical` came back as "le bas du typical"; `band` as "le band a gagné"). The players
-// of one line share a score, so they beat the same players; "the others" of the median
-// are everybody the line does not hold.
+// (`typical` came back as "le bas du typical"; `band` as "le band a gagné"). "The others"
+// of the median are everybody but this line's player.
 export function lineFacts(line: PodiumCommentLine, outOf: number, context: PodiumContext) {
   return {
-    reading: `"score" is tonight's score of this line (fewer tries is better; three is the floor; ∞ is a run that never finished). A score is worth something only against the other players' scores of the same night (what a day costs depends on its sentence), so nothing here gives a score from another day. "beats" is how many of tonight's other players this line beats, "othersMedian" the middle of their scores. "players" is each name's form over the ${context.formDays} days BEFORE today: how many of the other posters they usually beat, their recent places ("of" = how many posted that day), and their record against everybody else on tonight's board. "board" is the whole podium.`,
+    reading: `"score" is tonight's score of this line (fewer tries is better; three is the floor; ∞ is a run that never finished). A score is worth something only against the other players' scores of the same night (what a day costs depends on its sentence), so nothing here gives a score from another day. "outOf" is how many played tonight; "sameScore" names the others who made the same score (they share the place, each on a line of their own). "beats" is how many of tonight's other players this line beats, "othersMedian" the middle of their scores. "form" is this player's form over the ${context.formDays} days BEFORE today: how many of the other posters they usually beat, their recent places ("of" = how many posted that day), and their record against everybody else on tonight's board. "board" is the whole podium.`,
     date: context.date,
     weekday: context.weekday,
     place: line.position,
     outOf,
     score: line.score,
-    who: line.names,
-    beats: context.players.get(line.jids[0])?.beats ?? null,
-    othersMedian: medianScore([...context.ranks].filter(([jid]) => !line.jids.includes(jid)).map(([, rank]) => rank)),
+    who: line.name,
+    sameScore: line.sameScore,
+    beats: context.players.get(line.jid)?.beats ?? null,
+    othersMedian: medianScore([...context.ranks].filter(([jid]) => jid !== line.jid).map(([, rank]) => rank)),
     formDays: context.formDays,
-    players: line.jids.map((jid) => context.players.get(jid)?.form ?? null),
+    form: context.players.get(line.jid)?.form ?? null,
     board: context.board,
   };
 }

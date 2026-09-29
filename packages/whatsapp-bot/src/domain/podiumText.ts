@@ -5,20 +5,29 @@
 
 import { dateForDayNumber } from '@whippin/shared';
 import type { GroupLanguage } from '../config/groupConfig';
-import type { Podium, PodiumLine } from './podium';
+import type { OtherLanguage, Podium, PodiumPlayer } from './podium';
 
 export type Comments = ReadonlyMap<string, string>; // line id -> comment
 
-// A line's id is its SCORE, as a string: stable across a re-render, unique per line by
-// construction (one line per distinct score), and what the model's answer is keyed by.
-export function lineId(line: PodiumLine): string {
-  return String(line.score);
+// ONE PRINTED LINE: a player, their place and their score — or ∞ for a run that never
+// finished, printed after the places, its `position` the place after the last (which is
+// where a reader counts it). Its id is its number in the printed order ("1", "2", …):
+// unique by construction, stable across a re-render of the same podium, what the model's
+// answer is keyed by, and never a JID (ids reach the logs).
+export interface PodiumRow {
+  id: string;
+  position: number;
+  score: number | '∞';
+  player: PodiumPlayer;
 }
 
-// The ∞ line's id (PR-278 review). It is printed like any other line and is read like one
-// — the group counted the bare slot under Claire's name as a snub — so it is commented
-// like one. No finite score can collide with it.
-export const CAPPED_LINE_ID = '∞';
+export function podiumRows(podium: Podium): PodiumRow[] {
+  const afterLast = (podium.lines.at(-1)?.position ?? 0) + 1;
+  return [
+    ...podium.lines.map((l) => ({ position: l.position, score: l.score as number | '∞', player: l.player })),
+    ...podium.capped.map((player) => ({ position: afterLast, score: '∞' as const, player })),
+  ].map((row, i) => ({ id: String(i + 1), ...row }));
+}
 
 const MONTHS_FR = [
   'janvier',
@@ -55,41 +64,36 @@ export function dayLabel(dayNumber: number, language: GroupLanguage): string {
   return `${MONTHS_EN[m - 1]} ${d}, ${y}`;
 }
 
-export function joinNames(names: readonly string[], language: GroupLanguage): string {
-  if (names.length <= 1) return names[0] ?? '';
-  const and = language === 'fr' ? ' et ' : ' and ';
-  return `${names.slice(0, -1).join(', ')}${and}${names[names.length - 1]}`;
+// The other languages' results, closing the podium: "Côté anglais : Charles 7 · Marie 15".
+const LANGUAGE_NAMES: Record<GroupLanguage, Record<string, string>> = {
+  fr: { en: 'anglais', fr: 'français' },
+  en: { en: 'English', fr: 'French' },
+};
+
+function renderOtherLanguage(other: OtherLanguage, language: GroupLanguage): string {
+  const results = other.results.map((r) => `${r.name} ${r.score}`).join(' · ');
+  const name = LANGUAGE_NAMES[language][other.lang] ?? other.lang;
+  return language === 'fr' ? `Côté ${name} : ${results}` : `In ${name}: ${results}`;
 }
 
 export function renderPodium(
   podium: Podium,
   language: GroupLanguage,
   comments: Comments = new Map(),
+  others: readonly OtherLanguage[] = [],
 ): string {
   const title =
     language === 'fr'
       ? `🏆 Podium Whippin du ${dayLabel(podium.dayNumber, language)}`
       : `🏆 Whippin podium, ${dayLabel(podium.dayNumber, language)}`;
   const out: string[] = [title, ''];
-  for (const line of podium.lines) {
-    const names = joinNames(
-      line.players.map((p) => p.name),
-      language,
-    );
-    out.push(`${line.position} — ${names} — ${line.score}`);
-    const comment = comments.get(lineId(line));
+  for (const row of podiumRows(podium)) {
+    out.push(row.score === '∞' ? `∞ — ${row.player.name}` : `${row.position} — ${row.player.name} — ${row.score}`);
+    const comment = comments.get(row.id);
     if (comment) out.push(`_${comment}_`);
   }
-  if (podium.capped.length > 0) {
-    out.push(
-      `∞ — ${joinNames(
-        podium.capped.map((p) => p.name),
-        language,
-      )}`,
-    );
-    const capped = comments.get(CAPPED_LINE_ID);
-    if (capped) out.push(`_${capped}_`);
-  }
+  const closing = others.filter((o) => o.results.length > 0);
+  if (closing.length > 0) out.push('', ...closing.map((o) => renderOtherLanguage(o, language)));
   return out.join('\n');
 }
 

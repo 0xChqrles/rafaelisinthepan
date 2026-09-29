@@ -1,7 +1,8 @@
 // The declarations keyspace of the bot table: partition `GROUP#<jid>`, sort
-// `DAY#<000000>#PLAYER#<sender>`. Group first because every podium and every stat starts
-// from the social group; the day zero-padded into the sort key so ONE range Query answers
-// "this group's history between two days" and a `begins_with` answers one day — no GSI.
+// `DAY#<000000>#PLAYER#<sender>#LANG#<lang>`. Group first because every podium and every
+// stat starts from the social group; the day zero-padded into the sort key so ONE range
+// Query answers "this group's history between two days" and a `begins_with` answers one
+// day — no GSI. Both hand back every language; the reader picks one (`inLanguage`).
 //
 // The write is the precedence rule (`supersedes`) spelled as a ConditionExpression, so two
 // replays racing each other cannot interleave into a wrong row: the item is written only if
@@ -30,14 +31,14 @@ export function dayPrefix(dayNumber: number): string {
   return `DAY#${String(dayNumber).padStart(6, '0')}#`;
 }
 
-export function declarationSortKey(dayNumber: number, sender: string): string {
-  return `${dayPrefix(dayNumber)}PLAYER#${sender}`;
+export function declarationSortKey(dayNumber: number, sender: string, lang: string): string {
+  return `${dayPrefix(dayNumber)}PLAYER#${sender}#LANG#${lang}`;
 }
 
 function toItem(d: Declaration): Record<string, AttributeValue> {
   return {
     pk: { S: groupPartition(d.group) },
-    sk: { S: declarationSortKey(d.dayNumber, d.sender) },
+    sk: { S: declarationSortKey(d.dayNumber, d.sender, d.lang) },
     group: { S: d.group },
     dayNumber: { N: String(d.dayNumber) },
     sender: { S: d.sender },

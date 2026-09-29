@@ -16,7 +16,7 @@
 // acknowledgement: `null` here means the emoji stands in (`domain/ingest.ts`).
 
 import type { GroupConfig } from '../config/groupConfig';
-import { FORM_DAYS, buildShareContext } from '../domain/shareContext';
+import { FORM_DAYS, buildOtherPuzzleContext, buildShareContext } from '../domain/shareContext';
 import type { Declaration, DeclarationStore } from '../domain/declarations';
 import type { Log } from '../log';
 import { FACT_JUDGE_SYSTEM, chooseLine } from './lineJudge';
@@ -26,10 +26,13 @@ import type { LlmProvider } from './types';
 
 // Where the facts come from: the day's rows and the group's window before it — and what
 // the player wrote around the share, when the caller had it to give (`ingest.ts` says when).
+// `lang` is the share's: the group's own, or the other language's puzzle
+// (`shareContext.ts` says how that one is read).
 export interface ShareCommentDeps {
   declarations: DeclarationStore;
   dayNumber: number;
   sender: string;
+  lang: string;
   said?: string;
 }
 
@@ -77,12 +80,14 @@ export async function generateShareComment(
   // What they wrote with it travels beside the facts, so the judge reads it too: a line
   // that answers it is supported by it.
   const said = deps.said ? { said: deps.said } : {};
+  // A share of the other language's puzzle has no form to read (`buildOtherPuzzleContext`).
+  const own = deps.lang === group.language;
   let todayRows: Declaration[];
   let windowRows: Declaration[];
   try {
     [todayRows, windowRows] = await Promise.all([
       deps.declarations.day(group.id, deps.dayNumber),
-      deps.declarations.range(group.id, deps.dayNumber - FORM_DAYS, deps.dayNumber - 1),
+      own ? deps.declarations.range(group.id, deps.dayNumber - FORM_DAYS, deps.dayNumber - 1) : [],
     ]);
   } catch (error) {
     // No facts, no commentary: a line written without them is the empty one this
@@ -90,7 +95,9 @@ export async function generateShareComment(
     log.warn({ event: 'share.facts_failed', error: (error as Error).message }, 'could not read the facts; the emoji stands in');
     return null;
   }
-  const context = buildShareContext({ group, dayNumber: deps.dayNumber, sender: deps.sender, todayRows, windowRows });
+  const context = own
+    ? buildShareContext({ group, dayNumber: deps.dayNumber, sender: deps.sender, todayRows, windowRows })
+    : buildOtherPuzzleContext({ group, dayNumber: deps.dayNumber, sender: deps.sender, lang: deps.lang, todayRows });
   if (!context) {
     log.warn({ event: 'share.facts_missing' }, 'the share is not on the board; the emoji stands in');
     return null;

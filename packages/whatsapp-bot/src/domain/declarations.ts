@@ -1,6 +1,8 @@
-// One CURRENT declaration per (group, Whippin day, sender) — the durable row a podium is
-// built from once a share has been observed (#236). The WhatsApp sender JID is the player
-// key; the display name is a SNAPSHOT for presentation and never identity.
+// One CURRENT declaration per (group, Whippin day, sender, language) — the durable row a
+// podium is built from once a share has been observed (#236). The WhatsApp sender JID is
+// the player key; the display name is a SNAPSHOT for presentation and never identity. The
+// LANGUAGE is part of the key (2026-09-29): a player may share the same day's French and
+// English results, which answer two different puzzles and must never replace each other.
 //
 // PRECEDENCE, and it is the whole idempotency story: the same message delivered twice is
 // a no-op (same timestamp, same id); a player sharing the same result again changes
@@ -16,7 +18,7 @@
 // arriving as A, B, C, a store that ignored B would let C's Y stand over the player's
 // actual latest statement. But it is `unchanged`: nothing material moved, so nothing
 // reacts to it and no lead is claimed for it. `recorded` means the TOKEN standing for
-// that (group, day, sender) is not the one that stood before.
+// that (group, day, sender, language) is not the one that stood before.
 //
 // A WRITE WHOSE ANSWER WAS LOST IS RE-SENT, AND THE RE-SEND MUST NOT READ AS THE
 // DUPLICATE. The precedence rule is strictly monotonic, so the same message sent twice is
@@ -41,10 +43,10 @@ export interface Declaration {
   messageTs: number; // WhatsApp message timestamp, seconds
   name: string; // display-name snapshot at the time of the message
   receivedAt: string; // ISO instant the bot recorded it
-  lang: string;
+  lang: string; // the SHARE's language, from its token
 }
 
-export type DeclarationKey = Pick<Declaration, 'group' | 'dayNumber' | 'sender'>;
+export type DeclarationKey = Pick<Declaration, 'group' | 'dayNumber' | 'sender' | 'lang'>;
 
 // The standing row is this very write, landed by an earlier attempt of the same ingest
 // call (the header says why that is `recorded`, not the duplicate it looks like).
@@ -89,12 +91,10 @@ export interface DeclarationStore {
   range(group: string, fromDay: number, toDay: number): Promise<Declaration[]>;
 }
 
-// A read filter for the group's OWN language. Ingestion writes only rows whose share
-// language matches the group's, so this earns its keep in exactly one case — a group whose
-// configured `language` CHANGES — where the rows written under the old one would otherwise
-// be ranked beside the new ones, on a board whose numbers then answer two different
-// puzzles. Every read of the store goes through it; a filter that lives only on the write
-// side is one config edit away from being no filter at all.
+// A read filter for ONE language. The store holds every language a group's players share
+// (the group's own, and the other one, 2026-09-29), and a board, a form or a record is
+// read in one language only: two languages' numbers answer two different puzzles. Every
+// read that ranks goes through it.
 export function inLanguage(rows: readonly Declaration[], lang: string): Declaration[] {
   return rows.filter((row) => row.lang === lang);
 }
@@ -115,7 +115,7 @@ export function playersIn(rows: readonly Declaration[]): PlayerSummary[] {
 // In-memory implementation: tests and local dry runs.
 export function memoryDeclarationStore(): DeclarationStore & { rows(): Declaration[] } {
   const rows = new Map<string, Declaration>();
-  const key = (d: DeclarationKey) => `${d.group}#${d.dayNumber}#${d.sender}`;
+  const key = (d: DeclarationKey) => `${d.group}#${d.dayNumber}#${d.sender}#${d.lang}`;
   return {
     async record(declaration) {
       const current = rows.get(key(declaration));

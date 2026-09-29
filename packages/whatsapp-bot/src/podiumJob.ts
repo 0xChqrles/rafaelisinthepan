@@ -4,9 +4,10 @@
 // (`podium.time` / `reminder.time` in the group's `timezone`, social conventions), and
 // since #277 the DIARY rewrite at the game's day flip.
 //
-//   podium:   read the group's rows for the Whippin day → dense podium → (optional) model
-//             comments from the facts, the day's log and the diary → render → ONE outbound
-//             command on the queue the connected task consumes.
+//   podium:   read the group's rows for the Whippin day → dense podium of the group's
+//             language → (optional) model comments from the facts, the day's log and the
+//             diary → render, the other language's results as one closing line → ONE
+//             outbound command on the queue the connected task consumes.
 //   reminder: read the day → one deterministic line with the link (and, when the group
 //             plays as a Whippin group that still stands, its invite and preview card).
 //   diary:    read the closed day's log and the diary → the model rewrites the diary.
@@ -30,7 +31,7 @@ import { parseDay } from './domain/day';
 import { inLanguage, type DeclarationStore } from './domain/declarations';
 import { dynamoDeclarationStore } from './domain/dynamoDeclarationStore';
 import { nameResolver } from './domain/names';
-import { buildPodium } from './domain/podium';
+import { buildPodium, otherLanguages } from './domain/podium';
 import { renderPodium, renderReminder, type Comments } from './domain/podiumText';
 import { FORM_DAYS, buildPodiumContext } from './domain/shareContext';
 import { createWhippinGroupReader, groupInviteUrl, type WhippinGroupReader } from './domain/whippinGroup';
@@ -157,7 +158,8 @@ export async function runPodiumJob(event: PodiumJobEvent, deps: PodiumJobDeps): 
     return skipped(event.group, day);
   }
   const startedAt = now().getTime();
-  const rows = inLanguage(await deps.declarations.day(group.id, day), group.language);
+  const dayRows = await deps.declarations.day(group.id, day);
+  const rows = inLanguage(dayRows, group.language);
   const podium = buildPodium(day, rows, nameResolver(group));
   if (podium.lines.length === 0 && podium.capped.length === 0) {
     deps.log.info({ event: 'podium.empty', group: tag(group.id), day }, 'no shares today; nothing posted');
@@ -193,7 +195,7 @@ export async function runPodiumJob(event: PodiumJobEvent, deps: PodiumJobDeps): 
       deps.log.warn({ event: 'podium.facts_failed', group: tag(group.id), error: (error as Error).message }, 'could not read the facts; podium without comments');
     }
   }
-  const text = renderPodium(podium, group.language, comments);
+  const text = renderPodium(podium, group.language, comments, otherLanguages(day, dayRows, group.language, nameResolver(group)));
   await deps.outbound.enqueue({
     id: commandIds.podium(group.id, day),
     kind: 'message',
