@@ -15,8 +15,8 @@ import {
   type PlayerSummary,
 } from '../domain/declarations';
 import { parseDay } from '../domain/day';
-import { buildPodium } from '../domain/podium';
-import { dayStandings, spokenShare, usualBeats } from '../domain/shareContext';
+import { buildPodium, otherLanguages } from '../domain/podium';
+import { dayStandings, languageName, spokenShare, usualBeats } from '../domain/shareContext';
 import { displayName } from '../domain/names';
 import type { LlmTool } from '../llm/types';
 
@@ -82,26 +82,29 @@ function dayOf(rows: readonly Declaration[], day: number): Declaration[] {
   return rows.filter((r) => r.dayNumber === day);
 }
 
+// Who held position 1 on a day — alone or shared.
+function winnersOf(rows: readonly Declaration[], day: number): string[] {
+  return buildPodium(day, dayOf(rows, day))
+    .lines.filter((l) => l.position === 1)
+    .map((l) => l.player.jid);
+}
+
 // Days (within the window) on which `jid` held position 1 — alone or shared.
 function wonDays(rows: readonly Declaration[], jid: string): Set<number> {
   const days = new Set(rows.map((r) => r.dayNumber));
-  const won = new Set<number>();
-  for (const day of days) {
-    const podium = buildPodium(day, dayOf(rows, day));
-    if (podium.lines[0]?.players.some((p) => p.jid === jid)) won.add(day);
-  }
-  return won;
+  return new Set([...days].filter((day) => winnersOf(rows, day).includes(jid)));
 }
 
 export const TOOL_DEFINITIONS: LlmTool[] = [
   {
     name: 'get_today_podium',
-    description: "Today's podium in this group: dense positions, scores (lower is better) and names.",
+    description:
+      "Today's podium in this group: dense positions, scores (lower is better) and names, one player per line. Players who also shared the other language's puzzle are listed apart, with no places: that is a different sentence.",
     parameters: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
     name: 'get_player_score',
-    description: "One player's declared score on a day (default today).",
+    description: "One player's declared score on a day (default today), and their score on the other language's puzzle when they shared it.",
     parameters: {
       type: 'object',
       properties: {
@@ -184,7 +187,7 @@ export async function labelPlayers(
   jids: readonly string[],
 ): Promise<Map<string, string>> {
   const rows = await ctx.declarations.range(ctx.group.id, ctx.today - HISTORY_WINDOW_DAYS, ctx.today);
-  const players = playersIn(inLanguage(rows, ctx.group.language));
+  const players = playersIn(rows);
   return new Map(
     jids.map((jid) => [jid, displayName(ctx.group, jid, players.find((p) => p.sender === jid)?.name ?? '')]),
   );
@@ -192,15 +195,15 @@ export async function labelPlayers(
 
 export function createToolRunner(ctx: ToolContext): ToolRunner {
   const nameOf = (d: Declaration) => displayName(ctx.group, d.sender, d.name);
-  // Every read is the group's own language (see `inLanguage`): a tool must not answer a
-  // question about this group's daily with rows from the one it used to play.
+  // Every RANKING read is the group's own language (see `inLanguage`): places, forms,
+  // streaks and records answer the group's puzzle. Only names are read across languages
+  // (a player who shares only the other puzzle still has one), and the other language's
+  // results are reported apart, never ranked beside the group's.
   const ownLanguage = (rows: readonly Declaration[]) => inLanguage(rows, ctx.group.language);
   let windowRows: Promise<Declaration[]> | undefined;
-  const history = () =>
-    (windowRows ??= ctx.declarations
-      .range(ctx.group.id, ctx.today - HISTORY_WINDOW_DAYS, ctx.today)
-      .then(ownLanguage));
-  const players = async () => playersIn(await history());
+  const allRows = () => (windowRows ??= ctx.declarations.range(ctx.group.id, ctx.today - HISTORY_WINDOW_DAYS, ctx.today));
+  const history = async () => ownLanguage(await allRows());
+  const players = async () => playersIn(await allRows());
 
   async function resolve(raw: unknown): Promise<Resolution | { error: string }> {
     if (typeof raw !== 'string') return { error: 'player must be a name' };
@@ -218,16 +221,14 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
 
   const handlers: Record<string, (args: Record<string, unknown>) => Promise<unknown>> = {
     async get_today_podium() {
-      const today = ownLanguage(await ctx.declarations.day(ctx.group.id, ctx.today));
-      const podium = buildPodium(ctx.today, today, nameOf);
+      const today = await ctx.declarations.day(ctx.group.id, ctx.today);
+      const podium = buildPodium(ctx.today, ownLanguage(today), nameOf);
+      const others = otherLanguages(ctx.today, today, ctx.group.language, nameOf);
       return {
         date: dateForDayNumber(ctx.today),
-        lines: podium.lines.map((l) => ({
-          position: l.position,
-          score: l.score,
-          names: l.players.map((p) => p.name),
-        })),
+        lines: podium.lines.map((l) => ({ position: l.position, score: l.score, name: l.player.name })),
         unfinished: podium.capped.map((p) => p.name),
+        ...(others.length ? { otherLanguages: others.map((o) => ({ puzzle: languageName(o.lang), results: o.results })) } : {}),
       };
     },
     async get_player_score(args) {
@@ -242,13 +243,15 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
       // A day that has not happened has no result, and "played: false" would read as
       // "they skipped it" about a puzzle nobody has seen.
       if (day > ctx.today) return { error: 'that day has not been played yet' };
-      const rows =
+      const all =
         day === ctx.today || day < ctx.today - HISTORY_WINDOW_DAYS
-          ? ownLanguage(await ctx.declarations.day(ctx.group.id, day))
-          : dayOf(await history(), day);
+          ? await ctx.declarations.day(ctx.group.id, day)
+          : dayOf(await allRows(), day);
+      const rows = ownLanguage(all);
       const row = rows.find((x) => x.sender === player.sender);
       const podium = buildPodium(day, rows, nameOf);
-      const line = podium.lines.find((l) => l.players.some((p) => p.jid === player.sender));
+      const line = podium.lines.find((l) => l.player.jid === player.sender);
+      const elsewhere = all.filter((x) => x.sender === player.sender && x.lang !== ctx.group.language);
       return {
         player: nameOf({ ...row, sender: player.sender, name: player.name } as Declaration),
         date: dateForDayNumber(day),
@@ -256,6 +259,7 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
         score: row ? scoreOf(row) : null,
         position: line?.position ?? null,
         playersThatDay: rows.length,
+        ...(elsewhere.length ? { otherLanguages: elsewhere.map((x) => ({ puzzle: languageName(x.lang), score: scoreOf(x) })) } : {}),
       };
     },
     // A PLAYER'S FORM IS WHERE THEY LAND, NOT WHAT THEY SCORE (v13, user-decided
@@ -370,9 +374,7 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
       const playedCount = new Map<string, number>();
       for (const x of rows) playedCount.set(x.sender, (playedCount.get(x.sender) ?? 0) + 1);
       for (const day of new Set(rows.map((x) => x.dayNumber))) {
-        for (const p of buildPodium(day, dayOf(rows, day)).lines[0]?.players ?? []) {
-          wins.set(p.jid, (wins.get(p.jid) ?? 0) + 1);
-        }
+        for (const jid of winnersOf(rows, day)) wins.set(jid, (wins.get(jid) ?? 0) + 1);
       }
       const label = (jid: string) => {
         const p = playersIn(rows).find((x) => x.sender === jid);

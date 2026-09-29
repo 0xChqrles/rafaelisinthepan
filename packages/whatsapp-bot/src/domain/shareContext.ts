@@ -34,10 +34,11 @@ export function weekdayOf(date: string, language: GroupLanguage): string {
 
 export type Score = number | '∞';
 
+// One player per line, like the printed podium (`domain/podium.ts`).
 export interface BoardLine {
   position: number;
   score: Score;
-  names: string[];
+  name: string;
 }
 
 function scoreOf(d: Pick<Declaration, 'score' | 'capped'>): Score {
@@ -95,7 +96,7 @@ export function dayStandings(day: number, rows: readonly Declaration[]): Map<str
   const played = rows.filter((r) => r.dayNumber === day);
   const podium = buildPodium(day, played);
   const standings = new Map<string, DayStanding>();
-  for (const line of podium.lines) for (const p of line.players) standings.set(p.jid, { place: line.position, beats: null });
+  for (const line of podium.lines) standings.set(line.player.jid, { place: line.position, beats: null });
   for (const p of podium.capped) standings.set(p.jid, { place: null, beats: null });
   for (const row of played) {
     const others = played.filter((o) => o.sender !== row.sender);
@@ -124,10 +125,10 @@ interface WindowDay {
   standings: Map<string, DayStanding>;
 }
 
-// The FORM_DAYS days before `dayNumber`, in the group's language, newest first. The day
-// itself is never part of it: a form is what today is read AGAINST.
-function readWindow(group: GroupConfig, dayNumber: number, windowRows: readonly Declaration[]): WindowDay[] {
-  const window = inLanguage(windowRows, group.language).filter((r) => r.dayNumber < dayNumber && r.dayNumber >= dayNumber - FORM_DAYS);
+// The FORM_DAYS days before `dayNumber`, in one language, newest first. The day itself is
+// never part of it: a form is what today is read AGAINST.
+function readWindow(lang: string, dayNumber: number, windowRows: readonly Declaration[]): WindowDay[] {
+  const window = inLanguage(windowRows, lang).filter((r) => r.dayNumber < dayNumber && r.dayNumber >= dayNumber - FORM_DAYS);
   return [...new Set(window.map((r) => r.dayNumber))]
     .sort((a, b) => b - a)
     .map((day) => {
@@ -188,9 +189,10 @@ function formOf(sender: string, name: string, days: readonly WindowDay[], rivals
 
 function boardOf(dayNumber: number, rows: readonly Declaration[], nameOf: NameOf): BoardLine[] {
   const podium = buildPodium(dayNumber, rows, nameOf);
+  const afterLast = (podium.lines.at(-1)?.position ?? 0) + 1;
   return [
-    ...podium.lines.map((l) => ({ position: l.position, score: l.score as Score, names: l.players.map((p) => p.name) })),
-    ...(podium.capped.length ? [{ position: podium.lines.length + 1, score: '∞' as const, names: podium.capped.map((p) => p.name) }] : []),
+    ...podium.lines.map((l) => ({ position: l.position, score: l.score as Score, name: l.player.name })),
+    ...podium.capped.map((p) => ({ position: afterLast, score: '∞' as const, name: p.name })),
   ];
 }
 
@@ -200,6 +202,19 @@ const byRank = (a: Declaration, b: Declaration) => {
   return ra === rb ? 0 : ra < rb ? -1 : 1;
 };
 
+interface TodayBoard {
+  posted: number; // this share included
+  usualPosters?: number | null; // posters on an average played day of the window
+  first: boolean;
+  board: BoardLine[]; // dense places, this share on it; ∞ runs last, unplaced
+  place: number | null; // this player's, null for ∞
+  above: string[]; // better scores, best first
+  level: string[]; // the same score
+  below: string[]; // worse scores (∞ included), worst last
+  beats: string | null; // "2 of 5": how many of today's other posters this score beats (level ones not counted); null when alone
+  othersMedian: Score | null; // the middle of the others' scores; null when alone
+}
+
 interface ShareContext {
   reading: string; // how to read the rest — the one paragraph both the writer and the judge need
   date: string;
@@ -207,22 +222,60 @@ interface ShareContext {
   player: string;
   score: Score;
   formDays: number; // how far back `form` looks
-  today: {
-    posted: number; // this share included
-    usualPosters: number | null; // posters on an average played day of the window
-    first: boolean;
-    board: BoardLine[]; // dense places, this share on it; ∞ runs last, unplaced
-    place: number | null; // this player's, null for ∞
-    above: string[]; // better scores, best first
-    level: string[]; // the same score
-    below: string[]; // worse scores (∞ included), worst last
-    beats: string | null; // "2 of 5": how many of today's other posters this score beats (level ones not counted); null when alone
-    othersMedian: Score | null; // the middle of the others' scores; null when alone
-  };
+  today: TodayBoard;
   form: Form; // this player, over the window BEFORE today
 }
 
+// A SHARE OF THE OTHER LANGUAGE'S PUZZLE (user-decided 2026-09-29): the day's board of
+// THAT puzzle, and this player's score on the group's own puzzle that day, as a fact. No
+// form: the other puzzle is played by a few on the side, and handed a form of zero days
+// the writer told a daily player they had not played in two weeks.
+interface OtherPuzzleContext {
+  reading: string;
+  date: string;
+  weekday: string;
+  player: string;
+  puzzle: string; // "English"
+  score: Score;
+  today: TodayBoard; // that puzzle's shares only
+  groupPuzzle: string; // "French"
+  groupPuzzleScoreToday: Score | null; // what they already posted on it today; null: nothing yet
+}
+
 export const SHARE_READING = `A score is worth something only against the other players' scores of the SAME day (what a day costs depends on its sentence), so nothing here gives a score from another day. "today" is the board so far with this share on it: who is above, level and below, how many of the others this score beats, and the middle of their scores. "form" is the ${FORM_DAYS} days BEFORE today, never today: how many of the other posters this player usually beats, their recent places ("of" = how many posted that day), and their record against each person on today's board over the days both posted, with how many of the others that person usually beats.`;
+
+// A puzzle's language as the facts and the tools name it.
+export function languageName(lang: string): string {
+  return ({ en: 'English', fr: 'French' } as Record<string, string>)[lang] ?? lang;
+}
+
+function otherPuzzleReading(puzzle: string, groupPuzzle: string): string {
+  return `This is a share of the ${puzzle} puzzle: a different sentence from the ${groupPuzzle} one this group plays every day, played by a few on the side — say it is the ${puzzle} one. "today" is the ${puzzle} puzzle's board so far, ${puzzle} shares only: who is above, level and below, how many of them this score beats. "groupPuzzleScoreToday" is the score this player ALREADY POSTED here today on the ${groupPuzzle} puzzle (null: no ${groupPuzzle} result from them yet today). Setting the two scores side by side is a plain fact, never a verdict on either: two sentences are never worth the same. There is nothing here about habits on the ${puzzle} puzzle: say nothing about them.`;
+}
+
+// The day's board of one language as one player sees it, or null when they have no row.
+function todayOf(group: GroupConfig, dayNumber: number, sender: string, lang: string, todayRows: readonly Declaration[]) {
+  const nameOf = (d: Declaration) => displayName(group, d.sender, d.name);
+  const today = inLanguage(todayRows, lang).filter((r) => r.dayNumber === dayNumber);
+  const mine = today.find((r) => r.sender === sender);
+  if (!mine) return null;
+  const others = today.filter((r) => r.sender !== sender).sort(byRank);
+  const standing = dayStandings(dayNumber, today).get(sender)!;
+  const date = dateForDayNumber(dayNumber);
+  const board = (usualPosters?: number | null): TodayBoard => ({
+    posted: today.length,
+    ...(usualPosters === undefined ? {} : { usualPosters: usualPosters === null ? null : round1(usualPosters) }),
+    first: today.length === 1,
+    board: boardOf(dayNumber, today, nameOf),
+    place: standing.place,
+    above: others.filter((r) => rankOf(r) < rankOf(mine)).map(nameOf),
+    level: others.filter((r) => rankOf(r) === rankOf(mine)).map(nameOf),
+    below: others.filter((r) => rankOf(r) > rankOf(mine)).map(nameOf),
+    beats: others.length ? `${others.filter((r) => rankOf(r) > rankOf(mine)).length} of ${others.length}` : null,
+    othersMedian: medianScore(others.map(rankOf)),
+  });
+  return { nameOf, mine, others, date, weekday: weekdayOf(date, group.language), board };
+}
 
 // `todayRows` is the day's rows WITH this share recorded; `windowRows` is the group's rows
 // over the window BEFORE the day (any day of the window, the day itself excluded).
@@ -234,35 +287,46 @@ export function buildShareContext(input: {
   windowRows: readonly Declaration[];
 }): ShareContext | null {
   const { group, dayNumber, sender } = input;
-  const nameOf = (d: Declaration) => displayName(group, d.sender, d.name);
-  const today = inLanguage(input.todayRows, group.language).filter((r) => r.dayNumber === dayNumber);
-  const mine = today.find((r) => r.sender === sender);
-  if (!mine) return null;
-  const others = today.filter((r) => r.sender !== sender).sort(byRank);
-  const standing = dayStandings(dayNumber, today).get(sender)!;
-  const days = readWindow(group, dayNumber, input.windowRows);
-  const usualPosters = mean(days.map((d) => d.rows.length));
-  const date = dateForDayNumber(dayNumber);
+  const day = todayOf(group, dayNumber, sender, group.language, input.todayRows);
+  if (!day) return null;
+  const days = readWindow(group.language, dayNumber, input.windowRows);
   return {
     reading: SHARE_READING,
-    date,
-    weekday: weekdayOf(date, group.language),
-    player: nameOf(mine),
-    score: scoreOf(mine),
+    date: day.date,
+    weekday: day.weekday,
+    player: day.nameOf(day.mine),
+    score: scoreOf(day.mine),
     formDays: FORM_DAYS,
-    today: {
-      posted: today.length,
-      usualPosters: usualPosters === null ? null : round1(usualPosters),
-      first: today.length === 1,
-      board: boardOf(dayNumber, today, nameOf),
-      place: standing.place,
-      above: others.filter((r) => rankOf(r) < rankOf(mine)).map(nameOf),
-      level: others.filter((r) => rankOf(r) === rankOf(mine)).map(nameOf),
-      below: others.filter((r) => rankOf(r) > rankOf(mine)).map(nameOf),
-      beats: others.length ? `${others.filter((r) => rankOf(r) > rankOf(mine)).length} of ${others.length}` : null,
-      othersMedian: medianScore(others.map(rankOf)),
-    },
-    form: formOf(sender, nameOf(mine), days, others, nameOf),
+    today: day.board(mean(days.map((d) => d.rows.length))),
+    form: formOf(sender, day.nameOf(day.mine), days, day.others, day.nameOf),
+  };
+}
+
+// The facts of a share of the OTHER language's puzzle (`lang`), from the day's rows with
+// it recorded.
+export function buildOtherPuzzleContext(input: {
+  group: GroupConfig;
+  dayNumber: number;
+  sender: string;
+  lang: string;
+  todayRows: readonly Declaration[];
+}): OtherPuzzleContext | null {
+  const { group, dayNumber, sender, lang } = input;
+  const day = todayOf(group, dayNumber, sender, lang, input.todayRows);
+  if (!day) return null;
+  const puzzle = languageName(lang);
+  const groupPuzzle = languageName(group.language);
+  const posted = inLanguage(input.todayRows, group.language).find((r) => r.dayNumber === dayNumber && r.sender === sender);
+  return {
+    reading: otherPuzzleReading(puzzle, groupPuzzle),
+    date: day.date,
+    weekday: day.weekday,
+    player: day.nameOf(day.mine),
+    puzzle,
+    score: scoreOf(day.mine),
+    today: day.board(),
+    groupPuzzle,
+    groupPuzzleScoreToday: posted ? scoreOf(posted) : null,
   };
 }
 
@@ -293,7 +357,7 @@ export function buildPodiumContext(input: {
   const nameOf = (d: Declaration) => displayName(group, d.sender, d.name);
   const today = inLanguage(input.todayRows, group.language).filter((r) => r.dayNumber === dayNumber).sort(byRank);
   const standings = dayStandings(dayNumber, today);
-  const days = readWindow(group, dayNumber, input.windowRows);
+  const days = readWindow(group.language, dayNumber, input.windowRows);
   const players = new Map<string, { beats: string | null; form: Form }>();
   for (const row of today) {
     const others = today.filter((r) => r.sender !== row.sender);

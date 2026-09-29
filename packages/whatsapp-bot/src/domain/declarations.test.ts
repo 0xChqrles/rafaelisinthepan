@@ -105,6 +105,18 @@ describe('declaration precedence (#236)', () => {
     expect(await store.day('120363000000000002@g.us', 20700)).toEqual([]);
   });
 
+  it('keeps one row per LANGUAGE: the same day\'s other puzzle never replaces the group\'s', async () => {
+    const store = memoryDeclarationStore();
+    expect(await store.record(base)).toBe('recorded');
+    // A later message, same player and day, the English puzzle: a row of its own.
+    expect(await store.record({ ...base, lang: 'en', score: 4, token: 'EEE', messageId: 'M2', messageTs: 1_001 })).toBe('recorded');
+    const day = await store.day(base.group, base.dayNumber);
+    expect(day.map((r) => [r.lang, r.score]).sort()).toEqual([
+      ['en', 4],
+      ['fr', 7],
+    ]);
+  });
+
   it('lists the players a window has seen with their latest name snapshot', () => {
     const players = playersIn([
       base,
@@ -117,8 +129,11 @@ describe('declaration precedence (#236)', () => {
 
 describe('DynamoDB declaration keyspace', () => {
   it('sorts days lexically and spells the precedence rule as the write condition', async () => {
-    expect(declarationSortKey(20700, 'x@s.whatsapp.net')).toBe('DAY#020700#PLAYER#x@s.whatsapp.net');
-    expect(declarationSortKey(20700, 'a') < declarationSortKey(20701, 'a')).toBe(true);
+    expect(declarationSortKey(20700, 'x@s.whatsapp.net', 'fr')).toBe('DAY#020700#PLAYER#x@s.whatsapp.net#LANG#fr');
+    expect(declarationSortKey(20700, 'x@s.whatsapp.net', 'en')).not.toBe(declarationSortKey(20700, 'x@s.whatsapp.net', 'fr'));
+    expect(declarationSortKey(20700, 'a', 'fr') < declarationSortKey(20701, 'a', 'fr')).toBe(true);
+    // The range query's upper bound (`DAY#<to>#~`) still sorts after every key of its day.
+    expect(declarationSortKey(20700, 'x@s.whatsapp.net', 'fr') < 'DAY#020700#~').toBe(true);
 
     const send = vi.fn(async () => ({}));
     const store = dynamoDeclarationStore({ send } as unknown as DynamoDBClient, 'bot');

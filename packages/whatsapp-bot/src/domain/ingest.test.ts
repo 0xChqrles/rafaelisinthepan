@@ -251,13 +251,36 @@ describe('share ingestion (#236)', () => {
     expect(sent).toHaveLength(1);
   });
 
-  it('ignores unconfigured groups, its own messages, other languages and plain chatter', async () => {
+  it('ignores unconfigured groups, its own messages and plain chatter', async () => {
     const { ingest, sent } = harness();
     expect(await ingest(message({ group: '120363999999999999@g.us' }))).toBe('ignored');
     expect(await ingest(message({ fromMe: true }))).toBe('ignored');
-    expect(await ingest(message({ text: `${ORIGIN}/s/${token(3, 'en')}` }))).toBe('no_share');
     expect(await ingest(message({ text: 'bonjour' }))).toBe('no_share');
     expect(sent).toEqual([]);
+  });
+
+  it("records a share of the OTHER language under its own language, acknowledged, and claims no lead (2026-09-29)", async () => {
+    const comment = vi.fn(async () => 'Trois en anglais.');
+    const { ingest, declarations, sent } = harness(registry({ acknowledge: 'say', leaderAnnouncements: true }), { comment });
+    const zou = { id: 'M0', timestamp: 999, sender: '33600000000@s.whatsapp.net', participant: '33600000000@s.whatsapp.net', senderName: 'Zouzou' };
+    expect(await ingest(message({ ...zou, text: `${ORIGIN}/s/${token(5, 'en')}` }))).toBe('recorded');
+    expect(await ingest(message({ text: `${ORIGIN}/s/${token(3, 'en')}` }))).toBe('recorded');
+    expect((await declarations.day(GROUP, DAY)).map((r) => [r.lang, r.score]).sort()).toEqual([['en', 3], ['en', 5]]);
+    expect(comment).toHaveBeenLastCalledWith(expect.objectContaining({ id: GROUP }), expect.objectContaining({ dayNumber: DAY, lang: 'en' }));
+    // Two lines, and no "takes the lead" for a 3 that passed Zou's 5: the leader is the
+    // group's puzzle's.
+    expect(sent.map((c) => (c.kind === 'message' ? c.text : c.kind))).toEqual(['Trois en anglais.', 'Trois en anglais.']);
+    // The same player's French result that day is a row of its own, beside the English one.
+    expect(await ingest(message({ id: 'M2', timestamp: 1_001, text: `${ORIGIN}/s/${token(7)}` }))).toBe('recorded');
+    expect((await declarations.day(GROUP, DAY)).filter((r) => r.sender === message().sender).map((r) => [r.lang, r.score]).sort()).toEqual([['en', 3], ['fr', 7]]);
+  });
+
+  it("acknowledges a message carrying both languages for the group's own, even when the other scored better", async () => {
+    const { ingest, declarations, sent } = harness();
+    const text = `${ORIGIN}/s/${token(3, 'en')} et ${ORIGIN}/s/${token(12)}`;
+    expect(await ingest(message({ text }))).toBe('recorded');
+    expect(await declarations.day(GROUP, DAY)).toHaveLength(2);
+    expect(sent).toEqual([expect.objectContaining({ kind: 'reaction', emoji: '👍' })]);
   });
 
   it('a replayed share is recorded but never reacted to', async () => {

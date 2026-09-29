@@ -83,9 +83,9 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
     expect(await tools.run('get_today_podium', {})).toEqual({
       date: '2026-09-03',
       lines: [
-        { position: 1, score: 3, names: ['Zou'] },
-        { position: 2, score: 4, names: ['Gab 🔥'] },
-        { position: 3, score: 9, names: ['Bruno'] },
+        { position: 1, score: 3, name: 'Zou' },
+        { position: 2, score: 4, name: 'Gab 🔥' },
+        { position: 3, score: 9, name: 'Bruno' },
       ],
       unfinished: ['Bruno'],
     });
@@ -192,7 +192,7 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
     expect(await tools.labelFor('33699998888@s.whatsapp.net')).toBe('…8888'); // never seen
   });
 
-  it('ranks only the group\'s OWN language, in every read', async () => {
+  it('ranks only the group\'s OWN language, and reports the other one apart (2026-09-29)', async () => {
     const declarations = memoryDeclarationStore();
     await declarations.record(row(GAB, 'Gab', TODAY, 4));
     await declarations.record({ ...row(ZOU, 'Zouzou', TODAY, 2), lang: 'en' });
@@ -203,11 +203,24 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
       declarations,
       now: () => new Date('2026-09-03T12:00:00Z'),
     });
-    expect(await tools.run('get_today_podium', {})).toMatchObject({
-      lines: [{ position: 1, score: 4, names: ['Gab'] }],
+    // The other language is reported APART — no place, never ranked beside the group's.
+    expect(await tools.run('get_today_podium', {})).toEqual({
+      date: '2026-09-03',
+      lines: [{ position: 1, score: 4, name: 'Gab' }],
+      unfinished: [],
+      otherLanguages: [{ puzzle: 'English', results: [{ name: 'Zou', score: 2 }] }],
     });
-    // The filtered-out row is not even a player the group knows.
-    expect(await tools.run('get_player_form', { player: 'Zou' })).toMatchObject({ unknown: true });
+    // A player who shared only the other puzzle has a name, and no form on the group's.
+    expect(await tools.run('get_player_form', { player: 'Zou' })).toMatchObject({ daysPlayed: 0, usuallyBeats: null });
+    expect(await tools.run('get_player_score', { player: 'Zou' })).toMatchObject({
+      played: false,
+      score: null,
+      position: null,
+      playersThatDay: 1,
+      otherLanguages: [{ puzzle: 'English', score: 2 }],
+    });
+    // A player of the group's puzzle only carries no other-language field at all.
+    expect(await tools.run('get_player_score', { player: 'Gab' })).not.toHaveProperty('otherLanguages');
   });
 
   it('never promises a window wider than it reads, and takes a numeric string', async () => {

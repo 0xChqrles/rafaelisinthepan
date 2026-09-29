@@ -2,7 +2,7 @@ import { dateForDayNumber } from '@whippin/shared';
 import { describe, expect, it } from 'vitest';
 import { parseGroupConfig } from '../config/groupConfig';
 import type { Declaration } from './declarations';
-import { FORM_DAYS, SHARE_READING, buildPodiumContext, buildShareContext, medianScore, spokenShare } from './shareContext';
+import { FORM_DAYS, SHARE_READING, buildOtherPuzzleContext, buildPodiumContext, buildShareContext, medianScore, spokenShare } from './shareContext';
 
 const group = parseGroupConfig('g.json', {
   id: '120363000000000001@g.us',
@@ -39,11 +39,13 @@ describe('the facts a share is commented from (user-decided 2026-09-07; relative
     expect(ctx.formDays).toBe(FORM_DAYS);
     expect(ctx.reading).toBe(SHARE_READING);
     expect(ctx.today.board).toEqual([
-      { position: 1, score: 4, names: ['LUC'] },
-      { position: 2, score: 12, names: ['CAMI', 'ZOU'] },
-      { position: 3, score: 21, names: ['BRUNO'] },
-      { position: 4, score: '∞', names: ['THEO'] },
+      { position: 1, score: 4, name: 'LUC' },
+      { position: 2, score: 12, name: 'CAMI' },
+      { position: 2, score: 12, name: 'ZOU' },
+      { position: 3, score: 21, name: 'BRUNO' },
+      { position: 4, score: '∞', name: 'THEO' },
     ]);
+    expect(ctx).not.toHaveProperty('otherPuzzle');
     // Beats Bruno and Theo, level with Zou (not counted), behind Luc.
     expect(ctx.today).toMatchObject({ posted: 5, first: false, place: 2, above: ['LUC'], level: ['ZOU'], below: ['BRUNO', 'THEO'], beats: '2 of 4', othersMedian: 16.5 });
     // A ∞ run has no place, sits behind everybody and beats nobody.
@@ -56,7 +58,7 @@ describe('the facts a share is commented from (user-decided 2026-09-07; relative
     const window = [row(DAY - 1, 'luc', 5), row(DAY - 1, 'bruno', 9), row(DAY - 1, 'cami', 30), row(DAY - 2, 'luc', 7)];
     const ctx = buildShareContext({ group, dayNumber: DAY, sender: 'luc', todayRows: [row(DAY, 'luc', 6)], windowRows: window })!;
     expect(ctx.today).toMatchObject({ posted: 1, first: true, place: 1, above: [], below: [], level: [], beats: null, othersMedian: null, usualPosters: 2 });
-    expect(ctx.today.board).toEqual([{ position: 1, score: 6, names: ['LUC'] }]);
+    expect(ctx.today.board).toEqual([{ position: 1, score: 6, name: 'LUC' }]);
     // Alone on the 2nd day beats nobody and loses to nobody: that day says nothing of form.
     expect(ctx.form).toMatchObject({ daysPlayed: 2, usuallyBeats: 'all', rivals: [] });
   });
@@ -97,9 +99,35 @@ describe('the facts a share is commented from (user-decided 2026-09-07; relative
     expect(buildShareContext({ group, dayNumber: DAY, sender: 'bruno', todayRows: today, windowRows: [] })!.today.posted).toBe(1);
   });
 
+  it("a share of the OTHER language is read against that puzzle's players, with the player's own-language score as a fact (2026-09-29)", () => {
+    const en = (day: number, sender: string, score: number) => row(day, sender, score, false, 'en');
+    const today = [row(DAY, 'luc', 12), row(DAY, 'bruno', 5), en(DAY, 'luc', 7), en(DAY, 'cami', 9)];
+    const ctx = buildOtherPuzzleContext({ group, dayNumber: DAY, lang: 'en', sender: 'luc', todayRows: today })!;
+    // The board and the places are the English puzzle's alone.
+    expect(ctx).toMatchObject({ puzzle: 'English', score: 7, groupPuzzle: 'French', groupPuzzleScoreToday: 12 });
+    expect(ctx.today).toEqual({
+      posted: 2,
+      first: false,
+      board: [{ position: 1, score: 7, name: 'LUC' }, { position: 2, score: 9, name: 'CAMI' }],
+      place: 1,
+      above: [],
+      level: [],
+      below: ['CAMI'],
+      beats: '1 of 1',
+      othersMedian: 9,
+    });
+    // NO FORM: handed zero days of it, the writer told a daily player they had not played.
+    expect(ctx).not.toHaveProperty('form');
+    expect(ctx.reading).toContain('This is a share of the English puzzle');
+    expect(ctx.reading).toContain('never a verdict');
+    // Not posted on the group's puzzle yet: null, never a guess.
+    const cami = buildOtherPuzzleContext({ group, dayNumber: DAY, lang: 'en', sender: 'cami', todayRows: today })!;
+    expect(cami).toMatchObject({ groupPuzzleScoreToday: null });
+  });
+
   it('the podium reads every player the same way, their rivals being everybody else on the night', () => {
     const podium = buildPodiumContext({ group, dayNumber: DAY, todayRows: [row(DAY, 'luc', 6), row(DAY, 'bruno', 14)], windowRows: WINDOW });
-    expect(podium.board).toEqual([{ position: 1, score: 6, names: ['LUC'] }, { position: 2, score: 14, names: ['BRUNO'] }]);
+    expect(podium.board).toEqual([{ position: 1, score: 6, name: 'LUC' }, { position: 2, score: 14, name: 'BRUNO' }]);
     expect(podium.players.get('luc')).toMatchObject({ beats: '1 of 1', form: { usuallyBeats: '2 in 3', rivals: [{ name: 'BRUNO', youBeatThem: 2, theyBeatYou: 1, tied: 1 }] } });
     // The share line and the podium cannot disagree about who usually lands where.
     const share = buildShareContext({ group, dayNumber: DAY, sender: 'bruno', todayRows: [row(DAY, 'luc', 6), row(DAY, 'bruno', 14)], windowRows: WINDOW })!;

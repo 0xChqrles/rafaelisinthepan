@@ -31,7 +31,7 @@ async function store(rows: Declaration[] = [row(DAY, 'Zou', 5), row(DAY, 'Gab', 
   for (const r of rows) await s.record(r);
   return s;
 }
-const depsFor = (declarations: Awaited<ReturnType<typeof store>>, sender = 'Gab') => ({ declarations, dayNumber: DAY, sender });
+const depsFor = (declarations: Awaited<ReturnType<typeof store>>, sender = 'Gab') => ({ declarations, dayNumber: DAY, sender, lang: 'fr' });
 
 // Writer calls consume `steps` in call order (a step past the end is a usable line); a
 // JUDGE call — told apart by its own system prompt — is answered by `judge`, default keep.
@@ -86,6 +86,17 @@ describe('the spoken acknowledgement of a share is commentary from the numbers (
     expect(p.written()[0].system).toContain('On se chambre.');
     const judgeCall = p.calls.find((c) => c.system === FACT_JUDGE_SYSTEM)!;
     expect(judgeCall.messages[0].content).toContain('"score":7');
+  });
+
+  it("comments a share of the OTHER language from that puzzle's board and the player's own-language score, with no form (2026-09-29)", async () => {
+    const en = { ...row(DAY, 'Gab', 4), lang: 'en', token: 't-en', messageId: 'm-en' };
+    const p = provider([{ text: 'Quatre en anglais, sept en français.' }]);
+    const declarations = await store([...(await store()).rows(), en]);
+    expect(await generateShareComment(p.provider, group, { declarations, dayNumber: DAY, sender: 'Gab', lang: 'en' }, log)).toBe('Quatre en anglais, sept en français.');
+    const sent = JSON.parse(p.written()[0].messages[0].content);
+    expect(sent).toMatchObject({ puzzle: 'English', score: 4, groupPuzzle: 'French', groupPuzzleScoreToday: 7 });
+    expect(sent.today).toMatchObject({ posted: 1, first: true, board: [{ position: 1, score: 4, name: 'Gab' }] });
+    expect(sent).not.toHaveProperty('form');
   });
 
   it('shows the writer AND the judge what the player wrote with the share, beside the facts', async () => {

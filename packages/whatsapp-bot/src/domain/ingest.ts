@@ -1,6 +1,12 @@
 // The per-message pipeline (#236): allow-list → share links → durable declaration →
 // acknowledgement → (optionally) the new-leader line. A message that carries no valid share
-// for this group's language does nothing at all.
+// does nothing at all.
+//
+// A SHARE OF THE OTHER LANGUAGE IS RECORDED TOO (user-decided 2026-09-29). A group plays
+// one language — its podium, its leader, its reminder — and a player who also shares the
+// other language's puzzle is acknowledged like anyone (the line reads it against that
+// puzzle's own players), listed in one closing line of the podium, and answered about by
+// the chat tools. It claims no lead: the leader is the group's puzzle's.
 //
 // The model reaches this path through ONE injected function (`deps.comment`) and only for a
 // group configured `acknowledge: "say"`. Everything that DECIDES anything here is still
@@ -42,7 +48,7 @@ export interface IngestDeps {
   // and the retries (`llm/shareComment.ts`, wired in main.ts). Absent, or answering null,
   // means the emoji stands in. `said` is what the player wrote around the share, as the
   // caller remembered it (below).
-  comment?: (group: GroupConfig, key: { dayNumber: number; sender: string; said?: string }) => Promise<string | null>;
+  comment?: (group: GroupConfig, key: { dayNumber: number; sender: string; lang: string; said?: string }) => Promise<string | null>;
   // Told a line ONCE IT IS QUEUED — the line is a turn in the group's conversation and the
   // caller remembers it as one (main.ts) — and never for a line the queue refused for
   // good: remembered, that would be a message the bot believes it sent and nobody read.
@@ -102,20 +108,10 @@ export function createIngest(deps: IngestDeps) {
   return async function ingest(message: InboundMessage, said?: string): Promise<IngestOutcome> {
     const group = deps.groups.get(message.group);
     if (!group || message.fromMe) return 'ignored';
-    const shares = sharesIn(message.text, deps.siteOrigin);
-    // One declaration per day per message: a message pasting two tokens of one day means
-    // the last one (the same message id cannot supersede itself).
-    const byDay = new Map<number, DecodedShare>();
-    for (const share of shares) {
-      if (share.lang !== group.language) {
-        deps.log.info(
-          { event: 'share.other_language', lang: share.lang, group: tag(group.id) },
-          'ignoring a share of another language',
-        );
-        continue;
-      }
-      byDay.set(share.dayNumber, share);
-    }
+    // One declaration per (language, day) per message: a message pasting two tokens of one
+    // day means the last one (the same message id cannot supersede itself).
+    const byDay = new Map<string, DecodedShare>();
+    for (const share of sharesIn(message.text, deps.siteOrigin)) byDay.set(`${share.lang}:${share.dayNumber}`, share);
     if (byDay.size === 0) return 'no_share';
 
     let outcome: IngestOutcome = 'unchanged';
@@ -162,6 +158,7 @@ export function createIngest(deps: IngestDeps) {
           sender: tag(message.sender),
           messageId: message.id,
           day: share.dayNumber,
+          lang: share.lang,
           score: share.capped ? 'capped' : share.score,
           live: message.live,
         },
@@ -171,7 +168,7 @@ export function createIngest(deps: IngestDeps) {
       outcome = 'recorded';
       recorded.push(share);
 
-      if (group.leaderAnnouncements && !share.capped) {
+      if (group.leaderAnnouncements && share.lang === group.language && !share.capped) {
         // THE CLAIM RUNS ON A REPLAY TOO. The row holds the day's best, so a replayed
         // share that left it stale would have the next live one announce a lead it does
         // not hold. Only the ANNOUNCEMENT is live-only: history is not news.
@@ -205,19 +202,19 @@ export function createIngest(deps: IngestDeps) {
 
     // ONE acknowledgement per MESSAGE, whatever it carried. WhatsApp holds a single
     // reaction per account per message and the command id is keyed by the message, so
-    // queueing one per DAY would leave an arbitrary survivor to decide it. The best result
-    // the message showed is the one it is acknowledged for; a ∞ run is the worst of them.
-    const best = recorded.reduce<DecodedShare | null>(
-      (kept, share) => (kept && rankOf(kept) <= rankOf(share) ? kept : share),
-      null,
-    );
+    // queueing one per DAY would leave an arbitrary survivor to decide it. The group's own
+    // language comes first; then the best result the message showed is the one it is
+    // acknowledged for, a ∞ run being the worst of them.
+    const own = (share: DecodedShare) => share.lang === group.language;
+    const worse = (a: DecodedShare, b: DecodedShare) => (own(a) !== own(b) ? own(b) : rankOf(a) > rankOf(b));
+    const best = recorded.reduce<DecodedShare | null>((kept, share) => (kept && !worse(kept, share) ? kept : share), null);
     if (group.acknowledge !== 'none' && message.live && best) {
       // A LINE WHEN ASKED FOR ONE, THE EMOJI WHEN THERE IS NONE. The share is already
       // durable; what is being chosen here is only how it is acknowledged, and an
       // unavailable model may cost the words but never the acknowledgement itself.
       const line =
         group.acknowledge === 'say' && deps.comment
-          ? await deps.comment(group, { dayNumber: best.dayNumber, sender: message.sender, ...(said ? { said } : {}) }).catch((error) => {
+          ? await deps.comment(group, { dayNumber: best.dayNumber, sender: message.sender, lang: best.lang, ...(said ? { said } : {}) }).catch((error) => {
               deps.log.warn(
                 { event: 'share.comment_threw', group: tag(group.id), error: (error as Error).message },
                 'the line failed; acknowledging with the emoji',

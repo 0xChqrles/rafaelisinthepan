@@ -64,6 +64,25 @@ describe('podium job (#236)', () => {
     expect((sent[0] as { text: string }).text).toContain('1 — Gab — 3\n2 — Zou — 5');
   });
 
+  it("ranks the group's language alone and closes with the other one's results (2026-09-29)", async () => {
+    const now = () => new Date('2026-09-03T20:00:00Z');
+    const day = dayNumber(activeDate(now()));
+    const declarations = memoryDeclarationStore();
+    const base = { group: GROUP, dayNumber: day, capped: false, token: 't', messageTs: 1, receivedAt: '', lang: 'fr' };
+    await declarations.record({ ...base, sender: '33612345678@s.whatsapp.net', name: 'Gab', score: 9, messageId: 'a' });
+    await declarations.record({ ...base, sender: '33600000000@s.whatsapp.net', name: 'Zouzou', score: 9, messageId: 'b' });
+    await declarations.record({ ...base, lang: 'en', sender: '33612345678@s.whatsapp.net', name: 'Gab', score: 4, messageId: 'c' });
+    const sent: OutboundCommand[] = [];
+    const deps = { groups, declarations, outbound: { enqueue: async (c: OutboundCommand) => void sent.push(c) }, provider: null, log: createLog('silent'), now };
+    expect(await runPodiumJob({ group: GROUP }, deps)).toMatchObject({ outcome: 'posted', lines: 2 });
+    // A tie is two lines sharing the place; Gab's English 4 is neither a place nor a line.
+    expect((sent[0] as { text: string }).text).toMatch(/\n1 — Gab — 9\n1 — Zou — 9\n\nCôté anglais : Gab 4$/);
+    // Only the other language played: no podium at all.
+    const english = memoryDeclarationStore();
+    await english.record({ ...base, lang: 'en', sender: '33612345678@s.whatsapp.net', name: 'Gab', score: 4, messageId: 'c' });
+    expect((await runPodiumJob({ group: GROUP }, { ...deps, declarations: english })).outcome).toBe('empty');
+  });
+
   it('posts nothing for an empty day or an unconfigured group; a replay names its date', async () => {
     const declarations = memoryDeclarationStore();
     const sent: OutboundCommand[] = [];
@@ -98,7 +117,7 @@ describe('podium job (#236)', () => {
     const writer = requests.find((r) => r.system !== FACT_JUDGE_SYSTEM)!;
     const content = (writer.messages[0] as { content: string }).content;
     expect(content).toContain('"score":3');
-    expect(content).toContain('"players":[{"name":"Gab","daysPlayed":1,');
+    expect(content).toContain('"form":{"name":"Gab","daysPlayed":1,');
     expect(content).toContain('Gab vise toujours trop haut.');
     expect(content).toContain('Gab: je vise un 3');
     // Stores that refuse cost the background, never the podium.

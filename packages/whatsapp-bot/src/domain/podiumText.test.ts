@@ -1,36 +1,41 @@
 import { describe, expect, it } from 'vitest';
 import { dayNumber } from '@whippin/shared';
-import { CAPPED_LINE_ID, dayLabel, joinNames, renderPodium, renderReminder } from './podiumText';
+import { dayLabel, podiumRows, renderPodium, renderReminder } from './podiumText';
 
 const podium = {
   dayNumber: dayNumber('2026-09-01'),
   lines: [
-    { position: 1, score: 3, players: [{ jid: 'a', name: 'Gab' }] },
-    {
-      position: 2,
-      score: 4,
-      players: [
-        { jid: 'b', name: 'Delphine' },
-        { jid: 'c', name: 'Zou' },
-      ],
-    },
-    { position: 3, score: 7, players: [{ jid: 'd', name: 'Cami' }] },
+    { position: 1, score: 3, player: { jid: 'a', name: 'Gab' } },
+    { position: 2, score: 4, player: { jid: 'b', name: 'Delphine' } },
+    { position: 2, score: 4, player: { jid: 'c', name: 'Zou' } },
+    { position: 3, score: 7, player: { jid: 'd', name: 'Cami' } },
   ],
   capped: [{ jid: 'e', name: 'Max' }],
 };
 
 describe('podium rendering (#236)', () => {
-  it('prints the group\'s hand format, one line per distinct score, ∞ runs last', () => {
+  it('prints the group\'s hand format, one player per line — a tie shares the place, never the line — ∞ runs last', () => {
     expect(renderPodium(podium, 'fr')).toBe(
       [
         '🏆 Podium Whippin du 1er septembre 2026',
         '',
         '1 — Gab — 3',
-        '2 — Delphine et Zou — 4',
+        '2 — Delphine — 4',
+        '2 — Zou — 4',
         '3 — Cami — 7',
         '∞ — Max',
       ].join('\n'),
     );
+  });
+
+  it('ids every printed line by its number, never by a JID', () => {
+    expect(podiumRows(podium).map((r) => [r.id, r.position, r.score, r.player.name])).toEqual([
+      ['1', 1, 3, 'Gab'],
+      ['2', 2, 4, 'Delphine'],
+      ['3', 2, 4, 'Zou'],
+      ['4', 3, 7, 'Cami'],
+      ['5', 4, '∞', 'Max'],
+    ]);
   });
 
   it('places a model comment under its own line and nowhere else', () => {
@@ -38,20 +43,29 @@ describe('podium rendering (#236)', () => {
       podium,
       'fr',
       new Map([
-        ['3', 'La brigade antidopage est en route.'],
+        ['1', 'La brigade antidopage est en route.'],
+        ['3', 'Pile à côté de Delphine.'],
         ['99', 'orphan'],
       ]),
     );
-    expect(text).toContain('1 — Gab — 3\n_La brigade antidopage est en route._\n2 —');
+    expect(text).toContain('1 — Gab — 3\n_La brigade antidopage est en route._\n2 — Delphine — 4\n2 — Zou — 4\n_Pile à côté de Delphine._\n3 —');
     expect(text).not.toContain('orphan');
   });
 
   it('speaks the group language', () => {
     expect(renderPodium({ ...podium, capped: [] }, 'en')).toContain(
-      '🏆 Whippin podium, September 1, 2026\n\n1 — Gab — 3\n2 — Delphine and Zou — 4',
+      '🏆 Whippin podium, September 1, 2026\n\n1 — Gab — 3\n2 — Delphine — 4\n2 — Zou — 4',
     );
     expect(dayLabel(dayNumber('2026-03-12'), 'fr')).toBe('12 mars 2026');
-    expect(joinNames(['a', 'b', 'c'], 'en')).toBe('a, b and c');
+  });
+
+  it("closes with the other language's results on one line, in the group's language (2026-09-29)", () => {
+    const others = [{ lang: 'en', results: [{ name: 'Charles', score: 7 }, { name: 'Marie', score: 15 }, { name: 'Max', score: '∞' as const }] }];
+    expect(renderPodium(podium, 'fr', new Map(), others)).toMatch(/∞ — Max\n\nCôté anglais : Charles 7 · Marie 15 · Max ∞$/);
+    expect(renderPodium(podium, 'en', new Map(), [{ lang: 'fr', results: [{ name: 'Gab', score: 12 }] }])).toMatch(/\n\nIn French: Gab 12$/);
+    // Nobody shared another language: no closing line, and no trailing blank.
+    expect(renderPodium(podium, 'fr', new Map(), [])).toBe(renderPodium(podium, 'fr'));
+    expect(renderPodium(podium, 'fr', new Map(), [{ lang: 'en', results: [] }])).toBe(renderPodium(podium, 'fr'));
   });
 
   it('renders the morning line: what is up, what kind of thing it is, when the podium lands, the link', () => {
@@ -82,13 +96,13 @@ describe('podium rendering (#236)', () => {
     // mixed podium was read as a snub.
     const podium = {
       dayNumber: 20700,
-      lines: [{ position: 1, score: 3, players: [{ jid: 'a', name: 'Gab' }] }],
+      lines: [{ position: 1, score: 3, player: { jid: 'a', name: 'Gab' } }],
       capped: [{ jid: 'b', name: 'Claire' }],
     };
-    const text = renderPodium(podium, 'fr', new Map([['3', 'Impeccable.'], [CAPPED_LINE_ID, 'Tu es allée au bout.']]));
+    const text = renderPodium(podium, 'fr', new Map([['1', 'Impeccable.'], ['2', 'Tu es allée au bout.']]));
     expect(text).toContain('1 — Gab — 3\n_Impeccable._');
     expect(text).toContain('∞ — Claire\n_Tu es allée au bout._');
     // No comment for it is still a complete podium.
-    expect(renderPodium(podium, 'fr', new Map([['3', 'Impeccable.']]))).toContain('∞ — Claire');
+    expect(renderPodium(podium, 'fr', new Map([['1', 'Impeccable.']]))).toContain('∞ — Claire');
   });
 });

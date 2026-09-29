@@ -167,7 +167,7 @@ async function main(): Promise<void> {
   // day, and a second model path outside it would leave it bounding half the spend. Out of
   // budget answers null, which is the emoji — the share is still acknowledged.
   const comment = provider
-    ? (group: GroupConfig, key: { dayNumber: number; sender: string; said?: string }) =>
+    ? (group: GroupConfig, key: { dayNumber: number; sender: string; lang: string; said?: string }) =>
         generateShareComment(provider, group, { declarations, ...key }, log, async () => {
           const at = new Date();
           const { scope, key } = limitKeys.calls(at);

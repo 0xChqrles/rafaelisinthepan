@@ -32,8 +32,9 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
       day.ts                    parseDay — a "YYYY-MM-DD" a human or a model supplied, round-tripped
                                 through the shared pair so "2026-02-30" is refused, not rolled over
       declarations.ts           Declaration, the PRECEDENCE rule (`supersedes`), `inLanguage`, store interface, memory impl
-      dynamoDeclarationStore.ts GROUP#<jid> / DAY#<000000>#PLAYER#<sender>; precedence as a ConditionExpression
-      podium.ts                 DENSE podium (1, 2, 2 → 3); ∞ runs listed, never positioned
+      dynamoDeclarationStore.ts GROUP#<jid> / DAY#<000000>#PLAYER#<sender>#LANG#<lang>; precedence as a ConditionExpression
+      podium.ts                 DENSE podium (1, 2, 2 → 3), one player per line; ∞ runs listed, never positioned;
+                                `otherLanguages`, the other language's results for the closing line
       shareContext.ts           the FACTS a share is commented from: the day's board with this share placed,
                                 who is above/below and how many it beats, and each player's FORM — where
                                 they usually land among the others, their places, their record per rival
@@ -169,10 +170,20 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   the web CDN answers the miss with the app's index.html and a 200, which unfurls as the
   generic card — and a gone group or a failed read costs the line, never the reminder. The
   command names the link as its `preview`, so the message carries that group's card
-  (below). `language` decides which daily's shares count — an `fr` group ranks
-  the French puzzle and ignores an English token — on the way IN and on the way OUT: every
-  read of the declarations goes through `inLanguage`, so a group whose configured language
-  changes does not rank the rows it wrote under the old one. Files hold product behaviour
+  (below). **`language` decides which daily the group PLAYS** — its podium, its leader
+  line, its reminder — and every RANKING read of the declarations goes through
+  `inLanguage`, so two languages' numbers never meet on one board. **A share of the OTHER
+  language is RECORDED under its own language (user-decided 2026-09-29, reversing "an `fr`
+  group ignores an English token")**: declarations are keyed by (group, day, sender,
+  LANGUAGE), so a player's French and English results of one day never replace each other;
+  it is acknowledged like any share — the line is read against THAT puzzle's players, with
+  the player's score on the group's puzzle that day as a plain fact, never a verdict
+  (`shareContext.ts` `otherPuzzle`); the podium closes with ONE deterministic line of those
+  results, best first, no places and no comments (`Côté anglais : Charles 7 · Marie 15`,
+  `podium.ts` `otherLanguages`), and posts nothing when only the other language played;
+  the chat tools report them APART (`otherLanguages`). Not done, deliberately: an English
+  podium, a leader line or a reminder for the other language, any number comparing the two.
+  Files hold product behaviour
   only; the loader refuses unknown fields AT EVERY LEVEL so a typo cannot fall back to a
   default — the nested ones (`chat.perGroupPerDya`, `podium.timzone`) are the dangerous half,
   since those are the fields that HAVE defaults.
@@ -234,10 +245,14 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   while the row's message bookkeeping (id, timestamp, name snapshot) still follows it,
   because a replay arriving in any order must converge on the player's latest statement
   (`declarations.ts` says why). `recorded` means the token standing for that (group, day,
-  sender) changed. Not an anti-cheat.
+  sender, language) changed. Not an anti-cheat.
 - **The podium is DENSE and the renderer owns everything but the comments.** Never
   `rankBoard` from shared (competition ranks belong to the public board). Unavailable model
-  = scoreboard without jokes, never no scoreboard.
+  = scoreboard without jokes, never no scoreboard. **ONE PLAYER PER LINE (user-decided
+  2026-09-29):** equal scores share the place (`2 — Delphine — 4` / `2 — Zou — 4`), never
+  a line — a line holding two names got one comment for two people and read oddly. A
+  line's id is its number in the printed order (`podiumText.ts` `podiumRows`), never a
+  JID; a tie reaches the writer as a fact of each line (`sameScore`).
   **THE COMMENTS ARE COMMENTARY FROM THE NUMBERS, THE DAY AND THE DIARY (#277, user-decided
   2026-09-09).** Until then a podium line was written from a band word and nothing else,
   and it invented what it was not given: slowness in a game that times nothing, a weekday
@@ -257,11 +272,11 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   **`ROUNDS` = 2** — a second round with the judge's reasons when it kept none — the share
   path's shape. **EVERY LINE GETS A COMMENT OR NONE DOES**: a bare slot beside somebody's
   name reads as neglect ("n'a pas le plaisir d'un commentaire… sympa"), a podium with no
-  comments reads as the bot being quiet. **The ∞ LINE IS ONE OF THOSE LINES** (PR-278
-  review, `podiumText.ts` `CAPPED_LINE_ID`): it is printed under the places and read as one
-  of them, so a mixed podium that commented every finite line and left it bare was the
-  snub this rule exists to stop. It has no score and no position of its own — its facts
-  carry `score: "∞"` and the place after the last. **Two lines opening the same way** (`openingOf`,
+  comments reads as the bot being quiet. **The ∞ LINES ARE SOME OF THOSE LINES** (PR-278
+  review, `podiumText.ts` `podiumRows`): they are printed under the places and read as
+  places, so a mixed podium that commented every finite line and left one bare was the
+  snub this rule exists to stop. An ∞ line has no score and no position of its own — its
+  facts carry `score: "∞"` and the place after the last. **Two lines opening the same way** (`openingOf`,
   the first two words folded — "Pas mal pour…" opened four lines of one podium) are the
   tic parallel writers cannot see: the later one is written again once, told the opening
   to avoid (`echoes`). `COMMENT_MAX_CHARS` = 160 (120 until 2026-09-14: with the form
@@ -630,9 +645,8 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   word an earlier one used (six letters or more once folded, not a podium name, not the
   game's own vocabulary) is dropped and its line goes bare — which the renderer prints.
   **AND IT SPEAKS TO PEOPLE, NOT ABOUT THEM** — "tu …" to the person, never "elle …" about
-  them, and "vous" on a podium line holding more than one name (which
-  is also what stopped shared lines coming back empty: the model had no way to address two
-  people and wrote nothing). What did NOT change is the craft that removed the cringe: short,
+  them. (A podium line holding two names once took "vous"; since 2026-09-29 a line is one
+  player, and the podium task says so.) What did NOT change is the craft that removed the cringe: short,
   plain, no emoji, no exclamation marks, no rhetorical questions, no deduction narrated.
   Warm is a stance; loud is a failure, and "bravo !!" is still the wrong answer.
   **AND IT TYPES, IT DOES NOT COMPOSE.** Asked for a line "specific to this one", the model
