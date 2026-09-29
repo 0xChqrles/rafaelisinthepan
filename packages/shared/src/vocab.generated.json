@@ -1,9 +1,9 @@
 {
   "en": {
-    "builtAt": "2026-08-20",
-    "embedding": "glove.6B.300d",
-    "maxSlugLength": 22,
-    "vocabSize": 75125
+    "builtAt": "2026-09-28",
+    "embedding": "cc.en.300",
+    "maxSlugLength": 23,
+    "vocabSize": 85355
   },
   "fr": {
     "builtAt": "2026-08-20",

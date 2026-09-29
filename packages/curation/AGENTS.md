@@ -20,30 +20,35 @@
                              the famous-single cut, the artist cooldown (stdlib, tested)
       shelf_lyrics.py        the Genius fetch (lyricsgenius): artist list -> song files on the shelf
       quotes.py              the QUOTATION test: wikitext -> quoted lines, the in-order match, the
-                             shelf/quotes/ file (stdlib, tested)
+                             shelf/<lang>/quotes/ file (stdlib, tested)
       shelf_quotes.py        the Wikiquote + Wikipedia fetch (MediaWiki API, stdlib): per book on
-                             the shelf -> shelf/quotes/<file>.txt
-      starts.py              the start-word rule (valid French): displayed sentence, elision,
-                             band candidates (stdlib, tested)
-      parse.py               spaCy adapter (fr_core_news_md) -> rules.Token
+                             a language's shelf, that language's wikis -> shelf/<lang>/quotes/<file>.txt
+      starts.py              the start-word rule (valid in the language): displayed sentence, French
+                             elision / the English article, band candidates (stdlib, tested)
+      parse.py               spaCy adapter (fr_core_news_md, en_core_web_md) -> rules.Token
       llm.py                 the questions asked of Claude + JSON parsing; TASTE is read whole from
                              the `taste` skill, the practical laws from `find-sentences`, at run time
-      shelf.py               the shelf, its index, and what the archive already holds (read off
-                             the PUBLISH LEDGER, packages/generation/published.jsonl)
-      _paths.py              path wiring (generation + benchmark scripts on sys.path)
-    shelf/                   GITIGNORED: the epubs and song files to mine (copyrighted),
-                             artists.txt (the user's hand-written whitelist), index.json (state),
-                             quotes/<file>.txt (each book's quoted lines, per shelf_quotes)
+      shelf.py               LANGS, the shelves, their index, and what a language's archive already
+                             holds (read off the PUBLISH LEDGER, packages/generation/published.jsonl)
+      _paths.py              path wiring (generation + benchmark scripts on sys.path), shelf_dir(lang)
+    shelf/<lang>/            GITIGNORED, ONE SHELF PER LANGUAGE (fr/, en/): the epubs and song files
+                             to mine (copyrighted), artists.txt (the user's hand-written whitelist),
+                             index.json (state), quotes/<file>.txt (each book's quoted lines, per
+                             shelf_quotes)
     runs/                    GITIGNORED: one markdown log per run (every rejection names its rule)
     tests/                   pytest, dependency-free (rules, sentences, epub, lyrics); the LLM never runs
-    pyproject.toml, uv.lock  claude-agent-sdk, spacy + fr_core_news_md (URL wheel), gensim/numpy,
-                             lyricsgenius
+    pyproject.toml, uv.lock  claude-agent-sdk, spacy + fr_core_news_md + en_core_web_md (URL wheels),
+                             gensim/numpy, lyricsgenius
 ```
 
 ## Commands
 
 ```bash
-pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <shelf file | puzzle.json>] [--blind]
+pnpm curate [--lang fr|en] [--work <file on the shelf>] [--retry <shelf file | puzzle.json>] [--blind]
+#   --lang (`shelf.LANGS`: fr, en; default fr) picks the SHELF (shelf/<lang>/, where a work
+#   goes by its EDITION's language), the ARCHIVE (the ledger's lines of that language) and
+#   the VECTORS (french_neighbors / english_neighbors); the two languages share nothing
+#   (#317, user-decided 2026-09-25).
 #   Needs JEV_API_KEY in the environment (#308): the judge's sentence filter and giveaway
 #   notes, and gen_phrase — contextual by default — need it.
 #   Picks a work BY RULE (2026-09-20; the model no longer picks: `curate.pick_work` —
@@ -53,7 +58,7 @@ pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <shelf file | puzz
 #   forces one; --retry <shelf file> erases a previous attempt on a work — its index
 #   entry and the candidate puzzle(s) it wrote under the generation output, their judge
 #   scores included — then runs on it), mines it, and — taste choosing, code stating
-#   facts — writes ONE candidate day under packages/generation/output/word/fr/... via
+#   facts — writes ONE candidate day under packages/generation/output/word/<lang>/... via
 #   gen_phrase, headless, the #133 form question answered by the model. Exit 0 = a
 #   candidate was written (publish it yourself), 2 = no line of the work made a day
 #   (rerun: another work). The log is runs/<stamp>.md. --blind withholds the chosen day
@@ -68,22 +73,23 @@ pnpm curate [--lang fr] [--work <file on the shelf>] [--retry <shelf file | puzz
 #   the sentence is found again among the work's mined units for its casing; the mining,
 #   judge and shortlist are skipped, the day is chosen on that one line. A sentence the
 #   ledger holds is refused.
-pnpm shelf:lyrics [--artists shelf/artists.txt] [--max-songs N]
+pnpm shelf:lyrics [--lang fr] [--artists shelf/<lang>/artists.txt] [--max-songs N]
 #   The music source (#262): for each artist of the user's hand-written list, the songs
 #   from Genius most viewed first, minus the top FAMOUS_SHARE (the singles), minus what
 #   is on the shelf; one .txt per song with a header. Needs GENIUS_ACCESS_TOKEN (a free
 #   client token, genius.com/api-clients; never a file in the repo). The only step that
 #   touches the network; the curator never does.
-pnpm shelf:quotes [--work <file>] [--force]
-#   The quotation test's data: per book on the shelf, the author's fr.wikiquote page, the
-#   work's wikiquote page when it has one and the work's fr.wikipedia article, their
-#   quoted lines written to shelf/quotes/<file>.txt (skipped when the file exists). One
-#   request at a time with a named User-Agent; a shelf step, never the curator.
+pnpm shelf:quotes [--lang fr] [--work <file>] [--force]
+#   The quotation test's data: per book on the language's shelf, the author's page on
+#   that language's Wikiquote, the work's page there when it has one and the work's
+#   article on that language's Wikipedia (fr.* or en.*), their quoted lines written to
+#   shelf/<lang>/quotes/<file>.txt (skipped when the file exists).
+#   One request at a time with a named User-Agent; a shelf step, never the curator.
 pnpm --filter @whippin/curation test
 ```
 
-Needs: a paid Claude.ai login in Claude Code (`claude auth status`), the French reduced
-vectors (`pnpm reduce:fr` done once), and works on the shelf.
+Needs: a paid Claude.ai login in Claude Code (`claude auth status`), the language's reduced
+vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 
 ## Stable invariants
 
@@ -91,7 +97,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   words and which start words make a day is the MODEL's call, read off the `taste` skill
   (the one home of taste: the voice, the line, what is built for the game, the hidden
   words, the start words, difficulty). Code keeps only FACTS — which words can be hidden,
-  the cooldowns, the famous line, valid French, the puzzle format — and turns everything
+  the cooldowns, the famous line, valid grammar, the puzzle format — and turns everything
   it MEASURES into notes the model reads; nothing measured refuses a word. Why: replayed
   on the 16 days the user loved, the code rules it replaces would have rejected three of
   the lines before any model saw them (`MIN_CANDIDATES`: JeanJass, NeS, Rounhaa) and five
@@ -112,7 +118,8 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   any model call. **A rerun never pays the ranking judge twice**: `generate` replays the
   previous run's sidecar (`--contextual-replay`) when it regenerates with the model's
   start words, and `--retry <puzzle.json>` keeps the erased draft's scores for the same
-  trio.
+  trio — unless they no longer cover the map (the word tables changed since, #317): the
+  replay's refusal drops them and the judge runs again, never losing the line.
 - **The model shortlists with taste, then CHOOSES THE DAY BY COMPARISON.** It reads every
   kept line, `CHUNK` (150) at a time, picks at most `PICKS_PER_CHUNK` (6) by the taste
   skill and ranks a `SHORTLIST` (20), even when fewer than 20 lines were picked (one line
@@ -142,9 +149,12 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   « zigzag », secrets of a favourite day; a name nobody can reason toward is taste's
   call), not stopwords, not among the commonest words (`MAX_COMMON_RANK` 20 /
   `MAX_COMMON_RANK_ADV` 500, read off the reduced vectors' order), not a `WEAK_VERBS` verb
-  (saying, thinking, modality — user-decided 2026-09-08), slug in the vocab — a
+  (saying, thinking, modality — user-decided 2026-09-08; per language, the English list
+  the French one translated word for word, #317), slug in the vocab — a
   hyphenated compound included (user-decided 2026-09-24, lifting the 2026-09-10
-  exclusion: « post-it » was a secret of a favourite day), not a secret still in its `SECRET_COOLDOWN_DAYS` (90, `shelf.py`, judged on the
+  exclusion: « post-it » was a secret of a favourite day) and only WHOLE — `parse` merges
+  the pieces spaCy splits (« ice-cold », « répondit-il »), since gen_phrase can hole a
+  word-core, never a piece of one — not a secret still in its `SECRET_COOLDOWN_DAYS` (90, `shelf.py`, judged on the
   ledger's game day), no same-lemma twin under another slug in the line (a same-slug
   repeat is one hole per occurrence). A line with fewer than `TRIO` such words is skipped.
 - **The sentence must STAND ALONE, solved (user-decided 2026-09-18, on the Svevo day:
@@ -158,13 +168,17 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   The model has memorised every line of a canonical book, so what it remembers says
   nothing about what a reader has met: measured on 17 runs, the memory test's two
   rejections were both Machado de Assis lines nobody quotes (one named the niece
-  Vénancia). What a reader has met is on record: `pnpm shelf:quotes` fetches, per book,
-  the author's fr.wikiquote page, the work's wikiquote page and the work's fr.wikipedia
-  article, and `quotes.extract_quotes` writes their quoted lines (`{{citation}}` bodies
-  and « … » spans of at least `MIN_QUOTE_WORDS` = 5) to `shelf/quotes/<file>.txt`. The
-  curator, OFFLINE, removes every mined unit that shares `QUOTE_MATCH` (0.6) of the
-  shorter side's words, in order, with a quoted line — at least `QUOTE_MIN_WORDS` (4) of
-  them (`quotes.quoted`) — before the judge or the model reads it, and the log names the
+  Vénancia). What a reader has met is on record, in the day's language (#317):
+  `pnpm shelf:quotes` fetches, per book, the author's Wikiquote page, the work's
+  Wikiquote page and the work's Wikipedia article — fr.* for the French shelf, en.* for
+  the English one — and `quotes.extract_quotes` writes their quoted lines of at least
+  `MIN_QUOTE_WORDS` = 5 to `shelf/<lang>/quotes/<file>.txt`: in French the `{{citation}}`
+  bodies and « … » spans; in English en.wikiquote's top-level `* ` bullets (a `** `
+  sub-bullet is the source), block-quote templates and “…” / "…" spans. The curator,
+  OFFLINE, removes every mined unit that shares `QUOTE_MATCH` (0.6) of the shorter side's
+  CONTENT words (the language's function words out), in order, with a quoted line — at
+  least `QUOTE_MIN_WORDS` (4) of them (`quotes.quoted`) — before the judge or the model
+  reads it, and the log names the
   quote. A book with no file skips the test with a warning; a book whose fetch found no
   page (`quotes.quote_sources` empty) rejects nothing and says so. The model's own
   opinion — would a reader who has not read the book know this line — is logged as an
@@ -180,10 +194,11 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   one refuses the model). No second spelling of it here.
 - **`gen_phrase` is the only writer of a puzzle**, run headless from this package with
   `--words` and, when it demands one, `--form` answered by the model from the sentence
-  (`curate.generate` parses the #133 error's analysis list). Nothing here publishes.
+  (`curate.generate` parses the #133 error's analysis list; a word with NO analysis does
+  not inflect and takes `cit`, no agreement — a fact, so no question). Nothing here publishes.
 - **The START WORDS are CHOSEN by the model, the three together, never at random**, by
   the taste with code's notes (above), from the ONE band 100–200 of every map
-  (`starts.start_candidates`: rank `START_RANK_MIN..MAX`, no variant, elision-clean, not
+  (`starts.start_candidates`: rank `START_RANK_MIN..MAX`, no variant, letter-rule-clean, not
   past `MAX_START_FREQ_RANK` = 40000 in the corpus order — « hétéroptère » is out). The
   first successful gen_phrase run only supplies the rank maps; gen_phrase then reruns
   with `--start MOT=DEPART` per hole (#260). A hole the answer leaves without a valid start
@@ -193,12 +208,18 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
   good** (user-decided 2026-09-08): `shelf.archive()['pairs']` holds every start each
   secret was ever played with, `choose_starts` and `check_starts` exclude them from the
   band, and a generated start that repeats a pair is refused and re-picked.
-- **The displayed sentence must be VALID FRENCH** (user rule 2026-09-06: « l'effet »,
-  never « le effet »). After every generation `curate.check_starts` applies the one rule
-  code can apply with certainty (`starts.elision_problem`: an eliding word before a
-  vowel, an elided one before a consonant; `h` and `y` are left to the model), then asks the model
-  whether the displayed sentence is grammatical (`llm.grammar_check`, one reason per
-  faulty inserted word) — agreement, elision AND each start's CONSTRUCTION with what
+- **The displayed sentence must be VALID in its language** (user rule 2026-09-06:
+  « l'effet », never « le effet »). After every generation `curate.check_starts` applies
+  the one rule code can apply with certainty (`starts.letter_problem`). In French,
+  elision (`elision_problem`: an eliding word before a vowel, an elided one before a
+  consonant; `h` and `y` are left to the model). In English, its twin, the article « a » /
+  « an » before the start word (#317, `article_problem`): sounds decide, not letters (an
+  hour, a university, a one-off, a euro, an x-ray), so code refuses only what the letters
+  make certain — « a » before an a, i, e or o not led into a consonant sound (eu, ew,
+  one, once, oui), « an » before b, c, d, g, j, k, p, q, t, v, w, z — and leaves the rest
+  to the model. Then it asks the model whether the displayed sentence is grammatical
+  (`llm.grammar_check`, one reason per faulty inserted word) — agreement, elision or the
+  article, AND each start's CONSTRUCTION with what
   follows it (« affublé d'un prénom » for « hérité d'un prénom » passed the check on
   2026-09-10). A refused start is re-picked (`llm.pick_start`, taste included) and
   gen_phrase reruns; at most `START_ROUNDS` (3) rounds; what is still doubtful is logged
@@ -209,7 +230,7 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 
 ### Music (#262, user-decided 2026-09-06)
 
-- **The artist list is the whole gate**: `shelf/artists.txt`, the user's, by hand, one
+- **The artist list is the whole gate**: `shelf/<lang>/artists.txt`, the user's, by hand, one
   name per line, gitignored. The fetch reads it and nothing else; the model proposes no
   artist for the fetch. There is NO exclusion list: dropping a name and deleting the
   artist's files is the whole removal.
@@ -278,5 +299,5 @@ vectors (`pnpm reduce:fr` done once), and works on the shelf.
 ## Not in V1 (deliberately)
 
 Publishing; the benchmark as a difficulty gate; difficulty prediction from player logs;
-English (`LANGS` is `fr`);
+music in English (out of #317's scope; the code paths are generic);
 movies/subtitles (explicitly out, #262); per-token guess counting.

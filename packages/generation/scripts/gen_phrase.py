@@ -6,14 +6,14 @@
 Generate one self-contained game file for ONE sentence.
 
 Reuse the existing logic as-is:
-  - glove_neighbors.build_vocab / build_matrix / closest (cosine neighbors),
-  - french_neighbors equivalents for French fastText vectors,
+  - french_neighbors / english_neighbors build_vocab / build_matrix / closest (cosine
+    neighbors over each language's fastText Common Crawl vectors),
   - start_word.pick_start (start word selection),
   - the ranking pattern: secret word = rank 0, neighbors start at 1.
 
 Two per-language concerns drive the rest:
-  - loading: English (GloVe) and French (fastText) do not share the same reduced
-    file, header, or alphabet. All of that is described in CONFIG below.
+  - loading: English and French do not share the same reduced file or alphabet. All
+    of that is described in CONFIG below.
   - accents: French keeps accents for DISPLAY but folds them to a slug for every
     COMPARISON/LOOKUP (see slug()). We never fold a displayed form and never
     display a slug. Output filenames are ASCII slugs; JSON content keeps accents.
@@ -121,11 +121,10 @@ for path in (ROOT, SCRIPT_DIR):
 # ROOT == packages/generation, a sibling of web in the monorepo.
 GEN_OUTPUT = os.path.join(ROOT, "output")
 
+import english_neighbors as enn
 import french_neighbors as frn
-import glove_neighbors as gn
-from build_forms import (CITATION_FEATURE, FORM_LANGS, feature_pos, forms_path,
-                         load_forms)  # fr word-group inventory (#132/#146)
-from build_lemmas import lemmas_path, load_lemmas  # en form→lemma table (#104)
+from build_forms import (CITATION_FEATURE, GENDERED_LANGS, feature_pos, forms_path,
+                         load_forms)  # the word-group inventories (fr #132/#146, en #317)
 from distances import quantize_dq  # dq annotations (#115)
 from slug import path_slug, slug, write_vocab  # slug/fold contract, dir names, vocab
 from start_word import START_BAND, pick_start, start_band
@@ -158,10 +157,10 @@ KNOWN_KINDS = ("book", "movie", "music", "quote", "poem")
 # --- Per-language config -------------------------------------------------------
 # char_class: allowed alphabet. It is used BOTH to validate a vocab token
 # (token_regex) and to clean a word (normalize), to stay consistent.
-# For "en", char_class = "a-z" keeps ASCII letters only (the GloVe alphabet).
+# For "en", char_class = "a-z" keeps ASCII letters only (the wordlist's token rule).
 def _build_config():
     en = {
-        "module": gn,
+        "module": enn,
         "char_class": "a-z",
     }
     fr = {
@@ -242,13 +241,12 @@ def ws(display):
 # Merging happens HERE, at generation time; embeddings, the reduction and the vocab
 # existence set are untouched, and the front only ever LOOKS UP the keys.
 #
-# Since #132 the fr grouping comes from the SAME artifact as display agreement (the
-# Morphalou word-group inventory, build_forms.py): one dictionary defines identity for
-# grouping, ranking and display alike, so the merge walk and the agreement pass can
-# no longer disagree about what a form belongs to. Group keys remain readable
-# («porter:v», «porte:nc») but are opaque downstream: their suffix is not group POS.
-# en keeps its AGID
-# form→lemma table (build_lemmas.py), a decided non-goal, not a gap.
+# Since #132 (fr) and #317 (en) the grouping comes from the SAME artifact as display
+# agreement (the language's word-group inventory, build_forms.py): one dictionary
+# defines identity for grouping, ranking and display alike, so the merge walk and the
+# agreement pass can no longer disagree about what a form belongs to. Group keys
+# remain readable («porter:v», «porte:nc», «walk:nc») but are opaque downstream: their
+# suffix is not group POS («walk:nc» carries the verb too).
 
 @functools.lru_cache(maxsize=None)
 def _load_lexicon(lang):
@@ -272,24 +270,15 @@ def _load_lexicon(lang):
 
 
 def load_lemma_table(lang, disabled=False):
-    """Load the committed grouping table for a language.
-
-    fr reads the unified inventory's grouping (#132); en reads its AGID form→lemma
-    table (#104). Missing table -> hard error either way. --no-lemmas opts out
+    """Load the committed grouping table for a language: its word-group inventory's
+    grouping (fr #132, en #317). Missing table -> hard error. --no-lemmas opts out
     explicitly and returns an empty table, under which every word is its own
     singleton group — the ungrouped ranking, slug-collision losers compacted
-    (#134). For a language WITH a forms table it also requires --no-inflect
-    (see main): the agreement pass is keyed by the lexemes grouping provides."""
+    (#134). It then also requires --no-inflect (see prepare_run): the agreement
+    pass is keyed by the lexemes grouping provides."""
     if disabled:
         return {}
-    if lang in FORM_LANGS:
-        return _load_lexicon(lang).grouping
-    path = lemmas_path(lang)
-    if not os.path.exists(path):
-        die(f"table forme→lemme introuvable : {path}\n"
-            f"         construis-la avec scripts/build_lemmas.py (pnpm lemmas:{lang}), "
-            f"ou passe --no-lemmas pour t'en passer.")
-    return load_lemmas(path)
+    return _load_lexicon(lang).grouping
 
 
 def lemmas_of(word, lemma_table):
@@ -539,13 +528,14 @@ def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
 class ContextualRanker:
     """The sentence-bound glue between the walk and contextual_rank (#308).
 
-    Built once per run from the sentence, its excerpt and the judge; `reorder`
+    Built once per run from the sentence, its excerpt, its language (which picks the
+    judge's template, #317) and the judge; `reorder`
     turns one hole's static groups into the judge's order (the same groups, new
     similarities), `note` records what shipped, and main() prints the reports and
     writes the sidecar after the selector has restored the terminal."""
 
-    def __init__(self, judge, sentence, before=(), after=(), model=None):
-        self.judge, self.sentence = judge, sentence
+    def __init__(self, judge, sentence, before=(), after=(), model=None, *, lang):
+        self.judge, self.sentence, self.lang = judge, sentence, lang
         self.before, self.after = tuple(before), tuple(after)
         self.model = model or getattr(judge, "model", "?")
         self.records = []   # sidecar entries, one per reranked secret
@@ -558,7 +548,7 @@ class ContextualRanker:
         secret_lemmas = tuple(secret_lemmas or ())
         secret_label = lexeme_label(secret_lemmas[0]) if secret_lemmas else secret_display
         context = contextual_rank.Context(self.sentence, secret_display, secret_label,
-                                          self.before, self.after)
+                                          self.before, self.after, lang=self.lang)
         by_rank = {rank: (claims[0], clean, rep)
                    for _display, rank, claims, clean, rep in groups if rank}
         candidates = []
@@ -577,7 +567,7 @@ class ContextualRanker:
     def note(self, secret_display, merged):
         ranked, record = self._ranked[secret_display]
         self.reports.append(contextual_rank.format_report(
-            secret_display, ranked, record, model=self.model))
+            secret_display, ranked, record, model=self.model, lang=self.lang))
         record["kept"] = len(merged)
 
     # -- the curator's pre-filters (a filter only removes; nothing is chosen here) --
@@ -587,7 +577,7 @@ class ContextualRanker:
 
     def start_band_filter(self, words, occurrences, secret="?", display_words=None):
         """A callable for choose_start / the selector: band -> the band words that
-        read as French shown at this hole's occurrences. An emptied band is handed
+        read as the sentence's language shown at this hole's occurrences. An emptied band is handed
         back whole (the curator still needs something to pick from) with a note.
         `display_words` carries agreement rewrites; selection keeps the original
         group representatives while the judge reads the realized forms."""
@@ -597,7 +587,7 @@ class ContextualRanker:
             shown = [((display_words or {}).get(w, w), r) for w, r in band]
             try:
                 kept, removed = contextual_rank.filter_start_band(
-                    self.judge, words, occurrences, shown)
+                    self.judge, words, occurrences, shown, lang=self.lang)
             except contextual_rank.ContextualError as exc:
                 die(f"filtre des mots de départ impossible : {exc}")
             if removed:
@@ -620,7 +610,8 @@ class ContextualRanker:
         if not self.filters:
             return cands
         try:
-            kept, removed = contextual_rank.filter_hole_candidates(self.judge, words, cands)
+            kept, removed = contextual_rank.filter_hole_candidates(self.judge, words, cands,
+                                                                   lang=self.lang)
         except contextual_rank.ContextualError as exc:
             die(f"filtre des mots à trouer impossible : {exc}")
         if removed:
@@ -633,7 +624,8 @@ class ContextualRanker:
         if not self.filters or not pairs:
             return {}
         try:
-            return contextual_rank.same_concept(self.judge, self.sentence, pairs)
+            return contextual_rank.same_concept(self.judge, self.sentence, pairs,
+                                                lang=self.lang)
         except contextual_rank.ContextualError as exc:
             die(f"vérification des concepts partagés impossible : {exc}")
 
@@ -652,13 +644,13 @@ class ContextualRanker:
         return blocked
 
     def warn_start(self, words, occurrences, secret, start):
-        """Headless path: an explicit --start that does not read as French at the hole
-        is reported, never refused (the curator named it)."""
+        """Headless path: an explicit --start that does not read as the language at the
+        hole is reported, never refused (the curator named it)."""
         if not self.filters:
             return
         try:
             _kept, removed = contextual_rank.filter_start_band(
-                self.judge, words, occurrences, [(start, 0)])
+                self.judge, words, occurrences, [(start, 0)], lang=self.lang)
         except contextual_rank.ContextualError as exc:
             die(f"vérification du mot de départ impossible : {exc}")
         for w, _r, p in removed:
@@ -673,11 +665,13 @@ class ContextualRanker:
         cands = [{"pos": pos, "secret": s, "prefix": pre, "suffix": suf}
                  for s, occ in occurrences_by_secret.items() for pos, pre, suf in occ[:1]]
         try:
-            _kept, removed = contextual_rank.filter_hole_candidates(self.judge, words, cands)
+            _kept, removed = contextual_rank.filter_hole_candidates(self.judge, words, cands,
+                                                                    lang=self.lang)
             secrets = list(occurrences_by_secret)
             probs = contextual_rank.same_concept(
                 self.judge, self.sentence,
-                [(a, b) for i, a in enumerate(secrets) for b in secrets[i + 1:]])
+                [(a, b) for i, a in enumerate(secrets) for b in secrets[i + 1:]],
+                lang=self.lang)
         except contextual_rank.ContextualError as exc:
             die(f"vérification des trous impossible : {exc}")
         for w, p in removed:
@@ -1513,8 +1507,8 @@ def choose_start(secret, ranking, rank_map, rank_by_display, band=START_BAND,
         default = pick_start(secret, ranking, band_spec)
         band = None
     else:
-        # #308's judge removes the band words that do not read as French at this
-        # hole; the random default is drawn from what remains.
+        # #308's judge removes the band words that do not read as the sentence's
+        # language at this hole; the random default is drawn from what remains.
         band = band_filter(start_band(secret, ranking, band_spec))
         default = random.choice(band)[0] if band else secret
 
@@ -1695,6 +1689,13 @@ _TENSE_LABELS = {"pre": "présent", "imp": "imparfait", "pas": "passé simple",
                  "fut": "futur"}
 _GENDER_LABELS = {"m": "masculin", "f": "féminin"}
 _NUMBER_LABELS = {"s": "singulier", "p": "pluriel"}
+# English cells (#317): the forms English verbs inflect, and adjective degree.
+_DEGREE_LABELS = {"pos": "positif", "cmp": "comparatif", "sup": "superlatif"}
+_ENGLISH_VERB_LABELS = {
+    "base": "forme de base (infinitif, impératif, présent hors 3e pers. du singulier)",
+    "ind:pas": "prétérit",
+    "par:pas": "participe passé",
+}
 
 
 def _person_label(pn):
@@ -1712,8 +1713,12 @@ def describe_feature(feature):
     try:
         if feature == CITATION_FEATURE:
             return "forme de citation (invariable)"
+        if feature in _ENGLISH_VERB_LABELS:
+            return _ENGLISH_VERB_LABELS[feature]
         if parts[0] == "n":
             return f"nom, {_NUMBER_LABELS[parts[1]]}"
+        if parts[0] == "adj" and len(parts) == 2:
+            return f"adjectif, {_DEGREE_LABELS[parts[1]]}"
         if parts[0] == "adj":
             return f"adjectif, {_GENDER_LABELS[parts[1]]} {_NUMBER_LABELS[parts[2]]}"
         if feature == "inf":
@@ -1736,12 +1741,15 @@ class Morphology:
     `feature` is populated only for a verb: conjugation remains its whole cell.
     Nominals share gender+number; nouns consume only number and adjectives consume
     both. A noun cell itself carries no gender, so the TTY's author answer supplies
-    it without changing the artifact or --form cell vocabulary."""
+    it without changing the artifact or --form cell vocabulary. An English adjective
+    states its DEGREE (#317) — confirmed like any form, transferred to nobody: the
+    issue scopes English agreement to number and tense."""
 
     family: str
     gender: str | None = None
     number: str | None = None
     feature: str | None = None
+    degree: str | None = None
 
 
 _PROMPT_BACK = object()
@@ -1764,6 +1772,8 @@ def morphology_from_feature(feature):
         return Morphology("nominal", number=parts[1])
     if parts[0] == "adj" and len(parts) == 3:
         return Morphology("nominal", gender=parts[1], number=parts[2])
+    if parts[0] == "adj" and len(parts) == 2:
+        return Morphology("degree", degree=parts[1])
     gender = number = None
     if parts[0] == "par" and len(parts) == 4 and parts[1] == "pas":
         gender, number = parts[2], parts[3]
@@ -1783,6 +1793,8 @@ def describe_morphology(morphology):
         return " ".join(parts) or "nominal (genre et nombre non précisés)"
     if morphology.family == "verb" and morphology.feature is not None:
         return describe_feature(morphology.feature)
+    if morphology.family == "degree":
+        return f"adjectif {_DEGREE_LABELS.get(morphology.degree, morphology.degree)}"
     if morphology.family == "citation":
         return "forme de citation (invariable)"
     return "morphologie non précisée"
@@ -1820,17 +1832,24 @@ def describe_group_forms(key, table):
 def load_form_table(lang, disabled=False):
     """Load the agreement views of the word-group inventory for a language.
 
-    A language with no inventory (en — see FORM_LANGS) has no agreement pass at all:
-    that is a decided non-goal, so it returns None silently rather than erroring. For
-    a language that HAS one, a missing file is a hard error like the hors-dico
-    wordlist (_load_lexicon, shared with the grouping so the file is parsed once);
-    --no-inflect opts out explicitly and reproduces agreement-free output exactly.
-    Loaded eagerly, before the vectors, so a missing or corrupt table fails fast —
-    deferring the parse would buy nothing: deciding whether a secret is even a verb
-    reads the table, so every fr run consults it on its first hole anyway."""
-    if disabled or lang not in FORM_LANGS:
+    A missing file is a hard error like the hors-dico wordlist (_load_lexicon, shared
+    with the grouping so the file is parsed once); --no-inflect opts out explicitly
+    and reproduces agreement-free output exactly. Loaded eagerly, before the vectors,
+    so a missing or corrupt table fails fast — deferring the parse would buy nothing:
+    deciding whether a secret is even a verb reads the table, so every run consults
+    it on its first hole anyway."""
+    if disabled:
         return None
     return _load_lexicon(lang)
+
+
+# English adjectives do not agree (#317), and English merges a word's noun, verb and
+# adjective filings into ONE group: a group whose DOMINANT reading (the inventory's `dom`,
+# OANC evidence, read off its lemma) is not one of the language's agreeing classes keeps
+# its form, instead of being re-inflected as the noun or verb it only sometimes is
+# («brief» stays «brief» beside a plural secret, never «briefs»; «complete» never
+# «completed» beside a past). French agreement is untouched: no gate.
+_AGREEING_READINGS = {"en": frozenset({"nc", "v"})}
 
 
 class FormResolver:
@@ -1840,8 +1859,15 @@ class FormResolver:
     that was actually rewritten is recorded in `used` so the run can report it — the
     agreement is as visible in the preview as a borrowed vector is."""
 
-    def __init__(self, table, explicit=None, interactive=False, typable=None):
+    def __init__(self, table, explicit=None, interactive=False, typable=None,
+                 lang="fr"):
         self.table = table
+        # Whether the language's nominal morphology has gender (fr) or not (en, #317):
+        # only a gendered language asks a noun's gender at the prompt.
+        self.gendered = lang in GENDERED_LANGS
+        # The readings that agree, when the language gates agreement by the group's
+        # dominant reading (en); None agrees every paradigm a group carries (fr).
+        self._agreeing = _AGREEING_READINGS.get(lang)
         # A plain-trait entry (the pre-#144 shape, still what tests and callers may
         # hand over) is an UNQUALIFIED answer: normalize to the (lexeme|None, trait)
         # pairs parse_form_args produces.
@@ -1995,9 +2021,17 @@ class FormResolver:
         A verb answer keeps its exact verb cell and — the issue's open sub-decision,
         resolved here in favour of useful stated information — lends NUMBER to nouns;
         a past participle also lends its stated gender+number to adjectives. No
-        feature is guessed when the verb cell does not contain it."""
+        feature is guessed when the verb cell does not contain it. An English
+        adjective's degree prescribes nothing (#317: English agreement is number and
+        tense), and neither does an English verb to adjectives, having no gender; an
+        English group whose dominant reading is an adjective (or any class that does
+        not agree) takes nothing at all (_AGREEING_READINGS)."""
         if morphology is None or self.table is None:
             return ()
+        if self._agreeing is not None:
+            dominant = getattr(self.table, "dominant", {}).get(lexeme_label(lexeme))
+            if dominant is not None and dominant not in self._agreeing:
+                return ()
         poses = self.group_poses(lexeme)
         targets = []
         if morphology.family == "nominal":
@@ -2038,7 +2072,7 @@ class FormResolver:
 
     @staticmethod
     def _morphology_sort_key(morphology):
-        family = {"nominal": 0, "verb": 1, "citation": 2}.get(
+        family = {"nominal": 0, "verb": 1, "degree": 2, "citation": 3}.get(
             morphology.family, 9)
         gender = {"m": 0, "f": 1, None: 2}.get(morphology.gender, 3)
         number = {"s": 0, "p": 1, None: 2}.get(morphology.number, 3)
@@ -2047,17 +2081,19 @@ class FormResolver:
     def _morphology_choices(self, analyses):
         """Usage-level options -> the raw pairs each option can represent.
 
-        Noun cells deliberately expand to both genders: noun gender is lexical but
-        the artifact's `n:s`/`n:p` cells do not carry it, and #146 says the human
-        answer supplies it. Adjective/noun pairs then collapse onto the same nominal
-        choice when their gender+number agree; verb conjugations remain distinct, so
-        «pensée» still distinguishes the noun/adjective reading from the participle."""
+        Noun cells deliberately expand to both genders in a gendered language: noun
+        gender is lexical but the artifact's `n:s`/`n:p` cells do not carry it, and
+        #146 says the human answer supplies it. English has no gender (#317): its
+        noun cell is its number, asked as such. Adjective/noun pairs then collapse onto
+        the same nominal choice when their gender+number agree; verb conjugations remain
+        distinct, so «pensée» still distinguishes the noun/adjective reading from the
+        participle."""
         choices = {}
         for feature, key in analyses:
             morphology = morphology_from_feature(feature)
             variants = (morphology,)
-            if (morphology is not None and morphology.family == "nominal"
-                    and morphology.gender is None):
+            if (self.gendered and morphology is not None
+                    and morphology.family == "nominal" and morphology.gender is None):
                 variants = tuple(Morphology("nominal", gender, morphology.number)
                                  for gender in ("m", "f"))
             for variant in variants:
@@ -2204,7 +2240,7 @@ class FormResolver:
                     return resolved
                 print(f"  Numéro hors liste (1–{len(choices)}).")
                 continue
-            if raw in self.table.features:
+            if raw in self.table.features or raw == CITATION_FEATURE:
                 return raw, None, morphology_from_feature(raw)
             print(f"  « {raw} » n'est pas un trait connu (? pour la liste).")
 
@@ -2235,7 +2271,11 @@ class FormResolver:
             return self._chosen[key]
         named, feature = self.explicit.get(key, (None, None))
         morphology = morphology_from_feature(feature)
-        if feature is not None and feature not in self.table.features:
+        # `cit` — «no agreement», the citation form — answers for ANY word: it is the
+        # only answer a word with no analysis has (#317: the English adverbs and the
+        # adjectives that do not inflect, which AGID does not list).
+        if (feature is not None and feature not in self.table.features
+                and feature != CITATION_FEATURE):
             die(f"--form : « {feature} » n'est pas un trait connu de la table des "
                 f"formes (« {secret} »).")
         if named is not None:
@@ -2261,7 +2301,7 @@ class FormResolver:
                 analyses = self.analyses_of(secret)
                 listing = "\n".join("         " + line
                                     for line in self._analysis_lines(analyses))
-                example = ""
+                example = f" — ex. --form {secret}={CITATION_FEATURE}"
                 if analyses:
                     # The example must be RUNNABLE: a shared cell's plain trait
                     # would itself die as ambiguous, so it shows qualified (#144).
@@ -3250,8 +3290,7 @@ def add_shared_args(p):
     p.add_argument("--no-lemmas", action="store_true",
                    help="désactive le regroupement par lexème (#104/#134) — chaque "
                         "forme fléchie garde son propre rang ; exige --no-inflect "
-                        "quand la langue a une table de formes (l'accord est indexé "
-                        "par les lexèmes du regroupement)")
+                        "(l'accord est indexé par les lexèmes du regroupement)")
     p.add_argument("--no-inflect", action="store_true",
                    help="désactive l'accord des mots affichés (#119/#133) — "
                         "chaque mot garde sa forme de dictionnaire")
@@ -3280,13 +3319,13 @@ def prepare_run(lang, interactive, args):
     # removes (every surface becomes its own table-less singleton, and nothing carries
     # a cell to realize). Running it anyway would take --form answers and silently
     # rewrite nothing — reject the combination instead of degrading it.
-    if lang in FORM_LANGS and not args.no_inflect and args.no_lemmas:
+    if not args.no_inflect and args.no_lemmas:
         die("--no-lemmas retire les lexèmes sur lesquels l'accord d'affichage est "
             "indexé (#134) : ajoute --no-inflect pour générer sans regroupement, "
             "ou retire --no-lemmas.")
 
-    # Form table (addendum 2). None for a language with no table (en) or under
-    # --no-inflect: the agreement pass then never runs.
+    # Form table (addendum 2). None under --no-inflect: the agreement pass then never
+    # runs.
     form_table = load_form_table(lang, disabled=args.no_inflect)
 
     kv = cfg["module"].load_vectors()
@@ -3305,14 +3344,14 @@ def prepare_run(lang, interactive, args):
     # inferred: every secret confirms its form on a TTY (a single analysis included),
     # and off one --form is required per secret. --no-inflect is the explicit opt-out.
     forms = FormResolver(form_table, explicit=explicit_forms, interactive=interactive,
-                         typable=donors.typable)
+                         typable=donors.typable, lang=lang)
     reporter = PlayabilityReporter(V, lemma_table, forms_by_lemma, kv,
                                    resolver=forms)
     return PreparedRun(explicit_forms, lemma_table, forms_by_lemma, kv, V, M,
                        Vset, donors, forms, reporter)
 
 
-def report_run_adjustments(donors, forms, explicit_forms, lang, no_inflect,
+def report_run_adjustments(donors, forms, explicit_forms, no_inflect,
                            subject_fmt="secret « {} »",
                            unused_form_msg="n'a servi à aucun trou"):
     """Print what the run substituted or rewrote — never silently (#119/#133/#134).
@@ -3342,9 +3381,6 @@ def report_run_adjustments(donors, forms, explicit_forms, lang, no_inflect,
     if explicit_forms:
         if no_inflect:
             print("  attention : --form est ignoré sous --no-inflect.", file=sys.stderr)
-        elif lang not in FORM_LANGS:
-            print(f"  attention : --form est ignoré : pas de table de formes pour "
-                  f"'{lang}'.", file=sys.stderr)
         else:
             for key in sorted(set(explicit_forms) - forms.answered):
                 print(f"  attention : --form « {key} » {unused_form_msg}.",
@@ -3394,8 +3430,8 @@ def parse_args():
     p.add_argument("--url", help="page du morceau pour un jour musique (#270)")
     p.add_argument("--static", action="store_true",
                    help="classement statique seul (référence / expérience) : sans ce "
-                        "flag, un puzzle fr est classé par le SENS que la phrase donne "
-                        "au secret (#308) — le juge hébergé Jev (TypeSafe, clé "
+                        "flag, un puzzle (fr ou en, #317) est classé par le SENS que la "
+                        "phrase donne au secret (#308) — le juge hébergé Jev (TypeSafe, clé "
                         "JEV_API_KEY) réordonne les TOP_K groupes de l'embedding et "
                         "filtre les départs et les mots à trouer ; aucun repli "
                         "statique en cas d'échec")
@@ -3416,13 +3452,12 @@ def parse_args():
 
 def build_contextual_ranker(args, lang, sentence, V):
     """The #308 judge for this run: Jev through JEV_API_KEY, or a replay of a
-    previous run's sidecar. French only (the rubric and the lexeme labels are
-    French; another language brings its own template, a separate decision). The
-    A front label that is not a French word is demoted by the judge itself (a
-    frequency rule threw out «apparent» and «laid», 2026-09-22)."""
-    if lang != "fr":
-        die("--contextual-replay : le classement contextuel n'existe qu'en français (#308).")
+    previous run's sidecar. Every question is asked in the sentence's own language
+    (contextual_rank.LANGUAGES, #317: French the calibrated original, English its
+    twin); a front label that is not a word of that language is demoted by the judge
+    itself (a frequency rule threw out «apparent» and «laid», 2026-09-22)."""
     try:
+        contextual_rank.language(lang)
         if args.contextual_replay:
             judge = contextual_rank.ReplayJudge(
                 contextual_rank.load_sidecar(args.contextual_replay))
@@ -3434,7 +3469,7 @@ def build_contextual_ranker(args, lang, sentence, V):
     return ContextualRanker(judge, sentence, before=args.before or (),
                             after=args.after or (),
                             model=args.contextual_model if not args.contextual_replay
-                            else f"rejeu de {args.contextual_replay}")
+                            else f"rejeu de {args.contextual_replay}", lang=lang)
 
 
 def main():
@@ -3477,13 +3512,14 @@ def main():
     lemma_table, forms_by_lemma = run.lemma_table, run.forms_by_lemma
     donors, forms, reporter = run.donors, run.forms, run.reporter
 
-    # #308: the judge is the DEFAULT for a French sentence (user-decided 2026-09-20),
-    # bound to this sentence and its excerpt before any walk — a missing key dies here,
-    # ahead of the first hole. --static is the explicit opt-out; en has no judge.
+    # #308: the judge is the DEFAULT for a sentence puzzle (user-decided 2026-09-20 for
+    # French, 2026-09-25 for English, #317), bound to this sentence and its excerpt
+    # before any walk — a missing key dies here, ahead of the first hole. --static is
+    # the explicit opt-out.
     if args.static and args.contextual_replay:
         die("--static et --contextual-replay s'excluent.")
     contextual = None
-    if args.contextual_replay or (lang == "fr" and not args.static):
+    if args.contextual_replay or not args.static:
         contextual = build_contextual_ranker(args, lang, sentence, V)
 
     # DISPLAY tokens of the sentence: lowercased, but accents AND punctuation /
@@ -3561,7 +3597,8 @@ def main():
     sidecar = None
     if contextual is not None:
         sidecar = contextual_rank.write_sidecar(
-            out_path[:-len(".json")] + ".contextual.json", model=contextual.model,
+            out_path[:-len(".json")] + ".contextual.json", lang=lang,
+            model=contextual.model,
             sentence=sentence, before=contextual.before, after=contextual.after,
             records=contextual.records, usage=contextual.judge.usage,
             replayed_from=args.contextual_replay)
@@ -3574,7 +3611,7 @@ def main():
         print(f"  {h['start']['word']}^{h['start_rank']} -> {h['secret']['word']}")
     # Substitutions, agreement, #134's curator marks and --form typo warnings — the
     # shared reporting block (#154), in the sentence path's own words.
-    report_run_adjustments(donors, forms, run.explicit_forms, lang, args.no_inflect)
+    report_run_adjustments(donors, forms, run.explicit_forms, args.no_inflect)
     if source:
         print("  source : " + ", ".join(f"{k}={v}" for k, v in source.items()))
 

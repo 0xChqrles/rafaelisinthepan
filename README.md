@@ -51,7 +51,7 @@ pnpm typecheck         # tsc --noEmit
 
 # Generation (packages/generation — Python via uv)
 pnpm reduce:fr         # embedding/fr/cc.fr.300.vec      -> cc.fr.300_reduced.vec
-pnpm reduce:en         # embedding/en/glove.6B.300d.txt  -> glove.6B.300d_reduced.txt
+pnpm reduce:en         # embedding/en/cc.en.300.vec      -> cc.en.300_reduced.vec
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 words (no `--`)
 
 # LLM benchmark (packages/benchmark — Python via its own uv project; lab readings only)

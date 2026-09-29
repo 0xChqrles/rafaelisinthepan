@@ -1,9 +1,9 @@
-"""The shelf (`packages/curation/shelf/`, gitignored), its state file, and what the
-archive already holds (works, secrets, secret/start pairs, sentences), read off the
-PUBLISH LEDGER — `packages/generation/published.jsonl`, appended by every S3 publish and
-the one source of truth of what has been published (user-decided 2026-09-08; the
-generation output was the archive until then, and it stays what `forget` erases). The
-backend's local store is a test bed and is never read."""
+"""The shelves (`packages/curation/shelf/<lang>/`, gitignored, one per language), their
+state files, and what a language's archive already holds (works, secrets, secret/start
+pairs, sentences), read off the PUBLISH LEDGER — `packages/generation/published.jsonl`,
+appended by every S3 publish and the one source of truth of what has been published
+(user-decided 2026-09-08; the generation output was the archive until then, and it stays
+what `forget` erases). The backend's local store is a test bed and is never read."""
 
 from datetime import date, datetime, timezone
 import json
@@ -15,17 +15,19 @@ from slug import slug
 from epub import epub_metadata
 from lyrics import parse_song
 
-INDEX_FILE = _paths.SHELF_DIR / "index.json"
+# The languages the curator makes days in (#317), each with its own shelf, archive and
+# vectors; no rule looks across them (user-decided 2026-09-25).
+LANGS = ("fr", "en")
 # A secret comes back after this many days (user-decided 2026-09-08: a cooldown, not a
 # permanent blacklist — « cimetière » was off the table forever after one Ernaux day).
 # What stays permanent is the PAIR: a secret is never started from the same word twice.
 SECRET_COOLDOWN_DAYS = 90
 
 
-def list_works(shelf: Path = _paths.SHELF_DIR) -> list[dict]:
-    """Every work on the shelf with its own metadata: epubs as `kind: book`
-    (title/author from the OPF), song files as `kind: music` (from the header):
-    [{file, kind, title, author, ...}]."""
+def list_works(shelf: Path) -> list[dict]:
+    """Every work on a shelf (`_paths.shelf_dir(lang)`) with its own metadata: epubs as
+    `kind: book` (title/author from the OPF), song files as `kind: music` (from the
+    header): [{file, kind, title, author, ...}]."""
     out = []
     for path in sorted(shelf.glob("*.epub")):
         try:
@@ -43,17 +45,24 @@ def list_works(shelf: Path = _paths.SHELF_DIR) -> list[dict]:
     return out
 
 
-def load_index() -> dict:
-    """{books: {file: {read: iso, sentences: [..]}}} — which books were read and which
-    sentences were already proposed, so a rerun never re-offers a sentence."""
-    if INDEX_FILE.exists():
-        return json.loads(INDEX_FILE.read_text(encoding="utf-8"))
+def index_file(lang: str) -> Path:
+    return _paths.shelf_dir(lang) / "index.json"
+
+
+def load_index(lang: str) -> dict:
+    """{books: {file: {read: iso, sentences: [..]}}} — which books of the language's shelf
+    were read and which sentences were already proposed, so a rerun never re-offers a
+    sentence."""
+    path = index_file(lang)
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
     return {"books": {}}
 
 
-def save_index(index: dict) -> None:
-    INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
-    INDEX_FILE.write_text(json.dumps(index, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+def save_index(index: dict, lang: str) -> None:
+    path = index_file(lang)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(index, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 
 
 def record(index: dict, file: str, sentences: list[str], author: str = "") -> None:

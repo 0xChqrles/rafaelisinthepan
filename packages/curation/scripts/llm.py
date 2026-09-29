@@ -22,6 +22,35 @@ from llm_play import (
 MODEL = "claude-opus-5-5"
 EFFORT = "high"
 
+# The language each question is asked about (#317): its name, and what a start word must
+# agree with in it — French elides and has gender, English has neither and picks its
+# article by the next word's sound. French is the tuned original: its prompts read
+# exactly as they did before English existed.
+LANGUAGE = {"fr": "French", "en": "English"}
+# The name with its article: « a French reader », « an English reader ».
+A_LANGUAGE = {"fr": "a French", "en": "an English"}
+AGREEMENT = {"fr": "gender, number, verb form, elision", "en": "number, verb form, the article a/an"}
+# What a forms-table analysis is made of (the #133 question).
+ANALYSIS = {"fr": "part of speech, gender, number, tense", "en": "part of speech, number, tense, degree"}
+# The grammar check's question, with an example of a CONSTRUCTION the check must catch.
+GRAMMAR = {
+    "fr": """Is this French sentence grammatically valid — elision, gender and number
+agreement, verb forms, and each inserted word's CONSTRUCTION with what surrounds it (a
+verb must accept the object or preposition that follows it: « il avait hérité d'un
+prénom » is French, « il avait affublé d'un prénom » is not — affubler needs an object
+before « de »)?""",
+    "en": """Is this English sentence grammatically valid — the article (« a » or « an », by
+the sound that follows), number agreement, verb forms, and each inserted word's
+CONSTRUCTION with what surrounds it (a verb must accept the object or preposition that
+follows it: « she listened to the rain » is English, « she heard to the rain » is not —
+hear takes its object with no preposition)?""",
+}
+
+
+def _capital(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
 _JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 
 
@@ -116,9 +145,9 @@ def page_rules() -> str:
 # ---------------------------------------------------------------------------
 # Questions
 
-def pick_from_chunk(claude: Claude, sentences: list[str], limit: int) -> list[dict]:
+def pick_from_chunk(claude: Claude, sentences: list[str], limit: int, *, lang: str) -> list[dict]:
     listing = "\n".join(f"{i}. {s}" for i, s in enumerate(sentences))
-    answer = claude.json(f"""You curate a daily French word game: one sentence, three words removed, the
+    answer = claude.json(f"""You curate a daily {LANGUAGE[lang]} word game: one sentence, three words removed, the
 player rediscovers them from embedding-neighbour feedback. Below are sentences mined
 from one book. Choose the at most {limit} that would make the best days, by this taste —
 lines that DO something and are built for the game; skip plot, anything flat, anything
@@ -139,11 +168,11 @@ Return {{"picks": [{{"n": <index>, "why": "<one line>"}}, ...]}}, best first."""
     return out
 
 
-def rank_sentences(claude: Claude, picks: list[dict], limit: int) -> list[dict]:
+def rank_sentences(claude: Claude, picks: list[dict], limit: int, *, lang: str) -> list[dict]:
     if len(picks) <= 1:
         return picks
     listing = "\n".join(f"{i}. {p['sentence']}  ({p['why']})" for i, p in enumerate(picks))
-    answer = claude.json(f"""These sentences were shortlisted from one book for a daily French word game
+    answer = claude.json(f"""These sentences were shortlisted from one book for a daily {LANGUAGE[lang]} word game
 (three words removed, rediscovered from embedding-neighbour feedback). Rank the best
 {limit} by this taste — the line that would make the best day first:
 
@@ -163,12 +192,12 @@ Return {{"ranked": [<index>, ...]}}, best first, at most {limit} entries.""")
     return ranked or picks[:limit]
 
 
-def stands_alone(claude: Claude, sentence: str) -> dict:
+def stands_alone(claude: Claude, sentence: str, *, lang: str) -> dict:
     """Does the sentence make complete sense on its own, SOLVED, without its page? The
     user's rule of 2026-09-18 (the Svevo day: « c'étaient donc des nerfs parfaits »
     meant nothing even solved). A STRIKE, applied by code on the model's verdict; the
     rule is read from the skill file."""
-    answer = claude.json(f"""A French word game shows ONE sentence from a book or song, alone. The surrounding
+    answer = claude.json(f"""{_capital(A_LANGUAGE[lang])} word game shows ONE sentence from a book or song, alone. The surrounding
 page is available only after solving. Judge the complete sentence below with no context at all.
 
 {skill_section("## Stands alone")}
@@ -188,13 +217,13 @@ Return {{"about": "<one line: what the sentence says, from the sentence alone>",
     return {"ok": ok, "why": why, "about": about}
 
 
-def widely_known(claude: Claude, sentence: str, author: str, work: str) -> dict:
+def widely_known(claude: Claude, sentence: str, author: str, work: str, *, lang: str) -> dict:
     """Would a reader who has NOT read the book know this line? An ANNOTATION for the
     reviewer, never a strike (user-decided 2026-09-08): the model has memorised every
     line of a canonical book, so what it remembers says nothing about what a reader has
     met — the strike is the quotation test's (`quotes.quoted`), off the record."""
-    answer = claude.json(f"""A French word game hides three words of a sentence from « {work} » by {author} and
-the player rebuilds it. Would a French reader who has NOT read the book have met this
+    answer = claude.json(f"""{_capital(A_LANGUAGE[lang])} word game hides three words of a sentence from « {work} » by {author} and
+the player rebuilds it. Would {A_LANGUAGE[lang]} reader who has NOT read the book have met this
 exact sentence before — is it widely quoted (quotation sites, the book's encyclopedia
 article, school anthologies, titles, advertising)? Judge the SENTENCE's fame, not the
 book's.
@@ -205,9 +234,11 @@ Return {{"known": true/false, "why": "<one line>"}}.""")
     return {"known": bool(answer.get("known")), "why": str(answer.get("why") or "")}
 
 
-def holed(tokens, blanks: set[int], mark: int | None = None) -> str:
+def holed(tokens, blanks: set[int], mark: int | None = None, *, lang: str) -> str:
     """The sentence with the picked tokens blanked (`____`) and the one under test marked
-    (`[____]`), rebuilt from the tokens with a space between words."""
+    (`[____]`). French is rebuilt with a space between words, then its elisions and
+    guillemets closed up — the rendering the giveaway threshold was calibrated on; English
+    with the source's own spacing (#317: « don't » is two tokens, « the dog's » too)."""
     parts = []
     for t in tokens:
         if t.i == mark:
@@ -216,10 +247,12 @@ def holed(tokens, blanks: set[int], mark: int | None = None) -> str:
             parts.append("____")
         else:
             parts.append(t.text)
-    return re.sub(r"\s+([,.;:!?…»)])", r"\1", re.sub(r"([«(]|\w')\s+", r"\1", " ".join(parts)))
+    if lang == "fr":
+        return re.sub(r"\s+([,.;:!?…»)])", r"\1", re.sub(r"([«(]|\w')\s+", r"\1", " ".join(parts)))
+    return "".join(part + t.space for part, t in zip(parts, tokens)).strip()
 
 
-def choose_day(claude: Claude, lines: list[dict], refused: list[str]) -> dict | None:
+def choose_day(claude: Claude, lines: list[dict], refused: list[str], *, lang: str) -> dict | None:
     """The day, chosen by COMPARISON (2026-09-24): `lines` are shortlisted lines, each with
     the words code allows as its secrets ({"sentence", "allowed"}); the model picks the one
     that makes the best day and the three words to hide, in the order players will find
@@ -230,7 +263,7 @@ def choose_day(claude: Claude, lines: list[dict], refused: list[str]) -> dict | 
                            for n, line in enumerate(lines, 1))
     again = ("\nAlready turned down — do not choose these again:\n"
              + "\n".join(f"- {r}" for r in refused) + "\n") if refused else ""
-    answer = claude.json(f"""You choose tomorrow's day for a daily French word game. One line, three words hidden;
+    answer = claude.json(f"""You choose tomorrow's day for a daily {LANGUAGE[lang]} word game. One line, three words hidden;
 the player rebuilds each from how close every guess lands, starting from a START word
 chosen later. A word once found stays revealed and becomes context for the others.
 
@@ -263,7 +296,8 @@ or {{"line": null, "why": "<one line>"}} to decline.""")
     return {"line": n - 1, "words": [w.strip() for w in words], "path": path, "why": str(answer.get("why") or "")}
 
 
-def context_guesses(claude: Claude, tokens, blanks: set[int], mark: int, n: int) -> tuple[list[str], str | None]:
+def context_guesses(claude: Claude, tokens, blanks: set[int], mark: int, n: int,
+                    *, lang: str) -> tuple[list[str], str | None]:
     """What a reader could really put in ONE blank, the rest of the sentence intact and
     no start word, and the ONE word most readers would write there when readers agree
     (None when they split) — the reader's question, whose answer becomes a note for the
@@ -272,8 +306,8 @@ def context_guesses(claude: Claude, tokens, blanks: set[int], mark: int, n: int)
     to set the book aside: it has memorised a canonical text, and the true word is not
     what a reader who has never seen it writes — the position of the true word in its
     list was the verdict until 2026-09-15 and struck nearly every word of an Orwell."""
-    shown = holed(tokens, blanks, mark)
-    answer = claude.json(f"""You are a French reader. In this sentence one word is hidden, marked [____]
+    shown = holed(tokens, blanks, mark, lang=lang)
+    answer = claude.json(f"""You are {A_LANGUAGE[lang]} reader. In this sentence one word is hidden, marked [____]
 (____ marks the same word hidden again). You may recognise the sentence: set the book
 aside and answer for a reader who has NEVER seen it, from this sentence alone.
 
@@ -293,10 +327,10 @@ Return {{"guesses": ["...", ...], "expected": "..." or null}}.""")
     return guesses, expected.strip() if isinstance(expected, str) and expected.strip() else None
 
 
-def pick_form(claude: Claude, sentence: str, secret: str, choices: list[str]) -> int:
+def pick_form(claude: Claude, sentence: str, secret: str, choices: list[str], *, lang: str) -> int:
     listing = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(choices))
-    answer = claude.json(f"""In the French sentence below, which analysis is the word « {secret} »? The analyses
-are morphological readings from a forms table (part of speech, gender, number, tense).
+    answer = claude.json(f"""In the {LANGUAGE[lang]} sentence below, which analysis is the word « {secret} »? The analyses
+are morphological readings from a forms table ({ANALYSIS[lang]}).
 
 « {sentence} »
 
@@ -309,14 +343,11 @@ Return {{"choice": <1-based number>}}.""")
     return choice
 
 
-def grammar_check(claude: Claude, sentence: str, start_words: list[str]) -> dict:
-    """Is the displayed sentence valid French? The start words are the only things that
-    can be wrong (elision, gender, number, agreement); the model names the faulty ones."""
-    answer = claude.json(f"""Is this French sentence grammatically valid — elision, gender and number
-agreement, verb forms, and each inserted word's CONSTRUCTION with what surrounds it (a
-verb must accept the object or preposition that follows it: « il avait hérité d'un
-prénom » is French, « il avait affublé d'un prénom » is not — affubler needs an object
-before « de »)? The words {', '.join(f'« {w} »' for w in start_words)} were inserted into
+def grammar_check(claude: Claude, sentence: str, start_words: list[str], *, lang: str) -> dict:
+    """Is the displayed sentence valid in its language? The start words are the only
+    things that can be wrong (elision or the article, gender, number, agreement,
+    construction); the model names the faulty ones."""
+    answer = claude.json(f"""{GRAMMAR[lang]} The words {', '.join(f'« {w} »' for w in start_words)} were inserted into
 an existing sentence; only they can be wrong. Judge the grammar and the construction,
 not the meaning.
 
@@ -340,7 +371,7 @@ def _chain_block(chain: list[str] | None) -> str:
 
 
 def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict],
-                chain: list[str] | None = None) -> dict:
+                chain: list[str] | None = None, *, lang: str) -> dict:
     """The three start words, chosen TOGETHER by the taste. `holes`: [{secret,
     slug, slot, notes, options: [{word, rank}]}] — `notes` is what code measured (what a
     reader puts in the blank, how much the sentence hands the word over, where the reader's
@@ -357,7 +388,7 @@ def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict],
         blocks.append(f"Hole « {h['secret']} » (slot: {h.get('slot', 'as the hidden word')})\n"
                       f"  measured: {h.get('notes', 'nothing')}\n"
                       f"  start candidates (word (rank), closest first): {opts}")
-    answer = claude.json(f"""You choose the START words of a day for a daily French word game: each hole shows a
+    answer = claude.json(f"""You choose the START words of a day for a daily {LANGUAGE[lang]} word game: each hole shows a
 start word in place of the hidden word, the first clue; the player then types guesses and
 reads, for every hole, how close each lands.
 
@@ -368,7 +399,7 @@ The start word's practical rules:
 {start_rules()}
 
 The start word replaces the hidden word in the sentence: same part of speech, agreeing with
-its surroundings (gender, number, verb form, elision), taking the SAME CONSTRUCTION.
+its surroundings ({AGREEMENT[lang]}), taking the SAME CONSTRUCTION.
 
 The sentence, holes marked with the hidden word in brackets:
 {sentence_marked}
@@ -395,7 +426,7 @@ or {{"replace": {{"secret": "<hidden word>", "with": "<another word of the line>
     return {"starts": out, "replace": None, "why": str(answer.get("why") or "")}
 
 
-def choose_excerpt(claude: Claude, unit: str, window: dict) -> dict | None:
+def choose_excerpt(claude: Claude, unit: str, window: dict, *, lang: str) -> dict | None:
     """Where the PAGE around the unit starts and ends (#270): the model is shown the
     window — B1 is the sentence right before the line, A1 the one right after — and
     answers two counts. None when the answer is not two integers (the caller falls back);
@@ -408,7 +439,7 @@ def choose_excerpt(claude: Claude, unit: str, window: dict) -> dict | None:
         + [f"LINE: {unit}"]
         + [f"A{i + 1}: {s}" for i, s in enumerate(after)]
     )
-    answer = claude.json(f"""You curate a daily French word game. A player has just rebuilt the LINE below and is
+    answer = claude.json(f"""You curate a daily {LANGUAGE[lang]} word game. A player has just rebuilt the LINE below and is
 shown its page: the sentences of the book around it, verbatim. Decide how much of the
 page to keep, following these rules:
 
@@ -427,9 +458,10 @@ Return {{"before": <how many B sentences to keep, 0..{len(before)}>, "after": <h
 
 
 def pick_start(claude: Claude, sentence_marked: str, secret: str, options: list[dict],
-               refused: str = "", context: str = "unknown", chain: list[str] | None = None) -> str | None:
+               refused: str = "", context: str = "unknown", chain: list[str] | None = None,
+               *, lang: str) -> str | None:
     listing = ", ".join(f"{o['word']} ({o['rank']})" for o in options)
-    answer = claude.json(f"""You curate a daily French word game: three words of a sentence are hidden and the
+    answer = claude.json(f"""You curate a daily {LANGUAGE[lang]} word game: three words of a sentence are hidden and the
 player rediscovers each from embedding-neighbour feedback. One hole's START word (its
 first clue, shown in place of the hidden word « {secret} ») was refused: {refused or 'it broke the grammar'}.
 Choose another, following these rules:
@@ -440,7 +472,7 @@ And this taste (the start words part above all):
 {taste()}
 
 The start word replaces the hidden word: same part of speech, agreeing with its
-surroundings (gender, number, verb form, elision). Read the sentence with your choice in
+surroundings ({AGREEMENT[lang]}). Read the sentence with your choice in
 place before answering. Context check for this hole: {context}.
 
 The sentence, the hole marked [____]:
@@ -448,6 +480,6 @@ The sentence, the hole marked [____]:
 {_chain_block(chain)}
 Candidates (word (rank), closest first): {listing}
 
-Return {{"word": "<one candidate, exactly>"}} or {{"word": null}} if none makes valid French.""")
+Return {{"word": "<one candidate, exactly>"}} or {{"word": null}} if none makes valid {LANGUAGE[lang]}.""")
     word = answer.get("word")
     return word if isinstance(word, str) and word in {o["word"] for o in options} else None

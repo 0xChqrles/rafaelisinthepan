@@ -3,7 +3,8 @@
 # dependencies = []
 # ///
 """
-Build the ONE fr word-group inventory consumed by gen_phrase.py (#132/#146).
+Build the ONE word-group inventory per language consumed by gen_phrase.py
+(fr: #132/#146; en: #317).
 
 Before #132 two different sources defined what a lexeme is: Lexique/AGID for the
 rank-map lemma grouping (#104) and Lefff (verbs only) for display agreement (#119).
@@ -103,11 +104,38 @@ and the reason the sort key is not simply the whole line. Losing spellings are K
 only ordered after — and `load_forms` hands the caller the whole ordered list, so
 "preferred" can fall back to "typable" instead of the cell going unrealized.
 
-fr ONLY. English keeps its AGID lemma table (#104) and has no forms table — a decided
-non-goal, not a missing file (see FORM_LANGS).
+ENGLISH (#317, user-decided 2026-09-25: English puzzles are made like the French ones,
+as far as each language's properties allow) — the same artifact, the same columns, the
+same hygiene, from three sources with one responsibility each:
+
+  AGID 2016.01.19  THE authority for the lexeme — chosen by the #317 A/B over UniMorph
+                 (plurals corrupted to «countable», one spelling per cell, «bear →
+                 beared») and Wiktionary (half of what it alone states is a rare-POS
+                 paradigm on the right lemma — «boys» as a verb — with no flag to clean
+                 it, and no pinnable release). Its own confidence marks drive the
+                 cleanup: uncertain (~ ! ?) and obscure (level >= 2) spellings drop, an
+                 adjective needs both degrees attested (AGID files agent nouns as
+                 comparatives: «travel → traveler»), and a GUESSED entry (POS not in
+                 AGID's POS database) is corroborated against the trusted ones — the
+                 English twin of Morphalou's mixed-entry rule (see corroborate_agid).
+  VarCon 2020.12.07  American/British spelling variants (decision: both spellings
+                 are one word): each form's pure spelling variants join its cell, so
+                 «colour» and «color» become ONE group by #146's identical-form rule.
+                 Sense-restricted pairs (check/cheque | bank) never merge.
+  OANC           frequency / POS evidence ONLY (the `dom` column and a cell's spelling
+                 order), Lexique's twin; unrestricted licence.
+
+English has no gender, no adjective agreement and no elision, so it has no such cells:
+nouns carry number (n:s / n:p), verbs the five forms English inflects (base,
+ind:pre:3s, ind:pas, par:pas, par:pre), adjectives their degree (adj:pos / adj:cmp /
+adj:sup — grouped and confirmable, never transferred to neighbours). And English
+converts freely between noun and verb (a walk / to walk): entries sharing a lemma
+spelling are ONE group across POS (merge_entries(same_lemma=True)), since a player
+types the word, not its part of speech.
 
 Usage
     uv run scripts/build_forms.py --lang fr      (pnpm forms:fr)
+    uv run scripts/build_forms.py --lang en      (pnpm forms:en)
 Downloads are cached under wordlist/.cache/ (gitignored); --refresh re-downloads.
 """
 
@@ -152,9 +180,11 @@ MORPHALOU_CREDIT = "Morphalou 3.1 — ATILF / CNRS, via ORTOLANG"
 MORPHALOU_LICENSE_NAME = ("LGPL-LR (Lesser General Public License For "
                           "Linguistic Resources)")
 
-# The languages that HAVE a word-group inventory. Anything else has no agreement pass and
-# keeps its own lemma table (en: AGID) — deliberate, not a missing file.
-FORM_LANGS = ("fr",)
+# The languages that HAVE a word-group inventory — every supported language since #317.
+FORM_LANGS = ("fr", "en")
+# Languages whose nominal morphology carries GENDER (the #133 prompt asks it of a noun,
+# adjectives agree in it). English has none, so it never asks.
+GENDERED_LANGS = frozenset({"fr"})
 
 # Morphalou category -> the artifact's POS code. Everything else (the ~350 rows with
 # no category) is skipped and counted. The closed classes ARE included: they carry no
@@ -525,8 +555,8 @@ def entry_forms(cells):
     return frozenset(form for forms in cells.values() for form in forms)
 
 
-def merge_entries(lexemes):
-    """Collapse Morphalou filings that make no playable distinction (#146).
+def merge_entries(lexemes, same_lemma=False):
+    """Collapse dictionary filings that make no playable distinction (#146).
 
     Returns `(groups, stats)` where `groups` is insertion-ordered as
     `{opaque_group_key: ((lemma, pos, cells), ...)}`.
@@ -546,7 +576,15 @@ def merge_entries(lexemes):
     The measurements in issue #146 are computed on the original cleaned entries,
     before either rule changes the population, so the build report can pin the
     source facts (5,712 twin sets / 11,472 entries and 1,496 contained entries on
-    Morphalou 3.1)."""
+    Morphalou 3.1).
+
+    `same_lemma` (English, #317) adds a third rule: surviving entries that share a
+    LEMMA spelling are one group across POS, joined transitively with rule 1's twins
+    (so «colour» noun and verb and «color» noun and verb are one word). English
+    converts freely (a walk / to walk, a dream / to dream) and the embedding holds one
+    vector for both; splitting them would rank «walk» and «walked» apart and hand the
+    judge the same lemma twice. It also joins true homonyms AGID cannot tell apart
+    («bear» the animal and the verb) — the embedding cannot either."""
     rows = {key: entry_rows(cells) for key, cells in lexemes.items()}
     forms = {key: entry_forms(cells) for key, cells in lexemes.items()}
 
@@ -584,11 +622,16 @@ def merge_entries(lexemes):
         if key in surviving:
             surviving_by_forms.setdefault(spellings, []).append(key)
 
+    if same_lemma:
+        surviving_by_forms = _join_same_lemma(
+            [key for key in lexemes if key in surviving], surviving_by_forms, forms)
+
     groups = {}
     for key in lexemes:  # pinned source order owns exact-group naming
         if key not in surviving:
             continue
-        members = surviving_by_forms[forms[key]]
+        members = surviving_by_forms[forms[key]] if not same_lemma \
+            else surviving_by_forms[key]
         canonical = members[0]
         group = lexeme_key(*canonical)
         if group in groups:
@@ -607,6 +650,37 @@ def merge_entries(lexemes):
         ),
         "groups": len(groups),
     }
+
+
+def _join_same_lemma(keys, by_forms, forms):
+    """Rule 3 (English): union-find over the surviving entries, joining rule 1's
+    identical-form twins AND entries that share a lemma. Returns {entry: members}
+    with members in source order, the first naming the group."""
+    parent = {key: key for key in keys}
+
+    def find(key):
+        while parent[key] != key:
+            parent[key] = parent[parent[key]]
+            key = parent[key]
+        return key
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    order = {key: i for i, key in enumerate(keys)}
+    by_lemma = {}
+    for key in keys:
+        by_lemma.setdefault(key[0], []).append(key)
+    for members in list(by_lemma.values()) + [
+            [k for k in twins if k in parent] for twins in by_forms.values()]:
+        for other in members[1:]:
+            union(members[0], other)
+    components = {}
+    for key in keys:
+        components.setdefault(find(key), []).append(key)
+    return {key: tuple(sorted(components[find(key)], key=order.get)) for key in keys}
 
 
 # --- Lexique evidence -------------------------------------------------------------
@@ -633,13 +707,14 @@ def read_lexique_rows(path):
                    freq)
 
 
-def lexique_weights(rows, token_re):
-    """surface -> {POS class: summed frequency}, in the artifact's class vocabulary."""
+def lexique_weights(rows, token_re, classify=lexique_class):
+    """surface -> {POS class: summed frequency}, in the artifact's class vocabulary.
+    `classify` maps the source's category onto it (English rows arrive mapped)."""
     weight = {}
     for ortho, cgram, freq in rows:
         if not token_re.match(ortho):
             continue
-        pos = lexique_class(cgram)
+        pos = classify(cgram)
         weight.setdefault(ortho, {})
         weight[ortho][pos] = weight[ortho].get(pos, 0.0) + freq
     return weight
@@ -811,51 +886,61 @@ EXPECTED_MERGE_STATS = {
 }
 
 
-def validate_merge_stats(stats, row_count):
-    """Fail loudly when a #146 source measurement moves."""
-    actual = {name: stats.get(name) for name in EXPECTED_MERGE_STATS}
+def validate_merge_stats(stats, row_count, expected_stats=None, audit="#146"):
+    """Fail loudly when a pinned source measurement moves (fr: #146, en: #317)."""
+    if expected_stats is None:
+        expected_stats = EXPECTED_MERGE_STATS
+    actual = {name: stats.get(name) for name in expected_stats}
     actual["rows"] = row_count
     problems = [
         f"{name} : {actual[name]:,}, attendu {expected:,}"
         if isinstance(actual[name], int) else
         f"{name} : absent, attendu {expected:,}"
-        for name, expected in EXPECTED_MERGE_STATS.items()
+        for name, expected in expected_stats.items()
         if actual[name] != expected
     ]
     if problems:
-        print("Erreur : les mesures pinnées par l'audit #146 ont bougé —\n"
+        print(f"Erreur : les mesures pinnées par l'audit {audit} ont bougé —\n"
               + "".join(f"         {problem}\n" for problem in problems)
               + "         la source ou les règles ont changé : refais l'audit "
                 "avant de mettre à jour les mesures.", file=sys.stderr)
         sys.exit(1)
 
 
-def validate_rows(rows):
-    """Fail loudly when data under a #131 or #132 sentinel moved.
+def validate_rows(rows, expected_cells=None, inventory_cells=None,
+                  surface_lexemes=None, audit="#131/#132"):
+    """Fail loudly when data under a pinned sentinel moved (fr: #131/#132, en: #317).
 
     The source is digest-pinned, so a deviation means the parsing or cleanup rules
-    changed — exactly the moment the #131 audit must be redone, consciously, instead
-    of new morphology shipping under an old rationale."""
+    changed — exactly the moment the audit must be redone, consciously, instead
+    of new morphology shipping under an old rationale. The sentinels default to the
+    French ones, read at call time."""
+    expected_cells = EXPECTED_CELLS if expected_cells is None else expected_cells
+    inventory_cells = (EXPECTED_INVENTORY_CELLS if inventory_cells is None
+                       else inventory_cells)
+    surface_expected = (EXPECTED_SURFACE_LEXEMES if surface_lexemes is None
+                        else surface_lexemes)
     wanted_cells = {
         (group, feature)
-        for group, feature, _expected, _first in EXPECTED_CELLS
+        for group, feature, _expected, _first in expected_cells
     } | {
         (group, feature)
-        for group, feature, _expected in EXPECTED_INVENTORY_CELLS
+        for group, feature, _expected in inventory_cells
     }
-    wanted_surfaces = {form for form, _expected in EXPECTED_SURFACE_LEXEMES}
+    wanted_surfaces = {form for form, _expected in surface_expected}
     cells, preferred, surface_lexemes = {}, {}, {}
-    for group, _lemma, _pos, feature, form, _dom, freq in rows:
+    for group, _lemma, _pos, feature, form, _dom, _freq in rows:
         cell = (group, feature)
         if cell in wanted_cells:
             cells.setdefault(cell, set()).add(form)
-            best = preferred.get(cell)
-            if best is None or (-freq, form) < best[0]:
-                preferred[cell] = ((-freq, form), form)
+            # `rows` arrive in artifact order: a cell's FIRST row is what load_forms
+            # hands consumers as its preferred realization (fr: by frequency, en: by
+            # AGID's own preference).
+            preferred.setdefault(cell, (None, form))
         if form in wanted_surfaces:
             surface_lexemes.setdefault(form, set()).add(group)
     problems = []
-    for group, feature, expected, first in EXPECTED_CELLS:
+    for group, feature, expected, first in expected_cells:
         cell = (group, feature)
         actual = frozenset(cells.get(cell, set()))
         if actual != expected:
@@ -867,24 +952,478 @@ def validate_rows(rows):
             problems.append(f"{group} / {feature} : réalisation préférée "
                             f"« {actual_first} », attendue "
                             f"« {first} »")
-    for group, feature, expected in EXPECTED_INVENTORY_CELLS:
+    for group, feature, expected in inventory_cells:
         actual = frozenset(cells.get((group, feature), set()))
         if actual != expected:
             problems.append(
                 f"{group} / {feature} : formes {sorted(actual)}, "
                 f"attendu {sorted(expected)}")
-    for form, expected in EXPECTED_SURFACE_LEXEMES:
+    for form, expected in surface_expected:
         actual = frozenset(surface_lexemes.get(form, set()))
         if actual != expected:
             problems.append(
                 f"surface « {form} » : lexèmes {sorted(actual)}, "
                 f"attendu {sorted(expected)}")
     if problems:
-        print("Erreur : les cellules pinnées par les audits #131/#132 ont bougé —\n"
+        print(f"Erreur : les cellules pinnées par les audits {audit} ont bougé —\n"
               + "".join(f"         {p}\n" for p in problems)
               + "         la source ou les règles ont changé : refais l'audit "
                 "avant de mettre à jour les sentinelles.", file=sys.stderr)
         sys.exit(1)
+
+
+# ==================================================================================
+# English (#317): AGID for the lexeme, VarCon for the spelling variants, OANC for POS
+# evidence — one source, one responsibility, like Morphalou / Lexique for French.
+# ==================================================================================
+
+# AGID is the source the #104 lemma table already read; now PINNED like Morphalou.
+AGID_URL = "http://downloads.sourceforge.net/wordlist/agid-2016.01.19.tar.gz"
+AGID_ARCHIVE = "en.agid.tar.gz"
+AGID_SHA256 = "15d2d792d309d2dc838bf75d8abcd3feb36708c219dc5158d4fff70b89e601d1"
+AGID_MEMBER = "agid-2016.01.19/infl.txt"
+AGID_README = "agid-2016.01.19/README"
+AGID_CREDIT = "AGID 2016.01.19 — Kevin Atkinson, wordlist.aspell.net"
+# VarCon, from the SCOWL release tag (sourceforge no longer serves the tarball).
+VARCON_URL = ("https://raw.githubusercontent.com/en-wl/wordlist/rel-2020.12.07/"
+              "varcon/varcon.txt")
+VARCON_SHA256 = "340858b990255ec409adcf7faaf2b992aa2a76a16f30b4b9e2663863191dba33"
+VARCON_README_URL = ("https://raw.githubusercontent.com/en-wl/wordlist/rel-2020.12.07/"
+                     "varcon/README")
+VARCON_README_SHA256 = "876c66a2cbd141728aef632286689e1cd96c9df88eab26af8fda4b9924906db7"
+VARCON_CREDIT = "VarCon 2020.12.07 — Kevin Atkinson & Benjamin Titze, wordlist.aspell.net"
+# The Open American National Corpus counts (word, lemma, Penn tag, count): Lexique's twin
+# with an unrestricted licence (SUBTLEX-US, the issue's first idea, is CC BY-NC-SA).
+ANC_URL = "https://www.anc.org/SecondRelease/data/ANC-all-count.txt"
+ANC_SHA256 = "c9cd70d08604a53c29ec03ad1219499142ecbf6a3836e3f9fb9b934b12d29d27"
+ANC_CREDIT = ("Open American National Corpus, second release, word counts — "
+              "anc.org, unrestricted use and redistribution")
+
+# AGID's paradigms: the slot order its README documents, per POS. A verb with three
+# slots has one past for both the tense and the participle.
+AGID_SLOTS = {"V": ("ind:pas", "par:pas", "par:pre", "ind:pre:3s"),
+              "N": ("n:p",),
+              "A": ("adj:cmp", "adj:sup")}
+AGID_POS = {"V": "v", "N": "nc", "A": "adj"}
+# The cell a lemma itself fills (AGID lists only the inflections).
+EN_CITATION = {"v": "base", "nc": "n:s", "adj": "adj:pos"}
+# Paradigms AGID writes in a slot order of their own (its README names be and wit; the
+# modals and «methinks» / «only» are the other lines): not the regular grammar, so not
+# guessed at — skipped by name, and any OTHER line that breaks the grammar is an error.
+AGID_SPECIAL = frozenset({("be", "V"), ("wit", "V"), ("may", "V"), ("shall", "V"),
+                          ("methinks", "V"), ("only", "A")})
+_AGID_LINE = re.compile(r"^(?P<lemma>[A-Za-z']+) (?P<pos>[VNA])(?P<guess>\?)?: "
+                        r"(?P<slots>.+)$")
+_AGID_ITEM = re.compile(r"^(?P<form>[A-Za-z']+)(?P<marks>[~<!?]*)"
+                        r"(?: (?P<level>\d+(?:\.\d+)?))?(?: \{(?P<note>[^}]*)\})?$")
+# AGID's own doubts: «<» a good chance, «~» a slight chance, «!» likely another
+# (similar) word's inflection, «?» not in its word list — and variant level 2, «archaic,
+# hardly ever used, extremely obscure, or no evidence found». Holes beat wrong forms: all
+# drop. «<» is a GUESS too, and in the reduced vocabulary it is nearly always another
+# word's form (belief → «believes», fax → «faces», reef → «reeves», measured on the #317
+# review: a handful of right ones, «canvasses», against «prices», «motives», «water»).
+AGID_UNSURE = frozenset("~!?<")
+AGID_OBSCURE_LEVEL = 2
+
+
+def verify_digest(path, expected, name):
+    """A pinned source must be the exact file its provenance names."""
+    digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
+    if digest != expected:
+        print(f"Erreur : empreinte inattendue pour {name}\n"
+              f"         attendu {expected}\n"
+              f"         obtenu  {digest}\n"
+              f"         la source a changé : vérifie la version et la licence "
+              f"avant de mettre à jour l'empreinte.", file=sys.stderr)
+        sys.exit(1)
+    return path
+
+
+def read_agid(text, token_re):
+    """AGID infl.txt -> ({(lemma, pos): {feature: {form: preference}}}, guessed keys,
+    stats).
+
+    A form's PREFERENCE is AGID's own: (variant level, place in its slot) — «dreamed,
+    dreamt 1», «people, persons 0.1» — the order a cell's spellings ship in (OANC
+    frequency only breaks ties, e.g. between the American and British spellings a
+    VarCon merge brings together). A spelling equal to the lemma itself stays in
+    another cell only where AGID prefers it (level 0, no sense note: «sheep», «fish»,
+    «run»); filed as a variant («duck {:1}», «cannon 1», «beat 1», «forbid 1.1») it
+    would make the cell's agreement a no-op, and drops.
+
+    Fails closed: a line outside the README's grammar (other than the named
+    AGID_SPECIAL paradigms) or a slot count that does not match its POS is a hard
+    error, never skipped — a misread line would file forms under the wrong cell.
+    Capitalised lemmas are proper names («March», «Polish»), not the common word the
+    game's lowercase vocabulary holds; they are counted and left out."""
+    lexemes, guessed = {}, set()
+    stats = {"special": 0, "proper": 0, "unsure": 0, "obscure": 0, "citation_variant": 0}
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        if not raw.strip():
+            continue
+        m = _AGID_LINE.match(raw)
+        if m is None:
+            raise ValueError(f"AGID ligne {lineno} : hors grammaire : {raw!r}")
+        lemma, pos = m["lemma"], m["pos"]
+        if (lemma, pos) in AGID_SPECIAL:
+            stats["special"] += 1
+            continue
+        slots = m["slots"].split(" | ")
+        if pos == "V" and len(slots) == 3:
+            slots = [slots[0]] + slots  # one past for the tense and the participle
+        if len(slots) != len(AGID_SLOTS[pos]):
+            raise ValueError(f"AGID ligne {lineno} : {len(slots)} cases pour {pos} : "
+                             f"{raw!r}")
+        items = []
+        for feature, slot in zip(AGID_SLOTS[pos], slots):
+            for place, item in enumerate(slot.split(", ")):
+                im = _AGID_ITEM.match(item.strip())
+                if im is None:
+                    raise ValueError(f"AGID ligne {lineno} : forme illisible "
+                                     f"{item!r}")
+                items.append((feature, place, im))
+        if lemma != lemma.lower():
+            stats["proper"] += 1
+            continue
+        if not token_re.match(lemma):
+            continue
+        key = (lemma, AGID_POS[pos])
+        cells = lexemes.setdefault(key, {})
+        cells.setdefault(EN_CITATION[key[1]], {})[lemma] = (0.0, 0)
+        if m["guess"]:
+            guessed.add(key)
+        for feature, place, im in items:
+            form = im["form"].lower()
+            level = float(im["level"] or 0)
+            if set(im["marks"]) & AGID_UNSURE:
+                stats["unsure"] += 1
+                continue
+            if level >= AGID_OBSCURE_LEVEL:
+                stats["obscure"] += 1
+                continue
+            if form == lemma and (level > 0 or im["note"] is not None):
+                stats["citation_variant"] += 1
+                continue
+            if token_re.match(form):
+                forms = cells.setdefault(feature, {})
+                forms[form] = min(forms.get(form, (level, place)), (level, place))
+    return lexemes, guessed, stats
+
+
+def corroborate_agid(lexemes, guessed):
+    """The English twin of Morphalou's mixed-entry cleanup (#131): trusted rows win.
+
+    A GUESSED entry (AGID's `POS?`: «the part-of-speech was not in the part-of-speech
+    database however the inflected forms of the word were found in the word list») is
+    where AGID's wrong paradigms live: «pars V?: parsed | parsing | parses» is parse's,
+    «lowe A?: lower | lowest» is low's, «newspaper V?: newspapers» is the noun's plural
+    read as a verb. So a guessed entry keeps only the forms NO trusted entry already
+    states (its citation aside); it disappears when nothing of its own is left, or when
+    its lemma is itself another trusted word's form. Measured on the #317 A/B: every
+    enumerated wrong attachment goes, while the guessed entries that carry real words
+    of their own (the British «socialise», «scammers», «bartended») stay."""
+    trusted = {}
+    for (lemma, pos), cells in lexemes.items():
+        if (lemma, pos) in guessed:
+            continue
+        for forms in cells.values():
+            for form in forms:
+                trusted.setdefault(form, set()).add(lemma)
+    kept, dropped = {}, {"entries": 0, "rows": 0}
+    for key, cells in lexemes.items():
+        if key not in guessed:
+            kept[key] = cells
+            continue
+        lemma, pos = key
+        if trusted.get(lemma, set()) - {lemma}:
+            dropped["entries"] += 1
+            continue
+        own = {}
+        for feature, forms in cells.items():
+            if feature == EN_CITATION[pos]:
+                own[feature] = dict(forms)
+                continue
+            good = {f: pref for f, pref in forms.items() if f not in trusted}
+            dropped["rows"] += len(forms) - len(good)
+            if good:
+                own[feature] = good
+        if len(own) == 1:  # the citation alone: nothing this entry states itself
+            dropped["entries"] += 1
+            continue
+        kept[key] = own
+    return kept, dropped
+
+
+def complete_adjectives(lexemes):
+    """An adjective needs BOTH degrees attested. AGID files an agent noun as a
+    comparative when no superlative exists («travel A: traveler | travelest?», «see A:
+    seer»); a real gradable adjective has both (bigger / biggest)."""
+    kept, dropped = {}, 0
+    for key, cells in lexemes.items():
+        if key[1] == "adj" and not (cells.get("adj:cmp") and cells.get("adj:sup")):
+            dropped += 1
+            continue
+        kept[key] = cells
+    return kept, dropped
+
+
+# VarCon: the spelling categories that count (American, British -ise, British -ize) and
+# the variant levels that count (preferred, equal, variant — never «seldom», «possible»
+# or «improper»).
+VARCON_CATEGORIES = frozenset("ABZ")
+VARCON_LEVELS = frozenset({"", ".", "v"})
+_VARCON_TAG = re.compile(r"^(?P<cat>[ABZCD_])(?P<level>[.vV\-x]?)$")
+
+
+def read_varcon(text, token_re):
+    """varcon.txt -> ({spelling: frozenset(its variant set)}, stats).
+
+    Only PURE spelling lines join spellings: a line whose annotation restricts it to a
+    sense («check / cheque | bank», «prize / prise | otherwise», «| :1», «(-)») would
+    fuse two words, so it is skipped; a part-of-speech tag («practice / practise |
+    <V>») or a note («-- pl») restricts nothing and is kept. Variant sets are closed
+    transitively (one spelling in two lines is one word)."""
+    parent = {}
+
+    def find(w):
+        parent.setdefault(w, w)
+        while parent[w] != w:
+            parent[w] = parent[parent[w]]
+            w = parent[w]
+        return w
+
+    stats = {"lines": 0, "joined": 0, "sense": 0}
+    for raw in text.splitlines():
+        line = raw.split(" #", 1)[0].rstrip()
+        if not line or line.startswith("#"):
+            continue
+        stats["lines"] += 1
+        body, _sep, notes = line.partition(" | ")
+        pure = all(part.strip().startswith("--")
+                   or all(t.startswith("<") and t.endswith(">") for t in part.split())
+                   for part in notes.split(" | ")) if notes else True
+        if not pure:
+            stats["sense"] += 1
+            continue
+        spellings = []
+        for entry in body.split(" / "):
+            tags, sep, word = entry.partition(": ")
+            if not sep:
+                raise ValueError(f"VarCon : entrée illisible {entry!r} dans {raw!r}")
+            word = word.strip()
+            accepted = False
+            for tag in tags.split():
+                if tag.isdigit():
+                    continue  # a column number
+                tm = _VARCON_TAG.match(tag)
+                if tm is None:
+                    raise ValueError(f"VarCon : étiquette illisible {tag!r} dans {raw!r}")
+                if tm["cat"] in VARCON_CATEGORIES and tm["level"] in VARCON_LEVELS:
+                    accepted = True
+            if accepted and word == word.lower() and token_re.match(word):
+                spellings.append(word)
+        if len(set(spellings)) > 1:
+            stats["joined"] += 1
+            first = find(spellings[0])
+            for other in spellings[1:]:
+                root = find(other)
+                if root != first:
+                    parent[root] = first
+    classes = {}
+    for word in parent:
+        classes.setdefault(find(word), set()).add(word)
+    variants = {word: frozenset(classes[find(word)]) for word in parent}
+    stats["largest"] = max((len(c) for c in classes.values()), default=0)
+    return variants, stats
+
+
+def expand_variants(lexemes, variants):
+    """Every form's spelling variants join its cell («colours» brings «colors»): the
+    British and American filings of one word then have the SAME complete form set,
+    and #146's rule 1 makes them one group. A variant takes the preference of the form
+    it spells, so the two spellings tie and frequency orders them (American first). A
+    line keeps its own spelling on screen — only neighbours are displayed from the
+    table."""
+    added = 0
+    out = {}
+    for key, cells in lexemes.items():
+        grown = {}
+        for feature, forms in cells.items():
+            more = dict(forms)
+            for form, pref in forms.items():
+                for variant in variants.get(form, frozenset()):
+                    more[variant] = min(more.get(variant, pref), pref)
+            added += len(more) - len(forms)
+            grown[feature] = more
+        out[key] = grown
+    return out, added
+
+
+def anc_class(tag):
+    """One Penn tag -> the artifact's coarse POS class (the `dom` gate's vocabulary).
+    A modal is a verb, like French's AUX; a proper noun competes as its own class."""
+    if tag.startswith("VB") or tag == "MD":
+        return "v"
+    if tag in ("NN", "NNS"):
+        return "nc"
+    if tag in ("NNP", "NNPS"):
+        return "np"
+    if tag.startswith("JJ"):
+        return "adj"
+    if tag.startswith("RB") or tag == "WRB":
+        return "adv"
+    if tag in ("IN", "TO"):
+        return "prep"
+    if tag == "CC":
+        return "conj"
+    if tag in ("DT", "PDT", "WDT"):
+        return "det"
+    if tag.startswith(("PRP", "WP")) or tag == "EX":
+        return "pro"
+    if tag == "CD":
+        return "num"
+    if tag == "UH":
+        return "intj"
+    return tag or "?"
+
+
+def read_anc_rows(path):
+    """ANC-all-count.txt -> (surface, POS class, count) rows. Frequency evidence only."""
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for lineno, line in enumerate(f, 1):
+            cols = line.rstrip("\n").split("\t")
+            if len(cols) == 1 and cols[0].startswith("Total words :"):
+                continue  # the file's own footer
+            if len(cols) != 4:
+                raise ValueError(f"ANC ligne {lineno} : 4 colonnes attendues, "
+                                 f"{len(cols)} lues")
+            word, _lemma, tag, count = cols
+            yield word.strip().lower(), anc_class(tag), float(count)
+
+
+def build_rows_en(agid_text, varcon_text, anc_path):
+    """The English deterministic core: the three sources -> the artifact's rows.
+
+    Split from build() for the same reason as build_rows_fr: the reproduction test runs
+    the real path over the cached downloads."""
+    token_re = red.token_pattern("en")
+    lexemes, guessed, stats = read_agid(agid_text, token_re)
+    # The adjective check runs FIRST, so an agent noun AGID filed as a comparative
+    # («stone A: stoner | stonest?») is no trusted form when the guessed entry of the
+    # real word («stoner N?: stoners») is corroborated — and AGAIN after, since
+    # corroboration can take a guessed adjective's degree away.
+    lexemes, before = complete_adjectives(lexemes)
+    lexemes, dropped = corroborate_agid(lexemes, guessed)
+    stats["guessed_entries_dropped"] = dropped["entries"]
+    stats["guessed_rows_dropped"] = dropped["rows"]
+    lexemes, after = complete_adjectives(lexemes)
+    stats["adj_incomplete"] = before + after
+    variants, vstats = read_varcon(varcon_text, token_re)
+    stats.update({f"varcon_{k}": v for k, v in vstats.items()})
+    lexemes, stats["variant_forms"] = expand_variants(lexemes, variants)
+    groups, merge_stats = merge_entries(lexemes, same_lemma=True)
+    stats.update(merge_stats)
+    weight = lexique_weights(read_anc_rows(anc_path), token_re, classify=str)
+    rows = collect_rows(groups, weight)
+    # Sorted by (group, feature, AGID preference, -OANC frequency, form, source lemma,
+    # source POS): the FIRST row of a group cell is its preferred realization, AGID's
+    # own, and frequency only breaks its ties.
+    preference = {}
+    for group, members in groups.items():
+        for _lemma, _pos, cells in members:
+            for feature, forms in cells.items():
+                for form, pref in forms.items():
+                    key = (group, feature, form)
+                    preference[key] = min(preference.get(key, pref), pref)
+    rows.sort(key=lambda r: (r[0], r[3], preference[(r[0], r[3], r[4])], -r[6], r[4],
+                             r[1], r[2]))
+    validate_merge_stats(stats, len(rows), EXPECTED_MERGE_STATS_EN, "#317")
+    validate_rows(rows, EXPECTED_CELLS_EN, EXPECTED_INVENTORY_CELLS_EN,
+                  EXPECTED_SURFACE_LEXEMES_EN, "#317")
+    return rows, stats
+
+
+# The #317 audit, pinned like #131/#132's: the build FAILS when the data under one of
+# these moves, so a source or rule change forces a re-audit. Group keys are opaque
+# (the first surviving entry in AGID order names a merged word: «go:nc» carries the
+# noun AND the verb). (group, feature, expected forms, preferred spelling or None):
+EXPECTED_CELLS_EN = (
+    # irregular verbs, both past slots
+    ("go:nc", "ind:pas", frozenset({"went"}), None),
+    ("go:nc", "par:pas", frozenset({"gone"}), None),
+    ("see:nc", "ind:pas", frozenset({"saw"}), None),
+    ("run:nc", "par:pas", frozenset({"run"}), None),
+    # one verb, two senses, two pasts (AGID's {fib} / {recline}), in AGID's order
+    ("lie:nc", "ind:pas", frozenset({"lay", "lied"}), "lied"),
+    ("leave:nc", "ind:pas", frozenset({"left", "leaved"}), "left"),
+    ("bear:nc", "par:pas", frozenset({"born", "borne"}), "borne"),
+    # irregular and zero plurals; a level-2 variant («leafs») is gone; a TRUE zero form
+    # stays (sheep, run), a zero form filed as a variant does not (duck {:1}, beat 1)
+    ("child:nc", "n:p", frozenset({"children"}), None),
+    ("mouse:nc", "n:p", frozenset({"mice"}), None),
+    ("sheep:nc", "n:p", frozenset({"sheep"}), None),
+    ("fish:nc", "n:p", frozenset({"fish", "fishes"}), "fish"),
+    ("duck:nc", "n:p", frozenset({"ducks"}), None),
+    ("beat:nc", "par:pas", frozenset({"beaten"}), None),
+    ("leaf:nc", "n:p", frozenset({"leaves"}), None),
+    ("person:nc", "n:p", frozenset({"people", "persons"}), "people"),
+    # a «<» guess is gone («believes» is believe's, never belief's plural)
+    ("belief:nc", "n:p", frozenset({"beliefs"}), None),
+    # a level-1 variant stays, after AGID's preferred spelling
+    ("dream:nc", "ind:pas", frozenset({"dreamed", "dreamt"}), "dreamed"),
+    ("forbid:v", "ind:pas", frozenset({"forbade", "forbad"}), "forbade"),
+    # American and British spellings are ONE word (VarCon), the American first (OANC)
+    ("travel:nc", "ind:pas", frozenset({"traveled", "travelled"}), "traveled"),
+    ("color:nc", "n:p", frozenset({"colors", "colours"}), "colors"),
+    ("judgement:nc", "n:s", frozenset({"judgment", "judgement"}), "judgment"),
+    # adjective degree
+    ("good:adj", "adj:cmp", frozenset({"better"}), None),
+    ("big:adj", "adj:cmp", frozenset({"bigger"}), None),
+)
+# A noun and a verb of one spelling are one group, with both paradigms' cells.
+EXPECTED_INVENTORY_CELLS_EN = (
+    ("walk:nc", "base", frozenset({"walk"})),
+    ("walk:nc", "ind:pas", frozenset({"walked"})),
+    ("walk:nc", "ind:pre:3s", frozenset({"walks"})),
+    ("walk:nc", "n:p", frozenset({"walks"})),
+)
+# Homography stays derivable, and the cleanup's wrong attachments stay gone: «parsed»
+# is parse's, never a guessed «pars V?»'s; «lowest» is low's, never «lowe A?»'s; a
+# sense-restricted VarCon pair (cheque | bank, tyre | wheel) never joins the word.
+EXPECTED_SURFACE_LEXEMES_EN = (
+    ("leaves", frozenset({"leaf:nc", "leave:nc"})),
+    ("saw", frozenset({"saw:nc", "see:nc"})),
+    ("better", frozenset({"better:nc", "good:adj", "well:adj"})),
+    ("colour", frozenset({"color:nc"})),
+    ("parsed", frozenset({"parse:v"})),
+    ("lowest", frozenset({"low:adj"})),
+    ("cheque", frozenset({"cheque:nc"})),
+    ("tyre", frozenset({"tyre:nc"})),
+    # «<» guesses are gone, and an agent noun AGID filed as a comparative («stone A:
+    # stoner») no longer outranks the real word's guessed entry
+    ("believes", frozenset({"believe:v"})),
+    ("faces", frozenset({"face:nc"})),
+    ("discusses", frozenset({"discuss:v"})),
+    ("stoners", frozenset({"stoner:nc"})),
+)
+# The build's source facts on the pinned releases.
+EXPECTED_MERGE_STATS_EN = {
+    "proper": 13_180,
+    "unsure": 22_602,
+    "obscure": 274,
+    "citation_variant": 220,
+    "guessed_entries_dropped": 1_862,
+    "guessed_rows_dropped": 1_966,
+    "adj_incomplete": 5_032,
+    "varcon_joined": 12_988,
+    "varcon_sense": 589,
+    "variant_forms": 15_623,
+    "twin_groups": 1_870,
+    "twin_entries": 3_757,
+    "contained_entries": 112,
+    "groups": 84_182,
+    "rows": 245_654,
+}
 
 
 # --- Artifact ---------------------------------------------------------------------
@@ -908,6 +1447,25 @@ def header_lines(lang):
     A derived linguistic resource that names no source is not auditable, and the
     LGPL-LR asks for the notice to travel with the work — so it travels IN the
     artifact, not only in this script."""
+    if lang == "en":
+        return [
+            "# en.forms.tsv.gz — the unified word inventory (#317): lemma grouping, "
+            "duplicate-entry merging, spelling variants, homography and display "
+            "agreement.",
+            "# Built by scripts/build_forms.py (pnpm forms:en). Do not edit by hand.",
+            "#",
+            f"# Lexemes     : {AGID_CREDIT}",
+            f"#               {AGID_URL}",
+            f"#               {AGID_ARCHIVE} sha256:{AGID_SHA256}",
+            f"# Variants    : {VARCON_CREDIT}",
+            f"#               {VARCON_URL} sha256:{VARCON_SHA256}",
+            f"#               Copyright notices of both in "
+            f"{os.path.basename(license_path(lang))}.",
+            f"# POS evidence: {ANC_CREDIT}",
+            f"#               {ANC_URL} sha256:{ANC_SHA256}",
+            "#",
+            "# group<TAB>lemma<TAB>pos<TAB>feature<TAB>form<TAB>dom",
+        ]
     return [
         f"# {lang}.forms.tsv.gz — the unified word inventory (#132/#146): lemma "
         f"grouping, duplicate-entry merging, homography and display agreement.",
@@ -924,13 +1482,14 @@ def header_lines(lang):
     ]
 
 
-def build_rows(lang, csv_text, lexique_path):
-    """The deterministic core: the two sources -> the exact rows the artifact holds.
+def build_rows_fr(csv_text, lexique_path):
+    """The French deterministic core: the two sources -> the exact rows the artifact
+    holds.
 
     Split out of build() so the reproduction test can run the REAL path over the
     cached downloads instead of restating the sort key — a test that mirrors the
     code proves nothing about it."""
-    token_re = red.token_pattern(lang)
+    token_re = red.token_pattern("fr")
     lexemes, stats = read_morphalou(csv_text, token_re)
     groups, merge_stats = merge_entries(lexemes)
     stats.update(merge_stats)
@@ -1034,16 +1593,61 @@ def load_forms(path):
                    {group: frozenset(poses) for group, poses in group_pos.items()})
 
 
+def fetch_english(refresh):
+    """The three pinned English sources -> (infl.txt, varcon.txt, ANC path, licence).
+
+    The licence file is the two copyright sections verbatim — AGID's README
+    «COPYRIGHT AND SOURCE» and VarCon's README «Copyright» — each notice travelling with
+    the exact release it governs (a URL is not a copy)."""
+    agid = verify_digest(bw.fetch(AGID_URL, os.path.join(bw.CACHE_DIR, AGID_ARCHIVE),
+                                  refresh), AGID_SHA256, AGID_ARCHIVE)
+    varcon = verify_digest(bw.fetch(VARCON_URL, os.path.join(bw.CACHE_DIR,
+                                                             "en.varcon.txt"), refresh),
+                           VARCON_SHA256, "varcon.txt")
+    varcon_readme = verify_digest(
+        bw.fetch(VARCON_README_URL, os.path.join(bw.CACHE_DIR, "en.varcon.README"),
+                 refresh), VARCON_README_SHA256, "VarCon README")
+    anc = verify_digest(bw.fetch(ANC_URL, os.path.join(bw.CACHE_DIR, "en.anc.tsv"),
+                                 refresh), ANC_SHA256, "ANC-all-count.txt")
+    import tarfile
+    with tarfile.open(agid, "r:gz") as tar:
+        infl = tar.extractfile(AGID_MEMBER).read().decode("latin-1")
+        agid_readme = tar.extractfile(AGID_README).read().decode("latin-1")
+    # Both releases are Latin-1 («führer» in VarCon); nothing outside ASCII passes the
+    # token rule anyway.
+    varcon_text = open(varcon, encoding="latin-1").read()
+    return infl, varcon_text, anc, english_license(
+        agid_readme, open(varcon_readme, encoding="latin-1").read())
+
+
+def english_license(agid_readme, varcon_readme):
+    """The copyright sections out of the two READMEs; a missing one is a hard error."""
+    sections = []
+    for name, text, marker in (("AGID", agid_readme, "COPYRIGHT AND SOURCE:"),
+                               ("VarCon", varcon_readme, "\nCopyright\n=========")):
+        at = text.find(marker)
+        if at < 0:
+            print(f"Erreur : la section de copyright de {name} est introuvable dans "
+                  f"son README — vérifie la distribution.", file=sys.stderr)
+            sys.exit(1)
+        sections.append(f"==== {name} ====\n\n" + text[at:].strip() + "\n")
+    return "\n\n".join(sections)
+
+
 def build(lang, *, refresh):
     if lang not in FORM_LANGS:
         print(f"Erreur : pas d'inventaire de lexèmes pour '{lang}' "
               f"(langues : {', '.join(FORM_LANGS)}).", file=sys.stderr)
         sys.exit(1)
 
-    csv_text, licence = fetch_morphalou(refresh)
-    lexique = bw.fetch(LEXIQUE_URL,
-                       os.path.join(bw.CACHE_DIR, f"{lang}.lexique.tsv"), refresh)
-    rows, stats = build_rows(lang, csv_text, lexique)
+    if lang == "en":
+        infl, varcon_text, anc, licence = fetch_english(refresh)
+        rows, stats = build_rows_en(infl, varcon_text, anc)
+    else:
+        csv_text, licence = fetch_morphalou(refresh)
+        lexique = bw.fetch(LEXIQUE_URL,
+                           os.path.join(bw.CACHE_DIR, f"{lang}.lexique.tsv"), refresh)
+        rows, stats = build_rows_fr(csv_text, lexique)
     if not rows:
         print(f"Erreur : la source n'a produit aucune forme pour {lang}.",
               file=sys.stderr)
@@ -1056,8 +1660,8 @@ def build(lang, *, refresh):
     # mtime=0 — via GzipFile, since gzip.open does not take it: gzip stamps the clock
     # into its header, so without this an unchanged rebuild produces a byte-different,
     # content-identical blob and dirties the working tree for nothing.
-    # build_lemmas.py / build_wordlist.py still share that wart; fixing them rewrites
-    # their committed artifacts too, so that mechanical sweep remains separate.
+    # build_wordlist.py still has that wart; fixing it rewrites its committed
+    # artifacts too, so that mechanical sweep remains separate.
     with gzip.GzipFile(out_path, "wb", mtime=0) as gz, \
             io.TextIOWrapper(gz, encoding="utf-8") as f:
         for line in header_lines(lang):
@@ -1085,6 +1689,9 @@ def build(lang, *, refresh):
         print(f"          {pos:<5} {e['rows']:>9,} lignes  "
               f"{len(e['lemmas']):>8,} lexèmes  {len(e['forms']):>8,} formes  "
               f"({e['gated']:,} hors-gabarit POS, dom=0)", file=sys.stderr)
+    if lang == "en":
+        report_english(stats, lic_path, out_path)
+        return
     print(f"Nettoyage des entrées mixtes : {stats['rows_dropped']:,} ligne(s) non "
           f"corroborée(s) retirée(s) de {stats['entries_cleaned']:,} entrée(s) "
           f"(origines ⊄ {{morphalou2, lefff, lglexlefff}})", file=sys.stderr)
@@ -1110,9 +1717,36 @@ def build(lang, *, refresh):
     print(out_path)  # stdout: the built file path
 
 
+def report_english(stats, lic_path, out_path):
+    print(f"AGID : {stats['special']} paradigme(s) spécial(aux) écarté(s) par nom, "
+          f"{stats['proper']:,} nom(s) propre(s), {stats['unsure']:,} forme(s) douteuse(s) "
+          f"(< ~ ! ?), {stats['obscure']:,} variante(s) de niveau ≥ {AGID_OBSCURE_LEVEL}, "
+          f"{stats['citation_variant']:,} forme de citation classée en variante",
+          file=sys.stderr)
+    print(f"Entrées devinées (POS?) : {stats['guessed_entries_dropped']:,} entrée(s) et "
+          f"{stats['guessed_rows_dropped']:,} forme(s) déjà dites par une entrée sûre "
+          f"retirées ; adjectifs sans leurs deux degrés : {stats['adj_incomplete']:,}",
+          file=sys.stderr)
+    print(f"VarCon : {stats['varcon_joined']:,} ligne(s) de graphies jointes, "
+          f"{stats['varcon_sense']:,} restreinte(s) à un sens écartée(s), plus grande "
+          f"classe {stats['varcon_largest']} ; {stats['variant_forms']:,} forme(s) "
+          f"ajoutée(s) aux cellules", file=sys.stderr)
+    print(f"Fusion : {stats['twin_groups']:,} groupe(s) de formes identiques "
+          f"({stats['twin_entries']:,} entrées), {stats['contained_entries']:,} "
+          f"inclusion(s) même POS, {stats['groups']:,} groupe(s) après le lemme commun",
+          file=sys.stderr)
+    print(f"Gardes #317 : {len(EXPECTED_CELLS_EN)} cellule(s), "
+          f"{len(EXPECTED_INVENTORY_CELLS_EN)} sentinelle(s), "
+          f"{len(EXPECTED_SURFACE_LEXEMES_EN)} surface(s) homographe(s), "
+          f"{len(EXPECTED_MERGE_STATS_EN)} mesure(s) vérifiées.", file=sys.stderr)
+    print(f"Licences : AGID + VarCon -> {lic_path}", file=sys.stderr)
+    print(f"-> {out_path}", file=sys.stderr)
+    print(out_path)
+
+
 def main():
     p = argparse.ArgumentParser(
-        description="Construit l'inventaire de lexèmes d'une langue (fr) : "
+        description="Construit l'inventaire de lexèmes d'une langue (fr, en) : "
                     "groupement par lemme, homographie et accord d'affichage.")
     p.add_argument("--lang", choices=FORM_LANGS, default="fr")
     p.add_argument("--refresh", action="store_true",

@@ -5,7 +5,10 @@
   - exact ties fall back to static position, deterministically;
   - pass 2 (pairwise round-robin) re-orders pass 1's front, and the merged
     similarity series stays non-increasing so dq quantizes from it;
-  - an English-dominant label is demoted to the tail (code rule, two corpora);
+  - a label the judge says is not a word of the puzzle's language is demoted to the
+    tail and its verdict recorded (French: `french`, English: `english`, #317);
+  - every question is asked in the sentence's language: French byte-for-byte the
+    calibrated requests, English its twin with its own state keys (#317);
   - batching never changes a score; the lean request carries the rubric ONCE in the
     shared state and one short question per candidate;
   - a replay rebuilds the same order from the sidecar and refuses to guess;
@@ -29,13 +32,13 @@ class FakeJudge:
 
     def __init__(self, scores, truth=None, english=()):
         self.scores, self.truth = scores, scores if truth is None else truth
-        self.english = set(english)  # labels the judge calls "not French"
+        self.english = set(english)  # labels the judge calls "not of the language"
         self.usage = {"input_tokens": 0, "output_tokens": 0}
         self.requests = 0
         self.model = "fake"
         self.calls = []
 
-    def french(self, candidates):
+    def in_language(self, candidates, lang):
         self.calls.append(("french", [c.label for c in candidates]))
         return [0.1 if c.label in self.english else 0.9 for c in candidates]
 
@@ -52,7 +55,7 @@ class FakeJudge:
                 for a, b in pairs]
 
 
-CTX = cr.Context("il prit un chat avant de partir.", "chat", "chat")
+CTX = cr.Context("il prit un chat avant de partir.", "chat", "chat", lang="fr")
 
 
 def _cands(labels):
@@ -158,9 +161,9 @@ def test_jev_judge_batches_without_changing_scores_and_sends_the_lean_request(mo
     assert len(seen) == 3  # 3 + 3 + 1
     state, questions = seen[0]
     # the rubric travels ONCE in the shared state; each question names one candidate
-    assert state["consigne"] == cr.SCORE_INSTRUCTIONS and state["phrase"] == CTX.sentence
+    assert state["consigne"] == cr.FRENCH.score_instructions and state["phrase"] == CTX.sentence
     assert set(questions) == {"c0", "c1", "c2"}
-    assert questions["c1"]["criteria"] == cr.SCORE_LEVELS
+    assert questions["c1"]["criteria"] == list(cr.FRENCH.score_levels)
     assert "candidats[1]" in questions["c1"]["instructions"]
 
 
@@ -169,7 +172,7 @@ def test_jev_judge_asks_the_french_question_once_per_front_label(monkeypatch):
     seen = []
     monkeypatch.setattr(judge, "_call", lambda state, qs: seen.append((state, qs)) or
                         {k: {"type": "noul", "noul": 0.15 if "feeling" in qs[k]["instructions"] else 0.9} for k in qs})
-    assert judge.french(_cands(["apparent", "feeling"])) == [0.9, 0.15]
+    assert judge.in_language(_cands(["apparent", "feeling"]), "fr") == [0.9, 0.15]
     assert seen[0][0] == {"mots": ["apparent", "feeling"]} and len(seen[0][1]) == 2
 
 
@@ -192,7 +195,7 @@ def test_replay_rebuilds_the_same_order_and_never_guesses(tmp_path):
     scores = {"chien": 3.0, "félin": 2.9, "minou": 2.8, "tigre": 1.0}
     judge = FakeJudge(scores, {"minou": 2, "félin": 1})
     ranked, rec = cr.rerank(CTX, _cands(list(scores)), judge, pairwise_top=3)
-    path = cr.write_sidecar(str(tmp_path / "p.contextual.json"), model="fake",
+    path = cr.write_sidecar(str(tmp_path / "p.contextual.json"), lang="fr", model="fake",
                             sentence=CTX.sentence, before=(), after=(), records=[rec],
                             usage=judge.usage)
     replay = cr.ReplayJudge(cr.load_sidecar(path))
@@ -202,7 +205,7 @@ def test_replay_rebuilds_the_same_order_and_never_guesses(tmp_path):
     assert [r.similarity for r in again] == pytest.approx([r.similarity for r in ranked])
     with pytest.raises(cr.ContextualError):
         cr.rerank(CTX, _cands(list(scores) + ["loup"]), replay, pairwise_top=0)
-    other = cr.Context(CTX.sentence, "chien", "chien")
+    other = cr.Context(CTX.sentence, "chien", "chien", lang="fr")
     with pytest.raises(cr.ContextualError):
         cr.rerank(other, _cands(list(scores)), replay, pairwise_top=0)
 
@@ -217,7 +220,7 @@ def test_replay_refuses_changed_context_for_scores_and_pairs(tmp_path, change):
     candidates = _cands(["chien", "félin"])
     judge = FakeJudge({"chien": 1.0, "félin": 3.0})
     _, record = cr.rerank(CTX, candidates, judge)
-    path = cr.write_sidecar(str(tmp_path / "scores.json"), model="fake",
+    path = cr.write_sidecar(str(tmp_path / "scores.json"), lang="fr", model="fake",
                             sentence=CTX.sentence, before=(), after=(),
                             records=[record], usage=judge.usage)
     replay = cr.ReplayJudge(cr.load_sidecar(path))
@@ -318,7 +321,7 @@ def test_start_judge_reads_realized_forms_in_each_authoring_path(monkeypatch, au
         return {k: 0.9 if k.startswith("v") else 0.1 for k in questions}
 
     monkeypatch.setattr(judge, "noul", noul, raising=False)
-    ranker = gen_phrase.ContextualRanker(judge, " ".join(words), model="fake")
+    ranker = gen_phrase.ContextualRanker(judge, " ".join(words), model="fake", lang="fr")
     monkeypatch.setattr(gen_phrase, "start_band",
                         lambda _s, merged, _band: [(w, r) for w, r, _ in merged])
     monkeypatch.setattr(gen_phrase.sys, "stdin", SimpleNamespace(fileno=lambda: 0, isatty=lambda: False))
@@ -348,7 +351,8 @@ RANKING = [("chien", 0, 0.9), ("félin", 1, 0.8), ("minou", 2, 0.7), ("côté", 
 
 
 def _ranker(judge):
-    return gen_phrase.ContextualRanker(judge, "il prit un chat avant de partir.", model="fake")
+    return gen_phrase.ContextualRanker(judge, "il prit un chat avant de partir.", model="fake",
+                                       lang="fr")
 
 
 def test_contextual_map_keeps_the_static_groups_and_reorders_them_with_dq_from_the_judge():
@@ -450,7 +454,7 @@ def test_shown_sentence_places_the_word_at_every_occurrence_with_its_affixes():
 def test_start_band_filter_drops_what_does_not_read_as_french_and_keeps_the_rest():
     judge = FilteringJudge({"un chien avant": 0.9, "un courir avant": 0.2, "un beau avant": 0.55})
     band = [("chien", 250), ("courir", 251), ("beau", 252)]
-    kept, removed = cr.filter_start_band(judge, WORDS, [(3, "", "")], band)
+    kept, removed = cr.filter_start_band(judge, WORDS, [(3, "", "")], band, lang="fr")
     assert kept == [("chien", 250), ("beau", 252)]      # 0.55 >= START_FIT_MIN (0.5)
     assert removed == [("courir", 251, 0.2)]
     # the variants are the sentence with each candidate shown at the hole
@@ -462,7 +466,7 @@ def test_hole_candidate_filter_removes_words_whose_blank_breaks_the_sentence():
     judge = FilteringJudge({"mot retiré : « prit »": 0.3, "mot retiré : « chat »": 0.95})
     cands = [{"pos": 1, "secret": "prit", "prefix": "", "suffix": ""},
              {"pos": 3, "secret": "chat", "prefix": "", "suffix": ""}]
-    kept, removed = cr.filter_hole_candidates(judge, WORDS, cands)
+    kept, removed = cr.filter_hole_candidates(judge, WORDS, cands, lang="fr")
     assert [c["secret"] for c in kept] == ["chat"]
     assert removed == [("prit", 0.3)]
     assert judge.noul_calls[0][0]["variantes"][0] == "il _____ un chat avant de partir."
@@ -470,14 +474,15 @@ def test_hole_candidate_filter_removes_words_whose_blank_breaks_the_sentence():
 
 def test_same_concept_returns_one_probability_per_pair():
     judge = FilteringJudge({"« jardin » et « royaume »": 0.48, "« vide » et « refuge »": 0.7})
-    probs = cr.same_concept(judge, " ".join(WORDS), [("jardin", "royaume"), ("vide", "refuge")])
+    probs = cr.same_concept(judge, " ".join(WORDS), [("jardin", "royaume"), ("vide", "refuge")],
+                            lang="fr")
     assert probs == {("jardin", "royaume"): 0.48, ("vide", "refuge"): 0.7}
 
 
 def test_a_replay_judge_cannot_filter_and_the_ranker_steps_aside():
     replay = cr.ReplayJudge({"sentence": "s", "before": [], "after": [], "holes": []})
     assert not cr.can_filter(replay)
-    ranker = gen_phrase.ContextualRanker(replay, "s", model="fake")
+    ranker = gen_phrase.ContextualRanker(replay, "s", model="fake", lang="fr")
     assert ranker.start_band_filter(WORDS, [(3, "", "")]) is None
     cands = [{"pos": 3, "secret": "chat", "prefix": "", "suffix": ""}]
     assert ranker.filter_candidates(WORDS, cands) == cands
@@ -486,7 +491,7 @@ def test_a_replay_judge_cannot_filter_and_the_ranker_steps_aside():
 
 def test_the_ranker_blocks_a_candidate_naming_a_committed_secrets_concept():
     judge = FilteringJudge({"« matou » et « chat »": 0.8, "« avant » et « chat »": 0.05})
-    ranker = gen_phrase.ContextualRanker(judge, " ".join(WORDS), model="fake")
+    ranker = gen_phrase.ContextualRanker(judge, " ".join(WORDS), model="fake", lang="fr")
     cands = [{"pos": 3, "secret": "matou", "prefix": "", "suffix": ""},
              {"pos": 4, "secret": "avant", "prefix": "", "suffix": ""}]
     assert ranker.blocked_by(["chat"], cands) == {3}
@@ -495,7 +500,7 @@ def test_the_ranker_blocks_a_candidate_naming_a_committed_secrets_concept():
 
 def test_an_emptied_band_is_handed_back_whole_with_a_note():
     judge = FilteringJudge({"il prit": 0.1})  # everything reads badly
-    ranker = gen_phrase.ContextualRanker(judge, " ".join(WORDS), model="fake")
+    ranker = gen_phrase.ContextualRanker(judge, " ".join(WORDS), model="fake", lang="fr")
     band = [("chien", 250), ("courir", 251)]
     assert ranker.start_band_filter(WORDS, [(3, "", "")])(band) == band
     assert any("bande entière" in r for r in ranker.reports)
@@ -512,29 +517,122 @@ def test_choose_start_draws_its_default_from_the_filtered_band(monkeypatch):
     assert picked <= {"chien", "beau"}
 
 
-# --- the judge is the DEFAULT for a French sentence (user-decided 2026-09-20) ---------
-def test_a_french_run_without_a_key_dies_before_any_walk_unless_static(monkeypatch, capsys):
+# --- the judge is the DEFAULT for a sentence (fr 2026-09-20, en 2026-09-25, #317) -----
+@pytest.mark.parametrize("lang", ["fr", "en"])
+def test_a_run_without_a_key_dies_before_any_walk_unless_static(monkeypatch, capsys, lang):
     monkeypatch.delenv("JEV_API_KEY", raising=False)
     args = type("A", (), {"contextual_replay": None, "contextual_model": "jev-latest",
                           "before": None, "after": None})()
     with pytest.raises(SystemExit):
-        gen_phrase.build_contextual_ranker(args, "fr", "une phrase", ["a"])
+        gen_phrase.build_contextual_ranker(args, lang, "une phrase", ["a"])
     assert "JEV_API_KEY" in capsys.readouterr().err
-    # --static is the explicit opt-out; en never builds a judge (main's rule)
+    # --static is the explicit opt-out (main's rule)
 
 
-def test_a_replay_on_english_is_refused(capsys):
-    args = type("A", (), {"contextual_replay": "x.json", "contextual_model": "jev-latest",
+def test_an_english_run_builds_an_english_judge_and_another_language_is_refused(monkeypatch, capsys):
+    monkeypatch.setenv("JEV_API_KEY", "k")
+    args = type("A", (), {"contextual_replay": None, "contextual_model": "jev-latest",
                           "before": None, "after": None})()
+    ranker = gen_phrase.build_contextual_ranker(args, "en", "a sentence", ["a"])
+    assert ranker.lang == "en"
     with pytest.raises(SystemExit):
-        gen_phrase.build_contextual_ranker(args, "en", "a sentence", ["a"])
-    assert "français" in capsys.readouterr().err
+        gen_phrase.build_contextual_ranker(args, "de", "ein Satz", ["a"])
+    assert "de" in capsys.readouterr().err
+
+
+# --- English: the same questions in English, with English state keys (#317) -----------
+EN_CTX = cr.Context("the rain fell on the old roof.", "roof", "roof", ("It was late.",), (),
+                    lang="en")
+
+
+def _capturing_judge(monkeypatch):
+    judge = cr.JevJudge("k")
+    seen = []
+
+    def call(state, questions):
+        seen.append((state, questions))
+        out = {}
+        for key, q in questions.items():
+            out[key] = ({"score": 1.0} if q["type"] == "score" else
+                        {"probabilities": {"A": 0.5}} if q["type"] == "choice" else
+                        {"noul": 0.5})
+        return out
+    monkeypatch.setattr(judge, "_call", call)
+    return judge, seen
+
+
+def test_an_english_hole_is_judged_with_the_english_rubric_and_keys(monkeypatch):
+    judge, seen = _capturing_judge(monkeypatch)
+    cands = [cr.Candidate("ceiling:nc", "ceiling", 0), cr.Candidate("attic:nc", "attic", 1)]
+    judge.score(EN_CTX, cands)
+    judge.compare(EN_CTX, [(cands[0], cands[1])])
+    judge.in_language(cands, "en")
+    (score_state, score_qs), (pair_state, pair_qs), (word_state, word_qs) = seen
+    assert score_state["rubric"] == cr.ENGLISH.score_instructions
+    assert score_state["sentence"] == EN_CTX.sentence and score_state["before"] == ["It was late."]
+    assert score_state["secret_lexeme"] == "roof" and score_state["candidates"] == ["ceiling", "attic"]
+    assert "phrase" not in score_state and "consigne" not in score_state
+    assert score_qs["c1"]["instructions"] == "Apply `rubric` to the candidate `candidates[1]` (“attic”)."
+    assert score_qs["c0"]["criteria"] == list(cr.ENGLISH.score_levels)
+    assert pair_state["rubric"] == cr.ENGLISH.pair_instructions
+    assert pair_qs["p0"]["criteria"] == {"A": "“ceiling”", "B": "“attic”"}
+    assert word_state == {"words": ["ceiling", "attic"]} and "English" in word_qs["m0"]["instructions"]
+
+
+def test_every_template_speaks_its_own_state_keys():
+    for lang in cr.LANGUAGES.values():
+        texts = " ".join([lang.score_instructions, lang.pair_instructions, lang.score_question,
+                          lang.pair_question, lang.start_fit_prefix, lang.hole_prefix,
+                          lang.sentence_prefix, lang.word_question[0]]
+                         + [q for q, _t, _f in lang.giveaway_questions.values()])
+        for role in ("sentence", "secret", "lexeme", "before", "after", "candidates",
+                     "rubric", "variants", "words", "sentences", "blanked", "word"):
+            assert f"`{lang.keys[role]}" in texts, (lang.code, role)
+        assert set(lang.sentence_questions) == set(cr.SENTENCE_KEYS)
+        assert set(lang.giveaway_questions) == {"exact", "syn", "colloc"}
+        assert len(lang.score_levels) == 5
+
+
+def test_an_english_front_records_english_verdicts_and_replays_them(tmp_path):
+    judge = FakeJudge({"ceiling": 3.0, "toit": 2.0, "attic": 1.0}, english={"toit"})
+    cands = [cr.Candidate(f"{w}:n", w, i) for i, w in enumerate(["ceiling", "toit", "attic"])]
+    ranked, rec = cr.rerank(EN_CTX, cands, judge, pairwise_top=3)
+    assert "english" in rec and "french" not in rec and rec["demoted"] == ["toit"]
+    path = cr.write_sidecar(str(tmp_path / "e.contextual.json"), lang="en", model="fake",
+                            sentence=EN_CTX.sentence, before=EN_CTX.before, after=(),
+                            records=[rec], usage=judge.usage)
+    assert json.load(open(path))["rubric"] == cr.ENGLISH.rubric
+    again, rec2 = cr.rerank(EN_CTX, cands, cr.ReplayJudge(cr.load_sidecar(path)), pairwise_top=3)
+    assert [r.label for r in again] == [r.label for r in ranked] and rec2["english"] == rec["english"]
+
+
+def test_the_english_filters_and_measures_ask_in_english():
+    judge = FilteringJudge({})
+    words = ["the", "rain", "fell", "on", "the", "old", "roof."]
+    cr.filter_start_band(judge, words, [(6, "", ".")], [("ceiling", 120)], lang="en")
+    cr.filter_hole_candidates(judge, words, [{"pos": 1, "secret": "rain", "prefix": "", "suffix": ""}],
+                              lang="en")
+    cr.same_concept(judge, " ".join(words), [("rain", "roof")], lang="en")
+    cr.score_sentences(judge, [" ".join(words)], lang="en")
+    states = [state for state, _q in judge.noul_calls]
+    assert states[0] == {"variants": ["the rain fell on the old ceiling."]}
+    assert states[1]["variants"] == ["the _____ fell on the old roof."]
+    assert states[2] == {"sentence": "the rain fell on the old roof."}
+    assert states[3] == {"sentences": ["the rain fell on the old roof."]}
+    questions = [q for _s, qs in judge.noul_calls for q, _t, _f in qs.values()]
+    assert questions[0].startswith("For the sentence `variants[0]`: ")
+    assert "word removed: “rain”" in questions[1] and "“rain” and “roof”" in questions[2]
+
+
+def test_an_unknown_language_has_no_judge():
+    with pytest.raises(cr.ContextualError):
+        cr.language("de")
 
 
 # --- the sentence pre-filter (scored on one whole book, 2026-09-20; not yet wired) ------
 def test_score_sentences_asks_the_three_questions_per_sentence_and_keeps_order():
     judge = FilteringJudge({"phrases[0]` : La phrase se comprend": 0.2, "phrases[1]` : La phrase porte": 0.95})
-    scores = cr.score_sentences(judge, ["a b c", "d e f", "g h i"], per_request=2)
+    scores = cr.score_sentences(judge, ["a b c", "d e f", "g h i"], lang="fr", per_request=2)
     assert len(scores) == 3 and set(scores[0]) == {"autonome", "image", "celebre"}
     assert scores[0]["autonome"] == 0.2 and scores[1]["image"] == 0.95
     assert len(judge.noul_calls) == 2 and judge.noul_calls[1][0]["phrases"] == ["g h i"]
@@ -579,7 +677,10 @@ def test_giveaway_is_the_mean_of_the_three_questions_on_the_blanked_sentence():
         def noul(self, state, questions):
             seen.append((state, questions))
             return {"exact": 0.9, "syn": 0.6, "colloc": 0.3}
-    assert cr.giveaway(J(), "le ____ se faisait", "silence") == pytest.approx(0.6)
+    assert cr.giveaway(J(), "le ____ se faisait", "silence", lang="fr") == pytest.approx(0.6)
     assert seen[0][0] == {"phrase_a_trou": "le ____ se faisait", "mot": "silence"}
     assert set(seen[0][1]) == {"exact", "syn", "colloc"}
+    assert cr.giveaway(J(), "the ____ fell", "rain", lang="en") == pytest.approx(0.6)
+    assert seen[1][0] == {"blanked_sentence": "the ____ fell", "word": "rain"}
+    assert seen[1][1] == cr.ENGLISH.giveaway_questions
     assert 0 < cr.GIVEAWAY_MAX < 1

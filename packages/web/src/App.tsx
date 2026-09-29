@@ -200,7 +200,9 @@ export default function App() {
         {!blocked && route.view === 'groupInvite' && (
           <GroupInvite groupId={route.groupId} lang={homeLang} />
         )}
-        {!blocked && route.view === 'archive' && <Archive lang={route.lang} />}
+        {/* Keyed by language: each language has its own first day (#317), so switching
+            language remounts the calendar on a month its range holds. */}
+        {!blocked && route.view === 'archive' && <Archive key={route.lang} lang={route.lang} />}
         {/* The tutorial (#269): the list of levels, and one level's lesson on its own route. */}
         {!blocked && route.view === 'learn' && <Learn lang={route.lang} />}
         {!blocked && route.view === 'lesson' && (

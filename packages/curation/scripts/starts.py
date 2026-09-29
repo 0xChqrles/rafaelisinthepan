@@ -1,7 +1,8 @@
-"""The start word must leave the displayed sentence valid French (user rule
-2026-09-06: « l'effet », never « le effet »). Pure helpers: the displayed sentence, the
-mechanical elision rule, the band candidates a re-pick chooses from. The grammar
-judgement itself is the model's (`llm.grammar_check`).
+"""The start word must leave the displayed sentence valid in its language (user rule
+2026-09-06: « l'effet », never « le effet »; in English, an effect, never a effect —
+#317). Pure helpers: the displayed sentence, the one mechanical rule of each language
+(French elision, the English article), the band candidates a re-pick chooses from. The
+grammar judgement itself is the model's (`llm.grammar_check`).
 """
 
 import _paths  # noqa: F401
@@ -16,7 +17,7 @@ _VOWELS = "aeiouàâäéèêëíìîïóòôöúùûüœæ"
 # Initials whose elision the letter does not decide (« l'homme », « le hasard »; « le yaourt »,
 # « l'yeuse »): left to the model's grammar check.
 _MODEL_JUDGED = "hy"
-_PUNCT = "«»\"'’“”(),.;:!?…"
+_PUNCT = "«»\"'‘’“”(),.;:!?…"
 # Re-pick rounds before the run gives the start up to the reviewer.
 START_ROUNDS = 3
 # Candidates shown to the model for one re-pick.
@@ -60,11 +61,46 @@ def elision_problem(prev: str, word: str) -> str | None:
     return None
 
 
+# English's twin of elision (#317): « a » before a consonant SOUND, « an » before a vowel
+# sound — sounds, not letters, decide (an hour, a university, a one-off, a euro, an x-ray,
+# an FBI agent). The letters make it certain only here: after « a », an initial a or i,
+# an e not led into a « you » sound (eu, ew), an o not led into a « w » sound (one, once,
+# oui); after « an », an initial whose own name starts with a consonant sound too (b, c,
+# d…: read as a word or spelled as letters, it takes « a »). The rest — h, u, y, the
+# letters an acronym spells — is the model's.
+_A_BEFORE = "aeio"
+_A_UNSURE = ("eu", "ew", "one", "once", "oui")
+_AN_BEFORE = "bcdgjkpqtvwz"
+
+
+def article_problem(prev: str, word: str) -> str | None:
+    """The one article rule code can apply with certainty, off the letters."""
+    if not word:
+        return None
+    p = prev.lower().strip(_PUNCT)
+    w = word.lower()
+    if p == "a" and w[0] in _A_BEFORE and not w.startswith(_A_UNSURE):
+        return f"« {prev} {word} »: « {word} » opens on a vowel sound, it takes « an »"
+    if p == "an" and w[0] in _AN_BEFORE:
+        return f"« {prev} {word} »: « {word} » opens on a consonant sound, it takes « a »"
+    return None
+
+
+# The rule the letters decide, per language.
+_LETTER_RULES = {"fr": elision_problem, "en": article_problem}
+
+
+def letter_problem(prev: str, word: str, lang: str) -> str | None:
+    """What the language's mechanical rule refuses in « prev word »: French elision, the
+    English article. None when the letters leave nothing certain."""
+    return _LETTER_RULES[lang](prev, word)
+
+
 def start_candidates(rank_map: dict, secret_slug: str, prev: str, exclude=(),
-                     frequency_rank=lambda word: None) -> list[dict]:
+                     frequency_rank=lambda word: None, *, lang: str) -> list[dict]:
     """The band's words for one hole (rank START_BAND, 100-200 on every map since
     2026-09-24 — one per display word, no variant of the secret, not too rare) that
-    pass the elision rule, nearest first: [{word, rank}].
+    pass the language's letter rule (`letter_problem`), nearest first: [{word, rank}].
     `frequency_rank(word)` reads the corpus order (None = unknown, kept)."""
     seen: set[str] = set()
     out = []
@@ -76,7 +112,7 @@ def start_candidates(rank_map: dict, secret_slug: str, prev: str, exclude=(),
             continue
         if is_variant(slug(word), secret_slug) or word in exclude:
             continue
-        if elision_problem(prev, word) is not None:
+        if letter_problem(prev, word, lang) is not None:
             continue
         freq = frequency_rank(word)
         if freq is not None and freq > MAX_START_FREQ_RANK:

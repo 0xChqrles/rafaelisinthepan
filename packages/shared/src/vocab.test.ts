@@ -28,7 +28,7 @@ describe('vocab metadata (#200)', () => {
   it('names the corpus build each set came from', () => {
     // Not "the file": the raw source and its _reduced output answer the same name, so the
     // record cannot depend on which command last refreshed the set.
-    expect(VOCAB_BUILDS.en.embedding).toBe('glove.6B.300d');
+    expect(VOCAB_BUILDS.en.embedding).toBe('cc.en.300');
     expect(VOCAB_BUILDS.fr.embedding).toBe('cc.fr.300');
     for (const build of Object.values(VOCAB_BUILDS)) {
       expect(build.builtAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);

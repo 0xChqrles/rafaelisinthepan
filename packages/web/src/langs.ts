@@ -167,15 +167,15 @@ function isCalendarDate(s: string): boolean {
 }
 
 // Range bounds for date deep-links, injected so parsing stays pure/testable. `firstDate`
-// defaults to the launch const; `activeDate` is the client's active game day (the caller
-// passes it) — omitted, the future bound is not enforced (used by shape-only tests).
+// defaults to the language's first day (config); `activeDate` is the client's active game
+// day (the caller passes it) — omitted, the future bound is not enforced (used by
+// shape-only tests).
 export interface RouteBounds {
   firstDate?: string;
   activeDate?: string;
 }
 
 export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
-  const firstDate = bounds.firstDate ?? FIRST_PUZZLE_DATE;
   const segs = pathname.replace(/^\/+/, '').replace(/\/+$/, '').split('/');
   const [seg, second, third] = segs;
   if (seg === 'profile') return { view: 'profile' };
@@ -199,6 +199,7 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   // header title opens the selection drums (`PuzzleSelect`), so a page of its own answered
   // a question every page already answers. It falls through to `home` like `/mode`.
   if (!isLang(seg)) return { view: 'home' };
+  const firstDate = bounds.firstDate ?? FIRST_PUZZLE_DATE[seg];
 
   // A dated deep link is honored only when it is a real calendar date within range; a
   // date-SHAPED segment that is malformed OR out of range is treated as unknown -> home

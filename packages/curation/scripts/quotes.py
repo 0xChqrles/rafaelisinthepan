@@ -1,10 +1,10 @@
 """Which lines of a work are QUOTED — the famous-line test as a QUOTATION test, never a
 memory test (user-decided 2026-09-08). The model has memorised every line of a canonical
 book, which says nothing about what a reader knows; what a reader knows is on record:
-the author's Wikiquote page and the work's Wikipedia article are where a French reader
-meets a line without opening the book. `shelf_quotes.py` fetches those onto the shelf;
-this module extracts the quoted lines from the raw wikitext and matches a candidate unit
-against them. Stdlib only, tested; the curator never touches the network.
+the author's Wikiquote page and the work's Wikipedia article, in the language of the
+day, are where a reader meets a line without opening the book. `shelf_quotes.py` fetches
+those onto the shelf; this module extracts the quoted lines from the raw wikitext and
+matches a candidate unit against them. Stdlib only, tested; the curator never touches the network.
 """
 
 from pathlib import Path
@@ -13,37 +13,65 @@ import re
 import _paths
 from slug import slug
 
-QUOTES_DIR = _paths.SHELF_DIR / "quotes"
 # A quoted line shorter than this is an aphorism fragment or a title, matched by chance
 # too easily; skipped.
 MIN_QUOTE_WORDS = 5
 # A candidate is OUT when it shares this share of the SHORTER side's CONTENT words, in
 # order, with a quoted line — and at least QUOTE_MIN_WORDS of them (a quote can be the
 # first sentence of a two-sentence unit, or a unit the first half of a long quote).
-# Content words only: French function words fall in the same order in any two sentences
-# about anything, and « je ne sais pas si … veut dire … » is not a quotation of Camus.
+# Content words only: function words fall in the same order in any two sentences about
+# anything, and « je ne sais pas si … veut dire … » is not a quotation of Camus. One list
+# per language, as slugs.
 QUOTE_MATCH = 0.6
 QUOTE_MIN_WORDS = 4
-_STOPWORDS = frozenset((
-    "a au aux avec ce ces cet cette c d dans de des du elle elles en et eux il ils je j l la "
-    "le les leur leurs lui ma mais me mes moi mon ne ni nos notre nous on ou où par pas pour "
-    "qu que qui sa se ses si son sur ta te tes toi ton tu un une vos votre vous y est etait "
-    "ete etre suis es sont sera serait ai as avons avez ont avait avoir fut plus tres tout "
-    "toute tous toutes comme bien peu meme aussi donc alors car ici cela ca ceci"
-).split())
+_STOPWORDS = {
+    "fr": frozenset((
+        "a au aux avec ce ces cet cette c d dans de des du elle elles en et eux il ils je j l la "
+        "le les leur leurs lui ma mais me mes moi mon ne ni nos notre nous on ou où par pas pour "
+        "qu que qui sa se ses si son sur ta te tes toi ton tu un une vos votre vous y est etait "
+        "ete etre suis es sont sera serait ai as avons avez ont avait avoir fut plus tres tout "
+        "toute tous toutes comme bien peu meme aussi donc alors car ici cela ca ceci"
+    ).split()),
+    "en": frozenset((
+        "a an the and or but nor of to in on at by for from with into about as than so if "
+        "then that this these those there here it its he him his she her they them their we "
+        "us our you your i me my mine who whom whose which what when where why how not no "
+        "is are was were be been being am has have had do does did will would shall should "
+        "can could may might must very more most much all any some such only just also too "
+        "even well dont didnt doesnt isnt wasnt cant wont im ive youre theyre thats"
+    ).split()),
+}
+# The templates a page quotes with, per language — {name: the parameter holding the
+# quote, else the first positional one}: French Wikiquote's {{citation}}, used by
+# fr.wikipedia too; English Wikipedia's block quotes.
+QUOTE_TEMPLATES = {
+    "fr": {"citation": "citation"},
+    "en": {"quote": "text", "blockquote": "text", "quotation": "text", "cquote": "text",
+           "quote box": "quote"},
+}
 
 # Name particles that two different people share.
 _NAME_PARTICLES = frozenset({"de", "du", "la", "le", "les", "von", "van", "der", "as", "and", "et"})
 
 
 def same_person(a: str, b: str) -> bool:
-    """Two author strings name the same person when they share a real name part
-    (`Camus, Albert` / `Albert Camus`; never on a particle alone)."""
+    """Two author strings name the same person when every real name part of the shorter
+    one is in the longer (`Camus, Albert` / `Albert Camus`, `Machado de Assis` / `Joaquim
+    Maria Machado de Assis`; particles and initials aside), or — a given name
+    transliterated two ways, `Fiodor` / `Fédor Dostoïevski`, `Léon` / `Lev Tolstoï` — when
+    the family names (the last part, natural order) are one and the given names share
+    their initial. One shared part is not a person: `Charles Parish` is not `Charles
+    Dickens`, `Jean Rolin` not `Jean Racine`."""
 
-    def parts(text: str) -> set[str]:
-        return {slug(w) for w in re.split(r"[\s,()\-]+", text)} - {""} - _NAME_PARTICLES
+    def parts(text: str) -> list[str]:
+        words = [slug(w) for w in re.split(r"[\s,()\-.]+", text)]
+        return [w for w in words if len(w) >= 3 and w not in _NAME_PARTICLES]
 
-    return bool({p for p in parts(a) if len(p) >= 3} & parts(b))
+    la, lb = parts(a), parts(b)
+    shorter, longer = sorted((set(la), set(lb)), key=len)
+    if shorter and shorter <= longer:
+        return True
+    return bool(la and lb) and la[-1] == lb[-1] and la[0][0] == lb[0][0]
 
 
 # ---------------------------------------------------------------------------
@@ -83,11 +111,14 @@ def template_params(wikitext: str, start: int) -> tuple[list[str], int]:
     return params, len(wikitext)
 
 
-def template_bodies(wikitext: str, name: str = "citation") -> list[str]:
-    """The quote of every `{{citation|...}}` template: its `citation=` parameter, else its
-    first positional one. Raw wikitext, in page order."""
+def template_bodies(wikitext: str, templates: dict[str, str]) -> list[str]:
+    """The quote of every quotation template (`{{citation|...}}` in French): its named
+    quote parameter (`citation=`), else its first positional one. Raw wikitext, in page
+    order."""
     out: list[str] = []
-    for m in re.finditer(r"\{\{\s*" + re.escape(name) + r"\s*\|", wikitext, re.I):
+    names = "|".join(re.escape(name) for name in templates)
+    for m in re.finditer(r"\{\{\s*(" + names + r")\s*\|", wikitext, re.I):
+        param = templates[m.group(1).lower()]
         params, _ = template_params(wikitext, m.end())
         named = {}
         positional = []
@@ -97,7 +128,7 @@ def template_bodies(wikitext: str, name: str = "citation") -> list[str]:
                 named[key.strip().lower()] = value
             else:
                 positional.append(p)
-        body = named.get("citation") if "citation" in named else (positional[0] if positional else "")
+        body = named.get(param) if param in named else (positional[0] if positional else "")
         body = (body or "").strip()
         if body:
             out.append(body)
@@ -113,6 +144,7 @@ def clean_markup(text: str) -> str:
     text = re.sub(r"<[^>]+>", "", text)
     for _ in range(3):  # inner templates, a few levels deep
         text = re.sub(r"\{\{[^{}]*\}\}", " ", text)
+    text = re.sub(r"\[(?:https?:)?//\S+\s*([^\]]*)\]", r"\1", text)  # an external link: its label
     text = re.sub(r"\[\[[^\]|]*\|([^\]]*)\]\]", r"\1", text)
     text = re.sub(r"\[\[([^\]]*)\]\]", r"\1", text)
     text = re.sub(r"'{2,}", "", text)
@@ -141,12 +173,35 @@ def dedupe_quotes(quotes: list[str]) -> list[str]:
     return out
 
 
-def extract_quotes(wikitext: str, min_words: int = MIN_QUOTE_WORDS) -> list[str]:
-    """Every quoted line of a page, cleaned, deduplicated, in page order: the citation
-    templates (Wikiquote's own shape, used on Wikipedia too) and the « … » spans (how an
-    encyclopedia article quotes an incipit)."""
-    raw = template_bodies(wikitext)
-    raw += re.findall(r"«\s*(.+?)\s*»", wikitext, flags=re.S)
+def _without_tags(wikitext: str) -> str:
+    """Refs, comments and tags out, so a straight quote in an attribute (`<ref name="…">`)
+    never opens a span."""
+    text = re.sub(r"<!--.*?-->", " ", wikitext, flags=re.S)
+    text = re.sub(r"<ref[^>]*/>", " ", text, flags=re.I)
+    text = re.sub(r"<ref[^>]*>.*?</ref>", " ", text, flags=re.S | re.I)
+    return re.sub(r"<[^>]+>", " ", text)
+
+
+# A page reference closing an English Wikiquote line: « … (p. 11) », « … (pp. 4-5) ».
+_PAGE_REF = re.compile(r"\s*\((?:p|pp|ch|chapter)\b\.?[^)]*\)\s*$", re.I)
+
+
+def extract_quotes(wikitext: str, lang: str, *, wikiquote: bool = False,
+                   min_words: int = MIN_QUOTE_WORDS) -> list[str]:
+    """Every quoted line of a page, cleaned, deduplicated, in page order: the quotation
+    templates (French Wikiquote's own shape, used on Wikipedia too), the spans between
+    the language's quotation marks (how an encyclopedia article quotes an incipit: « … »
+    in French, “…” and "…" in English) and, on an English Wikiquote page, every top-level
+    `* ` bullet — how it files a quote, its source in a `** ` sub-bullet below."""
+    raw = template_bodies(wikitext, QUOTE_TEMPLATES[lang])
+    if lang == "fr":
+        raw += re.findall(r"«\s*(.+?)\s*»", wikitext, flags=re.S)
+    else:
+        text = _without_tags(wikitext)
+        if wikiquote:
+            raw += [_PAGE_REF.sub("", line) for line in re.findall(r"^\*(?!\*)\s*(.+)$", text, flags=re.M)]
+        raw += re.findall(r"“\s*([^”\n]+?)\s*”", text)
+        raw += re.findall(r'"\s*([^"\n]+?)\s*"', text)
     cleaned = [clean_markup(r) for r in raw]
     return dedupe_quotes([q for q in cleaned if word_count(q) >= min_words])
 
@@ -154,9 +209,9 @@ def extract_quotes(wikitext: str, min_words: int = MIN_QUOTE_WORDS) -> list[str]
 # ---------------------------------------------------------------------------
 # The test
 
-def _words(text: str) -> list[str]:
-    """The content words of a line, as slugs — function words out."""
-    return [s for s in (slug(w) for w in text.split()) if s and s not in _STOPWORDS]
+def _words(text: str, lang: str) -> list[str]:
+    """The content words of a line, as slugs — the language's function words out."""
+    return [s for s in (slug(w) for w in text.split()) if s and s not in _STOPWORDS[lang]]
 
 
 def in_order_hits(short: list[str], long: list[str]) -> int:
@@ -172,13 +227,13 @@ def in_order_hits(short: list[str], long: list[str]) -> int:
     return hits
 
 
-def quoted(unit: str, quotes: list[str]) -> str | None:
+def quoted(unit: str, quotes: list[str], *, lang: str) -> str | None:
     """The quoted line the unit is (or contains, or is contained by), else None."""
-    uw = _words(unit)
+    uw = _words(unit, lang)
     if not uw:
         return None
     for q in quotes:
-        qw = _words(q)
+        qw = _words(q, lang)
         if len(qw) < MIN_QUOTE_WORDS:
             continue
         short, long = (qw, uw) if len(qw) <= len(uw) else (uw, qw)
@@ -189,14 +244,18 @@ def quoted(unit: str, quotes: list[str]) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# The shelf file: shelf/quotes/<work file>.txt — `# source: <page>` lines, then one
-# quote per line. Gitignored with the shelf.
+# The shelf file: shelf/<lang>/quotes/<work file>.txt — `# source: <page>` lines, then
+# one quote per line. Gitignored with the shelf.
 
-def quotes_file(work_file: str, root: Path = QUOTES_DIR) -> Path:
+def quotes_dir(lang: str) -> Path:
+    return _paths.shelf_dir(lang) / "quotes"
+
+
+def quotes_file(work_file: str, root: Path) -> Path:
     return root / f"{work_file}.txt"
 
 
-def save_quotes(work_file: str, quotes: list[str], sources: list[str], root: Path = QUOTES_DIR) -> Path:
+def save_quotes(work_file: str, quotes: list[str], sources: list[str], root: Path) -> Path:
     path = quotes_file(work_file, root)
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [f"# source: {s}" for s in sources] + [" ".join(q.split()) for q in quotes]
@@ -204,7 +263,7 @@ def save_quotes(work_file: str, quotes: list[str], sources: list[str], root: Pat
     return path
 
 
-def quote_sources(work_file: str, root: Path = QUOTES_DIR) -> list[str]:
+def quote_sources(work_file: str, root: Path) -> list[str]:
     """The pages a work's quotes came from — none means the fetch ran and found no page,
     which the curator says out loud rather than reading as 'nothing quoted'."""
     path = quotes_file(work_file, root)
@@ -214,7 +273,7 @@ def quote_sources(work_file: str, root: Path = QUOTES_DIR) -> list[str]:
             if line.startswith("# source:")]
 
 
-def load_quotes(work_file: str, root: Path = QUOTES_DIR) -> list[str] | None:
+def load_quotes(work_file: str, root: Path) -> list[str] | None:
     """The quoted lines on file for a work; None when the fetch never ran for it."""
     path = quotes_file(work_file, root)
     if not path.exists():

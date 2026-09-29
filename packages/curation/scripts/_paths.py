@@ -13,7 +13,7 @@ REPO_ROOT = CURATION_DIR.parent.parent
 GENERATION_DIR = REPO_ROOT / "packages" / "generation"
 GENERATION_SCRIPTS_DIR = GENERATION_DIR / "scripts"
 BENCHMARK_SCRIPTS_DIR = REPO_ROOT / "packages" / "benchmark" / "scripts"
-SHELF_DIR = CURATION_DIR / "shelf"
+SHELF_ROOT = CURATION_DIR / "shelf"
 RUNS_DIR = CURATION_DIR / "runs"
 SKILL_FILE = REPO_ROOT / ".claude" / "skills" / "find-sentences" / "SKILL.md"
 # TASTE has ONE home (2026-09-24): what makes a day worth playing, read whole by every prompt
@@ -25,6 +25,13 @@ GENERATION_OUTPUT_DIR = GENERATION_DIR / "output" / "word"
 # what has been published, and the whole of the curator's archive.
 PUBLISHED_LEDGER = GENERATION_DIR / "published.jsonl"
 VOCAB_DIR = REPO_ROOT / "packages" / "web" / "public" / "vocab"
+
+
+def shelf_dir(lang: str) -> Path:
+    """One shelf per language (#317): shelf/<lang>/, where a work goes by the language of
+    its EDITION (a puzzle's language is its text's, translations included), with its own
+    index.json, quotes/ and artists.txt. The two languages share nothing."""
+    return SHELF_ROOT / lang
 
 for directory in (GENERATION_SCRIPTS_DIR, BENCHMARK_SCRIPTS_DIR):
     path = str(directory)

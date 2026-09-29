@@ -14,8 +14,8 @@
 > undoing it. Implementation detail and product/UX narrative live in the package files.
 
 React + Vite + TypeScript front end; Python generation scripts run via `uv` (wired through
-`pnpm`). Two languages: **en** (Stanford GloVe `glove.6B.300d`) and **fr** (fastText
-`cc.fr.300`). A **pnpm-workspaces monorepo** (`pnpm-workspace.yaml`; pnpm pinned via the
+`pnpm`). Two languages, made the same way (#317): **en** (fastText `cc.en.300`) and **fr**
+(fastText `cc.fr.300`). A **pnpm-workspaces monorepo** (`pnpm-workspace.yaml`; pnpm pinned via the
 root `packageManager` field):
 
 ```
@@ -163,8 +163,9 @@ is applied only to the player's raw keystrokes.
   semantics:** secret = `0`; nearest group = `1`; larger = farther. Alias keys share their
   group's rank.
 - **The RANKING PROVIDER may differ by artifact (#308, user-decided 2026-09-19):** a
-  single-word artifact ranks by the static embedding; a French SENTENCE puzzle (BY
-  DEFAULT since 2026-09-20; `--static` opts out) keeps the static walk as retrieval and ORDERS its `TOP_K` groups by
+  single-word artifact ranks by the static embedding; a SENTENCE puzzle (BY DEFAULT: French
+  since 2026-09-20, English since #317, 2026-09-25 — each language asked in its own words;
+  `--static` opts out) keeps the static walk as retrieval and ORDERS its `TOP_K` groups by
   the sense the sentence gives the secret, judged by TypeSafe's hosted Jev model (one
   Score per candidate, then a pairwise round-robin over the front; `dq` from the judge's
   geometry; no blend). Same groups, same keys rule, same schema — the web and the
