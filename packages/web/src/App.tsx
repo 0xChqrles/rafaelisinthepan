@@ -151,8 +151,9 @@ export default function App() {
   const identityScope = useIdentityScopeRevision();
 
   const place = blocked ? null : headerPlace(route, gameSurface, today);
-  // Leaving a lesson by the row IS skipping it: tracked as such, and the onboarding question
-  // is settled so the invitation does not ask again (nothing is recorded as done).
+  // Leaving the PLAYED lesson (level 1) by the row IS skipping it: tracked as such, and the
+  // onboarding question is settled so the invitation does not ask again (nothing is recorded
+  // as done). Leaving an article level is only leaving: it was never the onboarding.
   const leaveLesson = useCallback(() => {
     track('tutorial', { action: 'skip' });
     setOnboarded();
@@ -179,7 +180,7 @@ export default function App() {
                 litLeads={
                   (place === 'archive' && route.view === 'game') || route.view === 'lesson'
                 }
-                leave={route.view === 'lesson' ? leaveLesson : undefined}
+                leave={route.view === 'lesson' && route.level === PLAY_LEVEL ? leaveLesson : undefined}
               />
             }
           />

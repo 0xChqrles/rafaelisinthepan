@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { prefersReducedMotion } from '../hooks/useScramble';
+import { BAYER_8 } from './bayer';
 import { T0, hash3, noise3 } from './noise';
 
 // THE CHARGE METER'S DRAWING (#301, user-decided 2026-09-15: "improve the dithering, make it
@@ -50,17 +51,6 @@ import { T0, hash3, noise3 } from './noise';
 // value at once. Nothing is laid out and nothing here is state: the value it shows is
 // derived like the meter's reading, this only paces its arrival.
 const CELL_PX = 2;
-// prettier-ignore
-const BAYER_8: readonly number[] = [
-   0, 32,  8, 40,  2, 34, 10, 42,
-  48, 16, 56, 24, 50, 18, 58, 26,
-  12, 44,  4, 36, 14, 46,  6, 38,
-  60, 28, 52, 20, 62, 30, 54, 22,
-   3, 35, 11, 43,  1, 33,  9, 41,
-  51, 19, 59, 27, 49, 17, 57, 25,
-  15, 47,  7, 39, 13, 45,  5, 37,
-  63, 31, 55, 23, 61, 29, 53, 21,
-];
 
 // THE FOIL'S SHAPE.
 // The spectrum: the app's inks as one closed loop — cyan (`--hole`), cobalt (`--solve`),

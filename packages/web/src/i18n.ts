@@ -531,18 +531,25 @@ const STRINGS = {
   tutHintChemin: { en: 'A hint: the secret word is a small road, or a way.', fr: 'Un indice : le mot secret est une petite route, ou une voie.' },
   // The lesson's wordless ending: the solved sentence stands, and PLAY graduates into the game.
   tutPlay: { en: 'PLAY', fr: 'JOUER' },
-  // ---- the LEVELS list (#269): the tutorial page, one row per level (tutorial/levels.ts).
+  // ---- the LEVELS list (#269): the tutorial page, one card per level (tutorial/levels.ts).
   learnTitle: { en: 'TUTORIAL', fr: 'TUTORIEL' },
   levelPlayTitle: { en: 'THE GAME', fr: 'LE JEU' },
   levelPlaySub: { en: 'Guess the secret words', fr: 'Deviner les mots secrets' },
   levelDistanceTitle: { en: 'THE DISTANCE', fr: 'LA DISTANCE' },
-  levelDistanceSub: { en: 'How closeness is measured', fr: 'Comment la proximité se mesure' },
+  levelDistanceSub: { en: 'Words as coordinates', fr: 'Des mots en coordonnées' },
   levelMeaningsTitle: { en: 'MANY MEANINGS', fr: 'PLUSIEURS SENS' },
-  levelMeaningsSub: { en: 'One word, several places', fr: 'Un mot, plusieurs places' },
-  levelVectorsTitle: { en: 'UNDER THE HOOD', fr: 'SOUS LE CAPOT' },
-  levelVectorsSub: { en: 'Vectors, and what AIs do with them', fr: 'Les vecteurs, et ce que les IA en font' },
+  levelMeaningsSub: { en: 'One word, one vector', fr: 'Un mot, un seul vecteur' },
+  levelAttentionTitle: { en: 'ATTENTION', fr: 'L’ATTENTION' },
+  levelAttentionSub: { en: 'How a machine reads a sentence', fr: 'Comment une machine lit une phrase' },
+  levelJudgeTitle: { en: 'THE JUDGE', fr: 'LE JUGE' },
+  levelJudgeSub: { en: 'How the game ranks the words', fr: 'Comment le jeu range les mots' },
   levelDone: { en: 'Done', fr: 'Fait' },
   levelSoon: { en: 'SOON', fr: 'BIENTÔT' },
+  // An article level's credits line and its ending: which level of how many, and where the
+  // reader goes once it is read (the next level, else the game).
+  levelOf: { en: 'LEVEL {n} OF {total}', fr: 'NIVEAU {n} SUR {total}' },
+  levelNext: { en: 'NEXT LEVEL', fr: 'NIVEAU SUIVANT' },
+  levelFigure: { en: 'FIG.', fr: 'FIG.' },
   // ---- the game's pre-round gate (2026-08-11; #269 made it an INVITATION): until level 1 is
   // done, LEARN opens it and PLAY skips it; a device with no account keeps PLAY as its
   // deploy button.

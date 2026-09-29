@@ -7439,101 +7439,919 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
 }
 
-/* ===================== the tutorial's LEVELS (#269) ===================== */
-/* The list of levels: the board column's width, one row per level in the device list's
-   dress (glass, hairline, uppercase mono), read top-down under the header. */
+/* ===================== the tutorial's LEVELS (#269; re-dressed 2026-09-29) ===================== */
+/* THE LEVELS AS CARDS: the page has nothing else to show, so each level wears its
+   illustration (tutorial/art) edge to edge and the pictures fill the screen. Wide: a bento —
+   level 1, the game played, tall on the left, the four articles two by two beside it, the
+   whole grid one screen high. Tablet: level 1 across the top, the articles two by two. Phone:
+   one card under the other. The header's band is the page's top edge, the column the
+   header's own width. */
 .learn {
-  width: min(430px, 100%);
+  width: min(900px, 100%);
   align-self: stretch;
+  max-height: 100%;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  padding-top: 70px;
+  padding: 70px 0 28px;
 }
-.learn-list {
+.learn-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1.3fr 1fr 1fr;
+  grid-template-rows: repeat(2, minmax(210px, 1fr));
+  height: clamp(460px, calc(100vh - 140px), 660px);
+}
+.learn-cell {
+  min-width: 0;
+  min-height: 0;
+}
+.learn-cell.hero {
+  grid-row: span 2;
+}
+.learn-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: #08090d;
+  overflow: hidden;
+  color: var(--fg);
+  font-family: var(--ui);
+  text-align: left;
+  text-shadow: none;
+  cursor: pointer;
+  transition: border-color 0.12s linear;
+}
+.learn-card:hover:not(:disabled) {
+  border-color: var(--line-strong);
+}
+.learn-card .learn-art {
+  position: absolute;
+  inset: 0;
+  transition: filter 0.2s linear;
+}
+.learn-card-top,
+.learn-card-foot {
+  position: relative;
+  z-index: 1;
+  display: flex;
+}
+.learn-card-top {
+  justify-content: space-between;
+  align-items: center;
+}
+.learn-card-foot {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+/* The level's number, in the game's own face, as the article's page numbers its tracks. */
+.learn-no {
+  font-family: var(--pixel-font);
+  font-size: 12px;
+  color: var(--fg);
+}
+.learn-card.done .learn-no {
+  color: var(--accent);
+}
+.learn-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 7px;
+  border-radius: var(--r-sm);
+  background: rgba(5, 5, 7, 0.72);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* The done mark: a small accent square — the app's marker vocabulary (a square, never a
+   circle; 4px is the radius ceiling). */
+.learn-mark {
+  width: 7px;
+  height: 7px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.learn-title {
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+.learn-cell.hero .learn-title {
+  font-size: 22px;
+}
+/* The level to do NEXT: its title wears the invitation's selection box, drawn across it. */
+.learn-card.next .learn-title-text {
+  background: var(--fg);
+  color: var(--bg);
+  padding: 0.04em 0.22em;
+  margin-left: -0.22em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  animation: mark-wipe 320ms steps(8, jump-end) 420ms backwards;
+}
+.learn-sub {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+/* A level not ready in this language: a still, grey picture — the road, not a door. */
+.learn-card.soon {
+  cursor: default;
+}
+.learn-card.soon .learn-art {
+  filter: grayscale(1) brightness(0.5);
+}
+.learn-card.soon .learn-title {
+  color: var(--muted);
+}
+
+/* ONE LEVEL'S ILLUSTRATION: its canvas is the grid of cells, blown up by an exact integer
+   (LevelArt sets the size) with nearest-neighbour scaling — both halves of the pixel-art
+   rule — and pinned to the box's top-left corner so no cell straddles a half pixel. */
+.level-art {
+  position: relative;
+  overflow: hidden;
+}
+.level-art-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  image-rendering: pixelated;
+}
+
+@media (max-width: 900px) {
+  .learn-grid {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: none;
+    height: auto;
+  }
+  .learn-cell {
+    aspect-ratio: 4 / 3;
+  }
+  .learn-cell.hero {
+    grid-row: auto;
+    grid-column: 1 / -1;
+    aspect-ratio: 2.1 / 1;
+  }
+}
+@media (max-width: 640px) {
+  .learn {
+    padding: 58px 0 12px;
+  }
+  .learn-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .learn-cell {
+    aspect-ratio: 16 / 10;
+  }
+  .learn-cell.hero {
+    aspect-ratio: 4 / 3.3;
+  }
+  .learn-cell.hero .learn-title {
+    font-size: 20px;
+  }
+}
+
+/* ===================== an ARTICLE level (2026-09-29) ===================== */
+/* A LEVEL READ, set like the author's article page (chqrles.me): the SLEEVE — the level's
+   illustration, large — then the track number and the title, the credits line, the
+   standfirst; sections opened by a hairline and a numbered cue; figures in their own
+   panels, numbered through the level. The privacy notice's geometry (a column that scrolls
+   itself, pinned to the top of `.app`, the literal header clearance), a little wider for the
+   figures. The prose is the chrome's mono — the app's two voices hold: a word the game would
+   show is quoted in the pixel face, as the coach quotes its own. */
+.article-screen {
+  width: min(680px, 100%);
+  align-self: stretch;
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 64px 2px 72px;
+}
+.article-head {
+  display: flex;
+  flex-direction: column;
+}
+.article-sleeve {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: #08090d;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.article-sleeve .level-art {
+  position: absolute;
+  inset: 0;
+}
+.article-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-top: 26px;
+}
+.article-no {
+  font-family: var(--pixel-font);
+  font-size: 13px;
+  color: var(--accent);
+}
+.article-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+.article-credits {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.article-lead {
+  margin: 22px 0 0;
+  font-size: 16.5px;
+  line-height: 1.65;
+  font-weight: 450;
+  color: var(--fg);
+}
+.article-section {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 30px;
+}
+.article-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 12px 0 0;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.article-cue {
+  font-family: var(--pixel-font);
+  font-size: 10px;
+  letter-spacing: 0;
+  color: var(--accent);
+}
+.article-p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.75;
+  font-weight: 380;
+  color: var(--fg);
+}
+.article-quote {
+  margin: 0;
+  padding: 2px 0 2px 16px;
+  border-left: 2px solid var(--accent);
+}
+.article-quote p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.7;
+  font-weight: 500;
+  color: var(--fg);
+}
+.article-code {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  font-family: var(--ui);
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+.article-terms {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.article-terms > div {
+  display: grid;
+  grid-template-columns: 8.5em 1fr;
+  gap: 12px;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.article-terms dt {
+  font-weight: 650;
+  color: var(--accent);
+}
+.article-terms dd {
+  margin: 0;
+  color: var(--fg);
+}
+/* A numbered run of steps: each number in the pixel face, like the sections' cues, inside
+   the column (a native marker would hang outside it, where the scroller clips). */
+.article-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: step;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.article-steps li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 2.2em 1fr;
+  align-items: baseline;
+  font-size: 15px;
+  line-height: 1.65;
+  font-weight: 380;
+}
+.article-steps li::before {
+  content: counter(step, decimal-leading-zero);
+  font-family: var(--pixel-font);
+  font-size: 9px;
+  color: var(--accent);
+}
+/* AN EXAMPLE SENTENCE is set whole in the pixel face, as the game sets its own: plain words
+   white, the word it is about in the held chip, a hidden word an empty hole. */
+.ar-sentence {
+  font-family: var(--pixel-font);
+  font-size: 12px;
+  line-height: 2.2;
+  color: var(--fg);
+}
+.article-sentence {
+  padding: 14px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.article-sentence p,
+.ar-fig-sentence {
+  margin: 0;
+}
+.ar-held {
+  white-space: nowrap;
+}
+.ar-held-text {
+  padding: 0.13em 0.2em;
+  background: var(--fg);
+  color: var(--bg);
+}
+.article-p .ar-held,
+.article-lead .ar-held,
+.ar-fig-caption .ar-held {
+  font-family: var(--pixel-font);
+  font-size: 0.82em;
+}
+.ar-rank {
+  margin-left: 2px;
+  font-family: var(--pixel-font);
+  font-size: 0.62em;
+  color: var(--rank-color);
+}
+.ar-word {
+  font-family: var(--pixel-font);
+  font-size: 0.82em;
+  white-space: nowrap;
+}
+.ar-blank {
+  display: inline-block;
+  width: 4.5em;
+  height: 1.25em;
+  vertical-align: -0.3em;
+  border: 2px solid var(--hole);
+}
+.ar-term {
+  font-weight: 650;
+}
+
+/* THE FIGURES — each in its own panel, the caption under it: its number, then what it shows. */
+.ar-fig {
+  margin: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ar-fig-body {
+  padding: 20px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: #0a0b10;
+}
+.ar-fig-caption {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.ar-fig-no {
+  margin-right: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--fg);
+}
+.ar-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 22px;
+  margin-bottom: 14px;
+}
+.ar-tab {
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ar-tab.on {
+  color: var(--fg);
+  border-bottom-color: var(--fg);
+}
+/* The plane: grid, edges, words as squares — the focus word in the accent. */
+.ar-plane-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.ar-grid {
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 1;
+}
+.ar-edge {
+  stroke: var(--muted);
+  stroke-width: 1.3;
+}
+.ar-edge-label rect {
+  fill: #0a0b10;
+}
+.ar-edge-label text {
+  fill: var(--fg);
+  font-family: var(--ui);
+  font-size: 15px;
+  font-weight: 500;
+}
+.ar-point rect {
+  fill: var(--fg);
+}
+.ar-point text {
+  fill: var(--fg);
+  font-family: var(--pixel-font);
+  font-size: 13px;
+}
+.ar-point.focus rect,
+.ar-point.focus text {
+  fill: var(--accent);
+}
+/* Bars: they grow in when the figure comes on screen, one after the other. */
+.ar-bars {
+  display: grid;
+  gap: 12px;
+}
+.ar-bar-row {
+  display: grid;
+  grid-template-columns: 7.2em 1fr 3.6em;
+  align-items: center;
+  gap: 12px;
+}
+.ar-bar-word {
+  font-family: var(--pixel-font);
+  font-size: 10.5px;
+}
+.ar-bar-track {
+  height: 10px;
+}
+.ar-bar {
+  display: block;
+  height: 100%;
+  width: calc(var(--w) * 100%);
+  background: var(--muted);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1) calc(var(--i) * 70ms);
+}
+.ar-bars.seen .ar-bar {
+  transform: scaleX(1);
+}
+.ar-bar-value {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* The loop: the steps lit one after the other. */
+.ar-loop {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
+  gap: 6px;
+}
+.ar-loop-step {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-size: 13.5px;
+  color: var(--muted);
+  transition: color 0.15s linear, border-color 0.15s linear, background-color 0.15s linear;
+}
+.ar-loop-step.lit {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--fg);
+}
+.ar-loop-no {
+  font-family: var(--pixel-font);
+  font-size: 9px;
+}
+.ar-loop-back {
+  text-align: center;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+}
+/* Word lists: each word a small tile in the pixel face; a marked word wears the heat ramp's
+   end its tone names. */
+.ar-fig-sentence {
+  margin-bottom: 16px;
+  font-size: 11px;
+}
+.ar-lists.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 20px;
+}
+.ar-list-label {
+  margin: 0 0 10px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ar-list-words {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ar-list-words li {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-family: var(--pixel-font);
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+.ar-list-words li.marked.wrong {
+  color: #ff3d2e;
+  border-color: rgba(255, 61, 46, 0.45);
+}
+.ar-list-words li.marked.right {
+  color: var(--solve);
+  border-color: color-mix(in srgb, var(--solve) 55%, transparent);
+}
+/* A real neighbourhood: the secret's chip, then rank by rank, every rank in its heat. */
+.ar-ranks-secret {
+  margin: 0 0 16px;
+  font-family: var(--pixel-font);
+  font-size: 12px;
+}
+.ar-ranks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 9px 18px;
+}
+.ar-ranks-list li {
+  display: flex;
+  align-items: baseline;
   gap: 10px;
 }
-.learn-row {
+.ar-ranks-no {
+  min-width: 2.6em;
+  text-align: right;
+  font-family: var(--pixel-font);
+  font-size: 9px;
+  color: var(--rank-color);
+}
+.ar-ranks-word {
+  font-family: var(--pixel-font);
+  font-size: 10.5px;
+}
+.ar-ranks-gap {
+  margin: 10px 0;
+  color: var(--muted);
+}
+/* Attention's arcs, drawn in when the figure arrives, thicker for a larger share. */
+.ar-arcs-svg {
+  display: block;
   width: 100%;
+  height: 92px;
+  overflow: visible;
+}
+.ar-arc {
+  fill: none;
+  stroke: var(--fg);
+  stroke-width: calc(1.2px + var(--w) * 4px);
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  transition: stroke-dashoffset 900ms cubic-bezier(0.4, 0, 0.2, 1) calc(var(--i) * 140ms);
+}
+.ar-arcs.seen .ar-arc {
+  stroke-dashoffset: 0;
+}
+.ar-tokens {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+.ar-token {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 14px;
-  padding: 12px 14px;
+  gap: 8px;
+  min-width: 0;
+}
+.ar-token-word {
+  padding: 3px 5px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.ar-token.focus .ar-token-word {
+  background: var(--fg);
+  color: var(--bg);
+  font-weight: 650;
+}
+.ar-token.after .ar-token-word {
+  color: var(--muted);
+}
+.ar-token.hidden .ar-token-word {
+  color: var(--rail);
+  text-decoration: line-through;
+}
+.ar-token-share {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Two pipelines, row-aligned; where they part ways, the accent. */
+.ar-flow {
+  display: grid;
+  gap: 16px 12px;
+}
+.ar-flow-name {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--muted);
+}
+.ar-flow-step {
+  position: relative;
+  padding: 10px 8px;
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--glass);
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  line-height: 1.4;
+  text-align: center;
+}
+.ar-flow-step:empty {
+  border-color: transparent;
+}
+.ar-flow-step:not(.last):not(:empty)::after {
+  content: '↓';
+  position: absolute;
+  left: 50%;
+  bottom: -15px;
+  translate: -50% 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.ar-flow-step.marked {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* The tournament's top: where the embedding had each word, the share of duels it won, where
+   the tournament puts it — both ranks in the sentence's heat. */
+.ar-tourney {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ar-tourney th[scope='col'] {
+  padding: 0 6px 10px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: right;
+}
+.ar-tourney td,
+.ar-tourney th[scope='row'] {
+  padding: 7px 6px;
+  border-top: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.ar-tourney-word {
+  text-align: left;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.ar-tourney-from,
+.ar-tourney-to {
+  text-align: right;
+  color: var(--rank-color);
+}
+.ar-tourney-to {
+  font-family: var(--pixel-font);
+  font-size: 11px;
+}
+.ar-tourney-win {
+  text-align: right;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ar-tourney-bar {
+  display: inline-block;
+  width: calc(var(--w) * 44px);
+  height: 7px;
+  margin-right: 8px;
+  background: var(--muted);
+  vertical-align: 1px;
+}
+/* THE END: the next level as a card with its picture, the game, and a quiet source line. */
+.article-end {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 44px;
+  padding-top: 28px;
+  border-top: 1px solid var(--line);
+}
+.article-next {
+  display: grid;
+  grid-template-columns: minmax(120px, 40%) 1fr;
+  min-height: 132px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: #08090d;
+  overflow: hidden;
   color: var(--fg);
   font-family: var(--ui);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   text-align: left;
   text-shadow: none;
   cursor: pointer;
-  transition: background-color 0.1s linear, border-color 0.1s linear;
+  transition: border-color 0.12s linear;
 }
-.learn-row:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--fg) 45%, transparent);
+.article-next:hover {
+  border-color: var(--line-strong);
 }
-/* A level not built yet: greyed, not a target. */
-.learn-row:disabled {
-  opacity: 0.45;
-  cursor: default;
+.article-next .article-next-art {
+  height: 100%;
+  min-height: 132px;
 }
-/* The level's number, in the game's own face. */
-.learn-num {
-  flex: 0 0 auto;
-  min-width: 1.4em;
-  font-family: var(--pixel-font);
-  font-size: 14px;
-  color: var(--muted);
-}
-.learn-row.done .learn-num {
-  color: var(--accent);
-}
-.learn-info {
-  flex: 1 1 auto;
-  min-width: 0;
+.article-next-text {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  justify-content: center;
+  gap: 7px;
+  padding: 16px 18px;
 }
-.learn-name {
-  font-weight: 550;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.article-next-label {
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  color: var(--accent);
 }
-.learn-sub {
-  font-size: 9.5px;
-  font-weight: 500;
+.article-next-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.article-next-no {
+  font-family: var(--pixel-font);
+  font-size: 11px;
+  color: var(--muted);
+}
+.article-next-sub {
+  font-size: 10.5px;
   letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-/* The done mark: a small accent square — the app's marker vocabulary (a square, never a
-   circle; 4px is the radius ceiling), where the chevron of a level still to do would sit. */
-.learn-mark {
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  margin: 0 6px;
-  border-radius: 2px;
-  background: var(--accent);
+.article-play {
+  align-self: center;
 }
-.learn-row .ui-icon {
-  flex: 0 0 auto;
+.article-source {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+.article-source a {
   color: var(--muted);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+.article-source a:hover {
+  color: var(--accent);
 }
 @media (max-width: 640px) {
-  .learn {
-    padding-top: 64px;
+  .article-screen {
+    padding: 48px 0 40px;
+  }
+  .article-title-row {
+    margin-top: 20px;
+  }
+  .article-title {
+    font-size: 22px;
+  }
+  .article-lead {
+    font-size: 15.5px;
+  }
+  .article-p,
+  .article-quote p,
+  .article-steps li {
+    font-size: 14.5px;
+  }
+  .ar-fig-body {
+    padding: 16px 12px;
+  }
+  .article-terms > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .ar-token-word {
+    font-size: 11.5px;
+    padding: 2px 3px;
+  }
+  .ar-tourney {
+    font-size: 12px;
+  }
+  .ar-tourney-bar {
+    display: none;
   }
 }
 

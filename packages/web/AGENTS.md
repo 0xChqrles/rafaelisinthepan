@@ -116,10 +116,15 @@
                               `AbortSignal.timeout()` is above the browser floor and throws
                               BEFORE the fetch (it took the #216 bootstrap out on iOS 15)
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
-      tutorial/               the tutorial (#51/#155/#269): Learn.tsx (the levels), Lesson.tsx,
-                              LevelOne.tsx over LessonBoard.tsx, coach.ts (the reactive coach),
-                              levels.ts + data scripts/<lang>.ts (+ <lang>.<word>.json, the
-                              pruned #154 boards it plays on)
+      tutorial/               the tutorial (#51/#155/#269): Learn.tsx (the levels as cards),
+                              Lesson.tsx (dispatch), LevelOne.tsx over LessonBoard.tsx,
+                              coach.ts (the reactive coach), levels.ts + data scripts/<lang>.ts
+                              (+ <lang>.<word>.json, the pruned #154 boards it plays on);
+                              ArticleLevel.tsx (levels 2+, lazy via LazyArticle) over
+                              articles/<lang>.ts (the text, per language; types.ts, Rich.tsx
+                              the inline markup, typeset.ts, figures/); art/ (LevelArt.tsx,
+                              the dithered canvas, and scenes/, one picture per level)
+      components/bayer.ts     the ordered dither's Bayer 8×8 matrix (the meter, the level art)
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       components/strikeArt.ts the three strike sheets and their animation contract (#301: the
                               sentence's holes land them)
@@ -2899,20 +2904,40 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the feedback is the only teacher; the coach speaks on a mistake or a stall, never on
   success.** The MIX demo, the gated keyboard and the prescribed guesses are gone.
   **Routes, not a flag** (`langs.ts`): `/<lang>/learn` is the list (`tutorial/Learn.tsx`),
-  `/<lang>/learn/<n>` a BUILT level's lesson (`tutorial/Lesson.tsx`; an unbuilt or unknown `n`
-  lands on the list). `tutorialOpen` and `?tutorial=1` are gone — the route is the harness.
+  `/<lang>/learn/<n>` a level's lesson when it is READY in that language
+  (`tutorial/Lesson.tsx`; a level not ready there, or an unknown `n`, lands on the list).
+  `tutorialOpen` and `?tutorial=1` are gone — the route is the harness.
   Both are the RULES' place (BOOK lit); on a lesson the lit book still LEADS to the list
   (`HeaderKeys`' `litLeads`, the calendar-over-an-archive-play rule generalized), and any
-  other key leaves the lesson as a SKIP (`App`'s `leaveLesson`: tracked, `setOnboarded`).
-  **The LEVELS** (`tutorial/levels.ts`): 1 THE GAME (built) · 2 THE DISTANCE · 3 MANY MEANINGS
-  · 4 UNDER THE HOOD — each one layer deeper into the core concept (the user's four levels of
-  understanding: the UI and the distance; how the distance is computed; 300 dimensions, a
-  word holding several meanings; the vectors and what AIs do with them). Unbuilt rows are
-  greyed, not tappable, and say SOON; only a BUILT level counts toward the header's badge
-  (`.hk-badge`, `undoneLevels`) — a badge for something nobody can do is a nag. Completion is
-  DEVICE-LOCAL (`lessonsDone`, never on the account) and, for level 1, INFERRED FROM PLAY
-  (see the gate bullet). Replaying a done level is allowed. The row dress is the device
-  list's; the done mark is a small accent SQUARE where the chevron of a level still to do sits.
+  other key leaves LEVEL 1 as a SKIP (`App`'s `leaveLesson`: tracked, `setOnboarded`);
+  leaving an article level is only leaving.
+  **The LEVELS** (`tutorial/levels.ts`; re-cut 2026-09-29 on the user's go-ahead, "the game
+  received some updates since the levels have been decided, so feel free to reorganize
+  them"): 1 THE GAME (played) · 2 THE DISTANCE (words as coordinates: the embedding, how it
+  is learned, cosine, the rank) · 3 MANY MEANINGS (one vector per word; the sentence must be
+  read) · 4 ATTENTION (how a transformer reads: Q/K/V, layers, hidden states, the causal
+  mask) · 5 THE JUDGE (how the game ranks today: Jev's grade per candidate, the 200-word
+  tournament, the foreign-word check, why it is cheap). Levels 2–5 are ARTICLES, not played
+  (user-decided 2026-09-29: "not fully interactive like the first one… more like an article,
+  like the chqrles.me article, but without all the story telling"): the author's published
+  article cut into four, its own sentences and examples, figures redrawn in the app's style
+  (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **Facts follow the CODE
+  where the article and the pipeline differ** (the header of `articles/fr.ts` lists each
+  departure). **Written in French first** (user-decided 2026-09-29: "wait for the article
+  translation… for the moment just create the french version"): a level is READY in a
+  language when its lesson exists there (`Level.duration`, which also carries the reading
+  time the card prints — `levels.test.ts` holds it to the text); elsewhere its card is grey
+  and says SOON. Only a READY level counts toward the header's badge (`.hk-badge`,
+  `undoneLevels(done, lang)`) — a badge for something nobody can do is a nag. Completion is
+  DEVICE-LOCAL (`lessonsDone`, never on the account): level 1 is INFERRED FROM PLAY (see the
+  gate bullet), an article is done once READ TO ITS END (the end block scrolls into view).
+  Replaying a done level is allowed. **The list is a page of CARDS** (2026-09-29, "fill the
+  screen since we have nothing else to display"): each level wears its animated DITHERED
+  illustration (`art/scenes/`, the meter's Bayer 8×8, the app's inks and the heat ramp; ~11
+  fps, only on screen, one still frame under reduced motion) edge to edge, dithered out
+  under its title; number, duration or done mark, title, subtitle; the level to do NEXT
+  wears the invitation's selection box on its title. Wide: level 1 tall on the left, the
+  articles two by two; tablet: level 1 across the top; phone: one card under the other.
   **Stage progress (user-decided 2026-09-17):** the coach dialog shows `n/4` beside it,
   driven by the current stage and `stages.length` in `LevelOne`.
   **LEVEL 1 (`tutorial/LevelOne.tsx` over `LessonBoard.tsx`, one screen, the script's
@@ -3062,7 +3087,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   keep the three events (`start` / `skip` / `finish`). The boards are pruned #154 artifacts
   (`scripts/<lang>.<word>.json`, `prune-word-map.mjs --top 150`; the exact commands in each
   script's header), never published or served; a lesson board touches no `rounds`, no outbox,
-  no server. **Not done, deliberately: levels 2–4** (their rows show the road).
+  no server.
 - **App header — TWO SLOTS (user-decided 2026-08-30, superseding the 2026-08-18
   three-slot finalization recorded below).** The BAND is unchanged — `--glass` +
   hairline + backdrop blur (`components/TopBar.tsx`), full-bleed with one bottom

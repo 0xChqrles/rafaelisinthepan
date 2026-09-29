@@ -85,8 +85,9 @@ export default function HeaderKeys({
   litLeads?: boolean;
   leave?: () => void;
 }) {
-  // The BOOK's badge (#269): how many built tutorial levels this device has not done.
-  const undone = useGameStore((s) => undoneLevels(s.lessonsDone));
+  // The BOOK's badge (#269): how many tutorial levels ready in this language the device has
+  // not done.
+  const undone = useGameStore((s) => undoneLevels(s.lessonsDone, lang));
   const row = useRef<HTMLDivElement>(null);
   const dot = useRef<HTMLSpanElement>(null);
   const hoverDot = useRef<HTMLSpanElement>(null);
@@ -192,7 +193,7 @@ export default function HeaderKeys({
       {key('archive', t(lang, 'ariaArchive'), pathForArchive(lang), CalendarIcon)}
       {key('board', t(lang, 'ariaLeaderboard'), pathForBoard(lang), BoardIcon)}
       {/* The RULES — the tutorial's list of levels (#269), lit on it and on a lesson; the badge
-          counts the built levels this device has not done. */}
+          counts the levels ready in this language that this device has not done. */}
       {key(
         'rules',
         undone > 0 ? `${t(lang, 'ariaHelp')} (${undone})` : t(lang, 'ariaHelp'),
