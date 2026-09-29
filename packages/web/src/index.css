@@ -1505,6 +1505,12 @@ input {
 .phrase-intro .hole-rank {
   animation: rank-pop 0.4s ease-out var(--at, 0ms) backwards;
 }
+/* THE MORPH (the tutorial's stage change, Phrase's `morphFrom`): nothing is hidden — every
+   letter churns from the first frame (DecodeWord, Hole's `enter`) and settles, as a word
+   update does; the exponents pop in with it. */
+.phrase-morph .hole-rank {
+  animation: rank-pop 0.4s ease-out backwards;
+}
 
 .phrase .hole-btn,
 .phrase .hole-btn * {

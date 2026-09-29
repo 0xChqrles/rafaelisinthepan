@@ -96,17 +96,20 @@ export function useIntroClock(key: string, totalMs: number): IntroClock {
 
 // One plain word of the sentence while the intro runs: every letter a box, hidden until
 // the front reaches it (`first` is the sentence-wide index of its first letter), then a
-// churning glyph, then its own letter. The real word stays for a screen reader.
+// churning glyph, then its own letter — or, as a MORPH (`morph`), churning from the first
+// frame until the front settles it. The real word stays for a screen reader.
 export function DecodeWord({
   text,
   first,
   plan,
   clock,
+  morph = false,
 }: {
   text: string;
   first: number;
   plan: IntroPlan;
   clock: IntroClock;
+  morph?: boolean;
 }) {
   const tick = useSyncExternalStore(clock.subscribe, clock.tick, clock.tick);
   const now = tick * TICK_MS;
@@ -115,7 +118,7 @@ export function DecodeWord({
     const g = n;
     if (ch !== ' ') n += 1;
     const lands = g * plan.charMs;
-    if (now < lands) {
+    if (now < lands && !morph) {
       return (
         <span key={i} className="dw-letter dw-wait">
           {ch}

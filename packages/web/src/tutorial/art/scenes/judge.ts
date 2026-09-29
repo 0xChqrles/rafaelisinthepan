@@ -19,8 +19,9 @@ const judge: SceneMaker = (cols, rows, stage) => {
   // GEOMETRY — [word chips] [matrix] [score bars]. The matrix is as tall as its box allows
   // while the chips and bars still fit beside it at their leanest; then they take the width
   // left, up to their ideal proportions. On a card the box stays clear of the band its foot
-  // dithers the art out across, and of the level's number and length in its top corners:
-  // either BELOW them, or BETWEEN them — whichever holds the bigger matrix.
+  // dithers the art out across, and of the level's number and length in its top corners: it
+  // stands BELOW them, centred in the room left. (Squeezed BETWEEN them it held a bigger
+  // matrix on a phone's short card, but ran up the card's top edge beside the labels.)
   const fit = (y0: number, y1: number, x0: number, x1: number, fill: number) => {
     const room = y1 - y0;
     const span = x1 - x0;
@@ -37,11 +38,7 @@ const judge: SceneMaker = (cols, rows, stage) => {
   };
   const foot = stage.h < rows;
   let g = fit(0, stage.h, cols * 0.1, cols * 0.9, 0.82);
-  if (foot) {
-    const below = fit(12, stage.h - 9, cols * 0.1, cols * 0.9, 0.96);
-    const between = fit(3, stage.h - 9, 15, cols - 30, 0.96);
-    g = below.size >= between.size ? below : between;
-  }
+  if (foot) g = fit(12, stage.h - 9, cols * 0.1, cols * 0.9, 0.96);
   const { step, n, size, gap, labelW, barW, mx, my } = g;
   const cell = step - 1;
   const bx = mx + size + gap;

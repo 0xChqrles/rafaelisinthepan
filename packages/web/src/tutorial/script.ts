@@ -41,7 +41,7 @@ export type StageKind = 'reveal' | 'word' | 'sentence' | 'meter';
 export interface LessonStage {
   kind: StageKind;
   puzzle: Puzzle;
-  // The meter stage only: the BOT'S tries, landed one by one as the stage opens — the play
+  // The meter stage only: the BOT'S tries, already played when the stage opens — the play
   // log the board, the meters and the tries wheel replay, before the player's own guesses.
   // Chosen so one secret is found and the other's meter stands just under full.
   played?: string[];

@@ -21,7 +21,6 @@ import { guessKey, replayHoles } from '../game/scoring';
 import { replayCharge, strikeFor } from '../game/charge';
 import { sentenceStarts } from '../game/sentenceCase';
 import { SCRAMBLE_MS, prefersReducedMotion, useScramble } from '../hooks/useScramble';
-import { introPlan } from '../components/PhraseIntro';
 import type { Vocab } from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
 import type { HitState, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
@@ -49,10 +48,10 @@ import { LEVELS, PLAY_LEVEL } from './levels';
 // the way a solved round does and offers PLAY in its place (`onPlay`) — no score screen,
 // because a lesson has no score to show.
 //
-// A STAGE LEAVES THE WAY THE DAY DOES (2026-09-30): the solved board dissolves in place,
-// letter by letter (`DissolvePhrase`, the solved sentence's own exit), the try count fading
-// with it, and the next board decodes itself in (Phrase's own entrance). The last one
-// dissolves into LEVEL 1's own card, which turns DONE under the player's eyes.
+// A STAGE TURNS INTO THE NEXT ONE THE WAY A WORD CHANGES (2026-09-30): the next board's
+// letters churn in place from its first frame and settle, as an improved word does
+// (Phrase's `morphFrom`). The last one dissolves into LEVEL 1's own card, which turns DONE
+// under the player's eyes.
 
 // The board's holes at their start words — the same shape Game derives from a real puzzle, so
 // every component it feeds behaves identically.
@@ -84,12 +83,8 @@ function hasCoarsePointer(): boolean {
   );
 }
 
-// Hold on a solved word before it dissolves into the next stage.
-const STAGE_HOLD_MS = 200;
-// THE METER STAGE PLAYS ITSELF IN: the bot's tries land one at a time on a quicker beat than
-// a player's guess (the float's intro before FLOATING_HIT_INTRO_MS grew to 800), each once
-// the one before it has faded.
-const REPLAY_INTRO_MS = 320;
+// Hold on a solved word before the next stage takes over.
+const STAGE_HOLD_MS = 400;
 // The bot's reactions (`react`): its sprite jumps by whole texels, a pose a frame.
 const HOP_PX = [0, -2, -4, -2];
 const HOP_FRAME_MS = 80;
@@ -111,6 +106,7 @@ export default function LessonBoard({
   vocabError,
   retryVocab,
   final,
+  arrivedFrom,
   clearedBefore,
   onComplete,
   onPlay,
@@ -125,6 +121,9 @@ export default function LessonBoard({
   retryVocab: () => void;
   // The last stage ends on PLAY; any other rolls into the next by itself.
   final: boolean;
+  // The text the stage before this one ended on: this board scrambles in from it. None on the
+  // first stage, which decodes in as a sentence arrives.
+  arrivedFrom?: string;
   // Level 1 was already done on this device when the lesson opened: its card lands DONE.
   clearedBefore: boolean;
   onComplete: () => void;
@@ -138,7 +137,7 @@ export default function LessonBoard({
   // the secret makes it the closest word and `pair.alt` the secret — so the activation is
   // always seen before the solve. ONE map serves both readings: swapped, every rank-0 entry reads 1
   // and every rank-1 entry reads 0, and the board, the meters, the wheel and every later
-  // guess replay against that view. The bot then lands `alt`.
+  // guess replay against that view. The player then finds `alt`.
   const [swapped, setSwapped] = useState(false);
   const ranks = useMemo<RankMap>(() => {
     if (!swapped || !script.pair) return puzzle.ranks;
@@ -171,10 +170,10 @@ export default function LessonBoard({
   // button (CONTINUE / PLAY) once solved — where a single word rolls on by itself.
   const sentenceLike = stage === 'sentence' || stage === 'meter';
   // THE METER STAGE (#301 taught; scripted, user-decided 2026-09-16): the meters are SHOWN on
-  // this stage alone, and the BOT HAS ALREADY PLAYED — `played` is its log, landed on the
-  // board, the meters and the tries wheel exactly as a round's own log would be (try by try
-  // as the stage opens, below). One secret is found; the other's meter stands just under
-  // full, so the player's first close guess fills it.
+  // this stage alone, and the BOT HAS ALREADY PLAYED — `played` is its log, replayed onto the
+  // board, the meters and the tries wheel exactly as a round's own log would be. One secret
+  // is found; the other's meter stands just under full, so the player's first close guess
+  // fills it.
   const withMeters = stage === 'meter';
   const seed = useMemo(() => script.played ?? [], [script]);
   const fresh = useMemo(() => freshHoles(script), [script]);
@@ -190,31 +189,27 @@ export default function LessonBoard({
   // The player has opened a word's tries at least once (the coach reads it; the meter stage
   // waits on it).
   const [tapped, setTapped] = useState(false);
-  // The stage is leaving: the solved board dissolves (`DissolvePhrase`), then the next one
-  // takes over — or, on the last, the level's card.
+  // The last stage is leaving: its solved sentence dissolves (`DissolvePhrase`), then the
+  // level's card takes its place.
   const [leaving, setLeaving] = useState(false);
   // THE KEYBOARD RISES INTO THE TRAY when it arrives mid-stage — the reveal's CONTINUE, the
   // meter stage's tap — kb-drop's travel reversed. Never on a stage's own mount: between two
   // stages the keys stay still under the player's fingers.
   const [rising, setRising] = useState(false);
-  // THE METER STAGE PLAYS ITSELF IN (2026-09-30): it opens on the start words and the bot's
-  // log lands try by try — the floats, the swaps, the count, the meter filling — where it
-  // used to open already played. Read once; reduced motion opens on the played board.
-  const [replayAtMount] = useState(() => stage === 'meter' && seed.length > 0 && !prefersReducedMotion());
-  const [replaying, setReplaying] = useState(replayAtMount);
-  // The board the bot's log ends on. While it replays, the coach reads THIS board — its line
-  // names the word the tries end on from its first letter, rather than retyping at every swap.
-  const played = useMemo(() => replayHoles(fresh, ranks, seed), [fresh, ranks, seed]);
   // The board's local state — the ephemeral twin of Round's.
   const [holes, setHoles] = useState<RuntimeHole[]>(() =>
-    stage === 'reveal' ? revealedHoles(script) : replayAtMount ? fresh : replayHoles(fresh, ranks, seed),
+    stage === 'reveal' ? revealedHoles(script) : replayHoles(fresh, ranks, seed),
+  );
+  // THE ENTRANCE: from the stage before, each hole scrambles in from as many letters as it
+  // takes over — a lone word from the word it replaces, a sentence's hole from its own.
+  const [morphFrom] = useState(() =>
+    arrivedFrom === undefined ? undefined : holes.map((h) => (sentenceLike ? h.word.length : arrivedFrom.length)),
   );
   // The play log: the bot's tries first (the meter stage), then every counted guess.
   // `events` are the PLAYER's guesses alone (the coach reads those).
-  const [tried, setTried] = useState<string[]>(replayAtMount ? [] : seed);
+  const [tried, setTried] = useState<string[]>(seed);
   const [events, setEvents] = useState<GuessEvent[]>([]);
-  // The bot's replayed tries run off timers: read the log as it stands then, not as the
-  // closure saw it.
+  // What `land` reads when it runs: the log as it stands, not as the closure saw it.
   const triedRef = useRef(tried);
   triedRef.current = tried;
   // What the METERS read: the log as of the last RELEASE beat, the twin of Game's
@@ -222,7 +217,7 @@ export default function LessonBoard({
   // fades (`fadeDelayMs`) and then waits for the drops to land; read off `tried`, it changed
   // at the submit — the very render that remounts the struck word, so the new canvas was
   // born already full and the blood flew back to a chip that had nothing left to fill.
-  const [shownTried, setShownTried] = useState<string[]>(replayAtMount ? [] : seed);
+  const [shownTried, setShownTried] = useState<string[]>(seed);
   const ranksRef = useRef(ranks);
   ranksRef.current = ranks;
   const eventsRef = useRef(events);
@@ -248,16 +243,6 @@ export default function LessonBoard({
     timers.current.push(id);
     return id;
   }, []);
-  // The replay's own timers, kept apart so a tap can cut it short (`openHistory`).
-  const replayTimers = useRef<number[]>([]);
-  const laterReplay = useCallback(
-    (fn: () => void, ms: number) => {
-      const id = later(fn, ms);
-      replayTimers.current.push(id);
-      return id;
-    },
-    [later],
-  );
 
   // THE BOT REACTS, WITHOUT WORDS (2026-09-30): to a guess that brings a hole closer it hops;
   // to a word found it jumps; to the last one found, twice. On its sprite, by the Web
@@ -349,13 +334,9 @@ export default function LessonBoard({
     setHits((prev) => prev.filter((h) => h.id !== id));
   }, []);
 
-  // ONE guess landing on the board — the player's (counted, coached) or one of the bot's
-  // tries replayed as the meter stage opens (`byBot`: not a player event, no vocabulary
-  // check, no cut, no word said — the coach's line is its announcement). Answers how long its
-  // floats stay up, which is when the replay lands the next one.
+  // ONE guess landing on the board, counted and coached.
   const land = useCallback(
-    (typed: string, byBot: boolean, revealed = false): number => {
-      const schedule = byBot ? laterReplay : later;
+    (typed: string, revealed = false) => {
       // A reveal's choreography waits for the prompt's decode (Game's rule).
       const reveal = revealed ? (prefersReducedMotion() ? 0 : SCRAMBLE_MS) + REVEAL_HOLD_MS : 0;
       const tried = triedRef.current;
@@ -368,7 +349,7 @@ export default function LessonBoard({
       // THE SWAP: the secret typed before the hole is active becomes the closest word, and the
       // obvious word the secret. Read the map through that view from this guess on.
       const open = holes.find((h) => h.rank !== 0);
-      if (withMeters && !byBot && !activeOut && !swapped && script.pair && open && ranks[open.secret][typed]?.rank === 0) {
+      if (withMeters && !activeOut && !swapped && script.pair && open && ranks[open.secret][typed]?.rank === 0) {
         setSwapped(true);
         const map = ranks[open.secret];
         const dq1 = Object.values(map).find((e) => e.rank === 1)?.dq;
@@ -392,8 +373,7 @@ export default function LessonBoard({
         const entry: RankEntry | undefined = ranks[h.secret][typed];
         return [{ index, entry }];
       });
-      const fadeDelayMs =
-        reveal + Math.max(0, impacted.length - 1) * STAGGER_MS + (byBot ? REPLAY_INTRO_MS : FLOATING_HIT_INTRO_MS);
+      const fadeDelayMs = reveal + Math.max(0, impacted.length - 1) * STAGGER_MS + FLOATING_HIT_INTRO_MS;
       // The meters before and after this guess (the meter stage only): what each chip gains
       // flies into it as loot, exactly as on the day (#301).
       const before = withMeters ? meters(tried, ranks) : null;
@@ -404,11 +384,7 @@ export default function LessonBoard({
         // The day's own rule (`strikeFor`) on every stage: a guess that gives the hole
         // something — a closer word, or charge on the meter stage — is CUT; before the meter
         // stage there is no meter, so it is the closer word alone.
-        const strike = byBot
-          ? entry?.rank === 0
-            ? ('ultra' as const)
-            : undefined
-          : strikeFor(entry?.rank, isNew, gained, holes[index].rank);
+        const strike = strikeFor(entry?.rank, isNew, gained, holes[index].rank);
         setHits((prev) => [
           ...prev,
           entry != null
@@ -432,7 +408,7 @@ export default function LessonBoard({
       if (improved.some(Boolean)) {
         // The closer word and lower rank land as the number begins to fade; Hole stages the
         // rest (the exponent ticks down, the letters scramble over).
-        schedule(
+        later(
           () =>
             setHoles((prev) =>
               prev.map((h, i) => {
@@ -457,37 +433,34 @@ export default function LessonBoard({
       if (isNew) {
         triedRef.current = next;
         setTried(next);
-        if (withMeters) schedule(() => setShownTried(next), fadeDelayMs);
-        if (!byBot) setEvents((prev) => [...prev, event]);
+        if (withMeters) later(() => setShownTried(next), fadeDelayMs);
+        setEvents((prev) => [...prev, event]);
       }
 
       const solvesAll = holes.every((h) => h.rank === 0 || ranks[h.secret][typed]?.rank === 0);
-      if (!byBot) {
-        const parts = impacted.map(({ index, entry }) =>
-          srHoleResult(lang, index + 1, entry ? entry.rank : null),
-        );
-        say(solvesAll ? [...parts, t(lang, 'srSolvedAll')].join(', ') : parts.join(', '));
+      const parts = impacted.map(({ index, entry }) =>
+        srHoleResult(lang, index + 1, entry ? entry.rank : null),
+      );
+      say(solvesAll ? [...parts, t(lang, 'srSolvedAll')].join(', ') : parts.join(', '));
 
-        // The bot's reaction, on the beat the board answers: a word found on its star's
-        // impact, a closer word as its number lands. A guess that also brings a new line
-        // leaves the hop to the line (the sprite hops as it speaks) — except the last word
-        // found, which it always cheers.
-        const found = impacted.findIndex(({ entry }) => entry?.rank === 0);
-        const nextEvents = isNew ? [...eventsRef.current, event] : eventsRef.current;
-        const nextLine = coachLine({
-          stage,
-          holes: replayHoles(fresh, ranks, next),
-          events: nextEvents,
-          tapped: tappedRef.current,
-          revealed: false,
-          finished: solvesAll,
-        });
-        const nextCopy = nextLine ? coachCopy(lang, nextLine, stageViewRef.current, coarse) : null;
-        const quietLine = nextCopy === null || nextCopy === lastCoach.current;
-        if (solvesAll) react('solved', reveal + found * STAGGER_MS + 50);
-        else if (found >= 0 && quietLine) react('found', reveal + found * STAGGER_MS + 50);
-        else if (improved.some(Boolean) && quietLine) react('closer', fadeDelayMs);
-      }
+      // The bot's reaction, on the beat the board answers: a word found on its star's impact,
+      // a closer word as its number lands. A guess that also brings a new line leaves the hop
+      // to the line (the sprite hops as it speaks) — except the last word found, which it
+      // always cheers.
+      const found = impacted.findIndex(({ entry }) => entry?.rank === 0);
+      const nextLine = coachLine({
+        stage,
+        holes: replayHoles(fresh, ranks, next),
+        events: isNew ? [...eventsRef.current, event] : eventsRef.current,
+        tapped: tappedRef.current,
+        revealed: false,
+        finished: solvesAll,
+      });
+      const nextCopy = nextLine ? coachCopy(lang, nextLine, stageViewRef.current, coarse) : null;
+      const quietLine = nextCopy === null || nextCopy === lastCoach.current;
+      if (solvesAll) react('solved', reveal + found * STAGGER_MS + 50);
+      else if (found >= 0 && quietLine) react('found', reveal + found * STAGGER_MS + 50);
+      else if (improved.some(Boolean) && quietLine) react('closer', fadeDelayMs);
 
       if (solvesAll) {
         // A swapped Hole holds its exponent tween (RANK_MAX_MS) then settles the letters over
@@ -507,9 +480,8 @@ export default function LessonBoard({
         setPhase('settling');
         later(() => setPhase('done'), settleMs);
       }
-      return fadeDelayMs + HIT_FADE_MS;
     },
-    [withMeters, swapped, script.pair, fresh, meters, lang, say, later, laterReplay, stage, coarse, react],
+    [withMeters, swapped, script.pair, fresh, meters, lang, say, later, stage, coarse, react],
   );
 
   const submit = useCallback(
@@ -540,39 +512,16 @@ export default function LessonBoard({
       }
       setInput('');
       setFeedback(null);
-      land(typed, false, revealing);
+      land(typed, revealing);
     },
     [playing, vocab, lang, say, land, decoding, decode, later],
   );
 
-  // The bot's log, landed try by try once the sentence has decoded in (Phrase's intro), each
-  // try once the floats of the one before it are gone.
-  const landRef = useRef(land);
-  landRef.current = land;
-  useEffect(() => {
-    if (!replayAtMount) return;
-    const letters = puzzle.words
-      .map((w, i) => {
-        const h = puzzleHoles.find((x) => x.pos === i);
-        return h ? `${h.prefix ?? ''}${h.start.word}${h.suffix ?? ''}` : w;
-      })
-      .join('')
-      .replace(/\s/g, '').length;
-    const step = (i: number) => {
-      const lasts = landRef.current(seed[i], true);
-      if (i + 1 < seed.length) laterReplay(() => step(i + 1), lasts);
-      else laterReplay(() => setReplaying(false), lasts);
-    };
-    laterReplay(() => step(0), introPlan(letters).totalMs);
-    // Once, at mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // --- the stage's end ---
   const done = phase === 'done';
   useEffect(() => {
-    if (done && !final && !sentenceLike) later(() => setLeaving(true), STAGE_HOLD_MS);
-  }, [done, final, sentenceLike, later]);
+    if (done && !final && !sentenceLike) later(onComplete, STAGE_HOLD_MS);
+  }, [done, final, sentenceLike, later, onComplete]);
   // A sentence solved: the keyboard leaves the way it does in a solved round, and the button
   // renders only once it is gone (`kbGone`) — with the same deadline as Game's identical
   // beat, so a lost `animationend` cannot strand the player. The button is PLAY on the last
@@ -613,23 +562,7 @@ export default function LessonBoard({
   const [historyHole, setHistoryHole] = useState<number | null>(null);
   const [picked, setPicked] = useState<Record<number, WordPick>>({});
   const exploreLabels = useMemo(() => holes.map((_, i) => ariaHoleHistory(lang, i + 1)), [holes, lang]);
-  const openHistory = useCallback(
-    (index: number) => {
-      // A tap while the bot's log replays cuts it short: the board as it ends, at once.
-      if (replaying) {
-        replayTimers.current.forEach(clearTimeout);
-        replayTimers.current = [];
-        setHits([]);
-        setHoles(played);
-        triedRef.current = seed;
-        setTried(seed);
-        setShownTried(seed);
-        setReplaying(false);
-      }
-      setHistoryHole(index);
-    },
-    [replaying, played, seed],
-  );
+  const openHistory = useCallback((index: number) => setHistoryHole(index), []);
   // `tapped` lands on CLOSE (user-decided 2026-09-16): the line that follows the tap must
   // not type on behind the wheel.
   const closeHistory = useCallback(() => {
@@ -697,15 +630,8 @@ export default function LessonBoard({
   // --- the coach: the one line the board's state calls for, or nothing ---
   const line = useMemo(
     () =>
-      coachLine({
-        stage,
-        holes: replaying ? played : holes,
-        events,
-        tapped,
-        revealed,
-        finished: phase !== 'play',
-      }),
-    [phase, stage, holes, played, replaying, events, tapped, revealed],
+      coachLine({ stage, holes, events, tapped, revealed, finished: phase !== 'play' }),
+    [phase, stage, holes, events, tapped, revealed],
   );
   const coach = line ? coachCopy(lang, line, stageView, coarse) : null;
   // THE BOX NEVER DISAPPEARS (user-decided 2026-09-16): a beat with nothing new to say keeps
@@ -794,14 +720,9 @@ export default function LessonBoard({
                 </div>
               )}
               {leaving ? (
-                // The solved board's exit: its exact pixels, eroded letter by letter — `viewHoles`,
-                // so a swapped meter stage dissolves the word it actually shows.
-                <DissolvePhrase
-                  words={puzzle.words}
-                  puzzleHoles={viewHoles}
-                  capital={sentenceLike}
-                  onDone={final ? onLeft : onComplete}
-                />
+                // The found sentence's exit: its exact pixels, eroded letter by letter —
+                // `viewHoles`, so a swapped meter stage dissolves the word it actually shows.
+                <DissolvePhrase words={puzzle.words} puzzleHoles={viewHoles} brisk onDone={onLeft} />
               ) : (
                 <Phrase
                   words={puzzle.words}
@@ -820,7 +741,8 @@ export default function LessonBoard({
                   // A lone word is a word, not a sentence: no capital on the word stages.
                   capital={sentenceLike}
                   charges={charges}
-                />
+                  morphFrom={morphFrom}
+                  />
               )}
             </div>
             {/* Once there is nothing left to type the prompt retires in place — still laid out,
@@ -854,14 +776,14 @@ export default function LessonBoard({
       {/* The bottom is for INTERACTIONS: the keyboard — which drops away at the very end,
           leaving one button under the solved sentence. */}
       <div className={`tray${ending && !kbGone ? ' kb-leaving' : ''}${rising ? ' kb-rising' : ''}`}>
-        {leaving && !final ? null : vocabError ? (
+        {vocabError ? (
           <LoadError message={t(lang, 'failedVocab')} lang={lang} onRetry={retryVocab} />
         ) : !vocab ? (
           <p className="status">
             <LoadingWave text={t(lang, 'loading')} />
           </p>
         ) : kbGone ? (
-          <button type="button" className="mix-btn" onClick={final ? onPlay : () => setLeaving(true)}>
+          <button type="button" className="mix-btn" onClick={final ? onPlay : onComplete}>
             {t(lang, final ? 'tutPlay' : 'tutContinue')}
           </button>
         ) : revealed ? (

@@ -41,8 +41,8 @@ export default function LevelOne({
       <HeaderLeft>
         <LangTitle lang={lang} title={title} to={(picked) => pathForLesson(picked, PLAY_LEVEL)} />
       </HeaderLeft>
-      {/* key={at}: a stage is a fresh board with fresh state. The stage that ends dissolves
-          its board first, and the next one's decodes itself in (Phrase's own entrance). */}
+      {/* key={at}: a stage is a fresh board with fresh state, scrambling in from the text the
+          stage before it ended on. */}
       <LessonBoard
         key={at}
         lang={lang}
@@ -53,6 +53,7 @@ export default function LevelOne({
         vocabError={error}
         retryVocab={retry}
         final={at === script.stages.length - 1}
+        arrivedFrom={at > 0 ? script.stages[at - 1].puzzle.words.join(' ') : undefined}
         clearedBefore={clearedBefore}
         onComplete={next}
         onPlay={onDone}
