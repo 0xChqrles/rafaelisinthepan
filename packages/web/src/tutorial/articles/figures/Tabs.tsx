@@ -1,5 +1,6 @@
 // A figure's two (or more) states, as the article's own AVANT / APRÈS: a row of labels, the
-// shown one underlined. Chrome, so the mono voice in capitals.
+// shown one underlined. Pressed-state buttons, not tabs (the profile's palette swatches'
+// pattern): each is a plain button, and the figure announces what changed itself.
 export default function Tabs({
   labels,
   active,
@@ -10,13 +11,12 @@ export default function Tabs({
   onPick: (i: number) => void;
 }) {
   return (
-    <div className="ar-tabs" role="tablist">
+    <div className="ar-tabs" role="group">
       {labels.map((label, i) => (
         <button
           key={label}
           type="button"
-          role="tab"
-          aria-selected={i === active}
+          aria-pressed={i === active}
           className={`ar-tab${i === active ? ' on' : ''}`}
           onClick={() => onPick(i)}
         >

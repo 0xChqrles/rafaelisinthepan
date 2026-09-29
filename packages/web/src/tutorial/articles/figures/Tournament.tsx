@@ -1,5 +1,7 @@
 import type { CSSProperties } from 'react';
 import { rankHeatColor } from '@whippin/shared';
+import { t } from '../../../i18n';
+import { useArticleLang } from '../lang';
 
 // THE TOP OF A REAL TOURNAMENT: each word's place in the embedding (far, the weird red), the
 // share of its 199 duels it won, and the place the tournament gives it — the sentence's
@@ -13,15 +15,20 @@ export default function Tournament({
   rows: { word: string; from: number; win: number }[];
   labels: [string, string, string];
 }) {
+  const said = useArticleLang();
   const num = new Intl.NumberFormat(lang);
   const pct = new Intl.NumberFormat(lang, { style: 'percent', maximumFractionDigits: 0 });
   return (
     <table className="ar-tourney">
       <thead>
         <tr>
-          <th scope="col" />
+          <th scope="col">
+            <span className="sr-only">{t(said, 'levelWord')}</span>
+          </th>
           <th scope="col">{labels[0]}</th>
-          <th scope="col">{labels[1]}</th>
+          <th scope="col" className="ar-tourney-win-head">
+            {labels[1]}
+          </th>
           <th scope="col">{labels[2]}</th>
         </tr>
       </thead>

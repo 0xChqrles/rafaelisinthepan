@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import { bayerThreshold as th } from '../../components/bayer';
 import { prefersReducedMotion } from '../../hooks/useScramble';
 import type { LevelArtName } from '../levels';
-import { SCENES, STILL_T } from './scenes';
 import type { Raster, Scene } from './scenes';
 
 // ONE LEVEL'S ILLUSTRATION (scenes.ts): a canvas of CELLS, one canvas pixel a cell, blown up
@@ -19,6 +18,27 @@ import type { Raster, Scene } from './scenes';
 // meet — the ordered dither's own fade, never a smooth gradient over pixels.
 const FRAME_MS = 90;
 const FADE_PX = 56; // the fade band's height
+
+// The scenes are loaded ON DEMAND, in one chunk the list and the articles share: the pictures
+// are decoration on a page most sessions never open, and must not weigh on the game's first
+// load. Until they arrive the box shows its own ground; a failed load leaves it so.
+type ScenesModule = typeof import('./scenes');
+let scenes: ScenesModule | null = null;
+let scenesLoad: Promise<ScenesModule> | null = null;
+function loadScenes(): Promise<ScenesModule> {
+  if (!scenesLoad) {
+    scenesLoad = import('./scenes')
+      .then((module) => {
+        scenes = module;
+        return module;
+      })
+      .catch((error) => {
+        scenesLoad = null;
+        throw error;
+      });
+  }
+  return scenesLoad;
+}
 
 function hexToAbgr(hex: string): number {
   const v = parseInt(hex.slice(1), 16);
@@ -51,6 +71,8 @@ export default function LevelArt({
     const ctx = canvas.getContext('2d');
     if (!ctx) return undefined;
     const moving = !still && !prefersReducedMotion();
+    let mod = scenes;
+    let cancelled = false;
     let scene: Scene | null = null;
     let raster: Raster | null = null;
     let image: ImageData | null = null;
@@ -88,9 +110,10 @@ export default function LevelArt({
       }
       ctx.putImageData(image, 0, 0);
     };
-    const now = () => (moving ? performance.now() / 1000 : STILL_T[name]);
+    const now = () => (moving ? performance.now() / 1000 : (mod?.STILL_T[name] ?? 0));
 
     const layout = () => {
+      if (!mod) return;
       const w = el.clientWidth;
       const h = el.clientHeight;
       if (!w || !h) return;
@@ -103,7 +126,7 @@ export default function LevelArt({
       canvas.style.height = `${rows * cell}px`;
       const stageH = Math.max(1, rows - Math.round(foot / cell));
       try {
-        scene = SCENES[name](cols, rows, { w: cols, h: stageH });
+        scene = mod.SCENES[name](cols, rows, { w: cols, h: stageH });
       } catch (error) {
         broken = true;
         if (import.meta.env.DEV) console.error(`level art "${name}"`, error);
@@ -126,7 +149,7 @@ export default function LevelArt({
       timer = window.setTimeout(tick, FRAME_MS);
     };
     const wake = () => {
-      if (moving && visible && !document.hidden && !timer) timer = window.setTimeout(tick, FRAME_MS);
+      if (moving && scene && visible && !document.hidden && !timer) timer = window.setTimeout(tick, FRAME_MS);
     };
 
     layout();
@@ -143,7 +166,20 @@ export default function LevelArt({
     else visible = true;
     document.addEventListener('visibilitychange', wake);
     wake();
+    if (!mod) {
+      loadScenes()
+        .then((loaded) => {
+          if (cancelled) return;
+          mod = loaded;
+          layout();
+          wake();
+        })
+        .catch(() => {
+          // Decoration: the box keeps its ground.
+        });
+    }
     return () => {
+      cancelled = true;
       ro?.disconnect();
       io?.disconnect();
       document.removeEventListener('visibilitychange', wake);

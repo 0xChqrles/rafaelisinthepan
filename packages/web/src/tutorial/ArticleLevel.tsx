@@ -8,11 +8,13 @@ import { pathForGame, pathForLesson, type LangCode } from '../langs';
 import { navigate } from '../routing';
 import LevelArt from './art/LevelArt';
 import { articleFor } from './articles';
+import { ArticleLang } from './articles/lang';
 import Rich from './articles/Rich';
 import FigureBody from './articles/figures/Figure';
 import useSeen from './articles/figures/useSeen';
 import type { Block } from './articles/types';
-import { LEVELS, formatDuration, levelOf, nextReady } from './levels';
+import Duration from './Duration';
+import { LEVELS, levelOf, nextReady } from './levels';
 
 // AN ARTICLE LEVEL (levels 2+, 2026-09-29): the level read, not played — set like the
 // author's article page. Its sleeve (the level's illustration, large), the track number and
@@ -88,7 +90,7 @@ function BlockView({ block, lang, figNo }: { block: Block; lang: string; figNo: 
         <FigureBody lang={lang} fig={block.fig} />
       </div>
       <figcaption className="ar-fig-caption">
-        <span className="ar-fig-no">{`${t(lang, 'levelFigure')} ${pad2(figNo)}`}</span>
+        <span className="ar-fig-no">{`${t(lang, 'levelFigure')} ${pad2(figNo)}`}</span>{' '}
         <Rich text={block.caption} />
       </figcaption>
     </figure>
@@ -107,10 +109,13 @@ export default function ArticleLevel({ lang, level }: { lang: LangCode; level: n
     if (read) markLessonDone(level);
   }, [read, level, markLessonDone]);
   // A new level opens at its top: the phone's page scrolls as a whole, and navigating keeps
-  // its offset otherwise (routing.ts resets nothing).
+  // its offset otherwise (routing.ts resets nothing). And it takes the FOCUS: on a wide screen
+  // the article is its own scroller, which the keyboard can only scroll once it holds focus —
+  // without it the first Tab jumps past all the text to the end's buttons.
   useEffect(() => {
     window.scrollTo(0, 0);
     scroller.current?.scrollTo(0, 0);
+    scroller.current?.focus({ preventScroll: true });
   }, [level]);
 
   if (!meta || !article) return null;
@@ -124,7 +129,13 @@ export default function ArticleLevel({ lang, level }: { lang: LangCode; level: n
       <HeaderLeft>
         <LangTitle lang={lang} title={t(lang, meta.titleKey)} to={(picked) => pathForLesson(picked, level)} />
       </HeaderLeft>
-      <article ref={scroller} className="article-screen pixel-scroll">
+      <ArticleLang.Provider value={lang}>
+      <article
+        ref={scroller}
+        className="article-screen pixel-scroll"
+        tabIndex={0}
+        aria-labelledby="article-title"
+      >
         <header className="article-head">
           <div className="article-sleeve">
             <LevelArt name={meta.art} />
@@ -133,10 +144,16 @@ export default function ArticleLevel({ lang, level }: { lang: LangCode; level: n
             <span className="article-no" aria-hidden="true">
               {pad2(level)}
             </span>
-            <h1 className="article-title">{t(lang, meta.subKey)}</h1>
+            <h1 id="article-title" className="article-title">
+              {t(lang, meta.subKey)}
+            </h1>
           </div>
           <ul className="article-credits">
-            {seconds !== undefined && <li>{formatDuration(seconds)}</li>}
+            {seconds !== undefined && (
+              <li>
+                <Duration lang={lang} seconds={seconds} />
+              </li>
+            )}
             <li>{t(lang, 'levelOf').replace('{n}', String(level)).replace('{total}', String(LEVELS.length))}</li>
           </ul>
           <p className="article-lead">
@@ -186,6 +203,7 @@ export default function ArticleLevel({ lang, level }: { lang: LangCode; level: n
           )}
         </footer>
       </article>
+      </ArticleLang.Provider>
     </>
   );
 }

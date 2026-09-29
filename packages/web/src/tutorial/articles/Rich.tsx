@@ -1,6 +1,8 @@
 import { Fragment } from 'react';
 import type { CSSProperties } from 'react';
 import { rankHeatColor } from '@whippin/shared';
+import { t } from '../../i18n';
+import { useArticleLang } from './lang';
 
 // THE ARTICLES' INLINE MARKUP (types.ts): words quoted the way the game shows them — the pixel
 // face, as the coach quotes its own — a rank wearing the sentence's heat exponent, a hidden
@@ -9,9 +11,9 @@ import { rankHeatColor } from '@whippin/shared';
 // own), a quoted word is the one the sentence is about: the held chip.
 const TOKEN_RE = /`([^`]+)`|\*\*([^*]+)\*\*/g;
 
-function word(payload: string, key: number, mode: 'prose' | 'sentence') {
+function word(payload: string, key: number, mode: 'prose' | 'sentence', lang: string) {
   if (/^_+$/.test(payload)) {
-    return <span key={key} className="ar-blank" role="img" aria-label="…" />;
+    return <span key={key} className="ar-blank" role="img" aria-label={t(lang, 'levelBlank')} />;
   }
   const at = payload.lastIndexOf('^');
   const rank = at > 0 ? Number(payload.slice(at + 1)) : NaN;
@@ -36,12 +38,13 @@ function word(payload: string, key: number, mode: 'prose' | 'sentence') {
 }
 
 export default function Rich({ text, mode = 'prose' }: { text: string; mode?: 'prose' | 'sentence' }) {
+  const lang = useArticleLang();
   const out = [];
   let last = 0;
   let key = 0;
   for (const m of text.matchAll(TOKEN_RE)) {
     if (m.index > last) out.push(<Fragment key={key++}>{text.slice(last, m.index)}</Fragment>);
-    if (m[1] !== undefined) out.push(word(m[1], key++, mode));
+    if (m[1] !== undefined) out.push(word(m[1], key++, mode, lang));
     else
       out.push(
         <strong key={key++} className="ar-term">

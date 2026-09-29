@@ -1,5 +1,7 @@
 import { useRef } from 'react';
 import type { CSSProperties } from 'react';
+import { t } from '../../../i18n';
+import { useArticleLang } from '../lang';
 import useSeen from './useSeen';
 
 // ATTENTION AS ARCS: the sentence's tokens in a row, and from the focus token an arc to every
@@ -23,6 +25,7 @@ export default function Arcs({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const seen = useSeen(ref);
+  const said = useArticleLang();
   const slot = VIEW_W / tokens.length;
   const cx = (i: number) => slot * (i + 0.5);
   const pct = new Intl.NumberFormat(lang, { style: 'percent', maximumFractionDigits: 0 });
@@ -51,7 +54,13 @@ export default function Arcs({
           const state = i === focus ? 'focus' : hidden.includes(i) ? 'hidden' : i > focus ? 'after' : '';
           return (
             <li key={`${token}-${i}`} className={`ar-token ${state}`}>
-              <span className="ar-token-word">{token}</span>
+              {state === 'hidden' ? (
+                <s className="ar-token-word">{token}</s>
+              ) : (
+                <span className="ar-token-word">{token}</span>
+              )}
+              {state === 'focus' && <span className="sr-only">{` (${t(said, 'levelMarkFocus')})`}</span>}
+              {state === 'hidden' && <span className="sr-only">{` (${t(said, 'levelMarkUnheard')})`}</span>}
               <span className="ar-token-share">{w !== null && i !== focus ? pct.format(w) : ' '}</span>
             </li>
           );

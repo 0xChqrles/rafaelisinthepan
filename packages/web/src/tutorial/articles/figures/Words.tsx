@@ -1,4 +1,8 @@
 import { useState } from 'react';
+import type { CSSProperties } from 'react';
+import { MISS_COLOR } from '@whippin/shared';
+import { t } from '../../../i18n';
+import { useArticleLang } from '../lang';
 import type { WordList } from '../types';
 import Rich from '../Rich';
 import Tabs from './Tabs';
@@ -7,19 +11,24 @@ import Tabs from './Tabs';
 // in the game), then the lists side by side — or, with tabs, one at a time. A marked word
 // wears the heat ramp's end its tone names: weird red for a wrong sense, calm cobalt for
 // the right one.
+// A marked word says what it is in words too (the colour and the heavier frame are for eyes).
 function List({ list, showLabel }: { list: WordList; showLabel: boolean }) {
+  const lang = useArticleLang();
+  const tone = list.tone ?? 'wrong';
+  const said = t(lang, tone === 'wrong' ? 'levelMarkWrong' : 'levelMarkRight');
   return (
     <div className="ar-list">
       {showLabel && list.label && <p className="ar-list-label">{list.label}</p>}
-      <ol className="ar-list-words">
-        {list.words.map((w) => (
-          <li
-            key={w}
-            className={list.marked?.includes(w) ? `marked ${list.tone ?? 'wrong'}` : undefined}
-          >
-            {w}
-          </li>
-        ))}
+      <ol className="ar-list-words" style={{ '--mark': MISS_COLOR } as CSSProperties}>
+        {list.words.map((w) => {
+          const marked = list.marked?.includes(w);
+          return (
+            <li key={w} className={marked ? `marked ${tone}` : undefined}>
+              {w}
+              {marked && <span className="sr-only">{` (${said})`}</span>}
+            </li>
+          );
+        })}
       </ol>
     </div>
   );

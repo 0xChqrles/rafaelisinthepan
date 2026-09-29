@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { prefersReducedMotion } from '../../../hooks/useScramble';
 import type { PlanePoint } from '../types';
 import Tabs from './Tabs';
@@ -8,14 +8,10 @@ import Tabs from './Tabs';
 // words glide from one to the other and the lengths are re-read.
 const UNIT = 64;
 const W = 6;
-const H = 5.6;
 const PAD = 20;
 const SQUARE = 9;
 
 const GLIDE_MS = 650;
-
-const px = (x: number) => PAD + x * UNIT;
-const py = (y: number) => PAD + (H - y) * UNIT;
 
 export default function Plane({
   lang,
@@ -34,9 +30,10 @@ export default function Plane({
   shown.current = points;
   // A tab glides every word from where it stands to its place in the picked state — the
   // edges and their lengths follow, re-read on every frame.
+  const target = states[Math.min(at, states.length - 1)];
   useEffect(() => {
-    const target = states[Math.min(at, states.length - 1)];
     const from = shown.current;
+    if (from === target) return undefined;
     if (prefersReducedMotion()) {
       setPoints(target);
       return undefined;
@@ -53,8 +50,8 @@ export default function Plane({
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [at, states]);
-  const fmt = new Intl.NumberFormat(lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  }, [target]);
+  const fmt = useMemo(() => new Intl.NumberFormat(lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 }), [lang]);
   const ys = states.flat().map((p) => p.y);
   const y0 = Math.max(0, Math.floor(Math.min(...ys) - 0.5));
   const y1 = Math.ceil(Math.max(...ys) + 0.6);
@@ -111,11 +108,13 @@ export default function Plane({
           </g>
         ))}
       </svg>
-      <p className="sr-only">
+      {/* What the drawing says, in words: the final lengths of the state shown, re-read when a
+          tab changes it. */}
+      <p className="sr-only" aria-live={tabs ? 'polite' : undefined}>
         {edges
           .map(([a, b]) => {
-            const p = points[a];
-            const q = points[b];
+            const p = target[a];
+            const q = target[b];
             return `${p.word} – ${q.word} : ${fmt.format(Math.hypot(p.x - q.x, p.y - q.y))}`;
           })
           .join(' ; ')}

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import LangTitle from '../components/LangTitle';
 import { HeaderLeft } from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
@@ -5,7 +6,8 @@ import { t } from '../i18n';
 import { pathForLearn, pathForLesson, type LangCode } from '../langs';
 import { navigate } from '../routing';
 import LevelArt from './art/LevelArt';
-import { LEVELS, PLAY_LEVEL, formatDuration, isReady } from './levels';
+import Duration from './Duration';
+import { LEVELS, PLAY_LEVEL, isReady } from './levels';
 
 // THE TUTORIAL PAGE (#269; re-dressed 2026-09-29): the levels as CARDS, each wearing its
 // illustration (art/) edge to edge — the page has nothing else to show, so the pictures fill
@@ -23,6 +25,11 @@ const FOOT_PX = 92;
 export default function Learn({ lang }: { lang: LangCode }) {
   const done = useGameStore((s) => s.lessonsDone);
   const next = LEVELS.find((l) => isReady(l, lang) && !done.includes(l.level));
+  // The list opens at its top: on a phone the page scrolls as a whole, and coming back from
+  // an article (navigating resets nothing) would otherwise land on its last cards.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
   return (
     <div className="learn pixel-scroll">
       <HeaderLeft>
@@ -53,7 +60,11 @@ export default function Learn({ lang }: { lang: LangCode }) {
                       {t(lang, 'levelDone')}
                     </span>
                   ) : (
-                    seconds !== undefined && <span className="learn-meta">{formatDuration(seconds)}</span>
+                    seconds !== undefined && (
+                      <span className="learn-meta">
+                        <Duration lang={lang} seconds={seconds} />
+                      </span>
+                    )
                   )}
                 </span>
                 <span className="learn-card-foot">

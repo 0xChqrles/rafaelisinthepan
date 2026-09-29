@@ -3239,9 +3239,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   account is a place; the steps inside it keep their `back` on the LEFT while the face
   stays lit on the right). Tutorial — its list of levels and a lesson alike (#269): BOOK lit
   (the rules' place; on a lesson the lit book still leads to the list, and any other key
-  leaves the lesson, which is a SKIP — the fast-forward control that slot held, `skip.svg`
-  and `ariaSkipTutorial`, are retired). The book wears a BADGE with the count of built levels
-  this device has not done. **`profileReturn` is GONE from the store**: every
+  leaves LEVEL 1 as a SKIP — leaving an article level is only leaving; the fast-forward
+  control that slot held, `skip.svg` and `ariaSkipTutorial`, are retired). The book wears a
+  BADGE with the count of levels READY in this language that this device has not done
+  (`undoneLevels(done, lang)`). **`profileReturn` is GONE from the store**: every
   place is one tap away, so nothing has to remember where it was opened from, and
   `/account`'s left slot is its plain NAME rather than a back control. **This OVERTURNS #190's ACTIVE-DAY-ONLY crown** (2026-08-20): that rule hid
   the crown on an archive day so a key could not silently swap the day under the player,

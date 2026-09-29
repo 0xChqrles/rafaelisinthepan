@@ -15,7 +15,7 @@ export const SCENES: Record<LevelArtName, SceneMaker> = { game, distance, meanin
 export const STILL_T: Record<LevelArtName, number> = {
   game: 5.9,
   distance: 7,
-  meanings: 2.4,
-  attention: 3.1,
-  judge: 11.2,
+  meanings: 6.2,
+  attention: 59.5,
+  judge: 11.5,
 };

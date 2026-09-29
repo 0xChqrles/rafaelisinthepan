@@ -128,10 +128,11 @@ const game: SceneMaker = (cols, rows, stage) => {
 
   // A few wide lines on a wide card; on a tall one, the page the line was taken from.
   const wide = cols > avail * 2.2;
-  const room = Math.min(avail, Math.max(46, Math.round(avail * 0.74)));
+  // A tall card is filled by the book: as many of its lines as the height holds.
+  const room = Math.min(avail, Math.max(46, Math.round(avail * 0.9)));
   const fit = Math.max(2, Math.floor((room - promptGap - box) / M.pitch) + 1);
   const nSent = Math.min(wide ? 3 : 4, fit);
-  const nCtx = wide ? 0 : Math.max(0, Math.min(4, fit - nSent));
+  const nCtx = wide ? 0 : Math.max(0, Math.min(14, fit - nSent));
   const nBefore = Math.ceil(nCtx / 2);
   const nLines = nCtx + nSent;
   const lastSent = nBefore + nSent - 1;

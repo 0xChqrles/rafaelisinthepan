@@ -61,7 +61,8 @@ export function undoneLevels(done: readonly number[], lang: string): number {
   return LEVELS.filter((l) => isReady(l, lang) && !done.includes(l.level)).length;
 }
 
-// A duration as the article's page prints one: 5′30″, or 60″ under a minute.
+// A duration as the article's page prints one: 5′30″, or 60″ under a minute (a screen reader
+// is given `spokenDuration` beside it: the primes read as "prime").
 export function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;

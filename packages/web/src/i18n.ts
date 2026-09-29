@@ -550,6 +550,16 @@ const STRINGS = {
   levelOf: { en: 'LEVEL {n} OF {total}', fr: 'NIVEAU {n} SUR {total}' },
   levelNext: { en: 'NEXT LEVEL', fr: 'NIVEAU SUIVANT' },
   levelFigure: { en: 'FIG.', fr: 'FIG.' },
+  // What an article's figures say in words, for a screen reader: a hidden word, the table's
+  // word column, what a marked word is, and a duration spoken (the card prints 4′50″).
+  levelBlank: { en: 'hidden word', fr: 'mot caché' },
+  levelWord: { en: 'word', fr: 'mot' },
+  levelMarkWrong: { en: 'off topic', fr: 'hors sujet' },
+  levelMarkRight: { en: 'on topic', fr: 'dans le sens' },
+  levelMarkDiffers: { en: 'where they differ', fr: 'ce qui change' },
+  levelMarkFocus: { en: 'the word read', fr: 'le mot lu' },
+  levelMarkUnheard: { en: 'not heard yet', fr: 'pas encore entendu' },
+  levelDurationSpoken: { en: '{m} min {s} s', fr: '{m} min {s} s' },
   // ---- the game's pre-round gate (2026-08-11; #269 made it an INVITATION): until level 1 is
   // done, LEARN opens it and PLAY skips it; a device with no account keeps PLAY as its
   // deploy button.
