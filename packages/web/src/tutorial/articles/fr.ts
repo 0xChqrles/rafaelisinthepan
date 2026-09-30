@@ -330,13 +330,13 @@ const attention: Article = {
             states: [
               [
                 { word: 'planer', x: 0.9, y: 4.2 },
-                { word: 'vole', x: 2.6, y: 3.4, focus: true },
-                { word: 'dérober', x: 4.35, y: 2.45, label: 'below' },
+                { word: 'vole', x: 2.6, y: 3.4, focus: true, label: 'below' },
+                { word: 'dérober', x: 4.5, y: 2.9, label: 'below' },
               ],
               [
-                { word: 'planer', x: 0.9, y: 4.2, label: 'below' },
-                { word: 'vole', x: 1.75, y: 3.75, focus: true, label: 'below' },
-                { word: 'dérober', x: 4.35, y: 2.45, label: 'below' },
+                { word: 'planer', x: 0.9, y: 4.2 },
+                { word: 'vole', x: 1.5, y: 3.4, focus: true, label: 'below' },
+                { word: 'dérober', x: 4.5, y: 2.9, label: 'below' },
               ],
             ],
             edges: [

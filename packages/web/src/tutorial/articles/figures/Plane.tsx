@@ -6,7 +6,8 @@ import Tabs from './Tabs';
 
 // WORDS AS POINTS (the article's first figure, and its AVANT / APRÈS): a grid of plane units,
 // each word a square, each edge its length printed across its middle. With several states the
-// words glide from one to the other and the lengths are re-read.
+// words glide from one to the other and the lengths are re-read; a word's label keeps its
+// side (`label`) in every state, so it never jumps across its square.
 const UNIT = 64;
 const W = 6;
 const PAD = 20;
@@ -74,8 +75,10 @@ export default function Plane({
           const q = points[b];
           const d = Math.hypot(p.x - q.x, p.y - q.y);
           // A short edge has no room for its length between its two squares: the number
-          // steps off the edge, up its normal.
-          const lift = d * UNIT < 96 ? 24 : 0;
+          // steps off the edge along its normal, to the side away from the words' labels —
+          // below the edge when both label above, above it otherwise.
+          const away = p.label !== 'below' && q.label !== 'below' ? -1 : 1;
+          const lift = d * UNIT < 96 ? 24 * away : 0;
           const nx = d ? (-(q.y - p.y) / d) * Math.sign(q.x - p.x || 1) : 0;
           const ny = d ? (-(q.x - p.x) / d) * Math.sign(q.x - p.x || 1) : 0;
           const mx = (px(p.x) + px(q.x)) / 2 + nx * lift;

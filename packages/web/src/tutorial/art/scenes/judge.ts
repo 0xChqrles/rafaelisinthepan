@@ -16,33 +16,38 @@ const judge: SceneMaker = (cols, rows, stage) => {
   const I_RAIL = RAMP.length + 2;
   const I_MUTED = RAMP.length + 3;
 
-  // GEOMETRY — [word chips] [matrix] [score bars]. The matrix is as tall as its box allows
-  // while the chips and bars still fit beside it; then they take the width left, up to their
-  // ideal proportions. The group is centred on what is DRAWN: the widest chip on the left, and
-  // on the right the leader's bar, the longest (about BAR_REACH of the column). On a card it
-  // stands below the level's number and length in the top corners, and reaches down into the
-  // band its foot dithers the art out across, as every card's picture does.
+  // GEOMETRY — [word chips] [matrix] [score bars]. The MATRIX is the anchor: it is the one
+  // thing on screen through the whole loop (its dots are there before a duel lands, the bars
+  // grow from nothing), so it is what stands at the centre, the chips and the bars taking the
+  // same width either side of it. On a card it keeps a clear margin under the level's number
+  // and length in the top corners, and stops above the band its foot dithers the art out
+  // across.
   const BAR_REACH = 0.85;
   const fit = (y0: number, y1: number, x0: number, x1: number, fill: number) => {
     const room = y1 - y0;
     const span = x1 - x0;
-    const want = Math.min(room * fill, (span - 10) / 1.8);
-    const step = Math.max(4, Math.min(6, Math.round(want / 11)));
+    const want = Math.min(room * fill, (span - 10) / 2.2);
+    // A box too short for the smallest matrix at 4 draws it finer, 3 (a 320px phone's card).
+    const step = want < 23 ? 3 : Math.max(4, Math.min(6, Math.round(want / 11)));
     const n = Math.max(6, Math.min(20, Math.floor((want + 1) / step)));
     const size = n * step - 1;
     const gap = step + 1;
-    const left = span - 2 * gap - size;
-    const labelW = Math.round(Math.min(size * 0.34, left * 0.3));
-    const barW = Math.round(Math.min(size * 0.9, left * 0.7));
-    const drawn = labelW + gap + size + gap + barW * BAR_REACH;
-    const mx = Math.round(x0 + (span - drawn) / 2) + labelW + gap;
+    // Each side column's width; the leader's bar (the longest) reaches about BAR_REACH of the
+    // bar column, so the column is drawn wider by that much and the two sides end level.
+    const side = Math.round(Math.min(size * 0.6, (span - size) / 2 - gap));
+    const labelW = side;
+    const barW = Math.round(side / BAR_REACH);
+    const mx = Math.round(x0 + (span - size) / 2);
     // Centred in its room — and never above it: a box too short for the smallest matrix lets
     // its bottom rows fade into the foot rather than rise into the labels.
     return { step, n, size, gap, labelW, barW, mx, my: y0 + Math.max(0, Math.round((room - size) / 2)) };
   };
   const foot = stage.h < rows;
+  // On a card: from a margin under the labels (a little less on the shortest cards) to just
+  // inside the foot's fade.
+  const y1 = stage.h - 7;
   const g = foot
-    ? fit(12, stage.h - 2, cols * 0.08, cols * 0.92, 1)
+    ? fit(Math.max(13, Math.min(17, y1 - 18)), y1, cols * 0.08, cols * 0.92, 1)
     : fit(0, stage.h, cols * 0.1, cols * 0.9, 0.82);
   const { step, n, size, gap, labelW, barW, mx, my } = g;
   const cell = step - 1;
