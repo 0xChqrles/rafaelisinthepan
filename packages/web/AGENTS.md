@@ -2933,11 +2933,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   leaving an article level is only leaving.
   **The LEVELS** (`tutorial/levels.ts`; re-cut 2026-09-29 on the user's go-ahead, "the game
   received some updates since the levels have been decided, so feel free to reorganize
-  them"): 1 THE GAME (played) · 2 THE DISTANCE (words as coordinates: the embedding, how it
-  is learned, cosine, the rank) · 3 MANY MEANINGS (one vector per word; the sentence must be
-  read) · 4 ATTENTION (how a transformer reads: Q/K/V, layers, hidden states, the causal
-  mask) · 5 THE JUDGE (how the game ranks today: Jev's grade per candidate, the 200-word
-  tournament, the foreign-word check, why it is cheap). Levels 2–5 are ARTICLES, not played
+  them"): 1 THE GAME (played) · 2 THE DISTANCE (the embedding: words as coordinates, how it
+  is learned, cosine, the rank) · 3 MANY MEANINGS (what it lacks: one vector per word, so the
+  sentence must be read) · 4 ATTENTION (how a transformer reads a context: Q/K/V, the causal
+  mask, layers, tokens, the hidden state) · 5 THE JUDGE (Jev, which reads like a transformer
+  but judges instead of writing: the grade per candidate, the foreign-word check, the
+  200-word tournament, why it is cheap). The arc is the user's: "explanation of embedding ->
+  lack of context -> how the transformers can actually help us -> Jev which uses
+  transformers, but not like an LLM" — so the article's experiments with an LLM's hidden
+  states (the plan, the tokens and last-layer failures, the other models) are not told.
+  Levels 2–5 are ARTICLES, not played
   (user-decided 2026-09-29: "not fully interactive like the first one… more like an article,
   like the chqrles.me article, but without all the story telling"): the author's published
   article cut into four, its own sentences and examples, figures redrawn in the app's style

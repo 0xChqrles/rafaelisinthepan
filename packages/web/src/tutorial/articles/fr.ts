@@ -1,7 +1,11 @@
 // THE FRENCH ARTICLE LEVELS (2026-09-29): the author's article « J’ai amélioré Cémantix avec
 // une IA qui ne peut pas parler » (chqrles.me/cemantix, 2026-09-25), cut into four levels with
-// its story taken out — its own sentences wherever they explain, its examples, its jokes. What
-// changed on the way, so a later edit does not undo it:
+// its story taken out — its own sentences wherever they explain, its examples, its jokes. The
+// levels explain, in order: the embedding; what it lacks, the context; how a transformer reads
+// one; Jev, which reads like one but judges instead of writing. The article's experiments with
+// an LLM's hidden states (the plan, the causal mask's cost, tokens, the last layers, the other
+// models tried) are left out: level 4 ends on what a hidden state is, level 5 opens on Jev
+// (user-decided 2026-09-30). What else changed on the way, so a later edit does not undo it:
 //   - the embedding is taught as the article tells it, SKIP-GRAM (from a word, guess the words
 //     around it), and the game's own is said to have learned "de la même façon" — fastText's
 //     CBOW is the same idea the other way round, not worth a detour (user-decided 2026-09-29);
@@ -10,8 +14,8 @@
 //     rank 300; a foreign word is sent down by a yes/no question to Jev, not by a frequency
 //     rule; the rubric block quotes the code's own levels; a sentence's rank is Jev's order,
 //     the embedding's only for a lone word;
-//   - measurements are the ones the data holds: `étouffer` went from 27th to 1 182nd (the
-//     article joined two entries), a 0,1 wobble moves a tail word by thousands of ranks, not a
+//   - measurements are the ones the data holds: `étouffer` is 1 182nd once the consigne
+//     excludes the sentence's own words (27th before; the article joined two entries), a 0,1 wobble moves a tail word by thousands of ranks, not a
 //     hundred; the tournament rows are real Jev output (the spike's froidement run, whose note
 //     already had `impassibilité` 6th), the static lists the game's own (gen:word's walk over
 //     cc.fr.300, lemma display); `soigner` is only 18th for `traite` statically, so the level
@@ -239,34 +243,8 @@ const meanings: Article = {
         {
           p: 'L’embedding a compris « traiter un sujet ». La phrase, elle, parle de traiter quelqu’un. Le joueur qui tape `ménager` ou `dorloter` a parfaitement compris la phrase. Pourtant, avec l’embedding seul, le jeu lui répondrait `ménager^2037` et `dorloter^2096`. De cette injustice naît la frustration, et la frustration, ça mène à la guerre.',
         },
-        { p: 'Donner une phrase au joueur ne suffit donc pas. Il faut que le classement, lui aussi, lise la phrase.' },
-      ],
-    },
-    {
-      heading: 'Le sens de la phrase',
-      blocks: [
         {
-          p: 'C’est ce que fait le jeu pour chaque phrase du jour. L’embedding trouve toujours les 10 000 mots de la liste, puis un modèle qui lit la phrase les remet dans l’ordre, selon le sens qu’elle donne au mot caché. Un MISS reste donc un MISS : seul l’ordre change. Par exemple :',
-        },
-        {
-          fig: {
-            kind: 'words',
-            sentence: 'C’étaient donc des `nerfs` parfaits',
-            tabs: true,
-            lists: [
-              { label: 'Seul', words: ['muscles', 'neurones', 'nerveux', 'intestins', 'reins'] },
-              {
-                label: 'Dans la phrase',
-                words: ['nervosité', 'excitabilité', 'nerveux', 'énervement', 'irritable'],
-                marked: ['nervosité', 'excitabilité', 'nerveux', 'énervement', 'irritable'],
-                tone: 'right',
-              },
-            ],
-          },
-          caption: 'Parmi les plus proches voisins de `nerfs`, seul puis dans sa phrase. On parle de tempérament, pas d’anatomie.',
-        },
-        {
-          p: 'Pour jouer, une seule chose compte : le sens que la phrase donne au mot, pas le mot tout seul. Reste à comprendre comment une machine peut lire une phrase : c’est l’objet du niveau suivant.',
+          p: 'Donner une phrase au joueur ne suffit donc pas. Il faut que le classement, lui aussi, lise la phrase. Reste à comprendre comment une machine peut lire une phrase : c’est l’objet du niveau suivant.',
         },
       ],
     },
@@ -318,7 +296,10 @@ const attention: Article = {
             focus: 2,
             weights: [0.1, 0.9, null, null, null, null],
           },
-          caption: 'La query de `vole` comparée aux keys de `Le` et de `pigeon` : `pigeon` l’emporte. Et `ciel` ? On y revient juste après.',
+          caption: 'La query de `vole` comparée aux keys de `Le` et de `pigeon` : `pigeon` l’emporte.',
+        },
+        {
+          p: 'Et `ciel` ? Pendant l’attention, un mot ne peut écouter que ce qui le précède. On appelle ça le **masque causal**, et c’est logique : le modèle est entraîné à deviner la suite, on ne va pas la lui montrer.',
         },
         {
           p: 'Ces pourcentages servent à pondérer les values correspondantes, qui viennent enrichir le vecteur de `vole`.',
@@ -356,27 +337,6 @@ const attention: Article = {
       ],
     },
     {
-      heading: 'Le masque causal',
-      blocks: [
-        {
-          p: 'Pendant l’attention, un mot ne peut écouter que ce qui le précède. On appelle ça le **masque causal**, et c’est logique : le modèle est entraîné à deviner la suite, on ne va pas la lui montrer. Prenons une nouvelle phrase :',
-        },
-        {
-          fig: {
-            kind: 'arcs',
-            tokens: ['Le', 'pigeon', 'vole', 'de', 'l’argent'],
-            focus: 2,
-            weights: [0.35, 0.65, null, null, null],
-            hidden: [3, 4],
-          },
-          caption: 'Au moment de `vole`, `argent` n’est pas encore arrivé.',
-        },
-        {
-          p: 'Quand le modèle calcule le vecteur de `vole`, il a entendu `Le` et `pigeon`, mais il n’a jamais entendu parler d’`argent`. La partie la plus utile de la phrase lui est invisible, et le modèle ignore tout de la kleptomanie du pigeon.',
-        },
-      ],
-    },
-    {
       heading: 'Des dizaines de couches',
       blocks: [
         {
@@ -384,6 +344,9 @@ const attention: Article = {
         },
         {
           p: 'Pour entraîner un modèle comme GPT, on lui donne une tâche proche de celle de l’embedding : prédire la suite d’un texte. On lui montre « Le pigeon » et il doit prédire `vole`, puis « Le pigeon vole » et il doit prédire `dans`, et ainsi de suite sur des milliers de milliards de morceaux de texte. À chaque prédiction, on calcule la loss, puis les gradients, et on modifie légèrement tous les paramètres.',
+        },
+        {
+          p: 'Depuis le début, on fait comme si un LLM lisait des mots. C’est faux. Il lit des **tokens**, des morceaux de texte choisis pour être réutilisables : un mot courant tient dans un seul token, un mot plus rare est découpé en plusieurs. Ce qu’il apprend à prédire, c’est donc le token suivant.',
         },
         {
           p: 'À force de prédire la suite de milliards de phrases, le modèle apprend quels mots doivent s’écouter et quelles informations doivent circuler entre eux. C’est ainsi qu’un immense empilement de Transformers, entraîné avec l’objectif assez basique de deviner le mot suivant, finit par construire quelque chose qui ressemble dangereusement à une compréhension fine du contexte.',
@@ -397,12 +360,11 @@ const attention: Article = {
           p: 'À chaque couche, chaque mot possède donc un vecteur qui a écouté son contexte : son **hidden state**, son « état caché ». C’est exactement ce qui manquait à l’embedding statique : un vecteur qui a lu la phrase et qui fait la différence entre le vol du pigeon et le vol à l’étalage.',
         },
         {
-          p: 'D’habitude, on ne regarde pas ces vecteurs : on laisse le modèle aller jusqu’au bout et on lit le texte qu’il écrit. Mais rien n’interdit de l’arrêter en chemin et de récupérer le vecteur d’une couche.',
+          p: 'Dans l’utilisation normale d’un LLM, on ne regarde pas ces vecteurs : on laisse le modèle aller jusqu’au bout et on lit le texte qu’il produit. Toute cette lecture ne sert alors qu’à une chose : choisir le prochain token.',
         },
         {
-          p: 'Le plan devient simple. L’embedding trouve les 10 000 candidats. On écrit 10 000 versions de la phrase, en remplaçant le mot caché par chacun d’eux, on les fait lire au LLM, et on compare le hidden state de chaque candidat à celui du mot caché. On ne compare plus `voler` et `tuer` dans le vide : on les laisse d’abord lire leur phrase, puis on compare ce qu’ils sont devenus.',
+          p: 'Le jeu, lui, n’a rien à écrire. Il lui faut un modèle qui lise aussi bien, mais qui réponde à une autre question : c’est l’objet du niveau suivant.',
         },
-        { p: 'En théorie, l’idée est parfaite. Le niveau suivant montre ce que la théorie avait oublié.' },
       ],
     },
   ],
@@ -411,53 +373,8 @@ const attention: Article = {
 
 const judge: Article = {
   lead:
-    'Mesurer les vecteurs d’un LLM ne suffit pas. Alors le jeu pose la question à un modèle qui lit la phrase, trente mille fois par mot secret.',
+    'Pour ranger les mots d’une phrase, le jeu utilise une IA qui ne peut pas parler : elle lit comme un LLM, mais au lieu d’écrire, elle juge. Et on lui pose la question trente mille fois par mot secret.',
   sections: [
-    {
-      heading: 'Trois détails',
-      blocks: [
-        {
-          p: 'La théorie avait omis trois détails. Le premier, on l’a vu : le masque causal. Quand le modèle calcule `vole` dans « Le pigeon vole de l’argent », la fin de la phrase ne lui est pas encore arrivée.',
-        },
-        {
-          p: 'Deuxième détail : depuis le début, on fait comme si un LLM lisait des mots. C’est faux. Il lit des **tokens**, des morceaux de texte choisis pour être réutilisables. Un mot courant tient dans un seul token, un mot plus rare est découpé en plusieurs, avec un hidden state par morceau. On prend le dernier : il a au moins vu tous les morceaux précédents du même mot. Chez Qwen 3, par exemple, `cafard` devient `caf` et `ard`, et voici les plus proches voisins de `ard` :',
-        },
-        {
-          fig: {
-            kind: 'words',
-            sentence: 'On différencie de moins en moins le `cafard` de l’homme',
-            lists: [
-              { label: 'Embedding', words: ['cancrelat', 'blatte', 'cloporte'] },
-              {
-                label: 'Dernier token',
-                words: ['canard', 'nanard', 'bagnard', 'binoclard', 'sauciflard'],
-                marked: ['canard', 'nanard', 'bagnard', 'binoclard', 'sauciflard'],
-                tone: 'wrong',
-              },
-            ],
-          },
-          caption: 'Pas un seul insecte : le jeu serait devenu un dictionnaire de rimes.',
-        },
-        { p: 'À noter que le cloporte n’est pas un insecte mais un crustacé.' },
-        {
-          p: 'Troisième détail, et le plus profond : un LLM est entraîné à prédire la suite, pas à mesurer des distances. Dans ses dernières couches, il ne pense plus seulement au sens du mot : il prépare surtout ce qui ferait sens à cet endroit de la phrase.',
-        },
-        {
-          fig: {
-            kind: 'words',
-            sentence: 'Jusqu’à sa `retraite`',
-            lists: [{ words: ['rentrée', 'mariage', 'grève'] }],
-          },
-          caption: 'Les voisins de `retraite` dans les dernières couches d’un LLM.',
-        },
-        {
-          p: 'Des événements qui se placent très bien après « jusqu’à sa », mais qui n’ont que peu de rapport avec la retraite. On voulait une distance sémantique, on a fabriqué un exercice à trous.',
-        },
-        {
-          p: 'Surtout, quand un résultat est mauvais, impossible d’expliquer au vecteur ce qui ne doit pas compter. Si un mot est récompensé simplement parce qu’il rime avec la réponse, on ne peut écrire nulle part « arrête avec les rimes ». On peut seulement bidouiller, et prier.',
-        },
-      ],
-    },
     {
       heading: 'Poser la question',
       blocks: [
@@ -505,20 +422,37 @@ const judge: Article = {
           ],
         },
         {
-          p: 'Jev répond avec des décimales : un candidat obtient 3,26 plutôt que 3. La consigne est écrite en français ordinaire : seul le sens compte, pas la grammaire, pas l’orthographe, pas le fait que le candidat puisse remplacer le mot dans la phrase. Pour jouer, ça veut dire qu’il ne faut pas chercher ce qui irait bien dans le trou, mais ce qui veut dire la même chose.',
+          p: 'Jev répond avec des décimales : un candidat obtient 3,26 plutôt que 3. La consigne est écrite en français ordinaire : seul le sens compte, pas la grammaire, pas l’orthographe, pas le fait que le candidat puisse remplacer le mot dans la phrase. Pour jouer, ça veut dire qu’il ne faut pas chercher ce qui irait bien dans le trou, mais ce qui veut dire la même chose. Par exemple :',
         },
         {
-          p: 'Jev fait pourtant lui aussi des erreurs. Dans « la force de fixer froidement le malheur, d’étouffer mes émotions », il classait `étouffer` 27e voisin d’`émotions`. Or `étouffer` n’est pas un mot proche d’`émotions`, c’est un mot de la phrase. Alors on ajoute une ligne à la consigne :',
+          fig: {
+            kind: 'words',
+            sentence: 'C’étaient donc des `nerfs` parfaits',
+            tabs: true,
+            lists: [
+              { label: 'Seul', words: ['muscles', 'neurones', 'nerveux', 'intestins', 'reins'] },
+              {
+                label: 'Dans la phrase',
+                words: ['nervosité', 'excitabilité', 'nerveux', 'énervement', 'irritable'],
+                marked: ['nervosité', 'excitabilité', 'nerveux', 'énervement', 'irritable'],
+                tone: 'right',
+              },
+            ],
+          },
+          caption: 'Les plus proches voisins de `nerfs` selon l’embedding seul, puis selon Jev dans sa phrase.',
+        },
+        {
+          p: 'Jev a compris qu’on parlait de tempérament et pas de neurologie. La consigne dit aussi ce qui ne doit pas compter :',
         },
         {
           quote:
             'Un candidat qui figure dans la phrase, ou qui décrit ce que la phrase fait du mot secret (par exemple l’étouffer, le cacher, le perdre), n’est pas plus proche pour autant.',
         },
         {
-          p: '`étouffer` est passé de la 27e à la 1 182e place. Avec un vecteur, on pouvait constater qu’un résultat était mauvais, mais pas lui expliquer pourquoi. Ici, si Jev se trompe pour une raison qu’on peut formuler, il suffit de le lui dire.',
+          p: 'Dans « la force de fixer froidement le malheur, d’étouffer mes émotions », `étouffer` n’est pas un mot proche d’`émotions`, c’est un mot de la phrase : il n’arrive qu’au 1 182e rang. Avec un vecteur, on peut constater qu’un résultat est mauvais, mais pas lui expliquer pourquoi. Ici, si Jev se trompe pour une raison qu’on peut formuler, il suffit de le lui dire.',
         },
         {
-          p: 'Tout ne se règle pas avec des mots pour autant. La consigne dit aussi qu’un candidat qui n’est pas français mérite la note la plus basse, et Jev l’ignore superbement : `retirement` restait premier voisin de `retraite`. Alors on lui pose une question à part pour chacun des 200 premiers : est-ce bien un mot français ? Un mot étranger, un nom propre ou une marque est envoyé tout en bas.',
+          p: 'Tout ne se règle pas avec des mots pour autant. La consigne a beau donner la note la plus basse à un candidat qui n’est pas français, Jev l’ignore superbement : `retirement` restait premier voisin de `retraite`. Alors on lui pose une question à part pour chacun des 200 premiers : est-ce bien un mot français ? Un mot étranger, un nom propre ou une marque est envoyé tout en bas.',
         },
       ],
     },
@@ -583,9 +517,6 @@ const judge: Article = {
         },
         {
           p: 'Jev ne sait rien faire qu’un LLM serait incapable de faire, mais il prend une petite décision de sens extrêmement vite et pour presque rien : pour un mot secret, tout ça coûte à peu près 0,13 $. On peut donc se permettre une stratégie d’une brutalité remarquable : faire noter 10 000 candidats un par un, garder les 200 meilleurs, puis organiser 19 900 duels supplémentaires juste pour mieux les ranger. Jev est suffisamment bon marché pour qu’on lui pose trente mille fois la question.',
-        },
-        {
-          p: 'Une opération qui devient cent ou mille fois moins chère ne rend pas seulement la même solution plus économique : elle rend possibles des solutions qu’on aurait écartées avant même de les essayer.',
         },
       ],
     },
