@@ -116,10 +116,15 @@
                               `AbortSignal.timeout()` is above the browser floor and throws
                               BEFORE the fetch (it took the #216 bootstrap out on iOS 15)
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
-      tutorial/               the tutorial (#51/#155/#269): Learn.tsx (the levels), Lesson.tsx,
-                              LevelOne.tsx over LessonBoard.tsx, coach.ts (the reactive coach),
-                              levels.ts + data scripts/<lang>.ts (+ <lang>.<word>.json, the
-                              pruned #154 boards it plays on)
+      tutorial/               the tutorial (#51/#155/#269): Learn.tsx (the levels as cards),
+                              Lesson.tsx (dispatch), LevelOne.tsx over LessonBoard.tsx,
+                              coach.ts (the reactive coach), levels.ts + data scripts/<lang>.ts
+                              (+ <lang>.<word>.json, the pruned #154 boards it plays on);
+                              ArticleLevel.tsx (levels 2+, lazy via LazyArticle) over
+                              articles/<lang>.ts (the text, per language; types.ts, Rich.tsx
+                              the inline markup, typeset.ts, figures/); art/ (LevelArt.tsx,
+                              the dithered canvas, and scenes/, one picture per level)
+      components/bayer.ts     the ordered dither's Bayer 8×8 matrix (the meter, the level art)
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       components/strikeArt.ts the three strike sheets and their animation contract (#301: the
                               sentence's holes land them)
@@ -2899,20 +2904,47 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the feedback is the only teacher; the coach speaks on a mistake or a stall, never on
   success.** The MIX demo, the gated keyboard and the prescribed guesses are gone.
   **Routes, not a flag** (`langs.ts`): `/<lang>/learn` is the list (`tutorial/Learn.tsx`),
-  `/<lang>/learn/<n>` a BUILT level's lesson (`tutorial/Lesson.tsx`; an unbuilt or unknown `n`
-  lands on the list). `tutorialOpen` and `?tutorial=1` are gone — the route is the harness.
+  `/<lang>/learn/<n>` a level's lesson when it is READY in that language
+  (`tutorial/Lesson.tsx`; a level not ready there, or an unknown `n`, lands on the list).
+  `tutorialOpen` and `?tutorial=1` are gone — the route is the harness.
   Both are the RULES' place (BOOK lit); on a lesson the lit book still LEADS to the list
   (`HeaderKeys`' `litLeads`, the calendar-over-an-archive-play rule generalized), and any
-  other key leaves the lesson as a SKIP (`App`'s `leaveLesson`: tracked, `setOnboarded`).
-  **The LEVELS** (`tutorial/levels.ts`): 1 THE GAME (built) · 2 THE DISTANCE · 3 MANY MEANINGS
-  · 4 UNDER THE HOOD — each one layer deeper into the core concept (the user's four levels of
-  understanding: the UI and the distance; how the distance is computed; 300 dimensions, a
-  word holding several meanings; the vectors and what AIs do with them). Unbuilt rows are
-  greyed, not tappable, and say SOON; only a BUILT level counts toward the header's badge
-  (`.hk-badge`, `undoneLevels`) — a badge for something nobody can do is a nag. Completion is
-  DEVICE-LOCAL (`lessonsDone`, never on the account) and, for level 1, INFERRED FROM PLAY
-  (see the gate bullet). Replaying a done level is allowed. The row dress is the device
-  list's; the done mark is a small accent SQUARE where the chevron of a level still to do sits.
+  other key leaves LEVEL 1 as a SKIP (`App`'s `leaveLesson`: tracked, `setOnboarded`);
+  leaving an article level is only leaving.
+  **The LEVELS** (`tutorial/levels.ts`; re-cut 2026-09-29 on the user's go-ahead, "the game
+  received some updates since the levels have been decided, so feel free to reorganize
+  them"): 1 THE GAME (played) · 2 THE DISTANCE (words as coordinates: the embedding, how it
+  is learned, cosine, the rank) · 3 MANY MEANINGS (one vector per word; the sentence must be
+  read) · 4 ATTENTION (how a transformer reads: Q/K/V, layers, hidden states, the causal
+  mask) · 5 THE JUDGE (how the game ranks today: Jev's grade per candidate, the 200-word
+  tournament, the foreign-word check, why it is cheap). Levels 2–5 are ARTICLES, not played
+  (user-decided 2026-09-29: "not fully interactive like the first one… more like an article,
+  like the chqrles.me article, but without all the story telling"): the author's published
+  article cut into four, its own sentences and examples, figures redrawn in the app's style
+  (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **Facts follow the CODE
+  where the article and the pipeline differ** (the header of `articles/fr.ts` lists each
+  departure) — **except the embedding's training, told as the article tells it, SKIP-GRAM**
+  (from a word, guess the words around it; user-decided 2026-09-29: fastText's CBOW is not
+  worth a detour, the game's embedding "learned the same way"). **A secret next to ranked
+  words shows FOUND** — the solve's cobalt, as the game inks a hole in (`mot^0`, and the
+  word an example sentence is about) — never the held chip, which is a guess's. Every level
+  ends on a hook into the next one. The end is three bands: NEXT LEVEL, PLAY, then the
+  credit to the article apart. On a wide screen the list and an article scroll the WHOLE
+  VIEWPORT, so the scrollbar stands on the screen's edge (user-decided 2026-09-29). **Written in French first** (user-decided 2026-09-29: "wait for the article
+  translation… for the moment just create the french version"): a level is READY in a
+  language when its lesson exists there (`Level.duration`, which also carries the reading
+  time the card prints — `levels.test.ts` holds it to the text); elsewhere its card is grey
+  and says SOON. Only a READY level counts toward the header's badge (`.hk-badge`,
+  `undoneLevels(done, lang)`) — a badge for something nobody can do is a nag. Completion is
+  DEVICE-LOCAL (`lessonsDone`, never on the account): level 1 is INFERRED FROM PLAY (see the
+  gate bullet), an article is done once READ TO ITS END (the end block scrolls into view).
+  Replaying a done level is allowed. **The list is a page of CARDS** (2026-09-29, "fill the
+  screen since we have nothing else to display"): each level wears its animated DITHERED
+  illustration (`art/scenes/`, the meter's Bayer 8×8, the app's inks and the heat ramp; ~11
+  fps, only on screen, one still frame under reduced motion) edge to edge, dithered out
+  under its title; number, duration or done mark, title, subtitle; the level to do NEXT
+  wears the invitation's selection box on its title. Wide: level 1 tall on the left, the
+  articles two by two; tablet: level 1 across the top; phone: one card under the other.
   **Stage progress (user-decided 2026-09-17):** the coach dialog shows `n/4` beside it,
   driven by the current stage and `stages.length` in `LevelOne`.
   **LEVEL 1 (`tutorial/LevelOne.tsx` over `LessonBoard.tsx`, one screen, the script's
@@ -3002,15 +3034,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     at; the keys arrive with the line that hands the turn over — which types only once the
     WHEEL IS CLOSED (`tapped` lands on close, same day).
     that a rank-200 guess still fills it). The beats, each on the player's act: "I already
-    made some progress on this sentence, but I cannot find the last word. Click
-    equality¹¹ to see my tries." (ONE box, no beat between — user-decided 2026-09-16; TAP
-    on a coarse pointer — every tap line has its click twin) → tapped: "The 1000 closest words to the
-    secret fill its meter. Once full, you earn a clue." → a guess that does not fill:
-    `tutNear` → the obvious guess FILLS IT — no progress needed — and the hole ACTIVATES:
-    "The meter is full! 10 words close to the secret are masked in its tries. Click
-    freedom¹, pick a masked word, then press enter to reveal it — it costs a try."
-    (`tutActivatedTap`/`Click`, 2026-09-22; the tap teaches the wheel a second time and
-    the price once) → a hint REVEALED by an empty ENTER on the ghost: "unalienable² is revealed, for one try. Now find the secret word."
+    made progress on this sentence. Click equality¹¹ to see my tries." (ONE line, no beat
+    between — user-decided 2026-09-16; TAP on a coarse pointer — every tap line has its
+    click twin) → tapped: "The 1000 closest words to the secret fill its meter. Once full,
+    you unlock clues." (fr « on débloque des indices », never « on gagne un indice ») → a
+    guess that does not fill: `tutNear` → the obvious guess FILLS IT — no progress needed —
+    and the hole ACTIVATES: "The meter is full! Click freedom¹ and reveal a word."
+    (`tutActivatedTap`/`Click`, 2026-09-22; the tap teaches the wheel a second time)
+    (user-decided 2026-09-30, cutting the long lines: « J'ai déjà avancé sur cette phrase.
+    Clique sur parcours pour voir mes essais. », « Jauge pleine ! Touche {word}, et révèle
+    un mot. ») → a hint REVEALED by an empty ENTER on the ghost: "unalienable² is revealed, for one try. Now find the secret word."
     (`tutRevealed`, off the event's `revealed` flag) → a FAILED TRY typed after it earns the HINT
     (`hints[]`, or `pair.hint` once swapped), NEVER THE WORD (user-decided 2026-09-16,
     retiring the bot's own closing guess) → found: "You found it! You are ready for the real
@@ -3046,10 +3079,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   with a peak and snow on top.", user-decided 2026-09-16) → the ANSWER (`[2,2,9]` on the word — TWO failed tries in a row earn a REALLY
   EASY hint outright, "montagne is a bit hard", user-decided 2026-09-16; `[4,8,12]` on the
   sentence, the hole resisting longest chosen); the sentence teaches NO tap (dropped 2026-09-16: "this concept
-  will be taught on the next sentence"); SOLVED, the bot counts the tries and sets up what comes next (`tutSolved`, "You found both
-  in 7 tries. This one was easy: the daily sentences are harder." — the score, said once,
-  and the hook the METER stage hangs from, user-decided 2026-09-16; a found single word
-  still says nothing). The `{braces}` are filled from the board itself, so a line can never
+  will be taught on the next sentence"); SOLVED, the bot counts the tries and sets up what comes next (`tutSolved`, « Trouvés en
+  7 essais !\nEssayons une phrase plus dure. » / "Found in 7 tries!\nLet’s try a harder
+  sentence." — the score, said once, and the hook the METER stage hangs from, user-decided
+  2026-09-16, cut 2026-09-30; a found single word still says nothing). The `{braces}` are filled from the board itself, so a line can never
   name a word the map does not rank. THE COACH BOX IS THREE LINES, FIVE AT MOST (user-decided 2026-09-16, lifting the
   exact-three rule of 2026-08-04: the box is fixed-positioned and moves nothing beneath, and
   the bot's briefing on the last sentence runs to five at 320px — `.coach-text`
@@ -3062,7 +3095,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   keep the three events (`start` / `skip` / `finish`). The boards are pruned #154 artifacts
   (`scripts/<lang>.<word>.json`, `prune-word-map.mjs --top 150`; the exact commands in each
   script's header), never published or served; a lesson board touches no `rounds`, no outbox,
-  no server. **Not done, deliberately: levels 2–4** (their rows show the road).
+  no server.
 - **App header — TWO SLOTS (user-decided 2026-08-30, superseding the 2026-08-18
   three-slot finalization recorded below).** The BAND is unchanged — `--glass` +
   hairline + backdrop blur (`components/TopBar.tsx`), full-bleed with one bottom
@@ -3214,9 +3247,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   account is a place; the steps inside it keep their `back` on the LEFT while the face
   stays lit on the right). Tutorial — its list of levels and a lesson alike (#269): BOOK lit
   (the rules' place; on a lesson the lit book still leads to the list, and any other key
-  leaves the lesson, which is a SKIP — the fast-forward control that slot held, `skip.svg`
-  and `ariaSkipTutorial`, are retired). The book wears a BADGE with the count of built levels
-  this device has not done. **`profileReturn` is GONE from the store**: every
+  leaves LEVEL 1 as a SKIP — leaving an article level is only leaving; the fast-forward
+  control that slot held, `skip.svg` and `ariaSkipTutorial`, are retired). The book wears a
+  BADGE with the count of levels READY in this language that this device has not done
+  (`undoneLevels(done, lang)`). **`profileReturn` is GONE from the store**: every
   place is one tap away, so nothing has to remember where it was opened from, and
   `/account`'s left slot is its plain NAME rather than a back control. **This OVERTURNS #190's ACTIVE-DAY-ONLY crown** (2026-08-20): that rule hid
   the crown on an archive day so a key could not silently swap the day under the player,

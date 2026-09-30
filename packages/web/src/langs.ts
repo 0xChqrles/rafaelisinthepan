@@ -7,7 +7,7 @@ import {
   isBonusId,
 } from '@whippin/shared';
 import { FIRST_PUZZLE_DATE } from './config';
-import { levelOf } from './tutorial/levels';
+import { isReady, levelOf } from './tutorial/levels';
 
 // How far past the client's active day a dated route may reach (#273): ONE day, the
 // server's own +1-day skew window — which is what lets tomorrow's sentence open tonight.
@@ -222,11 +222,13 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   if (second === 'archive') return { view: 'archive', lang: seg };
   // /<lang>/board — the day's leaderboard (#190).
   if (second === BOARD_SEGMENT) return { view: 'board', lang: seg };
-  // /<lang>/learn — the tutorial's levels; /<lang>/learn/<n> — one BUILT level's lesson. A
-  // level that is not built (or not a level) lands on the list, where the road is shown.
+  // /<lang>/learn — the tutorial's levels; /<lang>/learn/<n> — one level's lesson, when it is
+  // ready in that language. A level that is not (or not a level) lands on the list, where the
+  // road is shown.
   if (second === LEARN_SEGMENT) {
     const level = third && /^\d+$/.test(third) ? Number(third) : NaN;
-    return levelOf(level)?.built ? { view: 'lesson', lang: seg, level } : { view: 'learn', lang: seg };
+    const found = levelOf(level);
+    return found && isReady(found, seg) ? { view: 'lesson', lang: seg, level } : { view: 'learn', lang: seg };
   }
   // /<lang>/bonus/<id> — a bonus puzzle. A broken id is a broken deep link: home.
   if (second === BONUS_SEGMENT) {

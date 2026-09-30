@@ -419,8 +419,8 @@ const STRINGS = {
   // ---- the LESSON (#51, remade by #269): level 1 is the game, played. The coach is
   // REACTIVE — it speaks on a mistake or a stall, never on success (tutorial/coach.ts) — so
   // every line here is the ONE thing a guess calls for. Deliberately TERSE, no under-the-hood
-  // talk. HARD LIMIT: the coach box is exactly 3 lines and clips — a string that wraps past
-  // three lines (~60 chars incl. exponents at the mobile width) is too much: cut it.
+  // talk. HARD LIMIT: the coach's line has a fixed room (`.l1-voice`: 2 lines wide, 3 at
+  // ≤820px, 4 on a phone) and clips — a string that wraps past it is too much: cut it.
   // Copy uses CoachText's inline markup so words LOOK like what they are in-game:
   // [[b:secret]] solve cobalt, [[w:hint^rank]] the held word's chip + rank exponent,
   // [[m:miss]] MISS's red. The {braces} are filled by coach.ts from the board itself, so a
@@ -443,12 +443,12 @@ const STRINGS = {
     en: 'Now a sentence, with two secret words.',
     fr: 'Maintenant une phrase, avec deux mots secrets.',
   },
-  // The sentence solved: the bot counts the tries — the score, said once — and says this one
-  // was easy where the daily sentences are harder (user-decided 2026-09-16): the hook the
-  // first-letter lesson will hang from.
+  // The sentence solved: the bot counts the tries — the score, said once — and leads on to a
+  // harder sentence, the meter stage (user-decided 2026-09-30, cutting "this one was easy:
+  // the daily sentences are harder"). The newline is the voice's own (`pre-line`).
   tutSolved: {
-    en: 'You found both in {n} tries. This one was easy: the daily sentences are harder.',
-    fr: 'Trouvés en {n} essais ! Celle-ci était facile, les vraies phrases sont plus dures.',
+    en: 'Found in {n} tries!\nLet’s try a harder sentence.',
+    fr: 'Trouvés en {n} essais !\nEssayons une phrase plus dure.',
   },
   // CONTINUE leads from that line into the meter stage — the one control, named for what
   // it does (never "tap anywhere").
@@ -459,26 +459,26 @@ const STRINGS = {
   // The briefing and the click instruction in ONE box (user-decided 2026-09-16; the wheel is
   // the next thing to open, the keyboard waits behind it).
   tutMeterIntroTap: {
-    en: 'I already made some progress on this sentence, but I cannot find the last word. Tap {word} to see my tries.',
-    fr: "J'ai déjà un peu avancé sur cette phrase mais je ne trouve pas le dernier mot. Touche {word} pour voir mes essais.",
+    en: 'I already made progress on this sentence. Tap {word} to see my tries.',
+    fr: "J'ai déjà avancé sur cette phrase. Touche {word} pour voir mes essais.",
   },
   tutMeterIntroClick: {
-    en: 'I already made some progress on this sentence, but I cannot find the last word. Click {word} to see my tries.',
-    fr: "J'ai déjà un peu avancé sur cette phrase mais je ne trouve pas le dernier mot. Clique sur {word} pour voir mes essais.",
+    en: 'I already made progress on this sentence. Click {word} to see my tries.',
+    fr: "J'ai déjà avancé sur cette phrase. Clique sur {word} pour voir mes essais.",
   },
   tutMeterTapped: {
-    en: 'The 1000 closest words to the secret fill its meter. Once full, you earn a clue.',
-    fr: 'Les 1000 mots les plus proches du secret remplissent sa jauge. Une fois pleine, on gagne un indice.',
+    en: 'The 1000 closest words to the secret fill its meter. Once full, you unlock clues.',
+    fr: 'Les 1000 mots les plus proches du secret remplissent sa jauge. Une fois pleine, on débloque des indices.',
   },
   // The activation (user-decided 2026-09-22, replacing the first letter): the given words
   // are MASKED in the word's tries, and a tap on one reveals it for a try.
   tutActivatedTap: {
-    en: 'The meter is full! {n} words close to the secret are masked in its tries. Tap {word}, pick a masked word, then press enter to reveal it — it costs a try.',
-    fr: 'Jauge pleine ! {n} mots proches du secret sont masqués dans ses essais. Touche {word}, choisis un mot masqué, puis valide pour le révéler, contre un essai.',
+    en: 'The meter is full! Tap {word} and reveal a word.',
+    fr: 'Jauge pleine ! Touche {word}, et révèle un mot.',
   },
   tutActivatedClick: {
-    en: 'The meter is full! {n} words close to the secret are masked in its tries. Click {word}, pick a masked word, then press enter to reveal it — it costs a try.',
-    fr: 'Jauge pleine ! {n} mots proches du secret sont masqués dans ses essais. Clique sur {word}, choisis un mot masqué, puis valide pour le révéler, contre un essai.',
+    en: 'The meter is full! Click {word} and reveal a word.',
+    fr: 'Jauge pleine ! Clique sur {word}, et révèle un mot.',
   },
   // A hint revealed: named, priced, and the turn handed back.
   tutRevealed: {
@@ -531,18 +531,36 @@ const STRINGS = {
   tutHintChemin: { en: 'A hint: the secret word is a small road, or a way.', fr: 'Un indice : le mot secret est une petite route, ou une voie.' },
   // The lesson's wordless ending: the solved sentence stands, and PLAY graduates into the game.
   tutPlay: { en: 'PLAY', fr: 'JOUER' },
-  // ---- the LEVELS list (#269): the tutorial page, one row per level (tutorial/levels.ts).
+  // ---- the LEVELS list (#269): the tutorial page, one card per level (tutorial/levels.ts).
   learnTitle: { en: 'TUTORIAL', fr: 'TUTORIEL' },
   levelPlayTitle: { en: 'THE GAME', fr: 'LE JEU' },
   levelPlaySub: { en: 'Guess the secret words', fr: 'Deviner les mots secrets' },
   levelDistanceTitle: { en: 'THE DISTANCE', fr: 'LA DISTANCE' },
-  levelDistanceSub: { en: 'How closeness is measured', fr: 'Comment la proximité se mesure' },
+  levelDistanceSub: { en: 'Words as coordinates', fr: 'Des mots en coordonnées' },
   levelMeaningsTitle: { en: 'MANY MEANINGS', fr: 'PLUSIEURS SENS' },
-  levelMeaningsSub: { en: 'One word, several places', fr: 'Un mot, plusieurs places' },
-  levelVectorsTitle: { en: 'UNDER THE HOOD', fr: 'SOUS LE CAPOT' },
-  levelVectorsSub: { en: 'Vectors, and what AIs do with them', fr: 'Les vecteurs, et ce que les IA en font' },
+  levelMeaningsSub: { en: 'One word, one vector', fr: 'Un mot, un seul vecteur' },
+  levelAttentionTitle: { en: 'ATTENTION', fr: 'L’ATTENTION' },
+  levelAttentionSub: { en: 'How a machine reads a sentence', fr: 'Comment une machine lit une phrase' },
+  levelJudgeTitle: { en: 'THE JUDGE', fr: 'LE JUGE' },
+  levelJudgeSub: { en: 'How the game ranks the words', fr: 'Comment le jeu range les mots' },
   levelDone: { en: 'Done', fr: 'Fait' },
   levelSoon: { en: 'SOON', fr: 'BIENTÔT' },
+  // An article level's credits line and its ending: which level of how many, and where the
+  // reader goes once it is read (the next level, else the game).
+  levelOf: { en: 'LEVEL {n} OF {total}', fr: 'NIVEAU {n} SUR {total}' },
+  levelNext: { en: 'NEXT LEVEL', fr: 'NIVEAU SUIVANT' },
+  levelFigure: { en: 'FIG.', fr: 'FIG.' },
+  levelSource: { en: 'The full story', fr: 'L’histoire complète' },
+  // What an article's figures say in words, for a screen reader: a hidden word, the table's
+  // word column, what a marked word is, and a duration spoken (the card prints 4′50″).
+  levelBlank: { en: 'hidden word', fr: 'mot caché' },
+  levelWord: { en: 'word', fr: 'mot' },
+  levelMarkWrong: { en: 'off topic', fr: 'hors sujet' },
+  levelMarkRight: { en: 'on topic', fr: 'dans le sens' },
+  levelMarkDiffers: { en: 'where they differ', fr: 'ce qui change' },
+  levelMarkFocus: { en: 'the word read', fr: 'le mot lu' },
+  levelMarkUnheard: { en: 'not heard yet', fr: 'pas encore entendu' },
+  levelDurationSpoken: { en: '{m} min {s} s', fr: '{m} min {s} s' },
   // ---- the game's pre-round gate (2026-08-11; #269 made it an INVITATION): until level 1 is
   // done, LEARN opens it and PLAY skips it; a device with no account keeps PLAY as its
   // deploy button.

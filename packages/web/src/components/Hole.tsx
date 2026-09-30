@@ -66,6 +66,7 @@ export default function Hole({
   chargeHintId,
   quiet = false,
   veiled = false,
+  enter,
 }: {
   hole: RuntimeHole;
   hit: HitState | null;
@@ -98,6 +99,9 @@ export default function Hole({
   // itself, so the round supplies it and the hole owns everything else: its own clock, and
   // whether it is personally free to ripple.
   quiet?: boolean;
+  // Read at mount only: the word scrambles IN from this many letters, as it does when it
+  // changes (Phrase's `morphFrom` — the tutorial's stage change).
+  enter?: number;
 }) {
   // Exponent rolls toward the current rank one rank step at a time (or snaps under
   // reduced motion, see rankTweenDuration). A solved hole visibly reaches 0, then removes
@@ -148,6 +152,11 @@ export default function Hole({
   // down changes `hole.word` in the same render that lifts the veil — a passive effect let
   // the OLD word paint once between the two before the churn began.
   const { jumble, start } = useScramble();
+  useLayoutEffect(() => {
+    if (enter !== undefined) start(hole.word, enter);
+    // Mount only: an entrance, never replayed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useLayoutEffect(() => {
     if (hole.word === displayWord) return undefined;
     // Mix in place through the numeric tween (RANK_MAX_MS), then settle. displayWord flips

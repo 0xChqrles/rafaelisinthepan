@@ -33,6 +33,7 @@ const TICK_MS = SCRAMBLE_TICK_MS;
 // Every letter's start falls somewhere in this fixed window — the whole erosion's
 // length, independent of the sentence's. In ticks so a start is always a whole frame.
 const SPREAD_TICKS = 18; // 720ms
+const BRISK_SPREAD_TICKS = 8; // 320ms (`brisk`)
 // Each letter churns a random number of frames before going out — the second die that
 // keeps two letters starting together from ending together.
 const CHURN_MIN_TICKS = 2;
@@ -63,10 +64,14 @@ interface Token {
 export default function DissolvePhrase({
   words,
   puzzleHoles,
+  brisk = false,
   onDone,
 }: {
   words: string[];
   puzzleHoles: PuzzleHole[];
+  // A quicker erosion with no breath after it: the tutorial's last sentence handing over to
+  // the level's card, which has a lesson's pace, not a result's.
+  brisk?: boolean;
   onDone: () => void;
 }) {
   // The letter plan is rolled ONCE at mount (both dice — start and churn length), so a
@@ -80,7 +85,7 @@ export default function DissolvePhrase({
     const plan = (text: string): Letter[] =>
       Array.from(text).map((ch) => ({
         ch,
-        startTick: Math.floor(Math.random() * SPREAD_TICKS),
+        startTick: Math.floor(Math.random() * (brisk ? BRISK_SPREAD_TICKS : SPREAD_TICKS)),
         churnTicks:
           CHURN_MIN_TICKS + Math.floor(Math.random() * (CHURN_MAX_TICKS - CHURN_MIN_TICKS + 1)),
       }));
@@ -153,9 +158,9 @@ export default function DissolvePhrase({
   useEffect(() => {
     if (tick < lastTick) return undefined;
     if (reduceMotion) return undefined; // the mount effect already reported
-    const id = window.setTimeout(() => onDoneRef.current(), DONE_HOLD_MS);
+    const id = window.setTimeout(() => onDoneRef.current(), brisk ? 0 : DONE_HOLD_MS);
     return () => window.clearTimeout(id);
-  }, [tick, lastTick, reduceMotion]);
+  }, [tick, lastTick, reduceMotion, brisk]);
 
   // One letter's frame: itself, a churning glyph, or its own invisible box.
   const letter = (l: Letter, index: number) => {

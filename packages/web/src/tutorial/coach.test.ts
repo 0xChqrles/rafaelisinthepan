@@ -230,19 +230,19 @@ describe('coachCopy', () => {
     );
     expect(coachCopy('en', { kind: 'answer', holeIndex: 0 }, stage, true)).toBe('The secret word is [[b:ocean]]. Type it.');
     expect(coachCopy('en', { kind: 'solved', tries: 7 }, stage, true)).toBe(
-      'You found both in 7 tries. This one was easy: the daily sentences are harder.',
+      'Found in 7 tries!\nLet’s try a harder sentence.',
     );
     expect(coachCopy('en', { kind: 'activated', word: 'sea', rank: 1 }, stage, true)).toBe(
-      'The meter is full! 5 words close to the secret are masked in its tries. Tap [[w:sea^1]], pick a masked word, then press enter to reveal it — it costs a try.',
+      'The meter is full! Tap [[w:sea^1]] and reveal a word.',
     );
     expect(coachCopy('fr', { kind: 'activated', word: 'mer', rank: 1 }, stage, false)).toBe(
-      'Jauge pleine ! 5 mots proches du secret sont masqués dans ses essais. Clique sur [[w:mer^1]], choisis un mot masqué, puis valide pour le révéler, contre un essai.',
+      'Jauge pleine ! Clique sur [[w:mer^1]], et révèle un mot.',
     );
     expect(coachCopy('fr', { kind: 'revealedHint', word: 'rive', rank: 3 }, stage, true)).toBe(
       '[[w:rive^3]] est révélé, pour un essai. À toi de trouver le mot secret.',
     );
-    expect(coachCopy('en', { kind: 'introMeter', hole }, stage, true)).toMatch(/last word\. Tap \[\[w:islands\^10\]\] to see my tries\.$/);
-    expect(coachCopy('en', { kind: 'introMeter', hole }, stage, false)).toMatch(/last word\. Click \[\[w:islands\^10\]\] to see my tries\.$/);
+    expect(coachCopy('en', { kind: 'introMeter', hole }, stage, true)).toMatch(/sentence\. Tap \[\[w:islands\^10\]\] to see my tries\.$/);
+    expect(coachCopy('en', { kind: 'introMeter', hole }, stage, false)).toMatch(/sentence\. Click \[\[w:islands\^10\]\] to see my tries\.$/);
     expect(coachCopy('en', { kind: 'hint', holeIndex: 0 }, stage, true)).toBe(
       'A hint: the secret word is a very large body of water.',
     );

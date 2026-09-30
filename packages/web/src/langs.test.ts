@@ -208,8 +208,14 @@ describe('tutorial routes (#269)', () => {
     expect(parseRoute('/en/learn/')).toEqual({ view: 'learn', lang: 'en' });
     expect(parseRoute('/en/learn/1')).toEqual({ view: 'lesson', lang: 'en', level: 1 });
   });
-  it('lands a level that is not built, or not a level, on the list', () => {
+  it('routes a level to its lesson only in a language it is ready in', () => {
+    expect(parseRoute('/fr/learn/2')).toEqual({ view: 'lesson', lang: 'fr', level: 2 });
+    expect(parseRoute('/fr/learn/5')).toEqual({ view: 'lesson', lang: 'fr', level: 5 });
+    // The article levels are written in French first; in English they are the road ahead.
     expect(parseRoute('/en/learn/2')).toEqual({ view: 'learn', lang: 'en' });
+  });
+  it('lands a level that is not ready, or not a level, on the list', () => {
+    expect(parseRoute('/fr/learn/6')).toEqual({ view: 'learn', lang: 'fr' });
     expect(parseRoute('/en/learn/99')).toEqual({ view: 'learn', lang: 'en' });
     expect(parseRoute('/en/learn/x')).toEqual({ view: 'learn', lang: 'en' });
   });

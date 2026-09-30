@@ -13,6 +13,8 @@ import { MISS_COLOR, rankHeatColor } from '@whippin/shared';
 // letter shows and a word being "typed" can never jump to the next line mid-word.
 // The visible text is aria-hidden (a live region would announce every keystroke of
 // the typewriter); callers pass richToPlain() to the screen-reader region instead.
+// While it types, the prompt's own cobalt underscore rides the last letter out — the bot
+// types the way the player does — and goes once the line is whole.
 
 type Seg =
   | { kind: 'plain'; text: string }
@@ -61,21 +63,22 @@ const HIDDEN: CSSProperties = { visibility: 'hidden' };
 // paragraph's layout (and its wrap points) never changes while the text types on.
 // One span per character keeps the browser's normal word-wrapping (breaks still
 // happen at the spaces), it just gates each glyph's visibility.
-function chars(text: string, budget: number) {
+// `typing`: the line is still typing, so the last letter out carries the caret.
+function chars(text: string, budget: number, typing: boolean) {
   return [...text].map((ch, i) => (
     // eslint-disable-next-line react/no-array-index-key -- static per copy string
-    <span key={i} style={i < budget ? undefined : HIDDEN}>
+    <span key={i} style={i < budget ? undefined : HIDDEN} className={typing && i === budget - 1 ? 'coach-caret' : undefined}>
       {ch}
     </span>
   ));
 }
 
-function renderSeg(s: Seg, budget: number, key: number) {
-  if (s.kind === 'plain') return <Fragment key={key}>{chars(s.text, budget)}</Fragment>;
+function renderSeg(s: Seg, budget: number, key: number, typing: boolean) {
+  if (s.kind === 'plain') return <Fragment key={key}>{chars(s.text, budget, typing)}</Fragment>;
   if (s.kind === 'blue') {
     return (
       <span key={key} className="rt-target">
-        {chars(s.text, budget)}
+        {chars(s.text, budget, typing)}
       </span>
     );
   }
@@ -85,7 +88,7 @@ function renderSeg(s: Seg, budget: number, key: number) {
     // MISS constant.
     return (
       <span key={key} className="rt-miss" style={{ color: MISS_COLOR }}>
-        {chars(s.text, budget)}
+        {chars(s.text, budget, typing)}
       </span>
     );
   }
@@ -99,9 +102,9 @@ function renderSeg(s: Seg, budget: number, key: number) {
   };
   return (
     <span key={key} className="rt-word">
-      <span className="rt-word-text">{chars(s.text, budget)}</span>
+      <span className="rt-word-text">{chars(s.text, budget, typing)}</span>
       <sup className="hole-rank" style={rankStyle}>
-        {chars(String(s.rank), budget - s.text.length)}
+        {chars(String(s.rank), budget - s.text.length, typing)}
       </sup>
     </span>
   );
@@ -135,10 +138,11 @@ export default function CoachText({ copy }: { copy: string }) {
   }, [copy, total, reduced]);
 
   let budget = shown;
+  const typing = shown < total;
   return (
     <p className="coach-text" aria-hidden="true">
       {segs.map((s, i) => {
-        const el = renderSeg(s, budget, i);
+        const el = renderSeg(s, budget, i, typing);
         budget -= segLen(s);
         return el;
       })}

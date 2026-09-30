@@ -9,7 +9,6 @@
 import type { RankEntry, RuntimeHole } from '@whippin/shared';
 import { t } from '../i18n';
 import type { LessonStage, StageKind } from './script';
-import { GIVEN } from '../game/charge';
 
 export type Stage = StageKind;
 
@@ -179,7 +178,7 @@ export function ordinal(lang: string, n: number): string {
   return `${n}${suffix}`;
 }
 
-// The line as the coach box prints it: the copy key's text with the board's words in their
+// The line as the coach prints it: the copy key's text with the board's words in their
 // in-game dress (CoachText's [[..]] markup — the held word's chip and exponent, MISS red,
 // the secret's cobalt).
 export function coachCopy(
@@ -211,9 +210,10 @@ export function coachCopy(
     case 'meterTapped':
       return t(lang, 'tutMeterTapped');
     case 'activated':
-      return t(lang, coarsePointer ? 'tutActivatedTap' : 'tutActivatedClick')
-        .replace('{n}', String(GIVEN))
-        .replace('{word}', chip(line.word, line.rank));
+      return t(lang, coarsePointer ? 'tutActivatedTap' : 'tutActivatedClick').replace(
+        '{word}',
+        chip(line.word, line.rank),
+      );
     case 'revealedHint':
       return t(lang, 'tutRevealed').replace('{word}', chip(line.word, line.rank));
     case 'found':

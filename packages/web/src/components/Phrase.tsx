@@ -25,6 +25,7 @@ export default function Phrase({
   // OFF for a board that is ONE word (the tutorial's word stage): a lone word is a word, not
   // a sentence, and a capital on it read wrong (user feedback 2026-09-16).
   capital = true,
+  morphFrom,
 }: {
   words: string[];
   holes: RuntimeHole[];
@@ -48,6 +49,11 @@ export default function Phrase({
   // description of it (empty for a hole with nothing to describe — a solved one).
   charges?: (HoleChargeView & { hint: string })[];
   capital?: boolean;
+  // THE MORPH ENTRANCE (the tutorial's stage change, 2026-09-30), in place of the decode: the
+  // sentence stands from its first frame, every letter churning, and settles as the front
+  // passes; each hole scrambles in from this many letters (by hole index), as an improved
+  // word does. The text before it is gone the same frame, so one text turns into the other.
+  morphFrom?: number[];
 }) {
   const holeIndexByPos = new Map<number, number>(holes.map((h, i) => [h.pos, i]));
   // Sentence case is a DISPLAY rule (`game/sentenceCase.ts`): the first token and every
@@ -61,8 +67,8 @@ export default function Phrase({
   // THE SENTENCE DECODES ITSELF IN when it arrives (`PhraseIntro` holds the why): a front
   // sweeps it left to right, a plain word's letters churning into place as it passes, a hole
   // stamped in at its own letter (`--at`, `.phrase-intro`). Each token's place on that
-  // front is the count of the letters before it. Keyed on the words, so a new sentence (a
-  // lesson's next stage) decodes again and nothing else ever replays it; the dissolve's copy
+  // front is the count of the letters before it. Keyed on the words, so a new sentence decodes again
+  // (or morphs in, with `morphFrom`: a lesson's next stage) and nothing else ever replays it; the dissolve's copy
   // of the sentence (`DissolvePhrase`) is a component of its own and never decodes.
   const key = words.join(' ');
   const shownText = (w: string, i: number) => (starts[i] ? capitalize(w) : w);
@@ -85,7 +91,7 @@ export default function Phrase({
 
   return (
     <>
-    <p className={`phrase${intro.running ? ' phrase-intro' : ''}`} key={key}>
+    <p className={`phrase${intro.running ? (morphFrom ? ' phrase-morph' : ' phrase-intro') : ''}`} key={key}>
       {words.map((w, i) => {
         const space = i > 0 ? ' ' : '';
         const idx = holeIndexByPos.get(i);
@@ -112,6 +118,7 @@ export default function Phrase({
                   <span className="word">{starts[i] ? capitalize(prefix) : prefix}</span>
                 ) : null}
                 <Hole
+                  enter={morphFrom?.[idx]}
                   capital={starts[i] && !prefix}
                   hole={rHole}
                   hit={activeHit}
@@ -142,7 +149,13 @@ export default function Phrase({
             {space}
             <span className="word">
               {intro.running ? (
-                <DecodeWord text={shownText(w, i)} first={firsts[i]} plan={plan} clock={intro} />
+                <DecodeWord
+                  text={shownText(w, i)}
+                  first={firsts[i]}
+                  plan={plan}
+                  clock={intro}
+                  morph={morphFrom !== undefined}
+                />
               ) : (
                 shownText(w, i)
               )}
