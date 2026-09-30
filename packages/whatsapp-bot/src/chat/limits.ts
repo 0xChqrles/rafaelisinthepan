@@ -21,7 +21,7 @@ export interface LimitStore {
   take(scope: string, key: string, max: number, expiresAt: number): Promise<boolean>;
 }
 
-export function utcDay(now: Date): string {
+function utcDay(now: Date): string {
   return now.toISOString().slice(0, 10);
 }
 
@@ -36,6 +36,14 @@ export const limitKeys = {
 // Two days: long enough to outlive the UTC day it counts, short enough to vanish on its own.
 export function limitExpiry(now: Date): number {
   return Math.floor(now.getTime() / 1000) + 2 * 24 * 60 * 60;
+}
+
+// One unit of the daily CALL ceiling. ONE spelling for every model path that spends it
+// (the conversation, the share line): two would be two counters the day a key changed,
+// each bounding half the spend.
+export function takeDailyCall(limits: LimitStore, ceiling: number, at: Date): Promise<boolean> {
+  const { scope, key } = limitKeys.calls(at);
+  return limits.take(scope, key, ceiling, limitExpiry(at));
 }
 
 export function dynamoLimitStore(client: DynamoDBClient, tableName: string): LimitStore {

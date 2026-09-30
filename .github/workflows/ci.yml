@@ -26,7 +26,7 @@ jobs:
 
       # Version comes from the root packageManager field (pnpm@11.9.0).
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -37,16 +37,17 @@ jobs:
       - name: Install JS deps
         run: pnpm install --frozen-lockfile
 
-      # uv + Python 3.12 for generation + benchmark pytest (dependency-free:
+      # uv + Python 3.12 for the generation, benchmark and curation pytest (dependency-free:
       # their conftests/path wiring make an ephemeral pytest env enough).
       - name: Set up uv (+ Python)
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: '3.12'
 
       - name: Typecheck
         run: pnpm -r --if-present run typecheck
 
-      # Fans out to Vitest (shared/web/backend) + pytest (generation/benchmark).
+      # Fans out to Vitest (shared/web/backend/whatsapp-bot/infra) + pytest
+      # (generation/benchmark/curation).
       - name: Test
         run: pnpm test

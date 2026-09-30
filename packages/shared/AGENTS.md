@@ -40,6 +40,8 @@
                               path + view box, shared by the OG card and the web result
     src/heat.ts               the app's ONE weird→calm stop gradient: heatColor() + fixed-cap rankHeatColor()/HIT_HEAT_CAP (exponents, floating hits, loot, route rows) + progressHeatColor()/progressEmoji() (run rulers incl. the card, share-text emoji row, archive fills, chooser strips)
     src/shareCard.ts          the share-token codec, browser + Lambda
+    src/base64url.ts          INTERNAL (not re-exported): the base64url alphabet + encoder the
+                              share-token and avatar codecs share
     src/cardSvg.ts            the OG cards' SVG: a result from a decoded token, and the #271 group card (name + member marks + app name)
     src/index.ts              re-exports
 ```
@@ -133,7 +135,7 @@
 - **`currentStreak` MOVED here from the web with #204** (`src/history.ts`): the erase
   confirmation names the streak the account being deleted is about to lose, so the SERVER
   derives one too, and two spellings would put a different number on that dialog than the
-  streak screen shows over the same days. `web/game/streak.ts` re-exports it and keeps
+  streak screen shows over the same days. `web/game/streak.ts` imports it and keeps
   `streakTransition`/`weekView`, which are the SCREEN's own.
 - **`src/vocab.generated.json` is the ONE file in this package nobody writes by hand
   (#200).** GENERATION emits it, in the same call that writes the existence set and from

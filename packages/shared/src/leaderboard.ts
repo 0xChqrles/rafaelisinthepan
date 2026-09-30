@@ -31,7 +31,13 @@ export interface RankedScore extends BoardScore {
 export const BOARD_TOP_LIMIT = 50;
 
 // How many neighbors flank the caller's own row on each side when it sits below the cut.
-export const BOARD_WINDOW_SPAN = 2;
+const BOARD_WINDOW_SPAN = 2;
+
+// The last key of every sort here: a deterministic row order between reads, never a
+// ranking claim.
+function byPublicId(a: { publicId: string }, b: { publicId: string }): number {
+  return a.publicId < b.publicId ? -1 : a.publicId > b.publicId ? 1 : 0;
+}
 
 // Sort a day's rows best-first — a score counts tries, so LOWER is better — and assign
 // competition ranks. Ties are ordered by publicId — NOT a ranking claim (they share the
@@ -41,7 +47,7 @@ export function rankBoard(rows: readonly BoardScore[]): RankedScore[] {
   const sorted = [...rows].sort((a, b) => {
     const byScore = a.score - b.score;
     if (byScore !== 0) return byScore;
-    return a.publicId < b.publicId ? -1 : a.publicId > b.publicId ? 1 : 0;
+    return byPublicId(a, b);
   });
   let rank = 1;
   return sorted.map((row, i) => {
@@ -88,7 +94,7 @@ export function orderPlaying(rows: readonly PlayingScore[]): PlayingScore[] {
   return [...rows].sort((a, b) => {
     if (a.progress !== b.progress) return b.progress - a.progress;
     if (a.tries !== b.tries) return a.tries - b.tries;
-    return a.publicId < b.publicId ? -1 : a.publicId > b.publicId ? 1 : 0;
+    return byPublicId(a, b);
   });
 }
 
@@ -162,7 +168,7 @@ export interface Board {
 // A day with no recorded score for a member is simply absent from that member's line —
 // a leaderboard is a DAY's competition (#211's on-time rule), so late and capped rounds
 // count for nothing here exactly as they record no row on the day board.
-export const PODIUM_POINTS: readonly number[] = [3, 2, 1];
+const PODIUM_POINTS: readonly number[] = [3, 2, 1];
 
 // One recorded score of one member on one day of the range — what the backend reads.
 export interface PeriodDay extends BoardScore {
@@ -210,7 +216,7 @@ export function rankPeriod(days: readonly PeriodDay[]): RankedPeriod[] {
     if (a.points !== b.points) return b.points - a.points;
     if (a.solvedDays !== b.solvedDays) return b.solvedDays - a.solvedDays;
     if (a.total !== b.total) return a.total - b.total;
-    return a.publicId < b.publicId ? -1 : a.publicId > b.publicId ? 1 : 0;
+    return byPublicId(a, b);
   });
   let rank = 1;
   return sorted.map((row, i) => {

@@ -1272,14 +1272,13 @@ input {
 }
 
 /* ===================== the puzzle selection ===================== */
-/* The title's selection (2026-09-02, four passes — the reasoning is in PuzzleSelect): the
-   hole wheel's fade in and out (`.wheel-dialog`) on FLAT `--bg`, every full-screen
-   dialog's ground, under the app's header row with a BACK CHEVRON in its left slot; and
-   in the middle of the screen TWO DRUMS side by side, the DAILY's and the LANGUAGE's,
-   each a column scrolling through a slot on one shared line — the row in the slot in the
-   title's chip at a size the middle of a screen can carry, the others plain. Every number
-   that has to agree — the row height, the pitch, the slot — is set inline from one
-   measured chip; the CSS owns the dress. */
+/* The title's selection (the reasoning is in PuzzleSelect): the hole wheel's fade in and
+   out on FLAT `--bg`, every full-screen dialog's ground, under the app's header row with
+   a BACK CHEVRON in its left slot; and in the middle of the screen ONE DRUM, the
+   LANGUAGE's, a column scrolling through a slot — the row in the slot in the title's chip
+   at a size the middle of a screen can carry, the others plain. Every number that has to
+   agree — the row height, the pitch, the slot — is set inline from one measured chip; the
+   CSS owns the dress. */
 /* Doubled with `.wheel-dialog` on purpose: the wheel's own `[open]` rule sets the dim and
    sits later in this file, so at equal specificity it would win. */
 .wheel-dialog.puzzle-select[open] {
@@ -1301,7 +1300,6 @@ input {
 .ps-cols {
   display: flex;
   align-items: flex-start;
-  gap: 56px;
   /* Centred in what the header leaves — auto margins, so the header keeps its own row. */
   margin: auto;
   padding: 24px 24px 72px;
@@ -1337,7 +1335,7 @@ input {
   font: inherit;
   color: var(--fg);
   cursor: pointer;
-  animation: wheel-row-in 120ms ease-out both;
+  animation: fade-in 120ms ease-out both;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
 .ps-chip {
@@ -1365,17 +1363,11 @@ input {
   background: color-mix(in srgb, var(--fg) 68%, var(--bg));
 }
 @media (max-width: 640px) {
-  .ps-cols {
-    gap: 36px;
-  }
   .ps-chip {
     font-size: 18px;
   }
 }
 @media (max-width: 360px) {
-  .ps-cols {
-    gap: 24px;
-  }
   .ps-chip {
     font-size: 16px;
   }
@@ -1862,9 +1854,9 @@ input {
    string also leaves `transform` free for `rank-pop`, which still plays in place.
    The exponent's own type is `0.55em`, so the chip's `0.2em` overhang is `0.2em / 0.55`
    in ITS context — the division is the unit conversion, written out rather than resolved
-   to a number that would silently stop matching the chip. */
+   to a number that would silently stop matching the chip (`.hole-rank`'s size below). */
 .hole:not(.resolved) .hole-rank {
-  translate: calc(0.2em / var(--rank-size, 0.55)) 0;
+  translate: calc(0.2em / 0.55) 0;
 }
 .hole:not(.resolved) ~ .word {
   translate: 0.2em 0;
@@ -1872,12 +1864,11 @@ input {
 .hole-rank {
   /* inline-block (not inline) so the rank-pop transform applies; width fits the
      exponent's own content so a trailing suffix hugs the number, no reserved gap.
-     THE SIZE IS ONE VARIABLE (`--rank-size`, the exponent's em over the word's): 0.55
-     where the class is reused (the coach text's hint words), 0.75 on the SENTENCE and the
-     wheel's slot row (user-decided 2026-09-15, "the exponent number should be bigger");
-     the chip nudges below divide by the same variable, so they cannot drift from it. */
+     THE SIZE is 0.55em of the word's, wherever the class is worn — the sentence, the
+     wheel's slot row, the coach text's hint words; the chip nudge above divides by the
+     same 0.55, so a change here changes it there. */
   display: inline-block;
-  font-size: calc(1em * var(--rank-size, 0.55));
+  font-size: 0.55em;
   margin-left: 1px;
   color: var(--rank-color);
   vertical-align: super;
@@ -2099,20 +2090,13 @@ input {
   }
 }
 
-/* --- prompt zone: input area ⇄ solved caption, no reserved heights ---
-   The two occupants of the row under the sentence overlay in ONE grid cell, both
-   mounted for the whole round (the retired/pending one visibility-hidden). The cell
-   sizes to the taller NATURAL height — the caption lays out its full citation from
-   frame one, MASKED until the reveal beat (SolvedCaption) so reserving that height
-   never leaves the attribution readable in an unsolved round's DOM — so the
-   prompt→citation swap cannot move the centered sentence and no hand-synced
-   min-height pair is needed (the old 90px/72px trick, removed 2026-07-25). */
+/* --- prompt zone: the row under the sentence, holding the input area ---
+   A one-cell grid (the input area is its grid item — see its `min-width: 0`). The prompt
+   stays mounted for the whole round, visibility-hidden once retired, so the centered
+   sentence never moves when it leaves. */
 .prompt-zone {
   width: 100%;
   display: grid;
-}
-.prompt-zone > * {
-  grid-area: 1 / 1;
 }
 .input-area.retired {
   visibility: hidden;
@@ -2445,7 +2429,7 @@ input {
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
   opacity: 0;
-  /* The stage rises the way the tray results always have (mirrored by resultAnimation). */
+  /* The stage rises the way the tray results always have (mirrored by `RESULTS_IN_MS`). */
   transform: translateY(clamp(24px, 5vh, 44px));
   transition: opacity 0.25s ease-out, transform 0.25s ease-out;
 }
@@ -2933,16 +2917,18 @@ input {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: hw-in 100ms ease-out both;
+  animation: fade-in 100ms ease-out both;
 }
 .hw-dialog[open].closing {
-  animation: hw-out 100ms ease-in both;
+  animation: fade-out 100ms ease-in both;
   pointer-events: none;
 }
 .hw-dialog::backdrop {
   background: transparent;
 }
-@keyframes hw-in {
+/* The app's two plain fades: dialogs, the error screen and the wheel's rows enter and leave
+   on these. */
+@keyframes fade-in {
   from {
     opacity: 0;
   }
@@ -2950,7 +2936,7 @@ input {
     opacity: 1;
   }
 }
-@keyframes hw-out {
+@keyframes fade-out {
   from {
     opacity: 1;
   }
@@ -3075,32 +3061,23 @@ input {
   overflow: hidden;
   color: var(--fg);
   background: color-mix(in srgb, var(--bg) 74%, transparent);
-  animation: wheel-in 100ms ease-out both;
+  animation: fade-in 100ms ease-out both;
 }
 .wheel-dialog[open].closing {
   animation: wheel-out 100ms ease-in both;
   pointer-events: none;
 }
-/* THE FOLD LEAVES THE SLOT ROW STANDING (user-reported 2026-09-02, "the hole word blinking
-   on wheel close"): the whole dialog used to fade, slot row included, while the real word
-   under it stayed VEILED until the dialog had closed — so for the fade's last frames there
-   was no word at all, and then it popped back. Now the fold fades only the DIM and the
-   plain rows; the slot row — the hole's own markup at the hole's own place — holds at full
-   strength until `close` lifts the veil, and the real word takes over under it with no
-   frame between. (The title's selection wears its own whole-screen fade, `select-out`.) */
+/* THE FOLD LEAVES THE SLOT ROW STANDING: the fold fades only the DIM and the plain rows;
+   the slot row — the hole's own markup at the hole's own place — holds at full strength
+   until `close` lifts the veil, and the real word takes over under it with no frame
+   between. The real word stays VEILED until the dialog has closed, so a fade of the whole
+   dialog would leave its last frames with no word at all. (The title's selection wears its
+   own whole-screen fade, `fade-out`.) */
 .wheel-dialog.closing .wheel-row:not(.wheel-row-slot) {
-  animation: wheel-row-out 100ms ease-in both;
+  animation: fade-out 100ms ease-in both;
 }
 .wheel-dialog::backdrop {
   background: transparent;
-}
-@keyframes wheel-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
 }
 @keyframes wheel-out {
   from {
@@ -3110,24 +3087,8 @@ input {
     background-color: transparent;
   }
 }
-@keyframes wheel-row-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-@keyframes select-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
 .wheel-dialog.puzzle-select[open].closing {
-  animation: select-out 100ms ease-in both;
+  animation: fade-out 100ms ease-in both;
 }
 /* THE DRUM: one column under the header, on the word's left edge, whose scroll position
    `HistoryWheel` writes itself — a ratchet with momentum, hopping row by row (see the
@@ -3183,20 +3144,12 @@ input {
   white-space: nowrap;
   overflow: visible;
   cursor: pointer;
-  animation: wheel-row-in 120ms ease-out both;
+  animation: fade-in 120ms ease-out both;
   animation-delay: calc(var(--i, 0) * 18ms);
 }
 .wheel-right .wheel-row {
   text-align: right;
   margin-left: auto;
-}
-@keyframes wheel-row-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
 }
 /* The sentence's hard 2px print on the plain rows (the global `button *` strips it), and
    NOT on the chip, for the phrase's own reason (near-black ink on white). */
@@ -3286,12 +3239,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .wheel-row-slot:active .hole:not(.resolved) .hole-word::before {
   background: color-mix(in srgb, var(--fg) 68%, var(--bg));
 }
-/* The two dresses: a word the solve merely NAMED recedes to the census's 0.55; the hole's
-   TRUE position — when the slot holds a pick standing in for it — carries an LED in the
-   held-word colour before it, the app's flat vivid square. */
-.wheel-row-revealed .wheel-word {
-  opacity: 0.55;
-}
+/* The hole's TRUE position — when the slot holds a pick standing in for it — carries an
+   LED in the held-word colour before it, the app's flat vivid square. */
 .wheel-row-best::before {
   content: '';
   display: inline-block;
@@ -3310,10 +3259,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    that turns `--fg` on hover — with only its floor width and the COPIED ink of its own. */
 .result-action {
   min-width: 180px;
-}
-/* COPIED lands in the accent on the white cap — the one moment the cap's ink is coloured. */
-.result-action.copied {
-  --cap-ink: var(--accent);
 }
 /* TOMORROW is SHARE's equal on the row, not its answer: the secondary shape, never the
    bare word. */
@@ -3573,7 +3518,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   background-repeat: no-repeat;
   background-size: 600% 100%;
   image-rendering: pixelated;
-  animation: streak-flame var(--streak-flame-dur, 0.7s) steps(6) infinite;
+  animation: streak-flame 0.7s steps(6) infinite;
 }
 /* The glow layer, painted BEHIND the core (::before precedes ::after): on top of the
    frame walk, its opacity BREATHES on a slow, slightly irregular pulse. 2.5s against the
@@ -3581,8 +3526,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .streak-flame::before {
   background-image: url('./assets/streak-glow.png');
   animation:
-    streak-flame var(--streak-flame-dur, 0.7s) steps(6) infinite,
-    streak-glow-pulse var(--streak-glow-dur, 2.5s) ease-in-out infinite;
+    streak-flame 0.7s steps(6) infinite,
+    streak-glow-pulse 2.5s ease-in-out infinite;
 }
 .streak-flame::after {
   background-image: url('./assets/streak-flamme.png');
@@ -3802,9 +3747,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--muted);
 }
 /* ENTER is the pad's ONE coloured key: flat solve COBALT (submitting is the step
-   toward solving), with the faint light it throws — a lamp, not a bevel. It lights
-   exactly when the input is a real word and falls back to a plain dark tile while
-   greyed, so the board itself says "publishable". */
+   toward solving). It lights exactly when the input is a real word and falls back to a
+   plain dark tile while greyed, so the board itself says "publishable". */
 .kb-enter {
   color: var(--fg);
   background: var(--solve);
@@ -3812,7 +3756,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .kb-enter.kb-greyed {
   color: var(--muted);
   background: #17181e;
-  box-shadow: none;
 }
 /* Control-key glyph: an inline currentColor SVG. Sized by % of the key so it tracks the
    responsive key height (desktop + mobile) with no per-breakpoint rule; the viewBox keeps
@@ -4029,7 +3972,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     padding-top: 60px;
     gap: 16px;
     align-items: stretch;
-    min-height: calc(100dvh - 44px);
     /* Mobile keyboard height (see .kb-key below): 3 rows of clamp(44,6.8vh,52) + gaps. */
     --kb-h: calc(3 * clamp(44px, 6.8vh, 52px) + 2 * 5px);
   }
@@ -4090,7 +4032,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
   .kb-key {
     height: clamp(44px, 6.8vh, 52px);
-    border-width: 2px;
   }
 
   /* Keyboard 4px above the screen bottom to match its 4px SIDE gap (it extends 10px past
@@ -5281,11 +5222,6 @@ figure.l1-fig {
     padding-top: clamp(96px, 22vh, 240px);
   }
 }
-.link-step {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
 /* THE ROWS (proposed 2026-09-02 on the user's review — "a bunch of primary button, label,
    secondary button with a different width, with different gaps and sizings, all of it
    stuck near the stats"): everything there is to DO with the account is a full-width ROW
@@ -5635,9 +5571,9 @@ figure.l1-fig {
   /* Quiet at rest, LIT once filled — but a boundary still has to be visible: at `--line`
      the empty cell measured 1.28:1 against its own ground, under WCAG 1.4.11's 3.0 for a
      UI component, and in daylight the six cells the whole screen is about read as nothing.
-     `--line-strong` is 3.42:1, and the filled state now signals in COLOUR (`--cell-ink`
-     plus its glow) rather than in alpha, so the rest/filled distinction is louder than the
-     hairline step it replaces, not quieter. */
+     `--line-strong` is 3.42:1, and the filled state now signals in COLOUR (`--cell-ink`,
+     border and digit) rather than in alpha, so the rest/filled distinction is louder than
+     the hairline step it replaces, not quieter. */
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   background: rgba(0, 0, 0, 0.28);
@@ -5650,8 +5586,8 @@ figure.l1-fig {
 /* A FILLED cell lights in its OWN ink — the digit and the border together — so the row
    fills into a small spectrum of the avatar palettes as the code goes in: the same colours
    the tile above it is churning through while it looks for the face (`AccountMark`'s
-   `CODE_INKS` supplies them, so the two surfaces cannot drift). The glow is the app's own
-   LED language at a whisper, never a fill: the cell is still a frame around a digit. */
+   `CODE_INKS` supplies them, so the two surfaces cannot drift). Never a fill: the cell is
+   still a frame around a digit. */
 .code-cell.filled {
   border-color: var(--cell-ink, var(--line-strong));
   color: var(--cell-ink, var(--fg));
@@ -5669,11 +5605,10 @@ figure.l1-fig {
    drops its accent here — one violet box in a red row reads as a second, unrelated state. */
 .code-input.invalid .code-cell,
 .code-input.invalid:focus-within .code-cell.next {
-  border-color: var(--danger);
-  color: var(--danger);
   /* The refusal takes the WHOLE row, spectrum included: a row that half-kept its colours
      would read as a partial refusal, and the digits were all wrong together. */
-  box-shadow: none;
+  border-color: var(--danger);
+  color: var(--danger);
   animation: word-shake var(--shake-ms, 380ms) ease-in-out;
 }
 .code-input.disabled {
@@ -6367,25 +6302,18 @@ figure.l1-fig {
 .profile-save {
   position: relative;
   overflow: hidden;
-  /* One FIXED roll distance shared by the label and the LED square: a percentage
-     would displace each by its own height, and the 8px square would lag the label. */
+  /* One FIXED roll distance: a percentage would displace the label by its own height. */
   --save-roll: 40px;
 }
 .profile-save .save-label {
   display: inline-block;
 }
-.profile-save .save-label.out,
-.profile-save.saving::before {
+.profile-save .save-label.out {
   animation: save-label-out 200ms ease-in forwards;
 }
-.profile-save .save-label.back,
-.profile-save.restoring::before {
+.profile-save .save-label.back {
   animation: save-label-back 240ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
-/* The LED belongs to the button's CONTENT, so it rolls with the label — and it turns
-   OFF on the click itself (the save disables the button, and the disabled dress is
-   the unlit socket): the whole travel plays dark, and after a refusal the light comes
-   back only when the button rests enabled again. */
 @keyframes save-label-out {
   to {
     translate: 0 var(--save-roll, 160%);
@@ -7435,27 +7363,11 @@ figure.l1-fig {
   margin-top: 12px;
 }
 .error-screen[open] {
-  animation: error-in 160ms ease-out;
+  animation: fade-in 160ms ease-out;
 }
 .error-screen[open].closing {
-  animation: error-out 140ms ease-in forwards;
+  animation: fade-out 140ms ease-in forwards;
   pointer-events: none;
-}
-@keyframes error-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes error-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
 }
 
 /* THE CONFIRMATION (#271, user-decided 2026-09-14): the error screen's shape and beats,

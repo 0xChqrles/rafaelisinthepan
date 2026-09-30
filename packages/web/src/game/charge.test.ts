@@ -8,7 +8,8 @@
 // so a replay reconstructs it exactly.
 
 import { describe, expect, it } from 'vitest';
-import type { RankMap, RuntimeHole } from '@whippin/shared';
+import type { RankMap } from '@whippin/shared';
+import type { RuntimeHole } from './types';
 import { CHARGE_TARGET, GIVEN, chargeForRank, replayCharge, strikeFor } from './charge';
 import type { HoleCharge } from './charge';
 import { replayHoles } from './scoring';

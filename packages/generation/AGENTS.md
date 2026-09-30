@@ -24,10 +24,9 @@ relative to `packages/generation/` unless prefixed.
                               (escape hatch; no re-reduce)
       slug.py                 stdlib-only: slug() contract + path_slug() dir names + write_vocab
                               (existence set + shared/src/vocab.generated.json, #200)
-      embedding_neighbors.py  shared load/vocab/matrix/cosine-rank logic
-      english_neighbors.py    en paths + derived .kv cache (thin wrapper over the above)
-      french_neighbors.py     fr paths + derived .kv cache (thin wrapper)
-      start_word.py           start/hint-word selection (rank band 100-200 on every map)
+      embedding_neighbors.py  load/vocab/matrix/cosine-rank logic; for_lang(lang) is the
+                              language's object: embedding/<lang>/ paths + derived .kv cache
+      start_word.py           start/hint-word selection (shipped ranks 100-200 on every map)
       distances.py            stdlib-only: dq quantization (#115)
       contextual_rank.py      stdlib-only: the #308 judge boundary — Jev (TypeSafe) pass 1
                               Score + pass 2 pairwise, word-of-the-language demotion, sidecar
@@ -344,13 +343,15 @@ Consequences that are load-bearing:
   <sidecar>` rebuilds the same map byte-for-byte without a call (verified), so a
   start-word or metadata correction never rescore. `--contextual-model` names the
   judge (`jev-latest` today; pin a version there when the API offers one).
-- **ONE start band on every map, `START_BAND` = 100–200** (`start_word.py`,
-  user-decided 2026-09-24, replacing 100–150 static / `CONTEXT_BAND` 250–400
-  contextual): replayed on the Jev days, players' guesses landed as close on the
-  contextual map as on a static rebuild, so a rank means the same distance to a player on
-  either — the deeper band put the start 2–3× farther, past the judge's pairwise-ordered
-  top (`PAIRWISE_TOP`). Do not reintroduce a per-map band on the "tighter near field"
-  premise without new play data. The
+- **ONE start band on every map, `START_BAND` = 100–200 in SHIPPED ranks**
+  (`start_word.py`): `start_band` reads the band on the rank the puzzle ships (the merge
+  walk's 0-based position + 1) and pairs each candidate with that rank — the rank the
+  curation package reads `START_BAND` on too. One band because players' guesses land as
+  close on the contextual map as on a static one (measured on real play), so a rank
+  means the same distance to a player on either; it tops out at the judge's
+  pairwise-ordered front (`PAIRWISE_TOP`), past which its order is loosest. Do not
+  reintroduce a per-map band on the "tighter near field" premise without new play
+  data. The
   hover preview of the interactive selector stays STATIC (browsing spends no judge
   call); the commit step's confirmed rebuild is the one that reranks, with a
   "quelques minutes" notice, so the band picked from is the map that ships.
@@ -478,8 +479,8 @@ Consequences that are load-bearing:
   opt out explicitly); and don't re-filter against the wordlist anywhere downstream.
 - **Don't skip the cache mtime check** in `load_vectors`.
 - **Don't inject a missing target word** into the vocab in `gen_phrase` — error out.
-- **Don't fall back to the static order when the judge fails** (`--contextual`), and
-  don't blend static similarity into a contextual score — retrieval and tie-break only.
+- **Don't fall back to the static order when the judge fails**, and don't blend static
+  similarity into a contextual score — retrieval and tie-break only.
 
 (Cross-package Do-NOTs — slug/fold divergence, fold/display separation, lemma-merge
 containment — live in the root `AGENTS.md`.)
@@ -564,7 +565,7 @@ pnpm vocab:fr         # -> packages/web/public/vocab/fr.json + shared/src/vocab.
 #    concept with a chosen hole (off a TTY those two only warn). Writes
 #    <puzzle>.contextual.json beside the puzzle, which --contextual-replay FICHIER
 #    rebuilds from without a call; --contextual-model MODELE names the judge. The hint
-#    band is 100-200, as on a static map.
+#    band is shipped ranks 100-200, as on a static map.
 pnpm gen:phrase "<sentence>" --lang fr --words a b c   # exactly 3 distinct words; all occurrences hole (no `--`)
 pnpm gen:phrase "<sentence>" --lang fr --words a b c --before "…" --after "…"   # the excerpt feeds the judge too
 pnpm gen:phrase "<sentence>" --lang fr --words a b c --static   # reference map, no judge
@@ -594,9 +595,9 @@ output filename contains the three distinct secret slugs in sentence order.
 
 - All paths below are under `packages/`. **Tunables:** `TOP_N = 400000` (reduce),
   `TOP_K = 10000` / curator report window `PLAYABILITY_TOP = 150` (gen),
-  start-rank band `START_BAND = 100–200` on every map (`start_word.py`, user-decided
-  2026-09-24; was 100–150, and 250–400 on a contextual map), `PAIRWISE_TOP = 200` /
-  `SCORE_BATCH = 50` / `PAIR_BATCH = 40` / `NOUL_BATCH = 40` / `WORKERS = 6`, filter
+  start band `START_BAND = 100–200` shipped ranks on every map (`start_word.py`),
+  `PAIRWISE_TOP = 200` / `SCORE_BATCH = 50` / `PAIR_BATCH = 40` / `NOUL_BATCH = 40` /
+  `WORKERS = 6`, filter
   thresholds `START_FIT_MIN = 0.5` / `HOLE_READABLE_MIN = 0.6` / `SAME_CONCEPT_MAX = 0.6` /
   `LANGUAGE_MIN = 0.2` (French-calibrated, carried over to English),
   `GIVEAWAY_MAX = 0.45` (calibrated on real play, 2026-09-22 — a NOTE the curator shows the model with its meaning, never a strike; curation `AGENTS.md`)
@@ -638,7 +639,7 @@ output filename contains the three distinct secret slugs in sentence order.
   because reduction already strips stopwords / single letters / non-dictionary tokens,
   "in `V`" **is** the content-word filter (no separate stopword list), so `l'animal` offers
   only `animal` and punctuation/stopwords are non-selectable. ←/→ navigate the content
-  words; the hovered word's **full start-word band** (`start_band`, ranks 100–200) is
+  words; the hovered word's **full start-word band** (`start_band`, shipped ranks 100–200) is
   previewed live (its neighbor ranking computed once per secret slug and **cached**).
   **Enter** commits the hovered occurrence's whole repeated-word group, then a **number +
   Enter** picks its shared start word (**Esc** cancels back to navigation, **Ctrl-C**
@@ -657,12 +658,16 @@ output filename contains the three distinct secret slugs in sentence order.
   `readline`, or where `TIOCSTI` is unavailable/blocked, the prompt just starts empty (typed
   fresh). Non-TTY runs are unchanged.
 - **Start-word selection on the `--words` path** (`gen_phrase.choose_start`): used by
-  `holes_from_words` (the interactive selector picks starts inline instead). On a TTY it
-  lists the rank-band candidates (numbered, each with its rank) and reads a choice — Enter
-  keeps the random default, a number picks a candidate, any other word is accepted only if
-  it is in that hole's rank map (matched by slug) else reprompts. The band logic, schema,
-  and downstream `start`/`start_rank` are unchanged; non-TTY (piped/batch) runs silently
-  keep the random default, so generation output is identical to before when not interacting.
+  `holes_from_words` for a hole no `--start` names (the interactive selector picks starts
+  inline instead). The default is ONE draw of the RNG `main()` seeds from `start_band` —
+  from what the judge's filter left of it on a contextual map — and the secret itself
+  when nothing qualifies, so a headless `--static` run without `--start` is reproducible;
+  a contextual run's default also rides on the live judge (its start filter, which a
+  replay skips, and its retries, which draw on the same RNG). On a TTY
+  it lists that band (numbered, each with its rank) and reads a choice — Enter keeps the
+  random default, a number picks a candidate, any other word is accepted only if it is
+  in that hole's rank map (matched by slug) else reprompts; non-TTY (piped/batch) runs
+  silently keep the random default.
 - **Data present:** `generation/embedding/fr/cc.fr.300_reduced.vec` and
   `generation/embedding/en/cc.en.300_reduced.vec` (+ `.kv` caches built; en 85,355 words —
   the cased source keeps only its lowercase tokens: «apple» no longer blends «Apple»).
@@ -698,6 +703,16 @@ output filename contains the three distinct secret slugs in sentence order.
   #317) ∪ Hunspell en_US (93,557). Hunspell en_GB is not unmunched: its affix rules
   expand into ~245k non-words («outeurocentrismativeness»). Built by `build_wordlist.py`; source downloads cache in `wordlist/.cache/`
   (gitignored). Tests use the small fixture `tests/fixtures/dico.fr.txt`.
+- **Source downloads** (`build_wordlist.fetch` + `verify_digest`, which `build_forms`
+  reuses): cached in `wordlist/.cache/`, `--refresh` re-downloads. A body is streamed to
+  `<dest>.part` and renamed onto `<dest>` only once whole — its byte count checked
+  against `Content-Length` when the response sends one — so an interrupted download is
+  never taken for the cache. **Every inventory source is sha256-pinned**, verified before
+  it is read: Morphalou, Lexique, AGID, VarCon (+ its README), OANC. Two come over plain
+  HTTP and their pins are what vouch for them: Lexique (lexique.org's HTTPS certificate
+  does not verify; the wordlist build reads the same pinned file) and AGID (its
+  sourceforge URL). The wordlist's other sources, SCOWL and the Hunspell dictionaries,
+  come over HTTPS, unpinned.
 - **Single-word artifacts (#154):** `gen_word.py` is a thin entry point over
   `gen_phrase`'s machinery — it imports `walk_secret` (claim → walk → keyed, dq-stamped
   map) and the shared command scaffolding `prepare_run` (flag

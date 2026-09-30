@@ -240,7 +240,7 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
               remoteJid: command.group,
               id: command.target.id,
               participant: command.target.participant,
-              fromMe: command.target.fromMe ?? false,
+              fromMe: false,
             },
           },
         });
@@ -261,7 +261,7 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
                 remoteJid: command.group,
                 id: command.replyTo.id,
                 participant: command.replyTo.participant,
-                fromMe: command.replyTo.fromMe ?? false,
+                fromMe: false,
               },
               message: { conversation: command.replyTo.text ?? '' },
             } as WAMessage)
@@ -276,7 +276,7 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
         if (!sock || !open) throw new Error('WhatsApp socket is not open.');
         sent = await sock.sendMessage(
           command.group,
-          { text: command.text, linkPreview, ...(command.mentions ? { mentions: command.mentions } : {}) },
+          { text: command.text, linkPreview },
           quoted ? { quoted } : undefined,
         );
       }

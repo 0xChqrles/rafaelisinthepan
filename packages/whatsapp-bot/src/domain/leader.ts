@@ -39,7 +39,7 @@ export interface LeaderStore {
   claim(claim: LeadClaim): Promise<LeadOutcome>;
 }
 
-export function leaderKey(group: string, lang: string, dayNumber: number) {
+function leaderKey(group: string, lang: string, dayNumber: number) {
   return {
     pk: { S: `GROUP#${group}` },
     sk: { S: `LEAD#${lang}#${String(dayNumber).padStart(6, '0')}` },

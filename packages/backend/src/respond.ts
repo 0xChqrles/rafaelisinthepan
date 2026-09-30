@@ -215,7 +215,7 @@ export function errorResponse(
   return json(statusCode, { error, message, ...extra }, headers);
 }
 
-// An HTML page (the share-card OG page).
+// An HTML page (a shared link's preview page, or a dead link's).
 export function html(statusCode: number, body: string, headers: Record<string, string> = {}): FnUrlResult {
   return { statusCode, headers: { 'Content-Type': 'text/html; charset=utf-8', ...headers }, body };
 }

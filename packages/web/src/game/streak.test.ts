@@ -1,47 +1,19 @@
-// CONTRACT: streak derivation (packages/web/src/game/streak.ts, issue #56). The streak
-// counters are DERIVED from the per-language SET of solved game days, never persisted:
-//   - currentStreak = the consecutive run ending at the last solved day, but ONLY while
-//     the streak is ALIVE (last solve is today or yesterday); a broken chain -> 0;
-//   - it is pure over the day array and defensively sorts + dedupes, so deriving from a
-//     raw set UNION is order-independent + idempotent (the property the day-set exists
-//     for — it makes a future cross-device merge a union + recompute).
+// CONTRACT: what the SCREEN derives from the per-language SET of solved game days
+// (packages/web/src/game/streak.ts, issues #56/#74) — never persisted counters:
+//   - streakTransition = the before/after streak a solve celebrates, anchored to the
+//     solved day;
+//   - weekView = the Monday-first week containing the active day, as 7 cells.
+// The streak itself (`currentStreak`) is @whippin/shared's since #204 and is
+// contract-tested there.
 
 import { describe, it, expect } from 'vitest';
-import { currentStreak, streakTransition, weekView } from './streak';
+import { streakTransition, weekView } from './streak';
 
 // 2024-01-01 is a MONDAY; its dayNumber is a clean anchor for the Monday-based week math.
 const MON = Math.floor(Date.UTC(2024, 0, 1) / 86_400_000);
 const TUE = MON + 1;
 const WED = MON + 2;
 const SUN = MON + 6;
-
-describe('currentStreak', () => {
-  it('is 0 for an empty set', () => {
-    expect(currentStreak([], 100)).toBe(0);
-  });
-
-  it('counts the consecutive run ending TODAY', () => {
-    expect(currentStreak([8, 9, 10], 10)).toBe(3);
-  });
-
-  it('is ALIVE when yesterday was solved but today is still pending', () => {
-    // Last solve is activeDay - 1: today is not yet required to keep a streak.
-    expect(currentStreak([8, 9], 10)).toBe(2);
-  });
-
-  it('is 0 once the chain is broken (last solve older than yesterday)', () => {
-    expect(currentStreak([8, 9], 12)).toBe(0);
-  });
-
-  it('counts only the tail run, not an earlier equal-or-longer one', () => {
-    // Earlier run [1,2,3] is broken; the live run is [9,10].
-    expect(currentStreak([1, 2, 3, 9, 10], 10)).toBe(2);
-  });
-
-  it('a single solved day today is a streak of 1', () => {
-    expect(currentStreak([10], 10)).toBe(1);
-  });
-});
 
 describe('streakTransition', () => {
   it('increments a live consecutive streak', () => {
@@ -54,30 +26,6 @@ describe('streakTransition', () => {
 
   it('starts at 0 -> 1 on the first-ever solve', () => {
     expect(streakTransition([10], 10)).toEqual({ previous: 0, next: 1 });
-  });
-});
-
-describe('merge-friendliness — the reason the day-set shape exists', () => {
-  // A union of two devices' solved-day sets is deriving-order-independent and idempotent:
-  // that is exactly why the streak persists the SET, not a counter (a counter can't merge).
-  const A = [1, 2, 3, 10];
-  const B = [3, 4, 11, 12]; // overlaps A on day 3, out of order
-
-  it('is order-independent: A∪B derives the same as B∪A', () => {
-    const activeDay = 12;
-    expect(currentStreak([...A, ...B], activeDay)).toBe(currentStreak([...B, ...A], activeDay));
-  });
-
-  it('is idempotent: re-including an already-present set changes nothing', () => {
-    const activeDay = 12;
-    const union = [...A, ...B];
-    expect(currentStreak([...union, ...A], activeDay)).toBe(currentStreak(union, activeDay));
-  });
-
-  it('derives the correct counters over the deduped union', () => {
-    // union sorted+deduped = [1,2,3,4,10,11,12]; current (activeDay 12) = [10,11,12] = 3.
-    const union = [...A, ...B];
-    expect(currentStreak(union, 12)).toBe(3);
   });
 });
 

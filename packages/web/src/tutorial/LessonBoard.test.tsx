@@ -22,7 +22,6 @@ vi.mock('../components/HistoryWheel', () => ({ default: () => null }));
 vi.mock('../components/HistoryModal', () => ({ default: () => null }));
 vi.mock('../components/FloatingHit', () => ({ HIT_FADE_MS: 600 }));
 vi.mock('../components/Hole', () => ({ RANK_MAX_MS: 400, rankTransitionDuration: () => 400 }));
-vi.mock('../screens/Game', () => ({ FLOATING_HIT_INTRO_MS: 320, KB_EXIT_FALLBACK_MS: 500, STAGGER_MS: 200 }));
 vi.mock('./CoachText', () => ({ default: () => null, richToPlain: (x: string) => x }));
 import LessonBoard from './LessonBoard';
 import script from './scripts/en';

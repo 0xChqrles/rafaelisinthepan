@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { t } from '../i18n';
+import { HeaderBack } from './TopBar';
 import CloseIcon from '../assets/icons/close.svg?react';
 
 // The header EVERY full-screen modal wears. It is not a modal chrome of its own: it is the
@@ -16,32 +17,42 @@ import CloseIcon from '../assets/icons/close.svg?react';
 //
 // The language flag is deliberately absent, which is the one place this row parts from the app
 // header: switching language from inside a modal would navigate the screen out from under it.
+//
+// TWO WAYS OUT, one per kind of surface: the ✕ top-right, or — `back` — the app header's own
+// `HeaderBack` in the LEFT slot before the name, the right slot left empty. The second is
+// the selection's shell (`PuzzleSelect` and the group screens): they open over a header
+// that carries the same chevron, so it is that component itself, never a look-alike.
 export default function ModalHeader({
   lang,
   title,
+  back = false,
   onClose,
 }: {
   lang: string;
   // The surface's name, top-left. Optional — the app header leaves that corner empty too when
   // a screen has nothing to put there (the game floats its own counter into it instead).
   title?: ReactNode;
+  back?: boolean;
   onClose: () => void;
 }) {
   return (
     <div className="modal-bar">
       <div className="topbar-inner">
         <div className="topbar-left">
+          {back && <HeaderBack label={t(lang, 'ariaClose')} onBack={onClose} />}
           {title ? <span className="topbar-title">{title}</span> : null}
         </div>
         <div className="topbar-right">
-          <button
-            type="button"
-            className="home-btn modal-close"
-            aria-label={t(lang, 'ariaClose')}
-            onClick={onClose}
-          >
-            <CloseIcon className="ui-icon" aria-hidden />
-          </button>
+          {!back && (
+            <button
+              type="button"
+              className="home-btn modal-close"
+              aria-label={t(lang, 'ariaClose')}
+              onClick={onClose}
+            >
+              <CloseIcon className="ui-icon" aria-hidden />
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -84,9 +84,6 @@ export function memoryScoreStore(
       return settle('recorded');
     },
 
-    // #204's active-day transfer: the recorded row follows the round it was derived from.
-    // It spends no allowance — the population gains no player, it renames the one it has —
-    // and it is refused when the destination already holds a row of its own.
     // #204's active-day transfer, the score half (`planScoreMove`'s rules): the row moves
     // when the source has one and the destination has none.
     move(key, from, to) {

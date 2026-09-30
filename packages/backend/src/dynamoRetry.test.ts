@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { batchRetryDelayMs, conflictDelayMs, fullJitterDelayMs } from './dynamoRetry';
+import { batchRetryDelayMs, conflictDelayMs } from './dynamoRetry';
 
 // CONTRACT: ONE backoff schedule, FULL JITTER over a doubling window (AWS's own
 // recommendation for both an unprocessed batch read and a cancelled transaction). Pinned
@@ -23,10 +23,5 @@ describe('dynamoRetry', () => {
     // usually holding a player's own request open.
     expect([0, 1, 2, 3].map((retry) => conflictDelayMs(retry, () => 1))).toEqual([20, 40, 80, 160]);
     expect(conflictDelayMs(0, () => 1)).toBeLessThan(batchRetryDelayMs(0, () => 1));
-  });
-
-  it('is ONE function underneath, so the two schedules cannot drift apart in shape', () => {
-    expect(fullJitterDelayMs(3, 50, () => 1)).toBe(batchRetryDelayMs(3, () => 1));
-    expect(fullJitterDelayMs(3, 20, () => 1)).toBe(conflictDelayMs(3, () => 1));
   });
 });

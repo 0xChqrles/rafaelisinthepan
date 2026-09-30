@@ -140,10 +140,11 @@ text's, translations included). Deliver a list the user can act on:
   manuals, documentaries) — the unexpected-source lever above. Fame does not exclude a
   book (see law 1); what excludes is a wrong register, poetry the vocab cannot carry, or
   a text so short it holds no sentence.
-- **Exclude** works already in the archive (`source.work` across
-  `packages/generation/output/word/<lang>/`, the record of every generated puzzle; the
-  backend's local store is a test bed, never a reference) and already on the shelf.
-  Check both before delivering.
+- **Exclude** works already in the archive (`source.work` on the shelf language's lines
+  of `packages/generation/published.jsonl`, the publish ledger — the record of every
+  published day, rebuilt by `pnpm puzzle:ledger --s3`; the generation output holds
+  unpublished drafts and the backend's local store is a test bed, never a reference) and
+  already on the shelf. Check both before delivering.
 - Prefer works that exist as an epub in the shelf's language; no self-published or
   out-of-print obscurities the user cannot find.
 
@@ -172,8 +173,10 @@ text's, translations included). Deliver a list the user can act on:
 5. **Check the game data** (never skip):
    - every secret's slug ∈ `packages/web/public/vocab/<lang>.json` (slug = lowercase,
      ligatures expanded, accents stripped, keep `[a-z-]`);
-   - secret not already used: inspect `holes[].secret.slug` across
-     `packages/generation/output/word/<lang>/**/*.json`.
+   - secret not in its 90-day cooldown: inspect `holes[].secret` (a slug) on the
+     language's lines of `packages/generation/published.jsonl` whose `day` is less than
+     90 days before today, days after today included (`shelf.SECRET_COOLDOWN_DAYS`;
+     `shelf.archive(<lang>)["secrets"]` holds that set, a corrected day by its last line).
 6. **Deliver 3–5 candidates**, each with: the exact sentence (accents/punctuation
    kept), recommended trio + alternates, source metadata (`kind` book/music/poem/movie
    + author + work), quotation-risk flag, and a ready command:

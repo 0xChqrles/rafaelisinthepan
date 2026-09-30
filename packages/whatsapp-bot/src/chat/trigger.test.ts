@@ -59,7 +59,11 @@ describe('conversation triggers (#236)', () => {
     expect(addressedTo(message({ text: "whippinbot t'es là ?" }), identity)).toBe('name');
     // Mid-sentence too (user-decided 2026-09-04): a friend is addressed like this in a group.
     expect(addressedTo(message({ text: 'je crois que WhippinBot dort' }), identity)).toBe('name');
+    expect(addressedTo(message({ text: 'salut whippinbot, tu fais quoi' }), identity)).toBe('name');
+    expect(addressedTo(message({ text: 'ok @whippinbot' }), identity)).toBe('name');
     expect(addressedTo(message({ text: 'WhippinBotte' }), identity)).toBeNull();
+    // Only the LEADING form is stripped from the question: mid-sentence the name is part of it.
+    expect(questionText(message({ text: 'salut whippinbot, tu fais quoi' }), identity)).toBe('salut whippinbot, tu fais quoi');
   });
 
   it('matches a name ending in punctuation, and never runs on into a longer word', () => {
@@ -81,7 +85,6 @@ describe('conversation triggers (#236)', () => {
       text: '@99999999999999 combien de jours que @33600000000 me bat ?',
       mentions: [m('99999999999999@lid', '33700000000@s.whatsapp.net'), m('33600000000@s.whatsapp.net')],
     });
-    expect(questionText(lid, unlisted, new Map([['33600000000', 'Zou']]))).toBe('combien de jours que Zou me bat ?');
     expect(questionText(lid, unlisted)).toBe('combien de jours que me bat ?');
   });
 
@@ -106,13 +109,6 @@ describe('conversation triggers (#236)', () => {
     expect(withMentionNames('@88888888888888 tu dors ?', namesWithBot(new Map(), unlisted))).toBe('…8888 tu dors ?');
   });
 
-  it('fires on the name anywhere in the message, as a whole word', () => {
-    expect(addressedTo(message({ text: 'salut whippinbot, tu fais quoi' }), identity)).toBe('name');
-    expect(addressedTo(message({ text: 'je crois que WhippinBot se trompe' }), identity)).toBe('name');
-    expect(addressedTo(message({ text: 'ok @whippinbot' }), identity)).toBe('name');
-    expect(addressedTo(message({ text: 'les whippinbottes sont là' }), identity)).toBe(null);
-    expect(questionText(message({ text: 'salut whippinbot, tu fais quoi' }), identity)).toBe('salut whippinbot, tu fais quoi');
-  });
 });
 
 describe('nothing to answer (#277)', () => {

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type Key
 import { createPortal } from 'react-dom';
 import { GROUP_NAME_MAX_LENGTH, sanitizeGroupName } from '@whippin/shared';
 import LoadingWave from './LoadingWave';
-import { HeaderBack } from './TopBar';
+import ModalHeader from './ModalHeader';
 import useModalDismiss from '../hooks/useModalDismiss';
 import { t } from '../i18n';
 import type { LangCode } from '../langs';
@@ -40,7 +40,7 @@ export default function GroupCreate({
   onCreate: (name: string) => Promise<boolean>;
   onClose: () => void;
 }) {
-  const { closing, beginClose, dialogProps } = useModalDismiss('select-out');
+  const { closing, beginClose, dialogProps } = useModalDismiss('fade-out');
   const [name, setName] = useState('');
   const [shaking, setShaking] = useState(false);
   const [inked, setInked] = useState(false);
@@ -84,20 +84,7 @@ export default function GroupCreate({
       aria-label={t(lang, 'groupNew')}
       onClose={onClose}
     >
-      <div className="modal-bar">
-        <div className="topbar-inner">
-          <div className="topbar-left">
-            <HeaderBack
-              label={t(lang, 'ariaClose')}
-              onBack={() => {
-                if (!closing) beginClose();
-              }}
-            />
-            <span className="topbar-title">{t(lang, 'groupNew')}</span>
-          </div>
-          <div className="topbar-right" />
-        </div>
-      </div>
+      <ModalHeader lang={lang} title={t(lang, 'groupNew')} back onClose={beginClose} />
 
       <form className="group-create" onSubmit={(event) => void submit(event)}>
         <div className="group-create-stage">

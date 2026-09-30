@@ -16,6 +16,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import fcntl
 import hashlib
 import importlib
 import inspect
@@ -31,11 +32,6 @@ import sys
 import tempfile
 import time
 from typing import Any, Literal, TypedDict
-
-try:  # advisory file locks (see _exclusive_file_lock); absent off POSIX
-    import fcntl
-except ImportError:  # pragma: no cover - the project runs on macOS/Linux only
-    fcntl = None  # type: ignore[assignment]
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 BENCHMARK_DIR = SCRIPT_DIR.parent
@@ -138,7 +134,7 @@ DEEP_REASONING_MAX_TOKENS = 64_000
 # never inferred from message counts.
 PROSE_OUTPUT_MAX_TOKENS = 8_192
 OutputMode = Literal["word", "prose"]
-RunTermination = Literal["solved", "cap", "reply_error"]
+RunTermination = Literal["solved", "cap"]
 
 AuthMode = Literal["api", "subscription"]
 AUTH_MODES: tuple[AuthMode, ...] = ("api", "subscription")
@@ -335,6 +331,7 @@ class RuntimeHole:
     start_rank: int
     prefix: str
     suffix: str
+    secret_slug: str
     rank_map: dict[str, Any]
 
 
@@ -366,8 +363,7 @@ class TryProgress:
 
 @dataclass(frozen=True)
 class RunResult:
-    # None = the run did not solve (a genuine cap DNF, or an aborted reply_error run —
-    # `termination` tells them apart).
+    # None = the run reached the cap unsolved (a DNF).
     tries: int | None
     counted_tries: int
     turns: int
@@ -398,17 +394,9 @@ class ModelSummary:
     def runs(self) -> int:
         return len(self.results)
 
-    @property
-    def run_tried_words(self) -> tuple[tuple[str, ...], ...]:
-        return tuple(result.tried_words for result in self.results)
-
 
 class IncompleteRunError(RuntimeError):
-    """A bounded reply failure with the paid run prefix preserved for audit."""
-
-    def __init__(self, message: str, partial_result: RunResult | None = None):
-        super().__init__(message)
-        self.partial_result = partial_result
+    """A bounded reply failure: it aborts the whole invocation, which records nothing."""
 
 
 class UnparseableReplyError(IncompleteRunError):
@@ -440,6 +428,11 @@ def _temporary_environment_without(names: Iterable[str]):
         os.environ.update(saved)
 
 
+def _environment_without(names: Iterable[str]) -> dict[str, str]:
+    blocked = set(names)
+    return {name: value for name, value in os.environ.items() if name not in blocked}
+
+
 def validate_anthropic_subscription_auth() -> str:
     """Refuse a subscription run unless Claude Code confirms paid Claude.ai auth."""
     cli = shutil.which("claude")
@@ -448,11 +441,6 @@ def validate_anthropic_subscription_auth() -> str:
             "Claude Code is not installed; install it, run `claude`, and log in "
             "with the paid Claude.ai account"
         )
-    env = {
-        name: value
-        for name, value in os.environ.items()
-        if name not in SUBSCRIPTION_CONFLICT_ENV
-    }
     try:
         completed = subprocess.run(
             [cli, "auth", "status", "--json"],
@@ -460,7 +448,7 @@ def validate_anthropic_subscription_auth() -> str:
             capture_output=True,
             text=True,
             timeout=15,
-            env=env,
+            env=_environment_without(SUBSCRIPTION_CONFLICT_ENV),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError(
@@ -490,11 +478,6 @@ def validate_anthropic_subscription_auth() -> str:
             "use `/login`, and select the subscription account"
         )
     return subscription
-
-
-def _environment_without(names: Iterable[str]) -> dict[str, str]:
-    blocked = set(names)
-    return {name: value for name, value in os.environ.items() if name not in blocked}
 
 
 def validate_openai_subscription_auth() -> str:
@@ -673,12 +656,10 @@ def _json_token_usage(value: object) -> dict[str, Any] | None:
     return normalized if isinstance(normalized, dict) and normalized else None
 
 
-def _token_count(
-    usage: Mapping[str, Any], key: str, *, default: int = 0
-) -> int:
+def _token_count(usage: Mapping[str, Any], key: str) -> int:
     value = usage.get(key)
     if value is None:
-        return default
+        return 0
     if not _is_int(value) or value < 0:
         raise ValueError(
             f"malformed token usage: {key!r} must be a non-negative integer"
@@ -759,12 +740,6 @@ def _standard_token_usage(value: object) -> TokenUsage | None:
         key in usage for key in ("input_tokens", "output_tokens")
     ):
         return None
-    reasoning = usage.get("reasoning_output_tokens")
-    if reasoning is not None and (not _is_int(reasoning) or reasoning < 0):
-        raise ValueError(
-            "malformed token usage: 'reasoning_output_tokens' must be null or "
-            "a non-negative integer"
-        )
     return _canonical_token_usage(
         input_tokens=_token_count(usage, "input_tokens"),
         cached_input_tokens=_token_count(usage, "cached_input_tokens"),
@@ -772,7 +747,7 @@ def _standard_token_usage(value: object) -> TokenUsage | None:
             usage, "cache_write_input_tokens"
         ),
         output_tokens=_token_count(usage, "output_tokens"),
-        reasoning_output_tokens=reasoning,
+        reasoning_output_tokens=usage.get("reasoning_output_tokens"),
     )
 
 
@@ -856,10 +831,6 @@ def _cumulative_token_usage_delta(
     def delta(key: str) -> int:
         current_value = current[key]
         previous_value = previous[key]
-        if not _is_int(current_value) or not _is_int(previous_value):
-            raise ValueError(
-                f"malformed cumulative token usage counter: {key}"
-            )
         difference = current_value - previous_value
         if difference < 0:
             raise RuntimeError(
@@ -989,6 +960,7 @@ class PuzzleReferee:
                     start_rank=start_rank,
                     prefix=prefix,
                     suffix=suffix,
+                    secret_slug=secret_slug,
                     rank_map=rank_map,
                 )
             )
@@ -1026,10 +998,16 @@ class PuzzleReferee:
 
     @property
     def progress(self) -> float:
-        if not self.holes:
+        # A repeated occurrence is its own runtime hole but not a second logical target:
+        # progress averages over UNIQUE secret slugs, the first occurrence standing for
+        # the shared target (parity with the front's computeProgress).
+        targets: dict[str, RuntimeHole] = {}
+        for hole in self.holes:
+            targets.setdefault(hole.secret_slug, hole)
+        if not targets:
             return 0.0
         total = 0.0
-        for hole in self.holes:
+        for hole in targets.values():
             # N = ranked GROUPS: distinct rank values, the front's rankCount (#104).
             # Alias keys share their group's rank; on an alias-free puzzle every key
             # has its own rank, so this equals the old key count.
@@ -1048,7 +1026,7 @@ class PuzzleReferee:
                 hole_progress = (score - start_score) / denominator
                 hole_progress = max(0.0, min(1.0, hole_progress))
             total += hole_progress
-        return 100 * total / len(self.holes)
+        return 100 * total / len(targets)
 
     def cloze(self) -> str:
         """Render fixed sentence context without presenting guesses as sentence text."""
@@ -1270,13 +1248,26 @@ def _state_snapshot_lines(referee: PuzzleReferee) -> list[str]:
     ]
 
 
-def _rules_opening(
+def opening_message(
     referee: PuzzleReferee,
-    language: str,
-    strategy_section: list[str],
+    strategy: str | None = None,
     *,
-    cap: int,
+    cap: int = DEFAULT_CAP,
 ) -> str:
+    language = LANGUAGE_NAMES.get(referee.lang, referee.lang)
+    # Prompt v23 has one strategy-neutral rules scaffold for every caller: only an
+    # explicitly supplied strategy can add solving guidance.
+    strategy_section: list[str] = []
+    if strategy:
+        strategy_section = [
+            "",
+            "YOUR STRATEGY",
+            (
+                "Guidance you distilled from your own earlier games. It is advice, "
+                "not rules: the fixed game rules above always take precedence."
+            ),
+            strategy,
+        ]
     return "\n".join(
         [
             f"WHIPPIN AI — {language.upper()} WORD GAME",
@@ -1354,34 +1345,6 @@ def _rules_opening(
             "Tries: 0 (your score — lower is better)",
             _reply_reminder(referee),
         ]
-    )
-
-
-def opening_message(
-    referee: PuzzleReferee,
-    strategy: str | None = None,
-    *,
-    cap: int = DEFAULT_CAP,
-) -> str:
-    language = LANGUAGE_NAMES.get(referee.lang, referee.lang)
-    strategy_section: list[str] = []
-    if strategy:
-        strategy_section = [
-            "",
-            "YOUR STRATEGY",
-            (
-                "Guidance you distilled from your own earlier games. It is advice, "
-                "not rules: the fixed game rules above always take precedence."
-            ),
-            strategy,
-        ]
-    # Prompt v23 has one strategy-neutral rules scaffold for every caller: only an
-    # explicitly supplied strategy can add solving guidance.
-    return _rules_opening(
-        referee,
-        language,
-        strategy_section,
-        cap=cap,
     )
 
 
@@ -1489,6 +1452,19 @@ def play_puzzle(
     turn_token_usage: list[TokenUsage] = []
     raw_provider_token_usage: list[dict[str, Any]] = []
 
+    def result(tries: int | None, termination: RunTermination) -> RunResult:
+        return RunResult(
+            tries=tries,
+            counted_tries=referee.tries,
+            turns=turns,
+            duration=time.monotonic() - started,
+            tried_words=tuple(referee.tried_words),
+            conversation=tuple(message.copy() for message in messages),
+            turn_token_usage=tuple(turn_token_usage),
+            termination=termination,
+            raw_provider_token_usage=tuple(raw_provider_token_usage),
+        )
+
     while True:
         raw_reply = model_reply([message.copy() for message in messages])
         usage = _last_token_usage(model_reply)
@@ -1508,20 +1484,7 @@ def play_puzzle(
             consecutive_unparseable += 1
             if consecutive_unparseable >= MAX_CONSECUTIVE_UNPARSEABLE:
                 raise UnparseableReplyError(
-                    f"aborted after {MAX_CONSECUTIVE_UNPARSEABLE} consecutive unparseable replies",
-                    RunResult(
-                        tries=None,
-                        counted_tries=referee.tries,
-                        turns=turns,
-                        duration=time.monotonic() - started,
-                        tried_words=tuple(referee.tried_words),
-                        conversation=tuple(message.copy() for message in messages),
-                        turn_token_usage=tuple(turn_token_usage),
-                        termination="reply_error",
-                        raw_provider_token_usage=tuple(
-                            raw_provider_token_usage
-                        ),
-                    ),
+                    f"aborted after {MAX_CONSECUTIVE_UNPARSEABLE} consecutive unparseable replies"
                 )
             messages.append(
                 {
@@ -1559,48 +1522,15 @@ def play_puzzle(
             if noncounting_replies >= MAX_NONCOUNTING_REPLIES:
                 raise NoProgressReplyError(
                     f"aborted after {MAX_NONCOUNTING_REPLIES} parsed replies "
-                    "without a counted try",
-                    RunResult(
-                        tries=None,
-                        counted_tries=referee.tries,
-                        turns=turns,
-                        duration=time.monotonic() - started,
-                        tried_words=tuple(referee.tried_words),
-                        conversation=tuple(message.copy() for message in messages),
-                        turn_token_usage=tuple(turn_token_usage),
-                        termination="reply_error",
-                        raw_provider_token_usage=tuple(
-                            raw_provider_token_usage
-                        ),
-                    ),
+                    "without a counted try"
                 )
 
         # A solve on try N wins even when N equals the cap. The cap is a DNF only when
         # unsolved after that many counted, unique, vocabulary-valid guesses.
         if feedback.solved:
-            return RunResult(
-                tries=feedback.tries,
-                counted_tries=feedback.tries,
-                turns=turns,
-                duration=time.monotonic() - started,
-                tried_words=tuple(referee.tried_words),
-                conversation=tuple(message.copy() for message in messages),
-                turn_token_usage=tuple(turn_token_usage),
-                termination="solved",
-                raw_provider_token_usage=tuple(raw_provider_token_usage),
-            )
+            return result(feedback.tries, "solved")
         if feedback.tries >= cap:
-            return RunResult(
-                tries=None,
-                counted_tries=feedback.tries,
-                turns=turns,
-                duration=time.monotonic() - started,
-                tried_words=tuple(referee.tried_words),
-                conversation=tuple(message.copy() for message in messages),
-                turn_token_usage=tuple(turn_token_usage),
-                termination="cap",
-                raw_provider_token_usage=tuple(raw_provider_token_usage),
-            )
+            return result(None, "cap")
 
 
 def _text_content(content: object) -> str:
@@ -1732,26 +1662,14 @@ def _stateless_word_parts(messages: list[Message]) -> tuple[str, str]:
     opening = messages[0]["content"]
     record_marker = "\nCOMPLETE CHRONOLOGICAL GAME RECORD\n"
     opening_rules, marker, initial_state = opening.partition(record_marker)
-    if marker:
-        stable = (
-            f"{opening_rules.rstrip()}\n\n"
-            "COMPLETE CHRONOLOGICAL GAME RECORD\n"
+    if not marker:
+        raise ValueError(
+            "word reply requires an opening that carries the complete game record"
         )
-    else:
-        # Defensive compatibility for direct adapter callers. Production v23 game
-        # openings carry the complete-record marker; older fixtures may expose only
-        # CURRENT STATE, and arbitrary one-message calls remain byte-preserving.
-        opening_rules, state_marker, state_tail = opening.partition(
-            "\nCURRENT STATE\n"
-        )
-        if state_marker:
-            stable = f"{opening_rules.rstrip()}\n\n"
-            initial_state = f"CURRENT STATE\n{state_tail}"
-        elif len(messages) == 1:
-            return "", opening
-        else:
-            stable = ""
-            initial_state = opening
+    stable = (
+        f"{opening_rules.rstrip()}\n\n"
+        "COMPLETE CHRONOLOGICAL GAME RECORD\n"
+    )
 
     record = [initial_state]
     turn_count = (len(messages) - 1) // 2
@@ -1786,6 +1704,26 @@ def _provider_messages(
     if output != "word":
         return messages
     return [{"role": "user", "content": _stateless_word_prompt(messages)}]
+
+
+def _is_fresh_opening(
+    messages: list[Message], message_count: int, transport: str
+) -> bool:
+    """Check a persistent turn against the append-only referee transcript.
+
+    `benchmark_model` reuses one adapter across runs, and a one-message transcript
+    always starts a fresh attempt: the caller resets its native session when this
+    returns True. Any other turn must extend the last answered transcript by exactly
+    one assistant reply and one referee message.
+    """
+    fresh = len(messages) == 1
+    expected_count = 1 if fresh or message_count == 0 else message_count + 2
+    if len(messages) != expected_count:
+        raise RuntimeError(
+            f"{transport} conversation diverged from the append-only referee "
+            "transcript"
+        )
+    return fresh
 
 
 def _merge_agent_text_continuation(current: str, continuation: str) -> str:
@@ -1940,8 +1878,6 @@ class AnthropicSubscriptionReply:
         self.model_id = model_id
         self.effort = effort
         self.output = output
-        if session not in SESSION_MODES:
-            raise ValueError(f"unsupported session mode: {session}")
         self.session = session
         # Only the Kimi subclass ships a child environment; it sets this after super().
         self._subprocess_env: dict[str, str] = {}
@@ -1960,31 +1896,15 @@ class AnthropicSubscriptionReply:
             raise ValueError("Agent SDK reply requires a final user message")
 
         persistent = self.output != "word" or self.session == "persistent"
-        if persistent:
-            # `benchmark_model` reuses one adapter across runs. A one-message
-            # transcript always starts a fresh attempt.
-            if len(messages) == 1:
-                self.session_id = None
-                self._message_count = 0
-            elif self._message_count == 0:
-                raise RuntimeError(
-                    "Agent SDK conversation cannot continue before its opening turn"
-                )
-            expected_count = (
-                1 if self._message_count == 0 else self._message_count + 2
+        if persistent and len(messages) > 1 and self._message_count == 0:
+            raise RuntimeError(
+                "Agent SDK conversation cannot continue before its opening turn"
             )
-            if len(messages) != expected_count:
-                raise RuntimeError(
-                    "Agent SDK conversation diverged from the append-only referee "
-                    "transcript"
-                )
-        else:
+        if not persistent or _is_fresh_opening(
+            messages, self._message_count, "Agent SDK"
+        ):
             self.session_id = None
             self._message_count = 0
-        if persistent and len(messages) > 1 and self.session_id is None:
-            raise RuntimeError(
-                "Agent SDK conversation cannot resume before its opening turn"
-            )
 
         # Product play sends only the newest referee message into the native session.
         # The explicit stateless diagnostic reconstructs the same complete public record
@@ -2114,8 +2034,6 @@ class KimiSubscriptionReply(AnthropicSubscriptionReply):
         )
         config_dir = Path(self._workspace.name) / "claude-config"
         config_dir.mkdir()
-        self.requested_effort = requested_effort
-        self.effective_effort = effective_effort
         # ClaudeAgentOptions.env is merged into the spawned CLI only. The surrounding
         # conflict guard removes inherited routes first, so these are the child's sole
         # Anthropic-compatible credential/endpoint values and never replace os.environ.
@@ -2136,18 +2054,6 @@ class KimiSubscriptionReply(AnthropicSubscriptionReply):
     def close(self) -> None:
         self._subprocess_env.clear()
         super().close()
-
-
-def _codex_snapshot_prompt(
-    messages: list[Message], output: OutputMode = "word"
-) -> str:
-    if output == "word":
-        return _stateless_word_prompt(messages)
-    # PROSE is one-shot by construction — the distiller sends exactly one message — and
-    # the prompt must stay byte-identical across transports. Wrapping a single message as
-    # both opening_rules and current_state would also duplicate large evidence packets
-    # and can push them over the model context.
-    return messages[0]["content"]
 
 
 def _codex_final_message(
@@ -2218,14 +2124,6 @@ class OpenAISubscriptionReply:
         output: OutputMode = "word",
         session: SessionMode = DEFAULT_SESSION,
     ):
-        if effort not in CODEX_SUBSCRIPTION_EFFORTS:
-            supported = "|".join(CODEX_SUBSCRIPTION_EFFORTS)
-            raise ValueError(
-                "OpenAI subscription auth does not support reasoning effort "
-                f"{effort!r}; use {supported}"
-            )
-        if session not in SESSION_MODES:
-            raise ValueError(f"unsupported session mode: {session}")
         cli = shutil.which("codex")
         if cli is None:
             raise RuntimeError("Codex CLI is not installed")
@@ -2254,8 +2152,6 @@ class OpenAISubscriptionReply:
 
     def _command(self, resume: str | None = None) -> list[str]:
         persistent = self.output == "word" and self.session == "persistent"
-        if resume is not None and not persistent:
-            raise RuntimeError("a stateless Codex turn cannot resume a session")
         config = [
             f"approval_policy={json.dumps('never')}",
             f"model_reasoning_effort={json.dumps(self.effort)}",
@@ -2308,33 +2204,23 @@ class OpenAISubscriptionReply:
             raise ValueError("Codex CLI reply requires a final user message")
 
         persistent = self.output == "word" and self.session == "persistent"
-        if persistent:
-            if len(messages) == 1:
-                self.session_id = None
-                self._message_count = 0
-                self._cumulative_token_usage = None
-            expected_count = (
-                1 if self._message_count == 0 else self._message_count + 2
-            )
-            if len(messages) != expected_count:
-                raise RuntimeError(
-                    "Codex CLI conversation diverged from the append-only referee "
-                    "transcript"
-                )
-        else:
+        if not persistent or _is_fresh_opening(
+            messages, self._message_count, "Codex CLI"
+        ):
             self.session_id = None
             self._message_count = 0
             self._cumulative_token_usage = None
-        if persistent and len(messages) > 1 and self.session_id is None:
-            raise RuntimeError(
-                "Codex CLI conversation cannot resume before its opening turn"
-            )
         resume = self.session_id if persistent else None
-        prompt = (
-            messages[-1]["content"]
-            if persistent
-            else _codex_snapshot_prompt(messages, self.output)
-        )
+        if persistent:
+            prompt = messages[-1]["content"]
+        elif self.output == "word":
+            prompt = _stateless_word_prompt(messages)
+        else:
+            # PROSE is one-shot by construction — the distiller sends exactly one message
+            # — and the prompt must stay byte-identical across transports. Wrapping a
+            # single message as both opening_rules and current_state would also duplicate
+            # large evidence packets and can push them over the model context.
+            prompt = messages[0]["content"]
 
         try:
             completed = subprocess.run(
@@ -2439,24 +2325,16 @@ def provider_reply(
             if not messages or messages[-1].get("role") != "user":
                 raise ValueError("Anthropic API reply requires a final user message")
             persistent = output == "word" and session == "persistent"
-            if persistent:
-                if len(messages) == 1:
-                    provider_history = []
-                    message_count = 0
-                expected_count = 1 if message_count == 0 else message_count + 2
-                if len(messages) != expected_count:
-                    raise RuntimeError(
-                        "Anthropic API conversation diverged from the append-only "
-                        "referee transcript"
-                    )
+            if persistent and _is_fresh_opening(
+                messages, message_count, "Anthropic API"
+            ):
+                provider_history = []
+                message_count = 0
             budget = _output_token_budget(effort, output)
             request: dict[str, Any] = {
                 "model": model_id,
                 "max_tokens": budget,
             }
-            stable_rules = ""
-            if output == "word" and not persistent:
-                stable_rules, volatile_state = _stateless_word_parts(messages)
             if persistent:
                 request["messages"] = [
                     *provider_history,
@@ -2465,7 +2343,8 @@ def provider_reply(
                 # Automatic moving cache breakpoints retain the append-only native
                 # conversation, including signed hidden-thinking blocks.
                 request["cache_control"] = {"type": "ephemeral"}
-            elif stable_rules:
+            elif output == "word":
+                stable_rules, volatile_state = _stateless_word_parts(messages)
                 # Word turns are one user message whose tail (the complete public
                 # record) changes every turn. A breakpoint placed after the whole
                 # message therefore never produces a cache read; pinning it on the
@@ -2486,7 +2365,7 @@ def provider_reply(
                     }
                 ]
             else:
-                request["messages"] = _provider_messages(messages, output)
+                request["messages"] = messages
                 # Append-only prose conversations still use Anthropic's
                 # automatic moving cache breakpoint on the last cacheable block.
                 request["cache_control"] = {"type": "ephemeral"}
@@ -2541,16 +2420,11 @@ def provider_reply(
             if not messages or messages[-1].get("role") != "user":
                 raise ValueError("OpenAI API reply requires a final user message")
             persistent = output == "word" and session == "persistent"
-            if persistent:
-                if len(messages) == 1:
-                    previous_response_id = None
-                    message_count = 0
-                expected_count = 1 if message_count == 0 else message_count + 2
-                if len(messages) != expected_count:
-                    raise RuntimeError(
-                        "OpenAI API conversation diverged from the append-only referee "
-                        "transcript"
-                    )
+            if persistent and _is_fresh_opening(
+                messages, message_count, "OpenAI API"
+            ):
+                previous_response_id = None
+                message_count = 0
             reasoning: dict[str, str] = {"effort": effort}
             if reasoning_mode == "pro":
                 reasoning["mode"] = "pro"
@@ -2764,8 +2638,8 @@ def load_playbook_profile(
     return playbook, actual_sha
 
 
-def load_vocab(lang: str, vocab_dir: Path = WEB_VOCAB_DIR) -> set[str]:
-    path = vocab_dir / f"{lang}.json"
+def load_vocab(lang: str) -> set[str]:
+    path = WEB_VOCAB_DIR / f"{lang}.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -2775,7 +2649,11 @@ def load_vocab(lang: str, vocab_dir: Path = WEB_VOCAB_DIR) -> set[str]:
     return set(data)
 
 
-def _write_json_atomic(path: Path, data: object, *, indent: int | None = None) -> None:
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _write_json_atomic(path: Path, data: object) -> None:
     temp_path: str | None = None
     original_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -2788,9 +2666,8 @@ def _write_json_atomic(path: Path, data: object, *, indent: int | None = None) -
             delete=False,
         ) as handle:
             temp_path = handle.name
-            json.dump(data, handle, ensure_ascii=False, indent=indent)
-            if indent is not None:
-                handle.write("\n")
+            json.dump(data, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
         if original_mode is not None:
             os.chmod(temp_path, original_mode)
         os.replace(temp_path, path)
@@ -2813,9 +2690,6 @@ def _exclusive_file_lock(path: Path):
     """
     lock_path = path.parent / f".{path.name}.lock"
     path.parent.mkdir(parents=True, exist_ok=True)
-    if fcntl is None:  # non-POSIX: no advisory locks, so writes stay best-effort
-        yield
-        return
     handle = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
     try:
         fcntl.flock(handle, fcntl.LOCK_EX)
@@ -2975,9 +2849,7 @@ def write_lab_artifact(
             }
             sessions = artifact["sessions"]
 
-        recorded_at = timestamp or datetime.now(timezone.utc).isoformat().replace(
-            "+00:00", "Z"
-        )
+        recorded_at = timestamp or _utc_now()
         sessions.append(
             _lab_session(
                 summary,
@@ -2989,7 +2861,7 @@ def write_lab_artifact(
                 playbook_sha256=playbook_sha256,
             )
         )
-        _write_json_atomic(path, artifact, indent=2)
+        _write_json_atomic(path, artifact)
     return path, artifact
 
 
@@ -3126,34 +2998,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 2
     api_key: str | None = None
-    kimi_subscription_selected = config["provider"] == "kimi"
-    if kimi_subscription_selected:
-        api_key = os.environ.get(PROVIDER_ENV["kimi"])
-        try:
+    try:
+        if config["provider"] == "kimi":
+            api_key = os.environ.get(PROVIDER_ENV["kimi"])
             validate_kimi_subscription_auth(api_key)
-        except RuntimeError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2
-
-    anthropic_subscription_selected = (
-        args.auth == "subscription" and config["provider"] == "anthropic"
-    )
-    if anthropic_subscription_selected:
-        try:
+        elif args.auth == "subscription" and config["provider"] == "anthropic":
             validate_anthropic_subscription_auth()
-        except RuntimeError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2
-
-    openai_subscription_selected = (
-        args.auth == "subscription" and config["provider"] == "openai"
-    )
-    if openai_subscription_selected:
-        try:
+        elif args.auth == "subscription" and config["provider"] == "openai":
             validate_openai_subscription_auth()
-        except RuntimeError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     effective_effort = _effective_provider_effort(config["provider"], args.effort)
     print(

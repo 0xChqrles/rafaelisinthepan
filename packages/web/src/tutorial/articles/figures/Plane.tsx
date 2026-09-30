@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { prefersReducedMotion } from '../../../hooks/useScramble';
+import { useArticleLang } from '../lang';
 import type { PlanePoint } from '../types';
 import Tabs from './Tabs';
 
@@ -14,16 +15,15 @@ const SQUARE = 9;
 const GLIDE_MS = 650;
 
 export default function Plane({
-  lang,
   states,
   edges,
   tabs,
 }: {
-  lang: string;
   states: PlanePoint[][];
   edges: [number, number][];
   tabs?: string[];
 }) {
+  const lang = useArticleLang();
   const [at, setAt] = useState(0);
   const [points, setPoints] = useState(states[0]);
   const shown = useRef(points);

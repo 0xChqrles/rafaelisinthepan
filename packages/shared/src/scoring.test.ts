@@ -34,12 +34,29 @@ describe('s + holeProgress — the reconstruction curve', () => {
     expect(s(99, 100)).toBeLessThan(s(1, 100));
   });
 
+  it('is strictly decreasing in rank (closer = higher)', () => {
+    for (const [a, b] of [[1, 2], [2, 10], [10, 100], [100, 999]]) {
+      expect(s(a, 1000)).toBeGreaterThan(s(b, 1000));
+    }
+  });
+
+  it('is LOGARITHMIC in rank, not linear', () => {
+    // ln(10) / ln(100) = 1/2: a tenth of the way out in rank is half the way out in s.
+    expect(s(9, 99)).toBeCloseTo(0.5, 12);
+    // s(9) = 3/4 and s(99) = 1/2 over ln(10000), so the hole is halfway from its start.
+    expect(holeProgress(9, 99, 9999)).toBeCloseTo(0.5, 12);
+  });
+
   it('runs 0 at the start rank to 1 at the solve, clamped at both ends', () => {
     expect(holeProgress(87, 87, 500)).toBeCloseTo(0, 10);
     expect(holeProgress(0, 87, 500)).toBeCloseTo(1, 10);
     // A guess FARTHER than the start cannot push a hole negative (the game never lets a
     // rank regress, but a derivation reading a raw log must not be able to either).
     expect(holeProgress(400, 87, 500)).toBe(0);
+  });
+
+  it('is monotonic between the two: a closer rank never scores lower', () => {
+    expect(holeProgress(50, 200, 1000)).toBeGreaterThan(holeProgress(150, 200, 1000));
   });
 
   it('treats an already-perfect start as solved-or-nothing rather than dividing by zero', () => {
@@ -73,6 +90,60 @@ describe('guessKey — the counted-try identity (#104)', () => {
     expect(guessKey(RANKS, 'zzz')).toBe('zzz');
     // Two different cold misses stay two different tries.
     expect(guessKey(RANKS, 'zzz')).not.toBe(guessKey(RANKS, 'yyy'));
+  });
+
+  // "privée"/"prive" alias to the privé entry in BOTH maps (rank 2 in a, rank 90 in b).
+  // "portes" is an alias of a DIFFERENT group (porte, rank 5), which map b never knows.
+  const ALIASED: RankMap = {
+    a: {
+      prive: { word: 'privé', rank: 2 },
+      privee: { word: 'privé', rank: 2 },
+      porte: { word: 'porte', rank: 5 },
+      portes: { word: 'porte', rank: 5 },
+    },
+    b: {
+      prive: { word: 'privé', rank: 90 },
+      privee: { word: 'privé', rank: 90 },
+    },
+  };
+
+  it('two inflections of one word share one identity when every map aliases them', () => {
+    expect(guessKey(ALIASED, 'privee')).toBe(guessKey(ALIASED, 'prive'));
+  });
+
+  it('different words (even aliased ones) keep distinct identities', () => {
+    expect(guessKey(ALIASED, 'porte')).not.toBe(guessKey(ALIASED, 'prive'));
+    expect(guessKey(ALIASED, 'portes')).toBe(guessKey(ALIASED, 'porte'));
+  });
+
+  it('is the outcome on EVERY hole, so a variant one map ranks differently is its own try', () => {
+    // Same rank in a, different rank in b: the player learns something new from the
+    // second one, so it cannot be folded into the first.
+    const split: RankMap = {
+      a: { chaud: { word: 'chaud', rank: 4 }, chaude: { word: 'chaud', rank: 4 } },
+      b: { chaud: { word: 'chaud', rank: 7 }, chaude: { word: 'chaude', rank: 9 } },
+    };
+    expect(guessKey(split, 'chaude')).not.toBe(guessKey(split, 'chaud'));
+  });
+
+  it('never fuses a SOLVING guess into a duplicate of a near miss (fr day 20667)', () => {
+    // The real regression: in the FIRST map the singular and the plural fold onto one
+    // group (`maniérés`, rank 6783), while in the hole's OWN map the plural IS the secret
+    // (rank 0) and the singular is a different group two ranks out. Anchoring the identity
+    // on the first map made the plural a repeat of the singular, so the guess that solved
+    // the sentence never entered `tried` — and the run ruler, the share card, the emoji
+    // row and the score all lost it.
+    const collided: RankMap = {
+      tropiques: {
+        maniere: { word: 'maniérés', rank: 6783 },
+        manieres: { word: 'maniérés', rank: 6783 },
+      },
+      manieres: {
+        maniere: { word: 'manière', rank: 2 },
+        manieres: { word: 'manières', rank: 0 },
+      },
+    };
+    expect(guessKey(collided, 'manieres')).not.toBe(guessKey(collided, 'maniere'));
   });
 });
 

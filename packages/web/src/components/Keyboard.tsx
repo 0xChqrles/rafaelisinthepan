@@ -8,6 +8,7 @@ import {
   type PointerEvent,
 } from 'react';
 import { KEYBOARD_ROWS, canExtend } from '../game/keyboard';
+import { prefersReducedMotion } from '../hooks/useScramble';
 // Inline SVG components (vite-plugin-svgr `?react`): they render into the DOM and paint
 // with `fill="currentColor"`, so each control key's icon inherits its `color` — muted for
 // backspace, accent for enter, dimmed when greyed. Icons are decorative; the button's
@@ -111,7 +112,7 @@ export default function Keyboard({
     const id = struckKey(prev, input, vocabSet);
     const node = id === null ? undefined : keys.current.get(id);
     if (!node || typeof node.animate !== 'function') return;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    if (prefersReducedMotion()) return;
     node.animate(id === 'enter' ? STRIKE_ENTER : STRIKE_FRAMES, { duration: STRIKE_MS, easing: 'ease-out' });
   }, [input, vocabSet]);
 
@@ -149,7 +150,7 @@ export default function Keyboard({
 
   const enterActive = vocabSet.has(input) || (input === '' && submittable);
 
-  const renderLetter = (char: string) => {
+  const renderLetter = (char: string, label?: string) => {
     const active = !locked && canExtend(prefixSet, input, char);
     const shaking = shake?.id === char;
     return (
@@ -157,7 +158,7 @@ export default function Keyboard({
         key={char}
         ref={keyRef(char)}
         type="button"
-        aria-label={char}
+        aria-label={label ?? char}
         aria-disabled={!active}
         className={`kb-key${active ? '' : ' kb-greyed'}${shaking ? ' kb-shake' : ''}`}
         onPointerDown={(e) => press(e, () => (active ? onType(char) : triggerShake(char)))}
@@ -169,15 +170,12 @@ export default function Keyboard({
     );
   };
 
-  const dashActive = !locked && canExtend(prefixSet, input, '-');
-  const dashShaking = shake?.id === '-';
   const lastRowIndex = KEYBOARD_ROWS.length - 1;
 
   return (
     <div className="keyboard" role="group" aria-label={t(lang, 'ariaKeyboard')}>
       {KEYBOARD_ROWS.map((row, rowIndex) => (
         // Rows are fixed; index is a stable key here.
-        // eslint-disable-next-line react/no-array-index-key
         <div className="kb-row" key={rowIndex}>
           {rowIndex === lastRowIndex && (
             <button
@@ -195,21 +193,10 @@ export default function Keyboard({
               <EnterIcon className="kb-icon" aria-hidden />
             </button>
           )}
-          {row.map(renderLetter)}
+          {row.map((char) => renderLetter(char))}
           {rowIndex === lastRowIndex && (
             <>
-              <button
-                ref={keyRef('-')}
-                type="button"
-                aria-label={t(lang, 'ariaDash')}
-                aria-disabled={!dashActive}
-                className={`kb-key${dashActive ? '' : ' kb-greyed'}${dashShaking ? ' kb-shake' : ''}`}
-                onPointerDown={(e) => press(e, () => (dashActive ? onType('-') : triggerShake('-')))}
-                onClick={(e) => activate(e, () => (dashActive ? onType('-') : triggerShake('-')))}
-                onAnimationEnd={() => setShake((prev) => (prev?.id === '-' ? null : prev))}
-              >
-                -
-              </button>
+              {renderLetter('-', t(lang, 'ariaDash'))}
               <button
                 ref={keyRef('back')}
                 type="button"

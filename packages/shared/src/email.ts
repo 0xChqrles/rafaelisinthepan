@@ -60,7 +60,7 @@ export function isValidEmail(raw: unknown): boolean {
 
 // SIX digits, leading zeros kept — what a person reads out of a mail app and types back.
 export const LINK_CODE_LENGTH = 6;
-export const LINK_CODE_PATTERN = /^\d{6}$/;
+const LINK_CODE_PATTERN = /^\d{6}$/;
 
 export function isValidLinkCode(value: unknown): value is string {
   return typeof value === 'string' && LINK_CODE_PATTERN.test(value);

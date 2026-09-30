@@ -99,7 +99,6 @@ describe('the conversation agent (#236, #277)', () => {
     // The day, in order, as user turns with the time; the question is the last of them.
     expect(contents(requests[0])).toEqual(['[13:00] Gab: je pense au nombre 67', `[14:00] Gab: WhippinBot qui mène ?  ${ANSWERING}`]);
     expect(requests[0].tools?.map((t) => t.name)).toContain('get_head_to_head');
-    expect(requests[0].tools?.map((t) => t.name)).not.toContain('remember');
     expect(requests[0].system).toContain('On se chambre.');
     expect(requests[0].system).toContain('2026-09-03, a jeudi'); // the weekday is GIVEN, never worked out
     expect(requests[1].messages.at(-1)).toMatchObject({ role: 'tool', toolCallId: 'c1' });
@@ -133,13 +132,53 @@ describe('the conversation agent (#236, #277)', () => {
       ['assistant', 'REACT 👍'],
       ['user', `[14:00] Gab: WhippinBot et demain ?  ${ANSWERING}`],
     ]);
-    // A reaction never charges the group's ceiling: it is not a bubble.
+    // The answer form, read off the raw text: wrapped in markdown, with a colon, with an
+    // emoji off the list — and with none at all, which is still a reaction and never the
+    // word `REACT` posted as a reply.
     expect(reactionIn('REACT ❤️')).toBe('❤️');
     expect(reactionIn('_react: 🔥_')).toBe('🔥');
     expect(reactionIn('REACT 🎉')).toBe(DEFAULT_REACTION);
+    expect(reactionIn('REACT')).toBe(DEFAULT_REACTION);
     expect(reactionIn('REACTION time')).toBeNull();
     expect(reactionIn('merci')).toBeNull();
     expect(reactionIn(null)).toBeNull();
+  });
+
+  it('THE ANSWER FORM OR A SENTENCE: `REACT` in capitals is always a reaction; another case followed by plain words is a sentence, posted as one', async () => {
+    // The form the prompt asks for, however it is wrapped — `_` is a separator after the
+    // keyword as before it — and whatever follows it.
+    expect(reactionIn('_REACT_')).toBe(DEFAULT_REACTION);
+    expect(reactionIn('**REACT**')).toBe(DEFAULT_REACTION);
+    expect(reactionIn('REACT:')).toBe(DEFAULT_REACTION);
+    expect(reactionIn('_REACT_ ❤️')).toBe('❤️');
+    expect(reactionIn('REACT thumbs up')).toBe(DEFAULT_REACTION);
+    expect(reactionIn('REACT red heart')).toBe(DEFAULT_REACTION);
+    // Another case: nothing, one token, or an emoji anywhere after it is still a reaction…
+    expect(reactionIn('React')).toBe(DEFAULT_REACTION);
+    expect(reactionIn('react heart')).toBe(DEFAULT_REACTION);
+    expect(reactionIn('react ❤️ merci')).toBe('❤️');
+    expect(reactionIn('React with a 🔥')).toBe(DEFAULT_REACTION);
+    // …and two plain words after it make a sentence: English opens one with the verb.
+    expect(reactionIn('React faster next time, Gab.')).toBeNull();
+    expect(reactionIn('react red heart')).toBeNull();
+    expect(reactionIn('_React_ faster next time')).toBeNull();
+    const { provider } = scripted([() => ({ text: 'React faster next time, Gab.' })]);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'WhippinBot any advice?');
+    const out = await agentWith(provider, { dayLog })(message('@33700000000 any advice?'), group, identity, TODAY, asked());
+    expect(out).toEqual({ kind: 'reply', text: 'React faster next time, Gab.' });
+  });
+
+  it('a reaction to an AMBIENT message never charges the group ceiling: it is not a bubble', async () => {
+    const { provider } = scripted([() => ({ text: 'REACT ❤️' })]);
+    const limits = memoryLimitStore();
+    const take = vi.spyOn(limits, 'take');
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'merci');
+    const out = await agentWith(provider, { limits, dayLog })(message('merci', { mentions: [] }), group, identity, TODAY, asked('ambient', NEW_EXCHANGE, { id: 'M1', name: 'Gab', text: 'merci' }));
+    expect(out).toEqual({ kind: 'react', emoji: '❤️' });
+    // The model call was spent; the group's written answers of the day were not.
+    expect(take.mock.calls.map(([scope]) => scope)).toEqual(['LIMIT#ALL']);
   });
 
   it('AMBIENT: silence is the default and costs nothing; a reply charges the group ceiling; the rules say so', async () => {

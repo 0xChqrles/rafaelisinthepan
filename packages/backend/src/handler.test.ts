@@ -19,7 +19,7 @@ import { createHandler, type HandlerDeps } from './handler';
 import { renderCardPng, renderGroupCardPng } from './ogCard';
 import { memoryGroupStore } from './memoryGroupStore';
 import type { ProfileRecord, ProfileStore } from './profileStore';
-import { LAMBDA_MAX_RESPONSE_BYTES, envelopeBytes, type FnUrlEvent } from './respond';
+import { LAMBDA_MAX_RESPONSE_BYTES, envelopeBytes, type FnUrlEvent, type FnUrlResult } from './respond';
 import type { PuzzleStore } from './store';
 
 // Spy on the card rasterizer (real PNG bytes are opaque to a lang assertion); a stub PNG
@@ -28,6 +28,12 @@ vi.mock('./ogCard', async () => {
   const actual = await vi.importActual<typeof import('./ogCard')>('./ogCard');
   const stub = () => vi.fn(async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]));
   return { ...actual, renderCardPng: stub(), renderGroupCardPng: stub() };
+});
+
+// The two stubs above live for the whole file, so their call history is emptied before
+// each test: an assertion about what a renderer was handed is about THIS test's call.
+beforeEach(() => {
+  vi.clearAllMocks();
 });
 
 // A minimal but schema-valid puzzle, keyed by the date the fixed clock resolves to.
@@ -67,6 +73,9 @@ function fakeStore(): PuzzleStore {
   return {
     async getPuzzle(date, lang) {
       return PUBLISHED_FR.has(date) && lang === 'fr' ? PUZZLE : null;
+    },
+    async hasPuzzle(date, lang) {
+      return PUBLISHED_FR.has(date) && lang === 'fr';
     },
     async getSlice() {
       return null;
@@ -120,12 +129,25 @@ function oversizedHandler() {
   return makeHandler({
     store: {
       async getPuzzle(date, lang) { return date === ACTIVE_DATE && lang === 'fr' ? puzzle : null; },
+      async hasPuzzle(date, lang) { return date === ACTIVE_DATE && lang === 'fr'; },
       async getSlice() { return null; },
     },
   });
 }
 
 const PUZZLE_QUERY = { lang: 'fr', date: ACTIVE_DATE };
+
+// A DEAD link's page — an invite naming no group, a share naming no result. The status
+// stays 404, so a crawler unfurls nothing, but a person's browser gets HTML that moves it on
+// to `target` rather than a JSON error body.
+function expectGonePage(res: FnUrlResult, target: string) {
+  expect(res.statusCode).toBe(404);
+  expect(res.headers['Content-Type']).toMatch(/text\/html/);
+  expect(res.body).toContain(`location.replace(${JSON.stringify(target)})`);
+  expect(res.body).toContain(`href="${target}"`);
+  expect(res.body).toContain('<meta name="robots" content="noindex">');
+  expect(res.body).not.toContain('og:');
+}
 
 describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
   it('returns the requested day\'s puzzle for the requested lang, unchanged', async () => {
@@ -205,21 +227,40 @@ describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
   });
 
   it('a store failure surfaces as a JSON 500, not an unhandled throw', async () => {
-    const handler = createHandler({
-      store: {
-        async getPuzzle() {
-          throw new Error('s3 boom');
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const handler = createHandler({
+        store: {
+          async getPuzzle() {
+            throw new Error('s3 boom');
+          },
+          async hasPuzzle() {
+            throw new Error('s3 boom');
+          },
+          async getSlice() {
+            throw new Error('s3 boom');
+          },
         },
-        async getSlice() {
-          throw new Error('s3 boom');
-        },
-      },
-      now: () => FIXED_NOW,
-      allowedOrigin: ORIGIN,
-    });
-    const res = await handler(event({ query: { lang: 'fr', date: ACTIVE_DATE } }));
-    expect(res.statusCode).toBe(500);
-    expect(JSON.parse(res.body).error).toBe('internal_error');
+        now: () => FIXED_NOW,
+        allowedOrigin: ORIGIN,
+      });
+      const res = await handler(event({ query: { lang: 'fr', date: ACTIVE_DATE } }));
+      expect(res.statusCode).toBe(500);
+      // The body names the failure and says NOTHING of its cause: a store's own message
+      // (an SDK one names the role, the table, the bucket) is not the caller's to read.
+      expect(JSON.parse(res.body)).toEqual({ error: 'internal_error', message: 'Unexpected error.' });
+      expect(res.body).not.toContain('s3 boom');
+      // The cause goes to the LOG instead, which is the only place it is seen at all: a
+      // handler that RETURNS a 500 is a successful invocation, with a clean log group.
+      expect(logged).toHaveBeenCalledTimes(1);
+      const [line, detail] = logged.mock.calls[0];
+      expect(line).toContain('internal_error');
+      expect(line).toContain('GET /'); // which route failed
+      expect(detail).toMatchObject({ name: 'Error', message: 's3 boom' });
+      expect(detail.stack).toContain('s3 boom');
+    } finally {
+      logged.mockRestore();
+    }
   });
 });
 
@@ -233,6 +274,7 @@ describe('puzzle endpoint — a bonus puzzle (GET /?lang=&bonus=)', () => {
     makeHandler({
       store: {
         async getPuzzle(address, lang) { return address === 'bonus/1234567' && lang === 'fr' ? PUZZLE : null; },
+        async hasPuzzle(address, lang) { return address === 'bonus/1234567' && lang === 'fr'; },
         async getSlice() { return null; },
       },
     });
@@ -462,18 +504,36 @@ describe('group invite link (#271) — the shared link, its preview page and its
     const get = vi.spyOn(groups, 'get');
     const handler = makeHandler({ siteOrigin: ORIGIN, groups, profiles: stored(null) });
     for (const bad of ['nope', 'abcdefghij234560', `${ID}x`]) {
+      // The page moves a person to the site home — a malformed id names no landing either,
+      // and it is never written into the page.
       const res = await handler(event({ path: `/${GROUP_SEGMENT}/${bad}` }));
-      expect(res.statusCode).toBe(404);
+      expectGonePage(res, `${ORIGIN}/`);
+      expect(res.body).not.toContain(bad);
+      expect(res.headers['Cache-Control']).toBeUndefined();
+      // The card stays a JSON 404: an image URL has no person behind it.
+      const card = await handler(event({ path: groupCardPath(bad) }));
+      expect(card.statusCode).toBe(404);
+      expect(JSON.parse(card.body).error).toBe('not_found');
     }
     expect(get).not.toHaveBeenCalled();
   });
 
-  it('a link naming no group has expired', async () => {
-    const res = await makeHandler({ siteOrigin: ORIGIN, groups: memoryGroupStore(), profiles: stored(null) })(
-      event({ path: `/${GROUP_SEGMENT}/${ID}` }),
+  it('a link naming no group has expired: a 404 moving a person on to the landing that says so', async () => {
+    const handler = makeHandler({ siteOrigin: ORIGIN, groups: memoryGroupStore(), profiles: stored(null) });
+    const res = await handler(event({ path: `/${GROUP_SEGMENT}/${ID}` }));
+    expectGonePage(res, `${ORIGIN}${groupLandingPath(ID)}`);
+    expect(res.headers['Cache-Control']).toBe('public, max-age=300');
+    const card = await handler(event({ path: groupCardPath(ID) }));
+    expect(card.statusCode).toBe(404);
+    expect(JSON.parse(card.body).message).toMatch(/expired/);
+    expect(card.headers['Cache-Control']).toBe('public, max-age=300');
+  });
+
+  it('builds the expired link\'s target off the request origin when no site origin is set', async () => {
+    const res = await makeHandler({ groups: memoryGroupStore(), profiles: stored(null) })(
+      event({ path: `/${GROUP_SEGMENT}/${ID}`, headers: { host: 'localhost:5173' } }),
     );
-    expect(res.statusCode).toBe(404);
-    expect(JSON.parse(res.body).message).toMatch(/expired/);
+    expectGonePage(res, `http://localhost:5173${groupLandingPath(ID)}`);
   });
 
   it('renders the card from the members\' STORED profiles, empty avatar read as none', async () => {
@@ -597,13 +657,64 @@ describe('a signed share (the result wearing its player)', () => {
     expect(res.headers['Cache-Control']).toBe('no-store');
   });
 
+  it('a trailing slash is the same link (a pasted one often carries one)', async () => {
+    const handler = makeHandler({
+      siteOrigin: ORIGIN,
+      profiles: stored({ publicId: ID, name: 'Chqrles', avatar: '' }),
+    });
+    const plain = await handler(event({ path: sharePath(token) }));
+    const slashed = await handler(event({ path: `${sharePath(token)}/` }));
+    expect(slashed.statusCode).toBe(200);
+    expect(slashed.headers['Content-Type']).toMatch(/text\/html/);
+    expect(slashed.body).toBe(plain.body);
+    const signed = await handler(event({ path: `${sharePath(token, ID)}/` }));
+    expect(signed.statusCode).toBe(200);
+    expect(signed.body).toContain('<title>Chqrles · Whippin AI 2026-07-04 — 6 tries</title>');
+    // The CARD the page points at takes the same slash, plain and signed.
+    const card = await handler(event({ path: `${shareCardPath(token)}/` }));
+    expect(card.statusCode).toBe(200);
+    expect(card.headers['Content-Type']).toMatch(/image\/png/);
+    expect(renderCardPng).toHaveBeenLastCalledWith(expect.objectContaining({ score: 6 }), null);
+    const signedCard = await handler(event({ path: `${shareCardPath(token, ID)}/` }));
+    expect(signedCard.statusCode).toBe(200);
+    expect(renderCardPng).toHaveBeenLastCalledWith(expect.objectContaining({ score: 6 }), {
+      publicId: ID,
+      name: 'Chqrles',
+      avatar: null,
+    });
+  });
+  it('a token that names no result reads no profile: the 404 and the legacy redirect draw no face', async () => {
+    const profiles = stored({ publicId: ID, name: 'Chqrles', avatar: '' });
+    const get = vi.spyOn(profiles, 'get');
+    const handler = makeHandler({ siteOrigin: ORIGIN, profiles });
+    const undecodable = token.slice(0, 4); // token-shaped, current version, truncated
+    // The page moves a person to the site home, signed or plain; the card stays JSON.
+    for (const page of [sharePath(undecodable, ID), sharePath(undecodable)]) {
+      const res = await handler(event({ path: page }));
+      expectGonePage(res, `${ORIGIN}/`);
+      expect(res.headers['Cache-Control']).toBeUndefined();
+    }
+    const card = await handler(event({ path: shareCardPath(undecodable, ID) }));
+    expect(card.statusCode).toBe(404);
+    expect(JSON.parse(card.body).error).toBe('not_found');
+    // A superseded (v1) token: version 1 | lang fr | day 638 — still a redirect when signed.
+    const legacy = await handler(event({ path: sharePath('FBPwAAA', ID) }));
+    expect(legacy.statusCode).toBe(301);
+    expect(legacy.headers.Location).toBe(`${ORIGIN}/fr/2026-07-04`);
+    expect(get).not.toHaveBeenCalled();
+  });
+
   it('a malformed signature is a 404 — never a lookup; a plain share is untouched', async () => {
     const profiles = stored(null);
     const get = vi.spyOn(profiles, 'get');
     const handler = makeHandler({ siteOrigin: ORIGIN, profiles });
     for (const bad of ['nope', 'abcdefghij234560', `${ID}x`]) {
-      expect((await handler(event({ path: sharePath(token, bad) }))).statusCode).toBe(404);
-      expect((await handler(event({ path: shareCardPath(token, bad) }))).statusCode).toBe(404);
+      const page = await handler(event({ path: sharePath(token, bad) }));
+      expectGonePage(page, `${ORIGIN}/`);
+      expect(page.body).not.toContain(bad);
+      const card = await handler(event({ path: shareCardPath(token, bad) }));
+      expect(card.statusCode).toBe(404);
+      expect(JSON.parse(card.body).error).toBe('not_found');
     }
     expect(get).not.toHaveBeenCalled();
     const plain = await handler(event({ path: sharePath(token) }));

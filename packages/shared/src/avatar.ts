@@ -13,6 +13,8 @@
 // = 14 bytes, base64url without padding = exactly 19 characters — a compact string on
 // the player row, rendered client-side as SVG.
 
+import { BASE64URL_ALPHABET, bytesToBase64Url } from './base64url';
+
 export const AVATAR_SIZE = 10;
 export const AVATAR_CELLS = AVATAR_SIZE * AVATAR_SIZE;
 
@@ -48,22 +50,7 @@ const BYTES = 1 + Math.ceil(AVATAR_CELLS / 8); // 14
 // 14 bytes -> 4 full base64 groups (16 chars) + one 2-byte tail (3 chars), no padding.
 export const AVATAR_STRING_LENGTH = 19;
 
-const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-const B64_INDEX = new Map([...B64].map((c, i) => [c, i] as const));
-
-function toBase64Url(bytes: Uint8Array): string {
-  let out = '';
-  for (let i = 0; i < bytes.length; i += 3) {
-    const a = bytes[i];
-    const b = i + 1 < bytes.length ? bytes[i + 1] : null;
-    const c = i + 2 < bytes.length ? bytes[i + 2] : null;
-    out += B64[a >> 2];
-    out += B64[((a & 3) << 4) | ((b ?? 0) >> 4)];
-    if (b !== null) out += B64[((b & 15) << 2) | ((c ?? 0) >> 6)];
-    if (c !== null) out += B64[c & 63];
-  }
-  return out;
-}
+const B64_INDEX = new Map([...BASE64URL_ALPHABET].map((c, i) => [c, i] as const));
 
 function fromBase64Url(s: string): Uint8Array {
   const bits: number[] = [];
@@ -108,7 +95,7 @@ export function encodeAvatar(palette: number, cells: readonly number[]): string 
     if (value !== 0 && value !== 1) throw new Error('avatar: cell value out of range');
     bytes[1 + (i >> 3)] |= value << (i & 7);
   }
-  return toBase64Url(bytes);
+  return bytesToBase64Url(bytes);
 }
 
 export function decodeAvatar(encoded: string): DecodedAvatar {

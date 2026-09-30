@@ -3,11 +3,11 @@
 // revision, the source, the sentence and the holes as secret / start / start rank. The
 // curator's archive reads it and nothing else, so the line's shape is a cross-package fact.
 import { describe, it, expect } from 'vitest';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Puzzle } from '@whippin/shared';
-import { appendPublished, ledgerEntry, parseLedger, publishLedgerPath } from './ledger';
+import { appendPublished, ledgerEntry, publishLedgerPath } from './ledger';
 
 const puzzle: Puzzle = {
   lang: 'fr',
@@ -36,16 +36,20 @@ describe('the publish ledger', () => {
     expect('source' in ledgerEntry(bare, '2026-09-08', new Date())).toBe(false);
   });
 
-  it('appends one JSON line per publish and reads them back, skipping a broken line', async () => {
+  it('appends one JSON line per publish, in order', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'ledger-'));
-    const file = path.join(dir, 'published.jsonl');
-    const a = ledgerEntry(puzzle, '2026-09-08', new Date('2026-09-08T09:00:00Z'));
-    const b = ledgerEntry({ ...puzzle, revision: 'def456' }, '2026-09-08', new Date('2026-09-08T10:00:00Z'));
-    await appendPublished(a, file);
-    await appendPublished(b, file);
-    const text = await readFile(file, 'utf8');
-    expect(text.split('\n').filter(Boolean)).toHaveLength(2);
-    expect(parseLedger(text + '{not json\n')).toEqual([a, b]);
+    try {
+      const file = path.join(dir, 'published.jsonl');
+      const a = ledgerEntry(puzzle, '2026-09-08', new Date('2026-09-08T09:00:00Z'));
+      const b = ledgerEntry({ ...puzzle, revision: 'def456' }, '2026-09-08', new Date('2026-09-08T10:00:00Z'));
+      await appendPublished(a, file);
+      await appendPublished(b, file);
+      const text = await readFile(file, 'utf8');
+      expect(text.endsWith('\n')).toBe(true);
+      expect(text.trim().split('\n').map((line) => JSON.parse(line))).toEqual([a, b]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('lives beside the generation output, whatever the working directory', () => {

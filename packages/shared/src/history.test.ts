@@ -16,8 +16,39 @@ describe('currentStreak', () => {
     expect(currentStreak([], 14)).toBe(0);
   });
 
+  it('counts only the tail run, not an earlier equal-or-longer one', () => {
+    // Earlier run [1,2,3] is broken; the live run is [9,10].
+    expect(currentStreak([1, 2, 3, 9, 10], 10)).toBe(2);
+  });
+
+  it('a single solved day today is a streak of 1', () => {
+    expect(currentStreak([10], 10)).toBe(1);
+  });
+
   it('is order-independent and idempotent — the collection is a merged SET', () => {
     expect(currentStreak([12, 10, 11, 11], 12)).toBe(3);
+  });
+});
+
+describe('currentStreak over a UNION — the reason the collection is a set of days', () => {
+  // A union of two devices' solved-day sets derives the same whatever the order and however
+  // often a set is included: that is exactly why the streak stores the SET, not a counter
+  // (a counter can't merge).
+  const A = [1, 2, 3, 10];
+  const B = [3, 4, 11, 12]; // overlaps A on day 3, out of order
+
+  it('is order-independent: A∪B derives the same as B∪A', () => {
+    expect(currentStreak([...A, ...B], 12)).toBe(currentStreak([...B, ...A], 12));
+  });
+
+  it('is idempotent: re-including an already-present set changes nothing', () => {
+    const union = [...A, ...B];
+    expect(currentStreak([...union, ...A], 12)).toBe(currentStreak(union, 12));
+  });
+
+  it('derives the streak of the deduped union', () => {
+    // union sorted+deduped = [1,2,3,4,10,11,12]; current (activeDay 12) = [10,11,12] = 3.
+    expect(currentStreak([...A, ...B], 12)).toBe(3);
   });
 });
 

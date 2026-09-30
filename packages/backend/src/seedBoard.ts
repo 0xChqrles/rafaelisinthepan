@@ -28,12 +28,12 @@ import { copyFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   AVATAR_CELLS,
-  VIEWER_IP_HEADER,
+  GROUP_ID_SOURCE,
   encodeAvatar,
   groupInvitePath,
   type Puzzle,
 } from '@whippin/shared';
-import { defaultLocalStoreRoot, sliceKey } from './layout';
+import { localStoreRoot, sliceKey, storeKey } from './layout';
 
 const API = process.env.WHIPPIN_API ?? 'http://localhost:8787';
 const SITE = process.env.WHIPPIN_SITE ?? 'http://localhost:5199';
@@ -54,8 +54,8 @@ const NAMES = [
 
 // Deterministic 64-hex seed DEVICE TOKENS (#216): the same population on every run, so
 // re-seeding after a server restart repairs the exact same board (first-write-wins rows
-// included). The ACCOUNT behind each one is assigned by the server, so this script learns
-// its ids from the bootstrap answer rather than deriving them.
+// included). The ACCOUNT behind each one is assigned by the server; every call here names
+// its seed by the token alone.
 function tokenOf(i: number): string {
   return i.toString(16).padStart(64, '0');
 }
@@ -79,18 +79,10 @@ function drawingOf(seed: number): number[] {
   return cells;
 }
 
-async function post(path: string, body: unknown, ip?: string): Promise<Response> {
+async function post(path: string, body: unknown): Promise<Response> {
   return fetch(`${API}${path}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      // The local adapter forwards headers verbatim, so each seed can present its own
-      // viewer address and clear the 5-submissions-per-IP allowance. Local-only: in
-      // production this header is overwritten by CloudFront's viewer-request function.
-      // The NAME is the shared three-package constant — a rename must reach here too,
-      // or the sixth seed silently caps and the board holds 5 rows.
-      ...(ip ? { [VIEWER_IP_HEADER]: ip } : {}),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 }
@@ -100,8 +92,8 @@ async function post(path: string, body: unknown, ip?: string): Promise<Response>
 // travels with it (#203): the round route reads that on every append, and a day whose slice
 // is missing answers the day-addressed 404 with no degraded mode.
 function ensureLocalPuzzle(date: string): Puzzle {
-  const root = process.env.PUZZLE_STORE ?? defaultLocalStoreRoot();
-  const wanted = join(root, `${date}.${LANG}.json`);
+  const root = localStoreRoot();
+  const wanted = join(root, storeKey(date, LANG));
   const read = () => JSON.parse(readFileSync(wanted, 'utf8')) as Puzzle;
   if (existsSync(wanted) && existsSync(join(root, sliceKey(date, LANG)))) return read();
   // A fresh clone has no store directory at all — say "publish one first" instead of
@@ -159,19 +151,18 @@ function groupArg(): string | null {
   const raw = process.argv[flag + 1];
   if (!raw) throw new Error('--group needs a group id or an invite link.');
   // Either link spelling, or a bare id: this extracts an id, it does not route.
-  const match = /(?:^|\/)([a-z2-7]{16})$/.exec(raw.trim());
+  const match = new RegExp(`(?:^|/)(${GROUP_ID_SOURCE})$`).exec(raw.trim());
   if (!match) throw new Error(`"${raw}" holds no 16-character group id.`);
   return match[1];
 }
 
-// Each seed's identity, learned from its own bootstrap. Turnstile is the local accept-all
+// Each seed's identity, created by its own bootstrap. Turnstile is the local accept-all
 // verifier, so the challenge is a placeholder here exactly as it is on the round writes.
-async function bootstrap(i: number, ip: string): Promise<string> {
-  const response = await post('/devices', { token: tokenOf(i), turnstileToken: 'local' }, ip);
+async function bootstrap(i: number): Promise<void> {
+  const response = await post('/devices', { token: tokenOf(i), turnstileToken: 'local' });
   if (!response.ok) {
     throw new Error(`device bootstrap ${i} refused: ${response.status} ${await response.text()}`);
   }
-  return ((await response.json()) as { accountId: string }).accountId;
 }
 
 async function main() {
@@ -189,13 +180,9 @@ async function main() {
 
   // 60 scored players: 40 distinct scores, then a 20-player tie across the top-50
   // cut. Every 9th-ish player skips the profile (the assigned-identity fallback).
-  // Every seed's account id, so the invite links below can name one without deriving it.
-  const accountIds = new Map<number, string>();
-
   for (let i = 0; i < 60; i += 1) {
-    const ip = `10.0.${Math.floor(i / 50)}.${(i % 50) + 1}`;
     const token = tokenOf(i);
-    accountIds.set(i, await bootstrap(i, ip));
+    await bootstrap(i);
     if (i % 9 !== 4) {
       const r = await post('/profile', {
         token,
@@ -209,25 +196,21 @@ async function main() {
     // which the local accept-all verifier waves through), solves the day, and the server
     // derives the score and records the row. The per-daily write interval is per PLAYER,
     // so 60 seeds in a row never pace each other.
-    const r = await post(
-      roundPath,
-      {
-        token,
-        // The day's PUBLISHED VERSION (#203) — the round's identity, and what the route
-        // checks its slice and rank maps against. An invented tag is a 404 on every seed.
-        puzzle: puzzle.revision,
-        guesses: playthrough(puzzle, score),
-        turnstileToken: 'local',
-      },
-      ip,
-    );
+    const r = await post(roundPath, {
+      token,
+      // The day's PUBLISHED VERSION (#203) — the round's identity, and what the route
+      // checks its slice and rank maps against. An invented tag is a 404 on every seed.
+      puzzle: puzzle.revision,
+      guesses: playthrough(puzzle, score),
+      turnstileToken: 'local',
+    });
     if (!r.ok) console.log(`[seed] round ${i} refused:`, r.status, await r.text());
   }
 
   // Two profile-only players with NO score today — a group board's "not played
   // yet" rows once linked.
   for (const i of [60, 61]) {
-    accountIds.set(i, await bootstrap(i, `10.0.2.${i}`));
+    await bootstrap(i);
     const r = await post('/profile', {
       token: tokenOf(i),
       name: NAMES[i % NAMES.length],

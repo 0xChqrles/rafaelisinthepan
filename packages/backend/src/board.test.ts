@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   activeDate,
   generatePublicId,
@@ -31,6 +31,7 @@ const DATE = activeDate(NOW);
 
 const emptyStore: PuzzleStore = {
   getPuzzle: async () => null,
+  hasPuzzle: async () => false,
   getSlice: async () => null,
 };
 
@@ -45,11 +46,13 @@ function fixedScores(rows: ScoreRow[]): ScoreStore {
   };
 }
 
+// `gone` names the accounts an email link DELETED (#204): the profile store answers
+// `live: false` for them, which is all a board ever learns about a deletion.
 async function makeHandler(
   rows: ScoreRow[],
-  opts: { store?: PuzzleStore; rounds?: RoundStore } = {},
+  opts: { store?: PuzzleStore; rounds?: RoundStore; gone?: readonly string[] } = {},
 ) {
-  const profiles = memoryProfileStore();
+  const profiles = memoryProfileStore((publicId) => !opts.gone?.includes(publicId));
   const devices = memoryDeviceStore();
   const groups = memoryGroupStore();
   const handler = createHandler({
@@ -59,10 +62,6 @@ async function makeHandler(
     profiles,
     groups,
     deviceStore: devices,
-    devices: {
-      turnstile: { verify: async () => true },
-      allowSourceIp: true,
-    },
     // The #206 playing rows read the members' stored rounds through the round route's
     // own dep bundle; only `roundStore` is ever touched by the board.
     ...(opts.rounds
@@ -234,10 +233,6 @@ describe('board route (#190)', () => {
       profiles: flaky,
       groups: memoryGroupStore(),
       deviceStore: memoryDeviceStore(),
-      devices: {
-        turnstile: { verify: async () => true },
-        allowSourceIp: true,
-      },
     });
 
     const result = await handler(get(QUERY));
@@ -247,6 +242,25 @@ describe('board route (#190)', () => {
       { publicId: other, score: 3, rank: 1, name: 'Zoe', avatar: null },
       { publicId: me, score: 7, rank: 2, name: '', avatar: null },
     ]);
+  });
+
+  // CONTRACT (#204): a deleted account stops being rendered everywhere — `/board` DROPS the
+  // row rather than dressing it, since the blank fallback is still that player's assigned
+  // pseudonym and mark.
+  it('drops a player whose account is gone from the global rows and the own window', async () => {
+    const ids = Array.from({ length: 60 }, () => generatePublicId());
+    // One deleted account in the top 50, one inside the caller's below-the-cut window.
+    const { handler } = await makeHandler(
+      ids.map((publicId, i) => ({ publicId, score: i + 1 })),
+      { gone: [ids[3], ids[56]] },
+    );
+
+    const board = JSON.parse((await handler(get({ ...QUERY, id: ids[57] }))).body) as Board;
+    expect(board.rows).toHaveLength(49);
+    expect(board.rows.map((row) => row.publicId)).not.toContain(ids[3]);
+    // The gap stays in the rank sequence: somebody left, nobody moved up.
+    expect(board.rows.slice(2, 4).map((row) => row.rank)).toEqual([3, 5]);
+    expect(board.own?.map((row) => row.score)).toEqual([56, 58, 59, 60]);
   });
 
   it("shows members' scores before the caller has played (own row simply absent)", async () => {
@@ -336,8 +350,8 @@ describe('group period boards and the standing (#271)', () => {
       },
     };
   }
-  async function makeDated(rows: (ScoreRow & { date: string })[]) {
-    const profiles = memoryProfileStore();
+  async function makeDated(rows: (ScoreRow & { date: string })[], gone: readonly string[] = []) {
+    const profiles = memoryProfileStore((publicId) => !gone.includes(publicId));
     const devices = memoryDeviceStore();
     const groups = memoryGroupStore();
     const handler = createHandler({
@@ -347,7 +361,6 @@ describe('group period boards and the standing (#271)', () => {
       profiles,
       groups,
       deviceStore: devices,
-      devices: { turnstile: { verify: async () => true }, allowSourceIp: true },
     });
     return { handler, profiles, groups, devices };
   }
@@ -395,6 +408,23 @@ describe('group period boards and the standing (#271)', () => {
     );
     expect(board.from).toBe('2026-08-01');
     expect(board.rows.map((row: { publicId: string }) => row.publicId)).toEqual([B]);
+  });
+
+  it('drops a member whose account is gone from the period rows (#204)', async () => {
+    const { handler, groups, devices } = await makeDated(
+      [
+        { date: '2026-08-17', publicId: B, score: 3 },
+        { date: '2026-08-17', publicId: ME, score: 5 },
+        { date: '2026-08-18', publicId: C, score: 4 },
+      ],
+      [B],
+    );
+    await enroll(groups, ME, B, C);
+    const caller = await callerOn(devices, ME);
+    const board = JSON.parse(
+      (await handler(post(QUERY, { token: caller.token, group: GROUP, period: 'week' }))).body,
+    );
+    expect(board.rows.map((row: { publicId: string }) => row.publicId)).toEqual([C, ME]);
   });
 
   it('answers the standing in each of the caller\'s groups, and none where they have no row', async () => {
@@ -462,6 +492,7 @@ describe('board in-progress rows (#206)', () => {
   };
   const artifactStore: PuzzleStore = {
     getPuzzle: async (date, lang) => (date === DATE && lang === 'fr' ? ARTIFACT : null),
+    hasPuzzle: async (date, lang) => date === DATE && lang === 'fr',
     getSlice: async () => null,
   };
 
@@ -580,7 +611,7 @@ describe('board in-progress rows (#206)', () => {
       await enroll(groups, me, id);
     }
     // SOLVED, but the population holds no row for them — the IP allowance refused it, or
-    // the solve landed past the flip. `recordScoreRow` swallows both silently by design.
+    // the solve landed past the flip. The round route records no row for either, silently by design.
     await seedRound(rounds, solvedUnranked, ['phare', 'nuit'], 100, { solved: true });
     // CAPPED: ROUND_GUESS_CAP raw misses, unsolved, terminal at infinity. Every miss keys
     // as itself, so the exact try count is the whole cap.
@@ -596,6 +627,62 @@ describe('board in-progress rows (#206)', () => {
     ]);
     // And neither is ever ALSO "not played yet" — the one claim this section refuses.
     expect(board.waiting).toEqual([]);
+  });
+
+  // CONTRACT (#204): the same drop on EVERY section of the day board — a deleted member is
+  // neither ranked, nor playing, nor "not played yet".
+  it('drops a member whose account is gone from rows, playing and waiting alike', async () => {
+    const me = generatePublicId();
+    const live = { ranked: generatePublicId(), playing: generatePublicId(), waiting: generatePublicId() };
+    const gone = { ranked: generatePublicId(), playing: generatePublicId(), waiting: generatePublicId() };
+    const rounds = memoryRoundStore();
+    const { handler, groups, devices } = await makeHandler(
+      [
+        { publicId: live.ranked, score: 4 },
+        { publicId: gone.ranked, score: 2 },
+      ],
+      { store: artifactStore, rounds, gone: Object.values(gone) },
+    );
+    await enroll(groups, me, ...Object.values(live), ...Object.values(gone));
+    await seedRound(rounds, live.playing, ['mer'], 50);
+    await seedRound(rounds, gone.playing, ['mer', 'lune'], 80);
+    const caller = await callerOn(devices, me);
+
+    const board = JSON.parse((await handler(post(QUERY, { token: caller.token, group: GROUP }))).body) as Board;
+    // The survivor keeps the rank the day gave them: the gap says somebody left.
+    expect(board.rows.map((row) => [row.publicId, row.rank])).toEqual([[live.ranked, 2]]);
+    expect(board.playing.map((row) => row.publicId)).toEqual([live.playing]);
+    expect(board.waiting.map((row) => row.publicId)).toEqual([live.waiting]);
+  });
+
+  // CONTRACT (#206): a failed read FAILS the POST. Degrading to an empty playing section
+  // would let `waiting` claim "not played yet" over a member who is mid-game.
+  it('fails the day board when the playing rows cannot be read, rather than calling them waiting', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const me = generatePublicId();
+      const friend = generatePublicId();
+      const throttled = async () => {
+        throw new Error('throttled');
+      };
+      const stores: { store: PuzzleStore; rounds: RoundStore }[] = [
+        // The members' rounds cannot be read…
+        { store: artifactStore, rounds: { ...memoryRoundStore(), getMany: throttled } },
+        // …or the artifact their tries are counted against cannot.
+        { store: { ...artifactStore, getPuzzle: throttled }, rounds: memoryRoundStore() },
+      ];
+      for (const opts of stores) {
+        const { handler, groups, devices } = await makeHandler([], opts);
+        await enroll(groups, me, friend);
+        const caller = await callerOn(devices, me);
+
+        const result = await handler(post(QUERY, { token: caller.token, group: GROUP }));
+        expect(result.statusCode).toBe(500);
+        expect(JSON.parse(result.body)).not.toHaveProperty('waiting');
+      }
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it('carries no playing section on the global board', async () => {

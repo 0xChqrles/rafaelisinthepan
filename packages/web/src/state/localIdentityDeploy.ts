@@ -29,6 +29,7 @@ import {
 } from '../identity';
 import { postProfileBody, profileUrl } from '../api';
 import { useGameStore } from './gameStore';
+import { holdOwnFace } from './ownFace';
 import { adoptSignedOutVerdict } from './signedOutVerdict';
 import { timeoutSignal } from '../timeout';
 
@@ -71,7 +72,13 @@ function sleep(ms: number): Promise<void> {
 async function deploy(identity: DeviceIdentity): Promise<void> {
   const held = inFlight.get(identity.accountId);
   if (held) return held;
-  const task = run(identity).finally(() => inFlight.delete(identity.accountId));
+  // The player's own face waits for this flight (`state/ownFace.ts`) and reads the profile
+  // once it settles, whatever the outcome.
+  const release = holdOwnFace();
+  const task = run(identity).finally(() => {
+    inFlight.delete(identity.accountId);
+    release(true);
+  });
   inFlight.set(identity.accountId, task);
   return task;
 }

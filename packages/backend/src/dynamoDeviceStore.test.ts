@@ -5,6 +5,7 @@ import {
   GetItemCommand,
   QueryCommand,
   TransactWriteItemsCommand,
+  UpdateItemCommand,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 import { dynamoDeviceStore } from './dynamoDeviceStore';
@@ -51,7 +52,6 @@ describe('dynamoDeviceStore revocation (#216)', () => {
     expect(send).toHaveBeenCalledTimes(1);
     const command = send.mock.calls[0][0] as DeleteItemCommand;
     expect(command).toBeInstanceOf(DeleteItemCommand);
-    expect(command).not.toBeInstanceOf(QueryCommand);
     expect(command.input).toMatchObject({
       TableName: 'scores',
       Key: { pk: { S: `device#${REVOKE_KEY}` }, sk: { S: 'device' } },
@@ -159,6 +159,63 @@ describe('dynamoDeviceStore revocation (#216)', () => {
   });
 });
 
+// CONTRACT (#216): `lastSeenAt` is a label on the sign-out screen, stamped behind an
+// authenticated call that already succeeded — so the stamp can never fail that call, and
+// it can never bring a revoked device's item back.
+describe('dynamoDeviceStore lastSeenAt touch (#216)', () => {
+  const NOW = '2026-08-25T00:00:00.000Z';
+
+  it('stamps ONLY an existing device item, so a revoked token is never resurrected', async () => {
+    const send = vi.fn(async (_command: unknown) => ({}));
+    const store = dynamoDeviceStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    await store.touch(REVOKE_KEY, NOW);
+    expect(send).toHaveBeenCalledTimes(1);
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    expect(command).toBeInstanceOf(UpdateItemCommand);
+    expect(command.input).toEqual({
+      TableName: 'scores',
+      Key: { pk: { S: `device#${REVOKE_KEY}` }, sk: { S: 'device' } },
+      UpdateExpression: 'SET #lastSeenAt = :now',
+      ConditionExpression: 'attribute_exists(pk)',
+      ExpressionAttributeNames: { '#lastSeenAt': 'lastSeenAt' },
+      ExpressionAttributeValues: { ':now': { S: NOW } },
+    });
+  });
+
+  it('stays SILENT when the device was revoked between the authentication and the stamp', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const send = vi.fn(async () => {
+        throw new ConditionalCheckFailedException({ $metadata: {}, message: 'revoked' });
+      });
+      const store = dynamoDeviceStore({ send } as unknown as DynamoDBClient, 'scores');
+
+      await expect(store.touch(REVOKE_KEY, NOW)).resolves.toBeUndefined();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('swallows an operational failure too, but LOGS it — a broken stamp must not be invisible', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const throttled = new Error('throttled');
+      const send = vi.fn(async () => {
+        throw throttled;
+      });
+      const store = dynamoDeviceStore({ send } as unknown as DynamoDBClient, 'scores');
+
+      await expect(store.touch(REVOKE_KEY, NOW)).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith('[devices] lastSeenAt touch failed:', throttled);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
 describe('dynamoDeviceStore bootstrap (#216)', () => {
   const TOKEN_HASH = 'c'.repeat(64);
   const INPUT = {
@@ -224,5 +281,71 @@ describe('dynamoDeviceStore bootstrap (#216)', () => {
     for (const item of write.input.TransactItems ?? []) {
       expect(item.Put?.ConditionExpression).toBe('attribute_not_exists(pk)');
     }
+  });
+
+  // What the table holds for this token once SOMEBODY's bootstrap has committed: the device
+  // item and the live account it names — another identity than the one INPUT would mint.
+  const WON = { accountId: 'w'.repeat(16), deviceId: 'v'.repeat(16) };
+  const stored = (command: GetItemCommand) => {
+    const pk = (command.input.Key?.pk as { S: string }).S;
+    if (pk === `device#${TOKEN_HASH}`) {
+      return {
+        Item: {
+          pk: { S: `device#${TOKEN_HASH}` },
+          deviceId: { S: WON.deviceId },
+          accountId: { S: WON.accountId },
+          createdAt: { S: '2026-08-24T00:00:00.000Z' },
+          lastSeenAt: { S: '2026-08-24T00:00:00.000Z' },
+        },
+      };
+    }
+    return pk === `player#${WON.accountId}` ? { Item: { createdAt: { S: '2026-08-24T00:00:00.000Z' } } } : {};
+  };
+  const cancelled = () =>
+    Object.assign(new Error('cancelled'), {
+      name: 'TransactionCanceledException',
+      CancellationReasons: [{ Code: 'None' }, { Code: 'ConditionalCheckFailed' }],
+    });
+
+  it('is IDEMPOTENT by token hash: a device that already exists is answered, and nothing is written', async () => {
+    const send = vi.fn(async (command: unknown) =>
+      command instanceof GetItemCommand ? stored(command) : {},
+    );
+    const store = dynamoDeviceStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    await expect(store.bootstrap(INPUT)).resolves.toMatchObject({
+      device: { revokeKey: TOKEN_HASH, deviceId: WON.deviceId, accountId: WON.accountId },
+      account: { accountId: WON.accountId, createdAt: '2026-08-24T00:00:00.000Z' },
+    });
+    // Two reads — the device item, then its account — and no write at all.
+    expect(send.mock.calls.map(([command]) => command instanceof GetItemCommand)).toEqual([true, true]);
+  });
+
+  it('adopts the identity that WON a racing bootstrap of the same token, rather than throwing', async () => {
+    // Nothing there at the first read; the rival commits before this transaction does.
+    let committed = false;
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof GetItemCommand) return committed ? stored(command) : {};
+      committed = true;
+      throw cancelled();
+    });
+    const store = dynamoDeviceStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    await expect(store.bootstrap(INPUT)).resolves.toMatchObject({
+      device: { deviceId: WON.deviceId, accountId: WON.accountId },
+      account: { accountId: WON.accountId },
+    });
+    expect(send.mock.calls.filter(([c]) => c instanceof TransactWriteItemsCommand)).toHaveLength(1);
+  });
+
+  it('rethrows the ORIGINAL failure when the re-read finds no identity to adopt', async () => {
+    const failure = cancelled();
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof GetItemCommand) return {};
+      throw failure;
+    });
+    const store = dynamoDeviceStore({ send } as unknown as DynamoDBClient, 'scores');
+
+    await expect(store.bootstrap(INPUT)).rejects.toBe(failure);
   });
 });

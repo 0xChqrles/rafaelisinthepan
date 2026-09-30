@@ -70,7 +70,7 @@ def test_returned_secret_slugs_back_to_the_target():
 
 
 def test_english_alphabet_splits_on_apostrophe():
-    # en char_class is ASCII a-z; "don't" -> cores "don"/"t", so "don" is holeable.
+    # the en alphabet is ASCII a-z; "don't" -> cores "don"/"t", so "don" is holeable.
     assert core("don't", "don", EN) == ("don", "", "'t")
 
 
@@ -106,11 +106,12 @@ def test_stopwords_and_punctuation_are_not_selectable():
 
 
 def test_one_candidate_per_token_position():
-    # Even if a token had several in-vocab cores, only its first is offered. Repeated
-    # positions across the sentence are still separate candidates and are grouped by
-    # secret slug when the interactive selector commits a selection.
-    out = cands("le chat noir", {"chat", "noir"})
-    assert [(c["pos"], c["secret"]) for c in out] == [(1, "chat"), (2, "noir")]
+    # A token with several in-vocab cores offers only its first. Repeated positions
+    # across the sentence are still separate candidates and are grouped by secret slug
+    # when the interactive selector commits a selection.
+    out = cands("le chat'noir dort", {"chat", "noir", "dort"})
+    assert out == [{"pos": 1, "secret": "chat", "prefix": "", "suffix": "'noir"},
+                   {"pos": 2, "secret": "dort", "prefix": "", "suffix": ""}]
 
 
 def test_accents_kept_and_hyphen_compound_is_one_candidate():

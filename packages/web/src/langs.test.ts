@@ -22,7 +22,6 @@ import {
   parseRoute,
   resolveHomeLang,
   resolveUiLang,
-  LANGS,
   pathForLearn,
   pathForLesson,
 } from './langs';

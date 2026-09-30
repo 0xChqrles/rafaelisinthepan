@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ComponentPropsWithRef, ComponentType } from 'react';
 import { animated, to, useReducedMotion, useSpring, useSprings } from '@react-spring/web';
 import { easeOutCubic } from '../hooks/useAnimatedNumber';
+import { coarsePointer } from '../hooks/useScramble';
 import { useSolvedDays } from '../state/history';
 import { streakTransition, weekView } from '../game/streak';
 import { streakDigitDelays, streakDigitSlots } from '../game/streakDigits';
@@ -694,16 +695,6 @@ export default function StreakDialog({
         </div>
       </div>
     </AnimatedDialog>
-  );
-}
-
-// Touch devices TAP, pointer devices CLICK — same device gate as the share button's
-// native-sheet detection (coarse pointer, not API presence).
-function coarsePointer(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(pointer: coarse)').matches
   );
 }
 

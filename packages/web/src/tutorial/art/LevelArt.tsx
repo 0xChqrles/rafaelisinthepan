@@ -5,7 +5,7 @@ import type { LevelArtName } from '../levels';
 import type { Raster, Scene } from './scenes';
 
 // ONE LEVEL'S ILLUSTRATION (scenes.ts): a canvas of CELLS, one canvas pixel a cell, blown up
-// by an exact integer (`cell` CSS pixels) with nearest-neighbour scaling — the pixel-art rule,
+// by an exact integer (`CELL` CSS pixels) with nearest-neighbour scaling — the pixel-art rule,
 // both halves (index.css `image-rendering`). It covers its box: the grid is the box rounded
 // UP to whole cells and centred, the overflow clipped by the box.
 //
@@ -20,6 +20,7 @@ import type { Raster, Scene } from './scenes';
 // `foot` keeps the bottom of the box (CSS pixels) for words laid over it — a card's title:
 // the scene composes above it, and the art is DITHERED OUT across the band where the two
 // meet — the ordered dither's own fade, never a smooth gradient over pixels.
+const CELL = 3;
 const FRAME_MS = 90;
 const FADE_PX = 56; // the fade band's height
 
@@ -61,14 +62,12 @@ function hexToAbgr(hex: string): number {
 
 export default function LevelArt({
   name,
-  cell = 3,
   still = false,
   foot = 0,
   from,
   className = '',
 }: {
   name: LevelArtName;
-  cell?: number;
   still?: boolean;
   foot?: number;
   from?: number;
@@ -136,14 +135,14 @@ export default function LevelArt({
       const w = el.clientWidth;
       const h = el.clientHeight;
       if (!w || !h) return;
-      const cols = Math.ceil(w / cell);
-      const rows = Math.ceil(h / cell);
+      const cols = Math.ceil(w / CELL);
+      const rows = Math.ceil(h / CELL);
       if (raster && raster.cols === cols && raster.rows === rows) return;
       canvas.width = cols;
       canvas.height = rows;
-      canvas.style.width = `${cols * cell}px`;
-      canvas.style.height = `${rows * cell}px`;
-      const stageH = Math.max(1, rows - Math.round(foot / cell));
+      canvas.style.width = `${cols * CELL}px`;
+      canvas.style.height = `${rows * CELL}px`;
+      const stageH = Math.max(1, rows - Math.round(foot / CELL));
       try {
         scene = mod.SCENES[name](cols, rows, { w: cols, h: stageH });
       } catch (error) {
@@ -152,8 +151,8 @@ export default function LevelArt({
         return;
       }
       if (foot > 0) {
-        fadeFrom = Math.round(stageH - FADE_PX / cell / 2);
-        fadeTo = Math.round(stageH + FADE_PX / cell / 2);
+        fadeFrom = Math.round(stageH - FADE_PX / CELL / 2);
+        fadeTo = Math.round(stageH + FADE_PX / CELL / 2);
       }
       palette = new Uint32Array([0, ...scene.inks.map(hexToAbgr)]);
       raster = { cols, rows, ink: new Uint8Array(cols * rows) };
@@ -204,7 +203,7 @@ export default function LevelArt({
       document.removeEventListener('visibilitychange', wake);
       window.clearTimeout(timer);
     };
-  }, [name, cell, still, foot, from]);
+  }, [name, still, foot, from]);
 
   return (
     <div ref={box} className={`level-art ${className}`} aria-hidden="true">

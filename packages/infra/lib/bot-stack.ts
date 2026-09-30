@@ -20,6 +20,7 @@
 // schedules and copied into both the image and the Lambda bundle. Adding a community is a
 // config change, not a code change here.
 
+import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -28,7 +29,6 @@ import {
   CfnOutput,
   Duration,
   RemovalPolicy,
-  Aws,
   Annotations,
   ArnFormat,
   TimeZone,
@@ -50,7 +50,9 @@ import * as sns from 'aws-cdk-lib/aws-sns';
 import * as subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { NagSuppressions } from 'cdk-nag';
+import { TIME_ZONE } from '@whippin/shared';
 import { readGroupConfigsForSynth, type GroupConfig } from '@whippin/whatsapp-bot/config';
+import { CONNECTED_METRIC } from '@whippin/whatsapp-bot/metrics';
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // packages/infra/lib
 const REPO_ROOT = path.resolve(here, '..', '..', '..');
@@ -73,9 +75,8 @@ export const BOT_METRICS_NAMESPACE = 'WhippinBot';
 // `OFFLINE_LIVE_S` (10 minutes) later and is written into that day's log when it is, so a
 // job at 22:05 read a day that could still grow and never folded what arrived after it
 // (PR-278 review). Twenty past is the first minute nothing can be added.
-export const DIARY_TIME = '22:20';
-export const DIARY_TIMEZONE = 'America/New_York';
-export const CONNECTED_METRIC = 'Connected';
+const DIARY_TIME = '22:20';
+const DIARY_TIMEZONE = TIME_ZONE;
 
 interface BotStackProps extends StackProps {
   // Where a human is reached: the confirmed SNS subscription behind the alarms. No default
@@ -228,9 +229,10 @@ export class BotStack extends Stack {
         platform: ecrAssets.Platform.LINUX_AMD64,
       }),
       logging: ecs.LogDrivers.awsLogs({ logGroup: taskLogs, streamPrefix: 'bot' }),
+      // BOT_GROUPS_DIR is the image's own: the Dockerfile copies the snapshot and names
+      // where it put it.
       environment: {
         ...commonEnv,
-        BOT_GROUPS_DIR: '/app/packages/whatsapp-bot/groups/local',
         BOT_METRICS_NAMESPACE: BOT_METRICS_NAMESPACE,
       },
       // Baileys' Signal work is bursty but small; the reservation keeps the scheduler honest.
@@ -516,13 +518,13 @@ export class BotStack extends Stack {
       value: podium.functionName,
     });
     new CfnOutput(this, 'AlertsTopicArn', { value: topic.topicArn });
-    new CfnOutput(this, 'ConfiguredGroups', {
-      value: groups.map((g) => `${g.name} (${g.language}${g.podium.enabled ? `, podium ${g.podium.time} ${g.timezone}` : ''})`).join('; ') || 'none',
-    });
-    void Aws.REGION;
   }
 }
 
+// A schedule's construct id names its group without carrying the JID: `cdk deploy` prints
+// logical ids in the CI log, which is public on this repository, and a JID names a private
+// conversation. The hash is the bot's own log `tag()` (whatsapp-bot/src/log.ts) — stable,
+// so a deploy that changes no group replaces no schedule.
 function scheduleId(group: GroupConfig): string {
-  return group.id.replace(/@g\.us$/, '').replace(/\D/g, '');
+  return createHash('sha256').update(group.id).digest('hex').slice(0, 10);
 }

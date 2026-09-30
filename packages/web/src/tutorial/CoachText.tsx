@@ -66,7 +66,7 @@ const HIDDEN: CSSProperties = { visibility: 'hidden' };
 // `typing`: the line is still typing, so the last letter out carries the caret.
 function chars(text: string, budget: number, typing: boolean) {
   return [...text].map((ch, i) => (
-    // eslint-disable-next-line react/no-array-index-key -- static per copy string
+    // Static per copy string: the index is a stable key.
     <span key={i} style={i < budget ? undefined : HIDDEN} className={typing && i === budget - 1 ? 'coach-caret' : undefined}>
       {ch}
     </span>

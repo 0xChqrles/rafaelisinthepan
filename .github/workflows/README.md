@@ -2,10 +2,11 @@
 
 Two workflows drive the pipeline (issue #33):
 
-- **`ci.yml`** — test gate. On every PR into `main` and on pushes to `main`: sets up
+- **`ci.yml`** — test gate. On every PR into `main` or `dev` and on pushes to both: sets up
   pnpm (`11.9.0` from the root `packageManager` field) + Node 22 + `uv`/Python 3.12,
   then runs `pnpm -r --if-present run typecheck` and `pnpm test` (Vitest for
-  `shared`/`web`/`backend` + pytest for `generation`/`benchmark`).
+  `shared`/`web`/`backend`/`infra`/`whatsapp-bot` + pytest for
+  `generation`/`benchmark`/`curation`).
 - **`deploy.yml`** — CD. On push to `main` and on manual `workflow_dispatch`: figures
   out which CDK stack(s) changed and deploys only those, authenticating to AWS via
   **GitHub OIDC** (no long-lived keys).
@@ -24,13 +25,25 @@ changed paths to stacks:
 | `packages/whatsapp-bot/**`, `.dockerignore` | — | — | ✅ (#236) |
 | `packages/shared/**` | ✅ | ✅ | ✅ (bundled into the Lambdas, the SPA **and** the bot image) |
 | `packages/infra/**` | ✅ | ✅ | ✅ (every stack def) |
-| `pnpm-lock.yaml`, `package.json`, `pnpm-workspace.yaml` | ✅ | ✅ | ✅ (safe default) |
+| `pnpm-lock.yaml`, `package.json`, `pnpm-workspace.yaml`, `tsconfig.base.json` | ✅ | ✅ | ✅ (safe default) |
 | `.github/workflows/deploy.yml` | ✅ | ✅ | ✅ |
 | `packages/generation/**` | — | — | — (not deployed; tested in CI only) |
 | `packages/benchmark/**` | — | — | — (not deployed; tested in CI only) |
 
+A push diffs against what is known to be **deployed**: the head commit of the last
+push-triggered Deploy run on `main` that succeeded (`gh run list … --event push --status
+success`, which is why `plan` holds `actions: read`), falling back to the previous push when
+there is none. A run is green only when everything its own diff selected deployed, so a stack
+that a failed or superseded run left behind stays in the next push's diff and redeploys — while
+one keeps failing, each push redeploys every stack changed since the last green run.
+The run listing is occasionally stale and names an older green head. The diff is then usually
+wider, but a path changed and changed back since that head (a deployed change, then its
+revert) compares as unchanged, so the revert's stack can be skipped. The `Diff base:` line in
+the run's log shows which head was used.
+
 `workflow_dispatch` takes a `stacks` input — `changed` (default) | `web` | `backend` |
 `bot` | `all` — to force a selection. `changed` on a manual run diffs the tip commit (`HEAD~1`).
+A manual run is never the base of a later push's diff.
 
 ## Required repo configuration
 
@@ -52,7 +65,7 @@ pnpm --filter @whippin/infra deploy:auth
 ```
 
 See [`packages/infra/README.md`](../../packages/infra/README.md#whippindeploystack--ci-auth-bootstrap)
-for the full picture (branch/preview knobs, importing an existing OIDC provider, and why
+for the full picture (the branch knob, importing an existing OIDC provider, and why
 this stack is human-deployed rather than run by CI). In short, the stack creates:
 
 - A GitHub OIDC provider (`token.actions.githubusercontent.com`, audience
@@ -65,7 +78,7 @@ this stack is human-deployed rather than run by CI). In short, the stack creates
 
 > **Chicken-and-egg:** `WhippinDeployStack` is deployed by a human, never by `deploy.yml` —
 > the CI role deliberately can't create or edit IAM, so it can't provision its own
-> privileges. That's also why `deploy.yml` only targets the backend/web stacks.
+> privileges. That's also why `deploy.yml` only targets the backend, web and bot stacks.
 
 ### 2. Web build config
 
@@ -86,14 +99,16 @@ shipped bundle. Web deploys read two repo **variables**:
 - `VITE_UMAMI_WEBSITE_ID` is optional (#60): the Umami Cloud website id; unset means
   analytics stay inert.
 
-The BACKEND deploy reads one more repo **variable**:
+The BACKEND and BOT deploys read one more repo **secret**:
 
-- `OPERATOR_EMAIL` is **required** (#230): the address the SES bounce/complaint alarms
-  notify and inbound mail for the domain (`hello@`, `abuse@`, `postmaster@`, `dmarc@`) is
-  forwarded to. The deploy job **fails before touching AWS** when it is unset: the site
-  publishes a privacy notice saying that inbox works, and a deploy without the variable would
+- `OPERATOR_EMAIL` is **required** (#230): the address the SES bounce/complaint alarms and
+  the bot's alarms notify, and inbound mail for the domain (`hello@`, `abuse@`,
+  `postmaster@`, `dmarc@`) is forwarded to. It is a secret, not a variable, because it is a
+  personal address and this repo is public: the job log prints a step's environment, and
+  masks only secrets. Both deploy jobs **fail before deploying anything** when it is unset:
+  the site publishes a privacy notice saying that inbox works, and a deploy without it would
   build no MX, no alarms and no landing bucket under it. Configure it with
-  `gh variable set OPERATOR_EMAIL --body '<address>'`, then confirm the SNS subscription
+  `gh secret set OPERATOR_EMAIL --body '<address>'`, then confirm the SNS subscription
   the first deploy emails (see `packages/infra/README.md`, operator steps).
 
 ### 3. Branch protection — required status check (manual, admin)

@@ -53,26 +53,12 @@ export default function NoPuzzle({
       : new Intl.DateTimeFormat(lang, { dateStyle: 'long', timeZone: 'UTC' }).format(day);
   }, [lang, date]);
 
-  if (bonus) {
+  if (bonus || date == null) {
     return (
       <div className="load-error arrive">
         <span className="board-ghost no-puzzle-ghost" aria-hidden="true" />
-        <p className="status">{t(lang, 'noBonus')}</p>
-        <p className="no-puzzle-note">{t(lang, 'noBonusNote')}</p>
-        <Button variant="secondary" onClick={() => setSelecting(true)}>
-          {t(lang, 'changeLanguage')}
-        </Button>
-        {select}
-      </div>
-    );
-  }
-
-  if (date == null) {
-    return (
-      <div className="load-error arrive">
-        <span className="board-ghost no-puzzle-ghost" aria-hidden="true" />
-        <p className="status error">{t(lang, 'noPuzzle')}</p>
-        <p className="no-puzzle-note">{t(lang, 'noPuzzleNote')}</p>
+        <p className={bonus ? 'status' : 'status error'}>{t(lang, bonus ? 'noBonus' : 'noPuzzle')}</p>
+        <p className="no-puzzle-note">{t(lang, bonus ? 'noBonusNote' : 'noPuzzleNote')}</p>
         <Button variant="secondary" onClick={() => setSelecting(true)}>
           {t(lang, 'changeLanguage')}
         </Button>

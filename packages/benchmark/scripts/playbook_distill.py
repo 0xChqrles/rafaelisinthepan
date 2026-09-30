@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Mapping, Sequence
-from datetime import datetime, timezone
 import gzip
 import hashlib
 import json
@@ -32,6 +31,7 @@ from llm_play import (
     ModelConfig,
     _last_raw_token_usage,
     _last_token_usage,
+    _utc_now,
     _write_json_atomic,
     provider_reply,
     select_model,
@@ -81,10 +81,6 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 class DistillationError(ValueError):
     """The corpus, checkpoint, or final profile violates the workflow contract."""
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -567,7 +563,7 @@ def _load_or_create_artifact(
     expected: dict[str, Any],
 ) -> dict[str, Any]:
     if not path.exists():
-        _write_json_atomic(path, expected, indent=2)
+        _write_json_atomic(path, expected)
         return expected
     artifact = _load_json(path, "distillation artifact")
     for key in ("schema_version", "kind", "workflow_version", "config", "corpus"):
@@ -604,7 +600,7 @@ def _stage_call(
     stage["prompt_sha256"] = prompt_sha
     stage["started_at"] = _utc_now()
     stage.pop("last_error", None)
-    _write_json_atomic(artifact_path, artifact, indent=2)
+    _write_json_atomic(artifact_path, artifact)
     print(
         f"{stage_name}: starting paid ultra pass (attempt {stage['attempts']})",
         flush=True,
@@ -618,7 +614,7 @@ def _stage_call(
         stage["status"] = "pending"
         stage["last_error"] = str(exc)
         stage["duration_seconds"] = time.monotonic() - started
-        _write_json_atomic(artifact_path, artifact, indent=2)
+        _write_json_atomic(artifact_path, artifact)
         raise
 
     stage["status"] = "complete"
@@ -633,7 +629,7 @@ def _stage_call(
     raw_usage = _last_raw_token_usage(reply)
     if raw_usage is not None:
         stage["raw_provider_token_usage"] = raw_usage
-    _write_json_atomic(artifact_path, artifact, indent=2)
+    _write_json_atomic(artifact_path, artifact)
     print(
         f"{stage_name}: complete ({len(response.encode('utf-8'))} response bytes)",
         flush=True,
@@ -672,7 +668,7 @@ def _write_profile_idempotently(path: Path, profile: dict[str, Any]) -> None:
                 f"refusing to overwrite a different playbook profile {path}"
             )
         return
-    _write_json_atomic(path, profile, indent=2)
+    _write_json_atomic(path, profile)
 
 
 def _paths_do_not_collide(

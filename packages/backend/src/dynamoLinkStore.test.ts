@@ -3,12 +3,14 @@ import {
   ConditionalCheckFailedException,
   DeleteItemCommand,
   GetItemCommand,
+  QueryCommand,
   TransactWriteItemsCommand,
   UpdateItemCommand,
   type AttributeValue,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 import { LINK_CODE_MAX_ATTEMPTS } from '@whippin/shared';
+import { expectExpressionsValid, expectTransactItemValid } from './dynamoExpressionChecks';
 import { dynamoLinkStore } from './dynamoLinkStore';
 
 // CONTRACT (#204), and it is the round store's contract restated for a second write path:
@@ -19,55 +21,14 @@ import { dynamoLinkStore } from './dynamoLinkStore';
 // unless the SHAPE of the expression is what the suite holds. This file's writes are the
 // ones nothing local can exercise: an account is DELETED by them.
 
-const CONDITION_FUNCTIONS = [
-  'attribute_exists',
-  'attribute_not_exists',
-  'attribute_type',
-  'begins_with',
-  'contains',
-  'size',
-];
-
-interface Expressed {
-  UpdateExpression?: string;
-  ConditionExpression?: string;
-  ExpressionAttributeNames?: Record<string, string>;
-  ExpressionAttributeValues?: Record<string, AttributeValue>;
-}
-
-function expectAliasesMatch(input: Expressed): void {
-  const source = `${input.UpdateExpression ?? ''} ${input.ConditionExpression ?? ''}`;
-  const check = (pattern: RegExp, declared: object | undefined, what: string) => {
-    const used = new Set(source.match(pattern) ?? []);
-    const keys = new Set(Object.keys(declared ?? {}));
-    expect([...keys].filter((k) => !used.has(k)), `${what} declared but unused`).toEqual([]);
-    expect([...used].filter((k) => !keys.has(k)), `${what} used but undeclared`).toEqual([]);
-  };
-  check(/#[A-Za-z0-9_]+/g, input.ExpressionAttributeNames, 'name');
-  check(/:[A-Za-z0-9_]+/g, input.ExpressionAttributeValues, 'value');
-  const condition = input.ConditionExpression;
-  if (condition === undefined) return;
-  for (const match of condition.matchAll(/([A-Za-z_]+)\s*\(/g)) {
-    if (['AND', 'OR', 'NOT'].includes(match[1].toUpperCase())) continue;
-    expect(CONDITION_FUNCTIONS, condition).toContain(match[1]);
-  }
-  // `if_not_exists` and `+` belong to an UPDATE expression's SET action, never a condition.
-  expect(condition).not.toMatch(/[+*/]/);
-  expect(condition).not.toMatch(/if_not_exists/);
-}
-
 // Every store here is built over this, so no write in this file escapes the checks. The
 // `wait` is INJECTED (`waits` records the schedule), so the conflict backoff is asserted
 // without a test ever sleeping.
 function makeStore(send: (command: unknown) => Promise<unknown>) {
   const checked = vi.fn(async (command: unknown) => {
-    if (command instanceof UpdateItemCommand) expectAliasesMatch(command.input);
+    if (command instanceof UpdateItemCommand) expectExpressionsValid(command.input);
     if (command instanceof TransactWriteItemsCommand) {
-      for (const item of command.input.TransactItems ?? []) {
-        for (const part of [item.Put, item.Delete, item.Update, item.ConditionCheck]) {
-          if (part) expectAliasesMatch(part as Expressed);
-        }
-      }
+      for (const item of command.input.TransactItems ?? []) expectTransactItemValid(item);
     }
     return send(command);
   });
@@ -368,6 +329,19 @@ describe('dynamoLinkStore — binding one address', () => {
         });
       });
       await expect(store.bind(input)).resolves.toBe(outcome);
+    }
+  });
+
+  it('lets the CHALLENGE win when more than one condition failed', async () => {
+    // A binding that won may have consumed the challenge: the losing request must read
+    // that, not `taken` or `account_changed`, or one code reads as two final answers.
+    for (const indices of [[0, 2], [1, 2], [0, 1, 2]]) {
+      const { store } = makeStore(async () => {
+        throw cancelling(
+          ...[0, 1, 2].map((at) => (indices.includes(at) ? 'ConditionalCheckFailed' : 'None')),
+        );
+      });
+      await expect(store.bind(input)).resolves.toBe('challenge_changed');
     }
   });
 });
@@ -677,6 +651,44 @@ describe('dynamoLinkStore — the indivisible core', () => {
       store.adopt({ ...PLAN, erase: true, departFrom: PLAN.from, moves: [KEY] }),
     ).resolves.toEqual({ outcome: 'account_changed', moved: [] });
   });
+
+  it('reads several identity refusals in PRECEDENCE: the challenge, then an account, then the device', async () => {
+    // Erasing with no departure job: [0] the device, [1] the adopted account, [2] the
+    // challenge, [3] the account being left.
+    const refusedAt = async (indices: number[]) => {
+      const { store, send } = makeStore(async (command) => {
+        if (command instanceof TransactWriteItemsCommand) throw refusing(indices)(command);
+        return {};
+      });
+      const result = await store.adopt({ ...PLAN, erase: true });
+      // An identity refusal is the ANSWER: nothing is planned or sent again.
+      expect(transactions(send)).toHaveLength(1);
+      return result;
+    };
+    await expect(refusedAt([0])).resolves.toEqual({ outcome: 'device_changed', moved: [] });
+    await expect(refusedAt([0, 1])).resolves.toEqual({ outcome: 'account_changed', moved: [] });
+    await expect(refusedAt([0, 3])).resolves.toEqual({ outcome: 'account_changed', moved: [] });
+    await expect(refusedAt([1, 2])).resolves.toEqual({ outcome: 'challenge_changed', moved: [] });
+    await expect(refusedAt([0, 1, 2, 3])).resolves.toEqual({ outcome: 'challenge_changed', moved: [] });
+  });
+
+  it('stops planning again after FOUR refused plans, loudly — play that keeps changing is not adopted', async () => {
+    const { store, send, waits } = makeStore(async (command) => {
+      if (command instanceof GetItemCommand) {
+        return command.input.Key!.pk.S === `round#${PLAN.from}`
+          ? { Item: round(PLAN.from, ['chat'], 1) }
+          : {};
+      }
+      // The source round's guard, every time: a guess lands between each plan and its commit.
+      throw refusing([7])(command as TransactWriteItemsCommand);
+    });
+    await expect(
+      store.adopt({ ...PLAN, erase: true, departFrom: PLAN.from, moves: [KEY] }),
+    ).rejects.toThrow(/kept changing/);
+    expect(transactions(send)).toHaveLength(4);
+    // A refusal is the play having changed, not contention: it plans again at once.
+    expect(waits).toEqual([]);
+  });
 });
 
 // CONTRACT (PR-227 review): AWS documents that the SDKs do NOT retry a
@@ -875,6 +887,39 @@ describe('dynamoLinkStore — transaction conflicts', () => {
 });
 
 describe('dynamoLinkStore — the departure queue', () => {
+  it('lists the jobs an adoption left queued: ONE consistent, paged Query of the account\'s own partition', async () => {
+    const pages = [
+      {
+        Items: [{ sk: { S: 'from#cccccccccccccccc' } }],
+        LastEvaluatedKey: { pk: { S: 'cursor' } },
+      },
+      { Items: [{ sk: { S: 'from#bbbbbbbbbbbbbbbb' } }] },
+    ];
+    const { store, send } = makeStore(async () => pages.shift()!);
+    // The ids the rows name, without their prefix, in a stable order.
+    await expect(store.pendingDepartures('aaaaaaaaaaaaaaaa')).resolves.toEqual([
+      'bbbbbbbbbbbbbbbb',
+      'cccccccccccccccc',
+    ]);
+    expect(send).toHaveBeenCalledTimes(2);
+    const first = (send.mock.calls[0][0] as QueryCommand).input;
+    expect(send.mock.calls[0][0]).toBeInstanceOf(QueryCommand);
+    expect(first).toMatchObject({
+      TableName: 'scores',
+      KeyConditionExpression: '#pk = :pk AND begins_with(#sk, :prefix)',
+      ExpressionAttributeNames: { '#pk': 'pk', '#sk': 'sk' },
+      ExpressionAttributeValues: {
+        ':pk': { S: 'depart#aaaaaaaaaaaaaaaa' },
+        ':prefix': { S: 'from#' },
+      },
+      // A job the adoption just committed must be visible to the drain that follows it.
+      ConsistentRead: true,
+    });
+    expect(first.ExclusiveStartKey).toBeUndefined();
+    const second = (send.mock.calls[1][0] as QueryCommand).input;
+    expect(second.ExclusiveStartKey).toEqual({ pk: { S: 'cursor' } });
+  });
+
   it('deletes a finished job unconditionally, so finishing twice is a no-op', async () => {
     const { store, send } = makeStore(async () => ({}));
     await store.clearDeparture('aaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbb');

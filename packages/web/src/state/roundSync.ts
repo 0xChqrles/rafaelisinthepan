@@ -68,8 +68,6 @@ export interface RoundSyncContext {
 }
 
 interface RoundFlight extends RoundSyncContext {
-  // Which published puzzle VERSION this conversation is about.
-  puzzle: string;
   // The last state the server told us about. The RAW log — its length is what the cap
   // counts, and it is NOT the play log's length whenever the projection dedups two devices'
   // surfaces of one group.
@@ -169,7 +167,7 @@ export function beginRoundSync(ctx: RoundSyncContext): void {
     // A sentence re-published UNDER an open conversation: everything the flight knows
     // describes the retired puzzle, so the conversation starts over — and re-opens if the
     // old one had closed at the cap or the freeze, since a fresh round is neither.
-    if (existing.puzzle !== puzzle) {
+    if (existing.revision !== puzzle) {
       existing.server = EMPTY_ROUND_SERVER;
       existing.readDone = false;
       existing.settled = false;
@@ -188,7 +186,7 @@ export function beginRoundSync(ctx: RoundSyncContext): void {
       existing.readDone = false;
       existing.failures = 0;
     }
-    Object.assign(existing, ctx, { puzzle });
+    Object.assign(existing, ctx);
     // Re-insert so the LRU sees this round as the most recent.
     flights.delete(ctx.roundKey);
     flights.set(ctx.roundKey, existing);
@@ -198,7 +196,6 @@ export function beginRoundSync(ctx: RoundSyncContext): void {
   }
   flights.set(ctx.roundKey, {
     ...ctx,
-    puzzle,
     server: EMPTY_ROUND_SERVER,
     readDone: false,
     settled: false,
@@ -233,7 +230,7 @@ export function retryRoundSync(roundKey: string): void {
   if (!f.settled) {
     f.closed = false;
     f.lockedEarly = false;
-    useGameStore.getState().setRoundLoad(roundKey, { status: 'loading', puzzle: f.puzzle });
+    useGameStore.getState().setRoundLoad(roundKey, { status: 'loading', puzzle: f.revision });
   }
   void pump(roundKey);
 }
@@ -243,7 +240,7 @@ export function retryRoundSync(roundKey: string): void {
 // sending a retired round's guesses is the one thing the revision exists to prevent.
 function pending(f: RoundFlight): string[] {
   const outbox = useGameStore.getState().outbox[f.roundKey];
-  return outbox && outbox.puzzle === f.puzzle ? outbox.guesses : [];
+  return outbox && outbox.puzzle === f.revision ? outbox.guesses : [];
 }
 
 async function pump(key: string): Promise<void> {
@@ -271,14 +268,14 @@ async function pump(key: string): Promise<void> {
     if (deviceIdentity() === null) {
       f.created = false;
       f.readDone = true;
-      publish(f, key, EMPTY_ROUND_SERVER);
+      publish(f, EMPTY_ROUND_SERVER);
       // Reassess straight away, for the race where an identity arrived while this branch
       // ran. A persisted outbox with no identity simply keeps waiting: since the trigger
       // rework the append never mints, and the gate's deploy is what kicks it loose.
       void pump(key);
       return;
     }
-    f.inFlight = readRound(f, key);
+    f.inFlight = readRound(f);
   } else {
     const owed = pending(f);
     if (owed.length === 0) return; // nothing pending
@@ -309,7 +306,7 @@ async function pump(key: string): Promise<void> {
     // a time so the server's atomic progress/cap guard judges each next guess. This
     // also prevents an oversized batch from refusing a round with one slot left
     // after another device advanced it.
-    f.inFlight = appendBatch(f, key, owed.slice(0, f.early ? 1 : room));
+    f.inFlight = appendBatch(f, owed.slice(0, f.early ? 1 : room));
   }
   try {
     await f.inFlight;
@@ -317,7 +314,7 @@ async function pump(key: string): Promise<void> {
     // Neither leg is expected to throw — both own their own error paths — but an
     // unexpected one must not escape as an unhandled rejection, and above all must not
     // leave `inFlight` pinned: that wedges this conversation shut for the tab's life.
-    retryLater(f, key);
+    retryLater(f);
   } finally {
     f.inFlight = null;
   }
@@ -325,7 +322,7 @@ async function pump(key: string): Promise<void> {
 }
 
 function requestBody(f: RoundFlight, token: string, guesses?: string[], challenge?: string) {
-  return { token, puzzle: f.puzzle, guesses, turnstileToken: challenge };
+  return { token, puzzle: f.revision, guesses, turnstileToken: challenge };
 }
 
 // Is this answer still about the puzzle — and the IDENTITY — that asked for it? A flight is
@@ -338,15 +335,15 @@ function requestBody(f: RoundFlight, token: string, guesses?: string[], challeng
 // Everything a superseded answer would have written is dropped; the flight has already been
 // reset to read again, and `pump` restarts it.
 function superseded(f: RoundFlight, puzzle: string, epoch: string | null): boolean {
-  return f.puzzle !== puzzle || epoch !== identityEpoch();
+  return f.revision !== puzzle || epoch !== identityEpoch();
 }
 
 // Take the server's answer as this round's truth and publish it to the screen. `byAppend`
 // says whether a SOLVE in it was confirmed by a batch this device just sent: that one is a
 // fresh solve and earns the round's beats, where a solve read at mount or refused as
 // `round_solved` is adopted history — shown, never celebrated.
-function adopt(f: RoundFlight, key: string, state: RoundState, byAppend: boolean): void {
-  publish(f, key, {
+function adopt(f: RoundFlight, state: RoundState, byAppend: boolean): void {
+  publish(f, {
     guesses: state.guesses,
     solved: state.solved,
     // Only ever true, like the flag itself: a later answer about an already-known solve
@@ -358,7 +355,7 @@ function adopt(f: RoundFlight, key: string, state: RoundState, byAppend: boolean
   });
 }
 
-function publish(f: RoundFlight, key: string, server: RoundServer): void {
+function publish(f: RoundFlight, server: RoundServer): void {
   const settled = f.settled;
   f.server = server;
   f.settled = true;
@@ -367,8 +364,8 @@ function publish(f: RoundFlight, key: string, server: RoundServer): void {
   // would hand the round a new object about once a second while a player types, and every
   // derivation downstream — the play log, the board replay, the run's trajectory — would
   // recompute for a value that did not change.
-  if (settled && sameServer(useGameStore.getState().roundLoads[key], f.puzzle, server)) return;
-  useGameStore.getState().setRoundLoad(key, { status: 'ready', puzzle: f.puzzle, server });
+  if (settled && sameServer(useGameStore.getState().roundLoads[f.roundKey], f.revision, server)) return;
+  useGameStore.getState().setRoundLoad(f.roundKey, { status: 'ready', puzzle: f.revision, server });
 }
 
 function sameServer(load: RoundLoad | undefined, puzzle: string, next: RoundServer): boolean {
@@ -391,21 +388,21 @@ function sameServer(load: RoundLoad | undefined, puzzle: string, next: RoundServ
 function settleOutbox(f: RoundFlight): void {
   const store = useGameStore.getState();
   const outbox = store.outbox[f.roundKey];
-  if (!outbox || outbox.puzzle !== f.puzzle) return;
+  if (!outbox || outbox.puzzle !== f.revision) return;
   const remaining = unacknowledged(outbox.guesses, f.server.guesses, (t) => guessKey(f.ranks, t));
   if (remaining.length === outbox.guesses.length) return;
-  store.setOutbox(f.roundKey, f.puzzle, remaining);
+  store.setOutbox(f.roundKey, f.revision, remaining);
 }
 
 // The round is over on the server's terms (solved, or capped): what this device still had
 // pending was REFUSED and will never be stored, so it is dropped for good rather than left
 // to count tries the recorded score does not.
 function discardOutbox(f: RoundFlight): void {
-  useGameStore.getState().discardOutbox(f.roundKey, f.puzzle);
+  useGameStore.getState().discardOutbox(f.roundKey, f.revision);
 }
 
-async function readRound(f: RoundFlight, key: string): Promise<void> {
-  const puzzle = f.puzzle;
+async function readRound(f: RoundFlight): Promise<void> {
+  const puzzle = f.revision;
   const identity = deviceIdentity();
   // `pump` has already taken the tokenless branch, so this can only be a race with a
   // sign-out; treat it as the superseded answer it would become.
@@ -418,7 +415,7 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
       requestBody(f, identity.token),
     );
   } catch {
-    if (!superseded(f, puzzle, epoch)) retryLater(f, key);
+    if (!superseded(f, puzzle, epoch)) retryLater(f);
     return;
   }
   if (superseded(f, puzzle, epoch)) return;
@@ -427,7 +424,7 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
     try {
       state = parseRound(await response.json());
     } catch {
-      if (!superseded(f, puzzle, epoch)) retryLater(f, key);
+      if (!superseded(f, puzzle, epoch)) retryLater(f);
       return;
     }
     // Re-checked after the body: reading it is another await, and a republish landing
@@ -436,7 +433,7 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
     // The server HAS a record for this puzzle, so no further append mints one and none
     // carries a challenge.
     f.created = true;
-    adopt(f, key, state, false);
+    adopt(f, state, false);
     // A solved round is FROZEN — it accepts no further appends — so anything still pending
     // was refused before it could be stored. Every other read merely acknowledges.
     if (state.solved) {
@@ -457,7 +454,7 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
     // outbox is still owed — and the first append creates (or replaces) the record,
     // carrying the round-start challenge.
     f.created = false;
-    publish(f, key, EMPTY_ROUND_SERVER);
+    publish(f, EMPTY_ROUND_SERVER);
   } else if (isVerdict(response.status)) {
     // A device signed out from elsewhere learns it HERE first, since the mount read is the
     // earliest private call a game route makes. The screen it raises is the whole answer;
@@ -465,19 +462,19 @@ async function readRound(f: RoundFlight, key: string): Promise<void> {
     // spelling of that resolution — the CODE decides, never the status.)
     await adoptSignedOutVerdict(response, epoch);
     if (superseded(f, puzzle, epoch)) return;
-    failLoad(f, key);
+    failLoad(f);
     f.closed = true;
     return;
   } else {
-    retryLater(f, key);
+    retryLater(f);
     return;
   }
   f.readDone = true;
   f.failures = 0;
 }
 
-async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promise<void> {
-  const puzzle = f.puzzle;
+async function appendBatch(f: RoundFlight, batch: string[]): Promise<void> {
+  const puzzle = f.revision;
   let response: Response;
   // THE APPEND NEVER MINTS (#216 trigger rework, user-decided 2026-08-24): the account
   // deploys on the sentence gate's PLAY, so by the time a guess can be typed the identity
@@ -509,7 +506,7 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     // tab, a dropped connection, a gateway timeout). Re-sending would append the same
     // batch a second time, so the recovery is a RE-READ: only the server can say what it
     // holds, and the outbox shrinks by what that answer shows.
-    if (!superseded(f, puzzle, epoch)) resync(f, key);
+    if (!superseded(f, puzzle, epoch)) resync(f);
     return;
   }
 
@@ -529,7 +526,7 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
       error = typeof data.error === 'string' ? data.error : undefined;
       state = parseRound(data);
     } catch {
-      if (!superseded(f, puzzle, epoch)) resync(f, key);
+      if (!superseded(f, puzzle, epoch)) resync(f);
       return;
     }
     // A superseded answer describes the RETIRED puzzle — or an identity this device has
@@ -545,7 +542,7 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     // conversation closes on a round that was never created. A 200 always created one; a
     // refusal only did if it carried real state, which `createdAt` is the mark of.
     if (response.ok || state.createdAt !== '') f.created = true;
-    adopt(f, key, state, response.ok);
+    adopt(f, state, response.ok);
 
     // The FREEZE (#203/#214): a solved round accepts nothing more. This answer must do
     // BOTH things — ADOPT the stored state, so the tab renders the round solved instead of
@@ -576,7 +573,7 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
         f.lockedEarly = true;
       } else {
         f.failures = priorFailures;
-        retryLater(f, key);
+        retryLater(f);
       }
       return;
     }
@@ -616,7 +613,7 @@ async function appendBatch(f: RoundFlight, key: string, batch: string[]): Promis
     return;
   }
   // A 5xx is an unknown outcome like a transport error: it may have committed.
-  resync(f, key);
+  resync(f);
 }
 
 // A 4xx is a VERDICT — a request this client will keep getting wrong (a language the
@@ -632,20 +629,20 @@ function isVerdict(status: number): boolean {
 // A load can only ever FAIL before it has succeeded once. After that the board is being
 // played, and a failed re-read is an ordinary retry behind it — never a reason to pull an
 // interactive screen back to an error state.
-function failLoad(f: RoundFlight, key: string): void {
+function failLoad(f: RoundFlight): void {
   if (f.settled) return;
-  useGameStore.getState().setRoundLoad(key, { status: 'failed', puzzle: f.puzzle });
+  useGameStore.getState().setRoundLoad(f.roundKey, { status: 'failed', puzzle: f.revision });
 }
 
-function retryLater(f: RoundFlight, key: string): void {
+function retryLater(f: RoundFlight): void {
   f.failures += 1;
   f.lastFailureAt = Date.now();
-  failLoad(f, key);
+  failLoad(f);
 }
 
 // The write's outcome is unknown: fall back to the read, which is the only thing that can
 // say what the server actually holds, and count the failure so the backoff widens.
-function resync(f: RoundFlight, key: string): void {
+function resync(f: RoundFlight): void {
   f.readDone = false;
   f.failures += 1;
   f.lastFailureAt = Date.now();
@@ -670,7 +667,7 @@ export function rearmRoundSync(): void {
     f.closed = false;
     f.lockedEarly = false;
     f.failures = 0;
-    useGameStore.getState().setRoundLoad(key, { status: 'loading', puzzle: f.puzzle });
+    useGameStore.getState().setRoundLoad(key, { status: 'loading', puzzle: f.revision });
     void pump(key);
   }
 }

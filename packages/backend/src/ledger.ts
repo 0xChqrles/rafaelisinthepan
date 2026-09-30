@@ -56,22 +56,6 @@ export function ledgerEntry(puzzle: Puzzle, day: string, publishedAt: Date): Pub
   return entry;
 }
 
-// Every line, in file order; a malformed line is skipped rather than taking the archive down.
-export function parseLedger(text: string): PublishedEntry[] {
-  const out: PublishedEntry[] = [];
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    try {
-      const entry = JSON.parse(line) as PublishedEntry;
-      if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue;
-      out.push(entry);
-    } catch {
-      // a broken line is not a reason to lose the rest
-    }
-  }
-  return out;
-}
-
 export async function appendPublished(entry: PublishedEntry, file = publishLedgerPath()): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });
   await appendFile(file, JSON.stringify(entry) + '\n', 'utf8');

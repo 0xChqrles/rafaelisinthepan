@@ -45,7 +45,6 @@ describe('the facts a share is commented from (user-decided 2026-09-07; relative
       { position: 3, score: 21, name: 'BRUNO' },
       { position: 4, score: '∞', name: 'THEO' },
     ]);
-    expect(ctx).not.toHaveProperty('otherPuzzle');
     // Beats Bruno and Theo, level with Zou (not counted), behind Luc.
     expect(ctx.today).toMatchObject({ posted: 5, first: false, place: 2, above: ['LUC'], level: ['ZOU'], below: ['BRUNO', 'THEO'], beats: '2 of 4', othersMedian: 16.5 });
     // A ∞ run has no place, sits behind everybody and beats nobody.

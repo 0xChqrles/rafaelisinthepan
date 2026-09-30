@@ -58,6 +58,8 @@
                               auto-verifying on the sixth digit
       components/AccountFace.tsx  the ONE read of "who an account is" (mark + name), shared
                               by the account screen, the flow's ending and the sign-out screen
+      state/ownFace.ts        when the player's OWN face is read again: the signals its
+                              profile's two writers (the deploy, the editor's SAVE) send
       state/account.ts        what `/account` shows — the `{token}` summary and the
                               group-departure drain behind it (#271)
       state/groups.ts         the player's GROUPS (#271): the ONE transient cache every group
@@ -142,6 +144,13 @@
       game/scoring.ts         the SCREEN's reading: applyGuessToHoles + replayHoles +
                               computeProgress over RuntimeHoles (the arithmetic itself is
                               @whippin/shared's since #203)
+      game/types.ts           the screen's own types: RuntimeHole (a hole as the round
+                              holds it) and HitState (one floating hit)
+      game/timing.ts          the guess choreography's shared beats (STAGGER_MS,
+                              FLOATING_HIT_INTRO_MS, REVEAL_HOLD_MS, KB_EXIT_FALLBACK_MS),
+                              one spelling for the game and the lesson board
+      hooks/lazyChunk.ts      one component kept out of the startup bundle: preload, the
+                              lazy render, and the retry a failed preload must not poison
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
       hooks/useLetterWave.ts  #129's ambient ripple on the holes
       game/history.ts         a hole's guess log ranked against its secret (buildHistory)
@@ -304,8 +313,8 @@ These are decided and verified against the code. Treat them as load-bearing.
   reconstructs the same meter, the same masked hints and the same count; `buildHistory`
   takes the given ranks and names them (`HistoryStop.given` / `masked` / `taken`: masked
   = no word, its rank and key alone; taken = the player's typed stop wearing the foil; the
-  solve unmasks the untaken, still given — on the words grid a hint TAKEN wears the foil,
-  one left on the table stands plain). Presentation (user-decided 2026-09-15, the third cut: "try
+  solve, or a round that ends capped (`over`), unmasks the untaken, still given — on the
+  words grid a hint TAKEN wears the foil, one left on the table stands plain). Presentation (user-decided 2026-09-15, the third cut: "try
   something else than a progress bar"): THE
   CHIP CONVERTS TO THE SOLVE INK EDGE TO EDGE ACROSS THE WORD — `.hole-meter`, the chip's
   own box and layer: the white ground turns cobalt from the left behind the dark letters,
@@ -370,9 +379,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   `--fg` through the mask at `.strike`'s own 5x / 4x with NO `.phrase` geometry; the recoil
   is the BLOW (`STRUCK_MS`, `strikeArt.ts`, as `--shake-ms`) and for that blow the chip
   INVERTS — ground `--bg`, ink `--fg` (`hole-invert`); and on a cut the rank is the LOOT
-  exponent (`Loot`) instead of the float, which stays for a miss, a repeat and the solve. The SENTENCE's exponent is 0.75em
-  (`--rank-size` on `.phrase` and the wheel's slot row; 0.55 where `.hole-rank` is
-  reused). The sequence is `cut → BLOOD: drops fly out on their own
+  exponent (`Loot`) instead of the float, which stays for a miss, a repeat and the solve. The exponent
+  (`.hole-rank`) is 0.55em of its word everywhere — the sentence, the wheel's slot row and
+  wherever the class is reused. The sequence is `cut → BLOOD: drops fly out on their own
   arcs and SPLAT around and below the word, lie there a pause, then are GATHERED at the
   conversion's front, each with a trail → the front sweeps on` — a drop per 2.5 points of the
   hit's gain ("proportional to the progression") — on the hit's own stagger beat
@@ -660,22 +669,16 @@ These are decided and verified against the code. Treat them as load-bearing.
       the ACTIVE day via useToday). Decorative (aria-hidden, pointer-events none),
       z-index 40 under the header's 60, covered by opaque dialogs, and DESKTOP ONLY
       (hidden ≤640px — a phone's viewport is all content).
-    - **The KEYBOARD is FLAT (user-decided 2026-08-18, superseding the bevelled
-      macropad keycaps the same day — "old skeuomorphism"):** every key is one solid
-      dark tile at the sharp radius, nothing modelled, and **a press is a STATE, not
+    - **The KEYBOARD is FLAT (no "old skeuomorphism"):** every key is one solid dark
+      tile at the sharp radius, nothing modelled, and **a press is a STATE, not
       travel** — brightness, never translateY (the rule the primary buttons follow
-      too). **ENTER is the pad's ONE coloured key**: flat solve cobalt with the faint
-      light it throws — a lamp, not a bevel — lit exactly when the input is a real word
-      (`.kb-enter` vs `.kb-enter.kb-greyed`), so the board itself says "publishable".
-      The flat rule's line: surface GRADIENTS, inset bevels and elevation shadows are
-      out everywhere; LUMINOUS glows (the LEDs, the ruler bloom, the logo aura, the
-      plate's cobalt wash) stay — they are light, not depth. Chrome icon strokes sit at
-      2 (up from 1.8) for the flatter, more confident weight.
-      On desktop the keys sit on a flat DEVICE PLATE (hairline + translucent fill, its
-      cobalt wash kept, its inner shadow gone) — drawn OUT OF FLOW (`.keyboard::before`,
-      inset past the keys) so `--kb-h` and the tray's fixed height stay exactly the
-      keys' own; the plate hides with the phone's full-bleed keyboard. The keys' pixel
-      glyphs and all key LOGIC are untouched.
+      too). **ENTER is the pad's ONE coloured key**: flat solve cobalt, lit exactly when
+      the input is a real word (`.kb-enter` vs `.kb-enter.kb-greyed`), so the board
+      itself says "publishable". The flat rule's line: surface GRADIENTS, inset bevels
+      and elevation shadows are out everywhere, and decorative light is gone too (see
+      DECORATIVE LIGHT IS GONE; the active hole's iridescent `sea-glow` is the one lit
+      exception). Chrome icon strokes sit at 2 for the flatter, more confident weight.
+      The keys' pixel glyphs and all key LOGIC are untouched.
     - **The INVERTED SELECTION BOX is the one emphasis gesture** (the board's
       highlighted headline word / selected list row) — and in the HEADER it is the
       ACTIVE TAB'S ALONE (user-decided 2026-08-18, third pass: with the glass band up,
@@ -860,21 +863,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
     transition except the first-ever acquisition advances it: A → null clears the old mount,
     and a later null → B remounts B's private reads; first bootstrap leaves it unchanged for
     the same reason it leaves the stores intact.
-  - **Persist v16 DROPS the outbox**: it is owed to #187's retired
-    identity, and the tokenless branch would otherwise pump a surviving outbox on the first
-    page load — bootstrapping a brand-new account and filing another identity's guesses
-    against it. **Persist v17 adds `identityOwner`** and `main.tsx` reconciles it against the
-    loaded device before rendering: an owner on the same account keeps the outbox, and no proof
-    drops it. An ownerless first act is kept
-    only when `whippin-device` holds its pending bootstrap token, then bound to the returned
-    identity; a missing/corrupt device key never turns old state into a new account's first act.
-    **Persist v18 moves the same state into IndexedDB**; the retired v17 localStorage blob
-    is NOT read (the standing no-back-compat rule — the brief import shipped with the first
-    cut was removed on the PR review as the compatibility layer it is), so an existing
-    device starts from the initial state once. `main.tsx` awaits hydration
-    and the initial ownership transaction before mounting any private reader, under a
-    startup DEADLINE that turns a stalled IndexedDB open into the visible startup failure
-    rather than a permanently blank page.
+  - **The persisted outbox is OWNED** (`identityOwner`, the account and device it was played
+    under), because guesses are owed to the account they were played under, and an outbox
+    with no proven owner would be sent as whatever account the device holds next.
+    `migratePersisted` keeps a stored outbox only when the record names a valid owner or
+    explicitly none; a record whose owner is missing or malformed loses its outbox.
+    `main.tsx` reconciles the owner against the loaded device before rendering: an owner on
+    the same account keeps the outbox; an ownerless one is kept only while `whippin-device`
+    holds its pending bootstrap token, then bound to the returned identity; anything else
+    drops it. A missing/corrupt device key never turns old state into a new account's first
+    act. The state lives in ONE IndexedDB record (`state/gamePersistence.ts`)
+    and nothing else is read, so a device without that record starts from the initial state.
+    `main.tsx` awaits hydration and the initial ownership transaction before mounting any
+    private reader, under a startup DEADLINE that turns a stalled IndexedDB open into the
+    visible startup failure rather than a permanently blank page.
   - **The tokenless branch is an ANSWER, not a loading state.** `roundSync` publishes a
     ready-and-empty authoritative round and `state/history.ts` a ready empty month and
     collection, so nothing breathes behind a request nobody made — the same rule #211's
@@ -908,7 +910,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     future deploy trigger cannot forget it. The ONE exemption is the profile editor's
     SAVE: its own deploy carries the player's typed fields, so it wraps its bootstrap in
     `withoutLocalIdentityDeploy` to keep the placeholder from racing (and possibly
-    overwriting) the save. Contract-tested (`localIdentityDeploy.test.ts`).
+    overwriting) the save. The player's own face waits for the flight and reads the
+    profile once it settles (the `AccountFace` bullet). Contract-tested
+    (`localIdentityDeploy.test.ts`, `ownFace.test.tsx`).
   - **Persisted game state is TRANSACTIONAL across tabs** (PR-219 final review, replacing
     rounds 2–3's snapshot merge). Zustand is now only the synchronous UI cache. Every
     persisted action emits an explicit domain mutation — append/acknowledge/discard one
@@ -1223,6 +1227,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
     and each used to fetch it themselves. It resolves to NOTHING until settled and is TAGGED
     with the account it is about, the leaderboard strip's own rule: a component that is not
     remounted when its account changes would otherwise render the previous person's face.
+    **The player's OWN face follows the profile this device writes** (`useOwnFace` over
+    `state/ownFace.ts`). `GET /profile` stays its only source; the writers only SIGNAL, and
+    never hand it a face (not the seed's, not a POST body's). The editor's successful SAVE
+    re-reads it, the face already drawn standing while the read is out. An account this
+    tab MINTED (`mintedHere`) keeps the seed's face while its first profile is being
+    written — `localIdentityDeploy`'s flight, or the editor's SAVE that minted it — and is
+    read once that settles, whatever the outcome: the seed's face if it was stored, the row
+    that won on a 409, the id's face if nothing landed, nothing if the account is gone. A
+    read during that write would find no profile and draw the face of the new account id: a
+    third face on the header for a beat, or until a reload. An ADOPTED account is read at
+    once, and read again when the deploy settles. A read that FAILS is no news: it changes
+    no face already drawn, and a minted account whose read-back fails keeps the seed's face.
   - **`GET /profile` HAS FOUR ANSWERS, AND `api.readProfile` IS WHERE THEY ARE TOLD APART**
     (PR-227 review, 2026-09-02): `shown` (200), `blank` (404 — LIVE, never customized, so the
     assigned identity IS this player's face), `gone` (410 `account_gone` — a DELETED account,
@@ -1278,6 +1294,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     which is exactly right (none of it belongs to the account just adopted). Fenced on the
     epoch the flow started under, like every other authoritative answer, and persisted BEFORE
     it publishes so a sibling tab cannot keep authenticating as the account this device left.
+    A write that cannot stick leaves the adopted identity SESSION-ONLY, and the key's
+    residue — the same token still naming the account left — never takes the session back.
   - **`SignedOut`'s RECONNECT is wired and PRIMARY** (PLAY became secondary): it lifts the
     verdict — the one gesture that removes the tombstone origin-wide — and lands on
     `/account/signin` DIRECTLY (vol. 2; it was `/account/email`, whose every word is about
@@ -1338,7 +1356,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     neither a hiccup nor the cap, so it takes the cap's own surface (a state with a way ONWARD
     rather than a retry) — retrying cannot bring a group back, and continuing silently would
     tell the clicker they joined a group they did not.
-  - **`game/streak.ts` re-exports `currentStreak` from `@whippin/shared`** and keeps
+  - **`game/streak.ts` imports `currentStreak` from `@whippin/shared`** and keeps
     `streakTransition`/`weekView`: the server derives a streak for the erase confirmation, so
     the derivation itself moved.
 - **The PRIVACY NOTICE (#229).** `/privacy` — a global route like the account area's, and a
@@ -1714,8 +1732,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     And `solved[lang]`'s PHASE is driven only by the most recently started collection
     read (`solvedReads`): a stale month's failure landing last fails its own month, never
     the collection another read owns.
-  - **Persist v15 DROPS `solvedDays`** — the last device-local half of a player's history, and
-    the one that could not follow them to a second device.
+  - **The device persists no history**: no solved day is stored locally — the collection
+    is the server's, so it follows the player to a second device.
 - **Round guess-log sync (#201).** *(RESHAPED by #214, above: the persisted `tried` log,
   `mergeLogs`, the `pendingFrom`/`serverCount` watermarks, `adoptRound`, the persisted
   `capped`/`recorded` flags and `holesMatchPuzzle` are all GONE — what this bullet describes
@@ -2035,7 +2053,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   caption, the WAITING dashed rows under one caption, the no-rank tick, the ghost's
   integer-scale mask, the assigned identity for an unnamed player — is unchanged.
   Board VISUALS carry no tests per policy; the contract-y parts are the shared ranking and
-  period rules, `parseBoard`/`parsePeriodBoard`/`parseGroups`/`parseStandings`, and the
+  period rules, `parseBoard`/`parsePeriodBoard`/`parseGroups`, and the
   route grammar (`langs.test.ts`).
   **THE IDENTITY STRIP IS GONE (2026-08-30, with the header rework).** *(Historical — the
   INVITE paragraph below describes the #189 friends button; the shape is the group INVITE's
@@ -2189,15 +2207,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   ground as it scrolls up under the header (a 40px top mask on `.hw-scroll`, padded so
   nothing fades at rest — the game header's own fade, which a dialog's scroll never
   lights). The
-  shared `ModalHeader` + Escape are the ways out (a fade, `hw-out`). The solved stage's
+  shared `ModalHeader` + Escape are the ways out (a fade, `fade-out`). The solved stage's
   word buttons open it too. `Game` picks the surface off the hole's rank (`wheelOpen`),
   and only the wheel veils the word beneath it.
   Exponents are the hole's own superscript (`.hole-rank` in the slot, `.wheel-rank` on
   plain rows — a flex row had flattened `<sup>`, user-reported). What it keeps: the pure
   model (`buildHistory`, which gained `display`, the canonical form the slot shows), the
-  `revealed` dress (0.55), the `given` dress — THE SEA, see the #301 bullet — and the hole's TRUE position wearing an LED in `--hole` when the
-  slot holds a pick, `holeTitle` as the dialog's name, `srRouteStop` per row; on the solved
-  stage the secret is appended as the last row (rank 0 is never a stop) and nothing picks.
+  `given` dress — THE SEA, see the #301 bullet — and the hole's TRUE position wearing an LED in `--hole` when the
+  slot holds a pick, `holeTitle` as the dialog's name, `srRouteStop` per row.
   A word too near the right edge of a phone (`MIN_COLUMN`) stands the column on its RIGHT
   edge. The scroller hides its scrollbar and fades both ends (a mask). **A PLAIN ROW
   STANDS ON ITS OWN GROUND** (user-decided 2026-09-02: at the quarter dim the rows printed
@@ -2218,7 +2235,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   overhang were clipped; the rows' text still starts on the word's x, measured at both
   breakpoints). **AND THE FOLD LEAVES THE SLOT ROW STANDING** (user-reported the same day, "the hole word
   blinking on wheel close"): `wheel-out` fades the DIM (background-color) and
-  `wheel-row-out` the plain rows, while the slot row — the hole's own markup at the hole's
+  `fade-out` the plain rows, while the slot row — the hole's own markup at the hole's
   own place — holds at full strength until the dialog leaves; and the fold itself (the
   pick and the unveil) is `flushSync`ed from the exit animation's END handler, before the
   hook closes the dialog in that same handler: `dialog.close()` fires `close` on a LATER
@@ -2226,7 +2243,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   frame after the slot row had gone — one frame with no word at all, measured. For a PICK, `Hole`
   starts its scramble in a LAYOUT effect, so the churn's first frame paints in place of the
   old word instead of one frame after it. The title's selection wears its own whole-screen
-  fade (`select-out`), since the dim-only exit is the wheel's. It stays a native
+  fade (`fade-out`), since the dim-only exit is the wheel's. It stays a native
   `<dialog>` on `useModalDismiss` (`wheel-out`) — the sentence and the keyboard under it
   must be inert — but it is the PuzzleSelect's KIND, so a tap OUTSIDE closes it. What is
   GONE with the modal (no-back-compat): the MISSED shelf (a miss is not a found word and
@@ -2482,11 +2499,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
       under the credit rather than through it, and **a tap on it scrolls the stage back to
       the top** (`backToTop`, smooth unless reduced motion): the running head is the way
       back to the score and SHARE. On a phone that fits, nothing overflows and nothing
-      moves. **A FINISHED round's secrets open the words MODAL, found or not** (PR-272
-      review): a capped round's unfound holes keep a rank, but the wheel measures the
-      board's own `[data-hole-explore] .hole-word-wrap`, which the page's secrets do not
-      wear, and a pick has nothing to swap into a page that already shows the answer —
-      `wheelOpen` is false once `finished`.
+      moves. **A FINISHED round's secrets open the words MODAL, found or not**: a capped
+      round's unfound holes keep a rank, but the wheel measures the board's own
+      `[data-hole-explore] .hole-word-wrap`, which the page's secrets do not wear, and a
+      pick has nothing to swap into a page that already shows the answer — `wheelOpen` is
+      false once `finished`. For the same reason the modal of a finished round masks
+      nothing and names the secret, found or not (`Game` passes `buildHistory` its
+      `over`).
     - **The SECRETS are BUTTONS inside the line** (`.solved-secret`: the solve blue, font
       and line inherited, no box, `inline-block` for the pop), one per OCCURRENCE (a slug
       appearing twice yields two, sharing one distinct-secret `number` — the ruler ticks'
@@ -2700,7 +2719,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   does the bar. The keyboard's exit beat
   releases the RESULT through a signal the DOM has to produce (its own
   `animationend`) — so it carries a **deadline** (`KB_EXIT_FALLBACK_MS`
-  in `Game.tsx`), a generous multiple of the real duration, cancelled by the genuine
+  in `game/timing.ts`), a generous multiple of the real duration, cancelled by the genuine
   signal. A lost signal must never be able to stall the solved sequence. (The SOURCE
   reveal's own 6s visible-time fallback died with the source-gating on 2026-08-14 —
   nothing downstream waits on the typewriter any more, so there is nothing left for a
@@ -2885,9 +2904,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `identity === null || (!learned && !played && !finished && guessCount === 0)` — `played` is
   this visit's PLAY (nothing is recorded until a guess lands), so a round already in progress
   never shows it for the lesson alone. On the gate the PHRASE is on screen but the round holds
-  back: the prompt lays out `retired`, the holes are untappable and waveless (`gateOpen` feeds
-  `exploreDisabled` and vetoes `quiet`), and the TRAY holds the buttons in the keyboard's own
-  footprint (`.rules-gate`, anchored to the tray's bottom by `.tray-gate`). No analytics event.
+  back: the prompt lays out `retired`, and the TRAY holds the buttons in the keyboard's own
+  footprint (`.rules-gate`, anchored to the tray's bottom by `.tray-gate`). The holes stay
+  tappable and keep their wave — `exploreDisabled` and `quiet` do not read `gateOpen` — so
+  each opens its wheel there as it does in play. No analytics event.
   **Since the #216 trigger rework the gate is also the sentence game's DEPLOY BUTTON**: a
   device with NO account shows it on every sentence day (archive days and post-sign-out
   included), whatever is done, because its PLAY is the only trigger on the screen — the tap
@@ -3047,7 +3067,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (`tutRevealed`, off the event's `revealed` flag) → a FAILED TRY typed after it earns the HINT
     (`hints[]`, or `pair.hint` once swapped), NEVER THE WORD (user-decided 2026-09-16,
     retiring the bot's own closing guess) → found: "You found it! You are ready for the real
-    game." → PLAY. `STUCK.meter` is unused
+    game." → PLAY. `STUCK` has no `meter` row
     (the stage is its own script). Not taught: the exact rate.
   **A WHEEL ROW'S HIT AREA IS ITS WORD** (`.wheel-row` `width: fit-content`, user-reported
   2026-09-16 from the lesson: "when we click next to a word it scrolls to it instead of
@@ -3091,7 +3111,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **The invitation is unchanged** (`tutorial/Invite.tsx`, no header): a first visit (no
   `onboarded`) lands on it; TUTORIAL navigates to level 1 (the lesson's PLAY or a header exit
   settles the flag), SKIP settles it there. Its preload warms the level-1 chunk
-  (`LazyLevelOne`, the LazyStreakDialog pattern; a failed chunk exits without completing the lesson). Analytics
+  (`LazyLevelOne`, on `hooks/lazyChunk` like `LazyStreakDialog`; a failed chunk exits without completing the lesson). Analytics
   keep the three events (`start` / `skip` / `finish`). The boards are pruned #154 artifacts
   (`scripts/<lang>.<word>.json`, `prune-word-map.mjs --top 150`; the exact commands in each
   script's header), never published or served; a lesson board touches no `rounds`, no outbox,
@@ -3210,7 +3230,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the others stand plain at the same size, and the chip hands itself from row to row
     on a 120ms cross-fade as the drum turns; rows arrive on the wheel's stagger counted out
     from the slot. **The drum IS the hole wheel's** — its physics moved out of
-    `HistoryWheel` into `hooks/useDrum` (`current`/`peek`/`jump`/`glideTo`/`glideBy`/
+    `HistoryWheel` into `hooks/useDrum` (`current`/`peek`/`jump`/`glideBy`/
     `tap`/`endedDrag`; the caller supplies only `write`, a scrollTop there and a translate
     here), so a drag, a fling, a wheel delta, an arrow key and a tap on a row all feel the
     same on both surfaces. ArrowUp/Down turn the drum. **THE PICK LANDS AS THE FOLD BEGINS, under
@@ -3269,10 +3289,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the row's last key. It reveals nothing about server state, which is the invariant it
     must not break: `useOwnFace` answers the account's stored profile or the identical
     pair derived from the persisted local seed, and `localIdentityDeploy` stores exactly
-    that pair at deployment — the same face before and after (#216). It HOLDS ITS BOX
-    until the face settles (the leaderboard strip's rule, and it matters more here, where
-    the control is on screen every day), and it sets `profileReturn` so `/account`'s back
-    lands where it was opened from. **It is A BARE PIXEL TILE, IN COLOUR — the fifth cell
+    that pair at deployment — the same face before and after (#216), with no other face
+    drawn in between; and a SAVE in the editor shows on it at once (the `AccountFace`
+    bullet). It HOLDS ITS BOX until the face settles (the leaderboard strip's rule, and it
+    matters more here, where the control is on screen every day). **It is A BARE PIXEL TILE, IN COLOUR — the fifth cell
     drawing in a row of five** (user-decided 2026-09-02, in two steps: square corners, then
     "remove the box shadow"; it kept its COLOUR from 2026-08-31, "actually quite cool", and
     is still the one full-colour chrome control, because that colour is the one thing on the
@@ -3664,9 +3684,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   restates Plausible's behaviour** (each verified against the real script): a
   `popstate` listener replaces the entry with itself so Back/Forward are counted and
   Umami's idea of the current page never goes stale; and a `data-before-send` hook
-  (`whippinUmamiBeforeSend`) drops a SAME-SITE referrer — a signed share's
-  `/s/<token>/<publicId>` would otherwise hand Umami the sharer's player id — and counts
-  a pageview once per PATH (a replace or a query-only change is not a page).
+  (`whippinUmamiBeforeSend`, its rule the pure `screenPayload`, contract-tested) drops a
+  SAME-SITE referrer — a signed share's `/s/<token>/<publicId>` would otherwise hand Umami
+  the sharer's player id — counts a pageview once per real PATH (a replace or a
+  query-only change is not a page), and sends the group invite landing
+  `/join/g/<groupId>` as `/join/g` on every payload, pageview or event, because a group
+  id is enough to join the group. A bonus page keeps its id.
   `track(event, props)` waits for that same script and calls `window.umami.track`, and
   is a **silent, never-throwing no-op** when unconfigured or blocked (a failed load stays
   failed for the page, never re-injected). **Env-gated:**

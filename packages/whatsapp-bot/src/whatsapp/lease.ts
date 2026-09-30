@@ -27,7 +27,6 @@ export const LEASE_GRACE_MS = LEASE_TTL_MS - LEASE_RENEW_MS;
 const LEASE_SK = LEASE_SORT_KEY;
 
 export interface Lease {
-  owner: string;
   // The instant the acquiring write was STAMPED from: the record expires LEASE_TTL_MS
   // after it, however long the answer took to arrive. The keeper measures its window from
   // here, never from the moment it was constructed.
@@ -209,7 +208,6 @@ export async function acquireLease(
     );
   }
   return {
-    owner,
     acquiredAt,
     renew: () => write(now(), '#owner = :owner', { '#owner': 'owner' }, { ':owner': { S: owner } }),
     release,

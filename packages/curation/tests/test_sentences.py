@@ -1,4 +1,5 @@
-from sentences import candidate_sentences, is_candidate, split_sentences
+from sentences import (EXCERPT_WINDOW, MAX_SENTENCES_PER_UNIT, MAX_WORDS, candidate_sentences, is_candidate,
+                       split_sentences)
 
 LONG = "Il aimait ce moment où la ville s'apaise, et le gémissement étrange de l'asphalte, à la nuit tombée, comme si la rue rendait sa violence contenue."
 
@@ -44,6 +45,25 @@ def test_short_sentences_join_into_a_unit_within_a_paragraph():
     assert is_candidate("Il partit sans un mot. Elle resta là, devant la porte, à compter les pas qui s'éloignaient. Puis Marie revint.")
 
 
+def _sentence(words):
+    return "Il " + "marche " * (words - 2) + "encore."
+
+
+def test_a_unit_is_at_most_thirty_three_words():
+    assert MAX_WORDS == 33
+    assert is_candidate(_sentence(33)) and not is_candidate(_sentence(34))
+    assert candidate_sentences(_sentence(34), lang="fr") == []
+    # a run is never joined past the band: 12 words, then 22 — each its own unit, never one of 34
+    short, long = _sentence(12), _sentence(22)
+    assert candidate_sentences(f"{short} {long}", lang="fr") == [short, long]
+
+
+def test_a_unit_is_at_most_three_sentences():
+    # four sentences of four words: three make 12, short of the band, and a fourth is never joined
+    assert MAX_SENTENCES_PER_UNIT == 3
+    assert candidate_sentences("Il vit la mer. Elle vit le ciel. Nous vîmes la terre. Ils virent le feu.", lang="fr") == []
+
+
 # The page around a unit (#270): raw neighbouring sentences, crossing paragraph breaks,
 # never the unit itself, both sides bounded.
 def test_excerpt_around_a_unit_crosses_paragraphs_and_stops_at_the_edges():
@@ -57,6 +77,14 @@ def test_excerpt_around_a_unit_crosses_paragraphs_and_stops_at_the_edges():
     assert excerpt_around(text, "Neuf.", n=2, lang="fr") == {"before": ["Sept.", "Huit."], "after": []}
     assert excerpt_around(text, "Trois. Quatre.", n=2, lang="fr") is None  # a unit never crosses a paragraph
     assert excerpt_around(text, "Dix.", lang="fr") is None
+
+
+def test_the_page_window_is_eight_sentences_a_side():
+    from sentences import excerpt_around
+    sentences = [f"{letter}a." for letter in "ABCDEFGHIJKLMNOPQRST"]
+    window = excerpt_around(" ".join(sentences), "Ja.", lang="fr")
+    assert EXCERPT_WINDOW == 8
+    assert window == {"before": sentences[1:9], "after": sentences[10:18]}
 
 
 def test_cut_excerpt_clamps_the_counts_into_the_window():

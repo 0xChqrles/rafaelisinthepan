@@ -28,8 +28,8 @@
 // était bien trop dur, retour utilisateur 2026-09-16) laissent la jauge à ~74 avec PARCOURS
 // (8) pour meilleur mot — assez long pour que le remplissage se lise sur la puce : CHEMIN la
 // remplit, visiblement, et le S apparaît ; un essai raté vaut ensuite l'indice, jamais le mot.
-import type { WordPuzzle } from '@whippin/shared';
 import type { LessonScript } from '../script';
+import { hole, single } from './board';
 import ocean from './fr.ocean.json';
 import montagne from './fr.montagne.json';
 import chien from './fr.chien.json';
@@ -37,31 +37,10 @@ import lune from './fr.lune.json';
 import chat from './fr.chat.json';
 import sentier from './fr.sentier.json';
 
-function hole(artifact: WordPuzzle, pos: number, start: string, suffix?: string) {
-  const entry = artifact.ranks[start];
-  return {
-    pos,
-    secret: artifact.word,
-    start: { word: entry.word, slug: start },
-    start_rank: entry.rank,
-    ...(suffix ? { suffix } : {}),
-  };
-}
-
-function single(artifact: WordPuzzle, start: string) {
-  return {
-    lang: 'fr',
-    revision: 'lesson',
-    words: [artifact.word.word],
-    holes: [hole(artifact, 0, start)],
-    ranks: { [artifact.word.slug]: artifact.ranks },
-  };
-}
-
 const script: LessonScript = {
   stages: [
-    { kind: 'reveal', puzzle: single(ocean, 'mer'), hints: ['tutHintOcean'] },
-    { kind: 'word', puzzle: single(montagne, 'ski'), hints: ['tutHintMontagne'] },
+    { kind: 'reveal', puzzle: single('fr', ocean, 'mer'), hints: ['tutHintOcean'] },
+    { kind: 'word', puzzle: single('fr', montagne, 'ski'), hints: ['tutHintMountain'] },
     {
       kind: 'sentence',
       puzzle: {
@@ -71,7 +50,7 @@ const script: LessonScript = {
         holes: [hole(chien, 1, 'loup'), hole(lune, 5, 'penombre', '.')],
         ranks: { [chien.word.slug]: chien.ranks, [lune.word.slug]: lune.ranks },
       },
-      hints: ['tutHintChien', 'tutHintLune'],
+      hints: ['tutHintDog', 'tutHintMoon'],
     },
     {
       kind: 'meter',
@@ -85,7 +64,7 @@ const script: LessonScript = {
       // La partie du bot jusqu'ici : le chat trouvé, puis le sentier tourné autour sans tomber.
       played: ['chat', 'parcours', 'randonneur', 'detour', 'hameau', 'tunnel'],
       pair: { alt: { word: 'chemin', slug: 'chemin' }, hint: 'tutHintChemin' },
-      hints: ['tutHintChat', 'tutHintSentier'],
+      hints: ['tutHintCat', 'tutHintSentier'],
     },
   ],
 };

@@ -13,14 +13,12 @@ const SLASH_FRAME_MS = 50;
 export type StrikeArt = {
   /** Modifier class on `.strike`; the base class IS the stroke, so it needs none. */
   css: string;
-  frames: number;
   /** One blow's length. Every sheet runs at `SLASH_FRAME_MS`, so this is never independent. */
   ms: number;
 };
 
 const art = (css: string, frames: number): StrikeArt => ({
   css,
-  frames,
   ms: frames * SLASH_FRAME_MS,
 });
 

@@ -9,12 +9,16 @@ import {
   ConditionalCheckFailedException,
   GetItemCommand,
   QueryCommand,
-  TransactWriteItemsCommand,
   UpdateItemCommand,
   type AttributeValue,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
 import { EARLY_GUESS_CAP, ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
+import {
+  expectConditionSyntax,
+  expectExpressionsValid,
+  expectTransactItemValid,
+} from './dynamoExpressionChecks';
 import { dynamoRoundStore, planRoundMove } from './dynamoRoundStore';
 
 const PUBLIC_ID = 'lfd5pqz5pa7zjm5u';
@@ -35,53 +39,15 @@ function storedItem(
   };
 }
 
-// DynamoDB's CONDITION grammar has NO arithmetic, and its whole function list is these
-// six — `size` over a document PATH. `if_not_exists` and `+` belong to an UPDATE
-// expression's SET action; naming either in a condition makes the service reject the
-// request with a ValidationException at parse, before anything is stored. A mocked
-// client cannot produce that error and the memory store never sees the expression, so
-// the shape of the expression is what this suite has to hold.
-const CONDITION_FUNCTIONS = [
-  'attribute_exists',
-  'attribute_not_exists',
-  'attribute_type',
-  'begins_with',
-  'contains',
-  'size',
-];
-
-// DynamoDB rejects an ExpressionAttributeNames entry that no expression references ("Value
-// provided in ExpressionAttributeNames unused in expressions: keys: {#x}") and an alias no
-// entry declares, and does the same for VALUES. A mocked client validates neither, so a
-// command carrying a union map of every attribute the store knows about looks perfectly
-// fine here and fails EVERY write in production. `checkedClient` below runs this on every
-// command any test in this file issues, so a new write path is covered by existing.
-interface Expressed {
-  UpdateExpression?: string;
-  ConditionExpression?: string;
-  ExpressionAttributeNames?: Record<string, string>;
-  ExpressionAttributeValues?: Record<string, AttributeValue>;
-}
-
-function expectAliasesMatch(command: UpdateItemCommand | Expressed): void {
-  const input: Expressed = command instanceof UpdateItemCommand ? command.input : command;
-  const { UpdateExpression = '', ConditionExpression = '' } = input;
-  const source = `${UpdateExpression} ${ConditionExpression}`;
-  const check = (pattern: RegExp, declared: object | undefined, what: string) => {
-    const used = new Set(source.match(pattern) ?? []);
-    const keys = new Set(Object.keys(declared ?? {}));
-    expect([...keys].filter((k) => !used.has(k)), `${what} declared but unused`).toEqual([]);
-    expect([...used].filter((k) => !keys.has(k)), `${what} used but undeclared`).toEqual([]);
-  };
-  check(/#[A-Za-z0-9_]+/g, input.ExpressionAttributeNames, 'name');
-  check(/:[A-Za-z0-9_]+/g, input.ExpressionAttributeValues, 'value');
-}
-
-// Every store in this suite is built over this, so no write escapes the checks above.
+// A mocked client cannot produce DynamoDB's parse-time ValidationException and the memory
+// store never sees an expression, so the SHAPE of each expression is what this suite has to
+// hold (`dynamoExpressionChecks.ts`): the alias correspondence, in both directions and for
+// values too, and the condition grammar. Every store in this suite is built over this, so
+// no write escapes the checks and a new write path is covered by the tests that exist.
 function checkedClient(send: (command: unknown) => Promise<unknown>) {
   return vi.fn(async (command: unknown) => {
     if (command instanceof UpdateItemCommand) {
-      expectAliasesMatch(command);
+      expectExpressionsValid(command.input);
       // THE VERSION INVARIANT (#204's adoption model): every mutation of a round item bumps
       // `version`, because the adoption transaction conditions on nothing else. A writer
       // added next month that forgets it reopens the stale-snapshot hole, so it is refused
@@ -91,16 +57,6 @@ function checkedClient(send: (command: unknown) => Promise<unknown>) {
           '#v = if_not_exists(#v, :zero) + :one',
         );
         expect(command.input.ExpressionAttributeNames?.['#v']).toBe('version');
-      }
-    }
-    // #204's transfer writes a TRANSACTION, and every clause inside it is subject to the
-    // same rejection — an unused or undeclared alias fails the whole write in production
-    // while looking fine against this mock.
-    if (command instanceof TransactWriteItemsCommand) {
-      for (const item of command.input.TransactItems ?? []) {
-        for (const part of [item.Put, item.Delete, item.Update]) {
-          if (part) expectAliasesMatch(part as Expressed);
-        }
       }
     }
     return send(command);
@@ -113,23 +69,6 @@ function makeStore(send: (command: unknown) => Promise<unknown>) {
     store: dynamoRoundStore({ send: checked } as unknown as DynamoDBClient, 'scores'),
     send: checked,
   };
-}
-
-function expectConditionSyntax(expression: string | undefined): void {
-  expect(expression).toBeTruthy();
-  const source = expression!;
-  for (const match of source.matchAll(/([A-Za-z_]+)\s*\(/g)) {
-    // `AND (`/`OR (`/`NOT (` are the grammar's own logical operators, not calls.
-    if (['AND', 'OR', 'NOT'].includes(match[1].toUpperCase())) continue;
-    expect(CONDITION_FUNCTIONS).toContain(match[1]);
-  }
-  // No arithmetic anywhere, and every `size()` reads a plain attribute PATH rather than
-  // wrapping another call.
-  expect(source).not.toMatch(/[+*/]/);
-  expect(source).not.toMatch(/\s-\s/);
-  for (const match of source.matchAll(/size\(\s*([^)]*)\)/g)) {
-    expect(match[1].trim()).toMatch(/^#[A-Za-z]+$/);
-  }
 }
 
 // What the item LOOKS like after the SET actions this command declares — so a test can
@@ -532,6 +471,8 @@ describe('dynamoRoundStore — the derived summary (#203)', () => {
     expect(command.input.UpdateExpression).toBe(
       'SET #prog = :progress, #solved = :solved, #v = if_not_exists(#v, :zero) + :one',
     );
+    expect(command.input.ExpressionAttributeValues![':progress']).toEqual({ N: '100' });
+    expect(command.input.ExpressionAttributeValues![':solved']).toEqual({ BOOL: true });
     // A record naming a DIFFERENT puzzle has already restarted and has nothing here to
     // correct. (The monotonicity clause beside it has its own suite below.)
     expect(command.input.ConditionExpression).toContain('#p = :puzzle');
@@ -558,7 +499,9 @@ describe('dynamoRoundStore — the derived summary (#203)', () => {
     });
     const { store } = makeStore(send);
     // Reported, not swallowed: the caller has to know the state it asked for is not the
-    // stored one, or it claims a solve this record never took.
+    // stored one, or it claims a solve this record never took. A better correction landing
+    // first is refused by the same condition and is indistinguishable here: neither is a
+    // retry, and neither may be read as "landed".
     await expect(
       store.settle({ ...KEY, publicId: PUBLIC_ID, puzzle: PUZZLE, progress: 100, solved: true }),
     ).resolves.toBe(false);
@@ -610,40 +553,10 @@ describe('dynamoRoundStore — the corrective write is MONOTONIC (#203)', () => 
       '#p = :puzzle AND (attribute_not_exists(#prog) OR #prog <= :progress)',
     );
     // A comparator against a value is the grammar's own (`#last < :cutoff` relies on it);
-    // arithmetic and `if_not_exists` are what it does not have.
+    // arithmetic and `if_not_exists` are what it does not have. `<=` rather than `<`: a
+    // solved derivation is exactly 100, the maximum a stored value can hold, so the clause
+    // can never refuse a solve — only a lowering correction.
     expectConditionSyntax(command.input.ConditionExpression);
-  });
-
-  it('lets the FIRST correction through on a row that has no progress yet', async () => {
-    const send = vi.fn(async (_command: unknown) => ({}));
-    const { store } = makeStore(send);
-    await store.settle(settle(60, false));
-    expect(send).toHaveBeenCalledTimes(1);
-  });
-
-  it('is `<=` so a SOLVE still lands when the percentage is already what it will be', async () => {
-    // A solved derivation is exactly 100, which is also the maximum a stored value can
-    // hold — so this clause can never refuse a solve, only a lowering correction.
-    const send = vi.fn(async (_command: unknown) => ({}));
-    const { store } = makeStore(send);
-    await store.settle(settle(100, true));
-    const command = send.mock.calls[0][0] as UpdateItemCommand;
-    expect(command.input.ExpressionAttributeValues![':progress']).toEqual({ N: '100' });
-    expect(command.input.UpdateExpression).toContain('#solved = :solved');
-  });
-
-  it('swallows the refusal: a better correction landing first is the right outcome', async () => {
-    const send = vi.fn(async (_command: unknown) => {
-      throw new ConditionalCheckFailedException({
-        $metadata: {},
-        message: 'The conditional request failed',
-      });
-    });
-    const { store } = makeStore(send);
-    // Indistinguishable from a republish, and neither is a retry — the row already holds
-    // something at least as true as what this write carried. It still reports FALSE, so a
-    // caller can never read "declined" as "landed".
-    await expect(store.settle(settle(60, false))).resolves.toBe(false);
   });
 });
 
@@ -810,8 +723,8 @@ describe('dynamoRoundStore.getMany — the board read (#206)', () => {
 // tuple, one per row read: each asserts the row is unchanged since the read (absent still
 // absent, or at the VERSION it carried), so every decision including "nothing here" is
 // guarded, by one clause whatever field a concurrent writer touches. The copied item takes
-// the DESTINATION's next version, never the source's. The alias correspondence and the
-// condition grammar are checked by the harness above.
+// the DESTINATION's next version, never the source's. The items are never SENT here, so
+// `plan` runs the alias correspondence and the condition grammar over every one it returns.
 describe('planRoundMove (#204)', () => {
   const FROM = PUBLIC_ID;
   const TO = 'zzzzzzzzzzzzzzzz';
@@ -820,8 +733,8 @@ describe('planRoundMove (#204)', () => {
     ...item,
     version: { N: String(version) },
   });
-  const plan = (rows: { from?: Record<string, AttributeValue>; to?: Record<string, AttributeValue> }) =>
-    planRoundMove(
+  const plan = async (rows: { from?: Record<string, AttributeValue>; to?: Record<string, AttributeValue> }) => {
+    const result = await planRoundMove(
       {
         send: async (command: unknown) => {
           const pk = (command as GetItemCommand).input.Key!.pk.S;
@@ -833,6 +746,9 @@ describe('planRoundMove (#204)', () => {
       FROM,
       TO,
     );
+    for (const item of result.items) expectTransactItemValid(item);
+    return result;
+  };
   const played = versioned({ ...at(FROM), ...storedItem(['bois', 'foret'], 1_000), solved: { BOOL: true } }, 7);
   // A row that holds NO guess: not play, so a played round may move in over it — and the
   // copy has to take that row's NEXT version.
@@ -854,7 +770,6 @@ describe('planRoundMove (#204)', () => {
       Item: { ...played, ...at(TO), version: { N: '1' } },
       ConditionExpression: 'attribute_not_exists(pk)',
     });
-    expectConditionSyntax(result.items[1].Delete!.ConditionExpression);
     expect(result.items[1].Delete).toMatchObject({
       Key: at(FROM),
       ConditionExpression: '#v = :v',
@@ -885,7 +800,6 @@ describe('planRoundMove (#204)', () => {
         ConditionExpression: 'attribute_not_exists(pk)',
       });
       expect(result.items[1].ConditionCheck!.Key).toEqual(at(TO));
-      expectConditionSyntax(result.items[1].ConditionCheck!.ConditionExpression);
       expect(result.items[1].ConditionCheck!.ConditionExpression).toBe(
         to ? '#v = :v' : 'attribute_not_exists(pk)',
       );

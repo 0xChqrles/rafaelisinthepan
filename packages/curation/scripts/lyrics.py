@@ -9,7 +9,7 @@ A song file is `<artist-slug>__<title-slug>.txt`: a header of `key: value` lines
 from datetime import date, timedelta
 import re
 
-from sentences import MAX_WORDS, MIN_LINE_WORDS, MIN_WORDS, word_count
+from sentences import MAX_INNER_CAPITALS, MAX_WORDS, MIN_LINE_WORDS, MIN_WORDS, word_count
 
 HEADER_KEYS = ("artist", "title", "album", "year", "pageviews")
 # Top-viewed share of an artist's songs dropped before any lyric is read: the famous
@@ -113,7 +113,7 @@ def is_unit_candidate(unit: str) -> bool:
         return False
     words = unit.split()
     inner_capitals = sum(1 for w in words[1:] if w[:1].isupper())
-    return inner_capitals <= 2
+    return inner_capitals <= MAX_INNER_CAPITALS
 
 
 def famous_cut(songs: list[dict], share: float = FAMOUS_SHARE) -> list[dict]:
@@ -126,8 +126,8 @@ def famous_cut(songs: list[dict], share: float = FAMOUS_SHARE) -> list[dict]:
     return ranked[int(drop):]
 
 
-def within_cooldown(last_used: date | None, today: date, days: int = ARTIST_COOLDOWN_DAYS) -> bool:
-    return last_used is not None and today - last_used < timedelta(days=days)
+def within_cooldown(last_used: date | None, today: date) -> bool:
+    return last_used is not None and today - last_used < timedelta(days=ARTIST_COOLDOWN_DAYS)
 
 
 def song_filename(artist: str, title: str, slug) -> str:

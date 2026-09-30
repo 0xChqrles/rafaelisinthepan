@@ -6,7 +6,7 @@
 //
 //   1. COMMIT — `LinkStore.adopt`, ONE transaction: the challenge is consumed, the device
 //      moves, the account being left is deleted with its profile row, the departure job
-//      is persisted, and the ACTIVE DAY's play moves with the device (`supportedLangs`,
+//      is persisted, and the ACTIVE DAY's play moves with the device (`SUPPORTED_LANGS`,
 //      every language where the destination has nothing and the source has play). Indivisible,
 //      because the half-states are not equally harmless: a device left on a DELETED account
 //      is a player signed out mid-link with everything gone, and a round moved by an
@@ -24,19 +24,10 @@
 // follows step 1 as a logged, non-fatal side effect, the round route's own rule for that
 // rebuildable collection.
 
-import { bestStreak, currentStreak, VOCAB_BUILDS } from '@whippin/shared';
+import { bestStreak, currentStreak, SUPPORTED_LANGS } from '@whippin/shared';
 import type { GroupStore } from './groupStore';
 import type { PlayerHistoryStore } from './historyStore';
 import type { LinkStore } from './linkStore';
-
-// EVERY supported language — "the active day" means all of them, not whichever route the
-// linking device happens to be on (user-decided 2026-08-23). Which language a player was on
-// lives in the browser and nowhere else, so a server that guessed would erase the round it
-// guessed wrong about. The product is bounded (two languages today), which is what makes
-// evaluating all of them the cheap answer as well as the right one.
-export function supportedLangs(): string[] {
-  return Object.keys(VOCAB_BUILDS);
-}
 
 // WHAT AN ACCOUNT IS WORTH, in the three numbers every surface that states one uses: the
 // live streak, the best it has ever held, and its total days. SOLVED DAYS are the measure —
@@ -58,8 +49,9 @@ export async function accountStakes(
   accountId: string,
   activeDay: number,
 ): Promise<AccountStakes> {
-  const langs = Object.keys(VOCAB_BUILDS);
-  const collections = await Promise.all(langs.map((lang) => history.solvedDays(accountId, lang)));
+  const collections = await Promise.all(
+    SUPPORTED_LANGS.map((lang) => history.solvedDays(accountId, lang)),
+  );
   return {
     // The BEST of each across languages, never their sum: a streak is a run of days in ONE
     // language, and adding two of them would state a number no streak screen ever shows.

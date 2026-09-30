@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { prefersReducedMotion } from '../hooks/useScramble';
 import digitsUrl from '../assets/digits.png';
 
 // The score watermark: the count drawn as big PIXEL BLOCKS behind the play content, solid
@@ -161,7 +162,7 @@ export default function CellDigits({ value, fit }: { value: number; fit?: number
     // from nothing — the number materializing cell by cell with the sentence decoding over
     // it (`PhraseIntro`). Never under reduced motion.
     const from = drawn.current ?? ARRIVAL;
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    const reduced = prefersReducedMotion();
     let flip = from.value !== value && !reduced ? { from, start: performance.now() } : null;
     let frame = 0;
 

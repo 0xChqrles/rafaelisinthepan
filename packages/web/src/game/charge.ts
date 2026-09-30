@@ -37,7 +37,8 @@
 // log's own canonical identity (`guessKey`) already decides what a counted guess is, and
 // this reads that log as given.
 
-import type { RankMap, RuntimeHole } from '@whippin/shared';
+import type { RankEntry, RankMap } from '@whippin/shared';
+import type { RuntimeHole } from './types';
 
 // The meter's target; charge caps here and the activation fires the moment it is reached.
 export const CHARGE_TARGET = 100;
@@ -78,7 +79,7 @@ export function chargeForRank(rank: number | undefined): number {
 // nothing else is: a repeat, a far word, a word that fills nothing on a full meter and is no
 // closer all keep the plain float. `best` is the hole's best BEFORE this guess, off the full
 // log (a guess still in the air may already have moved it).
-export type Strike = 'ultra' | 'slash';
+type Strike = 'ultra' | 'slash';
 export function strikeFor(rank: number | undefined, isNew: boolean, gained: number, best: number): Strike | undefined {
   if (rank === 0) return 'ultra';
   if (rank === undefined || !isNew) return undefined;
@@ -99,6 +100,23 @@ export interface HoleCharge {
   charge: number;
   active: boolean;
   given: GivenRank[];
+}
+
+// One secret's map as its distinct ranks, ascending — the walk outward from a word. One
+// pass over the alias-expanded map — tens of thousands of keys on a real puzzle — and an
+// active hole asks for it on every guess, so it is cached per map object, exactly like
+// the history's near field: the maps are immutable for a puzzle's lifetime.
+const ladderCache = new WeakMap<Record<string, RankEntry>, number[]>();
+
+function ladder(rankMap: Record<string, RankEntry>): number[] {
+  let rungs = ladderCache.get(rankMap);
+  if (!rungs) {
+    rungs = [...new Set(Object.values(rankMap).map((e) => e.rank))]
+      .filter((r) => r > 0)
+      .sort((a, b) => a - b);
+    ladderCache.set(rankMap, rungs);
+  }
+  return rungs;
 }
 
 // The whole log replayed onto the holes' meters — the meters as the play log describes
@@ -130,22 +148,10 @@ export function replayCharge(
       meters.set(h.secret, { charge: 0, solved: false, guessed: new Set([h.rank]), masked: [], taken: new Set() });
     }
   }
-  // Each secret's map as its distinct ranks, ascending — the walk outward from a word.
-  const ladders = new Map<string, number[]>();
-  const ladder = (secret: string): number[] => {
-    let rungs = ladders.get(secret);
-    if (!rungs) {
-      rungs = [...new Set(Object.values(ranks[secret] ?? {}).map((e) => e.rank))]
-        .filter((r) => r > 0)
-        .sort((a, b) => a - b);
-      ladders.set(secret, rungs);
-    }
-    return rungs;
-  };
   // Every word held opens the nearest rank farther than it that the player has not
   // reached; the GIVEN openings nearest the secret are the masks.
   const masksOf = (meter: Meter, secret: string): number[] => {
-    const rungs = ladder(secret);
+    const rungs = ladder(ranks[secret]);
     const openings = new Set<number>();
     for (const held of meter.guessed) {
       let lo = 0;

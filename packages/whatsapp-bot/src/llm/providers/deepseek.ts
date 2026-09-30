@@ -9,7 +9,7 @@ import {
   type LlmResponse,
 } from '../types';
 
-const DEFAULT_BASE_URL = 'https://api.deepseek.com';
+const ENDPOINT = 'https://api.deepseek.com/chat/completions';
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 interface WireMessage {
@@ -56,13 +56,11 @@ interface WireResponse {
 export interface DeepSeekOptions {
   apiKey: string;
   model: string;
-  baseUrl?: string;
   fetch?: typeof fetch;
 }
 
 export function deepSeekProvider(options: DeepSeekOptions): LlmProvider {
   const doFetch = options.fetch ?? fetch;
-  const url = `${(options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')}/chat/completions`;
   return {
     name: 'deepseek',
     model: options.model,
@@ -77,7 +75,6 @@ export function deepSeekProvider(options: DeepSeekOptions): LlmProvider {
           : request.effort
             ? { reasoning_effort: request.effort }
             : {}),
-        ...(request.json ? { response_format: { type: 'json_object' } } : {}),
         ...(request.tools && request.tools.length > 0
           ? {
               tools: request.tools.map((t) => ({
@@ -90,7 +87,7 @@ export function deepSeekProvider(options: DeepSeekOptions): LlmProvider {
       const started = Date.now();
       let response: Response;
       try {
-        response = await doFetch(url, {
+        response = await doFetch(ENDPOINT, {
           method: 'POST',
           headers: {
             'content-type': 'application/json',

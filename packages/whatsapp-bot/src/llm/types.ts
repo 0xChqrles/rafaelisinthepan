@@ -1,5 +1,5 @@
 // ONE provider-neutral request/response contract (#236), covering exactly what the bot
-// needs — ordinary generation, structured (JSON) output, tool calls, bounded output — and
+// needs — ordinary generation, tool calls, bounded output — and
 // not every feature every vendor exposes. Podium and chat code see only this; a provider's
 // own types stop at `providers/<name>.ts`.
 
@@ -25,7 +25,6 @@ export interface LlmRequest {
   messages: LlmMessage[];
   tools?: LlmTool[];
   maxTokens: number;
-  json?: boolean; // ask for a JSON object answer
   temperature?: number;
   // How much the model may THINK before answering, for a reasoning model: `none` turns the
   // thinking off, `low` bounds it. Absent = the provider's default.

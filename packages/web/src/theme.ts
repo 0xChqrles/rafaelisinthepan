@@ -6,7 +6,7 @@ import { darken } from 'polished';
 // as a second hex, so retuning the accent moves the whole button. Installed once from
 // main.tsx before the first render; the CSS carries a literal fallback for the instant
 // before it runs.
-export const ACCENT_DEEPEN = 0.07;
+const ACCENT_DEEPEN = 0.07;
 
 export function installTheme(): void {
   const root = document.documentElement;

@@ -24,6 +24,7 @@
 // side should have to handle.
 
 import { createHash } from 'node:crypto';
+import { playerPartition } from './profileStore';
 
 // What the base item is keyed by. SHA-256 is deterministic, so authentication stays ONE
 // direct read; and because only the digest is stored, a dump of this table authenticates
@@ -97,10 +98,6 @@ export type RevokeResult = 'removed' | 'absent' | 'mismatch';
 export interface DeviceStore {
   // AUTHENTICATION. One direct read of the base item, then the account-existence check.
   resolve(tokenHash: string): Promise<ResolvedDevice | null>;
-  // Is this account LIVE? An email link can delete the account a device leaves (#204), and
-  // an invite link carries a publicId that may now name nobody — so accepting one has to
-  // ask before writing an edge that would point at a deleted player.
-  accountExists(accountId: string): Promise<boolean>;
   // BOOTSTRAP — idempotent by token hash: a lost answer after a committed write must
   // return the device/account already created rather than mint another identity.
   bootstrap(input: BootstrapInput): Promise<ResolvedDevice>;
@@ -126,9 +123,7 @@ export const DEVICE_SORT_KEY = 'device';
 // The GSI's keys. The account partition is the player's own `player#<id>` prefix so a
 // human reading the table sees one account's rows together; the sort key is prefixed too,
 // so the index has room for a second per-account row shape without ambiguity.
-export function deviceIndexKey(accountId: string): string {
-  return `player#${accountId}`;
-}
+export const deviceIndexKey = playerPartition;
 
 export function deviceIndexSortKey(deviceId: string): string {
   return `device#${deviceId}`;
@@ -136,17 +131,9 @@ export function deviceIndexSortKey(deviceId: string): string {
 
 // The account item shares the player's partition with the #188 profile row, under its own
 // sort key: one Query on `player#<id>` shows everything an account is.
-export function accountKey(accountId: string): string {
-  return `player#${accountId}`;
-}
+export const accountKey = playerPartition;
 
 export const ACCOUNT_SORT_KEY = 'account';
-
-// The sparse index the device rows carry — only items holding BOTH index keys are in it,
-// which is every device row and nothing else on this table. Its name and key attributes
-// are the SHARED contract (`@whippin/shared` identity.ts): infra declares them, this
-// package writes and queries them, and a drift is a production-only ValidationException.
-export { DEVICE_INDEX_NAME } from '@whippin/shared';
 
 // Is this device's `lastSeenAt` from an earlier DAY than now? `lastSeenAt` is what makes
 // the sign-out screen legible ("this one, last used yesterday"), and it rides EVERY

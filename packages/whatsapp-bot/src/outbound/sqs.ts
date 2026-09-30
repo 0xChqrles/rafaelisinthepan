@@ -10,7 +10,7 @@ import {
   SendMessageCommand,
   type SQSClient,
 } from '@aws-sdk/client-sqs';
-import type { OutboundCommand, OutboundQueue } from './commands';
+import type { OutboundQueue } from './commands';
 
 // How many messages one receive may hand back, for the real queue AND its in-process
 // double: the double exists to model this transport, so a second spelling of its batch

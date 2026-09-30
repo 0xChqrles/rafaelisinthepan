@@ -15,7 +15,6 @@ Asserted against the schema in AGENTS.md, not against the implementation:
 
 import gen_phrase  # noqa: E402
 import gen_word  # noqa: E402
-from slug import slug  # noqa: E402
 
 # A small grouped neighborhood: two inflected groups around the word, so the walk has
 # real merging to do and the parity check compares a map with alias keys in it.
@@ -39,8 +38,8 @@ class _Embedding:
         self.ranking = ranking
         self.calls = []
 
-    def closest(self, word, _kv, _vocab, _matrix, *, n):
-        self.calls.append((word, n))
+    def closest(self, word, _kv, _vocab, _matrix):
+        self.calls.append(word)
         return self.ranking
 
 

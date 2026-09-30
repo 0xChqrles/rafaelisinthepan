@@ -21,6 +21,7 @@ import {
 } from '../identity';
 import { prefetchTurnstileTokens } from '../turnstile';
 import { withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
+import { holdOwnFace, ownProfileWritten } from '../state/ownFace';
 import ErrorScreen from '../components/ErrorScreen';
 import { navigate } from '../routing';
 import { ACCOUNT_PATH } from '../langs';
@@ -32,8 +33,6 @@ import LoadingWave from '../components/LoadingWave';
 import LangTitle from '../components/LangTitle';
 import { HeaderBack, HeaderLeft } from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
-// Inline SVG (vite-plugin-svgr): the close control back to the leaderboard, painting
-// with currentColor; the button's aria-label names it.
 
 // The #188 profile editor: name, tap-to-paint 10×10 grid, and the palette picker —
 // each swatch IS a palette ({bg, fg} pair, user-decided 2026-08-19: two colours,
@@ -140,6 +139,16 @@ const SAVE_RESTORE_MS = 240;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+// What an account STORES: its profile, or null for the 404 "never customized". Anything
+// else — transport, a 5xx, a malformed body — THROWS: the stored profile is unknown, and
+// neither reader (the editor's load, the guarded save) may guess it.
+async function readStoredProfile(publicId: string): Promise<ReturnType<typeof parseProfile> | null> {
+  const response = await fetch(profileUrl(publicId));
+  if (response.ok) return parseProfile(await response.json());
+  if (response.status === 404) return null;
+  throw new Error(`profile answered ${response.status}`);
+}
+
 export default function Profile() {
   // No puzzle to take a language from: same resolution as the `/` redirect.
   const lang = useUiLang();
@@ -174,6 +183,21 @@ export default function Profile() {
   // Bumped by RETRY — re-runs the read the way usePuzzle's retry re-runs its fetch.
   const [attempt, setAttempt] = useState(0);
 
+  // Open the editor on what `id` stores. Both READ halves: the assigned pseudonym stands in
+  // for an empty stored name, the assigned mark for a null stored avatar. The name is also
+  // sanitized on the way in (a no-op on anything the server stored, since it enforces the
+  // same rule). The BASELINE is those same display values, or a value the editor cannot
+  // reproduce would light SAVE up with nothing edited.
+  const openOn = (storedName: string, storedAvatar: string | null, id: string) => {
+    const shownName = nameForEditor(storedName, id);
+    const shownAvatar = avatarForEditor(storedAvatar, id);
+    const decoded = decodeAvatar(shownAvatar);
+    setName(shownName);
+    setPalette(decoded.palette);
+    setCells(decoded.cells);
+    setBaseline({ name: shownName, avatar: shownAvatar });
+  };
+
   // Read this identity's stored profile, and hold the editor back until it answers
   // (see LoadState). A 404 is the answer "never customized" and lands READY on the
   // blank start; anything else — transport, 5xx, a malformed body — is FAILED, which
@@ -195,15 +219,9 @@ export default function Profile() {
         if (held === null) {
           const seed = ensureLocalSeed();
           if (cancelled) return;
-          const name = nameForEditor('', seed);
-          const generated = defaultAvatar(seed);
-          const decoded = decodeAvatar(generated);
           setAssignedFrom(seed);
           setLoadedFor(null);
-          setName(name);
-          setPalette(decoded.palette);
-          setCells(decoded.cells);
-          setBaseline({ name, avatar: generated });
+          openOn('', null, seed);
           setLoad('ready');
           return;
         }
@@ -211,37 +229,11 @@ export default function Profile() {
         const publicId = held.accountId;
         setAssignedFrom(publicId);
         setLoadedFor(publicId);
-        const response = await fetch(profileUrl(publicId));
+        const stored = await readStoredProfile(publicId);
         if (cancelled || identityEpoch() !== epoch) return;
-        if (response.ok) {
-          const profile = parseProfile(await response.json());
-          // Both READ halves: the assigned pseudonym stands in for an empty stored name,
-          // the assigned mark for a null stored avatar. The name is also sanitized on the
-          // way in (a no-op on anything the server stored, since it enforces the same
-          // rule). The BASELINE is those same display values, or a value the editor
-          // cannot reproduce would light SAVE up with nothing edited.
-          const shownAvatar = avatarForEditor(profile.avatar, publicId);
-          const decoded = decodeAvatar(shownAvatar);
-          if (cancelled || identityEpoch() !== epoch) return;
-          const name = nameForEditor(profile.name, publicId);
-          setName(name);
-          setPalette(decoded.palette);
-          setCells(decoded.cells);
-          setBaseline({ name, avatar: shownAvatar });
-        } else if (response.status === 404) {
-          // Never customized: open on the assigned identity the boards already show
-          // (see the gating note above) — the same READ half, over an empty name.
-          const name = nameForEditor('', publicId);
-          const generated = defaultAvatar(publicId);
-          const decoded = decodeAvatar(generated);
-          setName(name);
-          setPalette(decoded.palette);
-          setCells(decoded.cells);
-          setBaseline({ name, avatar: generated });
-        } else {
-          setLoad('failed');
-          return;
-        }
+        // Never customized (null): open on the assigned identity the boards already show
+        // (see the gating note above) — the same READ halves, over an empty row.
+        openOn(stored?.name ?? '', stored?.avatar ?? null, publicId);
         setLoad('ready');
       } catch {
         // App remounts on an identity departure, but the fence is still explicit here:
@@ -372,107 +364,99 @@ export default function Profile() {
     // tap, the button's own dots for both legs. A deploy that fails saves nothing and
     // created nothing; TRY AGAIN re-runs the whole tap.
     let current = deviceIdentity();
-    if (current === null) {
-      try {
-        // The ONE acquisition the locally-decided username must NOT deploy into: this tap
-        // carries the player's OWN typed fields a beat later, so letting the placeholder
-        // race it would either lose the save or store a name nobody chose.
-        current = await withoutLocalIdentityDeploy(() => ensureDeviceIdentity());
-      } catch {
-        current = null;
-        outcome = 'account';
-      }
-    }
-    if (current !== null) {
-      epoch = identityEpochOf(current);
-      // The body is STORAGE space: an untouched assigned pseudonym stores as the empty
-      // name every surface derives it from (nameForStore's WRITE half) — compared against
-      // the pseudonym the player was actually SHOWN (`assignedFrom`: the account's, or the
-      // local seed's on a tokenless open). The baseline handling below stays in DISPLAY
-      // space, so a save can never leave the editor differing from what it just stored.
-      //
-      // **A save into an account the editor did NOT load is GUARDED** (PR-219 round-3
-      // review, P1): the baseline was a placeholder, so the account's stored profile is
-      // fetched first and every untouched field carried forward verbatim — a recovered or
-      // adopted account with a real profile must not have its name or mark wiped by the
-      // '' an untouched placeholder field would otherwise send.
-      const guarded = current.accountId !== loadedFor;
-      let fields: { name: string; avatar: string } | null = null;
-      if (guarded) {
+    // The header's face (`useOwnFace`) reads the profile again once this save has written
+    // it — and when this tap MINTS the account, it keeps the seed's face until then rather
+    // than reading a profile that does not exist yet (`state/ownFace.ts`).
+    const release = current === null ? holdOwnFace() : null;
+    let written = false;
+    try {
+      if (current === null) {
         try {
-          const response = await fetch(profileUrl(current.accountId));
-          if (identityEpoch() !== epoch) return;
-          if (response.ok) {
-            const profile = parseProfile(await response.json());
+          // The ONE acquisition the locally-decided username must NOT deploy into: this tap
+          // carries the player's OWN typed fields a beat later, so letting the placeholder
+          // race it would either lose the save or store a name nobody chose.
+          current = await withoutLocalIdentityDeploy(() => ensureDeviceIdentity());
+        } catch {
+          current = null;
+          outcome = 'account';
+        }
+      }
+      if (current !== null) {
+        epoch = identityEpochOf(current);
+        // The body is STORAGE space: an untouched assigned pseudonym stores as the empty
+        // name every surface derives it from (nameForStore's WRITE half) — compared against
+        // the pseudonym the player was actually SHOWN (`assignedFrom`: the account's, or the
+        // local seed's on a tokenless open). The baseline handling below stays in DISPLAY
+        // space, so a save can never leave the editor differing from what it just stored.
+        //
+        // **A save into an account the editor did NOT load is GUARDED** (PR-219 round-3
+        // review, P1): the baseline was a placeholder, so the account's stored profile is
+        // fetched first and every untouched field carried forward verbatim — a recovered or
+        // adopted account with a real profile must not have its name or mark wiped by the
+        // '' an untouched placeholder field would otherwise send.
+        const guarded = current.accountId !== loadedFor;
+        let fields: { name: string; avatar: string } | null = null;
+        if (guarded) {
+          try {
+            const stored = await readStoredProfile(current.accountId);
             if (identityEpoch() !== epoch) return;
-            fields = guardedSaveBody(
-              { name: clean, avatar: encoded },
-              baseline,
-              assignedFrom,
-              { name: profile.name, avatar: profile.avatar },
-            );
-          } else if (response.status === 404) {
-            // Never customized: the intended save applies in full.
-            fields = guardedSaveBody({ name: clean, avatar: encoded }, baseline, assignedFrom, null);
-          } else {
+            // Never customized (null): the intended save applies in full.
+            fields = guardedSaveBody({ name: clean, avatar: encoded }, baseline, assignedFrom, stored);
+          } catch {
+            if (identityEpoch() !== epoch) return;
             // What the account holds is UNKNOWN — refusing beats risking the wipe the
             // guard exists to prevent. TRY AGAIN re-runs the whole tap.
             outcome = 'error';
           }
-        } catch {
-          if (identityEpoch() !== epoch) return;
-          outcome = 'error';
+        } else {
+          fields = {
+            name: nameForStore(clean, assignedFrom),
+            avatar: avatarForStore(encoded, assignedFrom),
+          };
         }
-      } else {
-        fields = {
-          name: nameForStore(clean, assignedFrom),
-          avatar: avatarForStore(encoded, assignedFrom),
-        };
-      }
-      if (fields !== null && outcome === null) {
-        const body = { token: current.token, ...fields };
-        try {
-          const response = await postProfileBody(profileUrl(), body);
-          if (identityEpoch() !== epoch) return;
-          if (response.ok) {
-            if (guarded) {
-              // The editor is now THIS account's: re-bind it to the stored truth the save
-              // just merged, in DISPLAY space — a kept server name or mark appears, the
-              // placeholder identity is gone, and a further save is an ordinary one.
-              const shownName = nameForEditor(body.name, current.accountId);
-              const shownAvatar = avatarForEditor(body.avatar || null, current.accountId);
-              const decoded = decodeAvatar(shownAvatar);
-              setName(shownName);
-              setPalette(decoded.palette);
-              setCells(decoded.cells);
-              setBaseline({ name: shownName, avatar: shownAvatar });
-              setAssignedFrom(current.accountId);
-              setLoadedFor(current.accountId);
-            } else {
-              // DISPLAY space, like the name half: the body may have stored the empty
-              // avatar, but what the editor holds — and must compare against — is the
-              // drawing shown.
-              setBaseline({ name: clean, avatar: encoded });
-            }
-          } else {
-            const refusal = (await response.json().catch(() => null)) as { error?: string } | null;
+        if (fields !== null && outcome === null) {
+          const body = { token: current.token, ...fields };
+          try {
+            const response = await postProfileBody(profileUrl(), body);
             if (identityEpoch() !== epoch) return;
-            // A device signed out from elsewhere raises the screen that explains it; the
-            // save still reports as failed, because it was. (The body was already read
-            // for the moderation codes, so the shared PREDICATE decides directly.)
-            if (isUnknownDeviceAnswer(response.status, refusal?.error)) {
-              markDeviceSignedOut(epoch);
+            if (response.ok) {
+              if (guarded) {
+                // The editor is now THIS account's: re-bind it to the stored truth the save
+                // just merged, in DISPLAY space — a kept server name or mark appears, the
+                // placeholder identity is gone, and a further save is an ordinary one.
+                openOn(body.name, body.avatar || null, current.accountId);
+                setAssignedFrom(current.accountId);
+                setLoadedFor(current.accountId);
+              } else {
+                // DISPLAY space, like the name half: the body may have stored the empty
+                // avatar, but what the editor holds — and must compare against — is the
+                // drawing shown.
+                setBaseline({ name: clean, avatar: encoded });
+              }
+              written = true;
+            } else {
+              const refusal = (await response.json().catch(() => null)) as { error?: string } | null;
+              if (identityEpoch() !== epoch) return;
+              // A device signed out from elsewhere raises the screen that explains it; the
+              // save still reports as failed, because it was. (The body was already read
+              // for the moderation codes, so the shared PREDICATE decides directly.)
+              if (isUnknownDeviceAnswer(response.status, refusal?.error)) {
+                markDeviceSignedOut(epoch);
+              }
+              outcome =
+                refusal?.error === 'name_rejected' || refusal?.error === 'avatar_rejected'
+                  ? refusal.error
+                  : 'error';
             }
-            outcome =
-              refusal?.error === 'name_rejected' || refusal?.error === 'avatar_rejected'
-                ? refusal.error
-                : 'error';
+          } catch {
+            if (identityEpoch() !== epoch) return;
+            outcome = 'error';
           }
-        } catch {
-          if (identityEpoch() !== epoch) return;
-          outcome = 'error';
         }
       }
+    } finally {
+      if (release) release(written);
+      else if (written) ownProfileWritten();
     }
     await sleep(Math.max(0, SAVE_DOTS_MIN_MS - (Date.now() - started)));
     if (epoch !== null && identityEpoch() !== epoch) return;
@@ -616,14 +600,11 @@ export default function Profile() {
               </button>
             </div>
 
-            {/* Nothing to save = disabled, and .mix-btn:disabled::before unlights the
-                device card's LED — the board itself says whether there is a change.
-                While saving, the label rolls out the bottom and the dot loader drops in
-                from the top; the restore beat rolls the label back up. */}
+            {/* Nothing to save = disabled — the board itself says whether there is a
+                change. While saving, the label rolls out the bottom and the dot loader
+                drops in from the top; the restore beat rolls the label back up. */}
             <button
               type="button"
-              // The phase class also drives the LED square (the ::before), which rolls
-              // with the label — it belongs to the content, not to the button frame.
               className={`mix-btn profile-save${phase !== 'idle' ? ` ${phase}` : ''}`}
               disabled={phase !== 'idle' || !dirty}
               aria-busy={phase === 'saving'}
@@ -655,11 +636,6 @@ export default function Profile() {
               />
             )}
           </div>
-          {/* The account's devices, and the way to sign one out (#216). It belongs on this
-              screen because this screen IS the identity screen — and only when an account
-              EXISTS: a tokenless editor has no device rows to list, and asking would be a
-              private read on a visit that never acted (the list appears the moment SAVE's
-              deploy lands, since the identity above is reactive). */}
         </div>
       )}
     </>

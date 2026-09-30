@@ -374,9 +374,6 @@ const STRINGS = {
   // takes the headline itself.
   sourceBy: { en: 'by', fr: 'de' },
   ariaClose: { en: 'close', fr: 'fermer' },
-  // A masked hint picked into the sentence: what ENTER does then (the prompt's description).
-  reveal: { en: 'REVEAL', fr: 'RÉVÉLER' },
-  // The hints a round took, beside its tries on the result (user-decided 2026-09-22).
   // The streak celebration's ending hint: pure "what to do" — the whole screen dismisses,
   // so naming a "why" (continue/close — continue to WHAT? the game is done) would only
   // raise a question it can't answer. Pointer-aware: coarse pointers read TAP.
@@ -398,7 +395,6 @@ const STRINGS = {
   ariaHome: { en: "Today's puzzle", fr: 'Puzzle du jour' },
   ariaHelp: { en: 'How to play', fr: 'Comment jouer' },
   // ---- archive calendar (#55): playable past days behind a calendar screen.
-  archive: { en: 'ARCHIVE', fr: 'ARCHIVE' },
   ariaArchive: { en: 'Past puzzles', fr: 'Puzzles précédents' },
   // The account area's way OUT, on the header's own title (2026-08-29). The visible words
   // are the screen's NAME; this is what the control is called for a reader.
@@ -513,16 +509,9 @@ const STRINGS = {
     en: 'A hint: the secret word is very high, with a peak and snow on top.',
     fr: 'Un indice : le mot secret est très haut, avec un sommet et de la neige.',
   },
-  tutHintMontagne: {
-    en: 'A hint: the secret word is very high, with a peak and snow on top.',
-    fr: 'Un indice : le mot secret est très haut, avec un sommet et de la neige.',
-  },
   tutHintDog: { en: 'A hint: the secret word is man’s best friend.', fr: 'Un indice : le mot secret est le meilleur ami de l’homme.' },
   tutHintMoon: { en: 'A hint: the secret word lights the night.', fr: 'Un indice : le mot secret éclaire la nuit.' },
-  tutHintChien: { en: 'A hint: the secret word is man’s best friend.', fr: 'Un indice : le mot secret est le meilleur ami de l’homme.' },
-  tutHintLune: { en: 'A hint: the secret word lights the night.', fr: 'Un indice : le mot secret éclaire la nuit.' },
   tutHintCat: { en: 'A hint: the secret word purrs.', fr: 'Un indice : le mot secret ronronne.' },
-  tutHintChat: { en: 'A hint: the secret word purrs.', fr: 'Un indice : le mot secret ronronne.' },
   // The pair's two hints tell the twins apart without a letter (the letter left with the
   // activation, 2026-09-22): the statue's word, and its everyday twin.
   tutHintLiberty: { en: 'A hint: the secret word is being free — the statue in New York is named for it.', fr: 'Un indice : le mot secret, c’est être libre — la statue de New York porte son nom.' },

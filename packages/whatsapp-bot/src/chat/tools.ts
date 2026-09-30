@@ -15,8 +15,8 @@ import {
   type PlayerSummary,
 } from '../domain/declarations';
 import { parseDay } from '../domain/day';
-import { buildPodium, otherLanguages } from '../domain/podium';
-import { dayStandings, languageName, spokenShare, usualBeats } from '../domain/shareContext';
+import { buildPodium, otherLanguages, rankOf } from '../domain/podium';
+import { dayStandings, languageName, scoreOf, spokenShare, usualBeats } from '../domain/shareContext';
 import { displayName } from '../domain/names';
 import type { LlmTool } from '../llm/types';
 
@@ -32,19 +32,13 @@ const MAX_DAYS = HISTORY_WINDOW_DAYS;
 export interface ToolContext {
   group: GroupConfig;
   today: number; // active Whippin dayNumber
-  sender: string; // the person asking
   declarations: DeclarationStore;
-  now: () => Date;
 }
 
 export type Resolution =
   | { kind: 'one'; player: PlayerSummary }
   | { kind: 'ambiguous'; candidates: string[] }
   | { kind: 'unknown'; known: string[] };
-
-function norm(s: string): string {
-  return fold(s);
-}
 
 // Exact (folded) match first, on the operator override or the latest snapshot; then a
 // prefix match. Several hits are AMBIGUOUS, none is UNKNOWN — both spelled out with the
@@ -54,13 +48,13 @@ export function resolvePlayer(
   players: readonly PlayerSummary[],
   group: GroupConfig,
 ): Resolution {
-  const q = norm(query);
+  const q = fold(query);
   const labelled = players.map((p) => ({ player: p, name: displayName(group, p.sender, p.name) }));
   const byJid = labelled.find(({ player }) => player.sender === query.trim());
   if (byJid) return { kind: 'one', player: byJid.player };
   if (q === '') return { kind: 'unknown', known: labelled.map((l) => l.name) };
-  const exact = labelled.filter(({ name }) => norm(name) === q);
-  const hits = exact.length > 0 ? exact : labelled.filter(({ name }) => norm(name).startsWith(q));
+  const exact = labelled.filter(({ name }) => fold(name) === q);
+  const hits = exact.length > 0 ? exact : labelled.filter(({ name }) => fold(name).startsWith(q));
   if (hits.length === 1) return { kind: 'one', player: hits[0].player };
   if (hits.length > 1) return { kind: 'ambiguous', candidates: hits.map((h) => h.name) };
   return { kind: 'unknown', known: labelled.map((l) => l.name) };
@@ -72,10 +66,6 @@ function clampDays(raw: unknown, fallback: number = DEFAULT_DAYS): number {
   const asNumber = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
   const days = Number.isFinite(asNumber) ? Math.floor(asNumber) : fallback;
   return Math.min(MAX_DAYS, Math.max(1, days));
-}
-
-function scoreOf(d: Declaration): number | '∞' {
-  return d.capped ? '∞' : d.score;
 }
 
 function dayOf(rows: readonly Declaration[], day: number): Declaration[] {
@@ -172,10 +162,6 @@ export const TOOL_DEFINITIONS: LlmTool[] = [
 export interface ToolRunner {
   definitions: LlmTool[];
   run(name: string, args: unknown): Promise<unknown>;
-  // What the group calls one JID — the same reading `resolvePlayer` labels its candidates
-  // with, so a name substituted into a question is a name the tools can look up again. It
-  // rides the runner's cached window, so a question that also calls a tool pays one read.
-  labelFor(jid: string): Promise<string>;
 }
 
 // What the group calls each of some player keys, off the same window the tools resolve
@@ -253,7 +239,7 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
       const line = podium.lines.find((l) => l.player.jid === player.sender);
       const elsewhere = all.filter((x) => x.sender === player.sender && x.lang !== ctx.group.language);
       return {
-        player: nameOf({ ...row, sender: player.sender, name: player.name } as Declaration),
+        player: displayName(ctx.group, player.sender, player.name),
         date: dateForDayNumber(day),
         played: row !== undefined,
         score: row ? scoreOf(row) : null,
@@ -311,8 +297,8 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
         const a = rows.find((x) => x.dayNumber === day && x.sender === left.sender);
         const b = rows.find((x) => x.dayNumber === day && x.sender === right.sender);
         if (!a || !b) continue;
-        const sa = a.capped ? Infinity : a.score;
-        const sb = b.capped ? Infinity : b.score;
+        const sa = rankOf(a);
+        const sb = rankOf(b);
         const winner: 'left' | 'right' | null = sa < sb ? 'left' : sb < sa ? 'right' : null;
         if (winner === 'left') leftWins += 1;
         else if (winner === 'right') rightWins += 1;
@@ -376,8 +362,9 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
       for (const day of new Set(rows.map((x) => x.dayNumber))) {
         for (const jid of winnersOf(rows, day)) wins.set(jid, (wins.get(jid) ?? 0) + 1);
       }
+      const seen = playersIn(rows);
       const label = (jid: string) => {
-        const p = playersIn(rows).find((x) => x.sender === jid);
+        const p = seen.find((x) => x.sender === jid);
         return p ? displayName(ctx.group, jid, p.name) : jid;
       };
       const top = (m: Map<string, number>) =>
@@ -396,10 +383,6 @@ export function createToolRunner(ctx: ToolContext): ToolRunner {
 
   return {
     definitions: TOOL_DEFINITIONS,
-    async labelFor(jid) {
-      const known = (await players()).find((p) => p.sender === jid);
-      return displayName(ctx.group, jid, known?.name ?? '');
-    },
     async run(name, args) {
       const handler = Object.prototype.hasOwnProperty.call(handlers, name) ? handlers[name] : undefined;
       if (!handler) return { error: `unknown tool ${name}` };

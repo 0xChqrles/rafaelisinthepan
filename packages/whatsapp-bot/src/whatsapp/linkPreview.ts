@@ -21,7 +21,7 @@ import type { Log } from '../log';
 // rendered on a cache miss, measured at 2.3s — against the 3s Baileys defaults to.
 const FETCH_TIMEOUT_MS = 10_000;
 // The whole build, the upload included: well inside the queue's 60s visibility timeout.
-export const PREVIEW_BUDGET_MS = 20_000;
+const PREVIEW_BUDGET_MS = 20_000;
 // Baileys' own default for the small inline thumbnail.
 const THUMBNAIL_WIDTH_PX = 192;
 

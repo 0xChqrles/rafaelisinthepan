@@ -201,6 +201,20 @@ describe('rankPeriod (#271)', () => {
     expect(ranked.map((row) => row.rank)).toEqual([1, 1, 3]);
   });
 
+  it('pays nothing past the third RANK: a tie for second takes the last podium place with it', () => {
+    const E = 'eeeeeeeeeeeeeeee';
+    // One day: A first (3), B and C share second (2 each), so D is FOURTH and E fifth.
+    const ranked = rankPeriod([
+      day(A, '2026-09-07', 1), day(B, '2026-09-07', 2), day(C, '2026-09-07', 2),
+      day(D, '2026-09-07', 5), day(E, '2026-09-07', 6),
+    ]);
+    expect(ranked.map((row) => [row.publicId, row.points, row.solvedDays])).toEqual([
+      [A, 3, 1], [B, 2, 1], [C, 2, 1], [D, 0, 1], [E, 0, 1],
+    ]);
+    // D and E hold no points and one day each: fewer tries tells them apart.
+    expect(ranked.map((row) => row.rank)).toEqual([1, 2, 2, 4, 5]);
+  });
+
   it('breaks equal points by solved days, then by fewer tries', () => {
     const ranked = rankPeriod([
       // Day 1: B first (3), C second (2), A third (1).

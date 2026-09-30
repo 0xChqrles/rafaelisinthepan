@@ -104,6 +104,33 @@ export function dynamoLinkStore(
     return response.Item;
   };
 
+  // CONSUMING the challenge, as the item a final transaction (bind, adopt) carries: that
+  // is what makes the whole verification one-shot. The condition ties it to what `verify`
+  // accepted — the SAME challenge — so a resend after the read, or another final write
+  // consuming it first, refuses the whole transaction rather than granting the address
+  // without its code.
+  const consumeChallenge = (
+    emailHash: string,
+    codeHash: string,
+    seconds: number,
+  ): TransactWriteItem => ({
+    Delete: {
+      TableName: tableName,
+      Key: { pk: { S: challengeKey(emailHash) }, sk: { S: CHALLENGE_SORT_KEY } },
+      ConditionExpression: '#codeHash = :codeHash AND #expiresAt > :now AND #attempts < :max',
+      ExpressionAttributeNames: {
+        '#codeHash': 'codeHash',
+        '#expiresAt': 'expiresAt',
+        '#attempts': 'attempts',
+      },
+      ExpressionAttributeValues: {
+        ':codeHash': { S: codeHash },
+        ':now': { N: String(seconds) },
+        ':max': { N: String(LINK_CODE_MAX_ATTEMPTS) },
+      },
+    },
+  });
+
   return {
     async spendSends(allowances, windowSeconds, now) {
       if (allowances.length === 0) return true;
@@ -337,30 +364,7 @@ export function dynamoLinkStore(
                     },
                   },
                 },
-                {
-                  Delete: {
-                    TableName: tableName,
-                    Key: {
-                      pk: { S: challengeKey(input.emailHash) },
-                      sk: { S: CHALLENGE_SORT_KEY },
-                    },
-                    // Verification and consumption name the SAME challenge. A resend after
-                    // the read, or another final write consuming it first, refuses the whole
-                    // transaction rather than granting the address without its code.
-                    ConditionExpression:
-                      '#codeHash = :codeHash AND #expiresAt > :now AND #attempts < :max',
-                    ExpressionAttributeNames: {
-                      '#codeHash': 'codeHash',
-                      '#expiresAt': 'expiresAt',
-                      '#attempts': 'attempts',
-                    },
-                    ExpressionAttributeValues: {
-                      ':codeHash': { S: input.codeHash },
-                      ':now': { N: String(seconds) },
-                      ':max': { N: String(LINK_CODE_MAX_ATTEMPTS) },
-                    },
-                  },
-                },
+                consumeChallenge(input.emailHash, input.codeHash, seconds),
               ],
             }),
           );
@@ -422,26 +426,7 @@ export function dynamoLinkStore(
             ConditionExpression: 'attribute_exists(pk)',
           },
         },
-        {
-          // Consuming the challenge inside this transaction is what makes the whole
-          // verification one-shot. The condition ties it to what `verify` accepted.
-          Delete: {
-            TableName: tableName,
-            Key: { pk: { S: challengeKey(input.emailHash) }, sk: { S: CHALLENGE_SORT_KEY } },
-            ConditionExpression:
-              '#codeHash = :codeHash AND #expiresAt > :now AND #attempts < :max',
-            ExpressionAttributeNames: {
-              '#codeHash': 'codeHash',
-              '#expiresAt': 'expiresAt',
-              '#attempts': 'attempts',
-            },
-            ExpressionAttributeValues: {
-              ':codeHash': { S: input.codeHash },
-              ':now': { N: String(seconds) },
-              ':max': { N: String(LINK_CODE_MAX_ATTEMPTS) },
-            },
-          },
-        },
+        consumeChallenge(input.emailHash, input.codeHash, seconds),
       ];
       if (input.departFrom !== undefined) {
         identity.push({

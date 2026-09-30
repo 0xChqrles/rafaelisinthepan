@@ -12,7 +12,7 @@ const group = parseGroupConfig('g.json', {
   chat: { enabled: true },
   names: { '33680734588@s.whatsapp.net': 'Bruno Leduc' },
 });
-const names = { group, me: 'Charles', bot: 'WhippinBot' };
+const names = { group, me: 'Charles' };
 
 describe('reading a WhatsApp export (#277)', () => {
   it('reads days, times, authors, quotes and bodies that run over several lines', () => {

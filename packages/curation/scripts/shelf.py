@@ -14,6 +14,7 @@ from slug import slug
 
 from epub import epub_metadata
 from lyrics import parse_song
+from quotes import same_person
 
 # The languages the curator makes days in (#317), each with its own shelf, archive and
 # vectors; no rule looks across them (user-decided 2026-09-25).
@@ -94,12 +95,8 @@ def sentence_key(sentence: str) -> str:
 def ledger_lines(lang: str) -> list[dict]:
     """Every line of the ledger for a language, in file order, a broken or non-object line
     skipped — corrections included, each as its own line."""
-    try:
-        text = _paths.PUBLISHED_LEDGER.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return []
     out = []
-    for line in text.splitlines():
+    for line in _paths.PUBLISHED_LEDGER.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         try:
@@ -127,9 +124,10 @@ def _holes(entry: dict):
 
 
 def archive(lang: str, today: date | None = None) -> dict:
-    """What has been PUBLISHED, off the ledger (user-decided 2026-09-08 — the one source
-    of truth; neither the generation output nor the backend's local store is read):
-    {works: [{author, work}], secrets: {slug} (the ones still in their
+    """What has been PUBLISHED, off the ledger (the one source of truth; neither the
+    generation output nor the backend's local store is read):
+    {works: [{author, work}] (one per author and `title_key`, the key `in_archive`
+    compares: two volumes are two works), secrets: {slug} (the ones still in their
     SECRET_COOLDOWN_DAYS, judged on the game DAY they were published for), pairs: {secret
     slug: {start word}} (every secret/start pair ever played — permanent), sentences:
     {key}, last_used: {author slug: date}} (the artist cooldown's clock)."""
@@ -156,7 +154,7 @@ def archive(lang: str, today: date | None = None) -> dict:
         src = entry.get("source") or {}
         if not isinstance(src, dict):
             src = {}
-        key = (slug(src.get("author", "")), slug(src.get("work", "")))
+        key = (slug(src.get("author", "")), title_key(src.get("work", "")))
         if src and key not in seen:
             seen.add(key)
             works.append({"author": src.get("author", ""), "work": src.get("work", "")})
@@ -169,15 +167,51 @@ def archive(lang: str, today: date | None = None) -> dict:
             "last_used": last_used, "last_music": last_music}
 
 
+def title_key(title: str) -> str:
+    """A title as one comparable key: each word folded by `slug` without its dashes (« Jean
+    - Christophe » is « Jean-Christophe »), its DIGITS kept (`slug` drops them, and
+    « Vernon Subutex 1 » is not « Vernon Subutex 2 »)."""
+    return "".join(slug(w).replace("-", "") + "".join(ch for ch in w if ch.isdigit())
+                   for w in title.split())
+
+
+def _same_author(a: str, b: str) -> bool:
+    """An author missing on either side does not tell two books apart; one spelling is one
+    author even when `same_person` has no name part left to compare (« Oé »)."""
+    return not a.strip() or not b.strip() or slug(a) == slug(b) or same_person(a, b)
+
+
+def _contains(longer: str, shorter: str) -> bool:
+    """`shorter` inside `longer` without splitting a number: « vernonsubutex1 » is not
+    inside « vernonsubutex12 »."""
+    i = longer.find(shorter)
+    while i != -1:
+        j = i + len(shorter)
+        if not ((shorter[-1].isdigit() and j < len(longer) and longer[j].isdigit())
+                or (shorter[0].isdigit() and i and longer[i - 1].isdigit())):
+            return True
+        i = longer.find(shorter, i + 1)
+    return False
+
+
 def in_archive(book: dict, works: list[dict]) -> bool:
-    """A shelf book already used: same folded title, or the archived work's title
-    contained in the book's (editions pad titles with subtitles)."""
-    title = slug(book.get("title", ""))
+    """A shelf book already published (never the same book twice). The same `title_key`
+    is the same book whoever the author is: the ledger and the shelf can spell one author
+    two ways (`Fyodor Dostoevsky` / `Fédor Dostoïevski`). One key CONTAINED in the other
+    (an edition pads its title: `Le postier V2`, `… (French Edition)`), never splitting a
+    number, is the same book only by the same author — « Les Années douces » is not
+    Ernaux's « Les années », and « D. » is inside any title with a d."""
+    title = title_key(book.get("title", ""))
     if not title:
         return False
     for w in works:
-        archived = slug(w.get("work", ""))
-        if archived and (archived == title or archived in title or title in archived):
+        archived = title_key(w.get("work", ""))
+        if not archived:
+            continue
+        if archived == title:
+            return True
+        if (_contains(title, archived) or _contains(archived, title)) and _same_author(
+                w.get("author", ""), book.get("author", "")):
             return True
     return False
 
@@ -203,6 +237,11 @@ def find_unit(mined: list[str], sentence: str) -> str | None:
     return next((u for u in mined if sentence_key(u) == key), None)
 
 
+def sidecar_path(puzzle_path: str) -> str:
+    """The judge's scores gen_phrase writes beside a puzzle (#308)."""
+    return puzzle_path[:-len(".json")] + ".contextual.json"
+
+
 def erase_puzzle(path: Path) -> None:
     """Delete one candidate puzzle under the generation output and the empty
     directories it leaves."""
@@ -215,10 +254,11 @@ def erase_puzzle(path: Path) -> None:
 
 def forget(index: dict, work: dict, lang: str) -> list[str]:
     """Erase an attempt: the work's index entry and every candidate puzzle written for it
-    under the GENERATION OUTPUT (never the store — a published day is not an attempt).
+    under the GENERATION OUTPUT (never the store — a published day is not an attempt),
+    the title compared by `title_key` (a retry on one volume keeps another volume's drafts).
     Returns what was deleted."""
     index["books"].pop(work["file"], None)
-    author, title = slug(work.get("author", "")), slug(work.get("title", ""))
+    author, title = slug(work.get("author", "")), title_key(work.get("title", ""))
     if not title:  # an untitled work would match every source-less puzzle
         return []
     deleted = []
@@ -227,10 +267,10 @@ def forget(index: dict, work: dict, lang: str) -> list[str]:
             src = json.loads(path.read_text(encoding="utf-8")).get("source") or {}
         except (OSError, ValueError):
             continue
-        if slug(src.get("author", "")) == author and slug(src.get("work", "")) == title:
+        if slug(src.get("author", "")) == author and title_key(src.get("work", "")) == title:
             # A retried WORK starts over, so the judge's scores beside it go too (a
             # retried SENTENCE keeps them: `curate.retry_target` replays them).
-            path.with_name(path.stem + ".contextual.json").unlink(missing_ok=True)
+            Path(sidecar_path(str(path))).unlink(missing_ok=True)
             erase_puzzle(path)
             deleted.append(str(path))
     return deleted

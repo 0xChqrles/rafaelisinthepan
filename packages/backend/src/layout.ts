@@ -16,19 +16,6 @@
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-// A strict "YYYY-MM-DD" that is also a real calendar date (rejects 2026-13-40 etc).
-export function isValidDate(date: string): boolean {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  if (!m) return false;
-  const [, y, mo, d] = m.map(Number);
-  const probe = new Date(Date.UTC(y, mo - 1, d));
-  return (
-    probe.getUTCFullYear() === y &&
-    probe.getUTCMonth() === mo - 1 &&
-    probe.getUTCDate() === d
-  );
-}
-
 // The store key (also the basename, the layout is flat) for a (game day, language):
 // "<date>.<lang>.json". Used by the readers to GetObject/readFile directly and by `publish`
 // to write — one key per (date, lang), so there is never ambiguity.
@@ -48,7 +35,17 @@ export function sliceKey(date: string, lang: string): string {
 // Default local store root: packages/backend/.local-store (gitignored). Override with
 // the PUZZLE_STORE env var. Resolved from this module so it is the same dir whether
 // `serve` or `publish` is run from the repo root or the package directory.
-export function defaultLocalStoreRoot(): string {
+function defaultLocalStoreRoot(): string {
   const here = path.dirname(fileURLToPath(import.meta.url)); // packages/backend/src
   return path.resolve(here, '..', '.local-store');
+}
+
+// The local store root every local tool reads and writes: `override` (publish's `--store`)
+// if given, else PUZZLE_STORE, else the default above. A RELATIVE path resolves against the
+// directory the command was INVOKED from (pnpm/npm set INIT_CWD to it), not the package dir
+// pnpm `cd`s into — ONE resolution, so `publish`, `serve`, `inventory` and `board:seed`
+// given the same value can never land in different directories.
+export function localStoreRoot(override?: string, env: NodeJS.ProcessEnv = process.env): string {
+  const raw = override ?? env.PUZZLE_STORE;
+  return raw ? path.resolve(env.INIT_CWD ?? process.cwd(), raw) : defaultLocalStoreRoot();
 }

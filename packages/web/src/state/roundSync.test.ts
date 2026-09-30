@@ -20,7 +20,7 @@
 //     stored twice; a 4xx VERDICT closes the conversation instead of spinning.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RankMap, RuntimeHole } from '@whippin/shared';
+import type { RankMap } from '@whippin/shared';
 import { postRoundBody } from '../api';
 import { useGameStore, roundKeyForDay } from './gameStore';
 import {
@@ -33,7 +33,7 @@ import {
   retryRoundSync,
   writeDelayMs,
 } from './roundSync';
-import { replayHoles } from '../game/scoring';
+import { roundCapped } from '../game/playLog';
 import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
 
 // `roundUrl` is mocked with the rest (the house pattern — see useScoreHistogram.test.ts's
@@ -103,13 +103,6 @@ const SECRET_MAP: RankMap = {
   },
 };
 
-function freshHoles(): RuntimeHole[] {
-  return [
-    { pos: 1, secret: 'foret', word: 'bois', rank: 87, startRank: 87 },
-    { pos: 2, secret: 'ancienne', word: 'vieille', rank: 40, startRank: 40 },
-  ];
-}
-
 // The published VERSION a round is played on (#203) — the round's identity everywhere, and
 // what a republish changes.
 const REVISION = 'a1b2c3d4e5f60718';
@@ -127,7 +120,7 @@ function ctx(key: string = KEY, revision: string = REVISION, early = false) {
   } as const;
 }
 
-function ok(guesses: string[], solved = false) {
+function ok(guesses: string[], solved = false, credited?: boolean) {
   return {
     ok: true,
     status: 200,
@@ -138,6 +131,8 @@ function ok(guesses: string[], solved = false) {
       // startedAt to carry with it. `solved` is what the SERVER derived from the log it
       // stores (#203) — the fact that says the day's score row exists.
       solved,
+      // Only the answer CONFIRMING an on-time solve carries it (#211); absent otherwise.
+      ...(credited === undefined ? {} : { credited }),
       now: '2026-08-21T09:30:00.000Z',
     }),
   } as unknown as Response;
@@ -188,11 +183,9 @@ function server(key: string = KEY) {
   return entry?.status === 'ready' ? entry.server : undefined;
 }
 
-// The two facts the SCREEN derives from that state (#214). Restated here rather than
-// imported, because what is pinned is the SHAPE the screen reads, not Game's spelling of it.
+// What the SCREEN derives from that state (#214), by the screen's own reading of it.
 function capped(key: string = KEY): boolean {
-  const s = server(key);
-  return s !== undefined && !s.solved && s.guesses.length >= ROUND_GUESS_CAP;
+  return roundCapped(server(key));
 }
 
 function bodyOf(call: number): {
@@ -237,16 +230,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-});
-
-describe('replayHoles', () => {
-  it('walks the log under the game-loop rule: closer word + lower rank, solved locked', () => {
-    const holes = replayHoles(freshHoles(), SECRET_MAP, ['bois', 'ancienne']);
-    expect(holes[0]).toMatchObject({ word: 'bois', rank: 5 }); // improved
-    expect(holes[1]).toMatchObject({ word: 'ancienne', rank: 0 }); // solved
-    // The fresh template is never mutated.
-    expect(freshHoles()[0]).toMatchObject({ word: 'bois', rank: 87 });
-  });
 });
 
 describe('write pacing', () => {
@@ -732,6 +715,26 @@ describe('the SERVER\'s solve (#203/#214)', () => {
     });
   });
 
+  // ON TIME is the SERVER's verdict (#211): the client makes no comparison, so the answer
+  // confirming the solve is the only place the credit can come from.
+  it('publishes the server\'s on-time verdict carried by the confirming append', async () => {
+    post.mockResolvedValueOnce(status(404));
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+
+    seedOutbox(['foret']);
+    post.mockResolvedValueOnce(ok(['foret'], true, true));
+    notifyGuess(KEY);
+    await settle();
+    expect(server()).toEqual({
+      guesses: ['foret'],
+      solved: true,
+      solvedByAppend: true,
+      credited: true,
+    });
+  });
+
   it('a solve read at MOUNT is adopted history — nothing may celebrate it', async () => {
     post.mockResolvedValueOnce(ok(['foret', 'ancienne'], true));
     seedOutbox();
@@ -739,6 +742,8 @@ describe('the SERVER\'s solve (#203/#214)', () => {
     await settle();
     expect(server()?.solved).toBe(true);
     expect(server()?.solvedByAppend).toBe(false);
+    // The read is not the confirming answer: it carries no verdict, so nothing is credited.
+    expect(server()?.credited).toBe(false);
   });
 
   it('a solved round read at mount FREEZES: nothing is appended, the outbox is dropped', async () => {

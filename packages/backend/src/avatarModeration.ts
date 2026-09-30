@@ -10,8 +10,8 @@ import { AVATAR_SIZE } from '@whippin/shared';
 type Grid = string[]; // rows of 'X' (ink) / '.' (background)
 
 // The canonical 5×5 swastika: full vertical + horizontal bars through the centre, each
-// arm hooked 90° at its end. Rotating it 90° maps it onto itself (C4 symmetry), so the
-// variant set below collapses to the two chiralities per scale.
+// arm hooked 90° at its end. Rotating it 90° maps it onto itself (C4 symmetry), so its
+// only other orientation is the mirror image: two chiralities per scale.
 const BASE: Grid = [
   'X.XXX',
   'X.X..',
@@ -19,13 +19,6 @@ const BASE: Grid = [
   '..X.X',
   'XXX.X',
 ];
-
-function rotate(grid: Grid): Grid {
-  const size = grid.length;
-  return Array.from({ length: size }, (_, r) =>
-    Array.from({ length: size }, (_, c) => grid[size - 1 - c][r]).join(''),
-  );
-}
 
 function mirror(grid: Grid): Grid {
   return grid.map((row) => [...row].reverse().join(''));
@@ -40,30 +33,11 @@ function scale(grid: Grid, factor: number): Grid {
   return out;
 }
 
-// Every distinct orientation/chirality at every scale that fits the grid: 5×5 and 10×10.
-// Deduped by serialization — C4 symmetry collapses the 8 rotation/reflection combinations
-// to 2 per scale.
-function buildTemplates(): Grid[] {
-  const seen = new Set<string>();
-  const templates: Grid[] = [];
-  for (const factor of [1, 2]) {
-    const scaled = scale(BASE, factor);
-    for (const base of [scaled, mirror(scaled)]) {
-      let variant = base;
-      for (let turn = 0; turn < 4; turn++) {
-        const key = variant.join('/');
-        if (!seen.has(key)) {
-          seen.add(key);
-          templates.push(variant);
-        }
-        variant = rotate(variant);
-      }
-    }
-  }
-  return templates;
-}
-
-const TEMPLATES = buildTemplates();
+// Both chiralities at every scale that fits the grid: 5×5 and 10×10.
+const TEMPLATES: Grid[] = [1, 2].flatMap((factor) => {
+  const scaled = scale(BASE, factor);
+  return [scaled, mirror(scaled)];
+});
 
 // Match one template at one offset. `carved` flips the polarity: a background swastika
 // cut out of an inked field is the same symbol. Only the template's own window is

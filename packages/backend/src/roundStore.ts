@@ -42,7 +42,7 @@ export interface RoundState {
 //   early_locked — the round is being played BEFORE its day (#273) and the night's play is
 //                  over: the stored log has already made progress, or the batch would push
 //                  it past EARLY_GUESS_CAP; nothing changed. The day itself unlocks it.
-export type RoundAppendOutcome =
+type RoundAppendOutcome =
   | 'appended'
   | 'too_fast'
   | 'round_full'

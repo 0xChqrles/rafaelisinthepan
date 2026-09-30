@@ -29,8 +29,8 @@ export function articleText(article: Article): string[] {
 
 // Reading time in seconds, rounded to ten: words at the article page's own pace (its 23′32″
 // for about five thousand words), plus a few seconds per figure to look at it.
-export const WORDS_PER_MINUTE = 215;
-export const SECONDS_PER_FIGURE = 6;
+const WORDS_PER_MINUTE = 215;
+const SECONDS_PER_FIGURE = 6;
 export function readingSeconds(article: Article): number {
   const words = articleText(article)
     .join(' ')

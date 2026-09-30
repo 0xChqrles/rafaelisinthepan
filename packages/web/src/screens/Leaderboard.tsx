@@ -1,9 +1,9 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import {
+  BOARD_PERIODS,
   anonName,
   dateForDayNumber,
   defaultAvatar,
-  isBoardPeriod,
   progressHeatColor,
   type Board,
   type BoardPeriod,
@@ -23,6 +23,7 @@ import {
   postBoardBody,
   postGroupsBody,
   readGroup,
+  type GroupsBody,
 } from '../api';
 import Avatar from '../components/Avatar';
 import CrownIcon from '../assets/icons/board.svg?react';
@@ -37,7 +38,6 @@ import { HeaderLeft } from '../components/TopBar';
 import useShare from '../hooks/useShare';
 import useToday from '../hooks/useToday';
 import {
-  deviceIdentity,
   ensureRequestIdentity,
   identityEpoch,
   identityEpochOf,
@@ -47,7 +47,7 @@ import { adoptGroups, loadGroups, useGroups } from '../state/groups';
 import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { prefetchTurnstileTokens } from '../turnstile';
 import ErrorScreen from '../components/ErrorScreen';
-import { useGameStore } from '../state/gameStore';
+import { useGameStore, type BoardTab } from '../state/gameStore';
 import { pathForGroupInvite, type LangCode } from '../langs';
 import { t } from '../i18n';
 
@@ -86,17 +86,34 @@ import { t } from '../i18n';
 // and the global read stays anonymous. The deliberate acts that mint are NEW GROUP and
 // INVITE, and every identity-reading effect keys on the live identity, so a mint (or a
 // cross-tab adoption) populates the screen without a remount.
-type Tab = 'group' | 'global';
-
-const PERIODS: readonly BoardPeriod[] = ['day', 'week', 'month'];
 type AnyBoard = Board | PeriodBoard;
 
 const isPeriodBoard = (board: AnyBoard): board is PeriodBoard => 'from' in board;
 
+// The succession a LEAVE carries, read off the list the server last answered (the same
+// rule the server applies — `successionFor`; root AGENTS.md, Groups): a member who is not
+// the owner hands nothing over (`plain`); an owner alone deletes the group (`last`); an
+// owner of two hands it to the other member (`handover`); an owner of three or more must
+// NAME a member (`pick`).
+export type LeaveKind = 'plain' | 'last' | 'handover' | 'pick';
+
+export function leaveKindOf(group: GroupSummary | null, meId: string | null): LeaveKind {
+  if (group === null || group.createdBy !== meId) return 'plain';
+  const others = group.members.filter((id) => id !== meId);
+  return others.length === 0 ? 'last' : others.length === 1 ? 'handover' : 'pick';
+}
+
+// What the LEAVE puts on the wire: the successor travels only when the owner had to pick
+// one — every other leave is the group's id alone.
+export function leaveBody(token: string, group: string, kind: LeaveKind, successor: string | null): GroupsBody {
+  const named = kind === 'pick' ? successor : null;
+  return { token, leave: group, ...(named ? { successor: named } : {}) };
+}
+
 export default function Leaderboard({ lang }: { lang: LangCode }) {
   // The tab belongs to the VISIT (user feedback 2026-08-20): it lives in the store because
   // this screen remounts without the visit ending, and App resets it on any non-board route.
-  const tab: Tab = useGameStore((s) => s.boardTab);
+  const tab: BoardTab = useGameStore((s) => s.boardTab);
   const setTab = useGameStore((s) => s.setBoardTab);
   // WHICH group: the one last opened (persisted, account-owned), else the first the
   // server lists.
@@ -238,7 +255,6 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
       cancelled = true;
     };
     // `active?.id` rather than `active`: the list object is re-read, the group is not.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardKey, tab, active?.id, period, lang, date, attempt, identity]);
 
   const entry = boardKey === null ? undefined : boards[boardKey];
@@ -274,7 +290,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     try {
       let request;
       try {
-        request = await ensureRequestIdentity(null);
+        request = await ensureRequestIdentity(epoch);
       } catch {
         setFailure('account');
         return { ok: false, error: null };
@@ -329,19 +345,11 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     if (!delivered) setFailure('share');
   };
 
-  const creator = active !== null && active.createdBy === meId;
-  // The succession the LEAVE carries, read off the list the server last answered (the
-  // same rule the server applies — `successionFor`): who else is in the group decides
-  // whether the owner names somebody. A list gone stale by the time the tap lands is the
-  // server's 409 `successor_required`, which re-reads the list below.
+  // The succession the LEAVE carries: who else is in the group decides whether the owner
+  // names somebody. A list gone stale by the time the tap lands is the server's 409
+  // `successor_required`, which re-reads the list below.
   const others = active ? active.members.filter((id) => id !== meId) : [];
-  const leaveKind = !creator
-    ? 'plain'
-    : others.length === 0
-      ? 'last'
-      : others.length === 1
-        ? 'handover'
-        : 'pick';
+  const leaveKind = leaveKindOf(active, meId);
 
   // Opening the owner's leave with a choice to make DRESSES the candidates.
   useEffect(() => {
@@ -352,15 +360,14 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
       setFaces(Object.fromEntries(read.group.members.map((member) => [member.publicId, member])));
     });
     return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deliberately `active?.id`, not `active`: the list object is re-read, the group is not.
   }, [confirming?.kind, leaveKind, active?.id]);
 
   const leave = async () => {
     if (busy || !active) return;
     if (leaveKind === 'pick' && successor === null) return;
     const id = active.id;
-    const named = leaveKind === 'pick' ? successor : null;
-    const result = await write('leave', (token) => ({ token, leave: id, ...(named ? { successor: named } : {}) }));
+    const result = await write('leave', (token) => leaveBody(token, id, leaveKind, successor));
     setConfirming(null);
     setSuccessor(null);
     if (result.ok) {
@@ -412,13 +419,13 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
       {/* WHICH of the group's three boards: one framed switch, three equal cells. */}
       {tab === 'group' && active && (
         <nav className="board-tabs period-tabs" aria-label={t(lang, 'boardPeriods')}>
-          {PERIODS.map((view) => (
+          {BOARD_PERIODS.map((view) => (
             <button
               key={view}
               type="button"
               className={`board-tab${period === view ? ' active' : ''}`}
               aria-current={period === view || undefined}
-              onClick={() => isBoardPeriod(view) && setPeriod(view)}
+              onClick={() => setPeriod(view)}
             >
               {t(lang, view === 'day' ? 'periodDay' : view === 'week' ? 'periodWeek' : 'periodMonth')}
             </button>
@@ -591,7 +598,7 @@ function BoardList({
   inviteLabel,
 }: {
   board: Board;
-  tab: Tab;
+  tab: BoardTab;
   lang: LangCode;
   meId?: string;
   mates: ReadonlySet<string> | null;

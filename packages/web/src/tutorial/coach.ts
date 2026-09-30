@@ -6,7 +6,8 @@
 //
 // This module is the whole rule, pure: the board's state in, the line to say out. The
 // component renders it; coach.test.ts replays guess sequences against it.
-import type { RankEntry, RuntimeHole } from '@whippin/shared';
+import type { RankEntry } from '@whippin/shared';
+import type { RuntimeHole } from '../game/types';
 import { t } from '../i18n';
 import type { LessonStage, StageKind } from './script';
 
@@ -20,9 +21,8 @@ export interface GuessEvent {
   entries: (RankEntry | undefined)[];
   improved: boolean[];
   holeRanks: number[]; // each hole's rank BEFORE this guess landed
-  // The meter stage: this guess added charge to some hole, and the hole whose meter it
-  // FILLED (the hole is active, its given words out), if any.
-  charged?: boolean;
+  // The meter stage: the hole whose meter this guess FILLED (the hole is active, its given
+  // words out), if any.
   filled?: number | null;
   // This guess was a masked hint REVEALED from the wheel (the meter stage).
   revealed?: boolean;
@@ -49,9 +49,8 @@ export type CoachLine =
   // once tapped, what those tries did to the chip.
   | { kind: 'introMeter'; hole: RuntimeHole }
   | { kind: 'meterTapped' }
-  // The first guess that ranks but does not move the hole: what the number IS, against the
-  // number the hole already shows.
-  | { kind: 'away'; guess: RankEntry; hole: RuntimeHole }
+  // The first guess that ranks but does not move the hole: what the number IS.
+  | { kind: 'away'; guess: RankEntry }
   // The first MISS: too far to count.
   | { kind: 'miss'; typed: string }
   // A hole has resisted STUCK[0] guesses: look near the word it shows.
@@ -74,11 +73,10 @@ export type CoachLine =
 
 // Guesses a hole may resist before each rung of the ladder. The sentence gets more room:
 // two holes are in play, and a guess that moves one is progress the other cannot show.
-export const STUCK: Record<Stage, readonly [number, number, number]> = {
+export const STUCK: Record<Exclude<Stage, 'meter'>, readonly [number, number, number]> = {
   reveal: [2, 4, 6], // the answer was just on screen: nudge early
   word: [2, 2, 9], // two misses in a row earn the (really easy) hint outright — user-decided 2026-09-16
   sentence: [4, 8, 12],
-  meter: [1, Infinity, Infinity], // its own script below: the bot names the answer itself
 };
 
 // For each hole still open, how many guesses it has resisted since it last moved (or since
@@ -159,7 +157,7 @@ export function coachLine(state: CoachState): CoachLine | null {
       // The first ranked guess that landed farther than the hole: say what the number means,
       // once.
       const first = events.findIndex(farther);
-      if (first === events.length - 1) return { kind: 'away', guess: entry, hole: holes[0] };
+      if (first === events.length - 1) return { kind: 'away', guess: entry };
     } else if (!entry) {
       const first = events.findIndex((e) => !e.entries[0]);
       if (first === events.length - 1) return { kind: 'miss', typed: last.typed };
@@ -221,9 +219,7 @@ export function coachCopy(
     case 'away':
       return t(lang, 'tutAway')
         .replace('{guess}', chip(line.guess.word, line.guess.rank))
-        .replace('{n}', ordinal(lang, line.guess.rank))
-        .replace('{start}', chip(line.hole.word, line.hole.rank))
-        .replace('{m}', ordinal(lang, line.hole.rank));
+        .replace('{n}', ordinal(lang, line.guess.rank));
     case 'miss':
       return t(lang, 'tutMiss').replace('{miss}', `[[m:${line.typed}]]`);
     case 'near':

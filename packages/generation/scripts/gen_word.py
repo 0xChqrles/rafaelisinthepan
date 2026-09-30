@@ -211,8 +211,8 @@ def main():
     # Substitutions, agreement, #134's curator marks and --form typo warnings — the
     # shared reporting block (#154). A lone word is not a secret, so it is named
     # plainly, and an unused --form named another word rather than another hole.
-    report_run_adjustments(run.donors, run.forms, run.explicit_forms,
-                           args.no_inflect, subject_fmt="« {} »",
+    report_run_adjustments(run.donors, run.forms, args.no_inflect,
+                           subject_fmt="« {} »",
                            unused_form_msg="ne concerne pas ce mot")
 
 

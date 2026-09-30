@@ -142,7 +142,6 @@ Downloads are cached under wordlist/.cache/ (gitignored); --refresh re-downloads
 import argparse
 import csv
 import gzip
-import hashlib
 import html
 import io
 import os
@@ -151,13 +150,14 @@ import sys
 import zipfile
 from collections import namedtuple
 
-import build_wordlist as bw  # fetch() + the shared cache dir / UA
+import build_wordlist as bw  # fetch() + verify_digest() + the shared cache dir / UA
 import reduce_embedding as red  # token_pattern — one source for the token rule
 from slug import slug  # spelling-variant rescue in the cleanup compares SLUGS
 
 # --- Sources --------------------------------------------------------------------
 # Lexique is read from build_wordlist rather than restated: the URL is what makes the
-# builders share ONE download (and one cache file), so a bump must move all of them.
+# builders share ONE download (and one cache file), so a bump must move all of them —
+# and its digest pin (bw.LEXIQUE_SHA256) with it.
 LEXIQUE_URL = bw.SOURCES["fr"]["lexique"]
 
 # Morphalou is PINNED — exact release, exact archive, exact digest. A morphological
@@ -385,16 +385,9 @@ def fetch_morphalou(refresh):
     The digest is verified before anything is read out of the archive: an artifact
     this file will be distributed under someone else's licence must be the artifact
     we think it is."""
-    path = bw.fetch(MORPHALOU_URL, os.path.join(bw.CACHE_DIR, MORPHALOU_ARCHIVE),
-                    refresh)
-    digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
-    if digest != MORPHALOU_SHA256:
-        print(f"Erreur : empreinte inattendue pour {MORPHALOU_ARCHIVE}\n"
-              f"         attendu {MORPHALOU_SHA256}\n"
-              f"         obtenu  {digest}\n"
-              f"         la source a changé : vérifie la version et la licence "
-              f"avant de mettre à jour l'empreinte.", file=sys.stderr)
-        sys.exit(1)
+    path = bw.verify_digest(
+        bw.fetch(MORPHALOU_URL, os.path.join(bw.CACHE_DIR, MORPHALOU_ARCHIVE), refresh),
+        MORPHALOU_SHA256, MORPHALOU_ARCHIVE)
     with zipfile.ZipFile(path) as z:
         csv_text = z.read(MORPHALOU_MEMBER).decode("utf-8")
         readme = z.read(MORPHALOU_README).decode("utf-8", "replace")
@@ -484,7 +477,7 @@ def read_morphalou(csv_text, token_re):
         if dropped:
             stats["entries_cleaned"] += 1
             stats["rows_dropped"] += len(dropped)
-            remaining = 30 - len(stats["dropped_samples"])
+            remaining = 10 - len(stats["dropped_samples"])
             if remaining > 0:
                 stats["dropped_samples"].extend(
                     (key[0], key[1], feature, f)
@@ -624,7 +617,7 @@ def merge_entries(lexemes, same_lemma=False):
 
     if same_lemma:
         surviving_by_forms = _join_same_lemma(
-            [key for key in lexemes if key in surviving], surviving_by_forms, forms)
+            [key for key in lexemes if key in surviving], surviving_by_forms)
 
     groups = {}
     for key in lexemes:  # pinned source order owns exact-group naming
@@ -646,13 +639,13 @@ def merge_entries(lexemes, same_lemma=False):
         "contained_samples": tuple(
             (lexeme_key(*key), tuple(lexeme_key(*target)
                                      for target in contained[key]))
-            for key in list(contained)[:10]
+            for key in list(contained)[:5]
         ),
         "groups": len(groups),
     }
 
 
-def _join_same_lemma(keys, by_forms, forms):
+def _join_same_lemma(keys, by_forms):
     """Rule 3 (English): union-find over the surviving entries, joining rule 1's
     identical-form twins AND entries that share a lemma. Returns {entry: members}
     with members in source order, the first naming the group."""
@@ -669,18 +662,16 @@ def _join_same_lemma(keys, by_forms, forms):
         if ra != rb:
             parent[rb] = ra
 
-    order = {key: i for i, key in enumerate(keys)}
     by_lemma = {}
     for key in keys:
         by_lemma.setdefault(key[0], []).append(key)
-    for members in list(by_lemma.values()) + [
-            [k for k in twins if k in parent] for twins in by_forms.values()]:
+    for members in list(by_lemma.values()) + list(by_forms.values()):
         for other in members[1:]:
             union(members[0], other)
     components = {}
     for key in keys:
         components.setdefault(find(key), []).append(key)
-    return {key: tuple(sorted(components[find(key)], key=order.get)) for key in keys}
+    return {key: tuple(components[find(key)]) for key in keys}
 
 
 # --- Lexique evidence -------------------------------------------------------------
@@ -936,7 +927,7 @@ def validate_rows(rows, expected_cells=None, inventory_cells=None,
             # `rows` arrive in artifact order: a cell's FIRST row is what load_forms
             # hands consumers as its preferred realization (fr: by frequency, en: by
             # AGID's own preference).
-            preferred.setdefault(cell, (None, form))
+            preferred.setdefault(cell, form)
         if form in wanted_surfaces:
             surface_lexemes.setdefault(form, set()).add(group)
     problems = []
@@ -946,9 +937,8 @@ def validate_rows(rows, expected_cells=None, inventory_cells=None,
         if actual != expected:
             problems.append(f"{group} / {feature} : formes {sorted(actual)}, "
                             f"attendu {sorted(expected)}")
-        elif first is not None and (
-                preferred.get(cell) is None or preferred[cell][1] != first):
-            actual_first = preferred[cell][1] if cell in preferred else "aucune"
+        elif first is not None and preferred.get(cell) != first:
+            actual_first = preferred.get(cell, "aucune")
             problems.append(f"{group} / {feature} : réalisation préférée "
                             f"« {actual_first} », attendue "
                             f"« {first} »")
@@ -1024,19 +1014,6 @@ _AGID_ITEM = re.compile(r"^(?P<form>[A-Za-z']+)(?P<marks>[~<!?]*)"
 # review: a handful of right ones, «canvasses», against «prices», «motives», «water»).
 AGID_UNSURE = frozenset("~!?<")
 AGID_OBSCURE_LEVEL = 2
-
-
-def verify_digest(path, expected, name):
-    """A pinned source must be the exact file its provenance names."""
-    digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
-    if digest != expected:
-        print(f"Erreur : empreinte inattendue pour {name}\n"
-              f"         attendu {expected}\n"
-              f"         obtenu  {digest}\n"
-              f"         la source a changé : vérifie la version et la licence "
-              f"avant de mettre à jour l'empreinte.", file=sys.stderr)
-        sys.exit(1)
-    return path
 
 
 def read_agid(text, token_re):
@@ -1599,16 +1576,16 @@ def fetch_english(refresh):
     The licence file is the two copyright sections verbatim — AGID's README
     «COPYRIGHT AND SOURCE» and VarCon's README «Copyright» — each notice travelling with
     the exact release it governs (a URL is not a copy)."""
-    agid = verify_digest(bw.fetch(AGID_URL, os.path.join(bw.CACHE_DIR, AGID_ARCHIVE),
-                                  refresh), AGID_SHA256, AGID_ARCHIVE)
-    varcon = verify_digest(bw.fetch(VARCON_URL, os.path.join(bw.CACHE_DIR,
-                                                             "en.varcon.txt"), refresh),
-                           VARCON_SHA256, "varcon.txt")
-    varcon_readme = verify_digest(
+    agid = bw.verify_digest(bw.fetch(AGID_URL, os.path.join(bw.CACHE_DIR, AGID_ARCHIVE),
+                                     refresh), AGID_SHA256, AGID_ARCHIVE)
+    varcon = bw.verify_digest(bw.fetch(VARCON_URL, os.path.join(bw.CACHE_DIR,
+                                                                "en.varcon.txt"), refresh),
+                              VARCON_SHA256, "varcon.txt")
+    varcon_readme = bw.verify_digest(
         bw.fetch(VARCON_README_URL, os.path.join(bw.CACHE_DIR, "en.varcon.README"),
                  refresh), VARCON_README_SHA256, "VarCon README")
-    anc = verify_digest(bw.fetch(ANC_URL, os.path.join(bw.CACHE_DIR, "en.anc.tsv"),
-                                 refresh), ANC_SHA256, "ANC-all-count.txt")
+    anc = bw.verify_digest(bw.fetch(ANC_URL, os.path.join(bw.CACHE_DIR, "en.anc.tsv"),
+                                    refresh), ANC_SHA256, "ANC-all-count.txt")
     import tarfile
     with tarfile.open(agid, "r:gz") as tar:
         infl = tar.extractfile(AGID_MEMBER).read().decode("latin-1")
@@ -1635,23 +1612,15 @@ def english_license(agid_readme, varcon_readme):
 
 
 def build(lang, *, refresh):
-    if lang not in FORM_LANGS:
-        print(f"Erreur : pas d'inventaire de lexèmes pour '{lang}' "
-              f"(langues : {', '.join(FORM_LANGS)}).", file=sys.stderr)
-        sys.exit(1)
-
     if lang == "en":
         infl, varcon_text, anc, licence = fetch_english(refresh)
         rows, stats = build_rows_en(infl, varcon_text, anc)
     else:
         csv_text, licence = fetch_morphalou(refresh)
-        lexique = bw.fetch(LEXIQUE_URL,
-                           os.path.join(bw.CACHE_DIR, f"{lang}.lexique.tsv"), refresh)
+        lexique = bw.verify_digest(
+            bw.fetch(LEXIQUE_URL, os.path.join(bw.CACHE_DIR, f"{lang}.lexique.tsv"),
+                     refresh), bw.LEXIQUE_SHA256, bw.LEXIQUE_NAME)
         rows, stats = build_rows_fr(csv_text, lexique)
-    if not rows:
-        print(f"Erreur : la source n'a produit aucune forme pour {lang}.",
-              file=sys.stderr)
-        sys.exit(1)
 
     out_path, lic_path = forms_path(lang), license_path(lang)
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
@@ -1695,13 +1664,13 @@ def build(lang, *, refresh):
     print(f"Nettoyage des entrées mixtes : {stats['rows_dropped']:,} ligne(s) non "
           f"corroborée(s) retirée(s) de {stats['entries_cleaned']:,} entrée(s) "
           f"(origines ⊄ {{morphalou2, lefff, lglexlefff}})", file=sys.stderr)
-    for lemma, pos, feature, form in stats["dropped_samples"][:10]:
+    for lemma, pos, feature, form in stats["dropped_samples"]:
         print(f"          p.ex. {lemma}:{pos} / {feature} : {form}", file=sys.stderr)
     print(f"Fusion #146, formes identiques : {stats['twin_groups']:,} groupe(s), "
           f"{stats['twin_entries']:,} entrée(s) source.", file=sys.stderr)
     print(f"Fusion #146, inclusions même POS : {stats['contained_entries']:,} "
           f"entrée(s) redondante(s) retirée(s).", file=sys.stderr)
-    for source, targets in stats["contained_samples"][:5]:
+    for source, targets in stats["contained_samples"]:
         print(f"          p.ex. {source} ⊂ {', '.join(targets)}", file=sys.stderr)
     print(f"Gardes #146 : {len(EXPECTED_MERGE_STATS)} mesure(s) pinnée(s) "
           "vérifiée(s).", file=sys.stderr)

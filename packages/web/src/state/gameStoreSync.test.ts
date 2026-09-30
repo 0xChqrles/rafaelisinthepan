@@ -139,7 +139,7 @@ describe('transactional cross-tab game persistence', () => {
       pendingBootstrap: false,
     });
 
-    expect(await read(activeTab)).toMatchObject({ identityOwner: B, outbox: {} });
+    expect(await read(activeTab)).toEqual({ ...initialPersistedState(), identityOwner: B });
   });
 
   it('an old identity’s delayed mutation cannot write into the replacement identity', async () => {
@@ -157,7 +157,7 @@ describe('transactional cross-tab game persistence', () => {
       type: 'appendOutbox', key: 'd:5:fr', puzzle: REV, typed: 'late-a', expectedOwner: A,
     });
 
-    expect(await read(activeTab)).toMatchObject({ identityOwner: B, outbox: {} });
+    expect(await read(activeTab)).toEqual({ ...initialPersistedState(), identityOwner: B });
   });
 
   it('an acknowledgement removes its snapshot while preserving a concurrent append', async () => {
@@ -223,6 +223,41 @@ describe('transactional cross-tab game persistence', () => {
 });
 
 describe('live store wiring', () => {
+  // CONTRACT: what is persisted is what a reload restores. Every field of the committed
+  // record — the account-owned ones included, for the owner it names — reaches the cache.
+  it('hydrates every persisted field from the stored record', async () => {
+    await deleteDB(GAME_DATABASE_NAME);
+    const stored: PersistedState = {
+      identityOwner: A,
+      outbox: { 'd:5:fr': { puzzle: REV, guesses: ['bois'] } },
+      lastLang: 'en',
+      onboarded: true,
+      boardTab: 'global',
+      lastGroupId: 'abcdefghij234567',
+      lessonsDone: [1, 2],
+      localSeed: 'c'.repeat(16),
+    };
+    const seeder = new GameStateDatabase<PersistedState>(GAME_DATABASE_NAME);
+    await seeder.update(() => ({ version: GAME_PERSIST_VERSION, state: stored }));
+    await seeder.close();
+
+    try {
+      vi.resetModules();
+      const store = await import('./gameStore');
+      await store.hydrateGameStore();
+      store.reconcileGameStateIdentity(A);
+      await store.flushGameStorePersistence();
+
+      expect(store.persistedStateOf(store.useGameStore.getState())).toEqual(stored);
+      const probe = new GameStateDatabase<PersistedState>(GAME_DATABASE_NAME);
+      const committed = await probe.read();
+      await probe.close();
+      expect(committed?.state).toEqual(stored);
+    } finally {
+      await deleteDB(GAME_DATABASE_NAME);
+    }
+  });
+
   it('commits against sibling state before a queued notification and later refreshes the cache', async () => {
     await deleteDB(GAME_DATABASE_NAME);
     const listeners = new Set<(event: StorageEvent) => void>();

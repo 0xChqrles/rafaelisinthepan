@@ -70,7 +70,6 @@ function typedLine(chars: string[], shown: number, cursor: boolean) {
         const cursorHere = cursor && index === shown;
         return (
           // Static display metadata: its character index is a stable identity.
-          // eslint-disable-next-line react/no-array-index-key
           <span key={index} className={cursorHere ? 'source-type-slot' : undefined}>
             <span style={visible ? undefined : HIDDEN}>{char}</span>
             {cursorHere && <span className="source-type-cursor">_</span>}
@@ -194,7 +193,6 @@ export default function SolvedCaption({
         return (
           <p
             // The lines are static display metadata in a fixed order.
-            // eslint-disable-next-line react/no-array-index-key
             key={index}
             className={line.className}
             aria-hidden={animate || undefined}

@@ -7,6 +7,8 @@ those onto the shelf; this module extracts the quoted lines from the raw wikitex
 matches a candidate unit against them. Stdlib only, tested; the curator never touches the network.
 """
 
+from collections.abc import Sequence
+import functools
 from pathlib import Path
 import re
 
@@ -77,10 +79,9 @@ def same_person(a: str, b: str) -> bool:
 # ---------------------------------------------------------------------------
 # Wikitext -> quoted lines
 
-def template_params(wikitext: str, start: int) -> tuple[list[str], int]:
+def template_params(wikitext: str, start: int) -> list[str]:
     """The top-level `|`-separated parameters of the template whose body starts at
-    `start` (just past `{{name|`), and the index past its closing `}}`. Nested templates
-    and links keep their own pipes."""
+    `start` (just past `{{name|`). Nested templates and links keep their own pipes."""
     params: list[str] = []
     depth_t = depth_l = 0
     i = cur = start
@@ -92,7 +93,7 @@ def template_params(wikitext: str, start: int) -> tuple[list[str], int]:
         elif two == "}}":
             if depth_t == 0:
                 params.append(wikitext[cur:i])
-                return params, i + 2
+                return params
             depth_t -= 1
             i += 2
         elif two == "[[":
@@ -108,7 +109,7 @@ def template_params(wikitext: str, start: int) -> tuple[list[str], int]:
         else:
             i += 1
     params.append(wikitext[cur:])
-    return params, len(wikitext)
+    return params
 
 
 def template_bodies(wikitext: str, templates: dict[str, str]) -> list[str]:
@@ -119,10 +120,9 @@ def template_bodies(wikitext: str, templates: dict[str, str]) -> list[str]:
     names = "|".join(re.escape(name) for name in templates)
     for m in re.finditer(r"\{\{\s*(" + names + r")\s*\|", wikitext, re.I):
         param = templates[m.group(1).lower()]
-        params, _ = template_params(wikitext, m.end())
         named = {}
         positional = []
-        for p in params:
+        for p in template_params(wikitext, m.end()):
             key, eq, value = p.partition("=")
             if eq and re.fullmatch(r"\s*[\w\- ]+\s*", key):
                 named[key.strip().lower()] = value
@@ -186,8 +186,7 @@ def _without_tags(wikitext: str) -> str:
 _PAGE_REF = re.compile(r"\s*\((?:p|pp|ch|chapter)\b\.?[^)]*\)\s*$", re.I)
 
 
-def extract_quotes(wikitext: str, lang: str, *, wikiquote: bool = False,
-                   min_words: int = MIN_QUOTE_WORDS) -> list[str]:
+def extract_quotes(wikitext: str, lang: str, *, wikiquote: bool = False) -> list[str]:
     """Every quoted line of a page, cleaned, deduplicated, in page order: the quotation
     templates (French Wikiquote's own shape, used on Wikipedia too), the spans between
     the language's quotation marks (how an encyclopedia article quotes an incipit: « … »
@@ -203,7 +202,7 @@ def extract_quotes(wikitext: str, lang: str, *, wikiquote: bool = False,
         raw += re.findall(r"“\s*([^”\n]+?)\s*”", text)
         raw += re.findall(r'"\s*([^"\n]+?)\s*"', text)
     cleaned = [clean_markup(r) for r in raw]
-    return dedupe_quotes([q for q in cleaned if word_count(q) >= min_words])
+    return dedupe_quotes([q for q in cleaned if word_count(q) >= MIN_QUOTE_WORDS])
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +213,14 @@ def _words(text: str, lang: str) -> list[str]:
     return [s for s in (slug(w) for w in text.split()) if s and s not in _STOPWORDS[lang]]
 
 
-def in_order_hits(short: list[str], long: list[str]) -> int:
+@functools.lru_cache(maxsize=None)
+def _quote_words(quote: str, lang: str) -> tuple[str, ...]:
+    """A quoted line's content words, kept: every mined unit is matched against every
+    quote of the work."""
+    return tuple(_words(quote, lang))
+
+
+def in_order_hits(short: Sequence[str], long: Sequence[str]) -> int:
     """How many of `short`'s words appear in `long`, in order."""
     i = hits = 0
     for w in short:
@@ -233,7 +239,7 @@ def quoted(unit: str, quotes: list[str], *, lang: str) -> str | None:
     if not uw:
         return None
     for q in quotes:
-        qw = _words(q, lang)
+        qw = _quote_words(q, lang)
         if len(qw) < MIN_QUOTE_WORDS:
             continue
         short, long = (qw, uw) if len(qw) <= len(uw) else (uw, qw)

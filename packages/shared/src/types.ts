@@ -1,6 +1,6 @@
 // The generated schemas — the daily sentence puzzle (gen_phrase.py) and the #154
-// single-word artifact the onboarding board is cut from (gen_word.py) — plus the web's own
-// runtime round types.
+// single-word artifact the onboarding board is cut from (gen_word.py) — plus the score
+// and profile shapes the API speaks.
 // Keys are slugs, in the sense packages/generation/scripts/slug.py defines.
 
 // A displayed word plus its ASCII-folded lookup key (accents kept for display,
@@ -134,28 +134,4 @@ export interface PlayerProfile {
   // same convention every board row already follows. The wire may carry '' (the stored
   // empty), which the web's parse normalizes to null.
   avatar: string | null;
-}
-
-export interface RuntimeHole {
-  pos: number;
-  secret: string; // secret slug -> key into RankMap
-  word: string; // currently displayed (accented) word
-  rank: number;
-  startRank: number;
-}
-
-export interface HitState {
-  holeIndex: number;
-  value: number;
-  id: number;
-  startDelayMs: number;
-  fadeDelayMs: number;
-  miss?: boolean; // true => the guess was too far for this hole; render "MISS", not a number
-  // #301: the blow this guess lands on the hole — the CUT of a guess that charges the
-  // hole's meter, the ULTRA star of the exact hit. Absent on a miss, a repeat, or a rank
-  // the charge table pays nothing for.
-  strike?: 'slash' | 'ultra';
-  // #301: what this guess added to the hole's meter — the loot that flies into it. Absent
-  // (or 0) when the meter did not move: nothing to throw.
-  charge?: number;
 }

@@ -12,7 +12,6 @@ export interface MessageRef {
   // in a LID-addressed group — never the canonical player key: a reaction or a quote
   // addresses the original key, and a rewritten one addresses nothing.
   participant: string;
-  fromMe?: boolean;
   // What the quoted message said (a reply only): the quote bubble is drawn from it.
   text?: string;
 }
@@ -24,7 +23,6 @@ export type OutboundCommand =
       group: string;
       text: string;
       replyTo?: MessageRef;
-      mentions?: string[];
       // THE ONE LINK whose preview card goes with the message (user-decided 2026-09-14),
       // built by the task at send time. Only a link the CODE composed ever gets a card:
       // without this field a message goes without one, so the task never fetches a URL a
@@ -91,12 +89,6 @@ export function parseCommand(body: string): OutboundCommand | null {
   if (c.kind === 'message') {
     if (typeof c.text !== 'string' || c.text === '') return null;
     if (c.replyTo !== undefined && !isMessageRef(c.replyTo)) return null;
-    if (
-      c.mentions !== undefined &&
-      (!Array.isArray(c.mentions) || c.mentions.some((m) => typeof m !== 'string'))
-    ) {
-      return null;
-    }
     // An https link the text carries: a card for a link nobody can see is a card for nothing.
     if (c.preview !== undefined && (typeof c.preview !== 'string' || !c.preview.startsWith('https://') || !c.text.includes(c.preview))) {
       return null;

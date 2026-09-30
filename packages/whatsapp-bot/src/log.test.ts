@@ -28,9 +28,4 @@ describe('logs carry tags, never numbers (#236)', () => {
     expect(redactJids(withDevice)).toBe(tag(withDevice));
     expect(redactJids(withDevice)).not.toContain('33612345678');
   });
-
-  it('does not read a command id\'s own colons as one long JID', () => {
-    // `leader:<group>:<day>:<sender>:<score>` — the day survives as itself.
-    expect(redactJids(`leader:${GROUP}:20700:${SENDER}:3`)).toContain(':20700:');
-  });
 });

@@ -23,10 +23,8 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { SSMClient } from '@aws-sdk/client-ssm';
 import { activeDate, dateForDayNumber, dayNumber } from '@whippin/shared';
-import { DayLog, dayOfInstant, dynamoDayLogStore, renderDay, type Turn } from './chat/dayLog';
+import { DayLog, composeTurnText, dayOfInstant, dynamoDayLogStore, renderDay, type Turn } from './chat/dayLog';
 import { dynamoDiaryStore, rewriteDiary, stampOf, type Diary } from './chat/diary';
-import { quoteLead } from './chat/dayLog';
-import { withMentionNames } from './chat/trigger';
 import { botRegion, loadEnv } from './config/env';
 import { GROUP_JID, loadGroups, type GroupConfig } from './config/groupConfig';
 import { parseDay } from './domain/day';
@@ -78,18 +76,19 @@ function parseArgs(argv: string[]): { group: string; file: string; options: Opti
 // block out (never the raw contents of one), every mention as a name, and the quote spelled
 // out at the head. A message that leaves nothing is not a turn.
 function turnOf(message: ExportMessage, at: number, group: GroupConfig, options: Options, siteOrigin: string, id: string): Turn | null {
-  const names = { group, me: options.me, bot: group.chat.name };
-  const mentions = options.mentions;
-  const text = withMentionNames(withoutShares(message.text, siteOrigin), mentions);
+  const names = { group, me: options.me };
   const quoted = message.quoted;
-  const lead = quoted
-    ? quoteLead(
-        speakerName(quoted.author, names) === group.chat.name ? 'you' : speakerName(quoted.author, names),
-        withMentionNames(withoutShares(quoted.text, siteOrigin), mentions),
-      )
-    : '';
-  const kept = `${lead}${text}`.trim();
-  if (kept === '') return null;
+  const kept = composeTurnText(
+    withoutShares(message.text, siteOrigin),
+    quoted
+      ? {
+          author: speakerName(quoted.author, names) === group.chat.name ? 'you' : speakerName(quoted.author, names),
+          text: withoutShares(quoted.text, siteOrigin),
+        }
+      : null,
+    options.mentions,
+  );
+  if (kept === null) return null;
   const who = speakerName(message.author, names);
   const bot = who === group.chat.name;
   return { group: group.id, day: dayOfInstant(at), at, id, kind: bot ? 'bot' : 'said', name: bot ? '' : who, text: kept };

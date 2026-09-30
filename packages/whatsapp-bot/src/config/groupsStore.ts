@@ -11,10 +11,10 @@
 // path that does not exist there answers an EMPTY LIST, not an error. So a laptop whose
 // ambient region is not the deployment's would read nothing, write somewhere `deploy-bot`
 // never looks, and report success — the snapshot would ship without what was just edited.
-// The region is therefore PINNED here rather than inherited (`GROUPS_REGION`): the stacks
-// are pinned to us-east-1 in `infra/bin/app.ts`, so that is where these parameters are,
-// and it is not a fact a shell variable should be able to get wrong. `BOT_AWS_REGION`
-// overrides it for a deployment that moves.
+// The region is therefore PINNED rather than inherited (`botRegion`, `config/env.ts`):
+// the stacks are pinned to us-east-1 in `infra/bin/app.ts`, so that is where these
+// parameters are, and it is not a fact a shell variable should be able to get wrong.
+// `BOT_AWS_REGION` overrides it for a deployment that moves.
 //
 // WHY A SNAPSHOT RATHER THAN A RUNTIME READ. Neither the task nor the podium Lambda talks
 // to this module: they read files, and those files are pulled from here immediately before
@@ -36,9 +36,6 @@ import { botRegion } from './env';
 import { GroupConfigError, assertUniqueGroupIds, parseGroupConfig, type GroupConfig } from './groupConfig';
 
 export const GROUPS_PATH = '/whippin/bot/groups';
-
-// Where the stacks are — the package's one region (`config/env.ts` says why it is pinned).
-export const groupsRegion = (): string => botRegion();
 
 // SSM's Standard tier caps a parameter value at 4 KB. The Advanced tier is a per-parameter
 // monthly charge and a different API, for a value that is one group's settings: a config
@@ -67,7 +64,7 @@ export const parameterName = (slug: string): string => {
 
 export interface StoredGroup {
   slug: string;
-  json: string; // exactly what SSM holds, so a pull writes what an edit wrote
+  json: string; // exactly what SSM holds, so a pull writes what a push wrote
   config: GroupConfig;
 }
 
@@ -77,13 +74,12 @@ export interface StoredGroup {
 // skipped — somebody put it there meaning it to be a group — and never fatal to a read.
 export interface BrokenParameter {
   name: string; // the child name under GROUPS_PATH, exactly as SSM holds it
-  json: string;
   reason: string;
 }
 
 // What the path holds, sorted, with the unusable ones set apart. A read does NOT throw on
 // a broken parameter and does NOT judge the set (duplicate JIDs): it is the read behind
-// `edit` and `rm`, which are how a broken parameter gets FIXED, and a read that refused it
+// `push` and `rm`, which are how a broken parameter gets FIXED, and a read that refused it
 // would lock the operator out of every command at once, the console being the only way
 // back in. `assertDeployable` judges the set, and `pull` — the deploy's door — is the one
 // command that asks.
@@ -111,7 +107,7 @@ function toStored(name: string, json: string): StoredGroup {
 // A parameter whose name is no slug cannot be named by `rm` — a slug is what `rm` accepts,
 // and that rule is not loosened for the one case — so it is removed where it was made.
 export const removeByHand = (name: string): string =>
-  `aws ssm delete-parameter --region ${groupsRegion()} --name "${GROUPS_PATH}/${name}"`;
+  `aws ssm delete-parameter --region ${botRegion()} --name "${GROUPS_PATH}/${name}"`;
 
 // What a SNAPSHOT may be built from: every parameter usable, and the set valid as a set.
 // The message names sources and reasons, never a JID (it reaches CI logs).
@@ -155,7 +151,7 @@ export function ssmGroupsStore(client: SSMClient): GroupsStore {
             groups.push(toStored(name, parameter.Value));
           } catch (error) {
             if (!(error instanceof GroupConfigError)) throw error;
-            broken.push({ name, json: parameter.Value, reason: error.message });
+            broken.push({ name, reason: error.message });
           }
         }
         token = response.NextToken;
@@ -191,8 +187,8 @@ export function ssmGroupsStore(client: SSMClient): GroupsStore {
   };
 }
 
-// What `edit` enforces before anything reaches SSM. Returns the canonical text to store:
-// pretty-printed, so the next `edit` opens something a human can read and a diff is legible.
+// What `push` enforces before anything reaches SSM. Returns the canonical text to store:
+// pretty-printed, so the file a `pull` writes is one a human can read and a diff is legible.
 export function validateForStore(
   slug: string,
   json: string,

@@ -1,4 +1,5 @@
-from starts import article_problem, displayed, elision_problem, letter_problem, previous_token, start_candidates
+from starts import (MAX_START_FREQ_RANK, article_problem, displayed, elision_problem, letter_problem,
+                    previous_token, start_candidates)
 
 WORDS = ["le", "savoir", "humain", "sera", "rayé", "des", "archives", "du", "monde", "d’un", "moucheron."]
 HOLES = [
@@ -34,7 +35,7 @@ def test_previous_token_prefers_the_hole_prefix():
 def test_start_candidates_are_the_band_minus_variants_and_elision_failures():
     ranks = {
         "savoir": {"word": "savoir", "rank": 0},
-        "savoirs": {"word": "savoirs", "rank": 3},
+        "savoirs": {"word": "savoirs", "rank": 130},
         "usage": {"word": "usage", "rank": 110},
         "esprit": {"word": "esprit", "rank": 105},
         "monde": {"word": "monde", "rank": 120},
@@ -48,6 +49,10 @@ def test_start_candidates_are_the_band_minus_variants_and_elision_failures():
     # a word too rare for a player is out; an unknown frequency is kept
     rare = lambda w: {"esprit": 90000, "usage": 500}.get(w)  # noqa: E731
     assert [e["word"] for e in start_candidates(ranks, "savoir", "du", frequency_rank=rare, lang="fr")] == ["effet", "usage", "monde"]
+    # the boundary: not PAST the rank — a word at it stays, the next one is out
+    assert MAX_START_FREQ_RANK == 40000
+    edge = lambda w: {"esprit": 40001, "usage": 40000}.get(w)  # noqa: E731
+    assert [e["word"] for e in start_candidates(ranks, "savoir", "du", frequency_rank=edge, lang="fr")] == ["effet", "usage", "monde"]
 
 
 def test_y_initial_is_the_models_call_like_h():

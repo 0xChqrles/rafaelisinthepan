@@ -81,7 +81,7 @@ async function adoptServerAnswer(lang: string, solvedDays: number[]): Promise<vo
 
 // A view as `usePlayerHistory` would return it, minus the hook.
 function view(days: HistoryView['days'], daysPhase: HistoryView['daysPhase']): HistoryView {
-  return { days, daysPhase, solvedDays: null, solvedPhase: 'idle', retry: () => {} };
+  return { days, daysPhase, solvedPhase: 'idle', retry: () => {} };
 }
 
 describe('daySummaryStatus — a month that has not arrived is UNKNOWN, not "not started"', () => {

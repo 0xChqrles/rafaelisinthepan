@@ -41,7 +41,7 @@ import {
   readJsonObject,
   requireDayParams,
   requireDevice,
-  requireTurnstileToken,
+  requireTurnstile,
 } from './liveRoute';
 import type { DeviceStore } from './deviceStore';
 import type { PlayerHistoryStore } from './historyStore';
@@ -213,7 +213,7 @@ export async function handleRound(
   // describing another one is refused rather than derived against (puzzleReads.ts).
   const [seen, slice] = await Promise.all([
     rounds.get(key, publicId, puzzle, { consistent: false }),
-    slicePromise ?? loadSlice(puzzleStore, date, lang, puzzle),
+    slicePromise,
   ]);
   if (!slice) {
     // A missing slice IS a missing puzzle — there is no degraded mode: either publishing
@@ -240,8 +240,8 @@ export async function handleRound(
   if (!stored) {
     stored = await rounds.get(key, publicId, puzzle);
     if (!stored) {
-      const gate = await requireRoundStart(body, event, deps, responseHeaders);
-      if (gate) return gate;
+      const gate = await requireTurnstile(body, event, deps, responseHeaders, 'Round start');
+      if (!gate.ok) return gate.response;
     }
   }
 
@@ -363,27 +363,6 @@ export async function handleRound(
   );
 }
 
-// The Turnstile gate on a ROUND START (#203). Returns the refusal to answer with, or null
-// when the caller may create the round: the one write that mints state for a caller who has
-// done nothing yet.
-async function requireRoundStart(
-  body: Record<string, unknown>,
-  event: FnUrlEvent,
-  deps: RoundHandlerDeps,
-  headers: Record<string, string>,
-): Promise<FnUrlResult | null> {
-  const token = requireTurnstileToken(body, headers);
-  if (!token.ok) return token.response;
-  const remoteIp = clientIp(event, deps.allowSourceIp === true);
-  if (!remoteIp) {
-    throw new Error('Round start has no trusted client IP address.');
-  }
-  if (!(await deps.turnstile.verify(token.value, remoteIp))) {
-    return errorResponse(403, 'turnstile_rejected', 'Turnstile token is invalid.', headers);
-  }
-  return null;
-}
-
 interface AppendedRound {
   key: RoundKey;
   publicId: string;
@@ -459,11 +438,18 @@ async function settleAppend(
   // Recording it is the last thing the append does, so the answer the client adopts is never
   // ahead of the population it is about to read.
   if (truth.solved && solveIsStored) {
-    // ON TIME (below) gates BOTH of the day's rewards, and it is decided HERE, before
+    // ON TIME (below) gates BOTH of the day's rewards, and it is decided HERE, once, before
     // either side effect runs: a late solve (an archive replay, a round carried past the
-    // 22:00 flip) must not load the multi-megabyte scoring artifact only for
-    // `recordScoreRow` to discard the work at its own gate — archive days are explicitly
-    // playable, so that is a live path, not a corner.
+    // 22:00 flip) must not load the multi-megabyte scoring artifact for a row that will not
+    // be written — archive days are explicitly playable, so that is a live path, not a
+    // corner.
+    //
+    // **A LATE finish records NOTHING** (the owner's rule). It is one rule about the
+    // day's competition: a leaderboard is a day's, so a round not played on it is not
+    // competing in it, whether by a millisecond or by ten years. An archive replay therefore
+    // records no row and draws no standing — `/scores` answers `bucket: null` for a caller
+    // the population does not hold, and the solved screen simply shows no rank line. It also
+    // stops spending a #169 address allowance on a day nobody is competing in.
     const earned = onTime(key.date, instant);
     let credited = false;
     if (earned) {
@@ -538,11 +524,14 @@ async function creditSolvedDay(round: AppendedRound, deps: RoundHandlerDeps): Pr
   }
 }
 
-// THE SCORE, derived rather than claimed (#203). It counts UNIQUE tries, and `guessKey`
+// THE SCORE, derived rather than claimed (#203): one recorded row per player per daily
+// (#187), written by the SERVER from the stored log. It counts UNIQUE tries, and `guessKey`
 // dedups on a guess's rank in EVERY map — so this is the one thing the slice cannot answer
 // and the full artifact has to be loaded for. It happens ONCE per round, and the artifact is
 // read FRESH. A corrected published version starts a new round and replaces this player's
 // retired-version score row (puzzleReads.ts).
+//
+// Only an ON-TIME solve gets here — the caller (`settleAppend`) makes that one check.
 //
 // Every failure here is SILENT to the caller. The guesses are stored, the round is settled,
 // and the answer is about the LOG; a population that could not be written is a missing
@@ -555,13 +544,15 @@ async function recordScore(
   instant: Date,
 ): Promise<void> {
   const { key, publicId, state } = round;
+  // The version of the daily this score was earned on — the round's own tag (#203).
+  const revision = round.puzzle;
   // The load is guarded too, not just the write: the store only swallows NotFound, so a
   // throttle or a transient S3 5xx THROWS — and a throw escaping here would 500 an append
   // that already committed and froze the round, losing the score row for good (the freeze
   // means no later append ever retries it).
   let puzzle: Puzzle | null;
   try {
-    puzzle = await loadPuzzle(puzzleStore, key.date, key.lang, round.puzzle);
+    puzzle = await loadPuzzle(puzzleStore, key.date, key.lang, revision);
   } catch (error) {
     console.error(
       `[round] failed to load the puzzle to score ${key.date} ${key.lang} for ${publicId}:`,
@@ -573,42 +564,8 @@ async function recordScore(
     console.error(`[round] no puzzle to score ${key.date} ${key.lang} for ${publicId}.`);
     return;
   }
-  await recordScoreRow(
-    key,
-    publicId,
-    countTries(puzzle.ranks, state.guesses),
-    round.puzzle,
-    deps,
-    event,
-    instant,
-  );
-}
-
-// One recorded score per player per daily (#187), written by the SERVER now that the log
-// is (#203).
-//
-// **A LATE finish records NOTHING** (user-decided 2026-08-23). The gate lives here because
-// it is one rule about the day's competition: a leaderboard is a day's, so a round not
-// played on it is not competing in it, whether by a millisecond or by ten years. An archive
-// replay therefore records no row and draws no standing — `/scores` answers `bucket: null`
-// for a caller the population does not hold, and the solved screen simply shows no rank
-// line. It also stops spending a #169 address allowance on a day nobody is competing in.
-//
-// Every failure here is SILENT to the caller. The guesses are stored and the answer is
-// about the LOG; a population that could not be written is a missing standing, never a
-// refused write.
-async function recordScoreRow(
-  key: RoundKey,
-  publicId: string,
-  score: number,
-  // The version of the daily this score was earned on — the round's own tag (#203).
-  revision: string,
-  deps: RoundHandlerDeps,
-  event: FnUrlEvent,
-  instant: Date,
-): Promise<void> {
+  const score = countTries(puzzle.ranks, state.guesses);
   try {
-    if (!onTime(key.date, instant)) return;
     // The #169 volume floor, unchanged in shape: the address is HMACed and only the digest
     // reaches the store. A caller with no trusted address cannot be metered, so its score
     // is not recorded — the same stance the retired score POST took.

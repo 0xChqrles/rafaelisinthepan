@@ -85,10 +85,10 @@ class Log:
         self.lines.append(line)
         self.path.write_text("\n".join(self.lines) + "\n", encoding="utf-8")
 
-    def begin_attempt(self, n: int) -> None:
+    def begin_attempt(self) -> None:
         if self.blind:
             self._held = []
-            self._emit(f"\n## Attempt {n} (details withheld)")
+            self._emit("\n## Attempt 1 (details withheld)")
 
     def end_attempt(self, success: bool, summary: list[str] = ()) -> None:
         held, self._held = self._held, None
@@ -114,15 +114,12 @@ def die(msg: str) -> None:
 # Vectors: cosine between two tokens, None when either has no vector.
 
 def load_similarity(lang: str):
-    if lang == "fr":
-        import french_neighbors as module
-    elif lang == "en":
-        import english_neighbors as module
-    else:  # pragma: no cover - LANGS guards this
-        raise ValueError(lang)
-    kv = module.load_vectors()
-    V = module.build_vocab(kv)
-    M = module.build_matrix(kv, V)
+    from embedding_neighbors import for_lang  # gensim + numpy: only a run loads them
+
+    neighbors = for_lang(lang)
+    kv = neighbors.load_vectors()
+    V = neighbors.build_vocab(kv)
+    M = neighbors.build_matrix(kv, V)
 
     def key(t: rules.Token):
         for form in (t.text.lower(), t.lemma):
@@ -136,7 +133,7 @@ def load_similarity(lang: str):
 
     @lru_cache(maxsize=64)
     def ranking(k: str) -> dict[str, int]:
-        return {cand: r for cand, r, _ in module.closest(k, kv, V, M, n=None)}
+        return {cand: r for cand, r, _ in neighbors.closest(k, kv, V, M)}
 
     def neighbour_rank(t: rules.Token, word: str):
         """Where `word` stands in the STATIC ranking around the token's vector (0 = the
@@ -158,7 +155,7 @@ _FORM_NEEDED = re.compile(r"la forme de « (.+?) » doit être explicite")
 _ANALYSIS = re.compile(r"^\s*(\d+)\)\s+(\S+)\s+—\s+(.*)$", re.M)
 _EXAMPLE = re.compile(r"ex\. --form \S+=(\S+)")
 _SHARED = re.compile(r"Précise : (.+?)\.\s*$", re.S)
-_WRITTEN = re.compile(r"écrite dans (\S+) :")
+_WRITTEN = re.compile(r"écrite dans (.+) :$", re.M)
 
 
 def run_gen_phrase(sentence: str, words: list[str], source: dict, forms: dict[str, str], lang: str,
@@ -194,9 +191,7 @@ class Replace(Exception):
         self.secret, self.with_, self.why = secret, with_, why
 
 
-def _sidecar(puzzle_path: str) -> str:
-    """The judge's scores gen_phrase writes beside a puzzle (#308)."""
-    return puzzle_path[:-len(".json")] + ".contextual.json"
+_sidecar = shelf_mod.sidecar_path
 
 
 def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], source: dict, lang: str,
@@ -239,15 +234,23 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
                                         replay=_sidecar(prev) if prev else replay)
         if completed.returncode == 0:
             m = _WRITTEN.search(completed.stdout)
-            path = m.group(1) if m else None
-            if path and prev and path != prev:  # the file is named after its starts: a rerun leaves no orphan
+            if m is None:
+                # A puzzle whose path cannot be read cannot be given its start words nor
+                # checked: what gen_phrase wrote carries its own random band pick, and
+                # that is never a candidate day.
+                log("- gen:phrase wrote a puzzle but its path could not be read off the output: the draft "
+                    "is refused (the file is left under the generation output, with the generator's own "
+                    "start words)")
+                return None
+            path = m.group(1)
+            if prev and path != prev:  # the file is named after its starts: a rerun leaves no orphan
                 Path(prev).unlink(missing_ok=True)
                 Path(_sidecar(prev)).unlink(missing_ok=True)
-            if path and replay and _sidecar(path) != replay:  # the erased draft's scores, now copied
+            if replay and _sidecar(path) != replay:  # the erased draft's scores, now copied
                 Path(replay).unlink(missing_ok=True)
                 replay = None
-            prev = path or prev
-            if path and not chosen:
+            prev = path
+            if not chosen:
                 chosen = True
                 try:
                     picked = choose_starts(claude, log, path, context or {}, forms, frequency_rank, pairs or {},
@@ -265,7 +268,7 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
                 if picked:
                     _adopt(starts, tried, picked)
                     continue
-            if path and rounds < st.START_ROUNDS:
+            if rounds < st.START_ROUNDS:
                 repick = check_starts(claude, log, path, tried, context or {}, frequency_rank, pairs or {}, chain,
                                       lang=lang)
                 if repick:
@@ -273,7 +276,7 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
                     rounds += 1
                     continue
             log(f"- gen:phrase command: `{' '.join(_quote(c) for c in cmd[2:])}`")
-            return path or "(path not found in output)"
+            return path
         err = completed.stderr.strip()
         needed = _FORM_NEEDED.search(err)
         shared = _SHARED.search(err)
@@ -331,11 +334,21 @@ def _adopt(starts: dict[str, str], tried: dict[str, set[str]], picked: dict[str,
         tried.setdefault(key, set()).add(word)
 
 
+def _load(path: str) -> tuple[dict, dict[str, dict]]:
+    """A written puzzle, and the first hole of each secret by its slug (a repeated secret
+    is one hole per occurrence, sharing one start)."""
+    puzzle = json.loads(Path(path).read_text(encoding="utf-8"))
+    by_secret: dict[str, dict] = {}
+    for h in puzzle["holes"]:
+        by_secret.setdefault(h["secret"]["slug"], h)
+    return puzzle, by_secret
+
+
 def _word_rank(frequency_rank):
     """A frequency reader over display words for the start candidates (the curator's
     reader takes tokens)."""
     def read(word: str):
-        return frequency_rank(rules.Token(-1, word, word.lower(), "", "", -1, slug(word)))
+        return frequency_rank(rules.Token(-1, word, word.lower(), "", slug(word)))
     return read
 
 
@@ -352,11 +365,8 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
     model names a hidden word no start can save. Returns None when the model gives no
     complete trio of valid starts; a random generator pick must not become the day."""
     pairs, fillers = pairs or {}, fillers or {}
-    puzzle = json.loads(open(path, encoding="utf-8").read())
+    puzzle, by_secret = _load(path)
     words, holes = puzzle["words"], puzzle["holes"]
-    by_secret: dict[str, dict] = {}
-    for h in holes:
-        by_secret.setdefault(h["secret"]["slug"], h)
     marked = st.displayed(words, holes, {k: f"[{h['secret']['word']}]" for k, h in by_secret.items()})
     info = []
     for key, h in by_secret.items():
@@ -415,12 +425,9 @@ def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[s
     {secret slug: new start} for every faulty hole (empty = all good, or nothing better
     to offer). `tried` holds every start a hole has shown so far; none is offered again."""
     pairs = pairs or {}
-    puzzle = json.loads(open(path, encoding="utf-8").read())
+    puzzle, by_secret = _load(path)
     words, holes = puzzle["words"], puzzle["holes"]
     shown = st.displayed(words, holes)
-    by_secret: dict[str, dict] = {}
-    for h in holes:
-        by_secret.setdefault(h["secret"]["slug"], h)
     faulty: dict[str, str] = {}
     for key, h in by_secret.items():
         if h["start"]["word"] in pairs.get(key, ()):
@@ -467,14 +474,10 @@ def player_view(path: str, book: dict) -> list[str]:
     """What the blind log may show of a written puzzle: the sentence as the player
     first sees it, the start words with their ranks, the source, the path."""
     try:
-        puzzle = json.loads(open(path, encoding="utf-8").read())
+        puzzle, by_secret = _load(path)
     except (OSError, ValueError):
         return [f"- written: `{path}`"]
-    seen, starts = set(), []
-    for h in puzzle["holes"]:
-        if h["secret"]["slug"] not in seen:
-            seen.add(h["secret"]["slug"])
-            starts.append(f"{h['start']['word']} ({h['start_rank']})")
+    starts = [f"{h['start']['word']} ({h['start_rank']})" for h in by_secret.values()]
     return [f"- player view: « {st.displayed(puzzle['words'], puzzle['holes'])} »",
             f"- start words: {', '.join(starts)}",
             f"- source: {book.get('author', '')} — {book.get('title', '')}",
@@ -497,13 +500,13 @@ def in_cooldown(work: dict, archive: dict, index: dict, today: date) -> bool:
         lyr.within_cooldown(shelf_mod.last_proposed(index, work.get("author", "")), today)
 
 
-def choose_work(claude: llm.Claude, log: Log, args, archive: dict, index: dict, today: date) -> dict:
+def choose_work(log: Log, args, archive: dict, index: dict, today: date) -> dict:
     works = shelf_mod.list_works(_paths.shelf_dir(args.lang))
     if not works:
         die(f"nothing on the shelf ({_paths.shelf_dir(args.lang)})")
     # A file the shelf could not open (`list_works` puts the reason on its entry) is
-    # never offered to the model: the pick would spend a call and the run would die on
-    # the read. Named in the log so the file gets replaced.
+    # never picked: the run would die on the read. Named in the log so the file gets
+    # replaced.
     broken = [w for w in works if w.get("error")]
     if broken:
         log("- unreadable, skipped: " + ", ".join(f"{w['file']} ({w['error']})" for w in broken))
@@ -538,10 +541,11 @@ def choose_work(claude: llm.Claude, log: Log, args, archive: dict, index: dict, 
 
 
 def pick_work(fresh: list[dict], archive: dict, index: dict, today: date) -> tuple[dict, str]:
-    """The next work, by rule (user-decided 2026-09-20; the model no longer picks):
-    a song when no music day is within MUSIC_EVERY_DAYS, else a book; within the
-    kind, the author never used or proposed first, then the one left longest ago, then
-    the file name — deterministic, so two runs on one shelf pick the same work."""
+    """The next work, by rule (no model call):
+    a song when no music day is within MUSIC_EVERY_DAYS or no book is left, else a
+    book; within the kind, the author never used or proposed first, then the one left
+    longest ago, then the file name — deterministic, so two runs on one shelf pick the
+    same work."""
     music = [w for w in fresh if w["kind"] == "music"]
     last_music = archive.get("last_music")
     want_music = bool(music) and (last_music is None or (today - last_music).days >= MUSIC_EVERY_DAYS)
@@ -576,21 +580,15 @@ def mine(work: dict, text: str, log: Log, lang: str) -> list[str]:
     return sentences
 
 
-def judge_sentences(log: Log, sentences: list[str], lang: str, judge=None) -> list[str]:
+def judge_sentences(log: Log, sentences: list[str], lang: str, judge) -> list[str]:
     """The judge's sentence pre-filter (#308): every candidate is scored — stands alone,
     carries an image or a turn, not a famous line — and the loose filter removes what the
     model should not have to read (about half a novel: lines hanging on a name or a
     pronoun, the flat ones). Reading order is kept: the model reads everything left
     (2026-09-24 — ordering by the image score favoured description and cut what the model
-    never saw). The key is the one gen_phrase needs anyway; without it this dies here,
-    before any model call. The judge asks its questions in the line's language."""
+    never saw). The judge asks its questions in the line's language."""
     if not sentences:
         return []
-    if judge is None:
-        try:
-            judge = contextual_rank.JevJudge(contextual_rank.read_api_key(os.environ))
-        except contextual_rank.ContextualError as exc:
-            die(f"sentence judge: {exc}")
     try:
         scores = contextual_rank.score_sentences(judge, sentences, lang=lang)
     except contextual_rank.ContextualError as exc:
@@ -603,17 +601,12 @@ def judge_sentences(log: Log, sentences: list[str], lang: str, judge=None) -> li
     return kept
 
 
-def giveaway_scores(tokens, words, occurrences, lang: str, judge=None) -> dict[str, float]:
+def giveaway_scores(tokens, words, occurrences, lang: str, judge) -> dict[str, float]:
     """How much the sentence hands each word over, by the judge's measure
     (`contextual_rank.giveaway`): a NOTE for the model. On real play (84 holes), a score
     at or above `GIVEAWAY_MAX` was a hole a third of the players typed within three
     guesses. Each distinct word judged once, every occurrence blanked, the rest of the
     sentence intact and no start word — the reader's own view."""
-    if judge is None:
-        try:
-            judge = contextual_rank.JevJudge(contextual_rank.read_api_key(os.environ))
-        except contextual_rank.ContextualError as exc:
-            die(f"giveaway judge: {exc}")
     scores: dict[str, float] = {}
     for t in words:
         if t.slug in scores:
@@ -628,8 +621,7 @@ def giveaway_scores(tokens, words, occurrences, lang: str, judge=None) -> dict[s
     return scores
 
 
-def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str], lang: str) -> list[dict]:
-    sentences = [s for s in mined if shelf_mod.sentence_key(s) not in exclude]
+def shortlist(claude: llm.Claude, log: Log, sentences: list[str], lang: str) -> list[dict]:
     if not sentences:
         die("no candidate sentence in this work")
     picks: list[dict] = []
@@ -643,7 +635,7 @@ def shortlist(claude: llm.Claude, log: Log, mined: list[str], exclude: set[str],
 
 def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: dict, text: str,
         in_vocab, frequency_rank, neighbour_rank, lang: str, replay: str | None = None,
-        tried: list[str] | None = None):
+        tried: list[str] | None = None, *, judge):
     """The day, chosen by COMPARISON (2026-09-24): the shortlist's lines COMPARE at a
     time; the model picks the line and its three words, in the order players will find
     them, from the words code allows; code checks the facts (three distinct words of the
@@ -700,7 +692,7 @@ def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: d
                 refused.append(f"« {line['sentence']} » — {why}")
                 continue
             path = build_day(claude, log, line, trio, choice["path"], book, archive, text, source_base,
-                             frequency_rank, neighbour_rank, lang, replay if batch_start == 0 else None)
+                             frequency_rank, neighbour_rank, lang, replay if batch_start == 0 else None, judge)
             if path:
                 return path
             refused.append(f"« {line['sentence']} » with « {' · '.join(choice['words'])} » — it could not be built")
@@ -709,7 +701,8 @@ def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: d
 
 
 def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[str], book: dict, archive: dict,
-              text: str, source_base: dict, frequency_rank, neighbour_rank, lang: str, replay: str | None):
+              text: str, source_base: dict, frequency_rank, neighbour_rank, lang: str, replay: str | None,
+              judge):
     """One chosen day, built: code measures each hidden word — what a reader puts in its
     blank, how much the sentence hands it over — the page is cut (a book), and
     `generate` writes the puzzle, the start words chosen by the taste. A word
@@ -724,6 +717,7 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
     for t in line["allowed"]:
         occurrences.setdefault(t.slug, set()).add(t.i)
     readings: dict[str, tuple[list[str], str | None]] = {}
+    given: dict[str, float] = {}
     source = dict(source_base)
     if book["kind"] == "book":
         window = excerpt_around(text, sentence, EXCERPT_WINDOW, lang=lang)
@@ -735,7 +729,7 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
             if t.slug not in readings:
                 readings[t.slug] = llm.context_guesses(claude, tokens, occurrences[t.slug] - {t.i}, t.i,
                                                        rules.CONTEXT_GUESSES, lang=lang)
-        given = giveaway_scores(tokens, trio, occurrences, lang)
+        given.update(giveaway_scores(tokens, [t for t in trio if t.slug not in given], occurrences, lang, judge))
         context = {}
         for t in trio:
             guesses, expected = readings[t.slug]
@@ -812,7 +806,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--lang", choices=shelf_mod.LANGS, default="fr",
                    help="the language of the day: its shelf (shelf/<lang>/), archive and vectors")
-    p.add_argument("--work", help="a file name on the shelf, epub or song (skips the model's pick)")
+    p.add_argument("--work", help="a file name on the shelf, epub or song (skips the pick by rule)")
     p.add_argument("--blind", action="store_true",
                    help="withhold the winning sentence, its secrets and their handling from the "
                         "log and stdout (they go to runs/<stamp>.spoilers.md), so the run can be "
@@ -835,19 +829,26 @@ def main():
 
     vocab = set(json.loads((_paths.VOCAB_DIR / f"{args.lang}.json").read_text(encoding="utf-8")))
     index = shelf_mod.load_index(args.lang)
-    sentence = None
-    if args.retry:
-        sentence = retry_target(args, log, index)
+    # What the run cannot do without is checked before `--retry` erases anything and
+    # before any model call: the ledger, and the judge's key (the one gen_phrase needs
+    # anyway).
     if not _paths.PUBLISHED_LEDGER.exists():
         die(f"no publish ledger at {_paths.PUBLISHED_LEDGER} — run `pnpm puzzle:ledger --s3` first "
             "(the archive is read off it, and an empty archive would re-propose every published day)")
-    archive = shelf_mod.archive(args.lang, datetime.now(timezone.utc).date())
+    try:
+        judge = contextual_rank.JevJudge(contextual_rank.read_api_key(os.environ))
+    except contextual_rank.ContextualError as exc:
+        die(f"judge: {exc}")
+    sentence = None
+    if args.retry:
+        sentence = retry_target(args, log, index)
+    today = datetime.now(timezone.utc).date()
+    archive = shelf_mod.archive(args.lang, today)
     log(f"- archive: {len(archive['secrets'])} secret(s) still in their {shelf_mod.SECRET_COOLDOWN_DAYS}-day "
         f"cooldown, {sum(len(v) for v in archive['pairs'].values())} secret/start pair(s) blacklisted")
     claude = llm.Claude()
 
-    today = datetime.now(timezone.utc).date()
-    book = choose_work(claude, log, args, archive, index, today)
+    book = choose_work(log, args, archive, index, today)
     path = _paths.shelf_dir(args.lang) / book["file"]
     text = epub_text(path) if book["kind"] == "book" else path.read_text(encoding="utf-8")
     frequency_rank, neighbour_rank = load_similarity(args.lang)
@@ -891,13 +892,13 @@ def main():
         proposed = {shelf_mod.sentence_key(s) for s in index["books"].get(book["file"], {}).get("sentences", ())}
         proposed |= archive["sentences"]
         mined = unquoted([s for s in mine(book, text, log, args.lang) if shelf_mod.sentence_key(s) not in proposed])
-        mined = judge_sentences(log, mined, args.lang)
-        ranked = shortlist(claude, log, mined, proposed, args.lang)
+        mined = judge_sentences(log, mined, args.lang, judge)
+        ranked = shortlist(claude, log, mined, args.lang)
 
     tried: list[str] = []
-    log.begin_attempt(1)
+    log.begin_attempt()
     result = day(claude, log, ranked, book, archive, text, vocab.__contains__, frequency_rank, neighbour_rank,
-                 args.lang, replay=getattr(args, "replay", None), tried=tried)
+                 args.lang, replay=getattr(args, "replay", None), tried=tried, judge=judge)
     log.end_attempt(bool(result), player_view(result, book) if result else ())
     shelf_mod.record(index, book["file"], tried, author=book.get("author", ""))
     shelf_mod.save_index(index, args.lang)

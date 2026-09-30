@@ -28,6 +28,7 @@
 // invariant, and overshooting it by the number of simultaneous taps costs nothing.
 
 import { GROUP_MEMBERS_MAX, GROUPS_MAX } from '@whippin/shared';
+import { playerPartition } from './profileStore';
 
 export { GROUP_MEMBERS_MAX, GROUPS_MAX };
 
@@ -88,7 +89,7 @@ export function successionFor(
   return { options: { expectedVersion, successor: others[0].publicId }, needsChoice: true };
 }
 
-export interface GroupCreateInput {
+interface GroupCreateInput {
   id: string;
   name: string;
   createdBy: string;
@@ -100,9 +101,9 @@ export interface GroupCreateInput {
 //   group_limit — the creator is already in GROUPS_MAX groups; nothing changed;
 //   gone        — the creator's account row disappeared before the write (#204); nothing
 //                 changed, so no group exists that nobody is in.
-export type GroupCreateOutcome = 'created' | 'group_limit' | 'gone';
+type GroupCreateOutcome = 'created' | 'group_limit' | 'gone';
 
-export interface GroupJoinInput {
+interface GroupJoinInput {
   id: string;
   publicId: string;
   now: string;
@@ -116,7 +117,7 @@ export interface GroupJoinInput {
 //   group_full    — the group holds GROUP_MEMBERS_MAX members; nothing changed;
 //   group_limit   — the caller is in GROUPS_MAX groups already; nothing changed;
 //   gone          — the caller's account row disappeared before the write; nothing changed.
-export type GroupJoinOutcome =
+type GroupJoinOutcome =
   | 'joined'
   | 'already'
   | 'unknown_group'
@@ -151,6 +152,10 @@ export interface GroupStore {
   leaveAll(publicId: string): Promise<void>;
 }
 
+// `leaveAll`'s bound. A pass that finds nothing ends the loop; this only catches a store
+// that is not shrinking the partition it was told to, which is a bug rather than a retry.
+export const LEAVE_ALL_MAX_PASSES = 4;
+
 // The group's own partition; the sort key is `group` for the record and `member#<id>`
 // for each membership.
 export function groupKey(id: string): string {
@@ -163,11 +168,9 @@ export function memberSortKey(publicId: string): string {
 }
 
 // The player-side row shares the player's `player#<id>` partition (`profileKey`'s and
-// `accountKey`'s spelling) under a `group#<id>` sort key, so one Query on the partition
-// still shows everything an account is.
-export function playerGroupsKey(publicId: string): string {
-  return `player#${publicId}`;
-}
+// `accountKey`'s spelling, imported rather than respelled) under a `group#<id>` sort key,
+// so one Query on the partition still shows everything an account is.
+export const playerGroupsKey = playerPartition;
 export const PLAYER_GROUP_SORT_PREFIX = 'group#';
 export function playerGroupSortKey(id: string): string {
   return `${PLAYER_GROUP_SORT_PREFIX}${id}`;

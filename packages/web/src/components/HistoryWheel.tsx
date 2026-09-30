@@ -40,9 +40,9 @@ import MeterCanvas from './MeterCanvas';
 // behind it to be revealed by a scroll — the one thing the plain stack got wrong.
 //
 // What it keeps: the pure model (`buildHistory`; the order is `wheelOrder`, tested), the
-// `revealed` dress on the solved stage, the hole's TRUE position marked with an LED when
-// the slot holds a pick, the exponent in the shared heat colour — as a real superscript,
-// the hole's own — and the modal contract (`useModalDismiss`).
+// hole's TRUE position marked with an LED when the slot holds a pick, the exponent in the
+// shared heat colour — as a real superscript, the hole's own — and the modal contract
+// (`useModalDismiss`).
 //
 // THREE GROUNDS, THREE MEANINGS (user-decided 2026-09-22, with the activated hole): a
 // word the player TYPED stands on the plain surface; a hint the meter GAVE stands on THE
@@ -135,7 +135,7 @@ export default function HistoryWheel({
 }: {
   model: HistoryModel;
   // What the tapped control SHOWS — the hole's word and rank as the sentence has them
-  // (a pick included), or the secret at rank 0 on the solved stage.
+  // (a pick included).
   // The meter's reading (#301), so the slot row — the hole as the sentence draws it —
   // carries it too; a full meter (an active hole) draws nothing here: the slot is white.
   hub: { word: string; rank: number; meter?: number };
@@ -147,7 +147,7 @@ export default function HistoryWheel({
   // The hole's 1-based sentence position among distinct secrets — the ruler's numbering.
   number: number;
   lang: string;
-  // Absent once the round is over: the solved stage's words are trophies, not slots.
+  // Absent while the board takes no pick (`Game`'s `exploreDisabled`).
   onPick?: (stop: HistoryStop) => void;
   onClose: () => void;
 }) {
@@ -157,28 +157,8 @@ export default function HistoryWheel({
   const { closing, beginClose, dialogProps } = useModalDismiss('wheel-out');
   const title = holeTitle(lang, number);
 
-  // The rows, farthest first — plus, on the solved stage, the secret itself as the last
-  // row: the slot holds the answer there, and the answer is never a stop.
-  const rows = useMemo(() => {
-    const order = wheelOrder(model.stops);
-    if (model.solved && model.secret) {
-      order.push({
-        rank: 0,
-        dq: null,
-        display: model.secret,
-        word: model.secret,
-        slug: '',
-        start: false,
-        best: false,
-        behind: false,
-        revealed: false,
-        given: false,
-        masked: false,
-        taken: false,
-      });
-    }
-    return order;
-  }, [model]);
+  // The rows, farthest first.
+  const rows = useMemo(() => wheelOrder(model.stops), [model]);
   const hubIndex = Math.max(
     0,
     rows.findIndex((r) => r.rank === hub.rank),
@@ -249,7 +229,7 @@ export default function HistoryWheel({
     // A pick where the slot differs from what the hole shows — by rank, or by WORD at the
     // same rank: a mask picked earlier and revealed since is the same stop with its word.
     // Confirming a held mask also makes it the latest selection for the prompt's Enter.
-    if (pick && stop && stop.rank !== 0 && (stop.masked || stop.rank !== hubRank || stop.display !== hubWord)) pick(stop);
+    if (pick && stop && (stop.masked || stop.rank !== hubRank || stop.display !== hubWord)) pick(stop);
     onClose();
   }, [drum, onClose]);
   // THE FOLD LANDS IN THE SAME TASK THAT CLOSES THE DIALOG (user-reported 2026-09-02, "the
@@ -344,9 +324,9 @@ export default function HistoryWheel({
   );
   const body = (stop: HistoryStop, inSlot: boolean) =>
     inSlot ? (
-      <span className={`hole${stop.rank === 0 ? ' resolved' : ''}`}>
+      <span className="hole">
         <span className="hole-word-wrap" data-focus-box>
-          <span className={`hole-word${stop.masked ? ' wheel-mask' : ''}`}>
+          <span className="hole-word">
             {stop.masked
               ? Array.from(MASK).map((ch, k) => (
                   <span key={k} className="hole-letter">
@@ -365,14 +345,14 @@ export default function HistoryWheel({
               <span className="hole-meter" aria-hidden="true">
                 <MeterCanvas value={100} delayMs={0} durationMs={0} sea seed={stop.rank} />
               </span>
-            ) : hub.meter !== undefined && hub.meter < 100 && stop.rank > 0 ? (
+            ) : hub.meter !== undefined && hub.meter < 100 ? (
               <span className="hole-meter" aria-hidden="true">
                 <MeterCanvas value={hub.meter} delayMs={0} durationMs={0} />
               </span>
             ) : null}
           </span>
         </span>
-        {stop.rank > 0 && <sup className="hole-rank">{stop.rank}</sup>}
+        <sup className="hole-rank">{stop.rank}</sup>
       </span>
     ) : (
       // A plain row stands on its own GROUND (user-decided 2026-09-02: "you don't have
@@ -381,11 +361,11 @@ export default function HistoryWheel({
       // row's ground is the sea, on the word alone (the canvas over the word's own white
       // box), its exponent standing outside on the ground.
       <span className={`wheel-plain${stop.given ? ' wheel-given' : ''}`}>
-        <span className={`wheel-word${stop.masked ? ' wheel-mask' : ''}`}>
+        <span className="wheel-word">
           {stop.given && foil(stop)}
           {stop.masked ? MASK : stop.word}
         </span>
-        {stop.rank > 0 && <sup className="wheel-rank">{stop.rank}</sup>}
+        <sup className="wheel-rank">{stop.rank}</sup>
       </span>
     );
 
@@ -408,7 +388,7 @@ export default function HistoryWheel({
           el === scrollRef.current ||
           el.classList.contains('wheel-lead') ||
           el.classList.contains('wheel-trail');
-        if (bare && !closing) beginClose();
+        if (bare) beginClose();
       }}
     >
       <div
@@ -438,9 +418,7 @@ export default function HistoryWheel({
               key={stop.rank}
               ref={inSlot ? (el) => void (slotRef.current = el) : undefined}
               type="button"
-              className={`wheel-row${inSlot ? ' wheel-row-slot' : ''}${stop.revealed ? ' wheel-row-revealed' : ''}${
-                stop.best && !inSlot ? ' wheel-row-best' : ''
-              }`}
+              className={`wheel-row${inSlot ? ' wheel-row-slot' : ''}${stop.best && !inSlot ? ' wheel-row-best' : ''}`}
               style={rowStyle(stop, inSlot, i)}
               aria-label={inSlot ? t(lang, 'ariaClose') : srRouteStop(lang, { ...stop, word: stop.masked ? null : stop.word })}
               aria-current={inSlot ? 'true' : undefined}

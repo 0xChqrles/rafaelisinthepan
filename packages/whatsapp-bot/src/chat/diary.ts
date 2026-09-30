@@ -34,7 +34,7 @@ import { LlmUnavailable, type LlmProvider } from '../llm/types';
 import type { Log } from '../log';
 import { renderDay, type Turn } from './dayLog';
 
-export const DIARY_VERSION = 1;
+const DIARY_VERSION = 1;
 // About what a member holds in their head about a group of friends, and small enough to
 // sit in every prompt beside the whole day (user-decided 2026-09-11: 6000, from 3000).
 export const DIARY_MAX_CHARS = 6000;
@@ -62,7 +62,7 @@ export interface DiaryStore {
   put(group: string, diary: Diary, expected: DiaryStamp): Promise<boolean>;
 }
 
-export function diaryKey(group: string) {
+function diaryKey(group: string) {
   return { pk: { S: `DIARY#${group}` }, sk: { S: 'TEXT' } };
 }
 
@@ -243,8 +243,9 @@ export function mentionsPerson(text: string, name: string): boolean {
   return found.some((_, i) => parts.every((part, k) => found[i + k] === part));
 }
 
-// Null when the model could not do it, or did it and the name is still there: the
-// operator asked for a person to be gone, and a diary that still names them is not that.
+// Null when the model could not do it, answered nothing, or did it and the name is still
+// there: the operator asked for a person to be gone, and a diary that still names them is
+// not that — nor is a blanked one, which costs everything the bot knew.
 export async function withoutPerson(
   provider: LlmProvider,
   group: GroupConfig,
@@ -264,7 +265,11 @@ export async function withoutPerson(
       timeoutMs: TIMEOUT_MS,
     });
     if (response.finish !== 'stop') return null;
-    const text = plainDiary(response.text) ?? '';
+    const text = plainDiary(response.text);
+    if (!text) {
+      log.warn({ event: 'diary.forget_empty' }, 'the rewrite came back empty; not stored');
+      return null;
+    }
     if (mentionsPerson(text, name)) {
       log.warn({ event: 'diary.forget_incomplete' }, 'the rewrite still names the person; not stored');
       return null;

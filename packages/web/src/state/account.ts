@@ -25,7 +25,7 @@ import { adoptSignedOutVerdict } from './signedOutVerdict';
 const DRAIN_ATTEMPTS = 4;
 const DRAIN_DELAY_MS = 1_500;
 
-export type AccountPhase = 'idle' | 'loading' | 'ready' | 'failed';
+type AccountPhase = 'idle' | 'loading' | 'ready' | 'failed';
 
 interface AccountState {
   phase: AccountPhase;
@@ -42,6 +42,10 @@ export const useAccountStore = create<AccountState>(() => ({ phase: 'idle', summ
 // twice.
 let flight: Promise<void> | null = null;
 let loadedFor: string | null = null;
+// Moves when the account this store is about is LEFT (`resetAccountSummary`). A read that
+// outlives it may neither stamp its failure on the account that replaced it nor clear that
+// account's flight.
+let generation = 0;
 
 async function drain(token: string, epoch: string, pending: boolean): Promise<void> {
   let outstanding = pending;
@@ -71,6 +75,7 @@ export function loadAccountSummary(force = false): void {
   if (!force && loadedFor === identity.accountId) return;
   if (flight) return;
   const epoch = identityEpochOf(identity);
+  const requestGeneration = generation;
   useAccountStore.setState((state) => ({
     phase: 'loading',
     // Keep a summary already in hand while a refresh is out — the leaderboard's
@@ -84,7 +89,7 @@ export function loadAccountSummary(force = false): void {
       const response = await postLinkBody(linkUrl(), { token: resolved.identity.token });
       if (!response.ok) {
         await adoptSignedOutVerdict(response, resolved.epoch);
-        useAccountStore.setState({ phase: 'failed' });
+        if (generation === requestGeneration) useAccountStore.setState({ phase: 'failed' });
         return;
       }
       const summary = parseAccountSummary(await response.json());
@@ -95,9 +100,9 @@ export function loadAccountSummary(force = false): void {
       useAccountStore.setState({ phase: 'ready', summary });
       if (summary.departurePending) void drain(resolved.identity.token, epoch, true);
     } catch {
-      useAccountStore.setState({ phase: 'failed' });
+      if (generation === requestGeneration) useAccountStore.setState({ phase: 'failed' });
     } finally {
-      flight = null;
+      if (generation === requestGeneration) flight = null;
     }
   })();
 }
@@ -143,6 +148,7 @@ export function useAccountSummary(): AccountState {
 // Registered in `identityScope`: the summary belongs to the ACCOUNT, and a device that
 // leaves one may not keep showing its address.
 export function resetAccountSummary(): void {
+  generation += 1;
   flight = null;
   loadedFor = null;
   useAccountStore.setState({ phase: 'idle', summary: null });

@@ -23,8 +23,8 @@
 // The RAW device token: 32 random bytes as exactly 64 LOWERCASE hex characters. The server
 // accepts only this spelling and never normalizes an uppercase one, so one token has one
 // hash and one row.
-export const DEVICE_TOKEN_BYTES = 32;
-export const DEVICE_TOKEN_PATTERN = /^[0-9a-f]{64}$/;
+const DEVICE_TOKEN_BYTES = 32;
+const DEVICE_TOKEN_PATTERN = /^[0-9a-f]{64}$/;
 
 export function isValidDeviceToken(value: unknown): value is string {
   return typeof value === 'string' && DEVICE_TOKEN_PATTERN.test(value);

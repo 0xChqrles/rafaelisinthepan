@@ -39,12 +39,12 @@ import {
   type ResolvedDevice,
 } from './deviceStore';
 import {
-  clientIp,
+  header,
   LIVE_HEADERS,
   readJsonObject,
   requireDevice,
   requireDeviceToken,
-  requireTurnstileToken,
+  requireTurnstile,
 } from './liveRoute';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
 import type { TurnstileVerifier } from './turnstile';
@@ -136,15 +136,8 @@ export async function handleDevices(
     }
     const token = requireDeviceToken(body, responseHeaders);
     if (!token.ok) return token.response;
-    const challenge = requireTurnstileToken(body, responseHeaders);
+    const challenge = await requireTurnstile(body, event, deps, responseHeaders, 'Device bootstrap');
     if (!challenge.ok) return challenge.response;
-    const remoteIp = clientIp(event, deps.allowSourceIp === true);
-    if (!remoteIp) {
-      throw new Error('Device bootstrap has no trusted client IP address.');
-    }
-    if (!(await deps.turnstile.verify(challenge.value, remoteIp))) {
-      return errorResponse(403, 'turnstile_rejected', 'Turnstile token is invalid.', responseHeaders);
-    }
     // The ids are minted HERE, from the shared generator, so the store stays a storage
     // contract and there is one spelling of what an id is. `bootstrap` ignores them when the
     // token already names a device.
@@ -203,13 +196,4 @@ export async function handleDevices(
   }
 
   return json(200, await listing(devices, resolved), responseHeaders);
-}
-
-// The header lookup is case-insensitive: Function URL events lowercase their header names,
-// but the local HTTP adapter passes through whatever the client sent.
-function header(event: FnUrlEvent, name: string): string | undefined {
-  for (const [key, value] of Object.entries(event.headers ?? {})) {
-    if (key.toLowerCase() === name) return value;
-  }
-  return undefined;
 }

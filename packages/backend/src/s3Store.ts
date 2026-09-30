@@ -1,4 +1,4 @@
-import { type S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { type S3Client, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import type { Puzzle } from '@whippin/shared';
 import { isNotFound, type PuzzleStore } from './store';
 import { decodeSlice } from './slice';
@@ -21,6 +21,16 @@ export function s3Store(client: S3Client, bucket: string): PuzzleStore {
         return JSON.parse(await got.Body.transformToString()) as Puzzle;
       } catch (err) {
         if (isNotFound(err)) return null;
+        throw err;
+      }
+    },
+    // A HEAD of the same key: existence without the multi-MB body.
+    async hasPuzzle(date, lang) {
+      try {
+        await client.send(new HeadObjectCommand({ Bucket: bucket, Key: storeKey(date, lang) }));
+        return true;
+      } catch (err) {
+        if (isNotFound(err)) return false;
         throw err;
       }
     },

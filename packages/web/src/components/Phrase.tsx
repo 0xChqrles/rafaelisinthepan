@@ -2,7 +2,8 @@ import { Fragment, type CSSProperties } from 'react';
 import Hole, { type HoleChargeView } from './Hole';
 import { DecodeWord, introPlan, useIntroClock } from './PhraseIntro';
 import { capitalize, sentenceStarts } from '../game/sentenceCase';
-import type { HitState, Hole as PuzzleHole, RuntimeHole } from '@whippin/shared';
+import type { Hole as PuzzleHole } from '@whippin/shared';
+import type { HitState, RuntimeHole } from '../game/types';
 
 // Render the sentence: normal words as plain text, holes via <Hole>. A blanked word
 // keeps its display affixes (a leading clitic like "t'", trailing punctuation) around
@@ -33,11 +34,10 @@ export default function Phrase({
   hits: HitState[]; // one transient number per warm hole (multi-hit)
   onHitDone: (id: number) => void;
   onHoleResolved?: (index: number) => void;
-  // Route map (#117), by hole index: the button's exploration hint, or null for a hole whose
-  // secret carries no #115 geometry (no map, so no entry point at all). Stable for the
+  // By hole index: the button's exploration hint — every hole has one. Stable for the
   // round — the solved choreography gates the buttons with `exploreDisabled`, never by
   // taking them away.
-  exploreLabels?: (string | null)[];
+  exploreLabels?: string[];
   exploreDisabled?: boolean;
   onExplore?: (holeIndex: number) => void;
   // Is the sentence quiet enough for the ambient wave (#129)? Passed straight through: each
@@ -170,13 +170,11 @@ export default function Phrase({
         the DOM. Inside the <p> it would interleave "Explore word 2" into the prose a screen
         reader reads straight through; after it, the sentence stays a sentence. */}
     {onExplore &&
-      exploreLabels?.map((label, idx) =>
-        label === null ? null : (
-          <span key={idx} id={hintId(idx)} className="sr-only">
-            {label}
-          </span>
-        ),
-      )}
+      exploreLabels?.map((label, idx) => (
+        <span key={idx} id={hintId(idx)} className="sr-only">
+          {label}
+        </span>
+      ))}
     {/* The meters' descriptions (#301), outside the sentence for the same reason: the
         charge and the given words are the hole's STATE, read as a description of the
         hole, never as words in the prose. */}

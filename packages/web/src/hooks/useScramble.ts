@@ -35,6 +35,19 @@ export function prefersReducedMotion(): boolean {
   );
 }
 
+// A TOUCH SCREEN, as the whole app reads one: the PRIMARY pointer is coarse — the device
+// gate, never API presence (a touch device TAPS and gets the native share sheet, a pointer
+// device CLICKS).
+export const COARSE_POINTER = '(pointer: coarse)';
+
+export function coarsePointer(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia(COARSE_POINTER).matches
+  );
+}
+
 // The scramble's displayed string at progress `p` (0..1): the first `settled` letters of
 // the target are locked in place (left-to-right), the rest of the interpolated current
 // length are random glyphs. Length runs from `fromLen` at p=0 to the target's length at

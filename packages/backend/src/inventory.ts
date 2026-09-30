@@ -16,13 +16,19 @@
 import { access } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { activeDate, dateForDayNumber, dayNumber } from '@whippin/shared';
-import { defaultLocalStoreRoot, isValidDate, storeKey } from './layout';
+import {
+  activeDate,
+  dateForDayNumber,
+  dayNumber,
+  isCalendarDate,
+  SUPPORTED_LANGS,
+} from '@whippin/shared';
+import { localStoreRoot, storeKey } from './layout';
 import { isNotFound } from './store';
 import { STACK_REGION, stackOutputs } from './stack';
 
 const DEFAULT_DAYS = 14;
-const DEFAULT_LANGS = ['en', 'fr'];
+const DEFAULT_LANGS = [...SUPPORTED_LANGS];
 
 interface Args {
   s3: boolean;
@@ -83,7 +89,7 @@ function parseArgs(argv: string[]): Args {
 // `dateForDayNumber` pair (day.ts), which is the same offset-free UTC arithmetic the day
 // logic itself uses, so DST never shifts a boundary here.
 export function upcomingDays(startDate: string, n: number): string[] {
-  if (!isValidDate(startDate)) {
+  if (!isCalendarDate(startDate)) {
     throw new Error(`invalid start date "${startDate}" (expected YYYY-MM-DD)`);
   }
   if (!Number.isInteger(n) || n < 1) {
@@ -149,6 +155,24 @@ export function fsProbe(root: string): Probe {
   };
 }
 
+// The same probe over the deployed bucket: one HeadObject per cell, a missing object read
+// with the store's own `isNotFound` and anything else rethrown (a throttle is not a gap).
+// The SDK is imported here, on the S3 path only, so the local path stays AWS-free; the
+// bucket lives in STACK_REGION (the stack is pinned there).
+export async function s3Probe(bucket: string): Promise<Probe> {
+  const { S3Client, HeadObjectCommand } = await import('@aws-sdk/client-s3');
+  const client = new S3Client({ region: STACK_REGION });
+  return async (date, lang) => {
+    try {
+      await client.send(new HeadObjectCommand({ Bucket: bucket, Key: storeKey(date, lang) }));
+      return true;
+    } catch (err) {
+      if (isNotFound(err)) return false;
+      throw err;
+    }
+  };
+}
+
 // A small aligned table: date rows × lang columns, each cell `ok` / `MISSING`.
 function renderTable(days: string[], langs: string[], present: Summary['present']): string {
   const cell = (ok: boolean) => (ok ? 'ok' : 'MISSING');
@@ -174,22 +198,9 @@ async function main() {
   let probe: Probe;
   if (args.s3) {
     const { bucket } = await stackOutputs();
-    const { S3Client, HeadObjectCommand } = await import('@aws-sdk/client-s3');
-    const client = new S3Client({ region: STACK_REGION });
-    probe = async (date, lang) => {
-      try {
-        await client.send(
-          new HeadObjectCommand({ Bucket: bucket, Key: storeKey(date, lang) }),
-        );
-        return true;
-      } catch (err) {
-        if (isNotFound(err)) return false;
-        throw err;
-      }
-    };
+    probe = await s3Probe(bucket);
   } else {
-    const root = process.env.PUZZLE_STORE ?? defaultLocalStoreRoot();
-    probe = fsProbe(root);
+    probe = fsProbe(localStoreRoot());
   }
 
   const summary = await takeInventory(days, args.langs, probe);

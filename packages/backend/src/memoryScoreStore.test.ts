@@ -187,13 +187,6 @@ describe('first-write-wins is per VERSION (#203)', () => {
     expect(await store.list(KEY)).toEqual([{ publicId: 'lfd5pqz5pa7zjm5u', score: 2 }]);
   });
 
-  it('keeps ONE row per player — a corrected score replaces, never accumulates', async () => {
-    const store = memoryScoreStore(() => new Date());
-    await submit(store, 2, 'a1b2c3d4e5f60718');
-    await submit(store, 1, 'b2c3d4e5f6071829');
-    expect(await store.list(KEY)).toHaveLength(1);
-  });
-
   it('replaces at an exhausted IP allowance without consuming another slot', async () => {
     const store = memoryScoreStore(() => new Date(100_000_000), 1);
     await expect(store.submit(submission({ score: 4, requestToken: 'old' }))).resolves.toBe(

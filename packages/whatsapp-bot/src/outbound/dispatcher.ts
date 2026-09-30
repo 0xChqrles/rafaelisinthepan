@@ -39,9 +39,7 @@ export function createDispatcher(deps: {
   sent: SentStore;
   groups: GroupRegistry;
   log: Log;
-  now?: () => Date;
 }): Dispatcher {
-  const now = deps.now ?? (() => new Date());
   return {
     async dispatch(body) {
       const command = parseCommand(body);
@@ -71,7 +69,7 @@ export function createDispatcher(deps: {
       await deps.sent.put(command.group, {
         commandId: command.id,
         waMessageId,
-        sentAt: now().toISOString(),
+        sentAt: new Date().toISOString(),
       });
       deps.log.info(
         { event: 'outbound.sent', command: commandId, kind: command.kind, waMessageId },

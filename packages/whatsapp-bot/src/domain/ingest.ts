@@ -26,13 +26,10 @@ import type { DeclarationStore, Declaration } from './declarations';
 import type { LeaderStore } from './leader';
 import type { InboundMessage } from './message';
 import { displayName } from './names';
+import { rankOf } from './podium';
 import { renderLeader } from './podiumText';
 import { reactionFor } from './reactions';
 import { sharesIn, type DecodedShare } from './share';
-
-// How good a result is, for picking the one a message is acknowledged for: lower is
-// better, and a run that ended at ∞ is behind every finite score.
-const rankOf = (share: DecodedShare) => (share.capped ? Infinity : share.score);
 
 export interface IngestDeps {
   groups: GroupRegistry;

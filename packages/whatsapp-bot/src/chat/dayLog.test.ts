@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PutItemCommand, QueryCommand, type DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { dayNumber } from '@whippin/shared';
+import { dayNumber, progressEmoji, shareHeadline } from '@whippin/shared';
 import { withoutShares } from '../domain/share';
 import {
   DAY_LOG_TTL_SECONDS,
@@ -10,6 +10,7 @@ import {
   TURN_MAX_CHARS,
   boundTurnText,
   clockIn,
+  composeTurnText,
   dayLogSortKey,
   dayOfInstant,
   dynamoDayLogStore,
@@ -64,6 +65,37 @@ describe('the day log (#277)', () => {
     await log.appendUnlessSaid({ ...said('W1', 'Sept, derrière Zou.', NOON + 1), kind: 'bot', name: '' });
     await log.appendUnlessSaid({ ...said('W2', 'Podium du jour', NOON + 2), kind: 'bot', name: '' });
     expect(log.today(GROUP, DAY).map((t) => t.text)).toEqual(['Sept,\nderrière Zou.', 'Podium du jour']);
+  });
+
+  it('recognises the echo of a line that was CUT on the way in, whitespace runs and all', async () => {
+    // A long answer is remembered cut from the text as written; its echo arrives collapsed.
+    // With a space beside a newline the two cuts land on different characters, and an
+    // exact comparison would remember the line twice.
+    const composed = Array.from({ length: 16 }, (_, i) => `Phrase numéro ${i} de la réponse, assez longue.`).join(' \n');
+    expect(composed.length).toBeGreaterThan(TURN_MAX_CHARS);
+    const log = new DayLog(memoryDayLogStore());
+    await log.append({ ...said('M1#reply', composed), kind: 'bot', name: '' });
+    await log.appendUnlessSaid({ ...said('W1', composed.replace(/\s+/g, ' '), NOON + 1), kind: 'bot', name: '' });
+    expect(log.today(GROUP, DAY).map((t) => t.id)).toEqual(['M1#reply']);
+    // Another long line is another line: only the one already said is skipped.
+    await log.appendUnlessSaid({ ...said('W2', composed.replace(/\s+/g, ' ').replace('numéro 0', 'numéro zéro'), NOON + 2), kind: 'bot', name: '' });
+    expect(log.today(GROUP, DAY).map((t) => t.id)).toEqual(['M1#reply', 'W2']);
+  });
+
+  it('recognises that echo wherever the cut lands, on a letter or on the whitespace it trims', async () => {
+    const lines = Array.from({ length: 16 }, (_, i) => `Phrase numéro ${i} de la réponse, assez longue.`).join(' \n');
+    for (let pad = 0; pad < 60; pad += 1) {
+      const composed = `${'a'.repeat(pad)} ${lines}`;
+      const log = new DayLog(memoryDayLogStore());
+      await log.append({ ...said('M1#reply', composed), kind: 'bot', name: '' });
+      await log.appendUnlessSaid({ ...said('W1', composed.replace(/\s+/g, ' ').trim(), NOON + 1), kind: 'bot', name: '' });
+      expect(log.today(GROUP, DAY).map((t) => t.id), `pad ${pad}`).toEqual(['M1#reply']);
+    }
+    // A short line that merely ends on an ellipsis is no cut line: it swallows nothing.
+    const log = new DayLog(memoryDayLogStore());
+    await log.append({ ...said('M2#reply', 'Oui…'), kind: 'bot', name: '' });
+    await log.appendUnlessSaid({ ...said('W3', 'Oui, le podium du jour', NOON + 1), kind: 'bot', name: '' });
+    expect(log.today(GROUP, DAY).map((t) => t.id)).toEqual(['M2#reply', 'W3']);
   });
 
   it('skips an echo of a line already said TODAY, and never of yesterday\'s (PR-278 review)', async () => {
@@ -131,46 +163,26 @@ describe('the day log (#277)', () => {
   });
 });
 
-describe('what a share message contributes (#236)', () => {
-  // THE WEB'S OWN OUTPUT, verbatim (`web/src/game/share.ts` `shareText`, run against the
-  // real codec): a headline, the run as emoji, a blank line, the link. The
-  // bot cannot import the web, so the shape it strips is pinned here against what the web
-  // actually sends.
-  const SENTENCE = `Whippin AI 2026-09-03 — 7 essais\n🟥🟨1️⃣2️⃣3️⃣\n\n${ORIGIN}/s/ZBXY-GMSYiy-73w`;
-  const CAPPED = `Whippin AI 2026-09-03 — ∞ essais\n🟥🟥🟨\n\n${ORIGIN}/s/ZBXefoGN______-A`;
+describe('what a message becomes as a turn (#277)', () => {
+  // The generated share as the web sends it (the fixtures of `domain/share.test.ts`).
+  const SHARE = `${shareHeadline({ dayNumber: DAY }, 7, 'essais')}\n${progressEmoji(0)}${progressEmoji(100)}1️⃣\n\n${ORIGIN}/s/ZBXY-GMSYiy-73w`;
+  const names = new Map([['33600000000', 'Zou']]);
 
-  it('drops the WHOLE generated share — headline, row and link — not only the link', () => {
-    // The link is what the bot reads a share from, but the block beside it spells the
-    // same result out in words and emoji. "A score-only share never reaches the provider"
-    // holds only if none of it is remembered: a message that was only a share is EMPTY.
-    for (const share of [SENTENCE, CAPPED]) {
-      expect(withoutShares(share, ORIGIN)).toBe('');
-    }
+  it('spells the quote out, names every mention, and carries nothing of a share or a number', () => {
+    // Each text has its share block taken out ONCE, by the caller, as `main.ts` and
+    // `diarySeed.ts` do; the composition is what the day log then keeps.
+    const body = withoutShares(`${SHARE}\n@33600000000 t'as vu ?`, ORIGIN);
+    const quoted = { author: 'Gab', text: withoutShares(`gg @33659018262\n${SHARE}`, ORIGIN) };
+    const turn = composeTurnText(body, quoted, names)!;
+    expect(turn).toBe(`[replying to Gab: "gg …8262"] Zou t'as vu ?`);
+    for (const leak of ['ZBXY', 'Whippin AI', 'essais', '33600000000', '33659018262', '@']) expect(turn).not.toContain(leak);
   });
 
-  it('keeps what the player typed around the share — the commentary is the conversation', () => {
-    expect(withoutShares(`gg\n${SENTENCE}`, ORIGIN)).toBe('gg');
-    expect(withoutShares(`${SENTENCE}\ntrop dur aujourd'hui`, ORIGIN)).toBe("trop dur aujourd'hui");
-    // Two shares in one message, words between them.
-    expect(withoutShares(`hier\n${SENTENCE}\net aujourd'hui\n${CAPPED}`, ORIGIN)).toBe("hier et aujourd'hui");
-  });
-
-  it('strips the token whether the message was addressed to the bot or not', () => {
-    const addressed = `gg 7 essais ${ORIGIN}/s/ZBXg-ISaks2-fA @WhippinBot qui mène ?`;
-    const stripped = withoutShares(addressed, ORIGIN);
-    expect(stripped).toBe('gg 7 essais @WhippinBot qui mène ?');
-    expect(stripped).not.toContain('ZBXg');
-    expect(withoutShares(`${SENTENCE} @WhippinBot qui mène ?`, ORIGIN)).toBe('@WhippinBot qui mène ?');
-  });
-
-  it('drops the pieces of a share pasted apart, and nothing a person would say', () => {
-    expect(withoutShares(`${ORIGIN}/s/ZBXg-ISaks2-fA`, ORIGIN)).toBe('');
-    expect(withoutShares('Whippin AI 2026-09-03 — 7 essais', ORIGIN)).toBe('');
-    expect(withoutShares('🟥🟨🟪🟦2️⃣', ORIGIN)).toBe('');
-    expect(withoutShares('BRAVO', ORIGIN)).toBe('BRAVO');
-    expect(withoutShares(`PHARE\n${SENTENCE}`, ORIGIN)).toBe('PHARE');
-    expect(withoutShares('trop fort 🟦🟦', ORIGIN)).toBe('trop fort 🟦🟦');
-    expect(withoutShares(`a ${ORIGIN}/s/AAA et ${ORIGIN}/s/BBB b`, ORIGIN)).toBe('a et b');
-    expect(withoutShares('https://example.com/s/AAA', ORIGIN)).toBe('https://example.com/s/AAA');
+  it('keeps nothing of a message that was only a share, unless it answers something', () => {
+    const onlyShare = withoutShares(SHARE, ORIGIN);
+    expect(composeTurnText(onlyShare, null, names)).toBeNull();
+    // Under a quote the turn still says what it answers — the bot's own line as "you".
+    expect(composeTurnText(onlyShare, { author: 'you', text: 'Podium du jour' }, names)).toBe('[replying to you: "Podium du jour"]');
+    expect(composeTurnText('oui', null, names)).toBe('oui');
   });
 });

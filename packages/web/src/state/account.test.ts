@@ -29,7 +29,8 @@ vi.mock('../identity', () => ({
 }));
 vi.mock('./signedOutVerdict', () => ({ adoptSignedOutVerdict: vi.fn() }));
 
-const { resumeDepartureDrain } = await import('./account');
+const { loadAccountSummary, resetAccountSummary, resumeDepartureDrain, useAccountStore } =
+  await import('./account');
 
 const answered = (departurePending: boolean) => ({
   ok: true,
@@ -92,5 +93,87 @@ describe('resumeDepartureDrain — a link that still owes a departure', () => {
     resumeDepartureDrain(true);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(postLinkBody).not.toHaveBeenCalled();
+  });
+});
+
+// CONTRACT (#204/#216): the `{token}` read is what the account screen states. A device with
+// no account KNOWS its server state is empty and asks nothing; and the summary belongs to
+// the ACCOUNT, so a read that outlives the account it was about may not touch the one that
+// replaced it — neither its state nor its flight.
+describe('loadAccountSummary — the `{token}` read', () => {
+  const OTHER = {
+    identity: { token: 'e'.repeat(64), accountId: 'nq2yv6cme4jkbhtx', deviceId: 'q'.repeat(16) },
+    epoch: `nq2yv6cme4jkbhtx:${'q'.repeat(16)}`,
+  };
+  const otherSummary = {
+    accountId: OTHER.identity.accountId,
+    deviceId: OTHER.identity.deviceId,
+    email: 'zoe@example.com',
+    createdAt: '2026-08-12T10:00:00.000Z',
+    departurePending: false,
+  };
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason: unknown) => void;
+    const promise = new Promise<T>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    return { promise, resolve, reject };
+  }
+
+  beforeEach(() => {
+    resetAccountSummary();
+  });
+
+  it('answers a tokenless device READY and empty without a request (#216)', async () => {
+    identity.current = null;
+    loadAccountSummary();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useAccountStore.getState()).toEqual({ phase: 'ready', summary: null });
+    expect(postLinkBody).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a transport failure', (old: ReturnType<typeof deferred<unknown>>) => old.reject(new Error('timeout'))],
+    ['a refusal', (old: ReturnType<typeof deferred<unknown>>) => old.resolve({ ok: false, status: 503 })],
+  ])('ignores %s that lands after the account was left, and keeps the new flight', async (_name, land) => {
+    const old = deferred<unknown>();
+    const next = deferred<unknown>();
+    postLinkBody.mockReturnValueOnce(old.promise).mockReturnValueOnce(next.promise);
+    loadAccountSummary();
+
+    // The device moves onto another account: `identityScope` resets the summary, and the
+    // new account's screen starts its own read.
+    resetAccountSummary();
+    identity.current = OTHER;
+    loadAccountSummary();
+    expect(postLinkBody).toHaveBeenCalledTimes(2);
+
+    land(old);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useAccountStore.getState()).toEqual({ phase: 'loading', summary: null });
+    // The new account's read is still the one in flight: asking again starts no third.
+    loadAccountSummary();
+    expect(postLinkBody).toHaveBeenCalledTimes(2);
+
+    next.resolve({ ok: true, json: async () => otherSummary });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useAccountStore.getState()).toEqual({ phase: 'ready', summary: otherSummary });
+  });
+
+  it('a failure for the account still held is FAILED, and the next ask retries', async () => {
+    postLinkBody.mockRejectedValueOnce(new Error('offline'));
+    loadAccountSummary();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useAccountStore.getState().phase).toBe('failed');
+
+    const summary = { ...otherSummary, accountId: 'lfd5pqz5pa7zjm5u', deviceId: 'd'.repeat(16) };
+    postLinkBody.mockResolvedValueOnce({ ok: true, json: async () => summary });
+    loadAccountSummary(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useAccountStore.getState()).toEqual({ phase: 'ready', summary });
+    expect(postLinkBody).toHaveBeenCalledTimes(2);
   });
 });

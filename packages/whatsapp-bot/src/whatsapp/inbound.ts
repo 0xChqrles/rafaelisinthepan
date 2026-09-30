@@ -30,7 +30,7 @@ export function canonicalSender(key: WAMessage['key']): string | null {
   return chosen ? jidNormalizedUser(chosen) : null;
 }
 
-export function messageText(message: WAMessage): string {
+function messageText(message: WAMessage): string {
   const content = normalizeMessageContent(message.message);
   if (!content) return '';
   return (

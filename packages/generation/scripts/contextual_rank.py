@@ -57,6 +57,7 @@ sidecar, and `ReplayJudge` rebuilds the same map from it without a call.
 import json
 import random
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -373,14 +374,15 @@ class JevJudge:
     529 / 5xx-gateway / transport errors with capped backoff; any other refusal is a ContextualError.
     Usage is accumulated in `usage` (input/output tokens) for the report."""
 
-    def __init__(self, api_key, model=JEV_MODEL, workers=WORKERS, timeout=120):
+    def __init__(self, api_key, model=JEV_MODEL, workers=WORKERS):
         if not api_key:
             raise ContextualError("JEV_API_KEY manquante : le classement contextuel "
                                   "appelle un juge hébergé et ne se rabat jamais sur "
                                   "le classement statique.")
-        self.api_key, self.model, self.workers, self.timeout = api_key, model, workers, timeout
+        self.api_key, self.model, self.workers = api_key, model, workers
         self.usage = {"input_tokens": 0, "output_tokens": 0}
         self.requests = 0
+        self._counting = threading.Lock()  # _call runs on the worker threads
 
     def _call(self, state, questions, tries=12):
         body = json.dumps({"state": state, "model": self.model, "questions": questions},
@@ -390,7 +392,7 @@ class JevJudge:
             "Content-Type": "application/json"})
         for attempt in range(tries):
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                with urllib.request.urlopen(req, timeout=120) as r:
                     answer = json.load(r)
                 break
             except urllib.error.HTTPError as exc:
@@ -404,9 +406,10 @@ class JevJudge:
                     continue
                 raise ContextualError(f"juge injoignable : {exc}") from exc
         usage = answer.get("usage", {})
-        for k in self.usage:
-            self.usage[k] += int(usage.get(k, 0))
-        self.requests += 1
+        with self._counting:
+            for k in self.usage:
+                self.usage[k] += int(usage.get(k, 0))
+            self.requests += 1
         return answer["answers"]
 
     def _batched(self, items, size, work):
@@ -561,13 +564,11 @@ def rerank(context, candidates, judge, *, pairwise_top=PAIRWISE_TOP, seed=0):
     """Order `candidates` by contextual similarity to the secret.
 
     Returns (ranked, record): `ranked` best-first with a non-increasing `similarity`
-    (pass-2 front mapped onto pass-1's span, demoted labels at 0), `record` the
+    (pass-2 front mapped onto pass-1's span, demoted groups at 0), `record` the
     sidecar entry (scores, judged pairs, demotions, timings) this order derives from.
     Every candidate comes back; nothing is cut here (TOP_K is the walk's).
-    The front is then asked the language's word question; a label under LANGUAGE_MIN
-    is demoted."""
-    if not candidates:
-        return [], {"secret": context.secret, "scores": {}, "pairs": {}, "demoted": []}
+    The front is then asked the language's word question; a group whose label scores
+    under LANGUAGE_MIN is demoted."""
     verdict_key = context.language.verdict_key
     labels = [c.label for c in candidates]
     t0 = time.time()
@@ -595,27 +596,30 @@ def rerank(context, candidates, judge, *, pairwise_top=PAIRWISE_TOP, seed=0):
     t2 = time.time()
     for i in order[n_front:]:
         sim[i] = scores[i]
-    demoted, verdicts = [], {}
+    # Demotion is a verdict on ONE group: tracked by index, since two groups can
+    # share a lemma string and only one of them fall under the threshold.
+    demoted, verdicts = set(), {}
     if front:
         probs = judge.in_language([candidates[i] for i in front], context.lang)
         for i, p in zip(front, probs):
             verdicts[candidates[i].key] = p
             if p < LANGUAGE_MIN:
                 sim[i] = 0.0
-                demoted.append(labels[i])
+                demoted.add(i)
     # A flat pass-1 span collapses distinct win rates onto one similarity.
     # Preserve the pairwise verdict there (and ahead of tied tail candidates);
     # only equal verdicts fall back to static position. Demotions still tie at 0.
     final = sorted(front + order[n_front:],
                    key=lambda i: (-sim[i],
-                                  -win.get(i, -1.0) if labels[i] not in demoted else 1.0,
+                                  -win.get(i, -1.0) if i not in demoted else 1.0,
                                   candidates[i].static_pos))
     ranked = [Ranked(candidates[i].key, labels[i], sim[i], candidates[i].static_pos,
-                     scores[i], win.get(i), labels[i] in demoted) for i in final]
+                     scores[i], win.get(i), i in demoted) for i in final]
     record = {
         "secret": context.secret, "secret_label": context.secret_label,
         "scores": {candidates[i].key: scores[i] for i in range(len(labels))},
-        "pairs": judged, verdict_key: verdicts, "demoted": demoted,
+        "pairs": judged, verdict_key: verdicts,
+        "demoted": [labels[i] for i in front if i in demoted],
         "timing": {"score_s": round(t1 - t0, 1), "pairs_s": round(t2 - t1, 1)},
     }
     return ranked, record
@@ -638,7 +642,7 @@ def can_filter(judge):
     return hasattr(judge, "noul")
 
 
-def filter_start_band(judge, words, occurrences, band, *, lang, threshold=START_FIT_MIN):
+def filter_start_band(judge, words, occurrences, band, *, lang):
     """`band` = [(word, rank)] -> (kept, removed) where removed = [(word, rank, p)]:
     a start that does not read as the language, shown in the sentence, is dropped."""
     if not band:
@@ -652,14 +656,14 @@ def filter_start_band(judge, words, occurrences, band, *, lang, threshold=START_
     kept, removed = [], []
     for i, (w, r) in enumerate(band):
         p = probs[f"v{i}"]
-        if p >= threshold:
+        if p >= START_FIT_MIN:
             kept.append((w, r))
         else:
             removed.append((w, r, p))
     return kept, removed
 
 
-def filter_hole_candidates(judge, words, cands, *, lang, threshold=HOLE_READABLE_MIN):
+def filter_hole_candidates(judge, words, cands, *, lang):
     """`cands` = [{pos, secret, prefix, suffix}] -> (kept, removed) where removed =
     [(secret, p)]: a word whose blanking leaves the sentence unreadable is not
     offered as a hole."""
@@ -675,7 +679,7 @@ def filter_hole_candidates(judge, words, cands, *, lang, threshold=HOLE_READABLE
                                for i, c in enumerate(cands)})
     kept, removed = [], []
     for i, c in enumerate(cands):
-        if probs[f"v{i}"] >= threshold:
+        if probs[f"v{i}"] >= HOLE_READABLE_MIN:
             kept.append(c)
         else:
             removed.append((c["secret"], probs[f"v{i}"]))
@@ -731,12 +735,12 @@ def giveaway(judge, blanked, word, *, lang):
     return sum(probs[k] for k in questions) / len(questions)
 
 
-def format_report(secret, ranked, record, *, model, lang, top=25, front=PAIRWISE_TOP):
+def format_report(secret, ranked, record, *, model, lang):
     """The per-hole report gen_phrase prints: what the judge changed, at a glance.
     The front is the pass-2 window; "deep" counts its members the static walk had
     past rank 1000 — how much the judge disagrees with the embedding up close."""
     n = len(ranked)
-    head = ranked[:min(front, n)]
+    head = ranked[:min(PAIRWISE_TOP, n)]
     deep = sum(1 for r in head if r.static_pos >= 1000)
     furthest = max((r.static_pos + 1 for r in head), default=0)
     lines = [f"\nClassement contextuel : {secret}  (lexème « {record['secret_label']} »)",
@@ -747,7 +751,7 @@ def format_report(secret, ranked, record, *, model, lang, top=25, front=PAIRWISE
              f"  rétrogradés (pas un mot {language(lang).name}) : {len(record['demoted'])}"
              + (f" — {', '.join(record['demoted'][:8])}" if record["demoted"] else ""),
              f"  {'ctx':>5} {'stat':>6} {'score':>5}  mot"]
-    for i, r in enumerate(ranked[:top], 1):
+    for i, r in enumerate(ranked[:25], 1):
         lines.append(f"  {i:>5} {r.static_pos + 1:>6} {r.score:>5.2f}  {r.label}")
     return "\n".join(lines)
 
@@ -783,4 +787,4 @@ def write_sidecar(path, *, lang, model, sentence, before, after, records, usage,
 
 
 if __name__ == "__main__":
-    sys.exit("contextual_rank.py est un module de gen_phrase (--contextual), pas une commande.")
+    sys.exit("contextual_rank.py est un module de gen_phrase, pas une commande.")

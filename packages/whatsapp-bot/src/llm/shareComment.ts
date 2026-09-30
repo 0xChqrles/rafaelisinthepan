@@ -19,7 +19,7 @@ import type { GroupConfig } from '../config/groupConfig';
 import { FORM_DAYS, buildOtherPuzzleContext, buildShareContext } from '../domain/shareContext';
 import type { Declaration, DeclarationStore } from '../domain/declarations';
 import type { Log } from '../log';
-import { FACT_JUDGE_SYSTEM, chooseLine } from './lineJudge';
+import { chooseLine, refusalNote } from './lineJudge';
 import { buildSystemPrompt } from './personality';
 import { writeCandidate, type CandidateShape } from './podiumComments';
 import type { LlmProvider } from './types';
@@ -52,7 +52,7 @@ const CANDIDATES = 3;
 // reasons in front of it — and is the last: an acknowledgement half a minute after the
 // share reads as broken, and eight candidates a round would spend the day's ceiling.
 const ROUNDS = 2;
-const SHAPE: CandidateShape = { maxChars: COMMENTARY_MAX_CHARS, refuse: () => null, effort: 'none', timeoutMs: 15_000 };
+const SHAPE: CandidateShape = { maxChars: COMMENTARY_MAX_CHARS, timeoutMs: 15_000 };
 
 // What the player wrote around the share, when it is in the facts (`ShareCommentDeps.said`).
 const SAID = `If the facts carry "said", that is what the player wrote with their share: when it asks you something or says something worth an answer, your line answers it — in place of the commentary, not on top of it, at the same length.`;
@@ -105,10 +105,7 @@ export async function generateShareComment(
   const shown = JSON.stringify({ ...context, ...said });
   let refused: string[] = [];
   for (let round = 1; round <= ROUNDS; round += 1) {
-    const content =
-      round === 1
-        ? shown
-        : `${shown}\n\nYour previous lines were refused by the fact check${refused.length > 0 ? ' for these reasons:' : '.'}${refused.map((r) => `\n- ${r}`).join('')}\nWrite a new one that avoids them.`;
+    const content = round === 1 ? shown : `${shown}\n\n${refusalNote(refused)}`;
     const written = await Promise.all(
       Array.from({ length: CANDIDATES }, async () => {
         if (!(await takeCall())) {
@@ -120,7 +117,7 @@ export async function generateShareComment(
     );
     const candidates = written.filter((c): c is string => c !== null);
     log.info({ event: 'share.candidates', round, written: candidates.length, of: CANDIDATES }, 'candidates written');
-    const choice = await chooseLine(provider, { system: FACT_JUDGE_SYSTEM, occasion: shown }, candidates, log, takeCall, 'post-none');
+    const choice = await chooseLine(provider, shown, candidates, log, takeCall, 'post-none');
     if (choice.line) return choice.line;
     // Nothing written, or nothing judged, is not the judge's doing: no second try.
     if (choice.dropped === 0) return null;

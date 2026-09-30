@@ -44,6 +44,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AVATAR_PALETTES, AVATAR_SIZE, decodeAvatar } from '@whippin/shared';
 import Avatar from './Avatar';
 import { T0, noise3 } from './noise';
+import { prefersReducedMotion } from '../hooks/useScramble';
 
 // The noise is `components/noise.ts`'s (one octave of 3D value noise, integer-hashed) —
 // shared with the activated hole's sea since 2026-09-22.
@@ -147,10 +148,7 @@ export default function AccountMark({ avatar, size, compose = false }: AccountMa
   // The resolution runs ONCE per drawing and is over for good — a later re-render (a store
   // update, a re-read of the face) must not replay it.
   const [settled, setSettled] = useState(false);
-  const reduced =
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduced = prefersReducedMotion();
   // A drawing this component cannot read still renders — `Avatar` owns that failure, and a
   // mark that cannot be decoded must not take a screen with it.
   const target = useMemo(
@@ -193,9 +191,8 @@ export default function AccountMark({ avatar, size, compose = false }: AccountMa
     };
 
     if (reduced) {
-      // The picture, without the movement — and for an arrival that picture is the drawing.
-      paint(T0, target ? RESOLVE_MS : null);
-      if (target) setSettled(true);
+      // The picture, without the movement.
+      paint(T0, null);
       return;
     }
 

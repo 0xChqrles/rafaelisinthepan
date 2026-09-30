@@ -84,7 +84,6 @@ export function memoryLinkStore(deps: {
       const held = challenges.get(hash);
       if (!held) return { outcome: 'none', attemptsLeft: 0 };
       if (held.expiresAt * 1000 <= now.getTime()) {
-        challenges.delete(hash);
         return { outcome: 'expired', attemptsLeft: 0 };
       }
       if (held.attempts >= LINK_CODE_MAX_ATTEMPTS) {
@@ -116,7 +115,7 @@ export function memoryLinkStore(deps: {
         // CREATE-ONLY, like the production Put: a device that lost the race to this address
         // must not overwrite the binding that won it.
         if (bindings.has(input.emailHash)) return 'taken';
-        if (!deps.devices.bindAccountEmail(input.accountId, input.email, input.now)) {
+        if (!deps.devices.bindAccountEmail(input.accountId, input.email)) {
           return 'account_changed';
         }
         bindings.set(input.emailHash, { accountId: input.accountId });

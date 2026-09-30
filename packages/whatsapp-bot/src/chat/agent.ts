@@ -40,12 +40,12 @@ import { tag } from '../log';
 import { revealsSource, sourceContext, type DaySourceReader } from '../puzzle/daySource';
 import { REACT_PREFIX, clockIn, type DayLog, type Turn } from './dayLog';
 import { diaryTurn, type DiaryStore } from './diary';
-import { limitExpiry, limitKeys, type LimitStore } from './limits';
+import { limitExpiry, limitKeys, takeDailyCall, type LimitStore } from './limits';
 import { createToolRunner } from './tools';
 import { currentExchange, nothingToAnswer, type Approach, type BotIdentity, type Exchange } from './trigger';
 
-export const MAX_TOOL_ROUNDS = 4;
-export const REPLY_MAX_CHARS = 700;
+const MAX_TOOL_ROUNDS = 4;
+const REPLY_MAX_CHARS = 700;
 // GENEROUS, BECAUSE THE BUDGET IS SHARED WITH THINKING (the share line's finding, and it
 // bit here too): `deepseek-v4-flash` spends its reasoning from `max_tokens` and the
 // provider reads only `message.content`. At 300 the logs of 2026-09-04 show calls that
@@ -59,12 +59,14 @@ const REPLY_MAX_TOKENS = 2000;
 // lookahead treat `_` as a separator (unlike `\W`/`\b`, which see it as a word char), so
 // markdown-wrapped declines (`_NO_REPLY_`, `**NO_REPLY**`) still match.
 const NO_REPLY = /^[\W_]*NO_REPLY(?![A-Za-z0-9])/i;
-// `REACT ❤️` — the reaction the model asks for, then nothing.
-const REACT = new RegExp(`^[\\W_]*${REACT_PREFIX}\\b[\\s:]*(\\S+)`, 'iu');
+// `REACT ❤️` — the reaction the model asks for, then nothing. Captures the keyword as
+// written and what follows it; `_` is a separator after the keyword as before it (the
+// NO_REPLY lookahead), so `_REACT_` parses. Whether it IS a reaction is `reactionIn`'s.
+const REACT = new RegExp(`^[\\W_]*(${REACT_PREFIX})(?![A-Za-z0-9])[\\s:]*([\\s\\S]*)`, 'iu');
 
 // The reactions the bot may answer with. Allow-listed: a model that spells one wrong, or
 // invents a sequence, sends a broken reaction — so anything else becomes the plainest one.
-export const REACTIONS = ['❤️', '👍', '😂', '🙏', '👀', '🔥', '😴', '🫡'] as const;
+const REACTIONS = ['❤️', '👍', '😂', '🙏', '👀', '🔥', '😴', '🫡'] as const;
 export const DEFAULT_REACTION = '👍';
 // How many of the day's last turns the "you wrote N of the last M" fact reads.
 const RECENT_TURNS = 10;
@@ -132,11 +134,20 @@ export function plainReply(raw: string | null): string | null {
   return text === '' ? null : text;
 }
 
-// The reaction the model asked for, or null when the answer is not one.
+// The reaction the model asked for, or null when the answer is not one. `REACT` in
+// capitals is the form the prompt asks for and is ALWAYS a reaction — a bare one lost its
+// emoji, and a misspelt one (`REACT red heart`) is still the gesture. In any other case the
+// keyword may be a sentence's first word ("React faster next time, Gab."), so it is a
+// reaction only when at most one token follows it or what follows holds an emoji. The
+// emoji is the first token's when it is an allowed one, else the plainest. Markdown marks
+// are not tokens (`_REACT_ ❤️` is ❤️).
 export function reactionIn(raw: string | null): string | null {
   const match = raw ? REACT.exec(raw) : null;
   if (!match) return null;
-  const asked = match[1].replace(/[^\p{Extended_Pictographic}\p{Emoji_Component}‍]/gu, '');
+  const [, keyword, rest] = match;
+  const tokens = rest.replace(/[*_~`]/g, ' ').split(/\s+/).filter((t) => t !== '');
+  if (keyword !== REACT_PREFIX && tokens.length > 1 && !/\p{Extended_Pictographic}/u.test(rest)) return null;
+  const asked = (tokens[0] ?? '').replace(/[^\p{Extended_Pictographic}\p{Emoji_Component}‍]/gu, '');
   return (REACTIONS as readonly string[]).includes(asked) ? asked : DEFAULT_REACTION;
 }
 
@@ -144,7 +155,7 @@ export function reactionIn(raw: string | null): string | null {
 // the reminder are the bot's own acts, and "c'est à quelle heure le podium ?" is a question
 // it should not have to guess at. The times are the group's own wall-clock times (the
 // config states them in the group's zone), which is exactly how the group reads them.
-export function scheduleContext(group: GroupConfig): string {
+function scheduleContext(group: GroupConfig): string {
   const podium = group.podium.enabled
     ? `Every day at ${group.podium.time} (this group's own local time) you post the group's podium: the day's ${languageName(group.language)} sentence results ranked from the shares posted here — fewest tries first, one player per line, equal scores sharing the place, ∞ runs listed after the places — and, when somebody also shared the other language's puzzle, one closing line with those results, unranked. It is posted once; a share arriving later is recorded but the podium is not posted again.`
     : 'This group has no daily podium.';
@@ -166,7 +177,7 @@ export function fromOwner(group: GroupConfig, message: Pick<InboundMessage, 'sen
     (message.sender === group.owner || message.participant === group.owner || message.participantAlt === group.owner);
 }
 
-export function approachContext(approach: Approach, exchange: Exchange, wrote: number, of: number, owner = false): string {
+function approachContext(approach: Approach, exchange: Exchange, wrote: number, of: number, owner = false): string {
   // NEVER "the last message" (PR-278 review): it is not always the last turn — see
   // `AnswerOptions.said`. The mark is the one that is in the transcript.
   const target = `The message marked "${ANSWERING}" below`;
@@ -190,11 +201,7 @@ export function approachContext(approach: Approach, exchange: Exchange, wrote: n
 export function createAgent(deps: AgentDeps) {
   const now = deps.now ?? (() => new Date());
 
-  async function takeCall(): Promise<boolean> {
-    const at = now();
-    const { scope, key } = limitKeys.calls(at);
-    return deps.limits.take(scope, key, deps.dailyCallCeiling, limitExpiry(at));
-  }
+  const takeCall = () => takeDailyCall(deps.limits, deps.dailyCallCeiling, now());
 
   return async function answer(
     message: InboundMessage,
@@ -226,13 +233,7 @@ export function createAgent(deps: AgentDeps) {
       if (refused) return refused;
     }
 
-    const tools = createToolRunner({
-      group,
-      today,
-      sender: message.sender,
-      declarations: deps.declarations,
-      now,
-    });
+    const tools = createToolRunner({ group, today, declarations: deps.declarations });
 
     // THE SYSTEM PROMPT IS CODE- AND OPERATOR-AUTHORED, AND NOTHING ELSE. What a group
     // member typed — their push name, their message — and what the bot wrote in its diary
@@ -242,7 +243,7 @@ export function createAgent(deps: AgentDeps) {
     const date = dateForDayNumber(today);
     // NEVER FATAL, and never a wait worth failing an answer over: `get` resolves to null on
     // any trouble and the prompt carries no source line at all.
-    const source = deps.daySource ? await deps.daySource.get(group.language, today, date) : null;
+    const source = deps.daySource ? await deps.daySource.get(group.language, date) : null;
     const aboutSource = sourceContext(source);
     const turns = deps.dayLog.today(group.id, today);
     const recent = turns.slice(-RECENT_TURNS);
@@ -388,7 +389,7 @@ export const ANSWERING = '← the message you are answering';
 // clock, the bot's lines as its own, and a reaction of the bot's in the very form it
 // answers one — the transcript shows what was already closed and teaches the form. Only a
 // person's turn can be the one being answered; the bot never answers itself.
-export function turnMessage(turn: Turn, timezone: string, answering = false): LlmMessage {
+function turnMessage(turn: Turn, timezone: string, answering = false): LlmMessage {
   if (turn.kind === 'said') {
     return { role: 'user', content: `[${clockIn(timezone, turn.at)}] ${turn.name}: ${turn.text}${answering ? `  ${ANSWERING}` : ''}` };
   }

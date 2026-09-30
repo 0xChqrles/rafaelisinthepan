@@ -1,6 +1,7 @@
 import {
   GROUP_MEMBERS_MAX,
   GROUPS_MAX,
+  LEAVE_ALL_MAX_PASSES,
   byJoinedAt,
   successionFor,
   type GroupMember,
@@ -99,14 +100,10 @@ export function memoryGroupStore(
     },
 
     async leaveAll(publicId) {
-      for (let pass = 0; pass < 4; pass += 1) {
+      for (let pass = 0; pass < LEAVE_ALL_MAX_PASSES; pass += 1) {
         const mine = await this.listMine(publicId);
         if (mine.length === 0) return;
-        for (const held of mine) {
-          const group = await this.get(held.id);
-          const members = await this.members(held.id);
-          await this.leave(held.id, publicId, group ? successionFor(group, members, publicId).options : undefined);
-        }
+        for (const held of mine) await this.leave(held.id, publicId);
       }
       throw new Error(`Group departure of ${publicId} did not converge.`);
     },

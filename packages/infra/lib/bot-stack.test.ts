@@ -120,6 +120,17 @@ describe('WhatsApp bot stack (#236)', () => {
     expect(dynamo.filter((s) => JSON.stringify(s.Action).includes('dynamodb:PutItem'))).toHaveLength(2);
   });
 
+  // `cdk deploy` prints every resource's LOGICAL ID in the CI log, which is public on this
+  // repository, and a group JID names a private conversation.
+  it('keeps the group JID out of every logical id, and names each schedule the same on every synth', () => {
+    const digits = GROUP.replace(/\D/g, '');
+    const ids = Object.keys(template.toJSON().Resources as Record<string, unknown>);
+    expect(ids.filter((id) => id.includes(digits))).toEqual([]);
+    // A synth that changes nothing must replace no schedule.
+    const scheduleIds = (t: Template) => Object.keys(t.findResources('AWS::Scheduler::Schedule')).sort();
+    expect(scheduleIds(botTemplate())).toEqual(scheduleIds(template));
+  });
+
   it('owns a table with TTL + PITR, an outbound queue with a DLQ, and alarms that treat silence as down', () => {
     const tables = Object.values(template.findResources('AWS::DynamoDB::Table'));
     expect(tables).toHaveLength(1);

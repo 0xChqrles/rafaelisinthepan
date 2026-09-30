@@ -50,7 +50,7 @@ export default function HistoryModal({
   onClose: () => void;
 }) {
   // FIRST hook on purpose: it owns `showModal()` and turns every dismissal into the fold.
-  const { closing, beginClose, dialogProps } = useModalDismiss('hw-out');
+  const { closing, beginClose, dialogProps } = useModalDismiss('fade-out');
   const title = holeTitle(lang, number);
 
   // The width a word has to fit — the frame's — followed across a resize.
@@ -83,8 +83,8 @@ export default function HistoryModal({
             {model.stops.map((stop) => (
               <li
                 key={stop.rank}
-                // Solved, nothing is masked: a hint TAKEN wears the foil, one left on the
-                // table is a word the solve names, plain.
+                // Solved or over, nothing is masked: a hint TAKEN wears the foil, one left
+                // on the table is a word the model names, plain.
                 className={`hw-word${stop.taken ? ' hw-given' : stop.revealed || stop.given ? '' : ' hw-found'}`}
                 style={
                   {

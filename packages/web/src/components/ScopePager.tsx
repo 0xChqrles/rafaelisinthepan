@@ -166,7 +166,6 @@ export default function ScopePager({
     // the start of a glide — whose own scroll then carries the dress across, never ahead.
     setNear(nearest());
     place();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, scopes.length]);
 
   // RE-CENTRE the held page, instantly, when the pager's width CHANGES (the column
@@ -194,7 +193,7 @@ export default function ScopePager({
       if (page.firstElementChild) observer.observe(page.firstElementChild);
     }
     return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deliberately per page set: `scrollTo` and `place` read only refs, so a stale closure is harmless.
   }, [pageKeys]);
 
   useEffect(

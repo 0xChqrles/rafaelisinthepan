@@ -71,7 +71,9 @@ describe('dynamoScoreStore (#187)', () => {
       expect(command).toBeInstanceOf(BatchGetItemCommand);
       return responses.shift()!;
     });
-    const store = dynamoScoreStore({ send } as unknown as DynamoDBClient, 'scores');
+    const store = dynamoScoreStore({ send } as unknown as DynamoDBClient, 'scores', {
+      wait: async () => {},
+    });
     // The duplicate is collapsed; a player with no row today simply has none.
     await expect(
       store.getMany(KEY, ['player-a', 'player-b', 'player-a', 'never-played']),
@@ -290,17 +292,17 @@ describe('dynamoScoreStore (#187)', () => {
   });
 
   it('rethrows operational cancellations', async () => {
-    const conflict = new Error('transaction conflict');
-    Object.assign(conflict, {
+    const throttled = new Error('throttled');
+    Object.assign(throttled, {
       name: 'TransactionCanceledException',
-      CancellationReasons: [{ Code: 'None' }, { Code: 'TransactionConflict' }],
+      CancellationReasons: [{ Code: 'None' }, { Code: 'ThrottlingError' }],
     });
     const failing = vi.fn(async () => {
-      throw conflict;
+      throw throttled;
     });
     await expect(
       dynamoScoreStore({ send: failing } as unknown as DynamoDBClient, 'scores').submit(SUBMISSION),
-    ).rejects.toBe(conflict);
+    ).rejects.toBe(throttled);
   });
 });
 

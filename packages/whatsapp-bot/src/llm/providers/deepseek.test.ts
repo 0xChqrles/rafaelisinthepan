@@ -30,7 +30,6 @@ describe('DeepSeek provider boundary (#236)', () => {
       ],
       tools: [{ name: 't', description: 'd', parameters: { type: 'object', properties: {} } }],
       maxTokens: 50,
-      json: true,
     });
     expect(response.toolCalls).toEqual([{ id: 'c1', name: 'get_today_podium', arguments: '{}' }]);
     expect(response.finish).toBe('tool_calls');
@@ -47,7 +46,6 @@ describe('DeepSeek provider boundary (#236)', () => {
     expect(sent.messages[0]).toEqual({ role: 'system', content: 'sys' });
     expect(sent.messages[2].tool_calls[0].function.name).toBe('t');
     expect(sent.messages[3]).toEqual({ role: 'tool', content: '{}', tool_call_id: 'x' });
-    expect(sent.response_format).toEqual({ type: 'json_object' });
     expect(sent.tools[0].function.name).toBe('t');
     expect(sent.max_tokens).toBe(50);
   });
@@ -79,5 +77,28 @@ describe('DeepSeek provider boundary (#236)', () => {
     await expect(bad.generate({ system: '', messages: [], maxTokens: 1 })).rejects.toThrow(
       'HTTP 401',
     );
+
+    // A request that never came back — what `AbortSignal.timeout` rejects the fetch with —
+    // is an outage, and names its cause.
+    const timeout = vi.fn(async () => {
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    }) as unknown as typeof fetch;
+    const hung = deepSeekProvider({ apiKey: 'k', model: 'm', fetch: timeout });
+    const failure = await hung.generate({ system: '', messages: [], maxTokens: 1 }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(LlmUnavailable);
+    expect((failure as Error).message).toBe('deepseek: TimeoutError: The operation was aborted due to timeout');
+
+    // A rate limit is the one 4xx that is weather and not a bug.
+    const limited = deepSeekProvider({ apiKey: 'k', model: 'm', fetch: fetchReturning(429, {}) });
+    const refused = await limited.generate({ system: '', messages: [], maxTokens: 1 }).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(LlmUnavailable);
+    expect((refused as Error).message).toBe('deepseek: HTTP 429');
+
+    // And so is a 200 whose body is not the JSON it promised.
+    const notJson = vi.fn(async () => new Response('<html>bad gateway</html>', { status: 200 })) as unknown as typeof fetch;
+    const garbled = deepSeekProvider({ apiKey: 'k', model: 'm', fetch: notJson });
+    const unread = await garbled.generate({ system: '', messages: [], maxTokens: 1 }).catch((error: unknown) => error);
+    expect(unread).toBeInstanceOf(LlmUnavailable);
+    expect((unread as Error).message).toBe('deepseek: unparseable body');
   });
 });

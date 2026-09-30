@@ -30,6 +30,11 @@ export interface Podium {
 
 export type NameOf = (declaration: Declaration) => string;
 
+// A run that ended at ∞ is behind every finished one and level with another ∞.
+export function rankOf(d: Pick<Declaration, 'score' | 'capped'>): number {
+  return d.capped ? Number.POSITIVE_INFINITY : d.score;
+}
+
 export function buildPodium(
   dayNumber: number,
   rows: readonly Declaration[],

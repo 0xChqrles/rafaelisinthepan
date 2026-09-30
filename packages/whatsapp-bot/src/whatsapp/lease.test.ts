@@ -94,7 +94,7 @@ describe('keeping the lease (#236)', () => {
   function keeperFor(renew: () => Promise<boolean>, clock: { ms: number }) {
     const lost: LeaseLoss[] = [];
     const errors: number[] = [];
-    const lease: Lease = { owner: 'test', acquiredAt: clock.ms, renew, release: async () => {} };
+    const lease: Lease = { acquiredAt: clock.ms, renew, release: async () => {} };
     const keeper = keepLease(
       lease,
       { onLost: (reason) => lost.push(reason), onError: (_, staleMs) => errors.push(staleMs) },
@@ -191,7 +191,6 @@ describe('keeping the lease (#236)', () => {
     const clock = { ms: 0 };
     // Acquired at 0; the keeper is built later, once the slow answer came back.
     const lease: Lease = {
-      owner: 'test',
       acquiredAt: 0,
       renew: () => new Promise<boolean>(() => {}),
       release: async () => {},

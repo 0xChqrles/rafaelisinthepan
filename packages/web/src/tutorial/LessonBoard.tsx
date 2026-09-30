@@ -10,20 +10,21 @@ import HistoryWheel from '../components/HistoryWheel';
 import HistoryModal from '../components/HistoryModal';
 import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
-import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, REVEAL_HOLD_MS, STAGGER_MS } from '../screens/Game';
+import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, REVEAL_HOLD_MS, STAGGER_MS } from '../game/timing';
 import CoachText, { richToPlain } from './CoachText';
 import { coachCopy, coachLine, type GuessEvent } from './coach';
-import type { LessonStage } from './script';
+import { swappedView, type LessonStage } from './script';
 import { canExtend } from '../game/keyboard';
-import { latestMaskedPick, retireDisplacedPicks, selectWord, type WordPick } from '../game/wordWheel';
+import { latestMaskedPick, retireDisplacedPicks, selectWord, shownHolesFor, type WordPick } from '../game/wordWheel';
 import { MASK, buildHistory, type HistoryStop } from '../game/history';
 import { guessKey, replayHoles } from '../game/scoring';
 import { replayCharge, strikeFor } from '../game/charge';
 import { sentenceStarts } from '../game/sentenceCase';
-import { SCRAMBLE_MS, prefersReducedMotion, useScramble } from '../hooks/useScramble';
+import { SCRAMBLE_MS, coarsePointer, prefersReducedMotion, useScramble } from '../hooks/useScramble';
 import type { Vocab } from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
-import type { HitState, RankEntry, RankMap, RuntimeHole } from '@whippin/shared';
+import type { RankEntry, RankMap } from '@whippin/shared';
+import type { HitState, RuntimeHole } from '../game/types';
 import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
 import type { LangCode } from '../langs';
 import playerIdle from '../assets/player-idle.png';
@@ -73,14 +74,6 @@ function revealedHoles(stage: LessonStage): RuntimeHole[] {
     rank: 0,
     startRank: h.start_rank,
   }));
-}
-
-function hasCoarsePointer(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(pointer: coarse)').matches
-  );
 }
 
 // Hold on a solved word before the next stage takes over.
@@ -143,15 +136,7 @@ export default function LessonBoard({
   const ranks = useMemo<RankMap>(() => {
     if (!swapped || !script.pair) return puzzle.ranks;
     const open = puzzleHoles.find((h) => h.secret.slug !== puzzleHoles[0].secret.slug) ?? puzzleHoles[puzzleHoles.length - 1];
-    const map = puzzle.ranks[open.secret.slug];
-    const dq1 = Object.values(map).find((e) => e.rank === 1)?.dq;
-    const view: typeof map = {};
-    for (const [key, entry] of Object.entries(map)) {
-      if (entry.rank === 0) view[key] = { word: entry.word, rank: 1, dq: dq1 } as RankEntry;
-      else if (entry.rank === 1) view[key] = { word: entry.word, rank: 0 } as RankEntry;
-      else view[key] = entry;
-    }
-    return { ...puzzle.ranks, [open.secret.slug]: view };
+    return { ...puzzle.ranks, [open.secret.slug]: swappedView(puzzle.ranks[open.secret.slug]) };
   }, [swapped, script.pair, puzzle.ranks, puzzleHoles]);
   // The stage as the coach should read it: the swapped hole's secret is `alt`.
   const stageView = useMemo<LessonStage>(() => {
@@ -232,7 +217,7 @@ export default function LessonBoard({
   const hitId = useRef(0);
   // The prompt's own field (#267): a submit puts the caret back into it.
   const guessField = useRef<HTMLInputElement>(null);
-  const coarse = useMemo(hasCoarsePointer, []);
+  const coarse = useMemo(coarsePointer, []);
 
   const timers = useRef<number[]>([]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
@@ -352,15 +337,7 @@ export default function LessonBoard({
       const open = holes.find((h) => h.rank !== 0);
       if (withMeters && !activeOut && !swapped && script.pair && open && ranks[open.secret][typed]?.rank === 0) {
         setSwapped(true);
-        const map = ranks[open.secret];
-        const dq1 = Object.values(map).find((e) => e.rank === 1)?.dq;
-        const view: typeof map = {};
-        for (const [key, entry] of Object.entries(map)) {
-          if (entry.rank === 0) view[key] = { word: entry.word, rank: 1, dq: dq1 } as RankEntry;
-          else if (entry.rank === 1) view[key] = { word: entry.word, rank: 0 } as RankEntry;
-          else view[key] = entry;
-        }
-        ranks = { ...ranks, [open.secret]: view };
+        ranks = { ...ranks, [open.secret]: swappedView(ranks[open.secret]) };
         ranksRef.current = ranks;
       }
       // A counted guess is a NEW word identity (guessKey): a repeat still floats its numbers
@@ -427,7 +404,6 @@ export default function LessonBoard({
         entries: holes.map((h) => (h.rank === 0 ? undefined : ranks[h.secret][typed])),
         improved,
         holeRanks: holes.map((h) => h.rank),
-        charged: !!before && !!after && after.some((c, i) => c.charge > before[i].charge),
         filled: filled >= 0 ? filled : null,
         revealed,
       };
@@ -585,16 +561,7 @@ export default function LessonBoard({
   // A live pick in the hole's place; a picked MASK shows its word once the log holds it
   // (Game's rule).
   const shownHoles = useMemo(
-    () =>
-      holes.map((h, i) => {
-        const p = picked[i];
-        if (!p || h.rank === 0 || p.at !== h.rank || p.rank === h.rank) return h;
-        const hint = p.slug ? shownMeters?.[i].given.find((g) => g.rank === p.rank) : undefined;
-        if (p.slug && !hint) return h;
-        const revealed = hint?.consumed;
-        const word = revealed ? (ranks[h.secret][p.slug as string]?.word ?? p.word) : p.word;
-        return { ...h, word, rank: p.rank };
-      }),
+    () => shownHolesFor(holes, picked, shownMeters, ranks),
     [holes, picked, shownMeters, ranks],
   );
   const pickWord = useCallback(

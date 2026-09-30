@@ -46,9 +46,10 @@ pnpm forwards args straight to the script.
 #    --runs N plays N full runs (default 1); every run is recorded as-is — there is no
 #    representative selection and no cost pruning. Puzzle paths may be repo-root-relative
 #    (packages/generation/output/...) or generation-package-relative (output/...).
-#    EVERY invocation appends its complete session (all runs, transcripts, token usage)
-#    to output/<puzzle>.bench.json — file-locked, so overlapping runs for different
-#    models accumulate instead of clobbering each other. The puzzle JSON is never written.
+#    Every completed invocation appends its complete session (all runs, transcripts,
+#    token usage) to output/<puzzle>.bench.json — file-locked, so overlapping runs for
+#    different models accumulate instead of clobbering each other. A bounded reply error
+#    aborts the invocation: it exits 1 and records nothing. The puzzle JSON is never written.
 pnpm bench:puzzle <puzzle.json> --model MODEL [--playbook <model>.playbook.json] [--effort LEVEL] [--auth api|subscription] [--session persistent|stateless] [--cap N] [--runs N]
 KIMI_CODE_API_KEY=... pnpm bench:puzzle <puzzle.json> --model KIMI --auth subscription --effort medium
 
@@ -78,12 +79,10 @@ pnpm bench:playbook:distill --model GPT-SOL --auth subscription [--dry-run]
   strict improvement, solved locks, and the counted-try cap. The singular `--model`
   accepts the seven-model roster's friendly selector (`OPUS`, `SONNET`, `FABLE`, `GPT-SOL`,
   `GPT-TERRA`, `GPT-LUNA`, `KIMI`) or exact id; each invocation runs exactly one model.
-  **The harness is a lab instrument only (user-decided 2026-08-12):** the app's benchmark
-  display was removed (root `AGENTS.md`, schema section), and with it went the roster's
-  `display` flag, the `--selection median|best` machinery (representative selection and
-  every cost-pruning path), and `--in-place` (the puzzle-JSON embed). Nothing ever writes
-  into a puzzle file; every invocation appends its complete session to the lab artifact
-  (below). Ordinary play exposes `none|low|medium|high|xhigh|max`: GPT-5.6 API supports the full scale;
+  **The harness is a lab instrument only:** the app displays no benchmark result (root
+  `AGENTS.md`, schema section), there is no representative selection or cost pruning, and
+  nothing ever writes into a puzzle file; every completed invocation appends its complete
+  session to the lab artifact (below). Ordinary play exposes `none|low|medium|high|xhigh|max`: GPT-5.6 API supports the full scale;
   Codex-plan GPT supports `low` through `max`; Anthropic supports `none` through `max`.
   Kimi requires `--auth subscription` with the dedicated `KIMI_CODE_API_KEY`, rejects
   `none` (which would route away from K3), and maps `low→low`, `medium|high→high`, and
@@ -121,11 +120,15 @@ pnpm bench:playbook:distill --model GPT-SOL --auth subscription [--dry-run]
   hash-verified `whippin_model_playbook` profile and injects its `final_playbook` under the
   fixed rules as advice. `--runs N` plays N full runs (default 1, ONE uniform default for
   every model — Kimi included, no per-provider divergence); every run is played to its
-  natural end (solve, cap DNF, or a bounded reply error) and recorded as-is. Kimi prints its counted-guess
+  natural end (solve or cap DNF) and recorded as-is. A bounded reply error —
+  `MAX_CONSECUTIVE_UNPARSEABLE` (5) unparseable replies in a row, or
+  `MAX_NONCOUNTING_REPLIES` (5) parsed replies without a counted try — raises out of
+  `play_puzzle` and aborts the whole invocation: `main` prints it and exits 1, and
+  nothing is recorded, not even the runs already finished. Kimi prints its counted-guess
   exposure and warns that
   non-counting turns add paid requests; `low` still uses adaptive thinking. Lab sessions
-  record the session mode and each run's termination. **Every invocation appends its
-  complete session — all runs, transcripts, token usage — to
+  record the session mode and each run's termination (`solved` or `cap`). **Every
+  completed invocation appends its complete session — all runs, transcripts, token usage — to
   `output/<puzzle>.bench.json`** (`write_lab_artifact`), **guarded by
   `_exclusive_file_lock`** (an advisory `flock`
   on a sidecar `.<name>.lock`) spanning the read AND the write: the atomic replace alone

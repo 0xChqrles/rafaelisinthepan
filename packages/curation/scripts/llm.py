@@ -11,7 +11,6 @@ import re
 import tempfile
 
 import _paths  # noqa: F401
-from slug import slug
 from llm_play import (
     SUBSCRIPTION_CONFLICT_ENV,
     _agent_sdk_turn,

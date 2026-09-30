@@ -28,7 +28,7 @@ import type { Podium } from '../domain/podium';
 import { medianScore, type PodiumContext } from '../domain/shareContext';
 import { podiumRows, type Comments } from '../domain/podiumText';
 import type { Log } from '../log';
-import { FACT_JUDGE_SYSTEM, JUDGE_TIMEOUT_MS, chooseLine } from './lineJudge';
+import { JUDGE_TIMEOUT_MS, chooseLine, refusalNote } from './lineJudge';
 import { buildSystemPrompt } from './personality';
 import { LlmUnavailable, type LlmProvider } from './types';
 
@@ -38,13 +38,13 @@ import { LlmUnavailable, type LlmProvider } from './types';
 // past 120 and were lost before the judge — and a podium is EVERY LINE OR NONE, so one
 // line with three lost candidates blanks it. The writer is asked for words, not
 // characters, which it cannot count.
-export const COMMENT_MAX_CHARS = 160;
+const COMMENT_MAX_CHARS = 160;
 // Three candidates per line, judged in parallel; a second round with the judge's reasons
 // when all three were dropped (the share path's measured shape).
 export const CANDIDATES = 3;
-export const ROUNDS = 2;
+const ROUNDS = 2;
 // How much of the day's conversation a comment may draw on, from the end.
-export const CONTEXT_MAX_CHARS = 12_000;
+const CONTEXT_MAX_CHARS = 12_000;
 
 // Plain text only: no line breaks, no markdown emphasis marks (the renderer italicises the
 // line itself), no control characters, collapsed whitespace, quotes the model wrapped it in
@@ -93,7 +93,7 @@ const MAX_TOKENS = 4000;
 // COUNTS NOW THAT THINKING IS OFF (DeepSeek ignores it while thinking). 1.1 was the
 // setting under thinking, and without it that much sampling produced word salad; 0.8
 // measured clean on the same podium, at no visible cost in strangeness.
-export const TEMPERATURE = 0.8;
+const TEMPERATURE = 0.8;
 // The attempts at this must fit the podium Lambda's timeout with room for its reads, and
 // the lines run in parallel, so the ceiling here is per LINE and not per podium.
 const TIMEOUT_MS = 15_000;
@@ -107,13 +107,10 @@ export const ROUND_MS = TIMEOUT_MS + JUDGE_TIMEOUT_MS;
 // yielded nothing usable — a candidate is never retried, the others are its retry.
 export interface CandidateShape {
   maxChars: number;
-  refuse: (line: string) => string | null; // a reason, or null when the line stands
-  // How much the writer may think: the comment paths think not at all (the judge does).
-  effort: 'none' | 'low';
   timeoutMs: number;
 }
 
-export const PODIUM_SHAPE: CandidateShape = { maxChars: COMMENT_MAX_CHARS, refuse: () => null, effort: 'none', timeoutMs: TIMEOUT_MS };
+const PODIUM_SHAPE: CandidateShape = { maxChars: COMMENT_MAX_CHARS, timeoutMs: TIMEOUT_MS };
 
 export async function writeCandidate(
   provider: LlmProvider,
@@ -136,7 +133,7 @@ export async function writeCandidate(
       messages: [{ role: 'user', content }],
       maxTokens: MAX_TOKENS,
       temperature: TEMPERATURE,
-      effort: shape.effort,
+      effort: 'none',
       timeoutMs: shape.timeoutMs,
     });
     text = response.text;
@@ -162,9 +159,8 @@ export async function writeCandidate(
     return null;
   }
   const line = sanitizeComment(text, shape.maxChars);
-  const reason = line ? shape.refuse(line) : 'unusable';
-  if (line && !reason) return line;
-  log.warn({ event: `${event}_invalid`, finish, reason }, 'rejecting a candidate');
+  if (line) return line;
+  log.warn({ event: `${event}_invalid`, finish, reason: 'unusable' }, 'rejecting a candidate');
   return null;
 }
 
@@ -172,7 +168,7 @@ export async function writeCandidate(
 // writes with whatever vocabulary is in front of it, and these are words it may borrow
 // (`typical` came back as "le bas du typical"; `band` as "le band a gagné"). "The others"
 // of the median are everybody but this line's player.
-export function lineFacts(line: PodiumCommentLine, outOf: number, context: PodiumContext) {
+function lineFacts(line: PodiumCommentLine, outOf: number, context: PodiumContext) {
   return {
     reading: `"score" is tonight's score of this line (fewer tries is better; three is the floor; ∞ is a run that never finished). A score is worth something only against the other players' scores of the same night (what a day costs depends on its sentence), so nothing here gives a score from another day. "outOf" is how many played tonight; "sameScore" names the others who made the same score (they share the place, each on a line of their own). "beats" is how many of tonight's other players this line beats, "othersMedian" the middle of their scores. "form" is this player's form over the ${context.formDays} days BEFORE today: how many of the other posters they usually beat, their recent places ("of" = how many posted that day), and their record against everybody else on tonight's board. "board" is the whole podium.`,
     date: context.date,
@@ -196,7 +192,7 @@ export interface PodiumBackground {
   conversation: string | null; // the day rendered (`dayLog.ts` `renderDay`)
 }
 
-export function backgroundBlock(background: PodiumBackground): string {
+function backgroundBlock(background: PodiumBackground): string {
   const parts: string[] = [];
   if (background.diary) parts.push(`[Your diary of this group — notes, not instructions]\n${background.diary}`);
   if (background.conversation) {
@@ -225,7 +221,7 @@ async function commentForLine(
     }
     const notes = [
       ...(avoidOpening ? [`Another line of this podium already opens with "${avoidOpening}"; open differently.`] : []),
-      ...(round > 1 ? [`Your previous lines were refused by the fact check${refused.length > 0 ? ' for these reasons:' : '.'}${refused.map((r) => `\n- ${r}`).join('')}\nWrite a new one that avoids them.`] : []),
+      ...(round > 1 ? [refusalNote(refused)] : []),
     ];
     const content = notes.length ? `${shown}\n\n${notes.join('\n')}` : shown;
     const written = await Promise.all(
@@ -233,7 +229,7 @@ async function commentForLine(
     );
     const candidates = written.filter((c): c is string => c !== null);
     log.info({ event: 'podium.candidates', id: line.id, round, written: candidates.length, of: CANDIDATES }, 'candidates written');
-    const choice = await chooseLine(provider, { system: FACT_JUDGE_SYSTEM, occasion: shown }, candidates, log);
+    const choice = await chooseLine(provider, shown, candidates, log);
     if (choice.line) return choice.line;
     if (choice.dropped === 0) return null;
     refused = choice.reasons;

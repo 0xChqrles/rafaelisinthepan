@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { track } from '../analytics';
+import { coarsePointer } from './useScramble';
 
 // How something leaves the app: a touch device gets its native share sheet, everything else
 // copies the text and says so — and the details are the whole of it: the AbortError that
@@ -32,11 +33,7 @@ export default function useShare({ tracked = true }: { tracked?: boolean } = {})
 
   const share = useCallback(
     async (text: string) => {
-      const isTouch =
-        typeof window !== 'undefined' &&
-        typeof window.matchMedia === 'function' &&
-        window.matchMedia('(pointer: coarse)').matches;
-      if (isTouch && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      if (coarsePointer() && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
         try {
           await navigator.share({ title: 'Whippin AI', text });
           if (tracked) track('share', { method: 'native' });

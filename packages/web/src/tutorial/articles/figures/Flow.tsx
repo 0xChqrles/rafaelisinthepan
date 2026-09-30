@@ -18,7 +18,7 @@ export default function Flow({ rows }: { rows: { name: string; steps: string[]; 
             const marked = row.marked?.includes(i);
             return (
               <div
-                // eslint-disable-next-line react/no-array-index-key -- static per figure
+                // Static per figure: the index is a stable key.
                 key={i}
                 role="listitem"
                 className={`ar-flow-step${marked ? ' marked' : ''}${i === row.steps.length - 1 ? ' last' : ''}`}

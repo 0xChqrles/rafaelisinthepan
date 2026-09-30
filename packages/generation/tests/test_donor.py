@@ -101,7 +101,7 @@ def _stub_closest(monkeypatch):
     """Record which word each neighbor walk started from."""
     calls = []
 
-    def closest(word, _kv, _v, _m, *, n):
+    def closest(word, _kv, _v, _m):
         calls.append(word)
         return RANKINGS.get(word, DEFAULT_RANKING)
 
@@ -307,31 +307,18 @@ def test_donor_flag_parsing_rejects_a_malformed_pair(capsys):
     assert "MANQUANT=DONNEUR" in capsys.readouterr().err
 
 
-def test_selector_asks_for_the_donor_before_ranking(monkeypatch, capsys):
+def test_selector_asks_for_the_donor_before_ranking(monkeypatch, capsys, selector):
     """The interactive path must reach the same puzzle: hovering a vector-less word
     ranks nothing, committing it asks for the donor, and the walk then starts there."""
-    import os
-    import termios
-    import tty
-
     calls = _stub_closest(monkeypatch)
-    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking, *_band: [("vermine", 1)])
+    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking: [("vermine", 1)])
 
-    fd = os.open(os.devnull, os.O_RDONLY)
-    monkeypatch.setattr(gen_phrase.sys, "stdin",
-                        type("Stdin", (), {"fileno": lambda self: fd,
-                                           "isatty": lambda self: True})())
-    monkeypatch.setattr(termios, "tcgetattr", lambda _fd: None)
-    monkeypatch.setattr(termios, "tcsetattr", lambda *_a: None)
-    monkeypatch.setattr(tty, "setcbreak", lambda _fd: None)
     # accoutumes: commit -> Entrée keeps the suggested donor -> start word 1;
-    # then the two ordinary words go straight to their start word.
-    keys = iter(["ENTER", "ENTER", "1", "ENTER",
-                 "ENTER", "1", "ENTER",
-                 "ENTER", "1", "ENTER"])
-    monkeypatch.setattr(gen_phrase, "_read_key", lambda _fd: next(keys))
-    # each commit ends on the display-form question; Entrée keeps the band word.
-    monkeypatch.setattr("builtins.input", lambda _p="": "")
+    # then the two ordinary words go straight to their start word. Each commit ends
+    # on the display-form question; Entrée (no reply scripted) keeps the band word.
+    selector(["ENTER", "ENTER", "1", "ENTER",
+              "ENTER", "1", "ENTER",
+              "ENTER", "1", "ENTER"])
 
     donors = _resolver(interactive=True)
     captures = []
@@ -339,13 +326,10 @@ def test_selector_asks_for_the_donor_before_ranking(monkeypatch, capsys):
         "capture": lambda _self, secret, groups, rank_map, feature:
             captures.append((secret, groups, rank_map, feature)),
     })()
-    try:
-        holes, ranks = gen_phrase.select_holes_interactive(
-            _words(), FR, "fr", kv=KV, V=VOCAB, M=object(), Vset=VSET,
-            lemma_table=TABLE, forms_by_lemma=FORMS, donors=donors,
-            reporter=reporter)
-    finally:
-        os.close(fd)
+    holes, ranks = gen_phrase.select_holes_interactive(
+        _words(), FR, "fr", kv=KV, V=VOCAB, M=object(), Vset=VSET,
+        lemma_table=TABLE, forms_by_lemma=FORMS, donors=donors,
+        reporter=reporter)
 
     assert [h["secret"]["word"] for h in holes] == [
         "accoutumes", "doucement", "jardin",
@@ -399,37 +383,21 @@ def test_answering_the_donor_question_is_not_using_the_donor():
     assert "jardin" not in donors.used
 
 
-def test_selector_reports_no_substitution_for_a_word_it_never_holed(monkeypatch):
+def test_selector_reports_no_substitution_for_a_word_it_never_holed(monkeypatch, selector):
     """An interactive run may carry a --donor pair for a word the author ends up not
     selecting. The final preview must stay silent about it."""
-    import os
-    import termios
-    import tty
-
     _stub_closest(monkeypatch)
     monkeypatch.setattr(gen_phrase, "start_band",
-                        lambda _s, merged, *_band: [(w, r + 1) for w, r, _ in merged][:1])
+                        lambda _s, merged: [(w, r + 1) for w, r, _ in merged][:1])
 
-    fd = os.open(os.devnull, os.O_RDONLY)
-    monkeypatch.setattr(gen_phrase.sys, "stdin",
-                        type("Stdin", (), {"fileno": lambda self: fd,
-                                           "isatty": lambda self: True})())
-    monkeypatch.setattr(termios, "tcgetattr", lambda _fd: None)
-    monkeypatch.setattr(termios, "tcsetattr", lambda *_a: None)
-    monkeypatch.setattr(tty, "setcbreak", lambda _fd: None)
     # the cursor lands on "accoutumes" first every time: step over it, hole the rest.
-    keys = iter(["RIGHT", "ENTER", "1", "ENTER"] * 3)
-    monkeypatch.setattr(gen_phrase, "_read_key", lambda _fd: next(keys))
-    monkeypatch.setattr("builtins.input", lambda _p="": "")
+    selector(["RIGHT", "ENTER", "1", "ENTER"] * 3)
 
     donors = _resolver(explicit={"accoutumes": "accoutume"}, interactive=True)
-    try:
-        holes, _ranks = gen_phrase.select_holes_interactive(
-            _words("tu t'accoutumes doucement au jardin sans vermine."),
-            FR, "fr", kv=KV, V=VOCAB, M=object(), Vset=VSET,
-            lemma_table=TABLE, forms_by_lemma=FORMS, donors=donors)
-    finally:
-        os.close(fd)
+    holes, _ranks = gen_phrase.select_holes_interactive(
+        _words("tu t'accoutumes doucement au jardin sans vermine."),
+        FR, "fr", kv=KV, V=VOCAB, M=object(), Vset=VSET,
+        lemma_table=TABLE, forms_by_lemma=FORMS, donors=donors)
 
     assert [h["secret"]["word"] for h in holes] == ["doucement", "jardin", "vermine"]
     assert donors.used == {}
@@ -453,42 +421,26 @@ def test_a_committed_lemma_spends_every_donor_of_a_vector_less_word():
     assert not gen_phrase.spent_candidate("jardin", set(), spent, TABLE, donors)
 
 
-def test_selector_will_not_hole_a_donors_lemma_twice(monkeypatch):
+def test_selector_will_not_hole_a_donors_lemma_twice(monkeypatch, selector):
     """Committing "accoutume" spends the accoutumer group, so the vector-less
     "accoutumes" — whose every donor belongs to that same group — must stop being
     selectable. Its own lemmas cannot say so: the table does not know the form, so it
     is a singleton that clashes with nothing."""
-    import os
-    import termios
-    import tty
-
     _stub_closest(monkeypatch)
-    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking, *_band: [("vermine", 1)])
+    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking: [("vermine", 1)])
 
-    fd = os.open(os.devnull, os.O_RDONLY)
-    monkeypatch.setattr(gen_phrase.sys, "stdin",
-                        type("Stdin", (), {"fileno": lambda self: fd,
-                                           "isatty": lambda self: True})())
-    monkeypatch.setattr(termios, "tcgetattr", lambda _fd: None)
-    monkeypatch.setattr(termios, "tcsetattr", lambda *_a: None)
-    monkeypatch.setattr(tty, "setcbreak", lambda _fd: None)
     # three plain commits: whatever the cursor lands on after "accoutume" is committed
     # must NOT be "accoutumes" — otherwise these keys would hole it as the second word.
-    keys = iter(["ENTER", "1", "ENTER"] * 3)
-    monkeypatch.setattr(gen_phrase, "_read_key", lambda _fd: next(keys))
-    monkeypatch.setattr("builtins.input", lambda _p="": "")
+    selector(["ENTER", "1", "ENTER"] * 3)
 
     words = _words("il accoutume et tu t'accoutumes doucement au jardin.")
     donors = _resolver(interactive=True)
     assert [c["secret"] for c in gen_phrase.extract_candidates(words, FR, VSET, donors)] == [
         "accoutume", "accoutumes", "doucement", "jardin",
     ]
-    try:
-        holes, ranks = gen_phrase.select_holes_interactive(
-            words, FR, "fr", kv=KV, V=VOCAB, M=object(), Vset=VSET,
-            lemma_table=TABLE, forms_by_lemma=FORMS, donors=donors)
-    finally:
-        os.close(fd)
+    holes, ranks = gen_phrase.select_holes_interactive(
+        words, FR, "fr", kv=KV, V=VOCAB, M=object(), Vset=VSET,
+        lemma_table=TABLE, forms_by_lemma=FORMS, donors=donors)
 
     assert [h["secret"]["word"] for h in holes] == ["accoutume", "doucement", "jardin"]
     assert set(ranks) == {"accoutume", "doucement", "jardin"}
@@ -541,7 +493,7 @@ def _start_run(monkeypatch, answers, selectors=START_SELECTORS,
                sentence=START_SENTENCE, start="amuse"):
     """Generate through the --words path on a TTY, scripting the display prompt."""
     monkeypatch.setattr(FR["module"], "closest",
-                        lambda _w, _kv, _v, _m, *, n: START_RANKING, raising=False)
+                        lambda _w, _kv, _v, _m: START_RANKING, raising=False)
     monkeypatch.setattr(gen_phrase, "choose_start",
                         lambda _secret, _ranking, _rank_map, _rank_by_display: start)
     monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: True, raising=False)
@@ -624,36 +576,19 @@ def test_off_tty_is_never_asked_for_a_display_form(monkeypatch):
     assert gen_phrase.choose_start_display("amuse", 87, None) == "amuse"
 
 
-def test_selector_asks_for_the_display_form_too(monkeypatch):
+def test_selector_asks_for_the_display_form_too(monkeypatch, selector):
     """Both selection paths must offer the override — the selector drops out of raw
     mode for it, so the one free-text answer gets accents and line editing."""
-    import os
-    import termios
-    import tty
-
     monkeypatch.setattr(FR["module"], "closest",
-                        lambda _w, _kv, _v, _m, *, n: START_RANKING, raising=False)
-    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking, *_band: [("amuse", 1)])
+                        lambda _w, _kv, _v, _m: START_RANKING, raising=False)
+    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking: [("amuse", 1)])
 
-    fd = os.open(os.devnull, os.O_RDONLY)
-    monkeypatch.setattr(gen_phrase.sys, "stdin",
-                        type("Stdin", (), {"fileno": lambda self: fd,
-                                           "isatty": lambda self: True})())
-    monkeypatch.setattr(termios, "tcgetattr", lambda _fd: None)
-    monkeypatch.setattr(termios, "tcsetattr", lambda *_a: None)
-    monkeypatch.setattr(tty, "setcbreak", lambda _fd: None)
-    keys = iter(["ENTER", "1", "ENTER"] * 3)
-    monkeypatch.setattr(gen_phrase, "_read_key", lambda _fd: next(keys))
-    replies = iter(["amuses", "", ""])
-    monkeypatch.setattr("builtins.input", lambda _p="": next(replies))
+    selector(["ENTER", "1", "ENTER"] * 3, replies=["amuses", "", ""])
 
-    try:
-        holes, ranks = gen_phrase.select_holes_interactive(
-            _words(START_SENTENCE), FR, "fr", kv=KV, V=VOCAB, M=object(),
-            Vset=VSET, lemma_table=TABLE, forms_by_lemma=FORMS,
-            donors=_resolver(interactive=True))
-    finally:
-        os.close(fd)
+    holes, ranks = gen_phrase.select_holes_interactive(
+        _words(START_SENTENCE), FR, "fr", kv=KV, V=VOCAB, M=object(),
+        Vset=VSET, lemma_table=TABLE, forms_by_lemma=FORMS,
+        donors=_resolver(interactive=True))
 
     first = holes[0]
     assert first["start"] == {"word": "amuses", "slug": "amuses"}
@@ -664,37 +599,21 @@ def test_selector_asks_for_the_display_form_too(monkeypatch):
     assert [h["start"]["word"] for h in holes[1:]] == ["amuse", "amuse"]
 
 
-def test_selector_ships_the_geometry_on_every_hole_it_commits(monkeypatch):
+def test_selector_ships_the_geometry_on_every_hole_it_commits(monkeypatch, selector):
     """#115's `dq` has no opt-out, so BOTH selection paths must ship it. The --words
     path is covered by the geometry tests (test_distances.py); this covers the
     selector, whose holes are otherwise reachable only through the raw-mode loop — and
     a distance-less map scores nothing with no error anywhere."""
-    import os
-    import termios
-    import tty
-
     monkeypatch.setattr(FR["module"], "closest",
-                        lambda _w, _kv, _v, _m, *, n: START_RANKING, raising=False)
-    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking, *_band: [("amuse", 1)])
+                        lambda _w, _kv, _v, _m: START_RANKING, raising=False)
+    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking: [("amuse", 1)])
 
-    fd = os.open(os.devnull, os.O_RDONLY)
-    monkeypatch.setattr(gen_phrase.sys, "stdin",
-                        type("Stdin", (), {"fileno": lambda self: fd,
-                                           "isatty": lambda self: True})())
-    monkeypatch.setattr(termios, "tcgetattr", lambda _fd: None)
-    monkeypatch.setattr(termios, "tcsetattr", lambda *_a: None)
-    monkeypatch.setattr(tty, "setcbreak", lambda _fd: None)
-    keys = iter(["ENTER", "1", "ENTER"] * 3)
-    monkeypatch.setattr(gen_phrase, "_read_key", lambda _fd: next(keys))
-    monkeypatch.setattr("builtins.input", lambda _p="": "")
+    selector(["ENTER", "1", "ENTER"] * 3)
 
-    try:
-        holes, ranks = gen_phrase.select_holes_interactive(
-            _words(START_SENTENCE), FR, "fr", kv=KV, V=VOCAB, M=object(),
-            Vset=VSET, lemma_table=TABLE, forms_by_lemma=FORMS,
-            donors=_resolver(interactive=True))
-    finally:
-        os.close(fd)
+    holes, ranks = gen_phrase.select_holes_interactive(
+        _words(START_SENTENCE), FR, "fr", kv=KV, V=VOCAB, M=object(),
+        Vset=VSET, lemma_table=TABLE, forms_by_lemma=FORMS,
+        donors=_resolver(interactive=True))
 
     for hole in holes:
         rmap = ranks[hole["secret"]["slug"]]

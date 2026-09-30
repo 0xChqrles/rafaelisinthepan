@@ -47,20 +47,20 @@ import {
   LINK_SENDS_PER_IP,
   LINK_SEND_WINDOW_SECONDS,
   PUBLIC_ID_PATTERN,
+  SUPPORTED_LANGS,
   VOCAB_BUILDS,
 } from '@whippin/shared';
-import { accountStakes, drainDepartures, supportedLangs } from './accountLink';
+import { accountStakes, drainDepartures } from './accountLink';
 import { deviceTokenHash, type DeviceStore } from './deviceStore';
 import type { GroupStore } from './groupStore';
 import type { PlayerHistoryStore } from './historyStore';
 import { emailHash, linkCodeHash, type LinkStore } from './linkStore';
 import {
-  clientIp,
   LIVE_HEADERS,
   readJsonObject,
   requireDevice,
   requireDeviceToken,
-  requireTurnstileToken,
+  requireTurnstile,
 } from './liveRoute';
 import { linkCodeMail, type Mailer } from './mailer';
 import { hashClientIp } from './scores';
@@ -175,18 +175,12 @@ export async function handleLink(
   const hash = emailHash(email);
 
   if (wantsSend) {
-    const challenge = requireTurnstileToken(body, responseHeaders);
-    if (!challenge.ok) return challenge.response;
-    const remoteIp = clientIp(event, deps.allowSourceIp === true);
-    if (!remoteIp) {
-      throw new Error('Link code request has no trusted client IP address.');
-    }
     // Turnstile BEFORE the allowances, deliberately: the allowances are spent per address,
     // so checking them first would let an unauthenticated caller burn a stranger's code
     // budget and deny them a link they never asked to lose.
-    if (!(await deps.turnstile.verify(challenge.value, remoteIp))) {
-      return errorResponse(403, 'turnstile_rejected', 'Turnstile token is invalid.', responseHeaders);
-    }
+    const challenge = await requireTurnstile(body, event, deps, responseHeaders, 'Link code request');
+    if (!challenge.ok) return challenge.response;
+    const remoteIp = challenge.value;
     const lang = typeof body.lang === 'string' && Object.hasOwn(VOCAB_BUILDS, body.lang)
       ? body.lang
       : 'en';
@@ -482,7 +476,13 @@ export async function handleLink(
     ...(erase
       ? {
           departFrom: leaving,
-          moves: supportedLangs().map((lang) => ({ date: activeDate(instant), lang })),
+          // EVERY supported language — "the active day" means all of them, not whichever
+          // route the linking device happens to be on (the owner's rule). Which
+          // language a player was on lives in the browser and nowhere else, so a server
+          // that guessed would erase the round it guessed wrong about. The product is
+          // bounded (two languages today), which is what makes evaluating all of them the
+          // cheap answer as well as the right one.
+          moves: SUPPORTED_LANGS.map((lang) => ({ date: activeDate(instant), lang })),
         }
       : {}),
     now: instant.toISOString(),

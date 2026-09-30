@@ -6,7 +6,7 @@ import type { LlmEnv } from '../config/env';
 import { deepSeekProvider } from './providers/deepseek';
 import type { LlmProvider } from './types';
 
-export async function resolveLlmApiKey(env: LlmEnv, ssm: () => SSMClient): Promise<string | null> {
+async function resolveLlmApiKey(env: LlmEnv, ssm: () => SSMClient): Promise<string | null> {
   if (env.apiKey) return env.apiKey;
   if (!env.apiKeyParameter) return null;
   const response = await ssm().send(

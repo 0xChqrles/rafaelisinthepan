@@ -56,6 +56,9 @@ describe('the new-leader event (#236)', () => {
     const store = dynamoLeaderStore({ send } as unknown as DynamoDBClient, 'bot');
     expect(await store.claim({ group: GROUP, lang: 'fr', dayNumber: DAY, sender: GAB, score: 5 })).toBe('unchanged');
     const [put] = puts(send) as PutItemCommand[];
+    // The row is keyed by (group, LANGUAGE, day): one language's best never gates the other's.
+    expect(put.input.Item?.pk).toEqual({ S: `GROUP#${GROUP}` });
+    expect(put.input.Item?.sk).toEqual({ S: 'LEAD#fr#020700' });
     expect(put.input.Item?.score).toEqual({ N: '5' });
     expect(put.input.Item?.sender).toEqual({ S: GAB });
     expect(put.input.ConditionExpression).toBe('attribute_not_exists(#sk) OR #score > :score');

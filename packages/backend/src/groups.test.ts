@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GROUP_MEMBERS_MAX, GROUPS_MAX, type GroupSummary } from '@whippin/shared';
 import { createHandler } from './handler';
 import { memoryDeviceStore } from './memoryDeviceStore';
@@ -15,6 +15,7 @@ import { seedDevice, type TestDevice } from './testDevice';
 
 const emptyStore: PuzzleStore = {
   getPuzzle: async () => null,
+  hasPuzzle: async () => false,
   getSlice: async () => null,
 };
 const NOW = new Date('2026-09-13T12:00:00Z');
@@ -29,7 +30,6 @@ async function makeHandler(checkAccounts = true) {
     groups,
     profiles,
     deviceStore: devices,
-    devices: { turnstile: { verify: async () => true }, allowSourceIp: true },
   });
   const me = await seedDevice(devices);
   const them = await seedDevice(devices);
@@ -137,8 +137,12 @@ describe('groups route (#271) — create, join, leave, remove', () => {
     const { handler, me, them, groups } = await makeHandler();
     const id = await create(handler, me);
     await call(handler, { token: them.token, join: id });
-    // The group row goes under a member (the store's own delete, as the last leave does).
-    await groups.leave(id, me.accountId, { expectedVersion: (await groups.get(id))!.membershipVersion, deleteGroup: true });
+    // The group row is gone under a member. The memory store cannot HOLD that stray (its
+    // group delete takes every membership with it), so the missing row is staged at the
+    // read the list decides from.
+    const read = groups.get.bind(groups);
+    vi.spyOn(groups, 'get').mockImplementation(async (asked) => (asked === id ? null : read(asked)));
+    expect((await groups.listMine(them.accountId)).map((held) => held.id)).toEqual([id]);
     expect((await call(handler, { token: them.token })).groups).toEqual([]);
     await expect(groups.listMine(them.accountId)).resolves.toEqual([]);
   });
@@ -257,7 +261,6 @@ describe('groups route (#271) — the public face', () => {
       groups,
       profiles: memoryProfileStore(() => false),
       deviceStore: devices,
-      devices: { turnstile: { verify: async () => true }, allowSourceIp: true },
     });
     const answer = await gone(get(id));
     expect(answer.statusCode).toBe(200);
@@ -273,6 +276,17 @@ describe('groups route (#271) — the public face', () => {
 
 
 describe('membership changes between a leave decision and its transaction', () => {
+  // A refused leave backs off on the clock before the route decides again. The wait runs on
+  // fake timers here: the tests are about what is re-read, not about sleeping through it.
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const afterBackoff = async <T>(pending: Promise<T>): Promise<T> =>
+    (await Promise.all([pending, vi.runAllTimersAsync()]))[0];
+
   it('re-evaluates the successor when the selected member leaves first', async () => {
     const { handler, me, them, devices, groups } = await makeHandler();
     const third = await seedDevice(devices);
@@ -284,7 +298,7 @@ describe('membership changes between a leave decision and its transaction', () =
       await call(handler, { token: them.token, leave: id });
       return leave(...args);
     });
-    await call(handler, { token: me.token, leave: id, successor: them.accountId });
+    await afterBackoff(call(handler, { token: me.token, leave: id, successor: them.accountId }));
     expect((await groups.get(id))?.createdBy).toBe(third.accountId);
     expect((await groups.members(id)).map((m) => m.publicId)).toEqual([third.accountId]);
   });
@@ -300,7 +314,9 @@ describe('membership changes between a leave decision and its transaction', () =
       await call(handler, { token: them.token, leave: id });
       return leave(...args);
     });
-    const result = await handler(post({ token: me.token, leave: id, successor: them.accountId }));
+    const result = await afterBackoff(
+      handler(post({ token: me.token, leave: id, successor: them.accountId })),
+    );
     expect(result.statusCode).toBe(409);
     expect(JSON.parse(result.body).error).toBe('successor_required');
     expect((await groups.get(id))?.createdBy).toBe(me.accountId);
@@ -315,7 +331,7 @@ describe('membership changes between a leave decision and its transaction', () =
       await call(handler, { token: them.token, join: id });
       return leave(...args);
     });
-    await call(handler, { token: me.token, leave: id });
+    await afterBackoff(call(handler, { token: me.token, leave: id }));
     expect((await groups.get(id))?.createdBy).toBe(them.accountId);
     expect((await groups.members(id)).map((m) => m.publicId)).toEqual([them.accountId]);
     expect((await handler(get(id))).statusCode).toBe(200);
@@ -331,7 +347,7 @@ describe('membership changes between a leave decision and its transaction', () =
       await call(handler, { token: me.token, leave: id, successor: them.accountId });
       return leave(...args);
     });
-    await call(handler, { token: them.token, leave: id });
+    await afterBackoff(call(handler, { token: them.token, leave: id }));
     expect((await groups.get(id))?.createdBy).toBe(third.accountId);
     expect((await groups.members(id)).map((m) => m.publicId)).toEqual([third.accountId]);
   });
@@ -345,7 +361,9 @@ describe('membership changes between a leave decision and its transaction', () =
       await call(handler, { token: me.token, leave: id });
       return leave(...args);
     });
-    const result = await handler(post({ token: me.token, remove: id, member: them.accountId }));
+    const result = await afterBackoff(
+      handler(post({ token: me.token, remove: id, member: them.accountId })),
+    );
     expect(result.statusCode).toBe(403);
     expect(JSON.parse(result.body).error).toBe('not_creator');
     expect((await groups.members(id)).map((m) => m.publicId)).toEqual([them.accountId]);
@@ -357,10 +375,14 @@ describe('membership changes between a leave decision and its transaction', () =
     const id = await create(handler, me);
     await groups.join({ id, publicId: them.accountId, now: '2026-09-13T13:00:00Z' });
     await groups.join({ id, publicId: third.accountId, now: '2026-09-13T14:00:00Z' });
-    const leave = groups.leave.bind(groups);
-    vi.spyOn(groups, 'leave').mockImplementationOnce(async (...args) => {
+    // The departure decides from a member list the oldest member leaves right after: the
+    // read answers what stood BEFORE, so a leave that trusted it would hand the group to a
+    // member who is gone.
+    const members = groups.members.bind(groups);
+    vi.spyOn(groups, 'members').mockImplementationOnce(async (asked) => {
+      const before = await members(asked);
       await call(handler, { token: them.token, leave: id });
-      return leave(...args);
+      return before;
     });
     await groups.leaveAll(me.accountId);
     expect((await groups.get(id))?.createdBy).toBe(third.accountId);

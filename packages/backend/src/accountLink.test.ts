@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { drainDepartures } from './accountLink';
+import { accountStakes, drainDepartures } from './accountLink';
 import type { LinkStore } from './linkStore';
 import { memoryGroupStore } from './memoryGroupStore';
+import { memoryHistoryStore } from './memoryHistoryStore';
 
 const FROM = 'aaaaaaaaaaaaaaaa';
 const TO = 'bbbbbbbbbbbbbbbb';
@@ -33,8 +34,8 @@ describe('drainDepartures', () => {
 
     await expect(groups.listMine(FROM)).resolves.toEqual([]);
     expect((await groups.members('dddddddddddddddd')).map((m) => m.publicId)).toEqual([TO]);
-    // The creator's own group survives them, empty: its link still joins.
-    expect(await groups.members('cccccccccccccccc')).toEqual([]);
+    // Their leaving EMPTIED the group they owned alone, so it is deleted: its link 404s.
+    await expect(groups.get('cccccccccccccccc')).resolves.toBeNull();
     expect(pending).toEqual([]);
   });
 
@@ -50,5 +51,29 @@ describe('drainDepartures', () => {
 
   it('is done when nothing is queued', async () => {
     await expect(drainDepartures(queue([]) as LinkStore, memoryGroupStore(), TO)).resolves.toBe(true);
+  });
+});
+
+// CONTRACT (root AGENTS.md, the account's THREE NUMBERS): ONE aggregation over the
+// per-language solved-day collections — `streak` is the MAXIMUM of the per-language live
+// streaks, `best` the MAXIMUM of the per-language best streaks, `days` the SUM of the
+// collections' sizes. Never a sum of streaks: a streak is a run of days in ONE language.
+describe('accountStakes', () => {
+  const ACTIVE_DAY = 20700;
+
+  it('takes the MAXIMUM streak and the MAXIMUM best across languages, and SUMS the days', async () => {
+    const history = memoryHistoryStore();
+    // fr holds the live streak: three days running, up to the active day.
+    const fr = [ACTIVE_DAY - 2, ACTIVE_DAY - 1, ACTIVE_DAY];
+    // en holds the record: a live run of two, and an old broken run of four.
+    const en = [ACTIVE_DAY - 13, ACTIVE_DAY - 12, ACTIVE_DAY - 11, ACTIVE_DAY - 10, ACTIVE_DAY - 1, ACTIVE_DAY];
+    for (const day of fr) await history.recordSolvedDay({ publicId: TO, lang: 'fr', day });
+    for (const day of en) await history.recordSolvedDay({ publicId: TO, lang: 'en', day });
+
+    await expect(accountStakes(history, TO, ACTIVE_DAY)).resolves.toEqual({
+      streak: 3, // fr's, not 3 + 2
+      best: 4, // en's, not 3 + 4
+      days: 9, // 3 + 6: a day played in either language is a day played
+    });
   });
 });

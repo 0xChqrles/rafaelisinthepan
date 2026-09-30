@@ -25,17 +25,17 @@
 // `pnpm bot:cli groups`, which does hold the lease and needs the service scaled to zero.
 //
 // SSM is regional, and a client in the wrong region reads an EMPTY LIST rather than
-// failing — so the region is pinned to the deployment's (`groupsRegion`) instead of being
+// failing — so the region is pinned to the deployment's (`botRegion`) instead of being
 // inherited from the shell, and printed with every answer. `BOT_AWS_REGION` overrides.
 
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SSMClient } from '@aws-sdk/client-ssm';
+import { botRegion } from './config/env';
 import { GroupConfigError, assertUniqueGroupIds } from './config/groupConfig';
 import {
   GROUPS_PATH,
-  groupsRegion,
   assertDeployable,
   assertSlug,
   isSlug,
@@ -49,7 +49,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url)); // packages/whatsapp-bot/src
 const GROUPS_DIR = join(here, '..', 'groups');
 const EXAMPLE = join(GROUPS_DIR, 'example.json');
-export const SNAPSHOT_DIR = join(GROUPS_DIR, 'local');
+const SNAPSHOT_DIR = join(GROUPS_DIR, 'local');
 
 const USAGE = `Usage:
   pnpm bot:groups list
@@ -72,12 +72,12 @@ const describe = (g: StoredGroup): string =>
 
 // The snapshot a build and a deploy read. Writing it is the ONLY thing that puts a group
 // in front of the bot, which is what makes "editing SSM does not change production" true.
-// `dir` is a parameter (defaulting to the real snapshot) so tests can pull into a temp
-// directory instead of the checkout — `run` threads its own through.
-export function writeSnapshot(
+// `dir` is a parameter so tests can pull into a temp directory instead of the checkout —
+// `run` threads its own through.
+function writeSnapshot(
   groups: readonly StoredGroup[],
   replaceAll: boolean,
-  dir: string = SNAPSHOT_DIR,
+  dir: string,
 ): string[] {
   mkdirSync(dir, { recursive: true });
   if (replaceAll) {
@@ -98,7 +98,7 @@ export async function run(argv: readonly string[], store: GroupsStore, snapshotD
     const { groups, broken } = await store.list();
     // The path AND the region, always: "nothing configured" and "looking in the wrong
     // place" are the same answer from SSM, so the answer has to say where it looked.
-    say(`${GROUPS_PATH} (${groupsRegion()})`);
+    say(`${GROUPS_PATH} (${botRegion()})`);
     if (groups.length === 0 && broken.length === 0) {
       say(`  no group configured — copy ${EXAMPLE} to groups/local/<slug>.json, fill it in, then: pnpm bot:groups push <slug>`);
       return 0;
@@ -146,6 +146,8 @@ export async function run(argv: readonly string[], store: GroupsStore, snapshotD
     const next = validateForStore(argument, readFileSync(file, 'utf8'), groups);
     const current = groups.find((g) => g.slug === argument);
     if (current && next === current.json) {
+      // Nothing to store, but the file may spell the same config differently.
+      writeFileSync(file, next);
       say('No change.');
       return 0;
     }
@@ -195,7 +197,7 @@ export async function run(argv: readonly string[], store: GroupsStore, snapshotD
       return 0;
     }
     const written = writeSnapshot(all, true, snapshotDir);
-    say(`${snapshotDir}  <- ${GROUPS_PATH} (${groupsRegion()})`);
+    say(`${snapshotDir}  <- ${GROUPS_PATH} (${botRegion()})`);
     if (written.length === 0) say('  (no group configured in SSM)');
     for (const file of written) say(`  ${file}`);
     return 0;
@@ -207,7 +209,7 @@ export async function run(argv: readonly string[], store: GroupsStore, snapshotD
 
 const invokedDirectly = process.argv[1] && process.argv[1].endsWith('groupsCli.ts');
 if (invokedDirectly) {
-  run(process.argv.slice(2), ssmGroupsStore(new SSMClient({ region: groupsRegion() })))
+  run(process.argv.slice(2), ssmGroupsStore(new SSMClient({ region: botRegion() })))
     .then((code) => {
       process.exitCode = code;
     })

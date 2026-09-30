@@ -94,14 +94,17 @@ const GROUP_MARKS_Y = 118;
 const GROUP_MARKS_SHOWN = 6;
 const GROUP_NAME_Y = 410; // baseline
 const GROUP_NAME_MAX_SIZE = 60;
-// The name's own column, well inside the card's margins (the player card's rule): a
-// 16-character name set at the max size runs 960 of the 1020 the margins leave, which
-// reads as the name wearing the card. Held to this box, everything up to 12 glyphs keeps
-// the full size and only a genuinely long name steps down.
+// The name's own column, well inside the card's margins: at the max size a name reaching
+// the 1020 the margins leave reads as the name wearing the card.
+// Held to this box, everything up to 12 glyphs keeps the full size and only a genuinely
+// long name steps down (the 20-glyph cap sets at 36).
 const GROUP_NAME_WIDTH = 720;
 const GROUP_APP_Y = 528; // baseline
 const GROUP_APP_SIZE = 28;
 const APP_NAME = 'WHIPPIN AI';
+
+// A tile's corner radius: the web tile's proportion.
+const tileRadius = (px: number) => Math.round(px * 0.036);
 
 // The mark is the app's ONE avatar drawing: the palette's ground, the union outline of
 // the filled cells on top, and only the tile's outer corners rounded (the web's `Avatar`,
@@ -118,15 +121,17 @@ function markTile(
   px: number,
 ): string {
   const cell = px / AVATAR_SIZE;
+  const draw = (encoded: string) => {
+    const { palette, cells } = decodeAvatar(encoded);
+    return { ...AVATAR_PALETTES[palette], outline: avatarOutlinePath(cells, cell) };
+  };
   let drawing: { bg: string; fg: string; outline: string };
   try {
-    const { palette, cells } = decodeAvatar(avatar ?? defaultAvatar(publicId));
-    drawing = { ...AVATAR_PALETTES[palette], outline: avatarOutlinePath(cells, cell) };
+    drawing = draw(avatar ?? defaultAvatar(publicId));
   } catch {
-    const { palette, cells } = decodeAvatar(defaultAvatar(publicId));
-    drawing = { ...AVATAR_PALETTES[palette], outline: avatarOutlinePath(cells, cell) };
+    drawing = draw(defaultAvatar(publicId));
   }
-  const radius = Math.round(px * 0.036); // the web tile's proportion
+  const radius = tileRadius(px);
   return (
     `<clipPath id="${id}"><rect x="${x}" y="${y}" width="${px}" height="${px}" rx="${radius}"/></clipPath>` +
     // The clip sits on an UNtransformed group, in the same absolute space its rect is
@@ -214,7 +219,7 @@ export function renderGroupCardSvg({ name, members }: GroupCardData): string {
   );
   if (overflow > 0) {
     const x = tileX(shown.length);
-    const radius = Math.round(GROUP_MARK_PX * 0.036);
+    const radius = tileRadius(GROUP_MARK_PX);
     marks.push(
       `<rect x="${x}" y="${GROUP_MARKS_Y}" width="${GROUP_MARK_PX}" height="${GROUP_MARK_PX}" rx="${radius}" fill="none" stroke="${MUTED}" stroke-width="3"/>` +
         `<text x="${x + GROUP_MARK_PX / 2}" y="${GROUP_MARKS_Y + GROUP_MARK_PX / 2}" dy="0.16em" dominant-baseline="middle" text-anchor="middle" font-family="${CARD_FONT}" font-size="${GROUP_APP_SIZE}" fill="${MUTED}">+${overflow}</text>`,
@@ -266,6 +271,29 @@ function scoreLockup(score: number, capped: boolean, unit: { one: string; many: 
 // (`bonus.ts`) — "BONUS" and its id.
 export function cardPuzzleLabel({ dayNumber, bonusId }: Pick<CardData, 'dayNumber' | 'bonusId'>): string {
   return bonusId !== undefined ? `BONUS ${bonusId}` : dateForDayNumber(dayNumber ?? 0);
+}
+
+// A shared result's HEADLINE: the first line of the plain text a player shares, and the
+// preview page's title. ONE spelling for the web (which composes the message), the backend
+// (which titles the page) and the WhatsApp bot (which has to recognize the line to drop it
+// from what it remembers). The caller localizes the UNIT; the shape of the line is here.
+//
+// The day is named by its CALENDAR DATE, not the internal day index: a
+// reader can date the puzzle, and it is the same string the card draws and the shared link
+// resolves to. `dateForDayNumber` is `dayNumber`'s exact inverse, so this is still the
+// SERVER-owned game day, never the sharer's local date.
+// `score` is a number on every ordinary result and the literal `∞` on a #214 capped
+// sentence round — plain text has no font to be missing the glyph, so the character itself
+// is right here (the CARD and the on-screen result draw the shared path data instead,
+// because Press Start 2P has no such glyph).
+//
+// A BONUS puzzle (`bonus.ts`) is no day: it is named "BONUS <id>", the card's own label.
+export function shareHeadline(
+  ref: Pick<CardData, 'dayNumber' | 'bonusId'>,
+  score: number | string,
+  unit: string,
+): string {
+  return `Whippin AI ${cardPuzzleLabel(ref)} — ${score} ${unit}`;
 }
 
 export function renderCardSvg(

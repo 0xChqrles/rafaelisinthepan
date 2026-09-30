@@ -9,6 +9,5 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 export default function Button({ variant = 'primary', className = '', type = 'button', ...props }: ButtonProps) {
   const classes = ['btn', `btn-${variant}`, className].filter(Boolean).join(' ');
-  // eslint-disable-next-line react/button-has-type
   return <button type={type} className={classes} {...props} />;
 }

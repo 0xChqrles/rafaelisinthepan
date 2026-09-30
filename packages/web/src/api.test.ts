@@ -20,9 +20,11 @@ import {
   parseErasePrompt,
   parseBadCode,
   parseLinkResult,
+  parsePlayerHistory,
   parseProfile,
   parseRound,
   profileUrl,
+  readGroup,
   readProfile,
   roundUrl,
 } from './api';
@@ -349,6 +351,86 @@ describe('readProfile — the four answers (#204)', () => {
   });
 });
 
+// CONTRACT (#271): `GET /groups?id=` has THREE answers (the `readProfile` rule), told apart
+// on the error CODE: the group, GONE (404 `unknown_group` — the invite landing's EXPIRED) and
+// FAILED (the landing's RETRY). A 404 that does not say so is not an expired link.
+describe('readGroup — the three answers (#271)', () => {
+  const ID = 'abcdefghij234567';
+  const OWNER = 'zwjxqk37xfkvtxqu';
+  const group = (over: Partial<Record<string, unknown>> = {}) => ({
+    id: ID,
+    name: 'Les_copains',
+    createdBy: OWNER,
+    members: [{ publicId: OWNER, name: 'Zoe', avatar: null }],
+    ...over,
+  });
+  const answer = (init: { status: number; body?: unknown }) => {
+    const payload = JSON.stringify(init.body ?? {});
+    const response = {
+      ok: init.status < 400,
+      status: init.status,
+      json: async () => JSON.parse(payload) as unknown,
+      clone: () => response,
+    };
+    return response;
+  };
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.example');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it('SHOWN: a 200 carries the group\'s public face, asked for by its id', async () => {
+    const fetchMock = vi.fn(async (_url: string) => answer({ status: 200, body: group() }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(readGroup(ID)).resolves.toEqual({ status: 'shown', group: group() });
+    expect(fetchMock.mock.calls[0][0]).toBe(`https://api.example/groups?id=${ID}`);
+  });
+
+  it('GONE: a 404 `unknown_group` is a link naming no group', async () => {
+    vi.stubGlobal('fetch', async () => answer({ status: 404, body: { error: 'unknown_group' } }));
+    await expect(readGroup(ID)).resolves.toEqual({ status: 'gone' });
+  });
+
+  it('reads the CODE, not the status: a 404 that does not say so is not an expired link', async () => {
+    vi.stubGlobal('fetch', async () => answer({ status: 404, body: { error: 'not_found' } }));
+    await expect(readGroup(ID)).resolves.toEqual({ status: 'failed' });
+    vi.stubGlobal('fetch', async () => answer({ status: 404 }));
+    await expect(readGroup(ID)).resolves.toEqual({ status: 'failed' });
+  });
+
+  it('FAILED: a transport error or a 5xx is NOT evidence of an expired link', async () => {
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('offline');
+    });
+    await expect(readGroup(ID)).resolves.toEqual({ status: 'failed' });
+
+    vi.stubGlobal('fetch', async () => answer({ status: 503, body: { error: 'unknown_group' } }));
+    await expect(readGroup(ID)).resolves.toEqual({ status: 'failed' });
+  });
+
+  it('FAILED: a 200 of the wrong shape never draws a group', async () => {
+    const malformed = [
+      group({ id: 'NOPE' }),
+      group({ name: 7 }),
+      group({ createdBy: 'NOPE' }),
+      group({ members: 'none' }),
+      group({ members: [{ publicId: 'NOPE', name: '', avatar: null }] }),
+      // A present avatar must DECODE (the board rows' rule).
+      group({ members: [{ publicId: OWNER, name: '', avatar: 'garbage' }] }),
+      {},
+    ];
+    for (const body of malformed) {
+      vi.stubGlobal('fetch', async () => answer({ status: 200, body }));
+      await expect(readGroup(ID), JSON.stringify(body)).resolves.toEqual({ status: 'failed' });
+    }
+  });
+});
+
 // CONTRACT (#204, PR-227 review): the attempt ladder ends at the INPUT, not on a modal.
 // Every counted mismatch is `bad_code`, the fifth included, and its `attemptsLeft: 0` is
 // what makes "too many wrong codes" reachable — the server used to answer the fifth as a
@@ -614,10 +696,44 @@ describe('roundUrl + parseRound (#201/#203)', () => {
     expect(() => parseRound({ ...valid(), solved: 'yes' })).toThrow(/solved/);
   });
 
+  it('carries the SERVER\'s on-time verdict (#211) on the answer confirming a solve', () => {
+    expect(parseRound({ ...valid(), solved: true, credited: true }).credited).toBe(true);
+    expect(() => parseRound({ ...valid(), solved: true, credited: 'yes' })).toThrow(/credited/);
+  });
+
   it('rejects a wrong-shaped body (a silent sync failure, never garbage in the log)', () => {
     expect(() => parseRound(null)).toThrow(/round/);
     expect(() => parseRound({ ...valid(), guesses: 'bois' })).toThrow(/guesses/);
     expect(() => parseRound({ ...valid(), createdAt: 7 })).toThrow(/createdAt/);
+  });
+});
+
+// CONTRACT (#211): a wrong-shaped history answer is the calendar's FAILURE state, never a
+// month of NaN fills or a streak counted off garbage.
+describe('parsePlayerHistory (#211)', () => {
+  const valid = () => ({
+    days: [{ date: '2026-08-21', progress: 62.5, solved: false }],
+    solvedDays: [20686, 20687],
+  });
+
+  it('reads a month and the solved-day collection, empty ones included', () => {
+    expect(parsePlayerHistory(valid())).toEqual(valid());
+    expect(parsePlayerHistory({ days: [], solvedDays: [] })).toEqual({ days: [], solvedDays: [] });
+  });
+
+  it('rejects a wrong-shaped body', () => {
+    const day = valid().days[0];
+    expect(() => parsePlayerHistory(null)).toThrow(/history/);
+    expect(() => parsePlayerHistory([])).toThrow(/history/);
+    expect(() => parsePlayerHistory({ ...valid(), days: {} })).toThrow(/days/);
+    expect(() => parsePlayerHistory({ ...valid(), days: [null] })).toThrow(/days/);
+    expect(() => parsePlayerHistory({ ...valid(), days: [{ ...day, date: 20686 }] })).toThrow(/days/);
+    expect(() => parsePlayerHistory({ ...valid(), days: [{ ...day, progress: Number.NaN }] })).toThrow(/days/);
+    expect(() => parsePlayerHistory({ ...valid(), days: [{ ...day, progress: '62' }] })).toThrow(/days/);
+    expect(() => parsePlayerHistory({ ...valid(), days: [{ ...day, solved: 1 }] })).toThrow(/days/);
+    expect(() => parsePlayerHistory({ ...valid(), solvedDays: undefined })).toThrow(/solvedDays/);
+    expect(() => parsePlayerHistory({ ...valid(), solvedDays: [20686.5] })).toThrow(/solvedDays/);
+    expect(() => parsePlayerHistory({ ...valid(), solvedDays: ['20686'] })).toThrow(/solvedDays/);
   });
 });
 

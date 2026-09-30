@@ -54,8 +54,6 @@ interface Token {
   // The joining space before this token (Phrase renders it outside the word span).
   space: boolean;
   secret: boolean;
-  prefix?: string;
-  suffix?: string;
   letters: Letter[];
   prefixLetters?: Letter[];
   suffixLetters?: Letter[];
@@ -97,8 +95,6 @@ export default function DissolvePhrase({
           key: i,
           space,
           secret: true,
-          prefix: hole.prefix,
-          suffix: hole.suffix,
           prefixLetters: hole.prefix
             ? plan(starts[i] ? capitalize(hole.prefix) : hole.prefix)
             : undefined,
@@ -109,7 +105,6 @@ export default function DissolvePhrase({
       return { key: i, space, secret: false, letters: plan(starts[i] ? capitalize(w) : w) };
     });
     // Static for the dissolve's lifetime: the sentence it erodes is the one it mounted with.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const lastTick = useMemo(

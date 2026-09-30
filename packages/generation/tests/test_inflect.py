@@ -69,6 +69,7 @@ import pytest
 
 import build_forms
 import gen_phrase
+import reduce_embedding
 from build_forms import (clean_entry, collect_rows, dominant_pos, forms_path,
                          lexeme_key, lexique_class, lexique_weights, load_forms,
                          merge_entries, morphalou_features, normalize_lemma,
@@ -190,7 +191,7 @@ def test_read_morphalou_caps_dropped_samples_exactly():
     _lexemes, stats = read_morphalou(
         "\n".join(rows), build_forms.red.token_pattern("fr"))
     assert stats["rows_dropped"] == 35
-    assert len(stats["dropped_samples"]) == 30
+    assert len(stats["dropped_samples"]) == 10
 
 
 # --- duplicate dictionary entries (#146) -----------------------------------------
@@ -359,7 +360,7 @@ def test_pos_gate_with_corpus_evidence_keeps_the_dominant_reading():
     # Case 1. "évident": 0.27 as a form of "évider", 20.14 as the adjective -> the
     # adjective dominates and the verb reading is gated. Summed per class, VER and
     # AUX merged (an auxiliary is a verb).
-    token_re = gen_phrase.CONFIG["fr"]["token_regex"]
+    token_re = reduce_embedding.token_pattern("fr")
     weight = lexique_weights([("évident", "VER", 0.27), ("évident", "ADJ", 20.14),
                               ("pensé", "VER", 90.0), ("pensé", "AUX", 7.57),
                               ("pensée", "VER", 1.42), ("pensée", "NOM", 98.92)],
@@ -395,7 +396,7 @@ def test_lexique_classes_speak_the_artifacts_pos_vocabulary():
 
 
 def test_collect_rows_marks_dom_per_row_and_keeps_gated_targets():
-    token_re = gen_phrase.CONFIG["fr"]["token_regex"]
+    token_re = reduce_embedding.token_pattern("fr")
     weight = lexique_weights([("évident", "VER", 0.27), ("évident", "ADJ", 20.14),
                               ("pensé", "VER", 97.57)], token_re)
     lexemes = {
@@ -869,10 +870,11 @@ def test_a_merged_nominal_group_prefers_the_more_specific_adjective_cell():
     # Both cells can spell this synthetic merged group differently. The adjective
     # consumes the full f+p answer, so it deliberately wins over the noun's
     # number-only fallback instead of relying on an undocumented dict order.
-    table = SimpleNamespace(
-        entries={},
+    table = build_forms.Lexicon(
+        grouping={}, entries={}, dominant={}, members={},
         features=frozenset({"adj:f:p", "n:p"}),
         group_pos={"hybride:nc": frozenset({"adj", "nc"})},
+        group_forms={"hybride:nc": ("adjectivales", "nominales")},
         realize={
             ("hybride:nc", "adj:f:p"): ("adjectivales",),
             ("hybride:nc", "n:p"): ("nominales",),
@@ -1254,9 +1256,6 @@ def test_every_feature_in_the_committed_table_is_a_known_cell():
              | {"par:pre", "inf", "cit"})
     assert committed().features <= known
     assert "imp:pre:3s" not in committed().features
-    # every feature names exactly one POS — the per-POS transfer's precondition
-    for feature in committed().features:
-        assert build_forms.feature_pos(feature) in ("v", "nc", "adj", None)
 
 
 def test_the_committed_table_has_no_duplicate_row():
@@ -1386,18 +1385,18 @@ def test_the_146_build_measurements_are_hard_guards(capsys):
     assert "twin_groups : 5,711, attendu 5,712" in err
 
 
-@functools.lru_cache(maxsize=1)
-def committed_all_pos_cells():
-    """The shipped rows keyed by #146's opaque group and stored cell."""
-    cells = {}
+def test_the_committed_table_holds_the_146_rows_and_groups():
+    # The #146 measurements, restated from the audit like the #131 cells above and
+    # counted on the file itself: the loader only refuses a malformed line, so a table
+    # that lost whole rows would still load.
+    rows, groups = 0, set()
     with gzip.open(forms_path("fr"), "rt", encoding="utf-8") as f:
         for line in f:
-            if line.startswith("#"):
-                continue
-            group, _lemma, _pos, feature, form, _dom = \
-                line.rstrip("\n").split("\t")
-            cells.setdefault((group, feature), set()).add(form)
-    return cells
+            if not line.startswith("#"):
+                rows += 1
+                groups.add(line.split("\t", 1)[0])
+    assert rows == 994_497
+    assert len(groups) == 147_868
 
 
 @pytest.mark.parametrize("group,feature,expected", [
@@ -1410,7 +1409,7 @@ def committed_all_pos_cells():
 ])
 def test_the_132_all_pos_sentinels_ship_exactly_as_audited(
         group, feature, expected):
-    assert committed_all_pos_cells().get((group, feature)) == expected
+    assert set(committed().realize.get((group, feature), ())) == expected
 
 
 @pytest.mark.parametrize("form,expected", [

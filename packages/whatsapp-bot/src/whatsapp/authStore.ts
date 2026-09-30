@@ -18,6 +18,7 @@ import {
   DeleteItemCommand,
   GetItemCommand,
   PutItemCommand,
+  QueryCommand,
   type AttributeValue,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
@@ -266,7 +267,6 @@ export async function useDynamoAuthState(client: DynamoDBClient, table: string):
     },
     async wipe() {
       // The keyspace is small (creds + a few hundred keys); paged Query + batched deletes.
-      const { QueryCommand } = await import('@aws-sdk/client-dynamodb');
       let cursor: Record<string, AttributeValue> | undefined;
       do {
         const page = await client.send(

@@ -4,7 +4,7 @@ import { anonName, defaultAvatar, type BoardPlayer, type GroupSummary } from '@w
 import { readGroup } from '../api';
 import Avatar from './Avatar';
 import LoadingWave from './LoadingWave';
-import { HeaderBack } from './TopBar';
+import ModalHeader from './ModalHeader';
 import useModalDismiss from '../hooks/useModalDismiss';
 import { t } from '../i18n';
 import type { LangCode } from '../langs';
@@ -45,7 +45,7 @@ export default function GroupScreen({
   onLeave: () => void;
   onClose: () => void;
 }) {
-  const { closing, beginClose, dialogProps } = useModalDismiss('select-out');
+  const { closing, beginClose, dialogProps } = useModalDismiss('fade-out');
   const owner = group.createdBy === meId;
 
   const [faces, setFaces] = useState<Record<string, BoardPlayer>>({});
@@ -68,20 +68,7 @@ export default function GroupScreen({
       aria-label={group.name}
       onClose={onClose}
     >
-      <div className="modal-bar">
-        <div className="topbar-inner">
-          <div className="topbar-left">
-            <HeaderBack
-              label={t(lang, 'ariaClose')}
-              onBack={() => {
-                if (!closing) beginClose();
-              }}
-            />
-            <span className="topbar-title">{group.name}</span>
-          </div>
-          <div className="topbar-right" />
-        </div>
-      </div>
+      <ModalHeader lang={lang} title={group.name} back onClose={beginClose} />
 
       <div className="group-body pixel-scroll">
         <div className="board-section">{t(lang, 'groupMembers')}</div>

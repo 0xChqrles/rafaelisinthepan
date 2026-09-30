@@ -9,6 +9,7 @@ import { seedDevice } from './testDevice';
 
 const emptyStore: PuzzleStore = {
   getPuzzle: async () => null,
+  hasPuzzle: async () => false,
   getSlice: async () => null,
 };
 
@@ -20,10 +21,6 @@ async function makeHandler(profiles = memoryProfileStore()) {
       store: emptyStore,
       profiles,
       deviceStore: devices,
-      devices: {
-        turnstile: { verify: async () => true },
-        allowSourceIp: true,
-      },
     }),
     // Two devices on two ACCOUNTS: the profile is the account's, so writing from one must
     // never be visible under the other's id.
@@ -238,6 +235,26 @@ describe('profile route (#188)', () => {
     await handler(post({ token: me.token, name: 'nazi', avatar: blankAvatar() }));
     const read = await handler(get(me.accountId));
     expect(read.statusCode).toBe(404);
+  });
+
+  // CONTRACT (the live routes' shared body reader, liveRoute.ts): every live body is small,
+  // so one past the 4 KB cap is refused before it is parsed, and a body that is not a JSON
+  // OBJECT is a protocol violation.
+  it('refuses an oversized body (413) and a body that is not a JSON object (400)', async () => {
+    const { handler, me } = await makeHandler();
+    const oversized = await handler(
+      post({ token: me.token, name: 'x', avatar: blankAvatar(), padding: 'x'.repeat(4_096) }),
+    );
+    expect(oversized.statusCode).toBe(413);
+    expect(JSON.parse(oversized.body).error).toBe('payload_too_large');
+
+    for (const raw of ['{', '[1]', 'null', '"text"']) {
+      const response = await handler({ ...post({}), body: raw });
+      expect(response.statusCode).toBe(400);
+      expect(JSON.parse(response.body).error).toBe('bad_request');
+    }
+    // None of them wrote anything.
+    expect((await handler(get(me.accountId))).statusCode).toBe(404);
   });
 
   it('GET validates the id and 404s an unknown profile', async () => {

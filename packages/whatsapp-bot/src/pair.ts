@@ -27,7 +27,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main(): Promise<void> {
   const log = createLog();
-  const env = loadEnv({ ...process.env, BOT_TABLE: process.env.BOT_TABLE });
+  const env = loadEnv();
   const dynamo = new DynamoDBClient({ region: botRegion() });
   const phone = flag('--phone');
   const reset = process.argv.includes('--reset');

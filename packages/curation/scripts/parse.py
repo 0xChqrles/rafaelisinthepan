@@ -47,8 +47,6 @@ def _tokens(doc) -> list[Token]:
             text=t.text,
             lemma=t.lemma_.lower(),
             pos=t.pos_,
-            dep=t.dep_,
-            head=t.head.i,
             slug=slug(t.text),
             stop=bool(t.is_stop),
             space=t.whitespace_,

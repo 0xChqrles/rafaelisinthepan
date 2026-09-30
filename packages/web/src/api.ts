@@ -8,7 +8,6 @@ import {
   BONUS_ADDRESS_PREFIX,
   DEVICE_ID_PATTERN,
   GROUP_ID_PATTERN,
-  isBoardPeriod,
   isBonusAddress,
   isValidAvatar,
   isValidDeviceToken,
@@ -751,7 +750,7 @@ export function parseGroups(data: unknown): GroupsAnswer {
   return created === undefined ? { groups } : { groups, created };
 }
 
-export function parsePublicGroup(data: unknown): PublicGroup {
+function parsePublicGroup(data: unknown): PublicGroup {
   if (!isRecord(data)) throw new Error('malformed group: not an object');
   const { id, name, createdBy, members } = data;
   if (typeof id !== 'string' || !GROUP_ID_PATTERN.test(id)) throw new Error('malformed group: bad "id"');
@@ -791,9 +790,7 @@ export async function readGroup(id: string, signal?: AbortSignal): Promise<Group
 
 // The #190 leaderboard: GET is the anonymous GLOBAL top 50 (`id` — the caller's PUBLIC
 // id, never the token — widens it with their own below-the-cut window); POST with
-// `{token, group[, period]}` is a GROUP's board (#271), the trusted surface, and
-// `{token, standing: true}` where the caller stands today in each of their groups (the
-// server still answers it; the web's standing line was dropped 2026-09-14).
+// `{token, group[, period]}` is a GROUP's board (#271), the trusted surface.
 // Addressed per (day, lang) like everything else; all three query parameters are in the
 // board CloudFront behavior's allowList (the root AGENTS.md three-package contract).
 export function boardUrl(lang: string, date: string, id?: string, base: string = apiBase()): string {
@@ -803,9 +800,7 @@ export function boardUrl(lang: string, date: string, id?: string, base: string =
   return id ? `${root}&id=${encodeURIComponent(id)}` : root;
 }
 
-export type BoardBody =
-  | { token: string; group: string; period?: BoardPeriod }
-  | { token: string; standing: true };
+export type BoardBody = { token: string; group: string; period?: BoardPeriod };
 
 export async function postBoardBody(url: string, body: BoardBody): Promise<Response> {
   return postSignedJson(url, body);
@@ -911,10 +906,6 @@ export function parsePeriodBoard(data: unknown): PeriodBoard {
   }
   return { from, to, rows: rows as PeriodRow[] };
 }
-
-// The period name is the body's, and a screen's tab is typed by the same guard the server
-// validates with — one spelling of the three periods.
-export { isBoardPeriod };
 
 // Runtime shape check for a fetched profile — the parsePuzzle contract: a wrong-shaped
 // body surfaces as a failure, never as a broken editor or board row.

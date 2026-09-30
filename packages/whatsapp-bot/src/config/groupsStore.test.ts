@@ -72,7 +72,7 @@ describe('the SSM group-config store (#236)', () => {
   it('refuses a config over SSM Standard, and canonicalizes what it stores', () => {
     const big = config({ chat: { enabled: true, prePrompt: 'x'.repeat(MAX_VALUE_BYTES) } });
     expect(() => validateForStore('test', JSON.stringify(big), [])).toThrow(/over SSM Standard/);
-    // What is stored is pretty-printed, so the next edit opens something readable.
+    // What is stored is pretty-printed, so the file a pull writes is readable.
     const text = validateForStore('test', JSON.stringify(config()), []);
     expect(text).toMatch(/^\{\n  "id"/);
     expect(text.endsWith('\n')).toBe(true);
@@ -101,21 +101,19 @@ describe('reading the path (#236)', () => {
       ]),
     );
     const { groups, broken } = await store.list();
-    // One bad parameter used to throw here, which is the read behind `edit` and `rm` —
-    // the two commands that fix it — so the operator was locked out of every command at once.
+    // One bad parameter must not throw here: this is the read behind `push` and `rm` — the
+    // two commands that fix it — and a throw would lock the operator out of every command.
     expect(groups.map((g) => g.slug)).toEqual(['main']);
     expect(broken.map((b) => b.name)).toEqual(['Main', 'junk', 'typo']);
     const reason = (name: string) => broken.find((b) => b.name === name)?.reason;
     expect(reason('Main')).toMatch(/not a valid slug/);
     expect(reason('junk')).toMatch(/invalid JSON/);
     expect(reason('typo')).toMatch(/language/);
-    // The body travels with it: `edit` opens it as it is.
-    expect(broken.find((b) => b.name === 'junk')?.json).toBe('{oops');
   });
 
   it('refuses a snapshot while anything under the path is broken, or two configs name one group', () => {
     expect(() =>
-      assertDeployable({ groups: [], broken: [{ name: 'junk', json: '{oops', reason: 'junk: invalid JSON' }] }),
+      assertDeployable({ groups: [], broken: [{ name: 'junk', reason: 'junk: invalid JSON' }] }),
     ).toThrow(/junk: invalid JSON/);
     expect(() => assertDeployable({ groups: [stored('a', GROUP), stored('b', GROUP)], broken: [] })).toThrow(
       /already configured by a/,

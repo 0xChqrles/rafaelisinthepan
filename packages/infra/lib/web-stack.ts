@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Stack, type StackProps, Duration, CfnOutput, RemovalPolicy, Annotations } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
+import { GROUP_SEGMENT, SHARE_SEGMENT } from '@whippin/shared';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
@@ -74,7 +75,7 @@ export class WebStack extends Stack {
     }
 
     // ── Security response headers (HSTS + CSP + sniff/frame/referrer hardening) ─
-    // The SPA's only external origins are Google Fonts (CSS + woff2), the backend API,
+    // The SPA's only external origins are the backend API,
     // Umami's analytics (#60: its script from cloud.umami.is in script-src, its
     // collection endpoint gateway.umami.is in connect-src — Umami ships no npm tracker),
     // and Cloudflare Turnstile (#170: the invisible score-submission challenge loads its
@@ -82,8 +83,8 @@ export class WebStack extends Stack {
     // script-src + frame-src). Scripts are otherwise 'self' (Vite emits hashed module
     // files, no inline JS);
     // inline styles are allowed because the app sets dynamic `style={{…}}` (e.g.
-    // ProgressBar) and the CSS @imports the Google Fonts stylesheet; flags are inlined as
-    // data: URIs. CSP MUST be re-verified after deploy — an over-tight policy breaks the page.
+    // ProgressBar); flags are inlined as data: URIs. CSP MUST be re-verified after deploy —
+    // an over-tight policy breaks the page.
     const apiOrigin = props.apiOrigin ?? (domainName ? `https://api.${domainName}` : undefined);
     const umamiScriptOrigin = 'https://cloud.umami.is';
     const umamiCollectOrigin = 'https://gateway.umami.is';
@@ -92,8 +93,8 @@ export class WebStack extends Stack {
       "default-src 'self'",
       `script-src 'self' ${turnstileOrigin} ${umamiScriptOrigin}`,
       "img-src 'self' data:",
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "font-src 'self' https://fonts.gstatic.com",
+      "style-src 'self' 'unsafe-inline'",
+      "font-src 'self'",
       `connect-src 'self'${apiOrigin ? ` ${apiOrigin}` : ''} ${umamiCollectOrigin}`,
       `frame-src ${turnstileOrigin}`,
       "object-src 'none'",
@@ -169,6 +170,30 @@ export class WebStack extends Stack {
         }
       : undefined;
 
+    // ── SPA fallback: every client route is index.html ────────────────────────
+    // A client-routed path (`/en`, `/en/2026-09-01`, `/join/g/<id>`, `/account/email`) has
+    // no S3 object, so this viewer-request function hands the bucket `/index.html` for any
+    // path whose LAST segment carries no dot — every route the SPA owns — and leaves a file
+    // path (`/assets/x.js`, `/vocab/en.json`, `/version.json`) alone, so a missing file is
+    // the bucket's own error, never the SPA shell. It runs on the DEFAULT behavior only: a
+    // distribution-wide custom error response would also rewrite the API origin's answers
+    // on /s, /og and /g, serving a dead invite or share as 200 + the SPA shell and a dead
+    // card as HTML.
+    const spaFallbackFn = new cloudfront.Function(this, 'SpaFallbackFn', {
+      comment: 'Serve index.html for every SPA route (a last path segment with no dot).',
+      runtime: cloudfront.FunctionRuntime.JS_2_0,
+      code: cloudfront.FunctionCode.fromInline(
+        [
+          'function handler(event) {',
+          '  var request = event.request;',
+          "  var last = request.uri.slice(request.uri.lastIndexOf('/') + 1);",
+          "  if (last.indexOf('.') === -1) request.uri = '/index.html';",
+          '  return request;',
+          '}',
+        ].join('\n'),
+      ),
+    });
+
     // ── CloudFront: CDN in front of the private bucket ────────────────────────
     const distribution = new cloudfront.Distribution(this, 'SiteCdn', {
       comment: 'Whippin web front',
@@ -191,26 +216,26 @@ export class WebStack extends Stack {
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
         responseHeadersPolicy: siteHeaders,
         compress: true,
+        functionAssociations: [
+          { function: spaFallbackFn, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST },
+        ],
       },
       // /s/* (card page), /og/* (card image) and /g/* (the #271 group invite link's own
       // preview page, whose card lives under /og/g/) proxy to the backend; everything else
-      // is the SPA. Without these, the SPA fallback below would serve index.html for a
-      // shared link — which is exactly what made every invite unfurl as the app's stock
-      // card. The SPA still owns the invite's LANDING, /join/g/<groupId> (shared/invite.ts):
-      // the backend page renders the preview and bounces there, so the click's actual work
-      // stays client-side. Adding a pattern here TAKES that path away from the SPA — and
-      // it must be added to `web/vite.config.ts`'s dev proxy in the same breath, or the
-      // path works in exactly one of the two environments (that is how a pasted invite
-      // link came to do nothing at all locally, 2026-08-20).
+      // is the SPA. The backend's answer reaches the viewer as it is, a dead link's 404
+      // included, because the SPA fallback runs on the default behavior alone. The SPA
+      // still owns the invite's LANDING, /join/g/<groupId> (shared/invite.ts): the backend
+      // page renders the preview and bounces there, so the click's actual work stays
+      // client-side. Adding a pattern here TAKES that path away from the SPA — and it must
+      // be added to `web/vite.config.ts`'s dev proxy in the same breath, or the path works
+      // in exactly one of the two environments.
       additionalBehaviors: cardBehavior
-        ? { '/s/*': cardBehavior, '/og/*': cardBehavior, '/g/*': cardBehavior }
+        ? {
+            [`/${SHARE_SEGMENT}/*`]: cardBehavior,
+            '/og/*': cardBehavior,
+            [`/${GROUP_SEGMENT}/*`]: cardBehavior,
+          }
         : undefined,
-      // SPA fallback: client-routed paths have no S3 object, so map the bucket's 403/404
-      // to index.html with a 200 and let the app router resolve the route.
-      errorResponses: [
-        { httpStatus: 403, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: Duration.seconds(0) },
-        { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html', ttl: Duration.seconds(0) },
-      ],
     });
 
     // ── Route53: alias the site domain at the distribution ────────────────────

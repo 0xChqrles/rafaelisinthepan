@@ -211,24 +211,32 @@ def committed():
     return load_forms(forms_path("en"))
 
 
-@functools.lru_cache(maxsize=1)
-def committed_cells():
-    cells = {}
+def test_the_committed_table_holds_the_317_rows_and_groups():
+    # Counted on the file itself: the loader only refuses a malformed line, so a table
+    # that lost whole rows would still load.
+    rows, groups = 0, set()
     with gzip.open(forms_path("en"), "rt", encoding="utf-8") as f:
         for line in f:
-            if line.startswith("#"):
-                continue
-            group, _lemma, _pos, feature, form, _dom = line.rstrip("\n").split("\t")
-            cells.setdefault((group, feature), []).append(form)
-    return cells
+            if not line.startswith("#"):
+                rows += 1
+                groups.add(line.split("\t", 1)[0])
+    assert rows == build_forms.EXPECTED_MERGE_STATS_EN["rows"]
+    assert len(groups) == build_forms.EXPECTED_MERGE_STATS_EN["groups"]
 
 
 @pytest.mark.parametrize("group,feature,expected,first", build_forms.EXPECTED_CELLS_EN)
 def test_the_317_cells_ship_exactly_as_audited(group, feature, expected, first):
-    forms = committed_cells().get((group, feature), [])
+    forms = committed().realize.get((group, feature), ())
     assert frozenset(forms) == expected
     if first is not None:
         assert forms[0] == first  # the artifact's row order is the preference
+
+
+@pytest.mark.parametrize("group,feature,expected",
+                         build_forms.EXPECTED_INVENTORY_CELLS_EN)
+def test_the_317_noun_and_verb_sentinels_ship_exactly_as_audited(
+        group, feature, expected):
+    assert frozenset(committed().realize.get((group, feature), ())) == expected
 
 
 @pytest.mark.parametrize("form,expected", build_forms.EXPECTED_SURFACE_LEXEMES_EN)

@@ -62,6 +62,16 @@ def test_quoted_matches_the_line_its_first_sentence_and_nothing_else():
     assert quoted("", quotes, lang="fr") is None
 
 
+def test_a_quotation_shares_four_content_words_and_sixty_percent_of_the_shorter_side():
+    quote = ["Le chat noir dort sur la pierre froide du jardin."]       # six content words
+    assert quoted("Un chat noir dort.", quote, lang="fr") is None       # three shared, all of the unit
+    assert quoted("Un chat noir dort sur la pierre.", quote, lang="fr") == quote[0]    # four
+    # ten content words a side: five in order is half, six is the share
+    animals = ["chat chien loup renard ours cerf lapin mulot hibou corbeau"]
+    assert quoted("chat chien loup renard ours table chaise lampe tapis rideau", animals, lang="fr") is None
+    assert quoted("chat chien loup renard ours cerf table chaise lampe tapis", animals, lang="fr") == animals[0]
+
+
 def test_in_order_hits_counts_in_order_only():
     assert in_order_hits(["a", "b", "c"], ["a", "x", "b", "c"]) == 3
     assert in_order_hits(["c", "b", "a"], ["a", "b", "c"]) == 1
@@ -178,7 +188,7 @@ def test_the_fetch_reads_the_day_s_language_wikis_and_skips_an_adaptation(monkey
     wikitext = {"en.wikiquote.org": "* A quoted line of five words here.",
                 "en.wikipedia.org": "* A list item of the article, never a quote."}
     pages = []
-    monkeypatch.setattr(shelf_quotes, "search", lambda host, query, limit=5: hits[host])
+    monkeypatch.setattr(shelf_quotes, "search", lambda host, query: hits[host])
     monkeypatch.setattr(shelf_quotes, "page_wikitext",
                         lambda host, title: pages.append((host, title)) or wikitext[host])
     work = {"author": "Kurt Vonnegut", "title": "Slaughterhouse-Five (Kurt Vonnegut Series)"}
@@ -200,7 +210,7 @@ def test_an_edition_subtitle_does_not_hide_the_work_s_article(monkeypatch):
     assert shelf_quotes.same_title("Catch-22", "Catch-22")
     assert shelf_quotes.same_title("Vernon Subutex", "Vernon Subutex 1")   # a volume: its series
     queries = []
-    monkeypatch.setattr(shelf_quotes, "search", lambda host, query, limit=5: queries.append(query) or
+    monkeypatch.setattr(shelf_quotes, "search", lambda host, query: queries.append(query) or
                         ["Severance (TV series)", "Severance (Ma novel)"])
     assert shelf_quotes.work_page("en.wikipedia.org", "Severance: A Novel", "Ling Ma") == "Severance (Ma novel)"
     assert queries == ["Severance Ling Ma"]                  # searched without the subtitle

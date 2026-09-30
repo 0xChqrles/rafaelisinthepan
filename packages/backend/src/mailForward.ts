@@ -47,7 +47,7 @@ export interface SesNotification {
   };
 }
 
-export interface SesEvent {
+interface SesEvent {
   Records?: { ses?: SesNotification }[];
 }
 
@@ -116,7 +116,7 @@ const DROPPED_HEADERS = new Set([
 //                 by a sender who writes one of their own.
 const DROPPED_PREFIXES = ['x-ses-', 'x-whippin-'];
 
-export function isDroppedHeader(name: string): boolean {
+function isDroppedHeader(name: string): boolean {
   return DROPPED_HEADERS.has(name) || DROPPED_PREFIXES.some((prefix) => name.startsWith(prefix));
 }
 
@@ -145,10 +145,18 @@ export function splitMessage(raw: Buffer): { header: string; body: Buffer } {
  * The header block as whole FIELDS, with folded continuation lines rejoined onto the field
  * they continue — so a `Subject` wrapped over three lines is one entry and cannot be
  * mistaken for three unnamed ones.
+ *
+ * A CR INSIDE A LINE IS NOT A LINE BREAK HERE, SO IT MUST NOT BE ONE ANYWHERE: a parser
+ * downstream that reads it as one would find a header this function never classified — an
+ * `X-SES-*` or a `Bcc` hidden behind it, past the filter. It becomes a space, which keeps
+ * that text inside the field it was written in. A CR at either END of a line hides nothing
+ * (the field's name is read past it) and is left as it came, so a message with `\r\r\n`
+ * line endings is forwarded byte for byte.
  */
 export function headerFields(header: string): string[] {
   const fields: string[] = [];
-  for (const line of header.split(/\r?\n/)) {
+  for (const raw of header.split(/\r?\n/)) {
+    const line = raw.replace(/(?<=[^\r])\r+(?=[^\r])/g, ' ');
     if (line === '') continue;
     if (/^[ \t]/.test(line) && fields.length > 0) fields[fields.length - 1] += `\r\n${line}`;
     else fields.push(line);
@@ -156,12 +164,12 @@ export function headerFields(header: string): string[] {
   return fields;
 }
 
-export function fieldName(field: string): string {
+function fieldName(field: string): string {
   const colon = field.indexOf(':');
   return (colon < 0 ? field : field.slice(0, colon)).trim().toLowerCase();
 }
 
-export function fieldValue(field: string): string {
+function fieldValue(field: string): string {
   const colon = field.indexOf(':');
   return colon < 0 ? '' : field.slice(colon + 1).trim();
 }
@@ -303,8 +311,8 @@ export interface ForwardConfig {
   retentionDays: number;
 }
 
-function required(name: string): string {
-  const value = process.env[name];
+function required(env: NodeJS.ProcessEnv, name: string): string {
+  const value = env[name];
   if (!value) throw new Error(`mailForward: ${name} is not set`);
   return value;
 }
@@ -318,14 +326,14 @@ function boundedNumber(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-export function forwardConfig(): ForwardConfig {
+export function forwardConfig(env: NodeJS.ProcessEnv = process.env): ForwardConfig {
   return {
-    bucket: required('MAIL_BUCKET'),
-    prefix: process.env.MAIL_PREFIX ?? '',
-    mailFrom: required('MAIL_FROM'),
-    forwardTo: required('MAIL_FORWARD_TO'),
-    maxBytes: boundedNumber(process.env.MAX_FORWARD_BYTES, 9 * 1024 * 1024),
-    retentionDays: boundedNumber(process.env.MAIL_RETENTION_DAYS, 30),
+    bucket: required(env, 'MAIL_BUCKET'),
+    prefix: env.MAIL_PREFIX ?? '',
+    mailFrom: required(env, 'MAIL_FROM'),
+    forwardTo: required(env, 'MAIL_FORWARD_TO'),
+    maxBytes: boundedNumber(env.MAX_FORWARD_BYTES, 9 * 1024 * 1024),
+    retentionDays: boundedNumber(env.MAIL_RETENTION_DAYS, 30),
   };
 }
 

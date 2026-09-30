@@ -62,8 +62,6 @@ class Token:
     text: str
     lemma: str
     pos: str
-    dep: str
-    head: int
     slug: str
     stop: bool = False
     # The whitespace after the token in the source (spaCy's `whitespace_`): an English
