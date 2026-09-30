@@ -12,6 +12,9 @@ const UNIT = 64;
 const W = 6;
 const PAD = 20;
 const SQUARE = 9;
+// An edge's length is printed in a box this size, on the edge's middle.
+const LABEL_W = 38;
+const LABEL_H = 22;
 
 const GLIDE_MS = 650;
 
@@ -74,11 +77,14 @@ export default function Plane({
           const p = points[a];
           const q = points[b];
           const d = Math.hypot(p.x - q.x, p.y - q.y);
-          // A short edge has no room for its length between its two squares: the number
-          // steps off the edge along its normal, to the side away from the words' labels —
-          // below the edge when both label above, above it otherwise.
+          // The number sits ON its edge, unless its box would cover one of the two squares
+          // (an edge too short for it): then it steps off along the normal, to the side away
+          // from the words' labels — below the edge when both label above, above otherwise.
+          const crowded =
+            Math.abs(px(q.x) - px(p.x)) / 2 < LABEL_W / 2 + SQUARE &&
+            Math.abs(py(q.y) - py(p.y)) / 2 < LABEL_H / 2 + SQUARE;
           const away = p.label !== 'below' && q.label !== 'below' ? -1 : 1;
-          const lift = d * UNIT < 96 ? 24 * away : 0;
+          const lift = crowded ? 24 * away : 0;
           const nx = d ? (-(q.y - p.y) / d) * Math.sign(q.x - p.x || 1) : 0;
           const ny = d ? (-(q.x - p.x) / d) * Math.sign(q.x - p.x || 1) : 0;
           const mx = (px(p.x) + px(q.x)) / 2 + nx * lift;
@@ -87,7 +93,7 @@ export default function Plane({
             <g key={`${a}-${b}`}>
               <line className="ar-edge" x1={px(p.x)} y1={py(p.y)} x2={px(q.x)} y2={py(q.y)} />
               <g className="ar-edge-label" style={{ transform: `translate(${mx}px, ${my}px)` }}>
-                <rect x={-19} y={-11} width={38} height={22} />
+                <rect x={-LABEL_W / 2} y={-LABEL_H / 2} width={LABEL_W} height={LABEL_H} />
                 <text textAnchor="middle" dominantBaseline="central">
                   {fmt.format(d)}
                 </text>

@@ -29,7 +29,9 @@ const judge: SceneMaker = (cols, rows, stage) => {
     const want = Math.min(room * fill, (span - 10) / 2.2);
     // A box too short for the smallest matrix at 4 draws it finer, 3 (a 320px phone's card).
     const step = want < 23 ? 3 : Math.max(4, Math.min(6, Math.round(want / 11)));
-    const n = Math.max(6, Math.min(20, Math.floor((want + 1) / step)));
+    // Rounded UP to a whole row: the matrix may run a little past its box, half above and
+    // half below, rather than lose a row and a column.
+    const n = Math.max(6, Math.min(20, Math.floor((want + step) / step)));
     const size = n * step - 1;
     const gap = step + 1;
     // Each side column's width; the leader's bar (the longest) reaches about BAR_REACH of the
@@ -38,14 +40,13 @@ const judge: SceneMaker = (cols, rows, stage) => {
     const labelW = side;
     const barW = Math.round(side / BAR_REACH);
     const mx = Math.round(x0 + (span - size) / 2);
-    // Centred in its room — and never above it: a box too short for the smallest matrix lets
-    // its bottom rows fade into the foot rather than rise into the labels.
-    return { step, n, size, gap, labelW, barW, mx, my: y0 + Math.max(0, Math.round((room - size) / 2)) };
+    // Centred in its room, running at most two cells above it.
+    return { step, n, size, gap, labelW, barW, mx, my: y0 + Math.max(-2, Math.round((room - size) / 2)) };
   };
   const foot = stage.h < rows;
-  // On a card: from a margin under the labels (a little less on the shortest cards) to just
-  // inside the foot's fade.
-  const y1 = stage.h - 7;
+  // On a card: from a margin under the labels (a little less on the shortest cards) to the
+  // top of the foot's fade.
+  const y1 = stage.h - 8;
   const g = foot
     ? fit(Math.max(13, Math.min(17, y1 - 18)), y1, cols * 0.08, cols * 0.92, 1)
     : fit(0, stage.h, cols * 0.1, cols * 0.9, 0.82);
