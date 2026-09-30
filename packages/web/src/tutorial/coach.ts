@@ -179,7 +179,7 @@ export function ordinal(lang: string, n: number): string {
   return `${n}${suffix}`;
 }
 
-// The line as the coach box prints it: the copy key's text with the board's words in their
+// The line as the coach prints it: the copy key's text with the board's words in their
 // in-game dress (CoachText's [[..]] markup — the held word's chip and exponent, MISS red,
 // the secret's cobalt).
 export function coachCopy(

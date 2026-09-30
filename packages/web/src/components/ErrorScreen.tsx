@@ -22,7 +22,7 @@ import botIdle from '../assets/error-bot-idle.png';
 // **THE MESSENGER IS THE ERROR BOT (user-drawn, 2026-08-27), and it SPEAKS the error.** A
 // big fail cross was the first cut and it was replaced the same day: a cross is a verdict
 // stamped ON the player, where a character delivering bad news is the game's own voice —
-// the app already talks to you through the coach box and the pixel ghost, and this is the
+// the app already talks to you through the tutorial's coach and the pixel ghost, and this is the
 // one screen that only ever appears when something went wrong. `error-bot-idle.png` is a
 // 4-frame 32x32 idle bob, and `error-speech-ballon.png` is the balloon it speaks through —
 // outline, ERROR !, starbursts and tail, all drawn (user-decided 2026-08-27, replacing a

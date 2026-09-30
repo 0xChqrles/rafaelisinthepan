@@ -746,9 +746,9 @@ input {
 .tray.kb-rising {
   overflow: clip;
 }
-/* The pre-game GATE's stack (2026-08-11): the rules in the shared `.coach-rules` dialog +
-   the tutorial's own full-width button (PLAY), in the keyboard's footprint, so the button swaps what the tray
-   holds and moves nothing else. */
+/* The pre-game GATE's stack (2026-08-11): the tutorial's own full-width button (PLAY), in
+   the keyboard's footprint, so the button swaps what the tray holds and moves nothing
+   else. */
 .rules-gate {
   width: 100%;
   display: flex;
@@ -4285,57 +4285,32 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 
 /* ===================== onboarding tutorial (issue #51) ===================== */
-/* Screen contract: EXPLANATIONS in the top box, INTERACTIONS at the bottom (mix
-   button, then keyboard), the word/sentence in the middle. No modals, no backdrop —
-   the coach box is a game dialog, not an interruption. */
+/* Screen contract: the EXPLANATION at the top, the board in the middle, INTERACTIONS at the
+   bottom (a button, then the keyboard). No modals, no backdrop.
 
-/* The tutorial's boards are SHORT (one word / a five-word sentence): cap the whole
-   screen at the keyboard's width, much narrower than the real game's 1200px column,
-   so the sentence reads centered on desktop instead of hugging the left edge. The
-   HUD (progress bar) shrinks with it. */
+   LEVEL 1 OPENS AS THE ARTICLE LEVELS DO (2026-09-30): a BYLINE band on a hairline (the
+   player, the level's number and line, the stage counter), the coach's line under it as the
+   page's own voice with no box, the board in the articles' figure panel, then the prompt and
+   the keys. Everything is in flow — nothing is fixed over the board — in ONE column on every
+   stage, the header's own 900px, so nothing changes width between two stages. */
 .tutorial {
-  /* Clear the band + the bot + the coach box, so the centered word never rides under them.
-     Tracks the coach's height: 78px top + the 56px the bot adds + 3 lines + its padding + a
-     breath. */
-  padding-top: 334px; /* 286 + two more coach lines */
+  max-width: 900px;
+  align-items: center;
 }
-/* THE LESSON'S BOARD IS CENTRED (user-decided 2026-09-16): the word, and the sentence too,
-   sit on the column's centre line — and the sentence takes the game's full 1200px column, so
-   on a wide screen it stands on ONE line (the 680px cap it wore made it wrap "for no
-   reason"). The prompt keeps the left edge, as everywhere. */
+/* THE LESSON'S BOARD IS CENTRED (user-decided 2026-09-16): the word and the sentence sit on
+   the column's centre line. The prompt keeps the left edge, as everywhere, at ONE x and ONE
+   y on every stage (user-decided 2026-09-16): the column's edge, the play area's foot. */
 .tutorial .play {
   align-items: center;
 }
 .tutorial .phrase {
   text-align: center;
 }
-/* THE PROMPT KEEPS ONE X ACROSS THE STAGES (user-reported 2026-09-16: "on sentence mode it's
-   much more on the left"): the word stages sit in a 680px column and the sentence in the
-   game's 1200px one, so a prompt stretched to its column started at two different edges.
-   It is its own 680px box, centred in whichever column — the same left edge everywhere. */
-/* The board sits in the MIDDLE of the room between the coach and the prompt (user-reported
-   2026-09-16: hard against the box, the try count behind the sentence rode up into it). Two
-   auto margins split the free space: half above the board, half between it and the prompt. */
-.tutorial .phrase-anchor {
-  margin-top: auto;
-}
 .tutorial .input-area {
-  align-self: center;
-  width: min(680px, 100%);
+  align-self: stretch;
   align-items: start;
-  /* …and at ONE Y: parked on the play area's bottom edge, just above the keys, on every
-     stage (user-decided 2026-09-16, "stick the prompt to the same y too"). */
-  margin-top: auto;
 }
-
-/* The word stages are CLEAN: explanation on top, ONE big centered word in the middle, the
-   interaction at the bottom, nothing else. The word is the star. The PROMPT sits just above
-   the keyboard, on the LEFT — where the game's own prompt lives relative to the keys, and
-   off the word (user feedback 2026-09-16: centered under the word it read as part of it).
-   `margin-top: auto` parks it on the play area's bottom edge; the word keeps the centre. */
-.tutorial--word {
-  max-width: 680px;
-}
+/* The word stages are CLEAN: ONE big word in the plate, the prompt under it on the left. */
 .tutorial--word .phrase {
   font-size: clamp(28px, 7vw, 48px);
 }
@@ -4353,59 +4328,149 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
 }
 
-/* The explanation box: app background + surface border (a dialog, not a modal),
-   pinned to the top. Its size NEVER changes: the text area is exactly three lines
-   tall whatever the copy or the typewriter's progress, and text starts on the first
-   line. (It was four for a day, while the themes ending carried its claim and its
-   instruction in ONE line; splitting that into two beats gave the third line back.
-   What the invariant protects is the FIXED height — the word below must never move.) */
-/* The coach is a modern GLASS dialog since 2026-08-18: rounded, hairline rule, blurred
-   glass over the glows — the box itself now says "chrome here to help" while the game
-   words inside it stay pixel (below). */
-.coach {
-  position: fixed;
-  /* A clear breath under the glass band (its desktop bottom edge is 8 + 50 = 58px;
-     walked down from 64 on user review 2026-08-18 — "a bit too close to the header"). */
-  top: 78px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 120;
-  width: min(560px, calc(100vw - 32px));
-  background: var(--glass);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  padding: 16px 20px;
+/* THE BYLINE. The band stands on its own hairline — the rule an article's section opens with
+   — and everything in it sits on that line: the player at the left, its feet on the rule,
+   then the level as its card and its article head name it (the number in the pixel face and
+   the accent, the level's line as the title), and the stage counter at the right end. */
+.l1-band {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 0 0 12px 2px;
+  border-bottom: 1px solid var(--line);
 }
-/* THE PLAYER SPEAKS THE LESSON (user-decided 2026-09-16): the old lineup's PLAYER idle sheet
-   — `player-idle.png`, 8 frames of 22x31, restored from the benchmark display's removal —
-   at an INTEGER 2x, standing on the box's top-left edge so the box reads as what it says.
-   It is drawn OUTSIDE the box (absolute, above), because the text area's line budget is an
-   invariant: a sprite beside the text would cost lines at 320px. The box drops by the
-   sprite's height to make room. The walk is the `.cal-ripple` way: background-size fits ONE
-   frame (800% x 100%) and steps(8) walks background-position-x, the end value 100% x 8/7 so
-   frame 7 lands on 100% and the loop wraps cleanly. */
-.coach--bot {
-  top: calc(78px + 56px);
+.l1-byline {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: first baseline;
+  gap: 16px;
 }
-/* The step counter (n/4) speaks the game's own pixel face (user-decided 2026-09-17). */
-.coach-step {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 8px);
-  color: var(--muted);
+.l1-title-row {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  display: flex;
+  align-items: first baseline;
+  gap: 12px;
+  font: inherit;
+}
+.l1-no {
+  flex: none;
+  font-family: var(--pixel-font);
+  font-size: 13px;
+  color: var(--accent);
+}
+.l1-title {
+  min-width: 0;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+  text-wrap: balance;
+}
+/* The step counter (n/4) speaks the game's own pixel face (user-decided 2026-09-17), and
+   inks in the solve's cobalt once the stage's word is found. */
+.l1-step {
+  flex: none;
+  margin-right: -0.2em;
   font-family: var(--pixel-font);
   font-size: 12px;
   letter-spacing: 0.2em;
+  color: var(--muted);
 }
-.coach-bot {
+.l1-step.found {
+  color: var(--solve);
+}
+/* THE VOICE: the coach's line on the ground, set like an article's standfirst, in the
+   articles' 680px measure. Its room is reserved on the wrapper — three lines wide, four on a
+   narrow tablet, five on a phone — so an absent line never collapses it and nothing under it
+   ever moves. */
+.l1-voice {
+  --voice-fs: 16.5px;
+  --voice-lines: 3;
+  align-self: stretch;
+  padding-top: 16px;
+  height: calc(var(--voice-fs) * 1.65 * var(--voice-lines) + 16px);
+}
+.l1-voice .coach-text {
+  max-width: 680px;
+  font-size: var(--voice-fs);
+  font-weight: 450;
+  line-height: 1.65;
+  height: 100%;
+  /* Copy past the room is a COPY bug (too much to read): the clip makes it visible instead
+     of growing the voice. */
+  overflow: hidden;
+}
+@media (max-width: 820px) {
+  .l1-voice {
+    --voice-lines: 4;
+  }
+}
+/* The prompt's own cobalt underscore, riding the last letter out while the line types. */
+.coach-caret {
+  position: relative;
+}
+.coach-caret::after {
+  content: '';
   position: absolute;
-  left: 12px;
-  bottom: 100%;
+  left: calc(100% + 0.1em);
+  bottom: -0.02em;
+  width: 0.6em;
+  height: 0.14em;
+  background: var(--accent);
+}
+/* THE BOARD IS A FIGURE: the articles' own panel around the stage's word or sentence,
+   isolated so the try count behind the sentence paints ON its ground and is clipped to it
+   (the hits, the loot and the wheel are not). It takes the room between the voice and the
+   prompt (which stays laid out even retired), and has the same box on every stage — the
+   finale's card lands in exactly that box, on the same ground. */
+.l1-fig {
+  flex: 1 1 0;
+  width: 100%;
+  min-height: 120px;
+  max-height: 420px;
+  margin: auto 0;
+}
+figure.l1-fig {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 22px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: #08090d;
+}
+.l1-fig .progress-background {
+  overflow: hidden;
+  border-radius: inherit;
+}
+/* In the plate the lesson's SENTENCE steps down a little on a wide screen, the prompt with it
+   (the two move together), so the longest stage still stands on ONE line. */
+@media (min-width: 641px) {
+  .tutorial:not(.tutorial--word) .phrase,
+  .tutorial .word-input {
+    font-size: clamp(18px, 2.6vw, 26px);
+  }
+}
+/* THE PLAYER SPEAKS THE LESSON (user-decided 2026-09-16): the old lineup's PLAYER idle sheet
+   — `player-idle.png`, 8 frames of 22x31, restored from the benchmark display's removal — at
+   an INTEGER 2x, standing on the byline's rule. The walk is the `.cal-ripple` way:
+   background-size fits ONE frame (800% x 100%) and steps(8) walks background-position-x, the
+   end value 100% x 8/7 so frame 7 lands on 100% and the loop wraps cleanly. */
+.coach-bot {
+  position: relative;
+  flex: none;
   width: 44px; /* 22 x 2 */
   height: 62px; /* 31 x 2 */
-  margin-bottom: -8px; /* the feet sit on the box's top edge */
+  /* the feet sit ON the rule: the band's 12px of padding, plus the sheet's 8px under them */
+  margin-bottom: -20px;
   background-repeat: no-repeat;
   background-size: 800% 100%;
   image-rendering: pixelated;
@@ -4443,17 +4508,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .coach-text {
   margin: 0;
   font-family: var(--ui);
-  font-size: 16px;
-  font-weight: 350;
-  line-height: 1.7;
-  /* THREE lines, FIVE at most (user-decided 2026-09-16, lifting the exact-three rule of
-     2026-08-04: the bot's briefing on the last sentence runs to five at 320px, and the box
-     is FIXED — growing it moves nothing beneath). Copy that wraps past five lines is a
-     COPY bug (too much to read); the overflow clip makes that mistake visible instead of
-     growing the box further. */
-  min-height: 5.1em; /* 3 lines × line-height 1.7 */
-  max-height: 8.5em; /* 5 lines */
-  overflow: hidden;
   color: var(--fg);
   text-shadow: none;
 }
@@ -4504,30 +4558,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font-size: 0.82em;
   white-space: nowrap;
 }
-/* The RULES box (2026-08-11): the tutorial's dialog, reused by BOTH pre-game gates — one
-   design for everything that is here to help, so the box itself says instructions.
-   Unlike the tutorial's fixed three-line `.coach`, this one flows in place and sizes to
-   its copy: the rules are BULLETED newline-separated lines (pre-line) and may wrap.
-   680px — the keyboard's own footprint — on purpose (user feedback: the old 456px rules
-   read narrow on a desktop for no reason). */
-.coach-rules {
-  align-self: center;
-  width: min(680px, 100%);
-  background: var(--glass);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  padding: 16px 20px;
-}
-.coach-rules .coach-text {
-  height: auto;
-  white-space: pre-line;
-}
-
-/* (The cobalt CORNER TABS the dialogs wore from 2026-08-18 were retired by the
-   2026-09-01 rebrand: a coach box is a plain hairline glass box now — clean shapes,
-   nothing decorated.) */
 @keyframes rung-in {
   from {
     opacity: 0;
@@ -4601,24 +4631,39 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   animation: arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
 }
 @media (max-width: 640px) {
-  .coach {
-    padding: 12px 14px;
-    top: 64px; /* a breath under the phone's 48px full-bleed band */
-  }
-  .coach--bot {
-    top: calc(64px + 56px);
-  }
-  .coach-rules {
-    padding: 12px 14px;
-  }
-  .coach-text {
-    font-size: 14px; /* 3-line height scales with it (5.1em); the phone column is the
-                        copy budget's own tuning width */
-  }
-  /* Clear the band + the bot + the coach (64px top + 56px of bot + 3 lines + padding + a
-     breath). */
   .tutorial {
-    padding-top: 284px; /* 236 + two more coach lines */
+    padding-top: 52px;
+  }
+  .l1-band {
+    gap: 12px;
+    padding-bottom: 10px;
+  }
+  .coach-bot {
+    margin-bottom: -18px;
+  }
+  .l1-byline {
+    gap: 12px;
+  }
+  .l1-title-row {
+    gap: 10px;
+  }
+  .l1-no {
+    font-size: 10px;
+  }
+  .l1-title {
+    font-size: 15px;
+  }
+  .l1-step {
+    font-size: 11px;
+  }
+  .l1-voice {
+    --voice-fs: 15px;
+    --voice-lines: 5;
+    padding-top: 12px;
+    height: calc(var(--voice-fs) * 1.65 * var(--voice-lines) + 12px);
+  }
+  figure.l1-fig {
+    padding: 16px 12px;
   }
   /* The action button sits on the 14px page inset, not the keyboard's edge-to-edge hug, so
      like the solved results it gets +10px back over the keyboard's 4px bottom gap: bottom
@@ -4627,6 +4672,52 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      exactly that. */
   .mix-btn {
     margin-bottom: 10px;
+  }
+}
+/* The narrowest phones: the longest line (the full meter's) holds in its five lines down to
+   320, in either language (measured). */
+@media (max-width: 360px) {
+  .l1-voice {
+    --voice-fs: 14px;
+  }
+  .l1-title-row {
+    gap: 8px;
+  }
+  .l1-title {
+    font-size: 13.5px;
+    letter-spacing: -0.02em;
+  }
+}
+@media (max-width: 340px) {
+  .l1-voice {
+    --voice-fs: 13px;
+  }
+}
+/* A short screen: the plate gives up height first. */
+@media (max-height: 700px) {
+  .l1-fig {
+    min-height: 100px;
+  }
+}
+/* A short phone (an SE's 553px of Safari): the page's top, the voice's leading and the plate
+   give up what keeps the keys and the stage's button on screen. */
+@media (max-width: 640px) and (max-height: 600px) {
+  .tutorial {
+    padding-top: 44px;
+  }
+  .l1-voice {
+    padding-top: 8px;
+    height: calc(var(--voice-fs) * 1.55 * var(--voice-lines) + 8px);
+  }
+  .l1-voice .coach-text {
+    line-height: 1.55;
+  }
+  .l1-fig {
+    min-height: 84px;
+  }
+  /* The finale's card at that height is its labels and its title alone. */
+  .level-clear .learn-sub {
+    display: none;
   }
 }
 
@@ -7233,7 +7324,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 /* THE ERROR BOT (user-drawn, 2026-08-27) — 4-frame 32x32 idle bob, and a speech
    balloon it says ERROR ! through. It replaced a big fail cross the same day: a
    cross is a verdict stamped on the player, where a character is the game's own
-   voice, which this app already uses (the coach box, the board's ghost).
+   voice, which this app already uses (the tutorial's coach, the board's ghost).
 
    The sheet is COLOUR art (10 colours), so it is a background-image and not a
    `currentColor` mask — the ultra-slash rule. Integer scale + `pixelated`, the
@@ -7613,17 +7704,15 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--muted);
 }
 /* LEVEL 1, CLEARED (2026-09-30): the run's last sentence dissolves into the level's own
-   card, in the play area, at the coach box's width so the two edges line up. It lands in
+   card, in the board's plate (`.l1-fig`) — same box, same ground. It lands in
    its NEXT dress — its title in the selection box — and the box is then wiped off, left to
    right, uncovering the plain title: the level turns DONE (the number inks, the done mark
    takes the chip). A picture to look at, not a door: nothing to press. */
 .learn-card.level-clear {
-  flex: 1 1 0;
-  width: min(560px, calc(100vw - 32px)); /* the coach box's own width */
-  min-height: 150px;
-  max-height: 360px;
-  margin: 12px 0;
   cursor: default;
+}
+/* The frame is the board's plate, already there: only what is inside it arrives. */
+.learn-card.level-clear > * {
   animation: arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
 }
 .learn-card.level-clear:hover {

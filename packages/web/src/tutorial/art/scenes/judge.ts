@@ -34,7 +34,9 @@ const judge: SceneMaker = (cols, rows, stage) => {
     const labelW = Math.round(Math.min(size * 0.28, left * 0.3));
     const barW = Math.round(Math.min(size * 0.7, left * 0.7));
     const mx = Math.round(x0 + (span - labelW - size - barW - 2 * gap) / 2) + labelW + gap;
-    return { step, n, size, gap, labelW, barW, mx, my: y0 + Math.round((room - size) / 2) };
+    // Centred in its room — and never above it: a box too short for the smallest matrix lets
+    // its bottom rows fade into the foot rather than rise into the labels.
+    return { step, n, size, gap, labelW, barW, mx, my: y0 + Math.max(0, Math.round((room - size) / 2)) };
   };
   const foot = stage.h < rows;
   let g = fit(0, stage.h, cols * 0.1, cols * 0.9, 0.82);

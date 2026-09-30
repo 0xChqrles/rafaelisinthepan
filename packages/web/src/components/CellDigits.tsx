@@ -16,7 +16,8 @@ import digitsUrl from '../assets/digits.png';
 // on every draw. Both are deleted; the canvas is now the number plus room for its stroke.
 //
 // SIZED BY THE SCREEN ALONE (same decision): each glyph pixel of assets/digits.png is a
-// px×px block whose size comes continuously from the viewport budgets below. The old
+// px×px block whose size comes continuously from the viewport budgets below (the lesson's
+// framed plate passes `fit` and is sized by its anchor instead). The old
 // implementation quantized that size to whole `--cell` grid squares and SNAPPED the
 // number to the graph-paper grid — that existed so the BackgroundWaves field and the
 // body grid ran through the digits cell-for-cell, and both are gone (the waves deleted,
@@ -132,7 +133,10 @@ function loadMasks(): Promise<Mask[]> {
   return masksPromise;
 }
 
-export default function CellDigits({ value }: { value: number }) {
+// `fit` (the lesson's board, framed in its plate): size the number against its ANCHOR's
+// box — that share of its height, the width budget of its width — instead of the viewport,
+// so a count drawn inside a frame stands whole within it. The two-digit rule holds.
+export default function CellDigits({ value, fit }: { value: number; fit?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [masks, setMasks] = useState<Mask[] | null>(null);
   // What the canvas last showed — the flip's starting point when the count moves.
@@ -179,7 +183,8 @@ export default function CellDigits({ value }: { value: number }) {
       // own ink.
       const widest = masks.reduce((max, m) => Math.max(max, m.w), 0);
       const sized = Math.max(bits, MIN_SIZED_DIGITS * widest + GAP * (MIN_SIZED_DIGITS - 1));
-      // The glyph-pixel size, CONTINUOUS from the viewport (whole device pixels only, for
+      // The glyph-pixel size, CONTINUOUS from the viewport — or, with `fit`, from the anchor's
+      // box — (whole device pixels only, for
       // crisp blocks) — no grid quantization since the ground stopped being a grid.
       const px = Math.max(
         MIN_PX,
@@ -187,8 +192,8 @@ export default function CellDigits({ value }: { value: number }) {
           MAX_PX,
           Math.floor(
             Math.min(
-              (HEIGHT_BUDGET * window.innerHeight) / GLYPH_ROWS,
-              (WIDTH_BUDGET * window.innerWidth) / sized,
+              fit ? (fit * rect.height) / GLYPH_ROWS : (HEIGHT_BUDGET * window.innerHeight) / GLYPH_ROWS,
+              (WIDTH_BUDGET * (fit ? rect.width : window.innerWidth)) / sized,
             ),
           ),
         ),

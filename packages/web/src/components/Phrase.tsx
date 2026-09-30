@@ -67,8 +67,8 @@ export default function Phrase({
   // THE SENTENCE DECODES ITSELF IN when it arrives (`PhraseIntro` holds the why): a front
   // sweeps it left to right, a plain word's letters churning into place as it passes, a hole
   // stamped in at its own letter (`--at`, `.phrase-intro`). Each token's place on that
-  // front is the count of the letters before it. Keyed on the words, so a new sentence (a
-  // lesson's next stage) decodes again and nothing else ever replays it; the dissolve's copy
+  // front is the count of the letters before it. Keyed on the words, so a new sentence decodes again
+  // (or morphs in, with `morphFrom`: a lesson's next stage) and nothing else ever replays it; the dissolve's copy
   // of the sentence (`DissolvePhrase`) is a component of its own and never decodes.
   const key = words.join(' ');
   const shownText = (w: string, i: number) => (starts[i] ? capitalize(w) : w);

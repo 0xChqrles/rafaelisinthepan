@@ -32,9 +32,9 @@ import { LEVELS, PLAY_LEVEL } from './levels';
 
 // ONE STAGE OF THE LESSON, PLAYED (#269): a real board in the real game components, the real
 // keyboard and the real vocabulary from the first frame, and a coach that speaks only when a
-// guess calls for it (coach.ts). Screen contract, unchanged since #51: the explanation in the
-// TOP box (typewritten, in-game word styling), the board in the middle, INTERACTIONS at the
-// bottom. No modals but the tries, no NEXT, no SKIP in the body (the header is the exit) —
+// guess calls for it (coach.ts). Screen contract, unchanged since #51: the explanation at the
+// TOP (typewritten under the level's byline, in-game word styling), the board in the middle,
+// INTERACTIONS at the bottom. No modals but the tries, no NEXT, no SKIP in the body (the header is the exit) —
 // the flow advances by playing.
 //
 // The same guess loop as Game.submit, on LOCAL state: a lesson board is never a round — it
@@ -121,8 +121,9 @@ export default function LessonBoard({
   retryVocab: () => void;
   // The last stage ends on PLAY; any other rolls into the next by itself.
   final: boolean;
-  // The text the stage before this one ended on: this board scrambles in from it. None on the
-  // first stage, which decodes in as a sentence arrives.
+  // The text the stage before this one ended on: a lone word scrambles in from its length,
+  // a sentence's holes from their own. None on the first stage, which decodes in as a
+  // sentence arrives.
   arrivedFrom?: string;
   // Level 1 was already done on this device when the lesson opened: its card lands DONE.
   clearedBefore: boolean;
@@ -269,7 +270,7 @@ export default function LessonBoard({
   );
   const tappedRef = useRef(tapped);
   tappedRef.current = tapped;
-  // The coach's line as it stands (the box keeps the last one up; see below).
+  // The coach's line as it stands (the voice keeps the last one up; see below).
   const lastCoach = useRef<string | null>(null);
 
   // Screen-reader mirror, same pattern as Game (zero-width flip forces re-announcement).
@@ -634,8 +635,8 @@ export default function LessonBoard({
     [phase, stage, holes, events, tapped, revealed],
   );
   const coach = line ? coachCopy(lang, line, stageView, coarse) : null;
-  // THE BOX NEVER DISAPPEARS (user-decided 2026-09-16): a beat with nothing new to say keeps
-  // the last line up rather than blanking the dialog.
+  // THE LINE NEVER DISAPPEARS (user-decided 2026-09-16): a beat with nothing new to say keeps
+  // the last line up rather than blanking the voice.
   if (coach) lastCoach.current = coach;
   const shownCoach = coach ?? lastCoach.current;
   // Announce each new line once, in plain text (the visible typewriter is aria-hidden).
@@ -664,30 +665,44 @@ export default function LessonBoard({
         {announce}
       </div>
 
-      {/* THE COACH IS THE PLAYER (user-decided 2026-09-16: "people would want to read it more
-          if it's something telling it"; the error bot stood in first, then the old lineup's
-          PLAYER idle sheet — 8 frames, 22x31 — was brought back for the part): a character
-          stands on the box and speaks it. */}
-      {shownCoach && (
-        <div className="coach coach--bot">
-          <span className="coach-step">{step}/{totalSteps}</span>
-          {/* Keyed on the line: the character HOPS each time it says something new. The key
-              is its own — CoachText beside it is keyed on the same line, and two siblings
-              sharing a key leave the old sprite behind. */}
-          <div
-            key={`bot:${shownCoach}`}
-            ref={bot}
-            className="coach-bot"
-            aria-hidden
-            style={{ backgroundImage: `url(${playerIdle})` }}
-          />
-          <CoachText key={shownCoach} copy={shownCoach} />
+      {/* LEVEL 1 OPENS AS THE ARTICLE LEVELS DO (2026-09-30): a BYLINE on a hairline — the
+          player, the level's number and line, the stage counter (the pixel face, user-decided
+          2026-09-17) — then the coach's line under it as the page's own voice, no box. THE
+          COACH IS THE PLAYER (user-decided 2026-09-16: "people would want to read it more if
+          it's something telling it"): the old lineup's PLAYER idle sheet stands on the rule
+          and speaks the line under it. */}
+      <div className="l1-band">
+        {/* Keyed on the line: the character HOPS each time it says something new. The key is
+            its own — CoachText is keyed on the same line, and two siblings sharing a key leave
+            the old sprite behind. */}
+        <div
+          key={`bot:${shownCoach}`}
+          ref={bot}
+          className="coach-bot"
+          aria-hidden
+          style={{ backgroundImage: `url(${playerIdle})` }}
+        />
+        <div className="l1-byline">
+          <h1 className="l1-title-row">
+            <span className="l1-no" aria-hidden="true">
+              {String(levelOne.level).padStart(2, '0')}
+            </span>
+            <span className="l1-title">{t(lang, levelOne.subKey)}</span>
+          </h1>
+          {/* Inked in the solve's cobalt once the stage's word is found. */}
+          <span className={`l1-step${done ? ' found' : ''}`}>
+            {step}/{totalSteps}
+          </span>
         </div>
-      )}
+      </div>
+      {/* The voice's height is reserved on this wrapper, so nothing under it ever moves. */}
+      <div className="l1-voice">{shownCoach && <CoachText key={shownCoach} copy={shownCoach} />}</div>
 
-      <div className={`play${leaving ? ' play-finished' : ''}`}>
-        {cleared && (
-          <div className={`learn-card level-clear ${clearDone ? 'done' : 'todo'}`} aria-hidden="true">
+      <div className={`play${leaving ? ' play-finished' : ''}${cleared ? ' play-cleared' : ''}`}>
+        {/* THE BOARD IS A FIGURE: the stage's word or sentence in the articles' own panel, the
+            try count clipped inside it; the finale's card lands in exactly its box. */}
+        {cleared ? (
+          <div className={`l1-fig learn-card level-clear ${clearDone ? 'done' : 'todo'}`} aria-hidden="true">
             <LevelCard
               level={levelOne}
               lang={lang}
@@ -702,75 +717,72 @@ export default function LessonBoard({
               }
             />
           </div>
-        )}
-        {!cleared && (
-          <>
-            {/* The hiding PLAYS as the game's own word change (user-decided 2026-09-16): the
-                Hole scrambles the secret's letters into its stand-in's while the exponent
-                arrives — the same choreography every improving guess gets — so the player SEES
-                one word become the other, no remount. */}
-            <div className="phrase-anchor">
-              {/* The sentence stage shows the try count behind the sentence, as the day does:
-                  fewer tries is the score, and the number says so without a word. */}
-              {sentenceLike && (
-                <div className="progress-background" aria-hidden="true">
-                  {/* The whole log — the bot's tries included on the meter stage (user-decided
-                      2026-09-16): the count the day would show for this board. */}
-                  <CellDigits value={tried.length - (decoding !== null ? 1 : 0)} />
-                </div>
-              )}
-              {leaving ? (
-                // The found sentence's exit: its exact pixels, eroded letter by letter —
-                // `viewHoles`, so a swapped meter stage dissolves the word it actually shows.
-                <DissolvePhrase words={puzzle.words} puzzleHoles={viewHoles} brisk onDone={onLeft} />
-              ) : (
-                <Phrase
-                  words={puzzle.words}
-                  holes={shownHoles}
-                  puzzleHoles={puzzleHoles}
-                  hits={hits}
-                  onHitDone={removeHit}
-                  // A WORD IS TAPPABLE ON THE SENTENCES ONLY (user-decided 2026-09-16): a lone word
-                  // has no tries worth a wheel. The tap works whenever a sentence board is live —
-                  // including while the meter stage waits for exactly that tap.
-                  exploreLabels={sentenceLike ? exploreLabels : undefined}
-                  exploreDisabled={phase !== 'play' || revealed}
-                  onExplore={sentenceLike ? openHistory : undefined}
-                  quiet={quiet}
-                  veiledHole={wheelOpen ? historyHole : null}
-                  // A lone word is a word, not a sentence: no capital on the word stages.
-                  capital={sentenceLike}
-                  charges={charges}
-                  morphFrom={morphFrom}
-                  />
-              )}
-            </div>
-            {/* Once there is nothing left to type the prompt retires in place — still laid out,
-                so the board does not move, but invisible and inert. */}
-            {/* …and the reveal has nothing to type yet (the button below is the one action), nor
-                has the meter stage before the tap. */}
-            <div
-              className={`input-area${ending || revealed || waitingTap ? ' retired' : ''}`}
-              aria-hidden={ending || revealed || waitingTap || undefined}
-            >
-              <WordInput
-                value={input}
-                history={tried}
-                lang={lang}
-                fieldRef={guessField}
-                onType={appendChar}
-                onBackspace={deleteChar}
-                onSubmit={submit}
-                onReplace={replaceInput}
-                invalidSignal={invalidAt}
-                ghost={decoding !== null ? (decode.jumble ?? decoding) : ghost ? MASK : undefined}
-                ghostTarget={decoding ?? undefined}
-                active={playing && historyHole === null}
+        ) : (
+          // The hiding PLAYS as the game's own word change (user-decided 2026-09-16): the Hole
+          // scrambles the secret's letters into its stand-in's while the exponent arrives — the
+          // same choreography every improving guess gets — so the player SEES one word become
+          // the other, no remount.
+          <figure className="phrase-anchor l1-fig">
+            {/* The sentence stage shows the try count behind the sentence, as the day does:
+                fewer tries is the score, and the number says so without a word. */}
+            {sentenceLike && (
+              <div className="progress-background" aria-hidden="true">
+                {/* The whole log — the bot's tries included on the meter stage (user-decided
+                    2026-09-16): the count the day would show for this board. */}
+                <CellDigits value={tried.length - (decoding !== null ? 1 : 0)} fit={0.84} />
+              </div>
+            )}
+            {leaving ? (
+              // The found sentence's exit: its exact pixels, eroded letter by letter —
+              // `viewHoles`, so a swapped meter stage dissolves the word it actually shows.
+              <DissolvePhrase words={puzzle.words} puzzleHoles={viewHoles} brisk onDone={onLeft} />
+            ) : (
+              <Phrase
+                words={puzzle.words}
+                holes={shownHoles}
+                puzzleHoles={puzzleHoles}
+                hits={hits}
+                onHitDone={removeHit}
+                // A WORD IS TAPPABLE ON THE SENTENCES ONLY (user-decided 2026-09-16): a lone word
+                // has no tries worth a wheel. The tap works whenever a sentence board is live —
+                // including while the meter stage waits for exactly that tap.
+                exploreLabels={sentenceLike ? exploreLabels : undefined}
+                exploreDisabled={phase !== 'play' || revealed}
+                onExplore={sentenceLike ? openHistory : undefined}
+                quiet={quiet}
+                veiledHole={wheelOpen ? historyHole : null}
+                // A lone word is a word, not a sentence: no capital on the word stages.
+                capital={sentenceLike}
+                charges={charges}
+                morphFrom={morphFrom}
               />
-              <p className="hint">{feedback || ' '}</p>
-            </div>
-          </>
+            )}
+          </figure>
         )}
+        {/* Once there is nothing left to type the prompt retires in place — still laid out, so
+            the board (and the finale's card after it) does not move, but invisible and inert;
+            the reveal has nothing to type yet either (the button below is the one action), nor
+            has the meter stage before the tap. */}
+        <div
+          className={`input-area${ending || revealed || waitingTap || cleared ? ' retired' : ''}`}
+          aria-hidden={ending || revealed || waitingTap || cleared || undefined}
+        >
+          <WordInput
+            value={input}
+            history={tried}
+            lang={lang}
+            fieldRef={guessField}
+            onType={appendChar}
+            onBackspace={deleteChar}
+            onSubmit={submit}
+            onReplace={replaceInput}
+            invalidSignal={invalidAt}
+            ghost={decoding !== null ? (decode.jumble ?? decoding) : ghost ? MASK : undefined}
+            ghostTarget={decoding ?? undefined}
+            active={playing && historyHole === null}
+          />
+          <p className="hint">{feedback || ' '}</p>
+        </div>
       </div>
 
       {/* The bottom is for INTERACTIONS: the keyboard — which drops away at the very end,

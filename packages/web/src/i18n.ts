@@ -419,8 +419,8 @@ const STRINGS = {
   // ---- the LESSON (#51, remade by #269): level 1 is the game, played. The coach is
   // REACTIVE — it speaks on a mistake or a stall, never on success (tutorial/coach.ts) — so
   // every line here is the ONE thing a guess calls for. Deliberately TERSE, no under-the-hood
-  // talk. HARD LIMIT: the coach box is exactly 3 lines and clips — a string that wraps past
-  // three lines (~60 chars incl. exponents at the mobile width) is too much: cut it.
+  // talk. HARD LIMIT: the coach's line has a fixed room (`.l1-voice`: 3 lines wide, 4 at
+  // ≤820px, 5 on a phone) and clips — a string that wraps past it is too much: cut it.
   // Copy uses CoachText's inline markup so words LOOK like what they are in-game:
   // [[b:secret]] solve cobalt, [[w:hint^rank]] the held word's chip + rank exponent,
   // [[m:miss]] MISS's red. The {braces} are filled by coach.ts from the board itself, so a

@@ -116,8 +116,9 @@ type Hole = Word & { start: number; seed: number; ceil: number; first: Shape; he
 type Page = { words: Word[]; holes: Hole[]; n: number; typed: Shape[] };
 
 const game: SceneMaker = (cols, rows, stage) => {
-  // THE PAGE: under the card's top labels, above the band its foot fades across.
-  const top = stage.h < rows ? 12 : 8;
+  // THE PAGE: under the card's top labels — its first line's exponents included, which stand
+  // above the chips — and above the band its foot fades across.
+  const top = stage.h < rows ? 15 : 8;
   const bottom = stage.h < rows ? stage.h - 7 : stage.h - 6;
   const avail = bottom - top;
   const M = cols >= 150 && avail >= 60 ? LARGE : SMALL;
