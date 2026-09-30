@@ -19,6 +19,7 @@ vi.mock('./api', async (importOriginal) => ({
 
 import { postDevicesBody } from './api';
 import {
+  adoptLinkedAccount,
   DEVICE_BOOTSTRAP_LOCK,
   deviceIdentity,
   ensureDeviceIdentity,
@@ -32,6 +33,7 @@ import {
   resetDeviceIdentity,
   startFreshDevice,
   useIdentityStore,
+  type IdentityChange,
 } from './identity';
 
 const post = vi.mocked(postDevicesBody);
@@ -69,7 +71,7 @@ function fakeWindow(store: Storage): Window & typeof globalThis {
     addEventListener: (type: string, listener: (event: StorageEvent) => void) => {
       if (type === 'storage') storageListeners.push(listener);
     },
-    removeEventListener: (type: string, listener: (event: StorageEvent) => void) => {
+    removeEventListener: (_type: string, listener: (event: StorageEvent) => void) => {
       const index = storageListeners.indexOf(listener);
       if (index >= 0) storageListeners.splice(index, 1);
     },
@@ -628,12 +630,11 @@ describe('localStorage is shared by every TAB (#216)', () => {
     stop();
   });
 
-  // CONTRACT (review finding): the store's `mintedHere` is the readable half of the same
-  // fact `adopted` announces, because a component sees only the transition. A reader that
-  // infers "brand new, therefore empty" from tokenless -> identity is right ONLY after a
-  // proven mint — the leaderboard's known-empty friends board turns on exactly this, and
-  // an accepted invite mints AND links in one gesture, so a sibling tab adopting that
-  // identity has edges the instant it arrives.
+  // CONTRACT: the store's `mintedHere` is the readable half of the same fact `adopted`
+  // announces, because a component sees only the transition. A reader that infers "brand
+  // new, therefore empty" from tokenless -> identity is right ONLY after a proven mint — the
+  // player's own face (`useOwnFace`) keeps drawing the seed's face across exactly that
+  // deploy, where an adopted account's face is whatever its profile already says.
   it('says mintedHere for a proven MINT and never for an adoption', async () => {
     expect(useIdentityStore.getState().mintedHere).toBe(false);
     await ensureDeviceIdentity();
@@ -714,5 +715,151 @@ describe('localStorage is shared by every TAB (#216)', () => {
 
     read.mockRestore();
     expect(stored()).toEqual(identity);
+  });
+});
+
+// CONTRACT (#204): an email link that ADOPTS moves this device onto another account. The
+// TOKEN is unchanged — the server moves the one device item — so what changes is the account
+// it names. Fenced on the epoch the flow started under, like every authoritative answer, and
+// PERSISTED before it is announced, so a sibling tab cannot keep authenticating as the
+// account this device left.
+describe('an email link adopts another account (#204)', () => {
+  const LINKED = { accountId: 'qqqqqqqqqqqqqqqq', deviceId: 'rrrrrrrrrrrrrrrr' };
+
+  it('ignores a link answered for an identity this tab no longer holds', async () => {
+    const old = await ensureDeviceIdentity();
+    const oldEpoch = identityEpochOf(old);
+    const current = {
+      token: '7'.repeat(64),
+      accountId: 'ssssssssssssssss',
+      deviceId: 'tttttttttttttttt',
+    };
+    storage.setItem('whippin-device', JSON.stringify(current));
+    loadDeviceIdentity();
+    const seen: IdentityChange[] = [];
+    const stop = onIdentityChange((change) => seen.push(change));
+
+    expect(adoptLinkedAccount(oldEpoch, LINKED)).toBe(false);
+    expect(deviceIdentity()).toEqual(current);
+    expect(stored()).toEqual(current);
+    expect(seen).toHaveLength(0);
+    stop();
+  });
+
+  it('ignores a link answered after the device was signed out', async () => {
+    const identity = await ensureDeviceIdentity();
+    const epoch = identityEpochOf(identity);
+    markDeviceSignedOut(epoch);
+    const tombstone = stored();
+
+    expect(adoptLinkedAccount(epoch, LINKED)).toBe(false);
+    expect(deviceIdentity()).toBeNull();
+    expect(useIdentityStore.getState().signedOut).toBe(true);
+    expect(stored()).toEqual(tombstone);
+  });
+
+  it('keeps the token, persists the new account BEFORE announcing it, and changes scope', async () => {
+    const held = await ensureDeviceIdentity();
+    const adopted = { token: held.token, ...LINKED };
+    const seen: IdentityChange[] = [];
+    const storedWhenAnnounced: unknown[] = [];
+    const stop = onIdentityChange((change) => {
+      storedWhenAnnounced.push(stored());
+      seen.push(change);
+    });
+
+    expect(adoptLinkedAccount(identityEpochOf(held), LINKED)).toBe(true);
+    stop();
+
+    expect(storedWhenAnnounced).toEqual([adopted]);
+    expect(deviceIdentity()).toEqual(adopted);
+    expect(seen).toHaveLength(1);
+    // Leaving an account for another: everything the old one owned is cleared, and nothing
+    // is re-armed as an adopted FIRST identity would be.
+    expect(seen[0]).toEqual({
+      previous: held,
+      next: adopted,
+      accountChanged: true,
+      adopted: false,
+    });
+    expect(identityScopeRevision()).toBe(1);
+    // The link minted no second device: only the original bootstrap was posted.
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('adopts for the session when the write cannot stick, and an empty key does not drop it', async () => {
+    const held = await ensureDeviceIdentity();
+    const adopted = { token: held.token, ...LINKED };
+    storage.setItem = vi.fn(() => {
+      throw new Error('QuotaExceededError');
+    });
+
+    expect(adoptLinkedAccount(identityEpochOf(held), LINKED)).toBe(true);
+    expect(deviceIdentity()).toEqual(adopted);
+    expect(stored()).toEqual(held);
+
+    // A readable EMPTY key cannot disprove the identity whose own write just failed.
+    storage.removeItem('whippin-device');
+    await expect(ensureDeviceIdentity()).resolves.toEqual(adopted);
+    expect(deviceIdentity()).toEqual(adopted);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('the account LEFT, still readable after the failed write, does not take the session back', async () => {
+    loadDeviceIdentity(); // startup: installs the storage listener `otherTabWrote` reaches
+    const held = await ensureDeviceIdentity();
+    const adopted = { token: held.token, ...LINKED };
+    storage.setItem = vi.fn(() => {
+      throw new Error('QuotaExceededError');
+    });
+
+    expect(adoptLinkedAccount(identityEpochOf(held), LINKED)).toBe(true);
+    // The key still names the previous account under the SAME token: the residue of this
+    // tab's own failed write, not another tab's news.
+    expect(stored()).toEqual(held);
+
+    // The next deploy tap re-reads the key before anything else; so does a storage event.
+    await expect(ensureDeviceIdentity()).resolves.toEqual(adopted);
+    otherTabWrote();
+    expect(deviceIdentity()).toEqual(adopted);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('after two failed adoptions in a row, the account the key still names does not take the session back', async () => {
+    loadDeviceIdentity();
+    const held = await ensureDeviceIdentity();
+    const second = { accountId: 'uuuuuuuuuuuuuuuu', deviceId: 'vvvvvvvvvvvvvvvv' };
+    const adopted = { token: held.token, ...second };
+    storage.setItem = vi.fn(() => {
+      throw new Error('QuotaExceededError');
+    });
+
+    expect(adoptLinkedAccount(identityEpochOf(held), LINKED)).toBe(true);
+    expect(adoptLinkedAccount(identityEpochOf(LINKED), second)).toBe(true);
+    // The key still names the FIRST account: neither write stuck.
+    expect(stored()).toEqual(held);
+
+    await expect(ensureDeviceIdentity()).resolves.toEqual(adopted);
+    otherTabWrote();
+    expect(deviceIdentity()).toEqual(adopted);
+  });
+
+  it('a sibling tab that links this token onto a THIRD account is followed', async () => {
+    loadDeviceIdentity();
+    const held = await ensureDeviceIdentity();
+    const writable = storage.setItem;
+    storage.setItem = vi.fn(() => {
+      throw new Error('QuotaExceededError');
+    });
+    expect(adoptLinkedAccount(identityEpochOf(held), LINKED)).toBe(true);
+    expect(stored()).toEqual(held);
+
+    // Another tab, whose writes stick, links the same device onto an account this tab never
+    // held: real news under the same token, not the residue of this tab's failed write.
+    storage.setItem = writable;
+    const third = { token: held.token, accountId: 'wwwwwwwwwwwwwwww', deviceId: 'xxxxxxxxxxxxxxxx' };
+    storage.setItem('whippin-device', JSON.stringify(third));
+    otherTabWrote();
+    expect(deviceIdentity()).toEqual(third);
   });
 });

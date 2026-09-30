@@ -6,7 +6,7 @@ import judge from './judge';
 import meanings from './meanings';
 import type { SceneMaker } from './kit';
 
-export type { Raster, Scene, Stage } from './kit';
+export type { Raster, Scene } from './kit';
 
 export const SCENES: Record<LevelArtName, SceneMaker> = { game, distance, meanings, attention, judge };
 

@@ -7,15 +7,13 @@ import { useArticleLang } from '../lang';
 // share of its 199 duels it won, and the place the tournament gives it — the sentence's
 // exponent colours on both ends, so the climb reads as the game would print it.
 export default function Tournament({
-  lang,
   rows,
   labels,
 }: {
-  lang: string;
   rows: { word: string; from: number; win: number }[];
   labels: [string, string, string];
 }) {
-  const said = useArticleLang();
+  const lang = useArticleLang();
   const num = new Intl.NumberFormat(lang);
   const pct = new Intl.NumberFormat(lang, { style: 'percent', maximumFractionDigits: 0 });
   return (
@@ -23,7 +21,7 @@ export default function Tournament({
       <thead>
         <tr>
           <th scope="col">
-            <span className="sr-only">{t(said, 'levelWord')}</span>
+            <span className="sr-only">{t(lang, 'levelWord')}</span>
           </th>
           <th scope="col">{labels[0]}</th>
           <th scope="col" className="ar-tourney-win-head">

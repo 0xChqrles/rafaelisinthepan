@@ -35,14 +35,9 @@ export interface PuzzleCache<T> {
   // Fetch through the cache: a hit answers at once, an in-flight request for the same key
   // is joined, and a `null` answer (a missing day) is handed back but never kept.
   load(key: string, fetcher: () => Promise<T | null>): Promise<T | null>;
-  clear(): void;
 }
 
-export function createPuzzleCache<T>(
-  now: () => number = () => Date.now(),
-  max = PUZZLE_CACHE_MAX,
-  ttlMs = PUZZLE_CACHE_TTL_MS,
-): PuzzleCache<T> {
+export function createPuzzleCache<T>(now: () => number = () => Date.now()): PuzzleCache<T> {
   // Map iterates in insertion order, so re-inserting on a hit is what makes it an LRU.
   const entries = new Map<string, Entry<T>>();
   const inflight = new Map<string, Promise<T | null>>();
@@ -50,7 +45,7 @@ export function createPuzzleCache<T>(
   const get = (key: string): T | null => {
     const entry = entries.get(key);
     if (!entry) return null;
-    if (now() - entry.at > ttlMs) {
+    if (now() - entry.at > PUZZLE_CACHE_TTL_MS) {
       entries.delete(key);
       return null;
     }
@@ -63,7 +58,7 @@ export function createPuzzleCache<T>(
     entries.delete(key);
     entries.set(key, { value, at: now() });
     for (const oldest of entries.keys()) {
-      if (entries.size <= max) break;
+      if (entries.size <= PUZZLE_CACHE_MAX) break;
       entries.delete(oldest);
     }
   };
@@ -88,10 +83,6 @@ export function createPuzzleCache<T>(
       );
       inflight.set(key, request);
       return request;
-    },
-    clear() {
-      entries.clear();
-      inflight.clear();
     },
   };
 }

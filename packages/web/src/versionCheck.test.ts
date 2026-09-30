@@ -21,10 +21,6 @@ function harness(visibility: 'visible' | 'hidden' = 'visible', storage: 'ok' | '
       intervals.push(fn);
       return 0;
     },
-    // Lazy wrappers so vi.useFakeTimers() (installed per test, after the harness)
-    // still intercepts the module's abort timer.
-    setTimeout: (fn: () => void, ms?: number) => setTimeout(fn, ms),
-    clearTimeout: (id: Parameters<typeof clearTimeout>[0]) => clearTimeout(id),
     addEventListener: (type: string, fn: (event: { persisted: boolean }) => void) => {
       onWindow.set(type, [...(onWindow.get(type) ?? []), fn]);
     },

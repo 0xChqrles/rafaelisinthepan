@@ -8,15 +8,13 @@
 
 import { applyGuessToHoles, computeProgress } from './scoring';
 import {
-  cardPuzzleLabel,
   encodeResult,
   progressEmoji,
   sharePath,
-  type PuzzleRef,
   type RankMap,
-  type RuntimeHole,
   type ShareResult,
 } from '@whippin/shared';
+import type { RuntimeHole } from './types';
 
 // The ruler's two halves, replayed in ONE walk (they are the same walk: the same ordered
 // guesses under the same improvement rule as the live game loop, Game.submit). Keeping
@@ -161,27 +159,6 @@ export function emojiRow(trajectory: number[], solvedAt: (number | null)[] = [])
     keycaps.set(cell, [...(keycaps.get(cell) ?? []), HOLE_KEYCAPS[hole]]);
   });
   return cells.map((pct, i) => keycaps.get(i)?.join('') ?? progressEmoji(pct)).join('');
-}
-
-// The share headline. The screen localizes the UNIT; the shape of the line is the message
-// format, so it lives here with the rest of the composition.
-//
-// The day is named by its CALENDAR DATE, not the internal day index (decided 2026-08-03): a
-// reader can date the puzzle, and it is the same string the card draws and the shared link
-// resolves to. `dateForDayNumber` is `dayNumber`'s exact inverse, so this is still the
-// SERVER-owned game day, never the sharer's local date.
-// `score` is a number on every ordinary result and the literal `∞` on a #214 capped
-// sentence round — plain text has no font to be missing the glyph, so the character itself
-// is right here (the CARD and the on-screen result draw the shared path data instead,
-// because Press Start 2P has no such glyph).
-//
-// A BONUS puzzle (shared bonus.ts) is no day: it is named "BONUS <id>", the card's own label.
-export function shareHeadline(
-  puzzleRef: PuzzleRef,
-  score: number | string,
-  unit: string,
-): string {
-  return `Whippin AI ${cardPuzzleLabel(puzzleRef)} — ${score} ${unit}`;
 }
 
 // The shared/copied plain text: the headline, then the emoji row on its own line (attached

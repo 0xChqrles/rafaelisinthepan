@@ -6,16 +6,16 @@
 import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwatch';
 import type { Log } from '../log';
 import { botRegion } from '../config/env';
+import { CONNECTED_METRIC } from '../metricNames';
 
-export const CONNECTED_METRIC = 'Connected';
-export const METRIC_INTERVAL_MS = 60_000;
+const METRIC_INTERVAL_MS = 60_000;
 
 export function startConnectedMetric(
   namespace: string,
   isConnected: () => boolean,
   log: Log,
-  client = new CloudWatchClient({ region: botRegion() }),
 ): () => void {
+  const client = new CloudWatchClient({ region: botRegion() });
   const publish = async () => {
     try {
       await client.send(

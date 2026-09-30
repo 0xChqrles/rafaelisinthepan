@@ -88,7 +88,7 @@ function BlockView({ block, lang, figNo }: { block: Block; lang: string; figNo: 
   return (
     <figure className="ar-fig">
       <div className="ar-fig-body">
-        <FigureBody lang={lang} fig={block.fig} />
+        <FigureBody fig={block.fig} />
       </div>
       <figcaption className="ar-fig-caption">
         <span className="ar-fig-no">{`${t(lang, 'levelFigure')} ${pad2(figNo)}`}</span>{' '}
@@ -162,7 +162,7 @@ export default function ArticleLevel({ lang, level }: { lang: LangCode; level: n
           </p>
         </header>
         {article.sections.map((section, i) => (
-          // eslint-disable-next-line react/no-array-index-key -- static per article
+          // Static per article: the index is a stable key.
           <section key={i} className="article-section">
             {section.heading && (
               <h2 className="article-heading">
@@ -173,7 +173,7 @@ export default function ArticleLevel({ lang, level }: { lang: LangCode; level: n
               </h2>
             )}
             {section.blocks.map((block, j) => (
-              // eslint-disable-next-line react/no-array-index-key -- static per article
+              // Static per article: the index is a stable key.
               <BlockView key={j} block={block} lang={lang} figNo={'fig' in block ? (figures += 1) : 0} />
             ))}
           </section>

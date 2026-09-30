@@ -23,6 +23,7 @@ import { seedDevice, type TestDevice } from './testDevice';
 
 const emptyStore: PuzzleStore = {
   getPuzzle: async () => null,
+  hasPuzzle: async () => false,
   getSlice: async () => null,
 };
 
@@ -34,10 +35,6 @@ async function makeHandler(
   const handler = createHandler({
     store: emptyStore,
     deviceStore: devices,
-    devices: {
-      turnstile: { async verify() { return true; } },
-      allowSourceIp: true,
-    },
     rounds: {
       roundStore,
       scoreStore: memoryScoreStore(),

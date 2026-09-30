@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import {
-  BatchGetItemCommand,
   GetItemCommand,
   QueryCommand,
   TransactWriteItemsCommand,
@@ -8,8 +7,9 @@ import {
   type AttributeValue,
   type TransactWriteItem,
 } from '@aws-sdk/client-dynamodb';
+import { batchGetAll } from './dynamoBatchGet';
 import { classifyTransaction, refusedAt } from './dynamoErrors';
-import { BATCH_RETRY_ATTEMPTS, batchRetryDelayMs, sleep, type Wait } from './dynamoRetry';
+import { sleep, type Wait } from './dynamoRetry';
 import {
   DEDUP_SORT_KEY,
   SCORE_SUBMISSION_LIMIT,
@@ -23,7 +23,7 @@ import {
 
 // A batch read that comes back with UnprocessedKeys is DynamoDB saying the partition is
 // under pressure, and the wait between attempts is the SHARED full-jitter schedule
-// (`dynamoRetry.ts`, which holds the reasoning and the numbers).
+// (`dynamoBatchGet.ts` runs it; `dynamoRetry.ts` holds the reasoning and the numbers).
 
 export interface DynamoScoreStoreOptions {
   // Injected by tests, so asserting the retry SCHEDULE costs no real time.
@@ -67,7 +67,7 @@ export function dynamoScoreStore(
   return {
     async list(key) {
       const rows: ScoreRow[] = [];
-      let cursor: Record<string, unknown> | undefined;
+      let cursor: Record<string, AttributeValue> | undefined;
       do {
         const response = await client.send(
           new QueryCommand({
@@ -78,7 +78,7 @@ export function dynamoScoreStore(
             // Strong consistency: the POST path reads right after its own committed
             // write, and the returned histogram must already include the caller.
             ConsistentRead: true,
-            ...(cursor ? { ExclusiveStartKey: cursor as never } : {}),
+            ...(cursor ? { ExclusiveStartKey: cursor } : {}),
           }),
         );
         for (const item of response.Items ?? []) {
@@ -98,30 +98,18 @@ export function dynamoScoreStore(
     // member's score from the board.
     async getMany(key, publicIds) {
       const pk = dayKey(key);
-      const rows: ScoreRow[] = [];
-      const ids = [...new Set(publicIds)];
-      for (let i = 0; i < ids.length; i += 100) {
-        let keys: Record<string, AttributeValue>[] = ids
-          .slice(i, i + 100)
-          .map((id) => ({ pk: { S: pk }, sk: { S: id } }));
-        for (let attempt = 0; keys.length > 0; attempt += 1) {
-          if (attempt >= BATCH_RETRY_ATTEMPTS) {
-            throw new Error('Score batch read left unprocessed keys.');
-          }
-          // Only BETWEEN attempts: the first read of a batch is never delayed.
-          if (attempt > 0) await wait(batchRetryDelayMs(attempt - 1));
-          const response = await client.send(
-            new BatchGetItemCommand({
-              RequestItems: { [tableName]: { Keys: keys, ConsistentRead: true } },
-            }),
-          );
-          for (const item of response.Responses?.[tableName] ?? []) {
-            rows.push({ publicId: item.sk?.S ?? '', score: Number(item.score?.N ?? 0) });
-          }
-          keys = response.UnprocessedKeys?.[tableName]?.Keys ?? [];
-        }
-      }
-      return rows;
+      const items = await batchGetAll(
+        client,
+        tableName,
+        [...new Set(publicIds)].map((id) => ({ pk: { S: pk }, sk: { S: id } })),
+        { ConsistentRead: true },
+        wait,
+        'Score',
+      );
+      return items.map((item): ScoreRow => ({
+        publicId: item.sk?.S ?? '',
+        score: Number(item.score?.N ?? 0),
+      }));
     },
 
     async submit(input) {
@@ -217,12 +205,6 @@ export function dynamoScoreStore(
         throw error;
       }
     },
-
-    // #204's active-day transfer: the recorded row follows the round it was derived from.
-    // ONE transaction — a create-only Put under the adopting account and a Delete of the
-    // source — so the day's population holds this score under exactly one player at every
-    // instant and the histogram count is never transiently doubled. It spends NO allowance:
-    // the population gains no player, it renames the one it has.
   };
 }
 

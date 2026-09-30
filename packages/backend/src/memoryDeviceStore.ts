@@ -17,9 +17,13 @@ import type { LinkDeviceWrites } from './linkStore';
 // It also carries #204's link-time writes, which are NOT on the DeviceStore contract:
 // in production they ride inside `dynamoLinkStore`'s one indivisible transaction, so the
 // device store never issues them. See `LinkDeviceWrites`.
+//
+// `accountExists` is memory-only too: the memory group and profile stores are handed it as
+// their one answer to "is this account live", where production asserts or reads the account
+// row inside its own transactions.
 export function memoryDeviceStore(
   initial: readonly BootstrapInput[] = [],
-): DeviceStore & LinkDeviceWrites {
+): DeviceStore & LinkDeviceWrites & { accountExists(accountId: string): Promise<boolean> } {
   // The base table: token hash -> the ONE device item.
   const devices = new Map<string, DeviceRecord>();
   const accounts = new Map<string, AccountRecord>();

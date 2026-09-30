@@ -6,10 +6,12 @@ import { describe, it, expect } from 'vitest';
 import {
   zonedParts,
   activeDate,
+  isCalendarDate,
   dayNumber,
   dateForDayNumber,
   nextResetAt,
   secondsUntilNextReset,
+  weekStart,
 } from './day';
 
 describe('zonedParts — DST-correct NY wall clock', () => {
@@ -48,6 +50,23 @@ describe('activeDate — flips at 22:00 NY, DST-correct on both sides', () => {
   });
 });
 
+describe('isCalendarDate — strict real-calendar YYYY-MM-DD', () => {
+  it('accepts a real date', () => {
+    expect(isCalendarDate('2026-06-29')).toBe(true);
+    expect(isCalendarDate('2024-02-29')).toBe(true); // a leap day
+  });
+  it('rejects malformed / impossible dates', () => {
+    for (const bad of ['2026-6-9', '2026/06/29', '2026-13-01', '2026-02-30', '2026-13-40', 'today', '']) {
+      expect(isCalendarDate(bad)).toBe(false);
+    }
+  });
+  it('rejects a date with anything around it', () => {
+    for (const bad of ['2026-06-29 ', ' 2026-06-29', '2026-06-29T00:00:00Z', '2026-06-29\n']) {
+      expect(isCalendarDate(bad)).toBe(false);
+    }
+  });
+});
+
 describe('dayNumber — monotonic integer id for a date', () => {
   it('counts whole days since the Unix epoch', () => {
     expect(dayNumber('1970-01-01')).toBe(0);
@@ -78,6 +97,22 @@ describe('dateForDayNumber — inverse of dayNumber', () => {
   });
 });
 
+describe('weekStart — the Monday of a day\'s calendar week', () => {
+  const MON = dayNumber('2026-09-07'); // a Monday
+
+  it('a Monday opens its own week', () => {
+    expect(weekStart(MON)).toBe(MON);
+  });
+  it('a Sunday belongs to the week that started six days earlier', () => {
+    expect(weekStart(dayNumber('2026-09-13'))).toBe(MON);
+    // …and the day after it opens the next one.
+    expect(weekStart(dayNumber('2026-09-14'))).toBe(MON + 7);
+  });
+  it('every day of the week names the same Monday', () => {
+    for (let offset = 0; offset < 7; offset += 1) expect(weekStart(MON + offset)).toBe(MON);
+  });
+});
+
 describe('nextResetAt / secondsUntilNextReset — daily flip boundary', () => {
   it('summer, before reset: next flip is today 22:00 EDT', () => {
     const now = new Date('2026-06-28T14:00:00Z'); // 10:00 EDT
@@ -93,5 +128,46 @@ describe('nextResetAt / secondsUntilNextReset — daily flip boundary', () => {
     const now = new Date('2026-01-15T12:00:00Z'); // 07:00 EST
     expect(nextResetAt(now).toISOString()).toBe('2026-01-16T03:00:00.000Z');
     expect(secondsUntilNextReset(now)).toBe(15 * 3600);
+  });
+});
+
+// The two days a year the New-York clock moves. The game day still flips at 22:00 local on
+// both sides of the change, so one game day is 23 hours long and one is 25 — where a "+24h"
+// or an offset read at the wrong instant goes wrong, and nowhere else.
+describe('DST transition days — the flip stays at 22:00 NY', () => {
+  it('spring forward (2026-03-08): the game day is 23 hours long', () => {
+    // Opens 2026-03-07 22:00 EST (03:00 UTC), closes 2026-03-08 22:00 EDT (02:00 UTC).
+    const opens = new Date('2026-03-08T03:00:00Z');
+    expect(activeDate(new Date('2026-03-08T02:59:00Z'))).toBe('2026-03-07');
+    expect(activeDate(opens)).toBe('2026-03-08');
+    expect(nextResetAt(opens).toISOString()).toBe('2026-03-09T02:00:00.000Z');
+    expect(secondsUntilNextReset(opens)).toBe(23 * 3600);
+  });
+  it('spring forward: an instant BEFORE the clock change aims at the offset after it', () => {
+    const now = new Date('2026-03-08T04:00:00Z'); // 2026-03-07 23:00 EST, clocks move at 07:00 UTC
+    expect(nextResetAt(now).toISOString()).toBe('2026-03-09T02:00:00.000Z');
+    expect(secondsUntilNextReset(now)).toBe(22 * 3600);
+  });
+  it('spring forward: the day closes at 22:00 EDT', () => {
+    expect(activeDate(new Date('2026-03-09T01:59:00Z'))).toBe('2026-03-08');
+    expect(activeDate(new Date('2026-03-09T02:00:00Z'))).toBe('2026-03-09');
+  });
+
+  it('fall back (2026-11-01): the game day is 25 hours long', () => {
+    // Opens 2026-10-31 22:00 EDT (02:00 UTC), closes 2026-11-01 22:00 EST (03:00 UTC).
+    const opens = new Date('2026-11-01T02:00:00Z');
+    expect(activeDate(new Date('2026-11-01T01:59:00Z'))).toBe('2026-10-31');
+    expect(activeDate(opens)).toBe('2026-11-01');
+    expect(nextResetAt(opens).toISOString()).toBe('2026-11-02T03:00:00.000Z');
+    expect(secondsUntilNextReset(opens)).toBe(25 * 3600);
+  });
+  it('fall back: an instant BEFORE the clock change aims at the offset after it', () => {
+    const now = new Date('2026-11-01T03:00:00Z'); // 2026-10-31 23:00 EDT, clocks move at 06:00 UTC
+    expect(nextResetAt(now).toISOString()).toBe('2026-11-02T03:00:00.000Z');
+    expect(secondsUntilNextReset(now)).toBe(24 * 3600);
+  });
+  it('fall back: the day closes at 22:00 EST', () => {
+    expect(activeDate(new Date('2026-11-02T02:59:00Z'))).toBe('2026-11-01');
+    expect(activeDate(new Date('2026-11-02T03:00:00Z'))).toBe('2026-11-02');
   });
 });

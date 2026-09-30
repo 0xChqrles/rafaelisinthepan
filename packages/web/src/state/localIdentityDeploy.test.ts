@@ -62,7 +62,7 @@ function fakeWindow(store: Storage): Window & typeof globalThis {
     addEventListener: (type: string, listener: (event: StorageEvent) => void) => {
       if (type === 'storage') storageListeners.push(listener);
     },
-    removeEventListener: (type: string, listener: (event: StorageEvent) => void) => {
+    removeEventListener: (_type: string, listener: (event: StorageEvent) => void) => {
       const index = storageListeners.indexOf(listener);
       if (index >= 0) storageListeners.splice(index, 1);
     },
@@ -182,11 +182,13 @@ describe('deploying the locally-decided username (user-decided 2026-08-26)', () 
   });
 
   it('treats a profile that won between GET and POST as settled', async () => {
+    vi.useFakeTimers();
     save.mockResolvedValue(jsonResponse(409, { error: 'profile_exists' }));
     const remove = installLocalIdentityDeploy();
     try {
       await ensureDeviceIdentity();
-      await settle();
+      // Past every retry wait: a settled create is never asked again.
+      await vi.advanceTimersByTimeAsync(3_500);
       expect(fetchMock).toHaveBeenCalledOnce();
       expect(save).toHaveBeenCalledOnce();
     } finally {

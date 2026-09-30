@@ -10,7 +10,7 @@ import { randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage } from 'node:http';
 import { createHandler } from './handler';
 import { fsStore } from './fsStore';
-import { defaultLocalStoreRoot } from './layout';
+import { localStoreRoot } from './layout';
 import { memoryDeviceStore } from './memoryDeviceStore';
 import { memoryGroupStore } from './memoryGroupStore';
 import { memoryHistoryStore } from './memoryHistoryStore';
@@ -23,7 +23,7 @@ import { consoleMailer } from './mailer';
 import { localTurnstileVerifier } from './turnstile';
 
 const PORT = Number(process.env.PORT ?? 8787);
-const STORE_ROOT = process.env.PUZZLE_STORE ?? defaultLocalStoreRoot();
+const STORE_ROOT = localStoreRoot();
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ?? '*';
 // The per-ADDRESS submission allowance, turned OFF here and explicitly so — the same kind
 // of stated local-only choice as the accept-all Turnstile verifier below.

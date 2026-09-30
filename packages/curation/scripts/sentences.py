@@ -115,14 +115,14 @@ def word_count(sentence: str) -> int:
     return len(re.findall(r"[^\s]+", sentence))
 
 
-def is_candidate(sentence: str, *, min_words: int = MIN_WORDS, max_words: int = MAX_WORDS) -> bool:
+def is_candidate(sentence: str, *, min_words: int = MIN_WORDS) -> bool:
     """The mechanical filter: length band, opens on a capital (never on a quotation
     mark — a line that opens by quoting is reported speech or an argument with a
     sentence the player cannot see; user-decided 2026-09-08 on « “Il sait qu’il meurt”
     est une pensée profonde… »), closes on terminal punctuation, no dialogue dash, no
     roll call of names, no digits."""
     n = word_count(sentence)
-    if n < min_words or n > max_words:
+    if n < min_words or n > MAX_WORDS:
         return False
     if not sentence[0].isupper():
         return False
@@ -142,7 +142,7 @@ def is_candidate(sentence: str, *, min_words: int = MIN_WORDS, max_words: int = 
     return True
 
 
-def candidate_sentences(text: str, *, lang: str, **kwargs) -> list[str]:
+def candidate_sentences(text: str, *, lang: str) -> list[str]:
     """Distinct candidate UNITS of a text, in reading order: per starting sentence, the
     sentence alone when it has at least MIN_LINE_WORDS, and the shortest run of
     consecutive sentences of its paragraph (at most MAX_SENTENCES_PER_UNIT) that reaches
@@ -161,11 +161,11 @@ def candidate_sentences(text: str, *, lang: str, **kwargs) -> list[str]:
                 if start + n > len(paragraph):
                     break
                 unit = " ".join(paragraph[start:start + n])
-                if word_count(unit) > kwargs.get("max_words", MAX_WORDS):
+                if word_count(unit) > MAX_WORDS:
                     break
-                if n == 1 and is_candidate(unit, **{**kwargs, "min_words": MIN_LINE_WORDS}):
+                if n == 1 and is_candidate(unit, min_words=MIN_LINE_WORDS):
                     keep(unit)
-                if is_candidate(unit, **kwargs):
+                if is_candidate(unit):
                     keep(unit)
                     break
     return out

@@ -23,6 +23,7 @@ import type { PuzzleStore } from './store';
 
 const emptyStore: PuzzleStore = {
   getPuzzle: async () => null,
+  hasPuzzle: async () => false,
   getSlice: async () => null,
 };
 

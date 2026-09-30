@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { activeDate, dayNumber } from '@whippin/shared';
 import { memoryDayLogStore, type Turn } from './chat/dayLog';
 import { memoryDiaryStore } from './chat/diary';
@@ -9,6 +12,13 @@ import type { LlmProvider, LlmRequest } from './llm/types';
 import { createLog } from './log';
 import type { OutboundCommand } from './outbound/commands';
 import { runDiaryJob, runPodiumJob, runReminderJob } from './podiumJob';
+
+// The one thing the Lambda entry reads over the network while it builds: the model's key.
+const llm = vi.hoisted(() => ({ create: vi.fn() }));
+vi.mock('./llm', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./llm')>()),
+  createLlmProvider: llm.create,
+}));
 
 const GROUP = '120363000000000001@g.us';
 const groups = new GroupRegistry([
@@ -93,6 +103,29 @@ describe('podium job (#236)', () => {
     // A date that is not a real one is refused, not rolled over into March 2nd.
     expect(await runPodiumJob({ group: GROUP, date: '2026-02-30' }, deps)).toMatchObject({ outcome: 'skipped', dayNumber: 0 });
     expect(sent).toEqual([]);
+  });
+
+  it('clocks the comment budget by the process, not by the injected day clock', async () => {
+    // `now` decides the DAY. A budget stamped from it and checked against the real clock
+    // would already be spent for any fixed `now` in the past: the second round is refused.
+    const now = () => new Date('2026-09-03T20:00:00Z');
+    const day = dayNumber(activeDate(now()));
+    const declarations = memoryDeclarationStore();
+    await declarations.record({
+      group: GROUP, dayNumber: day, capped: false, token: 't', messageTs: 1, receivedAt: '', lang: 'fr',
+      sender: '33612345678@s.whatsapp.net', name: 'Gab', score: 3, messageId: 'a',
+    });
+    let judged = 0;
+    const { provider } = scripted((r) => {
+      if (r.system !== FACT_JUDGE_SYSTEM) return 'Trois, net et sans bavure.';
+      judged += 1;
+      return judged <= 3 ? '0: faux' : '1';
+    });
+    const result = await runPodiumJob(
+      { group: GROUP },
+      { groups, declarations, outbound: { enqueue: async () => {} }, provider, log: createLog('silent'), now },
+    );
+    expect(result.comments).toBe(1);
   });
 
   it('comments from the facts, the day\'s log and the diary (#277), and goes without them when they cannot be read', async () => {
@@ -316,5 +349,40 @@ describe('the morning reminder (user-decided 2026-09-05)', () => {
       expect(asked).toEqual([]);
       expect(sent[0]).not.toHaveProperty('preview');
     });
+  });
+});
+
+describe('the Lambda entry: what a container keeps between invocations', () => {
+  // A cold container with the environment the entry reads. Its snapshot holds no group, so
+  // an invocation ends at `skipped` before any AWS call.
+  async function coldContainer() {
+    vi.resetModules();
+    vi.stubEnv('BOT_TABLE', 'bot');
+    vi.stubEnv('BOT_OUTBOUND_QUEUE_URL', 'https://sqs.invalid/outbound');
+    vi.stubEnv('BOT_GROUPS_DIR', mkdtempSync(join(tmpdir(), 'whippin-podium-job-')));
+    vi.stubEnv('BOT_LOG_LEVEL', 'silent');
+    return (await import('./podiumJob')).handler;
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    llm.create.mockReset();
+  });
+
+  it('reads the model again after a load that THREW: a blip costs that invocation its model, never the container', async () => {
+    llm.create.mockRejectedValueOnce(new Error('ThrottlingException')).mockResolvedValue(null);
+    const handler = await coldContainer();
+    // The invocation at hand still runs, without a model.
+    expect((await handler({ group: GROUP })).outcome).toBe('skipped');
+    expect((await handler({ group: GROUP })).outcome).toBe('skipped');
+    expect(llm.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps what it built when no key is configured: that is an answer, not a failure', async () => {
+    llm.create.mockResolvedValue(null);
+    const handler = await coldContainer();
+    await handler({ group: GROUP });
+    await handler({ group: GROUP });
+    expect(llm.create).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { activeDate, dayNumber, LINK_SENDS_PER_ADDRESS } from '@whippin/shared';
+import {
+  activeDate,
+  dayNumber,
+  LINK_CODE_TTL_SECONDS,
+  LINK_SENDS_PER_ADDRESS,
+  LINK_SENDS_PER_IP,
+} from '@whippin/shared';
 import { createHandler } from './handler';
 import { memoryDeviceStore } from './memoryDeviceStore';
 import { memoryGroupStore } from './memoryGroupStore';
@@ -23,6 +29,7 @@ import { seedDevice } from './testDevice';
 
 const emptyStore: PuzzleStore = {
   getPuzzle: async () => null,
+  hasPuzzle: async () => false,
   getSlice: async () => null,
 };
 
@@ -33,8 +40,13 @@ const HASH = 'a'.repeat(64);
 // `clock` is for the tests that move time: the rolling send window is a fact about WHEN,
 // and a fixed instant cannot exercise it. `mail.fail` is for the SES boundary: a provider
 // can refuse, time out, or answer ambiguously, and what the route does then is a decided
-// behaviour rather than an accident.
-function harness(clock: { now: Date } = { now: NOW }, mail: { fail?: unknown } = {}) {
+// behaviour rather than an accident. `turnstile.rejects` is the challenge failing: the send
+// is the gated call, and what a refusal must NOT have done by then is the contract.
+function harness(
+  clock: { now: Date } = { now: NOW },
+  mail: { fail?: unknown } = {},
+  turnstile: { rejects?: boolean } = {},
+) {
   const devices = memoryDeviceStore();
   const profiles = memoryProfileStore((id) => devices.accountExists(id));
   const groups = memoryGroupStore((id) => devices.accountExists(id));
@@ -50,7 +62,6 @@ function harness(clock: { now: Date } = { now: NOW }, mail: { fail?: unknown } =
     profiles,
     groups,
     deviceStore: devices,
-    devices: { turnstile: { verify: async () => true }, allowSourceIp: true },
     link: {
       links,
       groups,
@@ -61,7 +72,7 @@ function harness(clock: { now: Date } = { now: NOW }, mail: { fail?: unknown } =
           sent.push(message);
         },
       },
-      turnstile: { verify: async () => true },
+      turnstile: { verify: async () => turnstile.rejects !== true },
       ipHmacSecret: 'x'.repeat(32),
       allowSourceIp: true,
     },
@@ -186,6 +197,70 @@ describe('email account linking (#204) — the code', () => {
     expect(refused.statusCode).toBe(429);
     expect(JSON.parse(refused.body).error).toBe('too_many_codes');
     expect(h.sent).toHaveLength(LINK_SENDS_PER_ADDRESS);
+  });
+
+  // CONTRACT (root AGENTS.md, Send): Turnstile is checked BEFORE the allowances. They are
+  // spent per ADDRESS, so a refused challenge that still charged one would let a caller who
+  // proved nothing burn a stranger's code budget.
+  it('refuses a rejected Turnstile token before anything is spent, stored or sent', async () => {
+    const gate = { rejects: true };
+    const h = harness({ now: NOW }, {}, gate);
+    const me = await seedDevice(h.devices);
+    const ask = () =>
+      h.handler(post({ token: me.token, email: 'zoe@example.com', turnstileToken: 'ok' }));
+
+    const refused = await ask();
+    expect(refused.statusCode).toBe(403);
+    expect(JSON.parse(refused.body).error).toBe('turnstile_rejected');
+    expect(h.sent).toHaveLength(0);
+    // No challenge was stored: there is no code to verify for this address.
+    const verify = await h.handler(post({ token: me.token, email: 'zoe@example.com', code: '000000' }));
+    expect(verify.statusCode).toBe(404);
+    expect(JSON.parse(verify.body).error).toBe('no_code');
+
+    // And no allowance was spent: the address still has its WHOLE budget.
+    gate.rejects = false;
+    for (let count = 0; count < LINK_SENDS_PER_ADDRESS; count += 1) {
+      expect((await ask()).statusCode).toBe(200);
+    }
+  });
+
+  it('bounds how many codes ONE sender can spray across addresses', async () => {
+    const h = harness();
+    const me = await seedDevice(h.devices);
+    // A different address every time, so the per-address bound never comes into it.
+    const ask = (n: number, sourceIp = '203.0.113.7') =>
+      h.handler({
+        ...post({ token: me.token, email: `player${n}@example.com`, turnstileToken: 'ok' }),
+        requestContext: { http: { method: 'POST', sourceIp } },
+      });
+    for (let n = 0; n < LINK_SENDS_PER_IP; n += 1) {
+      expect((await ask(n)).statusCode).toBe(200);
+    }
+    const refused = await ask(LINK_SENDS_PER_IP);
+    expect(refused.statusCode).toBe(429);
+    expect(JSON.parse(refused.body).error).toBe('too_many_codes');
+    expect(h.sent).toHaveLength(LINK_SENDS_PER_IP);
+    // The bound is that SENDER's: the same request from another address goes out.
+    expect((await ask(LINK_SENDS_PER_IP, '203.0.113.8')).statusCode).toBe(200);
+  });
+
+  it('answers the right code as expired once its ten minutes have passed', async () => {
+    const clock = { now: NOW };
+    const h = harness(clock);
+    const me = await seedDevice(h.devices);
+    const code = await askForCode(h, me.token, 'zoe@example.com');
+    const wrong = String((Number(code) + 1) % 1_000_000).padStart(6, '0');
+
+    // A second short of the TTL the challenge still stands: a wrong code is a WRONG code.
+    clock.now = new Date(NOW.getTime() + (LINK_CODE_TTL_SECONDS - 1) * 1_000);
+    const live = await h.handler(post({ token: me.token, email: 'zoe@example.com', code: wrong }));
+    expect(JSON.parse(live.body).error).toBe('bad_code');
+
+    clock.now = new Date(NOW.getTime() + (LINK_CODE_TTL_SECONDS + 1) * 1_000);
+    const expired = await h.handler(post({ token: me.token, email: 'zoe@example.com', code }));
+    expect(expired.statusCode).toBe(409);
+    expect(JSON.parse(expired.body).error).toBe('code_expired');
   });
 
   it('counts a WRONG code against the challenge and spends it, but never a right one', async () => {
@@ -707,7 +782,7 @@ describe('email account linking (#204) — the erase confirmation', () => {
     await expect(h.devices.accountExists(b.accountId)).resolves.toBe(true);
   });
 
-  it('does NOT delete an account that carries an address of its own — it is simply left', async () => {
+  it('TRANSFERS NOTHING from an account that carries an address of its own — it is simply left', async () => {
     const h = harness();
     const a = await seedDevice(h.devices);
     await h.handler(
@@ -717,11 +792,31 @@ describe('email account linking (#204) — the erase confirmation', () => {
     await h.handler(
       post({ token: b.token, email: 'b@example.com', code: await askForCode(h, b.token, 'b@example.com') }),
     );
+    // B played — and solved — today, the one day a DELETED account's play would move.
+    const key = { date: DATE, lang: 'fr' };
+    await h.rounds.append({
+      ...key,
+      publicId: b.accountId,
+      guesses: ['chat', 'chien'],
+      puzzle: 'rev1',
+      progress: 100,
+      solved: true,
+      early: false,
+      now: NOW,
+    });
+    await h.scores.submit({
+      ...key,
+      publicId: b.accountId,
+      score: 2,
+      submittedAt: NOW.toISOString(),
+      revision: 'rev1',
+      ipHash: 'h',
+      expiresAt: 0,
+      requestToken: 'r',
+    });
 
     // B's device links A's address. B can be signed back into from any future device, so it
-    // is not an orphan: nothing is destroyed and nothing transfers. The device still has to
-    // NAME the account it is leaving (the switch confirmation above), which is what
-    // separates "nothing is destroyed" from "nothing is asked".
+    // is not an orphan: nothing is destroyed and nothing transfers.
     const answer = await h.handler(
       post({
         token: b.token,
@@ -731,11 +826,15 @@ describe('email account linking (#204) — the erase confirmation', () => {
       }),
     );
     expect(answer.statusCode).toBe(200);
-    expect(JSON.parse(answer.body)).toMatchObject({
-      outcome: 'adopted',
-      accountId: a.accountId,
+
+    // The day stays B's, whole: its log, its score row — and A gained neither, nor a streak day.
+    await expect(h.rounds.get(key, b.accountId, 'rev1')).resolves.toMatchObject({
+      guesses: ['chat', 'chien'],
+      solved: true,
     });
-    await expect(h.devices.accountExists(b.accountId)).resolves.toBe(true);
+    await expect(h.rounds.get(key, a.accountId, 'rev1')).resolves.toBeNull();
+    await expect(h.scores.list(key)).resolves.toEqual([{ publicId: b.accountId, score: 2 }]);
+    await expect(h.history.solvedDays(a.accountId, 'fr')).resolves.toEqual([]);
   });
 });
 
@@ -1038,14 +1137,20 @@ describe('email account linking (#204) — what a deleted account stops being', 
     expect(profile.statusCode).toBe(410);
     expect(JSON.parse(profile.body).error).toBe('account_gone');
 
-    // And the deleted account's own device is signed out of every private route.
-    const join = await h.handler(post({ token: leaving.token }, '/groups'));
-    expect(join.statusCode).toBe(200);
-    // (the device MOVED to the saved account — that is the adoption — so it still
-    // authenticates; what is gone is the account it left, which no store can join.)
-    const groups = memoryGroupStore((id) => h.devices.accountExists(id));
+    // The device MOVED to the saved account — that is the adoption — so it still
+    // authenticates; what is gone is the account it left.
+    const mine = await h.handler(post({ token: leaving.token }, '/groups'));
+    expect(mine.statusCode).toBe(200);
+    // And that account can join nothing: the group exists and has room, so what the store
+    // refuses, inside its own write, is the account.
+    await h.groups.create({
+      id: 'cccccccccccccccc',
+      name: 'Open',
+      createdBy: saved.accountId,
+      now: NOW.toISOString(),
+    });
     await expect(
-      groups.join({ id: 'cccccccccccccccc', publicId: leaving.accountId, now: NOW.toISOString() }),
-    ).resolves.toBe('unknown_group');
+      h.groups.join({ id: 'cccccccccccccccc', publicId: leaving.accountId, now: NOW.toISOString() }),
+    ).resolves.toBe('gone');
   });
 });

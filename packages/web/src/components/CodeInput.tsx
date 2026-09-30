@@ -59,7 +59,7 @@ export default function CodeInput({
   // its own. It exists early so the address step's tap has something to focus.
   offstage?: boolean;
 }) {
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLInputElement | null>(null);
   const id = useId();
 
   // The player arrived here to type a code, so the caret is already in it — and after a

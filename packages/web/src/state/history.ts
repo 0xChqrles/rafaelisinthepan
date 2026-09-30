@@ -27,7 +27,7 @@
 
 import { useCallback, useEffect } from 'react';
 import { create } from 'zustand';
-import { bestStreak, boundSolvedDays, currentStreak, VOCAB_BUILDS } from '@whippin/shared';
+import { bestStreak, boundSolvedDays, currentStreak, SUPPORTED_LANGS } from '@whippin/shared';
 import { historyUrl, parsePlayerHistory, postHistoryBody } from '../api';
 import {
   deviceIdentity,
@@ -39,7 +39,7 @@ import { statusOf, type RoundSummary, type Status } from './status';
 
 // Where one summary read is. `idle` = nothing has asked for it; the rest are the read's own
 // three outcomes.
-export type HistoryPhase = 'idle' | 'loading' | 'ready' | 'failed';
+type HistoryPhase = 'idle' | 'loading' | 'ready' | 'failed';
 
 interface MonthEntry {
   phase: HistoryPhase;
@@ -233,8 +233,6 @@ export interface HistoryView {
   // The asked-for month, null until it lands (and on a screen that asked for none).
   days: Map<string, RoundSummary> | null;
   daysPhase: HistoryPhase;
-  // The language's solved game days, null until they land.
-  solvedDays: number[] | null;
   solvedPhase: HistoryPhase;
   // Ask again after a failure. Nothing else retries: a navigation read has no queue.
   retry: () => void;
@@ -280,7 +278,6 @@ export function usePlayerHistory({
   return {
     days: monthState.days,
     daysPhase: monthState.phase,
-    solvedDays: solvedState.days,
     solvedPhase: solvedState.phase,
     retry,
   };
@@ -308,8 +305,6 @@ export interface AccountStats {
   // all (#216).
   phase: HistoryPhase;
 }
-
-const SUPPORTED_LANGS = Object.keys(VOCAB_BUILDS);
 
 export function useAccountStats(activeDay: number): AccountStats {
   const solved = useHistoryStore((state) => state.solved);

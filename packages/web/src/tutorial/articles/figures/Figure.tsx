@@ -9,12 +9,12 @@ import Tournament from './Tournament';
 import Words from './Words';
 
 // One figure's drawing, by kind (types.ts).
-export default function FigureBody({ lang, fig }: { lang: string; fig: FigureData }) {
+export default function FigureBody({ fig }: { fig: FigureData }) {
   switch (fig.kind) {
     case 'plane':
-      return <Plane lang={lang} states={fig.states} edges={fig.edges} tabs={fig.tabs} />;
+      return <Plane states={fig.states} edges={fig.edges} tabs={fig.tabs} />;
     case 'bars':
-      return <Bars lang={lang} rows={fig.rows} />;
+      return <Bars rows={fig.rows} />;
     case 'loop':
       return <Loop steps={fig.steps} />;
     case 'words':
@@ -22,10 +22,10 @@ export default function FigureBody({ lang, fig }: { lang: string; fig: FigureDat
     case 'ranks':
       return <Ranks board={fig.board} take={fig.take} more={fig.more} />;
     case 'arcs':
-      return <Arcs lang={lang} tokens={fig.tokens} focus={fig.focus} weights={fig.weights} hidden={fig.hidden} />;
+      return <Arcs tokens={fig.tokens} focus={fig.focus} weights={fig.weights} hidden={fig.hidden} />;
     case 'flow':
       return <Flow rows={fig.rows} />;
     case 'tournament':
-      return <Tournament lang={lang} rows={fig.rows} labels={fig.labels} />;
+      return <Tournament rows={fig.rows} labels={fig.labels} />;
   }
 }

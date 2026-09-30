@@ -1,13 +1,18 @@
 """
-Shared embedding-neighbor utilities for the sentence reconstruction game.
+Embedding neighbors for the sentence reconstruction game: loading, vocabulary, matrix
+and cosine ranking over each language's fastText Common Crawl vectors.
 
-Language modules provide only their embedding file path, derived cache path, and
-vector format (header or not). This module owns the common loading, vocabulary,
-matrix, and cosine-ranking logic.
+`for_lang(lang)` is what callers use: the language's object, carrying its SPEC and
+load_vectors() / build_vocab(kv) / build_matrix(kv, V) / closest(word, kv, V, M).
+The two languages differ only by their path — embedding/<lang>/cc.<lang>.300_reduced.vec,
+produced by `pnpm reduce:<lang>` from the raw cc.<lang>.300.vec
+(https://fasttext.cc/docs/en/crawl-vectors.html) — and the .kv cache derived from it.
 
 The vectors are the *_reduced* files produced by scripts/reduce_embedding.py, which
 already cap (TOP_N) and filter the vocabulary. So loading takes no frequency limit
 and build_vocab is a pure pass-through — no re-filtering happens here.
+
+Dependencies: gensim + numpy, provisioned by uv (see the callers' PEP-723 headers).
 """
 
 import os
@@ -24,7 +29,6 @@ class EmbeddingSpec:
     name: str
     vectors_path: str
     cache_path: str
-    no_header: bool
     missing_hint: str
 
 
@@ -56,7 +60,6 @@ def load_vectors(spec: EmbeddingSpec):
     kv = KeyedVectors.load_word2vec_format(
         spec.vectors_path,
         binary=False,
-        no_header=spec.no_header,
     )
     os.makedirs(os.path.dirname(spec.cache_path), exist_ok=True)
     kv.save(spec.cache_path)
@@ -80,12 +83,12 @@ def build_matrix(kv, V):
     return M
 
 
-def closest(spec: EmbeddingSpec, word, kv, V, M, n=None):
+def closest(spec: EmbeddingSpec, word, kv, V, M):
     """
     Rank V by proximity to `word`.
 
-    Return a list of (word, rank, similarity), sorted from nearest to farthest.
-    The word itself is excluded. n=None -> return all ranked V.
+    Return a list of (word, rank, similarity), sorted from nearest to farthest:
+    ALL of V but the word itself.
     """
     if word not in kv:
         raise KeyError(f"'{word}' is absent from {spec.name}")
@@ -103,6 +106,43 @@ def closest(spec: EmbeddingSpec, word, kv, V, M, n=None):
             continue
         out.append((w, rank, float(sims[idx])))
         rank += 1
-        if n is not None and rank >= n:
-            break
     return out
+
+
+class Neighbors:
+    """One language's reduced vectors, called the way every consumer calls them."""
+
+    def __init__(self, lang, name):
+        # The reduced (capped + filtered) vectors are the single source of truth for
+        # the game.
+        vectors = os.path.join(ROOT, f"embedding/{lang}/cc.{lang}.300_reduced.vec")
+        self.SPEC = EmbeddingSpec(
+            name=f"{name} fastText",
+            vectors_path=vectors,
+            # Cache derived from the vec path: different reduced files -> different
+            # caches, and a re-reduction (newer .vec) invalidates it (_cache_is_fresh).
+            cache_path=os.path.splitext(vectors)[0] + ".kv",
+            missing_hint=f"Run `pnpm reduce:{lang}` first (needs the raw cc.{lang}.300.vec).",
+        )
+
+    def load_vectors(self):
+        return load_vectors(self.SPEC)
+
+    def build_vocab(self, kv):
+        return build_vocab(self.SPEC, kv)
+
+    def build_matrix(self, kv, V):
+        return build_matrix(kv, V)
+
+    def closest(self, word, kv, V, M):
+        return closest(self.SPEC, word, kv, V, M)
+
+
+# One instance per language, built once: a caller that keeps it (gen_phrase's CONFIG)
+# and one that asks again (curation) hold the same object.
+_BY_LANG = {"en": Neighbors("en", "English"), "fr": Neighbors("fr", "French")}
+
+
+def for_lang(lang):
+    """The neighbor object of `lang` ("en" or "fr")."""
+    return _BY_LANG[lang]

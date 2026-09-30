@@ -7,11 +7,11 @@
 import { describe, it, expect } from 'vitest';
 import { anonName, defaultAvatar } from './assigned';
 import { decodeAvatar, encodeAvatar, AVATAR_CELLS, AVATAR_PALETTES } from './avatar';
-import { renderCardSvg, renderGroupCardSvg, CARD_WIDTH } from './cardSvg';
-import { dateForDayNumber } from './day';
+import { renderCardSvg, renderGroupCardSvg, shareHeadline, CARD_WIDTH } from './cardSvg';
+import { dateForDayNumber, dayNumber } from './day';
 import { INFINITY_EM_HEIGHT, INFINITY_GLYPH, PIXEL_INK_LIFT_EM } from './glyphs';
 import { progressHeatColor } from './heat';
-import { NAME_MAX_LENGTH } from './name';
+import { GROUP_NAME_MAX_LENGTH, NAME_MAX_LENGTH } from './name';
 
 describe('renderCardSvg', () => {
   const data = {
@@ -231,7 +231,7 @@ describe('renderGroupCardSvg', () => {
   });
 
   it('keeps a long name inside the card on ONE line', () => {
-    const name = 'W'.repeat(NAME_MAX_LENGTH);
+    const name = 'W'.repeat(GROUP_NAME_MAX_LENGTH);
     const svg = renderGroupCardSvg({ name, members: [] });
     const size = Number(/font-size="(\d+)"[^>]*>W+<\/text>/.exec(svg)![1]);
     expect(name.length * size).toBeLessThan(CARD_WIDTH);
@@ -299,5 +299,27 @@ describe('a signed result card (the share link wearing its player)', () => {
     expect(right).toBeLessThanOrEqual(CARD_WIDTH - 90);
     const tile = /<clipPath id="sign"><rect x="(-?\d+)"/.exec(svg)!;
     expect(Number(tile[1])).toBeGreaterThanOrEqual(90);
+  });
+});
+
+// CONTRACT: a shared result's first line — the message the web composes, the title the
+// preview page carries, and the line the WhatsApp bot recognizes to drop a generated share.
+describe('shareHeadline — the message\'s first line', () => {
+  it('names the day by its CALENDAR DATE, never the internal index', () => {
+    const day = dayNumber('2026-08-11');
+    expect(shareHeadline({ dayNumber: day }, 12, 'essais')).toBe('Whippin AI 2026-08-11 — 12 essais');
+    // The index says nothing to a reader, and the archive URL the link resolves to spells
+    // the date — so the message has to spell it too.
+    expect(shareHeadline({ dayNumber: day }, 12, 'essais')).not.toContain(String(day));
+  });
+
+  it('names a BONUS puzzle by its id — it is no day', () => {
+    expect(shareHeadline({ bonusId: 1234567 }, 12, 'essais')).toBe('Whippin AI BONUS 1234567 — 12 essais');
+  });
+
+  it('carries a capped round\'s literal ∞ where the count would be', () => {
+    expect(shareHeadline({ dayNumber: dayNumber('2026-08-11') }, '∞', 'tries')).toBe(
+      'Whippin AI 2026-08-11 — ∞ tries',
+    );
   });
 });

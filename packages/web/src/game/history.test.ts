@@ -3,7 +3,7 @@
 // counted tries as stops on one line toward the hidden word —
 //   - the START word is a stop (identified by its stated rank, flagged `start`);
 //   - every ranked try is a stop showing the form the player TYPED; a try beyond the map
-//     is a miss, off the line entirely;
+//     is off the line entirely;
 //   - "you are here" is the HOLE's current rank, never inferred from the log;
 //   - the secret censors to null until the hole is solved (the `???` terminus), and the
 //     solving guess is the terminus, never a stop;
@@ -15,11 +15,14 @@
 //     `given` — MASKED (no word, the MASK to display, its rank, a key to reveal it by) until the player
 //     consumes it, when it stands as their typed stop wearing `given`; the solve unmasks
 //     the rest, still given, apart from what it merely names;
+//   - a round OVER with the hole unsolved (the cap) is presented like the solve: no mask,
+//     and the secret is named — the hole itself stays unsolved;
 //   - what stays retired: no censored census while the round is LIVE.
 // Asserted against the spec, not the implementation.
 
 import { describe, it, expect } from 'vitest';
-import type { RankEntry, RuntimeHole } from '@whippin/shared';
+import type { RankEntry } from '@whippin/shared';
+import type { RuntimeHole } from './types';
 import { MASK, buildHistory } from './history';
 
 const RANKS: Record<string, RankEntry> = {
@@ -50,9 +53,8 @@ describe('buildHistory', () => {
     const model = build([]);
     expect(model.secret).toBeNull(); // `???` — the unknown the line is walked toward
     expect(model.stops).toEqual([
-      { rank: 87, dq: 90, display: 'prairie', word: 'prairie', slug: 'prairie', start: true, best: true, behind: false, revealed: false, given: false, masked: false, taken: false },
+      { rank: 87, display: 'prairie', word: 'prairie', slug: 'prairie', start: true, best: true, behind: false, revealed: false, given: false, masked: false, taken: false },
     ]);
-    expect(model.misses).toEqual([]);
   });
 
   it('ranked tries are stops closest-first, wearing the form the player TYPED', () => {
@@ -64,9 +66,8 @@ describe('buildHistory', () => {
     ]);
   });
 
-  it('a mapless try is a miss, off the line, in try order', () => {
+  it('a mapless try is off the line: never a stop', () => {
     const model = build(['guitare', 'bois', 'velo'], 1);
-    expect(model.misses).toEqual(['guitare', 'velo']);
     expect(model.stops.map((s) => s.rank)).toEqual([1, 87]);
   });
 
@@ -122,25 +123,6 @@ describe('buildHistory', () => {
     expect(model.stops.find((s) => s.rank === 812)!.revealed).toBe(false);
   });
 
-  it('degrades to null dq on pre-#115 data instead of refusing the modal', () => {
-    const bare: Record<string, RankEntry> = {
-      mot: { word: 'mot', rank: 0 },
-      proche: { word: 'proche', rank: 1 },
-    };
-    const model = buildHistory({
-      rankMap: bare,
-      tried: ['proche'],
-      hole: hole(1),
-      startRank: 1,
-      secretWord: 'mot',
-    });
-    expect(model.stops).toEqual([{ rank: 1, dq: null, display: 'proche', word: 'proche', slug: 'proche', start: true, best: true, behind: false, revealed: false, given: false, masked: false, taken: false }]);
-  });
-
-  it('states the map\'s farthest rank so the gutter can be reserved up front', () => {
-    expect(build([]).maxRank).toBe(812);
-  });
-
   it('flags a stop farther than the departure as BEHIND; the departure and closer never', () => {
     // `fleur` (812) sits behind the start (87): a real stop, but not a step of the
     // journey, which runs departure → word. Everything at or inside the start is not.
@@ -180,5 +162,25 @@ describe('buildHistory', () => {
     ]);
     // A window given above an unmoved start reaches past the departure: still a stop.
     expect(build([], 87, [untaken(812)]).stops.find((s) => s.rank === 812)).toMatchObject({ given: true, masked: true, behind: true });
+  });
+
+  it('a round that is OVER unsolved (the cap) masks nothing and names the secret; the hole stays unsolved', () => {
+    // The capped round's result page already shows the answer, so its words grid has
+    // nothing left to hide: every given hint is named, and the headline is the secret.
+    const over = buildHistory({
+      rankMap: RANKS, tried: ['bois'], hole: hole(1), startRank: 87, secretWord: 'forêt',
+      given: [untaken(3), untaken(40)], over: true,
+    });
+    expect(over.secret).toBe('forêt');
+    expect(over.solved).toBe(false);
+    expect(over.stops.every((s) => !s.masked && s.word !== '')).toBe(true);
+    expect(over.stops.find((s) => s.rank === 3)).toMatchObject({ word: 'arbre', display: 'arbre', given: true, masked: false, taken: false });
+    // The same log while the round is live keeps the untaken hint masked and the secret censored.
+    const live = buildHistory({
+      rankMap: RANKS, tried: ['bois'], hole: hole(1), startRank: 87, secretWord: 'forêt',
+      given: [untaken(3)],
+    });
+    expect(live.secret).toBeNull();
+    expect(live.stops.find((s) => s.rank === 3)).toMatchObject({ word: '', masked: true });
   });
 });

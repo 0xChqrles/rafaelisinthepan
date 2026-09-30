@@ -63,15 +63,46 @@ describe('buildSlice — what a puzzle keeps', () => {
     expect(buildSlice(PUZZLE).holes.nuit.n).toBe(4);
   });
 
-  it('is ONE entry per secret, however many occurrences the sentence has', () => {
-    // Three holes, two secrets: the repeated occurrence is not a second progress target.
-    expect(PUZZLE.holes).toHaveLength(3);
-    expect(Object.keys(buildSlice(PUZZLE).holes)).toHaveLength(2);
-  });
-
   it('refuses a puzzle whose secret has no rank map rather than shipping a blind slice', () => {
     const broken = { ...PUZZLE, ranks: { nuit: PUZZLE.ranks.nuit } };
     expect(() => buildSlice(broken)).toThrow(/phare/);
+  });
+
+  it('keeps a secret whose slug is `constructor`, never reading it off the prototype chain', () => {
+    // A secret slug is all lowercase letters, so `constructor` is a word a puzzle can
+    // genuinely be built on. Skipped as "already seen", it would be absent from the slice
+    // and the round would report SOLVED once the other secret was found.
+    const puzzle: Puzzle = {
+      lang: 'en',
+      revision: 'a1b2c3d4e5f60718',
+      words: ['the', 'phare', 'constructor'],
+      holes: [
+        { pos: 1, secret: { word: 'phare', slug: 'phare' }, start: { word: 'quai', slug: 'quai' }, start_rank: 2 },
+        {
+          pos: 2,
+          secret: { word: 'constructor', slug: 'constructor' },
+          start: { word: 'builder', slug: 'builder' },
+          start_rank: 2,
+        },
+      ],
+      ranks: {
+        phare: PUZZLE.ranks.phare,
+        constructor: {
+          constructor: { word: 'constructor', rank: 0 },
+          maker: { word: 'maker', rank: 1, dq: 255 },
+          builder: { word: 'builder', rank: 2, dq: 0 },
+        },
+      },
+    };
+    const slice = buildSlice(puzzle);
+    expect(Object.keys(slice.holes).sort()).toEqual(['constructor', 'phare']);
+    // …and it is still there once the slice has been through the stored form.
+    const stored = decodeSlice(encodeSlice(slice));
+    expect(stored).toEqual(slice);
+    for (const read of [slice, stored]) {
+      expect(deriveRound(read, ['phare']).solved).toBe(false);
+      expect(deriveRound(read, ['phare', 'constructor']).solved).toBe(true);
+    }
   });
 });
 

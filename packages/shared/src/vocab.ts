@@ -39,3 +39,7 @@ export interface VocabBuild {
 // serve?" — read it with `Object.hasOwn`, never a bare index (a prototype key like
 // `constructor` would pass).
 export const VOCAB_BUILDS: Readonly<Record<string, VocabBuild>> = builds;
+
+// EVERY supported language, in the record's own order — what "all of them" iterates.
+// Whether ONE language is supported stays an `Object.hasOwn(VOCAB_BUILDS, lang)` question.
+export const SUPPORTED_LANGS: readonly string[] = Object.keys(VOCAB_BUILDS);

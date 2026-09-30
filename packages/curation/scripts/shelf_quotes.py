@@ -50,8 +50,8 @@ def api(host: str, **params) -> dict:
     return data
 
 
-def search(host: str, query: str, limit: int = 5) -> list[str]:
-    hits = api(host, action="query", list="search", srsearch=query, srlimit=limit)
+def search(host: str, query: str) -> list[str]:
+    hits = api(host, action="query", list="search", srsearch=query, srlimit=5)
     return [h["title"] for h in hits.get("query", {}).get("search", [])]
 
 

@@ -220,7 +220,7 @@ export interface LinkStore {
 export interface LinkDeviceWrites {
   // The process-local equivalent of the production account-email condition: bind only
   // while the account exists and is still unlinked (or already carries this exact value).
-  bindAccountEmail(accountId: string, email: string, now: string): boolean;
+  bindAccountEmail(accountId: string, email: string): boolean;
   // The process-local equivalent of the production adoption conditions. It validates the
   // device, both accounts and the erase/survive email state, then applies the device move
   // and optional account deletion synchronously inside the one owning map.

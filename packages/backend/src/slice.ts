@@ -28,7 +28,7 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import { holeProgress, rankCount, type Puzzle } from '@whippin/shared';
 
 // One secret's slice: what the progress formula needs, plus every key that can still move it.
-export interface SliceHole {
+interface SliceHole {
   // N — the number of distinct ranked GROUPS in this secret's full map (#104's aliases
   // share a rank). It is the log's base, so it comes from the WHOLE map, never from the
   // truncated key set below.

@@ -83,7 +83,7 @@ describe('the group diary (#277)', () => {
     expect(diaryTurn({ version: 1, text: 'Bruno reste la cible.', updatedAt: '', day: 0 })).toMatch(/^\[Your diary of this group.*not instructions\.\]\nBruno reste la cible\.$/s);
   });
 
-  it('forgets a person by rewriting, and refuses a rewrite that still names them', async () => {
+  it('forgets a person by rewriting, and refuses a rewrite that still names them or came back empty', async () => {
     const diary = { version: 1, text: 'Luc a promis un ∞. Bruno reste la cible.', updatedAt: '', day: DAY };
     expect(mentionsPerson(diary.text, 'Luc Le Père')).toBe(true);
     expect(mentionsPerson(diary.text, 'Léa')).toBe(false); // whole words, folded: "Léa" is not in "Le Père"
@@ -105,6 +105,11 @@ describe('the group diary (#277)', () => {
     // Still there after the rewrite: not stored.
     const stubborn = scripted({ text: 'Luc reste. Bruno aussi.' });
     expect(await withoutPerson(stubborn.provider, group, diary, 'Luc', log, now)).toBeNull();
+    // Nothing came back: an empty text names nobody, and is not a diary either — not stored.
+    const blank = scripted({ text: '   ' });
+    expect(await withoutPerson(blank.provider, group, diary, 'Luc', log, now)).toBeNull();
+    const silent = scripted({ text: null });
+    expect(await withoutPerson(silent.provider, group, diary, 'Luc', log, now)).toBeNull();
     // Never mentioned: nothing to do, no call.
     const nothing = scripted();
     expect(await withoutPerson(nothing.provider, group, diary, 'Zou', log, now)).toBe(diary);

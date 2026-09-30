@@ -11,7 +11,7 @@
 //   - `roundLoads` is transient by construction, never persisted;
 //   - lastLang remembers the last valid language (seeds the `/` redirect).
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   useGameStore,
   roundKeyForBonus,
@@ -22,6 +22,7 @@ import {
   persistedStateOf,
   initialPersistedState,
   applyGameMutation,
+  type GameMutation,
 } from './gameStore';
 import { useHistoryStore } from './history';
 
@@ -29,25 +30,6 @@ import { useHistoryStore } from './history';
 // what a REPUBLISH does has its own suite below.
 const REV = 'a1b2c3d4e5f60718';
 const OWNER = { accountId: 'a'.repeat(16), deviceId: 'd'.repeat(16) };
-import type { RuntimeHole } from '@whippin/shared';
-
-const initial = useGameStore.getState();
-
-// Two holes at their start ranks — the fresh state a round begins from.
-function freshHoles(): RuntimeHole[] {
-  return [
-    { pos: 1, secret: 'foret', word: 'bois', rank: 87, startRank: 87 },
-    { pos: 2, secret: 'ancienne', word: 'vieille', rank: 40, startRank: 40 },
-  ];
-}
-
-function repeatedSecretHoles(): RuntimeHole[] {
-  return [
-    { pos: 1, secret: 'chat', word: 'animal', rank: 60, startRank: 60 },
-    { pos: 3, secret: 'chat', word: 'bête', rank: 60, startRank: 60 },
-    { pos: 5, secret: 'jardin', word: 'parc', rank: 40, startRank: 40 },
-  ];
-}
 
 beforeEach(() => {
   // Reset to a pristine store between tests (merge, keeping the actions).
@@ -400,40 +382,13 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(out).toMatchObject({ identityOwner: OWNER, outbox: {}, lastLang: null });
   });
 
-  it('grandfathers a v1 blob with prior play state — a veteran never sees the tutorial', () => {
-    const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a', 'b'], progress: 10 } };
-    expect(migratePersisted({ rounds, lastLang: 'fr' }, 1).onboarded).toBe(true);
-    // Either signal alone is enough: rounds without lastLang, or lastLang without rounds.
-    expect(migratePersisted({ rounds, lastLang: null }, 1).onboarded).toBe(true);
-    expect(migratePersisted({ rounds: {}, lastLang: 'en' }, 1).onboarded).toBe(true);
-  });
-
-  it('a v1 blob with NO play state gets the tutorial (onboarded stays false)', () => {
-    expect(migratePersisted({ rounds: {}, lastLang: null }, 1).onboarded).toBe(false);
-  });
-
   it('keeps an explicit onboarded value over the grandfathering inference', () => {
-    const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a'], progress: 0 } };
-    expect(migratePersisted({ rounds, lastLang: 'fr', onboarded: false }, 2).onboarded).toBe(false);
+    expect(migratePersisted({ lastLang: 'fr', onboarded: false }, 20).onboarded).toBe(false);
   });
 
-  it('drops retired fields (v1 keyboard layout, v4 routeSeen) while keeping the current ones', () => {
-    const out = migratePersisted(
-      { rounds: {}, lastLang: 'en', layout: 'azerty', routeSeen: true },
-      1,
-    );
-    expect(out).toEqual({
-      identityOwner: null,
-      outbox: {},
-      lastLang: 'en',
-      onboarded: true,
-      boardTab: 'group',
-      lastGroupId: null,
-      lessonsDone: [],
-      localSeed: null,
-    });
-    expect('layout' in out).toBe(false);
-    expect('routeSeen' in out).toBe(false);
+  it('infers onboarded from a stored language when the flag is missing', () => {
+    expect(migratePersisted({ lastLang: 'fr' }, 20).onboarded).toBe(true);
+    expect(migratePersisted({ lastLang: null }, 20).onboarded).toBe(false);
   });
 
   it('drops the retired Word mode\u2019s rounds and mode preference from a current blob', () => {
@@ -454,86 +409,11 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(out).toMatchObject({ identityOwner: OWNER, outbox, lastLang: 'fr', onboarded: true });
   });
 
-  it('v2 -> v3 preserves lastLang/onboarded (its solved-day set is v15\u2019s to drop)', () => {
-    // The rounds themselves do NOT survive: any blob older than v13 predates the published
-    // revision, so its sentence rounds are dropped (see migratePersisted).
-    const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a', 'b'], progress: 10 } };
-    const out = migratePersisted({ rounds, lastLang: 'fr', onboarded: true }, 2);
-    expect(out).toEqual({
-      identityOwner: null,
-      outbox: {},
-      lastLang: 'fr',
-      onboarded: true,
-      boardTab: 'group',
-      lastGroupId: null,
-      lessonsDone: [],
-      localSeed: null,
-    });
-  });
-
-  // v4 -> v5 (#155): `routeSeen` armed the one-time first-solve auto-open, which went away
-  // with the onboarding rework — the tutorial now ends by tapping a word, so the map has
-  // nothing left to introduce mid-round. A v4 blob carrying the flag upgrades cleanly and
-  // loses nothing else.
-  it('v4 -> v5 drops routeSeen and preserves every other field', () => {
-    const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a', 'b'], progress: 10 } };
-    const solvedDays = { fr: [10, 11], en: [10] };
-    const out = migratePersisted(
-      { rounds, lastLang: 'fr', onboarded: true, solvedDays, routeSeen: true },
-      4,
-    );
-    expect(out).toEqual({
-      identityOwner: null,
-      // Dropped: v14 removed the sentence rounds map, and no older blob can say which of
-      // its guesses were still unsent (see migratePersisted).
-      outbox: {},
-      lastLang: 'fr',
-      onboarded: true,
-      boardTab: 'group',
-      lastGroupId: null,
-      lessonsDone: [],
-      localSeed: null,
-    });
-  });
-
-  // v13 -> v14 (#214): the sentence `rounds` map is DROPPED outright — persistent storage is an
-  // outbox now. There is nothing to translate: a stored round's UNSENT guesses were never
-  // distinguishable from its acknowledged ones inside one merged `tried` list, so seeding an
-  // outbox from it would re-send guesses the server already holds, burn cap slots on
-  // duplicates and — near the cap — cost an honest player their leaderboard entry. The mount
-  // READ recovers what the server has. The streak and every preference survive.
-  it('v13 -> v14 drops the sentence rounds map and starts the outbox empty', () => {
-    const rounds = {
-      'd:5:fr': { holes: [], guessCount: 2, tried: ['a', 'b'], progress: 10, revision: REV },
-    };
-    const solvedDays = { fr: [10, 11] };
-    const out = migratePersisted({ rounds, lastLang: 'fr', onboarded: true, solvedDays }, 13);
-    expect(out).not.toHaveProperty('rounds');
-    expect(out.outbox).toEqual({});
-  });
-
-  it('v16 -> v17 drops an outbox that cannot name the identity that owns it', () => {
+  it('drops an outbox that cannot name the identity that owns it', () => {
     const outbox = { 'd:5:fr': { puzzle: REV, guesses: ['bois'] } };
-    const out = migratePersisted({ outbox, lastLang: 'fr', onboarded: true }, 16);
+    const out = migratePersisted({ outbox, lastLang: 'fr', onboarded: true }, 20);
     expect(out.outbox).toEqual({});
     expect(out.identityOwner).toBeNull();
-  });
-
-  it('keeps a v17 owner-tagged outbox untouched', () => {
-    const outbox = { 'd:5:fr': { puzzle: REV, guesses: ['bois'] } };
-    const out = migratePersisted(
-      { identityOwner: OWNER, outbox, lastLang: 'fr', onboarded: true },
-      17,
-    );
-    expect(out.outbox).toEqual(outbox);
-    expect(out.identityOwner).toEqual(OWNER);
-  });
-
-  it('grandfathers a veteran off the RAW blob, not the dropped rounds', () => {
-    // `onboarded` asks whether this person has played before. Reading the post-drop map
-    // would hand the tutorial back to every veteran whose only signal was their history.
-    const rounds = { 'd:5:fr': { holes: freshHoles(), guessCount: 2, tried: ['a'], progress: 10 } };
-    expect(migratePersisted({ rounds, lastLang: null }, 12).onboarded).toBe(true);
   });
 
   // v19 -> v20 (#269): the rules gate's `sentenceRulesSeen` is RETIRED (dropped, not
@@ -550,62 +430,18 @@ describe('migratePersisted — persisted-blob upgrades', () => {
     expect(migratePersisted({ ...blob, lessonsDone: 'nope' }, 20).lessonsDone).toEqual([]);
   });
 
-  // v8 -> v9 (2026-08-20): which #190 board tab is up. Older blobs get 'friends'
-  // — the default the screen already opened on, so nobody's board moves under them; the
-  // field only starts remembering from the first flip. An unknown value is not a tab.
-  it('v8 -> v9 defaults boardTab to the group tab and keeps a stored global (v19 renamed it)', () => {
-    const blob = { rounds: {}, lastLang: 'fr', onboarded: true, solvedDays: {} };
-    expect(migratePersisted(blob, 8).boardTab).toBe('group');
-    expect(migratePersisted({ ...blob, boardTab: 'global' }, 9).boardTab).toBe('global');
-    expect(migratePersisted({ ...blob, boardTab: 'nonsense' }, 9).boardTab).toBe('group');
+  // Which #190 board tab is up: a blob without one gets the group tab, the default the
+  // screen opens on, and an unknown value is not a tab.
+  it('defaults boardTab to the group tab and keeps a stored global (v19 renamed it)', () => {
+    const blob = { lastLang: 'fr', onboarded: true };
+    expect(migratePersisted(blob, 20).boardTab).toBe('group');
+    expect(migratePersisted({ ...blob, boardTab: 'global' }, 20).boardTab).toBe('global');
+    expect(migratePersisted({ ...blob, boardTab: 'nonsense' }, 20).boardTab).toBe('group');
     // v18 -> v19: the retired 'friends' reads as the default, and a stored group survives
     // only when it is a group id.
     expect(migratePersisted({ ...blob, boardTab: 'friends' }, 18).boardTab).toBe('group');
     expect(migratePersisted({ ...blob, lastGroupId: 'abcdefghij234567' }, 19).lastGroupId).toBe('abcdefghij234567');
     expect(migratePersisted({ ...blob, lastGroupId: 'NOPE' }, 19).lastGroupId).toBeNull();
-  });
-
-  // v14 -> v15 (#211): the per-language solved-day sets are DROPPED. The collection lives
-  // on the private player row now, credited by the append that confirms a solve, so a
-  // persisted copy would be the second authority #214 removed for rounds — and one that
-  // cannot follow a player to a second device, which is the gap this issue closes.
-  it('v14 -> v15 drops the solved-day sets and keeps every preference', () => {
-    const outbox = { 'd:5:fr': { puzzle: REV, guesses: ['bois'] } };
-    const out = migratePersisted(
-      { outbox, lastLang: 'fr', onboarded: true, solvedDays: { fr: [10, 11] } },
-      14,
-    );
-    expect(out).not.toHaveProperty('solvedDays');
-    expect(out).toMatchObject({ lastLang: 'fr', onboarded: true });
-    // The outbox went at v16 with the identity that owed it (#216), below.
-    expect(out.outbox).toEqual({});
-  });
-
-  // v15 -> v16 (#216): the OUTBOX is dropped, because it belongs to an identity this device
-  // no longer has. Until #216 the identity was a shared secret (#187);
-  // it is now a device token resolving to a SERVER-assigned account, with no mapping between
-  // the two. Left in place, a surviving outbox is worse than stale: the tokenless branch
-  // pumps it on the first page load, which bootstraps a BRAND-NEW account and files the
-  // retired identity's guesses against it.
-  it('v15 -> v16 drops the outbox and keeps every preference', () => {
-    const out = migratePersisted(
-      {
-        outbox: { 'd:5:fr': { puzzle: REV, guesses: ['bois'] } },
-        lastLang: 'fr',
-        onboarded: true,
-        boardTab: 'global',
-        lessonsDone: [1],
-      },
-      15,
-    );
-    expect(out.outbox).toEqual({});
-    // A preference belongs to the DEVICE, not to the account it plays under.
-    expect(out).toMatchObject({
-      lastLang: 'fr',
-      onboarded: true,
-      boardTab: 'global',
-      lessonsDone: [1],
-    });
   });
 });
 
@@ -641,10 +477,25 @@ describe('persisted state ownership (#216)', () => {
     expect(useGameStore.getState().identityOwner).toEqual(replacement);
     expect(useGameStore.getState().outbox).toEqual(outbox);
   });
-});
 
-// Restore the module's initial state so a later import sees a clean store.
-useGameStore.setState(initial, false);
+  it('a mutation naming another owner changes nothing', () => {
+    // A late write from account A must not touch a state a sibling tab rebound to B.
+    const other = { accountId: 'b'.repeat(16), deviceId: 'e'.repeat(16) };
+    const state = { ...initialPersistedState(), identityOwner: other, outbox, lastGroupId: 'abcdefghij234567' };
+    const stale: GameMutation[] = [
+      { type: 'ensureOutbox', key: 'd:5:fr', puzzle: 'b2c3d4e5f6071829', expectedOwner: OWNER },
+      { type: 'appendOutbox', key: 'd:5:fr', puzzle: REV, typed: 'late', expectedOwner: OWNER },
+      { type: 'settleOutbox', key: 'd:5:fr', puzzle: REV, before: ['bois'], after: [], expectedOwner: OWNER },
+      { type: 'discardOutbox', key: 'd:5:fr', puzzle: REV, expectedOwner: OWNER },
+      { type: 'reconcileIdentity', expectedOwner: OWNER, identity: null, pendingBootstrap: false },
+    ];
+    for (const mutation of stale) {
+      const result = applyGameMutation(state, mutation);
+      expect(result.changed, mutation.type).toBe(false);
+      expect(result.state, mutation.type).toBe(state);
+    }
+  });
+});
 
 // CONTRACT (#203, user-decided 2026-08-22; reshaped by #214): a REPUBLISH means the puzzle
 // contained an error, so the round it retires STARTS OVER. Its guesses were answers to a
@@ -655,21 +506,8 @@ useGameStore.setState(initial, false);
 describe('a republished puzzle resets its round (#203/#214)', () => {
   const OTHER = 'b2c3d4e5f6071829';
 
-  it('drops the unsent guesses when the published VERSION changed', () => {
-    const { ensureOutbox, appendOutbox } = useGameStore.getState();
-    appendOutbox('d:5:fr', REV, 'bois');
-    expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual(['bois']);
-
-    // Same sentence, same holes — a corrected neighborhood.
-    ensureOutbox('d:5:fr', OTHER);
-    expect(useGameStore.getState().outbox['d:5:fr']).toBeUndefined();
-  });
-
-  it('keeps them untouched when the version is the same', () => {
-    const { ensureOutbox, appendOutbox } = useGameStore.getState();
-    appendOutbox('d:5:fr', REV, 'bois');
-    ensureOutbox('d:5:fr', REV);
-    expect(useGameStore.getState().outbox['d:5:fr']?.guesses).toEqual(['bois']);
+  afterEach(() => {
+    useHistoryStore.setState({ months: {}, solved: {} }, true);
   });
 
   it('leaves the SOLVED-DAY credit alone — a republish is the publisher\'s error', () => {

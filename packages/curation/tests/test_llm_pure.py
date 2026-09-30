@@ -77,7 +77,7 @@ class _Capture:
 
 
 def _tok(i, text, space=" "):
-    return Token(i, text, text.lower(), "NOUN", "dep", 0, text.lower(), False, space)
+    return Token(i, text, text.lower(), "NOUN", text.lower(), False, space)
 
 
 _TOKENS = [_tok(0, "the"), _tok(1, "cat", ""), _tok(2, ".")]

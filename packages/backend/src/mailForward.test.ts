@@ -152,6 +152,31 @@ describe('what a forwarded copy changes', () => {
     expect(readHeader(out, 'subject')).toBe('hi');
   });
 
+  it('leaves no header hidden behind a lone CR for a later parser to find', () => {
+    // A bare CR is no line break to this function, so what follows it is never classified.
+    // Forwarded as is, a parser that DOES break on it would read the two lines as headers.
+    const hostile = message([
+      'From: ada@example.com',
+      'Subject: hi\rX-SES-CONFIGURATION-SET: somebody-elses\rBcc: victim@example.com',
+      'To: hello@whippin.ai',
+    ]);
+    const forwarded = forwardedMessage(hostile, { mailFrom: MAIL_FROM });
+    expect(splitMessage(forwarded).header).not.toMatch(/\r(?!\n)/);
+    const out = fieldsOf(forwarded);
+    expect(out.some((f) => /^(x-ses-|bcc\s*:)/i.test(f))).toBe(false);
+    // The text stays where it was written: inside the Subject, as text.
+    expect(readHeader(out, 'subject')).toContain('X-SES-CONFIGURATION-SET');
+    expect(readHeader(out, 'to')).toBe('hello@whippin.ai');
+  });
+
+  it('forwards a message whose lines end in CR CR LF byte for byte', () => {
+    // A CR that ends a line hides nothing. Rewriting it would turn the CR-only separator
+    // line into a folded continuation and glue the body into the header block.
+    const sloppy = Buffer.from('From: a@b.c\r\r\nSubject: hi\r\r\n\r\r\nBODY: text\r\r\n', 'latin1');
+    const forwarded = forwardedMessage(sloppy, { mailFrom: MAIL_FROM }).toString('latin1');
+    expect(forwarded).toContain('Subject: hi\r\r\n\r\r\nBODY: text\r\r\n');
+  });
+
   it('falls back to the bare sender when there is no envelope address', () => {
     expect(forwardFrom(undefined, MAIL_FROM)).toBe(`<${MAIL_FROM}>`);
     expect(forwardFrom('', MAIL_FROM)).toBe(`<${MAIL_FROM}>`);
@@ -372,20 +397,14 @@ describe('reading the bounds from the environment', () => {
   it('falls back rather than letting a non-number remove the cap', () => {
     // `Number('9mb')` is NaN, and NaN loses every comparison — so a typo would not fail,
     // it would silently disable the size gate and hand SES a 40 MB message.
-    const env = { ...process.env };
-    Object.assign(process.env, {
+    const config = forwardConfig({
       MAIL_BUCKET: 'b',
       MAIL_FROM: MAIL_FROM,
       MAIL_FORWARD_TO: 'ops@example.com',
       MAX_FORWARD_BYTES: '9mb',
       MAIL_RETENTION_DAYS: '',
     });
-    try {
-      const config = forwardConfig();
-      expect(config.maxBytes).toBe(9 * 1024 * 1024);
-      expect(config.retentionDays).toBe(30);
-    } finally {
-      process.env = env;
-    }
+    expect(config.maxBytes).toBe(9 * 1024 * 1024);
+    expect(config.retentionDays).toBe(30);
   });
 });

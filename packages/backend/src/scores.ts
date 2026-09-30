@@ -1,5 +1,5 @@
-// The score route: `GET /scores?lang=&date=` — the day's anonymous population, as
-// the solved screen and the post-mortem read it.
+// The score route: `GET /scores?lang=&date=[&id=]` — the day's anonymous population, and
+// the band of the caller who names their public id.
 //
 // IT IS READ-ONLY SINCE #203. The score used to be something the CLIENT claimed, POSTed
 // with an invisible Turnstile token and validated against a ceiling. With the
@@ -28,11 +28,9 @@ export function hashClientIp(ip: string, secret: string): string {
 }
 
 // The histogram is DERIVED from the day's per-player rows at read time (#187): one bucket
-// per distinct recorded score, ascending, each an exact inclusive range. The rows are a
-// strict superset of the retired bucket counters, so the response shape the solved screen
-// consumes (#170/#176/#180) is unchanged — only the numbers' origin moved. `own` used to
-// locate the caller's score on POST; with the POST retired (#203) every read is the
-// anonymous one and the client locates its own count in the ranges.
+// per distinct recorded score, ascending, each an exact inclusive range. `own` is the
+// caller's recorded score — null when they named nobody or the population holds no row for
+// them — and `bucket` the index of its band.
 export function derivedHistogram(rows: readonly ScoreRow[], own: number | null): ScoreHistogram {
   const counts = new Map<number, number>();
   for (const row of rows) counts.set(row.score, (counts.get(row.score) ?? 0) + 1);
@@ -83,9 +81,9 @@ export async function handleScores(
     return errorResponse(400, 'bad_request', 'Query parameter "id" must be a player id.', responseHeaders);
   }
 
-  // A score population exists only for a published daily.
-  const puzzle = await puzzleStore.getPuzzle(date, lang);
-  if (puzzle == null) {
+  // A score population exists only for a published daily. Only its existence is asked:
+  // nothing here reads the artifact.
+  if (!(await puzzleStore.hasPuzzle(date, lang))) {
     return errorResponse(
       404,
       'not_found',

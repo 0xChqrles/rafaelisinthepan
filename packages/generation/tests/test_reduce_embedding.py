@@ -61,6 +61,20 @@ def test_rule_order_single_letter_before_stopword():
     assert red.classify("a", red.make_rules("en")) == "single-letter"
 
 
+def test_token_pattern_is_the_languages_letters_with_internal_hyphens():
+    # The shape the reference wordlist is normalized through: the language's lowercase
+    # letters, hyphens only BETWEEN letters — no uppercase, digit, apostrophe or markup.
+    fr = red.token_pattern("fr")
+    for ok in ("arc-en-ciel", "forêt"):
+        assert fr.match(ok), ok
+    for bad in ("-x", "x-", "a--b", "Cat", "h2o", "co²", "l'animal"):
+        assert not fr.match(bad), bad
+    # the alphabet is per language: an accented letter is not an English token
+    en = red.token_pattern("en")
+    assert en.match("apple")
+    assert not en.match("café")
+
+
 # --- header detection / output path ------------------------------------------------
 
 def test_detect_header():
@@ -179,6 +193,16 @@ def test_hors_dico_rejects_noise_keeps_inflected_forms(monkeypatch, tmp_path):
         assert absent not in kept
 
 
+def test_hors_dico_compares_the_pre_slug_token(monkeypatch, tmp_path):
+    # Accents are kept on both sides: the dico holds «forêt», so its accent-stripped
+    # spelling is an absent token — even though both fold to the one slug "foret".
+    lines = [
+        "foret 0 0\n",   # unaccented variant, absent from dico -> hors-dico
+        "forêt 0 0\n",   # in dico                              -> keep
+    ]
+    assert _run_dico(monkeypatch, tmp_path, lines) == ["forêt"]
+
+
 def test_hors_dico_applies_to_every_non_allowlisted_survivor(monkeypatch, tmp_path):
     # Even the very FIRST (most frequent) out-of-dico, non-allowlisted token is rejected:
     # there is no frequency exemption. gksudo leads the file yet is still dropped.
@@ -273,17 +297,21 @@ def test_reduce_emits_slugged_vocab_of_kept_words(monkeypatch, tmp_path):
     assert meta["embedding"] == "src"
 
 
-def test_missing_wordlist_fails_loud(monkeypatch, tmp_path):
+def test_missing_wordlist_fails_loud(monkeypatch, tmp_path, capsys):
     # A missing dico must ERROR, never silently ship unfiltered vocab.
+    # --no-vocab: a run that wrongly went on must not reach the real web/public/vocab.
     src = tmp_path / "src.vec"
     src.write_text("999 2\nforêt 0 0\n", encoding="utf-8")
     monkeypatch.setattr(
         sys, "argv",
         ["reduce", str(src), "--lang", "fr", "--dico", str(tmp_path / "nope.txt"),
-         "--out", str(tmp_path / "out.vec")],
+         "--no-vocab", "--out", str(tmp_path / "out.vec")],
     )
     with pytest.raises(SystemExit):
         red.main()
+    # the named reason, not any exit (argparse exits too), and nothing reduced
+    assert "wordlist hors-dico introuvable" in capsys.readouterr().err
+    assert not (tmp_path / "out.vec").exists()
 
 
 def test_load_dico_reads_plain_and_gzip_keeping_accents(tmp_path):
@@ -297,3 +325,17 @@ def test_load_dico_reads_plain_and_gzip_keeping_accents(tmp_path):
     expected = {"forêt", "chevaux", "arc-en-ciel"}   # blank line ignored, accents kept
     assert red.load_dico(str(plain)) == expected
     assert red.load_dico(str(gz)) == expected
+
+
+# --- the COMMITTED wordlists: the shape hors-dico relies on ------------------------
+
+@pytest.mark.parametrize("lang", ["fr", "en"])
+def test_the_committed_wordlist_is_token_shaped_sorted_and_unique(lang):
+    # Hors-dico subsumes the old uppercase / non-alphabet rules ONLY because the
+    # wordlist holds nothing but token-rule words; sorted + unique is what makes the
+    # committed file deterministic.
+    token_re = red.token_pattern(lang)
+    with gzip.open(red.dico_path(lang), "rt", encoding="utf-8") as f:
+        words = [line.rstrip("\n") for line in f]
+    assert [w for w in words if not token_re.match(w)] == []
+    assert words == sorted(set(words))

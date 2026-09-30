@@ -89,6 +89,47 @@ describe('memoryLinkStore.verify — the attempt ladder (#204)', () => {
   });
 });
 
+// CONTRACT: a code lives LINK_CODE_TTL_SECONDS, and the stored `expiresAt` is what the
+// store enforces — the table's own TTL deletion lags, so a challenge still held past its
+// instant keeps answering `expired` until a resend replaces it.
+describe('memoryLinkStore — an expired challenge (#204)', () => {
+  const EXPIRY = new Date(challenge().expiresAt * 1_000);
+  const BEFORE = new Date(EXPIRY.getTime() - 1_000);
+
+  it('answers `expired` AT its instant, for the right code and a wrong one, counting no attempt', async () => {
+    const links = store();
+    await links.putChallenge(HASH, challenge());
+    const expired = { outcome: 'expired', attemptsLeft: 0 };
+    await expect(links.verify(HASH, RIGHT, EXPIRY)).resolves.toEqual(expired);
+    await expect(links.verify(HASH, WRONG, EXPIRY)).resolves.toEqual(expired);
+    // Asked again it is STILL expired — never "no code was asked for".
+    await expect(links.verify(HASH, WRONG, EXPIRY)).resolves.toEqual(expired);
+    // Read a second before its instant, the challenge shows every attempt it started with:
+    // the expired calls spent none.
+    await expect(links.verify(HASH, WRONG, BEFORE)).resolves.toEqual({
+      outcome: 'wrong',
+      attemptsLeft: LINK_CODE_MAX_ATTEMPTS - 1,
+    });
+  });
+
+  it('refuses to BIND on an expired challenge, and creates no binding', async () => {
+    const links = store();
+    await links.putChallenge(HASH, challenge());
+    const bind = (now: Date) =>
+      links.bind({
+        emailHash: HASH,
+        codeHash: RIGHT,
+        email: 'zoe@example.com',
+        accountId: 'aaaaaaaaaaaaaaaa',
+        now: now.toISOString(),
+      });
+    await expect(bind(EXPIRY)).resolves.toBe('challenge_changed');
+    await expect(links.binding(HASH)).resolves.toBeNull();
+    // The same call a second earlier is the one that binds.
+    await expect(bind(BEFORE)).resolves.toBe('bound');
+  });
+});
+
 describe('memoryLinkStore.binding (#204)', () => {
   it('answers WHICH account an address reaches, and nothing else', async () => {
     const links = store();

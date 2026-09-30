@@ -17,6 +17,13 @@ describe('periodRange (#271)', () => {
     // A Monday is a week of one day; a Wednesday, three.
     expect(periodRange('week', '2026-09-07')).toEqual(['2026-09-07']);
     expect(periodRange('week', '2026-09-09')).toEqual(['2026-09-07', '2026-09-08', '2026-09-09']);
+    // The week is the CALENDAR's: it reaches back across a month's first day, and a year's.
+    expect(periodRange('week', '2026-10-01')).toEqual([
+      '2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01',
+    ]);
+    expect(periodRange('week', '2027-01-01')).toEqual([
+      '2026-12-28', '2026-12-29', '2026-12-30', '2026-12-31', '2027-01-01',
+    ]);
   });
 
   it('a month runs from its first day to the day asked about, across a week boundary', () => {

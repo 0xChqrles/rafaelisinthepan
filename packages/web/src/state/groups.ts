@@ -16,7 +16,7 @@ import { groupsUrl, parseGroups, postGroupsBody, type GroupsAnswer } from '../ap
 import { currentRequestIdentity, deviceIdentity, identityEpochOf } from '../identity';
 import { adoptSignedOutVerdict } from './signedOutVerdict';
 
-export type GroupsPhase = 'idle' | 'loading' | 'ready' | 'failed';
+type GroupsPhase = 'idle' | 'loading' | 'ready' | 'failed';
 
 interface GroupsState {
   phase: GroupsPhase;

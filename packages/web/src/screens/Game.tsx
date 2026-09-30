@@ -5,13 +5,12 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from 'react';
 import { guessKey, replayHoles } from '../game/scoring';
-import { playLogFor, withoutDeferred } from '../game/playLog';
+import { playLogFor, roundCapped, withoutDeferred } from '../game/playLog';
 import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
-import { latestMaskedPick, retireDisplacedPicks, selectWord, type WordPick } from '../game/wordWheel';
+import { latestMaskedPick, retireDisplacedPicks, selectWord, shownHolesFor, type WordPick } from '../game/wordWheel';
 import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import useRoundSync from '../hooks/useRoundSync';
@@ -37,11 +36,7 @@ import { navigate } from '../routing';
 import { pathForDay, pathForGame, pathForLesson } from '../langs';
 import { MASK, buildHistory } from '../game/history';
 import { SCRAMBLE_MS, useScramble } from '../hooks/useScramble';
-
-// How long an uncyphered ghost stands in the prompt, as a typed word, ONCE THE LAST
-// LETTER HAS SETTLED, before the prompt clears and the guess's choreography begins.
-export const REVEAL_HOLD_MS = 500;
-
+import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, REVEAL_HOLD_MS, STAGGER_MS } from '../game/timing';
 import type { HistoryStop } from '../game/history';
 import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
 import { track } from '../analytics';
@@ -50,7 +45,6 @@ import {
   dateForDayNumber,
   isBonusRef,
   puzzleAddress,
-  ROUND_GUESS_CAP,
   type PuzzleRef,
 } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -59,29 +53,17 @@ import { prefetchTurnstileTokens } from '../turnstile';
 import { deviceIdentity, ensureDeviceIdentity, useDeviceIdentity } from '../identity';
 import ErrorScreen from '../components/ErrorScreen';
 import type {
-  HitState,
   Hole,
   Puzzle,
   RankEntry,
   RankMap,
-  RuntimeHole,
   Source,
 } from '@whippin/shared';
+import type { HitState, RuntimeHole } from '../game/types';
 
 // Feedback shown under the input is one string. Only INVALID words use it now (red shake +
 // "does not exist"); a valid-but-too-far guess gives per-hole "MISS" feedback on the holes
 // instead, so it needs no under-input message.
-
-// When a guess impacts several holes, effect starts are staggered this many ms apart.
-// Floating distance/MISS feedback uses the same start stagger, then fades as one batch.
-// (The tutorial's board is ONE hole, so it staggers nothing — it takes the intro constant
-// below instead, which is what makes its single hit read like a real one.)
-export const STAGGER_MS = 200;
-// How long the LAST impacted hole's feedback stands before the guess is released into the
-// board (every earlier one stands longer, by the stagger): long enough to read each hole's
-// number over its own hole (user-asked 2026-09-23, "make sure we have the time to see them
-// well"; it was 320).
-export const FLOATING_HIT_INTRO_MS = 800;
 
 const STREAK_AFTER_WORDS_MS = 300;
 
@@ -95,11 +77,6 @@ const STREAK_READ_RETRY_MS = 4_000;
 // fresh array on every render.
 const EMPTY_LOG: string[] = [];
 
-// Deadline for the keyboard's solved-exit beat handing the tray back (see its effect):
-// a generous multiple of the real duration, so it only ever fires if the DOM signal
-// itself was lost.
-export const KB_EXIT_FALLBACK_MS = 1_200;
-
 // Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
 // (existence set + keyboard prefix set) before playing — existence is decided by it,
 // not by ranks. GameRoute supplies the actual app-header renderer; the round puts the
@@ -107,9 +84,9 @@ export const KB_EXIT_FALLBACK_MS = 1_200;
 export default function Game({
   puzzle,
   puzzleRef,
-  isActiveDay = true,
-  early = false,
-  deferResultsAnimation = false,
+  isActiveDay,
+  early,
+  deferResultsAnimation,
 }: {
   puzzle: Puzzle;
   // WHICH puzzle: a game day, or a BONUS (shared bonus.ts) — no day, so never the active
@@ -117,15 +94,15 @@ export default function Game({
   puzzleRef: PuzzleRef;
   // Whether this is the client's active day (false when replaying an archive day, #55):
   // gates the fresh-solve streak celebration and tags solve analytics as archive/live.
-  isActiveDay?: boolean;
+  isActiveDay: boolean;
   // EARLY PLAY (#273): this day is AFTER the client's active one — tomorrow's sentence,
   // opened tonight from today's result. Play stops at the first progress or the third
   // guess, and the keyboard's place counts down to the flip. LIVE: the route reads it off
   // the app's day signal, so the flip itself unlocks the round in an open tab.
-  early?: boolean;
+  early: boolean;
   // The dev streak preview lives above Game in App, so it supplies the same animation gate
   // as the real in-round dialog without coupling the preview to persisted round state.
-  deferResultsAnimation?: boolean;
+  deferResultsAnimation: boolean;
 }) {
   const { vocab, error, retry } = useVocab(puzzle.lang);
 
@@ -395,7 +372,7 @@ function Round({
   // own length can never reveal it, since what counts is what was STORED. A legitimate
   // solve accepted as raw entry 500 is an ordinary solved round: `solved` wins, and the
   // leaderboard entry it earned stands.
-  const capped = server !== null && !server.solved && server.guesses.length >= ROUND_GUESS_CAP;
+  const capped = roundCapped(server);
   // The round is over either way — the difference is what the headline says and whether
   // anything celebrates.
   const finished = solved || capped;
@@ -432,8 +409,8 @@ function Round({
   const [played, setPlayed] = useState(false);
   const gateOpen = identity === null || (!learned && !played && !finished && guessCount === 0);
   useEffect(() => {
-    if (guessCount > 0) markLessonDone(PLAY_LEVEL);
-  }, [guessCount, markLessonDone]);
+    if (guessCount > 0 && !learned) markLessonDone(PLAY_LEVEL);
+  }, [guessCount, learned, markLessonDone]);
   // PLAY, when it is the deploy button: a single tap that creates the account and opens
   // the round — a clear loading state while the bootstrap runs, and the app's error
   // surface when it fails (nothing was created; TRY AGAIN re-runs it).
@@ -698,16 +675,7 @@ function Round({
   // the log holds it (the reveal, or the word typed by hand): derived, so nothing about
   // the pick has to be rewritten when the guess lands.
   const shownHoles = useMemo(
-    () =>
-      holes.map((h, i) => {
-        const p = picked[i];
-        if (!p || h.rank === 0 || p.at !== h.rank || p.rank === h.rank) return h;
-        const hint = p.slug ? shownCharge[i].given.find((g) => g.rank === p.rank) : undefined;
-        if (p.slug && !hint) return h;
-        const revealed = hint?.consumed;
-        const word = revealed ? (ranks[h.secret][p.slug as string]?.word ?? p.word) : p.word;
-        return { ...h, word, rank: p.rank };
-      }),
+    () => shownHolesFor(holes, picked, shownCharge, ranks),
     [holes, picked, shownCharge, ranks],
   );
   const pickWord = useCallback(
@@ -734,12 +702,12 @@ function Round({
   // count ticking — is delayed by exactly that, so it plays on a word already read.
   const [decoding, setDecoding] = useState<string | null>(null); // the key being uncyphered
   const decode = useScramble();
-  // Tapping a hole is available during normal play only, since the 2026-08-14 redesign:
-  // once the solving beats begin, the sentence belongs to the choreography (and then
-  // dissolves), and the tap moves to the result's own secrets in the sentence's page —
-  // which are never disabled, because they only exist once every beat that owned the
-  // sentence is over. The rules GATE does NOT disable the holes: its own copy teaches the
-  // tap, so the gesture must work while the line that teaches it is on screen.
+  // Tapping a hole is available during normal play only: once the solving beats begin, the
+  // sentence belongs to the choreography (and then dissolves), and the tap moves to the
+  // result's own secrets in the sentence's page — which are never disabled, because they
+  // only exist once every beat that owned the sentence is over. The pre-round GATE does NOT
+  // disable the holes: the sentence stands on screen above its buttons, and every hole
+  // opens its wheel there exactly as it does in play.
   //
   // `promptExiting` covers the START of those beats: the prompt leaves on the solving
   // submit while the holes are still resolving, so `boardComplete` — which only follows the
@@ -802,8 +770,11 @@ function Round({
       // The given words as the BOARD shows them: they land with the release beat, like the
       // hole's own swap, so the wheel never names a word the sentence has not caught up to.
       given: shownCharge[historyHole]?.given,
+      // A finished round (solved or capped) shows its answer on the result page, so the
+      // words modal masks nothing and names the secret, found or not.
+      over: finished,
     });
-  }, [historyHole, holes, puzzleHoles, ranks, history, shownCharge]);
+  }, [historyHole, holes, puzzleHoles, ranks, history, shownCharge, finished]);
   const closeHistory = useCallback(() => {
     setHistoryHole(null);
   }, []);
@@ -826,8 +797,8 @@ function Round({
   // own rhythms. All the round contributes is the one fact a hole cannot see for itself: that
   // the SENTENCE is quiet. Guess feedback owns these words while it plays, and the history
   // modal owns the screen while it is open, so the affordance stands down for both — and once
-  // the round is over, stillness is what "done" looks like. The rules gate is NOT a veto:
-  // the holes are live under it (the gate teaches the tap), so the wave advertises them.
+  // the round is over, stillness is what "done" looks like. The pre-round gate is NOT a
+  // veto: the holes stay tappable under it, so the wave keeps advertising them.
   const quiet =
     !boardComplete && !finished && !promptExiting && historyHole === null && hits.length === 0;
 
@@ -1036,7 +1007,6 @@ function Round({
       playLog,
       ranks,
       freshHoles,
-      puzzleHoles,
       chargeState,
       boardComplete,
       finished,

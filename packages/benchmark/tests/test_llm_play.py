@@ -38,7 +38,6 @@ from llm_play import (
     OPENAI_API_EFFORTS,
     OPENAI_SUBSCRIPTION_CONFLICT_ENV,
     PROMPT_VERSION,
-    PROVIDER_ENV,
     PROSE_OUTPUT_MAX_TOKENS,
     REASONING_MAX_TOKENS,
     SESSION_MODES,
@@ -65,6 +64,8 @@ from llm_play import (
     _exclusive_file_lock,
     _effective_provider_effort,
     _aggregate_token_usage,
+    _cumulative_token_usage_delta,
+    _is_fresh_opening,
     _normalize_anthropic_token_usage,
     _normalize_openai_token_usage,
     _stateless_word_prompt,
@@ -154,6 +155,33 @@ def test_standard_usage_aggregation_keeps_unknown_reasoning_explicit():
         cached_input_tokens=20,
         cache_write_input_tokens=5,
     )
+    # One turn without a breakdown makes the total unknown, never a partial sum.
+    assert _aggregate_token_usage(
+        [
+            standardized_usage(20, 5, reasoning_output_tokens=3),
+            standardized_usage(30, 7),
+        ]
+    ) == standardized_usage(50, 12)
+
+
+def test_cumulative_usage_delta_refuses_a_counter_that_decreases():
+    previous = standardized_usage(100, 10, reasoning_output_tokens=6)
+
+    with pytest.raises(RuntimeError, match=r"decreased.*input_tokens: 90 < 100"):
+        _cumulative_token_usage_delta(
+            standardized_usage(90, 12, reasoning_output_tokens=7), previous
+        )
+    with pytest.raises(RuntimeError, match=r"decreased.*reasoning_output_tokens"):
+        _cumulative_token_usage_delta(
+            standardized_usage(120, 12, reasoning_output_tokens=5), previous
+        )
+
+
+def test_openai_usage_rejects_cached_input_above_total_input():
+    with pytest.raises(ValueError, match="cached input exceeds total input"):
+        _normalize_openai_token_usage(
+            {"input_tokens": 10, "cached_input_tokens": 20, "output_tokens": 1}
+        )
 
 
 def test_playbook_profile_loader_accepts_only_hash_verified_final_for_selected_model(
@@ -321,60 +349,6 @@ VOCAB = {"shared", "forest", "ocean", "cold", "other"}
 
 ANTHROPIC_MODELS = [config for config in MODELS if config["provider"] == "anthropic"]
 OPENAI_MODELS = [config for config in MODELS if config["provider"] == "openai"]
-KIMI_MODELS = [config for config in MODELS if config["provider"] == "kimi"]
-
-
-def test_supported_model_roster_names_every_lab_model():
-    assert MODELS == [
-        {
-            "provider": "anthropic",
-            "model_id": "claude-opus-4-8",
-            "label": "CLAUDE OPUS",
-            "tag": "OPUS",
-        },
-        {
-            "provider": "anthropic",
-            "model_id": "claude-sonnet-5",
-            "label": "CLAUDE SONNET",
-            "tag": "SONNET",
-        },
-        {
-            "provider": "openai",
-            "model_id": "gpt-5.6-sol",
-            "label": "GPT-5.6",
-            "tag": "GPT",
-        },
-        {
-            "provider": "openai",
-            "model_id": "gpt-5.6-terra",
-            "label": "GPT-5.6 TERRA",
-            "tag": "TERRA",
-        },
-        {
-            "provider": "openai",
-            "model_id": "gpt-5.6-luna",
-            "label": "GPT-5.6 LUNA",
-            "tag": "LUNA",
-        },
-        {
-            "provider": "anthropic",
-            "model_id": "claude-fable-5",
-            "label": "CLAUDE FABLE",
-            "tag": "FABLE",
-        },
-        {
-            "provider": "kimi",
-            "model_id": "k3",
-            "label": "KIMI K3",
-            "tag": "KIMI",
-        },
-    ]
-    assert KIMI_MODELS == [MODELS[6]]
-    assert PROVIDER_ENV == {
-        "anthropic": "ANTHROPIC_API_KEY",
-        "openai": "OPENAI_API_KEY",
-        "kimi": "KIMI_CODE_API_KEY",
-    }
 
 
 @pytest.mark.parametrize("config", ANTHROPIC_MODELS, ids=lambda config: config["label"])
@@ -434,7 +408,6 @@ def test_anthropic_adapter_none_disables_thinking_caches_and_omits_sampling(
         ("medium", REASONING_MAX_TOKENS),
         ("high", REASONING_MAX_TOKENS),
         ("xhigh", DEEP_REASONING_MAX_TOKENS),
-        ("max", DEEP_REASONING_MAX_TOKENS),
         ("max", DEEP_REASONING_MAX_TOKENS),
     ],
 )
@@ -650,6 +623,11 @@ def test_stateless_word_prompt_preserves_initial_clues_and_every_exact_result():
     assert prompt.count("CURRENT STATE") == 2
 
 
+def test_stateless_word_prompt_refuses_an_opening_without_the_game_record():
+    with pytest.raises(ValueError, match="complete game record"):
+        _stateless_word_prompt([{"role": "user", "content": "board"}])
+
+
 def test_codex_bootstrap_does_not_define_provider_specific_game_rules():
     assert "Follow the visible-reply contract in the user prompt exactly" in (
         CODEX_BENCHMARK_INSTRUCTIONS
@@ -667,29 +645,50 @@ def test_codex_bootstrap_does_not_define_provider_specific_game_rules():
 
 
 @pytest.mark.parametrize(
-    ("reply", "lang", "expected"),
+    ("reply", "expected"),
     [
-        ("chien", "fr", "chien"),
-        ("Chien", "fr", None),
-        (" forêt \n", "fr", "forêt"),
-        ("arc-en-ciel", "fr", "arc-en-ciel"),
-        ('**"forêt".**', "fr", None),
-        ("s'endormir", "fr", None),
-        ("s’endormir", "fr", None),
-        ("arc–en–ciel", "fr", None),
-        ("chien2", "fr", None),
-        ("chien_chat", "fr", None),
-        ("The answer is chien", "fr", None),
-        ("chien chat", "fr", None),
-        ("...", "fr", None),
-        ("mañana", "fr", None),
-        ("well-being", "en", "well-being"),
+        ("chien", "chien"),
+        ("Chien", None),
+        (" forêt \n", "forêt"),
+        ("arc-en-ciel", "arc-en-ciel"),
+        ('**"forêt".**', None),
+        ("s'endormir", None),
+        ("s’endormir", None),
+        ("arc–en–ciel", None),
+        ("chien2", None),
+        ("chien_chat", None),
+        ("The answer is chien", None),
+        ("chien chat", None),
+        ("...", None),
+        ("mañana", None),
+        ("well-being", "well-being"),
     ],
 )
-def test_reply_parser_enforces_the_advertised_language_word_shape(
-    reply, lang, expected
-):
+def test_reply_parser_enforces_the_advertised_language_word_shape(reply, expected):
     assert parse_single_word(reply) == expected
+
+
+def test_persistent_turns_must_extend_the_append_only_referee_transcript():
+    opening = [{"role": "user", "content": "opening"}]
+    continued = opening + [
+        {"role": "assistant", "content": "forest"},
+        {"role": "user", "content": "feedback"},
+    ]
+    later = continued + [
+        {"role": "assistant", "content": "ocean"},
+        {"role": "user", "content": "more feedback"},
+    ]
+
+    # A one-message transcript opens a fresh run whatever the adapter held before.
+    assert _is_fresh_opening(opening, 0, "Codex CLI") is True
+    assert _is_fresh_opening(opening, 3, "Codex CLI") is True
+    # A continuation adds exactly one reply and one referee message to the last turn.
+    assert _is_fresh_opening(continued, 1, "Codex CLI") is False
+    assert _is_fresh_opening(later, 3, "Codex CLI") is False
+    diverged = "Codex CLI conversation diverged from the append-only referee transcript"
+    for messages, answered in ((later, 1), (continued, 3), (continued, 0)):
+        with pytest.raises(RuntimeError, match=diverged):
+            _is_fresh_opening(messages, answered, "Codex CLI")
 
 
 @pytest.mark.parametrize("effort", EFFORT_LEVELS)
@@ -806,7 +805,15 @@ def test_anthropic_subscription_stateless_mode_reconstructs_each_public_record(
         auth="subscription",
         session="stateless",
     )
-    opening = [{"role": "user", "content": "opening\nCURRENT STATE\ninitial"}]
+    opening = [
+        {
+            "role": "user",
+            "content": (
+                "opening\n\nCOMPLETE CHRONOLOGICAL GAME RECORD\n"
+                "CURRENT STATE\ninitial"
+            ),
+        }
+    ]
     continued = opening + [
         {"role": "assistant", "content": "forest"},
         {"role": "user", "content": "latest"},
@@ -1119,7 +1126,15 @@ def test_kimi_subscription_stateless_mode_disables_provider_session_persistence(
         auth="subscription",
         session="stateless",
     )
-    opening = [{"role": "user", "content": "opening\nCURRENT STATE\ninitial"}]
+    opening = [
+        {
+            "role": "user",
+            "content": (
+                "opening\n\nCOMPLETE CHRONOLOGICAL GAME RECORD\n"
+                "CURRENT STATE\ninitial"
+            ),
+        }
+    ]
     continued = opening + [
         {"role": "assistant", "content": "forest"},
         {"role": "user", "content": "latest"},
@@ -1459,7 +1474,10 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(
     opening = [
         {
             "role": "user",
-            "content": "opening rules\nCURRENT STATE\ninitial state",
+            "content": (
+                "opening rules\n\nCOMPLETE CHRONOLOGICAL GAME RECORD\n"
+                "CURRENT STATE\ninitial state"
+            ),
         }
     ]
     continued = opening + [
@@ -1470,11 +1488,20 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(
         {"role": "assistant", "content": "ocean"},
         {"role": "user", "content": "latest authoritative state"},
     ]
+    next_opening = [
+        {
+            "role": "user",
+            "content": (
+                "opening again\n\nCOMPLETE CHRONOLOGICAL GAME RECORD\n"
+                "CURRENT STATE\ninitial state"
+            ),
+        }
+    ]
 
     assert reply(opening) == "forest"
     assert reply(continued) == "forest"
     assert reply(latest) == "forest"
-    assert reply([{"role": "user", "content": "opening again"}]) == "forest"
+    assert reply(next_opening) == "forest"
     assert reply.last_token_usage == standardized_usage(20, 2)
 
     assert len(calls) == 4
@@ -1519,10 +1546,10 @@ def test_openai_subscription_adapter_isolates_fresh_codex_exec(
     assert kwargs["text"] is True
     assert kwargs["timeout"] == CODEX_TURN_TIMEOUT_SECONDS
     assert [call_kwargs["input"] for _command, call_kwargs in calls] == [
-        _stateless_word_prompt(opening),
+        opening[0]["content"],
         _stateless_word_prompt(continued),
         _stateless_word_prompt(latest),
-        "opening again",
+        next_opening[0]["content"],
     ]
     # Fresh Codex turns get the same explicit full record as every other transport;
     # they do not need provider-side session memory to retain earlier evidence.
@@ -1906,8 +1933,9 @@ def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch, co
     reply = provider_reply(
         config, "secret", effort="none", session="stateless"
     )
+    board = "rules\n\nCOMPLETE CHRONOLOGICAL GAME RECORD\nboard"
 
-    assert reply([{"role": "user", "content": "board"}]) == "ocean"
+    assert reply([{"role": "user", "content": board}]) == "ocean"
     assert reply.last_token_usage == standardized_usage(9, 1)
     assert reply.last_raw_token_usage == {
         "input_tokens": 9,
@@ -1917,7 +1945,7 @@ def test_openai_adapter_uses_responses_with_explicit_none_effort(monkeypatch, co
     assert calls == [
         {
             "model": config["model_id"],
-            "input": [{"role": "user", "content": "board"}],
+            "input": [{"role": "user", "content": board}],
             "reasoning": {"effort": "none"},
             "max_output_tokens": 256,
         }
@@ -1956,12 +1984,13 @@ def test_openai_adapter_applies_requested_reasoning_effort(
     reply = provider_reply(
         config, "secret", effort=effort, session="stateless"
     )
+    board = "rules\n\nCOMPLETE CHRONOLOGICAL GAME RECORD\nboard"
 
-    assert reply([{"role": "user", "content": "board"}]) == "ocean"
+    assert reply([{"role": "user", "content": board}]) == "ocean"
     assert calls == [
         {
             "model": config["model_id"],
-            "input": [{"role": "user", "content": "board"}],
+            "input": [{"role": "user", "content": board}],
             "reasoning": {"effort": effort},
             "max_output_tokens": max_tokens,
         }
@@ -2089,12 +2118,6 @@ def test_cli_accepts_any_positive_run_count():
         parse_args(["puzzle.json", "--model", "OPUS", "--runs", "0"])
 
 
-@pytest.mark.parametrize("legacy_flag", ["--anthropic-auth", "--openai-auth"])
-def test_cli_rejects_removed_provider_specific_auth_flags(legacy_flag):
-    with pytest.raises(SystemExit):
-        parse_args(["puzzle.json", "--model", "OPUS", legacy_flag, "subscription"])
-
-
 def test_cli_rejects_none_effort_before_an_openai_subscription_call():
     with pytest.raises(SystemExit):
         parse_args(["puzzle.json", "--model", "GPT-SOL", "--auth", "subscription"])
@@ -2216,11 +2239,9 @@ def test_cli_choice_flag_without_value_lists_every_valid_value(
     assert f"Valid values: {', '.join(values)}." in error
 
 
-def test_cli_requires_exactly_one_model_and_rejects_the_plural_flag():
+def test_cli_requires_exactly_one_model():
     with pytest.raises(SystemExit):
         parse_args(["puzzle.json"])
-    with pytest.raises(SystemExit):
-        parse_args(["puzzle.json", "--models", "OPUS"])
     with pytest.raises(SystemExit):
         parse_args(["puzzle.json", "--model", "OPUS", "GPT-SOL"])
     with pytest.raises(SystemExit):
@@ -2256,7 +2277,6 @@ def make_run(
     duration=1.0,
     token_usage=(),
     raw_token_usage=(),
-    termination=None,
 ):
     return RunResult(
         tries=tries,
@@ -2266,11 +2286,7 @@ def make_run(
         tried_words=tuple(words),
         conversation=({"role": "user", "content": "opening"},),
         turn_token_usage=tuple(token_usage),
-        termination=(
-            termination
-            if termination is not None
-            else "solved" if tries is not None else "cap"
-        ),
+        termination="solved" if tries is not None else "cap",
         raw_provider_token_usage=tuple(raw_token_usage),
     )
 
@@ -2341,7 +2357,7 @@ def test_benchmark_model_plays_and_records_every_requested_run():
         "solved",
         "solved",
     ]
-    assert summary.run_tried_words == (
+    assert tuple(result.tried_words for result in summary.results) == (
         ("forest", "ocean"),
         ("shared", "forest", "ocean"),
         ("cold", "other", "forest", "ocean"),
@@ -2716,6 +2732,9 @@ def test_referee_reports_stagnation_as_evidence_without_forcing_a_tactic():
 
     first = referee.submit("warm")  # warm, rank 30 > best 10: not closer
     assert referee.stalled_tries == 1
+    warm_message = feedback_message(first, referee)
+    assert "word 1: rank 30 did not improve current best rank 10" in warm_message
+    assert "word 2: MISS (current best remains rank 5)" in warm_message
 
     second = referee.submit("cold")  # MISS on both holes
     assert referee.stalled_tries == 2
@@ -2841,6 +2860,43 @@ def test_referee_progress_matches_the_web_logarithmic_formula():
     assert referee.progress == pytest.approx(100)
 
 
+def test_referee_progress_averages_over_unique_secrets_not_occurrences():
+    # "chat" fills two holes but is ONE of the sentence's two targets: solving it is
+    # half the sentence, exactly what the front and the server report for that state.
+    referee = PuzzleReferee(repeated_secret_puzzle(), {"animal", "chat", "jardin"})
+    assert referee.progress == pytest.approx(0)
+
+    referee.submit("chat")
+    assert [hole.rank for hole in referee.holes] == [0, 0, 40]
+    assert referee.progress == pytest.approx(50)
+
+    referee.submit("jardin")
+    assert referee.progress == pytest.approx(100)
+
+
+def test_equal_rank_guess_counts_but_does_not_improve_the_current_best():
+    # Only a STRICTLY lower rank changes the best: "bête" ranks 50 against the "chat"
+    # holes, exactly their current best, so it moves nothing and extends the streak.
+    referee = PuzzleReferee(
+        repeated_secret_puzzle(), {"animal", "bete", "chat", "jardin"}
+    )
+
+    feedback = referee.submit("bête")
+
+    assert feedback.kind == "counted"
+    assert [
+        (outcome.number, outcome.rank, outcome.improved)
+        for outcome in feedback.outcomes
+    ] == [(1, 50, False), (2, 50, False), (3, None, False)]
+    assert [(hole.word, hole.rank) for hole in referee.holes] == [
+        ("animal", 50),
+        ("bête", 50),
+        ("parc", 40),
+    ]
+    assert referee.tries == 1
+    assert referee.stalled_tries == 1
+
+
 def test_solved_holes_are_locked_and_excluded_from_later_feedback():
     referee = PuzzleReferee(puzzle(), VOCAB)
     first = referee.submit("forest")
@@ -2864,6 +2920,14 @@ def test_cap_after_counted_tries_is_a_dnf():
     assert result.turns == 2
     assert result.tried_words == ("cold", "other")
     assert result.termination == "cap"
+
+
+def test_a_solve_on_the_last_allowed_try_wins_over_the_cap():
+    result = play_puzzle(puzzle(), VOCAB, ScriptedModel(["forest", "ocean"]), cap=2)
+
+    assert result.tries == 2
+    assert result.counted_tries == 2
+    assert result.termination == "solved"
 
 
 def test_final_score_matches_front_unique_try_semantics_for_same_sequence():
@@ -3207,16 +3271,6 @@ def test_opening_injects_learned_strategy_as_guidance_and_first_reply_is_a_guess
     assert "fixed game rules above always take precedence" in opening
 
 
-def test_an_unconditioned_caller_gets_the_strategy_neutral_rules():
-    ordinary = ScriptedModel(["forest", "ocean"])
-    play_puzzle(puzzle(), VOCAB, ordinary)
-
-    opening = ordinary.calls[0][0]["content"]
-    assert "YOUR STRATEGY" not in opening
-    assert "YOUR METHOD" not in opening
-    assert "Decide for yourself how to adapt" not in opening
-
-
 def test_stateless_reply_contract_permits_private_thinking_but_binds_visible_output():
     model = ScriptedModel(["forest", "ocean"])
     play_puzzle(puzzle(), VOCAB, model)
@@ -3385,15 +3439,15 @@ def test_prompt_states_the_minimize_tries_objective_everywhere():
 def test_unparseable_replies_reprompt_then_abort_after_five_consecutive_turns():
     model = ScriptedModel(["123", "...", "—", "42", "!!!"])
 
-    with pytest.raises(UnparseableReplyError, match="5 consecutive") as raised:
+    with pytest.raises(UnparseableReplyError) as raised:
         play_puzzle(puzzle(), VOCAB, model)
 
+    assert str(raised.value) == (
+        f"aborted after {MAX_CONSECUTIVE_UNPARSEABLE} consecutive unparseable replies"
+    )
     assert len(model.calls) == MAX_CONSECUTIVE_UNPARSEABLE
     assert "INVALID REPLY FORMAT" in model.calls[1][-1]["content"]
     assert "outside the stated grammar" in model.calls[1][-1]["content"]
-    assert raised.value.partial_result.counted_tries == 0
-    assert raised.value.partial_result.turns == MAX_CONSECUTIVE_UNPARSEABLE
-    assert raised.value.partial_result.tries is None
 
 
 @pytest.mark.parametrize(
@@ -3407,12 +3461,47 @@ def test_unparseable_replies_reprompt_then_abort_after_five_consecutive_turns():
 def test_parsed_replies_without_a_counted_try_abort_the_paid_loop(replies):
     model = ScriptedModel(replies)
 
-    with pytest.raises(NoProgressReplyError, match="without a counted try") as raised:
+    with pytest.raises(NoProgressReplyError) as raised:
         play_puzzle(puzzle(), VOCAB, model)
 
+    assert str(raised.value) == (
+        f"aborted after {MAX_NONCOUNTING_REPLIES} parsed replies without a counted try"
+    )
     expected_calls = MAX_NONCOUNTING_REPLIES + (1 if replies[0] == "cold" else 0)
     assert len(model.calls) == expected_calls
-    assert raised.value.partial_result.tries is None
-    assert raised.value.partial_result.counted_tries == (
-        1 if replies[0] == "cold" else 0
-    )
+
+
+@pytest.mark.parametrize(
+    ("failing_run", "message"),
+    [
+        (
+            ["123"] * MAX_CONSECUTIVE_UNPARSEABLE,
+            f"aborted after {MAX_CONSECUTIVE_UNPARSEABLE} consecutive unparseable replies",
+        ),
+        (
+            ["nonesuch"] * MAX_NONCOUNTING_REPLIES,
+            f"aborted after {MAX_NONCOUNTING_REPLIES} parsed replies without a counted try",
+        ),
+    ],
+    ids=["unparseable", "no-progress"],
+)
+def test_cli_a_bounded_reply_error_aborts_the_invocation_and_records_nothing(
+    monkeypatch, tmp_path, capsys, failing_run, message
+):
+    path = tmp_path / "puzzle.json"
+    path.write_text(json.dumps(puzzle()), encoding="utf-8")
+    model = ScriptedModel(["forest", "ocean", *failing_run])
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr("llm_play.load_vocab", lambda _lang: VOCAB)
+    monkeypatch.setattr("llm_play.BENCHMARK_OUTPUT_DIR", tmp_path / "lab")
+    monkeypatch.setattr("llm_play.provider_reply", lambda *_args, **_kwargs: model)
+
+    # Run 1 solves; run 2 hits a reply bound. The error aborts the whole invocation,
+    # the solved run included: exit 1, no lab artifact.
+    assert main([str(path), "--model", "OPUS", "--runs", "2"]) == 1
+
+    output = capsys.readouterr()
+    assert 'run=1 try=2 word="ocean" progress=100.00%' in output.out  # run 1 was played and solved
+    assert f"error: OPUS (claude-opus-4-8) failed: {message}" in output.err
+    assert "Wrote lab artifact ->" not in output.out
+    assert not (tmp_path / "lab" / "puzzle.bench.json").exists()

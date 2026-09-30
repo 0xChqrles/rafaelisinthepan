@@ -40,12 +40,16 @@ const SENTENCE: Puzzle = {
   ranks: { un: { un: { word: 'un', rank: 0 }, autre: { word: 'autre', rank: 10 } } },
 };
 
+// /scores asks the store only WHETHER the day is published: it never downloads the
+// artifact (megabytes of rank maps) nor its slice.
 function puzzleStore(): PuzzleStore {
   return {
-    async getPuzzle(date, lang) {
-      return [ACTIVE_DATE, NEXT_DATE].includes(date) && lang === 'fr' ? SENTENCE : null;
+    async hasPuzzle(date, lang) {
+      return [ACTIVE_DATE, NEXT_DATE].includes(date) && lang === 'fr';
     },
-    // The read never touches the slice — only the round route derives anything.
+    async getPuzzle() {
+      throw new Error('/scores must not download the full artifact');
+    },
     async getSlice() {
       throw new Error('/scores must not read the derivation slice');
     },
@@ -67,10 +71,9 @@ function event(options: {
   query?: Record<string, string>;
   body?: unknown;
   address?: string;
-  path?: string;
 } = {}): FnUrlEvent {
   return {
-    rawPath: options.path ?? '/scores',
+    rawPath: '/scores',
     queryStringParameters: options.query ?? {
       lang: 'fr',
       date: ACTIVE_DATE,
@@ -142,8 +145,7 @@ describe('GET /scores', () => {
         { min: 9, max: 9, count: 2 },
       ],
       total: 3,
-      // The read carries no identity, so a revisiting client locates its own score in the
-      // ranges itself.
+      // A read naming nobody locates nobody's band.
       bucket: null,
     });
   });
@@ -218,6 +220,7 @@ describe('GET /scores', () => {
     expect(next.statusCode).toBe(200);
 
     const futureStore: PuzzleStore = {
+      async hasPuzzle() { return true; },
       async getPuzzle() { return SENTENCE; },
       async getSlice() { return null; },
     };

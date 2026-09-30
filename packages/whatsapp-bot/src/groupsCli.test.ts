@@ -87,11 +87,13 @@ describe('bot:groups push (user-decided 2026-09-05)', () => {
     withFile(dir, 'test', raw('120363000000000007@g.us'));
     const written: string[] = [];
     const same: GroupsStore = { ...memoryStore([held]), put: async (_s, json) => void written.push(json) };
-    // Byte-different (compact), same canonical form: nothing to write.
+    // Byte-different (compact), same canonical form: nothing to store, and the file is
+    // still rewritten to match SSM byte for byte.
     expect(await saying(() => run(['push', 'test'], same, dir))).toMatch(/No change/);
     expect(written).toEqual([]);
+    expect(readFileSync(join(dir, 'test.json'), 'utf8')).toBe(held.json);
     // A broken parameter is fixed by pushing a good file over it.
-    const broken: BrokenParameter[] = [{ name: 'test', json: '{oops', reason: 'test: invalid JSON in SSM' }];
+    const broken: BrokenParameter[] = [{ name: 'test', reason: 'test: invalid JSON in SSM' }];
     const damaged: GroupsStore = { ...memoryStore([], broken), put: async (_s, json) => void written.push(json) };
     await saying(() => expect(run(['push', 'test'], damaged, dir)).resolves.toBe(0));
     expect(written).toHaveLength(1);
@@ -143,9 +145,9 @@ describe('bot:groups pull (#236)', () => {
   it('refuses to write a snapshot while anything under the path is broken', async () => {
     const dir = tempDir();
     const groups = [stored('a', '120363000000000001@g.us')];
-    const broken: BrokenParameter[] = [{ name: 'Main', json: '{}', reason: '"Main" is not a valid slug' }];
+    const broken: BrokenParameter[] = [{ name: 'Main', reason: '"Main" is not a valid slug' }];
     // The deploy's own gate: `pull` is the ONE command that judges the set, so `list`,
-    // `edit` and `rm` stay usable to fix what it names.
+    // `push` and `rm` stay usable to fix what it names.
     await expect(run(['pull'], memoryStore(groups, broken), dir)).rejects.toThrow(/Main/);
     await expect(run(['pull', 'a'], memoryStore(groups, broken), dir)).rejects.toThrow(/Main/);
     expect(readdirSync(dir)).toEqual([]);
@@ -169,8 +171,8 @@ describe('bot:groups list (#236)', () => {
   it('lists a broken parameter with its way out, without stopping the listing', async () => {
     const groups = [stored('a', '120363000000000001@g.us'), stored('b', '120363000000000001@g.us')];
     const broken: BrokenParameter[] = [
-      { name: 'Main', json: '{}', reason: '"Main" is not a valid slug' },
-      { name: 'junk', json: '{oops', reason: 'junk: invalid JSON in SSM' },
+      { name: 'Main', reason: '"Main" is not a valid slug' },
+      { name: 'junk', reason: 'junk: invalid JSON in SSM' },
     ];
     const said = await saying(() => expect(run(['list'], memoryStore(groups, broken))).resolves.toBe(0));
     expect(said).toContain('Whippin test'); // the usable rows, on the operator's own terminal

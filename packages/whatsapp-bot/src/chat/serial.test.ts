@@ -23,9 +23,9 @@ describe('one at a time, per key (PR-278 review)', () => {
     // The bug this exists for: five handlers of one burst read the same count, all decided
     // they were under the cap, and each wrote its own value back.
     const serial = serialByKey();
-    let count = 0;
-    let answered = 0;
     const CAP = 8;
+    let count = CAP - 2;
+    let answered = 0;
     await Promise.all(
       Array.from({ length: 5 }, () =>
         serial('g', async () => {
@@ -37,23 +37,8 @@ describe('one at a time, per key (PR-278 review)', () => {
         }),
       ),
     );
-    expect(count).toBe(5);
-    expect(answered).toBe(5);
-    // At the cap, nothing passes — however many arrive at once.
-    count = CAP;
-    answered = 0;
-    await Promise.all(
-      Array.from({ length: 5 }, () =>
-        serial('g', async () => {
-          const seen = count;
-          await tick();
-          if (seen >= CAP) return;
-          answered += 1;
-          count = seen + 1;
-        }),
-      ),
-    );
-    expect(answered).toBe(0);
+    // Two fit under the cap; the three behind them read what those wrote, and stop.
+    expect(answered).toBe(2);
     expect(count).toBe(CAP);
   });
 

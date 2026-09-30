@@ -32,11 +32,6 @@ Post it only if all of this holds: every number, name, place, comparison and cla
 
 Answer the digit first — 1 to post, 0 to drop — then, after a colon, the reason in a few words.`;
 
-export interface JudgeBrief {
-  system: string; // the reading: `FACT_JUDGE_SYSTEM`
-  occasion: string; // what the line is about — for the fact check, the facts themselves
-}
-
 export type Verdict = 'keep' | 'drop' | 'unknown';
 
 export interface Judgement {
@@ -74,16 +69,18 @@ const MAX_TOKENS = 4500;
 export const JUDGE_TIMEOUT_MS = 25_000;
 const TIMEOUT_MS = JUDGE_TIMEOUT_MS;
 
-export async function judgeLine(
+// `occasion` is what the line is about: the facts it was written from, and any
+// conversation and diary shown after them.
+async function judgeLine(
   provider: LlmProvider,
-  brief: JudgeBrief,
+  occasion: string,
   line: string,
   log: Log,
 ): Promise<Judgement> {
   try {
     const response = await provider.generate({
-      system: brief.system,
-      messages: [{ role: 'user', content: `Occasion: ${brief.occasion}\nLine: ${line}\n\nAnswer 1 or 0.` }],
+      system: FACT_JUDGE_SYSTEM,
+      messages: [{ role: 'user', content: `Occasion: ${occasion}\nLine: ${line}\n\nAnswer 1 or 0.` }],
       maxTokens: MAX_TOKENS,
       effort: 'low',
       timeoutMs: TIMEOUT_MS,
@@ -114,6 +111,11 @@ export interface Choice {
   reasons: string[];
 }
 
+// What the writer is told on its next round, when the judge kept none of its lines.
+export function refusalNote(reasons: readonly string[]): string {
+  return `Your previous lines were refused by the fact check${reasons.length > 0 ? ' for these reasons:' : '.'}${reasons.map((r) => `\n- ${r}`).join('')}\nWrite a new one that avoids them.`;
+}
+
 // The candidates are judged in PARALLEL and the first kept one, in candidate order, is
 // posted. All dropped = nothing posted, by design. All UNKNOWN — the judge could not be
 // reached at all — is the caller's call (`unjudged`): the PODIUM posts the first candidate
@@ -123,7 +125,7 @@ export interface Choice {
 // confusing itself with a rival) reached a group (2026-09-14).
 export async function chooseLine(
   provider: LlmProvider,
-  brief: JudgeBrief,
+  occasion: string,
   candidates: readonly string[],
   log: Log,
   takeCall: () => Promise<boolean> = async () => true,
@@ -131,7 +133,7 @@ export async function chooseLine(
 ): Promise<Choice> {
   if (candidates.length === 0) return { line: null, dropped: 0, reasons: [] };
   const judgements = await Promise.all(
-    candidates.map(async (line) => ((await takeCall()) ? judgeLine(provider, brief, line, log) : { verdict: 'unknown' as const })),
+    candidates.map(async (line) => ((await takeCall()) ? judgeLine(provider, occasion, line, log) : { verdict: 'unknown' as const })),
   );
   const verdicts = judgements.map((j) => j.verdict);
   const kept = candidates.find((_, i) => verdicts[i] === 'keep');

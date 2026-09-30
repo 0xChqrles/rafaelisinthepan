@@ -134,7 +134,7 @@ def _run_main(monkeypatch, tmp_path, extra_argv):
     monkeypatch.setattr(
         FR["module"],
         "closest",
-        lambda _secret, _kv, _v, _m, *, n: [("indice", 86, 0.9), ("proche", 87, 0.5)],
+        lambda _secret, _kv, _v, _m: [("indice", 86, 0.9), ("proche", 87, 0.5)],
         raising=False,
     )
     monkeypatch.setattr(gen_phrase, "write_vocab", lambda *_a, **_k: None)
@@ -143,6 +143,8 @@ def _run_main(monkeypatch, tmp_path, extra_argv):
         "choose_start",
         lambda _secret, _ranking, _rank_map, _rank_by_display: "indice",
     )
+    # main() prompts on a terminal: a batch run, whatever stdin the test runner has.
+    monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False, raising=False)
     monkeypatch.setattr(
         gen_phrase.sys,
         "argv",

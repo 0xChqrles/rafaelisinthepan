@@ -11,13 +11,11 @@ const VIEW_W = 600;
 const VIEW_H = 110;
 
 export default function Arcs({
-  lang,
   tokens,
   focus,
   weights,
   hidden = [],
 }: {
-  lang: string;
   tokens: string[];
   focus: number;
   weights: (number | null)[];
@@ -25,7 +23,7 @@ export default function Arcs({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const seen = useSeen(ref);
-  const said = useArticleLang();
+  const lang = useArticleLang();
   const slot = VIEW_W / tokens.length;
   const cx = (i: number) => slot * (i + 0.5);
   const pct = new Intl.NumberFormat(lang, { style: 'percent', maximumFractionDigits: 0 });
@@ -59,8 +57,8 @@ export default function Arcs({
               ) : (
                 <span className="ar-token-word">{token}</span>
               )}
-              {state === 'focus' && <span className="sr-only">{` (${t(said, 'levelMarkFocus')})`}</span>}
-              {state === 'hidden' && <span className="sr-only">{` (${t(said, 'levelMarkUnheard')})`}</span>}
+              {state === 'focus' && <span className="sr-only">{` (${t(lang, 'levelMarkFocus')})`}</span>}
+              {state === 'hidden' && <span className="sr-only">{` (${t(lang, 'levelMarkUnheard')})`}</span>}
               <span className="ar-token-share">{w !== null && i !== focus ? pct.format(w) : ' '}</span>
             </li>
           );

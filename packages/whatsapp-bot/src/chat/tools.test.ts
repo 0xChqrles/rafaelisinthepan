@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { dayNumber } from '@whippin/shared';
 import { parseGroupConfig } from '../config/groupConfig';
 import { memoryDeclarationStore, type Declaration } from '../domain/declarations';
-import { HISTORY_WINDOW_DAYS, TOOL_DEFINITIONS, createToolRunner, resolvePlayer } from './tools';
+import { HISTORY_WINDOW_DAYS, TOOL_DEFINITIONS, createToolRunner, labelPlayers, resolvePlayer } from './tools';
 
 const GROUP = '120363000000000001@g.us';
 const TODAY = dayNumber('2026-09-03');
@@ -40,14 +40,8 @@ function row(sender: string, name: string, day: number, score: number, capped = 
 async function harness(rows: Declaration[] = DEFAULT_ROWS) {
   const declarations = memoryDeclarationStore();
   for (const r of rows) await declarations.record(r);
-  const tools = createToolRunner({
-    group,
-    today: TODAY,
-    sender: GAB,
-    declarations,
-    now: () => new Date('2026-09-03T12:00:00Z'),
-  });
-  return { tools };
+  const tools = createToolRunner({ group, today: TODAY, declarations });
+  return { tools, declarations };
 }
 
 const DEFAULT_ROWS = [
@@ -169,13 +163,7 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
     ]) {
       await declarations.record(r);
     }
-    const tools = createToolRunner({
-      group,
-      today: TODAY,
-      sender: GAB,
-      declarations,
-      now: () => new Date('2026-09-03T12:00:00Z'),
-    });
+    const tools = createToolRunner({ group, today: TODAY, declarations });
     expect(await tools.run('get_head_to_head', { left: 'Gab', right: 'Zou' })).toMatchObject({
       leftWins: 1,
       rightWins: 0,
@@ -186,23 +174,19 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
   });
 
   it('labels a mentioned JID the way the group knows it', async () => {
-    const { tools } = await harness();
-    expect(await tools.labelFor(ZOU)).toBe('Zou'); // operator override
-    expect(await tools.labelFor(GAB)).toBe('Gab 🔥'); // latest snapshot
-    expect(await tools.labelFor('33699998888@s.whatsapp.net')).toBe('…8888'); // never seen
+    const { declarations } = await harness();
+    const unseen = '33699998888@s.whatsapp.net';
+    const names = await labelPlayers({ group, today: TODAY, declarations }, [ZOU, GAB, unseen]);
+    expect(names.get(ZOU)).toBe('Zou'); // operator override
+    expect(names.get(GAB)).toBe('Gab 🔥'); // latest snapshot
+    expect(names.get(unseen)).toBe('…8888'); // never seen
   });
 
   it('ranks only the group\'s OWN language, and reports the other one apart (2026-09-29)', async () => {
     const declarations = memoryDeclarationStore();
     await declarations.record(row(GAB, 'Gab', TODAY, 4));
     await declarations.record({ ...row(ZOU, 'Zouzou', TODAY, 2), lang: 'en' });
-    const tools = createToolRunner({
-      group,
-      today: TODAY,
-      sender: GAB,
-      declarations,
-      now: () => new Date('2026-09-03T12:00:00Z'),
-    });
+    const tools = createToolRunner({ group, today: TODAY, declarations });
     // The other language is reported APART — no place, never ranked beside the group's.
     expect(await tools.run('get_today_podium', {})).toEqual({
       date: '2026-09-03',
@@ -248,6 +232,10 @@ describe('Whippin tools are read-only structured answers (#236)', () => {
     });
     expect(await tools.run('get_player_score', { player: 'Gab', date: '2026-09-01' })).toMatchObject({
       date: '2026-09-01',
+    });
+    // Tomorrow has no result: "played: false" would read as a day they skipped.
+    expect(await tools.run('get_player_score', { player: 'Gab', date: '2026-09-04' })).toEqual({
+      error: 'that day has not been played yet',
     });
   });
 

@@ -45,7 +45,7 @@ import { timeoutSignal } from '../timeout';
 // **EXPIRED** (404 `unknown_group`) is neither a hiccup nor a cap: a link
 // naming no group is over, and the profile-style read already knows it before anything
 // is offered.
-export type JoinOutcome = 'joined' | 'settled' | 'full' | 'limit' | 'failed' | 'expired';
+type JoinOutcome = 'joined' | 'settled' | 'full' | 'limit' | 'failed' | 'expired';
 
 // The groups THIS tab joined from a landing. Module-level, because the tap that joins can
 // also MINT the identity, and an acquired identity remounts the routed surface — a
@@ -78,14 +78,14 @@ export async function sendJoin(groupId: string): Promise<JoinOutcome> {
     error = undefined;
   }
   if (error === 'group_limit') return 'limit';
-  if (response.status === 409) return 'full';
+  if (error === 'group_full') return 'full';
   if (error === 'unknown_group') return 'expired';
   await adoptSignedOutVerdict(response, epoch);
   return 'settled';
 }
 
 // A pending read, a missing group and a retryable failure are distinct states.
-export type GroupState = PublicGroup | 'gone' | 'failed' | null;
+type GroupState = PublicGroup | 'gone' | 'failed' | null;
 
 export function groupFrom(read: GroupRead): Exclude<GroupState, null> {
   if (read.status === 'shown') return read.group;

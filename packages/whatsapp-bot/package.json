@@ -34,6 +34,7 @@
     "vitest": "^2.1.9"
   },
   "exports": {
-    "./config": "./src/config/groupConfig.ts"
+    "./config": "./src/config/groupConfig.ts",
+    "./metrics": "./src/metricNames.ts"
   }
 }

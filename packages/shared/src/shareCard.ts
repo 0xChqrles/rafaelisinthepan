@@ -41,6 +41,7 @@
 // A bonus is no day, so a v7 result carries NO `dayNumber`: every consumer that counts a
 // day (the WhatsApp bot's podium) has to see it is not one.
 
+import { BASE64URL_ALPHABET, bytesToBase64Url } from './base64url';
 import { BONUS_ID_MAX, BONUS_ID_MIN } from './bonus';
 
 const SHARE_VERSION = 6;
@@ -125,25 +126,9 @@ class BitReader {
   }
 }
 
-// --- base64url over bytes (env-agnostic: no Buffer/atob) ---------------------------------
-const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+// --- base64url over bytes: the encoder is `base64url.ts`'s, the decoder this codec's own ---
 const B64_LOOKUP: Record<string, number> = {};
-for (let i = 0; i < B64.length; i += 1) B64_LOOKUP[B64[i]] = i;
-
-function bytesToB64url(bytes: Uint8Array): string {
-  let out = '';
-  for (let i = 0; i < bytes.length; i += 3) {
-    const rem = bytes.length - i;
-    const b0 = bytes[i];
-    const b1 = rem > 1 ? bytes[i + 1] : 0;
-    const b2 = rem > 2 ? bytes[i + 2] : 0;
-    out += B64[b0 >> 2];
-    out += B64[((b0 & 0x03) << 4) | (b1 >> 4)];
-    if (rem > 1) out += B64[((b1 & 0x0f) << 2) | (b2 >> 6)];
-    if (rem > 2) out += B64[b2 & 0x3f];
-  }
-  return out;
-}
+for (let i = 0; i < BASE64URL_ALPHABET.length; i += 1) B64_LOOKUP[BASE64URL_ALPHABET[i]] = i;
 
 function b64urlToBytes(s: string): Uint8Array | null {
   const bytes: number[] = [];
@@ -206,7 +191,7 @@ export function encodeResult(r: ShareResult): string {
 
   // A CAPPED run ends here: the round never finished, so there is nothing to tick and the
   // section is absent from the format rather than written empty (#214).
-  if (capped) return bytesToB64url(w.toBytes());
+  if (capped) return bytesToBase64Url(w.toBytes());
 
   // The TICKS: one entry per distinct secret, in sentence order (so its index IS the number
   // the card stacks under the tick). A tick's try is 1..score, which fits the score's own
@@ -224,7 +209,7 @@ export function encodeResult(r: ShareResult): string {
       w.write(clamp(Math.round(at), 1, score), idxBits);
     }
   }
-  return bytesToB64url(w.toBytes());
+  return bytesToBase64Url(w.toBytes());
 }
 
 // Every version so far opens with the SAME header — `version | lang | day` — and only the

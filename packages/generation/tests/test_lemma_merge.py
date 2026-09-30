@@ -421,18 +421,20 @@ def test_a_homograph_is_still_selectable_as_a_secret():
     assert [c["secret"] for c in cands] == ["mois", "sombre"]
 
 
-def test_same_group_selected_secrets_rejected(monkeypatch):
+def test_same_group_selected_secrets_rejected(monkeypatch, capsys):
     # "vermine" and "vermines" are one lemma group: holing both is one word twice.
     cfg = gen_phrase.CONFIG["fr"]
+    walked = []
+
     # Three neighbors so the walk leaves at least two distinct groups after "porte"
     # aliases into its own secret: a one-group walk has no distance span to quantize
     # (#115) and is rejected upstream.
-    fake = types.SimpleNamespace(
-        closest=lambda secret, kv, V, M, n=None: [
-            ("porte", 0, .9), ("chien", 1, .8), ("jardin", 2, .5)],
-    )
+    def closest(secret, kv, V, M):
+        walked.append(secret)
+        return [("porte", 0, .9), ("chien", 1, .8), ("jardin", 2, .5)]
+    fake = types.SimpleNamespace(closest=closest)
     monkeypatch.setitem(cfg, "module", fake)
-    monkeypatch.setattr(gen_phrase, "pick_start", lambda secret, ranking, *_band: "porte")
+    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking: [("porte", 1)])
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False, raising=False)
 
     words = ["la", "vermine", "et", "les", "vermines", "du", "chien"]
@@ -443,6 +445,9 @@ def test_same_group_selected_secrets_rejected(monkeypatch):
             kv=None, V=[], M=None, Vset=vset,
             lemma_table=TABLE, forms_by_lemma=FORMS,
         )
+    assert "sont des formes du même mot" in capsys.readouterr().err
+    # refused with the questions, before any walk (#308: a walk is minutes and money)
+    assert walked == []
     # sanity: three genuinely distinct groups DO build.
     holes, ranks = gen_phrase.holes_from_words(
         ["vermine", "porte", "chien"], ["la", "vermine", "porte", "chien"],
@@ -462,12 +467,12 @@ def test_batch_authoring_confirms_the_secret_before_the_walk(monkeypatch):
     cfg = gen_phrase.CONFIG["fr"]
     table = _lexicon()
     fake = types.SimpleNamespace(
-        closest=lambda secret, kv, V, M, n=None: [
+        closest=lambda secret, kv, V, M: [
             ("écarlate", 0, .9), ("rouge", 1, .85), ("jardin", 2, .5),
             ("doucement", 3, .4), ("grande", 4, .3)],
     )
     monkeypatch.setitem(cfg, "module", fake)
-    monkeypatch.setattr(gen_phrase, "pick_start", lambda s, r, *_band: "écarlate")
+    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking: [("écarlate", 1)])
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False, raising=False)
 
     forms = gen_phrase.FormResolver(table, explicit={
@@ -506,11 +511,11 @@ def test_batch_authoring_holes_a_homograph_without_letting_it_claim_a_lexeme(
         "sombre": ("sombre:adj",),
     }
     fake = types.SimpleNamespace(
-        closest=lambda secret, kv, V, M, n=None: [
+        closest=lambda secret, kv, V, M: [
             ("moi", 0, .9), ("jardin", 1, .8), ("sombre", 2, .5)],
     )
     monkeypatch.setitem(cfg, "module", fake)
-    monkeypatch.setattr(gen_phrase, "pick_start", lambda secret, ranking, *_band: "sombre")
+    monkeypatch.setattr(gen_phrase, "start_band", lambda _secret, _ranking: [("sombre", 1)])
     monkeypatch.setattr(sys.stdin, "isatty", lambda: False, raising=False)
 
     holes, ranks = gen_phrase.holes_from_words(

@@ -33,7 +33,7 @@
 // field by web/scripts/prune-word-map.mjs — the exact invocation is recorded in each
 // script's header, and scripts.test.ts fails if a board and its map ever drift.
 
-import type { Puzzle, Word } from '@whippin/shared';
+import type { Puzzle, RankEntry, Word } from '@whippin/shared';
 import type { UiKey } from '../i18n';
 
 export type StageKind = 'reveal' | 'word' | 'sentence' | 'meter';
@@ -59,5 +59,19 @@ export interface LessonStage {
 
 export interface LessonScript {
   stages: LessonStage[]; // reveal, word, sentence, meter — in the order they are played
+}
+
+// THE PAIR SWAP's reading of one secret's map (the meter stage): every rank-0 entry reads 1,
+// at the distance the rank-1 group stood, and every rank-1 entry reads 0 — the secret has
+// become the closest word and `pair.alt` the secret. Everything farther is untouched.
+export function swappedView(map: Record<string, RankEntry>): Record<string, RankEntry> {
+  const dq1 = Object.values(map).find((e) => e.rank === 1)?.dq;
+  const view: Record<string, RankEntry> = {};
+  for (const [key, entry] of Object.entries(map)) {
+    if (entry.rank === 0) view[key] = { word: entry.word, rank: 1, dq: dq1 } as RankEntry;
+    else if (entry.rank === 1) view[key] = { word: entry.word, rank: 0 } as RankEntry;
+    else view[key] = entry;
+  }
+  return view;
 }
 // (The per-language script lookup lives in ./scripts/index.ts.)

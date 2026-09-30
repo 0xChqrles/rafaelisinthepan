@@ -60,7 +60,8 @@ describe('dynamoHistoryStore — the streak\'s solved-day collection (#211)', ()
   it('bounds the collection with CONDITION grammar only — no arithmetic', async () => {
     const { store, send } = makeStore(async () => ({}));
     await store.recordSolvedDay({ publicId: PUBLIC_ID, lang: 'fr', day: 20_669 });
-    const condition = (send.mock.calls[0][0] as UpdateItemCommand).input.ConditionExpression!;
+    const input = (send.mock.calls[0][0] as UpdateItemCommand).input;
+    const condition = input.ConditionExpression!;
     expect(condition).toBe(
       'attribute_not_exists(#days) OR size(#days) < :max OR contains(#days, :one)',
     );
@@ -68,16 +69,11 @@ describe('dynamoHistoryStore — the streak\'s solved-day collection (#211)', ()
     // ValidationException before a single day is credited, which no mocked client can show.
     expect(condition).not.toMatch(/[+*/]/);
     expect(condition).not.toContain('if_not_exists');
-  });
-
-  it('a day the collection ALREADY holds is a silent no-op, not an overflow trim', async () => {
-    // The third clause exists for exactly this: a re-solve of a corrected revision must
-    // not fall into the trim path just because the collection is full.
-    const { store, send } = makeStore(async () => ({}));
-    await store.recordSolvedDay({ publicId: PUBLIC_ID, lang: 'fr', day: 20_669 });
-    const values = (send.mock.calls[0][0] as UpdateItemCommand).input.ExpressionAttributeValues!;
-    expect(values[':one']).toEqual({ N: '20669' });
-    expect(values[':max']).toEqual({ N: String(MAX_SOLVED_DAYS) });
+    // The bound is the shared cap, and the third clause names THIS day: a re-solve of a
+    // corrected revision must not fall into the trim path just because the collection is
+    // full.
+    expect(input.ExpressionAttributeValues![':max']).toEqual({ N: String(MAX_SOLVED_DAYS) });
+    expect(input.ExpressionAttributeValues![':one']).toEqual({ N: '20669' });
   });
 
   // A FULL collection trims with SET OPERATIONS — an unconditional ADD that returns the

@@ -63,6 +63,22 @@ export function activeDate(instant: Date): string {
   return dateLabel(p.year, p.month, p.day, p.hour >= RESET_HOUR ? 1 : 0);
 }
 
+// A strict "YYYY-MM-DD" that is also a real calendar date (rejects 2026-13-40 etc): the
+// shape guards the format, and the round trip through a UTC date weeds out impossible days
+// (Feb 30) and normalized overflow. The ONE check of the `date` a puzzle is addressed by —
+// the web before it routes to a day, the backend before it serves or publishes one.
+export function isCalendarDate(date: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!m) return false;
+  const [, y, mo, d] = m.map(Number);
+  const probe = new Date(Date.UTC(y, mo - 1, d));
+  return (
+    probe.getUTCFullYear() === y &&
+    probe.getUTCMonth() === mo - 1 &&
+    probe.getUTCDate() === d
+  );
+}
+
 // Monotonic integer id for a "YYYY-MM-DD" date: whole days since the Unix epoch. The
 // unambiguous identifier remains the date string; this integer is the stable ID that
 // persisted rounds key on and that a share token carries.
@@ -77,6 +93,15 @@ export function dayNumber(date: string): number {
 export function dateForDayNumber(n: number): string {
   const d = new Date(n * 86_400_000);
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+
+// The MONDAY that opens the calendar week of day number `n`, as a day number (Monday first
+// — the week people say "this week" about). A day number is whole days since the Unix epoch
+// at UTC midnight, so `getUTCDay` of that instant is the calendar weekday (0 for Sunday,
+// which a Monday-first week puts six days in). DST-safe — no local time involved.
+export function weekStart(n: number): number {
+  const weekday = new Date(n * 86_400_000).getUTCDay();
+  return n - ((weekday + 6) % 7);
 }
 
 // Offset (minutes, east-positive) of TIME_ZONE from UTC at `instant`, DST-correct.
@@ -102,10 +127,8 @@ function zonedTimeToUtc(year: number, month: number, day: number, hour: number):
 
 // The next instant at which the active day flips (the next local RESET_HOUR:00).
 export function nextResetAt(instant: Date): Date {
-  const p = zonedParts(instant);
-  // Before today's reset -> today's reset; at/after it -> tomorrow's.
-  const target = dateLabel(p.year, p.month, p.day, p.hour >= RESET_HOUR ? 1 : 0);
-  const [y, m, d] = target.split('-').map(Number);
+  // Before today's reset -> today's reset; at/after it -> tomorrow's: the ACTIVE date's.
+  const [y, m, d] = activeDate(instant).split('-').map(Number);
   return zonedTimeToUtc(y, m, d, RESET_HOUR);
 }
 

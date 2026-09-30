@@ -1,5 +1,6 @@
-import { App } from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
+import { App, Aspects } from 'aws-cdk-lib';
+import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
+import { AwsSolutionsChecks } from 'cdk-nag';
 import { describe, expect, it } from 'vitest';
 import { VIEWER_IP_HEADER } from '@whippin/shared';
 import { BackendStack } from './backend-stack';
@@ -25,6 +26,80 @@ function backendTemplate(): Template {
 }
 
 const template = backendTemplate();
+
+const distributions = () =>
+  Object.values(template.findResources('AWS::CloudFront::Distribution'));
+const liveBehaviors = () =>
+  distributions()[0].Properties.DistributionConfig.CacheBehaviors as Record<string, unknown>[];
+const originRequestPolicies = () =>
+  template.findResources('AWS::CloudFront::OriginRequestPolicy');
+
+// AWS's managed CachingDisabled cache policy.
+const CACHING_DISABLED_POLICY_ID = '4135ea2d-6df8-44a3-9df3-4b5a84be39ad';
+
+// The root AGENTS.md route table, row for row: each LIVE route's behavior, the
+// origin-request policy it wears and the queries that policy forwards — exactly what its
+// handler reads. It is one third of a three-package contract, and `backend:dev` has no CDN
+// to show a drift. `post` is off for /scores alone: that route is read-only (a POST is a
+// 405), so nothing depends on the method being allowed there.
+const LIVE_ROUTES = [
+  {
+    pattern: 'scores*',
+    policy: 'WhippinLiveScoresOrigin',
+    queries: ['lang', 'date', 'id'],
+    post: false,
+    why: 'the day, and the public id of the caller whose own band the read reports (#203)',
+  },
+  {
+    pattern: 'board*',
+    policy: 'WhippinLeaderboardOrigin',
+    queries: ['lang', 'date', 'id'],
+    post: true,
+    why: 'the day, and the public id widening the global GET with the caller\'s window (#190)',
+  },
+  {
+    pattern: 'round*',
+    policy: 'WhippinRoundOrigin',
+    queries: ['lang', 'date', 'bonus'],
+    post: true,
+    why: 'the day, or a bonus puzzle\'s id standing in for the date (#201)',
+  },
+  {
+    pattern: 'history*',
+    policy: 'WhippinPlayerHistoryOrigin',
+    queries: ['lang', 'month'],
+    post: true,
+    why: 'a calendar page is addressed by MONTH, never by date (#211)',
+  },
+  {
+    pattern: 'profile*',
+    policy: 'WhippinPlayerProfileOrigin',
+    queries: ['id'],
+    post: true,
+    why: 'the public id a board row resolves by (#188)',
+  },
+  {
+    pattern: 'groups*',
+    policy: 'WhippinGroupsOrigin',
+    queries: ['id'],
+    post: true,
+    why: 'the public group id the GET answers a face for (#271)',
+  },
+  {
+    pattern: 'devices*',
+    policy: 'WhippinDevicesOrigin',
+    queries: [],
+    post: true,
+    why: 'the device token rides in the body (#216)',
+  },
+  {
+    pattern: 'link*',
+    policy: 'WhippinAccountLinkOrigin',
+    queries: [],
+    post: true,
+    why: 'the device token rides in the body (#204)',
+  },
+];
 
 describe('score production boundary (#169)', () => {
   it('passes only parameter names to Lambda and grants one exact GetParameters read', () => {
@@ -57,16 +132,8 @@ describe('score production boundary (#169)', () => {
     expect(serializedResources).not.toContain('*');
   });
 
-  it('uses a deployable zero-cache score behavior with exact query forwarding', () => {
-    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
-    expect(distributions).toHaveLength(1);
-    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
-      string,
-      unknown
-    >[];
-    const scores = behaviors.find(({ PathPattern }) => PathPattern === 'scores*');
-    expect(scores?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-
+  it('caches the puzzle route alone, keyed on every query it reads', () => {
+    expect(distributions()).toHaveLength(1);
     // CloudFront rejects custom cache policies with every TTL at zero when they also
     // include cache-key values. Only the puzzle behavior should need a custom policy.
     const cachePolicies = Object.values(template.findResources('AWS::CloudFront::CachePolicy'));
@@ -76,217 +143,41 @@ describe('score production boundary (#169)', () => {
       cachePolicies[0].Properties.CachePolicyConfig.ParametersInCacheKeyAndForwardedToOrigin
         .QueryStringsConfig,
     ).toEqual({ QueryStringBehavior: 'whitelist', QueryStrings: ['lang', 'date', 'bonus'] });
+  });
 
-    const policies = Object.values(
-      template.findResources('AWS::CloudFront::OriginRequestPolicy'),
-    );
-    // The score policy, the profile policy (#188), the groups policy (#271), the
-    // board policy (#190), the round policy (#201), the history policy (#211), the
-    // devices policy (#216) and the account-link policy (#204) — each forwards exactly the
-    // queries its handler route reads (the root AGENTS.md allowList contract).
-    expect(policies).toHaveLength(8);
-    const scorePolicy = policies.find(
-      (policy) =>
-        policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinLiveScoresOrigin',
-    );
-    // `id` joined the addressing pair with #203: the read reports the CALLER's own band,
-    // so the handler needs the publicId naming them. An unlisted parameter never reaches the
-    // Lambda, so the standing would silently go blank for everybody.
-    expect(scorePolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
-      QueryStringBehavior: 'whitelist',
-      QueryStrings: ['lang', 'date', 'id'],
-    });
-    expect(scorePolicy?.Properties.OriginRequestPolicyConfig.CookiesConfig).toEqual({
-      CookieBehavior: 'none',
-    });
+  it('gives each live route its own origin-request policy, and builds no other', () => {
+    expect(Object.keys(originRequestPolicies())).toHaveLength(LIVE_ROUTES.length);
+  });
 
+  // The title is built here rather than interpolated by `it.each`, which would cut the
+  // reason short.
+  it.each(
+    LIVE_ROUTES.map(
+      (route) =>
+        [`${route.pattern} forwards exactly [${route.queries.join(', ')}]: ${route.why}`, route] as const,
+    ),
+  )('zero-cache live behavior %s', (_title, { pattern, policy, queries, post }) => {
+    const behavior = liveBehaviors().find(({ PathPattern }) => PathPattern === pattern);
+    // AWS's managed CachingDisabled policy: live data must never sit at the edge, and
+    // never inherit the puzzle's year-long s-maxage.
+    expect(behavior?.CachePolicyId).toBe(CACHING_DISABLED_POLICY_ID);
+    if (post) expect(behavior?.AllowedMethods).toContain('POST');
+
+    // The policy THIS behavior wears, not merely one that exists under the name.
+    const { Ref } = behavior?.OriginRequestPolicyId as { Ref: string };
+    const config = originRequestPolicies()[Ref]?.Properties.OriginRequestPolicyConfig;
+    expect(config?.Name).toBe(policy);
+    // An unlisted parameter never reaches the Lambda at all; an empty list forwards none.
+    expect(config?.QueryStringsConfig).toEqual(
+      queries.length
+        ? { QueryStringBehavior: 'whitelist', QueryStrings: queries }
+        : { QueryStringBehavior: 'none' },
+    );
+    expect(config?.CookiesConfig).toEqual({ CookieBehavior: 'none' });
     // AWS's Lambda-URL policy pattern: every VIEWER header except Host, so the payload
     // hash reaches the origin (it can never be named in an allow-list) and CloudFront
     // sets Host to the Function URL's own domain for the SigV4 signature.
-    expect(scorePolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
-      HeaderBehavior: 'allExcept',
-      Headers: ['Host'],
-    });
-  });
-
-  it('uses a deployable zero-cache profile behavior with exact query forwarding (#188)', () => {
-    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
-    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
-      string,
-      unknown
-    >[];
-    const profile = behaviors.find(({ PathPattern }) => PathPattern === 'profile*');
-    // AWS's managed CachingDisabled policy — profile data is live, like /scores.
-    expect(profile?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-    // POST must be allowed (the authenticated upsert).
-    expect(profile?.AllowedMethods).toContain('POST');
-
-    const policies = Object.values(
-      template.findResources('AWS::CloudFront::OriginRequestPolicy'),
-    );
-    const profilePolicy = policies.find(
-      (policy) =>
-        policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinPlayerProfileOrigin',
-    );
-    // `id` is the ONE query the profile handler reads; the Lambda-URL-safe header mode
-    // carries the viewer's x-amz-content-sha256 for the OAC-signed POST.
-    expect(profilePolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
-      QueryStringBehavior: 'whitelist',
-      QueryStrings: ['id'],
-    });
-    expect(profilePolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
-      HeaderBehavior: 'allExcept',
-      Headers: ['Host'],
-    });
-  });
-
-  it('uses a deployable zero-cache groups behavior forwarding exactly `id` (#271)', () => {
-    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
-    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
-      string,
-      unknown
-    >[];
-    const groups = behaviors.find(({ PathPattern }) => PathPattern === 'groups*');
-    // Memberships are live data, like /scores and /profile.
-    expect(groups?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-    // Every write is a POST: the device token authenticates in the body.
-    expect(groups?.AllowedMethods).toContain('POST');
-
-    const policies = Object.values(
-      template.findResources('AWS::CloudFront::OriginRequestPolicy'),
-    );
-    const groupsPolicy = policies.find(
-      (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinGroupsOrigin',
-    );
-    // ONE query: the public group id the GET answers a face for. The header mode is still
-    // the Lambda-URL-safe one, since it is what carries the OAC-signed body hash.
-    expect(groupsPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
-      QueryStringBehavior: 'whitelist',
-      QueryStrings: ['id'],
-    });
-    expect(groupsPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
-      HeaderBehavior: 'allExcept',
-      Headers: ['Host'],
-    });
-  });
-
-  it('uses a deployable zero-cache board behavior with exact query forwarding (#190)', () => {
-    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
-    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
-      string,
-      unknown
-    >[];
-    const board = behaviors.find(({ PathPattern }) => PathPattern === 'board*');
-    // The leaderboard is live data, like the other three.
-    expect(board?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-    // POST must be allowed (the authenticated group-board read).
-    expect(board?.AllowedMethods).toContain('POST');
-
-    const policies = Object.values(
-      template.findResources('AWS::CloudFront::OriginRequestPolicy'),
-    );
-    const boardPolicy = policies.find(
-      (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinLeaderboardOrigin',
-    );
-    // The THREE queries the board handler reads — lang/date address the day, `id` (public,
-    // never the secret) widens the global GET with the caller's own window.
-    expect(boardPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
-      QueryStringBehavior: 'whitelist',
-      QueryStrings: ['lang', 'date', 'id'],
-    });
-    expect(boardPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
-      HeaderBehavior: 'allExcept',
-      Headers: ['Host'],
-    });
-  });
-
-  it('uses a deployable zero-cache round behavior with exact query forwarding (#201)', () => {
-    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
-    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
-      string,
-      unknown
-    >[];
-    const round = behaviors.find(({ PathPattern }) => PathPattern === 'round*');
-    // The guess log is live data, like the other four.
-    expect(round?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-    // The route is POST-only: the device token authenticates in the body.
-    expect(round?.AllowedMethods).toContain('POST');
-
-    const policies = Object.values(
-      template.findResources('AWS::CloudFront::OriginRequestPolicy'),
-    );
-    const roundPolicy = policies.find(
-      (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinRoundOrigin',
-    );
-    // The addressing queries — the pair /scores forwards, plus a bonus puzzle's id; the
-    // secret never travels in a query. The header mode is still the Lambda-URL-safe one,
-    // since it is what carries the OAC-signed body hash.
-    expect(roundPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
-      QueryStringBehavior: 'whitelist',
-      QueryStrings: ['lang', 'date', 'bonus'],
-    });
-    expect(roundPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
-      HeaderBehavior: 'allExcept',
-      Headers: ['Host'],
-    });
-  });
-
-  it('uses a deployable zero-cache devices behavior forwarding NO query (#216)', () => {
-    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
-    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
-      string,
-      unknown
-    >[];
-    const devices = behaviors.find(({ PathPattern }) => PathPattern === 'devices*');
-    // Identity is live data, and a device list is private: it must never sit at the edge.
-    expect(devices?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-    // POST-only: the device token authenticates in the body.
-    expect(devices?.AllowedMethods).toContain('POST');
-
-    const policies = Object.values(
-      template.findResources('AWS::CloudFront::OriginRequestPolicy'),
-    );
-    const devicesPolicy = policies.find(
-      (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinDevicesOrigin',
-    );
-    // Nothing to forward — the token rides in the body. The header mode still has to be the
-    // Lambda-URL-safe one, since it is what carries the OAC-signed body hash.
-    expect(devicesPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
-      QueryStringBehavior: 'none',
-    });
-    expect(devicesPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
-      HeaderBehavior: 'allExcept',
-      Headers: ['Host'],
-    });
-  });
-
-  it('uses a deployable zero-cache link behavior forwarding NO query (#204)', () => {
-    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
-    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
-      string,
-      unknown
-    >[];
-    const link = behaviors.find(({ PathPattern }) => PathPattern === 'link*');
-    // An account link is live AND private: it must never sit at the edge.
-    expect(link?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-    // POST-only: the device token authenticates in the body, like /groups and /devices.
-    expect(link?.AllowedMethods).toContain('POST');
-
-    const policies = Object.values(
-      template.findResources('AWS::CloudFront::OriginRequestPolicy'),
-    );
-    const linkPolicy = policies.find(
-      (policy) => policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinAccountLinkOrigin',
-    );
-    // Nothing to forward — the token rides in the body. The header mode still has to be the
-    // Lambda-URL-safe one, since it is what carries the OAC-signed body hash.
-    expect(linkPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
-      QueryStringBehavior: 'none',
-    });
-    expect(linkPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
-      HeaderBehavior: 'allExcept',
-      Headers: ['Host'],
-    });
+    expect(config?.HeadersConfig).toEqual({ HeaderBehavior: 'allExcept', Headers: ['Host'] });
   });
 
   // CONTRACT (#204): the sender is one address, and the role may send as no other. A leaked
@@ -305,38 +196,6 @@ describe('score production boundary (#169)', () => {
     expect(JSON.stringify(send[0].Resource)).toContain(':identity/*');
     const functions = Object.values(template.findResources('AWS::Lambda::Function'));
     expect(functions[0].Properties.Environment.Variables).toMatchObject({ MAIL_FROM });
-  });
-
-  it('uses a deployable zero-cache history behavior with exact query forwarding (#211)', () => {
-    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
-    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
-      string,
-      unknown
-    >[];
-    const history = behaviors.find(({ PathPattern }) => PathPattern === 'history*');
-    // A player's own history is live AND private: it must never sit at the edge.
-    expect(history?.CachePolicyId).toBe('4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
-    // POST-only: the device token authenticates in the body, like /groups and /round.
-    expect(history?.AllowedMethods).toContain('POST');
-
-    const policies = Object.values(
-      template.findResources('AWS::CloudFront::OriginRequestPolicy'),
-    );
-    const historyPolicy = policies.find(
-      (policy) =>
-        policy.Properties.OriginRequestPolicyConfig.Name === 'WhippinPlayerHistoryOrigin',
-    );
-    // `lang` names which daily and `month` the calendar page — and NOT `date`: this
-    // read is addressed by a MONTH, which is exactly the sort-key prefix #203 reordered
-    // the round key for. An unlisted parameter never reaches the Lambda at all.
-    expect(historyPolicy?.Properties.OriginRequestPolicyConfig.QueryStringsConfig).toEqual({
-      QueryStringBehavior: 'whitelist',
-      QueryStrings: ['lang', 'month'],
-    });
-    expect(historyPolicy?.Properties.OriginRequestPolicyConfig.HeadersConfig).toEqual({
-      HeaderBehavior: 'allExcept',
-      Headers: ['Host'],
-    });
   });
 
   it('stamps the trusted viewer address onto EVERY route whose handler reads one', () => {
@@ -451,16 +310,18 @@ describe('per-player score storage (#187)', () => {
 const DOMAIN = 'test.invalid';
 const OPERATOR = 'ops@test.invalid';
 
-function mailTemplate(operatorEmail: string | undefined): Template {
-  const app = new App();
-  const stack = new BackendStack(app, 'MailBackendStack', {
+function mailStack(app: App, operatorEmail: string | undefined): BackendStack {
+  return new BackendStack(app, 'MailBackendStack', {
     env: { account: ACCOUNT, region: REGION },
     turnstileSecretParameter: TURNSTILE_PARAMETER,
     ipHmacSecretParameter: IP_HMAC_PARAMETER,
     domainName: DOMAIN,
     operatorEmail,
   });
-  return Template.fromStack(stack);
+}
+
+function mailTemplate(operatorEmail: string | undefined): Template {
+  return Template.fromStack(mailStack(new App(), operatorEmail));
 }
 
 const mail = mailTemplate(OPERATOR);
@@ -639,5 +500,20 @@ describe('mail plumbing (#230)', () => {
     expect(Object.keys(bare.findResources('AWS::SNS::Topic'))).toHaveLength(0);
     expect(Object.keys(bare.findResources('AWS::SES::ReceiptRuleSet'))).toHaveLength(0);
     bare.resourcePropertiesCountIs('AWS::Route53::RecordSet', { Type: 'MX' }, 0);
+  });
+});
+
+// `bin/app.ts` runs cdk-nag over every stack, where a finding is a FAILED SYNTH — and CI
+// synthesizes nothing, so without this a finding is first seen by the deploy, after the
+// merge (`bot-stack.test.ts` records how one reached production). Built WITH the domain
+// and the operator address, so the mail constructs and their suppressions are checked too.
+describe('cdk-nag (the gate bin/app.ts applies)', () => {
+  it('synthesizes with NO cdk-nag findings, mail plumbing included', () => {
+    const app = new App({ context: { 'aws:cdk:bundling-stacks': [] } });
+    const stack = mailStack(app, OPERATOR);
+    Aspects.of(app).add(new AwsSolutionsChecks());
+    expect(
+      Annotations.fromStack(stack).findError('*', Match.stringLikeRegexp('AwsSolutions-.*')),
+    ).toEqual([]);
   });
 });

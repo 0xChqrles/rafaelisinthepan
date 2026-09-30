@@ -42,6 +42,7 @@ Downloads are cached under wordlist/.cache/ (gitignored); --refresh re-downloads
 
 import argparse
 import gzip
+import hashlib
 import os
 import shutil
 import subprocess
@@ -68,7 +69,7 @@ SOURCES = {
     "en": {
         # SCOWL size<=60, American AND British spellings (GBs = -ise, GBz = -ize/Oxford),
         # keep diacritics (café/naïve), inline plain wordlist.
-        "scowl": ("http://app.aspell.net/create?max_size=60&spelling=US&spelling=GBs"
+        "scowl": ("https://app.aspell.net/create?max_size=60&spelling=US&spelling=GBs"
                   "&spelling=GBz&max_variant=1&diacritic=keep&download=wordlist"
                   "&encoding=utf-8&format=inline"),
         "hunspell": {
@@ -78,17 +79,50 @@ SOURCES = {
     },
 }
 
+# Lexique is the one source above served over plain HTTP (lexique.org's HTTPS certificate
+# does not verify), so it is PINNED by digest: it decides what counts as a French word
+# here and, in build_forms.py, the inventory's `dom` column and spelling order.
+LEXIQUE_NAME = "Lexique383.tsv"
+LEXIQUE_SHA256 = "637ba37a767a66679c48371d673ece50cbf541b49a4e40e598963d4f3fbce52b"
+
 
 def fetch(url, dest, refresh):
-    """Download url to dest (cached). Returns dest."""
+    """Download url to dest (cached). Returns dest.
+
+    The body is streamed to dest + ".part" and only renamed once it is whole, so an
+    interrupted or truncated download is never taken for the cached file by the next
+    run. A server that closes the connection early ends the copy without an error, so
+    the byte count is checked against Content-Length whenever the response states one
+    (a chunked response states none)."""
     if os.path.exists(dest) and not refresh:
         return dest
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     print(f"  ↓ {url}", file=sys.stderr)
     req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
+    part = dest + ".part"
+    with urllib.request.urlopen(req, timeout=120) as r, open(part, "wb") as f:
         shutil.copyfileobj(r, f)
+        expected, written = r.headers.get("Content-Length"), f.tell()
+    if expected is not None and written != int(expected):
+        print(f"Erreur : téléchargement incomplet de {url}\n"
+              f"         {written:,} octet(s) reçu(s), {int(expected):,} attendu(s) : "
+              f"relance la commande.", file=sys.stderr)
+        sys.exit(1)
+    os.replace(part, dest)
     return dest
+
+
+def verify_digest(path, expected, name):
+    """A pinned source must be the exact file its provenance names."""
+    digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
+    if digest != expected:
+        print(f"Erreur : empreinte inattendue pour {name}\n"
+              f"         attendu {expected}\n"
+              f"         obtenu  {digest}\n"
+              f"         la source a changé : vérifie la version et la licence "
+              f"avant de mettre à jour l'empreinte.", file=sys.stderr)
+        sys.exit(1)
+    return path
 
 
 def read_lexique(path):
@@ -143,8 +177,9 @@ def build(lang, *, skip_hunspell, refresh):
         per_source[name] = len(words) - before  # NEW words this source contributed
 
     if "lexique" in src:
-        add("lexique", read_lexique(fetch(src["lexique"],
-                                          os.path.join(CACHE_DIR, f"{lang}.lexique.tsv"), refresh)))
+        add("lexique", read_lexique(verify_digest(
+            fetch(src["lexique"], os.path.join(CACHE_DIR, f"{lang}.lexique.tsv"), refresh),
+            LEXIQUE_SHA256, LEXIQUE_NAME)))
     if "scowl" in src:
         add("scowl", read_flat(fetch(src["scowl"],
                                      os.path.join(CACHE_DIR, f"{lang}.scowl.txt"), refresh)))

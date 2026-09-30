@@ -48,6 +48,7 @@ function countingStore(present = true, secret = 'phare', aliasRank = 0, revision
   );
   const store: PuzzleStore = {
     getPuzzle,
+    hasPuzzle: async () => present,
     getSlice,
   };
   return { store, getPuzzle, getSlice };

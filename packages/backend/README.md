@@ -40,12 +40,13 @@ that provisions Lambda + Function URL + CloudFront + the bucket is issue #3.)
   - **Authenticated POSTs**: `POST /round` (#201/#203: the per-round guess log, the derived
     score), `POST /history` (#211), `GET|POST /groups`
     (#271), `POST /board` (a group's faces, #190), `POST /profile` (the own-row upsert,
-    #188), and `POST /devices` for the device list and revocation — each carries the
+    #188), `POST /link` (#204: the email backup) and `POST /devices` for the device list
+    and revocation — each carries the
     **DEVICE TOKEN in the body** (`{ "token": "<64-hex>" }`, #216), which the server
     resolves to the account.
   - **`POST /devices` bootstrap** is CREATION, not authentication: the Turnstile-gated
     request that mints the device row and its account. Turnstile gates exactly the
-    requests that CREATE state — this bootstrap and round creation.
+    requests that CREATE state — this bootstrap, round creation and the link code SEND.
 
   In production, every live POST serializes its body once, hashes those exact UTF-8
   bytes, and sends the digest as lowercase hexadecimal in `x-amz-content-sha256` —
@@ -65,7 +66,10 @@ that provisions Lambda + Function URL + CloudFront + the bucket is issue #3.)
   });
   ```
 - `GET /s/<token>` → the share page (OG meta) for a result token; `GET /og/<token>.png` →
-  its card image.
+  its card image. `GET /g/<groupId>` and `GET /og/g/<groupId>.png` → a group invite's page
+  and card. A dead PAGE link (a token naming no result, a group that no longer exists) is a
+  `404` served as a small `noindex` HTML page that moves a person on — to the site home, or
+  to the invite landing that says it expired; a dead card is a JSON `404`.
 - `GET /today` → `{ date, dayNumber, timeZone, resetHour, nextResetAt,
   secondsUntilNextReset }` — a DIAGNOSTIC: the server's current game day and the next
   flip. The client computes the day itself and does not read this.
@@ -85,7 +89,9 @@ correction up on a normal reload.
 ## S3 layout
 
 ```
-s3://<bucket>/<YYYY-MM-DD>.<lang>.json        — the puzzle
+s3://<bucket>/<YYYY-MM-DD>.<lang>.json            — the puzzle
+s3://<bucket>/<YYYY-MM-DD>.<lang>.slice.json.gz   — its derivation slice (#203), read by /round
+s3://<bucket>/bonus/<id>.<lang>.json              — a bonus puzzle (+ its slice), outside the calendar
 ```
 
 The key is fully determined by (game day, lang), so the Lambda `GetObject`s the one
@@ -105,6 +111,7 @@ S3 cannot drift apart.
 | `SCORE_TABLE`   | yes      | DynamoDB table holding per-player score rows + dedup items |
 | `TURNSTILE_SECRET_PARAMETER` | yes | SSM SecureString name for the Turnstile server secret |
 | `IP_HMAC_SECRET_PARAMETER` | yes | SSM SecureString name for the 32+ byte IP-HMAC key |
+| `MAIL_FROM`     | yes      | sender address of the #204 link-code mail        |
 | `ALLOWED_ORIGIN`| no       | CORS origin (the web origin in prod; `*` if unset) |
 | `SITE_ORIGIN`   | no       | canonical apex for the share card's absolute URLs (falls back to the request origin) |
 
@@ -164,6 +171,6 @@ server has no CloudFront OAC, so it does not require `x-amz-content-sha256`.
 ## Dev
 
 ```bash
-pnpm --filter @whippin/backend test       # vitest (handler + respond + store/layout + publish/inventory + share card)
+pnpm --filter @whippin/backend test       # vitest
 pnpm --filter @whippin/backend typecheck  # tsc --noEmit
 ```

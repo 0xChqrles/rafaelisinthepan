@@ -24,23 +24,23 @@ export function newTestDevice(accountId: string = generatePublicId()): TestDevic
   return { token: generateDeviceToken(), accountId, deviceId: generateDeviceId() };
 }
 
-export function deviceSeed(device: TestDevice, now = '2026-01-01T00:00:00.000Z'): BootstrapInput {
+export function deviceSeed(device: TestDevice): BootstrapInput {
   return {
     tokenHash: deviceTokenHash(device.token),
     accountId: device.accountId,
     deviceId: device.deviceId,
     agent: { device: 'Test', os: 'Test', browser: 'Test' },
-    now,
+    now: '2026-01-01T00:00:00.000Z',
   };
 }
 
 // Mint a device and put it in the store, for the tests whose setup is already async.
 export async function seedDevice(
   devices: DeviceStore,
-  options: { accountId?: string; now?: string } = {},
+  options: { accountId?: string } = {},
 ): Promise<TestDevice> {
   // An explicit account id is for the tests that need TWO devices on ONE account.
   const device = newTestDevice(options.accountId);
-  await devices.bootstrap(deviceSeed(device, options.now));
+  await devices.bootstrap(deviceSeed(device));
   return device;
 }

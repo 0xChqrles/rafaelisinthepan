@@ -19,9 +19,9 @@ import { SSMClient } from '@aws-sdk/client-ssm';
 import { activeDate, dayNumber } from '@whippin/shared';
 import { createAgent } from './chat/agent';
 import { createDaySourceReader } from './puzzle/daySource';
-import { DayLog, dayOfInstant, dynamoDayLogStore, quoteLead } from './chat/dayLog';
+import { DayLog, composeTurnText, dayOfInstant, dynamoDayLogStore } from './chat/dayLog';
 import { dynamoDiaryStore } from './chat/diary';
-import { dynamoLimitStore, limitExpiry, limitKeys } from './chat/limits';
+import { dynamoLimitStore, takeDailyCall } from './chat/limits';
 import { serialByKey } from './chat/serial';
 import { labelPlayers } from './chat/tools';
 import {
@@ -33,7 +33,6 @@ import {
   mayVolunteer,
   namesWithBot,
   quotesBot,
-  withMentionNames,
   type Approach,
   type BotIdentity,
   type Exchange,
@@ -168,11 +167,9 @@ async function main(): Promise<void> {
   // budget answers null, which is the emoji — the share is still acknowledged.
   const comment = provider
     ? (group: GroupConfig, key: { dayNumber: number; sender: string; lang: string; said?: string }) =>
-        generateShareComment(provider, group, { declarations, ...key }, log, async () => {
-          const at = new Date();
-          const { scope, key } = limitKeys.calls(at);
-          return limits.take(scope, key, env.llm.dailyCallCeiling, limitExpiry(at));
-        })
+        generateShareComment(provider, group, { declarations, ...key }, log, () =>
+          takeDailyCall(limits, env.llm.dailyCallCeiling, new Date()),
+        )
     : undefined;
 
   // The bot's own words into the day log, said in the log when the store refuses: a turn
@@ -265,13 +262,16 @@ async function main(): Promise<void> {
     const refs = quoted ? [...message.mentions, { jid: quoted.participant, player: quoted.player }] : message.mentions;
     // ONE map for the body and the quote, the bot in it under its name (`namesWithBot`).
     const names = namesWithBot(await mentionNames(group, refs), identity, message.mentions);
-    const lead = quoted
-      ? quoteLead(
-          quotesBot(message, identity) ? 'you' : (names.get(jidUser(quoted.participant)) ?? displayName(group, quoted.player, '')),
-          withMentionNames(quotedText, names),
-        )
-      : '';
-    const kept = `${lead}${withMentionNames(text, names)}`.trim();
+    const kept = composeTurnText(
+      text,
+      quoted
+        ? {
+            author: quotesBot(message, identity) ? 'you' : (names.get(jidUser(quoted.participant)) ?? displayName(group, quoted.player, '')),
+            text: quotedText,
+          }
+        : null,
+      names,
+    );
     if (!kept) return null;
     const at = message.timestamp * 1000;
     await keep({
@@ -328,7 +328,7 @@ async function main(): Promise<void> {
       const exchange = exchanges.get(group.id) ?? NEW_EXCHANGE;
       if (!address) {
         const acknowledged = group.acknowledge !== 'none' && ingested === 'recorded';
-        const wordless = !kept || (isWordless(kept) && !(message.quoted && !isWordless(message.quoted.text)));
+        const wordless = !kept || isWordless(kept);
         const reason = acknowledged ? 'acknowledged' : wordless ? 'wordless' : !mayVolunteer(exchange, at) ? 'exchange_budget' : null;
         if (reason) {
           if (reason === 'exchange_budget') log.info({ event: 'chat.silent', reason, group: tag(group.id) }, 'not offered');

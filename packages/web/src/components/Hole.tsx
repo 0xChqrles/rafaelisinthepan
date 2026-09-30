@@ -11,7 +11,7 @@ import useAnimatedNumber, { linearEasing } from '../hooks/useAnimatedNumber';
 import { capitalize } from '../game/sentenceCase';
 import useLetterWave, { WAVE_VARS, waveDurationMs } from '../hooks/useLetterWave';
 import { prefersReducedMotion, useScramble } from '../hooks/useScramble';
-import type { HitState, RuntimeHole } from '@whippin/shared';
+import type { HitState, RuntimeHole } from '../game/types';
 
 // `rankHeatColor` owns the app's absolute rank scale in @whippin/shared. Everything that
 // draws an exponent — this hole, the floating hit, route rows, loot and the tutorial —
@@ -155,7 +155,6 @@ export default function Hole({
   useLayoutEffect(() => {
     if (enter !== undefined) start(hole.word, enter);
     // Mount only: an entrance, never replayed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useLayoutEffect(() => {
     if (hole.word === displayWord) return undefined;
@@ -237,7 +236,6 @@ export default function Hole({
     };
     // A solve cancels both pending timers, including before the board's deferred release.
     // `seaShown` is what this choreography sets, not a reason to restart it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, solving]);
   const endBurst = useCallback(() => setBurst(0), []);
   // Where this hit's sparks gather: the meter after it, fixed per hit (see the loot below).
@@ -248,7 +246,6 @@ export default function Hole({
   useLayoutEffect(() => {
     if (lootHitId !== null) setLootFill(Math.min(100, chargeNow + chargeGain));
     // Fixed when the hit MOUNTS: the reading then is the pre-release one.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lootHitId]);
   useEffect(() => {
     if (resolved) onResolved?.(holeIndex);
@@ -283,7 +280,6 @@ export default function Hole({
     const id = window.setTimeout(() => setGreeting(false), waveDurationMs(letters.length));
     return () => window.clearTimeout(id);
     // The letter count is read when the greeting starts, like the ambient wave's.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [greeting]);
   const waving = ambientWaving || (greeting && ticking);
 

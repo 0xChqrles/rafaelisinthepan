@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import type { ChangeEvent, ClipboardEvent, FocusEvent, MutableRefObject } from 'react';
 import { fold } from '@whippin/shared';
 import { t } from '../i18n';
+import { COARSE_POINTER, coarsePointer, prefersReducedMotion } from '../hooks/useScramble';
 import UnlockIcon from '../assets/icons/unlock.svg?react';
 
 // Map a physical key to the slug character(s) it contributes. The on-screen keyboard
@@ -48,22 +49,12 @@ function strayTarget(target: EventTarget | null): StrayKeyTarget | null {
 // that landed elsewhere and was handed over.
 type KeyInput = Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'preventDefault'>;
 
-// A TOUCH SCREEN is read the way the rest of the app reads it (`Game`'s history-tap rule):
-// the PRIMARY pointer is coarse. Watched rather than read once, because it can change under a
+// A TOUCH SCREEN is read the way the rest of the app reads it (`coarsePointer`): the
+// PRIMARY pointer is coarse. Watched rather than read once, because it can change under a
 // live round — a Chromebook folded into a tablet, a phone docked to a desktop.
-const TOUCH_SCREEN = '(pointer: coarse)';
-
-function touchScreen(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia(TOUCH_SCREEN).matches
-  );
-}
-
 function watchTouchScreen(onChange: () => void): () => void {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => {};
-  const query = window.matchMedia(TOUCH_SCREEN);
+  const query = window.matchMedia(COARSE_POINTER);
   query.addEventListener('change', onChange);
   return () => query.removeEventListener('change', onChange);
 }
@@ -149,8 +140,8 @@ export default function WordInput({
   active = true,
 }: WordInputProps) {
   const [shaking, setShaking] = useState<boolean>(false);
-  const field = useRef<HTMLInputElement>(null);
-  const touch = useSyncExternalStore(watchTouchScreen, touchScreen, touchScreen);
+  const field = useRef<HTMLInputElement | null>(null);
+  const touch = useSyncExternalStore(watchTouchScreen, coarsePointer, coarsePointer);
 
   // Prompt history for Up/Down recall (desktop nicety). The array is the round's
   // PERSISTED guesses (passed in); the cursor (index) + draft stay ephemeral.
@@ -185,7 +176,7 @@ export default function WordInput({
     const recalled = recalling.current;
     recalling.current = false;
     if (recalled || shown !== '' || prev.length < 2 || !box) return;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    if (prefersReducedMotion()) return;
     setLaunch((last) => ({
       text: prev,
       n: (last?.n ?? 0) + 1,

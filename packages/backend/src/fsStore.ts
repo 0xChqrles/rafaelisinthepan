@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { Puzzle } from '@whippin/shared';
 import type { PuzzleStore } from './store';
@@ -19,6 +19,15 @@ export function fsStore(root: string): PuzzleStore {
         return JSON.parse(text) as Puzzle;
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw err;
+      }
+    },
+    async hasPuzzle(date, lang) {
+      try {
+        await stat(path.join(root, storeKey(date, lang)));
+        return true;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false;
         throw err;
       }
     },

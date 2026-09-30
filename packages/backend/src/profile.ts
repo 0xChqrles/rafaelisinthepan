@@ -37,7 +37,7 @@ import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respon
 // It REFUSES rather than sanitizes: sanitizing server-side would silently store a name
 // nobody typed, and the web sends a sanitized name through every path it has, so a
 // non-conforming body is a caller that went around the editor.
-export function validateName(raw: unknown): string | null {
+function validateName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   return isValidName(raw) ? raw : null;
 }

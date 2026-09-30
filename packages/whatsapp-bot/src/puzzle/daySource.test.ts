@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createLog } from '../log';
+import { createLog, type Log } from '../log';
 import { createDaySourceReader, revealsSource, sourceContext } from './daySource';
 
 const log = createLog('silent');
@@ -31,13 +31,13 @@ const ok = (body: unknown) =>
 describe("the day's source is ambient context, not a tool (#236)", () => {
   it('reads the day once and holds it, however often the group speaks', async () => {
     const r = reader([() => ok({ source: { kind: 'music', author: 'Bertrand Belin', work: 'Oiseau' } })]);
-    expect(await r.reader.get('fr', 20700, '2026-09-03')).toEqual({
+    expect(await r.reader.get('fr', '2026-09-03')).toEqual({
       kind: 'music',
       author: 'Bertrand Belin',
       work: 'Oiseau',
     });
-    await r.reader.get('fr', 20700, '2026-09-03');
-    await r.reader.get('fr', 20700, '2026-09-03');
+    await r.reader.get('fr', '2026-09-03');
+    await r.reader.get('fr', '2026-09-03');
     // One 4-6 MB read a day, not one per question.
     expect(r.fetchImpl).toHaveBeenCalledTimes(1);
     expect(r.calls[0]).toBe('https://api.whippin.ai/?lang=fr&date=2026-09-03');
@@ -50,9 +50,9 @@ describe("the day's source is ambient context, not a tool (#236)", () => {
     });
     const r = reader([() => pending]);
     const all = Promise.all([
-      r.reader.get('fr', 20700, '2026-09-03'),
-      r.reader.get('fr', 20700, '2026-09-03'),
-      r.reader.get('fr', 20700, '2026-09-03'),
+      r.reader.get('fr', '2026-09-03'),
+      r.reader.get('fr', '2026-09-03'),
+      r.reader.get('fr', '2026-09-03'),
     ]);
     release(ok({ source: { kind: 'book' } }));
     expect(await all).toEqual([{ kind: 'book' }, { kind: 'book' }, { kind: 'book' }]);
@@ -60,10 +60,11 @@ describe("the day's source is ambient context, not a tool (#236)", () => {
   });
 
   it('keys the cache by DAY and by LANGUAGE — two dailies are two sources', async () => {
-    const r = reader([() => ok({ source: { kind: 'music' } }), () => ok({ source: { kind: 'poem' } })]);
-    expect(await r.reader.get('fr', 20700, '2026-09-03')).toEqual({ kind: 'music' });
-    expect(await r.reader.get('en', 20700, '2026-09-03')).toEqual({ kind: 'poem' });
-    expect(r.fetchImpl).toHaveBeenCalledTimes(2);
+    const r = reader([() => ok({ source: { kind: 'music' } }), () => ok({ source: { kind: 'poem' } }), () => ok({ source: { kind: 'book' } })]);
+    expect(await r.reader.get('fr', '2026-09-03')).toEqual({ kind: 'music' });
+    expect(await r.reader.get('en', '2026-09-03')).toEqual({ kind: 'poem' });
+    expect(await r.reader.get('fr', '2026-09-04')).toEqual({ kind: 'book' });
+    expect(r.fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it('PARSES the puzzle, because "source" is also an ordinary French word', async () => {
@@ -81,7 +82,7 @@ describe("the day's source is ambient context, not a tool (#236)", () => {
           source: { kind: 'music', author: 'Bertrand Belin', work: 'Oiseau' },
         }),
     ]);
-    expect(await r.reader.get('fr', 20700, '2026-09-03')).toEqual({
+    expect(await r.reader.get('fr', '2026-09-03')).toEqual({
       kind: 'music',
       author: 'Bertrand Belin',
       work: 'Oiseau',
@@ -90,8 +91,8 @@ describe("the day's source is ambient context, not a tool (#236)", () => {
 
   it('an unpublished day is an ANSWER and is never re-read; a failure is retried later', async () => {
     const missing = reader([() => new Response('', { status: 404 })]);
-    expect(await missing.reader.get('fr', 20700, '2026-09-03')).toBeNull();
-    await missing.reader.get('fr', 20700, '2026-09-03');
+    expect(await missing.reader.get('fr', '2026-09-03')).toBeNull();
+    await missing.reader.get('fr', '2026-09-03');
     expect(missing.fetchImpl).toHaveBeenCalledTimes(1); // settled: no puzzle that day
 
     let clock = 1_000;
@@ -99,24 +100,40 @@ describe("the day's source is ambient context, not a tool (#236)", () => {
       [() => new Response('', { status: 503 }), () => ok({ source: { kind: 'music' } })],
       () => clock,
     );
-    expect(await down.reader.get('fr', 20700, '2026-09-03')).toBeNull();
-    await down.reader.get('fr', 20700, '2026-09-03');
+    expect(await down.reader.get('fr', '2026-09-03')).toBeNull();
+    await down.reader.get('fr', '2026-09-03');
     expect(down.fetchImpl).toHaveBeenCalledTimes(1); // not re-read at the rate the group talks
     clock += 6 * 60_000;
-    expect(await down.reader.get('fr', 20700, '2026-09-03')).toEqual({ kind: 'music' });
+    expect(await down.reader.get('fr', '2026-09-03')).toEqual({ kind: 'music' });
+  });
+
+  it('an unreachable API is a failure too: read again once the failure TTL has passed', async () => {
+    // A fetch that REJECTS is answered inside `load` (`source.unreachable`) and held like a
+    // 503 — never a settled answer for the life of the process.
+    let clock = 1_000;
+    const r = reader(
+      [
+        () => Promise.reject(new Error('boom')),
+        () => ok({ source: { kind: 'poem' } }),
+      ],
+      () => clock,
+    );
+    expect(await r.reader.get('fr', '2026-09-03')).toBeNull();
+    clock += 6 * 60_000;
+    expect(await r.reader.get('fr', '2026-09-03')).toEqual({ kind: 'poem' });
   });
 
   it('a puzzle with no source, an unreachable API and a broken body all read as NOTHING', async () => {
     const none = reader([() => ok({ lang: 'fr', words: [] })]);
-    expect(await none.reader.get('fr', 20700, '2026-09-03')).toBeNull();
+    expect(await none.reader.get('fr', '2026-09-03')).toBeNull();
     const dead = reader([
       () => {
         throw new Error('ECONNREFUSED');
       },
     ]);
-    expect(await dead.reader.get('fr', 20700, '2026-09-03')).toBeNull();
+    expect(await dead.reader.get('fr', '2026-09-03')).toBeNull();
     const junk = reader([() => new Response('<html>', { status: 200 })]);
-    expect(await junk.reader.get('fr', 20700, '2026-09-03')).toBeNull();
+    expect(await junk.reader.get('fr', '2026-09-03')).toBeNull();
   });
 
   it('a body that PARSES but is not an object is an answer, not a thrown error', async () => {
@@ -126,8 +143,8 @@ describe("the day's source is ambient context, not a tool (#236)", () => {
     // group talks. Read safely it is simply a day with no source: settled, quiet, one read.
     for (const body of ['null', '[]', '"whippin"']) {
       const r = reader([() => new Response(body, { status: 200 })]);
-      expect(await r.reader.get('fr', 20700, '2026-09-03')).toBeNull();
-      await r.reader.get('fr', 20700, '2026-09-03');
+      expect(await r.reader.get('fr', '2026-09-03')).toBeNull();
+      await r.reader.get('fr', '2026-09-03');
       expect(r.fetchImpl).toHaveBeenCalledTimes(1);
     }
   });
@@ -193,14 +210,14 @@ describe('a reply never waits on decoration (PR-247 review)', () => {
 
       // The first question after a restart finds an empty cache and a multi-megabyte read.
       // It answers without the source rather than putting that read in front of the model.
-      const first = r.reader.get('fr', 20700, '2026-09-03');
+      const first = r.reader.get('fr', '2026-09-03');
       await vi.advanceTimersByTimeAsync(1_600);
       expect(await first).toBeNull();
 
       // The read was never abandoned: it lands, and the group's next message has it.
       release(ok({ source: { kind: 'music', author: 'Bertrand Belin', work: 'Oiseau' } }));
       await vi.advanceTimersByTimeAsync(0);
-      expect(await r.reader.get('fr', 20700, '2026-09-03')).toEqual({
+      expect(await r.reader.get('fr', '2026-09-03')).toEqual({
         kind: 'music',
         author: 'Bertrand Belin',
         work: 'Oiseau',
@@ -213,34 +230,41 @@ describe('a reply never waits on decoration (PR-247 review)', () => {
 
   it('a rejected read does not poison the day for the process', async () => {
     // `load` answers rather than throwing, so this is the path that only opens once a
-    // caller may stop waiting: nobody is left awaiting the flight to clean it up.
+    // caller may stop waiting: nobody is left awaiting the flight to clean it up. Reached
+    // here by a `load` that does throw — its own warning fails once.
     let clock = 1_000;
-    const r = reader(
-      [
-        () => Promise.reject(new Error('boom')),
-        () => ok({ source: { kind: 'poem' } }),
-      ],
-      () => clock,
-    );
-    expect(await r.reader.get('fr', 20700, '2026-09-03')).toBeNull();
+    let warned = 0;
+    const warn = () => {
+      warned += 1;
+      if (warned === 1) throw new Error('log down');
+    };
+    const responses = [() => Promise.reject(new Error('boom')), () => Promise.resolve(ok({ source: { kind: 'poem' } }))];
+    const fetchImpl = vi.fn(async () => responses[Math.min(fetchImpl.mock.calls.length - 1, 1)]());
+    const r = createDaySourceReader({
+      apiBaseUrl: 'https://api.whippin.ai',
+      log: { warn, info: () => {} } as unknown as Log,
+      now: () => clock,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(await r.get('fr', '2026-09-03')).toBeNull();
+    expect(warned).toBe(2); // the one that threw, then the flight's own
     clock += 6 * 60_000;
-    expect(await r.reader.get('fr', 20700, '2026-09-03')).toEqual({ kind: 'poem' });
+    expect(await r.get('fr', '2026-09-03')).toEqual({ kind: 'poem' });
   });
-
 });
 
 describe('the whole answer, waited for (the reminder)', () => {
   it('says whether the day is published, and null for a read that failed', async () => {
     const published = reader([() => ok({ lang: 'fr', source: { kind: 'music' } })]);
-    expect(await published.reader.read('fr', 20700, '2026-09-04')).toEqual({ published: true, source: { kind: 'music' } });
+    expect(await published.reader.read('fr', '2026-09-04')).toEqual({ published: true, source: { kind: 'music' } });
     const bare = reader([() => ok({ lang: 'fr' })]);
-    expect(await bare.reader.read('fr', 20700, '2026-09-04')).toEqual({ published: true, source: null });
+    expect(await bare.reader.read('fr', '2026-09-04')).toEqual({ published: true, source: null });
     const missing = reader([() => new Response('', { status: 404 })]);
-    expect(await missing.reader.read('fr', 20700, '2026-09-04')).toEqual({ published: false, source: null });
+    expect(await missing.reader.read('fr', '2026-09-04')).toEqual({ published: false, source: null });
     const down = reader([() => new Response('', { status: 503 })]);
-    expect(await down.reader.read('fr', 20700, '2026-09-04')).toBeNull();
+    expect(await down.reader.read('fr', '2026-09-04')).toBeNull();
     // And it shares the cache with `get`: one read serves both.
-    expect(await published.reader.get('fr', 20700, '2026-09-04')).toEqual({ kind: 'music' });
+    expect(await published.reader.get('fr', '2026-09-04')).toEqual({ kind: 'music' });
     expect(published.fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

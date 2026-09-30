@@ -1,9 +1,11 @@
 import { useRef } from 'react';
 import type { CSSProperties } from 'react';
+import { useArticleLang } from '../lang';
 import useSeen from './useSeen';
 
 // PROBABILITIES AS BARS: one row per word, the bar's length its share of the largest.
-export default function Bars({ lang, rows }: { lang: string; rows: [string, number][] }) {
+export default function Bars({ rows }: { rows: [string, number][] }) {
+  const lang = useArticleLang();
   const ref = useRef<HTMLDivElement>(null);
   const seen = useSeen(ref);
   const max = Math.max(...rows.map(([, v]) => v));

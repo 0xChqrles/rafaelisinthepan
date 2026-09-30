@@ -10,6 +10,7 @@
 // turn unread: `speakerName` sends every one through the same `displayName` the live bot
 // uses — the group's own override, or the `…last4` handle every other surface shows.
 
+import { zonedParts } from '@whippin/shared';
 import type { GroupConfig } from './config/groupConfig';
 import { boundName, displayName } from './domain/names';
 
@@ -74,7 +75,6 @@ export function jidOfAuthor(author: string): string | null {
 export interface SpeakerNames {
   group: GroupConfig;
   me: string; // what the exporter calls themselves ("Vous") is this person
-  bot: string; // the export's name for the bot, when it is a plain name
 }
 
 // What the group calls whoever wrote a message — the ONE reading the live bot uses for a
@@ -91,21 +91,9 @@ export function speakerName(author: string, names: SpeakerNames): string {
 // turn is stored as an instant, so the zone has to be applied — and applied at the RIGHT
 // instant, since two of these months sit either side of a DST change. One correction pass
 // settles it: guess, read the zone's offset there, correct, read it again.
-export function zoneOffsetMs(timezone: string, at: number): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    hour12: false,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).formatToParts(new Date(at));
-  const at_ = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
-  // `hour12: false` renders midnight as 24 in some engines; both readings mean the same day.
-  const hour = at_('hour') % 24;
-  return Date.UTC(at_('year'), at_('month') - 1, at_('day'), hour, at_('minute'), at_('second')) - at;
+function zoneOffsetMs(timezone: string, at: number): number {
+  const p = zonedParts(new Date(at), timezone);
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - at;
 }
 
 export function instantIn(timezone: string, y: number, month: number, d: number, hour: number, minute: number): number {

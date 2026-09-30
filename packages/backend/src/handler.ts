@@ -2,15 +2,18 @@ import {
   activeDate,
   bonusAddress,
   isBonusId,
+  isCalendarDate,
   dateForDayNumber,
   dayNumber,
   decodeLegacyShareTarget,
   decodeResult,
   nextResetAt,
   secondsUntilNextReset,
+  groupLandingPath,
   GROUP_ID_PATTERN,
   GROUP_SEGMENT,
   PUBLIC_ID_PATTERN,
+  SHARE_SEGMENT,
   SHARE_TOKEN_SOURCE,
   RESET_HOUR,
   TIME_ZONE,
@@ -34,11 +37,11 @@ import {
 import {
   renderCardPng,
   renderGroupCardPng,
+  renderGoneHtml,
   renderGroupHtml,
   renderShareHtml,
   type ShareSigner,
 } from './ogCard';
-import { isValidDate } from './layout';
 import { handleBoard } from './board';
 import { handleDevices, type DeviceHandlerDeps } from './devices';
 import type { DeviceStore } from './deviceStore';
@@ -46,8 +49,9 @@ import type { GroupStore } from './groupStore';
 import { handleGroups, readGroupFace } from './groups';
 import { handleHistory } from './history';
 import { handleLink, type LinkHandlerDeps } from './link';
+import { DATE_SKEW_DAYS, LIVE_HEADERS } from './liveRoute';
 import { handleProfile } from './profile';
-import type { ProfileRecord, ProfileStore } from './profileStore';
+import { faceOf, type ProfileRecord, type ProfileStore } from './profileStore';
 import { handleRound, type RoundHandlerDeps } from './rounds';
 import { handleScores, type ScoreHandlerDeps } from './scores';
 import type { PuzzleStore } from './store';
@@ -104,12 +108,6 @@ const NOT_FOUND_CACHE_CONTROL = 'public, max-age=60, s-maxage=60';
 const PUZZLE_BROWSER_MAX_AGE = 300;
 const PUZZLE_CDN_MAX_AGE = 31_536_000;
 
-// How far (whole days) a requested date may sit AHEAD of the server's active day and
-// still be served: +1 tolerates client clock skew around the 22:00 flip without exposing
-// a pre-published future puzzle beyond the adjacent day. The PAST is open (the archive is
-// date-addressed), so only the future is guarded.
-const DATE_SKEW_DAYS = 1;
-
 const LANG_RE = /^[a-z]{2}$/;
 
 // The share card (issue #8) is content-addressed by its token: a given URL's bytes are fixed
@@ -124,7 +122,7 @@ const SHARE_MAX_AGE = 31_536_000;
 // pattern, and the page is served under the group preview's short TTL because, like the
 // group's, it names a player who can rename or redraw.
 const OG_PNG_RE = new RegExp(`^/og/(${SHARE_TOKEN_SOURCE})(?:/([^/]+))?\\.png$`);
-const SHARE_RE = new RegExp(`^/s/(${SHARE_TOKEN_SOURCE})(?:/([^/]+))?$`);
+const SHARE_RE = new RegExp(`^/${SHARE_SEGMENT}/(${SHARE_TOKEN_SOURCE})(?:/([^/]+))?$`);
 
 // The #271 group invite link and its card. Unlike a share token these are NOT
 // content-addressed — members join, leave and redraw their marks — so they carry a short
@@ -202,7 +200,7 @@ export function createHandler(deps: HandlerDeps) {
       isHistoryRoute ||
       isDevicesRoute ||
       isLinkRoute;
-    const routeHeaders = isLiveRoute ? { ...cors, 'Cache-Control': 'no-store' } : cors;
+    const routeHeaders = isLiveRoute ? { ...cors, ...LIVE_HEADERS } : cors;
 
     // CORS preflight. It carries no data, so `no-store` belongs on the live ROUTES and
     // not on the permission check in front of them — what governs its reuse is
@@ -231,18 +229,24 @@ export function createHandler(deps: HandlerDeps) {
       const groupMatch = groupCard ?? groupPage;
       if (groupMatch) {
         const groupId = groupMatch[1];
+        const base = deps.siteOrigin ?? requestOrigin(event);
+        // A dead PAGE link is still a 404 (a crawler unfurls nothing), but one a person's
+        // browser moves on from; the card stays a JSON 404.
         if (!GROUP_ID_PATTERN.test(groupId)) {
-          return errorResponse(404, 'not_found', 'Invalid invite link.', cors);
+          return groupCard
+            ? errorResponse(404, 'not_found', 'Invalid invite link.', cors)
+            : html(404, renderGoneHtml(`${base}/`), cors);
         }
         if (!deps.groups || !deps.profiles) throw new Error('Groups are not configured.');
         const face = await readGroupFace(deps.groups, deps.profiles, groupId);
         // A link naming no group is over: it expires rather than unfurling as an empty
-        // card, and the landing it would bounce to refuses the join for the same reason.
+        // card, and the landing it would bounce to refuses the join for the same reason —
+        // which is where the page sends a person, to be told so.
         if (!face) {
-          return errorResponse(404, 'not_found', 'This invite link has expired.', {
-            ...cors,
-            'Cache-Control': `public, max-age=${PREVIEW_MAX_AGE}`,
-          });
+          const headers = { ...cors, 'Cache-Control': `public, max-age=${PREVIEW_MAX_AGE}` };
+          return groupCard
+            ? errorResponse(404, 'not_found', 'This invite link has expired.', headers)
+            : html(404, renderGoneHtml(`${base}${groupLandingPath(groupId)}`), headers);
         }
         // A face drawn from a FAILED profile read is the assigned fallback, and holding it
         // at the edge would put a stranger's mark on a member who drew their own.
@@ -251,7 +255,6 @@ export function createHandler(deps: HandlerDeps) {
           const buffer = await renderGroupCardPng({ name: face.group.name, members: face.members });
           return png(200, buffer, { 'Cache-Control': cacheControl });
         }
-        const base = deps.siteOrigin ?? requestOrigin(event);
         return html(200, renderGroupHtml(groupId, face.group.name, base), {
           'Cache-Control': cacheControl,
         });
@@ -259,31 +262,42 @@ export function createHandler(deps: HandlerDeps) {
 
       // Share-card routes (issue #8) are keyed only on the token — no lang/day/store — so
       // they resolve BEFORE the puzzle logic (which would otherwise 400 on the missing lang).
-      const ogMatch = OG_PNG_RE.exec(rawPath);
-      const shareMatch = ogMatch ? null : SHARE_RE.exec(rawPath);
+      const ogMatch = OG_PNG_RE.exec(normalizedPath);
+      const shareMatch = ogMatch ? null : SHARE_RE.exec(normalizedPath);
       const routeMatch = ogMatch ?? shareMatch;
       if (routeMatch) {
         const token = routeMatch[1];
         const signedBy = routeMatch[2];
+        // Canonical apex origin for the og:image, the game redirect and a dead link's page
+        // (so they never depend on the CloudFront-to-CloudFront Host); the request origin is
+        // the local-dev fallback.
+        const base = deps.siteOrigin ?? requestOrigin(event);
+        // A dead share PAGE is a 404 that moves a person on to the site home, the group
+        // link's rule; a dead card stays a JSON 404.
+        const gone = (message: string) =>
+          ogMatch
+            ? errorResponse(404, 'not_found', message, cors)
+            : html(404, renderGoneHtml(`${base}/`), cors);
         if (signedBy !== undefined && !PUBLIC_ID_PATTERN.test(signedBy)) {
-          return errorResponse(404, 'not_found', 'Invalid share link.', cors);
+          return gone('Invalid share link.');
         }
+        const result = decodeResult(token);
         // WHO signed it. An account an email link deleted (#204) signs nothing: the
         // result is still real, so the page falls back to the PLAIN share — the card
         // without a face — rather than expiring, since the score was never the part that
         // went away. A failed read draws the assigned identity and,
         // like the group preview, is the one answer not cached; an answered one is held
-        // for the group preview's minutes.
+        // for the group preview's minutes. Read only for a token that names a result: the
+        // 404 and the legacy redirect below draw no face.
         let by: (CardFace & ShareSigner) | null = null;
         let cacheControl = `public, max-age=${SHARE_MAX_AGE}, immutable`;
-        if (signedBy !== undefined) {
+        if (result && signedBy !== undefined) {
           const { profile, answered, live } = await readFace(signedBy);
           cacheControl = answered ? `public, max-age=${PREVIEW_MAX_AGE}` : 'no-store';
           if (!answered || live) {
-            by = { publicId: signedBy, name: profile?.name ?? '', avatar: profile?.avatar || null };
+            by = { publicId: signedBy, ...faceOf(profile) };
           }
         }
-        const result = decodeResult(token);
         if (ogMatch) {
           // The DECODED result is handed straight to the renderer: `CardData` IS
           // `ShareResult`, so re-listing its fields here is a second declaration of the
@@ -293,12 +307,8 @@ export function createHandler(deps: HandlerDeps) {
           if (result) {
             return png(200, await renderCardPng(result, by), { 'Cache-Control': cacheControl });
           }
-          return errorResponse(404, 'not_found', 'Invalid share token.', cors);
+          return gone('Invalid share token.');
         }
-        // Canonical apex origin for both the og:image and the game redirect (so they never
-        // depend on the CloudFront-to-CloudFront Host); the request origin is the local-dev
-        // fallback.
-        const base = deps.siteOrigin ?? requestOrigin(event);
         if (result) {
           const body = renderShareHtml(token, result, base, by);
           return html(200, body, { 'Cache-Control': cacheControl });
@@ -313,7 +323,7 @@ export function createHandler(deps: HandlerDeps) {
             'Cache-Control': `public, max-age=${SHARE_MAX_AGE}, immutable`,
           });
         }
-        return errorResponse(404, 'not_found', 'Invalid share token.', cors);
+        return gone('Invalid share token.');
       }
 
       const instant = now();
@@ -403,7 +413,7 @@ export function createHandler(deps: HandlerDeps) {
         );
       }
 
-      if (rawPath.replace(/\/+$/, '').endsWith('/today')) {
+      if (normalizedPath.endsWith('/today')) {
         // /today is a DIAGNOSTIC: the server's view of the active day + reset info. The
         // client computes the day itself (shared day.ts) and no longer reads this in
         // normal play — it exists to debug clock-skew reports. `no-store` so it is
@@ -451,7 +461,7 @@ export function createHandler(deps: HandlerDeps) {
         address = bonusAddress(bonus);
       } else {
         const requestedDate = event.queryStringParameters?.date;
-        if (!requestedDate || !isValidDate(requestedDate)) {
+        if (!requestedDate || !isCalendarDate(requestedDate)) {
           return errorResponse(
             400,
             'bad_request',
@@ -528,8 +538,19 @@ export function createHandler(deps: HandlerDeps) {
       }
       return response;
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unexpected error.';
-      return errorResponse(500, 'internal_error', message, routeHeaders);
+      // LOGGED for the payload guard's reason above: a handler that RETURNS a 500 is a
+      // SUCCESSFUL invocation, so this line is the only trace the failure leaves in
+      // CloudWatch. The detail stays in the log — an SDK message names the role, the table
+      // and the bucket, and every route is reachable anonymously up to its first store call,
+      // so the body says nothing of it. Its fields are read off the error rather than the
+      // error handed over whole, which for an SDK failure is the entire response object.
+      console.error(
+        `[handler] internal_error: ${method} ${normalizedPath}`,
+        err instanceof Error
+          ? { name: err.name, message: err.message, stack: err.stack }
+          : { message: String(err) },
+      );
+      return errorResponse(500, 'internal_error', 'Unexpected error.', routeHeaders);
     }
   };
 }

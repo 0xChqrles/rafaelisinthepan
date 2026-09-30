@@ -12,11 +12,11 @@ otherwise valid generation run.
 """
 
 import copy
-from types import SimpleNamespace
 
 import pytest
 
 import gen_phrase
+from build_forms import Lexicon
 
 
 VOCAB = [
@@ -81,8 +81,14 @@ KV = {
 }
 
 
+def _table(**views):
+    """A hand-built inventory (build_forms.Lexicon): the named views, the rest empty."""
+    empty = {name: frozenset() if name == "features" else {} for name in Lexicon._fields}
+    return Lexicon(**{**empty, **views})
+
+
 def _resolver():
-    table = SimpleNamespace(
+    table = _table(
         realize={
             ("courant:adj", "adj:f:p"): ("courantes",),
             # Same POS but the requested spelling is absent from the reduced vocab: *.
@@ -106,10 +112,10 @@ def _resolver():
     return gen_phrase.FormResolver(table, explicit={"secrete": "adj:f:p"})
 
 
-def _report(**kwargs):
+def _report():
     return gen_phrase.build_playability_report(
         "secrète", GROUPS, RANK_MAP, VOCAB, LEMMA_TABLE, FORMS_BY_LEMMA,
-        KV, resolver=_resolver(), feature="adj:f:p", **kwargs)
+        KV, resolver=_resolver(), feature="adj:f:p")
 
 
 def test_report_covers_the_near_field_without_mutating_the_map():
@@ -201,8 +207,7 @@ def test_formatter_describes_an_opaque_merged_group_from_its_members():
         {"rank": 4, "word": "rouge", "lexeme": "rouge:nc"}
     ]
     report["divergences"] = []
-    table = SimpleNamespace(
-        members={"rouge:nc": ("rouge:nc", "rouge:adj")})
+    table = _table(members={"rouge:nc": ("rouge:nc", "rouge:adj")})
 
     out = gen_phrase.format_playability_report(report, table)
     assert "rouge (nom + adjectif) → « rouge »" in out

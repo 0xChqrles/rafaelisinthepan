@@ -1,8 +1,9 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { activeDate, progressHeatColor } from '@whippin/shared';
+import { dateForDayNumber, progressHeatColor } from '@whippin/shared';
 import PuzzleTitle from '../components/PuzzleTitle';
 import { HeaderLeft } from '../components/TopBar';
+import useToday from '../hooks/useToday';
 import { navigate } from '../routing';
 import { pathForDay, type LangCode } from '../langs';
 import { FIRST_PUZZLE_DATE } from '../config';
@@ -19,8 +20,6 @@ import {
   isoMonth,
   type YearMonth,
 } from '../calendar';
-// Inline SVG (vite-plugin-svgr): renders into the DOM and paints with currentColor, so
-// it inherits the header control's tint. Decorative — the button's aria-label names it.
 
 // The locale's first weekday (0 = Sunday … 6 = Saturday). Prefers Intl's `weekInfo`
 // (fr weeks start Monday, en-US Sunday); falls back to a per-language default where it
@@ -52,7 +51,9 @@ function firstDayOfWeek(lang: string): number {
 export default function Archive({ lang }: { lang: LangCode }) {
   // The window of playable days: [the language's first day, the client's active game day].
   // Both are ISO labels, so cells compare against them by string order (offset-free).
-  const today = useMemo(() => activeDate(new Date()), []);
+  // The day is a LIVE value: a calendar left open across the 22:00-ET flip opens the new
+  // day (and, on a month's last night, the new month) without a remount.
+  const today = dateForDayNumber(useToday());
   const firstDate = FIRST_PUZZLE_DATE[lang];
   const firstMonth = useMemo<YearMonth>(() => yearMonthOf(firstDate), [firstDate]);
   const activeMonth = useMemo<YearMonth>(() => yearMonthOf(today), [today]);
@@ -137,7 +138,6 @@ export default function Archive({ lang }: { lang: LangCode }) {
         {/* Weekday header — decorative (each day cell carries the full date). */}
         <div className="cal-grid cal-weekdays" aria-hidden="true">
           {weekdayLabels.map((label, i) => (
-            // eslint-disable-next-line react/no-array-index-key
             <span key={i} className="cal-weekday">
               {label}
             </span>
@@ -147,7 +147,6 @@ export default function Archive({ lang }: { lang: LangCode }) {
         <div className="cal-grid">
           {cells.map((date, i, all) =>
             date === null ? (
-              // eslint-disable-next-line react/no-array-index-key
               <span key={`pad-${i}`} className="cal-pad" aria-hidden="true" />
             ) : (
               <DayCell
@@ -290,7 +289,6 @@ function DayCell({
       fill: 'backwards',
     });
     // Mount only: the wave is the month's arrival, never a re-render's.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
     <button

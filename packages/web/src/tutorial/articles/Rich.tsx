@@ -62,10 +62,3 @@ export default function Rich({ text, mode = 'prose' }: { text: string; mode?: 'p
   if (last < text.length) out.push(<Fragment key={key++}>{text.slice(last)}</Fragment>);
   return <>{out}</>;
 }
-
-// The same text with the markup taken off — for labels and for counting.
-export function plain(text: string): string {
-  return text.replace(TOKEN_RE, (_m, w: string | undefined, b: string | undefined) =>
-    w !== undefined ? w.replace(/\^\d+$/, '') : (b ?? ''),
-  );
-}

@@ -6,9 +6,9 @@
 Generate one self-contained game file for ONE sentence.
 
 Reuse the existing logic as-is:
-  - french_neighbors / english_neighbors build_vocab / build_matrix / closest (cosine
+  - embedding_neighbors.for_lang(lang) build_vocab / build_matrix / closest (cosine
     neighbors over each language's fastText Common Crawl vectors),
-  - start_word.pick_start (start word selection),
+  - start_word.start_band (the start-word band),
   - the ranking pattern: secret word = rank 0, neighbors start at 1.
 
 Two per-language concerns drive the rest:
@@ -121,13 +121,13 @@ for path in (ROOT, SCRIPT_DIR):
 # ROOT == packages/generation, a sibling of web in the monorepo.
 GEN_OUTPUT = os.path.join(ROOT, "output")
 
-import english_neighbors as enn
-import french_neighbors as frn
 from build_forms import (CITATION_FEATURE, GENDERED_LANGS, feature_pos, forms_path,
                          load_forms)  # the word-group inventories (fr #132/#146, en #317)
 from distances import quantize_dq  # dq annotations (#115)
+from embedding_neighbors import for_lang  # each language's reduced vectors
+from reduce_embedding import CHAR_CLASS  # each language's alphabet, the reduction's
 from slug import path_slug, slug, write_vocab  # slug/fold contract, dir names, vocab
-from start_word import START_BAND, pick_start, start_band
+from start_word import start_band
 import contextual_rank  # #308: the hosted judge behind one small boundary
 
 # --- Vocabulary ----------------------------------------------------------------
@@ -143,8 +143,8 @@ import contextual_rank  # #308: the hosted judge behind one small boundary
 TOP_K = 10_000
 
 # Curator-only playability window (#135). The report reads the nearest groups that
-# can make up a normal journey (the start band also tops out at 150), but never
-# filters, reorders or otherwise changes the rank map it describes.
+# can make up a normal journey, but never filters, reorders or otherwise changes the
+# rank map it describes.
 PLAYABILITY_TOP = 150
 PLAYABILITY_SAMPLES = 5
 
@@ -155,22 +155,14 @@ PLAYABILITY_SAMPLES = 5
 KNOWN_KINDS = ("book", "movie", "music", "quote", "poem")
 
 # --- Per-language config -------------------------------------------------------
-# char_class: allowed alphabet. It is used BOTH to validate a vocab token
-# (token_regex) and to clean a word (normalize), to stay consistent.
-# For "en", char_class = "a-z" keeps ASCII letters only (the wordlist's token rule).
+# The allowed alphabet is the reduction's own (reduce_embedding.CHAR_CLASS, which also
+# spells the vocab token rule): cleaning a word (normalize) and locating one inside a
+# token read the same letters the vocabulary was built from. For "en" it is ASCII
+# letters only (the wordlist's token rule).
 def _build_config():
-    en = {
-        "module": enn,
-        "char_class": "a-z",
-    }
-    fr = {
-        "module": frn,
-        "char_class": "a-zàâäéèêëîïôöùûüÿçœæ",
-    }
-    for cfg in (en, fr):
-        cc = cfg["char_class"]
-        # Letters with optional internal dashes (same shape as the reduction's rule).
-        cfg["token_regex"] = re.compile(rf"^[{cc}]+(-[{cc}]+)*$")
+    configs = {lang: {"module": for_lang(lang)} for lang in ("en", "fr")}
+    for lang, cfg in configs.items():
+        cc = CHAR_CLASS[lang]
         # strip_re keeps the alphabet AND dashes (normalize collapses/trims them).
         cfg["strip_re"] = re.compile(rf"[^{cc}-]")
         # core_re finds each WORD-CORE inside a raw display token: a maximal run of
@@ -179,7 +171,7 @@ def _build_config():
         # Used to locate a secret inside a token while keeping the token intact for
         # display (issue: apostrophes/punctuation were being stripped from words[]).
         cfg["core_re"] = re.compile(rf"[{cc}]+(?:-[{cc}]+)*")
-    return {"en": en, "fr": fr}
+    return configs
 
 
 CONFIG = _build_config()
@@ -194,7 +186,7 @@ def die(msg):
 def normalize(tok, cfg):
     """Clean a TARGET word (a `--words` argument) down to the language alphabet.
 
-    Lowercases, keeps accents (they are in char_class) and internal dashes
+    Lowercases, keeps accents (they are in the alphabet) and internal dashes
     ("arc-en-ciel" stays "arc-en-ciel"), collapses repeated dashes and trims edge
     ones — matching slug(). This is NOT used for the sentence's DISPLAY tokens, which
     keep their punctuation/apostrophes (see display_token); it only sanitises the word
@@ -534,11 +526,11 @@ class ContextualRanker:
     similarities), `note` records what shipped, and main() prints the reports and
     writes the sidecar after the selector has restored the terminal."""
 
-    def __init__(self, judge, sentence, before=(), after=(), model=None, *, lang):
+    def __init__(self, judge, sentence, before=(), after=(), *, model, lang):
         self.judge, self.sentence, self.lang = judge, sentence, lang
         self.before, self.after = tuple(before), tuple(after)
-        self.model = model or getattr(judge, "model", "?")
-        self.records = []   # sidecar entries, one per reranked secret
+        self.model = model
+        self.records = []   # one entry per reranked secret; the sidecar takes records_for(holes)
         self.reports = []   # printed after the selector, in authoring order
         self._ranked = {}
 
@@ -552,7 +544,7 @@ class ContextualRanker:
         by_rank = {rank: (claims[0], clean, rep)
                    for _display, rank, claims, clean, rep in groups if rank}
         candidates = []
-        for display, idx, _sim in merged:
+        for _display, idx, _sim in merged:
             lex, _clean, _rep = by_rank[idx + 1]
             candidates.append(contextual_rank.Candidate(lex, lexeme_label(lex), idx))
         try:
@@ -569,6 +561,14 @@ class ContextualRanker:
         self.reports.append(contextual_rank.format_report(
             secret_display, ranked, record, model=self.model, lang=self.lang))
         record["kept"] = len(merged)
+
+    def records_for(self, holes):
+        """The sidecar entries of the puzzle's OWN holes, matched by slug. The selector
+        reranks a word the moment it is confirmed, and the author may still abandon it
+        (Échap) for another: that word was judged — the report and the usage say so —
+        but it is not in the puzzle the sidecar describes."""
+        secrets = {hole["secret"]["slug"] for hole in holes}
+        return [record for record in self.records if slug(record["secret"]) in secrets]
 
     # -- the curator's pre-filters (a filter only removes; nothing is chosen here) --
     @property
@@ -1069,22 +1069,31 @@ class PlayabilityReporter:
 # form, `ranks` stays keyed by the secret's slug, and the donor is absorbed as a rank-0
 # alias by the #104 merge walk (typing it solves, like any inflection of the secret).
 
+def _parse_pairs(pairs, flag, shape):
+    """The `MOT=VALEUR` occurrences of one repeatable flag -> (slug(mot), valeur, raw).
+
+    What --donor, --start and --form share: both sides trimmed and lowercased, the
+    word keyed by SLUG, a missing side or a letterless word a hard error worded with
+    the flag's own `shape`. A GENERATOR, so each pair is checked only when its caller
+    reaches it: the first faulty pair is the one reported, whatever a later one holds."""
+    for raw in pairs or ():
+        word, sep, value = raw.partition("=")
+        word, value = word.strip().lower(), value.strip().lower()
+        if not sep or not word or not value:
+            die(f"--{flag} attend {shape} (reçu : '{raw}').")
+        key = slug(word)
+        if not key:
+            die(f"--{flag} : '{word}' ne contient aucune lettre exploitable.")
+        yield key, value, raw
+
+
 def parse_donor_args(pairs):
     """`--donor MANQUANT=DONNEUR` occurrences -> {slug(manquant): donneur}.
 
     Keyed by SLUG because that is how a secret is identified everywhere else; the
     donor keeps its display form (it must match a reduced-vocab word exactly)."""
-    mapping = {}
-    for raw in pairs or ():
-        missing, sep, donor = raw.partition("=")
-        missing, donor = missing.strip().lower(), donor.strip().lower()
-        if not sep or not missing or not donor:
-            die(f"--donor attend 'MANQUANT=DONNEUR' (reçu : '{raw}').")
-        key = slug(missing)
-        if not key:
-            die(f"--donor : '{missing}' ne contient aucune lettre exploitable.")
-        mapping[key] = donor
-    return mapping
+    return {key: donor
+            for key, donor, _raw in _parse_pairs(pairs, "donor", "'MANQUANT=DONNEUR'")}
 
 
 def edit_distance(a, b):
@@ -1240,7 +1249,7 @@ def walk_secret(secret, donor, cfg, kv, V, M, Vset, lemma_table, forms_by_lemma,
     secret_lemmas = secret_claim(secret, donor, lemma_table, donors, forms)
     # The walk needs the FULL raw ranking: merging collapses inflections, so reaching
     # TOP_K distinct groups can consume well over TOP_K raw neighbors.
-    ranking = cfg["module"].closest(donor, kv, V, M, n=None)
+    ranking = cfg["module"].closest(donor, kv, V, M)
     return build_puzzle_rank_map(secret, ranking, lemma_table, forms_by_lemma, Vset,
                                  secret_lemmas=secret_lemmas, contextual=contextual)
 
@@ -1485,40 +1494,34 @@ def build_lang_vocab(kv, cfg):
     return cfg["module"].build_vocab(kv)
 
 
-def choose_start(secret, ranking, rank_map, rank_by_display, band=START_BAND,
-                 band_filter=None):
+def choose_start(secret, ranking, rank_map, rank_by_display, band_filter=None):
     """Pick the start (hint) word for ONE hole, interactively when on a terminal.
 
-    The random default is exactly what pick_start would choose, so nothing about
-    the rank-band selection itself changes. When stdin is a TTY, the rank-band
-    candidates are printed as a numbered list (each with its rank) and one line is
-    read:
+    The random default is one draw (the module RNG, which main() seeds) from the
+    rank band (start_band) — from what `band_filter` left of it when there is one —
+    and the secret itself when nothing qualifies. When stdin is a TTY, the same band
+    is printed as a numbered list (each with its rank) and one line is read:
       - empty (Enter)  -> the random default — keeps batch / non-interactive runs
         working without any input;
       - a list number  -> that candidate;
       - any other word -> accepted only if it is in this hole's rank map (i.e. it
         survived into V / the secret's ranking), matched by slug; else reprompt.
 
-    Returns a DISPLAY word that is a key of rank_by_display, so start_rank and the
-    {word, slug} object built downstream stay exactly as before.
+    Returns a DISPLAY word that is a key of rank_by_display, which the hole's
+    start_rank and its {word, slug} object are built from downstream.
     """
-    band_spec = band
-    if band_filter is None:
-        default = pick_start(secret, ranking, band_spec)
-        band = None
-    else:
+    band = start_band(secret, ranking)
+    if band_filter is not None:
         # #308's judge removes the band words that do not read as the sentence's
         # language at this hole; the random default is drawn from what remains.
-        band = band_filter(start_band(secret, ranking, band_spec))
-        default = random.choice(band)[0] if band else secret
+        band = band_filter(band)
+    default = random.choice(band)[0] if band else secret
 
     # No terminal attached (piped stdin / batch generation): keep the random
     # default silently, so automated runs never block on input().
     if not sys.stdin.isatty():
         return default
 
-    if band is None:
-        band = start_band(secret, ranking, band_spec)
     print(f"\nMot de départ pour « {secret} » "
           f"(Entrée = {default}^{rank_by_display[default]}) :")
     for i, (w, _r) in enumerate(band, 1):
@@ -1638,17 +1641,8 @@ def parse_start_args(pairs):
     choose_start prompt (#260: the curator re-picks a start that leaves the displayed
     sentence valid French). Validated where the start is settled: the word must be in
     the hole's own vocabulary and not its secret."""
-    mapping = {}
-    for raw in pairs or ():
-        word, sep, value = raw.partition("=")
-        word, value = word.strip().lower(), value.strip().lower()
-        if not sep or not word or not value:
-            die(f"--start attend 'MOT=DEPART' (reçu : '{raw}').")
-        key = slug(word)
-        if not key:
-            die(f"--start : '{word}' ne contient aucune lettre exploitable.")
-        mapping[key] = value
-    return mapping
+    return {key: start
+            for key, start, _raw in _parse_pairs(pairs, "start", "'MOT=DEPART'")}
 
 
 def parse_form_args(pairs):
@@ -1662,14 +1656,8 @@ def parse_form_args(pairs):
     trait is ':'-separated codes. Validation against the table happens where the
     answer is SETTLED (feature_for), same as a typed trait."""
     mapping = {}
-    for raw in pairs or ():
-        word, sep, value = raw.partition("=")
-        word, value = word.strip().lower(), value.strip().lower()
-        if not sep or not word or not value:
-            die(f"--form attend 'MOT=TRAIT' ou 'MOT=LEXÈME/TRAIT' (reçu : '{raw}').")
-        key = slug(word)
-        if not key:
-            die(f"--form : '{word}' ne contient aucune lettre exploitable.")
+    for key, value, raw in _parse_pairs(pairs, "form",
+                                        "'MOT=TRAIT' ou 'MOT=LEXÈME/TRAIT'"):
         lexeme, slash, feature = value.rpartition("/")
         if slash and (not lexeme or not feature):
             die(f"--form attend 'MOT=LEXÈME/TRAIT' (reçu : '{raw}').")
@@ -1806,7 +1794,7 @@ def describe_lexeme(key, table=None):
     With #146 metadata, describe every source paradigm a merged word carries rather
     than trusting the canonical key's suffix. The fallback keeps hand-built English
     and unit-test tables readable."""
-    members = getattr(table, "members", {}).get(key, ()) if table is not None else ()
+    members = table.members.get(key, ()) if table is not None else ()
     if not members:
         lemma, _sep, pos = key.rpartition(":")
         label = _POS_LABELS.get(pos)
@@ -1821,11 +1809,11 @@ def describe_lexeme(key, table=None):
 
 def describe_group_forms(key, table):
     """`fil : fil, fils` — the evidence shown for a real remaining identity pick."""
-    members = getattr(table, "members", {}).get(key, ())
+    members = table.members.get(key, ())
     lemmas = list(dict.fromkeys(member.rpartition(":")[0] for member in members))
     if not lemmas:
         lemmas = [key.rpartition(":")[0] or key]
-    forms = getattr(table, "group_forms", {}).get(key, ())
+    forms = table.group_forms.get(key, ())
     return f"{' / '.join(lemmas)} : {', '.join(forms) or 'aucune forme'}"
 
 
@@ -1969,18 +1957,13 @@ class FormResolver:
         """The paradigms an opaque #146 group carries, from explicit metadata."""
         if self.table is None:
             return frozenset()
-        return getattr(self.table, "group_pos", {}).get(lexeme, frozenset())
+        return self.table.group_pos.get(lexeme, frozenset())
 
     def group_forms(self, lexeme):
         """Every dictionary form of one group, for outcome equivalence / evidence."""
         if self.table is None:
             return ()
-        forms = getattr(self.table, "group_forms", {}).get(lexeme)
-        if forms is not None:
-            return forms
-        return tuple(sorted({form for (key, _feature), candidates
-                             in self.table.realize.items() if key == lexeme
-                             for form in candidates}))
+        return self.table.group_forms.get(lexeme, ())
 
     def _outcome(self, lexeme):
         """The playable key set a claim would add; differences outside vocab vanish."""
@@ -2029,7 +2012,7 @@ class FormResolver:
         if morphology is None or self.table is None:
             return ()
         if self._agreeing is not None:
-            dominant = getattr(self.table, "dominant", {}).get(lexeme_label(lexeme))
+            dominant = self.table.dominant.get(lexeme_label(lexeme))
             if dominant is not None and dominant not in self._agreeing:
                 return ()
         poses = self.group_poses(lexeme)
@@ -2670,7 +2653,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
         entry = cache.get(secret_slug)
         if entry is None or entry["claim"] != claim or entry["ranker"] is not ranker:
             ranking = entry["ranking"] if entry is not None \
-                else cfg["module"].closest(donor, kv, V, M, n=None)
+                else cfg["module"].closest(donor, kv, V, M)
             if ranker is not None:  # the judge takes a minute or two: say so
                 sys.stdout.write(f"\n  classement contextuel de « {secret} » par le "
                                  "juge (quelques minutes)…\n")
@@ -2681,7 +2664,7 @@ def select_holes_interactive(words, cfg, lang, kv, V, M, Vset,
             rbd = {secret: 0}
             for w, r, _ in merged:
                 rbd.setdefault(w, r + 1)
-            band = start_band(secret, merged, START_BAND)
+            band = start_band(secret, merged)
             agreed = None
             if ranker is not None:
                 agreed = forms.apply(rank_map, secret, donors,
@@ -2972,11 +2955,12 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
     ranks = {}
     used_lemmas = {}  # lemma -> the earlier selector that claimed it
     # PASS 1 — every question before any walk (#308): a secret's donor and form are
-    # settled for all three selectors first, so that off a TTY a missing --form dies
-    # before the first ranking — with a hosted judge, a walk is minutes and money,
-    # and a batch caller answering one question per run would otherwise pay for the
-    # holes already ranked on every rerun. secret_claim caches nothing itself, but
-    # the resolvers do (feature_for / donor_for per slug), so pass 2 re-asks nothing.
+    # settled for all three selectors first, and two selectors naming one word are
+    # refused, so that off a TTY a missing --form or a same-word pair dies before the
+    # first ranking — with a hosted judge, a walk is minutes and money, and a batch
+    # caller answering one question per run would otherwise pay for the holes already
+    # ranked on every rerun. secret_claim caches nothing itself, but the resolvers do
+    # (feature_for / donor_for per slug), so pass 2 re-asks nothing.
     resolved = []
     for raw, target_slug in selectors:
         # Resolve every occurrence by slug. A repeated selected word is one authoring
@@ -3010,15 +2994,10 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
         # The GEOMETRY source: the secret itself when it has a vector, else its donor.
         # Everything else below keeps using the true sentence form.
         donor = donors.donor_for(canonical_secret) if donors is not None else canonical_secret
-        secret_claim(canonical_secret, donor, lemma_table, donors, forms)  # asks now
-        resolved.append((raw, target_slug, occurrences, canonical_secret, donor))
-
-    # PASS 2 — the walks, in the same order.
-    for raw, target_slug, occurrences, canonical_secret, donor in resolved:
         # Two selected secrets in one lemma group would be one word holed twice. A
         # borrowed vector carries the donor's lemmas too, so a sibling of the donor is
         # "the same word" as well (#119). This test weighs the FULL identity, while
-        # the walk below claims only what is confirmed or unambiguous.
+        # the walk in pass 2 claims only what is confirmed or unambiguous.
         identity = group_lemmas(canonical_secret, donor, lemma_table)
         for lemma in identity:
             if lemma in used_lemmas:
@@ -3026,6 +3005,11 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
                     f"(lemme commun « {lemma} ») : choisis 3 mots distincts.")
         for lemma in identity:
             used_lemmas[lemma] = raw
+        secret_claim(canonical_secret, donor, lemma_table, donors, forms)  # asks now
+        resolved.append((target_slug, occurrences, canonical_secret, donor))
+
+    # PASS 2 — the walks, in the same order.
+    for target_slug, occurrences, canonical_secret, donor in resolved:
         # Claim, ranking and lexeme merging happen ONCE per distinct secret slug, in
         # walk_secret's fixed order — the #133 question fires inside it, ahead of the
         # walk (#134), because its answer names the lexeme group 0 claims.
@@ -3057,7 +3041,7 @@ def holes_from_words(words_arg, words, cfg, lang, kv, V, M, Vset,
             start = entry["word"]
         elif contextual is not None:
             start = choose_start(
-                canonical_secret, merged, selection_map, rank_by_display, band=START_BAND,
+                canonical_secret, merged, selection_map, rank_by_display,
                 band_filter=contextual.start_band_filter(
                     words, [(pos, pre, suf) for pos, (_s, pre, suf) in occurrences],
                     canonical_secret, display_words=dict(agreed.values())))
@@ -3266,7 +3250,6 @@ def source_dir_segments(source):
 @dataclass(frozen=True)
 class PreparedRun:
     """Everything a generation command loads before its first walk (prepare_run)."""
-    explicit_forms: dict
     lemma_table: dict
     forms_by_lemma: dict
     kv: object
@@ -3347,11 +3330,11 @@ def prepare_run(lang, interactive, args):
                          typable=donors.typable, lang=lang)
     reporter = PlayabilityReporter(V, lemma_table, forms_by_lemma, kv,
                                    resolver=forms)
-    return PreparedRun(explicit_forms, lemma_table, forms_by_lemma, kv, V, M,
-                       Vset, donors, forms, reporter)
+    return PreparedRun(lemma_table, forms_by_lemma, kv, V, M, Vset, donors, forms,
+                       reporter)
 
 
-def report_run_adjustments(donors, forms, explicit_forms, no_inflect,
+def report_run_adjustments(donors, forms, no_inflect,
                            subject_fmt="secret « {} »",
                            unused_form_msg="n'a servi à aucun trou"):
     """Print what the run substituted or rewrote — never silently (#119/#133/#134).
@@ -3378,11 +3361,11 @@ def report_run_adjustments(donors, forms, explicit_forms, no_inflect,
     for secret_word, count in forms.collisions.values():
         print(f"  {subject_fmt.format(secret_word)} : {count} collision(s) de slug "
               f"après accord (le plus proche gagne, réécriture(s) déclinée(s))")
-    if explicit_forms:
+    if forms.explicit:
         if no_inflect:
             print("  attention : --form est ignoré sous --no-inflect.", file=sys.stderr)
         else:
-            for key in sorted(set(explicit_forms) - forms.answered):
+            for key in sorted(set(forms.explicit) - forms.answered):
                 print(f"  attention : --form « {key} » {unused_form_msg}.",
                       file=sys.stderr)
 
@@ -3450,7 +3433,7 @@ def parse_args():
     return p.parse_args()
 
 
-def build_contextual_ranker(args, lang, sentence, V):
+def build_contextual_ranker(args, lang, sentence):
     """The #308 judge for this run: Jev through JEV_API_KEY, or a replay of a
     previous run's sidecar. Every question is asked in the sentence's own language
     (contextual_rank.LANGUAGES, #317: French the calibrated original, English its
@@ -3466,10 +3449,10 @@ def build_contextual_ranker(args, lang, sentence, V):
                                              model=args.contextual_model)
     except (contextual_rank.ContextualError, OSError, ValueError) as exc:
         die(f"classement contextuel (#308) : {exc}")
+    # The model is the one that SCORED: a replay carries its sidecar's forward, so the
+    # file it writes still says what built the map (`replayed_from` marks the replay).
     return ContextualRanker(judge, sentence, before=args.before or (),
-                            after=args.after or (),
-                            model=args.contextual_model if not args.contextual_replay
-                            else f"rejeu de {args.contextual_replay}", lang=lang)
+                            after=args.after or (), model=judge.model, lang=lang)
 
 
 def main():
@@ -3505,6 +3488,17 @@ def main():
     if words_arg is not None:
         _resolve_word_selectors(words_arg, cfg, lang)
 
+    # Likewise the two flag errors no table or vector can change: a malformed --url
+    # (build_source's own check, the one spelling of the rule — the call further down
+    # can then no longer raise) and the --static / --contextual-replay pair die here,
+    # not after the judge was paid.
+    try:
+        build_source(url=args.url)
+    except ValueError as exc:
+        sys.exit(f"erreur : {exc}")
+    if args.static and args.contextual_replay:
+        die("--static et --contextual-replay s'excluent.")
+
     # Tables, gate, vectors and the three resolvers, in prepare_run's fixed fail-fast
     # order — the scaffolding both generation commands share (#154).
     run = prepare_run(lang, interactive, args)
@@ -3516,11 +3510,9 @@ def main():
     # French, 2026-09-25 for English, #317), bound to this sentence and its excerpt
     # before any walk — a missing key dies here, ahead of the first hole. --static is
     # the explicit opt-out.
-    if args.static and args.contextual_replay:
-        die("--static et --contextual-replay s'excluent.")
     contextual = None
-    if args.contextual_replay or not args.static:
-        contextual = build_contextual_ranker(args, lang, sentence, V)
+    if not args.static:
+        contextual = build_contextual_ranker(args, lang, sentence)
 
     # DISPLAY tokens of the sentence: lowercased, but accents AND punctuation /
     # apostrophes KEPT (see display_token), so words[] reproduces the sentence. Each
@@ -3566,10 +3558,7 @@ def main():
             author = _prompt("Auteur / autrice")
         if work is None:
             work = _prompt("Titre de l'œuvre")
-    try:
-        source = build_source(kind, author, work, before=args.before, after=args.after, url=args.url)
-    except ValueError as exc:
-        sys.exit(f"erreur : {exc}")
+    source = build_source(kind, author, work, before=args.before, after=args.after, url=args.url)
 
     phrase = {
         "lang": lang,
@@ -3600,7 +3589,7 @@ def main():
             out_path[:-len(".json")] + ".contextual.json", lang=lang,
             model=contextual.model,
             sentence=sentence, before=contextual.before, after=contextual.after,
-            records=contextual.records, usage=contextual.judge.usage,
+            records=contextual.records_for(holes), usage=contextual.judge.usage,
             replayed_from=args.contextual_replay)
 
     # --- Preview ---------------------------------------------------------------
@@ -3611,7 +3600,7 @@ def main():
         print(f"  {h['start']['word']}^{h['start_rank']} -> {h['secret']['word']}")
     # Substitutions, agreement, #134's curator marks and --form typo warnings — the
     # shared reporting block (#154), in the sentence path's own words.
-    report_run_adjustments(donors, forms, run.explicit_forms, args.no_inflect)
+    report_run_adjustments(donors, forms, args.no_inflect)
     if source:
         print("  source : " + ", ".join(f"{k}={v}" for k, v in source.items()))
 

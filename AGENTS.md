@@ -6,12 +6,12 @@
 > file first, then the file of the package you touch. Every `CLAUDE.md` (root and
 > per-package) is a symlink to its sibling `AGENTS.md` — edit the **AGENTS.md**.
 >
-> The **code is ground truth.** If a rule here contradicts the code, trust the code and
-> surface the conflict rather than silently "fixing" either side.
+> The **code is the strongest source of truth.** Where a file here disagrees with the code,
+> fix the file to say how the code works now, and name the edit in your reply.
 >
-> Compacted 2026-09-05 (user-decided): this file records DECISIONS — the rule, its exact
-> constants and where they live, and one line of why when the why is what stops an agent
-> undoing it. Implementation detail and product/UX narrative live in the package files.
+> This file records how the system works: the rule, its exact constants and where they live,
+> and one line of why when the why is what stops an agent undoing it. Implementation detail
+> and product/UX narrative live in the package files.
 
 React + Vite + TypeScript front end; Python generation scripts run via `uv` (wired through
 `pnpm`). Two languages, made the same way (#317): **en** (fastText `cc.en.300`) and **fr**
@@ -56,18 +56,20 @@ map lives in ITS `AGENTS.md`.
 ## Maintaining these files
 
 - **You are a SCRIBE of the user's decisions, not an author of them.** Update these files
-  only when the user has **explicitly** decided something that changes an invariant, command,
-  schema or architecture rule. Never record a rule you inferred or think is a good idea; never
-  document a transient state as permanent.
+  when the user has **explicitly** decided something that changes an invariant, command,
+  schema or architecture rule, or when a file disagrees with the code as it stands (the
+  header's rule). Never record a rule you inferred or think is a good idea; never document a
+  transient state as permanent.
 - **Two zones, two bars.** *Stable invariants / cross-package contracts / Do-NOT lists*: edit
-  only on an explicit, confirmed user decision, and call the edit out prominently in your
-  reply. *Current state / mutable*: may be updated to reflect what now exists.
+  only on an explicit, confirmed user decision or to match the code as it stands — never to
+  match a change you are making — and call the edit out prominently in your reply. *Current state / mutable*: may be updated to reflect what now exists.
 - **Put a rule at the right SCOPE.** Repo-wide rules, workflow and anything two or more
   packages must agree on live HERE; single-package guidance lives in that package's file.
   State a rule once, at the widest scope it applies to; reference it from narrower files.
-- **Record the decision, not its history.** A rule, its constants, its location, and one line
-  of why. No measurements, review chronology, or rejected alternatives — except a rejected
-  alternative an agent would plausibly re-propose, in one line.
+- **Record how it works now, not its history.** A rule, its constants, its location, and one
+  line of why when the why matters. Never what was decided before, reverted, or when; no
+  measurements, review chronology, or rejected alternatives — except a rejected alternative
+  an agent would plausibly re-propose, in one line.
 - **Surface every edit** in your reply. **When in doubt, DO NOT edit** — ask or mention it.
   Keep edits minimal and consistent with the existing structure.
 
@@ -759,7 +761,7 @@ The live routes then share:
 - **DON'T add tests for cosmetic/visual work**, trivial wiring or config.
 - **A failing invariant test is a real regression — fix the CODE, never weaken the test.**
 - **Run `pnpm test` before a contract-touching task is done**: Vitest (`shared`, `web`,
-  `backend`, `infra`) + pytest (`generation`, `benchmark`, `curation`). Slug cases go in the ONE shared
+  `backend`, `whatsapp-bot`, `infra`) + pytest (`generation`, `benchmark`, `curation`). Slug cases go in the ONE shared
   fixture, never on one side only.
 
 ## Working an issue
@@ -804,7 +806,7 @@ straight through, and a literal `--` breaks `gen_phrase.py`'s parsing.
 
 ```bash
 pnpm install     # installs all workspaces
-pnpm test        # invariant tests: Vitest (web + shared + backend + infra) + pytest (generation + benchmark)
+pnpm test        # invariant tests: Vitest (shared, web, backend, whatsapp-bot, infra) + pytest (generation, benchmark, curation)
 pnpm typecheck   # tsc --noEmit
 ```
 

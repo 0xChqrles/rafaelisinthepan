@@ -19,7 +19,7 @@
 // single source of truth, so there is no bucket flag/env. Looking it up needs AWS creds
 // (already required to upload) + `cloudformation:DescribeStacks`.
 import { createHash, randomInt } from 'node:crypto';
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -27,12 +27,14 @@ import {
   bonusAddress,
   bonusPath,
   isBonusId,
+  isCalendarDate,
   BONUS_ID_MAX,
   BONUS_ID_MIN,
-  VOCAB_BUILDS,
+  SUPPORTED_LANGS,
   type Puzzle,
 } from '@whippin/shared';
-import { defaultLocalStoreRoot, isValidDate, sliceKey, storeKey } from './layout';
+import { fsProbe, s3Probe } from './inventory';
+import { localStoreRoot, sliceKey, storeKey } from './layout';
 import { buildSlice, encodeSlice } from './slice';
 import { appendPublished, ledgerEntry, publishLedgerPath } from './ledger';
 import { STACK_REGION, stackOutputs } from './stack';
@@ -53,9 +55,6 @@ function parseArgs(argv: string[]): Args {
     switch (a) {
       case '--s3':
         args.s3 = true;
-        break;
-      case '--local':
-        args.s3 = false;
         break;
       case '--day':
         args.day = argv[++i];
@@ -119,7 +118,7 @@ export function planPublish(
     throw new Error(`invalid bonus id "${args.bonusId}" (expected seven digits).`);
   }
   const day = args.bonusId !== undefined ? bonusAddress(args.bonusId) : (args.day ?? activeDate(now));
-  if (args.bonusId === undefined && !isValidDate(day)) {
+  if (args.bonusId === undefined && !isCalendarDate(day)) {
     throw new Error(`invalid --day "${day}" (expected YYYY-MM-DD).`);
   }
   const key = storeKey(day, lang);
@@ -138,7 +137,7 @@ export function planPublish(
 export async function mintBonusId(taken: (id: string, lang: string) => Promise<boolean>): Promise<string> {
   for (let attempt = 0; attempt < 20; attempt++) {
     const id = String(randomInt(BONUS_ID_MIN, BONUS_ID_MAX + 1));
-    const occupied = await Promise.all(Object.keys(VOCAB_BUILDS).map((lang) => taken(id, lang)));
+    const occupied = await Promise.all(SUPPORTED_LANGS.map((lang) => taken(id, lang)));
     if (occupied.every((exists) => !exists)) return id;
   }
   throw new Error('could not mint a free bonus id (20 draws taken).');
@@ -174,14 +173,14 @@ function resolveInput(p: string): string {
 
 // Minimal shape check — enough to name/route the puzzle and fail loudly on garbage (a #154
 // single-word artifact, which has no holes, included: it is the onboarding board's source,
-// never a daily).
-function puzzleLang(raw: unknown, file: string): string {
+// never a daily). Throws; the CLI turns that into a clean `die`.
+export function puzzleLang(raw: unknown, file: string): string {
   const p = raw as Partial<Puzzle>;
   if (!p || typeof p.lang !== 'string' || !/^[a-z]{2}$/.test(p.lang)) {
-    die(`${file}: missing/invalid "lang" (expected two lowercase letters).`);
+    throw new Error(`${file}: missing/invalid "lang" (expected two lowercase letters).`);
   }
   if (!Array.isArray(p.holes) || p.holes.length === 0) {
-    die(`${file}: not a sentence puzzle (no holes).`);
+    throw new Error(`${file}: not a sentence puzzle (no holes).`);
   }
   return p.lang;
 }
@@ -202,24 +201,13 @@ async function main() {
 
   // For S3, the destination is always the deployed bucket, discovered from the stack output.
   const deployed = args.s3 ? await stackOutputs() : undefined;
-  const rootArg = args.store ?? process.env.PUZZLE_STORE;
-  const root = rootArg ? resolveInput(rootArg) : defaultLocalStoreRoot();
+  const root = localStoreRoot(args.store);
 
   let bonusId: string | undefined;
   if (args.bonus === true) {
-    bonusId = await mintBonusId(async (id, candidateLang) => {
-      const key = storeKey(bonusAddress(id), candidateLang);
-      if (!deployed) return access(path.join(root, key)).then(() => true, () => false);
-      const { S3Client, HeadObjectCommand } = await import('@aws-sdk/client-s3');
-      const { isNotFound } = await import('./store');
-      try {
-        await new S3Client({ region: STACK_REGION }).send(new HeadObjectCommand({ Bucket: deployed.bucket, Key: key }));
-        return true;
-      } catch (err) {
-        if (isNotFound(err)) return false;
-        throw err;
-      }
-    });
+    // A bonus address takes the date's slot in the key, so the store probes read it as is.
+    const probe = deployed ? await s3Probe(deployed.bucket) : fsProbe(root);
+    bonusId = await mintBonusId((id, candidateLang) => probe(bonusAddress(id), candidateLang));
   } else if (typeof args.bonus === 'string') {
     bonusId = args.bonus;
   }

@@ -49,7 +49,6 @@ export interface Drum {
   peek: () => number;
   // Straight to a row, no glide — how a wheel opens on its word.
   jump: (row: number) => void;
-  glideTo: (row: number, ms: number) => void;
   glideBy: (rows: number) => void;
   // A tap on row i: `drag` when the press that just ended was a drag (its click counts
   // for nothing), `slot` when the row is already in the slot, `turn` when it glides there.
@@ -253,7 +252,7 @@ export default function useDrum({
 
   // One object per row change, so a caller's effects and callbacks can depend on it.
   return useMemo(
-    () => ({ current, peek, jump, glideTo, glideBy, tap, endedDrag }),
-    [current, peek, jump, glideTo, glideBy, tap, endedDrag],
+    () => ({ current, peek, jump, glideBy, tap, endedDrag }),
+    [current, peek, jump, glideBy, tap, endedDrag],
   );
 }

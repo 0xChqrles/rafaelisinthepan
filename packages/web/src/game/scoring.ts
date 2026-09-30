@@ -6,10 +6,11 @@
 // live in one place. What stays here is what only the SCREEN has — the runtime holes and
 // the improvement rule that walks them.
 
-import type { RankMap, RuntimeHole } from '@whippin/shared';
+import type { RankMap } from '@whippin/shared';
 import { holeProgress, rankCount } from '@whippin/shared';
+import type { RuntimeHole } from './types';
 
-export { countTries, guessKey, holeProgress, rankCount, s } from '@whippin/shared';
+export { guessKey, rankCount } from '@whippin/shared';
 
 // The game loop's improvement rule, stated ONCE: a valid guess moves every UNSOLVED hole
 // whose map ranks it closer, swapping in the entry's accented word and lower rank

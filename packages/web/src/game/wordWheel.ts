@@ -11,7 +11,8 @@
 //
 // Pure and tested; rendering is components/HistoryWheel.
 
-import type { RuntimeHole } from '@whippin/shared';
+import type { RankMap } from '@whippin/shared';
+import type { RuntimeHole } from './types';
 import type { HoleCharge } from './charge';
 import type { HistoryStop } from './history';
 
@@ -40,6 +41,29 @@ export function selectWord(
     ...picks,
     [index]: { word: stop.display, rank: stop.rank, at, slug: stop.masked ? stop.slug : undefined, order },
   };
+}
+
+// The board as the sentence shows it: a live pick stands in its hole's place — and a picked
+// MASK shows its WORD the moment the log holds it (the reveal, or the word typed by hand):
+// derived, so nothing about the pick has to be rewritten when the guess lands. A pick made
+// against another rank, on a solved hole, or of the hole's own word is simply the hole; so
+// is a masked pick the meters no longer give — or any masked pick on a board that shows
+// no meters (`charges` undefined).
+export function shownHolesFor(
+  holes: readonly RuntimeHole[],
+  picked: Record<number, WordPick>,
+  charges: readonly HoleCharge[] | undefined,
+  ranks: RankMap,
+): RuntimeHole[] {
+  return holes.map((h, i) => {
+    const p = picked[i];
+    if (!p || h.rank === 0 || p.at !== h.rank || p.rank === h.rank) return h;
+    const hint = p.slug ? charges?.[i].given.find((g) => g.rank === p.rank) : undefined;
+    if (p.slug && !hint) return h;
+    const revealed = hint?.consumed;
+    const word = revealed ? (ranks[h.secret][p.slug as string]?.word ?? p.word) : p.word;
+    return { ...h, word, rank: p.rank };
+  });
 }
 
 // A mask that leaves the active five is no longer a pick. Remove it from state so it

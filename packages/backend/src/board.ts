@@ -68,7 +68,7 @@ import {
 import type { DeviceStore } from './deviceStore';
 import type { GroupStore } from './groupStore';
 import { LIVE_HEADERS, readJsonObject, requireDayParams, requireDevice } from './liveRoute';
-import type { ProfileStore } from './profileStore';
+import { faceOf, type ProfileStore } from './profileStore';
 import type { RoundKey, RoundStore } from './roundStore';
 import type { ScoreKey, ScoreStore } from './scoreStore';
 import type { PuzzleStore } from './store';
@@ -94,7 +94,7 @@ export interface BoardHandlerDeps {
 // nothing was read for are the same answer, because the name and the mark are
 // decoration and the client derives an assigned identity from the publicId for all
 // three.
-const NO_PROFILE = { name: '', avatar: null } as const;
+const NO_PROFILE = faceOf(null);
 
 type Dress = (publicId: string) => { name: string; avatar: string | null };
 
@@ -122,11 +122,8 @@ async function dressRows(
   const byId = new Map(
     ids.map((id, i) => [
       id,
-      // `|| null` on the avatar: an empty stored string must dress as "no mark" — the
-      // client renders the assigned mark for null, where '' is not a decodable avatar.
       {
-        name: records[i]?.profile?.name ?? '',
-        avatar: records[i]?.profile?.avatar || null,
+        ...faceOf(records[i]?.profile),
         // A FAILED read (null) is not evidence of a deleted account, so it stays live: the
         // rule is "stop exposing a player who is gone", never "hide a player whose
         // decoration could not be read".

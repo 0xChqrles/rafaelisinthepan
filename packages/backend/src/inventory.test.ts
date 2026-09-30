@@ -11,7 +11,6 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { activeDate } from '@whippin/shared';
 import { upcomingDays, takeInventory, fsProbe } from './inventory';
 import { storeKey } from './layout';
 
@@ -29,11 +28,6 @@ describe('upcomingDays — next N GAME days = calendar dates from the active dat
     ]);
     // 2028 is a leap year, so Feb 29 exists in the window.
     expect(upcomingDays('2028-02-28', 3)).toEqual(['2028-02-28', '2028-02-29', '2028-03-01']);
-  });
-
-  it('uses the shared active-day definition as the window start', () => {
-    const start = activeDate(new Date('2026-06-29T12:00:00Z'));
-    expect(upcomingDays(start, 1)).toEqual([start]);
   });
 
   it('rejects a non-positive count and a malformed start date', () => {

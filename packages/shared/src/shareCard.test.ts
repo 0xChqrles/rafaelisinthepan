@@ -37,7 +37,6 @@ describe('encodeResult / decodeResult — round-trip', () => {
   it('derives the run length from the score (one cell per counted try, not stored)', () => {
     const d = decodeResult(encodeResult(sample));
     expect(d?.trajectory).toHaveLength(sample.score);
-    expect(sample.trajectory).toHaveLength(sample.score); // the input already matches
   });
 
   it('round-trips each try within one quantization step (colors are indistinguishable)', () => {
@@ -107,6 +106,53 @@ describe('encodeResult / decodeResult — round-trip', () => {
     expect(d?.score).toBe(0);
     expect(d?.trajectory).toEqual([]);
     expect(d?.solvedAt).toEqual([null, null, null]);
+  });
+});
+
+// Every other case here builds its token with `encodeResult` and reads it back, so a changed
+// field width or field order would round-trip through all of them while every link already
+// shared (`/s/<token>`, cached a year) stopped decoding. These are LITERAL tokens: the
+// layout as it is on the wire.
+describe('golden vectors — the v6 / v7 layout on the wire', () => {
+  // The sample's run as 5-bit levels (0..31), which is what the token stores.
+  const levels = [0, 0, 6, 13, 13, 13, 17, 17, 22, 22, 22, 31];
+
+  it('encodes a daily result (v6) to the same token as ever', () => {
+    expect(encodeResult(sample)).toBe('ZBPxMxjdGtvunMg');
+  });
+
+  it('decodes a v6 token: lang, day, score, the quantized run and its ticks', () => {
+    const d = decodeResult('ZBPxMxjdGtvunMg');
+    expect(d).toEqual({
+      lang: 'fr',
+      dayNumber: 20638,
+      score: 12,
+      trajectory: levels.map((level) => (level / 31) * 100),
+      solvedAt: [4, 12, 9],
+      capped: false,
+    });
+    expect(d?.trajectory[2]).toBeCloseTo(19.3548, 4); // level 6 of 31
+  });
+
+  it('encodes and decodes a CAPPED v6 token: the flag set, no tick section', () => {
+    expect(encodeResult({ ...sample, capped: true, solvedAt: [4, null, null] })).toBe('ZBP1MxjdGtvg');
+    const d = decodeResult('ZBP1MxjdGtvg');
+    expect(d?.capped).toBe(true);
+    expect(d?.solvedAt).toEqual([]);
+    expect(d?.dayNumber).toBe(20638);
+    expect(d?.score).toBe(12);
+    expect(d?.trajectory).toEqual(levels.map((level) => (level / 31) * 100));
+  });
+
+  it('encodes and decodes a BONUS token (v7): the id in the day\'s place', () => {
+    expect(encodeResult({ ...sample, dayNumber: undefined, bonusId: 4815162 })).toBe('dSXk6JmMbo1t905k');
+    const d = decodeResult('dSXk6JmMbo1t905k');
+    expect(d?.bonusId).toBe(4815162);
+    expect(d?.dayNumber).toBeUndefined();
+    expect(d?.lang).toBe('fr');
+    expect(d?.score).toBe(12);
+    expect(d?.solvedAt).toEqual([4, 12, 9]);
+    expect(d?.capped).toBe(false);
   });
 });
 
@@ -210,14 +256,14 @@ describe('the CAPPED flag (#214)', () => {
 // its lang + day survive — enough for the backend to send an old link's reader to the day
 // it named instead of a dead end.
 describe('decodeLegacyShareTarget — where an OLD link should still land', () => {
-  // v1 header: version 1 | lang 1 (fr) | day 638 | scoreLen 0 …, then whatever payload.
-  const v1 = (() => {
+  // A token of the given version: the header every version opens with — version | lang 1
+  // (fr) | day 638 — over a zeroed payload, which is never read here.
+  const header = (version: number) => {
     const bits = [
-      ...[0, 0, 0, 1], // version 1
+      ...version.toString(2).padStart(4, '0').split('').map(Number),
       ...[0, 1], // lang index 1 -> fr
       ...(638).toString(2).padStart(15, '0').split('').map(Number), // day - ID_EPOCH
-      ...[0, 0, 0, 0], // scoreLen 0 -> score 0
-      ...Array(15).fill(0), // v1 square payload — never read here
+      ...Array(15).fill(0), // whatever payload the format has after the header
     ];
     const bytes = new Uint8Array(Math.ceil(bits.length / 8));
     bits.forEach((b, i) => {
@@ -233,7 +279,8 @@ describe('decodeLegacyShareTarget — where an OLD link should still land', () =
       if (rem > 2) out += B64[b2 & 0x3f];
     }
     return out;
-  })();
+  };
+  const v1 = header(1);
 
   it('recovers the lang and day of a superseded (v1) token', () => {
     expect(decodeResult(v1)).toBeNull(); // the ruler payload is genuinely unreadable
@@ -261,35 +308,12 @@ describe('decodeLegacyShareTarget — where an OLD link should still land', () =
   // versions. A valid current Word token is decoded by its own decoder first and never
   // reaches here at all.
   it('recognizes ONLY the retired sentence versions 1 and 2', () => {
-    const header = (version: number) => {
-      const bits = [
-        ...version.toString(2).padStart(4, '0').split('').map(Number),
-        ...[0, 1], // lang index 1 -> fr
-        ...(638).toString(2).padStart(15, '0').split('').map(Number),
-        ...Array(15).fill(0), // whatever payload the format has after the header
-      ];
-      const bytes = new Uint8Array(Math.ceil(bits.length / 8));
-      bits.forEach((b, i) => {
-        if (b) bytes[i >> 3] |= 1 << (7 - (i & 7));
-      });
-      const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-      let out = '';
-      for (let i = 0; i < bytes.length; i += 3) {
-        const rem = bytes.length - i;
-        const [b0, b1, b2] = [bytes[i], rem > 1 ? bytes[i + 1] : 0, rem > 2 ? bytes[i + 2] : 0];
-        out += B64[b0 >> 2] + B64[((b0 & 0x03) << 4) | (b1 >> 4)];
-        if (rem > 1) out += B64[((b1 & 0x0f) << 2) | (b2 >> 6)];
-        if (rem > 2) out += B64[b2 & 0x3f];
-      }
-      return out;
-    };
-    for (const version of [1, 2]) {
-      expect(decodeLegacyShareTarget(header(version))).toEqual({
-        version,
-        lang: 'fr',
-        dayNumber: 20638,
-      });
-    }
+    // Version 1 is the case above.
+    expect(decodeLegacyShareTarget(header(2))).toEqual({
+      version: 2,
+      lang: 'fr',
+      dayNumber: 20638,
+    });
     // The retired Word mode's ids (3–5) are NOT sentence legacy.
     for (const version of [0, 3, 4, 5, 6, 7]) {
       expect(decodeLegacyShareTarget(header(version))).toBeNull();

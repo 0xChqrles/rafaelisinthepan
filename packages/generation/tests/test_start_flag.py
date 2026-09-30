@@ -9,7 +9,7 @@ from test_donor import (FORMS, FR, KV, START_RANKING, START_SELECTORS, START_SEN
 
 def _run(monkeypatch, starts):
     monkeypatch.setattr(FR["module"], "closest",
-                        lambda _w, _kv, _v, _m, *, n: START_RANKING, raising=False)
+                        lambda _w, _kv, _v, _m: START_RANKING, raising=False)
     monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False, raising=False)
     # the fixture ranking is too small for the real band; the other holes take "amuse"
     monkeypatch.setattr(gen_phrase, "choose_start",
@@ -39,8 +39,10 @@ def test_explicit_start_replaces_the_band_pick_for_that_hole_only(monkeypatch):
     assert by_secret["jardin"]["start"]["word"] == "amuse"
 
 
-def test_explicit_start_must_be_a_word_of_the_hole_not_its_secret(monkeypatch):
+def test_explicit_start_must_be_a_word_of_the_hole_not_its_secret(monkeypatch, capsys):
     with pytest.raises(SystemExit):
         _run(monkeypatch, {"doucement": "doucement"})
+    assert "--start : « doucement » n'est pas un mot de départ possible" in capsys.readouterr().err
     with pytest.raises(SystemExit):
         _run(monkeypatch, {"doucement": "zzzz"})
+    assert "--start : « zzzz » n'est pas un mot de départ possible" in capsys.readouterr().err

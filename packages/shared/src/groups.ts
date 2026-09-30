@@ -3,7 +3,7 @@
 // backend mints and validates the id, the web parses it out of a landing path, and both
 // have to agree on what "this week" means before one of them ranks it.
 
-import { dateForDayNumber, dayNumber } from './day';
+import { dateForDayNumber, dayNumber, weekStart } from './day';
 import { PUBLIC_ID_PATTERN, PUBLIC_ID_SOURCE, generatePublicId } from './identity';
 import type { BoardPlayer } from './leaderboard';
 
@@ -61,9 +61,7 @@ export function periodRange(period: BoardPeriod, date: string): string[] {
   const last = dayNumber(date);
   let first: number;
   if (period === 'week') {
-    // `getUTCDay` is 0 for Sunday; a Monday-first week puts Sunday six days in.
-    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-    first = last - ((weekday + 6) % 7);
+    first = weekStart(last);
   } else {
     first = dayNumber(`${date.slice(0, 7)}-01`);
   }

@@ -63,14 +63,6 @@ export function put(r: Raster, x: number, y: number, ink: number) {
   r.ink[yi * r.cols + xi] = ink;
 }
 
-// A cell inked when `density` beats its threshold: the dither's one gesture.
-export function dither(r: Raster, x: number, y: number, ink: number, density: number) {
-  const xi = Math.round(x);
-  const yi = Math.round(y);
-  if (xi < 0 || yi < 0 || xi >= r.cols || yi >= r.rows) return;
-  if (density > th(xi, yi)) r.ink[yi * r.cols + xi] = ink;
-}
-
 export function rect(r: Raster, x0: number, y0: number, w: number, h: number, ink: number, density = 1) {
   const xa = Math.max(0, Math.round(x0));
   const ya = Math.max(0, Math.round(y0));
@@ -80,31 +72,6 @@ export function rect(r: Raster, x0: number, y0: number, w: number, h: number, in
     for (let x = xa; x < xb; x += 1) {
       if (density >= 1 || density > th(x, y)) r.ink[y * r.cols + x] = ink;
     }
-  }
-}
-
-// A soft round glow: density falling off as a gaussian from the centre, dithered.
-export function glow(r: Raster, cx: number, cy: number, radius: number, ink: number, peak: number) {
-  const x0 = Math.max(0, Math.floor(cx - radius * 2));
-  const x1 = Math.min(r.cols - 1, Math.ceil(cx + radius * 2));
-  const y0 = Math.max(0, Math.floor(cy - radius * 2));
-  const y1 = Math.min(r.rows - 1, Math.ceil(cy + radius * 2));
-  const k = 1 / (2 * radius * radius);
-  for (let y = y0; y <= y1; y += 1) {
-    for (let x = x0; x <= x1; x += 1) {
-      const d2 = (x - cx) ** 2 + (y - cy) ** 2;
-      const v = peak * Math.exp(-d2 * k);
-      if (v > th(x, y)) r.ink[y * r.cols + x] = ink;
-    }
-  }
-}
-
-// A dithered straight segment, `density` along it.
-export function line(r: Raster, x0: number, y0: number, x1: number, y1: number, ink: number, density = 1) {
-  const n = Math.max(1, Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))));
-  for (let i = 0; i <= n; i += 1) {
-    const f = i / n;
-    dither(r, x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, ink, density);
   }
 }
 

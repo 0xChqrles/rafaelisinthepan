@@ -157,14 +157,6 @@ function writeResumable(value: Resumable | null): void {
   }
 }
 
-// What went wrong, in the words the error surface needs. (A `retry` flag chose between two
-// buttons on that surface until 2026-09-03; the screen has one way out now, and the act is
-// re-run from the step that owns it.)
-interface Refusal {
-  title: string;
-  note: string;
-}
-
 // THE ENDING HAS TO SURVIVE ITS OWN SUCCESS. An ADOPT changes the account this device acts
 // as, which bumps the identity SCOPE — and App keys every routed surface on it, so this
 // screen is unmounted and remounted in the same tick the link lands. Without this the one
@@ -182,6 +174,23 @@ let justLinked: {
   email: string;
   stakes: AccountStakes | null;
 } | null = null;
+
+// What a VERIFY puts on the wire: the code for the address, and the CONSENTS it carries.
+// **THE RETURNING DOOR AUTHORIZES NO BINDING** (the owner's rule). A player who came
+// to RECOVER an account and typed an address nobody holds did not ask to have their local
+// one bound to it — that is a different act, and a costly one: an account carries at most
+// ONE address, so a mistyped address would SPEND the slot and leave the account unable to be
+// saved under the right one. This is not the declared intent crossing the wire (it never
+// does); it is the caller naming what it authorizes, exactly as `erase` and `leave` do.
+export function verifyBody(
+  token: string,
+  email: string,
+  code: string,
+  returning: boolean,
+  confirm?: { erase?: string; leave?: string },
+): { token: string; email: string; code: string; bind: boolean; erase?: string; leave?: string } {
+  return { token, email, code, bind: !returning, ...(confirm ?? {}) };
+}
 
 export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   const lang = useUiLang();
@@ -204,7 +213,9 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   const [busy, setBusy] = useState(false);
   const [wrong, setWrong] = useState<number | null>(null);
   const [prompt, setPrompt] = useState<LinkErasePrompt | null>(null);
-  const [refusal, setRefusal] = useState<Refusal | null>(null);
+  // What went wrong, as the note the error surface shows under its one title. The screen
+  // has one way out, and the act is re-run from the step that owns it.
+  const [refusal, setRefusal] = useState<string | null>(null);
   // A standing explanation under the address field — something true about this account that
   // the player has to read before typing again, rather than a failure with a retry.
   const [note, setNote] = useState<string | null>(null);
@@ -259,7 +270,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
 
   useEffect(() => () => clearTimeout(shakeTimer.current), []);
 
-  const fail = useCallback((title: string, note: string) => setRefusal({ title, note }), []);
+  const fail = useCallback((note: string) => setRefusal(note), []);
 
   const leave = () => {
     writeResumable(null);
@@ -283,7 +294,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // does not (moving focus out of an open modal is worse than a closed keyboard), and RESEND
   // does not (the caret is already in the prompt).
   const send = useCallback(
-    async ({ resend = false, handOff = false }: { resend?: boolean; handOff?: boolean } = {}) => {
+    async ({ handOff = false }: { handOff?: boolean } = {}) => {
       const email = normalizeEmail(address);
       if (email === null || busy) return;
       if (handOff) codeField.current?.focus();
@@ -327,16 +338,16 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           return;
         }
         if (response.status === 429) {
-          fail(t(lang, 'linkFailed'), t(lang, 'linkTooMany'));
+          fail(t(lang, 'linkTooMany'));
           return;
         }
         if (error === 'bad_email') {
-          fail(t(lang, 'linkFailed'), t(lang, 'linkBadAddress'));
+          fail(t(lang, 'linkBadAddress'));
           return;
         }
-        fail(t(lang, 'linkFailed'), t(lang, 'linkSendFailedNote'));
+        fail(t(lang, 'linkSendFailedNote'));
       } catch {
-        fail(t(lang, 'linkFailed'), t(lang, 'linkSendFailedNote'));
+        fail(t(lang, 'linkSendFailedNote'));
       } finally {
         setBusy(false);
         if (handOff && !handedOn) addressField.current?.focus();
@@ -425,20 +436,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         const resolved = currentRequestIdentity(epoch);
         if (!resolved) return;
         request = resolved;
-        const response = await postLinkBody(linkUrl(), {
-          token: resolved.identity.token,
-          email,
-          code: typed,
-          // **THE RETURNING DOOR AUTHORIZES NO BINDING** (user-decided 2026-08-28). A
-          // player who came to RECOVER an account and typed an address nobody holds did not
-          // ask to have their local one bound to it — that is a different act, and a costly
-          // one: an account carries at most ONE address, so a mistyped address would SPEND
-          // the slot and leave the account unable to be saved under the right one. This is
-          // not the declared intent crossing the wire (it never does); it is the caller
-          // naming what it authorizes, exactly as `erase` and `leave` do.
-          bind: !returning,
-          ...(confirm ?? {}),
-        });
+        const response = await postLinkBody(
+          linkUrl(),
+          verifyBody(resolved.identity.token, email, typed, returning, confirm),
+        );
         const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
         if (response.ok) {
           finish(resolved, parseLinkResult(body));
@@ -465,7 +466,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           // named no account this screen could ask about, and there is nothing to confirm.
           // It closes WITHOUT a retry: the same code re-sent gets the same refusal, and the
           // generic failure's TRY AGAIN spun that loop with no way out of it.
-          fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'));
+          fail(t(lang, 'linkVerifyFailedNote'));
           return;
         }
         if (error === 'bad_code') {
@@ -475,7 +476,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           const { attemptsLeft, exhausted } = parseBadCode(body);
           setWrong(attemptsLeft);
           shakeTimer.current = setTimeout(() => setCode(''), 420);
-          if (exhausted) fail(t(lang, 'linkFailed'), t(lang, 'linkCodeSpent'));
+          if (exhausted) fail(t(lang, 'linkCodeSpent'));
           return;
         }
         if (error === 'code_expired' || error === 'code_spent' || error === 'no_code') {
@@ -484,7 +485,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           // here; ask the unchanged token before calling the completed operation expired.
           if (await recoverAmbiguous(resolved, email)) return;
           backToAddress();
-          fail(t(lang, 'linkFailed'), t(lang, 'linkCodeExpired'));
+          fail(t(lang, 'linkCodeExpired'));
           return;
         }
         // Nobody is at that address, and this door did not authorize creating anybody.
@@ -507,10 +508,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           return;
         }
         if (response.status >= 500 && (await recoverAmbiguous(resolved, email))) return;
-        fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'));
+        fail(t(lang, 'linkVerifyFailedNote'));
       } catch {
         if (request && (await recoverAmbiguous(request, email))) return;
-        fail(t(lang, 'linkFailed'), t(lang, 'linkVerifyFailedNote'));
+        fail(t(lang, 'linkVerifyFailedNote'));
       } finally {
         setBusy(false);
       }
@@ -793,7 +794,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 type="button"
                 className="link-quiet-btn"
                 disabled={busy || waitLeft > 0}
-                onClick={() => void send({ resend: true })}
+                onClick={() => void send()}
               >
                 {waitLeft > 0 ? `${t(lang, 'linkResend')} (${waitLeft})` : t(lang, 'linkResend')}
               </button>
@@ -856,7 +857,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
               </>
             ) : (
               <span
-                className={`account-hero-mark${faceSettled(eraseState) ? '' : ' skeleton'}`}
+                className={`account-hero-mark${faceSkeletonClass(eraseState)}`}
                 aria-hidden="true"
               />
             )}
@@ -923,7 +924,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
               </>
             ) : (
               <span
-                className={`account-hero-mark${faceSettled(endingState) ? '' : ' skeleton'}`}
+                className={`account-hero-mark${faceSkeletonClass(endingState)}`}
                 aria-hidden="true"
               />
             )}
@@ -979,19 +980,14 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         )}
       </div>
 
-      {refusal && (
+      {refusal !== null && (
         <ErrorScreen
           lang={lang}
-          title={refusal.title}
-          note={refusal.note}
+          title={t(lang, 'linkFailed')}
+          note={refusal}
           onClose={() => setRefusal(null)}
         />
       )}
     </>
   );
-}
-
-// Test seam: the ending's cross-remount carry must not leak between tests.
-export function resetJustLinked(): void {
-  justLinked = null;
 }

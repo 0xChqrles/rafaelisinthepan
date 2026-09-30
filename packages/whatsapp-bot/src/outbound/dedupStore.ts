@@ -26,7 +26,7 @@ export interface SentStore {
   put(group: string, record: SentRecord): Promise<void>;
 }
 
-export function outboxKey(group: string, commandId: string) {
+function outboxKey(group: string, commandId: string) {
   return { pk: { S: `OUTBOX#${group}` }, sk: { S: `CMD#${commandId}` } };
 }
 

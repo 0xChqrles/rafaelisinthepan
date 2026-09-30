@@ -39,11 +39,16 @@ export interface PlayerHistory {
 // the server.
 export const MAX_SOLVED_DAYS = 800;
 
+// A solved-day collection as every reading here takes it: ascending, duplicates dropped.
+function sortedUnique(days: readonly number[]): number[] {
+  return [...new Set(days)].sort((a, b) => a - b);
+}
+
 // Sort ascending, drop duplicates, keep the most recent MAX_SOLVED_DAYS. Written once and
 // applied on BOTH sides of the store — the write bounds what it keeps, the read bounds what
 // it hands out — so a row that somehow grew past the cap still answers inside it.
 export function boundSolvedDays(days: readonly number[]): number[] {
-  const sorted = [...new Set(days)].sort((a, b) => a - b);
+  const sorted = sortedUnique(days);
   return sorted.length > MAX_SOLVED_DAYS ? sorted.slice(-MAX_SOLVED_DAYS) : sorted;
 }
 
@@ -61,7 +66,7 @@ export function boundSolvedDays(days: readonly number[]): number[] {
 // Order-independent and idempotent by construction — it normalizes its input — because the
 // collection is a SET that is merged, never a sequence.
 export function currentStreak(days: readonly number[], activeDay: number): number {
-  const sorted = [...new Set(days)].sort((a, b) => a - b);
+  const sorted = sortedUnique(days);
   if (sorted.length === 0) return 0;
   const last = sorted[sorted.length - 1];
   if (last < activeDay - 1) return 0; // chain broken — the last solve is older than yesterday
@@ -84,7 +89,7 @@ export function currentStreak(days: readonly number[], activeDay: number): numbe
 // Order-independent and idempotent by construction — it normalizes its input — because the
 // collection is a SET that is merged, never a sequence.
 export function bestStreak(days: readonly number[]): number {
-  const sorted = [...new Set(days)].sort((a, b) => a - b);
+  const sorted = sortedUnique(days);
   let best = 0;
   let run = 0;
   for (let i = 0; i < sorted.length; i += 1) {

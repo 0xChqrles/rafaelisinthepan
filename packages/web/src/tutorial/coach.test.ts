@@ -15,7 +15,8 @@
 //   Every line is written for someone who has never heard of the game: it names the HIDDEN
 //   WORD the numbers are about (coachCopy below).
 import { describe, it, expect } from 'vitest';
-import type { RankEntry, RuntimeHole } from '@whippin/shared';
+import type { RankEntry } from '@whippin/shared';
+import type { RuntimeHole } from '../game/types';
 import { coachLine, coachCopy, ordinal, STUCK, type CoachState, type GuessEvent, type Stage } from './coach';
 import type { LessonStage } from './script';
 
@@ -41,7 +42,7 @@ function board(stage: Stage, starts: number[]) {
     finished,
   });
   // `ranks[i]` is the guess's rank on hole i, or null for a MISS there.
-  const guess = (typed: string, ranks: (number | null)[], meter?: { charged: boolean; filled: number | null; revealed?: boolean }) => {
+  const guess = (typed: string, ranks: (number | null)[], meter?: { filled: number | null; revealed?: boolean }) => {
     const entries = holes.map((h, i) => (h.rank === 0 || ranks[i] === null ? undefined : entry(typed, ranks[i] as number)));
     const improved = holes.map((h, i) => entries[i] !== undefined && (entries[i] as RankEntry).rank < h.rank);
     events.push({ typed, entries, improved, holeRanks: holes.map((h) => h.rank), ...meter });
@@ -61,7 +62,7 @@ describe('the reveal', () => {
     expect(coachLine(b.state(false, true))).toEqual({ kind: 'reveal', holeIndex: 0 });
     expect(coachLine(b.state())).toEqual({ kind: 'hidden', hole: expect.objectContaining({ rank: 1 }) });
     b.guess('water', [29]);
-    expect(coachLine(b.state())).toEqual({ kind: 'away', guess: expect.objectContaining({ rank: 29 }), hole: expect.objectContaining({ rank: 1 }) });
+    expect(coachLine(b.state())).toEqual({ kind: 'away', guess: expect.objectContaining({ rank: 29 }) });
     b.guess('boat', [45]);
     expect(coachLine(b.state())).toEqual({ kind: 'near', hole: expect.objectContaining({ rank: 1 }) });
     expect(STUCK.reveal[0]).toBeLessThanOrEqual(STUCK.word[0]);
@@ -82,7 +83,6 @@ describe('the word stage', () => {
     expect(coachLine(b.state())).toEqual({
       kind: 'away',
       guess: expect.objectContaining({ word: 'boat', rank: 45 }),
-      hole: expect.objectContaining({ word: 'start0', rank: 10 }),
     });
     b.guess('sea', [3]); // it moved: silence
     expect(coachLine(b.state())).toBeNull();
@@ -96,7 +96,7 @@ describe('the word stage', () => {
     expect(coachLine(b.state())).toBeNull();
     b.guess('sea', [3]); // it moved: silence
     b.guess('boat', [45]);
-    expect(coachLine(b.state())).toEqual({ kind: 'away', guess: expect.objectContaining({ rank: 45 }), hole: expect.objectContaining({ rank: 3 }) });
+    expect(coachLine(b.state())).toEqual({ kind: 'away', guess: expect.objectContaining({ rank: 45 }) });
   });
 
   it('names the first MISS, once', () => {
@@ -114,7 +114,7 @@ describe('the word stage', () => {
     expect(near).toBeLessThanOrEqual(hint);
     const b = board('word', [10]);
     b.guess('w0', [40]);
-    expect(coachLine(b.state())).toEqual({ kind: 'away', guess: expect.objectContaining({ rank: 40 }), hole: expect.objectContaining({ rank: 10 }) });
+    expect(coachLine(b.state())).toEqual({ kind: 'away', guess: expect.objectContaining({ rank: 40 }) });
     b.guess('w1', [null]);
     expect(coachLine(b.state())).toEqual({ kind: 'hint', holeIndex: 0 });
     for (let i = hint; i < answer; i += 1) b.guess(`w${i}`, [40 + i]);
@@ -180,16 +180,16 @@ describe('the meter stage — the bot has half played it', () => {
     const b = board('meter', [0, 24]); // the bot found the first word; the second stands at its best try
     expect(coachLine(b.state())).toEqual({ kind: 'introMeter', hole: expect.objectContaining({ rank: 24 }) });
     expect(coachLine(b.state(true))).toEqual({ kind: 'meterTapped' });
-    b.guess('x', [null, null], { charged: false, filled: null });
+    b.guess('x', [null, null], { filled: null });
     expect(coachLine(b.state(true))).toEqual({ kind: 'near', hole: expect.objectContaining({ rank: 24 }) });
-    b.guess('freedom', [null, 1], { charged: true, filled: 1 });
+    b.guess('freedom', [null, 1], { filled: 1 });
     expect(coachLine(b.state(true))).toEqual({ kind: 'activated', word: 'freedom', rank: 1 });
     // A hint revealed from the wheel: named with its price, the turn handed back.
-    b.guess('rights', [null, 3], { charged: true, filled: null, revealed: true });
+    b.guess('rights', [null, 3], { filled: null, revealed: true });
     expect(coachLine(b.state(true))).toEqual({ kind: 'revealedHint', word: 'rights', rank: 3 });
-    b.guess('y', [null, null], { charged: false, filled: null });
+    b.guess('y', [null, null], { filled: null });
     expect(coachLine(b.state(true))).toEqual({ kind: 'hint', holeIndex: 1 }); // a failed try: the hint, never the word
-    b.guess('z', [null, 300], { charged: true, filled: null });
+    b.guess('z', [null, 300], { filled: null });
     expect(coachLine(b.state(true))).toEqual({ kind: 'hint', holeIndex: 1 });
     expect(coachLine(b.state(true, false, true))).toEqual({ kind: 'found' });
   });
@@ -216,10 +216,10 @@ describe('coachCopy', () => {
     expect(coachCopy('en', { kind: 'intro', hole }, stage, true)).toBe(
       'Now find another secret word. I give you its 10th closest word, [[w:islands^10]].',
     );
-    expect(coachCopy('en', { kind: 'away', guess: entry('boat', 45), hole }, stage, true)).toBe(
+    expect(coachCopy('en', { kind: 'away', guess: entry('boat', 45) }, stage, true)).toBe(
       '[[w:boat^45]] is the 45th closest word to the secret.',
     );
-    expect(coachCopy('fr', { kind: 'away', guess: entry('bateau', 21), hole: { ...hole, rank: 1 } }, stage, true)).toBe(
+    expect(coachCopy('fr', { kind: 'away', guess: entry('bateau', 21) }, stage, true)).toBe(
       '[[w:bateau^21]] est le 21e mot le plus proche du secret.',
     );
     expect(coachCopy('en', { kind: 'miss', typed: 'violin' }, stage, true)).toBe(

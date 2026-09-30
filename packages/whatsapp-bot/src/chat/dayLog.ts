@@ -22,6 +22,7 @@
 import { QueryCommand, PutItemCommand, type AttributeValue, type DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { activeDate, dayNumber } from '@whippin/shared';
 import { dayPrefix } from '../domain/dynamoDeclarationStore';
+import { withMentionNames } from './trigger';
 
 export type TurnKind = 'said' | 'bot' | 'reacted';
 
@@ -43,6 +44,9 @@ export function boundTurnText(text: string): string {
   return text.length > TURN_MAX_CHARS ? `${text.slice(0, TURN_MAX_CHARS - 1).trimEnd()}…` : text;
 }
 
+// How far under the cap a cut line can stand: the run of whitespace `boundTurnText` trimmed.
+const CUT_TRIM_SLACK = 8;
+
 // A REPLY NAMES WHAT IT ANSWERS (2026-09-07). WhatsApp draws the quoted bubble; the model
 // reads text, so the quote is spelled out at the head of the turn — who said it, and what.
 // Bounded harder than a turn: it is orientation, not content, and the head of a long
@@ -53,6 +57,22 @@ export const QUOTE_MAX_CHARS = 200;
 export function quoteLead(author: string, text: string): string {
   const said = text.length > QUOTE_MAX_CHARS ? `${text.slice(0, QUOTE_MAX_CHARS - 1).trimEnd()}…` : text;
   return said === '' ? `[replying to a message from ${author}] ` : `[replying to ${author}: "${said}"] `;
+}
+
+// WHAT A MESSAGE BECOMES AS A TURN, for a live one (`main.ts`) and an exported one
+// (`diarySeed.ts`) alike: the quote spelled out at the head, then the body, every mention
+// in either as the name the group uses. Both texts arrive with their share block ALREADY
+// out (`withoutShares`, once — a second pass can strip what the first one's whitespace
+// collapse joined), and `author` is already "you" or a display name. Null when the message
+// leaves nothing to keep.
+export function composeTurnText(
+  body: string,
+  quoted: { author: string; text: string } | null,
+  names: ReadonlyMap<string, string>,
+): string | null {
+  const lead = quoted ? quoteLead(quoted.author, withMentionNames(quoted.text, names)) : '';
+  const kept = `${lead}${withMentionNames(body, names)}`.trim();
+  return kept === '' ? null : kept;
 }
 
 export function dayOfInstant(atMs: number): number {
@@ -107,14 +127,23 @@ export class DayLog {
   // with whitespace collapsed: the echo comes through `withoutShares`, which collapses it,
   // while the composed line was remembered as written, newlines and all.
   //
+  // A LINE THAT WAS CUT IS COMPARED AS A PREFIX: it was cut from the text as written and
+  // the echo would be cut from the collapsed one, so with a space beside a newline in it
+  // the two cuts land on different characters and no equality holds. A cut line is one that
+  // ends on the ellipsis at the cap — or a few characters short of it, `boundTurnText`
+  // trimming the whitespace its cut landed on (`CUT_TRIM_SLACK`).
+  //
   // WITHIN THE DAY, NOT ACROSS IT (PR-278 review): two days are held in memory, and the
   // morning reminder is deterministic — so yesterday's identical line made today's echo
   // look like a duplicate, and today's log lost its reminder.
   async appendUnlessSaid(turn: Turn): Promise<void> {
+    const echo = collapse(turn.text);
     const text = collapse(boundTurnText(turn.text));
-    const said = (this.turns.get(turn.group) ?? []).some(
-      (t) => t.day === turn.day && t.kind === 'bot' && collapse(t.text) === text,
-    );
+    const said = (this.turns.get(turn.group) ?? []).some((t) => {
+      if (t.day !== turn.day || t.kind !== 'bot') return false;
+      const cut = t.text.endsWith('…') && t.text.length > TURN_MAX_CHARS - CUT_TRIM_SLACK;
+      return cut ? echo.startsWith(collapse(t.text.slice(0, -1))) : collapse(t.text) === text;
+    });
     if (!said) await this.append(turn);
   }
 
@@ -136,7 +165,7 @@ function byInstant(a: Turn, b: Turn): number {
   return a.at - b.at || a.id.localeCompare(b.id);
 }
 
-export function dayLogPartition(group: string): string {
+function dayLogPartition(group: string): string {
   return `DAYLOG#${group}`;
 }
 
@@ -201,7 +230,7 @@ export function dynamoDayLogStore(client: DynamoDBClient, tableName: string): Da
   };
 }
 
-export function memoryDayLogStore(): DayLogStore & { rows(): Turn[] } {
+export function memoryDayLogStore(): DayLogStore {
   const rows = new Map<string, Turn>();
   return {
     async append(turn) {
@@ -210,7 +239,6 @@ export function memoryDayLogStore(): DayLogStore & { rows(): Turn[] } {
     async read(group, day) {
       return [...rows.values()].filter((t) => t.group === group && t.day === day).sort(byInstant);
     },
-    rows: () => [...rows.values()],
   };
 }
 
@@ -225,7 +253,7 @@ export function clockIn(timezone: string, atMs: number): string {
 // The bot's answer form for a reaction (`agent.ts` reads it back off the model's answer).
 export const REACT_PREFIX = 'REACT';
 
-export function turnLine(turn: Turn, timezone: string, botName: string): string {
+function turnLine(turn: Turn, timezone: string, botName: string): string {
   const who = turn.kind === 'said' ? turn.name : botName;
   const what = turn.kind === 'reacted' ? `${REACT_PREFIX} ${turn.text}` : turn.text;
   return `[${clockIn(timezone, turn.at)}] ${who}: ${what}`;

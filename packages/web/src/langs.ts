@@ -5,6 +5,7 @@ import {
   GROUP_LANDING_SEGMENT,
   GROUP_SEGMENT,
   isBonusId,
+  isCalendarDate,
 } from '@whippin/shared';
 import { FIRST_PUZZLE_DATE } from './config';
 import { isReady, levelOf } from './tutorial/levels';
@@ -12,7 +13,7 @@ import { isReady, levelOf } from './tutorial/levels';
 // How far past the client's active day a dated route may reach (#273): ONE day, the
 // server's own +1-day skew window — which is what lets tomorrow's sentence open tonight.
 // The route bound and the server's guard have to agree, or TOMORROW lands on a redirect.
-export const ROUTE_FUTURE_DAYS = 1;
+const ROUTE_FUTURE_DAYS = 1;
 
 // Supported game languages — the single source for the picker and the /<lang> URL
 // routing. A language is deep-linkable: /fr and /en map to the game in that language,
@@ -153,18 +154,9 @@ export type Route =
   | { view: 'groupInvite'; groupId: string }
   | { view: 'home' };
 
-// A strict "YYYY-MM-DD" that is ALSO a real calendar date (so 2026-13-40 is rejected):
-// the shape guards the format, the round-trip re-formats the parsed value and requires
-// it to match, which weeds out impossible days (Feb 30) and normalized overflow.
+// What makes a path segment date-SHAPED. Whether it is also a real calendar date (so
+// 2026-13-40 is rejected) is @whippin/shared's `isCalendarDate`, the check the server makes.
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-function isCalendarDate(s: string): boolean {
-  if (!DATE_RE.test(s)) return false;
-  const [y, m, d] = s.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return (
-    dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d
-  );
-}
 
 // Range bounds for date deep-links, injected so parsing stays pure/testable. `firstDate`
 // defaults to the language's first day (config); `activeDate` is the client's active game

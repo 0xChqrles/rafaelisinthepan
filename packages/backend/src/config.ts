@@ -19,7 +19,7 @@ interface Config {
   mailFrom: string;
 }
 
-export interface ScoreSecrets {
+interface ScoreSecrets {
   turnstileSecret: string;
   ipHmacSecret: string;
 }

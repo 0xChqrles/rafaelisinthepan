@@ -26,7 +26,7 @@ export type BoardTab = 'group' | 'global';
 // permanent problem. What is persisted now is an OUTBOX: the guesses this device has typed
 // and the server has NOT acknowledged, and nothing else. Everything else is either the
 // server's (held transiently, below) or a pure projection of the two (`game/playLog.ts`).
-export interface RoundOutbox {
+interface RoundOutbox {
   // WHICH PUBLISHED VERSION these guesses answer (#203's `revision`). A republish means
   // the puzzle contained an error, so a mismatched outbox is DROPPED rather than sent: its
   // guesses answered a different question, and a corrected rank map can move the very
@@ -267,108 +267,13 @@ interface GameState extends PersistedState {
 
 export const GAME_PERSIST_VERSION = 20;
 
-// Version upgrades for the persisted blob (exported for the invariant tests).
-//   v0 was a single top-level round ({ roundKey, holes, ... }); the shape is now a keyed
-//     map, so discard the old state rather than mis-merge it (one-time reset).
-//   v1 may still carry the RETIRED keyboard `layout` preference (removed with the AZERTY
-//     layout) — picking only the current fields silently drops it. A v19 blob may likewise
-//     still carry the retired Word mode's `wordRounds` and `lastMode` (removed 2026-09-16),
-//     dropped the same way. v1 also predates the
-//     onboarding tutorial (#51): anyone with existing play state has already learned the
-//     game, so GRANDFATHER them (rounds or a lastLang -> onboarded) — a veteran must
-//     never be surprised by the tutorial.
-//   v3 adds the per-language solved-day set (#56): any older blob gets an empty set (NO
-//     backfill from rounds — the streak starts fresh, by decision), and the counters are
-//     derived from it, never persisted.
-//   v4 added `routeSeen` (#129) — the flag that armed the one-time first-solve auto-open. v5
-//     RETIRES it with the auto-open itself (#155: the onboarding now ends by tapping a word,
-//     so the map no longer introduces itself mid-round). Like the retired keyboard `layout`
-//     before it, picking only the current fields silently drops it from any older blob.
-//   v8 adds `sentenceRulesSeen` (2026-08-11): the sentence game's one-time instructions
-//     gate. Older blobs get false — deliberately NOT grandfathered the way `onboarded`
-//     is, because the gate teaches the history tap, which is newer than any existing
-//     player's play state; every player sees it exactly once.
-//   v19 (#271) renames the trusted tab 'friends' -> 'group' and adds `lastGroupId`; an
-//     older blob's tab reads as the default, its group as none.
-//   v20 (#269) RETIRES `sentenceRulesSeen` (the rules gate became an invitation into the
-//     tutorial's level 1) and adds `lessonsDone`, the levels this device has done. Older
-//     blobs start with none — level 1 is inferred back from play on the first guess.
-//   v9 adds `boardTab` (2026-08-20): which #190 board tab is up. Older blobs get
-//     'friends', the default the screen already opens on, so nothing changes for anyone
-//     already using it. It is persisted only so a REFRESH does not end a visit to the
-//     board — App clears it on leaving one — so a stored 'global' is at most one
-//     interrupted visit old, never a preference to honour forever.
-//   v10 retires `scoreSubmitted` (2026-08-20): a finished round now asks the population
-//     until the population HOLDS it, so `scoreRecorded` alone settles a round and the old
-//     flag has no reader. It is STRIPPED rather than left as unread cruft (the v1 keyboard
-//     `layout` precedent), and stripping is also what HEALS the rounds it stranded — every
-//     round a 4xx burned (and, before the 2026-08-16 correction, every 5xx too) carried the
-//     flag with no recorded score, and now submits again on the next visit to its solved
-//     screen.
-//   v12 retires `scoreRecorded` from the round maps (#203): there is no client-claimed
-//     score left to reconcile — the server derives it from the guess log and records the
-//     row itself — so what a finished round persists is `recorded`, a plain "the server
-//     holds this round's solve", written from the round answers rather than from a score
-//     POST. STRIPPED, not translated (the v10 precedent, and the standing no-back-compat
-//     rule): a sentence round appended to AFTER this ships re-learns the fact from the
-//     answer that says `solved`.
-//     **A round already SOLVED before this ships does NOT recover, and never will**
-//     (corrected on review): its stored row was written by a pre-#203 append, so it carries
-//     no `solved` attribute, its mount READ answers `solved: false`, and with nothing left
-//     pending no append ever fires to derive one — so `recorded` is never set and its solved
-//     screen silently loses the standing line for good. Backfilling it server-side would be
-//     the compatibility layer this repo does not keep, and the cost is bounded to
-//     pre-launch rounds at most a day old against an archive that is wiped before launch.
-//   v13 DROPS every sentence round stored before the published revision existed (#203).
-//     `ensureRound` briefly ADOPTED one whose holes still matched, on the reasoning that a
-//     deploy must not throw away play in progress — which is a compatibility layer, and the
-//     repo does not keep those (root AGENTS.md: remove obsolete paths, never accommodate
-//     them). It is also not safe on its own terms: a pre-stamp round cannot say WHICH
-//     version it was played against, and since rank 0 is a GROUP, a correction can move the
-//     aliases that decide `solved` without touching a single hole — so the holes matching
-//     proves nothing about the maps. Dropped at the migration rather than lazily on mount,
-//     so every round that survives carries a revision by construction and no read path needs
-//     a branch for one that does not. Solved days and the streak are untouched; the cost is
-//     device-local sentence play at most a day old, against an archive wiped before launch.
-//   v14 DROPS the sentence `rounds` map OUTRIGHT (#214), and with it every round-shaped
-//     migration this list has accumulated. Local storage is an OUTBOX now: the server owns a
-//     round's log from its first guess, so a persisted holes/progress/count/flags mirror was
-//     a second answer to questions the server already answers — which is what made every
-//     visit a reconciliation. There is nothing to translate: a stored round's UNSENT guesses
-//     were never distinguishable from its acknowledged ones (`tried` is one merged list), so
-//     re-seeding an outbox from it would re-send guesses the server already holds, burn the
-//     cap on duplicates and — near the cap — cost an honest player their leaderboard entry.
-//     The mount READ recovers what the server has, which for anything that ever flushed is
-//     everything; the cost is guesses stranded on a device that has been offline since its
-//     last flush, at most one round's worth. Every preference is untouched (the archive and
-//     the streak get their server-backed source in #211, which ships with this — see v15).
-//   v15 DROPS `solvedDays` (#211), the last device-local half of a player's history. The
-//     per-language solved-day collection lives on the private player row now, credited by
-//     the append that CONFIRMS a solve and read back through the private history path, so a
-//     persisted copy would be the same second authority v14 removed for rounds — and one
-//     that cannot follow a player to a second device, which is the gap that made this a
-//     release blocker. STRIPPED rather than migrated: there is nowhere to migrate it TO (the
-//     collection is server-side and rebuilt from the authoritative round rows), and the
-//     standing no-back-compat rule says an obsolete path is removed, not accommodated. The
-//     cost is that a device whose rounds were never synced loses its streak; every round
-//     that ever flushed is on the server, and #214 already made that the only kind there is.
-//   v16 DROPS the OUTBOX (#216), because it belongs to an identity this device no longer
-//     has. Until #216 the identity was a shared secret (#187); it is now a
-//     device token resolving to a SERVER-assigned account, and there is no mapping between
-//     the two — the epic wipes the DB before launch and takes no migration. Left in place,
-//     it is worse than stale: the tokenless branch pumps a surviving outbox on the very
-//     first page load, which bootstraps a BRAND-NEW account and then appends the retired
-//     identity's guesses to it. Every preference survives, as at v14 and v15.
-//   v17 BINDS the outbox to its #216 owner. A v16 blob can carry state but cannot prove
-//     which device/account produced it, so it is dropped under the same no-back-compat rule
-//     as v16's retired-secret state. New ownerless state survives only while the device key
-//     carries the pending token minted by the act that created it; startup reconciliation
-//     drops it when the key is missing or corrupt instead of bootstrapping a stranger.
-//   v18 changes the STORAGE boundary, not this content shape: the state lives behind the
-//     transactional IndexedDB record (gamePersistence.ts). The retired v17 localStorage
-//     blob is NOT read — the standing no-back-compat rule (the v14 precedent): an
-//     empty database starts from the initial state, and the one-time cost is pre-launch
-//     preferences on existing devices.
+// Reads a stored record into the current state (exported for the invariant tests). The
+// state lives behind the transactional IndexedDB record (gamePersistence.ts), and nothing
+// else is read: a version below 1 means nothing was stored, and starts from the initial
+// state. Only the current fields are picked, each validated on its own, so anything else a
+// stored record carries is dropped: a board tab other than 'global' reads as 'group', a
+// missing group as none, missing `lessonsDone` as no level done (level 1 is inferred from
+// play on the first guess).
 function storedRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -391,30 +296,14 @@ function parseOutbox(value: unknown): Record<string, RoundOutbox> {
 }
 
 export function migratePersisted(persisted: unknown, version: number): PersistedState {
-  if (version < 1) {
-    return {
-      identityOwner: null,
-      outbox: {},
-      lastLang: null,
-      onboarded: false,
-      boardTab: 'group',
-      lastGroupId: null,
-      lessonsDone: [],
-      localSeed: null,
-    };
-  }
+  if (version < 1) return initialPersistedState();
   const p = (
     typeof persisted === 'object' && persisted !== null ? persisted : {}
-  ) as Partial<PersistedState> & { rounds?: Record<string, unknown> };
-  const legacyRounds = storedRecord(p.rounds);
+  ) as Partial<PersistedState>;
   const lastLang = typeof p.lastLang === 'string' && isLang(p.lastLang) ? p.lastLang : null;
-  // Grandfathering asks whether this person has PLAYED before, which the RAW blob answers —
-  // including through the `rounds` map v14 drops, since a veteran whose only signal is their
-  // play history must not be handed the tutorial back.
-  const onboarded =
-    typeof p.onboarded === 'boolean'
-      ? p.onboarded
-      : Object.keys(legacyRounds).length > 0 || lastLang != null;
+  // Grandfathering asks whether this person has PLAYED before, which a stored language
+  // answers when the flag itself is missing.
+  const onboarded = typeof p.onboarded === 'boolean' ? p.onboarded : lastLang != null;
   const lessonsDone = parseLessonsDone(p.lessonsDone);
   // The pre-account seed is display-only, so a malformed one simply re-mints on next need.
   const localSeed =
@@ -422,14 +311,10 @@ export function migratePersisted(persisted: unknown, version: number): Persisted
   const boardTab = p.boardTab === 'global' ? 'global' : 'group';
   const lastGroupId =
     typeof p.lastGroupId === 'string' && GROUP_ID_PATTERN.test(p.lastGroupId) ? p.lastGroupId : null;
-  const parsedOwner = version < 17 ? null : parseIdentityOwner(p.identityOwner);
+  const parsedOwner = parseIdentityOwner(p.identityOwner);
   // `undefined` means a current-version blob claimed an owner but did not carry a valid
   // one. Fail closed: the outbox may not survive malformed ownership metadata.
-  const stateHasOwnerContract = version >= 17 && parsedOwner !== undefined;
-  // The outbox arrives with v14 and holds only UNACKNOWLEDGED guesses, which no older blob
-  // can distinguish inside its merged `tried` list (see the v14 note) — so an older one
-  // starts empty rather than re-sending a log the server already holds. v16 raised that
-  // floor for the retired secret; v17 raises it again for ownerless device-token state.
+  const stateHasOwnerContract = parsedOwner !== undefined;
   const outbox = stateHasOwnerContract ? parseOutbox(p.outbox) : {};
   return {
     identityOwner: parsedOwner ?? null,
@@ -507,7 +392,6 @@ export type GameMutation =
 export interface GameMutationResult {
   state: PersistedState;
   changed: boolean;
-  landed?: boolean;
 }
 
 function sameOwner(a: IdentityOwner | null, b: IdentityOwner | null): boolean {
@@ -517,8 +401,8 @@ function sameOwner(a: IdentityOwner | null, b: IdentityOwner | null): boolean {
   );
 }
 
-function changed(state: PersistedState, next: PersistedState, landed?: boolean): GameMutationResult {
-  return { state: next, changed: next !== state, ...(landed === undefined ? {} : { landed }) };
+function changed(state: PersistedState, next: PersistedState): GameMutationResult {
+  return { state: next, changed: next !== state };
 }
 
 function removeAcknowledged(current: string[], before: string[], after: string[]): string[] {
@@ -554,8 +438,10 @@ export function applyGameMutation(
   state: PersistedState,
   mutation: GameMutation,
 ): GameMutationResult {
-  if ('expectedOwner' in mutation && mutation.type !== 'reconcileIdentity') {
-    if (!sameOwner(state.identityOwner, mutation.expectedOwner)) return changed(state, state, false);
+  // A late transition from A must not clear a state already rebound to B by a sibling.
+  // If the target is already committed, the mutation is simply idempotent.
+  if ('expectedOwner' in mutation && !sameOwner(state.identityOwner, mutation.expectedOwner)) {
+    return changed(state, state);
   }
 
   switch (mutation.type) {
@@ -627,11 +513,6 @@ export function applyGameMutation(
       return changed(state, { ...state, outbox });
     }
     case 'reconcileIdentity': {
-      // A late transition from A must not clear a state already rebound to B by a sibling.
-      // If the target is already committed, the mutation is simply idempotent.
-      if (!sameOwner(state.identityOwner, mutation.expectedOwner)) {
-        return changed(state, state);
-      }
       if (mutation.identity === null) {
         if (mutation.pendingBootstrap && state.identityOwner === null) return changed(state, state);
         if (state.identityOwner === null && Object.keys(state.outbox).length === 0) {
@@ -765,20 +646,19 @@ let syncSequence = 0;
 function normalizedEnvelope(
   stored: StoredGameState<PersistedState> | null,
 ): StoredGameState<PersistedState> {
-  const source = stored;
-  if (!source) return { version: GAME_PERSIST_VERSION, state: initialPersistedState() };
+  if (!stored) return { version: GAME_PERSIST_VERSION, state: initialPersistedState() };
   const sourceVersion =
-    typeof source.version === 'number' &&
-    Number.isInteger(source.version) &&
-    source.version >= 0
-      ? source.version
+    typeof stored.version === 'number' &&
+    Number.isInteger(stored.version) &&
+    stored.version >= 0
+      ? stored.version
       : 0;
   if (sourceVersion > GAME_PERSIST_VERSION) {
     throw new Error(`game state version ${sourceVersion} is newer than this build`);
   }
   return {
     version: GAME_PERSIST_VERSION,
-    state: migratePersisted(source.state, sourceVersion),
+    state: migratePersisted(stored.state, sourceVersion),
   };
 }
 
@@ -828,6 +708,7 @@ function applyCommittedState(state: PersistedState, forceOwner = false): void {
       ? {
           identityOwner: ownerMatches ? current.identityOwner : state.identityOwner,
           outbox: stableEntries(state.outbox, current.outbox, sameOutboxEntry),
+          lastGroupId: state.lastGroupId,
         }
       : {}),
   });
@@ -952,6 +833,16 @@ async function refreshCommittedState(): Promise<void> {
   return refreshFlight;
 }
 
+// The memory-only session: the initial state and a placeholder seed of its own, committed
+// nowhere.
+function hydrateInMemory(): void {
+  const seeded = applyGameMutation(initialPersistedState(), {
+    type: 'ensureLocalSeed',
+    seed: generatePublicId(),
+  }).state;
+  applyCommittedState(seeded, true);
+}
+
 // Hydrate before React mounts: the first IndexedDB transaction wins across simultaneously
 // opening tabs and establishes the placeholder seed in that same atomic state before
 // either tab paints. (The retired v17 localStorage blob is NOT imported — see the v18
@@ -959,12 +850,7 @@ async function refreshCommittedState(): Promise<void> {
 export async function hydrateGameStore(): Promise<void> {
   if (persistenceReady) return;
   if (typeof indexedDB === 'undefined') {
-    const fallback = initialPersistedState();
-    const seeded = applyGameMutation(fallback, {
-      type: 'ensureLocalSeed',
-      seed: generatePublicId(),
-    }).state;
-    applyCommittedState(seeded, true);
+    hydrateInMemory();
     return;
   }
 
@@ -989,12 +875,7 @@ export async function hydrateGameStore(): Promise<void> {
       }
     }
     console.error('Failed to initialize game persistence', error);
-    const fallback = initialPersistedState();
-    const seeded = applyGameMutation(fallback, {
-      type: 'ensureLocalSeed',
-      seed: generatePublicId(),
-    }).state;
-    applyCommittedState(seeded, true);
+    hydrateInMemory();
   }
 }
 

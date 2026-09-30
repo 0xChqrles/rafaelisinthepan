@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { WordPuzzle } from '@whippin/shared';
 import chat from '../scripts/fr.chat.json';
 import { articleFor, articleText } from '.';
-import Rich, { plain } from './Rich';
+import Rich from './Rich';
 import { frenchSpaces } from './typeset';
 import type { Article, Block, Figure } from './types';
 import { LEVELS, PLAY_LEVEL } from '../levels';
@@ -97,9 +97,6 @@ describe('the inline markup', () => {
   it('shows the word a sentence is about as found', () => {
     const html = renderToStaticMarkup(<Rich text="Le pigeon `vole`" mode="sentence" />);
     expect(html).toContain('<span class="ar-solved">vole</span>');
-  });
-  it('strips to plain text', () => {
-    expect(plain('`chien^4` est un **mot**')).toBe('chien est un mot');
   });
 });
 

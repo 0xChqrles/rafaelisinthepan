@@ -1,7 +1,7 @@
 // CONTRACT (issue #17): the local filesystem store is the LOCAL MIRROR of `s3Store`.
 // Same key (`layout.storeKey`, "<date>.<lang>.json") read directly, so the SAME handler
 // serves identical results locally and on S3. A missing day/lang must be a clean null
-// (-> 404), never a throw.
+// (-> 404) — or `false` from the existence probe — never a throw.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -58,6 +58,18 @@ describe('fsStore — mirrors s3Store, reads the flat key directly', () => {
 
   it('returns null (not a throw) when no file exists for the day', async () => {
     expect(await fsStore(root).getPuzzle('1999-01-01', 'fr')).toBeNull();
+  });
+
+  it('probes existence at the same key: true for a published day, false for a missing one', async () => {
+    expect(await fsStore(root).hasPuzzle(DATE, 'fr')).toBe(true);
+    expect(await fsStore(root).hasPuzzle(DATE, 'de')).toBe(false);
+    expect(await fsStore(root).hasPuzzle('1999-01-01', 'fr')).toBe(false);
+  });
+
+  it('THROWS from the probe on anything but a missing file', async () => {
+    // A root that is a FILE: the path under it is ENOTDIR, a broken store, not "no puzzle".
+    const notADirectory = path.join(root, storeKey(DATE, 'fr'));
+    await expect(fsStore(notADirectory).hasPuzzle(DATE, 'fr')).rejects.toMatchObject({ code: 'ENOTDIR' });
   });
 
   it('reads the #203 slice as BYTES and decodes it, with the same null-not-throw rule', async () => {

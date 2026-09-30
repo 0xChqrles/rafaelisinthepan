@@ -60,11 +60,9 @@ interface BackendStackProps extends StackProps {
   // resolves both encrypted values together on first use, caching only a successful read.
   turnstileSecretParameter?: string;
   ipHmacSecretParameter?: string;
-  // The LOCAL PART of the SES sender the #204 link codes go out as, under `domainName`
-  // (default "hello" -> hello@<domain>). The domain identity is verified in-stack below;
-  // with no custom domain there is nothing to verify and no mail to send, so the sender
-  // has to be supplied whole via `mailFrom`.
-  mailSender?: string;
+  // The SES sender the #204 link codes go out as (default hello@<domainName>). The domain
+  // identity is verified in-stack below; with no custom domain there is nothing to verify
+  // and no mail to send, so the sender has to be supplied whole here.
   mailFrom?: string;
   // Where a human is reached (#230). ONE address, because every use of it is the same job:
   // it is the confirmed SNS subscription behind the SES reputation alarms, AND the inbox
@@ -100,9 +98,8 @@ export class BackendStack extends Stack {
     // DKIM/SPF/DMARC: EasyDKIM below publishes the three DKIM CNAMEs; SPF and DMARC are TXT
     // records on the apex and belong to whoever owns the zone's mail policy, so they are a
     // documented operator step too rather than records this stack would silently overwrite.
-    const mailSender = props.mailSender ?? 'hello';
     const mailFrom =
-      props.mailFrom ?? (props.domainName ? `${mailSender}@${props.domainName}` : undefined);
+      props.mailFrom ?? (props.domainName ? `hello@${props.domainName}` : undefined);
     if (!mailFrom) {
       throw new Error(
         'BackendStack needs a sender for #204 link codes: pass `mailFrom`, or `domainName` to derive one.',
@@ -386,13 +383,6 @@ export class BackendStack extends Stack {
       enableAcceptEncodingBrotli: true,
     });
 
-    // `/scores` is live data: use AWS's managed zero-TTL policy for GET and POST alike.
-    // CloudFront rejects a CUSTOM policy whose min/default/max TTL are all zero when that
-    // same policy includes any cache-key query strings. Forward the protocol values
-    // through the origin policy instead: they reach Lambda but remain outside a cache key
-    // that can never be used.
-    const scoreCachePolicy = cloudfront.CachePolicy.CACHING_DISABLED;
-
     // The Turnstile-gated WRITES need TWO things at the origin, and no single header mode
     // carries both — which is the whole reason this function exists. It was the score POST
     // when it was written; since #203 that POST is retired and the writes are `/round`'s
@@ -577,9 +567,10 @@ export class BackendStack extends Stack {
     };
 
     // ONE shape for every LIVE route's BEHAVIOR too: zero-TTL because the data is live
-    // (it must never inherit the puzzle's year-long s-maxage), ALL methods because each
-    // of these routes has a write or an authenticated POST, and the route's own
-    // origin-request policy from above.
+    // (it must never inherit the puzzle's year-long s-maxage), ALL methods because every
+    // one of these routes but `/scores` has a write or an authenticated POST (`/scores` is
+    // a read-only GET kept on the same shape, so a POST reaches its named 405), and the
+    // route's own origin-request policy from above.
     const liveBehavior = (
       originRequestPolicy: cloudfront.IOriginRequestPolicy,
       overrides: Partial<cloudfront.BehaviorOptions> = {},
@@ -588,6 +579,10 @@ export class BackendStack extends Stack {
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
       cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+      // AWS's managed zero-TTL policy, for GET and POST alike. CloudFront rejects a CUSTOM
+      // policy whose min/default/max TTL are all zero when that same policy includes any
+      // cache-key query strings. Forward the protocol values through the origin policy
+      // instead: they reach Lambda but remain outside a cache key that can never be used.
       cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
       originRequestPolicy,
       responseHeadersPolicy: apiHeaders,
@@ -615,19 +610,17 @@ export class BackendStack extends Stack {
         compress: true,
       },
       // Every LIVE route wears the same behavior — zero-TTL (the data IS live), ALL
-      // methods (each has a write or an authenticated POST), and its own origin-request
-      // policy. Each pattern also catches a harmless trailing slash; the handler still
-      // accepts only the exact normalized route. Two of them differ, by the one thing that
-      // is not shared: the viewer-IP function, wanted wherever the handler needs a TRUSTED
-      // client address. Since #203 that is `/round` — its Turnstile-gated round creation
-      // verifies the challenge against it, and a finished round records the day's
-      // score row metered by its HMAC — as well as `/scores`, kept because the route's
-      // shape is otherwise unchanged. Runs before the cache lookup, so the header it
-      // stamps IS a viewer header by the time the origin request policy decides what to
-      // forward.
+      // methods (each but the read-only `/scores` has a write or an authenticated POST),
+      // and its own origin-request policy. Each pattern also catches a harmless trailing
+      // slash; the handler still accepts only the exact normalized route. Four of them
+      // differ, by the one thing that is not shared: the viewer-IP function, wanted
+      // wherever the handler needs a TRUSTED client address — `/round` (its Turnstile-gated
+      // round creation verifies the challenge against it, and a finished round records the
+      // day's score row metered by its HMAC), `/devices` and `/link` (below), and `/scores`,
+      // which keeps the same shape. It runs before the cache lookup, so the header it stamps
+      // IS a viewer header by the time the origin request policy decides what to forward.
       additionalBehaviors: {
         'scores*': liveBehavior(scoreOriginRequestPolicy, {
-          cachePolicy: scoreCachePolicy,
           functionAssociations: [viewerIpAssociation],
         }),
         'profile*': liveBehavior(profileOriginRequestPolicy),
@@ -692,7 +685,7 @@ export class BackendStack extends Stack {
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table and its indexes — the grant\'s <table>/index/* resource covers exactly the one DeviceByAccount GSI (#216) — with only Query/GetItem/PutItem/UpdateItem/DeleteItem (DeleteItem serves leaving a group, device revocation and #204\'s account erase), and SSM GetParameters to the two exact secret-parameter ARNs; no parameter wildcard exists. ses:SendEmail names this stack\'s own domain identity and is additionally conditioned on the single ses:FromAddress it may send as; the configuration-set wildcard is required by SES on every SendEmail call and grants nothing on its own.',
+            'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table and its indexes — the grant\'s <table>/index/* resource covers exactly the one DeviceByAccount GSI (#216) — with only Query/GetItem/BatchGetItem/PutItem/UpdateItem/DeleteItem/ConditionCheckItem (BatchGetItem reads a group board\'s known key set; DeleteItem serves leaving a group, device revocation and #204\'s account erase; ConditionCheckItem serves the rows #204\'s adoption asserts without writing), and SSM GetParameters to the two exact secret-parameter ARNs; no parameter wildcard exists. ses:SendEmail is conditioned on the single ses:FromAddress it may send as, which is the bound that matters; the identity wildcard is required because SES also evaluates the statement against a RECIPIENT that is a verified identity of this account, and the configuration-set wildcard is required by SES on every SendEmail call and grants nothing on its own.',
         },
         {
           id: 'AwsSolutions-L1',
@@ -717,7 +710,7 @@ export class BackendStack extends Stack {
       {
         id: 'AwsSolutions-CFR2',
         reason:
-          'No WAF: the origin is IAM-only via OAC; score writes require Turnstile, validate the puzzle-aware range, and cap HMAC-IP submissions atomically. WAF cost is unjustified at this scale.',
+          'No WAF: the origin is IAM-only via OAC; the requests that create state (device bootstrap, round creation, the link-code send) require Turnstile, the score row a solved round records is capped per HMAC-IP atomically, and the Lambda\'s reserved concurrency bounds the compute. WAF cost is unjustified at this scale.',
       },
       {
         id: 'AwsSolutions-CFR3',

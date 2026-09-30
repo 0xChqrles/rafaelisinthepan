@@ -21,7 +21,7 @@ import { t } from '../i18n';
 // hold the act back until a choice is made (`disabled` — the owner's successor pick).
 //
 // Follows the modal rules (`useModalDismiss`): opening focuses the dialog, Escape leaves
-// through the `error-out` beat, a backdrop tap is nothing (there is none).
+// through the `fade-out` beat, a backdrop tap is nothing (there is none).
 export default function ConfirmScreen({
   lang,
   title,
@@ -48,7 +48,7 @@ export default function ConfirmScreen({
   onConfirm: () => void;
   onClose: () => void;
 }) {
-  const { closing, beginClose, dialogProps } = useModalDismiss('error-out');
+  const { closing, beginClose, dialogProps } = useModalDismiss('fade-out');
 
   return (
     <dialog

@@ -69,6 +69,23 @@ describe('sendJoin — the tap carries the CLICKER key and the GROUP id', () => 
     await expect(answer(409, { error: 'group_limit' })).resolves.toBe('limit');
   });
 
+  it('a 409 naming no cap is an ordinary refusal — never "this group is full"', async () => {
+    await expect(answer(409, { error: 'something_else' })).resolves.toBe('settled');
+    await expect(answer(409, {})).resolves.toBe('settled');
+    // A body that cannot be read names no code either.
+    postGroupsBody.mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      json: async () => {
+        throw new Error('unreadable');
+      },
+      clone() {
+        return this;
+      },
+    });
+    await expect(sendJoin(GROUP)).resolves.toBe('settled');
+  });
+
   it('an unknown group is an EXPIRED link, read off the code', async () => {
     await expect(answer(404, { error: 'unknown_group' })).resolves.toBe('expired');
   });

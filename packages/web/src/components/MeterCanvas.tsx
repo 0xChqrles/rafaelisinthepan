@@ -392,7 +392,6 @@ export default function MeterCanvas({
     return cancel;
     // The delay and the travel are read when the value changes, like the CSS transition
     // they replace; a later change to either does not restart a tween.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, drawRamp, sea]);
 
   // THE SEA'S CLOCK: a frame every SEA_FRAME_MS while the sea is up — stepped, so it reads

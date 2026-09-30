@@ -47,15 +47,16 @@
 pnpm curate [--lang fr|en] [--work <file on the shelf>] [--retry <shelf file | puzzle.json>] [--blind]
 #   --lang (`shelf.LANGS`: fr, en; default fr) picks the SHELF (shelf/<lang>/, where a work
 #   goes by its EDITION's language), the ARCHIVE (the ledger's lines of that language) and
-#   the VECTORS (french_neighbors / english_neighbors); the two languages share nothing
+#   the VECTORS (generation's `embedding_neighbors.for_lang`); the two languages share nothing
 #   (#317, user-decided 2026-09-25).
 #   Needs JEV_API_KEY in the environment (#308): the judge's sentence filter and giveaway
 #   notes, and gen_phrase — contextual by default — need it.
-#   Picks a work BY RULE (2026-09-20; the model no longer picks: `curate.pick_work` —
+#   Picks a work BY RULE (no model call: `curate.pick_work` —
 #   off the shelf minus the archive minus index.json minus the artist cooldown, a song
-#   when no music day is within MUSIC_EVERY_DAYS = 4, else a book, the author never
-#   used or proposed first, then the one left longest ago, then the file name; --work
-#   forces one; --retry <shelf file> erases a previous attempt on a work — its index
+#   when no music day is within MUSIC_EVERY_DAYS = 4 or no book is left, else a book,
+#   the author never used or proposed first, then the one left longest ago, then the
+#   file name; --work forces one; --retry <shelf file> erases a previous attempt on a
+#   work — its index
 #   entry and the candidate puzzle(s) it wrote under the generation output, their judge
 #   scores included — then runs on it), mines it, and — taste choosing, code stating
 #   facts — writes ONE candidate day under packages/generation/output/word/<lang>/... via
@@ -198,7 +199,7 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   not inflect and takes `cit`, no agreement — a fact, so no question). Nothing here publishes.
 - **The START WORDS are CHOSEN by the model, the three together, never at random**, by
   the taste with code's notes (above), from the ONE band 100–200 of every map
-  (`starts.start_candidates`: rank `START_RANK_MIN..MAX`, no variant, letter-rule-clean, not
+  (`starts.start_candidates`: shipped rank within `START_BAND`, no variant, letter-rule-clean, not
   past `MAX_START_FREQ_RANK` = 40000 in the corpus order — « hétéroptère » is out). The
   first successful gen_phrase run only supplies the rank maps; gen_phrase then reruns
   with `--start MOT=DEPART` per hole (#260). A hole the answer leaves without a valid start
@@ -253,7 +254,9 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   `ARTIST_COOLDOWN_DAYS` (30) on the calendar, never the same song. Judged on the
   ledger's game day (`shelf.archive()['last_used']`) and on the run index
   (`shelf.last_proposed`). Books keep "never the same book twice".
-- Music is a minority stream (one or two days a week); the pick prompt says so.
+- Music is a minority stream (one or two days a week): `curate.pick_work` picks a song
+  when the archive shows no music day within `MUSIC_EVERY_DAYS` (4), or when no eligible
+  book is left on the shelf; otherwise a book.
 - `source` is `{kind: music, author: <artist>, work: <song title>}`, like the archive.
 
 - **A book day carries its PAGE, and the MODEL CUTS IT (#270, user-decided 2026-09-07;
@@ -280,6 +283,19 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   its last line for secrets, sentence and work — but its PAIRS come off every line, the
   corrected day's earlier start included (it was played until the correction). Neither the generation output (what `forget` erases: attempts) nor the
   backend's local store (a test bed) is ever read for the archive.
+- **Never the same BOOK twice** (`shelf.in_archive`, a shelf work against the archive's
+  works): titles compare by `shelf.title_key` (each word folded by `slug` without its
+  dashes, its digits kept: « Vernon Subutex 1 » is not « … 2 », « Jean - Christophe » is
+  « Jean-Christophe »), and the archive keeps one work per author and key, so every
+  published volume counts. The same key is the same work whoever the author is, since
+  the ledger and the shelf can spell one author two ways (`Fyodor Dostoevsky` / `Fédor
+  Dostoïevski`); the kind is not compared, so a book titled like a published song is
+  out unless `--work` forces it. One key inside the other, never splitting a number
+  (« … 1 » is not inside « … 12 »), is an edition's padding (« Le postier V2 »,
+  « … (French Edition) ») and the same work only by the same author: one spelling, or
+  `quotes.same_person` (an author missing on either side does not tell them apart). Kawakami's « Les Années douces » is not Ernaux's « Les années ».
+  `shelf.forget` compares titles by the same key, so a `--retry` on one volume keeps the
+  other volume's drafts.
 
 ## Do NOT
 

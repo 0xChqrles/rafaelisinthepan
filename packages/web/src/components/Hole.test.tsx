@@ -3,7 +3,7 @@ import { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Hole from './Hole';
-import type { HitState } from '@whippin/shared';
+import type { HitState } from '../game/types';
 
 // Canvas pixels are unrelated to the activation's lifetime; keep the real Hole effects,
 // strikes and timers so the test exercises cancellation across React updates. The stub
@@ -19,7 +19,6 @@ function StubMeter({ value, delayMs, durationMs, sea, onFull }: {
     if (value < 100 || sea || !reportsFull) return undefined;
     const id = window.setTimeout(() => onFull?.(), delayMs + durationMs + FRAME_MS);
     return () => window.clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
   return <canvas data-sea={sea ? '1' : undefined} />;
 }

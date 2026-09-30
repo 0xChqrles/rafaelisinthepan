@@ -16,8 +16,9 @@
 import { dateForDayNumber } from '@whippin/shared';
 import type { GroupConfig, GroupLanguage } from '../config/groupConfig';
 import { inLanguage, type Declaration } from './declarations';
-import { displayName } from './names';
-import { buildPodium, type NameOf } from './podium';
+import { nameResolver } from './names';
+import { buildPodium, rankOf, type NameOf } from './podium';
+import { podiumRows } from './podiumText';
 
 // How far back a player's form is read. Two weeks: long enough for where somebody usually
 // lands to mean something, short enough that it is who they are NOW.
@@ -41,13 +42,8 @@ export interface BoardLine {
   name: string;
 }
 
-function scoreOf(d: Pick<Declaration, 'score' | 'capped'>): Score {
+export function scoreOf(d: Pick<Declaration, 'score' | 'capped'>): Score {
   return d.capped ? '∞' : d.score;
-}
-
-// A run that ended at ∞ is behind every finished one and level with another ∞.
-function rankOf(d: Pick<Declaration, 'score' | 'capped'>): number {
-  return d.capped ? Number.POSITIVE_INFINITY : d.score;
 }
 
 function round1(n: number): number {
@@ -188,12 +184,7 @@ function formOf(sender: string, name: string, days: readonly WindowDay[], rivals
 }
 
 function boardOf(dayNumber: number, rows: readonly Declaration[], nameOf: NameOf): BoardLine[] {
-  const podium = buildPodium(dayNumber, rows, nameOf);
-  const afterLast = (podium.lines.at(-1)?.position ?? 0) + 1;
-  return [
-    ...podium.lines.map((l) => ({ position: l.position, score: l.score as Score, name: l.player.name })),
-    ...podium.capped.map((p) => ({ position: afterLast, score: '∞' as const, name: p.name })),
-  ];
+  return podiumRows(buildPodium(dayNumber, rows, nameOf)).map((r) => ({ position: r.position, score: r.score, name: r.player.name }));
 }
 
 const byRank = (a: Declaration, b: Declaration) => {
@@ -255,7 +246,7 @@ function otherPuzzleReading(puzzle: string, groupPuzzle: string): string {
 
 // The day's board of one language as one player sees it, or null when they have no row.
 function todayOf(group: GroupConfig, dayNumber: number, sender: string, lang: string, todayRows: readonly Declaration[]) {
-  const nameOf = (d: Declaration) => displayName(group, d.sender, d.name);
+  const nameOf = nameResolver(group);
   const today = inLanguage(todayRows, lang).filter((r) => r.dayNumber === dayNumber);
   const mine = today.find((r) => r.sender === sender);
   if (!mine) return null;
@@ -354,9 +345,8 @@ export function buildPodiumContext(input: {
   windowRows: readonly Declaration[];
 }): PodiumContext {
   const { group, dayNumber } = input;
-  const nameOf = (d: Declaration) => displayName(group, d.sender, d.name);
+  const nameOf = nameResolver(group);
   const today = inLanguage(input.todayRows, group.language).filter((r) => r.dayNumber === dayNumber).sort(byRank);
-  const standings = dayStandings(dayNumber, today);
   const days = readWindow(group.language, dayNumber, input.windowRows);
   const players = new Map<string, { beats: string | null; form: Form }>();
   for (const row of today) {

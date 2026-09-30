@@ -1,14 +1,15 @@
 # @whippin/infra
 
-AWS **CDK** app with three independent sibling stacks, each deployable on its own
+AWS **CDK** app with four independent sibling stacks, each deployable on its own
 (`cdk deploy <StackName>`):
 
 - **`WhippinBackendStack`** (issue #3) — the daily-puzzle backend (#2).
 - **`WhippinWebStack`** (issue #21) — hosting for the web front (`packages/web`).
+- **`WhippinBotStack`** (issue #236) — the WhatsApp group bot (`packages/whatsapp-bot`).
 - **`WhippinDeployStack`** (issue #33) — CI auth: the GitHub OIDC provider + the IAM role
   the Deploy workflow assumes. Deployed once by a human, not by CI (see below).
 
-All three stacks are **pinned to `us-east-1`** (CloudFront's ACM certs must live there, so the
+All four stacks are **pinned to `us-east-1`** (CloudFront's ACM certs must live there, so the
 certs stay in-stack with no cross-region reference). A single `-c domainName=<apex>` wires
 the custom domains: the **site** serves at the apex (`https://<domain>`) and the **API** at
 `https://api.<domain>` (a stable `VITE_API_BASE_URL`), with the backend's CORS origin
@@ -25,17 +26,18 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
   `pk`/`sk` key (#187). One first-write-wins score row per `(date, lang, publicId)`
   is permanent — a daily's partition is read back whole by one Query — while HMAC-IP
   dedup items have an `expiresAt` TTL and disappear after 48 hours. PITR is intentionally
-  disabled so backups cannot extend the pseudonymous dedup data's lifetime. There are no
-  indexes or scans.
+  disabled so backups cannot extend the pseudonymous dedup data's lifetime. It has ONE
+  secondary index, `DeviceByAccount` (#216: an account's devices); there are no scans.
 - **Lambda + Function URL** — runs the existing backend entrypoint
   [`backend/src/index.ts`](../backend/src/index.ts) (`createHandler` over the S3 store),
   bundled with esbuild at synth time. Reads `PUZZLE_BUCKET` / `ALLOWED_ORIGIN` from the
   environment (set by the stack), plus score table/secret configuration. Granted
-  **read-only** S3, only DynamoDB `Query`/`PutItem`/`UpdateItem`, and SSM `GetParameters`
+  **read-only** S3, only DynamoDB `Query`/`GetItem`/`BatchGetItem`/`PutItem`/`UpdateItem`/
+  `DeleteItem`/`ConditionCheckItem`, and SSM `GetParameters`
   on the two exact SecureString ARNs; the Function URL is
   **IAM-auth** so only CloudFront can invoke it.
 - **CloudFront** — CDN in front of the Function URL via **Origin Access Control**. Cache
-  key = request path + the `lang` and `date` query strings (the allowList in
+  key = request path + the `lang`, `date` and `bonus` query strings (the allowList in
   `lib/backend-stack.ts` — with no origin request policy on that behavior, an unlisted
   parameter never reaches the Lambda at all); the origin's `Cache-Control`
   (`max-age=300, s-maxage=31536000`) drives the TTL, purged by
@@ -51,9 +53,11 @@ Provisions the backend (#2) so it is reproducible and deployable from one comman
   HMAC dedup. This behavior cannot inherit the puzzle response's year-long cache.
 - **Custom API domain (optional)** — with `-c domainName=<apex>` the distribution serves at
   `api.<domain>` (override the label with `-c apiSubdomain=`): a DNS-validated ACM cert
-  in-stack (this stack is in `us-east-1`) plus Route53 A/AAAA aliases. Without it the API
-  stays on its `*.cloudfront.net` domain. `ApiUrl` is the value to use for
-  `VITE_API_BASE_URL`.
+  in-stack (this stack is in `us-east-1`) plus Route53 A/AAAA aliases. `domainName` defaults
+  to `whippin.ai` (`bin/app.ts`), and the app does not synthesize without one: this stack
+  derives its mail sender from it. The stack class keeps a no-domain branch (the default
+  `*.cloudfront.net` domain, no ACM/Route53) for direct construction with `mailFrom` only.
+  `ApiUrl` is the value to use for `VITE_API_BASE_URL`.
 
 ```
               ┌──────────────┐    OAC (SigV4)   ┌───────────────────┐  s3:GetObject  ┌────────────┐
@@ -104,7 +108,7 @@ that handles what comes **back**:
   and a Lambda that forwards each message to `operatorEmail`.
 
 `operatorEmail` has **no default** — it is a personal address and this repo is public. CI passes
-the `OPERATOR_EMAIL` repository variable and **fails the backend deploy when it is unset**: a
+the `OPERATOR_EMAIL` repository secret and **fails the backend deploy when it is unset**: a
 local synth may want the stack without it, production never does. Without it the stack builds
 **none** of the above: an alarm nobody is subscribed to and an MX nobody reads are the failure
 this plumbing removes, not lesser versions of it.
@@ -218,29 +222,38 @@ built from the repo root by the runner's Docker.
 | `ClusterName`, `ServiceName` | scale to 0 before pairing, back to 1 after. |
 | `PodiumFunctionName` | manual podium replay. |
 | `AlertsTopicArn` | the SNS topic behind the disconnected / dead-letter / podium-error alarms — **confirm its email subscription by hand**. |
-| `ConfiguredGroups` | what the deployed config enables, at a glance. |
 
 ## `WhippinWebStack` (#21) — web front hosting
 
 Hosts the built SPA (`packages/web/dist`) on a **private S3 bucket** served only through
-**CloudFront** (Origin Access Control) over HTTPS, with **SPA fallback** (403/404 →
-`/index.html`, 200). With a custom domain it adds a **DNS-validated ACM certificate** and
+**CloudFront** (Origin Access Control) over HTTPS, with an **SPA fallback** on the bucket
+behavior. With a custom domain it adds a **DNS-validated ACM certificate** and
 **Route53** A/AAAA aliases. The stack is **pinned to `us-east-1`** — the region CloudFront
 requires for its ACM cert — so the cert lives in-stack with no cross-region reference.
 
 - **S3 SPA bucket** — private (all public access blocked, TLS enforced, encrypted),
   `RemovalPolicy.DESTROY` + auto-delete: it holds only the current build (fully
   reproducible), so teardown is clean.
-- **CloudFront** — HTTPS (`REDIRECT_TO_HTTPS`), `CACHING_OPTIMIZED`, SPA fallback. The
-  build is uploaded by three `BucketDeployment`s: hashed `assets/*` get
+- **CloudFront** — HTTPS (`REDIRECT_TO_HTTPS`), `CACHING_OPTIMIZED`. `/s/*`, `/og/*` and
+  `/g/*` (the share page, the cards, the group invite preview) go to the API origin; everything
+  else is the bucket.
+- **SPA fallback** — a viewer-request **CloudFront Function** on the bucket behavior alone
+  serves `/index.html` for any path whose last segment has no dot (`/`, `/en`,
+  `/en/2026-09-01`, `/join/g/<id>`, `/account/email`) and leaves a file path (`/assets/x.js`,
+  `/vocab/en.json`, `/version.json`) untouched, so a missing file answers the bucket's own
+  error. It is not a distribution-wide custom error response, because one would also rewrite
+  the API origin's answers: a dead invite or share would become 200 + the SPA shell, and a
+  dead card HTML.
+- **Uploads** — the build is uploaded by three `BucketDeployment`s: hashed `assets/*` get
   `Cache-Control: public, max-age=31536000, immutable`, `vocab/*` its own
   stale-while-revalidate policy, and everything else (`index.html`, fonts) `no-cache`.
   The last one **invalidates `/*`**.
 - **Custom domain (optional)** — pass `-c domainName=<apex>` (the Route53 hosted zone must
   already exist in the account). The site serves at the **apex** (`<domain>`) by default;
-  pass `-c siteSubdomain=play` for `play.<domain>`. Without `domainName` the stack still
-  synthesizes/deploys on the default `*.cloudfront.net` domain (no ACM/Route53) — handy for
-  a credential-free smoke synth.
+  pass `-c siteSubdomain=play` for `play.<domain>`. `domainName` defaults to `whippin.ai`
+  (`bin/app.ts`), and the app does not synthesize without one: the backend stack derives
+  its mail sender from it. The stack class keeps a no-domain branch (the default
+  `*.cloudfront.net` domain, no ACM/Route53) for direct construction only.
 
 > **Build before deploy.** `cdk deploy WhippinWebStack` zips `packages/web/dist` at synth
 > time, so run `pnpm build` first (with `VITE_API_BASE_URL` and
@@ -265,8 +278,6 @@ uses:
   on the `cdk-hnb659fds-*` bootstrap roles + `cloudformation:DescribeStacks` — modern CDK
   performs every real change through the assumed bootstrap roles, so this role can't touch
   infrastructure on its own. Its ARN is the `DeployRoleArn` output → the repo secret.
-- **Preview role (optional)** — `-c enablePreviewRole=true` adds `whippin-github-preview`,
-  trusted for `pull_request` runs, for a future PR-preview pipeline.
 
 ```bash
 # One-time, with YOUR AWS credentials (account must be `cdk bootstrap`-ed in us-east-1):
@@ -282,15 +293,11 @@ pnpm --filter @whippin/infra deploy:auth \
 > **Why a human deploys this, not CI.** The deploy role deliberately **cannot create or
 > edit IAM** — so a compromised pipeline can't widen its own privileges. That means CI
 > can't deploy `WhippinDeployStack` itself; deploy it (and any change to it) with account
-> credentials. `deploy.yml` only ever targets the backend/web stacks.
+> credentials. `deploy.yml` only ever targets the backend, web and bot stacks.
 >
-> **On PR previews & security.** Fork PRs never receive an OIDC token, and same-repo PR
+> **On pull requests & security.** Fork PRs never receive an OIDC token, and same-repo PR
 > runs carry the `:pull_request` subject — which the **prod** role does not trust — so PR
-> code can never assume the prod role or deploy to `main`. Enabling the preview role is
-> step one of safe previews, not the whole story: because it can still assume the same
-> `cdk-hnb659fds-*` bootstrap roles, a real isolation boundary also needs a lower-privilege
-> target (a separate stack, and ideally a scoped bootstrap qualifier / permissions
-> boundary). Add that when the preview pipeline actually lands.
+> code can never assume the prod role or deploy to `main`.
 
 ### Wiring the two app stacks
 
@@ -316,7 +323,7 @@ each stack waits for the `CNAME` validation records it creates (a few minutes).
 
 Run from this package (or the repo root via `pnpm infra:*`). The app command in
 `cdk.json` runs the app through `npx tsx bin/app.ts`, so no compile step is needed. Pass a
-**stack name** to target one (omit it to act on all three):
+**stack name** to target one (omit it to act on all four):
 
 ```bash
 pnpm --filter @whippin/infra synth      # synthesize CloudFormation (also `pnpm infra:synth` from root)
@@ -360,35 +367,6 @@ caching the result into `cdk.context.json`.
 | `SiteBucketName`         | the S3 bucket holding the built SPA.                         |
 | `DistributionId`         | the CloudFront distribution id (manual invalidations).       |
 | `DistributionDomainName` | the CloudFront default domain (Route53 alias target).        |
-
-## Migrating the backend to `us-east-1`
-
-The backend was originally deployed to `eu-west-1`; both stacks are now pinned to
-`us-east-1` (so `api.<domain>`'s ACM cert lives in-stack). **Tear the old stack down
-FIRST** — CloudFront **cache policies and OACs are account-global**, so an old `eu-west-1`
-stack and a new `us-east-1` stack collide on the same global names (`409 AlreadyExists`)
-if both exist at once.
-
-The old stack can't be removed with `cdk destroy` (the CDK code now pins this stack to
-`us-east-1`, so `cdk destroy WhippinBackendStack` targets us-east-1 regardless of
-`AWS_REGION`). Delete it via CloudFormation directly:
-
-```bash
-# 1. Delete the old eu-west-1 stack and WAIT for it to finish (CloudFront distribution
-#    deletion is slow, ~15–20 min). Its RETAINed puzzle bucket is left behind.
-aws cloudformation delete-stack       --stack-name WhippinBackendStack --region eu-west-1
-aws cloudformation wait stack-delete-complete --stack-name WhippinBackendStack --region eu-west-1
-# 2. If a previous us-east-1 attempt left WhippinBackendStack in ROLLBACK_COMPLETE, drop it
-#    (a ROLLBACK_COMPLETE stack can't be updated):
-aws cloudformation delete-stack       --stack-name WhippinBackendStack --region us-east-1
-aws cloudformation wait stack-delete-complete --stack-name WhippinBackendStack --region us-east-1
-# 3. Now deploy fresh in us-east-1 (global names are free).
-pnpm --filter @whippin/infra run deploy --all -c domainName=whippin.ai
-```
-
-The old `eu-west-1` puzzle bucket is `RETAIN`ed, so step 1 leaves it behind — delete it
-manually (`aws s3 rb s3://<old-bucket> --force --region eu-west-1`) once you have confirmed
-nothing of value remains. Re-publish puzzles to the new bucket with `pnpm puzzle:publish --s3`.
 
 ## Notes
 

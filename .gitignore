@@ -24,18 +24,19 @@ packages/whatsapp-bot/groups/local/*.json
 # The eval fixture (#277): every bot line of a WhatsApp export, with its context, for the
 # user to rate. An export of a private group names real people; never committed.
 packages/whatsapp-bot/eval/local/
+# The copy of the bundled podium Lambda `infra/lib/bot-stack.test.ts` loads from inside the
+# bot package and removes afterwards; a run killed mid-test leaves it behind.
+packages/whatsapp-bot/bundle-probe-*.mjs
 
 # ── Editor / tooling local state ─────────────────────────────
 .claude/settings.local.json
 
 # ── CDK (issue #3) synth output ──────────────────────────────
 cdk.out
-packages/infra/cdk.out
 
 # ── Local backend puzzle store (issue #17) ───────────────────
 # Puzzles published locally for `pnpm backend:dev`; regenerate/republish at will.
 .local-store
-packages/backend/.local-store
 
 # ── Generation output (puzzles staged for publish) ───────────
 # `pnpm gen:phrase` writes puzzles here; publish them to the store/S3 with

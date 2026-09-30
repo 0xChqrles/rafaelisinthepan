@@ -2,7 +2,7 @@
 // the day and the score, decoded with the game's own codec. No model is anywhere on this
 // path, and the token's day — never the WhatsApp receive date — is what groups the result.
 
-import { PUBLIC_ID_SOURCE, SHARE_TOKEN_SOURCE, decodeResult } from '@whippin/shared';
+import { PUBLIC_ID_SOURCE, SHARE_SEGMENT, SHARE_TOKEN_SOURCE, decodeResult } from '@whippin/shared';
 
 export interface DecodedShare {
   token: string;
@@ -12,7 +12,7 @@ export interface DecodedShare {
   capped: boolean; // the run ended at ∞ (#214): recorded, never positioned
 }
 
-function escapeRegExp(s: string): string {
+export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
@@ -20,7 +20,7 @@ function escapeRegExp(s: string): string {
 // some other host is somebody else's business.
 function shareLink(siteOrigin: string, flags: string): RegExp {
   const host = siteOrigin.replace(/^https?:\/\//, '');
-  return new RegExp(`https?://${escapeRegExp(host)}/s/`, flags);
+  return new RegExp(`https?://${escapeRegExp(host)}/${SHARE_SEGMENT}/`, flags);
 }
 
 // Every share link in a text, in order of appearance.
@@ -40,11 +40,12 @@ export function findShareTokens(text: string, siteOrigin: string): string[] {
 }
 
 // THE GENERATED SHARE, AS THE WEB COMPOSES IT (`web/src/game/share.ts` `shareText`): a
-// headline `Whippin AI <date> — <score> <unit>`, the run as a row of emoji (the progress
-// squares and the keycaps of the solve moments), a blank line, the link. The bot cannot
-// import the web, so the shape is restated here and pinned by the tests against the web's
-// own output. The alphabets are the web's, verbatim: `progressEmoji`'s four squares and
-// `HOLE_KEYCAPS`. A BONUS puzzle's headline names `BONUS <id>` where a day names its date.
+// headline `Whippin AI <date> — <score> <unit>` (@whippin/shared's `shareHeadline`), the run
+// as a row of emoji (the progress squares and the keycaps of the solve moments), a blank
+// line, the link. A line has to be RECOGNIZED here, not built, so the shape is restated as
+// patterns — and pinned by the tests against `shareHeadline`'s and `progressEmoji`'s own
+// output. The alphabets are `progressEmoji`'s four squares and the web's `HOLE_KEYCAPS`.
+// A BONUS puzzle's headline names `BONUS <id>` where a day names its date.
 const HEADLINE = /^[ \t]*Whippin AI (?:\d{4}-\d{2}-\d{2}|BONUS \d{7}) — [^\n]*$/u;
 const ROW = /^[ \t]*(?:[🟥🟨🟪🟦]|[1-9]\uFE0F?\u20E3)+[ \t]*$/u;
 
@@ -92,7 +93,7 @@ export function withoutShares(text: string, siteOrigin: string): string {
 
 // A BONUS result (share token v7, shared bonus.ts) is no day's: it is never counted, so it
 // is not a share here — only its block is dropped from the text, like any share's.
-export function decodeShare(token: string): DecodedShare | null {
+function decodeShare(token: string): DecodedShare | null {
   const result = decodeResult(token);
   if (!result || result.dayNumber === undefined) return null;
   return {

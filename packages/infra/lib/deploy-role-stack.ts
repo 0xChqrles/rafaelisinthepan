@@ -18,11 +18,6 @@ interface DeployRoleStackProps extends StackProps {
   // Branch whose pushes may assume the PROD deploy role. Subject:
   // `repo:<owner>/<repo>:ref:refs/heads/<branch>`. Matches deploy.yml (push to main).
   deployBranch?: string; // default "main"
-  // Also create a SEPARATE, PR-scoped role (subject `repo:<owner>/<repo>:pull_request`)
-  // for a future preview pipeline. Off by default — see the security note in the README:
-  // a real preview boundary also needs a lower-privilege target, so this switch alone is
-  // step one, not the whole story.
-  enablePreviewRole?: boolean;
   // The GitHub OIDC provider is ACCOUNT-GLOBAL — at most ONE per URL per account. By
   // default this stack IMPORTS the account's existing provider (its ARN is derived from
   // the account id below, so nothing is hardcoded): GitHub's provider is very often
@@ -115,49 +110,28 @@ export class DeployRoleStack extends Stack {
       ],
     });
 
-    // A role trusted ONLY by this repo's Actions for the given subject patterns (OR-ed).
-    // aud is pinned to sts.amazonaws.com; sub is the repo + ref/PR scope — so no other
-    // repo (and no other account) can assume it.
-    const makeRole = (roleId: string, roleName: string, subjects: string[], description: string) =>
-      new iam.Role(this, roleId, {
-        roleName,
-        description,
-        assumedBy: new iam.OpenIdConnectPrincipal(provider, {
-          StringEquals: { [`${GITHUB_OIDC_DOMAIN}:aud`]: AUDIENCE },
-          StringLike: { [`${GITHUB_OIDC_DOMAIN}:sub`]: subjects },
-        }),
-        inlinePolicies: { CdkDeploy: cdkDeployPolicy },
-      });
-
     // ── PROD deploy role — the AWS_DEPLOY_ROLE_ARN secret ──────────────────────
+    // Trusted ONLY by this repo's Actions: aud is pinned to sts.amazonaws.com; sub is the
+    // repo + ref scope — so no other repo (and no other account) can assume it.
     // Scoped to pushes on <deployBranch> ONLY, so prod deploy power is unreachable from
     // pull-request code. (Fork PRs never receive an OIDC token at all, and same-repo PR
     // runs carry the `:pull_request` subject, which this role does not trust.)
-    const deployRole = makeRole(
-      'DeployRole',
-      'whippin-github-deploy',
-      [`repo:${repo}:ref:refs/heads/${deployBranch}`],
-      `GitHub Actions prod deploy for ${repo} (push to ${deployBranch}).`,
-    );
+    const deployRole = new iam.Role(this, 'DeployRole', {
+      roleName: 'whippin-github-deploy',
+      description: `GitHub Actions prod deploy for ${repo} (push to ${deployBranch}).`,
+      assumedBy: new iam.OpenIdConnectPrincipal(provider, {
+        StringEquals: { [`${GITHUB_OIDC_DOMAIN}:aud`]: AUDIENCE },
+        StringLike: {
+          [`${GITHUB_OIDC_DOMAIN}:sub`]: [`repo:${repo}:ref:refs/heads/${deployBranch}`],
+        },
+      }),
+      inlinePolicies: { CdkDeploy: cdkDeployPolicy },
+    });
 
     new CfnOutput(this, 'DeployRoleArn', {
       description: 'Set as the GitHub repo secret AWS_DEPLOY_ROLE_ARN.',
       value: deployRole.roleArn,
     });
-
-    // ── Optional preview role — PR-scoped, for a future preview pipeline ───────
-    if (props.enablePreviewRole) {
-      const previewRole = makeRole(
-        'PreviewRole',
-        'whippin-github-preview',
-        [`repo:${repo}:pull_request`],
-        `GitHub Actions PR-preview role for ${repo} (pull_request runs).`,
-      );
-      new CfnOutput(this, 'PreviewRoleArn', {
-        description: 'Role assumable from PR runs (a future preview pipeline). See README security note.',
-        value: previewRole.roleArn,
-      });
-    }
 
     new CfnOutput(this, 'GitHubOidcProviderArn', {
       description: 'The account GitHub Actions OIDC provider backing the deploy role(s).',

@@ -11,14 +11,21 @@
     calibrated requests, English its twin with its own state keys (#317);
   - batching never changes a score; the lean request carries the rubric ONCE in the
     shared state and one short question per candidate;
-  - a replay rebuilds the same order from the sidecar and refuses to guess;
+  - a replay rebuilds the same order from the sidecar and refuses to guess, and the
+    sidecar it writes still names the model that scored;
+  - a judge that cannot answer is a hard error, never a static fallback: a throttled
+    or unreachable service is retried with capped backoff, any other refusal is not;
   - through gen_phrase: rank 0 is the secret, aliases share their group's rank and
     dq, dq is quantized from the judge's similarities, key collisions resolve
     closest-first in the CONTEXTUAL order, the map's groups are the static walk's;
   - no judge = the static map, unchanged (gen_word's path).
 """
 
+import io
+import itertools
 import json
+import sys
+import urllib.error
 from dataclasses import replace
 
 import pytest
@@ -146,6 +153,22 @@ def test_a_front_label_that_is_not_french_is_demoted_to_the_tail_and_recorded():
     assert not ranked[-1].demoted and "c:nc" not in rec["french"]
 
 
+def test_a_kept_group_sharing_its_lemma_string_with_a_demoted_one_is_not_demoted():
+    # «gai» the adjective is refused as a word of the language, «gai» the noun is kept:
+    # two GROUPS, one label. The flat front leaves the order to the pairwise verdict,
+    # which the kept twin must still carry ahead of the word it beat.
+    cands = [cr.Candidate("triste:adj", "triste", 0), cr.Candidate("gai:adj", "gai", 1),
+             cr.Candidate("gai:nc", "gai", 2)]
+    judge = FakeJudge({"triste": 3.0, "gai": 3.0}, {"gai": 2, "triste": 1})
+    judge.in_language = lambda candidates, lang: [0.1 if c.key == "gai:adj" else 0.9
+                                                  for c in candidates]
+    ranked, rec = cr.rerank(CTX, cands, judge, pairwise_top=3)
+    assert [r.key for r in ranked] == ["gai:nc", "triste:adj", "gai:adj"]
+    assert [r.demoted for r in ranked] == [False, False, True]
+    assert [r.similarity for r in ranked] == [3.0, 3.0, 0.0]
+    assert rec["demoted"] == ["gai"]  # the report's list stays the labels
+
+
 def test_jev_judge_batches_without_changing_scores_and_sends_the_lean_request(monkeypatch):
     judge = cr.JevJudge("k", workers=2)
     seen = []
@@ -174,6 +197,91 @@ def test_jev_judge_asks_the_french_question_once_per_front_label(monkeypatch):
                         {k: {"type": "noul", "noul": 0.15 if "feeling" in qs[k]["instructions"] else 0.9} for k in qs})
     assert judge.in_language(_cands(["apparent", "feeling"]), "fr") == [0.9, 0.15]
     assert seen[0][0] == {"mots": ["apparent", "feeling"]} and len(seen[0][1]) == 2
+
+
+# --- the wire: retries, refusals, usage (a judge that cannot answer is a HARD error) ----
+def _wire(monkeypatch, outcomes):
+    """Script the judge's HTTP: each request takes the next of `outcomes` — a dict is
+    the JSON body answered, an exception is raised. Returns (requests sent, waits
+    asked for); nothing is sent and nothing sleeps."""
+    outcomes = iter(outcomes)
+    sent, waits = [], []
+
+    def urlopen(request, timeout):
+        sent.append(request)
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return io.BytesIO(json.dumps(outcome).encode("utf-8"))
+    monkeypatch.setattr(cr.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(cr.time, "sleep", waits.append)
+    return sent, waits
+
+
+def _refusal(code):
+    return urllib.error.HTTPError(cr.JEV_URL, code, "refused", {}, io.BytesIO(b"no"))
+
+
+ANSWER = {"answers": {"c0": {"score": 2.0}}, "usage": {"input_tokens": 7, "output_tokens": 1}}
+
+
+@pytest.mark.parametrize("hiccup", [lambda: _refusal(429), lambda: _refusal(529),
+                                    lambda: urllib.error.URLError("connection reset")],
+                         ids=["429", "529", "transport"])
+def test_a_throttled_or_unreachable_judge_is_retried_and_the_answer_counted_once(
+        monkeypatch, hiccup):
+    sent, waits = _wire(monkeypatch, [hiccup(), ANSWER])
+    judge = cr.JevJudge("k")
+    assert judge._call({}, {}) == ANSWER["answers"]
+    assert len(sent) == 2 and len(waits) == 1
+    assert judge.requests == 1
+    assert judge.usage == {"input_tokens": 7, "output_tokens": 1}
+
+
+def test_a_refused_request_is_a_hard_error_without_a_retry(monkeypatch):
+    sent, waits = _wire(monkeypatch, [_refusal(400), ANSWER])
+    judge = cr.JevJudge("k")
+    with pytest.raises(cr.ContextualError, match="400"):
+        judge._call({}, {})
+    assert len(sent) == 1 and waits == []
+    assert judge.requests == 0
+
+
+def test_a_judge_that_stays_down_is_a_hard_error_once_every_try_is_spent(monkeypatch):
+    sent, waits = _wire(monkeypatch, (urllib.error.URLError("down") for _ in itertools.count()))
+    judge = cr.JevJudge("k")
+    with pytest.raises(cr.ContextualError, match="injoignable"):
+        judge._call({}, {}, tries=4)
+    assert len(sent) == 4 and len(waits) == 3  # no wait after the last try
+    # throttled to the end is the same hard error
+    sent, waits = _wire(monkeypatch, (_refusal(429) for _ in itertools.count()))
+    with pytest.raises(cr.ContextualError, match="429"):
+        judge._call({}, {}, tries=4)
+    assert len(sent) == 4 and len(waits) == 3
+    # the backoff grows, then stops growing: it is capped
+    sent, waits = _wire(monkeypatch, (urllib.error.URLError("down") for _ in itertools.count()))
+    with pytest.raises(cr.ContextualError):
+        judge._call({}, {})
+    assert len(sent) == len(waits) + 1
+    assert waits == sorted(waits) and waits[0] < waits[-1] == waits[-2]
+    assert judge.requests == 0
+
+
+def test_token_usage_is_exact_when_the_worker_threads_report_together(monkeypatch):
+    # Every request reports one token each way, from WORKERS threads at once. The
+    # switch interval is shortened so that counters updated without a guard lose some.
+    body = json.dumps({"answers": {}, "usage": {"input_tokens": 1, "output_tokens": 1}})
+    monkeypatch.setattr(cr.urllib.request, "urlopen",
+                        lambda request, timeout: io.BytesIO(body.encode("utf-8")))
+    judge = cr.JevJudge("k")
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        judge._batched(list(range(4000)), 1, lambda _batch: [judge._call({}, {})])
+    finally:
+        sys.setswitchinterval(interval)
+    assert judge.requests == 4000
+    assert judge.usage == {"input_tokens": 4000, "output_tokens": 4000}
 
 
 def test_jev_judge_refuses_to_exist_without_a_key():
@@ -258,8 +366,8 @@ def test_interactive_contextual_selection_without_inflection(monkeypatch, capsys
     monkeypatch.setattr("builtins.input", lambda prompt="": "")
     bands = []
 
-    def band(secret, merged, bounds):
-        bands.append(bounds)
+    def band(secret, merged):  # the band's bounds are start_word's alone: no caller names one
+        bands.append(secret)
         return [(w, r) for w, r, _ in merged]
 
     monkeypatch.setattr(gen_phrase, "start_band", band)
@@ -283,10 +391,42 @@ def test_interactive_contextual_selection_without_inflection(monkeypatch, capsys
         assert [(h["pos"], h.get("suffix", "")) for h in holes
                 if h["secret"]["slug"] == "chat"] == [(0, ""), (3, ".")]
     assert len([c for c in judge.calls if c[0] == "score"]) == 3
-    assert bands and set(bands) == {gen_phrase.START_BAND}  # one band on every map (2026-09-24)
+    assert set(bands) == {"chat", "chien", "tigre"}  # every committed map drew its band there
     assert all(h["start"]["word"] == "minou" for h in holes)
     assert all(rmap["minou"]["rank"] == 1 for rmap in ranks.values())
     assert len(ranker.records) == 3
+
+
+def test_a_word_confirmed_then_abandoned_in_the_selector_stays_out_of_the_sidecar(
+        monkeypatch, selector):
+    from types import SimpleNamespace
+
+    words = ["chat", "chien", "tigre", "lion"]
+    ranking = [("félin", 0, .9), ("minou", 1, .8), ("loup", 2, .7)]
+    cfg = gen_phrase.CONFIG["fr"].copy()
+    cfg["module"] = SimpleNamespace(closest=lambda *a, **kw: ranking)
+    ranker = _ranker(FakeJudge({"félin": 1.0, "minou": 3.0, "loup": .5}))
+    monkeypatch.setattr(gen_phrase, "start_band",
+                        lambda _s, merged: [(w, r) for w, r, _ in merged])
+    # Entrée confirms «chat» — the judge ranks it — and Échap abandons it; the three
+    # other words are then holed, stepping over «chat» each time.
+    selector(["ENTER", "ESC"] + ["RIGHT", "ENTER", "1", "ENTER"] * 3)
+    holes, _ranks = gen_phrase.select_holes_interactive(
+        words, cfg, "fr", kv=None, V=words, M=None, Vset=set(words),
+        lemma_table={}, forms_by_lemma={}, contextual=ranker)
+    assert [h["secret"]["word"] for h in holes] == ["chien", "tigre", "lion"]
+    # the judge was asked about four words, and the run's records say so...
+    assert [r["secret"] for r in ranker.records] == ["chat", "chien", "tigre", "lion"]
+    # ...but the sidecar describes the puzzle: its three holes and nothing else
+    assert [r["secret"] for r in ranker.records_for(holes)] == ["chien", "tigre", "lion"]
+
+
+def test_the_sidecar_matches_a_hole_to_its_record_by_slug():
+    # a secret is identified by its slug: one record, whatever form a hole displays
+    ranker = _ranker(FakeJudge({}))
+    ranker.records += [{"secret": "côté"}, {"secret": "chat"}]
+    holes = [gen_phrase._make_hole("coté", "", "", 0, "minou", 1)]
+    assert ranker.records_for(holes) == [{"secret": "côté"}]
 
 
 @pytest.mark.parametrize("authoring", ["interactive", "batch", "explicit"])
@@ -323,7 +463,7 @@ def test_start_judge_reads_realized_forms_in_each_authoring_path(monkeypatch, au
     monkeypatch.setattr(judge, "noul", noul, raising=False)
     ranker = gen_phrase.ContextualRanker(judge, " ".join(words), model="fake", lang="fr")
     monkeypatch.setattr(gen_phrase, "start_band",
-                        lambda _s, merged, _band: [(w, r) for w, r, _ in merged])
+                        lambda _s, merged: [(w, r) for w, r, _ in merged])
     monkeypatch.setattr(gen_phrase.sys, "stdin", SimpleNamespace(fileno=lambda: 0, isatty=lambda: False))
     if authoring == "interactive":
         monkeypatch.setattr(termios, "tcgetattr", lambda _fd: None)
@@ -413,6 +553,22 @@ def test_the_ranker_reports_and_records_every_hole(capsys):
     assert "Classement contextuel : chat" in out and "minou" in out
     assert ranker.records[0]["secret"] == "chat" and ranker.records[0]["kept"] == 5
     assert json.dumps(ranker.records)  # the sidecar entry serializes
+
+
+@pytest.mark.parametrize("failing", ["score", "compare", "in_language"])
+def test_a_judge_that_cannot_answer_kills_the_run_instead_of_shipping_the_static_map(
+        monkeypatch, capsys, failing):
+    judge = FakeJudge({"chien": 1.0, "félin": 2.0, "minou": 3.0, "côté": 0.2, "tigre": 0.5})
+
+    def down(*_a, **_k):
+        raise cr.ContextualError("juge injoignable : timed out")
+    monkeypatch.setattr(judge, failing, down)
+    ranker = _ranker(judge)
+    with pytest.raises(SystemExit):
+        gen_phrase.build_puzzle_rank_map("chat", RANKING, {}, {}, set(), contextual=ranker)
+    err = capsys.readouterr().err
+    assert "« chat »" in err and "juge injoignable" in err
+    assert ranker.records == []  # nothing was ranked, nothing is recorded
 
 
 def test_lexeme_label_reads_the_lemma_off_an_opaque_key():
@@ -509,9 +665,9 @@ def test_an_emptied_band_is_handed_back_whole_with_a_note():
 def test_choose_start_draws_its_default_from_the_filtered_band(monkeypatch):
     monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False, raising=False)
     monkeypatch.setattr(gen_phrase, "start_band",
-                        lambda _s, merged, *_b: [(w, r + 1) for w, r, _ in merged])
+                        lambda _s, merged: [(w, r + 1) for w, r, _ in merged])
     merged = [("chien", 0, 0.9), ("courir", 1, 0.8), ("beau", 2, 0.7)]
-    picked = {gen_phrase.choose_start("chat", merged, {}, {}, band=(1, 3),
+    picked = {gen_phrase.choose_start("chat", merged, {}, {},
                                       band_filter=lambda band: [b for b in band if b[0] != "courir"])
               for _ in range(20)}
     assert picked <= {"chien", "beau"}
@@ -519,25 +675,37 @@ def test_choose_start_draws_its_default_from_the_filtered_band(monkeypatch):
 
 # --- the judge is the DEFAULT for a sentence (fr 2026-09-20, en 2026-09-25, #317) -----
 @pytest.mark.parametrize("lang", ["fr", "en"])
-def test_a_run_without_a_key_dies_before_any_walk_unless_static(monkeypatch, capsys, lang):
+def test_building_the_judge_without_a_key_is_a_hard_error(monkeypatch, capsys, lang):
     monkeypatch.delenv("JEV_API_KEY", raising=False)
     args = type("A", (), {"contextual_replay": None, "contextual_model": "jev-latest",
                           "before": None, "after": None})()
     with pytest.raises(SystemExit):
-        gen_phrase.build_contextual_ranker(args, lang, "une phrase", ["a"])
+        gen_phrase.build_contextual_ranker(args, lang, "une phrase")
     assert "JEV_API_KEY" in capsys.readouterr().err
-    # --static is the explicit opt-out (main's rule)
 
 
 def test_an_english_run_builds_an_english_judge_and_another_language_is_refused(monkeypatch, capsys):
     monkeypatch.setenv("JEV_API_KEY", "k")
     args = type("A", (), {"contextual_replay": None, "contextual_model": "jev-latest",
                           "before": None, "after": None})()
-    ranker = gen_phrase.build_contextual_ranker(args, "en", "a sentence", ["a"])
+    ranker = gen_phrase.build_contextual_ranker(args, "en", "a sentence")
     assert ranker.lang == "en"
     with pytest.raises(SystemExit):
-        gen_phrase.build_contextual_ranker(args, "de", "ein Satz", ["a"])
-    assert "de" in capsys.readouterr().err
+        gen_phrase.build_contextual_ranker(args, "de", "ein Satz")
+    assert "« de »" in capsys.readouterr().err
+
+
+def test_a_replay_names_the_model_that_scored_not_the_file_it_replays(tmp_path):
+    judge = FakeJudge({"chien": 1.0, "félin": 3.0})
+    _ranked, record = cr.rerank(CTX, _cands(["chien", "félin"]), judge)
+    scored = cr.write_sidecar(str(tmp_path / "p.contextual.json"), lang="fr",
+                              model="jev-2026-09", sentence=CTX.sentence, before=(),
+                              after=(), records=[record], usage=judge.usage)
+    args = type("A", (), {"contextual_replay": scored, "contextual_model": "jev-latest",
+                          "before": None, "after": None})()
+    ranker = gen_phrase.build_contextual_ranker(args, "fr", CTX.sentence)
+    # what main() writes as the new sidecar's `model`: an artifact says what built it
+    assert ranker.model == "jev-2026-09"
 
 
 # --- English: the same questions in English, with English state keys (#317) -----------
@@ -669,6 +837,27 @@ def test_a_question_that_dies_on_the_second_secret_precedes_the_first_walk(monke
     assert walked == []  # no ranking was computed: no judge call would have been paid
 
 
+@pytest.mark.parametrize("flags, refusal", [
+    (["--url", "youtu.be/x"], "--url must be a web link"),
+    (["--contextual-replay", "scores.contextual.json"], "--static et --contextual-replay s'excluent"),
+], ids=["url", "static-replay"])
+def test_a_flag_error_dies_before_anything_loads(monkeypatch, capsys, tmp_path, flags, refusal):
+    loaded = []
+    monkeypatch.setattr(gen_phrase.CONFIG["fr"]["module"], "load_vectors",
+                        lambda: loaded.append("vectors"), raising=False)
+    monkeypatch.setattr(gen_phrase, "load_lemma_table",
+                        lambda *_a, **_k: loaded.append("tables"))
+    monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False, raising=False)
+    monkeypatch.setattr(gen_phrase.sys, "argv", [
+        "gen_phrase.py", "le chat poursuit le jardin.", "--lang", "fr", "--static",
+        "--words", "chat", "poursuit", "jardin", "--no-inflect",
+        "--out-dir", str(tmp_path), *flags])
+    with pytest.raises(SystemExit) as exit_:
+        gen_phrase.main()
+    assert refusal in capsys.readouterr().err + str(exit_.value.code)
+    assert loaded == []  # no table, no vector — and so no walk and no judge call
+
+
 # --- the giveaway measure (threshold calibrated on real play, 2026-09-22) ------------------
 def test_giveaway_is_the_mean_of_the_three_questions_on_the_blanked_sentence():
     seen = []
@@ -683,4 +872,3 @@ def test_giveaway_is_the_mean_of_the_three_questions_on_the_blanked_sentence():
     assert cr.giveaway(J(), "the ____ fell", "rain", lang="en") == pytest.approx(0.6)
     assert seen[1][0] == {"blanked_sentence": "the ____ fell", "word": "rain"}
     assert seen[1][1] == cr.ENGLISH.giveaway_questions
-    assert 0 < cr.GIVEAWAY_MAX < 1

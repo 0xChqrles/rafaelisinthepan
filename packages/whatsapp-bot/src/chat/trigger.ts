@@ -22,6 +22,7 @@
 
 import type { InboundMessage, Mention, QuotedRef } from '../domain/message';
 import { fallbackName } from '../domain/names';
+import { escapeRegExp } from '../domain/share';
 
 export interface BotIdentity {
   jids: string[]; // the bot's own JIDs (phone-number form and LID form, when known)
@@ -37,10 +38,6 @@ function isBot(jid: string | undefined, identity: BotIdentity): boolean {
   if (!jid) return false;
   const u = jidUser(jid);
   return identity.jids.some((own) => jidUser(own) === u);
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // What must NOT follow the name: another letter, so "WhippinBot" does not fire on
@@ -110,8 +107,7 @@ export function isWordless(text: string): boolean {
 // Either spelling of a reference may be the bot's: the JID the message carried, or the
 // player key it resolved to (the bot's own LID may be unknown to `identity` while the
 // mapping already knows its number). ONE predicate for a mention and a quote alike, and
-// for stripping the addressing below — three readings of "is this the bot" would let a
-// message count as addressed by a token the question then keeps.
+// for naming the bot in what is remembered (`namesWithBot`).
 function namesBot(ref: Mention | QuotedRef, identity: BotIdentity): boolean {
   const jid = 'jid' in ref ? ref.jid : ref.participant;
   return isBot(jid, identity) || isBot(ref.player, identity);
@@ -148,15 +144,6 @@ export function namesWithBot(
   return all;
 }
 
-// Who else this message points at. Only the BOT's mention is addressing; everybody else's
-// is part of the question ("how many days has @Zou beaten me?"), and the agent resolves
-// these to the names the group uses before any of it reaches the model — by their PLAYER
-// key, which is what the declarations are filed under, while the text's @token spells the
-// JID the message carried.
-export function mentionedOthers(message: InboundMessage, identity: BotIdentity): Mention[] {
-  return message.mentions.filter((m) => !namesBot(m, identity));
-}
-
 const MENTION = /@(\d{5,})/g;
 
 // EVERY mention replaced by a name, for a message on its way into the day log. The log
@@ -173,25 +160,12 @@ export function withMentionNames(text: string, names: ReadonlyMap<string, string
     .trim();
 }
 
-// What is left of a message once the BOT's mention tokens and a leading name form are
-// removed — the question, or nothing. With no resolution supplied, EVERY mention reads as
-// addressing (a bare "@Bot @Zou" is not a question); with one, every other mention
-// survives as the name the group uses, never as the number behind it.
-export function questionText(
-  message: InboundMessage,
-  identity: BotIdentity,
-  names: ReadonlyMap<string, string> = new Map(),
-): string {
-  // The bot's own digits: what `identity` lists, plus the spelling of any mention that
-  // names the bot by its PLAYER key — the text's token spells the JID the message
-  // carried, and an unlisted LID would otherwise survive into the question as a handle.
-  const own = new Set(identity.jids.map(jidUser));
-  for (const m of message.mentions) if (namesBot(m, identity)) own.add(jidUser(m.jid));
-  const text = message.text.replace(MENTION, (whole, digits: string) => {
-    if (own.has(digits)) return ' ';
-    return names.size === 0 ? ' ' : ` ${names.get(digits) ?? fallbackName(digits)} `;
-  });
-  return text
+// What is left of a message once its mention tokens and a leading name form are removed —
+// the question, or nothing. EVERY mention reads as addressing here (a bare "@Bot @Zou" is
+// not a question), the bot's in whichever spelling it came.
+export function questionText(message: InboundMessage, identity: BotIdentity): string {
+  return message.text
+    .replace(MENTION, ' ')
     .replace(nameForm(identity.name, '[\\s,:;!?—-]*'), '')
     .replace(/\s+/g, ' ')
     .trim();

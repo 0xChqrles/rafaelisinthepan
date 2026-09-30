@@ -86,7 +86,7 @@ const skipped = (group: string, dayNumber: number): PodiumJobResult => ({ outcom
 // rewritten echo) — 140s of individually valid, individually slow calls, and a podium
 // killed before it is queued. Eighty leaves the reads and the enqueue their room; what
 // does not fit inside it is a round the podium goes without.
-export const COMMENT_BUDGET_MS = 80_000;
+const COMMENT_BUDGET_MS = 80_000;
 
 // THE MORNING REMINDER. Skipped — never a bare link — when the day is not published, and
 // when the read that would say so failed: inviting a group to a 404 is the one thing this
@@ -108,7 +108,7 @@ export async function runReminderJob(event: PodiumJobEvent, deps: PodiumJobDeps)
     deps.log.warn({ event: 'reminder.unwired', group: tag(group.id) }, 'no site or no day reader; nothing posted');
     return skipped(group.id, day);
   }
-  const read = await deps.daySource.read(group.language, day, dateForDayNumber(day));
+  const read = await deps.daySource.read(group.language, dateForDayNumber(day));
   if (!read || !read.published) {
     deps.log.info({ event: read ? 'reminder.unpublished' : 'reminder.unread', group: tag(group.id), day }, 'no puzzle to point at; nothing posted');
     return skipped(group.id, day);
@@ -157,7 +157,9 @@ export async function runPodiumJob(event: PodiumJobEvent, deps: PodiumJobDeps): 
     deps.log.warn({ event: 'podium.skipped', group: tag(event.group) }, 'group not configured for a podium');
     return skipped(event.group, day);
   }
-  const startedAt = now().getTime();
+  // The Lambda's own clock, which is what the deadline is checked against: `deps.now`
+  // decides the DAY and nothing else.
+  const startedAt = Date.now();
   const dayRows = await deps.declarations.day(group.id, day);
   const rows = inLanguage(dayRows, group.language);
   const podium = buildPodium(day, rows, nameResolver(group));
@@ -257,40 +259,58 @@ export async function runDiaryJob(event: PodiumJobEvent, deps: PodiumJobDeps): P
 }
 
 // Lambda entry. Everything with a side effect is built here, once per container.
-let deps: Promise<PodiumJobDeps> | undefined;
+interface BuiltDeps {
+  deps: PodiumJobDeps;
+  // The model could not be LOADED — a throw, as opposed to no key being configured, which
+  // is an answer and leaves `provider` null for good.
+  providerFailed: boolean;
+}
 
-async function buildDeps(): Promise<PodiumJobDeps> {
+let built: Promise<BuiltDeps> | undefined;
+
+async function buildDeps(): Promise<BuiltDeps> {
   const log = createLog();
   const env = loadEnv();
   if (!env.outboundQueueUrl) throw new Error('BOT_OUTBOUND_QUEUE_URL env var is required.');
   const dynamo = new DynamoDBClient({ region: botRegion() });
   let provider: LlmProvider | null = null;
+  let providerFailed = false;
   try {
     provider = await createLlmProvider(env.llm, () => new SSMClient({ region: botRegion() }));
   } catch (error) {
+    providerFailed = true;
     log.error({ event: 'llm.unconfigured', error: (error as Error).message }, 'podium without comments');
   }
   return {
-    groups: loadGroups(env.groupsDir),
-    declarations: dynamoDeclarationStore(dynamo, env.table),
-    outbound: sqsOutboundQueue(new SQSClient({ region: botRegion() }), env.outboundQueueUrl),
-    provider,
-    log,
-    siteOrigin: env.siteOrigin,
-    daySource: createDaySourceReader({ apiBaseUrl: env.apiBaseUrl, log }),
-    whippinGroups: createWhippinGroupReader({ apiBaseUrl: env.apiBaseUrl, log }),
-    dayLog: dynamoDayLogStore(dynamo, env.table),
-    diary: dynamoDiaryStore(dynamo, env.table),
+    deps: {
+      groups: loadGroups(env.groupsDir),
+      declarations: dynamoDeclarationStore(dynamo, env.table),
+      outbound: sqsOutboundQueue(new SQSClient({ region: botRegion() }), env.outboundQueueUrl),
+      provider,
+      log,
+      siteOrigin: env.siteOrigin,
+      daySource: createDaySourceReader({ apiBaseUrl: env.apiBaseUrl, log }),
+      whippinGroups: createWhippinGroupReader({ apiBaseUrl: env.apiBaseUrl, log }),
+      dayLog: dynamoDayLogStore(dynamo, env.table),
+      diary: dynamoDiaryStore(dynamo, env.table),
+    },
+    providerFailed,
   };
 }
 
 export async function handler(event: PodiumJobEvent): Promise<PodiumJobResult> {
   // A REJECTED promise must not be the cache: an SSM blip on the first invocation would
   // otherwise fail every later one for the life of the container, long after the cause.
-  deps ??= buildDeps().catch((error) => {
-    deps = undefined;
+  built ??= buildDeps().catch((error) => {
+    built = undefined;
     throw error;
   });
+  const { deps, providerFailed } = await built;
+  // NOR MAY DEPS WHOSE MODEL FAILED TO LOAD: this invocation still runs without one (a
+  // podium must go out), but kept, the same blip would leave every later podium bare and
+  // every diary rewrite `skipped` — a success the schedule's retries never see. Dropped
+  // before the run, so an invocation that throws is retried on a fresh read too.
+  if (providerFailed) built = undefined;
   const run = event.kind === 'reminder' ? runReminderJob : event.kind === 'diary' ? runDiaryJob : runPodiumJob;
-  return run(event, await deps);
+  return run(event, deps);
 }

@@ -8,7 +8,7 @@ import { dateForDayNumber } from './day';
 // out, random enough that a link is the only way in. The one spelling of it for every
 // package: the web routes on it, the backend serves and stores by it, the publish script
 // mints it, the share codec packs it.
-export const BONUS_ID_SOURCE = '[1-9][0-9]{6}';
+const BONUS_ID_SOURCE = '[1-9][0-9]{6}';
 export const BONUS_ID_PATTERN = new RegExp(`^${BONUS_ID_SOURCE}$`);
 export const BONUS_ID_MIN = 1_000_000;
 export const BONUS_ID_MAX = 9_999_999;

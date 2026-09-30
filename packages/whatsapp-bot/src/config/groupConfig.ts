@@ -107,7 +107,7 @@ export const PLACEHOLDER_GROUP_JID = '120363000000000000@g.us';
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const LANGUAGES: readonly GroupLanguage[] = ['en', 'fr'];
 
-export const DEFAULT_BOT_NAME = 'WhippinBot';
+const DEFAULT_BOT_NAME = 'WhippinBot';
 const DEFAULT_PER_GROUP_PER_DAY = 60;
 
 export class GroupConfigError extends Error {}
@@ -333,11 +333,12 @@ export function assertUniqueGroupIds(configs: readonly { id: string; source: str
 
 // The snapshot directory, as the RUNTIME reads it (the task at boot, the podium Lambda on
 // every invocation). A MISSING one is an ERROR here: the directory is named by
-// `BOT_GROUPS_DIR`, spelled once in the Dockerfile and once in the stack, and the two
-// drifting is exactly the case this has to catch — read as "no groups", the task boots,
-// reports connected, and silently ingests nothing, which no alarm watches. The throw makes
-// it a crash-loop the connected-gauge alarm does see. (An EMPTY directory is a legitimate
-// empty set: `groups/local/` is always present in a checkout.)
+// `BOT_GROUPS_DIR`, spelled once for the task (the Dockerfile) and once for the Lambda (the
+// stack), and a name drifting from where the files were copied is exactly the case this
+// has to catch — read as "no groups", the task boots, reports connected, and silently
+// ingests nothing, which no alarm watches. The throw makes it a crash-loop the
+// connected-gauge alarm does see. (An EMPTY directory is a legitimate empty set:
+// `groups/local/` is always present in a checkout.)
 export function readGroupConfigs(dir: string): GroupConfig[] {
   if (!existsSync(dir)) {
     throw new GroupConfigError(

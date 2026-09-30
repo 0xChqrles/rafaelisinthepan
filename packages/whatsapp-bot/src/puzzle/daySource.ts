@@ -14,16 +14,13 @@
 // that carries it: the share line and the podium comments are told nothing about the source
 // and so have nothing to leak.
 
-import { fold } from '@whippin/shared';
+import { fold, type Source } from '@whippin/shared';
 import type { Log } from '../log';
 
-// The shape the puzzle carries (#5). EVERY field is independently optional, so partial
-// metadata is valid and a puzzle may carry no `source` at all.
-export interface DaySource {
-  kind?: string; // book | movie | music | quote | poem | … (an OPEN set)
-  author?: string;
-  work?: string;
-}
+// The shape the puzzle carries (#5), less what only the solved page reads. EVERY field is
+// independently optional, so partial metadata is valid and a puzzle may carry no `source`
+// at all; the `kind` is an OPEN set (book | movie | music | quote | poem | …).
+export type DaySource = Pick<Source, 'kind' | 'author' | 'work'>;
 
 const FETCH_TIMEOUT_MS = 15_000;
 // HOW LONG A REPLY MAY WAIT ON DECORATION, which is a different question from how long the
@@ -60,10 +57,10 @@ export interface DaySourceReader {
   // with no metadata, or a read that failed. A caller never distinguishes those: all three
   // mean the prompt says nothing about where the sentence came from. Waits at most
   // `WAIT_BUDGET_MS`: the conversation must not stall on decoration.
-  get(lang: string, day: number, date: string): Promise<DaySource | null>;
+  get(lang: string, date: string): Promise<DaySource | null>;
   // The whole answer, WAITED FOR: whether the day is published and what its source is, or
   // null for a read that failed. For a caller with nothing better to do meanwhile.
-  read(lang: string, day: number, date: string): Promise<DayRead | null>;
+  read(lang: string, date: string): Promise<DayRead | null>;
 }
 
 export interface DaySourceDeps {
@@ -134,8 +131,8 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
   const flights = new Map<string, Promise<Entry>>();
 
   // The cached entry when it is still good, else ONE flight for it (shared).
-  function entryFor(lang: string, day: number, date: string): { held: Entry } | { flight: Promise<Entry> } {
-    const key = `${lang}#${day}`;
+  function entryFor(lang: string, date: string): { held: Entry } | { flight: Promise<Entry> } {
+    const key = `${lang}#${date}`;
     const held = cache.get(key);
     if (held && (held.retryAfter === undefined || held.retryAfter > now())) return { held };
     const flight =
@@ -161,8 +158,8 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
   }
 
   return {
-    async get(lang, day, date) {
-      const found = entryFor(lang, day, date);
+    async get(lang, date) {
+      const found = entryFor(lang, date);
       if ('held' in found) return found.held.source;
       // The reply does not wait on this past its budget. The flight is NOT cancelled — it
       // finishes into the cache — so a cold first message answers without the source and
@@ -177,8 +174,8 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
         clearTimeout(timer);
       }
     },
-    async read(lang, day, date) {
-      const found = entryFor(lang, day, date);
+    async read(lang, date) {
+      const found = entryFor(lang, date);
       const entry = 'held' in found ? found.held : await found.flight;
       return entry.retryAfter === undefined ? { published: entry.published, source: entry.source } : null;
     },

@@ -1,0 +1,139 @@
+import { App, Aspects } from 'aws-cdk-lib';
+import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
+import { AwsSolutionsChecks } from 'cdk-nag';
+import { describe, expect, it } from 'vitest';
+import { GROUP_SEGMENT, groupLandingPath, SHARE_SEGMENT } from '@whippin/shared';
+import { WebStack } from './web-stack';
+
+const ACCOUNT = '111122223333';
+const REGION = 'us-east-1';
+const DOMAIN = 'test.invalid';
+// NOT the stack's own `https://api.<domain>` default, so what is pinned below is the
+// origin the stack was HANDED (`bin/app.ts` passes the backend's).
+const API_HOST = `backend.${DOMAIN}`;
+const API_ORIGIN = `https://${API_HOST}`;
+
+// `fromLookup` resolves to a dummy zone with no credentials, which is enough: what is
+// pinned below is shape, not zone contents.
+function webStack(app: App): WebStack {
+  return new WebStack(app, 'TestWebStack', {
+    env: { account: ACCOUNT, region: REGION },
+    domainName: DOMAIN,
+    apiOrigin: API_ORIGIN,
+  });
+}
+
+const template = Template.fromStack(webStack(new App()));
+
+const [distribution] = Object.values(template.findResources('AWS::CloudFront::Distribution'));
+const config = distribution.Properties.DistributionConfig;
+
+// The CSP the SPA is served under — the DEFAULT behavior's headers policy, split into
+// its directives (name -> sources).
+function siteCsp(): Record<string, string[]> {
+  const { Ref } = config.DefaultCacheBehavior.ResponseHeadersPolicyId as { Ref: string };
+  const policy = template.findResources('AWS::CloudFront::ResponseHeadersPolicy')[Ref];
+  const csp = policy.Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig
+    .ContentSecurityPolicy.ContentSecurityPolicy as string;
+  return Object.fromEntries(
+    csp.split('; ').map((directive) => {
+      const [name, ...sources] = directive.split(' ');
+      return [name, sources];
+    }),
+  );
+}
+
+// The DEFAULT behavior's viewer-request function, run on a request as CloudFront runs it
+// (its source is a plain `function handler(event)`), answering the URI it sends on.
+function spaRewrite(): (uri: string) => string {
+  const associations = (config.DefaultCacheBehavior.FunctionAssociations ?? []) as {
+    FunctionARN: { 'Fn::GetAtt': [string, string] };
+  }[];
+  expect(associations).toHaveLength(1);
+  const [logicalId] = associations[0].FunctionARN['Fn::GetAtt'];
+  const code = template.findResources('AWS::CloudFront::Function')[logicalId].Properties
+    .FunctionCode as string;
+  const handler = new Function(`${code}\nreturn handler;`)() as (event: unknown) => { uri: string };
+  return (uri) => handler({ request: { method: 'GET', uri, querystring: {}, headers: {} } }).uri;
+}
+
+describe('web hosting stack (#21)', () => {
+  // CONTRACT (root AGENTS.md, shared/src/invite.ts): the share page, the cards and the
+  // group invite preview are served by the BACKEND under the apex. Infra routes the paths,
+  // the backend answers them, the web builds the links — and the dev proxy restates the
+  // list, so a pattern missing here shows on the real CDN alone, as a shared link that
+  // unfurls as the app's stock card.
+  it('hands exactly the share, card and invite paths to the API origin', () => {
+    const behaviors = config.CacheBehaviors as Record<string, unknown>[];
+    expect(behaviors.map(({ PathPattern }) => PathPattern).sort()).toEqual(
+      [`/${SHARE_SEGMENT}/*`, '/og/*', `/${GROUP_SEGMENT}/*`].sort(),
+    );
+
+    const origins = config.Origins as { Id: string; DomainName: unknown }[];
+    const api = origins.find(({ DomainName }) => DomainName === API_HOST);
+    expect(api).toBeDefined();
+    for (const behavior of behaviors) {
+      expect(behavior.TargetOriginId, String(behavior.PathPattern)).toBe(api!.Id);
+    }
+  });
+
+  // The SPA fallback is a viewer-request function on the DEFAULT behavior, never a
+  // distribution-wide error response: those rewrite every behavior's 403/404, so a dead
+  // invite, share or card from the API origin would answer 200 with the SPA shell.
+  it('falls back to the SPA on the bucket behavior alone, so the API origin\'s 404s reach the viewer', () => {
+    expect(config.CustomErrorResponses).toBeUndefined();
+
+    const associations = config.DefaultCacheBehavior.FunctionAssociations as { EventType: string }[];
+    expect(associations).toHaveLength(1);
+    expect(associations[0].EventType).toBe('viewer-request');
+
+    for (const behavior of config.CacheBehaviors as Record<string, unknown>[]) {
+      expect(behavior.FunctionAssociations, String(behavior.PathPattern)).toBeUndefined();
+    }
+  });
+
+  it('serves index.html for every client route and leaves every file alone', () => {
+    const rewrite = spaRewrite();
+    const routes = [
+      '/',
+      '/en',
+      '/fr/',
+      '/en/2026-09-01',
+      '/en/bonus/1234567',
+      groupLandingPath('abcdefghijklmnop'),
+      '/account/email',
+      '/fr/learn/2',
+    ];
+    for (const uri of routes) expect(rewrite(uri), uri).toBe('/index.html');
+    for (const uri of ['/assets/x.js', '/vocab/en.json', '/version.json', '/favicon.ico', '/index.html']) {
+      expect(rewrite(uri), uri).toBe(uri);
+    }
+  });
+
+  it('lets the SPA call the backend it was given', () => {
+    // An origin missing from `connect-src` is every API call refused by the browser.
+    expect(siteCsp()['connect-src']).toContain(API_ORIGIN);
+  });
+
+  it('loads fonts and styles from the site alone', () => {
+    // The fonts are self-hosted (`web/src/index.css`): the policy names no third party
+    // for a request the app never makes.
+    const csp = siteCsp();
+    expect(csp['font-src']).toEqual(["'self'"]);
+    expect(csp['style-src']).toEqual(["'self'", "'unsafe-inline'"]);
+  });
+
+  // `bin/app.ts` runs cdk-nag over every stack, where a finding is a FAILED SYNTH — and
+  // CI synthesizes nothing, so without this a finding is first seen by the deploy, after
+  // the merge. It checks LESS than the real deploy wherever `packages/web/dist` is absent
+  // (CI): the three BucketDeployments, and the stack-level suppressions they need, are
+  // only built from a local build.
+  it('synthesizes with NO cdk-nag findings', () => {
+    const app = new App();
+    const stack = webStack(app);
+    Aspects.of(app).add(new AwsSolutionsChecks());
+    expect(
+      Annotations.fromStack(stack).findError('*', Match.stringLikeRegexp('AwsSolutions-.*')),
+    ).toEqual([]);
+  });
+});

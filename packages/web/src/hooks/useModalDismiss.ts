@@ -27,11 +27,10 @@ const EXIT_FALLBACK_MS = 800;
 // with a real `@keyframes` rule and nothing type-checks it — see the closing effect, which
 // verifies it rather than trusting it.
 export default function useModalDismiss(exitAnimation: string): {
-  dialogRef: React.RefObject<HTMLDialogElement | null>;
   closing: boolean;
   beginClose: () => void;
   dialogProps: {
-    ref: React.RefObject<HTMLDialogElement | null>;
+    ref: React.RefObject<HTMLDialogElement>;
     tabIndex: number;
     onCancel: (e: React.SyntheticEvent) => void;
     onAnimationEnd: (e: React.AnimationEvent) => void;
@@ -79,7 +78,6 @@ export default function useModalDismiss(exitAnimation: string): {
   }, [closing, exitAnimation, finishClose]);
 
   return {
-    dialogRef,
     closing,
     beginClose,
     dialogProps: {

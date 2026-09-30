@@ -37,7 +37,7 @@ const NOUNS = [
 ];
 
 // FNV-1a over the id — enough spread for a display fallback (collisions cost nothing).
-export function idHash(publicId: string): number {
+function idHash(publicId: string): number {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < publicId.length; i += 1) {
     h = Math.imul(h ^ publicId.charCodeAt(i), 16777619) >>> 0;

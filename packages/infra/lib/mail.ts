@@ -49,8 +49,8 @@ const REPO_LOCKFILE = path.resolve(here, '..', '..', '..', 'pnpm-lock.yaml');
 // AWS puts an account "under review" at these rates and can pause its sending above them, so
 // they are the thresholds worth waking someone for rather than numbers of our own choosing.
 // (They are FRACTIONS: the CloudWatch metric reports 0.05, not 5.)
-export const BOUNCE_RATE_THRESHOLD = 0.05;
-export const COMPLAINT_RATE_THRESHOLD = 0.001;
+const BOUNCE_RATE_THRESHOLD = 0.05;
+const COMPLAINT_RATE_THRESHOLD = 0.001;
 
 // How long a received message sits in S3 before the lifecycle rule deletes it. It is a TRANSIT
 // BUFFER, not an archive — the forward happens within seconds and Lambda retries a failure on
@@ -62,16 +62,16 @@ export const COMPLAINT_RATE_THRESHOLD = 0.001;
 // removes it asynchronously — so a message can be readable a little past N × 24 hours, and
 // no lifecycle value makes a strict cutoff. The notice states this number; changing it
 // changes that file (root AGENTS.md).
-export const INBOUND_RETENTION_DAYS = 30;
+const INBOUND_RETENTION_DAYS = 30;
 
 // The message SES stores can be up to its own 40 MB receiving cap, which is far more than the
 // forwarder should pull into memory or hand back to SES. Above this it forwards a NOTICE
 // naming the sender, the subject and the S3 key instead of the message — see mailForward.ts.
-export const MAX_FORWARD_BYTES = 9 * 1024 * 1024;
+const MAX_FORWARD_BYTES = 9 * 1024 * 1024;
 
 // Where the receipt rule writes, and where the forwarder reads. One prefix, so the bucket
 // policy SES gets is scoped to it rather than to the whole bucket.
-export const INBOUND_PREFIX = 'inbound/';
+const INBOUND_PREFIX = 'inbound/';
 
 export interface MailAlertsProps {
   // The address every alarm notification goes to. SNS emails it a subscription confirmation
@@ -201,11 +201,7 @@ export class MailAlerts extends Construct {
    * congratulated on. Missing data IS "not breaching" here, unlike above: a function that
    * was not invoked has dropped nothing, and there is no paused-account reading of silence.
    */
-  addFunctionFailureAlarms(
-    id: string,
-    fn: lambda.IFunction,
-    description: string,
-  ): { errors: cloudwatch.Alarm; dropped: cloudwatch.Alarm } {
+  addFunctionFailureAlarms(id: string, fn: lambda.IFunction, description: string): void {
     const alarm = (suffix: string, metric: cloudwatch.IMetric, what: string) => {
       const created = new cloudwatch.Alarm(this, `${id}${suffix}`, {
         metric,
@@ -216,17 +212,14 @@ export class MailAlerts extends Construct {
         alarmDescription: `${what} ${description}`,
       });
       created.addAlarmAction(new cwActions.SnsAction(this.topic));
-      return created;
     };
     const window = { period: Duration.minutes(15), statistic: 'Sum' };
-    return {
-      errors: alarm('Errors', fn.metricErrors(window), 'The forwarder threw.'),
-      dropped: alarm(
-        'Dropped',
-        fn.metric('AsyncEventsDropped', window),
-        'Lambda dropped an invocation of the forwarder (retries exhausted, or the event aged out while throttled).',
-      ),
-    };
+    alarm('Errors', fn.metricErrors(window), 'The forwarder threw.');
+    alarm(
+      'Dropped',
+      fn.metric('AsyncEventsDropped', window),
+      'Lambda dropped an invocation of the forwarder (retries exhausted, or the event aged out while throttled).',
+    );
   }
 }
 
@@ -257,10 +250,6 @@ export interface MailReceivingProps {
  * an off-domain mailbox needs an authorization record only THAT domain's owner can publish.
  */
 export class MailReceiving extends Construct {
-  readonly bucket: s3.Bucket;
-  readonly forwarder: NodejsFunction;
-  readonly recipients: string[];
-
   constructor(scope: Construct, id: string, props: MailReceivingProps) {
     super(scope, id);
     const stack = Stack.of(this);
@@ -284,7 +273,7 @@ export class MailReceiving extends Construct {
     // correspondence in an account nothing is managing any more. The lifecycle rule is the
     // real retention story — see INBOUND_RETENTION_DAYS, and its note on why the bound it
     // enforces is "about" that many days rather than "at most".
-    this.bucket = new s3.Bucket(this, 'InboundBucket', {
+    const bucket = new s3.Bucket(this, 'InboundBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
@@ -304,7 +293,7 @@ export class MailReceiving extends Construct {
       removalPolicy: RemovalPolicy.DESTROY,
     });
 
-    this.forwarder = new NodejsFunction(this, 'Forwarder', {
+    const forwarder = new NodejsFunction(this, 'Forwarder', {
       entry: FORWARDER_ENTRY,
       handler: 'handler',
       runtime: lambda.Runtime.NODEJS_22_X,
@@ -325,7 +314,7 @@ export class MailReceiving extends Construct {
       logGroup,
       tracing: lambda.Tracing.ACTIVE,
       environment: {
-        MAIL_BUCKET: this.bucket.bucketName,
+        MAIL_BUCKET: bucket.bucketName,
         MAIL_PREFIX: INBOUND_PREFIX,
         MAIL_FROM: props.mailFrom,
         MAIL_FORWARD_TO: props.forwardTo,
@@ -344,7 +333,7 @@ export class MailReceiving extends Construct {
       },
     });
 
-    this.bucket.grantRead(this.forwarder, `${INBOUND_PREFIX}*`);
+    bucket.grantRead(forwarder, `${INBOUND_PREFIX}*`);
     // Conditioned on the ONE address it may send as, like the code sender: a forwarder that
     // could send as anything would be a better open relay than the thing it replaces. It
     // differs from the code sender's grant in two ways, both learned from the first real
@@ -357,7 +346,7 @@ export class MailReceiving extends Construct {
     //     one address a sandboxed account may send to at all. The code sender never meets
     //     this because players' addresses are not identities. The FromAddress condition is
     //     what bounds this grant, and it is unchanged.
-    this.forwarder.addToRolePolicy(
+    forwarder.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['ses:SendEmail', 'ses:SendRawEmail'],
         resources: [
@@ -370,9 +359,9 @@ export class MailReceiving extends Construct {
 
     // The aliases this domain answers on. ENUMERATED, never a catch-all: a domain that
     // accepts every local part is a spam magnet, and each of these four is here for a stated
-    // reason (see the class comment). Deduplicated so a `mailSender` of "abuse" cannot
-    // produce a rule SES rejects for repeating a recipient.
-    this.recipients = [
+    // reason (see the class comment). Deduplicated so a `mailFrom` that IS one of the three
+    // fixed aliases cannot produce a rule SES rejects for repeating a recipient.
+    const recipients = [
       ...new Set([
         props.mailFrom,
         `abuse@${props.domainName}`,
@@ -384,7 +373,7 @@ export class MailReceiving extends Construct {
     const ruleSet = new ses.ReceiptRuleSet(this, 'RuleSet', {
       rules: [
         {
-          recipients: this.recipients,
+          recipients,
           // Spam and virus scanning on, so the forwarder can refuse to relay what SES already
           // judged (it reads the verdicts off the event).
           scanEnabled: true,
@@ -394,9 +383,9 @@ export class MailReceiving extends Construct {
           // ORDER MATTERS: SES runs actions in sequence, so the message is in S3 before the
           // forwarder is invoked to read it.
           actions: [
-            new sesActions.S3({ bucket: this.bucket, objectKeyPrefix: INBOUND_PREFIX }),
+            new sesActions.S3({ bucket, objectKeyPrefix: INBOUND_PREFIX }),
             new sesActions.Lambda({
-              function: this.forwarder,
+              function: forwarder,
               // Asynchronous: this Lambda makes no mail-flow decision, so SES must not wait
               // on it — and a slow forward must never turn into a bounce for the sender.
               invocationType: sesActions.LambdaInvocationType.EVENT,
@@ -447,12 +436,12 @@ export class MailReceiving extends Construct {
 
     props.alerts.addFunctionFailureAlarms(
       'Forwarder',
-      this.forwarder,
+      forwarder,
       `Inbound mail to ${props.domainName} arrived but could not be forwarded. The message is in the landing bucket for about ${INBOUND_RETENTION_DAYS} days; after that it is gone.`,
     );
 
     // ── cdk-nag: accepted exceptions (each justified) ─────────────────────────
-    NagSuppressions.addResourceSuppressions(this.bucket, [
+    NagSuppressions.addResourceSuppressions(bucket, [
       {
         id: 'AwsSolutions-S1',
         reason:
@@ -460,7 +449,7 @@ export class MailReceiving extends Construct {
       },
     ]);
     NagSuppressions.addResourceSuppressions(
-      this.forwarder,
+      forwarder,
       [
         {
           id: 'AwsSolutions-IAM4',

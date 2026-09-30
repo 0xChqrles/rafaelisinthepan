@@ -3,7 +3,7 @@ import type { CSSProperties, KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import useDrum from '../hooks/useDrum';
 import useModalDismiss from '../hooks/useModalDismiss';
-import { HeaderBack } from './TopBar';
+import ModalHeader from './ModalHeader';
 import { t } from '../i18n';
 import { LANGS, type LangCode } from '../langs';
 
@@ -67,7 +67,7 @@ export default function PuzzleSelect({
 }) {
   // FIRST hook, per the contract: a closed <dialog> is `display: none`, and the row height
   // is measured below.
-  const { closing, beginClose, dialogProps } = useModalDismiss('select-out');
+  const { closing, beginClose, dialogProps } = useModalDismiss('fade-out');
 
   // A row is as tall as the chip it holds — measured once the dialog is open, off a chip
   // in the tree, so the CSS owns the type and the drum follows it.
@@ -157,27 +157,16 @@ export default function PuzzleSelect({
         const bare =
           el === e.currentTarget ||
           ['ps-cols', 'ps-drum', 'ps-track', 'ps-lead', 'ps-trail'].some((c) => el.classList.contains(c));
-        if (bare && !closing) beginClose();
+        if (bare) beginClose();
       }}
     >
-      {/* The app's header row, with the way back in its left slot — `HeaderBack` ITSELF, not
-          a look-alike: the selection opens over a header that carries the same control on
-          every step of the account area, and a chevron drawn a few pixels off from the one
-          it covers reads as the back button MOVING when the screen opens (user-reported
-          2026-09-03). Same component, same geometry, same slot: it does not move. */}
-      <div className="modal-bar">
-        <div className="topbar-inner">
-          <div className="topbar-left">
-            <HeaderBack
-              label={t(lang, 'ariaClose')}
-              onBack={() => {
-                if (!closing) beginClose();
-              }}
-            />
-          </div>
-          <div className="topbar-right" />
-        </div>
-      </div>
+      {/* The app's header row, with the way back in its left slot — `HeaderBack` ITSELF
+          (`ModalHeader`'s `back`), not a look-alike: the selection opens over a header that
+          carries the same control on every step of the account area, and a chevron drawn a
+          few pixels off from the one it covers reads as the back button MOVING when the
+          screen opens. Same component, same geometry, same slot:
+          it does not move. */}
+      <ModalHeader lang={lang} back onClose={beginClose} />
       {/* The row-height probe: one chip in the tree, off screen, in the rows' own dress. */}
       <span ref={probe} className="ps-chip ps-probe" aria-hidden>
         X

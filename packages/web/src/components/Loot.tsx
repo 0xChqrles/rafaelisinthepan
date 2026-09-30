@@ -92,7 +92,7 @@ export default function Loot({
   const [shown, setShown] = useState(target);
 
   useEffect(() => {
-    if (prefersReducedMotion() || target.length === 0) return undefined;
+    if (prefersReducedMotion()) return undefined;
     const steps = Math.max(1, Math.round(RISE_MS / SCRAMBLE_TICK_MS));
     let step = 0;
     let interval = 0;
@@ -110,14 +110,13 @@ export default function Loot({
       window.clearTimeout(begin);
       window.clearInterval(interval);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deliberately per hit: the rank and its beat are read once, when the hit mounts.
   }, [id]);
 
   useEffect(() => {
     const t = setTimeout(() => onDone && onDone(id), lootEndMs(releaseMs, improves));
     return () => clearTimeout(t);
     // Per hit: the component is re-keyed on each, and its beats are fixed at its mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useLayoutEffect(() => {
@@ -177,7 +176,7 @@ export default function Loot({
       flight.cancel();
       flash.cancel();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deliberately per hit: the throw is rolled once, when the hit mounts.
   }, [id]);
 
   return (

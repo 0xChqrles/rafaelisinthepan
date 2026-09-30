@@ -1,4 +1,3 @@
-import io
 import zipfile
 
 from epub import epub_metadata, epub_text, html_to_text

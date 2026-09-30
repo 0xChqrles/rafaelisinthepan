@@ -9,8 +9,8 @@ import { prefersReducedMotion } from './useScramble';
 // hole's `ticking`. That is `active`, and it stays with the caller.
 
 // One letter's whole up-and-down, and the delay between two consecutive letters.
-export const WAVE_LETTER_MS = 300;
-export const WAVE_STEP_MS = 40;
+const WAVE_LETTER_MS = 300;
+const WAVE_STEP_MS = 40;
 
 // The two numbers handed to CSS rather than repeated there, so the JS that ends a wave and
 // the animation that draws it read the same values. Spread onto the element's style while
@@ -67,7 +67,6 @@ export default function useLetterWave(active: boolean, letters: number): boolean
     // The letter count is read when the wave STARTS. A word whose length can change mid-life
     // (a hole's scramble) is not `active` while it changes, so this can never re-time a
     // wave that is already running.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waving]);
 
   useEffect(() => {

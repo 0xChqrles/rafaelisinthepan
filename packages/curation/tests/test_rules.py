@@ -16,27 +16,27 @@ from rules import (
 )
 
 
-def tok(i, text, pos, dep, head, lemma=None, stop=False):
-    return Token(i=i, text=text, lemma=lemma or text, pos=pos, dep=dep, head=head,
+def tok(i, text, pos, lemma=None, stop=False):
+    return Token(i=i, text=text, lemma=lemma or text, pos=pos,
                  slug=text.lower().replace("é", "e"), stop=stop)
 
 
 # "le vieux chat gris dort sur la pierre froide et la lune blanche brille"
 SENT = [
-    tok(0, "le", "DET", "det", 2, stop=True),
-    tok(1, "vieux", "ADJ", "amod", 2),
-    tok(2, "chat", "NOUN", "nsubj", 4),
-    tok(3, "gris", "ADJ", "amod", 2),
-    tok(4, "dort", "VERB", "ROOT", 4, lemma="dormir"),
-    tok(5, "sur", "ADP", "case", 7, stop=True),
-    tok(6, "la", "DET", "det", 7, stop=True),
-    tok(7, "pierre", "NOUN", "obl", 4),
-    tok(8, "froide", "ADJ", "amod", 7, lemma="froid"),
-    tok(9, "et", "CCONJ", "cc", 12, stop=True),
-    tok(10, "la", "DET", "det", 11, stop=True),
-    tok(11, "lune", "NOUN", "nsubj", 13),
-    tok(12, "blanche", "ADJ", "amod", 11, lemma="blanc"),
-    tok(13, "brille", "VERB", "conj", 4, lemma="briller"),
+    tok(0, "le", "DET", stop=True),
+    tok(1, "vieux", "ADJ"),
+    tok(2, "chat", "NOUN"),
+    tok(3, "gris", "ADJ"),
+    tok(4, "dort", "VERB", lemma="dormir"),
+    tok(5, "sur", "ADP", stop=True),
+    tok(6, "la", "DET", stop=True),
+    tok(7, "pierre", "NOUN"),
+    tok(8, "froide", "ADJ", lemma="froid"),
+    tok(9, "et", "CCONJ", stop=True),
+    tok(10, "la", "DET", stop=True),
+    tok(11, "lune", "NOUN"),
+    tok(12, "blanche", "ADJ", lemma="blanc"),
+    tok(13, "brille", "VERB", lemma="briller"),
 ]
 VOCAB = {t.slug for t in SENT}
 no_rank = lambda t, w: None  # noqa: E731
@@ -46,7 +46,9 @@ CHAT = SENT[2]
 # --- which words can be hidden ------------------------------------------------------
 
 def test_initial_candidates_keep_only_content_words_the_game_admits():
-    cands = initial_candidates(SENT, lang="fr", in_vocab=VOCAB.__contains__)
+    # « encore »: an adverb the game admits, and a stopword — out like the determiners
+    sent = SENT + [tok(14, "encore", "ADV", stop=True)]
+    cands = initial_candidates(sent, lang="fr", in_vocab=(VOCAB | {"encore"}).__contains__)
     assert [c.text for c in cands] == [
         "vieux", "chat", "gris", "dort", "pierre", "froide", "lune", "blanche", "brille",
     ]
@@ -55,7 +57,7 @@ def test_initial_candidates_keep_only_content_words_the_game_admits():
 def test_a_word_the_parser_calls_a_proper_noun_can_be_hidden():
     # « les rolex », « en zigzag »: the parser tags them PROPN; both were secrets of a
     # favourite day. Whether a name is worth hiding is taste's call.
-    sent = SENT + [tok(14, "rolex", "PROPN", "obj", 13)]
+    sent = SENT + [tok(14, "rolex", "PROPN")]
     assert "rolex" in {t.text for t in initial_candidates(sent, lang="fr", in_vocab=lambda s: True)}
 
 
@@ -66,20 +68,20 @@ def test_initial_candidates_drop_past_secrets_and_unknown_slugs():
 
 
 def test_initial_candidates_drop_a_same_lemma_twin_under_another_slug():
-    sent = SENT + [tok(14, "dormait", "VERB", "conj", 4, lemma="dormir")]
+    sent = SENT + [tok(14, "dormait", "VERB", lemma="dormir")]
     cands = initial_candidates(sent, lang="fr", in_vocab=lambda s: True)
     assert "dort" not in [c.text for c in cands]
     assert "dormait" not in [c.text for c in cands]
 
 
 def test_a_same_slug_repeat_stays_a_candidate():
-    sent = SENT + [tok(14, "chat", "NOUN", "conj", 11)]
+    sent = SENT + [tok(14, "chat", "NOUN")]
     cands = initial_candidates(sent, lang="fr", in_vocab=lambda s: True)
     assert [c.text for c in cands].count("chat") == 2
 
 
 def test_initial_candidates_drop_the_commonest_words_and_common_adverbs():
-    sent = SENT + [tok(14, "bien", "ADV", "advmod", 13), tok(15, "pensivement", "ADV", "advmod", 13)]
+    sent = SENT + [tok(14, "bien", "ADV"), tok(15, "pensivement", "ADV")]
     ranks = {"bien": 3, "pensivement": 9000, "chat": MAX_COMMON_RANK - 1, "lune": MAX_COMMON_RANK}
     cands = initial_candidates(sent, lang="fr", in_vocab=lambda s: True, frequency_rank=lambda t: ranks.get(t.text))
     texts = [c.text for c in cands]
@@ -88,10 +90,20 @@ def test_initial_candidates_drop_the_commonest_words_and_common_adverbs():
     assert MAX_COMMON_RANK_ADV > MAX_COMMON_RANK
 
 
+def test_an_adverb_has_its_own_frequency_floor():
+    # « jamais » (158) is out as an adverb; a noun as common stays
+    sent = SENT + [tok(14, "jamais", "ADV"), tok(15, "presque", "ADV"), tok(16, "doucement", "ADV")]
+    ranks = {"jamais": 158, "lune": 158, "presque": 499, "doucement": 500}
+    cands = initial_candidates(sent, lang="fr", in_vocab=lambda s: True, frequency_rank=lambda t: ranks.get(t.text))
+    texts = [c.text for c in cands]
+    assert "jamais" not in texts and "presque" not in texts
+    assert "lune" in texts and "doucement" in texts
+
+
 def test_weak_verbs_are_never_candidates():
     assert "croire" in WEAK_VERBS["fr"]
-    sent = [tok(0, "je", "PRON", "nsubj", 1, stop=True), tok(1, "crois", "VERB", "ROOT", 1, lemma="croire"),
-            tok(2, "chat", "NOUN", "obj", 1), tok(3, "dort", "VERB", "conj", 1, lemma="dormir")]
+    sent = [tok(0, "je", "PRON", stop=True), tok(1, "crois", "VERB", lemma="croire"),
+            tok(2, "chat", "NOUN"), tok(3, "dort", "VERB", lemma="dormir")]
     assert [t.text for t in initial_candidates(sent, lang="fr", in_vocab=lambda s: True)] == ["chat", "dort"]
 
 
@@ -101,19 +113,19 @@ def test_the_english_weak_verbs_are_the_french_list_translated():
     # faire, aller — nothing added.
     assert WEAK_VERBS["en"] == {"say", "believe", "think", "know", "seem", "appear", "want", "can",
                                 "must", "need", "find", "have", "be", "do", "make", "go"}
-    sent = [tok(0, "i", "PRON", "nsubj", 1, stop=True), tok(1, "think", "VERB", "ROOT", 1),
-            tok(2, "the", "DET", "det", 3, stop=True), tok(3, "cat", "NOUN", "nsubj", 4),
-            tok(4, "sleeps", "VERB", "ccomp", 1, lemma="sleep"), tok(5, "said", "VERB", "conj", 1, lemma="say")]
+    sent = [tok(0, "i", "PRON", stop=True), tok(1, "think", "VERB"),
+            tok(2, "the", "DET", stop=True), tok(3, "cat", "NOUN"),
+            tok(4, "sleeps", "VERB", lemma="sleep"), tok(5, "said", "VERB", lemma="say")]
     assert [t.text for t in initial_candidates(sent, lang="en", in_vocab=lambda s: True)] == ["cat", "sleeps"]
     # the languages share nothing: « dire » is no English lemma, « say » no French one
-    sent_fr = [tok(0, "say", "VERB", "ROOT", 0, lemma="say")]
+    sent_fr = [tok(0, "say", "VERB", lemma="say")]
     assert [t.text for t in initial_candidates(sent_fr, lang="fr", in_vocab=lambda s: True)] == ["say"]
 
 
 def test_a_hyphenated_compound_can_be_hidden():
     # « les post-it » was a secret of a favourite day (user-decided 2026-09-24, lifting the
     # 2026-09-10 exclusion).
-    sent = SENT + [tok(14, "post-it", "NOUN", "obl", 13)]
+    sent = SENT + [tok(14, "post-it", "NOUN")]
     vocab = VOCAB | {"post-it"}
     assert "post-it" in {t.text for t in initial_candidates(sent, lang="fr", in_vocab=vocab.__contains__)}
 
@@ -153,6 +165,9 @@ def test_a_rare_word_is_never_said_to_be_what_most_readers_write():
     # « je lance à la [cantonade] »: the model completes the idiom; a player may not know it.
     note = reading(CHAT, ["chat", "ronde"], "chat", frequency_rank=lambda t: PLAIN_WORD_RANK + 1)
     assert not note.startswith("most readers would write the secret")
+    # a word AT the boundary is still one a player knows
+    note = reading(CHAT, ["chat", "ronde"], "chat", frequency_rank=lambda t: PLAIN_WORD_RANK)
+    assert note.startswith("most readers would write the secret itself")
 
 
 # --- where the reader's words land in the hole's own map -----------------------------

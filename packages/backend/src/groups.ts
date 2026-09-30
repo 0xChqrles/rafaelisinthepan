@@ -46,7 +46,7 @@ import {
 import { CONFLICT_RETRY_ATTEMPTS, conflictDelayMs, sleep } from './dynamoRetry';
 import { LIVE_HEADERS, readJsonObject, requireDevice } from './liveRoute';
 import { isNameAllowed } from './nameFilter';
-import type { ProfileStore } from './profileStore';
+import { faceOf, type ProfileStore } from './profileStore';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
 
 export interface GroupHandlerDeps {
@@ -82,10 +82,10 @@ export async function readGroupFace(
       try {
         const found = await profiles.get(publicId);
         if (!found.live) return null;
-        return { publicId, name: found.profile?.name ?? '', avatar: found.profile?.avatar || null };
+        return { publicId, ...faceOf(found.profile) };
       } catch {
         answered = false;
-        return { publicId, name: '', avatar: null };
+        return { publicId, ...faceOf(null) };
       }
     }),
   );
@@ -288,7 +288,7 @@ export async function handleGroups(
 // whose group row is GONE is a stray pair pointing at nothing: it is dropped AND deleted
 // (the idempotent leave), so it neither shows as a group nobody owns nor holds one of the
 // caller's GROUPS_MAX slots for good.
-export async function listGroups(groups: GroupStore, publicId: string): Promise<GroupSummary[]> {
+async function listGroups(groups: GroupStore, publicId: string): Promise<GroupSummary[]> {
   const mine = await groups.listMine(publicId);
   const rows = await Promise.all(
     mine.map(async (held) => {

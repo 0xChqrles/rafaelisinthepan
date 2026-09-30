@@ -21,10 +21,12 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
     groups/local/*.json         THE ALLOW-LIST, as a gitignored SNAPSHOT pulled from SSM.
                                 No config → the group does not exist. Product behaviour, never a secret.
     src/config/groupsStore.ts   SSM `/whippin/bot/groups/<slug>` — the SOURCE of those configs
-    src/groupsCli.ts            `pnpm bot:groups` — list / edit / rm / pull
+    src/groupsCli.ts            `pnpm bot:groups` — list / push / rm / pull
     src/config/groupConfig.ts   strict parser + GroupRegistry (enabled groups by JID)
     src/config/env.ts           runtime env: table, queue URL, groups dir, site origin, LLM knobs
     src/log.ts                  pino + `tag()` — the ONE hashing of a JID for logs
+    src/metricNames.ts          CONNECTED_METRIC, the gauge's one spelling: the task publishes it, infra's
+                                disconnect alarm imports it (`@whippin/whatsapp-bot/metrics`, dependency-free)
     src/domain/                 Whippin-side logic, Baileys-free:
       message.ts                InboundMessage — the bot's own inbound shape
       share.ts                  find + decode share links (sentence tokens only); `withoutShares` — the text
@@ -42,7 +44,7 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
                                 and `renderReminder`, the morning line
       names.ts                  display name = operator override ?? latest snapshot ?? …last4
       reactions.ts              score band → emoji, no model (the `acknowledge: "react"` shape)
-      leader.ts                 the new-leader event + its anti-spam row (LEAD#<day>)
+      leader.ts                 the new-leader event + its anti-spam row (LEAD#<lang>#<000000 day>)
       whippinGroup.ts           the Whippin group's invite link (`?v=<day>`) and the public read that says
                                 whether it still stands (`GET /groups?id=`)
       ingest.ts                 the per-message pipeline: allow-list → share → durable row → acknowledgement/leader.
@@ -173,12 +175,12 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   (below). **`language` decides which daily the group PLAYS** — its podium, its leader
   line, its reminder — and every RANKING read of the declarations goes through
   `inLanguage`, so two languages' numbers never meet on one board. **A share of the OTHER
-  language is RECORDED under its own language (user-decided 2026-09-29, reversing "an `fr`
-  group ignores an English token")**: declarations are keyed by (group, day, sender,
-  LANGUAGE), so a player's French and English results of one day never replace each other;
-  it is acknowledged like any share — the line is read against THAT puzzle's players, with
-  the player's score on the group's puzzle that day as a plain fact, never a verdict
-  (`shareContext.ts` `otherPuzzle`); the podium closes with ONE deterministic line of those
+  language is RECORDED under its own language**: declarations are keyed by (group, day,
+  sender, LANGUAGE), so a player's French and English results of one day never replace each
+  other; it is acknowledged like any share — the line is read against THAT puzzle's
+  players, with the player's score on the group's puzzle that day as a plain fact, never a
+  verdict (`shareContext.ts` `buildOtherPuzzleContext`, `groupPuzzleScoreToday`); the
+  podium closes with ONE deterministic line of those
   results, best first, no places and no comments (`Côté anglais : Charles 7 · Marie 15`,
   `podium.ts` `otherLanguages`), and posts nothing when only the other language played;
   the chat tools report them APART (`otherLanguages`). Not done, deliberately: an English
@@ -291,10 +293,7 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   that were each valid and merely slow — so `runPodiumJob` hands
   `generatePodiumComments` a deadline (`COMMENT_BUDGET_MS` = 80 000 from the job's start)
   and a round that does not fit inside it (`ROUND_MS`) is not spent: a repeated opening
-  stands rather than being rewritten, and the podium is queued. The
-  one-liner machinery this replaced — the band `verdict`, the score withheld,
-  `spellsANumber` / `namesSomebody` / `readsLikeASimile` / `hasAClause`, `LINE_RULES`, the
-  voice judge, `dropEchoes` on six-letter words, eight candidates — is gone with it.
+  stands rather than being rewritten, and the podium is queued.
 - **Outbound has one owner.** Every send is a command with an id (`podium:<g>:<day>`,
   `ack:<g>:<msg>`, `reply:<g>:<msg>`, `leader:…`) on the SQS queue; the task's
   dispatcher checks the sent record (a STRONGLY CONSISTENT read — a redelivery can follow
@@ -446,18 +445,20 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
     replaced — the first `FOLLOW_UP_MESSAGES` (3) messages within five minutes of the
     bot's last line — reset on every bot line, and was therefore a loop with one person:
     25 bot messages in an hour, measured. "Bounded by construction" was false.)*
-  - **A REACTION IS THE THIRD OUTCOME** (user-decided 2026-09-09): the model answers
-    `REACT <emoji>` and nothing else; the emoji is allow-listed (`agent.ts` `REACTIONS`,
-    anything else becomes `DEFAULT_REACTION`), sent through the existing reaction command
-    under the `reply:` id, recorded in the day log as `REACT ❤️` in the bot's own turn,
-    and it moves no exchange and adds no bubble. **The turn is filed by `main.ts` once the
-    OUTBOUND QUEUE has accepted it** — the rule ingest's `spoken` hook already followed
-    (PR-278 review): written by the agent, a reply the queue then refused was a turn in the
-    day log nobody had read, and it had spent the exchange budget too. The prompt's rule: a thank-you, a
-    goodbye, an acknowledgement, a one-word reaction gets a reaction or nothing, never a
-    sentence — the bot never takes the last word. (A dozen of its sentences in five days
-    answered "merci", "bien", "❤️", "bonne nuit"; one of them, forced under "merci bot",
-    invented a podium row.) Emoji in TEXT stays banned; the reaction is the gesture.
+  - **A REACTION IS THE THIRD OUTCOME**: the model answers `REACT <emoji>` and nothing
+    else; the emoji is allow-listed (`agent.ts` `REACTIONS`, anything else becomes
+    `DEFAULT_REACTION`), sent through the reaction command under the `reply:` id, recorded
+    in the day log as `REACT ❤️` in the bot's own turn, and it moves no exchange and adds
+    no bubble. **`REACT` in capitals is ALWAYS a reaction** (`reactionIn`) — wrapped in
+    markdown (`_REACT_`, `**REACT**`), followed by a colon, with no emoji or a misspelt
+    one; the keyword in any other case is a reaction only when at most one token, or an
+    emoji, follows it, because two plain words after it make a sentence ("React faster
+    next time, Gab.") and it is posted as one. **The turn is filed by `main.ts` once the
+    OUTBOUND QUEUE has accepted it**, the rule ingest's `spoken` hook follows: a reply the
+    queue refused is not a turn anybody read, and it spends no exchange budget. The
+    prompt's rule: a thank-you, a goodbye, an acknowledgement, a one-word reaction gets a
+    reaction or nothing, never a sentence — the bot never takes the last word, and a
+    sentence forced under a "merci" is where the model makes a fact up.
   - **A bare `@bot` under a quoted question IS the question** (`trigger.ts`
     `nothingToAnswer`): the emptiness test reads the quote. In production a player quoted
     his own question, tagged the bot, and got nothing.
@@ -487,9 +488,11 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   bounded by WHAT IT IS, not by who typed it (PR-243 review, the three rules unchanged):
   - **A SHARE'S RAW CONTENTS never travel.** `withoutShares` strips the whole GENERATED
     block the web composes — the headline, the emoji row and the link — not only the token. A message that was ONLY a share leaves nothing to
-    remember; what the player typed around it is the conversation and stays. The shape is
-    restated in the bot (it cannot import the web) and pinned by tests against the web's
-    own output.
+    remember; what the player typed around it is the conversation and stays. The bot
+    recognizes the block with its own patterns (it cannot import the web), and its tests
+    build their fixtures from `@whippin/shared`'s `shareHeadline` and `progressEmoji`, the
+    shared halves of the web's composition, so a change to either format fails them; only
+    the keycaps are typed by hand.
   - **EVERY MENTION IS NAMED BEFORE IT IS REMEMBERED** (`withMentionNames`): a mention token
     spells the phone number or LID of whoever it points at. Resolved through the same
     window the tools name players from (`labelPlayers`, keyed by the token's digits,
@@ -506,8 +509,9 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   `namesWithBot`), cut at `QUOTE_MAX_CHARS` (200). So "A replies to B" is in the log.
   **In ORDER**: the player's turn is remembered BEFORE `ingest` runs (a spoken
   acknowledgement is composed inside it and remembered through the `spoken` hook, which
-  fires once the queue accepted it and names the message it answers); the bot's replies
-  and reactions are remembered by the agent; **the podium and the reminder enter through
+  fires once the queue accepted it and names the message it answers); `main.ts` files the
+  bot's replies and reactions once the outbound queue has accepted them; **the podium and
+  the reminder enter through
   WhatsApp's `fromMe` echo** (`DayLog.appendUnlessSaid` skips an echo of a line already
   remembered). The emoji acknowledgement is not a turn. **Only the BOT's mention is
   addressing**: everybody else's is part of what was said, as the name the group uses.
@@ -548,14 +552,13 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   NUMBER, so every one goes through `displayName` (`whatsappExport.ts` `speakerName`) —
   the group's override, or the `…last4` handle — and the turn is composed the way
   `main.ts` composes a live one: share block out, mentions named, quote spelled out.
-  `bot:cli forget <group> <player JID | name>` is now a REWRITE
-  (`withoutPerson`): the model writes the diary again without them, and a rewrite that
-  still names them is not stored; their turns in the day log expire on their own. **It
-  takes the NAME as readily as a JID** (PR-278 review): the diary writes people by the name
-  the group uses, and a JID reaches one only through the scoreboard rows — so a member who
-  never posted a score, or who renamed since, resolved to the `…last4` handle and the
-  command reported that the diary never mentioned them. A JID that resolves to nothing but
-  the handle is refused with the ask. `mentionsPerson` reads the WHOLE name in order (which
+  `bot:cli forget <group> <player JID | name>` is a REWRITE (`withoutPerson`): the model
+  writes the diary again without them, and a rewrite that still names them, or that comes
+  back empty, is not stored; their turns in the day log expire on their own. **It takes
+  the NAME as readily as a JID**: the diary writes people by the name the group uses, and a
+  JID reaches one only through the scoreboard rows, so a member who never posted a score,
+  or who renamed since, resolves to the `…last4` handle — a JID that resolves to nothing
+  but the handle is refused with the ask. `mentionsPerson` reads the WHOLE name in order (which
   is what carries "Jo") as well as any part of three letters or more (which is what carries
   "Luc Le Père"), both sides cut on the same word boundary so "Jean-Luc" matches; it errs
   towards YES, since over-matching costs a rerun and under-matching stores a diary that
@@ -639,11 +642,7 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   the bot said "tu l'as bien sortie" to everybody. That example is now a bare SHAPE
   ("tu …", never "elle …"), the global rule says outright that an example is a shape and
   never a line to reuse, and the audit is simple: no example in any prompt may be a
-  sentence a comment could be. **And ONE WORD, ONCE PER PODIUM** (`podiumComments.ts` `dropEchoes`):
-  the lines are written apart and in parallel, so the prompt's plea for variety cannot see
-  the other lines; the post-pass can. Read top to bottom, a comment repeating a DISTINCTIVE
-  word an earlier one used (six letters or more once folded, not a podium name, not the
-  game's own vocabulary) is dropped and its line goes bare — which the renderer prints.
+  sentence a comment could be.
   **AND IT SPEAKS TO PEOPLE, NOT ABOUT THEM** — "tu …" to the person, never "elle …" about
   them. (A podium line holding two names once took "vous"; since 2026-09-29 a line is one
   player, and the podium task says so.) What did NOT change is the craft that removed the cringe: short,
@@ -734,8 +733,9 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   with a 64 and the line, never shown it, answered with the worst score of the fortnight):
   `main.ts` hands `ingest` the text it remembered for the day log, so it exists only where
   the group's chat is on. **No band word travels** (the user: "not a word like
-  strong, just the score"); **numbers and names are the point**, so none of the one-liner
-  refusals apply to this path (`CandidateShape`); **the writer does NOT think, the judge does**
+  strong, just the score"); **numbers and names are the point**, so a candidate meets only
+  `writeCandidate`'s checks — a finished answer, one plain line within the length; **the
+  writer does NOT think, the judge does**
   (measured on the seeded day: thinking on, 15–29s a share and no better; off, 12–21s —
   the facts carry every comparison, the writer phrases a table); three candidates in
   parallel; and **the judge is a FACT CHECK** (`FACT_JUDGE_SYSTEM`: every claim backed by
@@ -1008,7 +1008,7 @@ pnpm bot:start        # run the task locally (needs AWS creds, BOT_TABLE; takes 
 pnpm bot:pair         # print the QR (or --phone <digits> for a pairing code); --reset to wipe first
 pnpm bot:cli groups   # list the paired account's groups with their JIDs (takes the lease)
 pnpm bot:groups list  # what SSM holds  |  push <slug> | rm <slug> | pull [slug]  (no lease)
-pnpm bot:cli forget <group JID> <player JID>   # rewrite the group's diary without them (needs the model)
+pnpm bot:cli forget <group JID> <player JID | name>   # rewrite the group's diary without them (needs the model)
 pnpm bot:fixture <export.md>                  # every bot line of a WhatsApp export, to rate (eval/local/, gitignored)
 pnpm bot:diary <group JID> <export.md>        # seed the diary from an export's history (--dry-run first)
 pnpm bot:build        # bundle main.ts into dist/ (what the Dockerfile runs)

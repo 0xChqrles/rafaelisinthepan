@@ -6,11 +6,12 @@ import {
   INFINITY_GLYPH,
   dateForDayNumber,
   isBonusRef,
+  shareHeadline,
   type PuzzleRef,
   type Source,
 } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
-import { shareHeadline, shareText, shareUrl } from '../game/share';
+import { shareText, shareUrl } from '../game/share';
 import RunRuler from './RunRuler';
 import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
@@ -20,7 +21,6 @@ import ChevronRightIcon from '../assets/icons/chevron-right.svg?react';
 import { useDeviceIdentity } from '../identity';
 import { ariaHoleHistory, t } from '../i18n';
 import { capitalize, sentenceStarts } from '../game/sentenceCase';
-import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 
 // The sentence result — a STAGE in two parts, the score above and the sentence's page
 // below (user-decided 2026-09-08, on #266's second review). It takes the whole column the
@@ -59,6 +59,11 @@ import { RESULTS_IN_MS, SCORE_COUNT_MS } from './resultAnimation';
 // inventing a parallel fast path, which is exactly what the decision asks for. Nothing
 // here listens for the tap: the round owns it, because the beats before this one (the
 // keyboard drop, the dissolve) are its.
+// The result choreography: the stage rises into the whole column the dissolved sentence
+// handed over, then the tally counts. Keep these numbers aligned with `.solved-stage` + its
+// card `.solved-numbers`, whose tally waits out the card's own rise.
+const RESULTS_IN_MS = 250;
+const SCORE_COUNT_MS = 800;
 // The secrets POP into the sentence one by one, 200ms apart, each a fast scale pop — the
 // round's three trophies counted out, back in the gaps they were taken from. Keep aligned
 // with `.solved-secret.in` / `solved-word-pop`.
@@ -91,6 +96,33 @@ function InfinityScore() {
       <path d={INFINITY_GLYPH.path} fill="currentColor" />
     </svg>
   );
+}
+
+// ONE BEAT of the reveal: false until `ready` has held for `delayMs`, then true. A settled
+// frame (`animate` off — rehydrated, or fast-forwarded) is true at once. Reduced motion
+// collapses the wait: to a 0ms timer, or — `syncWhenReduced` — to a synchronous set.
+function useBeat(
+  animate: boolean,
+  ready: boolean,
+  delayMs: number,
+  reduceMotion: boolean,
+  syncWhenReduced: boolean,
+): boolean {
+  const [on, setOn] = useState(() => !animate);
+  useEffect(() => {
+    if (!animate) {
+      setOn(true);
+      return undefined;
+    }
+    if (!ready) return undefined;
+    if (syncWhenReduced && reduceMotion) {
+      setOn(true);
+      return undefined;
+    }
+    const id = window.setTimeout(() => setOn(true), reduceMotion ? 0 : delayMs);
+    return () => window.clearTimeout(id);
+  }, [animate, ready, delayMs, reduceMotion, syncWhenReduced]);
+  return on;
 }
 
 // One OCCURRENCE of a secret in the solved sentence. A slug appearing twice yields two of
@@ -186,16 +218,7 @@ export default function SolvedScreen({
 
   // THE SCORE block, FIRST: its arrival is what starts the tally, so the number never
   // counts behind a block that has not appeared yet. It follows the stage's own rise.
-  const [scoreIn, setScoreIn] = useState(() => !animate);
-  useEffect(() => {
-    if (!animate) {
-      setScoreIn(true);
-      return undefined;
-    }
-    if (!stageIn) return undefined;
-    const id = window.setTimeout(() => setScoreIn(true), reduceMotion ? 0 : RESULTS_IN_MS);
-    return () => window.clearTimeout(id);
-  }, [animate, stageIn, reduceMotion]);
+  const scoreIn = useBeat(animate, stageIn, RESULTS_IN_MS, reduceMotion, false);
 
   // THE TALLY, once the card has LANDED (user-decided 2026-09-11): the card rises in
   // reading 0 over the whole bar, every cell there and none coloured yet, and only then
@@ -204,17 +227,8 @@ export default function SolvedScreen({
   // the number and the coloured cells cannot drift apart: at every frame the number says
   // how many tries are coloured. The ruler reserves its final footprint throughout, so
   // nothing below it moves.
-  const [countIn, setCountIn] = useState(() => !animate);
-  useEffect(() => {
-    if (!animate) {
-      setCountIn(true);
-      return undefined;
-    }
-    if (!scoreIn) return undefined;
-    // The card's own rise is the stage's (`.solved-numbers`, the same 250ms).
-    const id = window.setTimeout(() => setCountIn(true), reduceMotion ? 0 : RESULTS_IN_MS);
-    return () => window.clearTimeout(id);
-  }, [animate, scoreIn, reduceMotion]);
+  // The card's own rise is the stage's (`.solved-numbers`, the same 250ms).
+  const countIn = useBeat(animate, scoreIn, RESULTS_IN_MS, reduceMotion, false);
 
   const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
   useEffect(() => {
@@ -234,20 +248,7 @@ export default function SolvedScreen({
   // visible step comes well before the tween's own end (at 45% of it on a 3-try run), and
   // a timer off that end would hold everything still before SHARE.
   const countLanded = countIn && shownCount === guessCount;
-  const [shareIn, setShareIn] = useState(() => !animate);
-  useEffect(() => {
-    if (!animate) {
-      setShareIn(true);
-      return undefined;
-    }
-    if (!countLanded) return undefined;
-    if (reduceMotion) {
-      setShareIn(true);
-      return undefined;
-    }
-    const id = window.setTimeout(() => setShareIn(true), CLOSE_LEAD_MS);
-    return () => window.clearTimeout(id);
-  }, [animate, reduceMotion, countLanded]);
+  const shareIn = useBeat(animate, countLanded, CLOSE_LEAD_MS, reduceMotion, true);
 
   // THE PAGE, under the finished card: the credit types and the secrets pop into the
   // sentence — one beat, "here is what you rebuilt, and where it is from" — once SHARE
@@ -255,16 +256,7 @@ export default function SolvedScreen({
   // ends the reveal.
   const [captionDone, setCaptionDone] = useState(false);
   const finishCaption = useCallback(() => setCaptionDone(true), []);
-  const [textIn, setTextIn] = useState(() => !animate);
-  useEffect(() => {
-    if (!animate) {
-      setTextIn(true);
-      return undefined;
-    }
-    if (!shareIn) return undefined;
-    const id = window.setTimeout(() => setTextIn(true), reduceMotion ? 0 : TEXT_LEAD_MS);
-    return () => window.clearTimeout(id);
-  }, [animate, shareIn, reduceMotion]);
+  const textIn = useBeat(animate, shareIn, TEXT_LEAD_MS, reduceMotion, false);
 
   // THE SENTENCE, after the source (user-decided 2026-09-11: "score view → source →
   // sentence"): the text appears — and its secrets pop into it — once the citation has
@@ -308,20 +300,7 @@ export default function SolvedScreen({
 
   // The reveal's END: the secrets have popped into the sentence. The round disarms its
   // fast-forward on it.
-  const [textDone, setTextDone] = useState(() => !animate);
-  useEffect(() => {
-    if (!animate) {
-      setTextDone(true);
-      return undefined;
-    }
-    if (!sentenceIn) return undefined;
-    if (reduceMotion) {
-      setTextDone(true);
-      return undefined;
-    }
-    const id = window.setTimeout(() => setTextDone(true), popSpanMs);
-    return () => window.clearTimeout(id);
-  }, [animate, sentenceIn, reduceMotion, popSpanMs]);
+  const textDone = useBeat(animate, sentenceIn, popSpanMs, reduceMotion, true);
 
   useEffect(() => {
     if (textDone) onRevealEnd?.();
@@ -354,9 +333,9 @@ export default function SolvedScreen({
       },
       by,
     );
-    // This screen owns only its localized UNIT; the line's shape is share.ts's. A capped
-    // round names no count — `∞` stands where the number would, exactly as the card draws
-    // it — and the unit stays plural, since there is no "1" to agree with.
+    // This screen owns only its localized UNIT; the line's shape is @whippin/shared's. A
+    // capped round names no count — `∞` stands where the number would, exactly as the card
+    // draws it — and the unit stays plural, since there is no "1" to agree with.
     const unit = t(lang, !capped && guessCount === 1 ? 'try' : 'tries').toLowerCase();
     const headline = shareHeadline(puzzleRef, capped ? '∞' : guessCount, unit);
     // The card (via the token) draws the run in full; the plain-text row is the bounded

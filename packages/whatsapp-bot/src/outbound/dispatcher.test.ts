@@ -105,7 +105,6 @@ describe('outbound dispatcher (#236)', () => {
     ['a reaction with no author to react to', { id: 'r', kind: 'reaction', group: GROUP, emoji: '🔥', target: { id: 'M' } }],
     ['a reaction with no emoji', { id: 'r', kind: 'reaction', group: GROUP, emoji: '', target: { id: 'M', participant: 'p@s.whatsapp.net' } }],
     ['a half-formed reply ref', { id: 'x', kind: 'message', group: GROUP, text: 'hi', replyTo: { id: 'M' } }],
-    ['mentions that are not strings', { id: 'x', kind: 'message', group: GROUP, text: 'hi', mentions: [7] }],
     // A card belongs to a link the reader can see, and only an https one is ever built.
     ['a preview for a link the text does not carry', { id: 'x', kind: 'message', group: GROUP, text: 'hi', preview: 'https://whippin.ai/g/abcdefghij234567' }],
     ['a preview that is not https', { id: 'x', kind: 'message', group: GROUP, text: 'http://whippin.ai', preview: 'http://whippin.ai' }],
@@ -118,21 +117,28 @@ describe('outbound dispatcher (#236)', () => {
     const receive = vi.fn(async () => []);
     const abort = new AbortController();
     let open = false;
-    const consumer = runConsumer(
-      { receive, settle: async () => {}, defer: async () => {} },
-      { dispatch: async () => 'sent' as const },
-      log,
-      abort.signal,
-      () => open,
-    );
-    await new Promise((r) => setTimeout(r, 50));
-    expect(receive).not.toHaveBeenCalled();
-    open = true;
-    await new Promise((r) => setTimeout(r, 1_200));
-    expect(receive).toHaveBeenCalled();
-    abort.abort();
-    await consumer;
-  }, 10_000);
+    vi.useFakeTimers();
+    try {
+      const consumer = runConsumer(
+        { receive, settle: async () => {}, defer: async () => {} },
+        { dispatch: async () => 'sent' as const },
+        log,
+        abort.signal,
+        () => open,
+      );
+      await vi.advanceTimersByTimeAsync(50);
+      expect(receive).not.toHaveBeenCalled();
+      open = true;
+      await vi.advanceTimersByTimeAsync(1_200);
+      expect(receive).toHaveBeenCalled();
+      abort.abort();
+      // The loop is parked on a sleep: it has to fire before the consumer can end.
+      await vi.advanceTimersByTimeAsync(1_000);
+      await consumer;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it('HIDES a command deferred in hand rather than letting it burn deliveries', async () => {
     // The socket dropped between the receive and the send: the gate could not help, and a

@@ -16,7 +16,7 @@ export type Wait = (ms: number) => Promise<void>;
 
 export const sleep: Wait = (ms) => new Promise<void>((done) => setTimeout(done, ms));
 
-export function fullJitterDelayMs(
+function fullJitterDelayMs(
   retry: number,
   baseMs: number,
   random: () => number = Math.random,

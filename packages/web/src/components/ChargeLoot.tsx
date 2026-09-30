@@ -22,7 +22,7 @@ import type { CSSProperties } from 'react';
 // throw is rolled per hit (direction, distance, height, size), factors on em geometry the
 // CSS holds, so a run of similar guesses never stamps one identical splatter.
 const LOOT_LAUNCH_MS = 60;
-export const SPARK_FLIGHT_MS = 900;
+const SPARK_FLIGHT_MS = 900;
 const TRAIL_COPIES = 2;
 const TRAIL_LAG_MS = 45;
 // Where a drop lands around the hole: sideways either way, mostly BELOW the word (blood
@@ -47,7 +47,7 @@ export function chargeLootMs(startDelayMs: number): number {
 // eleven, the farthest rewarded one's 1.5 throws two.
 const POINTS_PER_SPARK = 2.5;
 const SPARKS_MIN = 2;
-export function sparkCount(charge: number): number {
+function sparkCount(charge: number): number {
   if (charge <= 0) return 0;
   return Math.max(SPARKS_MIN, Math.round(charge / POINTS_PER_SPARK));
 }
@@ -89,7 +89,7 @@ export default function ChargeLoot({
           rest: roll(0.15, 0.85).toFixed(3),
         };
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deliberately per hit: `charge` is read once, when the hit is thrown.
     [id],
   );
   // The FRONT after this hit, in the wrap's own width: the chip spans the word plus its

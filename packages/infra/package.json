@@ -14,7 +14,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@whippin/backend": "workspace:*",
     "@whippin/shared": "workspace:*",
     "aws-cdk-lib": "^2.214.0",
     "constructs": "^10.4.2",

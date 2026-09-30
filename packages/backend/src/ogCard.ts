@@ -18,7 +18,7 @@ import {
   renderGroupCardSvg,
   shareCardPath,
   bonusPath,
-  cardPuzzleLabel,
+  shareHeadline,
   dateForDayNumber,
   type CardData,
   type GroupCardData,
@@ -109,9 +109,7 @@ export function renderShareHtml(
   // ordinary HTML in the reader's own fonts; the card needs the shared path data because
   // Press Start 2P has no such glyph and the rasterizer loads nothing else.
   const count = result.capped ? '∞' : `${result.score}`;
-  const title = `Whippin AI ${cardPuzzleLabel(result)} — ${count} ${
-    result.capped || result.score !== 1 ? L.many : L.one
-  }`;
+  const title = shareHeadline(result, count, result.capped || result.score !== 1 ? L.many : L.one);
   // Click-through lands on the SHARED day, not today (#55): the token carries the
   // puzzle's dayNumber, and past days are playable at /<lang>/<YYYY-MM-DD>, so a shared
   // ARCHIVE result opens that archived date (a shared "today" result opens today's date,
@@ -148,14 +146,6 @@ export function renderGroupHtml(groupId: string, name: string, base: string): st
 
 // The preview page every shared link is served as: OG/Twitter meta carrying the card,
 // plus a redirect so a human who clicks lands where the link actually goes.
-//
-// The redirect is JavaScript, NOT `<meta http-equiv="refresh">`: preview crawlers don't
-// run JS, so they stop here and read THIS page's OG tags. A meta-refresh, by contrast, is
-// followed by some crawlers (e.g. Telegram) to the destination, whose default OG tags then
-// win — showing the wrong preview. The redirect sits in <head> so it fires DURING head
-// parsing, before the body paints, so a human never sees a "redirecting…" flash; the body
-// link is the no-JS fallback. Crawlers still read the OG meta below (a <script> doesn't
-// end the head).
 function previewPage(
   lang: string,
   rawTitle: string,
@@ -165,21 +155,57 @@ function previewPage(
 ): string {
   const title = escapeAttr(rawTitle);
   const image = escapeAttr(imageUrl);
+  return redirectPage(lang, title, target, linkLabel, [
+    '<meta property="og:type" content="website">',
+    `<meta property="og:title" content="${title}">`,
+    `<meta property="og:image" content="${image}">`,
+    `<meta property="og:image:width" content="${CARD_WIDTH}">`,
+    `<meta property="og:image:height" content="${CARD_HEIGHT}">`,
+    '<meta name="twitter:card" content="summary_large_image">',
+    `<meta name="twitter:title" content="${title}">`,
+    `<meta name="twitter:image" content="${image}">`,
+  ]);
+}
+
+// The page a DEAD link is served as — an invite naming no group, a share naming no result.
+// The route answers it with a 404, so a crawler unfurls nothing (it carries no OG meta
+// either, and `noindex`), while a person who clicked is moved on to `target`: the SPA
+// landing, which says the invite expired, or the site home.
+export function renderGoneHtml(target: string): string {
+  return redirectPage('en', 'Whippin AI', target, 'Whippin AI', [
+    '<meta name="robots" content="noindex">',
+  ]);
+}
+
+// The shell both pages share: a redirect in <head>, a no-JS link in the body, and the
+// head `meta` lines between (`title` arrives escaped).
+//
+// The redirect is JavaScript, NOT `<meta http-equiv="refresh">`: preview crawlers don't
+// run JS, so they stop here and read THIS page's OG tags. A meta-refresh, by contrast, is
+// followed by some crawlers (e.g. Telegram) to the destination, whose default OG tags then
+// win — showing the wrong preview. The redirect sits in <head> so it fires DURING head
+// parsing, before the body paints, so a human never sees a "redirecting…" flash; the body
+// link is the no-JS fallback. Crawlers still read the OG meta below (a <script> doesn't
+// end the head).
+//
+// The target is written into the script as a JSON string with every `<` escaped (`\u003c`,
+// still `<` once the script runs): JSON alone leaves `</script>` intact, and the origin
+// the target is built on can be the request's own Host.
+function redirectPage(
+  lang: string,
+  title: string,
+  target: string,
+  linkLabel: string,
+  meta: readonly string[],
+): string {
   return `<!doctype html>
 <html lang="${lang}">
 <head>
 <meta charset="utf-8">
-<script>location.replace(${JSON.stringify(target)})</script>
+<script>location.replace(${JSON.stringify(target).replace(/</g, '\\u003c')})</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title}</title>
-<meta property="og:type" content="website">
-<meta property="og:title" content="${title}">
-<meta property="og:image" content="${image}">
-<meta property="og:image:width" content="${CARD_WIDTH}">
-<meta property="og:image:height" content="${CARD_HEIGHT}">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="${title}">
-<meta name="twitter:image" content="${image}">
+${meta.join('\n')}
 </head>
 <body><a href="${escapeAttr(target)}">${linkLabel}</a></body>
 </html>`;

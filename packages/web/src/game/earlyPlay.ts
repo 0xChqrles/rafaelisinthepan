@@ -8,7 +8,8 @@
 // Progress is the SHARED reading: `holeProgress > 0` on any hole, which `computeProgress`
 // averages — an average of non-negative terms is above 0 exactly when one of them is.
 
-import { EARLY_GUESS_CAP, type RankMap, type RuntimeHole } from '@whippin/shared';
+import { EARLY_GUESS_CAP, type RankMap } from '@whippin/shared';
+import type { RuntimeHole } from './types';
 import { computeProgress, replayHoles } from './scoring';
 
 export function earlyLocked(

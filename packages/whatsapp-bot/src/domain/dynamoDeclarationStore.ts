@@ -22,7 +22,7 @@ import {
 } from '@aws-sdk/client-dynamodb';
 import { ownEarlierAttempt, type Declaration, type DeclarationStore } from './declarations';
 
-export function groupPartition(group: string): string {
+function groupPartition(group: string): string {
   return `GROUP#${group}`;
 }
 

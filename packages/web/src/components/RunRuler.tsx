@@ -36,7 +36,6 @@ export default function RunRuler({
       <div className="run-bar">
         {trajectory.map((pct, i) => (
           <span
-            // eslint-disable-next-line react/no-array-index-key
             key={i}
             className={`run-cell${i < filled ? ' on' : ''}`}
             style={

@@ -10,6 +10,7 @@ import type { PuzzleStore } from './store';
 // The card routes never touch the store; stub it so nothing else is exercised.
 const store: PuzzleStore = {
   getPuzzle: async () => null,
+  hasPuzzle: async () => false,
   getSlice: async () => null,
 };
 const handler = createHandler({ store });
@@ -104,6 +105,42 @@ describe('GET /s/<token>', () => {
   it('still 404s a corrupted CURRENT-version token (no redirect for a forgery)', async () => {
     const res = await handler(get(`/s/${token.slice(0, 4)}`));
     expect(res.statusCode).toBe(404);
+  });
+});
+
+// Every page the share and invite routes render is the one redirect shell: a script in
+// <head> and a no-JS link in the body, both built on the origin. Without a site origin (the
+// local serve) that origin is the request's own Host, which nothing validates — so no
+// character in it may end the script element early.
+describe('the redirect shell — a hostile Host (no site origin)', () => {
+  const host = 'x"</script><script>alert(1)//';
+  const base = `https://${host}`;
+
+  const expectOneScript = (body: string, target: string) => {
+    expect(body.match(/<script>/g)).toHaveLength(1);
+    expect(body.match(/<\/script>/g)).toHaveLength(1);
+    const script = /<script>location\.replace\((.*)\)<\/script>/.exec(body);
+    expect(script).not.toBeNull();
+    // The argument is still the exact target once the browser reads it.
+    expect(JSON.parse(script![1])).toBe(target);
+  };
+
+  it('a share page keeps its target inside the script', async () => {
+    const res = await handler(get(`/s/${token}`, { host }));
+    expect(res.statusCode).toBe(200);
+    expectOneScript(res.body, `${base}/fr/${dateForDayNumber(20638)}`);
+  });
+
+  it('a dead share page keeps its target inside the script', async () => {
+    const res = await handler(get('/s/AAAA', { host }));
+    expect(res.statusCode).toBe(404);
+    expectOneScript(res.body, `${base}/`);
+  });
+
+  it('a dead invite page keeps its target inside the script', async () => {
+    const res = await handler(get('/g/nope', { host }));
+    expect(res.statusCode).toBe(404);
+    expectOneScript(res.body, `${base}/`);
   });
 });
 

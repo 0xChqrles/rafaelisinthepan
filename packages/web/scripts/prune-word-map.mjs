@@ -10,10 +10,8 @@
 //   - the word itself (rank 0);
 //   - the NEAR FIELD — every group of rank <= `--top` (the committed boards use 150: it
 //     contains the game's own 50–150 start band and gives the free typing a real
-//     neighborhood to land on);
-//   - optionally, words outside that zone a board wants to name anyway (`--keep`; no board
-//     uses it since #269 retired the scripted guesses, kept for the next one that does).
-// A kept word brings its whole GROUP (every alias key at that rank), because `word`/`rank`/
+//     neighborhood to land on).
+// A rank is kept as a whole GROUP (every alias key at that rank), because `word`/`rank`/
 // `dq` are group properties and half a group is not a thing the schema describes.
 //
 // The board — which word, which start word — is declared ONCE, in
@@ -29,7 +27,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 function parseArgs(argv) {
-  const args = { keep: [] };
+  const args = {};
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
     const value = argv[i + 1];
@@ -42,10 +40,6 @@ function parseArgs(argv) {
       if (!Number.isInteger(top) || top < 1) throw new Error('--top needs a positive rank');
       args.top = top;
       i += 1;
-    } else if (flag === '--keep') {
-      if (!value) throw new Error('--keep needs a word');
-      args.keep.push(value);
-      i += 1;
     } else {
       throw new Error(`unknown argument: ${flag}`);
     }
@@ -57,21 +51,10 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2));
 const artifact = JSON.parse(readFileSync(args.in, 'utf8'));
 
-// The ranks of the groups the `--keep` words belong to. Missing means the board asks for a
-// word this neighborhood does not rank at all — a scripting mistake, not something to
-// silently drop (the "far" guess would then read as a MISS and teach the wrong lesson).
-const keptRanks = new Set(
-  args.keep.map((word) => {
-    const entry = artifact.ranks[word];
-    if (!entry) throw new Error(`--keep ${word}: absent from ${args.in}`);
-    return entry.rank;
-  }),
-);
-
 // Insertion order is the artifact's own, i.e. closest-first, which the embedded map keeps.
 const ranks = {};
 for (const [key, entry] of Object.entries(artifact.ranks)) {
-  if (entry.rank <= args.top || keptRanks.has(entry.rank)) {
+  if (entry.rank <= args.top) {
     ranks[key] = entry;
   }
 }

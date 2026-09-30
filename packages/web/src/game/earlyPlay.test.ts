@@ -5,7 +5,8 @@
 // ends agree on when the night ends without the refusal ever being what says so.
 
 import { describe, expect, it } from 'vitest';
-import { EARLY_GUESS_CAP, type RankMap, type RuntimeHole } from '@whippin/shared';
+import { EARLY_GUESS_CAP, type RankMap } from '@whippin/shared';
+import type { RuntimeHole } from './types';
 import { earlyLocked } from './earlyPlay';
 
 const RANKS: RankMap = {

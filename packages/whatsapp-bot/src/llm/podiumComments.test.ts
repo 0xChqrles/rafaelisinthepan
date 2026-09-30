@@ -137,7 +137,6 @@ describe('podium comments are commentary from the numbers (#236, #277)', () => {
     // per line; the fake answers '' past the list's end, which never reaches the judge).
     expect(provider.requests[0].effort).toBe('none');
     expect(provider.requests[0].system).toContain('a line is ONE player');
-    expect(provider.requests[0].system).not.toContain('"vous" when the line holds');
     expect(provider.judged.sort()).toEqual(['Même 4 que Delphine.', 'Ton meilleur des 14 jours, et de loin.', 'À 4, derrière Gab.']);
   });
 

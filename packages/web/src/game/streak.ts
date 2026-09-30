@@ -9,9 +9,8 @@
 // `currentStreak` MOVED to @whippin/shared with #204: the erase confirmation names the
 // streak the account being deleted is about to lose, so the SERVER derives one too, and two
 // spellings would put a different number on that dialog than this screen shows over the
-// same days. Re-exported here so every caller in this package keeps one import.
-import { currentStreak } from '@whippin/shared';
-export { currentStreak };
+// same days.
+import { currentStreak, weekStart } from '@whippin/shared';
 
 interface StreakTransition {
   previous: number;
@@ -40,22 +39,14 @@ interface WeekView {
   cells: WeekCell[]; // exactly 7, Monday..Sunday
 }
 
-// Monday-based weekday index (0 = Mon … 6 = Sun) of a dayNumber. dayNumber is whole days
-// since the Unix epoch at UTC midnight, so getUTCDay of that instant is the calendar
-// weekday; remap Sunday (0) to the Monday-first order. DST-safe — no local time involved.
-function mondayIndex(dayNumber: number): number {
-  const dow = new Date(dayNumber * 86_400_000).getUTCDay(); // 0 = Sun … 6 = Sat
-  return (dow + 6) % 7; // 0 = Mon … 6 = Sun
-}
-
 // The current week (the Monday..Sunday that contains `activeDay`, #74) as 7 cells. Pure
 // over the day array, like the counters, so it stays correct under any future set union.
 export function weekView(days: number[], activeDay: number): WeekView {
   const solvedSet = new Set(days);
-  const weekStart = activeDay - mondayIndex(activeDay); // this week's Monday
+  const monday = weekStart(activeDay); // this week's Monday
   const cells: WeekCell[] = [];
   for (let i = 0; i < 7; i++) {
-    const d = weekStart + i;
+    const d = monday + i;
     cells.push({
       dayNumber: d,
       solved: solvedSet.has(d),

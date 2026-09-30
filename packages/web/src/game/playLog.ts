@@ -20,7 +20,7 @@
 // Nothing here is an authority or a merge watermark. It is a VIEW, recomputed from its two
 // inputs, which is why the old reconciliation problem disappeared with the persisted round.
 
-import type { RankMap } from '@whippin/shared';
+import { ROUND_GUESS_CAP, type RankMap } from '@whippin/shared';
 import { guessKey } from './scoring';
 
 // The two inputs projected into one ordered log: server entries first (they are what the
@@ -51,6 +51,16 @@ export function playLogFor(
   outbox: readonly string[],
 ): string[] {
   return projectPlayLog(serverGuesses, outbox, (typed) => guessKey(ranks, typed));
+}
+
+// CAPPED: the server state is UNSOLVED with the raw cap stored, so every further append is
+// refused and the round ends at `∞`. Read off the RAW stored log — the one length the cap
+// counts — and DERIVED, never a stored flag. `solved` wins: a solve accepted as the last
+// raw entry is an ordinary solved round. A round whose state has not arrived is not capped.
+export function roundCapped(
+  server: { solved: boolean; guesses: readonly string[] } | null | undefined,
+): boolean {
+  return server != null && !server.solved && server.guesses.length >= ROUND_GUESS_CAP;
 }
 
 // Presentation-only view for the sentence board while a newly submitted guess's floating

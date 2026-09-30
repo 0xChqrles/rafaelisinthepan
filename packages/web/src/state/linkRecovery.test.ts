@@ -61,4 +61,18 @@ describe('ambiguous email-link recovery', () => {
       }),
     ).toMatchObject({ outcome: 'already_bound', accountId: SOURCE });
   });
+
+  it('an address the account already carried is already bound, even with a bind authorized', () => {
+    // The SAVE door re-submitting the address this account is saved under: nothing was
+    // bound by this verify, so the ending may not say "Account saved."
+    expect(
+      recoveredLinkResult({
+        summary: summary(SOURCE, EMAIL),
+        previousAccountId: SOURCE,
+        previousEmail: EMAIL,
+        requestedEmail: EMAIL,
+        bindingAuthorized: true,
+      }),
+    ).toMatchObject({ outcome: 'already_bound', accountId: SOURCE, email: EMAIL });
+  });
 });

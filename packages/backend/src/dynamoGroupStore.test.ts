@@ -178,6 +178,26 @@ describe('dynamoGroupStore (#271)', () => {
     ]);
   });
 
+  it('cleans up a membership whose group row is gone: both rows deleted, the absence asserted', async () => {
+    // The stray pair a deleted group leaves under another member. Nothing is decided from a
+    // snapshot here, so the transaction asserts the one fact it rests on — still no group.
+    const { send, client } = fakeClient({ group: false });
+    await expect(dynamoGroupStore(client, 'scores').leave(GROUP, THEM)).resolves.toBe(true);
+    const txs = transactions(send);
+    expect(txs).toHaveLength(1);
+    expect(txs[0].input.TransactItems).toEqual([
+      {
+        ConditionCheck: {
+          TableName: 'scores',
+          Key: { pk: { S: `group#${GROUP}` }, sk: { S: 'group' } },
+          ConditionExpression: 'attribute_not_exists(pk)',
+        },
+      },
+      { Delete: { TableName: 'scores', Key: { pk: { S: `group#${GROUP}` }, sk: { S: `member#${THEM}` } } } },
+      { Delete: { TableName: 'scores', Key: { pk: { S: `player#${THEM}` }, sk: { S: `group#${GROUP}` } } } },
+    ]);
+  });
+
   it('lists members and own groups in joinedAt order off strongly consistent Queries', async () => {
     const { send, client } = fakeClient({ members: 2, mine: 1 });
     const store = dynamoGroupStore(client, 'scores');
@@ -188,43 +208,59 @@ describe('dynamoGroupStore (#271)', () => {
     }
   });
 
-  it('leaveAll re-reads until the partition is empty, under the succession rule, and gives up loudly otherwise', async () => {
-    // Two memberships; the fake's groups are owned by ME and hold `members` other members.
-    let passes = 0;
-    const { client } = fakeClient({ mine: 2, members: 2 });
-    const base = client.send as unknown as ReturnType<typeof vi.fn>;
-    const send = vi.fn(async (command: unknown) => {
-      if (command instanceof QueryCommand && (command.input.ExpressionAttributeValues?.[':pk']?.S ?? '').startsWith('player#')) {
-        passes += 1;
-        return passes > 1 ? { Items: [] } : base(command);
-      }
-      return base(command);
-    });
-    await dynamoGroupStore({ send } as unknown as DynamoDBClient, 'scores').leaveAll(ME);
-    const txs = transactions(send);
-    expect(txs).toHaveLength(2);
-    // Each group: the owner's departure hands it to the OLDEST other member (nobody chooses).
-    for (const tx of txs) {
-      expect(tx.input.TransactItems).toHaveLength(3);
-      expect(tx.input.TransactItems![0].Update?.ExpressionAttributeValues?.[':successor']).toEqual({ S: 'm00000000000000' });
+  describe('leaveAll (the #204 departure)', () => {
+    // The fake's groups are owned by ME and hold `members` other members. The player's
+    // partition answers its memberships for `emptyAfter` reads, then nothing; the waits
+    // between passes are recorded, never slept.
+    function departing(opts: Parameters<typeof fakeClient>[0], emptyAfter = 1) {
+      let reads = 0;
+      const base = fakeClient(opts).send;
+      const send = vi.fn(async (command: unknown) => {
+        if (command instanceof QueryCommand && (command.input.ExpressionAttributeValues?.[':pk']?.S ?? '').startsWith('player#')) {
+          reads += 1;
+          if (reads > emptyAfter) return { Items: [] };
+        }
+        return base(command);
+      });
+      const waits: number[] = [];
+      const store = dynamoGroupStore({ send } as unknown as DynamoDBClient, 'scores', {
+        wait: async (ms) => {
+          waits.push(ms);
+        },
+      });
+      return { send, waits, store };
     }
 
-    // A group of one: the row goes with the membership.
-    passes = 0;
-    const solo = fakeClient({ mine: 1, members: 0 });
-    const soloBase = solo.client.send as unknown as ReturnType<typeof vi.fn>;
-    const soloSend = vi.fn(async (command: unknown) => {
-      if (command instanceof QueryCommand && (command.input.ExpressionAttributeValues?.[':pk']?.S ?? '').startsWith('player#')) {
-        passes += 1;
-        return passes > 1 ? { Items: [] } : soloBase(command);
+    it('re-reads until the partition is empty, each group under the succession rule', async () => {
+      const { send, waits, store } = departing({ mine: 2, members: 2 });
+      await store.leaveAll(ME);
+      const txs = transactions(send);
+      expect(txs).toHaveLength(2);
+      // Each group: the owner's departure hands it to the OLDEST other member (nobody chooses).
+      for (const tx of txs) {
+        expect(tx.input.TransactItems).toHaveLength(3);
+        expect(tx.input.TransactItems![0].Update?.ExpressionAttributeValues?.[':successor']).toEqual({ S: 'm00000000000000' });
       }
-      return soloBase(command);
+      // ONE wait, between the two reads of the partition, inside the conflict window.
+      expect(waits).toHaveLength(1);
+      expect(waits[0]).toBeLessThanOrEqual(20);
     });
-    await dynamoGroupStore({ send: soloSend } as unknown as DynamoDBClient, 'scores').leaveAll(ME);
-    expect(transactions(soloSend)[0].input.TransactItems![0].Delete?.Key?.sk).toEqual({ S: 'group' });
 
-    const stuck = fakeClient({ mine: 1 });
-    await expect(dynamoGroupStore(stuck.client, 'scores').leaveAll(ME)).rejects.toThrow(/converge/);
+    it('deletes a group of one: the row goes with the membership', async () => {
+      const { send, store } = departing({ mine: 1, members: 0 });
+      await store.leaveAll(ME);
+      const txs = transactions(send);
+      expect(txs).toHaveLength(1);
+      expect(txs[0].input.TransactItems![0].Delete?.Key?.sk).toEqual({ S: 'group' });
+    });
+
+    it('gives up loudly when the partition never empties', async () => {
+      const { send, waits, store } = departing({ mine: 1 }, Infinity);
+      await expect(store.leaveAll(ME)).rejects.toThrow(/converge/);
+      expect(transactions(send)).toHaveLength(4);
+      // Only BETWEEN passes: none before the first read, none before giving up.
+      expect(waits).toHaveLength(3);
+    });
   });
 
   it.each(['ConditionalCheckFailed', 'TransactionConflict'])('returns stale on %s without deleting membership', async (code) => {

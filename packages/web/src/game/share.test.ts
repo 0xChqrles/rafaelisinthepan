@@ -15,7 +15,6 @@ import {
   emojiRow,
   rowCellCount,
   rowMeans,
-  shareHeadline,
   shareText,
   shareUrl,
   MIN_ROW_CELLS,
@@ -23,13 +22,8 @@ import {
   ROW_BREAKPOINTS,
 } from './share';
 import { computeProgress, guessKey } from './scoring';
-import {
-  dayNumber,
-  decodeResult,
-  progressEmoji,
-  type RankMap,
-  type RuntimeHole,
-} from '@whippin/shared';
+import { decodeResult, progressEmoji, type RankMap } from '@whippin/shared';
+import type { RuntimeHole } from './types';
 
 // Visible glyphs in a row: a colored square is one code point, a keycap is three (digit +
 // VS16 + COMBINING ENCLOSING KEYCAP), so dropping the two combining marks counts cells.
@@ -137,16 +131,6 @@ describe('replayRun — the cells and the ticks come out of ONE walk', () => {
     const lastTick = Math.max(...solvedAt.map((at) => at ?? 0));
     expect(trajectory[lastTick - 1]).toBe(100);
     expect(trajectory.slice(0, lastTick - 1).every((p) => p < 100)).toBe(true);
-  });
-
-  it('is what the two single-purpose exports return', () => {
-    const ranks: RankMap = { a: mk(1000), b: mk(1000) };
-    const holes: RuntimeHole[] = [hole('a', 300), { ...hole('b', 300), pos: 2 }];
-    const tried = ['w200', 'w50', 'w0'];
-    expect(replayRun(holes, ranks, tried)).toEqual({
-      trajectory: replayRun(holes, ranks, tried).trajectory,
-      solvedAt: replayRun(holes, ranks, tried).solvedAt,
-    });
   });
 
   it('replays the SOLVED board from the counted tries, even across a slug collision', () => {
@@ -336,20 +320,6 @@ describe('emojiRow — the bounded row in plain text (fallback where no card ima
   it('handles no guesses without throwing', () => {
     expect(emojiRow([])).toBe('');
     expect(emojiRow([], [1, 2, 3])).toBe('');
-  });
-});
-
-describe('shareHeadline — the message\'s first line', () => {
-  it('names the day by its CALENDAR DATE, never the internal index', () => {
-    const day = dayNumber('2026-08-11');
-    expect(shareHeadline({ dayNumber: day }, 12, 'essais')).toBe('Whippin AI 2026-08-11 — 12 essais');
-    // The index says nothing to a reader, and the archive URL the link resolves to spells
-    // the date — so the message has to spell it too.
-    expect(shareHeadline({ dayNumber: day }, 12, 'essais')).not.toContain(String(day));
-  });
-
-  it('names a BONUS puzzle by its id — it is no day', () => {
-    expect(shareHeadline({ bonusId: 1234567 }, 12, 'essais')).toBe('Whippin AI BONUS 1234567 — 12 essais');
   });
 });
 

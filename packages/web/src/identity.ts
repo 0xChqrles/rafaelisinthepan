@@ -85,10 +85,10 @@ interface IdentityState {
   // bootstrap the other tab won), and an adopted account MAY ALREADY HOLD SERVER STATE.
   //
   // Published because a reader cannot tell the two apart from the transition alone, and the
-  // difference decides whether "brand new, therefore empty" is a fact or a guess: the
-  // leaderboard keeps its known-empty group list across a MINT (nothing to fetch could
-  // contradict it) and must drop it on an adoption, where a failed refresh would otherwise
-  // park a false "no group" under the stale-but-good rule with no retry offered.
+  // difference decides whether "brand new, therefore empty" is a fact or a guess. Its reader
+  // is the player's own face (`useOwnFace`): a MINTED account's first profile is the seed's
+  // face being written, so the face keeps drawing it across the deploy, where an adopted
+  // account's face is whatever its profile says.
   mintedHere: boolean;
 }
 
@@ -134,6 +134,11 @@ let pendingUnproven = false;
 // the live identity until this tab deliberately leaves it. This knowingly gives up the
 // cross-tab removal signal for that session-only identity.
 let sessionOnly = false;
+
+// The account the shared key still names under this tab's token after a link's adoption
+// failed to write: the residue of our own write, never news from another tab. Read back
+// from the key on every failed adoption, and consulted only while `sessionOnly` stands.
+let residueAccount: string | null = null;
 
 // A token this tab has AUTHORITATIVELY left. Conditional removal can fail (blocked or
 // throwing storage), but that must not make the next `ensure` re-adopt the revoked value
@@ -344,18 +349,15 @@ export function useSignedOut(): boolean {
   return useIdentityStore((state) => state.signedOut);
 }
 
+export function useMintedHere(): boolean {
+  return useIdentityStore((state) => state.mintedHere);
+}
+
 // The account the signed-out screen is ABOUT (user feedback 2026-08-26): the verdict's
 // public ids, for the screen to dress with the profile read's face. Null while the
 // device is not signed out — and on the theoretical verdict that carried no identity.
 export function useSignedOutAccount(): SignedOutTombstone | null {
   return useIdentityStore((state) => state.signedOutAs);
-}
-
-// Whether the identity this device holds was MINTED here rather than adopted (see
-// `mintedHere`). Read by anything that would otherwise infer "brand new, therefore empty"
-// from a tokenless -> identity transition, which an adoption does not license.
-export function useIdentityMintedHere(): boolean {
-  return useIdentityStore((state) => state.mintedHere);
 }
 
 export function identityScopeRevision(): number {
@@ -509,6 +511,19 @@ function syncFromStorage(): DeviceIdentity | null {
   // may be adopted normally.
   const ignored = stored.token !== null && departedTokens.has(stored.token);
   const found = ignored ? null : stored.identity;
+  // A link's ADOPTION whose write failed leaves the key naming the account it LEFT under
+  // this very token: the residue of our own write, which cannot disprove the session-only
+  // identity any more than an empty key can (below). Any OTHER account under the same
+  // token is a sibling tab's real link, and is followed.
+  if (
+    found &&
+    held &&
+    sessionOnly &&
+    found.token === held.token &&
+    found.accountId === residueAccount
+  ) {
+    return held;
+  }
   if (found) {
     sessionOnly = false;
     departedTokens.clear();
@@ -762,6 +777,11 @@ export function adoptLinkedAccount(
   // longer acts as. A write that cannot stick leaves the identity session-only, exactly as
   // a completed bootstrap's does.
   sessionOnly = !write(identity);
+  if (sessionOnly) {
+    const stored = readStored();
+    residueAccount =
+      stored.available && stored.identity?.token === held.token ? stored.identity.accountId : null;
+  }
   publish(identity);
   return true;
 }
@@ -837,6 +857,7 @@ let storageListener: ((event: StorageEvent) => void) | null = null;
 // Test seam: drop this module's state (it must not leak between tests).
 export function resetDeviceIdentity(): void {
   sessionOnly = false;
+  residueAccount = null;
   departedTokens.clear();
   dismissedTombstone = null;
   tombstoneShared = false;
@@ -848,5 +869,11 @@ export function resetDeviceIdentity(): void {
     window.removeEventListener('storage', storageListener);
   }
   storageListener = null;
-  useIdentityStore.setState({ identity: null, signedOut: false, signedOutAs: null, scopeRevision: 0 });
+  useIdentityStore.setState({
+    identity: null,
+    signedOut: false,
+    signedOutAs: null,
+    scopeRevision: 0,
+    mintedHere: false,
+  });
 }

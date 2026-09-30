@@ -22,6 +22,8 @@ import {
   EARLY_GUESS_CAP,
   ROUND_GUESS_CAP,
   ROUND_WRITE_MIN_MS,
+  SUPPORTED_LANGS,
+  VOCAB_BUILDS,
   type Puzzle,
 } from '@whippin/shared';
 import { createHandler } from './handler';
@@ -108,6 +110,9 @@ function puzzleStore(
       if (fullReadFails) throw new Error('S3 throttled');
       return sentence.current;
     },
+    async hasPuzzle() {
+      return sentence.current !== null;
+    },
     async getSlice() {
       return sentence.current ? buildSlice(sentence.current) : null;
     },
@@ -136,10 +141,6 @@ function makeHandler(
     now: () => new Date(current),
     allowedOrigin: ORIGIN,
     deviceStore: devices,
-    devices: {
-      turnstile: { async verify() { return options.turnstile !== false; } },
-      allowSourceIp: true,
-    },
     rounds: {
       roundStore: options.roundStore ?? memoryRoundStore(),
       scoreStore,
@@ -157,8 +158,9 @@ function makeHandler(
       current += ms;
     },
     // A republish under a LIVE handler. Artifact reads are fresh, so later requests must see
-    // the new revision without resetting any process-local state.
-    republish(puzzle: Puzzle) {
+    // the new revision without resetting any process-local state. `null` takes the day's
+    // artifacts away altogether.
+    republish(puzzle: Puzzle | null) {
       sentence.current = puzzle;
     },
   });
@@ -249,13 +251,17 @@ describe('protocol', () => {
     expect(response.statusCode).toBe(400);
   });
 
-  it("never reads the puzzle store — archive days sync like today's", async () => {
-    const response = await makeHandler()(
-      event({ query: { lang: 'fr', date: PAST_DATE }, body: body() }),
-    );
-    // Honest "none yet" from the round store, not a puzzle-store miss.
-    expect(response.statusCode).toBe(404);
-    expect(JSON.parse(response.body).error).toBe('not_found');
+  it("archive days sync like today's: a past day's log is stored and read back", async () => {
+    const handler = makeHandler();
+    const archive = { lang: 'fr', date: PAST_DATE };
+    const appended = await handler(event({ query: archive, body: body({ guesses: ['mer'] }) }));
+    expect(appended.statusCode).toBe(200);
+
+    const read = await handler(event({ query: archive }));
+    expect(read.statusCode).toBe(200);
+    expect(parsed(read).guesses).toEqual(['mer']);
+    // It is THAT day's round: today's is still the honest "none yet".
+    expect((await handler(event())).statusCode).toBe(404);
   });
 });
 
@@ -435,6 +441,43 @@ describe('the cap (#201)', () => {
     // The refusal still carries the truth, which is what lets the client re-size instead
     // of concluding the round is over.
     expect(parsed(refused).guesses).toHaveLength(ROUND_GUESS_CAP - 1);
+  });
+});
+
+// CONTRACT (#201): one coalesced flush is bounded by the guess cap itself, so the route's
+// body bound is DERIVED from the cap and the longest slug a vocabulary holds — a full-cap
+// batch of full-length slugs runs to several times the 4 KB the other live routes allow,
+// and refusing it (a 4xx the client closes on) would end a legitimate round.
+describe('the body bound', () => {
+  it.each(SUPPORTED_LANGS)(
+    `accepts a full flush of ${ROUND_GUESS_CAP} longest-possible %s slugs in one body`,
+    async (lang) => {
+      const { maxSlugLength } = VOCAB_BUILDS[lang];
+      // Distinct folded slugs of exactly the language's maximum length.
+      const guesses = Array.from({ length: ROUND_GUESS_CAP }, (_, i) =>
+        `${String.fromCharCode(97 + Math.floor(i / 26))}${String.fromCharCode(97 + (i % 26))}`.padEnd(
+          maxSlugLength,
+          'z',
+        ),
+      );
+      const flush = event({ query: { lang, date: ACTIVE_DATE }, body: body({ guesses }) });
+      // Well past the default live-body cap — the reason this route carries its own.
+      expect(Buffer.byteLength(flush.body!)).toBeGreaterThan(2 * 4_096);
+
+      const response = await makeHandler()(flush);
+      expect(response.statusCode).toBe(200);
+      expect(parsed(response).guesses).toEqual(guesses);
+    },
+  );
+
+  it('refuses a body no flush could need, before parsing or storing anything', async () => {
+    const handler = makeHandler();
+    const response = await handler(
+      event({ body: body({ guesses: ['mer'], padding: 'x'.repeat(64 * 1_024) }) }),
+    );
+    expect(response.statusCode).toBe(413);
+    expect(JSON.parse(response.body).error).toBe('payload_too_large');
+    expect((await handler(event())).statusCode).toBe(404);
   });
 });
 
@@ -737,8 +780,13 @@ describe('the derived summary (#203)', () => {
   it('a READ needs no slice and derives nothing', async () => {
     // The mount read is the player's own state, not a population claim — it must stay
     // cheap, and it must work on a day whose slice is missing.
-    const handler = makeHandler({ sentence: null });
-    expect((await handler(event())).statusCode).toBe(404); // nothing stored, not a slice 404
+    const handler = makeHandler();
+    await handler(event({ body: body({ guesses: ['mer'] }) }));
+    // The day's artifacts are gone: an append would now answer the day-addressed 404 above.
+    handler.republish(null);
+    const read = await handler(event());
+    expect(read.statusCode).toBe(200);
+    expect(parsed(read).guesses).toEqual(['mer']);
   });
 });
 
@@ -810,7 +858,16 @@ describe('what the answer is allowed to claim (#203)', () => {
       },
     });
 
-    const answer = await handler(event({ body: body({ guesses: ['phare', 'nuit'] }) }));
+    // The retries back off on the clock; the test runs those waits rather than sleeping them.
+    vi.useFakeTimers();
+    let answer: Awaited<ReturnType<typeof handler>>;
+    try {
+      const pending = handler(event({ body: body({ guesses: ['phare', 'nuit'] }) }));
+      await vi.runAllTimersAsync();
+      answer = await pending;
+    } finally {
+      vi.useRealTimers();
+    }
     expect(answer.statusCode).toBe(200);
     // The guesses ARE stored — that write committed.
     expect(parsed(answer).guesses).toEqual(['phare', 'nuit']);

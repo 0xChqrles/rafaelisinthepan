@@ -59,11 +59,11 @@ export const PRIVACY_CONTACT = 'hello@whippin.ai';
 export const PRIVACY_HOST = 'Amazon Web Services EMEA SARL, 38 avenue John F. Kennedy, L-1855 Luxembourg';
 
 // WHERE A MESSAGE TO US ENDS UP. Mail to `hello@` is forwarded (#230) to the operator's own
-// inbox — `OPERATOR_EMAIL`, a CI variable, so the code cannot know who hosts it — and that
+// inbox — `OPERATOR_EMAIL`, a CI secret, so the code cannot know who hosts it — and that
 // provider receives and stores the whole message, which makes it a recipient this page has
 // to name beside AWS, Cloudflare and Umami. The name is read off the address CI is
 // configured with; the day that inbox moves, this line moves with it.
-export const PRIVACY_MAILBOX_PROVIDER = 'Google';
+const PRIVACY_MAILBOX_PROVIDER = 'Google';
 
 // WHEN THIS WAS LAST TRUE. An ISO instant rather than a sentence per language: the two would
 // drift, and a date reads differently in the two locales anyway (the screen formats it).
@@ -84,7 +84,7 @@ interface Section {
   outro?: string;
 }
 
-export interface PrivacyDoc {
+interface PrivacyDoc {
   // The document's own first line — a sentence, set as a title (2026-09-03: "like a blog
   // post"). It is the claim the whole page substantiates.
   title: string;
@@ -101,7 +101,7 @@ export interface PrivacyDoc {
 //
 // `{mail}` and `{host}` are filled by the screen from PRIVACY_CONTACT / PRIVACY_HOST, so the
 // two languages cannot name two different inboxes — the `{n}` rule `tn` follows.
-export const PRIVACY: Record<UiLang, PrivacyDoc> = {
+const PRIVACY: Record<UiLang, PrivacyDoc> = {
   en: {
     title: 'What Whippin keeps about you, and why',
     lead: 'Whippin stores very little, but it does store a few things. This page lists all of them, explains what they are for, and tells you how to delete them.',

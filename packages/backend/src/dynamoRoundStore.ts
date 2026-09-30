@@ -1,16 +1,15 @@
 import {
-  BatchGetItemCommand,
   GetItemCommand,
   QueryCommand,
-  TransactWriteItemsCommand,
   UpdateItemCommand,
   type AttributeValue,
   type DynamoDBClient,
   type TransactWriteItem,
 } from '@aws-sdk/client-dynamodb';
 import { EARLY_GUESS_CAP, ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
+import { batchGetAll } from './dynamoBatchGet';
 import { isConditionFailure } from './dynamoErrors';
-import { BATCH_RETRY_ATTEMPTS, batchRetryDelayMs, sleep, type Wait } from './dynamoRetry';
+import { sleep, type Wait } from './dynamoRetry';
 import {
   earlyLocked,
   roundMonthPrefix,
@@ -40,7 +39,7 @@ const VERSION_BUMP_VALUES: Record<string, AttributeValue> = {
 
 export interface DynamoRoundStoreOptions {
   // Injected by tests, so asserting the retry SCHEDULE costs no real time.
-  wait?: (ms: number) => Promise<void>;
+  wait?: Wait;
 }
 
 // Production round records live in the score table (#201): one item per
@@ -59,11 +58,7 @@ export function dynamoRoundStore(
   tableName: string,
   options: DynamoRoundStoreOptions = {},
 ): RoundStore {
-  const wait = options.wait ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
-  const itemKey = (key: RoundKey, publicId: string) => ({
-    pk: { S: roundPartition(publicId) },
-    sk: { S: roundSortKey(key) },
-  });
+  const wait = options.wait ?? sleep;
 
   // Strongly consistent BY DEFAULT, for the score store's reason: the read lands right
   // after this player's own appends — the sync's catch-up on load, and the classification
@@ -73,7 +68,7 @@ export function dynamoRoundStore(
     const response = await client.send(
       new GetItemCommand({
         TableName: tableName,
-        Key: itemKey(key, publicId),
+        Key: roundItemKey(key, publicId),
         ConsistentRead: consistent,
       }),
     );
@@ -157,7 +152,7 @@ export function dynamoRoundStore(
     // resolved its edges into — the read shape the per-player partition was designed for
     // (roundStore.ts), never a read across players. Chunked at DynamoDB's 100-key batch
     // limit (GROUP_MEMBERS_MAX callers is one batch), with UnprocessedKeys
-    // retried behind the jittered schedule above.
+    // retried behind the jittered schedule (`dynamoBatchGet.ts`).
     //
     // EVENTUALLY CONSISTENT, where the score `getMany` reads consistently: a score row is
     // a final result the caller may have recorded a moment ago (their own just-finished
@@ -167,49 +162,30 @@ export function dynamoRoundStore(
     // exactly the rows with the least claim to it.
     async getMany(key, publicIds) {
       const partitionPrefix = roundPartition('');
-      const rows: RoundBoardRow[] = [];
-      const ids = [...new Set(publicIds)];
-      for (let i = 0; i < ids.length; i += 100) {
-        let keys: Record<string, AttributeValue>[] = ids
-          .slice(i, i + 100)
-          .map((id) => itemKey(key, id));
-        for (let attempt = 0; keys.length > 0; attempt += 1) {
-          if (attempt >= BATCH_RETRY_ATTEMPTS) {
-            throw new Error('Round batch read left unprocessed keys.');
-          }
-          // Only BETWEEN attempts: the first read of a batch is never delayed.
-          if (attempt > 0) await wait(batchRetryDelayMs(attempt - 1));
-          const response = await client.send(
-            new BatchGetItemCommand({
-              RequestItems: {
-                [tableName]: {
-                  Keys: keys,
-                  // The row's identity comes back out of its own partition key — the
-                  // publicId is what the key is built from, so no second attribute is
-                  // stored or read for it. The log crosses the wire because the exact
-                  // try count is a dedup over it (#206), which the stored summary
-                  // cannot answer.
-                  ProjectionExpression: `#pk, ${NAMES.guesses}, ${NAMES.puzzle}, ${NAMES.progress}`,
-                  ExpressionAttributeNames: {
-                    '#pk': 'pk',
-                    ...aliases('guesses', 'puzzle', 'progress'),
-                  },
-                },
-              },
-            }),
-          );
-          for (const item of response.Responses?.[tableName] ?? []) {
-            rows.push({
-              publicId: item.pk?.S?.slice(partitionPrefix.length) ?? '',
-              puzzle: puzzleOf(item) ?? '',
-              guesses: item.guesses?.L?.map((v) => v.S ?? '') ?? [],
-              progress: numberOf(item.progress) ?? 0,
-            });
-          }
-          keys = response.UnprocessedKeys?.[tableName]?.Keys ?? [];
-        }
-      }
-      return rows;
+      const items = await batchGetAll(
+        client,
+        tableName,
+        [...new Set(publicIds)].map((id) => roundItemKey(key, id)),
+        {
+          // The row's identity comes back out of its own partition key — the publicId is
+          // what the key is built from, so no second attribute is stored or read for it.
+          // The log crosses the wire because the exact try count is a dedup over it
+          // (#206), which the stored summary cannot answer.
+          ProjectionExpression: `#pk, ${NAMES.guesses}, ${NAMES.puzzle}, ${NAMES.progress}`,
+          ExpressionAttributeNames: {
+            '#pk': 'pk',
+            ...aliases('guesses', 'puzzle', 'progress'),
+          },
+        },
+        wait,
+        'Round',
+      );
+      return items.map((item): RoundBoardRow => ({
+        publicId: item.pk?.S?.slice(partitionPrefix.length) ?? '',
+        puzzle: puzzleOf(item) ?? '',
+        guesses: item.guesses?.L?.map((v) => v.S ?? '') ?? [],
+        progress: numberOf(item.progress) ?? 0,
+      }));
     },
 
     async get(key, publicId, puzzle, opts) {
@@ -273,7 +249,7 @@ export function dynamoRoundStore(
         const response = await client.send(
           new UpdateItemCommand({
             TableName: tableName,
-            Key: itemKey(input, input.publicId),
+            Key: roundItemKey(input, input.publicId),
             UpdateExpression:
               'SET #g = list_append(if_not_exists(#g, :empty), :batch), ' +
               '#p = :puzzle, #last = :now, #created = if_not_exists(#created, :created), ' +
@@ -339,7 +315,7 @@ export function dynamoRoundStore(
           const response = await client.send(
             new UpdateItemCommand({
               TableName: tableName,
-              Key: itemKey(input, input.publicId),
+              Key: roundItemKey(input, input.publicId),
               // A restart takes the RETIRED puzzle's derived summary with it: its `solved`
               // would otherwise freeze the fresh round on a sentence nobody is playing any
               // more.
@@ -417,7 +393,7 @@ export function dynamoRoundStore(
         await client.send(
           new UpdateItemCommand({
             TableName: tableName,
-            Key: itemKey(input, input.publicId),
+            Key: roundItemKey(input, input.publicId),
             UpdateExpression: input.solved
               ? `SET #prog = :progress, #solved = :solved, ${VERSION_BUMP}`
               : `SET #prog = :progress, ${VERSION_BUMP}`,
@@ -494,9 +470,9 @@ function numberOf(value: AttributeValue | undefined): number | undefined {
   return value?.N === undefined ? undefined : Number(value.N);
 }
 
-// The exact item a round lives at — the closure above spells the same key; this one is for
-// the plan below, which runs outside the store.
-export function roundItemKey(key: RoundKey, publicId: string): Record<string, AttributeValue> {
+// The exact item a round lives at: ONE spelling for the store above and for the plan below,
+// which runs outside it.
+function roundItemKey(key: RoundKey, publicId: string): Record<string, AttributeValue> {
   return { pk: { S: roundPartition(publicId) }, sk: { S: roundSortKey(key) } };
 }
 

@@ -6,19 +6,24 @@
 > caching) — plus the testing policy and the issue/PR workflow. Read it first.
 > The share routes (`/s/<token>`, `/og/<token>.png`) render tokens from the shared
 > `shareCard` codec; their product behavior is described in the solved-result bullet
-> of `packages/web/AGENTS.md`. A SIGNED share (`/s/<token>/<publicId>`, root `AGENTS.md`
-> 2026-09-05) reads the signer's profile through the best-effort `readFace` (`no-store`
-> on a failed read, the group preview's 300s otherwise), hands
-> the face to the renderers as a second argument, and bounces into the shared day exactly
-> like a plain share (no landing since 2026-09-10); a deleted signer renders the PLAIN share. Since #214 a SENTENCE token is **v6** and may be CAPPED:
+> of `packages/web/AGENTS.md`. A SIGNED share (`/s/<token>/<publicId>`, root `AGENTS.md`)
+> reads the signer's profile through the best-effort `readFace` (`no-store` on a failed
+> read, the group preview's 300s otherwise), hands the face to the renderers as a second
+> argument, and bounces into the shared day exactly like a plain share; a deleted signer
+> renders the PLAIN share. A SENTENCE token (**v6**) may be CAPPED (#214):
 > `ogCard.renderShareHtml` then titles the result `∞` (the literal character — this page is
 > ordinary HTML in the reader's own fonts) while `renderCardSvg` draws the shared PATH data,
 > because the one font in the Lambda bundle has no such glyph and the rasterizer runs with
-> `loadSystemFonts: false`. No route changed: the version check and the legacy redirect are
-> the codec's — but the `/og` route now hands the DECODED result STRAIGHT to the renderer
-> (`CardData` IS `ShareResult`). It used to re-list the fields, which is a second declaration
-> of one shape and silently drops whatever the codec learns next: it did exactly that with
-> `capped`, drawing a try count on a card whose own share page already said `∞`.
+> `loadSystemFonts: false`. The version check and the legacy redirect are the codec's; the
+> `/og` route hands the DECODED result STRAIGHT to the renderer (`CardData` IS
+> `ShareResult`) — re-listing its fields would be a second declaration of one shape, silently
+> dropping whatever the codec learns next (a capped card drawing a try count). A DEAD share
+> PAGE — a token naming no result (a superseded one still 301s to its day) or a malformed
+> signature — is a **404 served as HTML** (`ogCard.renderGoneHtml`: the preview pages'
+> `location.replace` shell, `noindex`, no OG meta) that moves a person on to the site home:
+> the status keeps a crawler from unfurling anything, and a person's browser gets a page
+> rather than a JSON body. A dead CARD (`/og/…`) stays a JSON 404. Same headers as the JSON
+> answer (CORS, no `Cache-Control`).
 
 ## File map
 
@@ -27,13 +32,18 @@
     src/
       handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local);
                               also the share routes and #271's group invite preview (/g/<groupId>)
-      store.ts                PuzzleStore interface (date+lang -> Puzzle | PuzzleSlice | null)
+      respond.ts              the Function-URL event/result shapes, CORS + the preflight max-age,
+                              the json/html/png/redirect answers, and the puzzle's brotli/gzip
+                              negotiation + the response-envelope budget
+      store.ts                PuzzleStore interface (date+lang -> Puzzle | PuzzleSlice | null,
+                              + the `hasPuzzle` existence probe) and the one not-found reading
       s3Store.ts, fsStore.ts  store impls: S3 (prod) and local FS (#17), both read the same key
       slice.ts                #203's DERIVATION SLICE: build it from a puzzle, read a log against
                               it (progress + solved), its gzip codec and its shape check
       puzzleReads.ts          #203's artifact reads: the slice (every append) and the full
                               puzzle (a solve), BOTH fresh, both gated on the caller's revision
-      scores.ts               /scores GET route (READ-ONLY since #203): params, derived histogram
+      scores.ts               /scores GET route (read-only): params, the existence probe, the
+                              derived histogram and the caller's band
       liveRoute.ts            what the LIVE routes share: no-store headers, the JSON-body
                               reader + size cap, #216's device-token check and the
                               `unknown_device` resolution behind it, the (lang, date)
@@ -105,16 +115,27 @@
                               (conflict > operational > business refusal)
       dynamoRetry.ts          the ONE backoff schedule (full jitter, doubling window) the
                               batch reads and the conflict loops share
+      dynamoBatchGet.ts       the ONE BatchGetItem chunk-and-retry loop the score and round
+                              `getMany` run on that schedule
+      dynamoExpressionChecks.ts  TEST-ONLY: the expression alias / condition checks the
+                              round and link store suites share
       turnstile.ts            Cloudflare Siteverify + explicit local accept-all verifier
-      ogCard.ts               resvg-wasm rasterizer + the preview PAGE template (share links + #271 group invites)
+      ogCard.ts               resvg-wasm rasterizer + the preview PAGE template (share links + #271 group
+                              invites) and the dead link's 404 page
       layout.ts               storeKey() / sliceKey() — the keys shared by readers + publish (#17/#4/#203)
       serve.ts                local HTTP server: Function-URL⇄HTTP adapter over createHandler (#17)
+      seedBoard.ts            `pnpm board:seed`: the LOCAL-ONLY board population seeder, played
+                              against a running `backend:dev`
       publish.ts              place a generated puzzle into local store (default) or S3 (#17/#4),
                               stamping its #203 `revision` and deriving its slice beside it;
                               an S3 publish of a sentence puzzle also APPENDS the ledger
       ledger.ts               the PUBLISH LEDGER (packages/generation/published.jsonl): the line
                               a sentence publish earns, the append, and `puzzle:ledger --s3`
                               (rebuild it from the bucket)
+      inventory.ts            `pnpm puzzle:inventory` (#61): publish-buffer coverage, one
+                              existence probe per (day, lang), local store or S3
+      stack.ts                the deployed WhippinBackendStack's outputs (bucket + API
+                              distribution) and its region, for publish, ledger and inventory
       config.ts               env names + one decrypted SSM GetParameters read
       index.ts                Lambda entrypoint (S3/Dynamo stores + async secret initialization)
     .local-store/<date>.<lang>.json          local puzzle store (gitignored) read by serve/fsStore
@@ -141,20 +162,24 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
 
 *(Safe to update without touching the invariants above.)*
 
-- **Score population (#169; per-player rows + identity #187; READ-ONLY since #203):** the
-  ONE handler serves `GET /scores?lang=&date=`. A
+- **Score population (#169; per-player rows #187; read-only, the round route writing the
+  rows #203):** the ONE handler serves `GET /scores?lang=&date=[&id=]`. A
   successful response is `{ buckets: [{ min, max, count }], total, bucket }`, inclusive
   ranges **derived at read time from the day's per-player rows** (one exact ascending band
-  per distinct recorded score; an empty population is `buckets: []`), with `bucket` always
-  `null` — the read carries no identity, and the client locates its own score in the
-  ranges. Every response is `no-store`. A POST is a named **405**: the row is written by the
-  ROUND route from the log the server already holds (#203) — and only when that round
-  finished ON THE DAY (2026-08-23), so an archive play joins no population and gets
-  `bucket: null` here. This file no longer
-  authenticates, verifies Turnstile, validates a range or hashes an address —
-  `hashClientIp` stays here beside the store contract, but its caller is `rounds.ts`.
-  It still reads the published puzzle, so an unpublished daily 404s rather than getting an
-  empty population. `dynamoScoreStore` creates a row with ONE transaction — the conditional
+  per distinct recorded score; an empty population is `buckets: []`). `bucket` is the
+  CALLER's band: `id` is their PUBLIC id (`PUBLIC_ID_PATTERN`, 400 when malformed; it
+  grants nothing, like `/board`'s), and `bucket` is `null` when no `id` is named or the
+  population holds no row for it — never a match on the number, which would hand a player
+  whose row the IP cap refused someone else's standing. Every response is `no-store`. A
+  POST is a named **405**: the row is written by the ROUND route from the log the server
+  already holds (#203) — and only when that round finished ON THE DAY, so an archive play
+  joins no population and gets `bucket: null` here. This file does not authenticate,
+  verify Turnstile, validate a range or hash an address. `hashClientIp` lives here beside
+  the store contract; its callers are `rounds.ts` (the score row's per-IP dedup) and
+  `link.ts` (the per-IP code-send allowance). It asks the puzzle store only WHETHER
+  the day is published (`PuzzleStore.hasPuzzle`: an S3 `HeadObject`, a `stat` locally —
+  never the multi-MB artifact, on an anonymous uncached route), so an unpublished daily
+  404s rather than getting an empty population. `dynamoScoreStore` creates a row with ONE transaction — the conditional
   5-count/48h-TTL dedup update plus a create-only put of the `(date, lang, publicId)`
   row. The row and its idempotency token both carry the published `revision`: a second
   submission on that version is `already_recorded`, while a different revision conditionally
@@ -197,13 +222,16 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   like every live JSON write (same OAC boundary); the `id` query must stay in the CloudFront
   profile behavior's allowList (root `AGENTS.md` contract).
 
-- **Group invite preview (#271; the shape is #189's player preview, user-decided
-  2026-08-20):** the ONE handler serves the invite LINK itself — `GET /g/<groupId>`, the
-  page a chat unfurls, and `GET /og/g/<groupId>.png`, the card it unfurls into (name +
-  member marks + app name, at most six tiles then a `+N`). Both resolve BEFORE the puzzle
-  logic (no lang, no day, nothing to 400 on); the id is matched loosely and validated with
-  the shared `GROUP_ID_PATTERN`, so a malformed one is a 404 that never reaches the store; a
-  link naming no group is a 404 "expired" cached 300s; the faces are `readGroupFace`
+- **Group invite preview (#271):** the ONE handler serves the invite LINK itself —
+  `GET /g/<groupId>`, the page a chat unfurls, and `GET /og/g/<groupId>.png`, the card it
+  unfurls into (name + member marks + app name, at most six tiles then a `+N`). Both
+  resolve BEFORE the puzzle logic (no lang, no day, nothing to 400 on); the id is matched
+  loosely and validated with the shared `GROUP_ID_PATTERN`, so a malformed one is a 404
+  that never reaches the store; a link naming no group is a 404 "expired" cached 300s. On
+  the PAGE both 404s are HTML (`ogCard.renderGoneHtml`, the share routes' dead-link page,
+  same headers as the JSON answer): an expired invite moves a person on to the SPA landing
+  `/join/g/<groupId>`, which shows the EXPIRED state, and a malformed id to the site home
+  (the id is never written into the page); the CARD's 404s stay JSON. The faces are `readGroupFace`
   (`groups.ts`) — the member list dressed like board rows, a GONE account dropped — and a
   read that FAILED answers `no-store` where an answered one caches for 300s. `siteOrigin`
   is what the preview page bounces to (the SPA landing `/join/g/<groupId>`), and
@@ -218,8 +246,8 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   `remove`) and two verbs in one body is a 400; every POST answers `{ groups }` as the list
   now stands through `listGroups` (the caller's memberships off their own partition, each
   with its member ids — one consistent Query per group, GROUPS_MAX at most), `create` adding
-  the minted id as `created`. The NAME is validated against the shared `isValidName` (never
-  empty) and moderated by `nameFilter.ts` (400 `name_rejected`). The stores: `create` is ONE
+  the minted id as `created`. The NAME is validated against the shared `isValidGroupName`
+  (the player name's charset at `GROUP_NAME_MAX_LENGTH` = 20; never empty) and moderated by `nameFilter.ts` (400 `name_rejected`). The stores: `create` is ONE
   create-only transaction of the group row + the creator's membership pair asserting the
   creator's account; `join` reads the group row, the caller's own membership row (an
   `already` writes nothing — the pair is one transaction, so there is no half to repair),
@@ -296,10 +324,11 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   **The LIVE routes share their plumbing** (`liveRoute.ts`, extracted 2026-08-20 when
   `/board` became the FOURTH byte-identical copy): the `no-store` header, the body
   reader with its 4 KB cap, the `{token}` device resolution, and the `(lang, date)` guard
-  pair with the +1-day future skew. **`clientIp` and `requireTurnstileToken` live here**,
-  shared by the gated writes (round creation and the device bootstrap): a route reaching into `scores.ts` for them would make that file a utility module
-  for routes it knows nothing about. `hashClientIp` stays in /scores — only the score
-  submission dedups by address. A supported language is one the pipeline has built
+  pair with the +1-day future skew. **`clientIp` and `requireTurnstile` (the whole gate) live here**,
+  shared by the gated writes (round creation, the device bootstrap and the link code send): a route reaching into `scores.ts` for them would make that file a utility module
+  for routes it knows nothing about. `hashClientIp` stays in `scores.ts`, beside the store
+  contract that names the digest; `rounds.ts` (the score row's dedup) and `link.ts` (the
+  per-IP send allowance) import it. A supported language is one the pipeline has built
   a vocabulary for (shared `VOCAB_BUILDS`, #200 — the same record the sentence ceiling
   comes from). The lang check is `Object.hasOwn`, deliberately —
   a bare `map[lang] === undefined` walks the prototype chain, so `constructor` /
@@ -423,15 +452,16 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   the round-start challenge is demanded, since the derivation's pre-read is eventually
   consistent and a stale `null` 403s an append the client sent no token with. And
   **`/scores` takes the caller's `id`** so the band it reports is theirs rather than whoever
-  else recorded the same number (`buildSlice` also stopped reading `holes[secret]` through
-  Object.prototype, which swallowed a `constructor` secret whole). A truth that reads SOLVED
+  else recorded the same number (above). `buildSlice` reads `holes[secret]` with
+  `Object.hasOwn`, since through Object.prototype a `constructor` secret is swallowed
+  whole. A truth that reads SOLVED
   then records the day's score row — `countTries` over the FULL artifact (`loadPuzzle`), the
   one thing the slice cannot answer — and that write's failures are LOGGED, never surfaced:
   the answer is about the log. `puzzleReads.ts` holds NO state — both reads are fresh, so
   there is nothing to reset between tests and nothing an instance can answer a later
   request from.
   Round CREATION is Turnstile-gated: the sentence round has no START message, so the
-  challenge rides the append whose pre-read found nothing (`requireRoundStart`), and a bare
+  challenge rides the append whose pre-read found nothing (`requireTurnstile`), and a bare
   token with no guesses is a 400 rather than a free challenge to burn. `RoundHandlerDeps`
   therefore carries `scoreStore` + `ipHmacSecret` beside its verifier — explicitly, rather
   than reaching into `deps.scores` for them, which would make that file a utility module for

@@ -1,14 +1,22 @@
 // Shared plumbing of the LIVE routes (/scores, /profile, /groups, /board, /round): the
 // no-store header, the JSON-body reader with its size cap, the #216 device-token
 // authentication (`requireDevice`, which replaced the #187 secret check), the Turnstile
-// token check the gated writes share, and the (lang, date) query guard pair the
+// gate the gated writes share, and the (lang, date) query guard pair the
 // day-addressed reads share. Each of these existed as a byte-identical copy
 // per route (four by the time /board landed) — one spelling here is what keeps a guard
 // from quietly drifting between routes.
 
 import { isIP } from 'node:net';
-import { bonusAddress, dayNumber, isBonusId, isValidDeviceToken, VIEWER_IP_HEADER, VOCAB_BUILDS } from '@whippin/shared';
-import { isValidDate } from './layout';
+import {
+  bonusAddress,
+  dayNumber,
+  isBonusId,
+  isCalendarDate,
+  isValidDeviceToken,
+  SUPPORTED_LANGS,
+  VIEWER_IP_HEADER,
+  VOCAB_BUILDS,
+} from '@whippin/shared';
 import {
   deviceTokenHash,
   staleLastSeen,
@@ -16,24 +24,27 @@ import {
   type ResolvedDevice,
 } from './deviceStore';
 import { errorResponse, type FnUrlEvent, type FnUrlResult } from './respond';
+import type { TurnstileVerifier } from './turnstile';
 
 export const LIVE_HEADERS = { 'Cache-Control': 'no-store' } as const;
 
 // Every live body is small (a secret, a score, a 19-char avatar); the default cap only
 // exists so a hostile body cannot make JSON.parse chew megabytes.
-export const LIVE_BODY_MAX_BYTES = 4_096;
+const LIVE_BODY_MAX_BYTES = 4_096;
 
-// The puzzle route's future guard, applied to the day-addressed live reads too.
+// How far (whole days) a requested date may sit AHEAD of the server's active day and
+// still be served: +1 tolerates client clock skew around the 22:00 flip without exposing
+// a pre-published future puzzle beyond the adjacent day. The PAST is open (the archive is
+// date-addressed), so only the future is guarded. ONE window for the puzzle route
+// (handler.ts) and the day-addressed live reads below.
 export const DATE_SKEW_DAYS = 1;
 
 // What the 400 tells the caller, spelled from the record the check reads rather than
 // restated — the drift this file's own guard exists to remove.
-const SUPPORTED_LANGS = Object.keys(VOCAB_BUILDS)
-  .map((lang) => `"${lang}"`)
-  .join(', ');
+const SUPPORTED_LANG_NAMES = SUPPORTED_LANGS.map((lang) => `"${lang}"`).join(', ');
 
 // A guard either yields the validated value or the response to return as-is.
-export type Guarded<T> = { ok: true; value: T } | { ok: false; response: FnUrlResult };
+type Guarded<T> = { ok: true; value: T } | { ok: false; response: FnUrlResult };
 
 const refuse = (response: FnUrlResult): { ok: false; response: FnUrlResult } => ({
   ok: false,
@@ -133,7 +144,8 @@ export async function requireDevice(
   return { ok: true, value: resolved };
 }
 
-function header(event: FnUrlEvent, name: string): string | undefined {
+// A request header by name, whatever case it arrived in.
+export function header(event: FnUrlEvent, name: string): string | undefined {
   const wanted = name.toLowerCase();
   for (const [key, value] of Object.entries(event.headers ?? {})) {
     if (key.toLowerCase() === wanted) return value;
@@ -162,12 +174,11 @@ export function clientIp(event: FnUrlEvent, allowSourceIp = false): string | nul
 
 // Cloudflare tokens run well under this; the bound only exists so a hostile body cannot
 // hand Siteverify a megabyte.
-export const TURNSTILE_TOKEN_MAX_LENGTH = 2_048;
+const TURNSTILE_TOKEN_MAX_LENGTH = 2_048;
 
-// The Turnstile-gated writes' shared token check (a round start, a device bootstrap, a link
-// code send). A missing or implausible token is refused as the authentication failure it
-// is, before any network call is made.
-export function requireTurnstileToken(
+// A missing or implausible Turnstile token is refused as the authentication failure it is,
+// before any network call is made.
+function requireTurnstileToken(
   body: Record<string, unknown>,
   headers: Record<string, string>,
 ): Guarded<string> {
@@ -184,11 +195,35 @@ export function requireTurnstileToken(
   return { ok: true, value: token };
 }
 
+// The Turnstile gate the gated writes share (a round start, a device bootstrap, a link code
+// send): the token's shape, then ONE Siteverify call against the trusted viewer address.
+// It yields that ADDRESS, which the link send goes on to meter by. A caller with no trusted
+// address cannot be verified at all — the CDN stamps one on every gated route, so its
+// absence is a wiring fault rather than a refusal, and `write` names which route hit it.
+export async function requireTurnstile(
+  body: Record<string, unknown>,
+  event: FnUrlEvent,
+  deps: { turnstile: TurnstileVerifier; allowSourceIp?: boolean },
+  headers: Record<string, string>,
+  write: string,
+): Promise<Guarded<string>> {
+  const token = requireTurnstileToken(body, headers);
+  if (!token.ok) return token;
+  const remoteIp = clientIp(event, deps.allowSourceIp === true);
+  if (!remoteIp) {
+    throw new Error(`${write} has no trusted client IP address.`);
+  }
+  if (!(await deps.turnstile.verify(token.value, remoteIp))) {
+    return refuse(errorResponse(403, 'turnstile_rejected', 'Turnstile token is invalid.', headers));
+  }
+  return { ok: true, value: remoteIp };
+}
+
 interface LangParams {
   lang: string;
 }
 
-export interface DayParams extends LangParams {
+interface DayParams extends LangParams {
   date: string;
 }
 
@@ -213,7 +248,7 @@ export function requireLangParams(
         // operator-visible signal of exactly the drift this record exists to remove:
         // it would keep offering "en" or "fr" after the pipeline built a third
         // language, and keep claiming a language is supported after one was dropped.
-        `Query parameter "lang" must be a supported language (${SUPPORTED_LANGS}).`,
+        `Query parameter "lang" must be a supported language (${SUPPORTED_LANG_NAMES}).`,
         headers,
       ),
     );
@@ -244,7 +279,7 @@ export function requireDayParams(
     return { ok: true, value: { lang, date: bonusAddress(bonusId) } };
   }
   const date = event.queryStringParameters?.date;
-  if (!date || !isValidDate(date)) {
+  if (!date || !isCalendarDate(date)) {
     return refuse(
       errorResponse(
         400,

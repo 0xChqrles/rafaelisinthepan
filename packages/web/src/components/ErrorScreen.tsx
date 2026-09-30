@@ -45,10 +45,7 @@ import botIdle from '../assets/error-bot-idle.png';
 //
 // Follows the modal rules (`useModalDismiss`) for DISMISSAL: opening focuses the dialog, a
 // backdrop tap is not one (there is no backdrop left to tap), and Escape leaves through the
-// `error-out` exit beat. The retired retry needed a synchronous, in-tap firing (WebKit refuses
-// a clipboard write reached across an async boundary — PR-219 review); with the retry gone
-// that constraint is gone with it, and the act is re-run from the screen that owns it, inside
-// its own fresh tap.
+// `fade-out` exit beat.
 export default function ErrorScreen({
   lang,
   title,
@@ -62,7 +59,7 @@ export default function ErrorScreen({
   note: string;
   onClose: () => void;
 }) {
-  const { closing, beginClose, dialogProps } = useModalDismiss('error-out');
+  const { closing, beginClose, dialogProps } = useModalDismiss('fade-out');
 
   return (
     <dialog
