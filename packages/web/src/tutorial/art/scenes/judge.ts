@@ -17,30 +17,33 @@ const judge: SceneMaker = (cols, rows, stage) => {
   const I_MUTED = RAMP.length + 3;
 
   // GEOMETRY — [word chips] [matrix] [score bars]. The matrix is as tall as its box allows
-  // while the chips and bars still fit beside it at their leanest; then they take the width
-  // left, up to their ideal proportions. On a card the box stays clear of the band its foot
-  // dithers the art out across, and of the level's number and length in its top corners: it
-  // stands BELOW them, centred in the room left. (Squeezed BETWEEN them it held a bigger
-  // matrix on a phone's short card, but ran up the card's top edge beside the labels.)
+  // while the chips and bars still fit beside it; then they take the width left, up to their
+  // ideal proportions. The group is centred on what is DRAWN: the widest chip on the left, and
+  // on the right the leader's bar, the longest (about BAR_REACH of the column). On a card it
+  // stands below the level's number and length in the top corners, and reaches down into the
+  // band its foot dithers the art out across, as every card's picture does.
+  const BAR_REACH = 0.85;
   const fit = (y0: number, y1: number, x0: number, x1: number, fill: number) => {
     const room = y1 - y0;
     const span = x1 - x0;
-    const want = Math.min(room * fill, (span - 10) / 1.63);
+    const want = Math.min(room * fill, (span - 10) / 1.8);
     const step = Math.max(4, Math.min(6, Math.round(want / 11)));
     const n = Math.max(6, Math.min(20, Math.floor((want + 1) / step)));
     const size = n * step - 1;
     const gap = step + 1;
     const left = span - 2 * gap - size;
-    const labelW = Math.round(Math.min(size * 0.28, left * 0.3));
-    const barW = Math.round(Math.min(size * 0.7, left * 0.7));
-    const mx = Math.round(x0 + (span - labelW - size - barW - 2 * gap) / 2) + labelW + gap;
+    const labelW = Math.round(Math.min(size * 0.34, left * 0.3));
+    const barW = Math.round(Math.min(size * 0.9, left * 0.7));
+    const drawn = labelW + gap + size + gap + barW * BAR_REACH;
+    const mx = Math.round(x0 + (span - drawn) / 2) + labelW + gap;
     // Centred in its room — and never above it: a box too short for the smallest matrix lets
     // its bottom rows fade into the foot rather than rise into the labels.
     return { step, n, size, gap, labelW, barW, mx, my: y0 + Math.max(0, Math.round((room - size) / 2)) };
   };
   const foot = stage.h < rows;
-  let g = fit(0, stage.h, cols * 0.1, cols * 0.9, 0.82);
-  if (foot) g = fit(12, stage.h - 9, cols * 0.1, cols * 0.9, 0.96);
+  const g = foot
+    ? fit(12, stage.h - 2, cols * 0.08, cols * 0.92, 1)
+    : fit(0, stage.h, cols * 0.1, cols * 0.9, 0.82);
   const { step, n, size, gap, labelW, barW, mx, my } = g;
   const cell = step - 1;
   const bx = mx + size + gap;

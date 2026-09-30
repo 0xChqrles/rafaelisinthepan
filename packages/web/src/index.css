@@ -4386,12 +4386,12 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--solve);
 }
 /* THE VOICE: the coach's line on the ground, set like an article's standfirst, in the
-   articles' 680px measure. Its room is reserved on the wrapper — three lines wide, four on a
-   narrow tablet, five on a phone — so an absent line never collapses it and nothing under it
-   ever moves. */
+   articles' 680px measure. Its room is reserved on the wrapper — two lines wide, three on a
+   tablet, four on a phone, the longest line's need at each (measured) — so an absent line
+   never collapses it and nothing under it ever moves. */
 .l1-voice {
   --voice-fs: 16.5px;
-  --voice-lines: 3;
+  --voice-lines: 2;
   align-self: stretch;
   padding-top: 16px;
   height: calc(var(--voice-fs) * 1.65 * var(--voice-lines) + 16px);
@@ -4402,13 +4402,15 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   font-weight: 450;
   line-height: 1.65;
   height: 100%;
+  /* A line may break where its copy says so ("Trouvés en 2 essais !\nEssayons…"). */
+  white-space: pre-line;
   /* Copy past the room is a COPY bug (too much to read): the clip makes it visible instead
      of growing the voice. */
   overflow: hidden;
 }
 @media (max-width: 820px) {
   .l1-voice {
-    --voice-lines: 4;
+    --voice-lines: 3;
   }
 }
 /* The prompt's own cobalt underscore, riding the last letter out while the line types. */
@@ -4658,7 +4660,7 @@ figure.l1-fig {
   }
   .l1-voice {
     --voice-fs: 15px;
-    --voice-lines: 5;
+    --voice-lines: 4;
     padding-top: 12px;
     height: calc(var(--voice-fs) * 1.65 * var(--voice-lines) + 12px);
   }
@@ -4674,8 +4676,8 @@ figure.l1-fig {
     margin-bottom: 10px;
   }
 }
-/* The narrowest phones: the longest line (the full meter's) holds in its five lines down to
-   320, in either language (measured). */
+/* The narrowest phones: the longest line holds in its four lines down to 320, in either
+   language (measured). */
 @media (max-width: 360px) {
   .l1-voice {
     --voice-fs: 14px;
@@ -4686,11 +4688,6 @@ figure.l1-fig {
   .l1-title {
     font-size: 13.5px;
     letter-spacing: -0.02em;
-  }
-}
-@media (max-width: 340px) {
-  .l1-voice {
-    --voice-fs: 13px;
   }
 }
 /* A short screen: the plate gives up height first. */

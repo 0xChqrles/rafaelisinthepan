@@ -419,8 +419,8 @@ const STRINGS = {
   // ---- the LESSON (#51, remade by #269): level 1 is the game, played. The coach is
   // REACTIVE — it speaks on a mistake or a stall, never on success (tutorial/coach.ts) — so
   // every line here is the ONE thing a guess calls for. Deliberately TERSE, no under-the-hood
-  // talk. HARD LIMIT: the coach's line has a fixed room (`.l1-voice`: 3 lines wide, 4 at
-  // ≤820px, 5 on a phone) and clips — a string that wraps past it is too much: cut it.
+  // talk. HARD LIMIT: the coach's line has a fixed room (`.l1-voice`: 2 lines wide, 3 at
+  // ≤820px, 4 on a phone) and clips — a string that wraps past it is too much: cut it.
   // Copy uses CoachText's inline markup so words LOOK like what they are in-game:
   // [[b:secret]] solve cobalt, [[w:hint^rank]] the held word's chip + rank exponent,
   // [[m:miss]] MISS's red. The {braces} are filled by coach.ts from the board itself, so a
@@ -443,12 +443,12 @@ const STRINGS = {
     en: 'Now a sentence, with two secret words.',
     fr: 'Maintenant une phrase, avec deux mots secrets.',
   },
-  // The sentence solved: the bot counts the tries — the score, said once — and says this one
-  // was easy where the daily sentences are harder (user-decided 2026-09-16): the hook the
-  // first-letter lesson will hang from.
+  // The sentence solved: the bot counts the tries — the score, said once — and leads on to a
+  // harder sentence, the meter stage (user-decided 2026-09-30, cutting "this one was easy:
+  // the daily sentences are harder"). The newline is the voice's own (`pre-line`).
   tutSolved: {
-    en: 'You found both in {n} tries. This one was easy: the daily sentences are harder.',
-    fr: 'Trouvés en {n} essais ! Celle-ci était facile, les vraies phrases sont plus dures.',
+    en: 'Found in {n} tries!\nLet’s try a harder sentence.',
+    fr: 'Trouvés en {n} essais !\nEssayons une phrase plus dure.',
   },
   // CONTINUE leads from that line into the meter stage — the one control, named for what
   // it does (never "tap anywhere").
@@ -459,26 +459,26 @@ const STRINGS = {
   // The briefing and the click instruction in ONE box (user-decided 2026-09-16; the wheel is
   // the next thing to open, the keyboard waits behind it).
   tutMeterIntroTap: {
-    en: 'I already made some progress on this sentence, but I cannot find the last word. Tap {word} to see my tries.',
-    fr: "J'ai déjà un peu avancé sur cette phrase mais je ne trouve pas le dernier mot. Touche {word} pour voir mes essais.",
+    en: 'I already made progress on this sentence. Tap {word} to see my tries.',
+    fr: "J'ai déjà avancé sur cette phrase. Touche {word} pour voir mes essais.",
   },
   tutMeterIntroClick: {
-    en: 'I already made some progress on this sentence, but I cannot find the last word. Click {word} to see my tries.',
-    fr: "J'ai déjà un peu avancé sur cette phrase mais je ne trouve pas le dernier mot. Clique sur {word} pour voir mes essais.",
+    en: 'I already made progress on this sentence. Click {word} to see my tries.',
+    fr: "J'ai déjà avancé sur cette phrase. Clique sur {word} pour voir mes essais.",
   },
   tutMeterTapped: {
-    en: 'The 1000 closest words to the secret fill its meter. Once full, you earn a clue.',
-    fr: 'Les 1000 mots les plus proches du secret remplissent sa jauge. Une fois pleine, on gagne un indice.',
+    en: 'The 1000 closest words to the secret fill its meter. Once full, you unlock clues.',
+    fr: 'Les 1000 mots les plus proches du secret remplissent sa jauge. Une fois pleine, on débloque des indices.',
   },
   // The activation (user-decided 2026-09-22, replacing the first letter): the given words
   // are MASKED in the word's tries, and a tap on one reveals it for a try.
   tutActivatedTap: {
-    en: 'The meter is full! {n} words close to the secret are masked in its tries. Tap {word}, pick a masked word, then press enter to reveal it — it costs a try.',
-    fr: 'Jauge pleine ! {n} mots proches du secret sont masqués dans ses essais. Touche {word}, choisis un mot masqué, puis valide pour le révéler, contre un essai.',
+    en: 'The meter is full! Tap {word} and reveal a word.',
+    fr: 'Jauge pleine ! Touche {word}, et révèle un mot.',
   },
   tutActivatedClick: {
-    en: 'The meter is full! {n} words close to the secret are masked in its tries. Click {word}, pick a masked word, then press enter to reveal it — it costs a try.',
-    fr: 'Jauge pleine ! {n} mots proches du secret sont masqués dans ses essais. Clique sur {word}, choisis un mot masqué, puis valide pour le révéler, contre un essai.',
+    en: 'The meter is full! Click {word} and reveal a word.',
+    fr: 'Jauge pleine ! Clique sur {word}, et révèle un mot.',
   },
   // A hint revealed: named, priced, and the turn handed back.
   tutRevealed: {

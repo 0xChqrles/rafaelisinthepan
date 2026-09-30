@@ -3034,15 +3034,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     at; the keys arrive with the line that hands the turn over — which types only once the
     WHEEL IS CLOSED (`tapped` lands on close, same day).
     that a rank-200 guess still fills it). The beats, each on the player's act: "I already
-    made some progress on this sentence, but I cannot find the last word. Click
-    equality¹¹ to see my tries." (ONE box, no beat between — user-decided 2026-09-16; TAP
-    on a coarse pointer — every tap line has its click twin) → tapped: "The 1000 closest words to the
-    secret fill its meter. Once full, you earn a clue." → a guess that does not fill:
-    `tutNear` → the obvious guess FILLS IT — no progress needed — and the hole ACTIVATES:
-    "The meter is full! 10 words close to the secret are masked in its tries. Click
-    freedom¹, pick a masked word, then press enter to reveal it — it costs a try."
-    (`tutActivatedTap`/`Click`, 2026-09-22; the tap teaches the wheel a second time and
-    the price once) → a hint REVEALED by an empty ENTER on the ghost: "unalienable² is revealed, for one try. Now find the secret word."
+    made progress on this sentence. Click equality¹¹ to see my tries." (ONE line, no beat
+    between — user-decided 2026-09-16; TAP on a coarse pointer — every tap line has its
+    click twin) → tapped: "The 1000 closest words to the secret fill its meter. Once full,
+    you unlock clues." (fr « on débloque des indices », never « on gagne un indice ») → a
+    guess that does not fill: `tutNear` → the obvious guess FILLS IT — no progress needed —
+    and the hole ACTIVATES: "The meter is full! Click freedom¹ and reveal a word."
+    (`tutActivatedTap`/`Click`, 2026-09-22; the tap teaches the wheel a second time)
+    (user-decided 2026-09-30, cutting the long lines: « J'ai déjà avancé sur cette phrase.
+    Clique sur parcours pour voir mes essais. », « Jauge pleine ! Touche {word}, et révèle
+    un mot. ») → a hint REVEALED by an empty ENTER on the ghost: "unalienable² is revealed, for one try. Now find the secret word."
     (`tutRevealed`, off the event's `revealed` flag) → a FAILED TRY typed after it earns the HINT
     (`hints[]`, or `pair.hint` once swapped), NEVER THE WORD (user-decided 2026-09-16,
     retiring the bot's own closing guess) → found: "You found it! You are ready for the real
@@ -3078,10 +3079,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   with a peak and snow on top.", user-decided 2026-09-16) → the ANSWER (`[2,2,9]` on the word — TWO failed tries in a row earn a REALLY
   EASY hint outright, "montagne is a bit hard", user-decided 2026-09-16; `[4,8,12]` on the
   sentence, the hole resisting longest chosen); the sentence teaches NO tap (dropped 2026-09-16: "this concept
-  will be taught on the next sentence"); SOLVED, the bot counts the tries and sets up what comes next (`tutSolved`, "You found both
-  in 7 tries. This one was easy: the daily sentences are harder." — the score, said once,
-  and the hook the METER stage hangs from, user-decided 2026-09-16; a found single word
-  still says nothing). The `{braces}` are filled from the board itself, so a line can never
+  will be taught on the next sentence"); SOLVED, the bot counts the tries and sets up what comes next (`tutSolved`, « Trouvés en
+  7 essais !\nEssayons une phrase plus dure. » / "Found in 7 tries!\nLet’s try a harder
+  sentence." — the score, said once, and the hook the METER stage hangs from, user-decided
+  2026-09-16, cut 2026-09-30; a found single word still says nothing). The `{braces}` are filled from the board itself, so a line can never
   name a word the map does not rank. THE COACH BOX IS THREE LINES, FIVE AT MOST (user-decided 2026-09-16, lifting the
   exact-three rule of 2026-08-04: the box is fixed-positioned and moves nothing beneath, and
   the bot's briefing on the last sentence runs to five at 320px — `.coach-text`
