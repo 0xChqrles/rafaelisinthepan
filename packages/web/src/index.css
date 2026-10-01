@@ -7912,7 +7912,11 @@ figure.l1-fig {
   font-size: 0.62em;
   color: var(--rank-color);
 }
+/* Every other quoted word: the held chip's white ground, no rank. */
 .ar-word {
+  padding: 0.13em 0.2em;
+  background: var(--fg);
+  color: var(--bg);
   font-family: var(--pixel-font);
   font-size: 0.82em;
   white-space: nowrap;

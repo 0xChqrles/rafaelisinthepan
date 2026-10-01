@@ -2957,7 +2957,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (from a word, guess the words around it; user-decided 2026-09-29: fastText's CBOW is not
   worth a detour, the game's embedding "learned the same way"). **A secret next to ranked
   words shows FOUND** — the solve's cobalt, as the game inks a hole in (`mot^0`, and the
-  word an example sentence is about) — never the held chip, which is a guess's. Every level
+  word an example sentence is about) — never the held chip, which is a guess's. **Every other
+  word the prose quotes wears the held chip's white ground** (user-decided: the accent word is
+  the one you are trying to get close to, the white ones are the others). Every level
   ends on the problem the next one answers. The end is three bands: NEXT LEVEL, PLAY, then the
   credit to the article apart. On a wide screen the list and an article scroll the WHOLE
   VIEWPORT, so the scrollbar stands on the screen's edge (user-decided 2026-09-29). **Written in French first** (user-decided 2026-09-29: "wait for the article

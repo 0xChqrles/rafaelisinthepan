@@ -5,7 +5,7 @@ import { t } from '../../i18n';
 import { useArticleLang } from './lang';
 
 // THE ARTICLES' INLINE MARKUP (types.ts): words quoted the way the game shows them — the pixel
-// face, as the coach quotes its own — a rank wearing the sentence's heat exponent, a hidden
+// face on the held chip's white ground — a rank wearing the sentence's heat exponent, a hidden
 // word as an empty hole, and the terms a paragraph defines. Everything else is plain text.
 // In an example SENTENCE (`mode="sentence"`, set whole in the pixel face like the game's
 // own), a quoted word is the one the sentence is about: its secret, shown found.

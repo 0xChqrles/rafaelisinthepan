@@ -3,7 +3,7 @@
 // what it says, so it lives in its own module (`fr.ts`, …) and never in `i18n.ts`.
 //
 // INLINE MARKUP, in every string below (`Rich.tsx` renders it):
-//   `mot`      a word as the game shows one — the pixel face, as the coach quotes its words
+//   `mot`      a word as the game shows one — the pixel face, on the held chip's white ground
 //   `mot^12`   the same word wearing its rank, the heat-coloured exponent of the sentence
 //   `mot^0`    the secret itself, SOLVED — the game's cobalt ink, as a found word reads
 //   `___`      a hidden word: an empty hole

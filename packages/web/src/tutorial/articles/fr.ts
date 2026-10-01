@@ -30,7 +30,7 @@ const distance: Article = {
     {
       blocks: [
         {
-          p: 'Comment le jeu peut calculer la distance entre le sens des mots ? Une distance, c’est une valeur numérique, donc il faut réussir à exprimer le sens des mots sous une forme numérique également. En gros, exprimer des informations complexes sous forme de nombres, ça a un nom, ça s’appelle un **embedding**. On pourrait par exemple donner des coordonnées aux mots, ce qui permettrait ensuite de mesurer facilement à quel point deux mots sont proches.',
+          p: 'Comment le jeu peut calculer la distance entre le sens des mots? Une distance, c’est une valeur numérique, donc il faut réussir à exprimer le sens des mots sous une forme numérique également. En gros, exprimer des informations complexes sous forme de nombres, ça a un nom, ça s’appelle un **embedding**. On pourrait par exemple donner des coordonnées aux mots, ce qui permettrait ensuite de mesurer facilement à quel point deux mots sont proches.',
         },
         {
           fig: {
@@ -106,7 +106,7 @@ const distance: Article = {
           caption: 'Et on recommence, quelques milliards de fois.',
         },
         {
-          p: 'Après seulement quelques milliards de répétitions, la loss commence à descendre sérieusement. Mais ce qui nous intéresse surtout, c’est ce que toutes ces corrections ont fait à nos vecteurs. Imaginons que le réseau rencontre régulièrement ce genre de phrases :',
+          p: 'Après "seulement" quelques milliards de répétitions, la loss commence à descendre sérieusement. Mais ce qui nous intéresse surtout, c’est ce que toutes ces corrections ont fait à nos vecteurs. Imaginons que le réseau rencontre régulièrement ce genre de phrases :',
         },
         {
           sentence: [
@@ -138,7 +138,7 @@ const meanings: Article = {
     {
       blocks: [
         {
-          p: 'Notre embedding a un défaut de naissance, il est **statique** : il attribue un seul vecteur à chaque mot, quelle que soit la phrase. Or un mot n’a pas qu’un seul sens. Pendant l’entraînement, `voler` a traîné aussi souvent avec des avions qu’avec des cambrioleurs, et son vecteur a fini quelque part entre les deux, dans un endroit qui n’est ni tout à fait le ciel ni tout à fait la poche des autres.',
+          p: 'Notre embedding a un défaut de naissance, il est **statique** : il attribue un seul vecteur à chaque mot, quelle que soit la phrase. Or un mot n’a pas qu’un seul sens. Pendant l’entraînement, `voler` a traîné aussi souvent avec des avions qu’avec des cambrioleurs, et son vecteur a fini quelque part entre les deux, dans un endroit qui n’est ni tout à fait le ciel ni tout à fait la roue avant de mon vélo.',
         },
         {
           fig: {
@@ -164,7 +164,7 @@ const meanings: Article = {
         },
         { sentence: ['Ne crains plus jamais le vide, c’est le refuge de ceux qui `volent`'] },
         {
-          p: 'Ici, aucun cambrioleur. Pourtant, voici les voisins de `volent` selon l’embedding :',
+          p: 'Ici, aucun cambrioleur. Pourtant, voici les voisins de `volent^0` selon l’embedding :',
         },
         {
           fig: {
@@ -188,7 +188,7 @@ const meanings: Article = {
               },
             ],
           },
-          caption: 'Les dix plus proches voisins de `volent` selon l’embedding. En couleur, ceux qui n’ont rien à faire dans le ciel.',
+          caption: 'Les dix plus proches voisins de `volent^0` selon l’embedding. En couleur, ceux qui n’ont rien à faire dans le ciel.',
         },
         {
           p: 'La moitié de la liste dans le ciel, l’autre moitié dans la rubrique faits divers. Mais prenons un autre exemple, plus subtil :',
@@ -199,7 +199,7 @@ const meanings: Article = {
             sentence: 'On me `traite` avec une douceur d’infirmière',
             lists: [{ words: ['aborder', 'documenter', 'consacrer', 'examiner', 'disséquer', 'disserter'] }],
           },
-          caption: 'Parmi les plus proches voisins de `traite` selon l’embedding.',
+          caption: 'Parmi les plus proches voisins de `traite^0` selon l’embedding.',
         },
         {
           p: 'L’embedding a compris « traiter un sujet ». La phrase, elle, parle de traiter quelqu’un. Le joueur qui tape dorloter ou ménager a parfaitement compris la phrase, pourtant le jeu lui répond qu’il en est loin. De cette injustice naît la frustration, et la frustration, ça mène à la guerre. Alors donner une phrase au joueur ne suffit pas. Il faut que l’embedding, lui aussi, lise la phrase.',
@@ -365,7 +365,7 @@ const judge: Article = {
           ],
         },
         {
-          p: 'La consigne est écrite en français ordinaire : seul le sens compte, pas la grammaire, pas l’orthographe, pas le fait que le candidat puisse remplacer le mot dans la phrase. Prenons `nerfs` :',
+          p: 'La consigne est écrite en français ordinaire : seul le sens compte, pas la grammaire, pas l’orthographe, pas le fait que le candidat puisse remplacer le mot dans la phrase. Prenons `nerfs^0` :',
         },
         {
           fig: {
@@ -382,14 +382,14 @@ const judge: Article = {
               },
             ],
           },
-          caption: 'Les plus proches voisins de `nerfs` selon l’embedding seul, puis selon Jev dans sa phrase.',
+          caption: 'Les plus proches voisins de `nerfs^0` selon l’embedding seul, puis selon Jev dans sa phrase.',
         },
         {
           p: 'Jev a compris qu’on parlait de tempérament et pas de neurologie. Au début, Jev faisait pourtant lui aussi des erreurs :',
         },
         { sentence: ['la force d’étouffer mes `émotions`'] },
         {
-          p: '`étouffer` n’est pas un mot proche d’`émotions`, c’est un mot de la phrase. Alors j’ai ajouté une ligne à la consigne :',
+          p: '`étouffer` n’est pas un mot proche d’`émotions^0`, c’est un mot de la phrase. Alors j’ai ajouté une ligne à la consigne :',
         },
         {
           quote:
@@ -399,7 +399,7 @@ const judge: Article = {
           p: '`étouffer` est passé de la 27e à la 1 182e place. En trifouillant dans les **hidden states**, je pouvais constater qu’un résultat était mauvais, mais pas expliquer au vecteur pourquoi. Ici, si Jev se trompe pour une raison que je peux formuler, je peux simplement lui dire.',
         },
         {
-          p: 'Tout ne se règle pas avec des mots pour autant. J’avais aussi écrit qu’un candidat qui n’est pas français méritait la note la plus basse, et Jev l’a superbement ignoré. `retirement` est resté premier voisin de `retraite`. J’ai fini par régler ça avec une autre question, posée à part pour chacun des 200 premiers : est-ce bien un mot français ?',
+          p: 'Tout ne se règle pas avec des mots pour autant. J’avais aussi écrit qu’un candidat qui n’est pas français méritait la note la plus basse, et Jev l’a superbement ignoré. `retirement` est resté premier voisin de `retraite^0`. J’ai fini par régler ça avec une autre question, posée à part pour chacun des 200 premiers : est-ce bien un mot français ?',
         },
       ],
     },
@@ -417,7 +417,7 @@ const judge: Article = {
           p: 'Pour chaque duel, Jev donne une probabilité de victoire aux deux candidats, et le score final d’un mot est simplement sa probabilité moyenne de victoire sur l’ensemble de ses confrontations. Un algorithme de tri classique demanderait beaucoup moins de comparaisons. Mais un tri suppose qu’on puisse faire confiance à la fonction qui compare deux éléments. Si `A > B` et `B > C`, on aimerait raisonnablement pouvoir en déduire que `A > C`. Jev, lui, peut très bien répondre que `A < C`, il n’est ni parfaitement déterministe, ni parfaitement transitif. Dans un tri classique, une mauvaise comparaison pourrait envoyer un mot au mauvais endroit et influencer toute la suite. Dans un tournoi complet, chaque candidat affronte les 199 autres, et s’il prend une décision étrange, elle se retrouve diluée parmi 198 autres confrontations.',
         },
         {
-          p: 'Et ça fonctionne vraiment. Pour le mot secret `froidement`, `impassibilité` passe de la 6e à la 2e place. Pour `beauté`, `fascination` remonte de la 152e à la 13e.',
+          p: 'Et ça fonctionne vraiment. Pour le mot secret `froidement^0`, `impassibilité` passe de la 6e à la 2e place. Pour `beauté^0`, `fascination` remonte de la 152e à la 13e.',
         },
         {
           fig: {
@@ -432,7 +432,7 @@ const judge: Article = {
               { word: 'impavide', from: 790, win: 0.956 },
             ],
           },
-          caption: 'Le haut du tournoi pour `froidement`.',
+          caption: 'Le haut du tournoi pour `froidement^0`.',
         },
         {
           p: 'Enfin, au-delà du 200e rang, je conserve simplement l’ordre des notes de Jev. Personne ne s’en rendra compte, mais maintenant vous le savez.',
