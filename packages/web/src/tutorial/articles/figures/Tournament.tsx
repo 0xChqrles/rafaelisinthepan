@@ -3,9 +3,9 @@ import { rankHeatColor } from '@whippin/shared';
 import { t } from '../../../i18n';
 import { useArticleLang } from '../lang';
 
-// THE TOP OF A REAL TOURNAMENT: each word's place in the embedding (far, the weird red), the
-// share of its 199 duels it won, and the place the tournament gives it — the sentence's
-// exponent colours on both ends, so the climb reads as the game would print it.
+// THE TOP OF A REAL TOURNAMENT: each word's place by its grade, its mean win probability
+// over its 199 duels, and the place the tournament gives it — the sentence's exponent
+// colours on both ends, so the climb reads as the game would print it.
 export default function Tournament({
   rows,
   labels,

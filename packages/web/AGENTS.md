@@ -2948,11 +2948,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (user-decided 2026-09-29: "not fully interactive like the first one… more like an article,
   like the chqrles.me article, but without all the story telling"): the author's published
   article cut into four, its own sentences and examples, figures redrawn in the app's style
-  (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **The article's own
+  (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **They say how it works,
+  never the journey** (user-decided: "we're explaining how it works, not how it didn't work,
+  nor how we've tried to make it work") — no attempt, failure or fix is told. **The article's own
   words, not a comma changed** (user-decided: "if you can reuse an article part without
   modifying it, then reuse it without modifying it, not even a single comma"): a paragraph
-  the article has is used exactly as it prints it; a sentence changes only where it points
-  into the cut story, contradicts the code, or jokes about a real person, and nothing the
+  the article has is used exactly as it prints it; a sentence changes only where it tells
+  the journey or points into the cut story, contradicts the code, or jokes about a real person, and nothing the
   article does not say is added to explain it. **Facts follow the CODE
   where the article and the pipeline differ** (the header of `articles/fr.ts` lists each
   departure) — **except the embedding's training, told as the article tells it, SKIP-GRAM**

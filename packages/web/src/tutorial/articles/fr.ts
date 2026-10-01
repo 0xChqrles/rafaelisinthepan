@@ -4,14 +4,20 @@
 // one; Jev, which reads like one but judges instead of writing. The article's experiments with
 // an LLM's hidden states are not told: level 4 ends on one paragraph that links to them.
 //
+// HOW IT WORKS, NEVER THE JOURNEY (user-decided): the levels say how the game works — never
+// how it was tried, what did not work, or how it was made to work.
 // THE ARTICLE'S OWN WORDS, NOT A COMMA CHANGED (user-decided): a paragraph the article has is
 // used exactly as the article prints it, punctuation and markup included. A sentence changes
 // only where the level cannot use it as it is, and every change is one of these:
-//   - it points into the story that was cut: the clause goes, or the game takes Cémantix's place;
+//   - it tells the journey, or points into the story that was cut: the clause goes, the game
+//     takes Cémantix's place, or the sentence says the rule instead of how it was found (the
+//     consigne's line on the sentence's own words, the foreign-word question);
 //   - the game's code or data says otherwise: `étouffer` was 27th (the article joined two
-//     entries), a 0,1 wobble moves a tail word by thousands of ranks, `impassibilité`'s note had
-//     it 6th, past the tournament's 200 the order is Jev's note, a foreign word is sent down by a
-//     yes/no question to Jev, `soigner` is only 18th for `traite` statically (so `dorloter`);
+//     entries), a 0,1 wobble moves a tail word by thousands of ranks, the notes had
+//     `impassibilité` 6th and `fascination` 81st, past the tournament's 200 the order is Jev's
+//     note, a foreign word is sent down by a yes/no question to Jev, the embedding (not today's
+//     game) answers `dorloter`, and `soigner` is only 18th for `traite` statically (so
+//     `dorloter`);
 //   - a joke about a real person or party, replaced.
 // Level 2's first and last sentences and level 4's last paragraph are the author's own,
 // written for the level. Figures redraw the article's, under its caption where it has one;
@@ -40,7 +46,7 @@ const distance: Article = {
               [
                 { word: 'chat', x: 1.5, y: 3.2 },
                 { word: 'chien', x: 3, y: 3.6 },
-                { word: 'loup', x: 4.6, y: 1.6 },
+                { word: 'loup', x: 4.6, y: 1.6, label: 'below' },
               ],
             ],
             edges: [
@@ -150,7 +156,7 @@ const meanings: Article = {
                 { word: 'envoler', x: 1.2, y: 3.9 },
                 { word: 'voler', x: 3, y: 3, focus: true },
                 { word: 'dérober', x: 4.8, y: 2.1, label: 'below' },
-                { word: 'chaparder', x: 5.3, y: 0.9, label: 'below' },
+                { word: 'chaparder', x: 5.0, y: 0.9, label: 'below' },
               ],
             ],
             edges: [
@@ -203,7 +209,7 @@ const meanings: Article = {
           caption: 'Parmi les plus proches voisins de `traite^0` selon l’embedding.',
         },
         {
-          p: 'L’embedding a compris « traiter un sujet ». La phrase, elle, parle de traiter quelqu’un. Le joueur qui tape `dorloter` ou `ménager` a parfaitement compris la phrase, pourtant le jeu lui répond qu’il en est loin. De cette injustice naît la frustration, et la frustration, ça mène à la guerre. Alors donner une phrase au joueur ne suffit pas. Il faut que l’embedding, lui aussi, lise la phrase.',
+          p: 'L’embedding a compris « traiter un sujet ». La phrase, elle, parle de traiter quelqu’un. Le joueur qui tape `dorloter` ou `ménager` a parfaitement compris la phrase, pourtant l’embedding lui répond qu’il en est loin. De cette injustice naît la frustration, et la frustration, ça mène à la guerre. Alors donner une phrase au joueur ne suffit pas. Il faut que l’embedding, lui aussi, lise la phrase.',
         },
       ],
     },
@@ -308,9 +314,9 @@ const judge: Article = {
       heading: 'La solution : arrêter de mesurer, poser la question',
       blocks: [
         {
-          p: 'Le jeu utilise **Jev**, un modèle de décision sorti en septembre 2026 par TypeSafe. Alors de quoi est fait ce fameux modèle qui a réussi là où les LLM ont échoué ? On ne sait pas exactement, TypeSafe parle d’une nouvelle architecture sans en publier les détails. Mais on peut quand même se faire une assez bonne idée du principe. Prendre un modèle capable de comprendre du texte, puis remplacer sa vocation d’écrivain par celle de juge. Un LLM classique termine son calcul en essayant de répondre à cette question :',
+          p: 'Le jeu utilise **Jev**, un modèle de décision sorti en septembre 2026 par TypeSafe. Alors de quoi est fait ce fameux modèle ? On ne sait pas exactement, TypeSafe parle d’une nouvelle architecture sans en publier les détails. Mais on peut quand même se faire une assez bonne idée du principe. Prendre un modèle capable de comprendre du texte, puis remplacer sa vocation d’écrivain par celle de juge. Un LLM classique termine son calcul en essayant de répondre à cette question :',
         },
-        { quote: 'Quel token dois-je écrire ensuite ?' },
+        { quote: 'Quel mot dois-je écrire ensuite ?' },
         {
           p: 'Un modèle de décision peut utiliser une représentation du même genre, mais terminer par une petite couche spécialisée, un **classifier**, qui répond plutôt à :',
         },
@@ -320,7 +326,7 @@ const judge: Article = {
           fig: {
             kind: 'flow',
             rows: [
-              { name: 'LLM', steps: ['texte', 'représentation', 'probabilités sur le prochain token', 'texte'] },
+              { name: 'LLM', steps: ['texte', 'représentation', 'probabilités sur le prochain mot', 'texte'] },
               {
                 name: 'Modèle de décision',
                 steps: ['texte + question', 'représentation', 'classifier', 'probabilités sur les réponses proposées'],
@@ -331,7 +337,7 @@ const judge: Article = {
           caption: 'Le même travail de lecture, une fin différente.',
         },
         {
-          p: 'Le gros du travail reste le même : lire le langage, comprendre les relations entre les mots et construire une représentation du contexte. C’est seulement à la fin qu’on lui demande autre chose, et c’est précisément ce dont on a besoin. Cette fois, on peut simplement poser la question :',
+          p: 'Le gros du travail reste le même : lire le langage, comprendre les relations entre les mots et construire une représentation du contexte. C’est seulement à la fin qu’on lui demande autre chose, et c’est précisément ce dont on a besoin. On peut simplement poser la question :',
         },
         { quote: 'Dans cette phrase, à quel point ce mot est-il proche de celui-là ?' },
       ],
@@ -360,33 +366,33 @@ const judge: Article = {
             sentence: 'C’étaient donc des `nerfs` parfaits',
             tabs: true,
             lists: [
-              { label: 'Seul', words: ['muscles', 'neurones', 'nerveux', 'intestins', 'reins'] },
+              { label: 'Embedding', words: ['muscles', 'neurones', 'nerveux', 'intestins', 'reins'] },
               {
-                label: 'Dans la phrase',
+                label: 'Jev',
                 words: ['nervosité', 'excitabilité', 'nerveux', 'énervement', 'irritable'],
                 marked: ['nervosité', 'excitabilité', 'nerveux', 'énervement', 'irritable'],
                 tone: 'right',
               },
             ],
           },
-          caption: 'Les plus proches voisins de `nerfs^0` selon l’embedding seul, puis selon Jev dans sa phrase.',
+          caption: 'Parmi les plus proches voisins de `nerfs^0` selon l’embedding seul, puis selon Jev dans sa phrase.',
         },
         {
-          p: 'Jev a compris qu’on parlait de tempérament et pas de neurologie. Au début, Jev faisait pourtant lui aussi des erreurs :',
+          p: 'Jev a compris qu’on parlait de tempérament et pas de neurologie. Prenons une nouvelle phrase :',
         },
         { sentence: ['la force d’étouffer mes `émotions`'] },
         {
-          p: '`étouffer` n’est pas un mot proche d’`émotions^0`, c’est un mot de la phrase. Alors j’ai ajouté une ligne à la consigne :',
+          p: '`étouffer` n’est pas un mot proche d’`émotions^0`, c’est un mot de la phrase. Jev le classerait pourtant 27e sans cette ligne de la consigne :',
         },
         {
           quote:
             'Un candidat qui figure dans la phrase, ou qui décrit ce que la phrase fait du mot secret, n’est pas plus proche pour autant.',
         },
         {
-          p: '`étouffer` est passé de la 27e à la 1 182e place. En trifouillant dans les vecteurs, je pouvais constater qu’un résultat était mauvais, mais pas expliquer au vecteur pourquoi. Ici, si Jev se trompe pour une raison que je peux formuler, je peux simplement lui dire.',
+          p: 'Avec elle, il tombe à la 1 182e place. Si Jev se trompe pour une raison que je peux formuler, je peux simplement lui dire.',
         },
         {
-          p: 'Tout ne se règle pas avec des mots pour autant. J’avais aussi écrit qu’un candidat qui n’est pas français méritait la note la plus basse, et Jev l’a superbement ignoré. `retirement` est resté premier voisin de `retraite^0`. J’ai fini par régler ça avec une autre question, posée à part pour chacun des 200 premiers : est-ce bien un mot français ?',
+          p: 'Les mots étrangers, eux, passent par une autre question, posée à part pour chacun des 200 premiers : est-ce bien un mot français ? Un mot qui échoue est renvoyé tout en bas, sans quoi `retirement` serait le premier voisin de `retraite^0`.',
         },
       ],
     },
@@ -394,7 +400,7 @@ const judge: Article = {
       heading: 'Un tournoi pour départager les vainqueurs',
       blocks: [
         {
-          p: 'Jev n’est pas non plus parfaitement stable. Si je lui demande plusieurs fois de noter le même candidat, sa réponse peut varier d’environ 0,1 point. Au fond du classement, ça ne change pas grand-chose. Le 7 400e mot peut devenir le 5 000e, ça ne bouleversera pas le jeu. En haut du classement, c’est différent. C’est là que l’ordre compte le plus, et si les mots classés 50e et 150e ont des notes presque identiques, une telle variation suffit à les rendre interchangeables. Jev sait donc assez bien quels mots méritent d’entrer dans les 200 premiers, mais beaucoup moins bien dans quel ordre les ranger.',
+          p: 'Jev n’est pas parfaitement stable. Si je lui demande plusieurs fois de noter le même candidat, sa réponse peut varier d’environ 0,1 point. Au fond du classement, ça ne change pas grand-chose. Le 7 400e mot peut devenir le 5 000e, ça ne bouleversera pas le jeu. En haut du classement, c’est différent. C’est là que l’ordre compte le plus, et si les mots classés 50e et 150e ont des notes presque identiques, une telle variation suffit à les rendre interchangeables. Jev sait donc assez bien quels mots méritent d’entrer dans les 200 premiers, mais beaucoup moins bien dans quel ordre les ranger.',
         },
         {
           p: 'Alors on va organiser un tournoi. Les 200 meilleurs candidats s’affrontent tous deux à deux, soit 19 900 duels, avec une seule question :',
@@ -404,19 +410,19 @@ const judge: Article = {
           p: 'Pour chaque duel, Jev donne une probabilité de victoire aux deux candidats, et le score final d’un mot est simplement sa probabilité moyenne de victoire sur l’ensemble de ses confrontations. Un algorithme de tri classique demanderait beaucoup moins de comparaisons. Mais un tri suppose qu’on puisse faire confiance à la fonction qui compare deux éléments. Si `A > B` et `B > C`, on aimerait raisonnablement pouvoir en déduire que `A > C`. Jev, lui, peut très bien répondre que `A < C`, il n’est ni parfaitement déterministe, ni parfaitement transitif. Dans un tri classique, une mauvaise comparaison pourrait envoyer un mot au mauvais endroit et influencer toute la suite. Dans un tournoi complet, chaque candidat affronte les 199 autres, et s’il prend une décision étrange, elle se retrouve diluée parmi 198 autres confrontations.',
         },
         {
-          p: 'Et ça fonctionne vraiment. Pour le mot secret `froidement^0`, `impassibilité` passe de la 6e à la 2e place. Pour `beauté^0`, `fascination` remonte de la 152e à la 13e.',
+          p: 'Pour le mot secret `froidement^0`, `impassibilité` passe de la 6e à la 2e place. Pour `beauté^0`, `fascination` remonte de la 81e à la 13e.',
         },
         {
           fig: {
             kind: 'tournament',
-            labels: ['embedding', 'duels gagnés', 'rang'],
+            labels: ['rang à la note', 'victoire moyenne', 'rang au tournoi'],
             rows: [
-              { word: 'impassiblement', from: 271, win: 0.99 },
-              { word: 'impassibilité', from: 2476, win: 0.977 },
-              { word: 'sang-froid', from: 329, win: 0.976 },
-              { word: 'imperturbablement', from: 755, win: 0.976 },
-              { word: 'impassible', from: 668, win: 0.968 },
-              { word: 'impavide', from: 790, win: 0.956 },
+              { word: 'impassiblement', from: 1, win: 0.99 },
+              { word: 'impassibilité', from: 6, win: 0.977 },
+              { word: 'sang-froid', from: 2, win: 0.976 },
+              { word: 'imperturbablement', from: 3, win: 0.976 },
+              { word: 'impassible', from: 4, win: 0.968 },
+              { word: 'impavide', from: 7, win: 0.956 },
             ],
           },
           caption: 'Le haut du tournoi pour `froidement^0`.',

@@ -8,7 +8,7 @@ import './keyboardLast';
 
 type ArticleProps = ComponentProps<typeof ArticleLevel>;
 
-// Keep the article levels — their prose, figures and the board they quote — out of the
+// Keep the article levels — their prose and figures — out of the
 // startup bundle. A lost chunk hands the reader back (`onUnavailable`).
 const chunk = lazyChunk<ArticleProps>(() => import('./ArticleLevel'));
 

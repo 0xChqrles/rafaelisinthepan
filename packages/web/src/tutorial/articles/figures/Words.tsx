@@ -8,16 +8,17 @@ import Rich from '../Rich';
 import Tabs from './Tabs';
 
 // LISTS OF NEIGHBOURS: the sentence they were read in (its word of interest a held chip, as
-// in the game), then the lists side by side — or, with tabs, one at a time. A marked word
+// in the game), then the lists side by side — or, with tabs, one at a time, every list laid
+// out in the same cell so a tab never changes the figure's height. A marked word
 // wears the heat ramp's end its tone names: weird red for a wrong sense, calm cobalt for
 // the right one.
 // A marked word says what it is in words too (the colour and the heavier frame are for eyes).
-function List({ list, showLabel }: { list: WordList; showLabel: boolean }) {
+function List({ list, showLabel, hidden }: { list: WordList; showLabel: boolean; hidden?: boolean }) {
   const lang = useArticleLang();
   const tone = list.tone ?? 'wrong';
   const said = t(lang, tone === 'wrong' ? 'levelMarkWrong' : 'levelMarkRight');
   return (
-    <div className="ar-list">
+    <div className="ar-list" hidden={hidden}>
       {showLabel && list.label && <p className="ar-list-label">{list.label}</p>}
       <ol className="ar-list-words" style={{ '--mark': MISS_COLOR } as CSSProperties}>
         {list.words.map((w) => {
@@ -52,9 +53,15 @@ export default function Words({
           <Rich text={sentence} mode="sentence" />
         </p>
       )}
-      <div className={`ar-lists${lists.length > 1 && !tabs ? ' columns' : ''}`}>
+      {/* A tab swaps the list shown: the figure says so itself, as the plane re-reads its lengths. */}
+      <div
+        className={`ar-lists${tabs ? ' stacked' : lists.length > 1 ? ' columns' : ''}`}
+        aria-live={tabs ? 'polite' : undefined}
+      >
         {tabs ? (
-          <List key={at} list={lists[at]} showLabel={false} />
+          lists.map((list, i) => (
+            <List key={list.label ?? list.words[0]} list={list} showLabel={false} hidden={i !== at} />
+          ))
         ) : (
           lists.map((list) => <List key={list.label ?? list.words[0]} list={list} showLabel />)
         )}

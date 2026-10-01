@@ -7584,7 +7584,7 @@ figure.l1-fig {
 .learn-cell.hero .learn-title {
   font-size: 22px;
 }
-/* The level to do NEXT: its title wears the invitation's selection box, drawn across it. */
+/* Level 1 until it is played: its title wears the invitation's selection box, drawn across it. */
 .learn-card.next .learn-title-text {
   background: var(--fg);
   color: var(--bg);
@@ -7893,6 +7893,10 @@ figure.l1-fig {
 .ar-fig-sentence {
   margin: 0;
 }
+/* A sentence that wraps must not read as two: more room between sentences than between lines. */
+.article-sentence p + p {
+  margin-top: 0.6em;
+}
 .ar-held {
   white-space: nowrap;
 }
@@ -7994,7 +7998,9 @@ figure.l1-fig {
 .ar-plane-svg {
   display: block;
   width: 100%;
+  max-width: 460px;
   height: auto;
+  margin: 0 auto;
 }
 .ar-grid {
   stroke: rgba(255, 255, 255, 0.07);
@@ -8106,6 +8112,17 @@ figure.l1-fig {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 20px;
+}
+/* Tabs: every list in one cell, the hidden ones holding their room, so the tallest sets it. */
+.ar-lists.stacked {
+  display: grid;
+}
+.ar-lists.stacked > .ar-list {
+  grid-area: 1 / 1;
+}
+.ar-lists.stacked > .ar-list[hidden] {
+  display: block;
+  visibility: hidden;
 }
 .ar-list-label {
   margin: 0 0 10px;
@@ -8237,14 +8254,16 @@ figure.l1-fig {
   border-color: var(--accent);
   color: var(--accent);
 }
-/* The tournament's top: where the embedding had each word, the share of duels it won, where
-   the tournament puts it — both ranks in the sentence's heat. */
+/* The tournament's top: each word's place by its grade, its mean win probability, where the
+   tournament puts it — both ranks in the sentence's heat. */
 .ar-tourney {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
 }
 .ar-tourney th[scope='col'] {
+  /* Heads of two and three lines all stand on the rule. */
+  vertical-align: bottom;
   padding: 0 6px 10px;
   font-size: 10px;
   font-weight: 650;
@@ -8460,8 +8479,8 @@ figure.l1-fig {
   }
 }
 /* The narrowest phones: the next-level card's picture yields to its title, and the
-   tournament keeps the climb (where the embedding had each word, where it ends) over the
-   share of duels won. */
+   tournament keeps the climb (the place by its grade, where it ends) over the mean win
+   probability. */
 @media (max-width: 360px) {
   .ar-tourney-win,
   .ar-tourney-win-head {

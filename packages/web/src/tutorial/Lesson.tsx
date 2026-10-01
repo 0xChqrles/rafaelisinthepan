@@ -11,8 +11,8 @@ import { PLAY_LEVEL } from './levels';
 // turning DONE, then the run's PLAY — records the level as done on this device, settles the
 // onboarding question for good (the first visit's invitation never asks again) and lands in
 // the game. Leaving it by the header instead is a SKIP: App's `leave` settles the question
-// the same way and records nothing done. Every other level is an ARTICLE (`ArticleLevel`),
-// which records itself once read to its end and has nothing to do with the onboarding.
+// the same way and records nothing done. Every other level is an ARTICLE (`ArticleLevel`):
+// it records nothing and has nothing to do with the onboarding.
 export default function Lesson({ lang, level, returnTo }: {
   lang: LangCode;
   level: number;

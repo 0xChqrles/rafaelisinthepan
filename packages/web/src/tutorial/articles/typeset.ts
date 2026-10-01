@@ -14,15 +14,13 @@ export function frenchSpaces(text: string): string {
     .replace(/« /g, `«${NBSP}`);
 }
 
-// Every string of an article through `fix` — prose, captions, figure labels and words alike
-// (a bundled board, `ranks`' data, is left as it is).
+// Every string of an article through `fix` — prose, captions, figure labels and words alike.
 export function typesetArticle(article: Article, fix: (s: string) => string): Article {
-  const walk = (value: unknown, key?: string): unknown => {
+  const walk = (value: unknown): unknown => {
     if (typeof value === 'string') return fix(value);
-    if (key === 'board') return value;
     if (Array.isArray(value)) return value.map((v) => walk(v));
     if (value && typeof value === 'object') {
-      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, walk(v, k)]));
+      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, walk(v)]));
     }
     return value;
   };
