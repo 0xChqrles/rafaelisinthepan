@@ -1,8 +1,8 @@
 // THE FRENCH ARTICLE LEVELS: the author's article « J’ai amélioré Cémantix avec une IA qui ne
 // peut pas parler » (chqrles.me/cemantix), cut into four levels with its story taken out. The
 // levels explain, in order: the embedding; what it lacks, the context; how a transformer reads
-// one, and why its hidden states are no distance; Jev, which reads like one but judges instead
-// of writing. The article's experiments with an LLM's hidden states are not told.
+// one; Jev, which reads like one but judges instead of writing. The article's experiments with
+// an LLM's hidden states are not told: level 4 ends on one paragraph that links to them.
 //
 // THE ARTICLE'S OWN WORDS, NOT A COMMA CHANGED (user-decided): a paragraph the article has is
 // used exactly as the article prints it, punctuation and markup included. A sentence changes
@@ -13,10 +13,11 @@
 //     it 6th, past the tournament's 200 the order is Jev's note, a foreign word is sent down by a
 //     yes/no question to Jev, `soigner` is only 18th for `traite` statically (so `dorloter`);
 //   - a joke about a real person or party, replaced.
-// Level 2's first and last sentences are the author's own, written for the level. Figures redraw
-// the article's, under its caption where it has one; where they show numbers they are the
-// game's (the static lists are gen:word's walk over cc.fr.300, the tournament rows real Jev
-// output). Every example sentence is a published day's line, as in the article itself.
+// Level 2's first and last sentences and level 4's last paragraph are the author's own,
+// written for the level. Figures redraw the article's, under its caption where it has one;
+// where they show numbers they are the game's (the static lists are gen:word's walk over
+// cc.fr.300, the tournament rows real Jev output). Every example sentence is a published
+// day's line, as in the article itself.
 import type { Article } from './types';
 import { frenchSpaces, typesetArticle } from './typeset';
 
@@ -293,21 +294,7 @@ const attention: Article = {
           p: 'Pour entraîner un modèle comme GPT, on lui donne une tâche assez proche de celle qu’on a utilisée pour les embeddings, prédire la suite d’un texte. On lui montre par exemple `Le pigeon` et il doit prédire `vole`, puis `Le pigeon vole` et il doit prédire `dans`, et ainsi de suite sur des milliards de morceaux de texte. À chaque prédiction, on calcule la **loss**, puis les **gradients**, et on modifie légèrement tous les paramètres. À force de prédire la suite de milliards de phrases, le modèle apprend progressivement quels mots doivent s’écouter et quelles informations doivent circuler entre eux. C’est ainsi qu’un immense empilement de couches Transformer, entraîné avec l’objectif assez basique de deviner le mot suivant, finit par construire quelque chose qui ressemble dangereusement à une compréhension fine du contexte.',
         },
         {
-          p: 'Premier détail passé sous silence. Pendant l’attention, un mot ne peut écouter que ce qui le précède. On appelle ça le **masque causal**, et c’est logique : le modèle est entraîné à deviner la suite, on ne va pas la lui montrer.',
-        },
-      ],
-    },
-    {
-      heading: 'Ouvrir le capot',
-      blocks: [
-        {
-          p: 'À chaque couche du réseau, chaque mot possède donc un vecteur qui a écouté son contexte. Ce vecteur intermédiaire porte un nom, le **hidden state**. C’est exactement ce qui manquait au jeu : un embedding qui a lu la phrase et qui peut faire la différence entre le `vol` du pigeon et le `vol` à l’étalage. Dans l’utilisation normale d’un LLM, on ne regarde pas directement ces vecteurs, on laisse le modèle aller jusqu’au bout et on lit le texte qu’il produit. Mais rien ne nous interdit de l’arrêter en chemin et de récupérer le vecteur produit par la couche qui nous intéresse.',
-        },
-        {
-          p: 'Depuis le début, je fais comme si un LLM lisait des mots. C’est faux. Il lit des **tokens**, des morceaux de texte choisis pour être réutilisables. Un mot courant peut tenir dans un seul token, un mot plus rare peut être découpé en plusieurs, et il a alors un **hidden state** par token. Il faut choisir lequel utiliser, et comme chaque token ne peut lire que ce qui le précède, le dernier est un candidat assez naturel : il a au moins vu tous les morceaux précédents du même mot.',
-        },
-        {
-          p: 'Troisième détail, et le plus profond. Notre embedding a été entraîné de manière à ce que les mots employés dans des contextes similaires obtiennent des vecteurs proches. Un LLM, lui, est entraîné avec un autre objectif : prédire le token suivant. Rien ne garantit donc que la géométrie brute de ses hidden states constitue une bonne distance sémantique. Ces vecteurs sont avant tout des représentations intermédiaires, utiles au modèle pour poursuivre son calcul.',
+          p: 'On pourrait alors utiliser les Transformers d’un LLM pour modifier les vecteurs de nos mots en fonction de leur contexte. Mais en pratique ça ne marche pas très bien pour plusieurs raisons détaillées dans [cet article](https://chqrles.me/cemantix/#ouvrir-le-capot). Pour résoudre notre problème on va effectivement utiliser des Transformers mais pas de LLM.',
         },
       ],
     },
@@ -344,7 +331,7 @@ const judge: Article = {
           caption: 'Le même travail de lecture, une fin différente.',
         },
         {
-          p: 'Le gros du travail reste le même : lire le langage, comprendre les relations entre les mots et construire une représentation du contexte. C’est seulement à la fin qu’on lui demande autre chose, et c’est précisément ce dont on a besoin. On a passé tout ce temps à récupérer les vecteurs intermédiaires d’un modèle entraîné à écrire, en espérant que leur géométrie réponde malgré tout à notre objectif. Cette fois, on peut simplement poser la question :',
+          p: 'Le gros du travail reste le même : lire le langage, comprendre les relations entre les mots et construire une représentation du contexte. C’est seulement à la fin qu’on lui demande autre chose, et c’est précisément ce dont on a besoin. Cette fois, on peut simplement poser la question :',
         },
         { quote: 'Dans cette phrase, à quel point ce mot est-il proche de celui-là ?' },
       ],
@@ -396,7 +383,7 @@ const judge: Article = {
             'Un candidat qui figure dans la phrase, ou qui décrit ce que la phrase fait du mot secret, n’est pas plus proche pour autant.',
         },
         {
-          p: '`étouffer` est passé de la 27e à la 1 182e place. En trifouillant dans les **hidden states**, je pouvais constater qu’un résultat était mauvais, mais pas expliquer au vecteur pourquoi. Ici, si Jev se trompe pour une raison que je peux formuler, je peux simplement lui dire.',
+          p: '`étouffer` est passé de la 27e à la 1 182e place. En trifouillant dans les vecteurs, je pouvais constater qu’un résultat était mauvais, mais pas expliquer au vecteur pourquoi. Ici, si Jev se trompe pour une raison que je peux formuler, je peux simplement lui dire.',
         },
         {
           p: 'Tout ne se règle pas avec des mots pour autant. J’avais aussi écrit qu’un candidat qui n’est pas français méritait la note la plus basse, et Jev l’a superbement ignoré. `retirement` est resté premier voisin de `retraite^0`. J’ai fini par régler ça avec une autre question, posée à part pour chacun des 200 premiers : est-ce bien un mot français ?',
@@ -436,17 +423,6 @@ const judge: Article = {
         },
         {
           p: 'Enfin, au-delà du 200e rang, je conserve simplement l’ordre des notes de Jev. Personne ne s’en rendra compte, mais maintenant vous le savez.',
-        },
-      ],
-    },
-    {
-      heading: 'Pourquoi ça marche ?',
-      blocks: [
-        {
-          p: 'Il faut quand même rendre justice aux LLM. Rien de ce que je demande à Jev ne semble hors de leur portée. Je pourrais prendre un bon modèle, lui montrer la phrase et deux candidats, puis lui demander lequel est sémantiquement le plus proche du mot secret. Il répondrait probablement très bien. Le problème, c’est qu’il faudrait lui poser la question des dizaines de milliers de fois, et une idée parfaitement raisonnable sur le papier devient beaucoup moins séduisante quand chaque petite décision coûte quelques secondes et une requête à un gros modèle.',
-        },
-        {
-          p: 'Jev ne sait rien faire qu’un LLM serait incapable de faire, mais il peut prendre une petite décision sémantique extrêmement vite et pour presque rien. Pour un mot secret, mon système lui fait traiter environ 3,1 millions de tokens, et en mettant la partie fixe de la consigne en cache, l’ensemble me coûte environ 0,13 $. Je peux donc me permettre une stratégie d’une brutalité remarquable : faire juger 10 000 candidats un par un, garder les 200 meilleurs, puis organiser 19 900 duels supplémentaires juste pour mieux les ranger. Avec un modèle plus lent ou plus cher, j’aurais passé mon temps à chercher un algorithme malin pour réduire le nombre de requêtes. Jev, lui, est suffisamment bon marché pour qu’on lui pose trente mille fois la question.',
         },
       ],
     },

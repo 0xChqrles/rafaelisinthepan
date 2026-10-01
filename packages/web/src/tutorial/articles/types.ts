@@ -8,6 +8,7 @@
 //   `mot^0`    the secret itself, SOLVED — the game's cobalt ink, as a found word reads
 //   `___`      a hidden word: an empty hole
 //   **terme**  a term being defined
+//   [texte](https://…)  a link out (https only), opened in a new tab
 export interface PlanePoint {
   word: string;
   x: number; // plane units, 0–6 on both axes

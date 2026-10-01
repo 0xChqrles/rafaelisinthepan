@@ -6,10 +6,11 @@ import { useArticleLang } from './lang';
 
 // THE ARTICLES' INLINE MARKUP (types.ts): words quoted the way the game shows them — the pixel
 // face on the held chip's white ground — a rank wearing the sentence's heat exponent, a hidden
-// word as an empty hole, and the terms a paragraph defines. Everything else is plain text.
+// word as an empty hole, the terms a paragraph defines, and a link out to the article (a new
+// tab: the level stays where it was read). Everything else is plain text.
 // In an example SENTENCE (`mode="sentence"`, set whole in the pixel face like the game's
 // own), a quoted word is the one the sentence is about: its secret, shown found.
-const TOKEN_RE = /`([^`]+)`|\*\*([^*]+)\*\*/g;
+const TOKEN_RE = /`([^`]+)`|\*\*([^*]+)\*\*|\[([^\]]+)\]\((https:\/\/[^)\s]+)\)/g;
 
 function word(payload: string, key: number, mode: 'prose' | 'sentence', lang: string) {
   if (/^_+$/.test(payload)) {
@@ -51,11 +52,17 @@ export default function Rich({ text, mode = 'prose' }: { text: string; mode?: 'p
   for (const m of text.matchAll(TOKEN_RE)) {
     if (m.index > last) out.push(<Fragment key={key++}>{text.slice(last, m.index)}</Fragment>);
     if (m[1] !== undefined) out.push(word(m[1], key++, mode, lang));
-    else
+    else if (m[2] !== undefined)
       out.push(
         <strong key={key++} className="ar-term">
           {m[2]}
         </strong>,
+      );
+    else
+      out.push(
+        <a key={key++} className="ar-link" href={m[4]} target="_blank" rel="noopener noreferrer">
+          {m[3]}
+        </a>,
       );
     last = m.index + m[0].length;
   }

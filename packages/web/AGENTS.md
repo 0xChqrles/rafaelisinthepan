@@ -2935,10 +2935,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   received some updates since the levels have been decided, so feel free to reorganize
   them"): 1 THE GAME (played) · 2 THE DISTANCE (the embedding: words as coordinates, how it
   is learned) · 3 MANY MEANINGS (what it lacks: one vector per word, so the
-  sentence must be read) · 4 ATTENTION (how a transformer reads a context: Q/K/V, the causal
-  mask, layers, tokens, the hidden state, and why its geometry is no distance) · 5 THE JUDGE (Jev, which reads like a transformer
+  sentence must be read) · 4 ATTENTION (how a transformer reads a context: Q/K/V, layers, how
+  an LLM learns it; then ONE paragraph, the author's own: an LLM's vectors work badly, the
+  reasons are in the article — a link to its "Ouvrir le capot" — so the game uses
+  Transformers but no LLM) · 5 THE JUDGE (Jev, which reads like a transformer
   but judges instead of writing: the grade per candidate, the foreign-word check, the
-  200-word tournament, why it is cheap). The arc is the user's: "explanation of embedding ->
+  200-word tournament). The arc is the user's: "explanation of embedding ->
   lack of context -> how the transformers can actually help us -> Jev which uses
   transformers, but not like an LLM" — so the article's experiments with an LLM's hidden
   states (the plan, the tokens and last-layer failures, the other models) are not told.

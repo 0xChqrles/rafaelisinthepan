@@ -69,6 +69,12 @@ describe('the inline markup', () => {
     expect(html).toContain('class="ar-blank"');
     expect(html).toContain('<strong class="ar-term">embedding</strong>');
   });
+  it('renders [text](https://…) as a link out, in a new tab', () => {
+    const html = renderToStaticMarkup(<Rich text="lire [cet article](https://chqrles.me/cemantix/#ouvrir-le-capot)." />);
+    expect(html).toContain(
+      '<a class="ar-link" href="https://chqrles.me/cemantix/#ouvrir-le-capot" target="_blank" rel="noopener noreferrer">cet article</a>',
+    );
+  });
   it('shows the word a sentence is about as found', () => {
     const html = renderToStaticMarkup(<Rich text="Le pigeon `vole`" mode="sentence" />);
     expect(html).toContain('<span class="ar-solved">vole</span>');

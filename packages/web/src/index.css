@@ -8376,6 +8376,15 @@ figure.l1-fig {
   text-transform: uppercase;
   color: var(--muted);
 }
+.ar-link {
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+.ar-link:hover {
+  text-decoration-color: var(--fg);
+}
 .article-source a {
   font-size: 13.5px;
   line-height: 1.5;
