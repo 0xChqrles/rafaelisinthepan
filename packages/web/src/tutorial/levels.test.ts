@@ -37,12 +37,12 @@ describe('levels ⇔ lessons', () => {
 });
 
 describe('what the list and the badge read', () => {
-  it('counts only the levels ready in the language', () => {
-    const readyFr = LEVELS.filter((l) => isReady(l, 'fr')).length;
-    const readyEn = LEVELS.filter((l) => isReady(l, 'en')).length;
-    expect(undoneLevels([], 'fr')).toBe(readyFr);
-    expect(undoneLevels([], 'en')).toBe(readyEn);
-    expect(undoneLevels([PLAY_LEVEL], 'en')).toBe(readyEn - 1);
+  it('counts level 1 alone: the articles have no done state', () => {
+    for (const lang of LANGS) {
+      expect(undoneLevels([], lang)).toBe(1);
+      expect(undoneLevels([PLAY_LEVEL], lang)).toBe(0);
+      expect(undoneLevels([2, 3, 4, 5], lang)).toBe(1);
+    }
   });
 
   it('leads a finished level to the next one ready in the language, none after the last', () => {

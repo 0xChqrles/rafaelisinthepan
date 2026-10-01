@@ -221,8 +221,8 @@ interface GameState extends PersistedState {
   // generating a local random value contacts no server and creates no account.
   ensureLocalSeed: () => string;
 
-  // Mark a tutorial level done (#269): level 1's run is over (its card turned DONE, or PLAY
-  // pressed) or a real round holds a guess; an article read to its end. Idempotent.
+  // Mark a tutorial level done (#269) — level 1, the only one with a done state: its run is
+  // over (its card turned DONE, or PLAY pressed) or a real round holds a guess. Idempotent.
   markLessonDone: (level: number) => void;
 
   // Reconcile the persisted OUTBOX to `key` playing `puzzle` (#214). An outbox naming a

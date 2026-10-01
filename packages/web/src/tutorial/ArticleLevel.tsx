@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import Button from '../components/Button';
 import LangTitle from '../components/LangTitle';
 import { HeaderLeft } from '../components/TopBar';
-import { useGameStore } from '../state/gameStore';
 import { t } from '../i18n';
 import { pathForGame, pathForLesson, type LangCode } from '../langs';
 import { navigate } from '../routing';
@@ -11,7 +10,6 @@ import { articleFor } from './articles';
 import { ArticleLang } from './articles/lang';
 import Rich from './articles/Rich';
 import FigureBody from './articles/figures/Figure';
-import useSeen from './articles/figures/useSeen';
 import type { Block } from './articles/types';
 import Duration from './Duration';
 import { keyboardLast } from './keyboardLast';
@@ -20,9 +18,9 @@ import { LEVELS, levelOf, nextReady } from './levels';
 // AN ARTICLE LEVEL (levels 2+, 2026-09-29): the level read, not played — set like the
 // author's article page. Its sleeve (the level's illustration, large), the track number and
 // the title, the credits line (how long, which level of how many); then the sections, each
-// opened by its numbered cue, the figures numbered through the level. Reading
-// it to its END records it as done on this device; the end leads on to the next level ready
-// in this language, and always to the game.
+// opened by its numbered cue, the figures numbered through the level. Nothing is recorded:
+// an article is there to read, as often as anyone likes. The end leads on to the next level
+// ready in this language, and always to the game.
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
 function BlockView({ block, lang, figNo }: { block: Block; lang: string; figNo: number }) {
@@ -101,14 +99,7 @@ function BlockView({ block, lang, figNo }: { block: Block; lang: string; figNo: 
 export default function ArticleLevel({ lang, level }: { lang: LangCode; level: number }) {
   const meta = levelOf(level);
   const article = articleFor(lang, level);
-  const markLessonDone = useGameStore((s) => s.markLessonDone);
   const scroller = useRef<HTMLElement>(null);
-  const end = useRef<HTMLElement>(null);
-  const read = useSeen(end, '0px');
-
-  useEffect(() => {
-    if (read) markLessonDone(level);
-  }, [read, level, markLessonDone]);
   // A new level opens at its top: the phone's page scrolls as a whole, and navigating keeps
   // its offset otherwise (routing.ts resets nothing). The article is a focusable scroller (a
   // wide screen scrolls it, not the page), and a player who came by the KEYBOARD — a card or
@@ -175,7 +166,7 @@ export default function ArticleLevel({ lang, level }: { lang: LangCode; level: n
             ))}
           </section>
         ))}
-        <footer ref={end} className="article-end">
+        <footer className="article-end">
           {next && (
             <button type="button" className="article-next" onClick={() => navigate(pathForLesson(lang, next.level))}>
               <LevelArt name={next.art} className="article-next-art" />

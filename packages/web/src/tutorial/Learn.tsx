@@ -12,14 +12,13 @@ import { LEVELS, PLAY_LEVEL, isReady } from './levels';
 // illustration (art/) edge to edge — the page has nothing else to show, so the pictures fill
 // it. Level 1, the game played, is the wide card on top; the four articles follow, two by two
 // where the screen is wide enough, one under the other on a phone. A card reads like a track
-// on the article's page: its number, how long it takes, its title and what it is about. The
-// level to do NEXT wears the invitation's highlight box on its title; a done level trades its
-// duration for the done mark; a level not ready in this language holds a still, grey picture
-// and says SOON — the road ahead, not a target. No gating between cards: any ready level can
-// be opened, done or not.
+// on the article's page: its number, how long it takes, its title and what it is about. Level
+// 1 is the one with a done state: until it is played its title wears the invitation's
+// highlight box, once done it trades its duration for the done mark. The articles are simply
+// there to read. A level not ready in this language holds a still, grey picture and says SOON
+// — the road ahead, not a target. No gating between cards: any ready level can be opened.
 export default function Learn({ lang }: { lang: LangCode }) {
-  const done = useGameStore((s) => s.lessonsDone);
-  const next = LEVELS.find((l) => isReady(l, lang) && !done.includes(l.level));
+  const playedOne = useGameStore((s) => s.lessonsDone.includes(PLAY_LEVEL));
   // The list opens at its top: on a phone the page scrolls as a whole, and coming back from
   // an article (navigating resets nothing) would otherwise land on its last cards.
   useEffect(() => {
@@ -33,8 +32,13 @@ export default function Learn({ lang }: { lang: LangCode }) {
       <ol className="learn-grid arrive">
         {LEVELS.map((level) => {
           const ready = isReady(level, lang);
-          const isDone = done.includes(level.level);
-          const state = !ready ? 'soon' : isDone ? 'done' : level === next ? 'next' : 'todo';
+          const state = !ready
+            ? 'soon'
+            : level.level !== PLAY_LEVEL
+              ? 'todo'
+              : playedOne
+                ? 'done'
+                : 'next';
           return (
             <li key={level.level} className={`learn-cell${level.level === PLAY_LEVEL ? ' hero' : ''}`}>
               <button

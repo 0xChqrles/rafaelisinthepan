@@ -2959,16 +2959,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   translation… for the moment just create the french version"): a level is READY in a
   language when its lesson exists there (`Level.duration`, which also carries the reading
   time the card prints — `levels.test.ts` holds it to the text); elsewhere its card is grey
-  and says SOON. Only a READY level counts toward the header's badge (`.hk-badge`,
-  `undoneLevels(done, lang)`) — a badge for something nobody can do is a nag. Completion is
-  DEVICE-LOCAL (`lessonsDone`, never on the account): level 1 is INFERRED FROM PLAY (see the
-  gate bullet), an article is done once READ TO ITS END (the end block scrolls into view).
-  Replaying a done level is allowed. **The list is a page of CARDS** (2026-09-29, "fill the
+  and says SOON. **Only LEVEL 1 has a DONE state**: the articles are read as often as anyone
+  likes and record nothing — no done mark, no highlight, no badge. Completion is
+  DEVICE-LOCAL (`lessonsDone`, never on the account), and level 1 is INFERRED FROM PLAY (see
+  the gate bullet). The header's badge (`.hk-badge`, `undoneLevels(done, lang)`) is 1 while
+  level 1 is ready in the language and not done — a badge for something nobody can do, or
+  for an article nobody has to "finish", is a nag. Replaying level 1 is allowed. **The list
+  is a page of CARDS** (2026-09-29, "fill the
   screen since we have nothing else to display"): each level wears its animated DITHERED
   illustration (`art/scenes/`, the meter's Bayer 8×8, the app's inks and the heat ramp; ~11
   fps, only on screen, one still frame under reduced motion) edge to edge, dithered out
-  under its title; number, duration or done mark, title, subtitle; the level to do NEXT
-  wears the invitation's selection box on its title. Wide: level 1 tall on the left, the
+  under its title; number, duration (or level 1's done mark), title, subtitle; level 1,
+  until done, wears the invitation's selection box on its title. Wide: level 1 tall on the left, the
   articles two by two; tablet: level 1 across the top; phone: one card under the other.
   **Stage progress (user-decided 2026-09-17):** the coach dialog shows `n/4` beside it,
   driven by the current stage and `stages.length` in `LevelOne`.
@@ -3274,8 +3276,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (the rules' place; on a lesson the lit book still leads to the list, and any other key
   leaves LEVEL 1 as a SKIP — leaving an article level is only leaving; the fast-forward
   control that slot held, `skip.svg` and `ariaSkipTutorial`, are retired). The book wears a
-  BADGE with the count of levels READY in this language that this device has not done
-  (`undoneLevels(done, lang)`). **`profileReturn` is GONE from the store**: every
+  BADGE while level 1 is ready in this language and not done on this device
+  (`undoneLevels(done, lang)`; the articles have no done state). **`profileReturn` is GONE from the store**: every
   place is one tap away, so nothing has to remember where it was opened from, and
   `/account`'s left slot is its plain NAME rather than a back control. **This OVERTURNS #190's ACTIVE-DAY-ONLY crown** (2026-08-20): that rule hid
   the crown on an archive day so a key could not silently swap the day under the player,
