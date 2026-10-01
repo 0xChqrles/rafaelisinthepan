@@ -63,8 +63,13 @@ easier), and the three are chosen TOGETHER, by playing the day out — the craft
   never « le effet »; in English, the article: « a » or « an »), gender, number, verb
   form, and the CONSTRUCTION — a verb must accept the complement that follows it
   (« hérité d'un prénom » cannot become « affublé d'un prénom »).
+- The displayed sentence must still MEAN something: the start is the kind of thing its
+  place needs — someone where the sentence has someone act. « le fitness se suicide »
+  is French and means nothing; « le cyclotouriste se suicide » is a clue. Odd or funny
+  is fine; meaningless is not.
 - A plain word a player knows, never an obscure term or a proper noun.
-- A start that breaks the grammar is replaced by another band word, never kept.
+- A start that breaks the grammar or the sense is replaced by another band word, never
+  kept.
 
 ## The page (recorded 2026-09-08)
 

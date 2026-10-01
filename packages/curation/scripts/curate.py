@@ -420,8 +420,8 @@ def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[s
                  context: dict[str, str], frequency_rank, pairs: dict[str, set[str]] | None = None,
                  chain: list[str] | None = None, *, lang: str) -> dict[str, str]:
     """The displayed sentence with its start words: a start this secret was already
-    played with (`pairs`), the language's letter rule (French elision, the English
-    article), then the model's grammar check. Returns
+    played with (`pairs`), then the model reading the sentence (`llm.sentence_check`:
+    correct, and still meaning something). Returns
     {secret slug: new start} for every faulty hole (empty = all good, or nothing better
     to offer). `tried` holds every start a hole has shown so far; none is offered again."""
     pairs = pairs or {}
@@ -432,12 +432,8 @@ def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[s
     for key, h in by_secret.items():
         if h["start"]["word"] in pairs.get(key, ()):
             faulty[key] = "this secret was already played from this start word"
-            continue
-        problem = st.letter_problem(st.previous_token(words, h), h["start"]["word"], lang)
-        if problem:
-            faulty[key] = problem
     if not faulty:
-        verdict = llm.grammar_check(claude, shown, [h["start"]["word"] for h in by_secret.values()], lang=lang)
+        verdict = llm.sentence_check(claude, shown, [h["start"]["word"] for h in by_secret.values()], lang=lang)
         if verdict["valid"]:
             log(f"- start words check: « {shown} » → valid")
             return {}

@@ -209,22 +209,26 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   good** (user-decided 2026-09-08): `shelf.archive()['pairs']` holds every start each
   secret was ever played with, `choose_starts` and `check_starts` exclude them from the
   band, and a generated start that repeats a pair is refused and re-picked.
-- **The displayed sentence must be VALID in its language** (user rule 2026-09-06:
-  « l'effet », never « le effet »). After every generation `curate.check_starts` applies
-  the one rule code can apply with certainty (`starts.letter_problem`). In French,
-  elision (`elision_problem`: an eliding word before a vowel, an elided one before a
-  consonant; `h` and `y` are left to the model). In English, its twin, the article « a » /
-  « an » before the start word (#317, `article_problem`): sounds decide, not letters (an
-  hour, a university, a one-off, a euro, an x-ray), so code refuses only what the letters
-  make certain — « a » before an a, i, e or o not led into a consonant sound (eu, ew,
-  one, once, oui), « an » before b, c, d, g, j, k, p, q, t, v, w, z — and leaves the rest
-  to the model. Then it asks the model whether the displayed sentence is grammatical
-  (`llm.grammar_check`, one reason per faulty inserted word) — agreement, elision or the
-  article, AND each start's CONSTRUCTION with what
-  follows it (« affublé d'un prénom » for « hérité d'un prénom » passed the check on
-  2026-09-10). A refused start is re-picked (`llm.pick_start`, taste included) and
-  gen_phrase reruns; at most `START_ROUNDS` (3) rounds; what is still doubtful is logged
-  for the reviewer.
+- **The displayed sentence must be VALID in its language AND MEAN SOMETHING, and the
+  MODEL judges it, never a mechanical check** (user rule 2026-09-06: « l'effet », never
+  « le effet »; the sense, and the model as the judge, user-decided 2026-10-01: Opus
+  reads a sentence better than any checklist). Code only keeps the BAND clean:
+  `starts.start_candidates` offers only words that can stand after the token before the
+  hole by the one rule the letters decide (`starts.letter_problem`) — in French, elision
+  (`elision_problem`: an eliding word before a vowel, an elided one before a consonant;
+  `h` and `y` are left to the model); in English, the article « a » / « an » (#317,
+  `article_problem`): sounds decide, not letters (an hour, a university, a one-off, a
+  euro, an x-ray), so code drops only what the letters make certain — « a » before an a,
+  i, e or o not led into a consonant sound (eu, ew, one, once, oui), « an » before b, c,
+  d, g, j, k, p, q, t, v, w, z. After every generation `curate.check_starts` asks the
+  model to read the displayed sentence as a native reader (`llm.sentence_check`, one
+  reason per faulty inserted word): correct language — agreement, elision or the
+  article, each start's construction — AND still meaning something, each start the kind
+  of thing its place needs (« le fitness se suicide » is French and means nothing; a
+  grammar-only check passed it). A start may be odd or funny; only a wrong or
+  meaningless one is refused. A refused start is re-picked (`llm.pick_start`, taste
+  included) and gen_phrase reruns; at most `START_ROUNDS` (3) rounds; what is still
+  doubtful is logged for the reviewer.
 - **Tests are dependency-free** (`uv run --no-project --with pytest`, like generation and
   benchmark): the rules take plain `Token`s and injected callables, so they run without
   spaCy, vectors or a model.
