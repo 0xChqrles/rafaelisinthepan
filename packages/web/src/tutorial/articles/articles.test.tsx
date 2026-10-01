@@ -50,6 +50,9 @@ describe('the article levels’ data', () => {
       if (fig.kind === 'tournament') {
         const wins = fig.rows.map((r) => r.win);
         expect(wins).toEqual([...wins].sort((a, b) => b - a));
+        // The tournament's places only go down the board, a skipped place drawn as a gap.
+        const places = fig.rows.map((r, i) => r.to ?? i + 1);
+        places.forEach((p, i) => expect(p).toBeGreaterThan(i ? places[i - 1] : 0));
       }
     }
   });

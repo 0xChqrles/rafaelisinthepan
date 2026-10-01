@@ -415,17 +415,19 @@ const judge: Article = {
         {
           fig: {
             kind: 'tournament',
-            labels: ['rang à la note', 'victoire moyenne', 'rang au tournoi'],
+            heads: ['note', 'tournoi', 'victoire moyenne'],
+            labels: ['rang à la note', 'rang au tournoi', 'victoire moyenne'],
             rows: [
-              { word: 'impassiblement', from: 1, win: 0.99 },
+              { word: 'impassiblement', from: 1, win: 0.9898 },
               { word: 'impassibilité', from: 6, win: 0.977 },
-              { word: 'sang-froid', from: 2, win: 0.976 },
-              { word: 'imperturbablement', from: 3, win: 0.976 },
-              { word: 'impassible', from: 4, win: 0.968 },
-              { word: 'impavide', from: 7, win: 0.956 },
+              { word: 'sang-froid', from: 2, win: 0.9763 },
+              { word: 'imperturbablement', from: 3, win: 0.9762 },
+              { word: 'impassible', from: 4, win: 0.9681 },
+              { word: 'impavide', from: 7, win: 0.9562 },
+              { word: 'glacialement', from: 5, win: 0.9357, to: 10 },
             ],
           },
-          caption: 'Le haut du tournoi pour `froidement^0`.',
+          caption: 'Le haut du classement pour `froidement^0`, de la note au tournoi.',
         },
         {
           p: 'Enfin, au-delà du 200e rang, je conserve simplement l’ordre des notes de Jev. Personne ne s’en rendra compte, mais maintenant vous le savez.',

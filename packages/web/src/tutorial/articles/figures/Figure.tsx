@@ -23,6 +23,6 @@ export default function FigureBody({ fig }: { fig: FigureData }) {
     case 'flow':
       return <Flow rows={fig.rows} />;
     case 'tournament':
-      return <Tournament rows={fig.rows} labels={fig.labels} />;
+      return <Tournament rows={fig.rows} heads={fig.heads} labels={fig.labels} />;
   }
 }

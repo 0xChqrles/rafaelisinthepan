@@ -43,9 +43,16 @@ export type Figure =
   | { kind: 'arcs'; tokens: string[]; focus: number; weights: (number | null)[]; hidden?: number[] }
   // Two pipelines, step by step; `marked` steps are where they differ.
   | { kind: 'flow'; rows: { name: string; steps: string[]; marked?: number[] }[] }
-  // The top of a real tournament: each word's place by its grade, its mean win probability
-  // over its duels, and the place the tournament gives it.
-  | { kind: 'tournament'; rows: { word: string; from: number; win: number }[]; labels: [string, string, string] };
+  // The top of a real tournament, drawn as a climb: each word's place by its grade (`from`),
+  // the place the tournament gives it (`to`, else its row's), its mean win probability. `heads`
+  // are the drawing's one-line heads, `labels` the same columns named in full for the table
+  // screen readers get — both in the order from, to, win.
+  | {
+      kind: 'tournament';
+      rows: { word: string; from: number; win: number; to?: number }[];
+      heads: [string, string, string];
+      labels: [string, string, string];
+    };
 
 export type Block =
   | { p: string }
