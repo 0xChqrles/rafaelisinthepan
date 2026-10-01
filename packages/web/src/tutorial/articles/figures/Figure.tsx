@@ -4,7 +4,6 @@ import Bars from './Bars';
 import Flow from './Flow';
 import Loop from './Loop';
 import Plane from './Plane';
-import Ranks from './Ranks';
 import Tournament from './Tournament';
 import Words from './Words';
 
@@ -19,13 +18,11 @@ export default function FigureBody({ fig }: { fig: FigureData }) {
       return <Loop steps={fig.steps} />;
     case 'words':
       return <Words sentence={fig.sentence} lists={fig.lists} tabs={fig.tabs} />;
-    case 'ranks':
-      return <Ranks board={fig.board} take={fig.take} more={fig.more} />;
     case 'arcs':
       return <Arcs tokens={fig.tokens} focus={fig.focus} weights={fig.weights} hidden={fig.hidden} />;
     case 'flow':
       return <Flow rows={fig.rows} />;
     case 'tournament':
-      return <Tournament rows={fig.rows} labels={fig.labels} />;
+      return <Tournament rows={fig.rows} heads={fig.heads} labels={fig.labels} />;
   }
 }

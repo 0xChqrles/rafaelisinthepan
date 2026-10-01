@@ -11,14 +11,15 @@
 // article's page prints its own). A level not ready in the list's language is shown, greyed,
 // and says SOON — the road ahead — but is not a target, and the route to it lands on the list.
 //
-// Only a READY level counts toward the header's badge and the game's LEARN / PLAY invitation:
-// a badge for something nobody can do is a nag.
+// Only LEVEL 1 can be DONE: it is the one the game invites into, and the one the header's
+// badge counts (while it is ready in the language and not done). The articles are read, as
+// often as anyone likes, and never marked: a level 2 always waiting to be "done" would be a
+// badge and a highlight that never go away.
 //
 // Completion is DEVICE-LOCAL. Level 1 is done once its run is over — its last sentence
 // dissolved into the level's card, which turns DONE on screen (PLAY records it too) — or once
 // ANY real round holds a guess, since a person who has played has learned what the run
-// teaches; an article is done once it has been read to its end. Nothing is stored on the
-// account.
+// teaches. Nothing is stored on the account.
 import type { UiKey } from '../i18n';
 
 // The illustration each level wears, on the list and at the head of its lesson (art/).
@@ -35,10 +36,10 @@ export interface Level {
 
 export const LEVELS: readonly Level[] = [
   { level: 1, titleKey: 'levelPlayTitle', subKey: 'levelPlaySub', art: 'game', duration: { en: 60, fr: 60 } },
-  { level: 2, titleKey: 'levelDistanceTitle', subKey: 'levelDistanceSub', art: 'distance', duration: { fr: 290 } },
-  { level: 3, titleKey: 'levelMeaningsTitle', subKey: 'levelMeaningsSub', art: 'meanings', duration: { fr: 140 } },
-  { level: 4, titleKey: 'levelAttentionTitle', subKey: 'levelAttentionSub', art: 'attention', duration: { fr: 280 } },
-  { level: 5, titleKey: 'levelJudgeTitle', subKey: 'levelJudgeSub', art: 'judge', duration: { fr: 430 } },
+  { level: 2, titleKey: 'levelDistanceTitle', subKey: 'levelDistanceSub', art: 'distance', duration: { fr: 220 } },
+  { level: 3, titleKey: 'levelMeaningsTitle', subKey: 'levelMeaningsSub', art: 'meanings', duration: { fr: 90 } },
+  { level: 4, titleKey: 'levelAttentionTitle', subKey: 'levelAttentionSub', art: 'attention', duration: { fr: 230 } },
+  { level: 5, titleKey: 'levelJudgeTitle', subKey: 'levelJudgeSub', art: 'judge', duration: { fr: 240 } },
 ];
 
 // The one level the game invites into today; named once so the gate, the invitation and
@@ -58,9 +59,10 @@ export function nextReady(n: number, lang: string): Level | undefined {
   return LEVELS.find((l) => l.level > n && isReady(l, lang));
 }
 
-// How many READY levels this device has not done — the header badge's number.
+// The header badge's number: 1 while level 1 is ready in `lang` and this device has not done
+// it, else 0 (the only level with a done state).
 export function undoneLevels(done: readonly number[], lang: string): number {
-  return LEVELS.filter((l) => isReady(l, lang) && !done.includes(l.level)).length;
+  return isReady(levelOf(PLAY_LEVEL)!, lang) && !done.includes(PLAY_LEVEL) ? 1 : 0;
 }
 
 // A duration as the article's page prints one: 5′30″, or 60″ under a minute (a screen reader

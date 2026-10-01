@@ -1,7 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { WordPuzzle } from '@whippin/shared';
-import chat from '../scripts/fr.chat.json';
 import { articleFor, articleText } from '.';
 import Rich from './Rich';
 import { frenchSpaces } from './typeset';
@@ -49,34 +47,14 @@ describe('the article levels’ data', () => {
           if (i >= fig.focus) expect(w).toBeNull();
         });
       }
-      if (fig.kind === 'ranks') for (const w of fig.more) expect(fig.board.ranks[w], w).toBeDefined();
       if (fig.kind === 'tournament') {
         const wins = fig.rows.map((r) => r.win);
         expect(wins).toEqual([...wins].sort((a, b) => b - a));
+        // The tournament's places only go down the board, a skipped place drawn as a gap.
+        const places = fig.rows.map((r, i) => r.to ?? i + 1);
+        places.forEach((p, i) => expect(p).toBeGreaterThan(i ? places[i - 1] : 0));
       }
     }
-  });
-});
-
-// The prose QUOTES the bundled board (the game's own embedding): if the board is ever
-// regenerated, these are the sentences to re-read.
-describe('what the French level 2 says about chat’s neighbours', () => {
-  const board = chat as WordPuzzle;
-  it('chien is 4th, renard 20th, souris 51st and loup 89th', () => {
-    expect(board.ranks.chien.rank).toBe(4);
-    // One rank for a word's forms, and accents not typed: chiens, chienne ⇒ chien⁴, felin ⇒ félin⁵.
-    expect(board.ranks.chiens.rank).toBe(4);
-    expect(board.ranks.chienne.rank).toBe(4);
-    expect(board.ranks.felin).toMatchObject({ word: 'félin', rank: 5 });
-    expect(board.ranks.renard.rank).toBe(20);
-    expect(board.ranks.souris.rank).toBe(51);
-    expect(board.ranks.loup.rank).toBe(89);
-  });
-  it('the text says so', () => {
-    const text = articleText(articleFor('fr', 2)!).join(' ');
-    expect(text).toContain('`chien^4`');
-    expect(text).toContain('`félin^5`');
-    expect(text).toContain('89e position');
   });
 });
 
@@ -93,6 +71,12 @@ describe('the inline markup', () => {
     const html = renderToStaticMarkup(<Rich text="Le `___` est un **embedding**" />);
     expect(html).toContain('class="ar-blank"');
     expect(html).toContain('<strong class="ar-term">embedding</strong>');
+  });
+  it('renders [text](https://…) as a link out, in a new tab', () => {
+    const html = renderToStaticMarkup(<Rich text="lire [cet article](https://chqrles.me/cemantix/#ouvrir-le-capot)." />);
+    expect(html).toContain(
+      '<a class="ar-link" href="https://chqrles.me/cemantix/#ouvrir-le-capot" target="_blank" rel="noopener noreferrer">cet article</a>',
+    );
   });
   it('shows the word a sentence is about as found', () => {
     const html = renderToStaticMarkup(<Rich text="Le pigeon `vole`" mode="sentence" />);

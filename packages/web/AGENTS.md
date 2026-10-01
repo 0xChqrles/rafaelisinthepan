@@ -2933,37 +2933,55 @@ it to the local store — see `packages/backend/AGENTS.md`).
   leaving an article level is only leaving.
   **The LEVELS** (`tutorial/levels.ts`; re-cut 2026-09-29 on the user's go-ahead, "the game
   received some updates since the levels have been decided, so feel free to reorganize
-  them"): 1 THE GAME (played) · 2 THE DISTANCE (words as coordinates: the embedding, how it
-  is learned, cosine, the rank) · 3 MANY MEANINGS (one vector per word; the sentence must be
-  read) · 4 ATTENTION (how a transformer reads: Q/K/V, layers, hidden states, the causal
-  mask) · 5 THE JUDGE (how the game ranks today: Jev's grade per candidate, the 200-word
-  tournament, the foreign-word check, why it is cheap). Levels 2–5 are ARTICLES, not played
+  them"): 1 THE GAME (played) · 2 THE DISTANCE (the embedding: words as coordinates, how it
+  is learned) · 3 MANY MEANINGS (what it lacks: one vector per word, so the
+  sentence must be read) · 4 ATTENTION (how a transformer reads a context: Q/K/V, layers, how
+  an LLM learns it; then ONE paragraph, the author's own: an LLM's vectors work badly, the
+  reasons are in the article — a link to its "Ouvrir le capot" — so the game uses
+  Transformers but no LLM) · 5 THE JUDGE (Jev, which reads like a transformer
+  but judges instead of writing: the grade per candidate, the foreign-word check, the
+  200-word tournament). The arc is the user's: "explanation of embedding ->
+  lack of context -> how the transformers can actually help us -> Jev which uses
+  transformers, but not like an LLM" — so the article's experiments with an LLM's hidden
+  states (the plan, the tokens and last-layer failures, the other models) are not told.
+  Levels 2–5 are ARTICLES, not played
   (user-decided 2026-09-29: "not fully interactive like the first one… more like an article,
   like the chqrles.me article, but without all the story telling"): the author's published
   article cut into four, its own sentences and examples, figures redrawn in the app's style
-  (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **Facts follow the CODE
+  (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **They say how it works,
+  never the journey** (user-decided: "we're explaining how it works, not how it didn't work,
+  nor how we've tried to make it work") — no attempt, failure or fix is told. **The article's own
+  words, not a comma changed** (user-decided: "if you can reuse an article part without
+  modifying it, then reuse it without modifying it, not even a single comma"): a paragraph
+  the article has is used exactly as it prints it; a sentence changes only where it tells
+  the journey or points into the cut story, contradicts the code, or jokes about a real person, and nothing the
+  article does not say is added to explain it. **Facts follow the CODE
   where the article and the pipeline differ** (the header of `articles/fr.ts` lists each
   departure) — **except the embedding's training, told as the article tells it, SKIP-GRAM**
   (from a word, guess the words around it; user-decided 2026-09-29: fastText's CBOW is not
   worth a detour, the game's embedding "learned the same way"). **A secret next to ranked
   words shows FOUND** — the solve's cobalt, as the game inks a hole in (`mot^0`, and the
-  word an example sentence is about) — never the held chip, which is a guess's. Every level
-  ends on a hook into the next one. The end is three bands: NEXT LEVEL, PLAY, then the
+  word an example sentence is about) — never the held chip, which is a guess's. **Every other
+  word the prose quotes wears the held chip's white ground** (user-decided: the accent word is
+  the one you are trying to get close to, the white ones are the others). Every level
+  ends on the problem the next one answers. The end is three bands: NEXT LEVEL, PLAY, then the
   credit to the article apart. On a wide screen the list and an article scroll the WHOLE
   VIEWPORT, so the scrollbar stands on the screen's edge (user-decided 2026-09-29). **Written in French first** (user-decided 2026-09-29: "wait for the article
   translation… for the moment just create the french version"): a level is READY in a
   language when its lesson exists there (`Level.duration`, which also carries the reading
   time the card prints — `levels.test.ts` holds it to the text); elsewhere its card is grey
-  and says SOON. Only a READY level counts toward the header's badge (`.hk-badge`,
-  `undoneLevels(done, lang)`) — a badge for something nobody can do is a nag. Completion is
-  DEVICE-LOCAL (`lessonsDone`, never on the account): level 1 is INFERRED FROM PLAY (see the
-  gate bullet), an article is done once READ TO ITS END (the end block scrolls into view).
-  Replaying a done level is allowed. **The list is a page of CARDS** (2026-09-29, "fill the
+  and says SOON. **Only LEVEL 1 has a DONE state**: the articles are read as often as anyone
+  likes and record nothing — no done mark, no highlight, no badge. Completion is
+  DEVICE-LOCAL (`lessonsDone`, never on the account), and level 1 is INFERRED FROM PLAY (see
+  the gate bullet). The header's badge (`.hk-badge`, `undoneLevels(done, lang)`) is 1 while
+  level 1 is ready in the language and not done — a badge for something nobody can do, or
+  for an article nobody has to "finish", is a nag. Replaying level 1 is allowed. **The list
+  is a page of CARDS** (2026-09-29, "fill the
   screen since we have nothing else to display"): each level wears its animated DITHERED
   illustration (`art/scenes/`, the meter's Bayer 8×8, the app's inks and the heat ramp; ~11
   fps, only on screen, one still frame under reduced motion) edge to edge, dithered out
-  under its title; number, duration or done mark, title, subtitle; the level to do NEXT
-  wears the invitation's selection box on its title. Wide: level 1 tall on the left, the
+  under its title; number, duration (or level 1's done mark), title, subtitle; level 1,
+  until done, wears the invitation's selection box on its title. Wide: level 1 tall on the left, the
   articles two by two; tablet: level 1 across the top; phone: one card under the other.
   **Stage progress (user-decided 2026-09-17):** the coach dialog shows `n/4` beside it,
   driven by the current stage and `stages.length` in `LevelOne`.
@@ -3269,8 +3287,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (the rules' place; on a lesson the lit book still leads to the list, and any other key
   leaves LEVEL 1 as a SKIP — leaving an article level is only leaving; the fast-forward
   control that slot held, `skip.svg` and `ariaSkipTutorial`, are retired). The book wears a
-  BADGE with the count of levels READY in this language that this device has not done
-  (`undoneLevels(done, lang)`). **`profileReturn` is GONE from the store**: every
+  BADGE while level 1 is ready in this language and not done on this device
+  (`undoneLevels(done, lang)`; the articles have no done state). **`profileReturn` is GONE from the store**: every
   place is one tap away, so nothing has to remember where it was opened from, and
   `/account`'s left slot is its plain NAME rather than a back control. **This OVERTURNS #190's ACTIVE-DAY-ONLY crown** (2026-08-20): that rule hid
   the crown on an archive day so a key could not silently swap the day under the player,
