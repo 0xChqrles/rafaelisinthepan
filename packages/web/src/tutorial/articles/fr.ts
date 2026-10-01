@@ -1,31 +1,24 @@
-// THE FRENCH ARTICLE LEVELS (2026-09-29): the author's article « J’ai amélioré Cémantix avec
-// une IA qui ne peut pas parler » (chqrles.me/cemantix, 2026-09-25), cut into four levels with
-// its story taken out — its own sentences wherever they explain, its examples, its jokes. The
+// THE FRENCH ARTICLE LEVELS: the author's article « J’ai amélioré Cémantix avec une IA qui ne
+// peut pas parler » (chqrles.me/cemantix), cut into four levels with its story taken out. The
 // levels explain, in order: the embedding; what it lacks, the context; how a transformer reads
-// one; Jev, which reads like one but judges instead of writing. The article's experiments with
-// an LLM's hidden states (the plan, the causal mask's cost, tokens, the last layers, the other
-// models tried) are left out: level 4 ends on what a hidden state is, level 5 opens on Jev
-// (user-decided 2026-09-30). What else changed on the way, so a later edit does not undo it:
-//   - the embedding is taught as the article tells it, SKIP-GRAM (from a word, guess the words
-//     around it), and the game's own is said to have learned "de la même façon" — fastText's
-//     CBOW is the same idea the other way round, not worth a detour (user-decided 2026-09-29);
-//   - facts follow the CODE where the article and the pipeline differ: past the tournament's
-//     200 the order is Jev's grade (the embedding only breaks ties), not the embedding's from
-//     rank 300; a foreign word is sent down by a yes/no question to Jev, not by a frequency
-//     rule; the rubric block quotes the code's own levels; a sentence's rank is Jev's order,
-//     the embedding's only for a lone word;
-//   - measurements are the ones the data holds: `étouffer` is 1 182nd once the consigne
-//     excludes the sentence's own words (27th before; the article joined two entries), a 0,1 wobble moves a tail word by thousands of ranks, not a
-//     hundred; the tournament rows are real Jev output (the spike's froidement run, whose note
-//     already had `impassibilité` 6th), the static lists the game's own (gen:word's walk over
-//     cc.fr.300, lemma display); `soigner` is only 18th for `traite` statically, so the level
-//     names `ménager` and `dorloter` (2 037th and 2 096th);
-//   - Jev's architecture stays a hedge, as in the article: TypeSafe does not publish it;
-//   - the jokes about real people and parties stay in the article.
-// Every example sentence is a published day's line, as in the article itself.
+// one, and why its hidden states are no distance; Jev, which reads like one but judges instead
+// of writing. The article's experiments with an LLM's hidden states are not told.
+//
+// THE ARTICLE'S OWN WORDS, NOT A COMMA CHANGED (user-decided): a paragraph the article has is
+// used exactly as the article prints it, punctuation and markup included. A sentence changes
+// only where the level cannot use it as it is, and every change is one of these:
+//   - it points into the story that was cut: the clause goes, or the game takes Cémantix's place;
+//   - the game's code or data says otherwise: `étouffer` was 27th (the article joined two
+//     entries), a 0,1 wobble moves a tail word by thousands of ranks, `impassibilité`'s note had
+//     it 6th, past the tournament's 200 the order is Jev's note, a foreign word is sent down by a
+//     yes/no question to Jev, `soigner` is only 18th for `traite` statically (so `dorloter`);
+//   - a joke about a real person or party, replaced.
+// Level 2's first and last sentences are the author's own, written for the level. Figures redraw
+// the article's, under its caption where it has one; where they show numbers they are the
+// game's (the static lists are gen:word's walk over cc.fr.300, the tournament rows real Jev
+// output). Every example sentence is a published day's line, as in the article itself.
 import type { Article } from './types';
 import { frenchSpaces, typesetArticle } from './typeset';
-import chat from '../scripts/fr.chat.json';
 
 const SOURCE = {
   text: '« J’ai amélioré Cémantix avec une IA qui ne peut pas parler »',
@@ -37,7 +30,7 @@ const distance: Article = {
     {
       blocks: [
         {
-          p: 'Si le mot secret est `chat^0`, `chien^4` veut dire que `chien` est son quatrième plus proche voisin. Une distance, c’est une valeur numérique, donc il faut réussir à exprimer le sens des mots sous une forme numérique également. En gros, exprimer des informations complexes sous forme de nombres, ça a un nom, ça s’appelle un **embedding**. On pourrait par exemple donner des coordonnées aux mots, ce qui permettrait ensuite de mesurer facilement à quel point deux mots sont proches.',
+          p: 'Comment le jeu peut calculer la distance entre le sens des mots ? Une distance, c’est une valeur numérique, donc il faut réussir à exprimer le sens des mots sous une forme numérique également. En gros, exprimer des informations complexes sous forme de nombres, ça a un nom, ça s’appelle un **embedding**. On pourrait par exemple donner des coordonnées aux mots, ce qui permettrait ensuite de mesurer facilement à quel point deux mots sont proches.',
         },
         {
           fig: {
@@ -58,15 +51,15 @@ const distance: Article = {
           caption: '`chat`, `chien` et `loup` sur un plan : deux coordonnées par mot, une distance par paire.',
         },
         {
-          p: 'L’idée a l’air bonne, mais plus on ajoute de mots sur le plan, plus il devient difficile de les répartir intelligemment, et deux dimensions ne suffiront pas longtemps. On va donc passer de 2 à, mettons, 300 dimensions : 300 coordonnées par mot, qui forment son **vecteur**, une flèche qui part du centre de l’espace et pointe vers le mot. C’est beaucoup plus difficile à dessiner, mais nettement plus pratique pour ranger des centaines de milliers de mots. La vraie problématique se dessine enfin : comment choisir les 300 coordonnées de chaque mot ?',
+          p: 'L’idée a l’air bonne, mais plus on ajoute de mots sur notre plan, plus il devient difficile de les répartir intelligemment, et deux dimensions ne suffiront pas longtemps. On va donc passer de 2 à, mettons, 300 dimensions. C’est beaucoup plus difficile à dessiner, mais nettement plus pratique pour ranger des centaines de milliers de mots. La vraie problématique se dessine enfin. Comment choisir les 300 coordonnées de chaque mot ?',
         },
       ],
     },
     {
-      heading: 'Deviner les voisins',
+      heading: 'Skip-gram / word2vec',
       blocks: [
         {
-          p: 'On commence par attribuer un vecteur aléatoire à chaque mot. À ce stade, nos coordonnées ne veulent absolument rien dire, et pour leur donner un sens, on demande à un réseau de neurones quelque chose d’assez simple : à partir d’un mot, prédire ceux qui ont des chances d’apparaître autour. On lui donne `chat`, et il attribue une probabilité à tous les mots qu’il connaît. Comme tout est encore plus ou moins aléatoire, ses premières réponses ressemblent à ça :',
+          p: 'On commence par attribuer un vecteur aléatoire à chaque mot. À ce stade, nos coordonnées ne veulent absolument rien dire, et pour leur donner un sens on va demander au réseau de faire quelque chose d’assez simple : à partir d’un mot, prédire ceux qui ont des chances d’apparaître autour. On lui donne `chat` et il attribue une probabilité à tous les mots qu’il connaît. Comme tout est encore plus ou moins aléatoire, ses premières réponses ressemblent à ça :',
         },
         {
           fig: {
@@ -83,18 +76,21 @@ const distance: Article = {
           caption: 'Les premières prédictions du réseau autour de `chat`, quand ses vecteurs ne veulent encore rien dire.',
         },
         {
-          p: 'Il faut maintenant trouver un moyen de lui expliquer qu’il raconte n’importe quoi. Pour ça, on constitue un grand corpus de référence, des milliards de phrases écrites par des humains. Prenons une phrase ambitieuse de ce corpus :',
+          p: 'Il faut maintenant trouver un moyen de lui expliquer qu’il raconte n’importe quoi. Pour ça, on constitue un grand corpus de référence à partir de textes soigneusement sélectionnés : des livres, des pages Wikipédia, des articles universitaires, par exemple.\nMaintenant prenons une phrase ambitieuse de notre corpus :',
         },
         { sentence: ['Le `chat` mange une souris'] },
         {
-          p: 'On choisit `chat` et on regarde ce qui apparaît autour : `le`, `mange`, `une`. Voilà ce que le réseau est censé prédire. S’il juge `moteur` beaucoup plus probable que `mange`, il s’est manifestement trompé. Reste à quantifier à quel point : on résume l’ensemble de ses erreurs dans un score qu’on appelle la **loss**. Plus elle est élevée, plus ses prédictions sont mauvaises.',
+          p: 'On choisit `chat` et on regarde ce qui apparaît autour : `le`, `mange`, `une`. Voilà ce que le réseau est censé prédire. S’il considère `moteur` comme beaucoup plus probable que `mange`, il s’est manifestement trompé. Reste à quantifier à quel point, alors on résume l’ensemble de ses erreurs dans un score qu’on appelle la **loss** : plus elle est élevée, plus ses prédictions sont mauvaises.',
         },
         {
-          p: 'On sait maintenant mesurer le problème, mais pas encore le corriger. Le réseau contient énormément de **paramètres**, des nombres qu’il peut ajuster, parmi lesquels les coordonnées de nos mots, et il faut savoir lesquels bouger et dans quel sens. Pour chacun, on calcule donc l’effet qu’aurait une toute petite modification sur la loss. En gros, on répond à la question :',
+          p: 'On sait maintenant mesurer le problème, mais pas encore le corriger. Le réseau contient énormément de paramètres, parmi lesquels les coordonnées de nos vecteurs, et il faut savoir lesquels bouger et dans quel sens. Pour chacun, on calcule donc l’effet qu’aurait une toute petite modification sur la loss. En gros pour chaque vecteur on répond à la question :',
         },
-        { quote: 'Si je modifie très légèrement cette coordonnée, est-ce que la loss augmente ou diminue, et de combien ?' },
         {
-          p: 'Toutes ces variations forment un **gradient** : un vecteur qui indique la direction dans laquelle la loss augmenterait le plus. On fait donc quelque chose de très sophistiqué : on va dans l’autre sens. On modifie légèrement les paramètres, on refait une prédiction, on recalcule l’erreur, puis on recommence. C’est la **descente de gradient**.',
+          quote:
+            'Si je modifie très légèrement cette coordonnée, est-ce que la loss augmente ou diminue, et de combien ?',
+        },
+        {
+          p: 'L’ensemble de ces variations forme le **gradient**, un vecteur qui indique la direction dans laquelle la loss augmenterait le plus, donc on fait quelque chose de très sophistiqué : on va dans l’autre sens. On modifie légèrement les paramètres, on refait une prédiction, on recalcule l’erreur, puis on recommence. C’est la **descente de gradient**.',
         },
         {
           fig: {
@@ -109,13 +105,8 @@ const distance: Article = {
           },
           caption: 'Et on recommence, quelques milliards de fois.',
         },
-      ],
-    },
-    {
-      heading: 'Qui se ressemble s’assemble',
-      blocks: [
         {
-          p: 'Après seulement quelques milliards de répétitions, la loss commence à descendre sérieusement. Mais ce qui nous intéresse surtout, c’est ce que toutes ces corrections ont fait aux coordonnées. Imaginons que le réseau rencontre régulièrement ce genre de phrases :',
+          p: 'Après seulement quelques milliards de répétitions, la loss commence à descendre sérieusement. Mais ce qui nous intéresse surtout, c’est ce que toutes ces corrections ont fait à nos vecteurs. Imaginons que le réseau rencontre régulièrement ce genre de phrases :',
         },
         {
           sentence: [
@@ -128,33 +119,14 @@ const distance: Article = {
           ],
         },
         {
-          p: '`chat` et `chien` vivent manifestement des vies assez similaires. Ils dorment, mangent, courent, donc ils apparaissent entourés de mots comparables. Pour réussir à prédire leurs contextes, le réseau finit donc par leur attribuer des vecteurs qui se ressemblent. Personne ne lui a expliqué qu’un chat et un chien étaient deux animaux domestiques relativement proches. D’ailleurs, il ne sait toujours pas ce qu’est un chat. Il a simplement constaté que `chat` traîne souvent avec les mêmes mots que `chien`, et ça suffit.',
+          p: '`chat` et `chien` vivent manifestement des vies assez similaires. Ils `dorment`, `mangent`, `courent` donc ils apparaissent entourés de mots comparables. Pour réussir à prédire leurs contextes, le réseau finit donc par leur attribuer des représentations qui se ressemblent. Personne ne lui a expliqué qu’un chat et un chien étaient deux animaux domestiques relativement proches. D’ailleurs, il ne sait toujours pas ce qu’est un chat. Il a simplement constaté que `chat` traîne souvent avec les mêmes mots que `chien`, et ça suffit.',
         },
         {
-          p: 'À force de corrections, les vecteurs aléatoires du départ s’organisent : les mots employés dans des contextes similaires occupent des régions similaires de l’espace à 300 dimensions. À la fin de l’entraînement, on garde ces coordonnées : on vient de créer un embedding.',
-        },
-      ],
-    },
-    {
-      heading: 'Le rang',
-      blocks: [
-        {
-          p: 'Celui du jeu a appris de la même façon, sur des milliards de mots tirés du web et de Wikipédia.',
+          p: 'À force de corriger ses prédictions, les vecteurs complètement aléatoires du départ finissent ainsi par s’organiser. Les mots utilisés dans des contextes similaires occupent des régions similaires de notre espace à 300 dimensions. À la fin de l’entraînement, on récupère ces vecteurs et on les utilise directement comme coordonnées sémantiques de nos mots : on vient de créer un **embedding**.',
         },
         {
-          p: 'Pour mesurer la proximité de deux mots, le jeu ne regarde pas la distance entre leurs points, mais l’angle entre leurs vecteurs : deux vecteurs qui pointent dans la même direction désignent des mots très proches, peu importe leur longueur. C’est la **similarité cosinus**.',
+          p: 'Cet embedding a pourtant un défaut de naissance que nous allons voir dans le niveau suivant.',
         },
-        {
-          p: 'Pour chaque mot secret, le jeu mesure cet angle avec chacun des quelque 130 000 mots qu’il connaît, les trie du plus proche au plus lointain et garde les 10 000 premiers. Un mot qui n’y figure pas n’a pas de rang : c’est un MISS. Pour un mot seul, le rang, c’est la place dans cette liste. Voici le début de celle de `chat` :',
-        },
-        {
-          fig: { kind: 'ranks', board: chat, take: 12, more: ['renard', 'souris', 'loup'] },
-          caption: 'Les voisins de `chat` dans l’embedding du jeu. `loup` n’arrive qu’en 89e position : le plan du début était optimiste.',
-        },
-        {
-          p: 'Les formes d’un même mot comptent pour un seul rang : `chien`, `chiens` et `chienne` sont tous `chien^4`. Et pas besoin de taper les accents : `felin` compte comme `félin^5`.',
-        },
-        { p: 'Cet embedding a pourtant un défaut de naissance que nous allons voir dans le niveau suivant.' },
       ],
     },
   ],
@@ -166,10 +138,7 @@ const meanings: Article = {
     {
       blocks: [
         {
-          p: 'Le jeu prend une jolie phrase dans un livre ou une chanson, cache trois mots, et il faut les retrouver. Sauf que l’embedding a un défaut de naissance : il est **statique**. Il attribue un seul vecteur à chaque mot, quelle que soit la phrase. Or un mot n’a pas qu’un seul sens.',
-        },
-        {
-          p: 'Pendant l’entraînement, `voler` a traîné aussi souvent avec des avions qu’avec des cambrioleurs, et son vecteur a fini quelque part entre les deux, dans un endroit qui n’est ni tout à fait le ciel ni tout à fait la poche des autres.',
+          p: 'Notre embedding a un défaut de naissance, il est **statique** : il attribue un seul vecteur à chaque mot, quelle que soit la phrase. Or un mot n’a pas qu’un seul sens. Pendant l’entraînement, `voler` a traîné aussi souvent avec des avions qu’avec des cambrioleurs, et son vecteur a fini quelque part entre les deux, dans un endroit qui n’est ni tout à fait le ciel ni tout à fait la poche des autres.',
         },
         {
           fig: {
@@ -191,16 +160,12 @@ const meanings: Article = {
           caption: 'Un seul point pour deux sens : `voler`, à mi-chemin entre le ciel et les cambrioleurs.',
         },
         {
-          p: 'Tant qu’on devine un mot seul, sans phrase, comme dans Cémantix ou au premier niveau de ce tutoriel, ce flou n’est pas vraiment un problème : le mot à trouver n’a lui-même aucun sens précis.',
+          p: 'Tant qu’on devine un mot sans contexte, ce flou n’est pas vraiment un problème, puisque le mot à trouver n’a lui-même aucun sens précis. Mais prenons cette phrase :',
         },
-      ],
-    },
-    {
-      heading: 'Ceux qui volent',
-      blocks: [
-        { p: 'Mais prenons cette phrase :' },
         { sentence: ['Ne crains plus jamais le vide, c’est le refuge de ceux qui `volent`'] },
-        { p: 'Ici, aucun cambrioleur. Pourtant, voici les voisins de `volent` selon l’embedding :' },
+        {
+          p: 'Ici, aucun cambrioleur. Pourtant, voici les voisins de `volent` selon l’embedding :',
+        },
         {
           fig: {
             kind: 'words',
@@ -226,7 +191,7 @@ const meanings: Article = {
           caption: 'Les dix plus proches voisins de `volent` selon l’embedding. En couleur, ceux qui n’ont rien à faire dans le ciel.',
         },
         {
-          p: 'La moitié de la liste dans le ciel, l’autre moitié dans la rubrique faits divers. Prenons un autre exemple, plus subtil :',
+          p: 'La moitié de la liste dans le ciel, l’autre moitié dans la rubrique faits divers. Mais prenons un autre exemple, plus subtil :',
         },
         {
           fig: {
@@ -237,10 +202,7 @@ const meanings: Article = {
           caption: 'Parmi les plus proches voisins de `traite` selon l’embedding.',
         },
         {
-          p: 'L’embedding a compris « traiter un sujet ». La phrase, elle, parle de traiter quelqu’un. Le joueur qui tape `ménager` ou `dorloter` a parfaitement compris la phrase. Pourtant, avec l’embedding seul, le jeu lui répondrait `ménager^2037` et `dorloter^2096`. De cette injustice naît la frustration, et la frustration, ça mène à la guerre.',
-        },
-        {
-          p: 'Donner une phrase au joueur ne suffit donc pas. Il faut que le classement, lui aussi, lise la phrase. Reste à comprendre comment une machine peut lire une phrase : c’est l’objet du niveau suivant.',
+          p: 'L’embedding a compris « traiter un sujet ». La phrase, elle, parle de traiter quelqu’un. Le joueur qui tape dorloter ou ménager a parfaitement compris la phrase, pourtant le jeu lui répond qu’il en est loin. De cette injustice naît la frustration, et la frustration, ça mène à la guerre. Alors donner une phrase au joueur ne suffit pas. Il faut que l’embedding, lui aussi, lise la phrase.',
         },
       ],
     },
@@ -251,10 +213,17 @@ const meanings: Article = {
 const attention: Article = {
   sections: [
     {
+      blocks: [
+        {
+          p: 'Malgré l’immensité de l’univers, il n’y a à notre connaissance que deux types d’êtres capables de comprendre le langage humain. Les humains eux-mêmes, et depuis peu, GPT et ses confrères, les LLM. Le second présente également l’avantage de mieux manipuler les vecteurs à 300 dimensions, on va donc se tourner vers lui.',
+        },
+      ],
+    },
+    {
       heading: 'Transformers',
       blocks: [
         {
-          p: 'GPT et ses confrères, les grands modèles de langage ou **LLM**, sont principalement constitués d’une brique : le **Transformer**. Un Transformer reçoit les vecteurs des mots d’une phrase et les transforme, pour que chacun intègre des informations provenant des autres mots. Il suffit alors de faire passer la phrase à travers plusieurs couches de Transformers pour obtenir des vecteurs qui ne représentent plus seulement les mots eux-mêmes, mais les mots dans leur contexte.',
+          p: 'Avant de parler d’un LLM complet, commençons par la brique dont il est principalement constitué, le **Transformer**. On a vu comment représenter des mots sous la forme de vecteurs. Un Transformer reçoit plusieurs de ces vecteurs et les transforme pour que chacun puisse intégrer des informations provenant des autres mots de la phrase. Il suffit alors de faire passer une phrase à travers plusieurs couches de Transformers pour obtenir des vecteurs qui ne représentent plus seulement les mots eux-mêmes, mais les mots dans leur contexte. Sur le papier, les Transformers semblent être l’outil idéal pour résoudre notre problème.',
         },
         {
           p: 'Le mécanisme qui permet aux mots de récupérer de l’information les uns chez les autres s’appelle l’**attention**. Pour chaque mot, le Transformer fabrique trois nouveaux vecteurs à partir de sa représentation actuelle :',
@@ -266,22 +235,14 @@ const attention: Article = {
             ['V (value)', 'l’information que je transmets si on m’écoute'],
           ],
         },
-      ],
-    },
-    {
-      heading: 'Le pigeon',
-      blocks: [
         { p: 'Prenons la phrase suivante et intéressons-nous au mot `vole` :' },
         { sentence: ['Le pigeon `vole` dans le ciel'] },
         {
-          p: 'Le Transformer reçoit son vecteur et en calcule la query. On peut imaginer qu’elle exprime quelque chose comme :',
+          p: 'Le Transformer reçoit son vecteur et en calcule la **Q (query)**. On peut imaginer qu’elle exprime quelque chose comme :',
         },
         { quote: 'Quelles informations du contexte sont importantes pour comprendre mon rôle ici ?' },
         {
-          p: 'Les autres mots possèdent chacun une key. Pour savoir lesquels sont intéressants, le Transformer compare la query de `vole` à chaque key grâce à un **produit scalaire**. On l’a déjà croisé sans le dire : la similarité cosinus du niveau 2, c’est un produit scalaire entre deux vecteurs ramenés à une longueur de 1.',
-        },
-        {
-          p: 'Ici, la longueur compte aussi. Mais à longueur égale, plus deux vecteurs pointent dans la même direction, plus le résultat est grand ; perpendiculaires, il vaut zéro ; opposés, il devient négatif. On s’en sert donc comme d’un score de compatibilité entre une query et une key, et ces scores sont ensuite ramenés à des pourcentages dont la somme fait 100 % (grâce à un softmax, pour les experts).',
+          p: 'Les autres mots possèdent de leur côté une **K (key)**, et pour déterminer lesquels sont intéressants, le Transformer compare la query de `vole` aux différentes keys grâce à un **produit scalaire**. Le produit scalaire dépend à la fois de la longueur des deux vecteurs et de l’angle qui les sépare. À longueur égale, plus ils pointent dans la même direction, plus le résultat est grand, perpendiculaires, on obtient zéro et dans des directions opposées, on passe dans le négatif. On peut donc l’utiliser comme un score de compatibilité entre une **Q (query)** et une **K (key)**, et ces scores sont ensuite ramenés à des pourcentages dont la somme fait 100 % (grâce à un softmax pour les experts).',
         },
         {
           fig: {
@@ -293,10 +254,7 @@ const attention: Article = {
           caption: 'La query de `vole` comparée aux keys de `Le` et de `pigeon` : `pigeon` l’emporte.',
         },
         {
-          p: 'Et `ciel` ? Pendant l’attention, un mot ne peut écouter que ce qui le précède. On appelle ça le **masque causal**, et c’est logique : le modèle est entraîné à deviner la suite, on ne va pas la lui montrer.',
-        },
-        {
-          p: 'Ces pourcentages servent à pondérer les values correspondantes, qui viennent enrichir le vecteur de `vole`.',
+          p: 'Ces pourcentages servent à pondérer les **values** correspondantes, qui viennent enrichir le vecteur de `vole`.',
         },
         {
           fig: {
@@ -326,24 +284,16 @@ const attention: Article = {
         },
         { quote: 'Si le sujet est un pigeon, alors vole signifie probablement se déplacer dans les airs.' },
         {
-          p: 'Le modèle a simplement appris que, dans ce genre de contexte, ce que contient `pigeon` est très utile pour représenter correctement `vole`. Les matrices qui fabriquent Q, K et V, de grands tableaux de nombres, font elles-mêmes partie des paramètres du réseau : au début de l’entraînement, elles produisent n’importe quoi, puis elles sont ajustées par descente de gradient, comme les coordonnées de l’embedding.',
-        },
-      ],
-    },
-    {
-      heading: 'Des dizaines de couches',
-      blocks: [
-        {
-          p: 'Une fois l’attention terminée, chaque mot possède une nouvelle représentation, enrichie de ce qu’il a récupéré dans son contexte. Elle passe par un réseau de neurones plus classique, puis devient l’entrée de la couche suivante. Et on recommence quelques dizaines de fois. Une première couche peut apprendre une relation simple entre `pigeon` et `vole`, puis les suivantes partent de cette information déjà intégrée et construisent des représentations de plus en plus riches.',
+          p: 'Le modèle a simplement appris que, dans ce genre de contexte, les informations contenues dans `pigeon` sont très utiles pour représenter correctement `vole`. Les matrices qui fabriquent Q, K et V sont elles-mêmes des paramètres du réseau. Au début de l’entraînement, elles produisent essentiellement n’importe quoi, puis elles sont progressivement ajustées par **descente de gradient**, comme nos **embeddings**.',
         },
         {
-          p: 'Pour entraîner un modèle comme GPT, on lui donne une tâche proche de celle de l’embedding : prédire la suite d’un texte. On lui montre « Le pigeon » et il doit prédire `vole`, puis « Le pigeon vole » et il doit prédire `dans`, et ainsi de suite sur des milliers de milliards de morceaux de texte. À chaque prédiction, on calcule la loss, puis les gradients, et on modifie légèrement tous les paramètres.',
+          p: 'Une fois l’attention terminée, chaque mot possède une nouvelle représentation, enrichie par ce qu’il a récupéré dans son contexte. Elle passe ensuite par un réseau de neurones plus classique, puis devient l’entrée de la couche Transformer suivante. Et on recommence quelques dizaines de fois. À chaque couche, de nouveaux Q, K et V sont calculés à partir des représentations produites par la précédente. Une première couche peut apprendre une relation relativement simple entre `pigeon` et `vole`, puis les suivantes travaillent à partir de cette information déjà intégrée et construisent progressivement des représentations plus riches.',
         },
         {
-          p: 'Depuis le début, on fait comme si un LLM lisait des mots. C’est faux. Il lit des **tokens**, des morceaux de texte choisis pour être réutilisables : un mot courant tient dans un seul token, un mot plus rare est découpé en plusieurs. Ce qu’il apprend à prédire, c’est donc le token suivant.',
+          p: 'Pour entraîner un modèle comme GPT, on lui donne une tâche assez proche de celle qu’on a utilisée pour les embeddings, prédire la suite d’un texte. On lui montre par exemple `Le pigeon` et il doit prédire `vole`, puis `Le pigeon vole` et il doit prédire `dans`, et ainsi de suite sur des milliards de morceaux de texte. À chaque prédiction, on calcule la **loss**, puis les **gradients**, et on modifie légèrement tous les paramètres. À force de prédire la suite de milliards de phrases, le modèle apprend progressivement quels mots doivent s’écouter et quelles informations doivent circuler entre eux. C’est ainsi qu’un immense empilement de couches Transformer, entraîné avec l’objectif assez basique de deviner le mot suivant, finit par construire quelque chose qui ressemble dangereusement à une compréhension fine du contexte.',
         },
         {
-          p: 'À force de prédire la suite de milliards de phrases, le modèle apprend quels mots doivent s’écouter et quelles informations doivent circuler entre eux. C’est ainsi qu’un immense empilement de Transformers, entraîné avec l’objectif assez basique de deviner le mot suivant, finit par construire quelque chose qui ressemble dangereusement à une compréhension fine du contexte.',
+          p: 'Premier détail passé sous silence. Pendant l’attention, un mot ne peut écouter que ce qui le précède. On appelle ça le **masque causal**, et c’est logique : le modèle est entraîné à deviner la suite, on ne va pas la lui montrer.',
         },
       ],
     },
@@ -351,13 +301,13 @@ const attention: Article = {
       heading: 'Ouvrir le capot',
       blocks: [
         {
-          p: 'À chaque couche, chaque mot possède donc un vecteur qui a écouté son contexte : son **hidden state**, son « état caché ». C’est exactement ce qui manquait à l’embedding statique : un vecteur qui a lu la phrase et qui fait la différence entre le vol du pigeon et le vol à l’étalage.',
+          p: 'À chaque couche du réseau, chaque mot possède donc un vecteur qui a écouté son contexte. Ce vecteur intermédiaire porte un nom, le **hidden state**. C’est exactement ce qui manquait au jeu : un embedding qui a lu la phrase et qui peut faire la différence entre le `vol` du pigeon et le `vol` à l’étalage. Dans l’utilisation normale d’un LLM, on ne regarde pas directement ces vecteurs, on laisse le modèle aller jusqu’au bout et on lit le texte qu’il produit. Mais rien ne nous interdit de l’arrêter en chemin et de récupérer le vecteur produit par la couche qui nous intéresse.',
         },
         {
-          p: 'Dans l’utilisation normale d’un LLM, on ne regarde pas ces vecteurs : on laisse le modèle aller jusqu’au bout et on lit le texte qu’il produit. Toute cette lecture ne sert alors qu’à une chose : choisir le prochain token.',
+          p: 'Depuis le début, je fais comme si un LLM lisait des mots. C’est faux. Il lit des **tokens**, des morceaux de texte choisis pour être réutilisables. Un mot courant peut tenir dans un seul token, un mot plus rare peut être découpé en plusieurs, et il a alors un **hidden state** par token. Il faut choisir lequel utiliser, et comme chaque token ne peut lire que ce qui le précède, le dernier est un candidat assez naturel : il a au moins vu tous les morceaux précédents du même mot.',
         },
         {
-          p: 'Le jeu, lui, n’a rien à écrire. Il lui faut un modèle qui lise aussi bien, mais qui réponde à une autre question : c’est l’objet du niveau suivant.',
+          p: 'Troisième détail, et le plus profond. Notre embedding a été entraîné de manière à ce que les mots employés dans des contextes similaires obtiennent des vecteurs proches. Un LLM, lui, est entraîné avec un autre objectif : prédire le token suivant. Rien ne garantit donc que la géométrie brute de ses hidden states constitue une bonne distance sémantique. Ces vecteurs sont avant tout des représentations intermédiaires, utiles au modèle pour poursuivre son calcul.',
         },
       ],
     },
@@ -368,16 +318,17 @@ const attention: Article = {
 const judge: Article = {
   sections: [
     {
-      heading: 'Poser la question',
+      heading: 'La solution : arrêter de mesurer, poser la question',
       blocks: [
         {
-          p: 'Le jeu utilise **Jev**, un modèle de décision sorti en septembre 2026 par TypeSafe. TypeSafe n’en publie pas l’architecture, mais on peut se faire une assez bonne idée du principe : prendre un modèle capable de comprendre du texte, puis remplacer sa vocation d’écrivain par celle de juge. Un LLM classique termine son calcul en essayant de répondre à cette question :',
+          p: 'Le jeu utilise **Jev**, un modèle de décision sorti en septembre 2026 par TypeSafe. Alors de quoi est fait ce fameux modèle qui a réussi là où les LLM ont échoué ? On ne sait pas exactement, TypeSafe parle d’une nouvelle architecture sans en publier les détails. Mais on peut quand même se faire une assez bonne idée du principe. Prendre un modèle capable de comprendre du texte, puis remplacer sa vocation d’écrivain par celle de juge. Un LLM classique termine son calcul en essayant de répondre à cette question :',
         },
         { quote: 'Quel token dois-je écrire ensuite ?' },
         {
           p: 'Un modèle de décision peut utiliser une représentation du même genre, mais terminer par une petite couche spécialisée, un **classifier**, qui répond plutôt à :',
         },
         { quote: 'Parmi ces réponses, laquelle semble correcte, et avec quelle probabilité ?' },
+        { p: 'En simplifiant énormément, ça donne quelque chose comme :' },
         {
           fig: {
             kind: 'flow',
@@ -390,10 +341,10 @@ const judge: Article = {
               },
             ],
           },
-          caption: 'En simplifiant énormément : le même travail de lecture, une fin différente.',
+          caption: 'Le même travail de lecture, une fin différente.',
         },
         {
-          p: 'Le gros du travail reste le même : lire le langage, comprendre les relations entre les mots, construire une représentation du contexte. C’est seulement à la fin qu’on lui demande autre chose, et c’est précisément ce dont le jeu a besoin. Plutôt que d’espérer que des angles entre vecteurs répondent à notre question, on peut simplement la poser :',
+          p: 'Le gros du travail reste le même : lire le langage, comprendre les relations entre les mots et construire une représentation du contexte. C’est seulement à la fin qu’on lui demande autre chose, et c’est précisément ce dont on a besoin. On a passé tout ce temps à récupérer les vecteurs intermédiaires d’un modèle entraîné à écrire, en espérant que leur géométrie réponde malgré tout à notre objectif. Cette fois, on peut simplement poser la question :',
         },
         { quote: 'Dans cette phrase, à quel point ce mot est-il proche de celui-là ?' },
       ],
@@ -402,19 +353,19 @@ const judge: Article = {
       heading: 'Une note pour chaque candidat',
       blocks: [
         {
-          p: 'L’embedding garde son rôle de rabatteur. Il fournit les 10 000 voisins du mot caché, sans se soucier du contexte, et chacun reçoit ensuite une note de Jev, de 0 à 4 :',
+          p: 'L’embedding garde son rôle de rabatteur. Il fournit les 10 000 voisins du mot caché, sans se soucier du contexte, et chacun reçoit ensuite une note de Jev :',
         },
         {
           code: [
-            '0 : Aucun rapport de sens avec le mot secret tel qu’employé dans la phrase',
-            '1 : Rapport lointain : même domaine très général, ou association vague',
-            '2 : Lié : même champ lexical, idée voisine, ou souvent associé au mot secret dans ce sens',
-            '3 : Très proche : quasi-synonyme, ou la même notion à une nuance près',
-            '4 : Même sens : synonyme direct du mot secret dans ce contexte',
+            '0 : aucun rapport de sens avec le mot secret tel qu’employé dans la phrase',
+            '1 : rapport lointain, même domaine très général',
+            '2 : lié, même champ lexical ou idée voisine',
+            '3 : très proche, quasi-synonyme',
+            '4 : même sens, synonyme direct dans ce contexte',
           ],
         },
         {
-          p: 'Jev répond avec des décimales : un candidat obtient 3,26 plutôt que 3. La consigne est écrite en français ordinaire : seul le sens compte, pas la grammaire, pas l’orthographe, pas le fait que le candidat puisse remplacer le mot dans la phrase. Pour jouer, ça veut dire qu’il ne faut pas chercher ce qui irait bien dans le trou, mais ce qui veut dire la même chose. Par exemple :',
+          p: 'La consigne est écrite en français ordinaire : seul le sens compte, pas la grammaire, pas l’orthographe, pas le fait que le candidat puisse remplacer le mot dans la phrase. Prenons `nerfs` :',
         },
         {
           fig: {
@@ -434,35 +385,39 @@ const judge: Article = {
           caption: 'Les plus proches voisins de `nerfs` selon l’embedding seul, puis selon Jev dans sa phrase.',
         },
         {
-          p: 'Jev a compris qu’on parlait de tempérament et pas de neurologie. La consigne dit aussi ce qui ne doit pas compter :',
+          p: 'Jev a compris qu’on parlait de tempérament et pas de neurologie. Au début, Jev faisait pourtant lui aussi des erreurs :',
+        },
+        { sentence: ['la force d’étouffer mes `émotions`'] },
+        {
+          p: '`étouffer` n’est pas un mot proche d’`émotions`, c’est un mot de la phrase. Alors j’ai ajouté une ligne à la consigne :',
         },
         {
           quote:
-            'Un candidat qui figure dans la phrase, ou qui décrit ce que la phrase fait du mot secret (par exemple l’étouffer, le cacher, le perdre), n’est pas plus proche pour autant.',
+            'Un candidat qui figure dans la phrase, ou qui décrit ce que la phrase fait du mot secret, n’est pas plus proche pour autant.',
         },
         {
-          p: 'Dans « la force de fixer froidement le malheur, d’étouffer mes émotions », `étouffer` n’est pas un mot proche d’`émotions`, c’est un mot de la phrase : il n’arrive qu’au 1 182e rang. Avec un vecteur, on peut constater qu’un résultat est mauvais, mais pas lui expliquer pourquoi. Ici, si Jev se trompe pour une raison qu’on peut formuler, il suffit de le lui dire.',
+          p: '`étouffer` est passé de la 27e à la 1 182e place. En trifouillant dans les **hidden states**, je pouvais constater qu’un résultat était mauvais, mais pas expliquer au vecteur pourquoi. Ici, si Jev se trompe pour une raison que je peux formuler, je peux simplement lui dire.',
         },
         {
-          p: 'Tout ne se règle pas avec des mots pour autant. La consigne a beau donner la note la plus basse à un candidat qui n’est pas français, Jev l’ignore superbement : `retirement` restait premier voisin de `retraite`. Alors on lui pose une question à part pour chacun des 200 premiers : est-ce bien un mot français ? Un mot étranger, un nom propre ou une marque est envoyé tout en bas.',
+          p: 'Tout ne se règle pas avec des mots pour autant. J’avais aussi écrit qu’un candidat qui n’est pas français méritait la note la plus basse, et Jev l’a superbement ignoré. `retirement` est resté premier voisin de `retraite`. J’ai fini par régler ça avec une autre question, posée à part pour chacun des 200 premiers : est-ce bien un mot français ?',
         },
       ],
     },
     {
-      heading: 'Un tournoi',
+      heading: 'Un tournoi pour départager les vainqueurs',
       blocks: [
         {
-          p: 'Jev n’est pas parfaitement stable. Si on lui demande plusieurs fois de noter le même candidat, sa réponse varie d’environ 0,1 point. Au fond du classement, ça ne change pas grand-chose : le 7 400e mot peut devenir le 5 000e, et personne ne joue là-bas. En haut, c’est différent : c’est là que se joue la partie. Les notes y sont si serrées qu’une telle variation suffit à envoyer le 150e mot au 100e rang, ou au 200e. Jev sait donc assez bien quels mots méritent d’entrer dans les 200 premiers, mais beaucoup moins bien dans quel ordre les ranger.',
+          p: 'Jev n’est pas non plus parfaitement stable. Si je lui demande plusieurs fois de noter le même candidat, sa réponse peut varier d’environ 0,1 point. Au fond du classement, ça ne change pas grand-chose. Le 7 400e mot peut devenir le 5 000e, ça ne bouleversera pas le jeu. En haut du classement, c’est différent. C’est là que l’ordre compte le plus, et si les mots classés 50e et 150e ont des notes presque identiques, une telle variation suffit à les rendre interchangeables. Jev sait donc assez bien quels mots méritent d’entrer dans les 200 premiers, mais beaucoup moins bien dans quel ordre les ranger.',
         },
         {
-          p: 'Alors on organise un tournoi. Les 200 meilleurs candidats s’affrontent tous deux à deux, soit 19 900 duels, avec une seule question :',
+          p: 'Alors on va organiser un tournoi. Les 200 meilleurs candidats s’affrontent tous deux à deux, soit 19 900 duels, avec une seule question :',
         },
         { quote: 'Lequel de ces deux mots est le plus proche du mot secret dans cette phrase ?' },
         {
-          p: 'Pour chaque duel, Jev donne une probabilité de victoire aux deux candidats. Le score d’un mot, c’est sa probabilité moyenne de victoire sur ses 199 duels.',
+          p: 'Pour chaque duel, Jev donne une probabilité de victoire aux deux candidats, et le score final d’un mot est simplement sa probabilité moyenne de victoire sur l’ensemble de ses confrontations. Un algorithme de tri classique demanderait beaucoup moins de comparaisons. Mais un tri suppose qu’on puisse faire confiance à la fonction qui compare deux éléments. Si `A > B` et `B > C`, on aimerait raisonnablement pouvoir en déduire que `A > C`. Jev, lui, peut très bien répondre que `A < C`, il n’est ni parfaitement déterministe, ni parfaitement transitif. Dans un tri classique, une mauvaise comparaison pourrait envoyer un mot au mauvais endroit et influencer toute la suite. Dans un tournoi complet, chaque candidat affronte les 199 autres, et s’il prend une décision étrange, elle se retrouve diluée parmi 198 autres confrontations.',
         },
         {
-          p: 'Trier les mots demanderait beaucoup moins de comparaisons. Mais un tri suppose qu’on puisse faire confiance à la comparaison : si A bat B et B bat C, A doit battre C. Jev, lui, peut très bien répondre que C bat A. Dans un tri, une mauvaise comparaison peut envoyer un mot au mauvais endroit ; dans un tournoi complet, elle se retrouve diluée parmi 198 autres.',
+          p: 'Et ça fonctionne vraiment. Pour le mot secret `froidement`, `impassibilité` passe de la 6e à la 2e place. Pour `beauté`, `fascination` remonte de la 152e à la 13e.',
         },
         {
           fig: {
@@ -477,27 +432,10 @@ const judge: Article = {
               { word: 'impavide', from: 790, win: 0.956 },
             ],
           },
-          caption:
-            'Le haut du tournoi pour `froidement`, dans la même phrase. L’embedding plaçait `impassibilité` au 2 476e rang, la note de Jev au 6e, le tournoi le met 2e.',
-        },
-      ],
-    },
-    {
-      heading: 'Le rang, dans une phrase',
-      blocks: [
-        { p: 'Quand on tape un mot dans une phrase du jour, son rang sort donc de cette chaîne :' },
-        {
-          steps: [
-            'l’embedding rabat les 10 000 plus proches voisins du mot caché ; hors de cette liste, c’est un MISS, même si la phrase rend le mot proche ;',
-            'Jev note chacun d’eux selon le sens que la phrase donne au mot caché ;',
-            'les 200 mieux notés s’affrontent en tournoi, qui fixe les rangs 1 à 200 ;',
-            'un mot étranger qui s’est glissé parmi eux est envoyé tout en bas ;',
-            'au-delà du 200e, c’est la note qui range les mots, et l’embedding départage les ex æquo ;',
-            'les mots de départ affichés dans les trous sont choisis entre le 100e et le 200e rang.',
-          ],
+          caption: 'Le haut du tournoi pour `froidement`.',
         },
         {
-          p: 'Tout ça une fois pour toutes, avant la sortie de la phrase : pendant la partie, les rangs sont déjà écrits. Personne ne s’en rendra compte, mais maintenant vous le savez.',
+          p: 'Enfin, au-delà du 200e rang, je conserve simplement l’ordre des notes de Jev. Personne ne s’en rendra compte, mais maintenant vous le savez.',
         },
       ],
     },
@@ -505,10 +443,10 @@ const judge: Article = {
       heading: 'Pourquoi ça marche ?',
       blocks: [
         {
-          p: 'Il faut quand même rendre justice aux LLM : rien de tout ça ne semble hors de leur portée. On pourrait prendre un bon modèle, lui montrer la phrase et deux candidats, puis lui demander lequel est le plus proche du mot secret : il répondrait probablement très bien. Le problème, c’est qu’il faudrait lui poser la question des dizaines de milliers de fois, et une idée parfaitement raisonnable sur le papier devient beaucoup moins séduisante quand chaque petite décision coûte quelques secondes et une requête à un gros modèle.',
+          p: 'Il faut quand même rendre justice aux LLM. Rien de ce que je demande à Jev ne semble hors de leur portée. Je pourrais prendre un bon modèle, lui montrer la phrase et deux candidats, puis lui demander lequel est sémantiquement le plus proche du mot secret. Il répondrait probablement très bien. Le problème, c’est qu’il faudrait lui poser la question des dizaines de milliers de fois, et une idée parfaitement raisonnable sur le papier devient beaucoup moins séduisante quand chaque petite décision coûte quelques secondes et une requête à un gros modèle.',
         },
         {
-          p: 'Jev ne sait rien faire qu’un LLM serait incapable de faire, mais il prend une petite décision de sens extrêmement vite et pour presque rien : pour un mot secret, tout ça coûte à peu près 0,13 $. On peut donc se permettre une stratégie d’une brutalité remarquable : faire noter 10 000 candidats un par un, garder les 200 meilleurs, puis organiser 19 900 duels supplémentaires juste pour mieux les ranger. Jev est suffisamment bon marché pour qu’on lui pose trente mille fois la question.',
+          p: 'Jev ne sait rien faire qu’un LLM serait incapable de faire, mais il peut prendre une petite décision sémantique extrêmement vite et pour presque rien. Pour un mot secret, mon système lui fait traiter environ 3,1 millions de tokens, et en mettant la partie fixe de la consigne en cache, l’ensemble me coûte environ 0,13 $. Je peux donc me permettre une stratégie d’une brutalité remarquable : faire juger 10 000 candidats un par un, garder les 200 meilleurs, puis organiser 19 900 duels supplémentaires juste pour mieux les ranger. Avec un modèle plus lent ou plus cher, j’aurais passé mon temps à chercher un algorithme malin pour réduire le nombre de requêtes. Jev, lui, est suffisamment bon marché pour qu’on lui pose trente mille fois la question.',
         },
       ],
     },

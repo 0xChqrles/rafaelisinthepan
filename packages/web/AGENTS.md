@@ -2934,9 +2934,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **The LEVELS** (`tutorial/levels.ts`; re-cut 2026-09-29 on the user's go-ahead, "the game
   received some updates since the levels have been decided, so feel free to reorganize
   them"): 1 THE GAME (played) · 2 THE DISTANCE (the embedding: words as coordinates, how it
-  is learned, cosine, the rank) · 3 MANY MEANINGS (what it lacks: one vector per word, so the
+  is learned) · 3 MANY MEANINGS (what it lacks: one vector per word, so the
   sentence must be read) · 4 ATTENTION (how a transformer reads a context: Q/K/V, the causal
-  mask, layers, tokens, the hidden state) · 5 THE JUDGE (Jev, which reads like a transformer
+  mask, layers, tokens, the hidden state, and why its geometry is no distance) · 5 THE JUDGE (Jev, which reads like a transformer
   but judges instead of writing: the grade per candidate, the foreign-word check, the
   200-word tournament, why it is cheap). The arc is the user's: "explanation of embedding ->
   lack of context -> how the transformers can actually help us -> Jev which uses
@@ -2946,14 +2946,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (user-decided 2026-09-29: "not fully interactive like the first one… more like an article,
   like the chqrles.me article, but without all the story telling"): the author's published
   article cut into four, its own sentences and examples, figures redrawn in the app's style
-  (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **Facts follow the CODE
+  (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **The article's own
+  words, not a comma changed** (user-decided: "if you can reuse an article part without
+  modifying it, then reuse it without modifying it, not even a single comma"): a paragraph
+  the article has is used exactly as it prints it; a sentence changes only where it points
+  into the cut story, contradicts the code, or jokes about a real person, and nothing the
+  article does not say is added to explain it. **Facts follow the CODE
   where the article and the pipeline differ** (the header of `articles/fr.ts` lists each
   departure) — **except the embedding's training, told as the article tells it, SKIP-GRAM**
   (from a word, guess the words around it; user-decided 2026-09-29: fastText's CBOW is not
   worth a detour, the game's embedding "learned the same way"). **A secret next to ranked
   words shows FOUND** — the solve's cobalt, as the game inks a hole in (`mot^0`, and the
   word an example sentence is about) — never the held chip, which is a guess's. Every level
-  ends on a hook into the next one. The end is three bands: NEXT LEVEL, PLAY, then the
+  ends on the problem the next one answers. The end is three bands: NEXT LEVEL, PLAY, then the
   credit to the article apart. On a wide screen the list and an article scroll the WHOLE
   VIEWPORT, so the scrollbar stands on the screen's edge (user-decided 2026-09-29). **Written in French first** (user-decided 2026-09-29: "wait for the article
   translation… for the moment just create the french version"): a level is READY in a

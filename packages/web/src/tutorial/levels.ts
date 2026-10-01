@@ -36,10 +36,10 @@ export interface Level {
 
 export const LEVELS: readonly Level[] = [
   { level: 1, titleKey: 'levelPlayTitle', subKey: 'levelPlaySub', art: 'game', duration: { en: 60, fr: 60 } },
-  { level: 2, titleKey: 'levelDistanceTitle', subKey: 'levelDistanceSub', art: 'distance', duration: { fr: 280 } },
-  { level: 3, titleKey: 'levelMeaningsTitle', subKey: 'levelMeaningsSub', art: 'meanings', duration: { fr: 100 } },
-  { level: 4, titleKey: 'levelAttentionTitle', subKey: 'levelAttentionSub', art: 'attention', duration: { fr: 250 } },
-  { level: 5, titleKey: 'levelJudgeTitle', subKey: 'levelJudgeSub', art: 'judge', duration: { fr: 330 } },
+  { level: 2, titleKey: 'levelDistanceTitle', subKey: 'levelDistanceSub', art: 'distance', duration: { fr: 220 } },
+  { level: 3, titleKey: 'levelMeaningsTitle', subKey: 'levelMeaningsSub', art: 'meanings', duration: { fr: 90 } },
+  { level: 4, titleKey: 'levelAttentionTitle', subKey: 'levelAttentionSub', art: 'attention', duration: { fr: 300 } },
+  { level: 5, titleKey: 'levelJudgeTitle', subKey: 'levelJudgeSub', art: 'judge', duration: { fr: 320 } },
 ];
 
 // The one level the game invites into today; named once so the gate, the invitation and

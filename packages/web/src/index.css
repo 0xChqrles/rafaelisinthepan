@@ -7801,6 +7801,8 @@ figure.l1-fig {
   line-height: 1.75;
   font-weight: 380;
   color: var(--fg);
+  /* The article breaks a line inside a paragraph now and then; so does its copy here. */
+  white-space: pre-line;
 }
 .article-quote {
   margin: 0;
@@ -8136,40 +8138,6 @@ figure.l1-fig {
 .ar-list-words li.marked.right {
   color: var(--solve);
   border-color: color-mix(in srgb, var(--solve) 55%, transparent);
-}
-/* A real neighbourhood: the secret's chip, then rank by rank, every rank in its heat. */
-.ar-ranks-secret {
-  margin: 0 0 16px;
-  font-family: var(--pixel-font);
-  font-size: 12px;
-}
-.ar-ranks-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 9px 18px;
-}
-.ar-ranks-list li {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-.ar-ranks-no {
-  min-width: 2.6em;
-  text-align: right;
-  font-family: var(--pixel-font);
-  font-size: 9px;
-  color: var(--rank-color);
-}
-.ar-ranks-word {
-  font-family: var(--pixel-font);
-  font-size: 10.5px;
-}
-.ar-ranks-gap {
-  margin: 10px 0;
-  color: var(--muted);
 }
 /* Attention's arcs, drawn in when the figure arrives, thicker for a larger share. */
 .ar-arcs-svg {

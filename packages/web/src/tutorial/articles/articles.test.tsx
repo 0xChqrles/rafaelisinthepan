@@ -1,7 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { WordPuzzle } from '@whippin/shared';
-import chat from '../scripts/fr.chat.json';
 import { articleFor, articleText } from '.';
 import Rich from './Rich';
 import { frenchSpaces } from './typeset';
@@ -49,34 +47,11 @@ describe('the article levels’ data', () => {
           if (i >= fig.focus) expect(w).toBeNull();
         });
       }
-      if (fig.kind === 'ranks') for (const w of fig.more) expect(fig.board.ranks[w], w).toBeDefined();
       if (fig.kind === 'tournament') {
         const wins = fig.rows.map((r) => r.win);
         expect(wins).toEqual([...wins].sort((a, b) => b - a));
       }
     }
-  });
-});
-
-// The prose QUOTES the bundled board (the game's own embedding): if the board is ever
-// regenerated, these are the sentences to re-read.
-describe('what the French level 2 says about chat’s neighbours', () => {
-  const board = chat as WordPuzzle;
-  it('chien is 4th, renard 20th, souris 51st and loup 89th', () => {
-    expect(board.ranks.chien.rank).toBe(4);
-    // One rank for a word's forms, and accents not typed: chiens, chienne ⇒ chien⁴, felin ⇒ félin⁵.
-    expect(board.ranks.chiens.rank).toBe(4);
-    expect(board.ranks.chienne.rank).toBe(4);
-    expect(board.ranks.felin).toMatchObject({ word: 'félin', rank: 5 });
-    expect(board.ranks.renard.rank).toBe(20);
-    expect(board.ranks.souris.rank).toBe(51);
-    expect(board.ranks.loup.rank).toBe(89);
-  });
-  it('the text says so', () => {
-    const text = articleText(articleFor('fr', 2)!).join(' ');
-    expect(text).toContain('`chien^4`');
-    expect(text).toContain('`félin^5`');
-    expect(text).toContain('89e position');
   });
 });
 
