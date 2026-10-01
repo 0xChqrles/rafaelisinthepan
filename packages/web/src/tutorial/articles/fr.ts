@@ -202,7 +202,7 @@ const meanings: Article = {
           caption: 'Parmi les plus proches voisins de `traite^0` selon l’embedding.',
         },
         {
-          p: 'L’embedding a compris « traiter un sujet ». La phrase, elle, parle de traiter quelqu’un. Le joueur qui tape dorloter ou ménager a parfaitement compris la phrase, pourtant le jeu lui répond qu’il en est loin. De cette injustice naît la frustration, et la frustration, ça mène à la guerre. Alors donner une phrase au joueur ne suffit pas. Il faut que l’embedding, lui aussi, lise la phrase.',
+          p: 'L’embedding a compris « traiter un sujet ». La phrase, elle, parle de traiter quelqu’un. Le joueur qui tape `dorloter` ou `ménager` a parfaitement compris la phrase, pourtant le jeu lui répond qu’il en est loin. De cette injustice naît la frustration, et la frustration, ça mène à la guerre. Alors donner une phrase au joueur ne suffit pas. Il faut que l’embedding, lui aussi, lise la phrase.',
         },
       ],
     },
