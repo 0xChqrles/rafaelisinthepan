@@ -4326,8 +4326,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .l1-step.found {
   color: var(--solve);
 }
-/* THE VOICE: the coach's line on the ground, set like an article's standfirst, in the
-   articles' 680px measure. Its room is reserved on the wrapper — two lines wide, three on a
+/* THE VOICE: the coach's line on the ground, set large in the articles' 680px measure. Its room is reserved on the wrapper — two lines wide, three on a
    tablet, four on a phone, the longest line's need at each (measured) — so an absent line
    never collapses it and nothing under it ever moves. */
 .l1-voice {
@@ -7705,8 +7704,8 @@ figure.l1-fig {
 
 /* ===================== an ARTICLE level (2026-09-29) ===================== */
 /* A LEVEL READ, set like the author's article page (chqrles.me): the SLEEVE — the level's
-   illustration, large — then the track number and the title, the credits line, the
-   standfirst; sections opened by a hairline and a numbered cue; figures in their own
+   illustration, large — then the track number and the title, the credits line; sections
+   opened by a hairline and a numbered cue; figures in their own
    panels, numbered through the level. The privacy notice's geometry (a column that scrolls
    itself, pinned to the top of `.app`, the literal header clearance), a little wider for the
    figures. The prose is the chrome's mono — the app's two voices hold: a word the game would
@@ -7771,13 +7770,6 @@ figure.l1-fig {
   text-transform: uppercase;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-}
-.article-lead {
-  margin: 22px 0 0;
-  font-size: 16.5px;
-  line-height: 1.65;
-  font-weight: 450;
-  color: var(--fg);
 }
 .article-section {
   display: flex;
@@ -7908,7 +7900,6 @@ figure.l1-fig {
   color: var(--bg);
 }
 .article-p .ar-held,
-.article-lead .ar-held,
 .ar-fig-caption .ar-held {
   font-family: var(--pixel-font);
   font-size: 0.82em;
@@ -7931,7 +7922,6 @@ figure.l1-fig {
   white-space: nowrap;
 }
 .article-p .ar-solved,
-.article-lead .ar-solved,
 .ar-fig-caption .ar-solved {
   font-size: 0.82em;
 }
@@ -8434,9 +8424,6 @@ figure.l1-fig {
   }
   .article-title {
     font-size: 22px;
-  }
-  .article-lead {
-    font-size: 15.5px;
   }
   .article-p,
   .article-quote p,

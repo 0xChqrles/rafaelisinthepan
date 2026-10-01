@@ -19,8 +19,8 @@ import { LEVELS, levelOf, nextReady } from './levels';
 
 // AN ARTICLE LEVEL (levels 2+, 2026-09-29): the level read, not played — set like the
 // author's article page. Its sleeve (the level's illustration, large), the track number and
-// the title, the credits line (how long, which level of how many), the standfirst; then the
-// sections, each opened by its numbered cue, the figures numbered through the level. Reading
+// the title, the credits line (how long, which level of how many); then the sections, each
+// opened by its numbered cue, the figures numbered through the level. Reading
 // it to its END records it as done on this device; the end leads on to the next level ready
 // in this language, and always to the game.
 const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -157,9 +157,6 @@ export default function ArticleLevel({ lang, level }: { lang: LangCode; level: n
             )}
             <li>{t(lang, 'levelOf').replace('{n}', String(level)).replace('{total}', String(LEVELS.length))}</li>
           </ul>
-          <p className="article-lead">
-            <Rich text={article.lead} />
-          </p>
         </header>
         {article.sections.map((section, i) => (
           // Static per article: the index is a stable key.

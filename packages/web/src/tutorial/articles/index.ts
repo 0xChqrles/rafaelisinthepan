@@ -11,7 +11,7 @@ export function articleFor(lang: string, level: number): Article | undefined {
 
 // Every piece of text a reader reads, in order — the reading time is counted on it.
 export function articleText(article: Article): string[] {
-  const out: string[] = [article.lead];
+  const out: string[] = [];
   for (const section of article.sections) {
     if (section.heading) out.push(section.heading);
     for (const block of section.blocks) {

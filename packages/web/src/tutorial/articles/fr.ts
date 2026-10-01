@@ -33,8 +33,6 @@ const SOURCE = {
 };
 
 const distance: Article = {
-  lead:
-    'Le jeu est un chaud-froid sémantique : chaque mot tapé reçoit un numéro, sa place parmi les voisins du mot secret. Pour ranger des mots par proximité, il faut d’abord savoir mesurer la distance entre deux mots.',
   sections: [
     {
       blocks: [
@@ -164,8 +162,6 @@ const distance: Article = {
 };
 
 const meanings: Article = {
-  lead:
-    'À la manière de l’électron qui se trouve partout à la fois tant qu’on ne le mesure pas, un mot seul porte tous ses sens tant qu’on ne l’utilise pas.',
   sections: [
     {
       blocks: [
@@ -253,14 +249,12 @@ const meanings: Article = {
 };
 
 const attention: Article = {
-  lead:
-    'Malgré l’immensité de l’univers, il n’y a à notre connaissance que deux types d’êtres capables de comprendre le langage humain : les humains eux-mêmes et, depuis peu, GPT et ses confrères, les grands modèles de langage ou **LLM**. Les seconds présentent également l’avantage de mieux manipuler les vecteurs à 300 dimensions.',
   sections: [
     {
       heading: 'Transformers',
       blocks: [
         {
-          p: 'Un LLM est principalement constitué d’une brique : le **Transformer**. Un Transformer reçoit les vecteurs des mots d’une phrase et les transforme, pour que chacun intègre des informations provenant des autres mots. Il suffit alors de faire passer la phrase à travers plusieurs couches de Transformers pour obtenir des vecteurs qui ne représentent plus seulement les mots eux-mêmes, mais les mots dans leur contexte.',
+          p: 'GPT et ses confrères, les grands modèles de langage ou **LLM**, sont principalement constitués d’une brique : le **Transformer**. Un Transformer reçoit les vecteurs des mots d’une phrase et les transforme, pour que chacun intègre des informations provenant des autres mots. Il suffit alors de faire passer la phrase à travers plusieurs couches de Transformers pour obtenir des vecteurs qui ne représentent plus seulement les mots eux-mêmes, mais les mots dans leur contexte.',
         },
         {
           p: 'Le mécanisme qui permet aux mots de récupérer de l’information les uns chez les autres s’appelle l’**attention**. Pour chaque mot, le Transformer fabrique trois nouveaux vecteurs à partir de sa représentation actuelle :',
@@ -372,8 +366,6 @@ const attention: Article = {
 };
 
 const judge: Article = {
-  lead:
-    'Pour ranger les mots d’une phrase, le jeu utilise une IA qui ne peut pas parler : elle lit comme un LLM, mais au lieu d’écrire, elle juge. Et on lui pose la question trente mille fois par mot secret.',
   sections: [
     {
       heading: 'Poser la question',

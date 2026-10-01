@@ -68,8 +68,6 @@ export interface ArticleSection {
 }
 
 export interface Article {
-  // The standfirst, under the title (the title itself is the level's subtitle).
-  lead: string;
   sections: ArticleSection[];
   // The last line, after everything: a quiet footnote (a source, a link).
   source?: { text: string; href: string };
