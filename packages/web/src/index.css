@@ -3035,11 +3035,12 @@ input {
 /* Tap a hole and its place in the sentence becomes a fixed SLOT that ONE column of the
    words already found for it scrolls THROUGH, item by item (user-decided 2026-09-01, the
    day's fifth approach: the history modal's line, a radial net with lines twice revised,
-   and a plain stack came before it): farther words above, closer words below; the word in
-   the slot wears the hole's own chip at the sentence's own size, the others stand plain
-   and smaller; the word the wheel settles on is the pick. `HistoryWheel` owns every
-   number that has to agree with the sentence (row height = its line box, the slot = the
-   word's own line, all set inline from the measured host); the CSS owns the dress.
+   and a plain stack came before it): farther words above, closer words below; every row
+   stands at the sentence's own size, the slot's included — the word in the slot wearing
+   the hole's own chip, the others plain; the word the wheel settles on is the pick.
+   `HistoryWheel` owns every number that has to agree with the sentence (the rows' size,
+   row height = its line box, the slot = the word's own line, all set inline from the
+   measured host); the CSS owns the dress.
 
    The dialog IS the dim: a transparent full-screen native dialog whose own background is
    the ground at 74%, so the sentence reads through it at about a quarter — the slot's
@@ -3120,11 +3121,12 @@ input {
 .hole.veiled .hole-rank {
   visibility: hidden;
 }
-/* A ROW: one line box of the sentence's own height (inline), the word in the pixel face
-   with its exponent raised as the hole's is — plain text, no tile — snapping to the slot.
-   The one IN the slot wears the hole's own markup (chip + exponent at the sentence's size,
-   `.hole` inside), so it lands exactly on the word it stands for. Rows arrive on a short
-   stagger counted out from the slot (`--i`), each a quick fade. */
+/* A ROW: one line box of the sentence's own height and the sentence's own size (inline,
+   one size in the slot and out of it), the word in the pixel face with its exponent raised
+   as the hole's is — plain text, no tile — snapping to the slot. The one IN the slot wears
+   the hole's own markup (chip + exponent, `.hole` inside), so it lands exactly on the word
+   it stands for. Rows arrive on a short stagger counted out from the slot (`--i`), each a
+   quick fade. */
 .wheel-row {
   position: relative;
   display: block;

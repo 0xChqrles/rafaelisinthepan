@@ -15,18 +15,19 @@ import MeterCanvas from './MeterCanvas';
 // "item-by-item scrolling, beautiful, works well on mobile"): tap a hole and its place in
 // the sentence becomes a fixed SLOT, and the words already found for it stand in ONE column
 // that scrolls THROUGH that slot with mandatory snap — a picker drum. Farther words above,
-// closer words below; the word in the slot wears the hole's own chip at the sentence's own
-// size, the others stand plain and smaller; and the word in the slot when the wheel FOLDS
-// is the pick. Tap a row and it glides into the slot; tap the slot, anywhere outside the
-// column, or Escape, and it folds. THE PICK LANDS ON THE FOLD, NEVER WHILE THE WHEEL IS
-// OPEN (user-reported 2026-09-01): a pick swaps the real hole beneath — its scramble, and
-// a word of another length reflows the sentence, moving the hole to another line under a
-// slot that stays put. So the sentence under the wheel is FROZEN, the slot row stands in
-// for the word at its measured place, and the hole swaps with its usual choreography once
-// the overlay is gone. EVERY word is a row, the words behind the start included — "you
-// should be able to select far words" (user-decided 2026-09-01, third pass, retiring the
-// dashed rule and the dim those rows wore for one pass): a far word is a word the player
-// found, and reading the sentence with it is the wheel's whole point.
+// closer words below; EVERY row stands at the sentence's own size, the slot's included —
+// one type size while the wheel is open, since rows of mixed sizes read as a mess — the
+// word in the slot wearing the hole's own chip, the others plain; and the word in the slot
+// when the wheel FOLDS is the pick. Tap a row and it glides into the slot; tap the slot,
+// anywhere outside the column, or Escape, and it folds. THE PICK LANDS ON THE FOLD, NEVER
+// WHILE THE WHEEL IS OPEN (user-reported 2026-09-01): a pick swaps the real hole beneath —
+// its scramble, and a word of another length reflows the sentence, moving the hole to
+// another line under a slot that stays put. So the sentence under the wheel is FROZEN, the
+// slot row stands in for the word at its measured place, and the hole swaps with its usual
+// choreography once the overlay is gone. EVERY word is a row, the words behind the start
+// included — "you should be able to select far words" (user-decided 2026-09-01, third pass,
+// retiring the dashed rule and the dim those rows wore for one pass): a far word is a word
+// the player found, and reading the sentence with it is the wheel's whole point.
 //
 // THE WHEEL MOVES LIKE THE iOS DATE PICKER (user-decided 2026-09-01, the fifth pass on
 // its feel): the scroller is driven by hand, with no native scrolling (`overflow: hidden`,
@@ -68,20 +69,31 @@ import MeterCanvas from './MeterCanvas';
 // because the sentence and the keyboard under it must be inert; it is the PuzzleSelect's
 // kind (a thing hanging off a control that stays on screen), so a tap outside closes it.
 
-// The screen margin the column keeps, and the air between rows.
+// The screen margin the column keeps, and the air between rows: the rows stand at the
+// sentence's size, so a plain row's 1.5em ground fills its whole line box, and the gap is
+// all that keeps the grounds from reading as one block.
 const EDGE = 8;
-const GAP = 6;
+const GAP = 10;
 // The chip's overhang past the word, in em of the sentence (`.hole-word::before`'s 0.2em),
-// plus a pixel of slack: the column is inset by this on the word's own side so the slot
+// plus a pixel of slack: a column on the word's LEFT edge is inset by this so the slot
 // row's chip — and the plain rows' grounds — are not clipped by the scroller's edge
 // (user-reported 2026-09-02: "when you click on a hole word, the left padding disappears").
+// A column on the word's RIGHT edge is inset by what the rows draw past their box on that
+// side instead: the exponent's nudge and its 2px print.
 const OVERHANG_EM = 0.2;
 // The room a column needs on the word's right before it stands on the word's RIGHT edge
 // instead — a word near the right edge of a phone leaves nothing to left-align on.
 const MIN_COLUMN = 160;
-// A row that is not in the slot is drawn at this fraction of the sentence's size — a peer
-// of the word, quieter than it (user feedback 2026-09-01: same-size rows read too big).
-const ROW_SCALE = 0.8;
+// What a row puts on its line beside its word, in em of the row's own size: the LED a best
+// row wears before it (`.wheel-row-best`, 0.4em + 0.5em of margin), and the exponent after
+// it — 0.55em a digit (`.wheel-rank`), nudged clear of the ground by 0.2em of the row plus
+// 0.25em of its own (`.wheel-plain .wheel-rank`). And, in pixels, the exponent's margin
+// and its 2px print.
+const LED_EM = 0.9;
+const RANK_EM = 0.55;
+const NUDGE_EM = 0.2 + 0.25 * RANK_EM;
+const SLACK_PX = 3;
+// The floor of the last resort: a row no side of the screen holds shrinks, never below this.
 const ROW_MIN_PX = 9;
 
 
@@ -117,10 +129,20 @@ function measureHost(index: number): Anchor | null {
   };
 }
 
-// Press Start 2P advances exactly 1em per glyph, so the size at which a word fits its
-// column is arithmetic.
-function fit(word: string, column: number, max: number): number {
-  return Math.max(ROW_MIN_PX, Math.min(max, (column - 12) / Math.max(1, word.length)));
+// A row's whole width in em of its own size. Press Start 2P advances exactly 1em per glyph,
+// so it is arithmetic: the LONGER of the row's two spellings — the typed form a plain row
+// prints and the canonical one the slot prints (`MASK` on a masked stop, whatever its
+// word) — so a row keeps ONE size as it turns through the slot, plus the LED and the
+// exponent.
+function rowEm(stop: HistoryStop, shown: string): number {
+  const chars = stop.masked ? MASK.length : Math.max(stop.word.length, shown.length);
+  return chars + (stop.best ? LED_EM : 0) + RANK_EM * String(stop.rank).length + NUDGE_EM;
+}
+
+// A row stands at the sentence's size; only a row its column cannot hold shrinks — alone,
+// to fit, the words modal's rule.
+function fit(em: number, column: number, size: number): number {
+  return Math.max(ROW_MIN_PX, Math.min(size, (column - SLACK_PX) / em));
 }
 
 export default function HistoryWheel({
@@ -284,11 +306,24 @@ export default function HistoryWheel({
     );
   }
 
-  // The column stands on the word's left edge — or, when the word sits too near the right
-  // edge for a column to stand there, on its right edge.
-  const flip = anchor.width - EDGE - anchor.wrap.x < MIN_COLUMN;
-  const column = flip ? anchor.wrap.x + anchor.wrap.w - EDGE : anchor.width - EDGE - anchor.wrap.x;
-  const inset = Math.ceil(anchor.fontSize * OVERHANG_EM) + 1;
+  // The word in the slot is the hole as the sentence draws it — the same markup, so the
+  // chip and the exponent are the sentence's own; every other row is the word, plain,
+  // with its exponent raised the same way.
+  const shown = (stop: HistoryStop) => (capital ? capitalize(stop.display) : stop.display);
+  const ems = rows.map((stop) => rowEm(stop, shown(stop)));
+
+  // The column stands on the word's left edge, reaching for the screen's right — or on its
+  // right edge, reaching for the screen's left, when the right leaves less than MIN_COLUMN,
+  // or when the longest row does not fit on the right and the left has more room. So a row
+  // shrinks only when it fits neither side.
+  const right = anchor.width - EDGE - anchor.wrap.x;
+  const left = anchor.wrap.x + anchor.wrap.w - EDGE;
+  const longest = Math.max(0, ...ems) * anchor.fontSize + SLACK_PX;
+  const flip = right < MIN_COLUMN || (longest > right && left > right);
+  const column = flip ? left : right;
+  const inset = flip
+    ? Math.ceil(anchor.fontSize * NUDGE_EM) + 2
+    : Math.ceil(anchor.fontSize * OVERHANG_EM) + 1;
   const origin = anchor.top - EDGE;
   const height = anchor.height - origin;
   const rowH = anchor.lineHeight;
@@ -297,25 +332,18 @@ export default function HistoryWheel({
   // the last row reach it too.
   const slot = anchor.wrap.y - origin;
   const trailing = Math.max(0, height - slot - rowH);
-  const small = anchor.fontSize * ROW_SCALE;
 
-  // A masked stop is drawn MASK_CELLS cells wide whatever its word's length.
-  const widthOf = (stop: HistoryStop, inSlot: boolean) =>
-    stop.masked ? MASK : inSlot ? shown(stop) : stop.word;
-  const rowStyle = (stop: HistoryStop, inSlot: boolean, i: number): CSSProperties =>
+  // ONE size per row, the same in the slot and out of it: the sentence's own.
+  const rowStyle = (stop: HistoryStop, i: number): CSSProperties =>
     ({
       height: rowH,
       lineHeight: `${rowH}px`,
       marginBottom: GAP,
-      fontSize: `${fit(widthOf(stop, inSlot), column, inSlot ? anchor.fontSize : small)}px`,
+      fontSize: `${fit(ems[i], column, anchor.fontSize)}px`,
       '--rank-color': rankHeatColor(stop.rank),
       '--i': Math.abs(i - hubIndex),
     }) as CSSProperties;
 
-  // The word in the slot is the hole as the sentence draws it — the same markup, so the
-  // chip and the exponent are the sentence's own; every other row is the word, plain,
-  // with its exponent raised the same way.
-  const shown = (stop: HistoryStop) => (capital ? capitalize(stop.display) : stop.display);
   // The foil a hint wears, on its word or on its mask.
   const foil = (stop: HistoryStop) => (
     <span className="wheel-sea" aria-hidden="true">
@@ -396,9 +424,9 @@ export default function HistoryWheel({
         ref={scrollRef}
         style={{
           top: origin,
-          // The column stands on the word's edge, INSET by the chip's overhang on that side
-          // (padding inside the box, so the rows' text still starts on the word's x and the
-          // chip has room to overhang without being clipped).
+          // The column stands on the word's edge, INSET on that side by what the rows draw
+          // past their box there (padding inside the box, so the rows' text still starts on
+          // the word's x and the chip, or the exponent, has room without being clipped).
           ...(flip
             ? { right: anchor.width - (anchor.wrap.x + anchor.wrap.w) - inset, paddingRight: inset }
             : { left: anchor.wrap.x - inset, paddingLeft: inset }),
@@ -419,7 +447,7 @@ export default function HistoryWheel({
               ref={inSlot ? (el) => void (slotRef.current = el) : undefined}
               type="button"
               className={`wheel-row${inSlot ? ' wheel-row-slot' : ''}${stop.best && !inSlot ? ' wheel-row-best' : ''}`}
-              style={rowStyle(stop, inSlot, i)}
+              style={rowStyle(stop, i)}
               aria-label={inSlot ? t(lang, 'ariaClose') : srRouteStop(lang, { ...stop, word: stop.masked ? null : stop.word })}
               aria-current={inSlot ? 'true' : undefined}
               // The wheel's ONE tab stop is the row in the slot (#267): the arrows turn it.

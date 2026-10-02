@@ -2104,9 +2104,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
 - **Hole WHEEL (user-decided 2026-09-01, REPLACING the history modal below):** tapping a
   HOLE no longer opens a screen — its place in the sentence becomes a fixed SLOT, and the
   words already found for it stand in ONE column that SCROLLS THROUGH that slot with
-  mandatory snap, item by item, a picker drum: **farther words above, closer below; the word
-  in the slot wears the hole's own chip at the sentence's own size, the others stand plain
-  at 0.8× of it; and the word in the slot when the wheel FOLDS is the pick** (`Game`'s
+  mandatory snap, item by item, a picker drum: **farther words above, closer below; EVERY
+  row stands at the sentence's own size, the slot's included — ONE type size while the
+  wheel is open (user-decided: rows of mixed sizes "look messy") — the word in the slot
+  wearing the hole's own chip, the others plain; and the word in the slot when the wheel
+  FOLDS is the pick** (`Game`'s
   `picked`, DISPLAY-ONLY: the round's state, score, progress and history all read the real
   holes; never persisted; it lasts until the hole next IMPROVES). Tap a row and it glides
   into the slot; tap the slot, outside the column, or Escape, and it folds — ONE door
@@ -2177,14 +2179,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   model (`buildHistory`, which gained `display`, the canonical form the slot shows), the
   `given` dress — THE SEA, see the #301 bullet — and the hole's TRUE position wearing an LED in `--hole` when the
   slot holds a pick, `holeTitle` as the dialog's name, `srRouteStop` per row.
-  A word too near the right edge of a phone (`MIN_COLUMN`) stands the column on its RIGHT
-  edge. The scroller hides its scrollbar and fades both ends (a mask). **A PLAIN ROW
+  **A row has ONE size, in the slot and out of it**: its width is arithmetic in the pixel
+  face (1em a glyph) — the LONGER of its typed form (a plain row's) and its canonical form
+  (the slot's), so nothing changes size as it crosses the slot, plus the best row's LED and
+  the exponent — and it stands at the sentence's size unless its column cannot hold it.
+  The column stands on the word's left edge, or on its RIGHT edge when the room on the
+  right is under `MIN_COLUMN` or the longest row does not fit there and the left has more
+  room; only a row that fits NEITHER side shrinks, alone, to fit (floor `ROW_MIN_PX`) — the
+  words modal's rule. The scroller hides its scrollbar and fades both ends (a mask). **A PLAIN ROW
   STANDS ON ITS OWN GROUND** (user-decided 2026-09-02: at the quarter dim the rows printed
   over the sentence's words — "you don't have wheel items over sentence text"): `.wheel-plain`
   boxes the WORD on the `--surface` tone, drawn as the chip is drawn (an absolutely
   positioned em-sized pseudo, no layout, so the letters keep the slot's x), a little
   taller than the chip — 1.5em against 1.267 (user-asked the same day, "a few more pixels
-  of vertical padding") — and since 2026-09-22 the EXPONENT stands OUTSIDE it on the
+  of vertical padding"), so at the sentence's size it fills the whole line box and the
+  rows stand `GAP` (10px) apart to read as separate boxes, never a shorter ground — and
+  since 2026-09-22 the EXPONENT stands OUTSIDE it on the
   ground, a clear gap past the box's overhang, on every plain row, given or typed
   (user-decided in three passes: "out of the background", "it touches it", "a few pixel
   more detached… the same for non holo words"). Buttons carry `font-variant-ligatures:
@@ -2195,7 +2205,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   day: "when you click on a hole word, the left padding disappears"; the scroller began
   exactly on the word's x with `overflow: hidden`, so the slot chip's and the grounds' left
   overhang were clipped; the rows' text still starts on the word's x, measured at both
-  breakpoints). **AND THE FOLD LEAVES THE SLOT ROW STANDING** (user-reported the same day, "the hole word
+  breakpoints); a column on the word's RIGHT edge is inset on that side by what the rows draw
+  past their box there instead — the exponent's nudge and its 2px print. **AND THE FOLD LEAVES THE SLOT ROW STANDING** (user-reported the same day, "the hole word
   blinking on wheel close"): `wheel-out` fades the DIM (background-color) and
   `fade-out` the plain rows, while the slot row — the hole's own markup at the hole's
   own place — holds at full strength until the dialog leaves; and the fold itself (the
