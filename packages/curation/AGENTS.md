@@ -50,7 +50,7 @@ pnpm curate [--lang fr|en] [--work <file on the shelf>] [--retry <shelf file | p
 #   the VECTORS (generation's `embedding_neighbors.for_lang`); the two languages share nothing
 #   (#317, user-decided 2026-09-25).
 #   Needs JEV_API_KEY in the environment (#308): the judge's sentence filter and giveaway
-#   notes, and gen_phrase — contextual by default — need it.
+#   scores, and gen_phrase — contextual by default — need it.
 #   Picks a work BY RULE (no model call: `curate.pick_work` —
 #   off the shelf minus the archive minus index.json minus the artist cooldown, a song
 #   when no music day is within MUSIC_EVERY_DAYS = 4 or no book is left, else a book,
@@ -99,7 +99,8 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   (the one home of taste: the voice, the line, what is built for the game, the hidden
   words, the start words, difficulty). Code keeps only FACTS — which words can be hidden,
   the cooldowns, the famous line, valid grammar, the puzzle format — and turns everything
-  it MEASURES into notes the model reads; nothing measured refuses a word. Why: replayed
+  it MEASURES into notes the model reads; nothing measured refuses a word but the giveaway
+  FLOOR (below). Why: replayed
   on the 16 days the user loved, the code rules it replaces would have rejected three of
   the lines before any model saw them (`MIN_CANDIDATES`: JeanJass, NeS, Rounhaa) and five
   of the trios (the pair rules: « éleveur de [pigeons] », « le cafard de l'[homme] »),
@@ -138,9 +139,11 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   word; the words that could stand there and the one most readers would write) — becomes
   a plain note (`rules.reading`: whether most readers would write the secret itself,
   twins folded — `is_twin`, `TWIN_RANK` 3 — a rare word past `PLAIN_WORD_RANK` never
-  said to be expected); the judge's giveaway score (`curate.giveaway_scores`, with its
-  real-play meaning: at `GIVEAWAY_MAX` 0.45 and above, a third of the players typed the
-  hole within three guesses); and, once the map is built, where the reader's nearest word
+  said to be expected); the judge's giveaway score (`curate.giveaway_scores`, judged for
+  every word that can be hidden BEFORE the choice — the floor, below — with its real-play
+  meaning: at `GIVEAWAY_MAX` 0.45 and above, a third of the players typed the hole within
+  three guesses; under `GIVEAWAY_HARD` 0.20 the hole plays hard and its start comes from
+  nearer, below); and, once the map is built, where the reader's nearest word
   lands in the hole's own map (`rules.map_nearest_filler`). With those notes and each
   hole's band, `llm.pick_starts` chooses the three starts by the taste — or
   names ONE hidden word no start can save and another word of the line to hide instead
@@ -157,7 +160,12 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   the pieces spaCy splits (« ice-cold », « répondit-il »), since gen_phrase can hole a
   word-core, never a piece of one — not a secret still in its `SECRET_COOLDOWN_DAYS` (90, `shelf.py`, judged on the
   ledger's game day), no same-lemma twin under another slug in the line (a same-slug
-  repeat is one hole per occurrence). A line with fewer than `TRIO` such words is skipped.
+  repeat is one hole per occurrence), and **the line gives a path to it** (user-decided
+  2026-10-02): the judge's giveaway score at or above `GIVEAWAY_MIN` (0.10,
+  `contextual_rank.py`). Why: under it players never reason their way to the word — English
+  « bloated » and « rapacity » beat a native speaker — and no loved day's hole sits under
+  it. The words under it are logged and never shown to the model. A line with fewer than
+  `TRIO` such words is skipped.
 - **The sentence must STAND ALONE, solved (user-decided 2026-09-18, on the Svevo day:
   « c'étaient donc des nerfs parfaits » meant nothing even solved — the page is shown
   after the solve, never during play).** One call per CHOSEN line (`llm.stands_alone`, the
@@ -198,8 +206,11 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   (`curate.generate` parses the #133 error's analysis list; a word with NO analysis does
   not inflect and takes `cit`, no agreement — a fact, so no question). Nothing here publishes.
 - **The START WORDS are CHOSEN by the model, the three together, never at random**, by
-  the taste with code's notes (above), from the ONE band 100–200 of every map
-  (`starts.start_candidates`: shipped rank within `START_BAND`, no variant, letter-rule-clean, not
+  the taste with code's notes (above), from the band 100–200 of every map — a HARD hole's
+  (giveaway under `GIVEAWAY_HARD` 0.20) from the nearer `HARD_START_BAND` 50–100, the usual
+  band when that one holds no clean word (user-decided 2026-10-02: the hard days a bit
+  easier, the easy days as they are) — (`starts.start_candidates`: shipped rank within the
+  band, no variant, letter-rule-clean, not
   past `MAX_START_FREQ_RANK` = 40000 in the corpus order — « hétéroptère » is out). The
   first successful gen_phrase run only supplies the rank maps; gen_phrase then reruns
   with `--start MOT=DEPART` per hole (#260). A hole the answer leaves without a valid start
@@ -209,22 +220,26 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   good** (user-decided 2026-09-08): `shelf.archive()['pairs']` holds every start each
   secret was ever played with, `choose_starts` and `check_starts` exclude them from the
   band, and a generated start that repeats a pair is refused and re-picked.
-- **The displayed sentence must be VALID in its language** (user rule 2026-09-06:
-  « l'effet », never « le effet »). After every generation `curate.check_starts` applies
-  the one rule code can apply with certainty (`starts.letter_problem`). In French,
-  elision (`elision_problem`: an eliding word before a vowel, an elided one before a
-  consonant; `h` and `y` are left to the model). In English, its twin, the article « a » /
-  « an » before the start word (#317, `article_problem`): sounds decide, not letters (an
-  hour, a university, a one-off, a euro, an x-ray), so code refuses only what the letters
-  make certain — « a » before an a, i, e or o not led into a consonant sound (eu, ew,
-  one, once, oui), « an » before b, c, d, g, j, k, p, q, t, v, w, z — and leaves the rest
-  to the model. Then it asks the model whether the displayed sentence is grammatical
-  (`llm.grammar_check`, one reason per faulty inserted word) — agreement, elision or the
-  article, AND each start's CONSTRUCTION with what
-  follows it (« affublé d'un prénom » for « hérité d'un prénom » passed the check on
-  2026-09-10). A refused start is re-picked (`llm.pick_start`, taste included) and
-  gen_phrase reruns; at most `START_ROUNDS` (3) rounds; what is still doubtful is logged
-  for the reviewer.
+- **The displayed sentence must be VALID in its language AND MEAN SOMETHING, and the
+  MODEL judges it, never a mechanical check** (user rule 2026-09-06: « l'effet », never
+  « le effet »; the sense, and the model as the judge, user-decided 2026-10-01: Opus
+  reads a sentence better than any checklist). Code only keeps the BAND clean:
+  `starts.start_candidates` offers only words that can stand after the token before the
+  hole by the one rule the letters decide (`starts.letter_problem`) — in French, elision
+  (`elision_problem`: an eliding word before a vowel, an elided one before a consonant;
+  `h` and `y` are left to the model); in English, the article « a » / « an » (#317,
+  `article_problem`): sounds decide, not letters (an hour, a university, a one-off, a
+  euro, an x-ray), so code drops only what the letters make certain — « a » before an a,
+  i, e or o not led into a consonant sound (eu, ew, one, once, oui), « an » before b, c,
+  d, g, j, k, p, q, t, v, w, z. After every generation `curate.check_starts` asks the
+  model to read the displayed sentence as a native reader (`llm.sentence_check`, one
+  reason per faulty inserted word): correct language — agreement, elision or the
+  article, each start's construction — AND still meaning something, each start the kind
+  of thing its place needs (« le fitness se suicide » is French and means nothing; a
+  grammar-only check passed it). A start may be odd or funny; only a wrong or
+  meaningless one is refused. A refused start is re-picked (`llm.pick_start`, taste
+  included) and gen_phrase reruns; at most `START_ROUNDS` (3) rounds; what is still
+  doubtful is logged for the reviewer.
 - **Tests are dependency-free** (`uv run --no-project --with pytest`, like generation and
   benchmark): the rules take plain `Token`s and injected callables, so they run without
   spaCy, vectors or a model.
@@ -301,7 +316,8 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 
 - Don't publish, and don't write a puzzle by any path but `gen_phrase`.
 - Don't turn a measurement into a veto: code states facts, taste chooses. A new signal
-  goes to the model as a note, with its real-play meaning.
+  goes to the model as a note, with its real-play meaning. The one veto is the giveaway
+  floor (`GIVEAWAY_MIN`, user-decided 2026-10-02).
 - Don't write taste into code or a prompt copy; it lives in the `taste` skill.
 - Don't ask a model to PLAY the puzzle — to guess its way to a secret, count the tries or
   simulate a player (user-decided 2026-09-25): LLMs don't play like people (on real

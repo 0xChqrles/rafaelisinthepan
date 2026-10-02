@@ -31,19 +31,6 @@ A_LANGUAGE = {"fr": "a French", "en": "an English"}
 AGREEMENT = {"fr": "gender, number, verb form, elision", "en": "number, verb form, the article a/an"}
 # What a forms-table analysis is made of (the #133 question).
 ANALYSIS = {"fr": "part of speech, gender, number, tense", "en": "part of speech, number, tense, degree"}
-# The grammar check's question, with an example of a CONSTRUCTION the check must catch.
-GRAMMAR = {
-    "fr": """Is this French sentence grammatically valid — elision, gender and number
-agreement, verb forms, and each inserted word's CONSTRUCTION with what surrounds it (a
-verb must accept the object or preposition that follows it: « il avait hérité d'un
-prénom » is French, « il avait affublé d'un prénom » is not — affubler needs an object
-before « de »)?""",
-    "en": """Is this English sentence grammatically valid — the article (« a » or « an », by
-the sound that follows), number agreement, verb forms, and each inserted word's
-CONSTRUCTION with what surrounds it (a verb must accept the object or preposition that
-follows it: « she listened to the rain » is English, « she heard to the rain » is not —
-hear takes its object with no preposition)?""",
-}
 
 
 def _capital(text: str) -> str:
@@ -114,7 +101,7 @@ def parse_json(reply: str):
 # ---------------------------------------------------------------------------
 # TASTE has ONE home, the `taste` skill, read WHOLE by every prompt that chooses a line,
 # a trio or a start word. The `find-sentences` skill keeps the practical laws (the famous
-# line, standing alone, the start word's grammar, the page); the prompts quote them.
+# line, standing alone, the start word, the page); the prompts quote them.
 
 def skill_section(heading: str) -> str:
     text = _paths.SKILL_FILE.read_text(encoding="utf-8")
@@ -342,23 +329,27 @@ Return {{"choice": <1-based number>}}.""")
     return choice
 
 
-def grammar_check(claude: Claude, sentence: str, start_words: list[str], *, lang: str) -> dict:
-    """Is the displayed sentence valid in its language? The start words are the only
-    things that can be wrong (elision or the article, gender, number, agreement,
-    construction); the model names the faulty ones."""
-    answer = claude.json(f"""{GRAMMAR[lang]} The words {', '.join(f'« {w} »' for w in start_words)} were inserted into
-an existing sentence; only they can be wrong. Judge the grammar and the construction,
-not the meaning.
+def sentence_check(claude: Claude, sentence: str, start_words: list[str], *, lang: str) -> dict:
+    """Does the displayed sentence read right? The start words are the only things that
+    can be wrong; the model reads it as a native reader would and names the ones that do
+    not belong — wrong as language, or leaving the sentence meaning nothing."""
+    answer = claude.json(f"""The words {', '.join(f'« {w} »' for w in start_words)} were each put into an existing
+{LANGUAGE[lang]} sentence in place of another word; only they can be wrong.
 
 « {sentence} »
 
-Return {{"valid": true/false, "faulty": [{{"word": "<inserted word that breaks the grammar>", "why": "<one line>"}}, ...]}}.""")
+Read it as {A_LANGUAGE[lang]} reader would. Does each inserted word belong where it stands: the
+sentence correct {LANGUAGE[lang]}, and still meaning something? An inserted word is a clue,
+not the author's word: it may be less apt, odd or funny. Name only a word that breaks the
+language, or one the sentence cannot be about where it stands.
+
+Return {{"valid": true/false, "faulty": [{{"word": "<inserted word that does not belong>", "why": "<one line>"}}, ...]}}.""")
     faulty: dict[str, str] = {}
     for item in answer.get("faulty", []) or []:
         if isinstance(item, dict) and isinstance(item.get("word"), str):
-            faulty[item["word"]] = item.get("why", "") or "ungrammatical"
+            faulty[item["word"]] = item.get("why", "") or "does not belong"
         elif isinstance(item, str):
-            faulty[item] = "ungrammatical"
+            faulty[item] = "does not belong"
     return {"valid": bool(answer.get("valid")) and not faulty, "faulty": faulty}
 
 
@@ -462,7 +453,7 @@ def pick_start(claude: Claude, sentence_marked: str, secret: str, options: list[
     listing = ", ".join(f"{o['word']} ({o['rank']})" for o in options)
     answer = claude.json(f"""You curate a daily {LANGUAGE[lang]} word game: three words of a sentence are hidden and the
 player rediscovers each from embedding-neighbour feedback. One hole's START word (its
-first clue, shown in place of the hidden word « {secret} ») was refused: {refused or 'it broke the grammar'}.
+first clue, shown in place of the hidden word « {secret} ») was refused: {refused or 'it did not belong in the sentence'}.
 Choose another, following these rules:
 
 {start_rules()}
@@ -479,6 +470,6 @@ The sentence, the hole marked [____]:
 {_chain_block(chain)}
 Candidates (word (rank), closest first): {listing}
 
-Return {{"word": "<one candidate, exactly>"}} or {{"word": null}} if none makes valid {LANGUAGE[lang]}.""")
+Return {{"word": "<one candidate, exactly>"}} or {{"word": null}} if none leaves correct {LANGUAGE[lang]} that still means something.""")
     word = answer.get("word")
     return word if isinstance(word, str) and word in {o["word"] for o in options} else None

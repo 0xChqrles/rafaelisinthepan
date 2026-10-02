@@ -91,7 +91,7 @@ QUESTIONS = {
     "choose_day": lambda c, lang: llm.choose_day(c, [{"sentence": "The cat.", "allowed": ["cat"]}], [], lang=lang),
     "context_guesses": lambda c, lang: llm.context_guesses(c, _TOKENS, set(), 1, 6, lang=lang),
     "pick_form": lambda c, lang: llm.pick_form(c, "The cat.", "cat", ["n:s — nom, singulier"], lang=lang),
-    "grammar_check": lambda c, lang: llm.grammar_check(c, "The dog.", ["dog"], lang=lang),
+    "sentence_check": lambda c, lang: llm.sentence_check(c, "The dog.", ["dog"], lang=lang),
     "pick_starts": lambda c, lang: llm.pick_starts(c, "The [cat].", [_HOLE], None, lang=lang),
     "choose_excerpt": lambda c, lang: llm.choose_excerpt(c, "The cat.", {"before": ["B."], "after": []}, lang=lang),
     "pick_start": lambda c, lang: llm.pick_start(c, "The [____].", "cat", _HOLE["options"], lang=lang),
@@ -123,13 +123,6 @@ def test_every_question_is_asked_in_the_day_s_language(monkeypatch, name):
     for p in en.prompts:
         assert "elision" not in p and "gender" not in p and "affubl" not in p and "prénom" not in p
         assert "a English" not in p and "A English" not in p
-
-
-def test_the_english_grammar_question_asks_about_the_article():
-    en = _Capture()
-    llm.grammar_check(en, "An dog.", ["dog"], lang="en")
-    assert "the article (« a » or « an »" in en.prompts[0]
-    assert "« she heard to the rain » is not" in en.prompts[0]
 
 
 def test_holed_rebuilds_english_with_its_own_spacing_and_french_as_calibrated():

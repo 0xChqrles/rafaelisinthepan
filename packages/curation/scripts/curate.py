@@ -197,15 +197,16 @@ _sidecar = shelf_mod.sidecar_path
 def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], source: dict, lang: str,
              context: dict[str, str] | None = None, frequency_rank=lambda t: None,
              pairs: dict[str, set[str]] | None = None, replay: str | None = None,
-             chain: list[str] | None = None, fillers: dict[str, list[str]] | None = None):
+             chain: list[str] | None = None, fillers: dict[str, list[str]] | None = None,
+             hard: set[str] | frozenset[str] = frozenset()):
     """Returns the written puzzle path, or None with the reason logged. The forms are
     answered by the model as gen_phrase asks. The first successful run only supplies the
     rank maps: the START WORDS are then chosen by the model, the three together, playing
     the day out from each hole's band with code's notes (`context`, and where the
-    reader's `fillers` land in each map) — or it names a word to swap, and the draft is
-    erased and Replace raised; the puzzle is regenerated with the starts; every result is
-    checked (the displayed sentence must be valid in its language) and a refused start
-    re-picked, at most START_ROUNDS times."""
+    reader's `fillers` land in each map; a `hard` hole's band is the nearer one) — or it
+    names a word to swap, and the draft is erased and Replace raised; the puzzle is
+    regenerated with the starts; every result is checked (the displayed sentence must be
+    valid in its language) and a refused start re-picked, at most START_ROUNDS times."""
     forms: dict[str, str] = {}
     starts: dict[str, str] = {}
     tried: dict[str, set[str]] = {}  # every start a hole has shown, secret slug -> words
@@ -254,7 +255,7 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
                 chosen = True
                 try:
                     picked = choose_starts(claude, log, path, context or {}, forms, frequency_rank, pairs or {},
-                                           chain, fillers or {}, lang=lang)
+                                           chain, fillers or {}, lang=lang, hard=hard)
                 except Replace:
                     Path(path).unlink(missing_ok=True)
                     Path(_sidecar(path)).unlink(missing_ok=True)
@@ -270,7 +271,7 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
                     continue
             if rounds < st.START_ROUNDS:
                 repick = check_starts(claude, log, path, tried, context or {}, frequency_rank, pairs or {}, chain,
-                                      lang=lang)
+                                      lang=lang, hard=hard)
                 if repick:
                     _adopt(starts, tried, repick)
                     rounds += 1
@@ -355,7 +356,7 @@ def _word_rank(frequency_rank):
 def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, str],
                   forms: dict[str, str], frequency_rank, pairs: dict[str, set[str]] | None = None,
                   chain: list[str] | None = None, fillers: dict[str, list[str]] | None = None,
-                  *, lang: str) -> dict[str, str] | None:
+                  *, lang: str, hard: set[str] | frozenset[str] = frozenset()) -> dict[str, str] | None:
     """The model picks the three start words together, by the taste, from each
     hole's band (clean by the language's letter rule, not too rare, never a start this
     secret was played with before — `pairs`, the archive's permanent blacklist — nearest
@@ -371,8 +372,8 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
     info = []
     for key, h in by_secret.items():
         options = st.start_candidates(puzzle["ranks"][key], key, st.previous_token(words, h),
-                                      exclude=pairs.get(key, ()),
-                                      frequency_rank=_word_rank(frequency_rank), lang=lang)[:st.START_OPTIONS]
+                                      exclude=pairs.get(key, ()), frequency_rank=_word_rank(frequency_rank),
+                                      lang=lang, hard=key in hard)[:st.START_OPTIONS]
         if not options:
             log(f"- no clean start in the band for « {h['secret']['word']} »; the model must replace it")
         nearest = rules.map_nearest_filler(puzzle["ranks"][key], key, fillers.get(key, []))
@@ -418,10 +419,11 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
 
 def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[str]],
                  context: dict[str, str], frequency_rank, pairs: dict[str, set[str]] | None = None,
-                 chain: list[str] | None = None, *, lang: str) -> dict[str, str]:
+                 chain: list[str] | None = None, *, lang: str,
+                 hard: set[str] | frozenset[str] = frozenset()) -> dict[str, str]:
     """The displayed sentence with its start words: a start this secret was already
-    played with (`pairs`), the language's letter rule (French elision, the English
-    article), then the model's grammar check. Returns
+    played with (`pairs`), then the model reading the sentence (`llm.sentence_check`:
+    correct, and still meaning something). Returns
     {secret slug: new start} for every faulty hole (empty = all good, or nothing better
     to offer). `tried` holds every start a hole has shown so far; none is offered again."""
     pairs = pairs or {}
@@ -432,12 +434,8 @@ def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[s
     for key, h in by_secret.items():
         if h["start"]["word"] in pairs.get(key, ()):
             faulty[key] = "this secret was already played from this start word"
-            continue
-        problem = st.letter_problem(st.previous_token(words, h), h["start"]["word"], lang)
-        if problem:
-            faulty[key] = problem
     if not faulty:
-        verdict = llm.grammar_check(claude, shown, [h["start"]["word"] for h in by_secret.values()], lang=lang)
+        verdict = llm.sentence_check(claude, shown, [h["start"]["word"] for h in by_secret.values()], lang=lang)
         if verdict["valid"]:
             log(f"- start words check: « {shown} » → valid")
             return {}
@@ -455,7 +453,8 @@ def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[s
         prev = st.previous_token(words, h)
         options = st.start_candidates(puzzle["ranks"][key], key, prev,
                                       exclude={h["start"]["word"], *tried.get(key, ()), *pairs.get(key, ())},
-                                      frequency_rank=_word_rank(frequency_rank), lang=lang)[:st.START_OPTIONS]
+                                      frequency_rank=_word_rank(frequency_rank), lang=lang,
+                                      hard=key in hard)[:st.START_OPTIONS]
         if not options:
             log(f"- no other start in the band for « {h['secret']['word']} » — left to the reviewer")
             continue
@@ -603,10 +602,11 @@ def judge_sentences(log: Log, sentences: list[str], lang: str, judge) -> list[st
 
 def giveaway_scores(tokens, words, occurrences, lang: str, judge) -> dict[str, float]:
     """How much the sentence hands each word over, by the judge's measure
-    (`contextual_rank.giveaway`): a NOTE for the model. On real play (84 holes), a score
-    at or above `GIVEAWAY_MAX` was a hole a third of the players typed within three
-    guesses. Each distinct word judged once, every occurrence blanked, the rest of the
-    sentence intact and no start word — the reader's own view."""
+    (`contextual_rank.giveaway`), read on real play (84 holes): under `GIVEAWAY_MIN` the
+    line gives no path to the word and it is never hidden; under `GIVEAWAY_HARD` the hole
+    plays hard and draws a nearer start; at or above `GIVEAWAY_MAX` a third of the players
+    typed it within three guesses. Each distinct word judged once, every occurrence
+    blanked, the rest of the sentence intact and no start word — the reader's own view."""
     scores: dict[str, float] = {}
     for t in words:
         if t.slug in scores:
@@ -619,6 +619,15 @@ def giveaway_scores(tokens, words, occurrences, lang: str, judge) -> dict[str, f
         except contextual_rank.ContextualError as exc:
             die(f"giveaway judge: {exc}")
     return scores
+
+
+def _occurrences(words) -> dict[str, set[int]]:
+    """Where each hideable word stands in the line, by slug (a repeat is one hole per
+    occurrence)."""
+    out: dict[str, set[int]] = {}
+    for t in words:
+        out.setdefault(t.slug, set()).add(t.i)
+    return out
 
 
 def shortlist(claude: llm.Claude, log: Log, sentences: list[str], lang: str) -> list[dict]:
@@ -638,7 +647,8 @@ def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: d
         tried: list[str] | None = None, *, judge):
     """The day, chosen by COMPARISON (2026-09-24): the shortlist's lines COMPARE at a
     time; the model picks the line and its three words, in the order players will find
-    them, from the words code allows; code checks the facts (three distinct words of the
+    them, from the words code allows — a word the line gives no path to (giveaway under
+    `GIVEAWAY_MIN`) is never offered; code checks the facts (three distinct words of the
     line that can be hidden; the line stands alone), measures each word and hands the
     notes to the start-word step, which may swap a word no start can save. A refusal is
     told back and the model chooses again, DAY_ROUNDS times, then the next lines. Every
@@ -651,16 +661,27 @@ def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: d
             tokens = parse(pick["sentence"], lang)
             allowed = rules.initial_candidates(tokens, lang=lang, in_vocab=in_vocab,
                                                past_secrets=archive["secrets"], frequency_rank=frequency_rank)
+            given: dict[str, float] = {}
+            pathless: list[str] = []
+            if len({t.slug for t in allowed}) >= rules.TRIO:
+                # The floor: a word the line gives no path to is never hidden.
+                given = giveaway_scores(tokens, allowed, _occurrences(allowed), lang, judge)
+                pathless = list(dict.fromkeys(f"{t.text} ({given[t.slug]:.2f})" for t in allowed
+                                              if given[t.slug] < contextual_rank.GIVEAWAY_MIN))
+                allowed = [t for t in allowed if given[t.slug] >= contextual_rank.GIVEAWAY_MIN]
             if len({t.slug for t in allowed}) < rules.TRIO:
-                log(f"\n## « {pick['sentence']} »\n- skipped: fewer than {rules.TRIO} words can be hidden")
+                log(f"\n## « {pick['sentence']} »\n- skipped: fewer than {rules.TRIO} words can be hidden"
+                    + (f" (no path to {', '.join(pathless)})" if pathless else ""))
                 continue
-            lines.append({"sentence": pick["sentence"], "tokens": tokens, "allowed": allowed})
+            lines.append({"sentence": pick["sentence"], "tokens": tokens, "allowed": allowed, "given": given,
+                          "pathless": pathless})
         if not lines:
             continue
         tried.extend(x["sentence"] for x in lines)
         log(f"\n## Comparing {len(lines)} line(s)")
         for n, line in enumerate(lines, 1):
-            log(f"{n}. « {line['sentence']} »")
+            log(f"{n}. « {line['sentence']} »"
+                + (f" — no path to {', '.join(line['pathless'])}" if line["pathless"] else ""))
         refused: list[str] = []
         alone: dict[str, dict] = {}
         for _ in range(DAY_ROUNDS):
@@ -692,7 +713,7 @@ def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: d
                 refused.append(f"« {line['sentence']} » — {why}")
                 continue
             path = build_day(claude, log, line, trio, choice["path"], book, archive, text, source_base,
-                             frequency_rank, neighbour_rank, lang, replay if batch_start == 0 else None, judge)
+                             frequency_rank, neighbour_rank, lang, replay if batch_start == 0 else None)
             if path:
                 return path
             refused.append(f"« {line['sentence']} » with « {' · '.join(choice['words'])} » — it could not be built")
@@ -701,23 +722,20 @@ def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: d
 
 
 def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[str], book: dict, archive: dict,
-              text: str, source_base: dict, frequency_rank, neighbour_rank, lang: str, replay: str | None,
-              judge):
+              text: str, source_base: dict, frequency_rank, neighbour_rank, lang: str, replay: str | None):
     """One chosen day, built: code measures each hidden word — what a reader puts in its
-    blank, how much the sentence hands it over — the page is cut (a book), and
-    `generate` writes the puzzle, the start words chosen by the taste. A word
-    the start step swaps (Replace) is replaced by another word of the line that can be
-    hidden, REPLACE_ROUNDS times."""
-    sentence, tokens = line["sentence"], line["tokens"]
+    blank, how much the sentence hands it over (`line["given"]`, judged for every word
+    that can be hidden) — the page is cut (a book), and `generate` writes the puzzle, the
+    start words chosen by the taste, a hard hole's from nearer. A word the start step
+    swaps (Replace) is replaced by another word of the line that can be hidden,
+    REPLACE_ROUNDS times."""
+    sentence, tokens, given = line["sentence"], line["tokens"], line["given"]
     known = llm.widely_known(claude, sentence, book.get("author", ""), book.get("title", ""), lang=lang)
     log("- known-line check (annotation): "
         + ("the model thinks a reader would know it" if known["known"] else "not known off the page")
         + (f" — {known['why']}" if known["why"] else ""))
-    occurrences: dict[str, set[int]] = {}
-    for t in line["allowed"]:
-        occurrences.setdefault(t.slug, set()).add(t.i)
+    occurrences = _occurrences(line["allowed"])
     readings: dict[str, tuple[list[str], str | None]] = {}
-    given: dict[str, float] = {}
     source = dict(source_base)
     if book["kind"] == "book":
         window = excerpt_around(text, sentence, EXCERPT_WINDOW, lang=lang)
@@ -729,18 +747,22 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
             if t.slug not in readings:
                 readings[t.slug] = llm.context_guesses(claude, tokens, occurrences[t.slug] - {t.i}, t.i,
                                                        rules.CONTEXT_GUESSES, lang=lang)
-        given.update(giveaway_scores(tokens, [t for t in trio if t.slug not in given], occurrences, lang, judge))
+        hard = {t.slug for t in trio if given[t.slug] < contextual_rank.GIVEAWAY_HARD}
         context = {}
         for t in trio:
             guesses, expected = readings[t.slug]
             note = rules.reading(t, guesses, expected, neighbour_rank=neighbour_rank, frequency_rank=frequency_rank)
             note += (f"; the sentence hands it over at {given[t.slug]:.2f} (on real play, "
                      f"{contextual_rank.GIVEAWAY_MAX} and above was typed within three guesses by a third of the players)")
+            if t.slug in hard:
+                lo, hi = st.HARD_START_BAND
+                note += (f"; under {contextual_rank.GIVEAWAY_HARD} a hole played hard on real play, so its start "
+                         f"candidates come from nearer (ranks {lo}-{hi})")
             context[t.slug] = note
         try:
             return generate(claude, log, sentence, [t.text for t in trio], source, lang, context, frequency_rank,
                             archive["pairs"], replay=replay, chain=chain,
-                            fillers={t.slug: readings[t.slug][0] for t in trio})
+                            fillers={t.slug: readings[t.slug][0] for t in trio}, hard=hard)
         except Replace as swap:
             old = next((t for t in trio if t.slug == slug(swap.secret) or t.text == swap.secret), None)
             new = next((t for t in line["allowed"] if t.slug == slug(swap.with_)), None)

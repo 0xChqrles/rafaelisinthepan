@@ -92,6 +92,14 @@ GIVEAWAY_MAX = 0.45         # a hole the sentence hands over (mean of the giveaw
                             # of 64 (0.5: 8 easy / 6 lost; 0.4: 11 / 13) — in curation a lost good
                             # hole is cheap, a given-away day is not. It catches about HALF the easy
                             # holes: the rest are not predicted by these questions
+GIVEAWAY_MIN = 0.10         # the floor: under it the line gives no path to the word, and the curator
+                            # never hides it. On the same 84 holes, the two under it (« facho », 4 % of
+                            # the players within 30 tries, and « cygne », both 0.097) played as hard as
+                            # any; English « bloated » (0.07) and « rapacity » (0.06) beat a native
+                            # speaker; the loved days' holes start at 0.127 (« mammifères »)
+GIVEAWAY_HARD = 0.20        # under it a hole plays hard: 7 of the 13 holes under it were found by fewer
+                            # than 60 % of their players, against 12 of the 71 above. The curator draws
+                            # its start from nearer (curation `starts.HARD_START_BAND`)
 
 class ContextualError(Exception):
     """A judge that cannot answer: no key, a refused request, a replay without the

@@ -31,6 +31,12 @@ class Log(list):
         self.append(line)
 
 
+def _giveaways(monkeypatch, scores=None):
+    """Every word a line can hide is judged before the choice (the floor); a word the
+    test does not name gets a path (0.3)."""
+    monkeypatch.setattr(contextual_rank, "giveaway", lambda _j, _shown, word, lang: (scores or {}).get(word, 0.3))
+
+
 def test_judge_sentences_removes_the_failing_and_keeps_reading_order():
     table = {
         "flat": {"autonome": 0.9, "image": 0.1, "celebre": 0.0},
@@ -117,6 +123,7 @@ def test_a_chosen_line_that_does_not_stand_alone_is_told_back_and_nothing_is_bui
         return {"line": 0, "words": ["chat", "pierre", "froide"], "path": [], "why": "w"} if len(asked) == 1 else None
 
     monkeypatch.setattr(curate.llm, "choose_day", choose)
+    _giveaways(monkeypatch)
     monkeypatch.setattr(curate.llm, "stands_alone", lambda _c, s, lang: {"ok": False, "about": "", "why": "leans on its page"})
     monkeypatch.setattr(curate, "build_day", lambda *a, **k: pytest.fail("a refused line is never built"))
     log = Log()
@@ -135,6 +142,7 @@ def test_words_off_the_line_are_told_back(monkeypatch):
         return {"line": 0, "words": ["chat", "lune", "pierre"], "path": [], "why": "w"} if len(asked) == 1 else None
 
     monkeypatch.setattr(curate.llm, "choose_day", choose)
+    _giveaways(monkeypatch)
     curate.day(object(), Log(), [{"sentence": "Le chat dort sur la pierre froide."}], {"kind": "book"},
                {"secrets": set(), "pairs": {}}, "", lambda w: True, lambda t: None, lambda t, w: None, "fr", judge=object())
     assert "distinct words of the line" in asked[1][0]
@@ -316,11 +324,11 @@ def test_a_start_the_secret_was_played_with_is_never_offered(tmp_path, monkeypat
 
 
 def test_a_generated_start_that_repeats_a_pair_is_refused_and_re_picked(tmp_path, monkeypatch):
-    # Refused by code, with no grammar question; the re-pick is offered neither the refused
+    # Refused by code, with no question to the model; the re-pick is offered neither the refused
     # start, nor a start the hole has already shown, nor another pair already played.
     path = _generated_draft(tmp_path, ["lapin", "souris", "mulot", "rat"], starts=["lapin", "loup", "brique"])
     asked = []
-    monkeypatch.setattr(curate.llm, "grammar_check", lambda *_a, **_k: pytest.fail("a played pair needs no model"))
+    monkeypatch.setattr(curate.llm, "sentence_check", lambda *_a, **_k: pytest.fail("a played pair needs no model"))
     monkeypatch.setattr(curate.llm, "pick_start", _pick_one(asked, "rat"))
     repick = curate.check_starts(object(), Log(), str(path), {"chat": {"souris"}}, {}, lambda _t: None,
                                  pairs={"chat": {"lapin", "mulot"}}, lang="fr")
@@ -329,36 +337,37 @@ def test_a_generated_start_that_repeats_a_pair_is_refused_and_re_picked(tmp_path
                       "this secret was already played from this start word")]
 
 
-def test_start_words_the_grammar_check_passes_are_kept(tmp_path, monkeypatch):
+def test_start_words_the_sentence_check_passes_are_kept(tmp_path, monkeypatch):
     path = _generated_draft(tmp_path, ["lapin", "souris"], starts=["lapin", "loup", "brique"])
     checked = []
-    monkeypatch.setattr(curate.llm, "grammar_check",
+    monkeypatch.setattr(curate.llm, "sentence_check",
                         lambda _c, shown, starts, lang: checked.append((shown, starts)) or {"valid": True, "faulty": {}})
     monkeypatch.setattr(curate.llm, "pick_start", lambda *_a, **_k: pytest.fail("nothing to re-pick"))
     assert curate.check_starts(object(), Log(), str(path), {}, {}, lambda _t: None, lang="fr") == {}
     assert checked == [("un lapin un loup une brique", ["lapin", "loup", "brique"])]
 
 
-def test_a_start_the_grammar_check_faults_is_re_picked_from_the_rest_of_the_band(tmp_path, monkeypatch):
+def test_a_start_the_sentence_check_faults_is_re_picked_from_the_rest_of_the_band(tmp_path, monkeypatch):
     path = _generated_draft(tmp_path, ["lapin", "souris", "mulot"], starts=["lapin", "loup", "brique"])
     asked = []
-    monkeypatch.setattr(curate.llm, "grammar_check",
+    monkeypatch.setattr(curate.llm, "sentence_check",
                         lambda *_a, **_k: {"valid": False, "faulty": {"lapin": "un accord faux"}})
     monkeypatch.setattr(curate.llm, "pick_start", _pick_one(asked, "souris"))
     assert curate.check_starts(object(), Log(), str(path), {}, {}, lambda _t: None, lang="fr") == {"chat": "souris"}
     assert asked == [("un [____] un loup une brique", "chat", ["souris", "mulot"], "un accord faux")]
 
 
-def test_a_start_that_breaks_the_letter_rule_is_refused_before_any_grammar_question(tmp_path, monkeypatch):
-    # « le effet » is never French: code knows it, and the model is only asked for another
-    # start — « ami » elides after « le » too, so it is not offered either.
+def test_the_model_judges_the_sentence_and_the_re_pick_band_keeps_the_letter_rule(tmp_path, monkeypatch):
+    # No mechanical refusal: « le effet » goes to the model like any start; the band the
+    # re-pick chooses from still holds only words that can follow « le » — « ami » elides.
     path = _generated_draft(tmp_path, ["effet", "ami", "lapin"], starts=["effet", "loup", "brique"], first="le")
-    asked = []
-    monkeypatch.setattr(curate.llm, "grammar_check", lambda *_a, **_k: pytest.fail("the letter rule needs no model"))
+    asked, checked = [], []
+    monkeypatch.setattr(curate.llm, "sentence_check", lambda _c, shown, _starts, lang: checked.append(shown) or
+                        {"valid": False, "faulty": {"effet": "« le effet » n'est pas français"}})
     monkeypatch.setattr(curate.llm, "pick_start", _pick_one(asked, "lapin"))
     assert curate.check_starts(object(), Log(), str(path), {}, {}, lambda _t: None, lang="fr") == {"chat": "lapin"}
-    assert asked == [("le [____] un loup une brique", "chat", ["lapin"],
-                      "« le effet » : « le » s'élide devant une voyelle")]
+    assert checked == ["le effet un loup une brique"]
+    assert asked == [("le [____] un loup une brique", "chat", ["lapin"], "« le effet » n'est pas français")]
 
 
 def test_start_words_are_re_picked_at_most_start_rounds_times(monkeypatch):
@@ -375,21 +384,22 @@ def test_start_words_are_re_picked_at_most_start_rounds_times(monkeypatch):
 
 # --- a word no start can save is swapped, REPLACE_ROUNDS times at most --------------------
 
-def _build_day(monkeypatch, generate, log):
+def _build_day(monkeypatch, generate, log, given=None):
     """build_day on a song's line with chat · dort · pierre chosen and « froide » left to
-    swap in; returns (its result, the words the reader and the giveaway judge were asked)."""
+    swap in, each word's giveaway judged before the choice (`given`, 0.3 by default);
+    returns (its result, the words the reader was asked)."""
     tokens = _line_tokens()
     allowed = [t for t in tokens if t.text in ("chat", "dort", "pierre", "froide")]
-    asked = {"reader": [], "judge": []}
+    asked = []
     monkeypatch.setattr(curate.llm, "widely_known", lambda *_a, **_k: {"known": False, "why": ""})
     monkeypatch.setattr(curate.llm, "context_guesses",
-                        lambda _c, toks, _blanks, mark, _n, lang: asked["reader"].append(toks[mark].text) or ([], None))
-    monkeypatch.setattr(contextual_rank, "giveaway", lambda _j, _shown, word, lang: asked["judge"].append(word) or 0.1)
+                        lambda _c, toks, _blanks, mark, _n, lang: asked.append(toks[mark].text) or ([], None))
     monkeypatch.setattr(curate, "generate", generate)
-    line = {"sentence": "Le chat dort sur la pierre froide.", "tokens": tokens, "allowed": allowed}
+    line = {"sentence": "Le chat dort sur la pierre froide.", "tokens": tokens, "allowed": allowed,
+            "given": given or {t.slug: 0.3 for t in allowed}}
     path = curate.build_day(object(), log, line, allowed[:3], ["chat: le sujet"], {"kind": "music"}, {"pairs": {}},
                             "", {"kind": "music"}, lambda t: None, lambda t, w: None, "fr",
-                            "old.contextual.json", object())
+                            "old.contextual.json")
     return path, asked
 
 
@@ -407,8 +417,8 @@ def test_a_swapped_word_rebuilds_the_day_and_only_the_new_word_is_measured(monke
     # another trio: the erased draft's scores no longer apply, and the chain says what changed
     assert calls == [(["chat", "dort", "pierre"], "old.contextual.json", ["chat: le sujet"]),
                      (["chat", "dort", "froide"], None, ["froide replaces pierre: too far", "chat: le sujet"])]
-    # the two words kept are neither read nor judged again
-    assert asked == {"reader": ["chat", "dort", "pierre", "froide"], "judge": ["chat", "dort", "pierre", "froide"]}
+    # the two words kept are not read again
+    assert asked == ["chat", "dort", "pierre", "froide"]
 
 
 def test_a_day_is_given_up_after_replace_rounds_swaps(monkeypatch):
@@ -423,6 +433,70 @@ def test_a_day_is_given_up_after_replace_rounds_swaps(monkeypatch):
     assert curate.REPLACE_ROUNDS == 2
     assert path is None and any("no start words could save this day" in line for line in log)
     assert calls == [["chat", "dort", "pierre"], ["chat", "dort", "froide"], ["chat", "dort", "pierre"]]
+
+
+# --- the giveaway judge, read on real play: a floor, and a nearer start for a hard hole ----
+
+def _day_on_the_line(monkeypatch, scores):
+    """day() on « Le chat dort sur la pierre froide. » with the giveaways `scores`;
+    returns (the words offered to the model, the log)."""
+    monkeypatch.setattr(curate, "parse", _line_tokens)
+    _giveaways(monkeypatch, scores)
+    offered = []
+    monkeypatch.setattr(curate.llm, "choose_day",
+                        lambda _c, lines, _refused, lang: offered.append(lines[0]["allowed"]) or None)
+    log = Log()
+    curate.day(object(), log, [{"sentence": "Le chat dort sur la pierre froide."}], {"kind": "book"},
+               {"secrets": set(), "pairs": {}}, "", lambda w: True, lambda t: None, lambda t, w: None, "fr",
+               judge=object())
+    return offered, log
+
+
+def test_a_word_the_line_gives_no_path_to_is_never_offered(monkeypatch):
+    # User-decided 2026-10-02: under GIVEAWAY_MIN the line leads nowhere near the word
+    # (« bloated », « rapacity » beat a native speaker), so the model never sees it.
+    assert contextual_rank.GIVEAWAY_MIN == 0.10
+    offered, log = _day_on_the_line(monkeypatch, {"chat": 0.3, "dort": 0.09, "pierre": 0.10, "froide": 0.5})
+    assert offered == [["chat", "pierre", "froide"]]          # at the floor a word stays
+    assert any("no path to dort (0.09)" in line for line in log)
+
+
+def test_a_line_the_floor_leaves_short_of_three_words_is_skipped(monkeypatch):
+    offered, log = _day_on_the_line(monkeypatch, {"chat": 0.05, "dort": 0.09})
+    assert offered == []
+    assert any("fewer than 3 words can be hidden (no path to chat (0.05), dort (0.09))" in line for line in log)
+
+
+def test_a_hard_hole_draws_its_start_from_nearer_and_the_model_is_told(monkeypatch):
+    # User-decided 2026-10-02: the hard days a bit easier, the easy days as they are.
+    assert contextual_rank.GIVEAWAY_HARD == 0.20
+    seen = {}
+
+    def generate(_c, _l, _sentence, _words, _source, _lang, context, *_a, hard, **_k):
+        seen.update(context=context, hard=hard)
+        return "out/x_y_z.json"
+
+    _build_day(monkeypatch, generate, Log(), given={"chat": 0.19, "dort": 0.20, "pierre": 0.5, "froide": 0.5})
+    assert seen["hard"] == {"chat"}                            # at the threshold a hole is not hard
+    assert "start candidates come from nearer (ranks 50-100)" in seen["context"]["chat"]
+    assert "nearer" not in seen["context"]["dort"]
+
+
+def test_the_start_choice_offers_a_hard_hole_the_nearer_band(tmp_path, monkeypatch):
+    path = _three_hole_draft(tmp_path)
+    puzzle = json.loads(path.read_text(encoding="utf-8"))
+    for secret, (near, usual) in {"chat": ("souris", "lapin"), "chien": ("renard", "loup")}.items():
+        puzzle["ranks"][secret] = {near: {"word": near, "rank": 70}, usual: {"word": usual, "rank": 120}}
+    path.write_text(json.dumps(puzzle), encoding="utf-8")
+    shown = []
+
+    def pick(_claude, _marked, info, _chain, lang):
+        shown.extend(info)
+        return {"starts": {"chat": "souris", "chien": "loup", "pierre": "brique"}, "replace": None, "why": ""}
+
+    monkeypatch.setattr(curate.llm, "pick_starts", pick)
+    curate.choose_starts(object(), Log(), str(path), {}, {}, lambda _t: None, lang="fr", hard={"chat"})
+    assert [[o["word"] for o in h["options"]] for h in shown] == [["souris"], ["loup"], ["brique"]]
 
 
 def test_an_unusable_page_cut_falls_back_to_three_sentences_a_side(monkeypatch):
@@ -641,6 +715,7 @@ def test_an_english_day_is_chosen_in_english_from_english_facts(monkeypatch):
         return None
 
     monkeypatch.setattr(curate.llm, "choose_day", choose)
+    _giveaways(monkeypatch)
     curate.day(object(), Log(), [{"sentence": "I think the old cat sleeps on cold stone."}], {"kind": "book"},
                {"secrets": set(), "pairs": {}}, "", lambda w: True, lambda t: None, lambda t, w: None, "en", judge=object())
     assert seen == [("en", ["old", "cat", "sleeps", "cold", "stone"])]   # « think » is an English weak verb
