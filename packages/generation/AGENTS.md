@@ -351,7 +351,8 @@ Consequences that are load-bearing:
   means the same distance to a player on either; it tops out at the judge's
   pairwise-ordered front (`PAIRWISE_TOP`), past which its order is loosest. Do not
   reintroduce a per-map band on the "tighter near field" premise without new play
-  data. The
+  data. The curator draws a HARD hole's start (one the line gives little of) from a
+  nearer band of its own (curation `AGENTS.md`). The
   hover preview of the interactive selector stays STATIC (browsing spends no judge
   call); the commit step's confirmed rebuild is the one that reranks, with a
   "quelques minutes" notice, so the band picked from is the map that ships.
@@ -600,7 +601,9 @@ output filename contains the three distinct secret slugs in sentence order.
   `WORKERS = 6`, filter
   thresholds `START_FIT_MIN = 0.5` / `HOLE_READABLE_MIN = 0.6` / `SAME_CONCEPT_MAX = 0.6` /
   `LANGUAGE_MIN = 0.2` (French-calibrated, carried over to English),
-  `GIVEAWAY_MAX = 0.45` (calibrated on real play, 2026-09-22 — a NOTE the curator shows the model with its meaning, never a strike; curation `AGENTS.md`)
+  `GIVEAWAY_MAX = 0.45` (calibrated on real play, 2026-09-22 — a NOTE the curator shows the model with its meaning, never a strike; curation `AGENTS.md`),
+  `GIVEAWAY_MIN = 0.10` (the curator's floor: a word under it is never hidden) /
+  `GIVEAWAY_HARD = 0.20` (the curator's hard hole: a nearer start)
   (`contextual_rank.py`).
   `PLAYABILITY_TOP` is a curator report window sized for a sentence hole's near field.
 - **Playability report (#135):** `build_playability_report` reads (never mutates)

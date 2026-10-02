@@ -22,6 +22,10 @@ _PUNCT = "«»\"'‘’“”(),.;:!?…"
 START_ROUNDS = 3
 # Candidates shown to the model for one re-pick.
 START_OPTIONS = 40
+# A HARD hole — the line gives little of it (`contextual_rank.GIVEAWAY_HARD`) — draws its
+# start from nearer than the band of every map (user-decided 2026-10-02: the hard days a
+# bit easier, the easy days as they are); the usual band when this one has no clean word.
+HARD_START_BAND = (50, 100)
 # A start word past this place in the corpus frequency order is too rare to be a plain
 # word a player knows (« hétéroptère » is out, « bestiole » is in) — ONE boundary with the
 # obviousness filter's plain-word test (`rules.PLAIN_WORD_RANK`).
@@ -97,27 +101,30 @@ def letter_problem(prev: str, word: str, lang: str) -> str | None:
 
 
 def start_candidates(rank_map: dict, secret_slug: str, prev: str, exclude=(),
-                     frequency_rank=lambda word: None, *, lang: str) -> list[dict]:
+                     frequency_rank=lambda word: None, *, lang: str, hard: bool = False) -> list[dict]:
     """The band's words for one hole (rank START_BAND, 100-200 on every map since
-    2026-09-24 — one per display word, no variant of the secret, not too rare) that
-    pass the language's letter rule (`letter_problem`), nearest first: [{word, rank}].
+    2026-09-24; HARD_START_BAND for a `hard` hole, the usual band when it holds none —
+    one per display word, no variant of the secret, not too rare) that pass the
+    language's letter rule (`letter_problem`), nearest first: [{word, rank}].
     `frequency_rank(word)` reads the corpus order (None = unknown, kept)."""
-    seen: set[str] = set()
-    out = []
-    lo, hi = START_BAND
-    for key, entry in rank_map.items():
-        rank = entry.get("rank", 0)
-        word = entry.get("word", key)
-        if not lo <= rank <= hi or word in seen:
-            continue
-        if is_variant(slug(word), secret_slug) or word in exclude:
-            continue
-        if letter_problem(prev, word, lang) is not None:
-            continue
-        freq = frequency_rank(word)
-        if freq is not None and freq > MAX_START_FREQ_RANK:
-            continue
-        seen.add(word)
-        out.append({"word": word, "rank": rank})
+    out: list[dict] = []
+    for lo, hi in (HARD_START_BAND, START_BAND) if hard else (START_BAND,):
+        seen: set[str] = set()
+        for key, entry in rank_map.items():
+            rank = entry.get("rank", 0)
+            word = entry.get("word", key)
+            if not lo <= rank <= hi or word in seen:
+                continue
+            if is_variant(slug(word), secret_slug) or word in exclude:
+                continue
+            if letter_problem(prev, word, lang) is not None:
+                continue
+            freq = frequency_rank(word)
+            if freq is not None and freq > MAX_START_FREQ_RANK:
+                continue
+            seen.add(word)
+            out.append({"word": word, "rank": rank})
+        if out:
+            break
     out.sort(key=lambda e: e["rank"])
     return out
