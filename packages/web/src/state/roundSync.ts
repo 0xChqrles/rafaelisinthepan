@@ -36,7 +36,7 @@
 // a ref would not survive a real unmount, and neither the queue nor the in-flight write may
 // be duplicated by a remount (archive round-trips, StrictMode).
 
-import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, type RankMap } from '@whippin/shared';
+import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, roundEnded, type RankMap } from '@whippin/shared';
 import { parseRound, postRoundBody, roundUrl, type RoundState } from '../api';
 import { guessKey } from '../game/scoring';
 import { unacknowledged } from '../game/playLog';
@@ -212,8 +212,8 @@ export function notifyGuess(roundKey: string): void {
 
 // THE GIVE-UP (the screen's confirm): end this round unsolved. Resolves TRUE once the round
 // is over on the server's terms — given up, or a solve that won the race — and FALSE when
-// the give-up did not land (a refusal, or an outcome the re-read could not confirm); the
-// round then stays open and the player may ask again. What the outbox still owes is FLUSHED
+// the give-up did not land (a refusal, a flush whose outcome is unknown, or a give-up the
+// re-read could not confirm); the round then stays open and the player may ask again. What the outbox still owes is FLUSHED
 // first, so the log the give-up freezes holds every try the player made.
 export function giveUpRound(roundKey: string): Promise<boolean> {
   const f = flights.get(roundKey);
@@ -232,9 +232,10 @@ export function giveUpRound(roundKey: string): Promise<boolean> {
   return promise;
 }
 
-// Is this round over on the server's terms — solved, given up, or capped?
+// Is this round over on the server's terms — solved, or ended unsolved (given up, or capped:
+// the shared `roundEnded`)?
 function over(f: RoundFlight): boolean {
-  return f.server.solved || f.server.gaveUp || f.server.guesses.length >= ROUND_GUESS_CAP;
+  return f.server.solved || roundEnded(f.server);
 }
 
 // Answer a pending give-up, once.
@@ -731,6 +732,11 @@ function resync(f: RoundFlight): void {
   f.readDone = false;
   f.failures += 1;
   f.lastFailureAt = Date.now();
+  // A give-up still waiting on the FLUSH did not go out, so it did not land: answered FALSE
+  // now. Left pending, it would wait on appends that may keep failing while every re-read
+  // succeeds — a busy button with no end. The outbox keeps retrying as before. (One already
+  // SENT is the re-read's to answer: it may have committed.)
+  if (f.giveUp && !f.giveUp.sent) answerGiveUp(f, false);
   // Deliberately NOT `failLoad`: the round is already interactive, and an unknown write
   // outcome is a sync hiccup, not a load failure.
 }

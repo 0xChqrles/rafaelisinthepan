@@ -891,6 +891,27 @@ describe('the give-up', () => {
     await expect(answer).resolves.toBe(false);
   });
 
+  it('a FLUSH whose outcome is unknown answers FALSE at once — even while every re-read succeeds', async () => {
+    // The give-up waits on the flush. Appends that keep failing (a slice hiccup, a timing-out
+    // Lambda, a challenge that will not mint) behind reads that keep succeeding would
+    // otherwise hold the screen's busy button forever.
+    await ready();
+    seedOutbox(['chemin']);
+    post.mockImplementation(async (_url, body) => (body.guesses ? status(503) : ok(['bois'])));
+    let answered: boolean | undefined;
+    void giveUpRound(KEY).then((ended) => {
+      answered = ended;
+    });
+    await settle();
+    expect(answered).toBe(false);
+    // The outbox keeps retrying as before; the give-up never goes out behind the player.
+    await settle(10_000);
+    expect(post.mock.calls.filter(([, body]) => body.guesses).length).toBeGreaterThan(1);
+    expect(post.mock.calls.some(([, body]) => body.giveUp)).toBe(false);
+    expect(outbox()).toEqual(['chemin']);
+    expect(server()?.gaveUp).toBe(false);
+  });
+
   it('a GIVEN-UP round read at mount FREEZES: nothing is appended, the outbox is dropped', async () => {
     post.mockResolvedValueOnce(givenUp(['bois']));
     seedOutbox(['chemin']);

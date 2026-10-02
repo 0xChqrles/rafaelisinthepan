@@ -1797,9 +1797,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the server's terms (2xx, or a `round_solved` refusal: the solve won and is adopted as
   history), FALSE on any other 4xx (the round stays open, the conversation too). An UNKNOWN
   outcome re-READS, and the read answers it: `gaveUp`/`solved` → TRUE, otherwise FALSE —
-  never a second give-up sent behind the player's back; a read that fails answers FALSE at
-  once (no busy button through an outage; should it have landed, the retried read closes
-  the round by itself). A republish, a re-arm and a reset answer a pending give-up FALSE.
+  never a second give-up sent behind the player's back. Whatever leaves the outcome unknown
+  before an answer can come answers FALSE at once, so the button is never busy without end: a
+  read that fails (should the give-up have landed, the retried read closes the round by
+  itself), and a FLUSH append whose outcome is unknown — the give-up never went out, and
+  appends can keep failing behind re-reads that succeed; the outbox retries as before. A
+  republish, a re-arm and a reset answer a pending give-up FALSE.
   There is no client score submission since
   #203: `useScoreHistogram` launches its population READ only on the SERVER's own `solved`,
   so capped/offline-only play has no row to claim and asks for no standing.
@@ -2100,9 +2103,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `navigator.share` wants a fresh gesture, so a browser refusing the native sheet after
   the bootstrap round trip falls back to useShare's clipboard path (COPIED).
   Both are the #188/#189 wiring; both work before ever playing — and the invite
-  share is the ONE `useShare` caller that passes `tracked: false`, because the pinned
-  `share` analytics event means "a RESULT left the app" (the three-event invariant) and
-  counting invite links into it would silently redefine what the number measures. Rows rise on
+  share passes `useShare`'s `tracked: false`, because the pinned `share` analytics event
+  counts a SOLVED DAY's result leaving the app (the three-event invariant; a bonus and an
+  unfinished result — given up or capped — opt out the same way) and counting invite links
+  into it would silently redefine what the number measures. Rows rise on
   the `rung-in` gesture staggered by index (delays survive reduced motion, the rise
   collapses). Board VISUALS carry no tests per policy; the contract-y parts are the
   shared ranking rules, `parseBoard`, and the route grammar (langs.test.ts).
