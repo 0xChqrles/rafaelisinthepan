@@ -20,7 +20,8 @@
                               backend stores), the 6-digit code's shape/TTL/attempts, the send bounds
     src/leaderboard.ts        the #190 board rules: competition tie ranks, the plain top-50 cut,
                               own-row window, #271's period rule (rankPeriod) and standing
-                              (standingIn) + the Board API types (backend cuts, web renders)
+                              (standingIn) + the Board API types (backend cuts, web renders),
+                              and the LIVE read's (`LiveBoard`: all my groups, merged, unranked)
     src/groups.ts             #271: the group id's shape, the GroupSummary/PublicGroup wire
                               types, the three board periods and periodRange (week/month days)
     src/history.ts            the #211 PRIVATE player history: the month/day summary types,
@@ -214,7 +215,9 @@
   #271, of the PERIOD rule (`rankPeriod`:
   podium points 3/2/1 per day by competition rank, then solved days, then the total, fewer
   tries first) and the STANDING (`standingIn`) — plus the `Board`/`BoardRow`/
-  `PeriodBoard` API types. The BACKEND applies them before attaching profiles and the WEB
+  `PeriodBoard` API types and the live read's `LiveBoard`/`LiveRow`/`LiveGroup` (its rows
+  carry NO rank: the union of several groups has none, and the web ranks each group with
+  `rankBoard`). The BACKEND applies them before attaching profiles and the WEB
   renders what they produced; a fork would let the ranks a board shows drift from the
   rows the server selected. Contract-tested (`leaderboard.test.ts`); the product rules
   live in the root `AGENTS.md` (Leaderboard reads). `src/groups.ts` carries the id shape,

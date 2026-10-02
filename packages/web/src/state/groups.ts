@@ -1,6 +1,7 @@
 // The player's GROUPS (#271), as every surface that draws them needs them: the leaderboard's
 // tabs, the global board's member marks, the invite landing's "already a member" and the
-// solved screen's standing line all read ONE answer to "which groups am I in".
+// play screen's question "is there anybody to race?" (the live read's eligibility,
+// state/liveBoard.ts) all read ONE answer to "which groups am I in".
 //
 // TRANSIENT, never persisted: it is the server's answer about the caller, and #211's rule
 // applies — a list that has not arrived is UNKNOWN, never a guessed empty one. The one

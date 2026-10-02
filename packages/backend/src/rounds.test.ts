@@ -156,9 +156,9 @@ function makeHandler(
     advance(ms: number) {
       current += ms;
     },
-    // A republish under a LIVE handler. Artifact reads are fresh, so later requests must see
-    // the new revision without resetting any process-local state. `null` takes the day's
-    // artifacts away altogether.
+    // A republish under a LIVE handler. The slice is read fresh and the held full artifact is
+    // keyed by revision, so later requests must see the new revision without resetting any
+    // process-local state. `null` takes the day's artifacts away altogether.
     republish(puzzle: Puzzle | null) {
       sentence.current = puzzle;
     },

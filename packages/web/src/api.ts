@@ -19,6 +19,8 @@ import type {
   BoardPlayer,
   BoardRow,
   GroupSummary,
+  LiveBoard,
+  LiveGroup,
   PeriodBoard,
   PeriodRow,
   PlayingRow,
@@ -805,7 +807,8 @@ export async function readGroup(id: string, signal?: AbortSignal): Promise<Group
 
 // The #190 leaderboard: GET is the anonymous GLOBAL top 50 (`id` — the caller's PUBLIC
 // id, never the token — widens it with their own below-the-cut window); POST with
-// `{token, group[, period]}` is a GROUP's board (#271), the trusted surface.
+// `{token, group[, period]}` is a GROUP's board (#271), the trusted surface, and
+// `{token, live: true}` every group the caller is in, merged (`parseLiveBoard`).
 // Addressed per (day, lang) like everything else; all three query parameters are in the
 // board CloudFront behavior's allowList (the root AGENTS.md three-package contract).
 export function boardUrl(lang: string, date: string, id?: string, base: string = apiBase()): string {
@@ -815,7 +818,9 @@ export function boardUrl(lang: string, date: string, id?: string, base: string =
   return id ? `${root}&id=${encodeURIComponent(id)}` : root;
 }
 
-export type BoardBody = { token: string; group: string; period?: BoardPeriod };
+export type BoardBody =
+  | { token: string; group: string; period?: BoardPeriod }
+  | { token: string; live: true };
 
 export async function postBoardBody(url: string, body: BoardBody): Promise<Response> {
   return postSignedJson(url, body);
@@ -893,6 +898,36 @@ export function parseBoard(data: unknown): Board {
   checkPlayingRows(playing, 'playing');
   checkBoardPlayers(waiting, 'waiting');
   return data as unknown as Board;
+}
+
+function isLiveGroup(value: unknown): value is LiveGroup {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    GROUP_ID_PATTERN.test(value.id) &&
+    typeof value.name === 'string' &&
+    isIdList(value.members)
+  );
+}
+
+// The LIVE read (`{token, live: true}`): the caller's groups with their member lists, and
+// the members' finished rows (a dressed player and a whole try count — no rank, which only
+// a single group's board can give) and playing rows (the day board's own shape).
+export function parseLiveBoard(data: unknown): LiveBoard {
+  if (!isRecord(data)) throw new Error('malformed live board: not an object');
+  const { groups, rows, playing } = data;
+  if (!Array.isArray(groups) || !groups.every(isLiveGroup)) {
+    throw new Error('malformed live board: "groups" must be an array of groups');
+  }
+  if (!Array.isArray(rows)) throw new Error('malformed live board: "rows" must be an array');
+  for (const raw of rows) {
+    const row = raw as Record<string, unknown>;
+    if (!isBoardPlayer(raw) || typeof row.score !== 'number' || !Number.isInteger(row.score) || row.score < 1) {
+      throw new Error('malformed live board: bad "rows" row');
+    }
+  }
+  checkPlayingRows(playing, 'playing');
+  return data as unknown as LiveBoard;
 }
 
 const isCount = (value: unknown): value is number =>

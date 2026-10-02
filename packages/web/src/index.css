@@ -706,6 +706,8 @@ input {
    moves the sentence between the solved beats), so the bottom edge and everything above
    stay put when the keyboard is replaced by the results — no reflow, no empty gap. */
 .tray {
+  /* The race line's anchor (`.race-line`, laid on this box's top edge). */
+  position: relative;
   width: 100%;
   height: calc(var(--kb-h) + env(safe-area-inset-bottom, 0px));
   display: flex;
@@ -800,6 +802,88 @@ input {
 }
 .reveal-tray .mix-btn + .btn-secondary {
   padding-block: 10px;
+}
+/* THE RACE LINE (`components/RaceLine`): the player's groups around them, ONE line laid on
+   the tray's TOP EDGE — absolutely, so its arrival (the first answer lands after the round is
+   on screen) and its leaving move nothing in the column; the sentence's centring never sees
+   it. It sits in the gap the column already keeps above the tray and the play area's own
+   bottom slack. ONE line, never wrapping: at most three entries of a mark and two short
+   numbers, which fit the narrowest phone's column. The game surface's dress: the pixel face
+   for the numbers, the % in the heat ramp's ink (the board's playing rows), tries muted, a
+   finished member's count in the solve cobalt. */
+.race-line {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 100%;
+  margin: 0;
+  padding: 2px 4px;
+  white-space: nowrap;
+  font-family: var(--pixel-font);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--fg);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  animation: race-in 240ms ease-out backwards;
+  transition: opacity 200ms ease-out, visibility 0s linear 0s;
+}
+.race-line.retired {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 200ms ease-out, visibility 0s linear 200ms;
+}
+@keyframes race-in {
+  from {
+    opacity: 0;
+  }
+}
+.race-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.race-entry .avatar,
+.race-mark-box {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+.race-mark-box {
+  display: block;
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+/* The player's own mark is framed in the accent — "you are here", the boards' own marker. */
+.race-entry.me .avatar,
+.race-entry.me .race-mark-box {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+.race-pct {
+  color: var(--race-heat);
+}
+.race-tries {
+  color: var(--muted);
+}
+.race-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--solve);
+}
+.race-solved {
+  width: 10px;
+  height: 10px;
+}
+.race-inf {
+  color: var(--muted);
+  shape-rendering: crispEdges;
 }
 @keyframes kb-drop {
   to {

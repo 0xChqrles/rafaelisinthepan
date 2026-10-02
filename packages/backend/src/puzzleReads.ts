@@ -1,33 +1,47 @@
-// The round route's artifact reads (#203). BOTH ARE FRESH — nothing here is cached, and the
-// reason is worth the whole comment. (This module was `puzzleCache.ts` while it briefly held
-// one; the name went with the cache, since a file called a cache that is not one misleads
-// every later reader.)
+// The artifact reads (#203): the derivation SLICE, read FRESH on every append, and the FULL
+// artifact, held in the Lambda's memory KEYED BY ITS PUBLISHED REVISION.
 //
-//   | any append, any day | the SLICE         | read fresh, ~12.5 KB gzipped, 0.51 ms |
-//   | a solve, any day    | the full artifact | read fresh, ~0.8 MB gzipped, 52 ms    |
+//   | any append, any day                    | the SLICE         | read fresh, ~12.5 KB gzipped |
+//   | a solve, the day board, the live read  | the full artifact | reused for the same          |
+//   |                                        |                   | revision, else read fresh    |
 //
-// #203 designed a slice cache (~100 days resident) and a one-day cache for today's full
-// artifact. Both are gone, and the reason they went is worth keeping: while the only identity
-// in the system was the SENTENCE's hole layout, nothing could tell a cached artifact from a
-// corrected one — and since rank 0 is a GROUP (79 of 151 hole occurrences in the local fr
-// store carry more than one rank-0 key, worst 27), a correction moves exactly the aliases
-// that decide `solved`. A stale slice then froze a round and recorded a score for a puzzle
-// nobody solved, or silently swallowed a real solve, with nothing to correct either.
+// The FULL artifact (~0.8 MB gzipped, a 6.21 MB JSON parse) is what an exact try count
+// needs, and the live ranking reads it at guess cadence: every player in a group re-reads
+// the board after their own guesses land, against an API limited to 10 concurrent Lambdas.
+// Parsing it per read would spend those slots on the same megabytes over and over, so a
+// warm Lambda KEEPS the parsed artifact and reuses it — but only for the revision the
+// caller has just learned is current.
 //
-// The published `revision` (#203, user-decided 2026-08-22) would now make a cache safe — a
-// version's content never changes, so an entry keyed by it can never go stale. It stays gone
-// anyway, because fresh is simple and cheap enough not to need one: a ~12.5 KB GET plus a
-// 0.51 ms parse per append, issued CONCURRENTLY with the round item's DynamoDB read
-// (`rounds.ts`), so no wall-clock on a request already waiting on a comparable round trip,
-// and on the order of $0.60 a month in S3 GETs at 1,000 players averaging 50 guesses.
+// Why a revision makes this safe: a published version's content never changes (the
+// revision is a hash of the whole artifact, rank maps included), so an entry keyed by it can
+// never go stale. A correction mints a new revision and simply misses. The current revision
+// is always learned FRESH: from the slice the append just read (a solve — the round's own
+// tag, which that slice was checked against), or from a fresh slice read (`loadCurrentPuzzle`
+// — the boards). A full artifact read fresh is kept only when it names that revision; one
+// that does not is the day-addressed 404 (the publish writes the slice first, so the window
+// between the two writes fails closed rather than mixing them).
 //
-// The megabytes the slice exists to avoid are still avoided: what #203 measured as unviable
-// was PARSING a 6.21 MB artifact per append, and that is exactly what this never does. The
-// full artifact is parsed once per round, on the append that solves it.
+// The memory is per STORE INSTANCE (one per Lambda container in production, one per test
+// handler), at most `HELD_ARTIFACTS` entries by store key — the active day in each language —
+// the least recently used one evicted.
 
 import type { Puzzle } from '@whippin/shared';
+import { storeKey } from './layout';
 import type { PuzzleSlice } from './slice';
 import type { PuzzleStore } from './store';
+
+export const HELD_ARTIFACTS = 2;
+
+const held = new WeakMap<PuzzleStore, Map<string, Puzzle>>();
+
+function heldFor(store: PuzzleStore): Map<string, Puzzle> {
+  let entries = held.get(store);
+  if (!entries) {
+    entries = new Map();
+    held.set(store, entries);
+  }
+  return entries;
+}
 
 // The day's slice. Fetch it CONCURRENTLY with the round item's read (`rounds.ts` does):
 // neither depends on the other, so the GET hides inside a round trip already being paid for.
@@ -45,16 +59,41 @@ export async function loadSlice(
   return slice && slice.revision === revision ? slice : null;
 }
 
-// The FULL artifact — what the SCORE needs, because it counts unique tries and `guessKey`
-// dedups on a guess's rank in EVERY map, not only the ranks near the answer. Loaded once per
-// round, on the append that solves it.
+// The FULL artifact of the published `revision` — what the SCORE needs, because it counts
+// unique tries and `guessKey` dedups on a guess's rank in EVERY map, not only the ranks near
+// the answer. Null when the store holds another version (a count off a retired version's
+// maps is a count about a different puzzle) or none.
 export async function loadPuzzle(
   store: PuzzleStore,
   date: string,
   lang: string,
   revision: string,
 ): Promise<Puzzle | null> {
+  const key = storeKey(date, lang);
+  const entries = heldFor(store);
+  const kept = entries.get(key);
+  if (kept && kept.revision === revision) {
+    // Touched: the entry moves to the back of the eviction order.
+    entries.delete(key);
+    entries.set(key, kept);
+    return kept;
+  }
   const puzzle = await store.getPuzzle(date, lang);
-  // A score counted off a retired version's maps is a score about a different puzzle.
-  return puzzle && puzzle.revision === revision ? puzzle : null;
+  if (!puzzle || puzzle.revision !== revision) return null;
+  entries.delete(key);
+  entries.set(key, puzzle);
+  while (entries.size > HELD_ARTIFACTS) entries.delete(entries.keys().next().value as string);
+  return puzzle;
+}
+
+// The FULL artifact of whatever version is published NOW: the slice, read fresh, names it.
+// Null for an unpublished day (no slice), and for the publish window where the two objects
+// disagree. The boards read through this — a board has no revision of its own to ask about.
+export async function loadCurrentPuzzle(
+  store: PuzzleStore,
+  date: string,
+  lang: string,
+): Promise<Puzzle | null> {
+  const slice = await store.getSlice(date, lang);
+  return slice ? loadPuzzle(store, date, lang, slice.revision) : null;
 }

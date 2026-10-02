@@ -26,6 +26,7 @@ import {
   type GroupsBody,
 } from '../api';
 import Avatar from '../components/Avatar';
+import { shownPercent } from '../game/race';
 import CrownIcon from '../assets/icons/board.svg?react';
 import ConfirmScreen from '../components/ConfirmScreen';
 import InfinityGlyph from '../components/InfinityGlyph';
@@ -773,7 +774,7 @@ function PlayingRowItem({ row, me, index }: { row: PlayingRow; me: boolean; inde
       <span className="board-norank" aria-hidden="true" />
       <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
       <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
-      <span className="board-progress">{Math.round(row.progress)}%</span>
+      <span className="board-progress">{shownPercent(row.progress)}%</span>
       <span className="board-score">
         {row.over ? (
           <>

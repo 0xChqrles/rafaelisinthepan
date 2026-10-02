@@ -41,8 +41,9 @@
       s3Store.ts, fsStore.ts  store impls: S3 (prod) and local FS (#17), both read the same key
       slice.ts                #203's DERIVATION SLICE: build it from a puzzle, read a log against
                               it (progress + solved), its gzip codec and its shape check
-      puzzleReads.ts          #203's artifact reads: the slice (every append) and the full
-                              puzzle (a solve), BOTH fresh, both gated on the caller's revision
+      puzzleReads.ts          #203's artifact reads: the slice (every append, FRESH) and the
+                              full puzzle (a solve, the day board, the live read), held in
+                              memory KEYED BY REVISION; both gated on a revision learned fresh
       scores.ts               /scores GET route (read-only): params, the existence probe, the
                               derived histogram and the caller's band
       liveRoute.ts            what the LIVE routes share: no-store headers, the JSON-body
@@ -90,7 +91,8 @@
                               week and month boards + the caller's standings — shared
                               leaderboard rules over score rows + profiles + member lists;
                               since #206 the day POST also answers `playing` (round rows
-                              deduped against the day's full artifact)
+                              deduped against the day's full artifact); `{token, live: true}`
+                              answers every group of the caller's merged (`readLive`)
       history.ts              POST /history (#211): the PRIVATE player history — one month of
                               one language's summaries + its solved-day collection
       historyStore.ts         solved-day storage contract; the private player#<publicId>
@@ -157,7 +159,7 @@ pnpm puzzle:publish <puzzle.json> --bonus [ID] [--s3]  # a BONUS puzzle (root AG
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--ci]  # publish-buffer coverage (#61); reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
 pnpm puzzle:ledger --s3     # rebuild packages/generation/published.jsonl (gitignored — the bucket is the truth) from every sentence puzzle in the bucket; an S3 publish appends to it itself; the curator refuses to run without it
 pnpm backend:dev                # local server (puzzles + /scores + /profile + /groups + /board + /round + /history + /devices + /link + /today) on :8787; FS puzzles, in-memory scores/profiles/groups/rounds/history/devices/links, local Turnstile accept-all, and #204's link codes PRINTED to this log
-pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server with a #190 board population + a seeded group (in-memory — re-run after a restart); --group also lands five seeds in YOUR group
+pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server with a #190 board population + a seeded group (in-memory — re-run after a restart); --group also lands eight seeds (three of them mid-round) in YOUR group
 ```
 
 ---
@@ -282,8 +284,14 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   below. The GLOBAL GET, the period boards and the standing still read none:* a population
   only exists for a published daily, so an unpublished day answers empty.*)* GET's optional
   `id` is validated against `PUBLIC_ID_PATTERN` (400 malformed); POST authenticates
-  `{token}` like every live route, then DISPATCHES on the body: `standing: true` (no group,
-  no period) answers the caller's standings — every group's member list, ONE exact-key
+  `{token}` like every live route, then DISPATCHES on the body: `live: true` (no group, no
+  period, no standing, else 400) answers `readLive` — `listMine`, each group's member list
+  (a membership whose list no longer names the caller is dropped), then the day face's own
+  pieces over the deduplicated UNION, once: the score `getMany`, `loadPlaying` (one artifact
+  read), the subtraction and `orderPlaying`, one `dressRows` over the rows and players (a
+  GONE account leaves the rows, the players and the member lists); no rank (`rankBoard` only
+  orders the rows); a caller in no group answers empty before any other read.
+  `standing: true` (no group, no period) answers the caller's standings — every group's member list, ONE exact-key
   batch over the union for the day, `standingIn` per group; otherwise `group` is required
   (`GROUP_ID_PATTERN`, else 400), `period` optional (`isBoardPeriod`, else 400), and the
   member list is the TRUST BOUNDARY: a caller not on it is 403 `not_member`, an unknown
@@ -308,7 +316,9 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   revision but no score row is IN PROGRESS — `loadPlaying` reads `RoundStore.getMany`
   (BatchGetItem over the exact keys, EVENTUALLY consistent — the method's comment holds
   the reasoning) CONCURRENTLY with the score `getMany` and the full artifact
-  (`getPuzzle`, fresh — the one puzzle-store read on this route), dedups each raw log
+  (`loadCurrentPuzzle`: a FRESH slice read names the published revision, and the parsed
+  artifact held for that revision answers — puzzleReads.ts; the day face and the live read are
+  the only puzzle-store reads on this route), dedups each raw log
   with `countTries` for the exact try count, carries the STORED derived `progress`, and
   orders with the shared `orderPlaying`; a failure there fails the POST rather than
   letting `waiting` claim "not played yet" over a member mid-game (root `AGENTS.md`,
@@ -346,8 +356,10 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   **`pnpm board:seed` (src/seedBoard.ts) is the LOCAL-ONLY population seeder**: run it
   against a live `pnpm backend:dev` to fill the in-memory stores with 60 scored players
   (a tie straddling the top-50 cut included), a few unnamed ones, two unplayed
-  profile-only ones, a seeded GROUP of four with its printed invite link (#271);
-  `--group <groupId|/g/link>` also lands five seeds in YOUR group. Re-run after every backend restart (the stores reset —
+  profile-only ones, three MID-ROUND players (a partial, unsolved log each — the board's IN
+  PROGRESS rows and the play screen's race line), a seeded GROUP of seven (the three
+  mid-round among them) with its printed invite link (#271); `--group <groupId|/g/link>`
+  also lands eight seeds (the three mid-round included) in YOUR group. Re-run after every backend restart (the stores reset —
   that is why it is a script, not a fixture); it copies the newest local fr sentence
   puzzle forward to the active day when that key is missing.
 
@@ -450,10 +462,16 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   settle delayed past a better one is refused rather than parking a stale percentage.
   `parseSlice` checks the rank VALUES too, not only the field shapes, and `encodeSlice` runs
   it before writing: a malformed puzzle then fails loudly at PUBLISH instead of shipping a
-  day whose every append answers the day-addressed 404. **NEITHER artifact is cached.** The
-  published revision now makes a revision-keyed cache correct, but fresh remains simpler and
-  cheap: the small slice fetch overlaps the round read, and the full artifact is loaded only
-  on solve. **`publish` stamps a `revision`** on the puzzle and its slice — a hash of the
+  day whose every append answers the day-addressed 404. **The SLICE is read fresh; the FULL
+  artifact is held by REVISION** (`puzzleReads.ts`): a per-store-instance map (one per
+  Lambda container; one per test handler, so tests never share it) of at most
+  `HELD_ARTIFACTS` = 2 entries by store key, least recently used evicted. `loadPuzzle(…,
+  revision)` answers the held artifact when it carries that revision, else reads fresh and
+  keeps it only when it names it; `loadCurrentPuzzle` learns the revision from a fresh slice
+  first (the boards). The revision a caller asks with is always learned fresh — the solve's
+  is the round's own tag, which the append's fresh slice was just checked against — so a held
+  entry can never answer for a corrected day. Why held at all: the live read asks at guess
+  cadence and the API has 10 concurrent Lambdas. **`publish` stamps a `revision`** on the puzzle and its slice — a hash of the
   complete puzzle content, rank maps included, so an identical republish is a no-op — and
   `loadSlice`/`loadPuzzle` refuse anything that does not name the version the caller sent.
   Publish writes the slice FIRST; the shared revision makes the two-object window fail closed
@@ -469,9 +487,9 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   whole. A truth that reads SOLVED
   then records the day's score row — `countTries` over the FULL artifact (`loadPuzzle`), the
   one thing the slice cannot answer — and that write's failures are LOGGED, never surfaced:
-  the answer is about the log. `puzzleReads.ts` holds NO state — both reads are fresh, so
-  there is nothing to reset between tests and nothing an instance can answer a later
-  request from.
+  the answer is about the log. `puzzleReads.ts`'s held artifacts are keyed by the store
+  INSTANCE and the revision, so nothing needs resetting between tests and a held entry can
+  only ever answer for the exact version it was read as.
   Round CREATION is Turnstile-gated: the sentence round has no START message, so the
   challenge rides the append whose pre-read found nothing (`requireTurnstile`), and a bare
   token with no guesses is a 400 rather than a free challenge to burn. `RoundHandlerDeps`

@@ -161,6 +161,33 @@ export interface Board {
   waiting: BoardPlayer[];
 }
 
+// ---- THE LIVE READ (`POST /board {token, live: true}`): every group the caller is in,
+// MERGED — the play screen's race line and the solved screen's group boards read this one
+// answer. The members of all those groups are one deduplicated population, so nothing in
+// it is ranked: a rank belongs to ONE group, and the client ranks each group itself with
+// `rankBoard` over the rows its member list names.
+
+// A member who FINISHED today: the recorded score, dressed — no rank (see above).
+export interface LiveRow extends BoardPlayer {
+  score: number;
+}
+
+// One of the caller's groups: who is in it, so the client can cut the merged rows per group.
+export interface LiveGroup {
+  id: string;
+  name: string;
+  members: string[];
+}
+
+export interface LiveBoard {
+  groups: LiveGroup[];
+  // Every member of those groups (the caller included) with a recorded score today.
+  rows: LiveRow[];
+  // Every member with a round for the current revision and no score row, in
+  // `orderPlaying`'s order — the day board's own `playing` section, over the union.
+  playing: PlayingRow[];
+}
+
 // ---- A group's WEEK / MONTH (#271, user-decided 2026-09-07): ONE rule, applied by the
 // backend over the recorded score rows of every day in the range and rendered by the web.
 //

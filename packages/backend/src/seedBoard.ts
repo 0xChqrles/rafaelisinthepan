@@ -10,7 +10,8 @@
 // What it seeds: 60 scored players (40 distinct scores + a 20-player tie across the
 // top-50 cut, so shared ranks are visible on both sides of it), most with profiles (a few without,
 // to show the pseudonym + dashed-mark fallback), plus a couple of profile-only players
-// with NO score (a group board's "not played yet" rows). It prints the INVITE LINK of a
+// with NO score (a group board's "not played yet" rows) and three MID-ROUND players (a
+// partial, unsolved log each — the IN PROGRESS rows). It prints the INVITE LINK of a
 // group the seeds created — opening it in the app is the real one-tap join flow, and the
 // easiest way to see a populated group board without hunting down ids.
 //
@@ -145,6 +146,24 @@ function playthrough(puzzle: Puzzle, score: number): string[] {
   return [...misses, ...secrets];
 }
 
+// A log that is still UNSOLVED after `tries` unique tries: `near` real neighbours of the
+// secrets (never a rank-0 key of any map, so nothing solves), padded with misses. Each seed
+// takes its own slice of the neighbours, so the in-progress rows land on different
+// percentages — what the board's IN PROGRESS section and the play screen's race line show.
+function partialRun(puzzle: Puzzle, tries: number, near: number, offset: number): string[] {
+  const solving = (slug: string) => Object.values(puzzle.ranks).some((map) => map[slug]?.rank === 0);
+  const neighbours = Object.values(puzzle.ranks)
+    .flatMap((map) => Object.entries(map).filter(([, entry]) => entry.rank >= 2 && entry.rank <= 400))
+    .sort(([a, x], [b, y]) => x.rank - y.rank || (a < b ? -1 : 1))
+    .map(([slug]) => slug)
+    .filter((slug, i, all) => all.indexOf(slug) === i && /^[a-z]+$/.test(slug) && !solving(slug));
+  const picked = neighbours.filter((_, i) => i % 7 === offset % 7).slice(0, near);
+  const misses = playthrough(puzzle, tries - picked.length + puzzle.holes.length).filter(
+    (slug) => !solving(slug),
+  );
+  return [...misses.slice(0, tries - picked.length), ...picked];
+}
+
 function groupArg(): string | null {
   const flag = process.argv.indexOf('--group');
   if (flag < 0) return null;
@@ -219,14 +238,39 @@ async function main() {
     if (!r.ok) console.log(`[seed] profile ${i} refused:`, r.status, await r.text());
   }
 
+  // Three players MID-ROUND today: a partial, unsolved log each (no score row), on
+  // different percentages and try counts — the board's IN PROGRESS rows and the play
+  // screen's race line.
+  const PARTIAL = [
+    { i: 62, tries: 24, near: 9 },
+    { i: 63, tries: 14, near: 4 },
+    { i: 64, tries: 31, near: 14 },
+  ];
+  for (const { i, tries, near } of PARTIAL) {
+    await bootstrap(i);
+    const p = await post('/profile', {
+      token: tokenOf(i),
+      name: NAMES[i % NAMES.length],
+      avatar: encodeAvatar(i % 5, drawingOf(i)),
+    });
+    if (!p.ok) console.log(`[seed] profile ${i} refused:`, p.status, await p.text());
+    const r = await post(roundPath, {
+      token: tokenOf(i),
+      puzzle: puzzle.revision,
+      guesses: partialRun(puzzle, tries, near, i),
+      turnstileToken: 'local',
+    });
+    if (!r.ok) console.log(`[seed] partial round ${i} refused:`, r.status, await r.text());
+  }
+
   // Optionally land a few seeds in the given group — a JOIN is the caller's own write, so
   // YOUR board fills without your device token ever leaving your browser.
   if (groupId) {
-    for (const i of [2, 7, 19, 47, 60]) {
+    for (const i of [2, 7, 19, 47, 60, ...PARTIAL.map((seed) => seed.i)]) {
       const r = await post('/groups', { token: tokenOf(i), join: groupId });
       if (!r.ok) console.log(`[seed] group join ${i} refused:`, r.status, await r.text());
     }
-    console.log(`[seed] joined 5 seeds (one unplayed) to group ${groupId}`);
+    console.log(`[seed] joined 8 seeds (one unplayed, three mid-round) to group ${groupId}`);
   }
 
   // A seeded GROUP of its own: created by one seed, joined by a handful (one unplayed), so
@@ -238,13 +282,15 @@ async function main() {
     console.log('[seed] group creation refused:', created.status, await created.text());
   } else {
     const seeded = ((await created.json()) as { created: string }).created;
-    for (const i of [33, 5, 61]) {
+    for (const i of [33, 5, 61, ...PARTIAL.map((seed) => seed.i)]) {
       const r = await post('/groups', { token: tokenOf(i), join: seeded });
       if (!r.ok) console.log(`[seed] group join ${i} refused:`, r.status, await r.text());
     }
     console.log(`[seed] done — ${LANG} board for ${date} holds 60 scores.`);
     console.log('[seed] group invite link (open it in the app to join a board with rows):');
-    console.log(`[seed]   ${SITE}${groupInvitePath(seeded)}   (Les_Amis: 4 seeds, one has NOT played today)`);
+    console.log(
+      `[seed]   ${SITE}${groupInvitePath(seeded)}   (Les_Amis: 7 seeds, one has NOT played today, three are mid-round)`,
+    );
   }
 }
 

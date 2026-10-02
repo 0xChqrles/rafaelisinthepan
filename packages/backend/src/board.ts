@@ -17,8 +17,12 @@
 //                                          — its WEEK or MONTH (`PeriodBoard`), ranked by
 //                                            the shared period rule (`rankPeriod`);
 //       { token, standing: true }          — where the caller stands today in each of
-//                                            their groups (`GroupStanding[]`), the solved
-//                                            screen's one line.
+//                                            their groups (`GroupStanding[]`);
+//       { token, live: true }              — EVERY group the caller is in, MERGED
+//                                            (`LiveBoard`): the members' finished and
+//                                            playing rows over the deduplicated union, the
+//                                            play screen's race line and the solved
+//                                            screen's group boards.
 //
 // Every answer is rows a board can draw directly: rank (competition ties), score, and the
 // public profile (#188) — name and avatar — attached per row. The ranking, the plain
@@ -34,9 +38,10 @@
 // it leaks nothing about the puzzle — a percentage and a try count say nothing about
 // which words are involved. Getting the try count EXACT needs the day's FULL artifact
 // (`countTries` dedups on a guess's rank in EVERY map, which no summary answers — the raw
-// stored log can hold one identity twice whenever two devices merge), so the day POST is
-// the one board read that touches the puzzle store, read FRESH like every other artifact
-// read (#203's rule, puzzleReads.ts).
+// stored log can hold one identity twice whenever two devices merge), so the day POST and
+// the live read are the board reads that touch the puzzle store: the slice FRESH, to learn
+// the published revision, and the full artifact through the revision-keyed memory
+// (puzzleReads.ts) — the live read comes at guess cadence.
 //
 // The GLOBAL GET, the period boards and the standing read no puzzle store: a population
 // only ever exists for a published daily (the round route's guards enforce it — it is
@@ -60,6 +65,9 @@ import {
   type BoardPlayer,
   type BoardRow,
   type GroupStanding,
+  type LiveBoard,
+  type LiveGroup,
+  type LiveRow,
   type PeriodBoard,
   type PeriodDay,
   type PeriodRow,
@@ -68,6 +76,7 @@ import {
   type RankedScore,
 } from '@whippin/shared';
 import type { DeviceStore } from './deviceStore';
+import { loadCurrentPuzzle } from './puzzleReads';
 import type { GroupStore } from './groupStore';
 import { LIVE_HEADERS, readJsonObject, requireDayParams, requireDevice } from './liveRoute';
 import { faceOf, type ProfileStore } from './profileStore';
@@ -85,8 +94,9 @@ export interface BoardHandlerDeps {
   devices: DeviceStore;
   // The #206 in-progress rows: the members' stored rounds, and the day's full artifact
   // the exact try count dedups their logs against. Optional for the read-only handler
-  // consumers that never take the day POST; without both, the board simply carries no
-  // playing section — production and the local server always provide them.
+  // consumers that never take the day POST or the live read; without both, the board
+  // simply carries no playing section — production and the local server always provide
+  // them.
   rounds?: RoundStore;
   puzzles?: PuzzleStore;
 }
@@ -148,16 +158,15 @@ function toBoardRows(rows: readonly RankedScore[], dress: Dress): BoardRow[] {
   return rows.map((row) => ({ ...row, ...dress(row.publicId) }));
 }
 
-// The #206 in-progress candidates: every group member's stored round for this daily,
+// The #206 in-progress candidates: every given member's stored round for this daily,
 // deduped into an exact try count against the day's full artifact. UNFILTERED — the
 // caller still subtracts the players the score population already ranks, which it can
 // only do once both concurrent reads have answered.
 //
-// The two loads run CONCURRENTLY (neither depends on the other), and the artifact is
-// read FRESH (#203's rule — puzzleReads.ts holds the whole reasoning): a board open is
-// a person tapping a screen, not the per-guess hot path the derivation slice exists
-// for, and a warm Lambda retaining megabytes of parsed puzzle was the cost fresh reads
-// were chosen to avoid. Only rounds naming the artifact's own published revision
+// The two loads run CONCURRENTLY (neither depends on the other). The artifact is the
+// CURRENT published one — a fresh slice read names its revision, and a warm Lambda reuses
+// the parsed artifact it already holds for that revision (puzzleReads.ts holds the whole
+// reasoning: the live read asks at guess cadence). Only rounds naming that revision
 // qualify: a retired revision's log answers a different puzzle — its tries dedup
 // against maps it was never played on — and that round restarts on the player's next
 // append anyway, so for THIS puzzle they honestly have not started.
@@ -175,7 +184,7 @@ async function loadPlaying(
 ): Promise<PlayingScore[]> {
   if (!rounds || !puzzles) return [];
   const [puzzle, stored] = await Promise.all([
-    puzzles.getPuzzle(key.date, key.lang),
+    loadCurrentPuzzle(puzzles, key.date, key.lang),
     rounds.getMany(key, members),
   ]);
   if (!puzzle) return [];
@@ -247,7 +256,19 @@ export async function handleBoard(
   const auth = await requireDevice(body.value, responseHeaders, deps.devices, instant);
   if (!auth.ok) return auth.response;
   const publicId = auth.value.account.accountId;
-  const { group, period = 'day', standing } = body.value;
+  const { group, period = 'day', standing, live: liveAsked } = body.value;
+
+  if (liveAsked !== undefined) {
+    if (liveAsked !== true || group !== undefined || body.value.period !== undefined || standing !== undefined) {
+      return errorResponse(
+        400,
+        'bad_request',
+        'Body field "live" must be true, and asks for no group, period or standing.',
+        responseHeaders,
+      );
+    }
+    return json(200, await readLive(deps, key, publicId), responseHeaders);
+  }
 
   if (standing !== undefined) {
     if (standing !== true || group !== undefined || body.value.period !== undefined) {
@@ -408,4 +429,47 @@ async function readStandings(
     const standing = standingIn(rankBoard(groupRows), publicId);
     return standing ? [{ group: group.id, ...standing }] : [];
   });
+}
+
+// EVERY group the caller is in, MERGED (`{token, live: true}`): the play screen's race line
+// and the solved screen's group boards read this ONE answer, at guess cadence — so it is the
+// day board's own pieces over the UNION of the members, once: one exact-key score batch, one
+// round batch, ONE artifact read (the revision-keyed one, puzzleReads.ts), one profile read
+// per member who has a row. Nothing is ranked here: a rank belongs to ONE group, and the
+// client ranks each group with the shared `rankBoard` over the rows its member list names.
+//
+// Members-only BY CONSTRUCTION: the groups are the caller's own memberships, each kept only
+// while its member list still names the caller (the day board's own trust boundary), so no
+// group the caller is not in can reach the union. A caller in no group answers empty without
+// reading anything else.
+async function readLive(deps: BoardHandlerDeps, key: ScoreKey, publicId: string): Promise<LiveBoard> {
+  const mine = await deps.groups.listMine(publicId);
+  if (mine.length === 0) return { groups: [], rows: [], playing: [] };
+  const lists = await Promise.all(mine.map((group) => deps.groups.members(group.id)));
+  const held: LiveGroup[] = mine
+    .map((group, i) => ({ id: group.id, name: group.name, members: lists[i].map((member) => member.publicId) }))
+    .filter((group) => group.members.includes(publicId));
+  if (held.length === 0) return { groups: [], rows: [], playing: [] };
+  const union = [...new Set(held.flatMap((group) => group.members))];
+  const [scores, candidates] = await Promise.all([
+    deps.scores.getMany(key, union),
+    loadPlaying(deps.rounds, deps.puzzles, key, union),
+  ]);
+  // The day board's subtraction: a recorded score is the day's final word on a member.
+  const scored = new Set(scores.map((row) => row.publicId));
+  const playing = orderPlaying(candidates.filter((row) => !scored.has(row.publicId)));
+  // `rankBoard` for a deterministic row order only (fewest tries, then publicId) — its rank
+  // is dropped: over a union of groups it would be a claim no group makes.
+  const finished = rankBoard(scores);
+  const { dress, live } = await dressRows(deps.profiles, finished, playing);
+  return {
+    // A member whose account is gone leaves the lists too, wherever a read learned it (#204).
+    groups: held.map((group) => ({ ...group, members: group.members.filter(live) })),
+    rows: finished
+      .filter((row) => live(row.publicId))
+      .map((row): LiveRow => ({ publicId: row.publicId, score: row.score, ...dress(row.publicId) })),
+    playing: playing
+      .filter((row) => live(row.publicId))
+      .map((row): PlayingRow => ({ ...row, ...dress(row.publicId) })),
+  };
 }

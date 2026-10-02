@@ -746,6 +746,25 @@ export function srHoleGiven(lang: string, n?: number): string {
   return n === undefined ? what : `word ${n}: ${what}`;
 }
 
+// THE RACE LINE, in words (the line itself is wordless): the members of the player's groups
+// around them, in the line's order. A finished member says how many tries; one whose round
+// ended unsolved says so; the player is "you" with their live %.
+export type RaceSpoken =
+  | { name: string; kind: 'done'; score: number }
+  | { name: string; kind: 'playing' | 'over'; percent: number; tries: number; me: boolean };
+
+export function ariaRaceLine(lang: string, entries: readonly RaceSpoken[]): string {
+  const fr = uiLang(lang) === 'fr';
+  const tries = (n: number) => (fr ? `${n} essai${n === 1 ? '' : 's'}` : `${n} ${n === 1 ? 'try' : 'tries'}`);
+  const parts = entries.map((entry) => {
+    if (entry.kind === 'done') return fr ? `${entry.name}, trouvé en ${tries(entry.score)}` : `${entry.name}, solved in ${tries(entry.score)}`;
+    if (entry.me) return fr ? `vous, ${entry.percent} %` : `you, ${entry.percent}%`;
+    if (entry.kind === 'over') return fr ? `${entry.name}, non résolu` : `${entry.name}, unsolved`;
+    return fr ? `${entry.name}, ${entry.percent} %, ${tries(entry.tries)}` : `${entry.name}, ${entry.percent}%, ${tries(entry.tries)}`;
+  });
+  return fr ? `Vos groupes : ${parts.join(' ; ')}` : `Your groups: ${parts.join('; ')}`;
+}
+
 // The history modal's title (2026-08-10, keeping the route map's naming): a hole is named
 // by its 1-based sentence position among DISTINCT secrets — the run ruler's tick numbers
 // (the same numbering the run ruler's ticks and the share row's keycaps use, so two

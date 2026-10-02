@@ -536,9 +536,10 @@ async function creditSolvedDay(round: AppendedRound, deps: RoundHandlerDeps): Pr
 // THE SCORE, derived rather than claimed (#203): one recorded row per player per daily
 // (#187), written by the SERVER from the stored log. It counts UNIQUE tries, and `guessKey`
 // dedups on a guess's rank in EVERY map — so this is the one thing the slice cannot answer
-// and the full artifact has to be loaded for. It happens ONCE per round, and the artifact is
-// read FRESH. A corrected published version starts a new round and replaces this player's
-// retired-version score row (puzzleReads.ts).
+// and the full artifact has to be loaded for. It happens ONCE per round, for the revision this
+// append's own fresh slice was checked against — a warm Lambda reuses the parsed artifact it
+// holds for that revision (puzzleReads.ts). A corrected published version starts a new round
+// and replaces this player's retired-version score row.
 //
 // Only an ON-TIME solve gets here — the caller (`settleAppend`) makes that one check.
 //

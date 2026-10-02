@@ -10,6 +10,7 @@ import {
   devicesUrl,
   groupsUrl,
   parseBoard,
+  parseLiveBoard,
   parseDeviceIdentity,
   puzzleUrl,
   puzzleOutcome,
@@ -671,6 +672,56 @@ describe('parseBoard (shape validation, #190)', () => {
     expect(() => parseBoard({ ...valid(), own: [row({ name: 3 })] })).toThrow(/own/);
     expect(() => parseBoard({ ...valid(), waiting: undefined })).toThrow(/waiting/);
     expect(() => parseBoard({ ...valid(), waiting: [{ publicId: 'NOPE' }] })).toThrow(/waiting/);
+  });
+});
+
+// The LIVE read (`{token, live: true}`): every group the caller is in, merged — groups with
+// their member lists, finished rows (a whole try count, NO rank: a rank belongs to one group
+// and the client ranks each itself) and the day board's own playing rows.
+describe('parseLiveBoard (the live read)', () => {
+  const group = (over: Partial<Record<string, unknown>> = {}) => ({
+    id: 'gggggggggggggggg',
+    name: 'Famille',
+    members: ['abcdefghij234567', 'bcdefghij234567a'],
+    ...over,
+  });
+  const row = (over: Partial<Record<string, unknown>> = {}) => ({
+    publicId: 'abcdefghij234567',
+    name: 'Zoe',
+    avatar: null,
+    score: 7,
+    ...over,
+  });
+  const playingRow = (over: Partial<Record<string, unknown>> = {}) => ({
+    publicId: 'bcdefghij234567a',
+    name: '',
+    avatar: null,
+    tries: 12,
+    progress: 62.5,
+    over: false,
+    ...over,
+  });
+  const valid = () => ({ groups: [group()], rows: [row()], playing: [playingRow()] });
+
+  it('accepts a well-formed answer, the empty one included', () => {
+    expect(parseLiveBoard(valid())).toEqual(valid());
+    expect(parseLiveBoard({ groups: [], rows: [], playing: [] })).toEqual({ groups: [], rows: [], playing: [] });
+    expect(parseLiveBoard({ ...valid(), playing: [playingRow({ over: true })] }).playing[0].over).toBe(true);
+  });
+
+  it('rejects a wrong-shaped answer (a failure, never NaN rows)', () => {
+    expect(() => parseLiveBoard(null)).toThrow(/live board/);
+    expect(() => parseLiveBoard({ ...valid(), groups: undefined })).toThrow(/groups/);
+    expect(() => parseLiveBoard({ ...valid(), groups: [group({ id: 'NOPE' })] })).toThrow(/groups/);
+    expect(() => parseLiveBoard({ ...valid(), groups: [group({ members: ['NOPE'] })] })).toThrow(/groups/);
+    expect(() => parseLiveBoard({ ...valid(), groups: [group({ name: 3 })] })).toThrow(/groups/);
+    expect(() => parseLiveBoard({ ...valid(), rows: 'none' })).toThrow(/rows/);
+    expect(() => parseLiveBoard({ ...valid(), rows: [row({ score: 1.5 })] })).toThrow(/rows/);
+    expect(() => parseLiveBoard({ ...valid(), rows: [row({ score: 0 })] })).toThrow(/rows/);
+    expect(() => parseLiveBoard({ ...valid(), rows: [row({ avatar: '' })] })).toThrow(/rows/);
+    expect(() => parseLiveBoard({ ...valid(), playing: undefined })).toThrow(/playing/);
+    expect(() => parseLiveBoard({ ...valid(), playing: [playingRow({ tries: 0 })] })).toThrow(/playing/);
+    expect(() => parseLiveBoard({ ...valid(), playing: [playingRow({ progress: 101 })] })).toThrow(/playing/);
   });
 });
 

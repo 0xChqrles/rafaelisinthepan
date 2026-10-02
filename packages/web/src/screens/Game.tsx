@@ -6,7 +6,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import { guessKey, replayHoles } from '../game/scoring';
+import { computeProgress, guessKey, replayHoles } from '../game/scoring';
+import { raceOf } from '../game/race';
 import { playLogFor, withoutDeferred } from '../game/playLog';
 import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
@@ -17,11 +18,14 @@ import useRoundSync from '../hooks/useRoundSync';
 import { giveUpRound, notifyGuess, retryRoundSync } from '../state/roundSync';
 import { useGameStore, roundKeyFor } from '../state/gameStore';
 import { noteSolvedDay, usePlayerHistory } from '../state/history';
+import { loadGroups, useGroups } from '../state/groups';
+import { requestLiveBoard, useLiveBoard } from '../state/liveBoard';
 import Phrase from '../components/Phrase';
 import CellDigits from '../components/CellDigits';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import RevealTray from '../components/RevealTray';
+import RaceLine from '../components/RaceLine';
 import DissolvePhrase from '../components/DissolvePhrase';
 import SolvedScreen, { type SolvedHole } from '../components/SolvedScreen';
 import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakDialog';
@@ -427,6 +431,44 @@ function Round({
       .finally(() => setDeploying(false));
   }, [identity, deploying]);
   const openLesson = useCallback(() => navigate(pathForLesson(lang, PLAY_LEVEL)), [lang]);
+
+  // --- THE RACE LINE: the player's groups, merged, around them while they play
+  // (`state/liveBoard.ts` owns the read and its cost; `game/race.ts` the order). TODAY's
+  // sentence only — a group's competition is the day's (#211), so an archive day or a bonus
+  // races nobody — with an account (no token, no private fetch), and only when one of the
+  // player's groups holds somebody else. The groups list answers that last question.
+  const racing = isActiveDay && !isBonusRef(puzzleRef) && identity !== null;
+  useEffect(() => {
+    if (racing) loadGroups();
+  }, [racing, identity]);
+  const { groups } = useGroups();
+  const raceable = racing && (groups?.some((group) => group.members.length > 1) ?? false);
+  const raceDate = puzzleAddress(puzzleRef);
+  // ASKED when the round's server state lands and every time it CHANGES — the round's start,
+  // each acknowledged append, and the answer confirming a solve or a give-up (so the result
+  // reads the final rows) — and when the tab comes back. The module throttles; this only asks.
+  useEffect(() => {
+    if (raceable && server !== null) requestLiveBoard(lang, raceDate);
+  }, [raceable, server, lang, raceDate]);
+  useEffect(() => {
+    if (!raceable) return undefined;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') requestLiveBoard(lang, raceDate);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [raceable, lang, raceDate]);
+  const liveBoard = useLiveBoard(lang, raceDate);
+  // The player's own entry is the SCREEN's: the % of the board they see (it moves when a hit
+  // lands) and their own try count — both ahead of the stored summary the read carries.
+  const ownProgress = useMemo(() => computeProgress(holes, ranks), [holes, ranks]);
+  const race = useMemo(
+    () =>
+      raceable && liveBoard !== null && identity !== null
+        ? raceOf(liveBoard, { publicId: identity.accountId, progress: ownProgress, tries: guessCount })
+        : null,
+    [raceable, liveBoard, identity, ownProgress, guessCount],
+  );
   // The celebration is deliberately code-split out of startup. Warm its chunk only while
   // an eligible unsolved daily round is idle; if a player solves before idle fires, the
   // just-solved transition below starts the same preload immediately. Both scheduling paths
@@ -1256,6 +1298,17 @@ function Round({
               gateOpen ? ' tray-gate' : ''
             }`}
           >
+            {/* THE RACE LINE, laid on the tray's top edge over whatever it holds. It goes out
+                with the prompt on the solving submit (or the give-up) and stays laid down,
+                invisible, until the result takes the column. Never over the gate, whose
+                stack can rise past the tray's edge. */}
+            {race && !gateOpen && (
+              <RaceLine
+                lang={lang}
+                entries={race.window}
+                retired={promptExiting || finished || showResults}
+              />
+            )}
             {gateOpen ? (
               /* The GATE, in the keyboard's own footprint: PLAY (the tutorial's own full-width
                  button, so the graduation and the gate speak one button) and, while the lesson

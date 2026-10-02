@@ -409,9 +409,16 @@ The live routes then share:
 - **What the server LOADS:** every append reads the day's **derivation slice** (every key at
   or below each hole's `start_rank`, + `n`/`start_rank`; ~300× smaller than the puzzle),
   produced by `pnpm puzzle:publish` beside the sentence puzzle (SENTENCE ONLY), written FIRST,
-  carrying the same `revision`; a solve reads the FULL artifact for `countTries`. **Both are
-  read FRESH, no cache**; the slice fetch runs concurrently with the round read. **A missing
-  slice or a revision mismatch is the day-addressed 404** — no degraded mode.
+  carrying the same `revision`; a solve reads the FULL artifact for `countTries`. **The slice
+  is read FRESH; the full artifact is held in the Lambda's memory KEYED BY ITS REVISION**
+  (`backend/src/puzzleReads.ts`, at most two entries by store key, least recently used out):
+  every read first learns the current revision fresh — the append's own slice, or a fresh
+  slice read on the boards — and reuses the parsed artifact only when it carries that
+  revision, else reads it fresh and checks it names the same one. Why: the live ranking reads
+  the full artifact at guess cadence and the API runs on 10 concurrent Lambdas; a published
+  version's content never changes, so an entry keyed by it never goes stale and a
+  correction simply misses. The slice fetch runs concurrently with the round read. **A
+  missing slice or a revision mismatch is the day-addressed 404** — no degraded mode.
 - **Authoritative SOLVED comes only from the server flag.** The board may complete locally
   while the solving append is in flight; the result, leaderboard, streak and `solve` event wait
   for confirmation. A solve confirmed by THIS device's batch is fresh (celebrated); one learned
@@ -693,7 +700,8 @@ The live routes then share:
   group the caller is not in — an unknown group answers the same); `POST {token, group,
   period: 'week' | 'month'}` = the PERIOD board; `POST {token, standing: true}` = where the
   caller stands today in EACH of their groups (`{standings: [{group, rank, of}]}`, only the
-  groups they hold a recorded row in). Ranking rules are shared pure functions
+  groups they hold a recorded row in); `POST {token, live: true}` = the LIVE read (below).
+  Ranking rules are shared pure functions
   (`shared/src/leaderboard.ts`): competition tie ranks, the plain top-50 cut, the ±2 own-row
   window, `standingIn`. Rows dressed with profiles (a missing or FAILED profile read dresses
   blank → assigned identity; a GONE account is dropped).
@@ -710,7 +718,7 @@ The live routes then share:
   written by the solving append — the second step, once a group asks).
 - **Three states on the day board**: `waiting` (a member with neither a round nor a score;
   never the caller), **`playing`** (#206: a round for the CURRENT revision and no score row —
-  exact `countTries` over the FULL artifact read fresh, stored `progress`, ordered by the shared
+  exact `countTries` over the FULL artifact of the current revision, stored `progress`, ordered by the shared
   `orderPlaying` with NO rank number; members only; a failed read fails the
   POST), finished. A round that ENDED UNSOLVED (`roundEnded`: given up, or capped) stays in
   `playing` marked **`over`** — `∞` in the tries slot, its % muted, ordered after every live
@@ -729,7 +737,30 @@ The live routes then share:
   gone; the `/scores` route itself still answers — no consumer, the user's call to retire).
   `of` is the members who RECORDED a score today, never the group's size: a rank over people
   who have not played is a claim.
-- Entry: the header's crown on every game surface (archive days included since 2026-08-31).
+- **THE LIVE READ (`POST /board {token, live: true}`, the shared `LiveBoard`): EVERY group
+  the caller is in, MERGED** — `{groups: [{id, name, members}], rows, playing}` over the
+  deduplicated UNION of their members (the caller included): `rows` = the members with a
+  recorded score today (dressed, `score`, NO rank — a rank belongs to ONE group, so the client
+  ranks each group itself with `rankBoard` over the rows its member list names), `playing` =
+  the day board's own section over the union (`over` included, `orderPlaying`'s order). The
+  day board's pieces, read ONCE per call — one score batch, one round batch, ONE artifact
+  read, one profile per member with a row; members-only by construction (the caller's own
+  memberships, each kept only while its member list names the caller); a gone account dropped
+  from rows, playing and the member lists; a caller in no group answers empty with no
+  artifact read. Date-addressed (no bonus). **Its consumers read ONE client module,
+  `web/src/state/liveBoard.ts`: the play screen's RACE LINE and the solved screen's group
+  boards — never a read of their own.** It is asked when the round's server state lands or
+  changes (round start, each acknowledged append, the answer confirming a solve or a
+  give-up) and when the tab comes back, only on the ACTIVE day, with an account, for a player
+  in a group with somebody else — and **THROTTLED in that one module: at most ONE read per
+  `LIVE_REFRESH_MS` (10 s), one flight at a time, a request inside the window served ONCE at
+  its end (never dropped)**. Why the throttle lives client-side and nowhere else: the read is
+  at guess cadence against 10 Lambdas. The race line is an ORDER, never a rank (#206):
+  finished members first (fewest tries), then the playing ones by `orderPlaying` with the
+  player's own entry taken from the screen (their live % and tries), the ended-unsolved last;
+  it shows the one just ahead, the player and the one just behind.
+- Entry: the header's crown on every game surface (archive days included since 2026-08-31),
+  and the race line's tap during play.
 
 ### The WhatsApp bot boundary (#236, decided 2026-09-03)
 

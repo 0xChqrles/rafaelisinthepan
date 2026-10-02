@@ -63,10 +63,16 @@
       state/account.ts        what `/account` shows — the `{token}` summary and the
                               group-departure drain behind it (#271)
       state/groups.ts         the player's GROUPS (#271): the ONE transient cache every group
-                              surface reads (tabs, marks, the landing's "already in")
-      hooks/useGroupStanding.ts  the solved screen's standing read: one request, the group last
-                              opened else the best standing (`pickStanding`)
-      components/GroupStanding.tsx  the "2ND OF 7" line beside the score, a tap onto the board
+                              surface reads (tabs, marks, the landing's "already in", the race
+                              line's "is there anybody to race")
+      state/liveBoard.ts      the LIVE read (`POST /board {token, live: true}`): all my groups
+                              merged — the ONE module asking it, throttled (`LIVE_REFRESH_MS`),
+                              for the race line and the solved screen's group boards
+      game/race.ts            the race line's ORDER (pure): finished, then playing by the shared
+                              `orderPlaying` with my own entry off the screen; the ahead/me/behind
+                              window; `shownPercent` (floored)
+      components/RaceLine.tsx  the race line: marks + % + tries on the tray's top edge, a tap onto
+                              the board
       components/DeviceList.tsx  the account's devices + SIGN OUT rows (#216), on the profile editor
       components/ErrorScreen.tsx  the app's error surface: a FULL-SCREEN modal led by the
                               user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet);
@@ -424,6 +430,37 @@ These are decided and verified against the code. Treat them as load-bearing.
   payout (the letter as a second fill was proposed and not taken), a manual hint button
   (a hint asked for with no mask picked — REVEAL only reveals the mask the player picked),
   a hint currency, adaptive thresholds.
+- **THE RACE LINE: MY GROUPS' PLAYERS AROUND ME WHILE I PLAY (user-decided 2026-10-02: "I'm
+  at 75% and this friend from this group is at 79% with 20 tries, and this other one is
+  just behind me with 67% at 14 tries").** ONE wordless line (`components/RaceLine`) laid
+  on the tray's TOP EDGE — absolutely positioned, so its arrival (the first answer lands
+  after the round is on screen) and its leaving move NOTHING: it sits in the gap above the
+  tray and the play area's bottom slack, over whatever the tray holds (the keyboard, a
+  mask's REVEAL), never in the header, never over the gate (whose stack can rise past the
+  tray). Who sees it: TODAY's sentence (never an archive day, never a bonus — a group's
+  competition is the day's), with an account, in a group that holds somebody else (the
+  `state/groups.ts` list answers it; the game screen loads it), and somebody else has a row
+  today. What it shows: the one just ahead, ME, the one just behind — two after me when I
+  lead, two before when I trail (`game/race.ts`) — over ALL my groups merged (the root
+  `AGENTS.md` live read): each other member's MARK (`Avatar`, 20px, sharp — 2px cells), then
+  a member still playing prints their % in the heat ramp's ink (the board's playing-row
+  dress) and their tries muted; a FINISHED member wears the pixel check
+  (`assets/icons/check.svg`) and their score in the solve cobalt; one whose round ended
+  unsolved wears `∞`. MY entry is my mark (framed in the accent) and my LIVE % —
+  `computeProgress` over the board I SEE, so it moves when a hit lands — **the one place the
+  play screen prints the player's own percentage.** The order is the boards' own (finished
+  by fewest tries, then `orderPlaying`, my entry taken from the screen, never my server
+  row); NO RANK NUMBER and no names (#206: a position mid-round moves with every guess; the
+  names are on the board, and the WHOLE LINE is the tap onto it — the aria-label,
+  `ariaRaceLine`, says it in words). A % is FLOORED (`shownPercent`, the board's playing rows
+  too): 100% is only ever a solve. The read is `state/liveBoard.ts`, asked when the round's
+  server state lands or CHANGES (round start, each acknowledged append, the answer
+  confirming the solve or the give-up — so the result reads the final rows) and when the tab
+  comes back; it holds the cost rule (one read per 10 s, one flight, a trailing call) and
+  fails SILENTLY, the last answer standing. The line RETIRES with the prompt (the solving
+  submit, a give-up) and stays mounted, invisible, until the result takes the column. It
+  lives in the gap above the tray: on a short viewport with a long sentence it lies over the
+  prompt's hint row (empty unless a word was just refused).
 - **THE PALETTE IS THREE INDEPENDENT AXES (user-decided 2026-08-17): weird/calm +
   hole/solve + accent — in STAMP-INK tones** (retuned the same day against the user's
   /inspiration set — vintage offset stamps, riso posters — after the first calm cut went
@@ -2015,8 +2052,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **WHICH TAB belongs to a VISIT** (user feedback 2026-08-20; `boardTab` is `'group' |
   'global'` since persist **v19**, App resets it on any non-board route); **WHICH GROUP
   outlives it** — `gameStore.lastGroupId` (v19, account-owned: `reconcileIdentity` drops it
-  with the account), set by every group tab opened and by the standing line's tap, the
-  first listed group standing in for a stale or missing one. The period is the screen's own
+  with the account), set by every group tab opened, a group created and a group JOINED from
+  its invite, the first listed group standing in for a stale or missing one. The period is the screen's own
   state. The groups themselves are `state/groups.ts` — ONE transient cache (`loadGroups`,
   `adoptGroups` after every write, `resetGroups` in `identityScope`), tokenless
   known-empty without a request. The list refreshes on board/invite entry and on opening
@@ -2760,8 +2797,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   streak solve the exit beat does NOT play hidden behind the celebration — the keyboard
   holds still under the modal and the drop starts at its dismissal (decided 2026-07-24).
   **The sentence must NOT move between the solved beats (decided 2026-07-24):** through
-  the streak and the drop the tray keeps the keyboard's fixed height and the retired prompt
-  keeps its layout, so `.play`'s centering never shifts the phrase — the sentence holds
+  the streak and the drop the tray keeps the keyboard's fixed height, the retired prompt
+  keeps its layout and the race line — an overlay on the tray's edge, out of the column's
+  flow — retires in place, so `.play`'s centering never shifts the phrase — the sentence holds
   perfectly still right up until it dissolves in place (the 2026-08-14 exit, restored
   2026-09-08). **Fresh-solve
   sequence (decided 2026-07-10):** the
@@ -3452,7 +3490,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (ARCHIVE / TUTORIAL, plus any inline stat like the tutorial's counter), or a loaded game's
   own left chip: **the sentence game's is the DAY'S DATE** (`components/PuzzleDate`,
   user-decided 2026-08-16, replacing the reconstruction-% counter that held this corner —
-  the percentage now speaks only through the run ruler's colours at the end of the round).
+  mid-round, the player's own percentage prints only in the RACE LINE, beside their
+  groups' players, and otherwise speaks through the run ruler's colours at the end).
   The date is `dateForDayNumber(dayNumber)`, the same
   `2026-08-16` spelling the card, the OG title, the shared text and the archive URL use, so
   an archived day reads as the day it is from the moment it loads. CHROME, not a stat:
