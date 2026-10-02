@@ -1,9 +1,12 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
 import { App, Aspects } from 'aws-cdk-lib';
 import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
 import { AwsSolutionsChecks } from 'cdk-nag';
 import { describe, expect, it } from 'vitest';
 import { GROUP_SEGMENT, groupLandingPath, SHARE_SEGMENT } from '@whippin/shared';
-import { WebStack } from './web-stack';
+import { WebStack, builtRoutePages } from './web-stack';
 
 const ACCOUNT = '111122223333';
 const REGION = 'us-east-1';
@@ -13,6 +16,18 @@ const DOMAIN = 'test.invalid';
 const API_HOST = `backend.${DOMAIN}`;
 const API_ORIGIN = `https://${API_HOST}`;
 
+// A build of its own, rather than whatever `packages/web/dist` a local build left behind (CI
+// has none): the shell, a chunk, the vocabulary, and two routes with a page of their own.
+function fakeBuild(files: readonly string[]): string {
+  const dist = mkdtempSync(path.join(tmpdir(), 'web-dist-'));
+  for (const rel of files) {
+    mkdirSync(path.dirname(path.join(dist, rel)), { recursive: true });
+    writeFileSync(path.join(dist, rel), '');
+  }
+  return dist;
+}
+const WEB_DIST = fakeBuild(['index.html', 'assets/index-x.js', 'vocab/en.json', 'fr/learn/index.html', 'fr/learn/2/index.html']);
+
 // `fromLookup` resolves to a dummy zone with no credentials, which is enough: what is
 // pinned below is shape, not zone contents.
 function webStack(app: App): WebStack {
@@ -20,6 +35,7 @@ function webStack(app: App): WebStack {
     env: { account: ACCOUNT, region: REGION },
     domainName: DOMAIN,
     apiOrigin: API_ORIGIN,
+    webDist: WEB_DIST,
   });
 }
 
@@ -102,12 +118,47 @@ describe('web hosting stack (#21)', () => {
       '/en/bonus/1234567',
       groupLandingPath('abcdefghijklmnop'),
       '/account/email',
-      '/fr/learn/2',
+      '/en/learn/2',
+      '/fr/learning',
     ];
     for (const uri of routes) expect(rewrite(uri), uri).toBe('/index.html');
-    for (const uri of ['/assets/x.js', '/vocab/en.json', '/version.json', '/favicon.ico', '/index.html']) {
+    for (const uri of [
+      '/assets/x.js',
+      '/vocab/en.json',
+      '/version.json',
+      '/favicon.ico',
+      '/index.html',
+      '/fr/learn/2/index.html',
+    ]) {
       expect(rewrite(uri), uri).toBe(uri);
     }
+  });
+
+  // A route the build gave a page of its own wears that page's link preview (web
+  // src/linkPreviews.ts); below one, the NEAREST such route above it answers — the route a
+  // level not ready in a language lands on in the SPA (its list).
+  it('serves a route the build gave a page of its own, and the nearest one above any other', () => {
+    const rewrite = spaRewrite();
+    expect(rewrite('/fr/learn')).toBe('/fr/learn/index.html');
+    expect(rewrite('/fr/learn/')).toBe('/fr/learn/index.html');
+    expect(rewrite('/fr/learn/2')).toBe('/fr/learn/2/index.html');
+    expect(rewrite('/fr/learn/2/')).toBe('/fr/learn/2/index.html');
+    expect(rewrite('/fr/learn/9')).toBe('/fr/learn/index.html');
+    expect(rewrite('/fr')).toBe('/index.html');
+  });
+
+  it('reads the routes with a page of their own off a build', () => {
+    const dist = fakeBuild([
+      'index.html',
+      'fr/learn/index.html',
+      'fr/learn/2/index.html',
+      'en/learn/index.html',
+      'assets/nested/index.html',
+      'vocab/index.html',
+      'fr/other/page.html',
+    ]);
+    expect(builtRoutePages(dist)).toEqual(['/en/learn', '/fr/learn', '/fr/learn/2']);
+    expect(builtRoutePages(path.join(dist, 'missing'))).toEqual([]);
   });
 
   it('lets the SPA call the backend it was given', () => {
@@ -123,11 +174,25 @@ describe('web hosting stack (#21)', () => {
     expect(csp['style-src']).toEqual(["'self'", "'unsafe-inline'"]);
   });
 
+  // The uploads run in an order: the route pages after the chunks they name (as the root set
+  // does) and BEFORE the fallback function that serves them — a function naming a page the
+  // bucket does not hold yet answers that route with the bucket's 403 until the upload lands.
+  it('publishes the route pages after their chunks and before the function that serves them', () => {
+    const deployments = template.findResources('Custom::CDKBucketDeployment');
+    const id = (prefix: string) => Object.keys(deployments).find((key) => key.startsWith(prefix))!;
+    const [pages, assets, vocab, root] = ['DeployPages', 'DeployAssets', 'DeployVocab', 'DeployRoot'].map(id);
+    expect(deployments[pages].DependsOn).toEqual(expect.arrayContaining([assets, vocab]));
+    const [fn] = Object.values(template.findResources('AWS::CloudFront::Function'));
+    expect(fn.DependsOn).toEqual(expect.arrayContaining([pages]));
+    // The pages are DeployPages' alone: the root set leaves them out.
+    expect(deployments[pages].Properties.Include).toEqual(['*/index.html']);
+    expect(deployments[root].Properties.Exclude).toContain('*/index.html');
+  });
+
   // `bin/app.ts` runs cdk-nag over every stack, where a finding is a FAILED SYNTH — and
   // CI synthesizes nothing, so without this a finding is first seen by the deploy, after
-  // the merge. It checks LESS than the real deploy wherever `packages/web/dist` is absent
-  // (CI): the three BucketDeployments, and the stack-level suppressions they need, are
-  // only built from a local build.
+  // the merge. The stack is built from a fake build, so the BucketDeployments and the
+  // stack-level suppressions they need are checked too.
   it('synthesizes with NO cdk-nag findings', () => {
     const app = new App();
     const stack = webStack(app);

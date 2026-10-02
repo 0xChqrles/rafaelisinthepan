@@ -241,13 +241,16 @@ requires for its ACM cert — so the cert lives in-stack with no cross-region re
   serves `/index.html` for any path whose last segment has no dot (`/`, `/en`,
   `/en/2026-09-01`, `/join/g/<id>`, `/account/email`) and leaves a file path (`/assets/x.js`,
   `/vocab/en.json`, `/version.json`) untouched, so a missing file answers the bucket's own
-  error. It is not a distribution-wide custom error response, because one would also rewrite
+  error. A route the build gave a page of its own (`<route>/index.html`, the tutorial's link
+  previews) is served that page, the nearest one at or above the path winning; the list is
+  read off `dist` at synth. It is not a distribution-wide custom error response, because one would also rewrite
   the API origin's answers: a dead invite or share would become 200 + the SPA shell, and a
   dead card HTML.
-- **Uploads** — the build is uploaded by three `BucketDeployment`s: hashed `assets/*` get
+- **Uploads** — the build is uploaded by four `BucketDeployment`s: hashed `assets/*` get
   `Cache-Control: public, max-age=31536000, immutable`, `vocab/*` its own
-  stale-while-revalidate policy, and everything else (`index.html`, fonts) `no-cache`.
-  The last one **invalidates `/*`**.
+  stale-while-revalidate policy, and the route pages and everything else (`index.html`,
+  fonts) `no-cache`. The route pages land before the fallback function that serves them;
+  the root set lands last and **invalidates `/*`**.
 - **Custom domain (optional)** — pass `-c domainName=<apex>` (the Route53 hosted zone must
   already exist in the account). The site serves at the **apex** (`<domain>`) by default;
   pass `-c siteSubdomain=play` for `play.<domain>`. `domainName` defaults to `whippin.ai`

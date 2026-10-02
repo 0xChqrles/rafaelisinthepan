@@ -632,9 +632,9 @@ The live routes then share:
   under SHARE was retired 2026-09-10). The TOKEN is untouched (no codec change; the bot
   reads a signed share as a plain one and strips the id with the link). No account → the
   plain `/s/<token>`, content-addressed and year-cached. A deleted signer falls back to the
-  PLAIN share (the score was never the part that went away). The signed card centres the
-  strip, the gap and the result as ONE block (the result moves down; the plain card is
-  untouched).
+  PLAIN share (the score was never the part that went away). The signed card sets the
+  player's mark as a portrait beside the count, its name in the title chip under it; the
+  result it draws is the plain card's (`shared/src/cardSvg.ts`).
 
 ### Groups (#271, user-decided 2026-09-07; they REPLACED the #189 friends graph — no back-compat)
 
@@ -737,6 +737,9 @@ The live routes then share:
   (`whippinGroup`, user-decided 2026-09-14), whose invite link (`shared/src/invite.ts`
   `groupInvitePath`) the morning reminder prints after reading only its public face
   (`GET /groups?id=`) — the invite contract has a fourth consumer, and still no membership read.
+  It also LINKS the tutorial's levels (user-decided 2026-10-02): which levels exist, in which
+  languages, and their paths are `shared/src/tutorial.ts`, the table the web teaches from —
+  the bot answers a question about how the game works with the level's page.
 - **Its stack is a sibling** (`WhippinBotStack`, `infra/lib/bot-stack.ts`): one Fargate task
   (`desiredCount 1`, stop-before-start — one Baileys session is a correctness rule), a
   bot-owned table, an SQS outbound queue, a podium Lambda with one schedule per group, alarms

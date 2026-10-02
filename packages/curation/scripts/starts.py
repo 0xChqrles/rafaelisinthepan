@@ -1,8 +1,9 @@
-"""The start word must leave the displayed sentence valid in its language (user rule
-2026-09-06: « l'effet », never « le effet »; in English, an effect, never a effect —
-#317). Pure helpers: the displayed sentence, the one mechanical rule of each language
-(French elision, the English article), the band candidates a re-pick chooses from. The
-grammar judgement itself is the model's (`llm.grammar_check`).
+"""Pure helpers for the start words: the displayed sentence, and the band candidates
+the model chooses from — only words that can stand after the token before the hole,
+by the one rule the letters decide in each language (French elision: « le effet » is
+never French; the English article: never « a effect », #317). Whether the displayed
+sentence reads right — correct, and still meaning something — is the model's
+(`llm.sentence_check`).
 """
 
 import _paths  # noqa: F401
@@ -15,7 +16,7 @@ ELIDING = frozenset({"le", "la", "de", "ne", "que", "se", "ce", "je", "me", "te"
                      "jusque", "lorsque", "puisque", "quoique"})
 _VOWELS = "aeiouàâäéèêëíìîïóòôöúùûüœæ"
 # Initials whose elision the letter does not decide (« l'homme », « le hasard »; « le yaourt »,
-# « l'yeuse »): left to the model's grammar check.
+# « l'yeuse »): left to the model.
 _MODEL_JUDGED = "hy"
 _PUNCT = "«»\"'‘’“”(),.;:!?…"
 # Re-pick rounds before the run gives the start up to the reviewer.

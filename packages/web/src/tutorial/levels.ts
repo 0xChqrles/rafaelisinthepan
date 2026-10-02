@@ -6,6 +6,9 @@
 // one word holding several meanings, how a machine reads a sentence, and the judge that
 // now orders every daily map.
 //
+// WHICH levels exist, in which languages, and their pages are SHARED (`shared/src/tutorial.ts`):
+// the WhatsApp bot links them. What each is called and the picture it wears are here.
+//
 // A level is READY IN A LANGUAGE when its lesson exists in it: `duration` names the
 // languages, and says how long the lesson takes in each (the list prints it the way the
 // article's page prints its own). A level not ready in the list's language is shown, greyed,
@@ -20,38 +23,34 @@
 // dissolved into the level's card, which turns DONE on screen (PLAY records it too) — or once
 // ANY real round holds a guess, since a person who has played has learned what the run
 // teaches. Nothing is stored on the account.
+import { PLAY_LEVEL, TUTORIAL_LEVELS, isReady, type TutorialLevel } from '@whippin/shared';
 import type { UiKey } from '../i18n';
+
+export { PLAY_LEVEL, isReady };
 
 // The illustration each level wears, on the list and at the head of its lesson (art/).
 export type LevelArtName = 'game' | 'distance' | 'meanings' | 'attention' | 'judge';
 
-export interface Level {
-  level: number;
+interface LevelFace {
   titleKey: UiKey;
   subKey: UiKey;
   art: LevelArtName;
-  // Seconds the lesson takes, per language it is ready in (absent = not ready there).
-  duration: Partial<Record<string, number>>;
 }
 
-export const LEVELS: readonly Level[] = [
-  { level: 1, titleKey: 'levelPlayTitle', subKey: 'levelPlaySub', art: 'game', duration: { en: 60, fr: 60 } },
-  { level: 2, titleKey: 'levelDistanceTitle', subKey: 'levelDistanceSub', art: 'distance', duration: { fr: 220 } },
-  { level: 3, titleKey: 'levelMeaningsTitle', subKey: 'levelMeaningsSub', art: 'meanings', duration: { fr: 90 } },
-  { level: 4, titleKey: 'levelAttentionTitle', subKey: 'levelAttentionSub', art: 'attention', duration: { fr: 230 } },
-  { level: 5, titleKey: 'levelJudgeTitle', subKey: 'levelJudgeSub', art: 'judge', duration: { fr: 240 } },
-];
+export type Level = TutorialLevel & LevelFace;
 
-// The one level the game invites into today; named once so the gate, the invitation and
-// the inference from play all point at the same row.
-export const PLAY_LEVEL = 1;
+const FACES: Record<number, LevelFace> = {
+  1: { titleKey: 'levelPlayTitle', subKey: 'levelPlaySub', art: 'game' },
+  2: { titleKey: 'levelDistanceTitle', subKey: 'levelDistanceSub', art: 'distance' },
+  3: { titleKey: 'levelMeaningsTitle', subKey: 'levelMeaningsSub', art: 'meanings' },
+  4: { titleKey: 'levelAttentionTitle', subKey: 'levelAttentionSub', art: 'attention' },
+  5: { titleKey: 'levelJudgeTitle', subKey: 'levelJudgeSub', art: 'judge' },
+};
+
+export const LEVELS: readonly Level[] = TUTORIAL_LEVELS.map((level) => ({ ...level, ...FACES[level.level] }));
 
 export function levelOf(n: number): Level | undefined {
   return LEVELS.find((l) => l.level === n);
-}
-
-export function isReady(level: Level, lang: string): boolean {
-  return level.duration[lang] !== undefined;
 }
 
 // The level after `n` that is ready in `lang` — where a finished lesson leads.

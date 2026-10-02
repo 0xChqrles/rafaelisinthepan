@@ -13,8 +13,8 @@
 > renders the PLAIN share. A SENTENCE token (**v6**) may be CAPPED (#214):
 > `ogCard.renderShareHtml` then titles the result `∞` (the literal character — this page is
 > ordinary HTML in the reader's own fonts) while `renderCardSvg` draws the shared PATH data,
-> because the one font in the Lambda bundle has no such glyph and the rasterizer runs with
-> `loadSystemFonts: false`. The version check and the legacy redirect are the codec's; the
+> because neither font in the Lambda bundle (Press Start 2P, Azeret Mono Bold) has such a
+> glyph and the rasterizer runs with `loadSystemFonts: false`. The version check and the legacy redirect are the codec's; the
 > `/og` route hands the DECODED result STRAIGHT to the renderer (`CardData` IS
 > `ShareResult`) — re-listing its fields would be a second declaration of one shape, silently
 > dropping whatever the codec learns next (a capped card drawing a try count). A DEAD share
@@ -121,7 +121,10 @@
                               round and link store suites share
       turnstile.ts            Cloudflare Siteverify + explicit local accept-all verifier
       ogCard.ts               resvg-wasm rasterizer + the preview PAGE template (share links + #271 group
-                              invites) and the dead link's 404 page
+                              invites) and the dead link's 404 page; the cards set two faces,
+                              `assets/PressStart2P-Regular.ttf` and `assets/AzeretMono-Bold.ttf`
+                              (a static bold instance of the web's variable woff2: resvg reads
+                              no woff2)
       layout.ts               storeKey() / sliceKey() — the keys shared by readers + publish (#17/#4/#203)
       serve.ts                local HTTP server: Function-URL⇄HTTP adapter over createHandler (#17)
       seedBoard.ts            `pnpm board:seed`: the LOCAL-ONLY board population seeder, played

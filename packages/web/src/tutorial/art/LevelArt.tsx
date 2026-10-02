@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { bayerThreshold as th } from '../../components/bayer';
+import { bayerThreshold as th } from '@whippin/shared';
 import { prefersReducedMotion } from '../../hooks/useScramble';
 import type { LevelArtName } from '../levels';
 import type { Raster, Scene } from './scenes';
