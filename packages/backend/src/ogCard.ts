@@ -1,11 +1,11 @@
 // Share-card rendering (issue #8): rasterize the shared card SVG to a PNG for the OG image,
 // and build the tiny HTML page that carries the OG meta + redirects a human into the game.
 // The SVG/layout + heat colors come from @whippin/shared (renderCardSvg), so the card matches
-// the on-screen grid exactly; here we only add the pixel font + rasterization.
+// the on-screen grid exactly; here we only add the fonts + rasterization.
 //
 // resvg runs as WebAssembly (@resvg/resvg-wasm) — no native .node addon, so it bundles with
 // esbuild and deploys to Lambda without Docker or an arch-specific binary. The .wasm module
-// and the pixel font live in ./assets NEXT TO this module and are copied into the Lambda
+// and the fonts live in ./assets NEXT TO this module and are copied into the Lambda
 // bundle at synth (backend-stack commandHooks), so the SAME `./assets/*` paths resolve both
 // locally (tsx/vitest) and in the deployed bundle (index.mjs at the bundle root).
 import { readFile } from 'node:fs/promises';
@@ -29,27 +29,33 @@ import {
 } from '@whippin/shared';
 
 const WASM_URL = new URL('./assets/resvg.wasm', import.meta.url);
-const FONT_URL = new URL('./assets/PressStart2P-Regular.ttf', import.meta.url);
+// The two faces a card sets: the pixel face (the count, the indices) and the chrome's mono
+// in its bold (the lockup, the units, the names) — a static instance of the web's own
+// variable Azeret Mono, since the rasterizer reads no woff2.
+const FONT_URLS = [
+  new URL('./assets/PressStart2P-Regular.ttf', import.meta.url),
+  new URL('./assets/AzeretMono-Bold.ttf', import.meta.url),
+];
 const CARD_FONT = 'Press Start 2P';
 
 // initWasm may be called only ONCE per process, so init on first render and cache the promise
-// (which also yields the reusable font buffer). NB: if @resvg/resvg-wasm is bumped, refresh
+// (which also yields the reusable font buffers). NB: if @resvg/resvg-wasm is bumped, refresh
 // the committed src/assets/resvg.wasm to match the JS glue.
-let ready: Promise<Uint8Array> | null = null;
-function ensureReady(): Promise<Uint8Array> {
+let ready: Promise<Uint8Array[]> | null = null;
+function ensureReady(): Promise<Uint8Array[]> {
   if (!ready) {
     ready = (async () => {
       await initWasm(new Uint8Array(await readFile(WASM_URL)));
-      return new Uint8Array(await readFile(FONT_URL));
+      return Promise.all(FONT_URLS.map(async (url) => new Uint8Array(await readFile(url))));
     })();
   }
   return ready;
 }
 
 async function rasterize(svg: string): Promise<Buffer> {
-  const font = await ensureReady();
+  const fontBuffers = await ensureReady();
   const resvg = new Resvg(svg, {
-    font: { fontBuffers: [font], loadSystemFonts: false, defaultFontFamily: CARD_FONT },
+    font: { fontBuffers, loadSystemFonts: false, defaultFontFamily: CARD_FONT },
   });
   return Buffer.from(resvg.render().asPng());
 }
@@ -107,7 +113,7 @@ export function renderShareHtml(
   // A #214 CAPPED round says `∞` where the count would be, exactly as the card draws it.
   // The literal character is right HERE where the pixel face is not involved — this is
   // ordinary HTML in the reader's own fonts; the card needs the shared path data because
-  // Press Start 2P has no such glyph and the rasterizer loads nothing else.
+  // neither of the card's two faces has such a glyph and the rasterizer loads nothing else.
   const count = result.capped ? '∞' : `${result.score}`;
   const title = shareHeadline(result, count, result.capped || result.score !== 1 ? L.many : L.one);
   // Click-through lands on the SHARED day, not today (#55): the token carries the

@@ -1,7 +1,7 @@
 // CONTRACT (light): the share-card SVG (packages/shared/src/cardSvg.ts) must render the
 // player's RUN RULER — one cell per counted try on the SHARED heat ramp (so the card
-// matches the on-screen ruler), a tick per solving try with the dropped hole's sentence
-// index under it — plus the score and the day's calendar date.
+// matches the on-screen ruler), a tick per solved secret with its sentence index under it —
+// plus the score and the day's calendar date.
 // Exact positions are cosmetic and not asserted; they get tuned against the rasterized PNG.
 
 import { describe, it, expect } from 'vitest';
@@ -12,6 +12,18 @@ import { dateForDayNumber, dayNumber } from './day';
 import { INFINITY_EM_HEIGHT, INFINITY_GLYPH, PIXEL_INK_LIFT_EM } from './glyphs';
 import { progressHeatColor } from './heat';
 import { GROUP_NAME_MAX_LENGTH, NAME_MAX_LENGTH } from './name';
+import { GROUP_MEMBERS_MAX } from './scores';
+
+// The ruler's cells: the run group's rects that are a bar's height (the ticks overhang it).
+const BAR = { x: 64, w: 1072, h: 48 };
+function cellRects(svg: string): { x: number; y: number; w: number; fill: string }[] {
+  const run = /<g class="run"[^>]*>(.*?)<\/g>/.exec(svg)![1];
+  return [...run.matchAll(/<rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" fill="([^"]+)"/g)]
+    .filter((m) => Number(m[4]) === BAR.h)
+    .map((m) => ({ x: Number(m[1]), y: Number(m[2]), w: Number(m[3]), fill: m[5] }));
+}
+// The sentence indices under the ticks, in the order drawn.
+const indices = (svg: string) => [...svg.matchAll(/font-size="32"[^>]*>(\d+)</g)].map((m) => m[1]);
 
 describe('renderCardSvg', () => {
   const data = {
@@ -35,26 +47,19 @@ describe('renderCardSvg', () => {
 
   it('marks each solved secret with its sentence index (1..3), in sentence order', () => {
     const svg = renderCardSvg(data);
-    const indices = [...svg.matchAll(/font-size="28"[^>]*>(\d+)</g)].map((m) => m[1]);
-    expect(indices).toEqual(['1', '3', '2']); // ticks ordered by try: 3 -> hole 1, 5 -> 3, 6 -> 2
-  });
-
-  it('stacks the indices of several secrets dropped by ONE guess under a single tick', () => {
-    const svg = renderCardSvg({ ...data, solvedAt: [6, 6, 6] });
-    expect(svg.match(/<rect /g) ?? []).toHaveLength(1 + 6 + 1); // bg + cells + ONE tick
-    const indices = [...svg.matchAll(/font-size="28"[^>]*>(\d+)</g)].map((m) => m[1]);
-    expect(indices).toEqual(['1', '2', '3']); // all three, stacked
+    expect(indices(svg)).toEqual(['1', '3', '2']); // ticks ordered by try: 3 -> hole 1, 5 -> 3, 6 -> 2
   });
 
   it('draws no tick for a secret the run never solved', () => {
     const svg = renderCardSvg({ ...data, solvedAt: [3, null, null] });
     expect(svg.match(/<rect /g) ?? []).toHaveLength(1 + 6 + 1);
-    expect([...svg.matchAll(/font-size="28"[^>]*>(\d+)</g)].map((m) => m[1])).toEqual(['1']);
+    expect(indices(svg)).toEqual(['1']);
   });
 
   it('shows the try count (unit named — lower is better) and the day as its calendar date', () => {
     const svg = renderCardSvg(data);
-    expect(svg).toContain('6 TRIES');
+    expect(svg).toContain('>6</text>');
+    expect(svg).toContain('>TRIES</text>');
     // The token carries the day INDEX; the card draws the date that index IS — the server's
     // game day in every timezone (dateForDayNumber is dayNumber's inverse), never "#123"
     // and never the reader's local date.
@@ -63,17 +68,26 @@ describe('renderCardSvg', () => {
     expect(svg).not.toContain('#123');
   });
 
+  it('names the day by its date alone — the internal index appears nowhere', () => {
+    const day = dayNumber('2026-08-02');
+    const svg = renderCardSvg({ ...data, dayNumber: day });
+    expect(svg).toContain('>2026-08-02</text>');
+    expect(svg).not.toContain(String(day));
+    expect(renderCardSvg({ ...data, dayNumber: undefined, bonusId: 1234567 })).toContain('>BONUS 1234567</text>');
+  });
+
   it('uses the singular for one try', () => {
-    expect(renderCardSvg({ ...data, score: 1 })).toContain('1 TRY');
+    expect(renderCardSvg({ ...data, score: 1 })).toContain('>TRY</text>');
+    expect(renderCardSvg({ ...data, score: 1 })).not.toContain('>TRIES</text>');
   });
 
   it('localizes the unit by the token language (fr -> ESSAIS/ESSAI)', () => {
-    expect(renderCardSvg({ ...data, lang: 'fr' })).toContain('6 ESSAIS');
-    expect(renderCardSvg({ ...data, lang: 'fr', score: 1 })).toContain('1 ESSAI');
+    expect(renderCardSvg({ ...data, lang: 'fr' })).toContain('>ESSAIS</text>');
+    expect(renderCardSvg({ ...data, lang: 'fr', score: 1 })).toContain('>ESSAI</text>');
   });
 
   it('falls back to en for an unknown language', () => {
-    expect(renderCardSvg({ ...data, lang: 'zz' })).toContain('6 TRIES');
+    expect(renderCardSvg({ ...data, lang: 'zz' })).toContain('>TRIES</text>');
   });
 
   it('is a well-formed standalone svg at OG dimensions', () => {
@@ -87,15 +101,15 @@ describe('renderCardSvg', () => {
   it('keeps a long run (300 tries) inside the card, one cell per try, no gaps', () => {
     const trajectory = Array.from({ length: 300 }, (_, i) => (100 * (i + 1)) / 300);
     const svg = renderCardSvg({ lang: 'en', dayNumber: 300, score: 300, trajectory, solvedAt: [120, 240, 300] });
-    const cells = [...svg.matchAll(/<rect x="([\d.]+)" y="180" width="([\d.]+)"/g)];
+    const cells = cellRects(svg);
     expect(cells).toHaveLength(300);
-    for (const [, x, w] of cells) {
-      expect(Number(w)).toBeGreaterThanOrEqual(1); // never a zero-width sliver
-      expect(Number(x) + Number(w)).toBeLessThanOrEqual(CARD_WIDTH);
+    for (const { x, w } of cells) {
+      expect(w).toBeGreaterThanOrEqual(1); // never a zero-width sliver
+      expect(x + w).toBeLessThanOrEqual(CARD_WIDTH);
     }
     // Contiguous: each cell starts where the previous one ended — no seams in the bar.
     for (let i = 1; i < cells.length; i += 1) {
-      expect(Number(cells[i][1])).toBe(Number(cells[i - 1][1]) + Number(cells[i - 1][2]));
+      expect(cells[i].x).toBe(cells[i - 1].x + cells[i - 1].w);
     }
   });
 
@@ -106,32 +120,32 @@ describe('renderCardSvg', () => {
     // rasterizer to draw 32k of them on every /og cache miss.
     const trajectory = Array.from({ length: 32_767 }, (_, i) => (100 * (i + 1)) / 32_767);
     const svg = renderCardSvg({ lang: 'en', dayNumber: 300, score: 32_767, trajectory, solvedAt: [1, 2, 3] });
-    const cells = [...svg.matchAll(/<rect x="([\d.]+)" y="180" width="([\d.]+)"/g)];
+    const cells = cellRects(svg);
     expect(cells.length).toBeLessThanOrEqual(CARD_WIDTH);
     // Still the same bar: contiguous, every cell at least a pixel, none past the edge.
-    for (const [, x, w] of cells) {
-      expect(Number(w)).toBeGreaterThanOrEqual(1);
-      expect(Number(x) + Number(w)).toBeLessThanOrEqual(CARD_WIDTH);
+    for (const { x, w } of cells) {
+      expect(w).toBeGreaterThanOrEqual(1);
+      expect(x + w).toBeLessThanOrEqual(CARD_WIDTH);
     }
     for (let i = 1; i < cells.length; i += 1) {
-      expect(Number(cells[i][1])).toBe(Number(cells[i - 1][1]) + Number(cells[i - 1][2]));
+      expect(cells[i].x).toBe(cells[i - 1].x + cells[i - 1].w);
     }
     // And it still spans the full bar — collapsing cells must not shorten the run.
     const last = cells[cells.length - 1];
-    expect(Number(last[1]) + Number(last[2])).toBe(Number(cells[0][1]) + 1020);
+    expect(last.x + last.w).toBe(cells[0].x + BAR.w);
   });
 
-  // #214: a capped round ends at `∞`. Press Start 2P has no such glyph and the rasterizer
-  // loads no other font, so the card DRAWS it from the shared path data — the same path
-  // the on-screen result draws, which is why it lives in one module.
+  // #214: a capped round ends at `∞`. Neither of the card's two faces has such a glyph and
+  // the rasterizer loads no other font, so the card DRAWS it from the shared path data —
+  // the same path the on-screen result draws, which is why it lives in one module.
   describe('the CAPPED headline', () => {
     const capped = { ...data, capped: true, solvedAt: [] };
 
     it('draws the glyph PATH and names no count', () => {
       const svg = renderCardSvg(capped);
       expect(svg).toContain(INFINITY_GLYPH.path);
-      expect(svg).toContain('TRIES');
-      expect(svg).not.toContain('6 TRIES');
+      expect(svg).toContain('>TRIES</text>');
+      expect(svg).not.toContain('>6</text>');
     });
 
     it('keeps the unit PLURAL — there is no count for a "1" to agree with', () => {
@@ -146,37 +160,36 @@ describe('renderCardSvg', () => {
       expect(rects).toHaveLength(1 + data.trajectory.length); // bg + 6 cells, no ticks
     });
 
-    it('sets the glyph in the TYPE\'s own band, not on the nominal baseline', () => {
+    it('sets the glyph in the TYPE\'s own band, on WHOLE cells', () => {
       // Measured off the rasterized card: Press Start 2P reserves descender room under
       // every glyph, so a shape whose bottom sits ON the baseline reads visibly low and
-      // short beside the word. The glyph is drawn at the face's CAP HEIGHT and lifted by
-      // the same ink offset, which is what put the ∞ and TRIES on one line.
-      const svg = renderCardSvg(capped);
-      const [, ty, scale] = /translate\(-?[\d.]+ ([\d.]+)\) scale\(([\d.]+)\)/.exec(svg)!;
-      const size = 76; // the headline's font size
-      const inkBottom = Number(ty) + INFINITY_GLYPH.height * Number(scale);
-      expect(inkBottom).toBeCloseTo(430 - PIXEL_INK_LIFT_EM * size, 1);
-      expect(INFINITY_GLYPH.height * Number(scale)).toBeCloseTo(INFINITY_EM_HEIGHT * size, 1);
+      // short beside the word. The glyph fills the digits' cap height on whole cells (the
+      // pixel-art rule), its ink bottom where the digits' is — measured against a card laid
+      // out identically, one whose run never solved (no ticks, like a capped one).
+      const glyph = (svg: string) => /class="infinity" transform="translate\((\d+) (\d+)\) scale\((\d+)\)"/.exec(svg)!;
+      const [, , gy, cell] = glyph(renderCardSvg(capped)).map(Number);
+      const size = 160; // the count's font size
+      expect(Number.isInteger(cell)).toBe(true);
+      expect(Math.abs(INFINITY_GLYPH.height * cell - INFINITY_EM_HEIGHT * size)).toBeLessThanOrEqual(cell / 2);
+      const plain = renderCardSvg({ ...data, solvedAt: [null, null, null] });
+      const baseline = Number(/<text x="\d+" y="(\d+)"[^>]*font-size="160"/.exec(plain)![1]);
+      expect(gy + INFINITY_GLYPH.height * cell).toBe(baseline - Math.round(PIXEL_INK_LIFT_EM * size));
     });
 
-    it('keeps the lockup inside the card at both the glyph and the word', () => {
-      // The glyph's own box plus the unit is laid out arithmetically (the face advances
-      // 1em per glyph), so an off-by-one in that sum walks the headline off the card.
-      const svg = renderCardSvg({ ...capped, lang: 'fr' });
-      const translate = /translate\((-?[\d.]+) ([\d.]+)\) scale\(([\d.]+)\)/.exec(svg);
-      expect(translate).not.toBeNull();
-      const [, gx, , scale] = translate!;
-      expect(Number(gx)).toBeGreaterThan(0);
-      expect(Number(gx) + INFINITY_GLYPH.width * Number(scale)).toBeLessThan(CARD_WIDTH);
-      const textX = /<text x="([\d.]+)" y="430"/.exec(svg);
-      expect(textX).not.toBeNull();
-      expect(Number(textX![1])).toBeGreaterThan(Number(gx));
-      expect(Number(textX![1])).toBeLessThan(CARD_WIDTH);
+    it('keeps the headline inside the card at both the glyph and the word', () => {
+      const svg = renderCardSvg({ ...capped, lang: 'fr' }, { publicId: 'abcdefghij234567', name: 'W'.repeat(NAME_MAX_LENGTH), avatar: null });
+      const [, gx, , cell] = /class="infinity" transform="translate\((\d+) (\d+)\) scale\((\d+)\)"/.exec(svg)!.map(Number);
+      expect(gx).toBeGreaterThan(0);
+      expect(gx + INFINITY_GLYPH.width * cell).toBeLessThan(CARD_WIDTH);
+      // The unit stands centred under the glyph, inside the card.
+      const unitX = Number(/<text x="(\d+)" y="\d+" text-anchor="middle"[^>]*>ESSAIS<\/text>/.exec(svg)![1]);
+      expect(Math.abs(unitX - (gx + (INFINITY_GLYPH.width * cell) / 2))).toBeLessThanOrEqual(1);
+      expect(unitX).toBeLessThan(CARD_WIDTH);
     });
 
     it('leaves an ordinary result drawing its number', () => {
       const svg = renderCardSvg(data);
-      expect(svg).toContain('6 TRIES');
+      expect(svg).toContain('>6</text>');
       expect(svg).not.toContain(INFINITY_GLYPH.path);
     });
   });
@@ -200,7 +213,8 @@ describe('renderGroupCardSvg', () => {
         { publicId: other, name: '', avatar: null },
       ],
     });
-    expect(svg).toContain('>Les_copains<');
+    // In the chrome's capitals, as the board sets it.
+    expect(svg).toContain('>LES_COPAINS<');
     expect(svg).toContain(AVATAR_PALETTES[2].fg);
     const { palette } = decodeAvatar(defaultAvatar(other));
     expect(svg).toContain(AVATAR_PALETTES[palette].fg);
@@ -210,7 +224,7 @@ describe('renderGroupCardSvg', () => {
   it('says the app name, and nothing else besides the group', () => {
     const svg = renderGroupCardSvg({ name: 'Bureau', members: [{ publicId: id, name: '', avatar: null }] });
     const texts = [...svg.matchAll(/>([^<>]+)<\/text>/g)].map((m) => m[1]);
-    expect(texts).toEqual(['Bureau', 'WHIPPIN AI']);
+    expect(texts).toEqual(['BUREAU', 'WHIPPIN AI']);
   });
 
   it('folds a large group into six tiles: five marks and a +N count', () => {
@@ -222,6 +236,37 @@ describe('renderGroupCardSvg', () => {
     const svg = renderGroupCardSvg({ name: 'Big', members });
     expect(svg.match(/<clipPath /g)).toHaveLength(5);
     expect(svg).toContain('>+4<');
+  });
+
+  it('keeps the +N count inside its tile, up to the members cap', () => {
+    const members = Array.from({ length: GROUP_MEMBERS_MAX }, (_, i) => ({
+      publicId: `member${String(i).padStart(10, '0')}`,
+      name: '',
+      avatar: null,
+    }));
+    const svg = renderGroupCardSvg({ name: 'Big', members });
+    const label = `+${GROUP_MEMBERS_MAX - 5}`;
+    const text = new RegExp(`<text x="(\\d+)" y="\\d+" font-family="Press Start 2P" font-size="(\\d+)"[^>]*>\\${label}<`).exec(svg)!;
+    // The tile is the last one drawn before the lockup: the surface rect the count sits on.
+    const tile = /<rect x="(\d+)" y="\d+" width="120" height="120" rx="4" fill="#14151c"\/>/.exec(svg)!;
+    expect(Number(text[1])).toBeGreaterThan(Number(tile[1]));
+    expect(Number(text[1]) + label.length * Number(text[2])).toBeLessThan(Number(tile[1]) + 120);
+  });
+
+  it('keeps the name chip clear of every mark, whatever the count and the name', () => {
+    for (let count = 0; count <= 7; count += 1) {
+      for (let glyphs = 1; glyphs <= GROUP_NAME_MAX_LENGTH; glyphs += 1) {
+        const members = Array.from({ length: count }, (_, i) => ({ publicId: `member${String(i).padStart(10, '0')}`, name: '', avatar: null }));
+        const svg = renderGroupCardSvg({ name: 'W'.repeat(glyphs), members });
+        const [, cx, cy, cw, ch] = /<rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" fill="#ffffff"\/>/.exec(svg)!.map(Number);
+        for (const [, tx, ty] of svg.matchAll(/<clipPath id="member\d+"><rect x="(\d+)" y="(\d+)"/g)) {
+          const x = Number(tx);
+          const y = Number(ty);
+          const apart = x >= cx + cw || cx >= x + 120 || y >= cy + ch || cy >= y + 120;
+          expect(apart, `${count} members, ${glyphs} glyphs`).toBe(true);
+        }
+      }
+    }
   });
 
   it('still draws a face for a stored string that will not decode', () => {
@@ -241,9 +286,9 @@ describe('renderGroupCardSvg', () => {
 
 // CONTRACT (user-decided 2026-09-05): a SIGNED share — every share the result screens make
 // from a device holding an account — draws the player's mark and name on the result card,
-// and a plain share draws neither. The strip sits in the top band the result
-// leaves empty, and the name is bounded by the profile's own cap so the widest signature
-// clears the margins.
+// and a plain share draws neither. The mark is the portrait beside the count, the name in
+// the title chip under it; signing never changes the RESULT drawn, and the widest
+// signature (the profile's own cap) keeps the card's column.
 describe('a signed result card (the share link wearing its player)', () => {
   const id = 'abcdefghij234567';
   const sentence = {
@@ -260,7 +305,7 @@ describe('a signed result card (the share link wearing its player)', () => {
     expect(svg).toContain('>Chqrles<');
     expect(svg).toContain(AVATAR_PALETTES[2].fg);
     // The result is still the card's subject: the count and the date are untouched.
-    expect(svg).toContain('6 TRIES');
+    expect(svg).toContain('>6</text>');
     expect(svg).toContain(dateForDayNumber(123));
   });
 
@@ -269,36 +314,43 @@ describe('a signed result card (the share link wearing its player)', () => {
     expect(svg).toContain(`>${anonName(id)}<`);
     const { palette } = decodeAvatar(defaultAvatar(id));
     expect(svg).toContain(AVATAR_PALETTES[palette].bg);
-    expect(svg).toContain('6 TRIES');
+    expect(svg).toContain('>6</text>');
   });
 
-  it('draws no face on a plain share, and moves nothing', () => {
+  it('draws no face on a plain share', () => {
     expect(renderCardSvg(sentence)).not.toContain('clipPath');
-    expect(renderCardSvg(sentence)).toContain('translate(0 0)');
   });
 
-  it('makes room for the strip by moving the whole RESULT down, never by squeezing it', () => {
+  it('draws the same RESULT signed or not: the run, rect for rect, only moved', () => {
     const signed = renderCardSvg(sentence, { publicId: id, name: 'Chqrles', avatar: null });
-    const shift = /<g transform="translate\(0 (\d+)\)">/.exec(signed)!;
-    expect(Number(shift[1])).toBeGreaterThan(0);
-    // The strip sits ABOVE the moved result with a gap: its bottom edge is clear of the
-    // ruler's tick tops (BAR_Y − TICK_OVERHANG = 171, plus the shift).
-    const tile = /<clipPath id="sign"><rect x="-?\d+" y="(\d+)" width="(\d+)"/.exec(signed)!;
-    expect(Number(tile[1]) + Number(tile[2])).toBeLessThan(171 + Number(shift[1]));
-    // Inside the moved group the result is the plain card's, coordinate for coordinate.
     const plain = renderCardSvg(sentence);
-    const inner = (svg: string) => svg.slice(svg.indexOf('<g shape-rendering'), svg.lastIndexOf('</g>'));
-    expect(inner(signed)).toBe(inner(plain));
+    // The run group (cells, ticks, indices) with every y taken relative to the bar's top.
+    const run = (svg: string) => {
+      const bar = cellRects(svg)[0].y;
+      const group = /<g class="run"[^>]*>(.*?)<\/g>/.exec(svg)![1];
+      return group.replace(/y="(\d+)"/g, (_, y) => `y="${Number(y) - bar}"`);
+    };
+    expect(run(signed)).toBe(run(plain));
+    // The whole portrait column — the tile and the name chip under it — clears the ticks.
+    const tickTop = cellRects(signed)[0].y - 16;
+    const tile = /<clipPath id="sign"><rect x="\d+" y="(\d+)" width="(\d+)"/.exec(signed)!;
+    expect(Number(tile[1]) + Number(tile[2])).toBeLessThan(tickTop);
+    const chip = /<rect x="\d+" y="(\d+)" width="\d+" height="(\d+)" fill="#ffffff"\/>/.exec(signed)!;
+    expect(Number(chip[1]) + Number(chip[2])).toBeLessThan(tickTop);
   });
 
-  it('keeps the widest signature inside the card margins', () => {
+  it('keeps the widest signature inside the card\'s column, clear of the count', () => {
     const name = 'W'.repeat(NAME_MAX_LENGTH);
     const svg = renderCardSvg(sentence, { publicId: id, name, avatar: null });
-    const text = /<text x="(\d+)"[^>]*font-size="(\d+)"[^>]*>W+<\/text>/.exec(svg)!;
-    const right = Number(text[1]) + NAME_MAX_LENGTH * Number(text[2]);
-    expect(right).toBeLessThanOrEqual(CARD_WIDTH - 90);
-    const tile = /<clipPath id="sign"><rect x="(-?\d+)"/.exec(svg)!;
-    expect(Number(tile[1])).toBeGreaterThanOrEqual(90);
+    // The name's chip and the portrait start inside the column.
+    const chip = /<rect x="(\d+)" y="\d+" width="(\d+)" height="\d+" fill="#ffffff"\/>/.exec(svg)!;
+    expect(Number(chip[1])).toBeGreaterThanOrEqual(BAR.x);
+    const tile = /<clipPath id="sign"><rect x="(\d+)"/.exec(svg)!;
+    expect(Number(tile[1])).toBeGreaterThanOrEqual(BAR.x);
+    // The count starts right of the chip, and ends inside the column.
+    const count = /<text x="(\d+)" y="\d+" font-family="Press Start 2P" font-size="160"[^>]*>(\d+)</.exec(svg)!;
+    expect(Number(count[1])).toBeGreaterThan(Number(chip[1]) + Number(chip[2]));
+    expect(Number(count[1]) + count[2].length * 160).toBeLessThanOrEqual(BAR.x + BAR.w);
   });
 });
 

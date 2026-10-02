@@ -37,12 +37,16 @@
                               set IS (size, longest key, corpus build). Never hand-edited.
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
     src/glyphs.ts             pixel-art glyphs the game DRAWS rather than sets: the #214 `∞`
-                              path + view box, shared by the OG card and the web result
+                              path + view box, shared by the OG card and the web result; the
+                              app's mark, traced for the OG cards
+    src/bayer.ts              the ordered dither's Bayer 8×8 matrix (the meter, the level art,
+                              the OG cards' rings)
     src/heat.ts               the app's ONE weird→calm stop gradient: heatColor() + fixed-cap rankHeatColor()/HIT_HEAT_CAP (exponents, floating hits, loot, route rows) + progressHeatColor()/progressEmoji() (run rulers incl. the card, share-text emoji row, archive fills, chooser strips)
     src/shareCard.ts          the share-token codec, browser + Lambda
     src/base64url.ts          INTERNAL (not re-exported): the base64url alphabet + encoder the
                               share-token and avatar codecs share
-    src/cardSvg.ts            the OG cards' SVG: a result from a decoded token, and the #271 group card (name + member marks + app name)
+    src/cardSvg.ts            the OG cards' SVG: a result from a decoded token, and the #271 group card (name + member marks + app name),
+                              in the site previews' frame (brackets + lockup), set in the pixel face and Azeret Mono Bold
     src/index.ts              re-exports
 ```
 

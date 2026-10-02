@@ -1,7 +1,7 @@
 // THE ORDERED DITHER'S MATRIX — Bayer 8×8, 64 levels: the app's one way of turning a density
-// into pixels (the charge meter's fill and sea, the tutorial's level art). A cell is inked
-// when its threshold is under the density wanted there, so a density ramp lights cells one by
-// one in threshold order — the pixel art's own gradient.
+// into pixels (the charge meter's fill and sea, the tutorial's level art, the cards' rings). A
+// cell is inked when its threshold is under the density wanted there, so a density ramp lights
+// cells one by one in threshold order — the pixel art's own gradient.
 // prettier-ignore
 export const BAYER_8: readonly number[] = [
    0, 32,  8, 40,  2, 34, 10, 42,

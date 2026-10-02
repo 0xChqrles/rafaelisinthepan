@@ -28,8 +28,9 @@
     lib/backend-stack.ts      BackendStack: private S3 + DynamoDB + Lambda(Fn URL) + CloudFront; opt api.<domain>; us-east-1
     lib/backend-stack.test.ts synthesized score-boundary contract (SSM names/IAM + deployable zero-cache/OAC policies) + the #230 mail shape + cdk-nag
     lib/web-stack.test.ts     synthesized contract: the three API-routed path patterns, the SPA fallback (a
-                              default-behavior function run against sample paths; no error responses), the CSP,
-                              cdk-nag
+                              default-behavior function run against sample paths, the routes with a page of their
+                              own included; no error responses), the route-page scan, the upload order (a fake
+                              build), the CSP, cdk-nag
     lib/deploy-role-stack.test.ts  cdk-nag over the deploy role stack
     lib/mail.ts               MailAlerts (SNS + SES reputation alarms) + MailReceiving (MX, rule set, S3, forwarder) — #230
     lib/web-stack.ts          WebStack (#21): private S3 (SPA) + CloudFront(OAC) + ACM + Route53; apex; us-east-1
@@ -152,19 +153,30 @@
   (`SpaFallbackFn`) on the DEFAULT behavior alone**: a path whose last segment has no dot
   (`/`, `/en`, `/en/2026-09-01`, `/join/g/<id>`) is served `/index.html`; a file path
   (`/assets/x.js`, `/vocab/en.json`, `/version.json`) is left alone, so a missing file
-  answers the bucket's own error, never the SPA shell. It is NOT a distribution-wide
+  answers the bucket's own error, never the SPA shell. **A route the build gave a page of
+  its own** (`<route>/index.html` — the web's link previews, `web/src/linkPreviews.ts`) is
+  served that page instead, the NEAREST one at or above the path winning; the routes are read
+  off the build at synth (`builtRoutePages`) and ride in the function's source, since a
+  viewer-request function cannot ask the bucket what exists. A deploy without a build
+  therefore publishes a function that knows no pages: the SPA is untouched, but the
+  tutorial's routes unfurl as the home card until the next deploy with one. It is NOT a
+  distribution-wide
   custom error response: that would also rewrite the three API behaviors' answers, serving
   a dead invite or share as 200 + the SPA shell and a dead card as HTML, where the backend
   answers a dead invite or share with a 404 page that moves a person on, and a dead card
   with a JSON 404. `web-stack.test.ts` runs the function's source against sample paths.
-  Three `BucketDeployment`s split cache lifetimes (hashed `assets/*` immutable-1yr,
+  Four `BucketDeployment`s split cache lifetimes (hashed `assets/*` immutable-1yr,
   `vocab/*` SWR, everything else `no-cache`) and **invalidate
   `/*`** on deploy — so `pnpm build` must run **before** deploy (missing `dist` → warn +
   skip upload). **The root set (index.html + version.json) publishes LAST** — an explicit
-  `addDependency` on the other two, because `version.json` is the web's stale-tab reload
-  trigger (`web/src/versionCheck.ts`) and index.html names the new hashed chunks: without
-  the ordering, a tab reloading mid-deploy can fetch an index whose chunks are not in the
-  bucket yet. Custom
+  `addDependency` on the chunks and the vocabulary, because `version.json` is the web's
+  stale-tab reload trigger (`web/src/versionCheck.ts`) and index.html names the new hashed
+  chunks: without the ordering, a tab reloading mid-deploy can fetch an index whose chunks
+  are not in the bucket yet. **The route pages (`DeployPages`, `*/index.html`) publish after
+  the chunks too, and BEFORE the fallback function** (the function `addDependency`s them):
+  the function is updated as soon as the stack update starts, and naming a page the bucket
+  does not hold yet would answer that route with the bucket's 403 until the upload landed.
+  Custom
   domain comes from `-c domainName=<apex>` (**defaults to `whippin.ai`** in `bin/app.ts`): it
   looks up the existing Route53 zone (`fromLookup`), issues a DNS-validated **ACM** cert, sets
   the distribution alias to `<siteSubdomain>.<domain>` (`siteSubdomain` default **`""` = apex**;

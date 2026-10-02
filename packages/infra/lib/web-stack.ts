@@ -31,6 +31,28 @@ interface WebStackProps extends StackProps {
   // Drives the Content-Security-Policy `connect-src`. Defaults to `https://api.<domainName>`
   // when a domain is set; when neither is available, `connect-src` is just 'self'.
   apiOrigin?: string;
+  // The built SPA to publish: `packages/web/dist` unless a test hands its own.
+  webDist?: string;
+}
+
+// THE ROUTES WITH A PAGE OF THEIR OWN: every `<route>/index.html` in a build, as its route
+// (`dist/fr/learn/2/index.html` -> `/fr/learn/2`). The web build writes one per page whose
+// link preview is its own (web/src/linkPreviews.ts) — the same shell under another head, so a
+// chat app's crawler, which runs no JavaScript, reads the right card. The root index.html is
+// the shell itself, and `assets/` and `vocab/` hold files, never pages.
+export function builtRoutePages(dist: string): string[] {
+  if (!fs.existsSync(dist)) return [];
+  const routes: string[] = [];
+  const walk = (dir: string, route: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || (route === '' && (entry.name === 'assets' || entry.name === 'vocab'))) continue;
+      const child = `${route}/${entry.name}`;
+      if (fs.existsSync(path.join(dir, entry.name, 'index.html'))) routes.push(child);
+      walk(path.join(dir, entry.name), child);
+    }
+  };
+  walk(dist, '');
+  return routes.sort();
 }
 
 // Frontend hosting (#21): private S3 bucket holding `packages/web/dist`, served only via
@@ -48,6 +70,7 @@ export class WebStack extends Stack {
     // The site's final origin host: the apex (e.g. "whippin.ai") by default, or
     // "<subdomain>.<domain>" when a subdomain is given.
     const siteDomain = domainName ? (subdomain ? `${subdomain}.${domainName}` : domainName) : undefined;
+    const webDist = props.webDist ?? WEB_DIST;
 
     // ── S3: the private SPA bucket ────────────────────────────────────────────
     // Fully private (blocks all public access, enforces TLS, encrypts at rest); reachable
@@ -179,15 +202,29 @@ export class WebStack extends Stack {
     // distribution-wide custom error response would also rewrite the API origin's answers
     // on /s, /og and /g, serving a dead invite or share as 200 + the SPA shell and a dead
     // card as HTML.
+    //
+    // A route the build gave a PAGE OF ITS OWN (`builtRoutePages`: the tutorial's list and
+    // its levels) is served that page instead — the same shell wearing its own link preview.
+    // The NEAREST such route at or above the path wins, so `/en/learn/3`, a level not ready in
+    // English, unfurls as the list the SPA lands it on. The routes ride in the function's
+    // source: a viewer-request function cannot ask the bucket what exists.
+    const pages = Object.fromEntries(builtRoutePages(webDist).map((route) => [route, 1]));
     const spaFallbackFn = new cloudfront.Function(this, 'SpaFallbackFn', {
-      comment: 'Serve index.html for every SPA route (a last path segment with no dot).',
+      comment: 'Serve a route its own page, or index.html (a last path segment with no dot).',
       runtime: cloudfront.FunctionRuntime.JS_2_0,
       code: cloudfront.FunctionCode.fromInline(
         [
+          `var PAGES = ${JSON.stringify(pages)};`,
           'function handler(event) {',
           '  var request = event.request;',
           "  var last = request.uri.slice(request.uri.lastIndexOf('/') + 1);",
-          "  if (last.indexOf('.') === -1) request.uri = '/index.html';",
+          "  if (last.indexOf('.') !== -1) return request;",
+          "  var route = request.uri.replace(/\\/+$/, '');",
+          '  while (route) {',
+          "    if (PAGES[route]) { request.uri = route + '/index.html'; return request; }",
+          "    route = route.slice(0, route.lastIndexOf('/'));",
+          '  }',
+          "  request.uri = '/index.html';",
           '  return request;',
           '}',
         ].join('\n'),
@@ -251,10 +288,11 @@ export class WebStack extends Stack {
     }
 
     // ── Publish the built SPA + invalidate ────────────────────────────────────
-    // Two deployments to split cache lifetimes; prune:false so old hashed assets linger
-    // for in-flight clients (and so the two passes never delete each other's files).
-    if (fs.existsSync(WEB_DIST)) {
-      const source = s3deploy.Source.asset(WEB_DIST);
+    // Several deployments to split cache lifetimes and order the uploads; prune:false so old
+    // hashed assets linger for in-flight clients (and so the passes never delete each
+    // other's files).
+    if (fs.existsSync(webDist)) {
+      const source = s3deploy.Source.asset(webDist);
       // The deployment Lambda unzips the bundle and runs `aws s3 sync` in-process; the
       // default 128 MB OOMs on this payload (multi-MB vocab JSON), so give it headroom.
       const memoryLimit = 512;
@@ -286,10 +324,26 @@ export class WebStack extends Stack {
         ],
         memoryLimit,
       });
+      // The ROUTE PAGES (`<route>/index.html`, `builtRoutePages`): the shell again, so the root
+      // set's rule holds for them — they publish after the chunks they name. And they publish
+      // BEFORE the fallback function that serves them: the function is a resource of its own,
+      // updated as soon as the stack update starts, and a function naming a page the bucket
+      // does not hold yet answers that route with the bucket's 403 until the upload lands.
+      const deployPages = new s3deploy.BucketDeployment(this, 'DeployPages', {
+        sources: [source],
+        destinationBucket: bucket,
+        prune: false,
+        exclude: ['*'],
+        include: ['*/index.html'],
+        cacheControl: [s3deploy.CacheControl.fromString('no-cache')],
+        memoryLimit,
+      });
+      deployPages.node.addDependency(deployAssets, deployVocab);
+      spaFallbackFn.node.addDependency(deployPages);
       // index.html and the remaining unhashed files (fonts, images, version.json) — always
-      // revalidate so a redeploy is picked up immediately. Excludes assets/* and vocab/*
-      // (handled above). This pass carries the CloudFront invalidation that purges all
-      // three sets.
+      // revalidate so a redeploy is picked up immediately. Excludes assets/*, vocab/* and the
+      // route pages (handled above). This pass carries the CloudFront invalidation that
+      // purges every set.
       // `.DS_Store` is excluded because `prune: false` makes any stray upload PERMANENT:
       // one break-glass deploy from a laptop (ALLOW_LOCAL_DEPLOY=1) shipped Finder's
       // `.DS_Store` on 2026-07-26 and it stayed publicly served for a month, since no
@@ -300,7 +354,7 @@ export class WebStack extends Stack {
         sources: [source],
         destinationBucket: bucket,
         prune: false,
-        exclude: ['assets/*', 'vocab/*', '.DS_Store', '*/.DS_Store'],
+        exclude: ['assets/*', 'vocab/*', '*/index.html', '.DS_Store', '*/.DS_Store'],
         cacheControl: [s3deploy.CacheControl.fromString('no-cache')],
         distribution,
         distributionPaths: ['/*'],
@@ -313,7 +367,7 @@ export class WebStack extends Stack {
       deployRoot.node.addDependency(deployAssets, deployVocab);
     } else {
       Annotations.of(this).addWarning(
-        `No build at ${WEB_DIST} — run \`pnpm build\` (with VITE_API_BASE_URL set) before \`cdk deploy\`. ` +
+        `No build at ${webDist} — run \`pnpm build\` (with VITE_API_BASE_URL set) before \`cdk deploy\`. ` +
           'Synthesizing the stack without uploading the SPA.',
       );
     }
@@ -341,7 +395,7 @@ export class WebStack extends Stack {
           'S3 server access logging intentionally off; bucket is private (BLOCK_ALL), TLS-enforced, reachable only via CloudFront OAC.',
       },
     ]);
-    // Framework-managed custom resources (autoDeleteObjects + the three BucketDeployments)
+    // Framework-managed custom resources (autoDeleteObjects + the BucketDeployments)
     // use AWS managed policies, wildcard object permissions, and a CDK-pinned runtime — none
     // are authored here and cannot be tightened without forking the constructs.
     NagSuppressions.addStackSuppressions(this, [
