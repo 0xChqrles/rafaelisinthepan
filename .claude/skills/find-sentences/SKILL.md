@@ -82,6 +82,8 @@ verbatim.
 - What comes AFTER the line weighs more than a third sentence before it: the page is read
   by someone who just rebuilt the line and wants to know where it led.
 - Never rewrite, never summarise: the two counts are the whole answer.
+- Never keep a reactionary sentence on the page (the `taste` skill's voice): cut before
+  it, to zero if need be.
 
 ## Taste
 
@@ -144,7 +146,8 @@ text's, translations included). Deliver a list the user can act on:
   of `packages/generation/published.jsonl`, the publish ledger — the record of every
   published day, rebuilt by `pnpm puzzle:ledger --s3`; the generation output holds
   unpublished drafts and the backend's local store is a test bed, never a reference) and
-  already on the shelf. Check both before delivering.
+  already on the shelf. Check both before delivering. Exclude a reactionary book too (the
+  `taste` skill's voice): *Soumission* is out though Houellebecq's other novels are in.
 - Prefer works that exist as an epub in the shelf's language; no self-published or
   out-of-print obscurities the user cannot find.
 
