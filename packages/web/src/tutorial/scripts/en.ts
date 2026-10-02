@@ -22,16 +22,18 @@
 // SENTENCE: "a dog barks at the moon." — DOG behind COYOTE (63) and MOON behind STAR (69),
 // the game's own 50–150 band. THE METER: "the cat dreams of liberty." — shown as "the stray
 // dreams of peace.": CAT behind STRAY (80), already found by the bot; the secret is LIBERTY
-// behind PEACE (107), and the OBVIOUS guess, FREEDOM, is its closest word (rank 1): typing it
-// earns a 1, never the solve — and typing LIBERTY first swaps the two (liberty reads 1,
-// freedom becomes the secret), so the activation is always seen before the solve. The bot's
-// FIVE tries (few, and the best one an EASY SYNONYM, user-decided 2026-09-16) — re-picked on
-// the new map (#317), where the synonyms sit far (independence 56, emancipation 41) and the
-// ideology words close (democracy 4, equality 11): five tries no closer than a synonym
-// cannot reach the ~72 FREEDOM needs to fill the meter alone, so the best try is the EASY
-// word a player types next to liberty, EQUALITY (11): independence, equality, happiness,
-// justice, dignity leave the meter at three quarters, FREEDOM fills it — visibly — and the
-// given words land; a failed try then earns the hint, never the word.
+// behind PEACE (107), and the OBVIOUS guess, FREEDOM, is its closest word — which the
+// lesson reads 2, UNALIENABLE (the map's 2) reading 1 (`meterView`): typing FREEDOM earns a
+// 2, never the solve, and the full meter then offers the one word closer, UNALIENABLE¹, to
+// reveal — and typing LIBERTY first swaps the two (liberty reads 2, freedom becomes the
+// secret), so the activation is always seen before the solve. The bot's FIVE tries (few,
+// and the best one an EASY SYNONYM, user-decided 2026-09-16) — picked on the fastText map
+// (#317), where the synonyms sit far (independence 56, autonomy 44) and the ideology words
+// close (democracy 4, equality 11): five tries no closer than a synonym cannot reach the
+// ~75 FREEDOM² needs to fill the meter alone, so the best try is the EASY word a player
+// types next to liberty, EQUALITY (11): independence, equality, autonomy, justice, dignity
+// leave the meter at three quarters (75.3), FREEDOM fills it — visibly — and the masked
+// word lands; a failed try then earns the hint, never the word.
 //
 // scripts.test.ts replays this file and fails if an edit breaks the lesson's shape.
 import type { LessonScript } from '../script';
@@ -68,7 +70,7 @@ const script: LessonScript = {
         ranks: { [cat.word.slug]: cat.ranks, [liberty.word.slug]: liberty.ranks },
       },
       // The bot's game so far: it found the cat, then circled liberty without landing.
-      played: ['cat', 'independence', 'equality', 'happiness', 'justice', 'dignity'],
+      played: ['cat', 'independence', 'equality', 'autonomy', 'justice', 'dignity'],
       pair: { alt: { word: 'freedom', slug: 'freedom' }, hint: 'tutHintFreedom' },
       hints: ['tutHintCat', 'tutHintLiberty'],
     },

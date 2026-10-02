@@ -771,6 +771,36 @@ input {
 .tray.tray-gate {
   justify-content: flex-end;
 }
+/* THE REVEAL TRAY (`components/RevealTray`): the price, REVEAL and BACK in the keyboard's
+   exact footprint, anchored to its bottom like the gate's PLAY and LEARN — so the swap moves
+   nothing above it. Tighter than the gate's stack: three lines share the keyboard's height
+   on the smallest phone. */
+.reveal-tray {
+  width: 100%;
+  height: var(--kb-h);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+/* The price: the UI face, muted, centred on the button it explains. */
+.reveal-cost {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+  text-align: center;
+}
+/* The stack stands together at the bottom: the deploy button's own auto margin would part
+   the price from it. */
+.reveal-tray .mix-btn {
+  margin-top: 0;
+}
+.reveal-tray .mix-btn + .btn-secondary {
+  padding-block: 10px;
+}
 @keyframes kb-drop {
   to {
     /* Past its own height + the safe-area pad, so the last row fully leaves the clip. */
@@ -3217,7 +3247,7 @@ input {
 /* A MASKED hint (user-decided 2026-09-22): the foil under a fixed run of `?` whatever the
    word's length — `MASK` — so a masked row and a masked slot read as a sealed card, and
    say so. The wheel holds NO reveal control: picking a mask selects it, and the reveal is
-   the PROMPT's (`.wi-ghost`, below the sentence). */
+   the tray's REVEAL, the mask standing in the prompt (`.wi-ghost`, below the sentence). */
 /* Every plain row's exponent steps clear of its box's right overhang, and a few pixels
    more (user-reported 2026-09-22: "it touches it", then "a few pixel more detached"): the
    sentence chip's own nudge, in the exponent's 0.55em, plus a gap of its own. */

@@ -351,6 +351,11 @@ const STRINGS = {
   // "not started", which is the one thing an unloaded day must never claim.
   srStatusUnknown: { en: 'status not loaded', fr: 'statut non chargé' },
   notAWord: { en: 'this word does not exist', fr: "ce mot n'existe pas" },
+  // THE REVEAL (#301): a masked hint picked into the sentence takes the keyboard's place —
+  // the button that reveals it, its price over it, and the way back to the keyboard.
+  revealButton: { en: 'REVEAL', fr: 'RÉVÉLER' },
+  revealCost: { en: 'Costs one try.', fr: 'Coûte un essai.' },
+  revealBack: { en: 'BACK', fr: 'RETOUR' },
   // The score unit stays NAMED in both languages (lower is better must survive the
   // share card); the share text lowercases these.
   try: { en: 'TRY', fr: 'ESSAI' },
@@ -462,8 +467,8 @@ const STRINGS = {
     en: 'The 1000 closest words to the secret fill its meter. Once full, you unlock clues.',
     fr: 'Les 1000 mots les plus proches du secret remplissent sa jauge. Une fois pleine, on débloque des indices.',
   },
-  // The activation (user-decided 2026-09-22, replacing the first letter): the given words
-  // are MASKED in the word's tries, and a tap on one reveals it for a try.
+  // The activation (user-decided 2026-09-22, replacing the first letter): the word given
+  // is MASKED in the word's tries; picked, REVEAL takes the keyboard's place, for a try.
   tutActivatedTap: {
     en: 'The meter is full! Tap {word} and reveal a word.',
     fr: 'Jauge pleine ! Touche {word}, et révèle un mot.',
@@ -712,15 +717,15 @@ export function srHoleCharge(lang: string, charge: number): string {
   return uiLang(lang) === 'fr' ? `jauge à ${pct} %` : `meter at ${pct}%`;
 }
 
-// The given words (#301; user-decided 2026-09-22, replacing the initial): what a full meter
-// hands over — `count` words near the secret, read in the hole's tries. With `n`, the live
-// announcement the moment they land; without, the hole's standing description.
-export function srHoleGiven(lang: string, count: number, n?: number): string {
+// The given word (#301): what a full meter offers — ONE masked word closer than the hole's
+// best, read in the hole's tries. With `n`, the live announcement the moment it lands;
+// without, the hole's standing description.
+export function srHoleGiven(lang: string, n?: number): string {
   if (uiLang(lang) === 'fr') {
-    const what = `${count} mots masqués proches du secret dans ses essais, un essai chacun à révéler`;
+    const what = 'un mot masqué plus proche que son meilleur dans ses essais, un essai pour le révéler';
     return n === undefined ? what : `mot ${n} : ${what}`;
   }
-  const what = `${count} masked words near the secret in its tries, one try each to reveal`;
+  const what = 'a masked word closer than its best in its tries, one try to reveal';
   return n === undefined ? what : `word ${n}: ${what}`;
 }
 

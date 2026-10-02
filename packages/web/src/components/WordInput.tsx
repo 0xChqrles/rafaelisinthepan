@@ -75,8 +75,8 @@ interface WordInputProps {
   // PRE-TYPED here while the field is empty — `?????` in the accent with the OPEN LOCK, a
   // glyph on the pixel font's own 8-cell grid at 1em (user-decided 2026-09-23: the lock
   // stays, drawn to the font's weight rather than the 20px header mark that "doesn't work
-  // near the thick and fat question mark glyphs"), ENTER lit — and ENTER submits it as the
-  // guess that reveals it; the marks then UNCYPHER into the word here, EACH LETTER
+  // near the thick and fat question mark glyphs") — and the tray's REVEAL, or Enter, submits
+  // it as the guess that reveals it; the marks then UNCYPHER into the word here, EACH LETTER
   // TURNING `--fg` AS IT SETTLES (`ghostTarget`: a letter is uncyphered once it matches
   // the word at its place), before the prompt clears. Drawn only; the field stays empty.
   ghost?: string;

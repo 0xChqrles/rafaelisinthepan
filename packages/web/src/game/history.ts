@@ -62,12 +62,12 @@ export interface HistoryStop {
   // recede. Never true while the hole is live: an unsolved line shows only where the
   // player has been.
   revealed: boolean;
-  // GIVEN by the meter (user-decided 2026-09-22): a hint the active hole shows — the next
-  // word past one the player holds, at most `GIVEN` masked at once (2026-09-25,
-  // `game/charge.ts`); a mask not taken can give way to a nearer one. MASKED until the player takes it: a
-  // masked stop has no word (`word` empty, `display` the MASK), only its rank; taking it —
-  // revealing it from the wheel, or typing it — is a guess, and the stop is then a hint
-  // CONSUMED: given, unmasked, wearing the foil. The solve unmasks what was never taken.
+  // GIVEN by the meter (user-decided 2026-09-22; one at a time since 2026-10-02,
+  // `game/charge.ts`): the hint an active hole offers — the next word closer than its best.
+  // MASKED until the player takes it: a masked stop has no word (`word` empty, `display`
+  // the MASK), only its rank; taking it — revealing it, or typing it — is a guess, and the
+  // stop is then a hint CONSUMED: given, unmasked, wearing the foil. The solve unmasks
+  // what was never taken.
   given: boolean;
   masked: boolean;
   taken: boolean; // a given hint the player consumed (guessed after it was given)
@@ -191,9 +191,9 @@ export function buildHistory({
   };
 
   // The walked stretch, walked once: the departure, "you", the given words and the solve's
-  // reveal all read their entries out of it. A window given above an unmoved start reaches
-  // past the departure, so the field is walked out to the farthest given rank.
-  const field = nearField(rankMap, Math.max(startRank, ...given.map((g) => g.rank)));
+  // reveal all read their entries out of it. A given word is always closer than a word the
+  // hole held, so the departure bounds them too.
+  const field = nearField(rankMap, startRank);
 
   const startEntry = field.get(startRank);
   if (startEntry) visit(startEntry.entry, startEntry.key, { start: true });
@@ -214,12 +214,12 @@ export function buildHistory({
     if (here) here.best = true;
   }
 
-  // THE GIVEN WORDS (user-decided 2026-09-22; 2026-09-25): the hints the active hole shows. One
-  // the player CONSUMED — guessed after it was given — is in the log already and stands as
-  // a typed stop; visiting it again marks it given (the foil). One not yet taken is MASKED
-  // while the hole is live: a stop with a rank and no word. The solve — or the round being
-  // over — unmasks it, named with the canonical form, still given (it was on offer, not
-  // merely named afterwards).
+  // THE GIVEN WORDS (user-decided 2026-09-22): the hints the active hole has offered. One
+  // the player CONSUMED — guessed while it was offered — is in the log already and stands
+  // as a typed stop; visiting it again marks it given (the foil). The one on offer is
+  // MASKED while the hole is live: a stop with a rank and no word. The solve — or the round
+  // being over — unmasks it, named with the canonical form, still given (it was on offer,
+  // not merely named afterwards).
   for (const { rank, consumed } of given) {
     const found = field.get(rank);
     if (found) {

@@ -38,8 +38,8 @@ function rankTweenDuration(fromRank: number, toRank: number): number {
 }
 
 // THE CHARGE METER (#301): what the hole shows of its meter — the charge, and whether the
-// hole is ACTIVE (the meter full, the given words out — user-decided 2026-09-22, replacing
-// the revealed initial). Both are the round's DERIVED reading of the play log; the hole
+// hole is ACTIVE (the meter full, a word closer offered — user-decided 2026-09-22,
+// replacing the revealed initial). Both are the round's DERIVED reading of the play log; the hole
 // owns only the choreography that lands them.
 export interface HoleChargeView {
   value: number;

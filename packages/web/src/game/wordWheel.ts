@@ -11,7 +11,6 @@
 //
 // Pure and tested; rendering is components/HistoryWheel.
 
-import type { RankMap } from '@whippin/shared';
 import type { RuntimeHole } from './types';
 import type { HoleCharge } from './charge';
 import type { HistoryStop } from './history';
@@ -43,45 +42,28 @@ export function selectWord(
   };
 }
 
-// The board as the sentence shows it: a live pick stands in its hole's place — and a picked
-// MASK shows its WORD the moment the log holds it (the reveal, or the word typed by hand):
-// derived, so nothing about the pick has to be rewritten when the guess lands. A pick made
+// The board as the sentence shows it: a live pick stands in its hole's place. A pick made
 // against another rank, on a solved hole, or of the hole's own word is simply the hole; so
-// is a masked pick the meters no longer give — or any masked pick on a board that shows
-// no meters (`charges` undefined).
+// is a masked pick the meters no longer offer — or any masked pick on a board that shows
+// no meters (`charges` undefined). A picked MASK shows the mask until the reveal lands:
+// the revealed word is closer than the best it was picked against, so the hole improves
+// to it and shows it as its own.
 export function shownHolesFor(
   holes: readonly RuntimeHole[],
   picked: Record<number, WordPick>,
   charges: readonly HoleCharge[] | undefined,
-  ranks: RankMap,
 ): RuntimeHole[] {
   return holes.map((h, i) => {
     const p = picked[i];
     if (!p || h.rank === 0 || p.at !== h.rank || p.rank === h.rank) return h;
-    const hint = p.slug ? charges?.[i].given.find((g) => g.rank === p.rank) : undefined;
-    if (p.slug && !hint) return h;
-    const revealed = hint?.consumed;
-    const word = revealed ? (ranks[h.secret][p.slug as string]?.word ?? p.word) : p.word;
-    return { ...h, word, rank: p.rank };
+    if (p.slug && !charges?.[i].given.some((g) => g.rank === p.rank)) return h;
+    return { ...h, word: p.word, rank: p.rank };
   });
 }
 
-// A mask that leaves the active five is no longer a pick. Remove it from state so it
-// cannot reappear later if another guess makes that rank available again.
-export function retireDisplacedPicks(
-  picks: Record<number, WordPick>,
-  charges: readonly HoleCharge[],
-): Record<number, WordPick> {
-  let next = picks;
-  for (const [index, pick] of Object.entries(picks)) {
-    if (!pick.slug || charges[Number(index)]?.given.some((g) => g.rank === pick.rank)) continue;
-    if (next === picks) next = { ...picks };
-    delete next[Number(index)];
-  }
-  return next;
-}
-
-// Enter reveals the latest still-valid masked selection; consumed or displaced picks retire.
+// THE GHOST: the latest masked pick still standing — picked against the hole's current
+// best and still on offer in `charges` — is the one the REVEAL submits. A taken, improved
+// or replaced pick is no ghost.
 export function latestMaskedPick(
   picks: Record<number, WordPick>,
   holes: readonly RuntimeHole[],
@@ -98,4 +80,10 @@ export function latestMaskedPick(
   if (!latest) return null;
   const { index, slug } = latest;
   return { index, slug };
+}
+
+// BACK: every masked pick undone — each hole shows its own word again and no ghost stands,
+// so the keyboard returns. Picks of words the player holds stay.
+export function withoutMaskedPicks(picks: Record<number, WordPick>): Record<number, WordPick> {
+  return Object.fromEntries(Object.entries(picks).filter(([, p]) => !p.slug));
 }

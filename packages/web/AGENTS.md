@@ -136,7 +136,7 @@
                               and falling away
       game/charge.ts          #301's hole CHARGE METER: the rank -> charge function, the replay
                               of the play log onto every hole's meter, the ACTIVATION and the
-                              ranks it GIVES (2026-09-22)
+                              ONE masked word it offers closer than the hole's best
       components/ChargeLoot.tsx  the blood a charging guess knocks out of the hole, gathered
                               onto the meter
       components/MeterCanvas.tsx  the meter's drawing: the chip converting as an ordered
@@ -156,7 +156,10 @@
       hooks/useLetterWave.ts  #129's ambient ripple on the holes
       game/history.ts         a hole's guess log ranked against its secret (buildHistory)
       game/wordWheel.ts       the order those words scroll through the tapped hole in
-                              (wheelOrder): farther above, closer below, behind-the-start apart
+                              (wheelOrder): farther above, closer below, behind-the-start apart;
+                              the picks, the ghost a REVEAL submits, BACK's un-pick
+      components/RevealTray.tsx  a picked mask's tray, in the keyboard's place: the price,
+                              REVEAL, BACK
       components/HistoryWheel.tsx  an OPEN hole's tap: a picker drum (`useDrum`) through the
                               word's own place — the word the wheel folds on is the sentence's
       components/HistoryModal.tsx  a COMPLETED hole's tap: its words as a plain grid, full
@@ -242,28 +245,26 @@ These are decided and verified against the code. Treat them as load-bearing.
   logical secret (repeated occurrences share it), capped at `CHARGE_TARGET` = 100, and
   reaching it ACTIVATES THE HOLE (user-decided 2026-09-22, REPLACING the secret's first
   letter — "it goes against the game core logic which is to guess with meaning not
-  letters"): **EVERY WORD THE HOLE HOLDS OPENS THE NEXT ONE (user-decided 2026-09-25,
-  replacing the 5 words drawn ONCE from the best at the activation): once the meter is
-  full, each word the player has in the hole — the visible start, every rank reached,
-  every hint revealed — opens the nearest word FARTHER than it that the player does not
-  have ("if I found 4 and 6, let's give 5 and 7, and if I unlock 7 and find 2, let's give
-  8 and 3"), and the hole shows the `GIVEN` = 5 openings NEAREST THE SECRET as MASKED
-  HINTS in its tries ("max 5 available words at the same time"), recomputed after every
-  guess — a revealed hint opens the next, and a nearer word can push the farthest
-  UNTAKEN mask out; a hint TAKEN is given for good; never a word closer than one the
-  player has** (`replayCharge`, `game/charge.ts`). Why: a player stuck on a joke they had
-  not seen got nothing after the one draw; the user accepted the trade-off that the
-  first masks now sit one past each word held instead of five in a row past the best.
-  (History: 10 words from the best on 2026-09-22, "10 more words actually always give a
-  better idea of the concept"; 5, drawn once, nothing after, on 2026-09-23, "lower is
-  safer at first".) A full meter takes no more charge. **THE HINTS ARE MASKED, AND REVEALING ONE
+  letters"): **AN ACTIVE HOLE OFFERS ONE WORD CLOSER THAN ITS BEST (user-decided
+  2026-10-02: "instead of revealing 5 words before the closest one, we should be able to
+  reveal ONE word CLOSER than the closest word"): once the meter is full, the hole offers
+  exactly ONE MASKED HINT in its tries — the nearest rank in the secret's map strictly
+  BELOW the hole's best (the visible start, every rank reached, every hint revealed: the
+  lowest of them), walked through the ranks the map holds. Taking it makes it the new
+  best, so the next closer word is offered AT ONCE, one try each, down to the word just
+  before the secret: THE SECRET IS NEVER OFFERED (a best of 1 offers nothing — a hint
+  that solved would make every hole buyable, and "solved" would stop meaning "found"). A
+  closer word typed by hand moves the offer under it the same way; a farther guess leaves
+  it where it is; a hint TAKEN is given for good** (`replayCharge`, `game/charge.ts`).
+  Repeated occurrences of one secret share one meter and one offer. A reveal therefore
+  buys PROGRESS — the hole improves, and the score with it. A full meter takes no more
+  charge. **THE HINTS ARE MASKED, AND REVEALING ONE
   IS A GUESS (user-decided 2026-09-22: "making the hint words masked, and you can just
   select them with the wheel, it counts as a guess, but this way users who don't want help
   don't get penalized, and those who need help just increase their score in return… you
   manage your own pace")**: a masked hint is a foil block of FIXED width (the wheel's
   `MASK`, `?????` — never the word's length; "????? instead of nothing", same day) wearing
-  its EXPONENT, so the player
-  chooses which distance to spend a try on. **A mask turns through the wheel and is PICKED
+  its EXPONENT, so the player sees how close the word it hides is before spending a try. **A mask turns through the wheel and is PICKED
   like any row** — fold on it and the sentence shows `?????²` on the hole's foil, display
   only (user-decided 2026-09-22 on the first cut, where the fold could not pick a mask
   and the hole snapped back to its best word: "it feels weird to have the closest word
@@ -271,10 +272,22 @@ These are decided and verified against the code. Treat them as load-bearing.
   PRE-TYPED in the prompt — `.wi-ghost`, `?????` in the accent with the OPEN LOCK, a
   glyph on the pixel font's own 8-cell grid at 1em (`assets/icons/unlock.svg`; the
   20px header-grid mark "doesn't work near the thick and fat question mark glyphs",
-  user-reviewed 2026-09-23, and the lock itself was to stay) — ENTER is
-  lit (`Keyboard`'s `submittable`) and EVERY LETTER IS OUT (`locked`; "no letters should
-  be available on the keyboard at this point"), and an empty ENTER SUBMITS its key
-  (`HistoryStop.slug`) as the guess AT ONCE — the log, the server, the try — while the
+  user-reviewed 2026-09-23, and the lock itself was to stay) — and THE KEYBOARD LEAVES THE
+  TRAY (user-decided 2026-10-02: "instead of having the keyboard with the 'enter' key
+  only, we shouldn't have the keyboard at all, but a 'reveal' button with a caption
+  saying that it will cost one try"): while the ghost stands in the empty prompt, and
+  while it decodes, the tray holds `components/RevealTray` in the keyboard's own `--kb-h`
+  footprint, anchored to its bottom so nothing above moves — the price ("Costs one try." /
+  « Coûte un essai. », the UI face, muted, the button's `aria-describedby`), REVEAL (the
+  `.mix-btn`, disabled while it decodes) and BACK / RETOUR under it in the gate's quiet
+  secondary dress, which un-picks every masked pick (`withoutMaskedPicks`): the holes show
+  their own words again and the keyboard returns. The tray sits INSIDE `.kb-exit`, because
+  a reveal can solve the board through another hole and the solve's drop waits on that
+  wrapper's own `animationend`. A physical Enter is REVEAL's twin and Backspace BACK's;
+  letters and the history recall are refused with the prompt's shake while it stands, and
+  picking a mask clears a half-typed draft first, so the ghost always stands in an empty
+  prompt. REVEAL SUBMITS the ghost's key (`HistoryStop.slug`) as the guess AT ONCE — the
+  log, the server, the try — while the
   PROMPT UNCYPHERS IT (user-decided 2026-09-23, the settled cut): the marks churn into
   the word (`useScramble`, the hole's own settle, `SCRAMBLE_MS`), EACH LETTER TURNING
   `--fg` — a typed letter — THE MOMENT IT SETTLES while the rest churn in the accent
@@ -286,7 +299,7 @@ These are decided and verified against the code. Treat them as load-bearing.
   `startDelayMs` and the release's `fadeDelayMs`), so it plays on a word already read. The ghost is spent off the FULL log (`chargeState`) the
   instant the guess is in; the hole keeps its mask off the deferred view until the
   release. Never two steps — a decode a player could read and back out of would be a
-  hint for free, outside the log. (Reviewed away on the way: a 900ms hold BEFORE the send
+  hint for free, outside the log; BACK is out while it decodes. (Reviewed away on the way: a 900ms hold BEFORE the send
   — "we don't know if you should hit enter, or what".)** (user-decided 2026-09-22, after three reveal
   controls in the wheel — a button, a lock on the slot, a lock on every row — were each
   reviewed away: the side changed with the screen, a lock at a line's start went off a
@@ -294,13 +307,11 @@ These are decided and verified against the code. Treat them as load-bearing.
   button when the word has been selected, so you can only unlock it once back on the
   sentence and you can see the hits on the other words as well then"). The word enters
   the play log like any typed guess, counts as a try, charges the other holes, syncs, can
-  hit another hole — its floats land on the board — and the picked hole shows the WORD
-  the moment the log holds it (`shownHoles` derives it; the pick is never rewritten). The
-  first keystroke types over the ghost; the wheel holds no reveal control at all. A rank
-  the player had ALREADY reached is never given (they knew the word) — the next farther
-  one is given in its place. **THE HINTS TAKEN are
-  derived from the log** (`GivenRank.consumed`: a given rank guessed after it was given —
-  typed by hand counts the same, "it's on them") and **NO COUNT OF THEM IS DISPLAYED
+  hit another hole — its floats land on the board — and the picked hole, improved to the
+  revealed word on the release, shows it as its own (`shownHoles` derives it; the pick is
+  never rewritten). The wheel holds no reveal control at all. **THE HINTS TAKEN are
+  derived from the log** (`GivenRank.consumed`: the offered rank guessed while it was
+  offered — typed by hand counts the same, "it's on them") and **NO COUNT OF THEM IS DISPLAYED
   ANYWHERE** (user-decided 2026-09-23: "remove the hint count on the card and anywhere
   else… on the frontend side, just don't display it anywhere", retiring the `N HINTS` /
   `N INDICES` line under the tries, `hintsTaken` and `.solved-score-hints`; the server
@@ -311,10 +322,10 @@ These are decided and verified against the code. Treat them as load-bearing.
   play log, never persisted — THE SERVER STORES NOTHING FOR IT** (the user's "store the
   closest rank at activation" was declined as a second copy of a fact the log states):
   `replayCharge` over the same log the board replays, so a reload or another device
-  reconstructs the same meter, the same masked hints and the same count; `buildHistory`
+  reconstructs the same meter, the same masked hint and the same count; `buildHistory`
   takes the given ranks and names them (`HistoryStop.given` / `masked` / `taken`: masked
   = no word, its rank and key alone; taken = the player's typed stop wearing the foil; the
-  solve, or a round that ends capped (`over`), unmasks the untaken, still given — on the
+  solve, or a round that ends capped (`over`), unmasks the one left, still given — on the
   words grid a hint TAKEN wears the foil, one left on the table stands plain). Presentation (user-decided 2026-09-15, the third cut: "try
   something else than a progress bar"): THE
   CHIP CONVERTS TO THE SOLVE INK EDGE TO EDGE ACROSS THE WORD — `.hole-meter`, the chip's
@@ -368,7 +379,7 @@ These are decided and verified against the code. Treat them as load-bearing.
   MOVES**: the word the wheel holds wears the regular white chip, active hole or given
   word ("when wheel focused, a word should not have a moving background, just the regular
   white for a better UX") — except a MASKED hint in the slot, which keeps its foil: it is
-  the thing to pick, and the prompt's ghost then reveals.
+  the thing to pick, and the tray's REVEAL then reveals it.
   RETIRED with it: `.hole-initial` (the first-cell tile), `initialOf`, `srHoleInitial`, the
   `.spent` fade. Retired the same day, each on the
   user's review: a line along the chip's bottom edge and the band the chip grew for it (a
@@ -404,11 +415,14 @@ These are decided and verified against the code. Treat them as load-bearing.
   choreography (charging is additive). The sheets are `components/strikeArt.ts` +
   `Strike.tsx` (`.strike`, its own integer scales under `.phrase`; see THE HIT ART) —
   never the heat. A11y: the meter and the
-  given words are the hole button's DESCRIPTION (`srHoleCharge` / `srHoleGiven`, sr-only
-  spans outside the sentence like the exploration hints, never words in the prose); words
-  given by a guess are also announced with it. Reduced motion keeps the state and snaps:
+  offered word are the hole button's DESCRIPTION (`srHoleCharge` / `srHoleGiven` — "a
+  masked word closer than its best in its tries, one try to reveal"; a full meter with
+  nothing left to offer is described as its meter — sr-only spans outside the sentence
+  like the exploration hints, never words in the prose); a word a guess has the hole
+  offer is also announced with it. Reduced motion keeps the state and snaps:
   no sparks, no fill travel, the sea holds one frame. Not done, deliberately: a second
-  payout (the letter as a second fill was proposed and not taken), a manual hint button,
+  payout (the letter as a second fill was proposed and not taken), a manual hint button
+  (a hint asked for with no mask picked — REVEAL only reveals the mask the player picked),
   a hint currency, adaptive thresholds.
 - **THE PALETTE IS THREE INDEPENDENT AXES (user-decided 2026-08-17): weird/calm +
   hole/solve + accent — in STAMP-INK tones** (retuned the same day against the user's
@@ -3018,28 +3032,32 @@ it to the local store — see `packages/backend/AGENTS.md`).
     SHOWN for the first time. **THE SECRET IS THE CLOSE SYNONYM OF THE OBVIOUS WORD** (user-
     decided 2026-09-16 after solving it in one try: "if you type the word 0 it should become
     the word -1"): the sentence begs for FREEDOM / CHEMIN, and that word is the secret's
-    rank-1 neighbour (`pair.alt`) — typing it earns a 1 and fills the chip, never the solve;
-    both words read in the sentence ("both words relevant, e.g. mer/océan"). **AND THE TWO
-    SWAP ROLES if the secret is typed first, before the hole is active** (user-decided
-    2026-09-16 after typing « sentier » in one try): the secret reads 1 and `alt` becomes the
-    secret the bot lands. ONE map serves both readings — swapped, every rank-0 entry reads 1
-    and every rank-1 entry reads 0 (`ranks` view in `LessonBoard`), and the board, the
-    meters, the wheel and every later guess replay against it. Once the hole is active there
-    is no swap: the goal is only that the activation is seen before the solve. `played` is the
+    rank-1 neighbour (`pair.alt`) — typing it fills the chip, never the solve; both words
+    read in the sentence ("both words relevant, e.g. mer/océan"). **THE LESSON READS THE
+    MAP THROUGH ONE VIEW** (`meterView`, `tutorial/script.ts`; user-decided 2026-10-02 with
+    the one-closer offer): `alt` reads 2 and the map's rank-2 word (UNALIENABLE / VALLON)
+    reads 1, so once FREEDOM² fills the meter one word is left closer than it for the reveal
+    to hand over. **AND THE TWO SWAP ROLES if the secret is typed first, before the hole is
+    active** (user-decided 2026-09-16 after typing « sentier » in one try): on top of that
+    view the secret reads 2 and `alt` becomes the secret the player then finds. ONE map
+    serves every reading (`ranks` in `LessonBoard`), and the board, the meters, the wheel
+    and every later guess replay against it. Once the hole is active there is no swap: the
+    goal is only that the activation is seen before the solve. `played` is the
     bot's log — FEW tries, five, the best one an EASY SYNONYM of the obvious word (en: cat,
-    independence, equality, happiness, justice, dignity — on the fastText map (#317) the
-    synonyms sit past rank 40 and five of them cannot reach the ~72 FREEDOM needs to fill the
-    meter alone, so en's best try is the easy word EQUALITY, an exception for the user to
+    independence, equality, autonomy, justice, dignity — on the fastText map (#317) the
+    synonyms sit past rank 40 and five of them cannot reach the ~75 FREEDOM² needs to fill
+    the meter alone, so en's best try is the easy word EQUALITY, an exception for the user to
     re-judge; fr: chat, parcours, randonneur, détour,
-    hameau, tunnel — masculine so « le » holds; « belvédère » "was way too hard: the goal is
+    hameau, ravin — masculine so « le » holds; « belvédère » "was way too hard: the goal is
     easy guesses that teach the other mechanics", user-decided 2026-09-16) — replayed onto the board, the meters and the tries wheel exactly as a
     round's log would be, chosen so the open word's meter stands at ABOUT THREE QUARTERS
-    (~73 en / ~74 fr, the day's own `replayCharge` — no lesson boost; "almost full, we don't
+    (~75 en / ~76 fr, the day's own `replayCharge` — no lesson boost; "almost full, we don't
     see it getting filled") with a best try that is no giveaway AND LONG ENOUGH for the fill
     to read on its chip (`equality^11` / `parcours^8` — `col` "was too short to understand
     the notion of progression", 2026-09-16;
-    the test wants rank ≥ 5 and ≥ 6 letters, 65–80, ≤ 6 tries, `alt` at rank 1, untried, and
-    filling it alone). THE WATERMARK COUNTS THE WHOLE LOG, the bot's tries included.
+    the test wants rank ≥ 5 and ≥ 6 letters, 65–80, ≤ 6 tries, `alt` at rank 1 in the map
+    and 2 in the view, untried, filling it alone, and the full meter offering the word
+    read 1). THE WATERMARK COUNTS THE WHOLE LOG, the bot's tries included.
     THE KEYBOARD IS HELD BACK UNTIL THE TAP (user-decided 2026-09-16): the stage opens with
     the prompt retired and the tray empty, so the bot's tries are the first thing to look
     at; the keys arrive with the line that hands the turn over — which types only once the
@@ -3050,11 +3068,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     click twin) → tapped: "The 1000 closest words to the secret fill its meter. Once full,
     you unlock clues." (fr « on débloque des indices », never « on gagne un indice ») → a
     guess that does not fill: `tutNear` → the obvious guess FILLS IT — no progress needed —
-    and the hole ACTIVATES: "The meter is full! Click freedom¹ and reveal a word."
+    and the hole ACTIVATES: "The meter is full! Click freedom² and reveal a word."
     (`tutActivatedTap`/`Click`, 2026-09-22; the tap teaches the wheel a second time)
     (user-decided 2026-09-30, cutting the long lines: « J'ai déjà avancé sur cette phrase.
     Clique sur parcours pour voir mes essais. », « Jauge pleine ! Touche {word}, et révèle
-    un mot. ») → a hint REVEALED by an empty ENTER on the ghost: "unalienable² is revealed, for one try. Now find the secret word."
+    un mot. ») → the one word closer, picked in the wheel and REVEALED from the tray (the
+    game's REVEAL, Enter its twin): "unalienable¹ is revealed, for one try. Now find the
+    secret word."
     (`tutRevealed`, off the event's `revealed` flag) → a FAILED TRY typed after it earns the HINT
     (`hints[]`, or `pair.hint` once swapped), NEVER THE WORD (user-decided 2026-09-16,
     retiring the bot's own closing guess) → found: "You found it! You are ready for the real
@@ -3618,7 +3638,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     keyboard**: on mount, and again whenever `active` flips back true (a modal closing hands
     focus to the control that opened it — the hole, never the prompt). Each screen also
     refocuses it from its own `submit`, which moves anything only when the on-screen ENTER
-    was reached by Tab.
+    (or the reveal tray's REVEAL) was reached by Tab; BACK refocuses it as it brings the
+    keyboard back. The reveal tray's buttons, like the keys, take no focus from a press.
   - **It TAKES THE FOCUS BACK when a click lands on nothing** (`relatedTarget: null`, a turn
     later, and only if `document.activeElement` is `<body>`): the on-screen keys deliberately
     take no focus, so one stray click on the sentence's margin would otherwise leave physical

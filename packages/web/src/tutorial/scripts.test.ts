@@ -13,8 +13,10 @@
 //   - THE METER is a second sentence, harder (clues 80–150), two new words, that the BOT has
 //     half played (`played`): the first word found, the second's meter around three quarters
 //     (the fill must be SEEN) and its best try no giveaway; the OBVIOUS guess (`pair.alt`) is
-//     the secret's rank-1 word, not the secret, and fills the meter by itself — and the two
-//     swap roles if the secret is typed first, so the activation is never skipped (user-decided
+//     the secret's rank-1 word, not the secret — the lesson reads it 2 and the rank-2 word 1
+//     (`meterView`) — and fills the meter by itself, which then offers that rank-1 word to
+//     REVEAL (the game offers one word closer than the best, never the secret); the secret
+//     typed first swaps roles with it, so the activation is never skipped (user-decided
 //     2026-09-16);
 //   - every board stays byte-compatible with the real per-puzzle schema (parsePuzzle-valid —
 //     they feed the REAL game components), rank 0 is the secret, every key folds to itself
@@ -26,7 +28,7 @@ import { parsePuzzle } from '../api';
 import { replayHoles } from '../game/scoring';
 import { CHARGE_TARGET, chargeForRank, replayCharge } from '../game/charge';
 import { scriptFor } from './scripts';
-import { swappedView, type LessonStage } from './script';
+import { meterView, type LessonStage } from './script';
 import { t } from '../i18n';
 
 function checkBoard(stage: LessonStage) {
@@ -140,55 +142,80 @@ for (const lang of ['en', 'fr'] as const) {
           expect(hole.start_rank).toBeLessThanOrEqual(150);
         }
       });
-      it('the bot’s tries find the first word and leave the second’s meter three quarters full, its best try no giveaway; the obvious guess is the rank-1 word and fills it', () => {
+      it('the bot’s tries find the first word and leave the second’s meter three quarters full, its best try no giveaway; the obvious guess reads 2, fills it, and the reveal offers the word read 1', () => {
         const { puzzle } = meter;
         const played = meter.played ?? [];
         expect(played.length).toBeGreaterThan(0);
         expect(played.length).toBeLessThanOrEqual(6); // few tries (user-decided 2026-09-16)
         for (const typed of played) expect(fold(typed)).toBe(typed);
+        const secret = puzzle.holes[1].secret.slug;
+        // The lesson plays the open secret's map through its view.
+        const ranks = { ...puzzle.ranks, [secret]: meterView(puzzle.ranks[secret], false) };
         const fresh = freshHoles(meter);
-        const holes = replayHoles(fresh, puzzle.ranks, played);
+        const holes = replayHoles(fresh, ranks, played);
         expect(holes[0].rank).toBe(0);
         expect(holes[1].rank).toBeGreaterThanOrEqual(5);
         expect(holes[1].word.length).toBeGreaterThanOrEqual(6); // long enough for the fill to read
-        const [, meterB] = replayCharge(fresh, puzzle.ranks, played);
+        const [, meterB] = replayCharge(fresh, ranks, played);
         expect(meterB.active).toBe(false);
         expect(meterB.charge).toBeGreaterThanOrEqual(65);
         expect(meterB.charge).toBeLessThanOrEqual(80);
-        // The obvious guess: the secret's closest word, untried by the bot, and enough on its
-        // own to fill the meter — so it earns the activation, never the solve.
+        // The obvious guess: the secret's closest word in the map, read 2 by the lesson,
+        // untried by the bot, and enough on its own to fill the meter — so it earns the
+        // activation, never the solve.
         const alt = meter.pair!.alt;
         expect(fold(alt.slug)).toBe(alt.slug);
-        const entry = puzzle.ranks[puzzle.holes[1].secret.slug][alt.slug];
-        expect(entry.rank).toBe(1);
-        expect(entry.word).toBe(alt.word);
+        expect(puzzle.ranks[secret][alt.slug]).toMatchObject({ rank: 1, word: alt.word });
+        expect(ranks[secret][alt.slug].rank).toBe(2);
         expect(played).not.toContain(alt.slug);
         expect(t(puzzle.lang, meter.pair!.hint).length).toBeGreaterThan(0);
-        expect(meterB.charge + chargeForRank(entry.rank)).toBeGreaterThanOrEqual(CHARGE_TARGET);
+        expect(meterB.charge + chargeForRank(2)).toBeGreaterThanOrEqual(CHARGE_TARGET);
+        // Full, the hole offers ONE masked word: the map's rank-2 word, read 1.
+        const filled = [...played, alt.slug];
+        expect(replayHoles(fresh, ranks, filled)[1].rank).toBe(2);
+        const [, full] = replayCharge(fresh, ranks, filled);
+        expect(full.active).toBe(true);
+        expect(full.given).toEqual([{ rank: 1, consumed: false }]);
+        const rank2 = Object.keys(puzzle.ranks[secret]).find((k) => puzzle.ranks[secret][k].rank === 2)!;
+        expect(played).not.toContain(rank2);
+        expect(ranks[secret][rank2].rank).toBe(1);
+        // Revealed, it is a hint taken, and nothing is left to offer but the secret.
+        expect(replayCharge(fresh, ranks, [...filled, rank2])[1].given).toEqual([{ rank: 1, consumed: true }]);
       });
-      it('the secret typed first SWAPS the pair: it reads 1 and fills the meter, and the obvious word then solves', () => {
+      it('the lesson view trades ranks 1 and 2; swapped, the secret reads 2 and fills the meter, the word read 1 is offered, and the obvious word then solves', () => {
         const { puzzle } = meter;
         const played = meter.played ?? [];
         const secret = puzzle.holes[1].secret.slug;
         const map = puzzle.ranks[secret];
-        const view = swappedView(map);
-        // Every rank-0 entry reads 1 at the rank-1 group's distance, every rank-1 entry
-        // reads 0, and nothing farther moves.
-        const dq1 = Object.values(map).find((e) => e.rank === 1)?.dq;
-        expect(dq1).toBeDefined();
+        const dqAt = (rank: number) => Object.values(map).find((e) => e.rank === rank)?.dq;
+        expect(dqAt(1)).toBeDefined();
+        expect(dqAt(2)).toBeDefined();
+        // Every rank-1 entry reads 2 at the rank-2 group's distance and every rank-2 entry
+        // reads 1 at the rank-1 group's; nothing else moves.
+        const view = meterView(map, false);
         for (const [key, entry] of Object.entries(map)) {
-          if (entry.rank === 0) expect(view[key]).toEqual({ word: entry.word, rank: 1, dq: dq1 });
-          else if (entry.rank === 1) expect(view[key]).toEqual({ word: entry.word, rank: 0 });
+          if (entry.rank === 1) expect(view[key]).toEqual({ word: entry.word, rank: 2, dq: dqAt(2) });
+          else if (entry.rank === 2) expect(view[key]).toEqual({ word: entry.word, rank: 1, dq: dqAt(1) });
           else expect(view[key]).toBe(entry);
         }
-        // Played through that view, the secret is the closest word: the activation is seen,
-        // never the solve — and the obvious word is the one that lands.
-        const ranks = { ...puzzle.ranks, [secret]: view };
+        // Swapped on top: the secret reads 2, the obvious word reads 0, the rank-2 word 1.
+        const swapped = meterView(map, true);
+        for (const [key, entry] of Object.entries(map)) {
+          if (entry.rank === 0) expect(swapped[key]).toEqual({ word: entry.word, rank: 2, dq: dqAt(2) });
+          else if (entry.rank === 1) expect(swapped[key]).toEqual({ word: entry.word, rank: 0 });
+          else if (entry.rank === 2) expect(swapped[key]).toEqual({ word: entry.word, rank: 1, dq: dqAt(1) });
+          else expect(swapped[key]).toBe(entry);
+        }
+        // Played through that view, the secret is the obvious word's place: the activation
+        // is seen, the word read 1 offered, never the solve — and the obvious word lands.
+        const ranks = { ...puzzle.ranks, [secret]: swapped };
         const fresh = freshHoles(meter);
-        const swapped = [...played, secret];
-        expect(replayHoles(fresh, ranks, swapped)[1].rank).toBe(1);
-        expect(replayCharge(fresh, ranks, swapped)[1].active).toBe(true);
-        expect(replayHoles(fresh, ranks, [...swapped, meter.pair!.alt.slug])[1].rank).toBe(0);
+        const typed = [...played, secret];
+        expect(replayHoles(fresh, ranks, typed)[1].rank).toBe(2);
+        const [, full] = replayCharge(fresh, ranks, typed);
+        expect(full.active).toBe(true);
+        expect(full.given).toEqual([{ rank: 1, consumed: false }]);
+        expect(replayHoles(fresh, ranks, [...typed, meter.pair!.alt.slug])[1].rank).toBe(0);
       });
     });
   });

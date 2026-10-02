@@ -63,8 +63,10 @@ import MeterCanvas from './MeterCanvas';
 // `MASK` (`?????`) on the foil — never the word's length — with its exponent, so the
 // player can choose which distance to spend a try on; it turns through the slot and IS
 // PICKED like any row, and the sentence then shows `?????²` on the hole's foil. The
-// reveal happens THERE, from the prompt: the picked mask stands pre-typed in it and
-// ENTER submits it as a guess (`Game`'s ghost). The wheel has no reveal control at all.
+// reveal happens THERE: the picked mask stands pre-typed in the prompt and REVEAL takes
+// the keyboard's place to submit it as a guess (`Game`'s ghost, `RevealTray`). The wheel
+// has no reveal control at all. The one mask an active hole offers is the word just
+// closer than its best, so it turns up just under the slot.
 // The slot row's own tap, a tap outside and Escape close, as ever. It stays a native <dialog>
 // because the sentence and the keyboard under it must be inert; it is the PuzzleSelect's
 // kind (a thing hanging off a control that stays on screen), so a tap outside closes it.
@@ -250,7 +252,7 @@ export default function HistoryWheel({
     const stop = r[drum.peek()];
     // A pick where the slot differs from what the hole shows — by rank, or by WORD at the
     // same rank: a mask picked earlier and revealed since is the same stop with its word.
-    // Confirming a held mask also makes it the latest selection for the prompt's Enter.
+    // Confirming a held mask also makes it the latest selection, the one REVEAL submits.
     if (pick && stop && (stop.masked || stop.rank !== hubRank || stop.display !== hubWord)) pick(stop);
     onClose();
   }, [drum, onClose]);

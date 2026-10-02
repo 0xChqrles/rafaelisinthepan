@@ -10,7 +10,7 @@ import { guessKey, replayHoles } from '../game/scoring';
 import { playLogFor, roundCapped, withoutDeferred } from '../game/playLog';
 import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
-import { latestMaskedPick, retireDisplacedPicks, selectWord, shownHolesFor, type WordPick } from '../game/wordWheel';
+import { latestMaskedPick, selectWord, shownHolesFor, withoutMaskedPicks, type WordPick } from '../game/wordWheel';
 import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import useRoundSync from '../hooks/useRoundSync';
@@ -21,6 +21,7 @@ import Phrase from '../components/Phrase';
 import CellDigits from '../components/CellDigits';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
+import RevealTray from '../components/RevealTray';
 import DissolvePhrase from '../components/DissolvePhrase';
 import SolvedScreen, { type SolvedHole } from '../components/SolvedScreen';
 import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakDialog';
@@ -29,7 +30,7 @@ import HistoryModal from '../components/HistoryModal';
 import Button from '../components/Button';
 import { PLAY_LEVEL } from '../tutorial/levels';
 import LoadError from '../components/LoadError';
-import { replayCharge, strikeFor } from '../game/charge';
+import { replayCharge, strikeFor, type HoleCharge } from '../game/charge';
 import { navigate } from '../routing';
 import { pathForLesson } from '../langs';
 import { MASK, buildHistory } from '../game/history';
@@ -267,9 +268,6 @@ function Round({
     () => replayCharge(freshHoles, ranks, withoutDeferred(ranks, playLog, deferred)),
     [freshHoles, ranks, playLog, deferred],
   );
-  useLayoutEffect(() => {
-    setPicked((current) => retireDisplacedPicks(current, shownCharge));
-  }, [shownCharge]);
   // Score = number of unique tries. A try is a submitted word that exists in the
   // vocabulary, including misses; repeats and inflections of an already-played word are
   // one try (#104), which is exactly what the projection collapsed.
@@ -642,37 +640,49 @@ function Round({
   // hole IMPROVES: `at` records the real rank the pick was made against, and the moment that
   // rank moves the new best takes the hole back. A pick at the hole's own rank is simply the
   // hole. Never persisted: a reading aid, not a fact about the round.
-  // A live pick is shown in the hole's place — and a picked MASK shows its WORD the moment
-  // the log holds it (the reveal, or the word typed by hand): derived, so nothing about
-  // the pick has to be rewritten when the guess lands.
+  // A picked MASK shows `?????` until its reveal lands: the word is closer than the best it
+  // was picked against, so the hole then improves to it and shows it as its own.
   const shownHoles = useMemo(
-    () => shownHolesFor(holes, picked, shownCharge, ranks),
-    [holes, picked, shownCharge, ranks],
+    () => shownHolesFor(holes, picked, shownCharge),
+    [holes, picked, shownCharge],
   );
   const pickWord = useCallback(
     (index: number, stop: HistoryStop) => {
       const at = holes[index]?.rank;
       if (at === undefined || at === 0) return;
+      // A mask picked puts REVEAL in the keyboard's place: a half-typed draft goes first,
+      // so the prompt is the mask's alone.
+      if (stop.masked) setInput('');
       setPicked((cur) => selectWord(cur, index, stop, at));
     },
     [holes],
   );
-  // THE GHOST: the masked hint picked into the sentence and not yet revealed — the one an
-  // empty ENTER submits. The latest such pick, should two holes hold one. Read off the
-  // FULL log (`chargeState`): the ghost is spent the instant the guess is in, while the
-  // hole (`shownHoles`, the deferred view) keeps its mask until the release.
+  // THE GHOST: the masked hint picked into the sentence and not yet revealed — the one
+  // REVEAL (or an empty Enter) submits. The latest such pick, should two holes hold one.
+  // Read off the FULL log (`chargeState`): the ghost is spent the instant the guess is in,
+  // while the hole (`shownHoles`, the deferred view) keeps its mask until the release.
   const ghost = useMemo(
     () => latestMaskedPick(picked, holes, chargeState),
     [holes, picked, chargeState],
   );
-  // THE DECODE (user-decided 2026-09-23, the second cut of it): ENTER on the ghost SENDS
-  // THE GUESS AT ONCE — the log, the server, the count — and the prompt UNCYPHERS the
-  // word meanwhile: the marks churn into it (`useScramble`, the hole's own settle) as a
-  // TYPED word, in `--fg`, it stands `REVEAL_HOLD_MS`, then the prompt clears the way it
-  // does on any guess; the guess's whole choreography — the hits, the hole's swap, the
-  // count ticking — is delayed by exactly that, so it plays on a word already read.
+  // THE DECODE (user-decided 2026-09-23, the second cut of it): REVEAL SENDS THE GUESS AT
+  // ONCE — the log, the server, the count — and the prompt UNCYPHERS the word meanwhile:
+  // the marks churn into it (`useScramble`, the hole's own settle) as a TYPED word, in
+  // `--fg`, it stands `REVEAL_HOLD_MS`, then the prompt clears the way it does on any
+  // guess; the guess's whole choreography — the hits, the hole's swap, the count ticking —
+  // is delayed by exactly that, so it plays on a word already read.
   const [decoding, setDecoding] = useState<string | null>(null); // the key being uncyphered
   const decode = useScramble();
+  // THE REVEAL TRAY (user-decided 2026-10-02) holds the keyboard's place while a ghost
+  // stands or decodes — the prompt holds a word already, so no key has anything to add.
+  // (A mask picked clears the draft, and letters and recall are refused while it stands,
+  // so a ghost always stands in an empty prompt.)
+  const revealUp = decoding !== null || ghost !== null;
+  // BACK: the mask un-picked, the hole's own word back, the keyboard back under the caret.
+  const unpickMask = useCallback(() => {
+    setPicked(withoutMaskedPicks);
+    guessField.current?.focus({ preventScroll: true });
+  }, []);
   // Tapping a hole is available during normal play only: once the solving beats begin, the
   // sentence belongs to the choreography (and then dissolves), and the tap moves to the
   // result's own secrets in the sentence's page — which are never disabled, because they
@@ -698,11 +708,13 @@ function Round({
   const charges = useMemo(
     () =>
       shownCharge.map((c, i) => {
+        // A full meter with nothing left to offer (its best is the word just before the
+        // secret) is described as the meter it is.
         const hint =
           holes[i].rank === 0
             ? ''
-            : c.active
-              ? srHoleGiven(lang, c.given.filter((g) => !g.consumed).length)
+            : c.given.some((g) => !g.consumed)
+              ? srHoleGiven(lang)
               : srHoleCharge(lang, c.charge);
         return { value: c.charge, active: c.active, hint };
       }),
@@ -791,32 +803,40 @@ function Round({
       if (promptExiting) return;
       setFeedback(null);
       // A ghost stands, or decodes: the letters are out (the prompt holds a word already).
-      if (decoding !== null || (ghost !== null && input === '')) {
+      if (revealUp) {
         setInvalidAt(Date.now());
         return;
       }
       if (canExtend(prefixSet, input, char)) setInput(input + char);
       else setInvalidAt(Date.now());
     },
-    [prefixSet, input, promptExiting, ghost, decoding],
+    [prefixSet, input, promptExiting, revealUp],
   );
 
+  // Backspace on a standing ghost is BACK (the tray's twin); nothing while it decodes.
   const deleteChar = useCallback(() => {
-    if (promptExiting) return;
+    if (promptExiting || decoding !== null) return;
     setFeedback(null);
-    setInput((cur) => cur.slice(0, -1));
-  }, [promptExiting]);
+    if (ghost !== null) unpickMask();
+    else setInput((cur) => cur.slice(0, -1));
+  }, [promptExiting, decoding, ghost, unpickMask]);
 
   // Replace the whole input (physical-keyboard history recall). Recalled values are
   // past valid words, hence valid prefixes, so no re-validation is needed.
   // The value a recall just put in the prompt, so the keyboard strikes no key for it.
   const recalledInput = useRef<string | null>(null);
+  // Refused like a letter while a ghost stands: a recall would put the keyboard back under
+  // a mask still picked.
   const replaceInput = useCallback((v: string) => {
     if (promptExiting) return;
     setFeedback(null);
+    if (revealUp) {
+      setInvalidAt(Date.now());
+      return;
+    }
     recalledInput.current = v;
     setInput(v);
-  }, [promptExiting]);
+  }, [promptExiting, revealUp]);
 
   const submit = useCallback(
     (raw: string) => {
@@ -826,10 +846,10 @@ function Round({
       // The next guess is typed where the last one was: a no-op when the field already has
       // the focus, which is every submit but the on-screen ENTER's own keyboard activation.
       guessField.current?.focus({ preventScroll: true });
-      // An EMPTY submit with a masked hint picked is THE REVEAL (user-decided 2026-09-22):
-      // the ghost's key goes in as the guess, at once, and the prompt uncyphers it while
-      // the guess's choreography waits `reveal` ms (the decode above). Everything below is
-      // the guess's usual way, shifted by that.
+      // An EMPTY submit with a masked hint picked is THE REVEAL (user-decided 2026-09-22;
+      // the tray's REVEAL, or Enter): the ghost's key goes in as the guess, at once, and the
+      // prompt uncyphers it while the guess's choreography waits `reveal` ms (the decode
+      // above). Everything below is the guess's usual way, shifted by that.
       if (decoding !== null) return;
       const revealing = !fold(raw) && ghost !== null;
       const typed = fold(raw) || ghost?.slug || '';
@@ -910,13 +930,12 @@ function Round({
       const parts = impacted.map(({ index, entry }) =>
         srHoleResult(lang, index + 1, entry ? entry.rank : null),
       );
-      // Words this guess gives — the masks it opens on an active hole — are said in the
-      // same breath: they are news. Counted as masks that were not there before, since a
-      // nearer opening can take the place of the farthest one.
+      // The word this guess has a hole offer — the activation's first, or the next one
+      // closer once it moves the best — is said in the same breath: it is news.
+      const offer = (c: HoleCharge) => c.given.find((g) => !g.consumed)?.rank;
       for (const { index } of impacted) {
-        const before = new Set(chargeState[index].given.map((g) => g.rank));
-        const gave = charged[index].given.filter((g) => !g.consumed && !before.has(g.rank)).length;
-        if (gave > 0) parts.push(srHoleGiven(lang, gave, index + 1));
+        const next = offer(charged[index]);
+        if (next !== undefined && next !== offer(chargeState[index])) parts.push(srHoleGiven(lang, index + 1));
       }
       say(solvesAll ? [...parts, t(lang, 'srSolvedAll')].join(', ') : parts.join(', '));
 
@@ -1126,10 +1145,11 @@ function Round({
             </div>
           </div>
 
-          {/* Bottom zone (fixed keyboard-height footprint): the on-screen keyboard, or the
-              gate. The keyboard lingers (inert; submit is guarded) through the last hole's
-              animation, then slides down out of the tray (#110); the tray then sits empty
-              under the dissolving sentence until the result takes the whole column. */}
+          {/* Bottom zone (fixed keyboard-height footprint): the on-screen keyboard (or, a mask
+              picked, the REVEAL tray in its place), or the gate. The keyboard lingers (inert;
+              submit is guarded) through the last hole's animation, then slides down out of
+              the tray (#110); the tray then sits empty under the dissolving sentence until the
+              result takes the whole column. */}
           <div
             className={`tray${keyboardLeaving ? ' kb-leaving' : ''}${
               gateOpen ? ' tray-gate' : ''
@@ -1165,18 +1185,28 @@ function Round({
                   if (keyboardLeaving && e.target === e.currentTarget) setKeyboardLeaving(false);
                 }}
               >
-                <Keyboard
-                  input={input}
-                  prefixSet={prefixSet}
-                  vocabSet={vocabSet}
-                  submittable={ghost !== null && decoding === null}
-                  locked={decoding !== null || (ghost !== null && input === '')}
-                  recalled={recalledInput}
-                  lang={lang}
-                  onType={appendChar}
-                  onBackspace={deleteChar}
-                  onSubmit={submit}
-                />
+                {/* A picked mask takes the keyboard's place with REVEAL — inside this wrapper
+                    all the same: a reveal can solve the board through another hole, and the
+                    solve's drop waits on this element's own animation. */}
+                {revealUp ? (
+                  <RevealTray
+                    lang={lang}
+                    decoding={decoding !== null}
+                    onReveal={() => submit('')}
+                    onBack={unpickMask}
+                  />
+                ) : (
+                  <Keyboard
+                    input={input}
+                    prefixSet={prefixSet}
+                    vocabSet={vocabSet}
+                    recalled={recalledInput}
+                    lang={lang}
+                    onType={appendChar}
+                    onBackspace={deleteChar}
+                    onSubmit={submit}
+                  />
+                )}
               </div>
             )}
           </div>
