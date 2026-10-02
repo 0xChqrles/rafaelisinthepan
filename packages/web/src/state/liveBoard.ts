@@ -13,7 +13,9 @@
 // TRANSIENT and ACCOUNT-owned (`identityScope` resets it), fenced by the identity epoch like
 // every private read. No token, no request (#216). A failure is SILENT and keeps the last
 // answer: the numbers are ambient, and a line that blinks out on a network blip says nothing
-// true.
+// true. It also says whether a read is still to come (`busy`): a consumer waiting for a newer
+// answer than the one in hand (the solved screen's boards, for one that has seen the round's
+// end) stops waiting when nothing more is on its way.
 
 import { create } from 'zustand';
 import type { LiveBoard } from '@whippin/shared';
@@ -27,19 +29,21 @@ interface LiveBoardState {
   // WHICH day the answer is about (`<lang>:<date>`): a day has its own board.
   key: string | null;
   board: LiveBoard | null;
-  // The day whose last read FAILED with no answer about it in hand: a consumer holding room for
-  // the first answer stops holding it (the solved screen's boards draw without the groups).
-  missed: string | null;
+  // The day (`<lang>:<date>`) a read is asked for or out about — an answer about it is still
+  // to come — or null when nothing is.
+  busy: string | null;
 }
 
-export const useLiveBoardStore = create<LiveBoardState>(() => ({ key: null, board: null, missed: null }));
+export const useLiveBoardStore = create<LiveBoardState>(() => ({ key: null, board: null, busy: null }));
 
 const keyOf = (lang: string, date: string) => `${lang}:${date}`;
 
 // The day a request is waiting to be served for (the latest asked), the read out on the
-// wire, the trailing call's timer, and when the last read STARTED — the window runs from there.
+// wire and the day it is about, the trailing call's timer, and when the last read STARTED —
+// the window runs from there.
 let wanted: { lang: string; date: string } | null = null;
 let flight: Promise<void> | null = null;
+let flying: { lang: string; date: string } | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let lastStartedAt = Number.NEGATIVE_INFINITY;
 let generation = 0;
@@ -50,6 +54,15 @@ export function requestLiveBoard(lang: string, date: string): void {
   if (deviceIdentity() === null) return;
   wanted = { lang, date };
   schedule();
+  publishBusy();
+}
+
+// The day still owed an answer: the one waiting (its timer, or the flight ahead of it), else
+// the one out on the wire.
+function publishBusy(): void {
+  const target = wanted ?? flying;
+  const busy = target === null ? null : keyOf(target.lang, target.date);
+  if (useLiveBoardStore.getState().busy !== busy) useLiveBoardStore.setState({ busy });
 }
 
 function schedule(): void {
@@ -59,6 +72,7 @@ function schedule(): void {
     timer = setTimeout(() => {
       timer = null;
       schedule();
+      publishBusy();
     }, wait);
     return;
   }
@@ -69,6 +83,7 @@ function run(target: { lang: string; date: string }): void {
   wanted = null;
   const identity = deviceIdentity();
   if (identity === null) return;
+  flying = target;
   const epoch = identityEpochOf(identity);
   const requestGeneration = generation;
   const current = () => generation === requestGeneration && currentRequestIdentity(epoch) !== null;
@@ -84,22 +99,22 @@ function run(target: { lang: string; date: string }): void {
       if (!current()) return;
       if (!response.ok) {
         await adoptSignedOutVerdict(response, resolved.epoch);
-        throw new Error(`live board answered ${response.status}`);
+        return;
       }
       const board = parseLiveBoard(await response.json());
       // Fenced: an answer that outlived its identity is about an account this device no
       // longer acts as.
       if (!current()) return;
-      useLiveBoardStore.setState({ key: keyOf(target.lang, target.date), board, missed: null });
+      useLiveBoardStore.setState({ key: keyOf(target.lang, target.date), board });
     } catch {
-      // Silent: the last answer stands — and with none, the day is marked missed.
-      const key = keyOf(target.lang, target.date);
-      if (current() && useLiveBoardStore.getState().key !== key) useLiveBoardStore.setState({ missed: key });
+      // Silent: the last answer stands.
     } finally {
       if (generation === requestGeneration) {
         flight = null;
+        flying = null;
         // A request that came in while this one was out is the trailing call.
         schedule();
+        publishBusy();
       }
     }
   })();
@@ -110,9 +125,9 @@ export function useLiveBoard(lang: string, date: string): LiveBoard | null {
   return useLiveBoardStore((state) => (state.key === keyOf(lang, date) ? state.board : null));
 }
 
-// Whether the read about (lang, date) failed with no answer in hand — nothing is on its way.
-export function useLiveBoardMissed(lang: string, date: string): boolean {
-  return useLiveBoardStore((state) => state.missed === keyOf(lang, date));
+// Whether an answer about (lang, date) is still to come: a read asked for it, or out.
+export function useLiveBoardBusy(lang: string, date: string): boolean {
+  return useLiveBoardStore((state) => state.busy === keyOf(lang, date));
 }
 
 // Registered in `identityScope`: the answer belongs to the ACCOUNT.
@@ -122,6 +137,7 @@ export function resetLiveBoard(): void {
   if (timer !== null) clearTimeout(timer);
   timer = null;
   wanted = null;
+  flying = null;
   lastStartedAt = Number.NEGATIVE_INFINITY;
-  useLiveBoardStore.setState({ key: null, board: null, missed: null });
+  useLiveBoardStore.setState({ key: null, board: null, busy: null });
 }

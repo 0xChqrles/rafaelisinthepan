@@ -10,7 +10,11 @@
 //
 // ONE FIXED BOX, whatever it holds: empty while the first answers are out, the same height on
 // every tab, so nothing that has landed moves when a read arrives or a swipe turns the page.
-// Nothing at all once every read has answered with nothing to show.
+// Its fate is decided ONCE, by the page under it: a box whose reads have all answered with
+// nothing to show BEFORE the page lands leaves the stage's flow (the page has not shown, so
+// nothing seen moves) and never comes back; once the page has landed — at once on a settled
+// frame — the box keeps its room for good, empty if it must, because taking it away would pull
+// the page up under the player's eyes.
 //
 // A tap on a tab's rows, or on its name in the middle, opens that board: a group's (it becomes
 // the group last opened) or the global one. No analytics event.
@@ -49,6 +53,7 @@ export default function ResultBoards({
   tries,
   progress,
   ended,
+  pageIn,
 }: ResultBoardsData & {
   // The stage's own dress for the block (its beat), on the box itself: a block that draws
   // nothing leaves nothing in the stage's flow.
@@ -58,6 +63,8 @@ export default function ResultBoards({
   tries: number;
   progress: number;
   ended: boolean;
+  // The sentence's page under the box has landed: from then on the box keeps its room.
+  pageIn: boolean;
 }) {
   const identity = useDeviceIdentity();
   const own = shownFace(useOwnFace());
@@ -80,7 +87,12 @@ export default function ResultBoards({
           ended,
         });
   const pending = identity !== null && (awaited || (tabs.length === 0 && world === null));
-  if (tabs.length === 0 && !pending) return null;
+  const empty = tabs.length === 0 && !pending;
+  // The box's fate, latched (see the header): gone, kept, or still open.
+  const [fate, setFate] = useState<'gone' | 'kept' | null>(null);
+  const decided = fate ?? (pageIn ? 'kept' : empty ? 'gone' : null);
+  if (decided !== fate) setFate(decided);
+  if (decided === 'gone') return null;
 
   const index = Math.max(0, tabs.findIndex((tab) => tab.key === chosen));
   const shown = tabs[index] as ResultTab | undefined;

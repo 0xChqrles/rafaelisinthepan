@@ -731,9 +731,10 @@ The live routes then share:
   group last opened (`gameStore.lastGroupId`) first, then the others; a group where nobody
   but the player has a row is skipped — then **WORLD** (fr MONDE), the day's global board;
   a player in no group sees WORLD alone. The groups come off the LIVE read below (no read
-  of their own); WORLD is ONE anonymous `GET /board?…&id=<publicId>` per result display
-  (score rows + profiles, no artifact), identity-fenced, a failure dropping the tab
-  silently. Each tab is the boards' own reading (`web/src/game/resultBoards.ts`): a group's
+  of their own), and only off an answer read after the round ended (one asked during play
+  lacks the score the solve recorded); WORLD is ONE anonymous `GET /board?…&id=<publicId>`
+  per result display (score rows + profiles, no artifact), identity-fenced, a failure
+  dropping the tab silently. Each tab is the boards' own reading (`web/src/game/resultBoards.ts`): a group's
   members who recorded a score ranked by `rankBoard` over that group's member list, then its
   playing members by `orderPlaying`; the whole day when it fits the box (6 rows), else the
   podium + the player's ±1 window + two playing rows + a `+N` of the rest. **The player's
@@ -741,7 +742,8 @@ The live routes then share:
   recorded their score; `∞` among the ended when the round ended unsolved; an unranked
   finished row when solved with no recorded score (late, IP-refused) — never a false rank.
   WORLD invents nothing (no recorded score: the podium alone). One fixed box whatever it
-  holds, so nothing that has landed moves. A tap opens that board (a group becomes the group
+  holds, so nothing that has landed moves: a box left with nothing to show goes only while
+  the page under it has not landed, and stays, empty, once it has. A tap opens that board (a group becomes the group
   last opened); no analytics event. `POST /board {token, standing: true}` still answers,
   with no consumer (retiring it is a separate call).
 - **THE LIVE READ (`POST /board {token, live: true}`, the shared `LiveBoard`): EVERY group

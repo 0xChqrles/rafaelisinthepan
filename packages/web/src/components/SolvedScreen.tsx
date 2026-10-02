@@ -238,6 +238,8 @@ export default function SolvedScreen({
 
   // THE BOARDS, under SHARE: their box has held its room since frame one, and lands now —
   // whatever its reads have answered by then (a read landing later fills the box in place).
+  // Until then it is inert as well as invisible (CSS), so a tap that skips the reveal never
+  // lands on a board the player cannot see.
   const boardsIn = useBeat(animate, shareIn, BOARDS_LEAD_MS, reduceMotion, false);
 
   // THE PAGE, under the finished card and the boards: the credit types and the secrets pop
@@ -425,6 +427,7 @@ export default function SolvedScreen({
           tries={guessCount}
           progress={trajectory[trajectory.length - 1] ?? 0}
           ended={unfinished}
+          pageIn={textIn}
         />
       )}
 

@@ -5,7 +5,8 @@ import type { LiveBoard } from '@whippin/shared';
 // Lambdas, so this module is the ONE place its cost is bounded — at most one read per
 // LIVE_REFRESH_MS, one flight at a time, a request inside the window served ONCE at its end
 // (never dropped), no request without an identity, an answer fenced by the identity epoch,
-// and a failure that keeps the last answer.
+// and a failure that keeps the last answer. It says whether an answer is still to come
+// (`busy`), so a consumer waiting for a newer one never waits on nothing.
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(),
@@ -129,22 +130,51 @@ describe('the live read', () => {
     await settle();
     expect(mocks.post).toHaveBeenCalledTimes(3);
     expect(useLiveBoardStore.getState().board).toEqual(answer('good'));
-    // An answer is in hand: nothing is marked missed.
-    expect(useLiveBoardStore.getState().missed).toBeNull();
     // A refused read is offered to the sign-out verdict, which alone decides what it means.
     expect(mocks.verdict).toHaveBeenCalledTimes(1);
   });
 
-  it('marks the day MISSED when its read fails with no answer in hand, until one arrives', async () => {
-    mocks.post.mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
+  it('is BUSY about a day from the request until no read for it is waiting or out', async () => {
+    const first = deferred<ReturnType<typeof ok>>();
+    mocks.post.mockReturnValueOnce(first.promise);
+    expect(useLiveBoardStore.getState().busy).toBeNull();
     requestLiveBoard('fr', '2026-10-02');
+    // Out on the wire.
+    expect(useLiveBoardStore.getState().busy).toBe('fr:2026-10-02');
+    first.resolve(ok(answer('first')));
     await settle();
-    expect(useLiveBoardStore.getState()).toMatchObject({ board: null, missed: 'fr:2026-10-02' });
-    mocks.post.mockResolvedValueOnce(ok(answer('late')));
+    expect(useLiveBoardStore.getState()).toMatchObject({ board: answer('first'), busy: null });
+
+    // A request inside the window waits for its trailing call: still owed, so still busy —
+    // through the wait and the flight, whatever the flight answers.
+    vi.advanceTimersByTime(2_000);
+    requestLiveBoard('fr', '2026-10-02');
+    expect(mocks.post).toHaveBeenCalledTimes(1);
+    expect(useLiveBoardStore.getState().busy).toBe('fr:2026-10-02');
+    const trailing = deferred<ReturnType<typeof ok>>();
+    mocks.post.mockReturnValueOnce(trailing.promise);
+    vi.advanceTimersByTime(LIVE_REFRESH_MS - 2_000);
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    expect(useLiveBoardStore.getState().busy).toBe('fr:2026-10-02');
+    trailing.reject(new Error('offline'));
+    await settle();
+    // Failed: nothing more is on its way, and the last answer stands.
+    expect(useLiveBoardStore.getState()).toMatchObject({ board: answer('first'), busy: null });
+  });
+
+  it('stays busy across a flight when a request came in behind it', async () => {
+    const slow = deferred<ReturnType<typeof ok>>();
+    mocks.post.mockReturnValueOnce(slow.promise);
+    requestLiveBoard('fr', '2026-10-02');
+    requestLiveBoard('fr', '2026-10-02');
+    mocks.post.mockResolvedValueOnce(ok(answer('after')));
+    slow.resolve(ok(answer('before')));
+    await settle();
+    // The answer that landed predates the second request, whose read is still owed.
+    expect(useLiveBoardStore.getState()).toMatchObject({ board: answer('before'), busy: 'fr:2026-10-02' });
     vi.advanceTimersByTime(LIVE_REFRESH_MS);
-    requestLiveBoard('fr', '2026-10-02');
     await settle();
-    expect(useLiveBoardStore.getState()).toMatchObject({ board: answer('late'), missed: null });
+    expect(useLiveBoardStore.getState()).toMatchObject({ board: answer('after'), busy: null });
   });
 
   it("drops an answer that outlived its identity, and serves the next account's own", async () => {

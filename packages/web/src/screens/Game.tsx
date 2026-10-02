@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { computeProgress, guessKey, replayHoles } from '../game/scoring';
 import { raceOf } from '../game/race';
+import { liveSawEnd } from '../game/resultBoards';
 import { playLogFor, withoutDeferred } from '../game/playLog';
 import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
@@ -19,7 +20,7 @@ import { giveUpRound, notifyGuess, retryRoundSync } from '../state/roundSync';
 import { useGameStore, roundKeyFor } from '../state/gameStore';
 import { noteSolvedDay, usePlayerHistory } from '../state/history';
 import { loadGroups, useGroups } from '../state/groups';
-import { requestLiveBoard, useLiveBoard, useLiveBoardMissed } from '../state/liveBoard';
+import { requestLiveBoard, useLiveBoard, useLiveBoardBusy } from '../state/liveBoard';
 import Phrase from '../components/Phrase';
 import CellDigits from '../components/CellDigits';
 import WordInput from '../components/WordInput';
@@ -459,21 +460,22 @@ function Round({
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [raceable, lang, raceDate]);
   const liveBoard = useLiveBoard(lang, raceDate);
-  const liveMissed = useLiveBoardMissed(lang, raceDate);
-  // The result's boards (SolvedScreen) read the same answer — and hold their room for it while
-  // one is on its way: the groups list still unknown, or a group with somebody else and no
-  // answer (nor a failed read) yet.
-  const boards = useMemo(
-    () =>
-      racing
-        ? {
-            date: raceDate,
-            live: raceable ? liveBoard : null,
-            awaited: (groups === null && groupsPhase !== 'failed') || (raceable && liveBoard === null && !liveMissed),
-          }
-        : null,
-    [racing, raceDate, raceable, liveBoard, groups, groupsPhase, liveMissed],
-  );
+  const liveBusy = useLiveBoardBusy(lang, raceDate);
+  // The result's boards (SolvedScreen) read the same answer, but only one read AFTER the round
+  // ended (`liveSawEnd`: the server's row for the player shows the end) — the answer in hand
+  // when the solve lands was asked during play and lacks the score the solve just recorded.
+  // They hold their room while such an answer is on its way: the groups list still unknown, or
+  // a group with somebody else and a read still to come. With none coming (a failed read), the
+  // groups are left out rather than drawn off a stale answer.
+  const boards = useMemo(() => {
+    if (!racing) return null;
+    const ended = raceable && liveBoard !== null && identity !== null && liveSawEnd(liveBoard, identity.accountId);
+    return {
+      date: raceDate,
+      live: ended ? liveBoard : null,
+      awaited: (groups === null && groupsPhase !== 'failed') || (raceable && !ended && liveBusy),
+    };
+  }, [racing, raceDate, raceable, liveBoard, identity, groups, groupsPhase, liveBusy]);
   // The player's own entry is the SCREEN's: the % of the board they see (it moves when a hit
   // lands) and their own try count — both ahead of the stored summary the read carries.
   const ownProgress = useMemo(() => computeProgress(holes, ranks), [holes, ranks]);

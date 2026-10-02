@@ -4,6 +4,7 @@ import {
   RESULT_LINES_MAX,
   WORLD_TAB,
   groupResult,
+  liveSawEnd,
   resultTabs,
   worldResult,
   type ResultBoard,
@@ -19,7 +20,8 @@ import {
 // `∞` among the ended when the round ended unsolved, an unranked finished row otherwise — never
 // a false rank. A group where nobody else has a row is skipped. Tabs: the group last opened
 // first, then the others, then the WORLD (the global board: podium + own window, nothing
-// invented).
+// invented). The groups are drawn only off a live answer read after the round ended
+// (`liveSawEnd`): one from before it would leave out the score the solve just recorded.
 
 const ME = 'mmmmmmmmmmmmmmmm';
 const id = (c: string) => c.repeat(16);
@@ -147,9 +149,10 @@ describe('groupResult', () => {
 
   it('draws my solve with NO recorded score as an unranked finished row (no false rank)', () => {
     const g = group([ME, id('a'), id('b')]);
-    // The read still carries my mid-round row from before the solve: my own result replaces it.
+    // The read carries my solved round with no score row (late, or refused by the IP floor):
+    // my own result draws it.
     const board = groupResult(
-      live([g], [done(id('a'), 15), done(id('b'), 40)], [playing(ME, 80, 10)]),
+      live([g], [done(id('a'), 15), done(id('b'), 40)], [playing(ME, 100, 21)]),
       g,
       solvedMe(22),
     );
@@ -181,6 +184,21 @@ describe('groupResult', () => {
     const g = group([ME, id('a')]);
     expect(groupResult(live([g], [done(ME, 9)], []), g, solvedMe(9))).toBeNull();
     expect(groupResult(live([g], [], [playing(ME, 30, 4, true)]), g, endedMe(4, 30))).toBeNull();
+  });
+});
+
+describe('liveSawEnd', () => {
+  const g = group([ME, id('a')]);
+
+  it('sees the end in my recorded score, my ended round, or my complete one', () => {
+    expect(liveSawEnd(live([g], [done(ME, 9)], []), ME)).toBe(true);
+    expect(liveSawEnd(live([g], [], [playing(ME, 64, 30, true)]), ME)).toBe(true);
+    expect(liveSawEnd(live([g], [], [playing(ME, 100, 30)]), ME)).toBe(true);
+  });
+
+  it('does not see it in an answer read mid-round, or one that does not name me', () => {
+    expect(liveSawEnd(live([g], [done(id('a'), 9)], [playing(ME, 80, 10)]), ME)).toBe(false);
+    expect(liveSawEnd(live([g], [done(id('a'), 9)], []), ME)).toBe(false);
   });
 });
 

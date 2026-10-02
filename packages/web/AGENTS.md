@@ -2665,7 +2665,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     another block's rung-in ("way too long", user-reported 2026-09-11). SHARE hides IN PLACE
     with its footprint kept; the BOARDS land a breath after it (`boardsIn`,
     `BOARDS_LEAD_MS`), their box held from frame one, and the page's beat follows them; no
-    arrival moves anything.
+    arrival moves anything. Until its beat the box is INERT as well as invisible
+    (`visibility: hidden` off `.in`), so a skip-tap where it sits only skips.
   - **Nothing that has landed ever moves:** the score block holds its footprint from frame
     one and arrives at `opacity: 0`, the boards' box is one fixed size whatever it holds,
     the credit holds its box hidden, the secrets' boxes are open before they pop.
@@ -2892,14 +2893,24 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `RESULT_LINES_MAX` (6) rows, a gap's rule and the `+N` line — whatever it holds, so it
     stands EMPTY in its place while the first answers are out and a read landing or a swipe
     moves nothing. It holds its room while the LIVE answer is `awaited` — the groups list
-    still unknown, or a group with somebody else and neither an answer nor a failed read
-    (`useLiveBoardMissed`) yet — rather than draw the WORLD first and turn to a group a
-    moment later; the WORLD tab is appended when its own read lands. A block that ends with
-    no tab at all (every read failed, or empty) draws nothing and leaves the stage's flow.
+    still unknown, or a group with somebody else and no answer that has seen the round's
+    end while a read is still to come (`useLiveBoardBusy`) — rather than draw the WORLD
+    first and turn to a group a moment later; the WORLD tab is appended when its own read
+    lands. **Its fate is decided ONCE, by the page under it**: a block whose reads all
+    answer with no tab (every read failed, or empty) BEFORE the page's beat (`pageIn`)
+    leaves the stage's flow for good; once the page has landed — at once on a settled
+    frame — the box keeps its room for good, empty if it must, since removing it would
+    pull the visible page up.
   - **The data is not fetched twice**: the groups are the LIVE read `Game` already keeps
     for the race line (`state/liveBoard.ts`, asked once more when the solve or the give-up
-    is confirmed); the WORLD is `hooks/useWorldBoard` — ONE anonymous `GET /board…&id=`
-    per mount, identity-fenced, a failure silent and final for the mount.
+    is confirmed), drawn only off an answer read AFTER the round ended (`liveSawEnd`: the
+    server's row for the player is their recorded score, an ended round or a complete
+    one). The answer in hand when the solve lands was asked during play and lacks the score
+    it recorded; the throttle can put the newer one up to `LIVE_REFRESH_MS` away, and the
+    box waits for it rather than draw the player unranked and re-rank them in place. With no
+    such answer and none coming (a failed read), the groups are left out. The WORLD is
+    `hooks/useWorldBoard` — ONE anonymous `GET /board…&id=` per mount, identity-fenced, a
+    failure silent and final for the mount.
   - **The reading is `game/resultBoards.ts`** (pure, contract-tested): `groupResult` cuts
     the merged live rows by the group's member list, ranks them with the shared
     `rankBoard`, orders the playing members with the shared `orderPlaying` (generic over
@@ -2911,8 +2922,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **The player's own row is drawn from their own result** (`tries`, the trajectory's last
     %, `ended`): ranked only when the live rows hold their recorded score; else an unranked
     playing row — `∞` among the ended for a round that ended unsolved, 100% for a solve with
-    no recorded score — replacing whatever stale mid-round row the read still carries. Their
-    face is `useOwnFace`'s.
+    no recorded score — replacing the row the read carries for them. Their face is
+    `useOwnFace`'s.
   - **The tabs turn on the board's own `ScopePager`** (no plus: `onNew` is optional), the
     dots hidden — their room kept — when there is one tab; the tab the player turned to is
     kept by KEY, so a tab arriving later never moves them off it. The rows are

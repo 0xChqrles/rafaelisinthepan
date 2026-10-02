@@ -85,6 +85,17 @@ function rankedLines(
   return { lines, shown: keep.size };
 }
 
+// Whether a live answer was read AFTER the player's round ended: the server's own row for them
+// says so — their recorded score, or a round over (ended unsolved) or complete (a 100% is only
+// ever a solve; one with no score row is late or refused by the IP floor). An answer read
+// before the end still carries them mid-round, and drawing the groups off it would leave out
+// the score their solve just recorded: the result waits for a newer one.
+export function liveSawEnd(live: LiveBoard, publicId: string): boolean {
+  if (live.rows.some((row) => row.publicId === publicId)) return true;
+  const own = live.playing.find((row) => row.publicId === publicId);
+  return own !== undefined && (own.over || own.progress >= 100);
+}
+
 // ONE group's day. Null when nobody but the player has a row in it today: there is nobody to
 // compare with.
 export function groupResult(live: LiveBoard, group: LiveGroup, me: ResultMe): ResultBoard | null {
