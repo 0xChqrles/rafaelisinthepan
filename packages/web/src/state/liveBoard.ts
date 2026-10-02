@@ -9,6 +9,10 @@
 // stands for, so the last guess of a burst is always reflected. The server keeps the day's
 // parsed artifact by revision for it (backend puzzleReads.ts), and the API runs on 10
 // concurrent Lambdas: a chatty client would throttle every player's guesses.
+// ONE request skips the window: the one asked when the round ENDS on screen (`now`) — the
+// result's boards wait for an answer that has seen the end, and the trailing call could hold
+// them empty for most of a window. It still waits for a flight already out (one at a time),
+// and it happens once a round, so the bound stays a window per read but for that one.
 //
 // TRANSIENT and ACCOUNT-owned (`identityScope` resets it), fenced by the identity epoch like
 // every private read. No token, no request (#216). A failure is SILENT and keeps the last
@@ -47,12 +51,19 @@ let flying: { lang: string; date: string } | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let lastStartedAt = Number.NEGATIVE_INFINITY;
 let generation = 0;
+// The request waiting skips the window (`now`).
+let urgent = false;
 
 // Ask for a fresh answer about (lang, date). At once when the window is open; otherwise
-// once, at the window's end.
-export function requestLiveBoard(lang: string, date: string): void {
+// once, at the window's end — or, `now`, at once (or the moment the flight out lands).
+export function requestLiveBoard(lang: string, date: string, now = false): void {
   if (deviceIdentity() === null) return;
   wanted = { lang, date };
+  if (now) {
+    urgent = true;
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+  }
   schedule();
   publishBusy();
 }
@@ -67,7 +78,7 @@ function publishBusy(): void {
 
 function schedule(): void {
   if (wanted === null || flight !== null || timer !== null) return;
-  const wait = lastStartedAt + LIVE_REFRESH_MS - Date.now();
+  const wait = urgent ? 0 : lastStartedAt + LIVE_REFRESH_MS - Date.now();
   if (wait > 0) {
     timer = setTimeout(() => {
       timer = null;
@@ -81,6 +92,7 @@ function schedule(): void {
 
 function run(target: { lang: string; date: string }): void {
   wanted = null;
+  urgent = false;
   const identity = deviceIdentity();
   if (identity === null) return;
   flying = target;
@@ -137,6 +149,7 @@ export function resetLiveBoard(): void {
   if (timer !== null) clearTimeout(timer);
   timer = null;
   wanted = null;
+  urgent = false;
   flying = null;
   lastStartedAt = Number.NEGATIVE_INFINITY;
   useLiveBoardStore.setState({ key: null, board: null, busy: null });

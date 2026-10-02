@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { Board, BoardRow, LiveBoard, LiveGroup, LiveRow, PlayingRow } from '@whippin/shared';
 import {
   RESULT_LINES_MAX,
-  WORLD_TAB,
+  GLOBAL_TAB,
   groupResult,
   liveSawEnd,
   resultTabs,
-  worldResult,
+  globalResult,
   type ResultBoard,
   type ResultMe,
 } from './resultBoards';
@@ -14,13 +14,14 @@ import {
 // CONTRACT (the solved screen's boards): ONE group at a time, its finished members ranked by
 // the shared `rankBoard` over that group's own members, then its playing members by the shared
 // `orderPlaying` (ended-unsolved last). Shown: the whole day when it fits the box, else the
-// podium + the player's ±1 window (their row always in), a few playing rows, a count of the
-// rest — never more than RESULT_LINES_MAX rows.
+// podium + the player's ±1 window (their row always in), up to two playing rows, the room left
+// filled by the next ranked rows and then more playing rows (a box never left half empty), a
+// count of the rest — never more than RESULT_LINES_MAX rows.
 // The player's own row comes from their own result: ranked only when their score is recorded,
 // `∞` among the ended when the round ended unsolved, an unranked finished row otherwise — never
 // a false rank. A group where nobody else has a row is skipped. Tabs: the group last opened
-// first, then the others, then the WORLD (the global board: podium + own window, nothing
-// invented). The groups are drawn only off a live answer read after the round ended
+// first, then the others, then GLOBAL (the global board: podium + own window, filled the
+// same way, nothing invented). The groups are drawn only off a live answer read after the round ended
 // (`liveSawEnd`): one from before it would leave out the score the solve just recorded.
 
 const ME = 'mmmmmmmmmmmmmmmm';
@@ -92,12 +93,35 @@ describe('groupResult', () => {
     expect(board?.more).toBe(12 - 6);
   });
 
-  it('runs the podium into my window without a gap when they touch', () => {
+  it('runs the podium into my window without a gap when they touch, and fills the box under it', () => {
     const g = group([ME, id('a'), id('b'), id('c'), id('d'), id('e'), id('f')]);
     const rows = [3, 4, 5, 7, 8, 9].map((score, i) => done(id('abcdef'[i]), score));
     const board = groupResult(live([g], [...rows, done(ME, 6)], []), g, solvedMe(6));
-    expect(read(board)).toEqual(['#1 a', '#2 b', '#3 c', '#4 m*', '#5 d']);
-    expect(board?.more).toBe(2);
+    expect(read(board)).toEqual(['#1 a', '#2 b', '#3 c', '#4 m*', '#5 d', '#6 e']);
+    expect(board?.more).toBe(1);
+  });
+
+  it('never leaves the box half empty when I am on the podium: the next rows down fill it', () => {
+    const others = 'abcdef'.split('');
+    const g = group([ME, ...others.map(id)]);
+    const rows = [done(ME, 2), ...others.map((c, i) => done(id(c), 5 + i))];
+    const first = groupResult(live([g], rows, []), g, solvedMe(2));
+    expect(read(first)).toEqual(['#1 m*', '#2 a', '#3 b', '#4 c', '#5 d', '#6 e']);
+    expect(first?.more).toBe(1);
+
+    // With players still going: the ranking takes what it can, the playing rows keep their two.
+    const busy = groupResult(
+      live([g], rows.slice(0, 5), [playing(id('e'), 80, 9), playing(id('f'), 60, 9), playing(id('z'), 40, 9)]),
+      { ...g, members: [...g.members, id('z')] },
+      solvedMe(2),
+    );
+    expect(read(busy)).toEqual(['#1 m*', '#2 a', '#3 b', '#4 c', '80% e', '60% f']);
+    expect(busy?.more).toBe(1 + 1);
+
+    // My round ENDED unsolved: the podium, the rows under it, and my ∞ last.
+    const ended = groupResult(live([g], rows.slice(1), [playing(ME, 40, 30, true)]), g, endedMe(30, 40));
+    expect(read(ended)).toEqual(['#1 a', '#2 b', '#3 c', '#4 d', '#5 e', '∞ m*']);
+    expect(ended?.more).toBe(1);
   });
 
   it("shows a small group's whole day when it fits the box: every rank, every player", () => {
@@ -126,9 +150,10 @@ describe('groupResult', () => {
       g,
       solvedMe(8),
     );
-    // Live first (closest to done, then fewer tries), the given-up `a` last — and only two shown.
-    expect(read(board)).toEqual(['#1 e', '#2 f', '#3 m*', '79% d', '79% b']);
-    expect(board?.more).toBe(2);
+    // Live first (closest to done, then fewer tries), the given-up `a` last — two by right, a
+    // third in the room the short ranking leaves, the box full.
+    expect(read(board)).toEqual(['#1 e', '#2 f', '#3 m*', '79% d', '79% b', '67% c']);
+    expect(board?.more).toBe(1);
   });
 
   it('draws my ENDED round as ∞ among the ended rows, from my own result, never ranked', () => {
@@ -202,7 +227,7 @@ describe('liveSawEnd', () => {
   });
 });
 
-describe('worldResult', () => {
+describe('globalResult', () => {
   const ranked = (c: string, rank: number, score = rank + 2): BoardRow => ({
     publicId: id(c),
     name: '',
@@ -215,22 +240,27 @@ describe('worldResult', () => {
 
   it('shows the podium and my window inside the cut', () => {
     const rows = [ranked('a', 1), ranked('b', 2), ranked('c', 3), ranked('d', 4), meRow(5), ranked('e', 6)];
-    expect(read(worldResult(board(rows), ME))).toEqual(['#1 a', '#2 b', '#3 c', '#4 d', '#5 m*', '#6 e']);
+    expect(read(globalResult(board(rows), ME))).toEqual(['#1 a', '#2 b', '#3 c', '#4 d', '#5 m*', '#6 e']);
   });
 
   it('reaches my own window below the cut, with a gap', () => {
     const cut = 'abcdefghij'.split('').map((c, i) => ranked(c, i + 1));
     const own = [ranked('x', 79), meRow(80), ranked('y', 81)];
-    const world = worldResult(board(cut, own), ME);
-    expect(read(world)).toEqual(['#1 a', '#2 b', '#3 c', '~', '#79 x', '#80 m*', '#81 y']);
+    const globalBoard = globalResult(board(cut, own), ME);
+    expect(read(globalBoard)).toEqual(['#1 a', '#2 b', '#3 c', '~', '#79 x', '#80 m*', '#81 y']);
     // The cut does not say how many there are: no count.
-    expect(world?.more).toBe(0);
+    expect(globalBoard?.more).toBe(0);
   });
 
-  it('invents nothing for a player with no recorded score: the podium alone', () => {
+  it('fills the box under the podium when I sit on it', () => {
+    const cut = 'abcdefghij'.split('').map((c, i) => ranked(c, i + 2));
+    expect(read(globalResult(board([meRow(1), ...cut]), ME))).toEqual(['#1 m*', '#2 a', '#3 b', '#4 c', '#5 d', '#6 e']);
+  });
+
+  it('invents nothing for a player with no recorded score: the top of the board alone', () => {
     const cut = 'abcdefghij'.split('').map((c, i) => ranked(c, i + 1));
-    expect(read(worldResult(board(cut), ME))).toEqual(['#1 a', '#2 b', '#3 c']);
-    expect(worldResult(board([]), ME)).toBeNull();
+    expect(read(globalResult(board(cut), ME))).toEqual(['#1 a', '#2 b', '#3 c', '#4 d', '#5 e', '#6 f']);
+    expect(globalResult(board([]), ME)).toBeNull();
   });
 });
 
@@ -239,20 +269,20 @@ describe('resultTabs', () => {
   const g2 = group([ME, id('b')], 'h', 'Two');
   const lonely = group([ME, id('c')], 'k', 'Lonely');
   const answer = live([g1, lonely, g2], [done(id('a'), 5), done(id('b'), 7), done(ME, 9)], []);
-  const world: Board = {
+  const globalBoard: Board = {
     rows: [{ publicId: id('w'), name: '', avatar: null, score: 3, rank: 1 }],
     own: null,
     playing: [],
     waiting: [],
   };
 
-  it('puts the group last opened first, skips the empty ones, and ends on the WORLD', () => {
-    expect(resultTabs(answer, world, id('h'), solvedMe(9)).map((tab) => tab.key)).toEqual([id('h'), id('g'), WORLD_TAB]);
-    expect(resultTabs(answer, world, null, solvedMe(9)).map((tab) => tab.key)).toEqual([id('g'), id('h'), WORLD_TAB]);
+  it('puts the group last opened first, skips the empty ones, and ends on GLOBAL', () => {
+    expect(resultTabs(answer, globalBoard, id('h'), solvedMe(9)).map((tab) => tab.key)).toEqual([id('h'), id('g'), GLOBAL_TAB]);
+    expect(resultTabs(answer, globalBoard, null, solvedMe(9)).map((tab) => tab.key)).toEqual([id('g'), id('h'), GLOBAL_TAB]);
   });
 
-  it('shows the WORLD alone without groups, and no WORLD without its read', () => {
-    expect(resultTabs(null, world, null, solvedMe(9)).map((tab) => tab.key)).toEqual([WORLD_TAB]);
+  it('shows GLOBAL alone without groups, and no GLOBAL without its read', () => {
+    expect(resultTabs(null, globalBoard, null, solvedMe(9)).map((tab) => tab.key)).toEqual([GLOBAL_TAB]);
     expect(resultTabs(answer, null, null, solvedMe(9)).map((tab) => tab.group?.name)).toEqual(['One', 'Two']);
     expect(resultTabs(null, null, null, solvedMe(9))).toEqual([]);
   });

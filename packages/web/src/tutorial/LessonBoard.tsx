@@ -624,10 +624,15 @@ export default function LessonBoard({
   }, [historyHole, holes, puzzleHoles, viewHoles, ranks, tried, shownMeters]);
 
   // --- the coach: the one line the board's state calls for, or nothing ---
+  // Nothing new while the prompt DECODES a reveal: the line that names the word would read it
+  // out under the marks still uncyphering it. The last line holds, and the new one types once
+  // the word stands decoded.
   const line = useMemo(
     () =>
-      coachLine({ stage, holes, events, tapped, revealed, finished: phase !== 'play' }),
-    [phase, stage, holes, events, tapped, revealed],
+      decoding !== null
+        ? null
+        : coachLine({ stage, holes, events, tapped, revealed, finished: phase !== 'play' }),
+    [decoding, phase, stage, holes, events, tapped, revealed],
   );
   const coach = line ? coachCopy(lang, line, stageView, coarse) : null;
   // THE LINE NEVER DISAPPEARS (user-decided 2026-09-16): a beat with nothing new to say keeps

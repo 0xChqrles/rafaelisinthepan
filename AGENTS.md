@@ -729,19 +729,22 @@ The live routes then share:
   UNDER SHARE, on the ACTIVE day only** (never an archive day or a bonus — the live read is
   the active day's). Tabs, swiped on the board's pager: each of the player's groups — the
   group last opened (`gameStore.lastGroupId`) first, then the others; a group where nobody
-  but the player has a row is skipped — then **WORLD** (fr MONDE), the day's global board;
-  a player in no group sees WORLD alone. The groups come off the LIVE read below (no read
+  but the player has a row is skipped — then **GLOBAL**, the day's global board, under the
+  board screen's own name for it (one name across the app); a player in no group sees
+  GLOBAL alone. The groups come off the LIVE read below (no read
   of their own), and only off an answer read after the round ended (one asked during play
-  lacks the score the solve recorded); WORLD is ONE anonymous `GET /board?…&id=<publicId>`
+  lacks the score the solve recorded); GLOBAL is ONE anonymous `GET /board?…&id=<publicId>`
   per result display (score rows + profiles, no artifact), identity-fenced, a failure
   dropping the tab silently. Each tab is the boards' own reading (`web/src/game/resultBoards.ts`): a group's
   members who recorded a score ranked by `rankBoard` over that group's member list, then its
   playing members by `orderPlaying`; the whole day when it fits the box (6 rows), else the
-  podium + the player's ±1 window + two playing rows + a `+N` of the rest. **The player's
+  podium + the player's ±1 window + up to two playing rows, the box's room still left filled
+  by the next rows down the ranking and then more playing rows (never a half-empty box
+  beside a `+N`), + a `+N` of the rest. **The player's
   own row comes from their own result, never a guess:** ranked only when the server
   recorded their score; `∞` among the ended when the round ended unsolved; an unranked
   finished row when solved with no recorded score (late, IP-refused) — never a false rank.
-  WORLD invents nothing (no recorded score: the podium alone). One fixed box whatever it
+  GLOBAL invents nothing (no recorded score: the top of the board alone). One fixed box whatever it
   holds, so nothing that has landed moves: a box left with nothing to show goes only while
   the page under it has not landed, and stays, empty, once it has. A tap opens that board (a group becomes the group
   last opened); no analytics event. `POST /board {token, standing: true}` still answers,
@@ -763,8 +766,12 @@ The live routes then share:
   give-up) and when the tab comes back, only on the ACTIVE day, with an account, for a player
   in a group with somebody else — and **THROTTLED in that one module: at most ONE read per
   `LIVE_REFRESH_MS` (10 s), one flight at a time, a request inside the window served ONCE at
-  its end (never dropped)**. Why the throttle lives client-side and nowhere else: the read is
-  at guess cadence against 10 Lambdas. The race line is an ORDER, never a rank (#206):
+  its end (never dropped) — save ONE: the read asked by the answer that ENDS the round on
+  screen (a solve or a give-up confirmed) goes at once (still behind a flight already out),
+  so the result's group boards are built from a post-end answer without waiting out the
+  window**. Why the throttle lives client-side and nowhere else: the read is at guess cadence
+  against 10 Lambdas. Nothing polls an idle player: the triggers above are the whole list.
+  The race line is an ORDER, never a rank (#206):
   finished members first (fewest tries), then the playing ones by `orderPlaying` with the
   player's own entry taken from the screen (their live % and tries), the ended-unsolved last;
   it shows the one just ahead, the player and the one just behind.

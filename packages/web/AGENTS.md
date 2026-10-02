@@ -66,18 +66,19 @@
                               surface reads (tabs, marks, the landing's "already in", the race
                               line's "is there anybody to race")
       state/liveBoard.ts      the LIVE read (`POST /board {token, live: true}`): all my groups
-                              merged — the ONE module asking it, throttled (`LIVE_REFRESH_MS`),
-                              for the race line and the solved screen's group boards
+                              merged — the ONE module asking it, throttled (`LIVE_REFRESH_MS`;
+                              the read asked as the round ends goes at once), for the race line
+                              and the solved screen's group boards
       game/race.ts            the race line's ORDER (pure): finished, then playing by the shared
                               `orderPlaying` with my own entry off the screen; the ahead/me/behind
                               window; `shownPercent` (floored)
       components/RaceLine.tsx  the race line: marks + % + tries on the tray's top edge, a tap onto
                               the board
       game/resultBoards.ts    the solved screen's BOARDS (pure): one group's day off the live read,
-                              the WORLD off the global board, the tabs' order, the box's cap
+                              GLOBAL off the global board, the tabs' order, the box's cap
       components/ResultBoards.tsx  those boards under SHARE: the pager's tabs over a fixed box of
                               rows, a tap onto the board
-      hooks/useWorldBoard.ts  the WORLD tab's one anonymous global-board read per result display
+      hooks/useGlobalBoard.ts  the GLOBAL tab's one anonymous global-board read per result display
       components/BoardRows.tsx  a board's ROWS (rank/crown, ranked, playing, waiting), drawn alike
                               by the leaderboard screen and the result's boards
       components/DeviceList.tsx  the account's devices + SIGN OUT rows (#216), on the profile editor
@@ -161,8 +162,8 @@
       game/types.ts           the screen's own types: RuntimeHole (a hole as the round
                               holds it) and HitState (one floating hit)
       game/timing.ts          the guess choreography's shared beats (STAGGER_MS,
-                              FLOATING_HIT_INTRO_MS, REVEAL_HOLD_MS, KB_EXIT_FALLBACK_MS),
-                              one spelling for the game and the lesson board
+                              FLOATING_HIT_INTRO_MS, REVEAL_HOLD_MS, KB_EXIT_FALLBACK_MS,
+                              GIVE_UP_HOLD_MS), one spelling for the game and the lesson board
       hooks/lazyChunk.ts      one component kept out of the startup bundle: preload, the
                               lazy render, and the retry a failed preload must not poison
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
@@ -463,7 +464,8 @@ These are decided and verified against the code. Treat them as load-bearing.
   too): 100% is only ever a solve. The read is `state/liveBoard.ts`, asked when the round's
   server state lands or CHANGES (round start, each acknowledged append, the answer
   confirming the solve or the give-up — so the result reads the final rows) and when the tab
-  comes back; it holds the cost rule (one read per 10 s, one flight, a trailing call) and
+  comes back; it holds the cost rule (one read per 10 s, one flight, a trailing call — save
+  the read asked by the answer that ENDS the round on screen, which goes at once, `now`) and
   fails SILENTLY, the last answer standing. The line RETIRES with the prompt (the solving
   submit, a give-up) and stays mounted, invisible, until the result takes the column. It
   lies in the column's gap above the tray plus the play area's RACE BAND (`.play-race`):
@@ -1683,7 +1685,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the lock's 8-cell grid, monochrome, `--muted`; aria `giveUp`) stands at the RIGHT END of
     the prompt row: `.prompt-zone` is a two-column grid whose second column the flag holds
     from the first frame (`.off` = hidden in place), so its arrival never moves the sentence
-    or narrows the prompt — a long guess crops its own head before reaching it. Shown
+    or narrows the prompt — a long guess crops its own head before reaching it. Its tap
+    target is a box past the glyph's edges (`.give-up-btn::after`), never padding: the 1em
+    flag is under 24px on a phone, and a bigger button would move the prompt row. Shown
     (`canGiveUp`) once the round holds a guess, not finished, the gate closed, no reveal
     standing or decoding, the prompt not leaving; never in the tutorial (it lives in
     `Game`, not in `Keyboard`). A tap opens the `ConfirmScreen` (`giveUpTitle` /
@@ -1693,8 +1697,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     A give-up confirmed on THIS device (`giveUpHere`, set before the request so the render
     that turns the round over already sees it) PLAYS: the prompt leaves, every unfound hole
     turns into its SECRET with its own word-change scramble (`boardHoles`: rank 0,
-    `revealed`), then the usual keyboard drop → dissolve → result — no `solve` event, no
-    streak, no celebration. **A REVEALED secret keeps the HELD CHIP** (`.hole.revealed`,
+    `revealed`), the revealed sentence STANDS `GIVE_UP_HOLD_MS` (1 s, `game/timing.ts`) once
+    every word has settled — the answer is read in place (never under reduced
+    motion) — then the usual keyboard drop → dissolve → result — no `solve`
+    event, no streak, no celebration. **A REVEALED secret keeps the HELD CHIP** (`.hole.revealed`,
     never `.resolved`: the white chip, no exponent) — the solve cobalt says "found", and
     only of a word that was; the dissolve keeps the chip until the word's last letter goes
     (`revealedAt`, `.chip-out`), and the result page's unfound secrets wear the chip too
@@ -2703,7 +2709,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the tap that dismisses it must not spend the reveal it is handing over to (its
     dismissal lands 200ms later, past its exit fade, so the arming cannot catch that same
     gesture either) — and never under the dev `?streak=N` preview, which holds the result
-    at frame zero behind a modal this round never sees. The boards' box snaps to whatever
+    at frame zero behind a modal this round never sees. The boards' box is INERT until it
+    has LANDED (`.solved-boards.armed`, its rung-in played — `BOARDS_ARRIVE_MS`): before
+    that the skip-tap that lands where it sits, unseen or at the arrival's first
+    transparent frames, only skips; once it shows, a tap on it skips AND opens that board,
+    like any other target. The boards' box snaps to whatever
     is true right now: it stands empty while a read is out and fills in place when one
     lands, so the skip never blocks on, or fakes, the network. Reduced motion is unchanged (already near-instant). **Skipping the SOLVING
     choreography is deliberately out of scope.**
@@ -2881,7 +2891,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   suppresses the first-visit invitation, and synthesizes its visual week without mutating
   persisted rounds/solved days; production builds ignore the parameter.
 - **Solved-screen BOARDS (user-decided 2026-10-02: "on the solved screen, it would be nice
-  to have a way to see how you scored compared to your group"; the WORLD tab the same day,
+  to have a way to see how you scored compared to your group"; the GLOBAL tab the same day,
   "when you have no group, we need something to show instead").** The product rule lives in
   the root `AGENTS.md` (*The solved screen's BOARDS*); what is this package's:
   - **Where and when**: `SolvedScreen` takes `boards` (`ResultBoardsData`) from `Game`, set
@@ -2894,8 +2904,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     stands EMPTY in its place while the first answers are out and a read landing or a swipe
     moves nothing. It holds its room while the LIVE answer is `awaited` — the groups list
     still unknown, or a group with somebody else and no answer that has seen the round's
-    end while a read is still to come (`useLiveBoardBusy`) — rather than draw the WORLD
-    first and turn to a group a moment later; the WORLD tab is appended when its own read
+    end while a read is still to come (`useLiveBoardBusy`) — rather than draw GLOBAL
+    first and turn to a group a moment later; the GLOBAL tab is appended when its own read
     lands. **Its fate is decided ONCE, by the page under it**: a block whose reads all
     answer with no tab (every read failed, or empty) BEFORE the page's beat (`pageIn`)
     leaves the stage's flow for good; once the page has landed — at once on a settled
@@ -2906,19 +2916,23 @@ it to the local store — see `packages/backend/AGENTS.md`).
     is confirmed), drawn only off an answer read AFTER the round ended (`liveSawEnd`: the
     server's row for the player is their recorded score, an ended round or a complete
     one). The answer in hand when the solve lands was asked during play and lacks the score
-    it recorded; the throttle can put the newer one up to `LIVE_REFRESH_MS` away, and the
-    box waits for it rather than draw the player unranked and re-rank them in place. With no
-    such answer and none coming (a failed read), the groups are left out. The WORLD is
-    `hooks/useWorldBoard` — ONE anonymous `GET /board…&id=` per mount, identity-fenced, a
+    it recorded. The answer that ENDS the round asks its read `now` — past the throttle's
+    window, behind a flight already out — so the newer one lands about a round-trip later,
+    long before the box does; the box waits for it rather than draw the player unranked and
+    re-rank them in place. With no
+    such answer and none coming (a failed read), the groups are left out. GLOBAL is
+    `hooks/useGlobalBoard` — ONE anonymous `GET /board…&id=` per mount, identity-fenced, a
     failure silent and final for the mount.
   - **The reading is `game/resultBoards.ts`** (pure, contract-tested): `groupResult` cuts
     the merged live rows by the group's member list, ranks them with the shared
     `rankBoard`, orders the playing members with the shared `orderPlaying` (generic over
     dressed rows), and shows the whole day when it fits the box, else the podium (first
-    three ranked rows), the player's ±1 window with a gap between, two playing rows and
-    `more`; `worldResult` does the same over the global cut + own window (no `+N`: the cut
+    three ranked rows), the player's ±1 window with a gap between, up to two playing rows,
+    the room still left FILLED (`pickRanked`: the next rows down the ranking, then more
+    playing rows — a player on the podium never gets a half-empty box beside a `+N`) and
+    `more`; `globalResult` does the same over the global cut + own window (no `+N`: the cut
     does not say how many there are); `resultTabs` orders the group last opened first, skips
-    a group where nobody but the player has a row, and ends on the WORLD.
+    a group where nobody but the player has a row, and ends on GLOBAL.
   - **The player's own row is drawn from their own result** (`tries`, the trajectory's last
     %, `ended`): ranked only when the live rows hold their recorded score; else an unranked
     playing row — `∞` among the ended for a round that ended unsolved, 100% for a solve with
@@ -2928,10 +2942,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     dots hidden — their room kept — when there is one tab; the tab the player turned to is
     kept by KEY, so a tab arriving later never moves them off it. The rows are
     `components/BoardRows` (`BoardRowItem`, `PlayingRowItem`, with a 20px `mark`), the
-    leaderboard's own, at the block's size (`.result-board .board-row`, 28px). WORLD is
-    `resultWorld` (WORLD / MONDE).
+    leaderboard's own, at the block's size (`.result-board .board-row`, 28px). The box is
+    ONE column held to its width (`grid-template-columns: minmax(0, 1fr)`): an `auto` column
+    grows to the pager's min-content — every title side by side — and the rows run off the
+    screen. GLOBAL is the board screen's own `boardGlobal`: one name for the global board
+    across the app. A sideways SWIPE on the rows turns the tab too (`touch-action: pan-y`;
+    40px, mostly sideways) and opens nothing.
   - **A tap** on the rows, or on the middle tab's name (the keyboard's way), opens that
-    board: a group sets `lastGroupId` and the board's `group` tab, the WORLD its `global`
+    board: a group sets `lastGroupId` and the board's `group` tab, GLOBAL its `global`
     tab, then `pathForBoard`. No analytics event.
 - **The game's pre-round GATE is an INVITATION into the tutorial (2026-08-11's rules gate;
   DEPLOY duty added by the #216 trigger rework, user-decided 2026-08-24; remade by #269,
@@ -3135,7 +3153,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     un mot. ») → the one word closer, picked in the wheel and REVEALED from the tray (the
     game's REVEAL, Enter its twin): "unalienable¹ is revealed, for one try. Now find the
     secret word."
-    (`tutRevealed`, off the event's `revealed` flag) → a FAILED TRY typed after it earns the HINT
+    (`tutRevealed`, off the event's `revealed` flag; it types once the prompt's DECODE has
+    ended — while the prompt uncyphers the word the coach says nothing new, the last line
+    holding, so the line never names the word under the marks) → a FAILED TRY typed after it earns the HINT
     (`hints[]`, or `pair.hint` once the secret is traded), NEVER THE WORD (user-decided 2026-09-16,
     retiring the bot's own closing guess) → found: "You found it! You are ready for the real
     game." → PLAY. `STUCK` has no `meter` row

@@ -6,7 +6,9 @@ import type { LiveBoard } from '@whippin/shared';
 // LIVE_REFRESH_MS, one flight at a time, a request inside the window served ONCE at its end
 // (never dropped), no request without an identity, an answer fenced by the identity epoch,
 // and a failure that keeps the last answer. It says whether an answer is still to come
-// (`busy`), so a consumer waiting for a newer one never waits on nothing.
+// (`busy`), so a consumer waiting for a newer one never waits on nothing. ONE request skips
+// the window — the one asked when the round ends (`now`), so the result's boards are built
+// from an answer that has seen the end without waiting out the window — and only that one.
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(),
@@ -192,6 +194,51 @@ describe('the live read', () => {
     old.resolve(ok(answer('A')));
     await settle();
     expect(useLiveBoardStore.getState().board).toEqual(answer('B'));
+  });
+
+  it('serves the request asked when the round ends AT ONCE, inside the window, and only that one', async () => {
+    mocks.post.mockResolvedValue(ok(answer('during')));
+    requestLiveBoard('fr', '2026-10-02');
+    await settle();
+    // A guess acknowledged 2s later waits for the window's end…
+    vi.advanceTimersByTime(2_000);
+    requestLiveBoard('fr', '2026-10-02');
+    expect(mocks.post).toHaveBeenCalledTimes(1);
+    // …and the end confirmed a second later goes at once, standing for that wait too.
+    vi.advanceTimersByTime(1_000);
+    mocks.post.mockResolvedValue(ok(answer('ended')));
+    requestLiveBoard('fr', '2026-10-02', true);
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    await settle();
+    expect(useLiveBoardStore.getState()).toMatchObject({ board: answer('ended'), busy: null });
+    // Nothing trails behind it: the wait it replaced was served.
+    vi.advanceTimersByTime(LIVE_REFRESH_MS * 2);
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+
+    // Every other request is throttled again, from the read it made.
+    requestLiveBoard('fr', '2026-10-02');
+    expect(mocks.post).toHaveBeenCalledTimes(3);
+    await settle();
+    requestLiveBoard('fr', '2026-10-02');
+    vi.advanceTimersByTime(LIVE_REFRESH_MS - 1);
+    expect(mocks.post).toHaveBeenCalledTimes(3);
+    vi.advanceTimersByTime(1);
+    expect(mocks.post).toHaveBeenCalledTimes(4);
+  });
+
+  it('keeps ONE flight at a time for the end too: it goes the moment the flight out lands', async () => {
+    const out = deferred<ReturnType<typeof ok>>();
+    mocks.post.mockReturnValueOnce(out.promise);
+    requestLiveBoard('fr', '2026-10-02');
+    requestLiveBoard('fr', '2026-10-02', true);
+    expect(mocks.post).toHaveBeenCalledTimes(1);
+    mocks.post.mockResolvedValueOnce(ok(answer('ended')));
+    out.resolve(ok(answer('during')));
+    await settle();
+    // Not at the window's end: at once.
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    await settle();
+    expect(useLiveBoardStore.getState()).toMatchObject({ board: answer('ended'), busy: null });
   });
 
   it('says which day an answer is about', async () => {

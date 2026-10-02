@@ -31,7 +31,7 @@ import { capitalize, sentenceStarts } from '../game/sentenceCase';
 //             card's closing beat and the game's one liked-indicator, and it is never
 //             reached by scrolling.
 //   BOARDS  — on the ACTIVE day only: how the day compares, the player's groups then the
-//             WORLD (`ResultBoards`), in one fixed box that holds its room from frame one.
+//             GLOBAL (`ResultBoards`), in one fixed box that holds its room from frame one.
 //   CONTEXT — under it, with a gap: the source credit, then the sentence the player
 //             rebuilt in the READING face, its secrets in the solve blue and tappable.
 //             This is the round's variable-height content, so THIS is what scrolls: a
@@ -80,6 +80,9 @@ const CAPTION_FALLBACK_SLACK_MS = 4_000;
 // and the boards follow SHARE by another.
 const CLOSE_LEAD_MS = 260;
 const BOARDS_LEAD_MS = 200;
+// The boards' own arrival (`.solved-boards.in`'s rung-in): they are a tap onto the board only
+// once it has played.
+const BOARDS_ARRIVE_MS = 220;
 
 // ONE BEAT of the reveal: false until `ready` has held for `delayMs`, then true. A settled
 // frame (`animate` off — rehydrated, or fast-forwarded) is true at once. Reduced motion
@@ -238,9 +241,10 @@ export default function SolvedScreen({
 
   // THE BOARDS, under SHARE: their box has held its room since frame one, and lands now —
   // whatever its reads have answered by then (a read landing later fills the box in place).
-  // Until then it is inert as well as invisible (CSS), so a tap that skips the reveal never
-  // lands on a board the player cannot see.
+  // Until it has LANDED — through its own arrival, which starts at opacity 0 — it is inert
+  // (CSS), so a tap that skips the reveal never lands on a board the player cannot see yet.
   const boardsIn = useBeat(animate, shareIn, BOARDS_LEAD_MS, reduceMotion, false);
+  const boardsArmed = useBeat(animate, boardsIn, BOARDS_ARRIVE_MS, reduceMotion, true);
 
   // THE PAGE, under the finished card and the boards: the credit types and the secrets pop
   // into the sentence — one beat, "here is what you rebuilt, and where it is from" — once
@@ -421,7 +425,7 @@ export default function SolvedScreen({
       {/* ---- the BOARDS: how the day compares, the active day only. */}
       {boards && (
         <ResultBoards
-          className={`solved-boards${boardsIn ? ' in' : ''}`}
+          className={`solved-boards${boardsIn ? ' in' : ''}${boardsArmed ? ' armed' : ''}`}
           lang={lang}
           {...boards}
           tries={guessCount}

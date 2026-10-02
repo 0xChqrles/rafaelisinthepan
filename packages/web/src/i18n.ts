@@ -592,9 +592,9 @@ const STRINGS = {
   // untrusted tab. Terse chrome in the app's register; the tabs and the rows do the
   // explaining. GLOBAL is one word in both languages, like TOP and the grades.
   boardTitle: { en: 'LEADERBOARD', fr: 'CLASSEMENT' },
+  // The board's global tab, and the solved screen's last one (after the player's groups): one
+  // name for the day's global board across the app.
   boardGlobal: { en: 'GLOBAL', fr: 'GLOBAL' },
-  // The solved screen's last tab: the day's global board, after the player's groups.
-  resultWorld: { en: 'WORLD', fr: 'MONDE' },
   boardPeriods: { en: 'Period', fr: 'Période' },
   // TODAY, not DAY (user-decided 2026-09-14): the live board is today's, and a period
   // named DAY beside WEEK and MONTH read as "any day".

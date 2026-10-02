@@ -40,7 +40,7 @@ import { navigate } from '../routing';
 import { pathForLesson } from '../langs';
 import { MASK, buildHistory } from '../game/history';
 import { SCRAMBLE_MS, useScramble } from '../hooks/useScramble';
-import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, REVEAL_HOLD_MS, STAGGER_MS } from '../game/timing';
+import { FLOATING_HIT_INTRO_MS, GIVE_UP_HOLD_MS, KB_EXIT_FALLBACK_MS, REVEAL_HOLD_MS, STAGGER_MS } from '../game/timing';
 import type { HistoryStop } from '../game/history';
 import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
 import { track } from '../analytics';
@@ -448,9 +448,15 @@ function Round({
   // ASKED when the round's server state lands and every time it CHANGES — the round's start,
   // each acknowledged append, and the answer confirming a solve or a give-up (so the result
   // reads the final rows) — and when the tab comes back. The module throttles; this only asks.
+  // The answer that ENDS the round while it is played on screen (a round already over when it
+  // loads is no such answer) asks `now`: the result's boards wait for an answer that has seen
+  // the end, and the throttle's trailing call would hold them empty for most of a window.
+  const racePlaying = useRef(false);
   useEffect(() => {
-    if (raceable && server !== null) requestLiveBoard(lang, raceDate);
-  }, [raceable, server, lang, raceDate]);
+    const endedHere = finished && racePlaying.current;
+    racePlaying.current = server !== null && !finished;
+    if (raceable && server !== null) requestLiveBoard(lang, raceDate, endedHere);
+  }, [raceable, server, finished, lang, raceDate]);
   useEffect(() => {
     if (!raceable) return undefined;
     const onVisible = () => {
@@ -643,11 +649,21 @@ function Round({
     // the celebration of a day the collection is holding.
     const willShowStreak = streakAdvanced;
     if (!willShowStreak) {
-      setShowResults(true);
-      setKeyboardLeaving(true);
-      setShowStreakDialog(false);
-      setAwaitingWordAnimations(false);
-      return;
+      const handOver = () => {
+        setShowResults(true);
+        setKeyboardLeaving(true);
+        setShowStreakDialog(false);
+        setAwaitingWordAnimations(false);
+      };
+      // A GIVE-UP's revealed sentence stands a beat first, so the answer is read in place
+      // (only a fresh give-up waits on its words: `gaveUp` here is one confirmed on this
+      // device).
+      if (!gaveUp || prefersReducedMotion()) {
+        handOver();
+        return;
+      }
+      const hold = window.setTimeout(handOver, GIVE_UP_HOLD_MS);
+      return () => window.clearTimeout(hold);
     }
 
     // Let the player see the fully resolved sentence for one clean beat before the
@@ -660,7 +676,7 @@ function Round({
       setAwaitingWordAnimations(false);
     }, STREAK_AFTER_WORDS_MS);
     return () => window.clearTimeout(timer);
-  }, [allWordsResolved, awaitingWordAnimations, streakAdvanced]);
+  }, [allWordsResolved, awaitingWordAnimations, streakAdvanced, gaveUp]);
 
   const dismissStreakDialog = useCallback(() => {
     // StreakDialog calls this only AFTER its 200ms exit fade. On a streak solve it is
@@ -1199,8 +1215,8 @@ function Round({
           onExplore={openHistory}
           animate={animateResults}
           onRevealEnd={() => setRevealEnded(true)}
-          // How the day compares — the player's groups, then the world — on the active day
-          // only: an archive day or a bonus has no live board.
+          // How the day compares — the player's groups, then the global board — on the
+          // active day only: an archive day or a bonus has no live board.
           boards={boards}
           // The dev `?streak=N` preview (App owns that dialog, so this round never sees
           // it in `showStreakDialog`) opens over an ALREADY-SOLVED day, where the result

@@ -1,11 +1,12 @@
 // THE RESULT'S BOARDS: under SHARE, how the player's day compares — each of their groups in
-// turn, then the WORLD, swiped through on the board's own pager (dots under it, no plus). Each
+// turn, then GLOBAL, swiped through on the board's own pager (dots under it, no plus). Each
 // tab is a few of the board's own rows (`BoardRows`), picked by `game/resultBoards.ts`: the
-// whole day when it fits, else the podium, the player's ±1 and a few still playing, and a `+N`.
+// whole day when it fits, else the podium, the player's ±1 and a few still playing, the box
+// filled with the rows next in line, and a `+N`.
 //
 // The data is not this screen's to fetch twice: the groups come off the LIVE read the play
-// screen already keeps (`state/liveBoard.ts`), passed in; the WORLD is one anonymous read of the
-// global board per mount (`useWorldBoard`). The active day only — the caller mounts this for
+// screen already keeps (`state/liveBoard.ts`), passed in; GLOBAL is one anonymous read of the
+// global board per mount (`useGlobalBoard`). The active day only — the caller mounts this for
 // nothing else.
 //
 // ONE FIXED BOX, whatever it holds: empty while the first answers are out, the same height on
@@ -17,14 +18,16 @@
 // the page up under the player's eyes.
 //
 // A tap on a tab's rows, or on its name in the middle, opens that board: a group's (it becomes
-// the group last opened) or the global one. No analytics event.
-import { useState } from 'react';
+// the group last opened) or the global one. No analytics event. A sideways SWIPE on the rows
+// turns the tab like one on the names above (the rows are most of the box, and where a thumb
+// swipes); it opens nothing.
+import { useRef, useState } from 'react';
 import type { LiveBoard } from '@whippin/shared';
 import { BoardRowItem, PlayingRowItem } from './BoardRows';
 import ScopePager from './ScopePager';
 import { shownFace, useOwnFace } from './AccountFace';
 import { resultTabs, type ResultTab } from '../game/resultBoards';
-import useWorldBoard from '../hooks/useWorldBoard';
+import useGlobalBoard from '../hooks/useGlobalBoard';
 import { useDeviceIdentity } from '../identity';
 import { t } from '../i18n';
 import { pathForBoard, type LangCode } from '../langs';
@@ -33,13 +36,15 @@ import { useGameStore } from '../state/gameStore';
 
 // A mark at an INTEGER cell scale: 10 cells of 2px, the race line's own size.
 const MARK = 20;
+// A swipe on the rows: this far sideways, and mostly sideways (a scroll of the page is not one).
+const SWIPE_PX = 40;
 
 export interface ResultBoardsData {
   // The active day, as the boards address it.
   date: string;
   // The live answer, or null: none yet, or none to show (no group holding somebody else).
   live: LiveBoard | null;
-  // A live answer is on its way: the box holds its room for it rather than draw the WORLD first
+  // A live answer is on its way: the box holds its room for it rather than draw GLOBAL first
   // and turn to a group a moment later.
   awaited: boolean;
 }
@@ -71,14 +76,18 @@ export default function ResultBoards({
   const lastGroupId = useGameStore((s) => s.lastGroupId);
   const setLastGroup = useGameStore((s) => s.setLastGroup);
   const setBoardTab = useGameStore((s) => s.setBoardTab);
-  const world = useWorldBoard(lang, date);
+  const globalBoard = useGlobalBoard(lang, date);
   // The tab the player turned to, by key: a tab arriving later never moves them off it.
   const [chosen, setChosen] = useState<string | null>(null);
+  // A swipe on the rows in progress, and whether the last gesture was one (its click, a
+  // mouse's, opens nothing).
+  const swipe = useRef<{ id: number; x: number; y: number } | null>(null);
+  const swiped = useRef(false);
 
   const tabs: ResultTab[] =
     identity === null || awaited
       ? []
-      : resultTabs(live, world === 'failed' ? null : world, lastGroupId, {
+      : resultTabs(live, globalBoard === 'failed' ? null : globalBoard, lastGroupId, {
           publicId: identity.accountId,
           name: own?.name ?? '',
           avatar: own?.avatar ?? null,
@@ -86,7 +95,7 @@ export default function ResultBoards({
           progress,
           ended,
         });
-  const pending = identity !== null && (awaited || (tabs.length === 0 && world === null));
+  const pending = identity !== null && (awaited || (tabs.length === 0 && globalBoard === null));
   const empty = tabs.length === 0 && !pending;
   // The box's fate, latched (see the header): gone, kept, or still open.
   const [fate, setFate] = useState<'gone' | 'kept' | null>(null);
@@ -115,7 +124,7 @@ export default function ResultBoards({
         <>
           <ScopePager
             lang={lang as LangCode}
-            scopes={tabs.map((tab) => ({ key: tab.key, title: tab.group ? tab.group.name : t(lang, 'resultWorld') }))}
+            scopes={tabs.map((tab) => ({ key: tab.key, title: tab.group ? tab.group.name : t(lang, 'boardGlobal') }))}
             active={index}
             onChange={(i) => setChosen(tabs[i]?.key ?? null)}
             onOpen={(i) => {
@@ -125,7 +134,30 @@ export default function ResultBoards({
           />
           {/* The rows are a picture of the board, and the whole of it is the tap onto it; the
               keyboard's way there is the tab's name above. */}
-          <div className="result-board" onClick={() => open(shown)}>
+          <div
+            className="result-board"
+            onPointerDown={(e) => {
+              swipe.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
+              swiped.current = false;
+            }}
+            onPointerUp={(e) => {
+              const start = swipe.current;
+              swipe.current = null;
+              if (start === null || start.id !== e.pointerId) return;
+              const dx = e.clientX - start.x;
+              if (Math.abs(dx) < SWIPE_PX || Math.abs(dx) < 2 * Math.abs(e.clientY - start.y)) return;
+              swiped.current = true;
+              const next = tabs[index + (dx < 0 ? 1 : -1)];
+              if (next) setChosen(next.key);
+            }}
+            onPointerCancel={() => {
+              swipe.current = null;
+            }}
+            onClick={() => {
+              if (swiped.current) swiped.current = false;
+              else open(shown);
+            }}
+          >
             <ol key={shown.key} className="board-list">
               {shown.board.lines.map((line, i) =>
                 line.kind === 'gap' ? (
