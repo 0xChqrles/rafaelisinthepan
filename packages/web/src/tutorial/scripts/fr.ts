@@ -24,7 +24,8 @@
 // que la leçon lit 2, VALLON (le 2 de la carte) lisant 1 (`meterView`) : taper CHEMIN vaut un
 // 2, jamais la solution, et la jauge pleine offre alors le seul mot plus proche, VALLON¹, à
 // révéler — et taper SENTIER en premier échange les deux (sentier lit 2, chemin devient le
-// secret), pour que l'activation soit toujours vue avant la solution. Les CINQ essais du bot
+// secret), taper VALLON en premier aussi (il lit 2, chemin¹ est le mot à révéler), pour que
+// l'activation, avec un mot à révéler, soit toujours vue avant la solution. Les CINQ essais du bot
 // (parcours, randonneur, détour, hameau, ravin — peu, masculins pour que « le » tienne, et le
 // meilleur un synonyme FACILE de chemin : « belvédère » était bien trop dur, retour
 // utilisateur 2026-09-16) laissent la jauge à ~76 avec PARCOURS (8) pour meilleur mot — assez

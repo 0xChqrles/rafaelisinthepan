@@ -14,7 +14,7 @@ import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
 import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, REVEAL_HOLD_MS, STAGGER_MS } from '../game/timing';
 import CoachText, { richToPlain } from './CoachText';
 import { coachCopy, coachLine, type GuessEvent } from './coach';
-import { meterView, type LessonStage } from './script';
+import { meterView, tradeFor, type LessonStage, type MeterTrade } from './script';
 import { canExtend } from '../game/keyboard';
 import { latestMaskedPick, selectWord, shownHolesFor, withoutMaskedPicks, type WordPick } from '../game/wordWheel';
 import { MASK, buildHistory, type HistoryStop } from '../game/history';
@@ -130,23 +130,25 @@ export default function LessonBoard({
   const puzzleHoles = puzzle.holes;
   // THE METER STAGE'S VIEW of the open secret's map (`meterView`): the obvious word
   // `pair.alt` reads 2 and the rank-2 word reads 1, so the one word the full meter offers
-  // closer than it is there to reveal. THE PAIR SWAP (user-decided 2026-09-16): before the
-  // hole is active, typing the secret makes it read 2 and `pair.alt` the secret — so the
-  // activation is always seen before the solve. ONE map serves every reading, and the
-  // board, the meters, the wheel and every later guess replay against it. Swapped, the
-  // player then finds `alt`.
-  const [swapped, setSwapped] = useState(false);
+  // closer than it is there to reveal. THE PAIR TRADE (the secret's, user-decided
+  // 2026-09-16): before the hole is active, a word typed that reads closer than `alt` — the
+  // secret, or the word read 1 — reads 2 and `alt` takes its place, so the activation is
+  // always seen before the solve, with a word left to reveal. ONE map serves every
+  // reading, and the board, the meters, the wheel and every later guess replay against it.
+  // The secret traded, the player then finds `alt`.
+  const [traded, setTraded] = useState<MeterTrade>(null);
   const openSecret = useMemo(
     () => (puzzleHoles.find((h) => h.secret.slug !== puzzleHoles[0].secret.slug) ?? puzzleHoles[puzzleHoles.length - 1]).secret.slug,
     [puzzleHoles],
   );
   const ranks = useMemo<RankMap>(() => {
     if (!script.pair) return puzzle.ranks;
-    return { ...puzzle.ranks, [openSecret]: meterView(puzzle.ranks[openSecret], swapped) };
-  }, [swapped, script.pair, puzzle.ranks, openSecret]);
-  // The stage as the coach should read it: the swapped hole's secret is `alt`.
+    return { ...puzzle.ranks, [openSecret]: meterView(puzzle.ranks[openSecret], traded) };
+  }, [traded, script.pair, puzzle.ranks, openSecret]);
+  // The stage as the coach should read it: once the secret is traded, the hole's secret is
+  // `alt`.
   const stageView = useMemo<LessonStage>(() => {
-    if (!swapped || !script.pair) return script;
+    if (traded !== 0 || !script.pair) return script;
     const alt = script.pair.alt;
     const last = puzzleHoles.length - 1;
     return {
@@ -154,7 +156,7 @@ export default function LessonBoard({
       puzzle: { ...puzzle, holes: puzzleHoles.map((h, i) => (i === last ? { ...h, secret: alt } : h)) },
       hints: script.hints.map((key, i) => (i === last ? script.pair!.hint : key)),
     };
-  }, [swapped, script, puzzle, puzzleHoles]);
+  }, [traded, script, puzzle, puzzleHoles]);
   const viewHoles = stageView.puzzle.holes;
   const stageViewRef = useRef(stageView);
   stageViewRef.current = stageView;
@@ -310,8 +312,9 @@ export default function LessonBoard({
     },
     [playing, prefixSet, input, decoding],
   );
-  // BACK: the mask un-picked, the keyboard back under the caret.
+  // BACK: the mask un-picked, the keyboard back under the caret, on an empty prompt.
   const unpickMask = useCallback(() => {
+    setFeedback(null);
     setPicked(withoutMaskedPicks);
     guessField.current?.focus({ preventScroll: true });
   }, []);
@@ -352,12 +355,16 @@ export default function LessonBoard({
       // The hole was already active before this guess: this is the player's "one more try",
       // and the bot closes after it (unless the try itself lands).
       const activeOut = eventsRef.current.some((e) => e.filled != null);
-      // THE SWAP: the secret typed before the hole is active becomes the closest word, and the
-      // obvious word the secret. Read the map through that view from this guess on.
+      // THE TRADE: a word typed before the hole is active that reads closer than the obvious
+      // word takes its place (it reads 2) and the obvious word takes this one's. Read the map
+      // through that view from this guess on.
       const open = holes.find((h) => h.rank !== 0);
-      if (withMeters && !activeOut && !swapped && script.pair && open && ranks[open.secret][typed]?.rank === 0) {
-        setSwapped(true);
-        ranks = { ...ranks, [open.secret]: meterView(puzzle.ranks[open.secret], true) };
+      const trade = withMeters && !activeOut && traded === null && script.pair && open
+        ? tradeFor(ranks[open.secret][typed]?.rank)
+        : null;
+      if (open && trade !== null) {
+        setTraded(trade);
+        ranks = { ...ranks, [open.secret]: meterView(puzzle.ranks[open.secret], trade) };
         ranksRef.current = ranks;
       }
       // A counted guess is a NEW word identity (guessKey): a repeat still floats its numbers
@@ -478,7 +485,7 @@ export default function LessonBoard({
         later(() => setPhase('done'), settleMs);
       }
     },
-    [withMeters, swapped, script.pair, puzzle.ranks, fresh, meters, lang, say, later, stage, coarse, react],
+    [withMeters, traded, script.pair, puzzle.ranks, fresh, meters, lang, say, later, stage, coarse, react],
   );
 
   const submit = useCallback(
@@ -584,8 +591,11 @@ export default function LessonBoard({
     (index: number, stop: HistoryStop) => {
       const at = holes[index]?.rank;
       if (at === undefined || at === 0) return;
-      // A mask picked: the draft goes first (Game's rule).
-      if (stop.masked) setInput('');
+      // A mask picked: the draft goes first, and what was said about it (Game's rule).
+      if (stop.masked) {
+        setInput('');
+        setFeedback(null);
+      }
       setPicked((cur) => selectWord(cur, index, stop, at));
     },
     [holes],
@@ -719,7 +729,7 @@ export default function LessonBoard({
             )}
             {leaving ? (
               // The found sentence's exit: its exact pixels, eroded letter by letter —
-              // `viewHoles`, so a swapped meter stage dissolves the word it actually shows.
+              // `viewHoles`, so a traded meter stage dissolves the word it actually shows.
               <DissolvePhrase words={puzzle.words} puzzleHoles={viewHoles} brisk onDone={onLeft} />
             ) : (
               <Phrase

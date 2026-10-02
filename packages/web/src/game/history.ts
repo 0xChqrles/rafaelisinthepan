@@ -70,7 +70,7 @@ export interface HistoryStop {
   // what was never taken.
   given: boolean;
   masked: boolean;
-  taken: boolean; // a given hint the player consumed (guessed after it was given)
+  taken: boolean; // a given hint the player consumed (guessed while it was offered)
 }
 
 export interface HistoryModel {

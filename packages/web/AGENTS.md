@@ -3037,12 +3037,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     MAP THROUGH ONE VIEW** (`meterView`, `tutorial/script.ts`; user-decided 2026-10-02 with
     the one-closer offer): `alt` reads 2 and the map's rank-2 word (UNALIENABLE / VALLON)
     reads 1, so once FREEDOM² fills the meter one word is left closer than it for the reveal
-    to hand over. **AND THE TWO SWAP ROLES if the secret is typed first, before the hole is
-    active** (user-decided 2026-09-16 after typing « sentier » in one try): on top of that
-    view the secret reads 2 and `alt` becomes the secret the player then finds. ONE map
-    serves every reading (`ranks` in `LessonBoard`), and the board, the meters, the wheel
-    and every later guess replay against it. Once the hole is active there is no swap: the
-    goal is only that the activation is seen before the solve. `played` is the
+    to hand over. **AND A WORD READ CLOSER THAN `alt`, typed before the hole is active,
+    TRADES PLACES WITH IT** (`MeterTrade` / `tradeFor`): on top of that view it reads 2 and
+    fills the meter. The SECRET traded (user-decided 2026-09-16 after typing « sentier » in
+    one try), `alt` becomes the secret the player then finds; the word read 1 traded, `alt`
+    reads 1 and is the word the reveal hands over (the same trick, so the one-closer offer
+    never meets a best of 1). A full meter therefore always holds a best of 2 and a word to
+    reveal. ONE map serves every reading (`ranks` in `LessonBoard`), and the board, the
+    meters, the wheel and every later guess replay against it. Once the hole is active
+    there is no trade: the goal is only that the activation, with a word to reveal, is
+    seen before the solve. `played` is the
     bot's log — FEW tries, five, the best one an EASY SYNONYM of the obvious word (en: cat,
     independence, equality, autonomy, justice, dignity — on the fastText map (#317) the
     synonyms sit past rank 40 and five of them cannot reach the ~75 FREEDOM² needs to fill
@@ -3056,8 +3060,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     to read on its chip (`equality^11` / `parcours^8` — `col` "was too short to understand
     the notion of progression", 2026-09-16;
     the test wants rank ≥ 5 and ≥ 6 letters, 65–80, ≤ 6 tries, `alt` at rank 1 in the map
-    and 2 in the view, untried, filling it alone, and the full meter offering the word
-    read 1). THE WATERMARK COUNTS THE WHOLE LOG, the bot's tries included.
+    and 2 in the view, untried, filling it alone, the full meter offering the word read 1,
+    and no first word solving or filling the meter with nothing to reveal). THE WATERMARK
+    COUNTS THE WHOLE LOG, the bot's tries included.
     THE KEYBOARD IS HELD BACK UNTIL THE TAP (user-decided 2026-09-16): the stage opens with
     the prompt retired and the tray empty, so the bot's tries are the first thing to look
     at; the keys arrive with the line that hands the turn over — which types only once the
@@ -3076,7 +3081,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     game's REVEAL, Enter its twin): "unalienable¹ is revealed, for one try. Now find the
     secret word."
     (`tutRevealed`, off the event's `revealed` flag) → a FAILED TRY typed after it earns the HINT
-    (`hints[]`, or `pair.hint` once swapped), NEVER THE WORD (user-decided 2026-09-16,
+    (`hints[]`, or `pair.hint` once the secret is traded), NEVER THE WORD (user-decided 2026-09-16,
     retiring the bot's own closing guess) → found: "You found it! You are ready for the real
     game." → PLAY. `STUCK` has no `meter` row
     (the stage is its own script). Not taught: the exact rate.

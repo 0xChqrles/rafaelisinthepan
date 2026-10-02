@@ -651,8 +651,11 @@ function Round({
       const at = holes[index]?.rank;
       if (at === undefined || at === 0) return;
       // A mask picked puts REVEAL in the keyboard's place: a half-typed draft goes first,
-      // so the prompt is the mask's alone.
-      if (stop.masked) setInput('');
+      // and the message about it, so the prompt is the mask's alone.
+      if (stop.masked) {
+        setInput('');
+        setFeedback(null);
+      }
       setPicked((cur) => selectWord(cur, index, stop, at));
     },
     [holes],
@@ -678,8 +681,10 @@ function Round({
   // (A mask picked clears the draft, and letters and recall are refused while it stands,
   // so a ghost always stands in an empty prompt.)
   const revealUp = decoding !== null || ghost !== null;
-  // BACK: the mask un-picked, the hole's own word back, the keyboard back under the caret.
+  // BACK: the mask un-picked, the hole's own word back, the keyboard back under the caret,
+  // on an empty prompt.
   const unpickMask = useCallback(() => {
+    setFeedback(null);
     setPicked(withoutMaskedPicks);
     guessField.current?.focus({ preventScroll: true });
   }, []);

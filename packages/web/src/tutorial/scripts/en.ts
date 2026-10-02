@@ -26,7 +26,8 @@
 // lesson reads 2, UNALIENABLE (the map's 2) reading 1 (`meterView`): typing FREEDOM earns a
 // 2, never the solve, and the full meter then offers the one word closer, UNALIENABLE¹, to
 // reveal — and typing LIBERTY first swaps the two (liberty reads 2, freedom becomes the
-// secret), so the activation is always seen before the solve. The bot's FIVE tries (few,
+// secret), typing UNALIENABLE first too (it reads 2, freedom¹ is the word to reveal), so
+// the activation, with a word to reveal, is always seen before the solve. The bot's FIVE tries (few,
 // and the best one an EASY SYNONYM, user-decided 2026-09-16) — picked on the fastText map
 // (#317), where the synonyms sit far (independence 56, autonomy 44) and the ideology words
 // close (democracy 4, equality 11): five tries no closer than a synonym cannot reach the
