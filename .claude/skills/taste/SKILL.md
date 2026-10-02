@@ -45,8 +45,11 @@ it is a joke.
 - **Two registers in one breath.** The learned and the spoken side by side — a salon
   wit's phrasing about a fat man, a rapper's pun on the motherland.
 
-What it never is: lyrical, solemn, a lesson, a verdict on the reader. A mood alone is not
-the voice: a line that is only sad, or a little off in tone, is the weaker kind of day.
+What it never is: lyrical, solemn, a lesson, a verdict on the reader — and never
+**reactionary**: no line that mocks a group of people or longs for the old order, and no
+line from a passage that does, since the page shows it (Muray on the gay activists of the
+Pacs: a light joke, a sneering page). A mood alone is not the voice: a line that is only
+sad, or a little off in tone, is the weaker kind of day.
 And the worst kind is **slop** — a line chosen because nothing is wrong with it: a piece
 of plot told in plain words, a stock image, three ordinary words. This is the game's voice
 and it does not move.
@@ -168,6 +171,10 @@ when they do?
 The book sets the ceiling. A writer whose sentences turn gives a day on almost any page;
 plain narrative prose — a thriller's, a chronicle's — reports what happens and leaves
 nothing to rebuild. When a book's best lines are all dead, the answer is another book.
+
+Never a **reactionary book** (user-decided 2026-10-02). The author is not the test, the
+book and the line are: Houellebecq is a reference, his *Soumission* is out, and a
+reactionary line is out whoever wrote it.
 
 ## The hidden words
 
