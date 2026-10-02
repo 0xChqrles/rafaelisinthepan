@@ -23,3 +23,4 @@ export * from './bonus';
 export * from './groups';
 export * from './name';
 export * from './vocab';
+export * from './tutorial';

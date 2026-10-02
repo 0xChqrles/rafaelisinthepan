@@ -58,3 +58,13 @@ describe('what the list and the badge read', () => {
     expect(formatDuration(45)).toBe('45″');
   });
 });
+
+describe('the shared levels and their faces', () => {
+  it('names and draws every level the shared table holds', () => {
+    for (const level of LEVELS) {
+      expect(level.titleKey, `level ${level.level}`).toBeDefined();
+      expect(level.subKey, `level ${level.level}`).toBeDefined();
+      expect(level.art, `level ${level.level}`).toBeDefined();
+    }
+  });
+});

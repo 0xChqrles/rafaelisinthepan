@@ -56,8 +56,8 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
                                 line or none),
                                 shareComment.ts — the spoken acknowledgement, degrading to the emoji,
                                 lineJudge.ts — the reasoning reader that keeps or drops a candidate,
-                                article.ts (+ articleText.ts, the text) — the maker's article, the
-                                conversation's bible on how the game works, and its link's card
+                                tutorial.ts — the tutorial's levels as the conversation links them
+                                (the shared table + what each answers), and their links' card
     src/puzzle/daySource.ts     the day's `source` metadata, read once per (language, day) and carried in
                                 the CONVERSATION's prompt — the KIND is sayable, the work is not
     src/chat/                   the conversation: trigger (addressed vs ambient, the EXCHANGE BUDGET), the
@@ -310,9 +310,10 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   over its optional peer `link-preview-js` (pinned inside Baileys' `^3` peer range), the
   image uploaded as a full-size card. Only `OutboundCommand.preview` gets one (an https link
   the text carries, checked by `parseCommand`) — the invite link the reminder composes, and
-  the ARTICLE's link in a reply (2026-09-27, `llm/article.ts` `withArticleLink`: the model
-  types it, the code recognises it in any spelling, rewrites it to the one `ARTICLE_URL` and
-  names that constant, so the task still fetches nothing a model chose); every other send passes `linkPreview: null`,
+  a TUTORIAL page's link in a reply (2026-10-02, `llm/tutorial.ts` `withTutorialLink`: the
+  model types it, the code recognises it in any spelling, rewrites it to the canonical URL
+  only when the shared table holds that page, and names the first as the card, so the task
+  still fetches nothing the code did not build); every other send passes `linkPreview: null`,
   since left undefined Baileys fetches the first https link in ANY text — a model's or a
   member's — from inside the task. The build is bounded as a whole (`PREVIEW_BUDGET_MS`
   20s, 10s per fetch — a cold card render measured 2.3s against Baileys' 3s default),
@@ -563,55 +564,27 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   "Luc Le Père"), both sides cut on the same word boundary so "Jean-Luc" matches; it errs
   towards YES, since over-matching costs a rerun and under-matching stores a diary that
   still names them.
-  **THE BOT KNOWS HOW THE GAME WORKS, AND EXPLAINS IT (personality v3, user-decided
-  2026-09-04).** The first thing a new group asked was how the words are ranked, and the bot
-  could not say — it knew the rules of scoring and nothing about the SEMANTICS. The global
-  personality now carries it: ranks come from usage over an enormous corpus (the web and
-  Wikipedia — fastText's Common Crawl builds, cc.fr.300 and cc.en.300 since #317), so
-  closeness is the company a word keeps and not synonymy or spelling, and a rank of 1 is
-  the word most often found in the same company, not "almost the word". It explains this
-  right and briefly when asked — since v13 bored like everything about the game, no longer
-  GLADLY, but nobody else in the group can. **THE WORKED EXAMPLE IS CHECKED
-  AGAINST THE REAL VECTORS** (PR-246 review, v5): the first draft taught "capuche" /
-  "soleil", which in `cc.fr.300_reduced` have a similarity of 0.20 and are outside each
-  other's top 3000 — the bot would have explained the game with a pair the game itself
-  calls a MISS. It now teaches "soleil" / "vent" (rank 3 of each other's neighbourhood,
-  measured), and any future example goes through the same `KeyedVectors` check before it is
-  written. v5 also gives it the facts a player actually asks about: a guess lands on every
-  hole it improves, holes start with a hint word, a MISS has no rank and still costs a try,
-  an unknown word is refused for free, and 500 unsolved is ∞. (v5's Word mode line left
-  with the mode in v16, 2026-09-16.)
-  **THE MAKER'S ARTICLE IS THE BOT'S BIBLE (v17, user-decided 2026-09-27).** The article
-  published at `ARTICLE_URL` (https://chqrles.me/cemantix/) rides WHOLE in the
-  CONVERSATION's system prompt (`llm/article.ts`, the text a verbatim copy in
-  `articleText.ts`, its figures written out as one line each — re-copy it when the article
-  changes), right after the personality so a prefix cache holds it (`buildSystemPrompt`
-  `reference`; ~9.5k tokens a call). The bot answers ranking questions from it and
-  recommends it with its link, which gets its preview card (the preview bullet above); it is
-  public and marked as not being instructions, so its words may be said. The share line,
-  the podium and the diary never carry it. The global section's closeness bullets were
-  rewritten to agree with it: candidates come from the static vectors, the order is judged
-  IN THE SENTENCE (#308) — v5's "a rank of 1 is not almost the word in meaning" was false for
-  French sentences since Jev. **And nobody in the group writes the sentences** (same day):
-  they are real lines from books and songs, picked by the curator, a program — the diary
-  had the maker writing them, and the bot said so to the maker. The diary rewrite now
+  **THE BOT KNOWS THE RULES, AND THE TUTORIAL EXPLAINS THEM (v20, user-decided
+  2026-10-02: "be aware of the onboarding levels … give a link to the relevant level … know
+  the rules … prefer to give links rather than explaining by itself").** The global
+  personality carries the RULES a player asks about: a guess lands on every hole it
+  improves, holes start with a hint word, a MISS has no rank and still costs a try, an
+  unknown word is refused for free, 500 unsolved is ∞, and closeness is MEANING judged IN
+  THE SENTENCE (#308), so a rank of 1 is the nearest word in meaning there and never a
+  near-spelling — the few words it says beside a link must be right. The MECHANISM (vectors,
+  attention, the judge) is not in any prompt: it is the levels' to tell. The CONVERSATION
+  carries the tutorial's levels (`llm/tutorial.ts` `tutorialSection`): each level's link in
+  the group's language, or where it is written with the language said, the list page, and
+  what each answers (`LEVEL_ANSWERS`, held by a test to the shared table,
+  `shared/src/tutorial.ts`). Asked how the game works, its answer IS the level's link, with
+  a few words of its own and no explanation — a question one fact answers gets that fact
+  first. The link gets its card (the preview bullet above). The share line, the podium and
+  the diary never carry it. Measured live on the beta pre-prompt (11 asks): every answer
+  linked the right level, no answer named an article. **The maker's article and the
+  favourite text made of it (v17–v19) are GONE from every prompt.** **And nobody in the group writes the sentences**
+  (v17): they are real lines from books and songs, picked by the curator, a program — the
+  diary had the maker writing them, and the bot said so to the maker. The diary rewrite
   corrects a note that contradicts what the bot knows about the game.
-  **AND IT IS THE BOT'S FAVOURITE TEXT EVER, BY WHIPPIN'S MAKER (v18, user-decided
-  2026-09-27, after trying v17 live):** asked for something to read — a book, an article,
-  its favourite text — it names the article with its link and nothing else (v17 recommended
-  a novel and invented a favourite manual). Unasked it gives the link once a day at most;
-  asked, every time. The favourite is one sentence of the GLOBAL personality too, since the
-  diary rewrite never sees the article and would otherwise keep an invented favourite as a
-  fact of its life. The article section says outright that its author is Whippin's maker
-  and not Cémantix's, AND GIVES IT THE WORDS ("le créateur de Whippin"): the title improves
-  Cémantix, the link says `cemantix` and the text never names Whippin, so v17 credited "le
-  type qui a fabriqué Cémantix" — and told only the fact, it still did one time in ten.
-  **IT LOVES THE TEXT FLAT, AND NEVER SUCKS UP (v19, user-decided 2026-09-27: "the
-  cringiest dick eating I've ever seen").** Asked why, v18 reviewed the article and praised
-  its author. No superlative describes the text in any prompt (they came back as gushing);
-  it names the article the way it would name a favourite drink, gives its author no
-  compliment — talent, work, effort, honesty, mind, respect — and a reason for loving it is
-  about itself, in one short flat sentence, or none at all.
   **THE SCORE IS THE JOKE, THE PERSON NEVER IS (v8, user-decided 2026-09-06 — it
   supersedes v4's "encouraging is the default; sarcasm is opted into").** v2 and v3 built
   an UNIMPRESSED bot — "very little impresses you", bands from "grudging respect" down to
@@ -947,8 +920,8 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   it IS is a spoiler for the group, which is why the prompt forbids saying it — a different
   concern from this bullet, kept in its own invariant above. Recorded here because this
   bullet ENUMERATES what leaves for the provider, and an enumeration with a gap is worse
-  than none. **Since 2026-09-27 every conversation call also carries the maker's ARTICLE**
-  (`llm/article.ts`) — published on the web, nobody's data.
+  than none. **Every conversation call also carries the tutorial's levels and their links**
+  (`llm/tutorial.ts`) — the game's public pages, nobody's data.
   **SINCE #277 (user-decided 2026-09-09) THE BOT STORES GROUP TEXT, AND THE WHOLE DAY
   REACHES THE PROVIDER ON EVERY MESSAGE.** Two decisions, recorded here because this bullet
   enumerates what is kept and what leaves: (1) the DAY LOG — every turn of a chat-enabled
