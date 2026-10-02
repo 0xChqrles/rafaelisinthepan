@@ -4,7 +4,6 @@ import {
   anonName,
   dateForDayNumber,
   defaultAvatar,
-  progressHeatColor,
   type Board,
   type BoardPeriod,
   type BoardPlayer,
@@ -12,7 +11,6 @@ import {
   type GroupSummary,
   type PeriodBoard,
   type PeriodRow,
-  type PlayingRow,
 } from '@whippin/shared';
 import {
   boardUrl,
@@ -26,10 +24,8 @@ import {
   type GroupsBody,
 } from '../api';
 import Avatar from '../components/Avatar';
-import { shownPercent } from '../game/race';
-import CrownIcon from '../assets/icons/board.svg?react';
 import ConfirmScreen from '../components/ConfirmScreen';
-import InfinityGlyph from '../components/InfinityGlyph';
+import { BoardRank, BoardRowItem, PlayingRowItem, WaitingRowItem } from '../components/BoardRows';
 import GroupCreate from '../components/GroupCreate';
 import GroupScreen from '../components/GroupScreen';
 import LoadError from '../components/LoadError';
@@ -708,20 +704,6 @@ function PeriodList({
   );
 }
 
-// A row's rank: `#N` in the quiet pixel face — and FIRST PLACE WEARS THE CROWN instead, the
-// header's own board mark in the accent (the palette's "every solved word/trophy/terminus"
-// blue). Competition ranks share a first, so a tie crowns every row that holds it. The
-// number stays for a screen reader.
-function BoardRank({ rank }: { rank: number }) {
-  if (rank !== 1) return <span className="board-rank">#{rank}</span>;
-  return (
-    <span className="board-rank crown">
-      <CrownIcon className="ui-icon" aria-hidden />
-      <span className="sr-only">#1</span>
-    </span>
-  );
-}
-
 function PeriodRowItem({
   row,
   me,
@@ -758,70 +740,5 @@ function Face({ player }: { player: BoardPlayer }) {
       <Avatar avatar={player.avatar ?? defaultAvatar(player.publicId)} size={44} />
       <span className={`confirm-name${player.name ? '' : ' anon'}`}>{player.name || anonName(player.publicId)}</span>
     </span>
-  );
-}
-
-// A member mid-round — or done with nothing recorded: a round that ENDED UNSOLVED (`over`:
-// given up, or capped) prints `∞` where the tries would be, its % kept quiet, after the live
-// rows (the shared `orderPlaying`).
-function PlayingRowItem({ row, me, index }: { row: PlayingRow; me: boolean; index: number }) {
-  return (
-    <li
-      className={`board-row playing${row.over ? ' over' : ''}${me ? ' me' : ''}`}
-      style={{ '--i': index, '--play-heat': progressHeatColor(row.progress) } as CSSProperties}
-      aria-current={me || undefined}
-    >
-      <span className="board-norank" aria-hidden="true" />
-      <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
-      <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
-      <span className="board-progress">{shownPercent(row.progress)}%</span>
-      <span className="board-score">
-        {row.over ? (
-          <>
-            <InfinityGlyph className="board-inf" />
-            <span className="sr-only">∞</span>
-          </>
-        ) : (
-          row.tries
-        )}
-      </span>
-    </li>
-  );
-}
-
-function WaitingRowItem({ player, index }: { player: BoardPlayer; index: number }) {
-  return (
-    <li className="board-row waiting" style={{ '--i': index } as CSSProperties}>
-      <span className="board-norank" aria-hidden="true" />
-      <Avatar avatar={player.avatar ?? defaultAvatar(player.publicId)} size={28} />
-      <span className={`board-name${player.name ? '' : ' anon'}`}>{player.name || anonName(player.publicId)}</span>
-    </li>
-  );
-}
-
-function BoardRowItem({
-  row,
-  me,
-  mate,
-  index,
-}: {
-  row: BoardRow;
-  me: boolean;
-  mate: boolean;
-  index: number;
-}) {
-  return (
-    <li
-      // `me` wins over `mate`: your own row is never one of your people, but a stale list
-      // could say so, and two markers on one row is a rendering bug on screen.
-      className={`board-row${me ? ' me' : mate ? ' mate' : ''}`}
-      style={{ '--i': index } as CSSProperties}
-      aria-current={me || undefined}
-    >
-      <BoardRank rank={row.rank} />
-      <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
-      <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
-      <span className="board-score">{row.score}</span>
-    </li>
   );
 }

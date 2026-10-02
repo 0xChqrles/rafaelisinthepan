@@ -211,7 +211,8 @@
 - `src/leaderboard.ts` is the ONE definition of the #190 board's ranking rules —
   competition-style tie ranks, the plain top-50 cut (nothing folded, user-decided
   2026-08-20), the own-row ±2 window, the in-progress ORDER (`orderPlaying`: live rows before
-  the ENDED ones — `over`, given up or capped — then progress down, tries up) — and, since
+  the ENDED ones — `over`, given up or capped — then progress down, tries up; generic, so a
+  dressed row comes back dressed) — and, since
   #271, of the PERIOD rule (`rankPeriod`:
   podium points 3/2/1 per day by competition rank, then solved days, then the total, fewer
   tries first) and the STANDING (`standingIn`) — plus the `Board`/`BoardRow`/

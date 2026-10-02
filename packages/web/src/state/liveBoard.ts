@@ -27,9 +27,12 @@ interface LiveBoardState {
   // WHICH day the answer is about (`<lang>:<date>`): a day has its own board.
   key: string | null;
   board: LiveBoard | null;
+  // The day whose last read FAILED with no answer about it in hand: a consumer holding room for
+  // the first answer stops holding it (the solved screen's boards draw without the groups).
+  missed: string | null;
 }
 
-export const useLiveBoardStore = create<LiveBoardState>(() => ({ key: null, board: null }));
+export const useLiveBoardStore = create<LiveBoardState>(() => ({ key: null, board: null, missed: null }));
 
 const keyOf = (lang: string, date: string) => `${lang}:${date}`;
 
@@ -81,15 +84,17 @@ function run(target: { lang: string; date: string }): void {
       if (!current()) return;
       if (!response.ok) {
         await adoptSignedOutVerdict(response, resolved.epoch);
-        return;
+        throw new Error(`live board answered ${response.status}`);
       }
       const board = parseLiveBoard(await response.json());
       // Fenced: an answer that outlived its identity is about an account this device no
       // longer acts as.
       if (!current()) return;
-      useLiveBoardStore.setState({ key: keyOf(target.lang, target.date), board });
+      useLiveBoardStore.setState({ key: keyOf(target.lang, target.date), board, missed: null });
     } catch {
-      // Silent: the last answer stands.
+      // Silent: the last answer stands — and with none, the day is marked missed.
+      const key = keyOf(target.lang, target.date);
+      if (current() && useLiveBoardStore.getState().key !== key) useLiveBoardStore.setState({ missed: key });
     } finally {
       if (generation === requestGeneration) {
         flight = null;
@@ -105,6 +110,11 @@ export function useLiveBoard(lang: string, date: string): LiveBoard | null {
   return useLiveBoardStore((state) => (state.key === keyOf(lang, date) ? state.board : null));
 }
 
+// Whether the read about (lang, date) failed with no answer in hand — nothing is on its way.
+export function useLiveBoardMissed(lang: string, date: string): boolean {
+  return useLiveBoardStore((state) => state.missed === keyOf(lang, date));
+}
+
 // Registered in `identityScope`: the answer belongs to the ACCOUNT.
 export function resetLiveBoard(): void {
   generation += 1;
@@ -113,5 +123,5 @@ export function resetLiveBoard(): void {
   timer = null;
   wanted = null;
   lastStartedAt = Number.NEGATIVE_INFINITY;
-  useLiveBoardStore.setState({ key: null, board: null });
+  useLiveBoardStore.setState({ key: null, board: null, missed: null });
 }

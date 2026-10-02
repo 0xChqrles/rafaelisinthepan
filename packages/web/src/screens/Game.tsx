@@ -19,7 +19,7 @@ import { giveUpRound, notifyGuess, retryRoundSync } from '../state/roundSync';
 import { useGameStore, roundKeyFor } from '../state/gameStore';
 import { noteSolvedDay, usePlayerHistory } from '../state/history';
 import { loadGroups, useGroups } from '../state/groups';
-import { requestLiveBoard, useLiveBoard } from '../state/liveBoard';
+import { requestLiveBoard, useLiveBoard, useLiveBoardMissed } from '../state/liveBoard';
 import Phrase from '../components/Phrase';
 import CellDigits from '../components/CellDigits';
 import WordInput from '../components/WordInput';
@@ -441,7 +441,7 @@ function Round({
   useEffect(() => {
     if (racing) loadGroups();
   }, [racing, identity]);
-  const { groups } = useGroups();
+  const { phase: groupsPhase, groups } = useGroups();
   const raceable = racing && (groups?.some((group) => group.members.length > 1) ?? false);
   const raceDate = puzzleAddress(puzzleRef);
   // ASKED when the round's server state lands and every time it CHANGES — the round's start,
@@ -459,6 +459,21 @@ function Round({
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [raceable, lang, raceDate]);
   const liveBoard = useLiveBoard(lang, raceDate);
+  const liveMissed = useLiveBoardMissed(lang, raceDate);
+  // The result's boards (SolvedScreen) read the same answer — and hold their room for it while
+  // one is on its way: the groups list still unknown, or a group with somebody else and no
+  // answer (nor a failed read) yet.
+  const boards = useMemo(
+    () =>
+      racing
+        ? {
+            date: raceDate,
+            live: raceable ? liveBoard : null,
+            awaited: (groups === null && groupsPhase !== 'failed') || (raceable && liveBoard === null && !liveMissed),
+          }
+        : null,
+    [racing, raceDate, raceable, liveBoard, groups, groupsPhase, liveMissed],
+  );
   // The player's own entry is the SCREEN's: the % of the board they see (it moves when a hit
   // lands) and their own try count — both ahead of the stored summary the read carries.
   const ownProgress = useMemo(() => computeProgress(holes, ranks), [holes, ranks]);
@@ -1182,10 +1197,13 @@ function Round({
           onExplore={openHistory}
           animate={animateResults}
           onRevealEnd={() => setRevealEnded(true)}
+          // How the day compares — the player's groups, then the world — on the active day
+          // only: an archive day or a bonus has no live board.
+          boards={boards}
           // The dev `?streak=N` preview (App owns that dialog, so this round never sees
           // it in `showStreakDialog`) opens over an ALREADY-SOLVED day, where the result
           // is mounted from the first frame. Without this it would play its whole reveal
-          // — citation, tally, standing — under a full-screen modal, and dismissal would
+          // — tally, SHARE, boards, citation — under a full-screen modal, and dismissal would
           // land on a finished frame: the exact choreography the harness exists to
           // replay, spent unseen. The prop flips false on dismissal, which is the cue.
           start={!deferResultsAnimation}

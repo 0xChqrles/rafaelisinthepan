@@ -604,7 +604,7 @@ The live routes then share:
   histogram is DERIVED from the day's per-player rows at read time: `{ buckets, total,
   bucket }`, one exact band per distinct score, ascending; empty population → `buckets: []`;
   `bucket` is the CALLER's band (`bucket: null` when the population holds no row for them —
-  never a number match).
+  never a number match). No client reads it any more (the user's call to retire it).
 - **The score row is written by the ROUND route** (the solving append),
   ONE row per `(date, lang, publicId)` carrying the `revision`, **only when `onTime`**.
   First write wins within a revision; a new revision replaces the row (no new IP allowance).
@@ -725,18 +725,25 @@ The live routes then share:
   row (`orderPlaying`), so a member who gave up never reads as a live rival. A solve with no
   score row (late, IP-refused) stays IN PROGRESS unmarked — accepted. The caller's own
   playing row never defeats the just-you ghost.
-- **The solved screen's standing line is DROPPED (user-decided 2026-09-14, "for now at
-  least"): the web reads no standing; `POST /board {token, standing: true}` still answers
-  (retiring it is a separate call). What it was, for when it returns:** ONE line — "2ND OF
-  7" (no "today": the result screen is today's, and the word pushed the line off a phone's
-  card) — for the group last opened
-  (`gameStore.lastGroupId`, account-owned, persisted) when the player stands in it, else the
-  best standing (lowest rank, then the larger field); a tap opens that group's board; nothing
-  when the player is in no group or holds no row (late, capped, given up). It REPLACED the #170 TOP-%
-  badge (`ScoreTop`, `scoreStanding`, `useScoreHistogram` and the web's `/scores` client are
-  gone; the `/scores` route itself still answers — no consumer, the user's call to retire).
-  `of` is the members who RECORDED a score today, never the group's size: a rank over people
-  who have not played is a claim.
+- **THE SOLVED SCREEN'S BOARDS (user-decided 2026-10-02): how the player's day compares,
+  UNDER SHARE, on the ACTIVE day only** (never an archive day or a bonus — the live read is
+  the active day's). Tabs, swiped on the board's pager: each of the player's groups — the
+  group last opened (`gameStore.lastGroupId`) first, then the others; a group where nobody
+  but the player has a row is skipped — then **WORLD** (fr MONDE), the day's global board;
+  a player in no group sees WORLD alone. The groups come off the LIVE read below (no read
+  of their own); WORLD is ONE anonymous `GET /board?…&id=<publicId>` per result display
+  (score rows + profiles, no artifact), identity-fenced, a failure dropping the tab
+  silently. Each tab is the boards' own reading (`web/src/game/resultBoards.ts`): a group's
+  members who recorded a score ranked by `rankBoard` over that group's member list, then its
+  playing members by `orderPlaying`; the whole day when it fits the box (6 rows), else the
+  podium + the player's ±1 window + two playing rows + a `+N` of the rest. **The player's
+  own row comes from their own result, never a guess:** ranked only when the server
+  recorded their score; `∞` among the ended when the round ended unsolved; an unranked
+  finished row when solved with no recorded score (late, IP-refused) — never a false rank.
+  WORLD invents nothing (no recorded score: the podium alone). One fixed box whatever it
+  holds, so nothing that has landed moves. A tap opens that board (a group becomes the group
+  last opened); no analytics event. `POST /board {token, standing: true}` still answers,
+  with no consumer (retiring it is a separate call).
 - **THE LIVE READ (`POST /board {token, live: true}`, the shared `LiveBoard`): EVERY group
   the caller is in, MERGED** — `{groups: [{id, name, members}], rows, playing}` over the
   deduplicated UNION of their members (the caller included): `rows` = the members with a
@@ -760,7 +767,7 @@ The live routes then share:
   player's own entry taken from the screen (their live % and tries), the ended-unsolved last;
   it shows the one just ahead, the player and the one just behind.
 - Entry: the header's crown on every game surface (archive days included since 2026-08-31),
-  and the race line's tap during play.
+  the race line's tap during play, and the solved screen's boards.
 
 ### The WhatsApp bot boundary (#236, decided 2026-09-03)
 

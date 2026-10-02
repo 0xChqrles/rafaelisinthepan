@@ -15,32 +15,35 @@ import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
 import Button from './Button';
 import InfinityGlyph from './InfinityGlyph';
+import ResultBoards, { type ResultBoardsData } from './ResultBoards';
 import { useDeviceIdentity } from '../identity';
 import { ariaHoleHistory, t } from '../i18n';
 import { capitalize, sentenceStarts } from '../game/sentenceCase';
 
-// The sentence result — a STAGE in two parts, the score above and the sentence's page
-// below (user-decided 2026-09-08, on #266's second review). It takes the whole column the
-// dissolved sentence handed over (the 2026-08-14 hand-over, restored), and it stacks:
+// The sentence result — a STAGE: the score above, the player's boards under it, and the
+// sentence's page below (user-decided 2026-09-08, on #266's second review). It takes the whole
+// column the dissolved sentence handed over (the 2026-08-14 hand-over, restored), and it stacks:
 //
 //   SCORE   — at the TOP, right under the header: the named `<tries> TRIES` over its run
 //             ruler and SHARE (sharing is what you do with a
 //             RESULT, user-decided 2026-08-14). Its height is the same on
 //             every round, and it is above the fold on every phone — SHARE is the
-//             reveal's closing beat and the game's one liked-indicator, and it is never
+//             card's closing beat and the game's one liked-indicator, and it is never
 //             reached by scrolling.
+//   BOARDS  — on the ACTIVE day only: how the day compares, the player's groups then the
+//             WORLD (`ResultBoards`), in one fixed box that holds its room from frame one.
 //   CONTEXT — under it, with a gap: the source credit, then the sentence the player
 //             rebuilt in the READING face, its secrets in the solve blue and tappable.
 //             This is the round's variable-height content, so THIS is what scrolls: a
 //             long sentence (and, with #270, the sentences of the book around it, read
 //             top-down from the credit) goes under the fold, the score never does.
 //
-// The reveal runs stage → SCORE → rank + SHARE → credit → sentence (user-decided
+// The reveal runs stage → SCORE → SHARE → BOARDS → credit → sentence (user-decided
 // 2026-09-11, reversing 2026-08-15's page-first order now that the score is a CARD above
 // the page): the stage rises in with the card, which lands reading 0 over a bar with no
 // colour in it yet; then the tally counts WHILE the bar colours in, try by try — one beat
-// saying one thing, "here is your run" — then the standing lands with SHARE,
-// closing the card; only THEN, with the score standing above it, the credit types, and
+// saying one thing, "here is your run" — then SHARE lands, closing the card, and the boards
+// under it; only THEN, with the score standing above it, the credit types, and
 // only once it has printed does the sentence appear under it, its secrets popping in. The 2026-08-15 rule survives in the other direction:
 // nothing prints while the numbers move, so the two never read as happening at once. The
 // citation's completion is the screen's one signal-driven beat, so it carries a DEADLINE
@@ -73,9 +76,10 @@ const TEXT_LEAD_MS = 320;
 // completion signal and moving on anyway. Generous by design: it is a backstop, and the
 // typewriter's intervals are merely THROTTLED on a hidden tab, never dropped.
 const CAPTION_FALLBACK_SLACK_MS = 4_000;
-// The card's closing beat — the standing and SHARE, together — follows the count's
-// landing (the bar full) by a breath.
+// The card's closing beat — SHARE — follows the count's landing (the bar full) by a breath,
+// and the boards follow SHARE by another.
 const CLOSE_LEAD_MS = 260;
+const BOARDS_LEAD_MS = 200;
 
 // ONE BEAT of the reveal: false until `ready` has held for `delayMs`, then true. A settled
 // frame (`animate` off — rehydrated, or fast-forwarded) is true at once. Reduced motion
@@ -134,6 +138,7 @@ export default function SolvedScreen({
   animate = true,
   start = true,
   onRevealEnd,
+  boards = null,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
@@ -163,6 +168,9 @@ export default function SolvedScreen({
   // The reveal's last beat has landed (the credit printed under the card, or the settled
   // frame): the round disarms its fast-forward on it.
   onRevealEnd?: () => void;
+  // How the day compares, on the ACTIVE day only (null on an archive day or a bonus): the
+  // live answer the play screen keeps and whether one is on its way.
+  boards?: ResultBoardsData | null;
 }) {
   const reduceMotion = prefersReducedMotion();
   const hasSource = Boolean(source?.kind || source?.author || source?.work);
@@ -216,12 +224,11 @@ export default function SolvedScreen({
   const shownScore = useAnimatedNumber(countTarget, !animate || reduceMotion ? 1 : SCORE_COUNT_MS);
   const shownCount = Math.round(shownScore);
 
-  // The card's closing beat (user-decided 2026-08-16): the STANDING and SHARE land
-  // TOGETHER, once the tally has settled. SHARE used to wait out the standing's own
-  // rung-in and a breath of its own on top, which put the card's one action far too late
-  // (user-reported 2026-09-11). Both hold their layout space throughout (the rank's slot
-  // is always mounted, SHARE hides in place), so the flip changes when they appear, never
-  // where anything sits.
+  // The card's closing beat (user-decided 2026-08-16): SHARE lands once the tally has
+  // settled — its own beat, never behind anything else's (user-reported 2026-09-11: waiting
+  // out another rung-in put the card's one action far too late). It holds its layout space
+  // throughout (SHARE hides in place), so the flip changes when it appears, never where
+  // anything sits.
   // It keys off the count LANDING — the number showing its final value, the bar full —
   // not off `SCORE_COUNT_MS`: the tween eases out and the number is rounded, so the last
   // visible step comes well before the tween's own end (at 45% of it on a 3-try run), and
@@ -229,13 +236,17 @@ export default function SolvedScreen({
   const countLanded = countIn && shownCount === guessCount;
   const shareIn = useBeat(animate, countLanded, CLOSE_LEAD_MS, reduceMotion, true);
 
-  // THE PAGE, under the finished card: the credit types and the secrets pop into the
-  // sentence — one beat, "here is what you rebuilt, and where it is from" — once SHARE
-  // has closed the card above it. The credit's completion retires its own cursor and
+  // THE BOARDS, under SHARE: their box has held its room since frame one, and lands now —
+  // whatever its reads have answered by then (a read landing later fills the box in place).
+  const boardsIn = useBeat(animate, shareIn, BOARDS_LEAD_MS, reduceMotion, false);
+
+  // THE PAGE, under the finished card and the boards: the credit types and the secrets pop
+  // into the sentence — one beat, "here is what you rebuilt, and where it is from" — once
+  // the blocks above it have landed. The credit's completion retires its own cursor and
   // ends the reveal.
   const [captionDone, setCaptionDone] = useState(false);
   const finishCaption = useCallback(() => setCaptionDone(true), []);
-  const textIn = useBeat(animate, shareIn, TEXT_LEAD_MS, reduceMotion, false);
+  const textIn = useBeat(animate, boards ? boardsIn : shareIn, TEXT_LEAD_MS, reduceMotion, false);
 
   // THE SENTENCE, after the source (user-decided 2026-09-11: "score view → source →
   // sentence"): the text appears — and its secrets pop into it — once the citation has
@@ -362,9 +373,7 @@ export default function SolvedScreen({
         </span>
         {/* The primary sentence metric. The hidden final value reserves the count's width
             so its tally never moves the content below it — an unfinished round has no tally
-            to reserve for, since `∞` is one fixed shape. (The #271 standing line stood beside
-            the number here until 2026-09-14, when the user dropped it; the #170 badge
-            before it. The slot stays, empty.) */}
+            to reserve for, since `∞` is one fixed shape. */}
         <span className="solved-score">
           <span className="solved-score-line">
             {unfinished ? (
@@ -406,6 +415,18 @@ export default function SolvedScreen({
           </Button>
         </div>
       </div>
+
+      {/* ---- the BOARDS: how the day compares, the active day only. */}
+      {boards && (
+        <ResultBoards
+          className={`solved-boards${boardsIn ? ' in' : ''}`}
+          lang={lang}
+          {...boards}
+          tries={guessCount}
+          progress={trajectory[trajectory.length - 1] ?? 0}
+          ended={unfinished}
+        />
+      )}
 
       {/* ---- the PAGE: the sentence's page. The credit first, then the text — read
            top-down, the way a page is. The whole stage scrolls; the credit sticks. */}

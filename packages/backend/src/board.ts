@@ -400,8 +400,8 @@ async function readPeriodBoard(
   };
 }
 
-// Where the caller stands TODAY in each of their groups (#271) — the solved screen's one
-// line, and the reason it needs ONE request rather than a board per group: every group's
+// Where the caller stands TODAY in each of their groups (#271) — no client reads it today —
+// in ONE request rather than a board per group: every group's
 // member list (GROUPS_MAX Queries at most), then ONE exact-key batch over the union of
 // members for the day, ranked per group by the day board's own rule. Score rows only —
 // no artifact, no rounds, no profiles — which is what keeps a solve's standing cheap.

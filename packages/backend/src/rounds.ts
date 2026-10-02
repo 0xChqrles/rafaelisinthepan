@@ -456,8 +456,8 @@ async function settleAppend(
     // **A LATE finish records NOTHING** (the owner's rule). It is one rule about the
     // day's competition: a leaderboard is a day's, so a round not played on it is not
     // competing in it, whether by a millisecond or by ten years. An archive replay therefore
-    // records no row and draws no standing — `/scores` answers `bucket: null` for a caller
-    // the population does not hold, and the solved screen simply shows no rank line. It also
+    // records no row, so no board ranks it: the solved screen's boards draw the player's own
+    // row unranked. It also
     // stops spending a #169 address allowance on a day nobody is competing in.
     const earned = onTime(key.date, instant);
     let credited = false;

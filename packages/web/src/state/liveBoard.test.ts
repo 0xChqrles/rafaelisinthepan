@@ -129,8 +129,22 @@ describe('the live read', () => {
     await settle();
     expect(mocks.post).toHaveBeenCalledTimes(3);
     expect(useLiveBoardStore.getState().board).toEqual(answer('good'));
+    // An answer is in hand: nothing is marked missed.
+    expect(useLiveBoardStore.getState().missed).toBeNull();
     // A refused read is offered to the sign-out verdict, which alone decides what it means.
     expect(mocks.verdict).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks the day MISSED when its read fails with no answer in hand, until one arrives', async () => {
+    mocks.post.mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
+    requestLiveBoard('fr', '2026-10-02');
+    await settle();
+    expect(useLiveBoardStore.getState()).toMatchObject({ board: null, missed: 'fr:2026-10-02' });
+    mocks.post.mockResolvedValueOnce(ok(answer('late')));
+    vi.advanceTimersByTime(LIVE_REFRESH_MS);
+    requestLiveBoard('fr', '2026-10-02');
+    await settle();
+    expect(useLiveBoardStore.getState()).toMatchObject({ board: answer('late'), missed: null });
   });
 
   it("drops an answer that outlived its identity, and serves the next account's own", async () => {

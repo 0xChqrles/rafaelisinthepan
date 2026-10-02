@@ -73,6 +73,13 @@
                               window; `shownPercent` (floored)
       components/RaceLine.tsx  the race line: marks + % + tries on the tray's top edge, a tap onto
                               the board
+      game/resultBoards.ts    the solved screen's BOARDS (pure): one group's day off the live read,
+                              the WORLD off the global board, the tabs' order, the box's cap
+      components/ResultBoards.tsx  those boards under SHARE: the pager's tabs over a fixed box of
+                              rows, a tap onto the board
+      hooks/useWorldBoard.ts  the WORLD tab's one anonymous global-board read per result display
+      components/BoardRows.tsx  a board's ROWS (rank/crown, ranked, playing, waiting), drawn alike
+                              by the leaderboard screen and the result's boards
       components/DeviceList.tsx  the account's devices + SIGN OUT rows (#216), on the profile editor
       components/ErrorScreen.tsx  the app's error surface: a FULL-SCREEN modal led by the
                               user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet);
@@ -495,8 +502,7 @@ These are decided and verified against the code. Treat them as load-bearing.
     REMOVING the stamp orange outright — "keep the blue/violet palette for all accent
     and actions"; the hex is the ground's violet orb lifted to text contrast, chosen
     clear of the solve cobalt and the pale hole blue): the chrome (prompt caret, loading status, COPIED), the `+Ns` gain, the
-    history "you are here" node, the streak, the source credit's headline, the
-    standing's rank number. The keyboard's ENTER cap is the one exception, lit in a
+    history "you are here" node, the streak, the source credit's headline. The keyboard's ENTER cap is the one exception, lit in a
     COBALT gradient (the macropad's "Publish" blue — submitting is the step toward the
     solve); the ground's old orange corner orb went cobalt with the accent. Never a
     scale value, never a word state.
@@ -653,9 +659,7 @@ These are decided and verified against the code. Treat them as load-bearing.
   - **PIXEL (Press Start 2P)** is reserved for the PLAY surfaces: the sentence and its holes, the prompt/input and its hint, the keyboard (keys + its `.kb-icon` pixel
     enter/backspace), the floating hits, the loot, the strike sheets, the CellDigits
     watermark, MixWord — and, since the same day's later passes, the whole SOLVED STACK's data:
-    the result count (`.solved-score-num`), the ENTIRE standing line (labels, the
-    accent rank number AND the TOP badge — one face, so `standingUnits` is back to
-    rank-digits-count-DOUBLE with one unit = one label glyph), the SOURCE CREDIT (both
+    the result count (`.solved-score-num`), the SOURCE CREDIT (both
     lines — the source is the puzzle's content, not chrome, and it is EXEMPT from the
     all-caps chrome rule: quoted content keeps its own casing, the code-uppercased KIND
     carrying the phrase contrast), the run ruler's tick numbers, and the streak
@@ -665,7 +669,7 @@ These are decided and verified against the code. Treat them as load-bearing.
     reservations and CellDigits' grid sit on surfaces that stayed pixel. The coach text's inline `[[b:]]`/`[[w:]]` words are
     pixel at 0.82em INSIDE modern copy — game words quoted in chrome.
   - **MONO (Azeret Mono variable 100-900, `--ui`)** is EVERYTHING else — body default,
-    header (title/date), buttons, coach copy, the standing line,
+    header (title/date), buttons, coach copy,
     calendar, streak, statuses, and every moment the retired serif
     used to headline (chooser names, the invite title — the credit, the result numbers
     and the streak digits all moved ON to the pixel face the same day, see above). A monospace is tabular by construction, so everything that ticks is stable
@@ -683,10 +687,10 @@ These are decided and verified against the code. Treat them as load-bearing.
     (`--r-sm/md/lg` = 2/3/4px), hairlines (`--line`/`--line-strong`), glass (`--glass`) —
     worn by every non-game box: aura-gradient chooser cards (cobalt/violet/orange by
     nth-child), glass coach dialogs (both gates + the tutorial), gradient-and-bloom
-    primary buttons, the outlined TOP badge, glass result actions, calendar cells and
+    primary buttons, glass result actions, calendar cells and
     week tiles. **THE DESIGN STAYS SHARP (user-decided 2026-08-18): 4px is the absolute
-    radius ceiling — no pills, no circles anywhere in the chrome** (the SHARE pill, the
-    TOP-badge pill and the rounded scrollbar thumb of the first cut are all squared back
+    radius ceiling — no pills, no circles anywhere in the chrome** (the SHARE pill and
+    the rounded scrollbar thumb of the first cut are squared back
     off; the run ruler's filament rounds at 3px).
     **ONE INK (user-decided the same day): chrome text and ICONS are `--fg`** — `--muted`
     survives only on GAME surfaces (the route drawing's dresses, the keyboard's control
@@ -1623,7 +1627,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   device rows (the same row grammar).
   **THE REVEAL RUNS SCORE FIRST, THEN THE PAGE (user-decided 2026-09-11, reversing the
   2026-08-15 page-first order):** the stage rises with the card, the tally counts while the
-  ruler colors, the standing lands with SHARE, closing the card — and only then the credit
+  ruler colors, SHARE lands, closing the card, and the BOARDS under it — and only then the credit
   types, and only once it has printed does the SENTENCE appear, its secrets popping in
   ("score view → source → sentence", the user's second pass the same day: the text used
   to stand from the first frame). The 2026-08-15 rule survives inverted: nothing prints
@@ -1843,8 +1847,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   appends can keep failing behind re-reads that succeed; the outbox retries as before. A
   republish, a re-arm and a reset answer a pending give-up FALSE.
   There is no client score submission since
-  #203: `useScoreHistogram` launches its population READ only on the SERVER's own `solved`,
-  so capped/offline-only play has no row to claim and asks for no standing.
+  #203: the server records the score row itself from the log it stores, so capped, given-up
+  or offline-only play has no row to claim.
   **An ADOPTED solve is not a fresh solve** — the beats belong to a solve the server
   confirmed on a batch THIS device sent (`solvedByAppend`, #214, replacing the submit-time
   `solvedByPlay` guess), so a second tab finishing the board under this one replays no
@@ -1859,7 +1863,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
 - **Derived scores (#203):** the sync engine gained two jobs. (1) ROUND CREATION carries a
   Turnstile challenge — the sentence round has no START message, so the token rides the
   append whose read found nothing (`RoundFlight.created`), and every later append carries
-  none. A failure there is an ordinary failed write, retried with the rest: the round keeps
+  none; `prefetchTurnstileTokens` asks for it while the puzzle is on screen (TWO on a device
+  with no identity — the bootstrap, then round creation — one otherwise), each token
+  consumed exactly once. A failure there is an ordinary failed write, retried with the rest: the round keeps
   playing locally, which is why nothing is said on screen. (2) The SERVER's `solved` is adopted as a
   FACT (`markRoundRecorded`) — it says the day's score row exists, and it says the round is
   FROZEN, so the conversation closes — and its log is adopted SERVER-ONLY, where every other
@@ -2054,8 +2060,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **WHICH TAB belongs to a VISIT** (user feedback 2026-08-20; `boardTab` is `'group' |
   'global'` since persist **v19**, App resets it on any non-board route); **WHICH GROUP
   outlives it** — `gameStore.lastGroupId` (v19, account-owned: `reconcileIdentity` drops it
-  with the account), set by every group tab opened, a group created and a group JOINED from
-  its invite, the first listed group standing in for a stale or missing one. The period is the screen's own
+  with the account), set by every group tab opened, a group created, a group JOINED from
+  its invite and a group's board opened from the result, the first listed group standing in
+  for a stale or missing one. The period is the screen's own
   state. The groups themselves are `state/groups.ts` — ONE transient cache (`loadGroups`,
   `adoptGroups` after every write, `resetGroups` in `identityScope`), tokenless
   known-empty without a request. The list refreshes on board/invite entry and on opening
@@ -2545,13 +2552,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **The result is a STAGE** (`components/SolvedScreen` → `.solved-stage`, `flex: 1 1 0`
     + `min-height: 0` so its height is DEFINITE inside `.game`'s auto-with-a-min box — a
     `1 1 auto` item sized by its content grows the page instead), centred, rising in the
-    way the tray results always have (`RESULTS_IN_MS`), stacking TWO parts with ONE gap:
-    - **SCORE** (`.solved-numbers`) — the named `<tries> TRIES` headline (the #170 TOP
-      badge beside the number since 2026-09-05) over the run ruler, **then SHARE**, which
+    way the tray results always have (`RESULTS_IN_MS`), stacking the SCORE, the BOARDS (the
+    active day only) and the PAGE:
+    - **SCORE** (`.solved-numbers`) — the named `<tries> TRIES` headline over the run
+      ruler, **then SHARE**, which
       belongs to this block (user-decided 2026-08-14, third pass: sharing is
       what you do with a RESULT). Centred and capped at the keyboard's 680px. Measured on a
-      375×667 phone: 197px tall, SHARE landing at y 226–273, where the block ends, with
-      the whole page still below it.
+      375×667 phone: SHARE at y 301–349; at 320×568, SHARE at y 287–335.
+    - **BOARDS** (`ResultBoards`, `.result-boards`; the bullet *Solved-screen BOARDS*
+      below) — how the day compares, 24px under the score (the score's own story, so closer
+      than the stage's gap), in ONE fixed box (258px). At 375×667 it fills y 390–648 and
+      the page starts below the fold (y 702).
     - **PAGE** (`.solved-page`) — the sentence's page, read TOP-DOWN the way a page is
       (user-decided 2026-09-08: "with the source above the text, we can start by a few
       sentences before the puzzle" — no auto-scroll onto the line): the **SOURCE credit**
@@ -2626,7 +2637,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
       nothing) and a non-`http(s)` url (it becomes an href). Songs get NO lyrics (the
       #270 decision stands, reaffirmed 2026-09-08: a verse or chorus is still reproduced
       lyrics). Not here: excerpts on the archive calendar, the share page or the card.
-  - **The reveal reads dissolve → score → standing + SHARE → page since 2026-09-11 (see
+  - **The reveal reads dissolve → score → SHARE → boards → page since 2026-09-11 (see
     the card bullet above; the paragraph below describes the 2026-09-08 page-first order
     it replaced, and its beats still hold in their new places).** The stage rises in;
     the CREDIT types (`SolvedCaption`, hidden with `visibility` until its beat so the text
@@ -2643,20 +2654,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
     numbers and counting **VISIBLE time only** (the interval is throttled on a hidden tab,
     so a wall-clock deadline could reveal the numbers over a half-printed credit on
     return). A source-less puzzle's numbers follow the pops. **Inside the block the reveal
-    runs score → standing → SHARE (user-decided 2026-08-16):** the card lands reading 0
+    runs score → SHARE (user-decided 2026-08-16):** the card lands reading 0
     over the whole bar, every cell there and none coloured (user-decided 2026-09-11); then
     the tally counts its `SCORE_COUNT_MS` WHILE the bar colours in try by try, each tick
     standing as its try is reached — `RunRuler` fills off the count itself (`filled`), so
     the number always says how many tries are coloured — one beat saying "here is your
-    run"; then the STANDING and SHARE land TOGETHER (`shareIn`), a breath after the count
+    run"; then SHARE lands (`shareIn`), a breath after the count
     LANDS (the eased, rounded number shows its final value well before the tween's own
-    end, so a timer off `SCORE_COUNT_MS` held a dead beat). SHARE also waiting out the
-    standing's own rung-in was "way too long" (user-reported 2026-09-11). The standing's
-    slot is always mounted; SHARE hides IN PLACE with its footprint kept, so neither
+    end, so a timer off `SCORE_COUNT_MS` held a dead beat) — on its own beat, never behind
+    another block's rung-in ("way too long", user-reported 2026-09-11). SHARE hides IN PLACE
+    with its footprint kept; the BOARDS land a breath after it (`boardsIn`,
+    `BOARDS_LEAD_MS`), their box held from frame one, and the page's beat follows them; no
     arrival moves anything.
   - **Nothing that has landed ever moves:** the score block holds its footprint from frame
-    one and arrives at `opacity: 0`, the credit holds its box hidden, the secrets' boxes
-    are open before they pop. Rehydrated solves render `.settled` and replay nothing.
+    one and arrives at `opacity: 0`, the boards' box is one fixed size whatever it holds,
+    the credit holds its box hidden, the secrets' boxes are open before they pop.
+    Rehydrated solves render `.settled` and replay nothing.
   - **The score WATERMARK goes with the round** (`.play-finished`): it fades the moment the
     board is solved — the count's next appearance is the result's own headline — so it is
     already gone when the sentence dissolves.
@@ -2682,17 +2695,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     page) produces no click and must not read as a skip.
     **It is armed for the reveal's own span only** (`revealPlaying`): from the hand-over
     (`showResults`, which is also when the drop starts) until the result reports its LAST
-    BEAT (`onRevealEnd`, on SHARE's arrival — `revealEnded`, reset with the round; PR-272
+    BEAT (`onRevealEnd`, once the secrets have popped — `revealEnded`, reset with the round; PR-272
     review: `animateResults` stays true after the reveal, so the listener never stood
     down), never while the streak
     celebration stands — that screen keeps its OWN fast-forward → dismiss handling, and
     the tap that dismisses it must not spend the reveal it is handing over to (its
     dismissal lands 200ms later, past its exit fade, so the arming cannot catch that same
     gesture either) — and never under the dev `?streak=N` preview, which holds the result
-    at frame zero behind a modal this round never sees. The standing slot snaps to
-    whatever is true right now: `ScoreTop` renders nothing while the population read is
-    out and appears settled when it lands, so the skip never blocks on, or fakes, the
-    network. Reduced motion is unchanged (already near-instant). **Skipping the SOLVING
+    at frame zero behind a modal this round never sees. The boards' box snaps to whatever
+    is true right now: it stands empty while a read is out and fills in place when one
+    lands, so the skip never blocks on, or fakes, the network. Reduced motion is unchanged (already near-instant). **Skipping the SOLVING
     choreography is deliberately out of scope.**
   - **REMOVED with the 2026-08-14 redesign** (no-back-compat rule, all were left without a
     consumer): the caption's `masked` veil and its prompt-zone overlay (the caption mounts
@@ -2822,7 +2834,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   opts one back into the choreography so the post-streak sequence can be watched. **That
   replay is held at frame zero until the preview dismisses** (`SolvedScreen`'s `start`,
   restored 2026-08-16): App owns the preview dialog, so this round never sees it in
-  `showStreakDialog`, and without the gate the whole reveal — citation, tally, standing —
+  `showStreakDialog`, and without the gate the whole reveal — tally, SHARE, boards, citation —
   plays under a full-screen modal and dismissal lands on a finished frame, spending unseen
   the exact beats the harness exists to show. Player progression is separate:
   `StreakDialog` is a
@@ -2867,103 +2879,49 @@ it to the local store — see `packages/backend/AGENTS.md`).
   opens the sequence immediately with `N` as the PREVIOUS value (`?streak=9` → `9→10`),
   suppresses the first-visit invitation, and synthesizes its visual week without mutating
   persisted rounds/solved days; production builds ignore the parameter.
-- **Solved-screen STANDING — DROPPED 2026-09-14 (user-decided: "just drop this part for
-  now at least"): neither result screen shows a standing; `GroupStanding`,
-  `useGroupStanding`, `tStanding`/`ordinal`, `parseStandings` and `.standing-line` are
-  deleted, the `.solved-score-line` slot stays empty, and the server's `standing: true`
-  read still answers with no consumer. The paragraph below is what it was.**
-- **Solved-screen STANDING — the GROUP line (#271, user-decided 2026-09-07; it REPLACED
-  the #170 TOP-% badge below; DROPPED 2026-09-14):** the result stack showed `2ND OF 7` beside the score (no
-  "today": the result screen is today's, and the word clipped at a 375px card's edge)
-  (`components/GroupStanding`, in the badge's exact `.standing-line` slot, a BUTTON onto the
-  group's board that sets `lastGroupId` first), read by `hooks/useGroupStanding` — ONE
-  request, `POST /board {token, standing: true}`, once the SERVER holds the round (the #203
-  gate below, unchanged) — and `pickStanding` chooses the group last opened when the player
-  stands in it, else the best (lowest rank, then the larger field). `of` is the members who
-  RECORDED a score today. Nothing is drawn for a player in no group, with no row (late,
-  capped), with no identity, or on a silent failure; the ordinal is `i18n.ordinal`
-  (`1ST`/`2ND`… and `1ER`/`2E`…), the line `tStanding`. **REMOVED** (no-back-compat):
-  `ScoreTop`, `game/scores.ts` (`scoreStanding`, the three gates, `formatTopPct`),
-  `hooks/useScoreHistogram`, `api.scoresUrl`/`parseScoreHistogram`, the `scoreTop` string —
-  the backend's `/scores` route still answers with no consumer (the user's call).
-  *(The paragraphs below describe the #170 badge this replaced; what survives of them is the
-  SERVER-holds-the-round gate, the one-conversation-per-round flight and the silent failure.)*
-  The result stack used to show where the finished score sits
-  in the day's anonymous population (#169), above its own metrics and SHARE — the
-  comparison story that replaced the removed LLM benchmark.
-  ONE rule (`hooks/useScoreHistogram`), and since #203 it is a plain READ: a round the
-  SERVER holds — its transient `solved` since #214 dropped the
-  persisted `recorded` mirror —
-  GETs the day's bands and locates itself in them by its own score. Both ends read the same
-  log — and the read NAMES the caller (`id`, the PUBLIC id, the /board rule) so the band it
-  gets back is THEIRS, not whoever else recorded the same number (corrected on review:
-  matching by value gave a round the IP cap refused an unrelated player's rank). A population holding no row for the caller
-  answers `bucket: null` and no standing is drawn; `bucketIndexOf` retired with the guess.
-  **What #203 RETIRED here** (no-back-compat): the score POST, the invisible Turnstile token
-  it carried (`turnstile.ts` serves ROUND START instead, and gained
-  `prefetchTurnstileTokens` — asked for while the puzzle loads, so the challenges are in hand before the player acts; a device with no identity
-  fills TWO slots (bootstrap then round creation), while an existing identity fills one, and
-  each prefetched token is consumed EXACTLY ONCE), the OAC-hashed `api.postScoreBody`, the
-  persisted `scoreRecorded` VALUE and the whole ask-until-recorded state machine of
-  2026-08-20, plus `game/scores.ts`'s `shouldSubmitScore`/`shouldAskPopulation` and the
-  `canSubmit` cap gate. The server derives the score from the log it already holds and
-  records the row itself, so there is nothing to claim, nothing to validate and nothing to
-  retry — and the #201 cap needs no client rule either, since a capped round's appends were
-  refused and its solve never reached the server.
-  **The gate is the SERVER's fact, not the local board's**: `solved` flips a beat before the
-  solving append lands, and reading the population then would find nothing and — with no
-  retry left — leave the standing blank for good. That fact is the SERVER state the
-  sync engine publishes off any round answer that says `solved`, and since #214 it is
-  TRANSIENT (store **v14** drops the sentence rounds map outright, taking the persisted
-  `recorded` with it, exactly as **v12** stripped `scoreRecorded` and **v13** dropped the
-  pre-revision rounds — the standing no-back-compat rule, the v7/v11 precedent). A reload
-  therefore learns the standing from the round it re-reads, which is also what makes it
-  correct on a device that never played the day.
-  The completion is keyed to the round that launched it (never whichever round navigation
-  made active later), and an in-flight read is shared across real component remounts so
-  leaving for the archive/tutorial and returning cannot mint a second request. EVERY
-  failure is silent by decision: the solved screen simply shows no standing, never an
-  error. **An ARCHIVE solve now shows none either** (user-decided 2026-08-23): a leaderboard
-  is a DAY's competition and a late finish is not competing in it, so the server records no
-  row and answers `bucket: null`, which this slot already draws as nothing. The read still
-  fires — the client does not second-guess which days have a population, and that guess is
-  exactly the kind of local rule the same decision removed from the streak. **What it shows is ONE BADGE — `TOP 25%` — BESIDE THE SCORE** (`components/ScoreTop`,
-  user-decided 2026-09-05: "the rank # line should be dropped, we could keep the TOP% only,
-  displayed next to the score, above the score bar" — superseding the `RANK #16 OF 100`
-  line of 2026-08-15, which itself replaced the brick histogram):
-
-  - **The rank is still COMPUTED, never drawn** (`game/scores.ts` `scoreStanding`,
-    contract-tested): competition ranking — everyone strictly ahead, plus one — (the bands BEFORE mine),
-    clamped to the population. It exists because the second gate below reads it.
-  - **TOP uses the MIDPOINT of the shared bucket** (user-decided 2026-08-16):
-    `(strictly ahead + bucket count / 2) / total`, the standard percentile-rank treatment
-    for ties; an empty bucket carries no badge, and an inconsistent stale snapshot is
-    capped at 100% and silenced by the median gate.
-  - **The badge is gated THREE times, and every gate only ever silences it**: above
-    `PERCENT_MIN_TOTAL` (10) recorded scores (a percentage of a handful is arithmetic, not
-    a standing); from `PERCENT_MIN_RANK` (10) on (a single-digit standing is too small a
-    field to blur into a percentage); at or above the MEDIAN — `PERCENT_MAX` (50) is the
-    largest number it prints (#176: TOP is a claim, and `TOP 99%` is that claim turned
-    against the player wearing it; the boundary is inclusive). The population floor is
-    implied by the other two and stays because it states its own claim.
-  - `formatTopPct` prints at most ONE decimal with the trailing zero stripped (`8.5`, `50`).
-  - **It is an OUTLINED stamp — a hairline `--line-strong` rule around `--fg` pixel type,
-    no ground** (user-decided 2026-08-17 over the filled chip), ABSOLUTELY placed off the
-    number's right edge (`.solved-score-line` is the box, `.score-top` the badge): the
-    number stays centred over its unit and the ruler, and the badge arriving — on the
-    `rung-in` gesture, at the reveal's standing beat — or never arriving (a silent failure,
-    a pending read, a gated standing) moves NOTHING. A rehydrated result renders `.settled`
-    and replays nothing. There is no RANKING... placeholder any more: a badge that may not
-    come is not announced. **REMOVED with the line** (no-back-compat): `ScoreRank`, the
-    `.score-slot`/`.score-rank-*` CSS and its three size tiers, `standingUnits` /
-    `TIGHT_STANDING_UNITS`, `LoadingWave`'s `letterClass`, and the `scoreRank` / `scoreOf`
-    / `scoreRanking` strings.
-  **REMOVED with it** (no-back-compat): the whole chart — `ScoreChart`, `chartField`,
-  `chartUnits`, `MAX_CHART_BANDS`, `MAX_COLUMN_UNITS`, the band-merging and its `+N`
-  legend, the `.score-field`/`.score-col`/`.score-brick`/`.score-stub`/`.score-plot`/
-  `.score-legend` CSS — and the N-adaptive copy line with it (`histogramCopy`,
-  `beatenCount`, `scoreFirst`/`scoreOther`/`scoreOthers`/`scoreBeat`): `TOP x%` and "you
-  beat x%" are the same claim inverted, and the rank says it once.
+- **Solved-screen BOARDS (user-decided 2026-10-02: "on the solved screen, it would be nice
+  to have a way to see how you scored compared to your group"; the WORLD tab the same day,
+  "when you have no group, we need something to show instead").** The product rule lives in
+  the root `AGENTS.md` (*The solved screen's BOARDS*); what is this package's:
+  - **Where and when**: `SolvedScreen` takes `boards` (`ResultBoardsData`) from `Game`, set
+    only on the ACTIVE day with an account (`racing`: never an archive day or a bonus), and
+    draws `components/ResultBoards` between the SCORE and the PAGE. It lands a breath after
+    SHARE (`boardsIn`, hung off `stageIn` like every beat, so the `?streak=N` hold and the
+    #179 skip both answer it), and the page's beat follows it.
+  - **ONE FIXED BOX** (`.result-boards`, 258px): the pager's head, room for
+    `RESULT_LINES_MAX` (6) rows, a gap's rule and the `+N` line — whatever it holds, so it
+    stands EMPTY in its place while the first answers are out and a read landing or a swipe
+    moves nothing. It holds its room while the LIVE answer is `awaited` — the groups list
+    still unknown, or a group with somebody else and neither an answer nor a failed read
+    (`useLiveBoardMissed`) yet — rather than draw the WORLD first and turn to a group a
+    moment later; the WORLD tab is appended when its own read lands. A block that ends with
+    no tab at all (every read failed, or empty) draws nothing and leaves the stage's flow.
+  - **The data is not fetched twice**: the groups are the LIVE read `Game` already keeps
+    for the race line (`state/liveBoard.ts`, asked once more when the solve or the give-up
+    is confirmed); the WORLD is `hooks/useWorldBoard` — ONE anonymous `GET /board…&id=`
+    per mount, identity-fenced, a failure silent and final for the mount.
+  - **The reading is `game/resultBoards.ts`** (pure, contract-tested): `groupResult` cuts
+    the merged live rows by the group's member list, ranks them with the shared
+    `rankBoard`, orders the playing members with the shared `orderPlaying` (generic over
+    dressed rows), and shows the whole day when it fits the box, else the podium (first
+    three ranked rows), the player's ±1 window with a gap between, two playing rows and
+    `more`; `worldResult` does the same over the global cut + own window (no `+N`: the cut
+    does not say how many there are); `resultTabs` orders the group last opened first, skips
+    a group where nobody but the player has a row, and ends on the WORLD.
+  - **The player's own row is drawn from their own result** (`tries`, the trajectory's last
+    %, `ended`): ranked only when the live rows hold their recorded score; else an unranked
+    playing row — `∞` among the ended for a round that ended unsolved, 100% for a solve with
+    no recorded score — replacing whatever stale mid-round row the read still carries. Their
+    face is `useOwnFace`'s.
+  - **The tabs turn on the board's own `ScopePager`** (no plus: `onNew` is optional), the
+    dots hidden — their room kept — when there is one tab; the tab the player turned to is
+    kept by KEY, so a tab arriving later never moves them off it. The rows are
+    `components/BoardRows` (`BoardRowItem`, `PlayingRowItem`, with a 20px `mark`), the
+    leaderboard's own, at the block's size (`.result-board .board-row`, 28px). WORLD is
+    `resultWorld` (WORLD / MONDE).
+  - **A tap** on the rows, or on the middle tab's name (the keyboard's way), opens that
+    board: a group sets `lastGroupId` and the board's `group` tab, the WORLD its `global`
+    tab, then `pathForBoard`. No analytics event.
 - **The game's pre-round GATE is an INVITATION into the tutorial (2026-08-11's rules gate;
   DEPLOY duty added by the #216 trigger rework, user-decided 2026-08-24; remade by #269,
   user-decided 2026-09-16).** It states NO rules: the lesson teaches by playing, and a player

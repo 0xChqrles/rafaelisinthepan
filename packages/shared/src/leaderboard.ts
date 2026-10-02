@@ -94,8 +94,8 @@ export interface PlayingScore {
 // (`over`) after them — a member who gave up at 79% is not ahead of one still playing at
 // 75% — then closest to done first, fewer tries breaking the tie (fewer is the score that
 // would record), publicId last for a deterministic board between reads — `rankBoard`'s own
-// tie rule.
-export function orderPlaying(rows: readonly PlayingScore[]): PlayingScore[] {
+// tie rule. It sorts the rows it is given, so a dressed row comes back dressed.
+export function orderPlaying<T extends PlayingScore>(rows: readonly T[]): T[] {
   return [...rows].sort((a, b) => {
     if (a.over !== b.over) return a.over ? 1 : -1;
     if (a.progress !== b.progress) return b.progress - a.progress;
@@ -268,9 +268,8 @@ export function rankPeriod(days: readonly PeriodDay[]): RankedPeriod[] {
 }
 
 // Where the caller stands on one group's DAY board (#271): their competition rank among
-// the members who recorded a score today, and how many did — "2nd of 7 today". Null when
-// the caller has no recorded score on that board (not finished, finished late, capped),
-// which the solved screen draws as nothing.
+// the members who recorded a score today, and how many did — "2nd of 7". Null when the
+// caller has no recorded score on that board (not finished, finished late, capped).
 export interface Standing {
   rank: number;
   of: number;
@@ -282,8 +281,8 @@ export function standingIn(ranked: readonly RankedScore[], publicId: string): St
 }
 
 // What `POST /board {token, standing: true}` answers, one entry per group of the caller's
-// in which they stand today. The solved screen picks ONE (the group last opened, else the
-// best), so the whole set travels in one request.
+// in which they stand today, the whole set in one request. No client reads it today (the
+// solved screen's boards read the live read instead).
 export interface GroupStanding extends Standing {
   group: string;
 }
