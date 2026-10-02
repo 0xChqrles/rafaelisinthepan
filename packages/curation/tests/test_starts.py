@@ -1,5 +1,5 @@
-from starts import (MAX_START_FREQ_RANK, article_problem, displayed, elision_problem, letter_problem,
-                    previous_token, start_candidates)
+from starts import (HARD_START_BAND, MAX_START_FREQ_RANK, article_problem, displayed, elision_problem,
+                    letter_problem, previous_token, start_candidates)
 
 WORDS = ["le", "savoir", "humain", "sera", "rayé", "des", "archives", "du", "monde", "d’un", "moucheron."]
 HOLES = [
@@ -53,6 +53,24 @@ def test_start_candidates_are_the_band_minus_variants_and_elision_failures():
     assert MAX_START_FREQ_RANK == 40000
     edge = lambda w: {"esprit": 40001, "usage": 40000}.get(w)  # noqa: E731
     assert [e["word"] for e in start_candidates(ranks, "savoir", "du", frequency_rank=edge, lang="fr")] == ["effet", "usage", "monde"]
+
+
+def test_a_hard_hole_draws_from_the_nearer_band_else_the_usual_one():
+    # A hole the line gives little of starts nearer (user-decided 2026-10-02).
+    assert HARD_START_BAND == (50, 100)
+    ranks = {
+        "savoir": {"word": "savoir", "rank": 0},
+        "tout": {"word": "tout", "rank": 40},        # nearer than even the hard band
+        "voisin": {"word": "voisin", "rank": 95},
+        "proche": {"word": "proche", "rank": 60},
+        "monde": {"word": "monde", "rank": 120},
+    }
+    words = lambda r, **k: [e["word"] for e in start_candidates(r, "savoir", "du", lang="fr", **k)]  # noqa: E731
+    assert words(ranks, hard=True) == ["proche", "voisin"]
+    assert words(ranks) == ["monde"]
+    # no clean word in the nearer band: the usual one, never no start at all
+    far = {k: v for k, v in ranks.items() if k not in ("proche", "voisin")}
+    assert words(far, hard=True) == ["monde"]
 
 
 def test_y_initial_is_the_models_call_like_h():

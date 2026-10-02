@@ -54,9 +54,9 @@ The practical rules:
 
 ## The start word
 
-Each hole shows a START word, ranked 100–200 from the secret (lower rank = closer =
-easier), and the three are chosen TOGETHER, by playing the day out — the craft is in the
-`taste` skill. The practical rules:
+Each hole shows a START word, ranked 100–200 from the secret (50–100 for a hole the line
+gives little of; lower rank = closer = easier), and the three are chosen TOGETHER, by
+playing the day out — the craft is in the `taste` skill. The practical rules:
 
 - First strike every candidate that does not fit the slot; choose only among what is
   left. The displayed sentence must stay valid in its language: elision (« l'effet »,
