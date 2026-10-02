@@ -38,7 +38,7 @@
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
     src/glyphs.ts             pixel-art glyphs the game DRAWS rather than sets: the #214 `∞`
                               path + view box, shared by the OG card and the web result; the
-                              app's mark and the ultra star, traced for the OG cards
+                              app's mark, traced for the OG cards
     src/bayer.ts              the ordered dither's Bayer 8×8 matrix (the meter, the level art,
                               the OG cards' rings)
     src/heat.ts               the app's ONE weird→calm stop gradient: heatColor() + fixed-cap rankHeatColor()/HIT_HEAT_CAP (exponents, floating hits, loot, route rows) + progressHeatColor()/progressEmoji() (run rulers incl. the card, share-text emoji row, archive fills, chooser strips)

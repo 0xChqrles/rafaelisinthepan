@@ -1,7 +1,7 @@
 // CONTRACT (light): the share-card SVG (packages/shared/src/cardSvg.ts) must render the
 // player's RUN RULER — one cell per counted try on the SHARED heat ramp (so the card
-// matches the on-screen ruler), a tick per solving try with the dropped hole's sentence
-// index under it — plus the score and the day's calendar date.
+// matches the on-screen ruler), a tick per solved secret with its sentence index under it —
+// plus the score and the day's calendar date.
 // Exact positions are cosmetic and not asserted; they get tuned against the rasterized PNG.
 
 import { describe, it, expect } from 'vitest';
@@ -9,7 +9,7 @@ import { anonName, defaultAvatar } from './assigned';
 import { decodeAvatar, encodeAvatar, AVATAR_CELLS, AVATAR_PALETTES } from './avatar';
 import { renderCardSvg, renderGroupCardSvg, shareHeadline, CARD_WIDTH } from './cardSvg';
 import { dateForDayNumber, dayNumber } from './day';
-import { INFINITY_EM_HEIGHT, INFINITY_GLYPH, PIXEL_INK_LIFT_EM, ULTRA_STAR } from './glyphs';
+import { INFINITY_EM_HEIGHT, INFINITY_GLYPH, PIXEL_INK_LIFT_EM } from './glyphs';
 import { progressHeatColor } from './heat';
 import { GROUP_NAME_MAX_LENGTH, NAME_MAX_LENGTH } from './name';
 import { GROUP_MEMBERS_MAX } from './scores';
@@ -48,12 +48,6 @@ describe('renderCardSvg', () => {
   it('marks each solved secret with its sentence index (1..3), in sentence order', () => {
     const svg = renderCardSvg(data);
     expect(indices(svg)).toEqual(['1', '3', '2']); // ticks ordered by try: 3 -> hole 1, 5 -> 3, 6 -> 2
-  });
-
-  it('stacks the indices of several secrets dropped by ONE guess under a single tick', () => {
-    const svg = renderCardSvg({ ...data, solvedAt: [6, 6, 6] });
-    expect(svg.match(/<rect /g) ?? []).toHaveLength(1 + 6 + 1); // bg + cells + ONE tick
-    expect(indices(svg)).toEqual(['1', '2', '3']); // all three, stacked
   });
 
   it('draws no tick for a secret the run never solved', () => {
@@ -198,21 +192,6 @@ describe('renderCardSvg', () => {
       expect(svg).toContain('>6</text>');
       expect(svg).not.toContain(INFINITY_GLYPH.path);
     });
-  });
-
-  // A finished round ends on a solve, and its last tick wears the game's ultra star — the
-  // exact hit's own burst; a capped round has no tick, and so no star.
-  it('bursts the ultra star over the last tick, and only on a solved run', () => {
-    const star = (svg: string) => /<g class="star" transform="translate\((\d+) (\d+)\) scale\((\d+)\)"/.exec(svg);
-    const solved = renderCardSvg(data);
-    expect(star(solved)).not.toBeNull();
-    for (const { path } of ULTRA_STAR.inks) expect(solved).toContain(path);
-    // Over the bar, never on a cell: its foot stands above the tick's top.
-    const [, sx, sy, scale] = star(solved)!.map(Number);
-    const tickTop = cellRects(solved)[0].y - 16;
-    expect(sy + ULTRA_STAR.height * scale).toBeLessThanOrEqual(tickTop);
-    expect(sx + ULTRA_STAR.width * scale).toBeLessThanOrEqual(CARD_WIDTH);
-    expect(star(renderCardSvg({ ...data, capped: true, solvedAt: [] }))).toBeNull();
   });
 });
 

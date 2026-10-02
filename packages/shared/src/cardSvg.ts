@@ -34,7 +34,7 @@ import { AVATAR_PALETTES, AVATAR_SIZE, decodeAvatar } from './avatar';
 import { avatarOutlinePath } from './avatarOutline';
 import { dateForDayNumber } from './day';
 import { bayerThreshold } from './bayer';
-import { INFINITY_EM_HEIGHT, INFINITY_GLYPH, MARK_GLYPH, PIXEL_INK_LIFT_EM, ULTRA_STAR } from './glyphs';
+import { INFINITY_EM_HEIGHT, INFINITY_GLYPH, MARK_GLYPH, PIXEL_INK_LIFT_EM } from './glyphs';
 import { progressHeatColor } from './heat';
 import type { ShareResult } from './shareCard';
 
@@ -420,9 +420,7 @@ function dropScraps(ink: Uint8Array, cols: number, rows: number, min: number): v
 // in the mono, and the run ruler across the card's whole column. The day is the top row's
 // EDITION, opposite the lockup: its calendar date (or BONUS and its id).
 // A SIGNED share (user-decided 2026-09-05) sets the player's mark beside the count as a
-// portrait, its name in the title chip under it; a plain share's count stands alone. A
-// round the player FINISHED ends on a solve, and the ruler's last tick wears the game's
-// ULTRA STAR — the exact hit's own burst; a capped round has no tick, and no star.
+// portrait, its name in the title chip under it; a plain share's count stands alone.
 const SCORE_SIZE = 160; // 20px a pixel of the face
 const UNIT_SIZE = 32;
 const UNIT_TRACKING = 0.16;
@@ -436,17 +434,13 @@ const BAR_H = 48;
 const TICK_W = 8;
 const TICK_OVERHANG = 16;
 const NUM_SIZE = 32;
-const NUM_GAP = 14; // the tick's foot to the first index's ink
-const NUM_STEP = 40; // stacked indices under one shared tick
+const NUM_GAP = 14; // the tick's foot to the index's ink
 const HERO_GAP = 40; // the hero's foot to the ticks' tops
 // The signed card's portrait: the mark at 16px a cell, its name chip under it.
 const PORTRAIT_PX = 160;
 const PORTRAIT_NAME_SIZE = 28;
 const PORTRAIT_NAME_GAP = 16;
 const PORTRAIT_GAP = 72; // the portrait column to the count's
-// The star on the last tick, at twice its sheet's size, standing just over the tick.
-const STAR_SCALE = 2;
-const STAR_GAP = 4;
 // The edition, on the top row: the day's own label in the pixel face's accent.
 const EDITION_SIZE = 24;
 
@@ -527,30 +521,23 @@ export function renderCardSvg(
   const n = Math.max(1, trajectory.length);
   const unit = UNITS[lang] ?? UNITS.en;
 
-  // Solve moments: one tick per solving try, on the RIGHT edge of that try's cell (the state
-  // AFTER the guess), with the dropped holes' sentence indices stacked under it — several
-  // secrets falling to one guess share a single tick, exactly as on screen.
-  const ticks: { at: number; holes: number[] }[] = [];
-  solvedAt.forEach((at, i) => {
-    if (at == null) return;
-    const tick = ticks.find((x) => x.at === at);
-    if (tick) tick.holes.push(i + 1);
-    else ticks.push({ at, holes: [i + 1] });
-  });
-  ticks.sort((a, b) => a.at - b.at);
+  // Solve moments: one tick per solved secret, on the RIGHT edge of the cell of the try that
+  // solved it (the state AFTER the guess), the hole's sentence index under it. The secrets
+  // are distinct words, so no try solves two: every tick holds one index.
+  const ticks = solvedAt
+    .map((at, i) => (at == null ? null : { at, hole: i + 1 }))
+    .filter((tick): tick is { at: number; hole: number } => tick !== null)
+    .sort((a, b) => a.at - b.at);
 
-  // The hero (the count, beside the portrait on a signed card), the ruler under it, and as
-  // many index rows as the deepest stack needs — none on a capped round, which has no tick.
-  // The block is centred in the room under the top row.
+  // The hero (the count, beside the portrait on a signed card), the ruler under it, and the
+  // row of indices — none on a capped round, which has no tick. The block is centred in the
+  // room under the top row.
   const inkH = Math.round(INFINITY_EM_HEIGHT * SCORE_SIZE);
   const countH = inkH + UNIT_GAP + Math.round(UI_CAP_EM * UNIT_SIZE);
   const signer = by ? by.name || anonName(by.publicId) : '';
   const nameChipH = Math.round(CHIP_HEIGHT * PORTRAIT_NAME_SIZE);
   const heroH = by ? Math.max(countH, PORTRAIT_PX + PORTRAIT_NAME_GAP + nameChipH) : countH;
-  // A sentence hides three secrets, so the layout reserves at most three rows; a forged token
-  // with more draws them all, below.
-  const depth = Math.min(3, Math.max(0, ...ticks.map((t) => t.holes.length)));
-  const numH = depth ? NUM_GAP + inkHeight(NUM_SIZE) + (depth - 1) * NUM_STEP : 0;
+  const numH = ticks.length ? NUM_GAP + inkHeight(NUM_SIZE) : 0;
   const blockH = heroH + HERO_GAP + 2 * TICK_OVERHANG + BAR_H + numH;
   const top = Math.round(ROOM_CY - blockH / 2);
   const barY = top + heroH + HERO_GAP + TICK_OVERHANG;
@@ -593,32 +580,16 @@ export function renderCardSvg(
 
   // The ticks on whole pixels, their indices centred under them.
   const tickX = (at: number) => edge(Math.min(at, n));
+  const numBaseline = barY + BAR_H + TICK_OVERHANG + NUM_GAP + inkHeight(NUM_SIZE) + Math.round(PIXEL_INK_LIFT_EM * NUM_SIZE);
   const marks = ticks
-    .map(({ at, holes }) => {
+    .map(({ at, hole }) => {
       const x = tickX(at);
-      const nums = holes
-        .map(
-          (h, k) =>
-            `<text x="${x - NUM_SIZE / 2}" y="${barY + BAR_H + TICK_OVERHANG + NUM_GAP + inkHeight(NUM_SIZE) + Math.round(PIXEL_INK_LIFT_EM * NUM_SIZE) + k * NUM_STEP}" font-family="${PIXEL_FONT}" font-size="${NUM_SIZE}" fill="${FG}">${h}</text>`,
-        )
-        .join('');
-      return `<rect x="${x - TICK_W / 2}" y="${barY - TICK_OVERHANG}" width="${TICK_W}" height="${BAR_H + 2 * TICK_OVERHANG}" fill="${FG}"/>${nums}`;
+      return (
+        `<rect x="${x - TICK_W / 2}" y="${barY - TICK_OVERHANG}" width="${TICK_W}" height="${BAR_H + 2 * TICK_OVERHANG}" fill="${FG}"/>` +
+        `<text x="${x - NUM_SIZE / 2}" y="${numBaseline}" font-family="${PIXEL_FONT}" font-size="${NUM_SIZE}" fill="${FG}">${hole}</text>`
+      );
     })
     .join('');
-
-  // The star over the tick of the solve that ENDED the round — its last try — held inside
-  // the card.
-  let star = '';
-  if (ticks.length && ticks[ticks.length - 1].at === n) {
-    const w = ULTRA_STAR.width * STAR_SCALE;
-    const h = ULTRA_STAR.height * STAR_SCALE;
-    const x = Math.min(CARD_WIDTH - BRACKET_INSET - w, Math.round(tickX(ticks[ticks.length - 1].at) - w / 2));
-    const y = barY - TICK_OVERHANG - STAR_GAP - h;
-    star =
-      `<g class="star" transform="translate(${x} ${y}) scale(${STAR_SCALE})" shape-rendering="crispEdges">` +
-      ULTRA_STAR.inks.map(({ fill, path }) => `<path d="${path}" fill="${fill}"/>`).join('') +
-      `</g>`;
-  }
 
   // The edition, right-aligned on the top row: the date, or BONUS and its id.
   const edition = cardPuzzleLabel({ dayNumber, bonusId });
@@ -633,7 +604,6 @@ export function renderCardSvg(
     // that lower is better. Localized by the token's lang (#59). A capped round draws `∞`
     // instead — same band, same unit, no number (#214).
     hero,
-    star,
     `<g class="run" shape-rendering="crispEdges">${cells}${marks}</g>`,
     `</svg>`,
   ].join('');
