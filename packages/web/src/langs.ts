@@ -6,6 +6,9 @@ import {
   GROUP_SEGMENT,
   isBonusId,
   isCalendarDate,
+  LEARN_SEGMENT,
+  learnPath,
+  lessonPath,
 } from '@whippin/shared';
 import { FIRST_PUZZLE_DATE } from './config';
 import { isReady, levelOf } from './tutorial/levels';
@@ -66,17 +69,16 @@ export function pathForBoard(lang: string | null): string {
 // lesson. Language-scoped like a board — the lesson is taught in a language, and the header's
 // language pick keeps you on it. They are ROUTES rather than a flag over the game (which the
 // tutorial was until 2026-09-16) so a level is linkable and the row's grammar — a lit key is
-// where you are — holds without a store trick.
-const LEARN_SEGMENT = 'learn';
-
+// where you are — holds without a store trick. The paths are shared (`shared/src/tutorial.ts`):
+// the WhatsApp bot links them.
 export function pathForLearn(lang: string | null): string {
   if (!isLang(lang)) return '/';
-  return `/${lang}/${LEARN_SEGMENT}`;
+  return learnPath(lang);
 }
 
 export function pathForLesson(lang: string | null, level: number): string {
   if (!isLang(lang)) return '/';
-  return `/${lang}/${LEARN_SEGMENT}/${level}`;
+  return lessonPath(lang, level);
 }
 
 // The ACCOUNT area (#204's UX rework, 2026-08-26). FOUR routes, because they answer four

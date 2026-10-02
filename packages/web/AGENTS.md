@@ -114,19 +114,24 @@
       components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows);
                               the tracer + the assigned identity are @whippin/shared's since 2026-08-20
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
+      linkPreviews.ts         what a shared link unfurls as: the home card, and the tutorial's list
+                              and every ready level, each BUILT as a page of its own (vite.config.ts
+                              `link-previews`), served under its route by infra's SPA fallback
+      assets/previews/        those cards, 1200×630 PNGs — the home, a list and a level per level ×
+                              language (committed artifacts, emitted hashed)
       timeout.ts              a fetch deadline as an AbortSignal — the ONE spelling, because
                               `AbortSignal.timeout()` is above the browser floor and throws
                               BEFORE the fetch (it took the #216 bootstrap out on iOS 15)
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
       tutorial/               the tutorial (#51/#155/#269): Learn.tsx (the levels as cards),
                               Lesson.tsx (dispatch), LevelOne.tsx over LessonBoard.tsx,
-                              coach.ts (the reactive coach), levels.ts + data scripts/<lang>.ts
+                              coach.ts (the reactive coach), levels.ts (each level's face over
+                              `shared/src/tutorial.ts`, which levels exist and where) + data scripts/<lang>.ts
                               (+ <lang>.<word>.json, the pruned #154 boards it plays on);
                               ArticleLevel.tsx (levels 2+, lazy via LazyArticle) over
                               articles/<lang>.ts (the text, per language; types.ts, Rich.tsx
                               the inline markup, typeset.ts, figures/); art/ (LevelArt.tsx,
                               the dithered canvas, and scenes/, one picture per level)
-      components/bayer.ts     the ordered dither's Bayer 8×8 matrix (the meter, the level art)
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       components/strikeArt.ts the three strike sheets and their animation contract (#301: the
                               sentence's holes land them)
@@ -463,8 +468,8 @@ These are decided and verified against the code. Treat them as load-bearing.
     the grain are all gone; the grain shipped twice and was dropped as "ugly as hell").
   - **`--fg` is PLAIN WHITE** #ffffff (the warm stamp-paper #f4f1e8 is retired), `--muted`
     a neutral cool grey #a6adb8, the hairline/glass tokens white-based, the surfaces
-    neutral dark (#14151c / #1f212a). `shared/src/cardSvg.ts` MIRRORS bg/fg/muted — a
-    palette move edits both, and `heat.test.ts`'s BG_LUMINANCE + `AccountMark.test.ts`'s
+    neutral dark (#14151c / #1f212a). `shared/src/cardSvg.ts` MIRRORS bg/fg/accent (and
+    `--rail` and `--surface`, which its group card wears) — a palette move edits both, and `heat.test.ts`'s BG_LUMINANCE + `AccountMark.test.ts`'s
     GROUND pin the shared value.
   - **ONE GAME ACCENT, and it is the SOLVE COBALT** (user-decided 2026-09-01, third
     pass: "the solved word color, which should be the game accent color"): `--accent` is
@@ -3723,6 +3728,29 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `share {method:'native'|'clipboard'}` — `SolvedScreen` success paths; `tutorial
   {action:'start'|'finish'|'skip'}` — invite accept / the ending's PLAY / skip
   (fast-forward or invite SKIP). Plus automatic pageviews.
+- **Link previews: a page of its own for each tutorial page.** A chat app reads a link's
+  preview off the page's HTML and runs no JavaScript, so a page with its own card is BUILT as
+  one. `src/linkPreviews.ts` names them — HOME (every route with no page at or above it), the
+  tutorial's LIST per language and every level READY in a language — the tutorial's words
+  taken from the app's own strings (a level's title, what it is about, `levelOf`, its
+  duration), sentence-cased; HOME keeps the site's own sentence. `index.html` carries one
+  `<!-- link-preview -->` slot: the build's `link-previews` plugin (`vite.config.ts`) fills it
+  with HOME's block and writes the same shell once more per page (`fr/learn/2/index.html`), its
+  own block and `<html lang>`; infra's SPA fallback serves a route the NEAREST page the build
+  gave it (so `/en/learn/3`, not ready in English, unfurls as the list it lands on). The
+  plugin loads `linkPreviews.ts` THROUGH Vite (`ssrLoadModule`), because a config file cannot
+  import `@whippin/shared`'s TS source. `<title>` stays `Whippin AI` on every page: the SPA
+  sets no title, so a page's own would hold only on a direct load.
+  - **The cards are committed PNGs** in `src/assets/previews/`, drawn from the app's own
+    scenes (`tutorial/art/scenes`), inks, sprites and fonts. One per level × language,
+    READY OR NOT (`linkPreviews.test.ts`), so a level becoming ready in a language
+    already has its card; a page whose card is missing fails the build. They go out as
+    HASHED assets: chat apps cache a preview image by its URL, so a redrawn card must be
+    a new one. They were rendered offline and no generator is committed: a level added or
+    renamed needs its cards drawn again. They carry no reading time (it changes with the
+    article; the page's description states it) and no SOON (a level's card is the same
+    ready or not). HOME's card says the game in no language — its guesses are words
+    English and French share — since every route without a page of its own wears it.
 - **Stale-tab auto-reload (user-decided 2026-08-16):** a deployed release must reach tabs
   already open — an SPA loads its JS once, and the deploy's `prune: false` deliberately
   keeps old chunks alive, so nothing ever forces a stale tab to refresh (and under the

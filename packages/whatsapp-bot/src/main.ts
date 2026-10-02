@@ -208,6 +208,7 @@ async function main(): Promise<void> {
         limits,
         dayLog,
         dailyCallCeiling: env.llm.dailyCallCeiling,
+        siteOrigin: env.siteOrigin,
         // Read once per (language, day) and held for the process's life: the task is
         // long-lived, so the group pays one 4-6 MB read a day and not one per question.
         daySource: createDaySourceReader({ apiBaseUrl: env.apiBaseUrl, log }),
@@ -387,7 +388,7 @@ async function main(): Promise<void> {
           group: group.id,
           text: outcome.text,
           replyTo: { id: message.id, participant: message.participant, text: message.text },
-          // The article's card, waited for before the send (`llm/article.ts`).
+          // The tutorial page's card, waited for before the send (`llm/tutorial.ts`).
           ...(outcome.preview ? { preview: outcome.preview } : {}),
         });
       } catch (error) {

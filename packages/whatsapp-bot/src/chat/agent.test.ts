@@ -4,7 +4,6 @@ import { parseGroupConfig } from '../config/groupConfig';
 import { memoryDeclarationStore } from '../domain/declarations';
 import type { InboundMessage } from '../domain/message';
 import { createLog } from '../log';
-import { ARTICLE_URL } from '../llm/article';
 import { LlmUnavailable, type LlmProvider, type LlmRequest, type LlmResponse } from '../llm/types';
 import { ANSWERING, DEFAULT_REACTION, createAgent, fromOwner, plainReply, reactionIn } from './agent';
 import { DayLog, memoryDayLogStore, type Turn } from './dayLog';
@@ -74,6 +73,7 @@ function agentWith(provider: LlmProvider, over: Partial<Parameters<typeof create
     dayLog: new DayLog(memoryDayLogStore()),
     dailyCallCeiling: 100,
     log: createLog('silent'),
+    siteOrigin: 'https://whippin.ai',
     now: () => NOW,
     ...over,
   });
@@ -410,16 +410,17 @@ describe('the bot knows its own schedule in this group (user-decided 2026-09-05)
   });
 });
 
-describe("the maker's article rides in the conversation's prompt (2026-09-27)", () => {
-  it('is in the system prompt, and a reply giving its link names the card', async () => {
-    const { provider, requests } = scripted([() => ({ text: 'Tout est là : chqrles.me/cemantix' })]);
+describe("the tutorial's levels ride in the conversation's prompt (2026-10-02)", () => {
+  it("lists the group's levels, and a reply giving one's link names its card", async () => {
+    const { provider, requests } = scripted([() => ({ text: 'Tout est là : whippin.ai/fr/learn/5' })]);
     const dayLog = new DayLog(memoryDayLogStore());
     await said(dayLog, 'comment il classe les mots ?');
     const out = await agentWith(provider, { dayLog })(message('@33700000000 comment il classe les mots ?'), group, identity, TODAY, asked());
-    expect(out).toEqual({ kind: 'reply', text: `Tout est là : ${ARTICLE_URL}`, preview: ARTICLE_URL });
-    expect(requests[0].system).toContain('<article>');
-    // Ahead of everything that changes per group or per message: the prefix a cache holds.
-    expect(requests[0].system.indexOf('<article>')).toBeLessThan(requests[0].system.indexOf('On se chambre.'));
+    const page = 'https://whippin.ai/fr/learn/5';
+    expect(out).toEqual({ kind: 'reply', text: `Tout est là : ${page}`, preview: page });
+    expect(requests[0].system).toContain('https://whippin.ai/fr/learn/1');
+    expect(requests[0].system).toContain('https://whippin.ai/fr/learn\n');
+    expect(requests[0].system).not.toContain('chqrles.me');
   });
 });
 

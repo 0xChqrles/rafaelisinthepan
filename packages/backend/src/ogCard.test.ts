@@ -163,3 +163,22 @@ describe('GET /s/<token> — a bonus result', () => {
     expect(res.headers['Content-Type']).toBe('image/png');
   });
 });
+
+// The card's mono is a static bold instance of the web's Azeret Mono, and resvg ignores
+// `font-variant-ligatures`: a face that kept its substitutions would print a name holding
+// `ffi` or a `1x2` as ligatures and a multiplication sign. The bundled instance carries no
+// GSUB table, so every name and label is set glyph for glyph.
+describe('the cards\' fonts', () => {
+  const tables = async (file: string) => {
+    const { readFile } = await import('node:fs/promises');
+    const font = await readFile(new URL(`./assets/${file}`, import.meta.url));
+    const count = font.readUInt16BE(4);
+    return Array.from({ length: count }, (_, i) => font.toString('latin1', 12 + i * 16, 16 + i * 16));
+  };
+
+  it('ships the bold mono with no substitutions', async () => {
+    const tags = await tables('AzeretMono-Bold.ttf');
+    expect(tags).toContain('glyf');
+    expect(tags).not.toContain('GSUB');
+  });
+});

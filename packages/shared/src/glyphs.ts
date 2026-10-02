@@ -2,9 +2,9 @@
 //
 // The app's number face is Press Start 2P, and it has no `∞` — nor does anything else the
 // OG card could fall back on, since the rasterizer runs with `loadSystemFonts: false` and
-// the only font in the bundle is that one. So the capped round's headline ships as PATH
-// DATA, drawn identically by `cardSvg.ts` (the share card) and by the web result in place
-// of `.solved-score-num`. ONE path and ONE view box, here, is what keeps the two surfaces
+// the bundle's other face, Azeret Mono's bold, has none either. So the capped round's
+// headline ships as PATH DATA, drawn identically by `cardSvg.ts` (the share card) and by
+// the web result in place of `.solved-score-num`. ONE path and ONE view box, here, is what keeps the two surfaces
 // showing the same glyph.
 
 // The ∞ on a 9×5 pixel grid — two loops that genuinely CROSS, with the outer corners
@@ -46,6 +46,21 @@ export const INFINITY_EM_HEIGHT = 0.88;
 // lockup never restates the grid's proportions.
 export const INFINITY_EM_WIDTH =
   (INFINITY_EM_HEIGHT * INFINITY_GLYPH.width) / INFINITY_GLYPH.height;
+
+// THE APP'S MARK, the header's own (`web/public/logo.png`, 22×22, one ink), as path data so
+// the cards can draw it: the rasterizer loads fonts and nothing else. One rectangle per
+// run of a row, all wound the same way. Traced from the PNG — a redrawn mark is traced again.
+export const MARK_GLYPH = {
+  width: 22,
+  height: 22,
+  path:
+    'M7 1h1v1h-1z M6 2h2v1h-2z M6 3h2v1h-2z M5 4h3v1h-3z M5 5h4v1h-4z M14 5h1v1h-1z ' +
+    'M4 6h5v1h-5z M14 6h2v1h-2z M4 7h5v1h-5z M13 7h3v1h-3z M3 8h6v1h-6z M13 8h4v1h-4z ' +
+    'M3 9h7v1h-7z M12 9h5v1h-5z M2 10h16v1h-16z M2 11h16v1h-16z M1 12h18v1h-18z ' +
+    'M1 13h18v1h-18z M0 14h5v1h-5z M7 14h13v1h-13z M8 15h12v1h-12z M8 16h6v1h-6z ' +
+    'M16 16h5v1h-5z M7 17h6v1h-6z M18 17h3v1h-3z M5 18h8v1h-8z M20 18h2v1h-2z ' +
+    'M3 19h11v1h-11z M1 20h14v1h-14z M0 21h16v1h-16z',
+} as const;
 
 // How far ABOVE its nominal baseline the pixel face's ink actually sits, as a fraction of
 // the font size — also measured off the rasterized card (10px at font-size 76). The face

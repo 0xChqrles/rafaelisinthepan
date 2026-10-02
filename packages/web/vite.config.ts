@@ -1,10 +1,13 @@
 import { execSync } from 'node:child_process';
-import { defineConfig, loadEnv } from 'vite';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { createServer, defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 // Lets `import Icon from './x.svg?react'` return an inline React component (see AGENTS.md
 // "SVG icons"): the SVG is emitted into the DOM, so its `fill="currentColor"` inherits the
 // button's `color` for every theme/state instead of being locked to a rasterised <img>.
 import svgr from 'vite-plugin-svgr';
+import type { LinkPreview } from './src/linkPreviews';
 
 // The build's identity, for stale-tab detection (src/versionCheck.ts): the bundle carries
 // it as `__BUILD_ID__` and the emitted `dist/version.json` names the same value — so an
@@ -24,6 +27,66 @@ function buildId(): string {
   } catch {
     return `local-${stamp}`;
   }
+}
+
+// THE LINK PREVIEWS (src/linkPreviews.ts): the shell's placeholder takes the HOME preview, and
+// every page with a preview of its own is the same shell again under its route
+// (`fr/learn/2/index.html`), wearing its own block and its language. The pictures go out as
+// hashed assets — a redrawn one is a new URL, which is what makes a chat app read it again.
+// A missing picture or placeholder fails the build: a page shipping the wrong card, or none,
+// is only ever seen in somebody else's chat.
+//
+// The previews are read off the app's own modules, which reach @whippin/shared — TS source
+// this config file cannot import (Vite hands a config's package imports to Node). So the
+// plugin loads `src/linkPreviews.ts` THROUGH Vite, as the app itself is built.
+const PREVIEW_SLOT = '<!-- link-preview -->';
+const SHELL_LANG = '<html lang="en"';
+type Previews = typeof import('./src/linkPreviews');
+
+function linkPreviews(): Plugin {
+  let previews: Previews;
+  return {
+    name: 'link-previews',
+    apply: 'build',
+    enforce: 'post',
+    async buildStart() {
+      const server = await createServer({
+        configFile: false,
+        root: fileURLToPath(new URL('.', import.meta.url)),
+        logLevel: 'silent',
+        appType: 'custom',
+        // No HMR and no WebSocket server: `hmr: false` alone still binds Vite's HMR port.
+        server: { middlewareMode: true, hmr: false, ws: false },
+        optimizeDeps: { noDiscovery: true, include: [] },
+      });
+      try {
+        previews = (await server.ssrLoadModule('/src/linkPreviews.ts')) as Previews;
+      } finally {
+        await server.close();
+      }
+    },
+    generateBundle(_options, bundle) {
+      const index = bundle['index.html'];
+      if (index?.type !== 'asset') throw new Error('link-previews: no index.html in the bundle');
+      const shell = String(index.source);
+      if (shell.split(PREVIEW_SLOT).length !== 2 || shell.split(SHELL_LANG).length !== 2) {
+        throw new Error(`link-previews: index.html must carry ${PREVIEW_SLOT} and ${SHELL_LANG} once each`);
+      }
+      const page = (preview: LinkPreview) => {
+        const ref = this.emitFile({
+          type: 'asset',
+          name: preview.image,
+          source: readFileSync(new URL(`./src/assets/previews/${preview.image}`, import.meta.url)),
+        });
+        const tags = previews.previewTags(preview, `${previews.SITE_ORIGIN}/${this.getFileName(ref)}`);
+        return shell.replace(PREVIEW_SLOT, tags).replace(SHELL_LANG, `<html lang="${preview.lang}"`);
+      };
+      index.source = page(previews.HOME_PREVIEW);
+      for (const preview of previews.pagePreviews()) {
+        this.emitFile({ type: 'asset', fileName: `${preview.path.slice(1)}/index.html`, source: page(preview) });
+      }
+    },
+  };
 }
 
 // https://vite.dev/config/
@@ -62,6 +125,7 @@ export default defineConfig(({ command, mode }) => {
           });
         },
       },
+      linkPreviews(),
     ],
     define: { __BUILD_ID__: JSON.stringify(build) },
     // THE CDN'S OWN PATH LIST, restated for local development. In production the WEB
