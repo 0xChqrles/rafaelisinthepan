@@ -737,6 +737,9 @@ The live routes then share:
   (`whippinGroup`, user-decided 2026-09-14), whose invite link (`shared/src/invite.ts`
   `groupInvitePath`) the morning reminder prints after reading only its public face
   (`GET /groups?id=`) — the invite contract has a fourth consumer, and still no membership read.
+  It also LINKS the tutorial's levels (user-decided 2026-10-02): which levels exist, in which
+  languages, and their paths are `shared/src/tutorial.ts`, the table the web teaches from —
+  the bot answers a question about how the game works with the level's page.
 - **Its stack is a sibling** (`WhippinBotStack`, `infra/lib/bot-stack.ts`): one Fargate task
   (`desiredCount 1`, stop-before-start — one Baileys session is a correctness rule), a
   bot-owned table, an SQS outbound queue, a podium Lambda with one schedule per group, alarms

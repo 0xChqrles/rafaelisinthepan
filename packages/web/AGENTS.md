@@ -125,7 +125,8 @@
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
       tutorial/               the tutorial (#51/#155/#269): Learn.tsx (the levels as cards),
                               Lesson.tsx (dispatch), LevelOne.tsx over LessonBoard.tsx,
-                              coach.ts (the reactive coach), levels.ts + data scripts/<lang>.ts
+                              coach.ts (the reactive coach), levels.ts (each level's face over
+                              `shared/src/tutorial.ts`, which levels exist and where) + data scripts/<lang>.ts
                               (+ <lang>.<word>.json, the pruned #154 boards it plays on);
                               ArticleLevel.tsx (levels 2+, lazy via LazyArticle) over
                               articles/<lang>.ts (the text, per language; types.ts, Rich.tsx
