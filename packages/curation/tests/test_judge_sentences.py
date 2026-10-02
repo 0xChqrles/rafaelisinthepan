@@ -316,11 +316,11 @@ def test_a_start_the_secret_was_played_with_is_never_offered(tmp_path, monkeypat
 
 
 def test_a_generated_start_that_repeats_a_pair_is_refused_and_re_picked(tmp_path, monkeypatch):
-    # Refused by code, with no grammar question; the re-pick is offered neither the refused
+    # Refused by code, with no question to the model; the re-pick is offered neither the refused
     # start, nor a start the hole has already shown, nor another pair already played.
     path = _generated_draft(tmp_path, ["lapin", "souris", "mulot", "rat"], starts=["lapin", "loup", "brique"])
     asked = []
-    monkeypatch.setattr(curate.llm, "grammar_check", lambda *_a, **_k: pytest.fail("a played pair needs no model"))
+    monkeypatch.setattr(curate.llm, "sentence_check", lambda *_a, **_k: pytest.fail("a played pair needs no model"))
     monkeypatch.setattr(curate.llm, "pick_start", _pick_one(asked, "rat"))
     repick = curate.check_starts(object(), Log(), str(path), {"chat": {"souris"}}, {}, lambda _t: None,
                                  pairs={"chat": {"lapin", "mulot"}}, lang="fr")
@@ -329,36 +329,37 @@ def test_a_generated_start_that_repeats_a_pair_is_refused_and_re_picked(tmp_path
                       "this secret was already played from this start word")]
 
 
-def test_start_words_the_grammar_check_passes_are_kept(tmp_path, monkeypatch):
+def test_start_words_the_sentence_check_passes_are_kept(tmp_path, monkeypatch):
     path = _generated_draft(tmp_path, ["lapin", "souris"], starts=["lapin", "loup", "brique"])
     checked = []
-    monkeypatch.setattr(curate.llm, "grammar_check",
+    monkeypatch.setattr(curate.llm, "sentence_check",
                         lambda _c, shown, starts, lang: checked.append((shown, starts)) or {"valid": True, "faulty": {}})
     monkeypatch.setattr(curate.llm, "pick_start", lambda *_a, **_k: pytest.fail("nothing to re-pick"))
     assert curate.check_starts(object(), Log(), str(path), {}, {}, lambda _t: None, lang="fr") == {}
     assert checked == [("un lapin un loup une brique", ["lapin", "loup", "brique"])]
 
 
-def test_a_start_the_grammar_check_faults_is_re_picked_from_the_rest_of_the_band(tmp_path, monkeypatch):
+def test_a_start_the_sentence_check_faults_is_re_picked_from_the_rest_of_the_band(tmp_path, monkeypatch):
     path = _generated_draft(tmp_path, ["lapin", "souris", "mulot"], starts=["lapin", "loup", "brique"])
     asked = []
-    monkeypatch.setattr(curate.llm, "grammar_check",
+    monkeypatch.setattr(curate.llm, "sentence_check",
                         lambda *_a, **_k: {"valid": False, "faulty": {"lapin": "un accord faux"}})
     monkeypatch.setattr(curate.llm, "pick_start", _pick_one(asked, "souris"))
     assert curate.check_starts(object(), Log(), str(path), {}, {}, lambda _t: None, lang="fr") == {"chat": "souris"}
     assert asked == [("un [____] un loup une brique", "chat", ["souris", "mulot"], "un accord faux")]
 
 
-def test_a_start_that_breaks_the_letter_rule_is_refused_before_any_grammar_question(tmp_path, monkeypatch):
-    # « le effet » is never French: code knows it, and the model is only asked for another
-    # start — « ami » elides after « le » too, so it is not offered either.
+def test_the_model_judges_the_sentence_and_the_re_pick_band_keeps_the_letter_rule(tmp_path, monkeypatch):
+    # No mechanical refusal: « le effet » goes to the model like any start; the band the
+    # re-pick chooses from still holds only words that can follow « le » — « ami » elides.
     path = _generated_draft(tmp_path, ["effet", "ami", "lapin"], starts=["effet", "loup", "brique"], first="le")
-    asked = []
-    monkeypatch.setattr(curate.llm, "grammar_check", lambda *_a, **_k: pytest.fail("the letter rule needs no model"))
+    asked, checked = [], []
+    monkeypatch.setattr(curate.llm, "sentence_check", lambda _c, shown, _starts, lang: checked.append(shown) or
+                        {"valid": False, "faulty": {"effet": "« le effet » n'est pas français"}})
     monkeypatch.setattr(curate.llm, "pick_start", _pick_one(asked, "lapin"))
     assert curate.check_starts(object(), Log(), str(path), {}, {}, lambda _t: None, lang="fr") == {"chat": "lapin"}
-    assert asked == [("le [____] un loup une brique", "chat", ["lapin"],
-                      "« le effet » : « le » s'élide devant une voyelle")]
+    assert checked == ["le effet un loup une brique"]
+    assert asked == [("le [____] un loup une brique", "chat", ["lapin"], "« le effet » n'est pas français")]
 
 
 def test_start_words_are_re_picked_at_most_start_rounds_times(monkeypatch):
