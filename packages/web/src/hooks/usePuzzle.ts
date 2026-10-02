@@ -16,8 +16,8 @@ import { puzzleUrl, puzzleOutcome, parsePuzzle } from '../api';
 // changes. A BONUS puzzle (shared bonus.ts) passes its `bonusId` instead: the same fetch,
 // addressed by the id. Idle (no fetch) until a language is chosen.
 // The last few PARSED artifacts, kept across mounts (`puzzleCache.ts` holds the two bounds
-// and the safety argument): going back and forth between today's result and tomorrow's
-// round no longer decompresses and parses megabytes on every arrival.
+// and the safety argument): going back and forth between today's result and an archive
+// day no longer decompresses and parses megabytes on every arrival.
 const sentenceCache = createPuzzleCache<Puzzle>();
 
 export default function usePuzzle(lang: string | null, date?: string, bonusId?: number) {

@@ -1,6 +1,5 @@
 import {
   BONUS_SEGMENT,
-  dayNumber,
   GROUP_ID_PATTERN,
   GROUP_LANDING_SEGMENT,
   GROUP_SEGMENT,
@@ -12,11 +11,6 @@ import {
 } from '@whippin/shared';
 import { FIRST_PUZZLE_DATE } from './config';
 import { isReady, levelOf } from './tutorial/levels';
-
-// How far past the client's active day a dated route may reach (#273): ONE day, the
-// server's own +1-day skew window — which is what lets tomorrow's sentence open tonight.
-// The route bound and the server's guard have to agree, or TOMORROW lands on a redirect.
-const ROUTE_FUTURE_DAYS = 1;
 
 // Supported game languages — the single source for the picker and the /<lang> URL
 // routing. A language is deep-linkable: /fr and /en map to the game in that language,
@@ -198,15 +192,12 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   // A dated deep link is honored only when it is a real calendar date within range; a
   // date-SHAPED segment that is malformed OR out of range is treated as unknown -> home
   // (a clearly date-like deep link that is broken should not silently fall through to
-  // today). The range reaches ONE day past the active one (#273): tomorrow's sentence is
-  // playable tonight, on the dated route the server already serves inside its skew window.
+  // today). The range ends at the client's active day: a day not yet out is no deep link.
   const dateOf = (s: string): string | 'home' | null => {
     if (!DATE_RE.test(s)) return null; // not date-shaped at all
     if (!isCalendarDate(s)) return 'home';
     if (s < firstDate) return 'home';
-    if (bounds.activeDate && dayNumber(s) - dayNumber(bounds.activeDate) > ROUTE_FUTURE_DAYS) {
-      return 'home';
-    }
+    if (bounds.activeDate && s > bounds.activeDate) return 'home';
     return s;
   };
 

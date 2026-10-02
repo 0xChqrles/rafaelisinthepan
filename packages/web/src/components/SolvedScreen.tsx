@@ -17,7 +17,6 @@ import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
 import Button from './Button';
-import ChevronRightIcon from '../assets/icons/chevron-right.svg?react';
 import { useDeviceIdentity } from '../identity';
 import { ariaHoleHistory, t } from '../i18n';
 import { capitalize, sentenceStarts } from '../game/sentenceCase';
@@ -151,7 +150,6 @@ export default function SolvedScreen({
   animate = true,
   start = true,
   onRevealEnd,
-  onTomorrow,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
@@ -180,10 +178,6 @@ export default function SolvedScreen({
   // The reveal's last beat has landed (the credit printed under the card, or the settled
   // frame): the round disarms its fast-forward on it.
   onRevealEnd?: () => void;
-  // TOMORROW (#273, user-decided 2026-09-08): the result screen's ONE onward action —
-  // the next day's sentence, opened tonight, beside SHARE. Only today's result offers it
-  // (the round passes nothing on an archive day), and it arrives on SHARE's own beat.
-  onTomorrow?: () => void;
 }) {
   const reduceMotion = prefersReducedMotion();
   const hasSource = Boolean(source?.kind || source?.author || source?.work);
@@ -411,10 +405,8 @@ export default function SolvedScreen({
         </div>
         </div>
 
-        {/* SHARE closes the card: hidden in place (footprint kept) until it lands with
-            the standing — and TOMORROW beside it (#273), the onward action, on the same
-            beat: two equals on one row, never a second arrival. */}
-        <div className={`result-actions${onTomorrow ? ' paired' : ''}${shareIn ? ' in' : ''}`}>
+        {/* SHARE closes the card: hidden in place (footprint kept) until the count lands. */}
+        <div className={`result-actions${shareIn ? ' in' : ''}`}>
           <Button
             variant="primary"
             className={`result-action${copied ? ' copied' : ''}`}
@@ -422,13 +414,6 @@ export default function SolvedScreen({
           >
             {copied ? t(lang, 'copied') : t(lang, 'share')}
           </Button>
-          {onTomorrow && (
-            <Button variant="secondary" className="result-action btn-arrow" onClick={onTomorrow}>
-              {t(lang, 'tomorrow')}
-              {/* The title's own 7×7 pixel chevron, pointing ONWARD (user-asked 2026-09-11). */}
-              <ChevronRightIcon className="ui-icon" aria-hidden />
-            </Button>
-          )}
         </div>
       </div>
 

@@ -29,11 +29,9 @@ import HistoryModal from '../components/HistoryModal';
 import Button from '../components/Button';
 import { PLAY_LEVEL } from '../tutorial/levels';
 import LoadError from '../components/LoadError';
-import FlipCountdown from '../components/FlipCountdown';
-import { earlyLocked } from '../game/earlyPlay';
 import { replayCharge, strikeFor } from '../game/charge';
 import { navigate } from '../routing';
-import { pathForDay, pathForGame, pathForLesson } from '../langs';
+import { pathForLesson } from '../langs';
 import { MASK, buildHistory } from '../game/history';
 import { SCRAMBLE_MS, useScramble } from '../hooks/useScramble';
 import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, REVEAL_HOLD_MS, STAGGER_MS } from '../game/timing';
@@ -42,7 +40,6 @@ import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../
 import { track } from '../analytics';
 import {
   fold,
-  dateForDayNumber,
   isBonusRef,
   puzzleAddress,
   type PuzzleRef,
@@ -85,21 +82,15 @@ export default function Game({
   puzzle,
   puzzleRef,
   isActiveDay,
-  early,
   deferResultsAnimation,
 }: {
   puzzle: Puzzle;
   // WHICH puzzle: a game day, or a BONUS (shared bonus.ts) — no day, so never the active
-  // day, never early, and never a streak or an analytics beat.
+  // day, and never a streak or an analytics beat.
   puzzleRef: PuzzleRef;
   // Whether this is the client's active day (false when replaying an archive day, #55):
   // gates the fresh-solve streak celebration and tags solve analytics as archive/live.
   isActiveDay: boolean;
-  // EARLY PLAY (#273): this day is AFTER the client's active one — tomorrow's sentence,
-  // opened tonight from today's result. Play stops at the first progress or the third
-  // guess, and the keyboard's place counts down to the flip. LIVE: the route reads it off
-  // the app's day signal, so the flip itself unlocks the round in an open tab.
-  early: boolean;
   // The dev streak preview lives above Game in App, so it supplies the same animation gate
   // as the real in-round dialog without coupling the preview to persisted round state.
   deferResultsAnimation: boolean;
@@ -128,7 +119,6 @@ export default function Game({
       revision={puzzle.revision}
       puzzleRef={puzzleRef}
       isActiveDay={isActiveDay}
-      early={early}
       deferResultsAnimation={deferResultsAnimation}
     />
   );
@@ -147,7 +137,6 @@ function Round({
   revision,
   puzzleRef,
   isActiveDay,
-  early,
   deferResultsAnimation,
 }: {
   words: string[];
@@ -161,7 +150,6 @@ function Round({
   revision: string;
   puzzleRef: PuzzleRef;
   isActiveDay: boolean;
-  early: boolean;
   deferResultsAnimation: boolean;
 }) {
   // Fresh per-hole state derived from the puzzle. Used until the persisted store
@@ -239,7 +227,6 @@ function Round({
     // The round's identity on the wire (#203): the version this puzzle was published as.
     revision,
     ranks,
-    early,
   });
   const server = load.status === 'ready' ? load.server : null;
 
@@ -376,22 +363,6 @@ function Round({
   // The round is over either way — the difference is what the headline says and whether
   // anything celebrates.
   const finished = solved || capped;
-  // THE NIGHT'S LOCK (#273): tomorrow's round, and the play log already holds the first
-  // progress or the third guess. Judged LOCALLY, off the same play log the board replays
-  // — the input locks right after the guess that made progress, never on the server's
-  // refusal — and read over the FULL log rather than the board's deferred view, so the
-  // lock lands on the guess itself while its floating hit still plays. Lifted by the
-  // flip, when `early` goes false and the keyboard comes back where the clock stood.
-  const locked = useMemo(
-    () => early && !finished && earlyLocked(freshHoles, ranks, playLog),
-    [early, finished, freshHoles, ranks, playLog],
-  );
-  // TOMORROW (#273): the result screen's one onward action, from today's result only —
-  // the next day's sentence, on the dated route the server serves inside its skew window.
-  const goTomorrow = useCallback(() => {
-    if (isBonusRef(puzzleRef)) return;
-    navigate(pathForDay(lang, dateForDayNumber(puzzleRef.dayNumber + 1)));
-  }, [lang, puzzleRef]);
 
   // The pre-round GATE (2026-08-11; the #216 triggers 2026-08-24; an INVITATION since #269,
   // user-decided 2026-09-16). Two reasons to hold the round back, one tray:
@@ -850,8 +821,8 @@ function Round({
   const submit = useCallback(
     (raw: string) => {
       // A board already complete takes no more guesses, and neither does a round the server
-      // has closed — solved (frozen) or capped — nor one locked for the night (#273).
-      if (boardComplete || finished || promptExiting || locked) return;
+      // has closed — solved (frozen) or capped.
+      if (boardComplete || finished || promptExiting) return;
       // The next guess is typed where the last one was: a no-op when the field already has
       // the focus, which is every submit but the on-screen ENTER's own keyboard activation.
       guessField.current?.focus({ preventScroll: true });
@@ -1011,7 +982,6 @@ function Round({
       boardComplete,
       finished,
       promptExiting,
-      locked,
       vocabSet,
       appendOutbox,
       revision,
@@ -1074,10 +1044,6 @@ function Round({
           onExplore={openHistory}
           animate={animateResults}
           onRevealEnd={() => setRevealEnded(true)}
-          // TOMORROW opens the next day's sentence (#273) — from TODAY's result only: an
-          // archive day's next day is another archive day, and tomorrow's own result
-          // (impossible tonight, ordinary once its day has come) has no day to open.
-          onTomorrow={isActiveDay ? goTomorrow : undefined}
           // The dev `?streak=N` preview (App owns that dialog, so this round never sees
           // it in `showStreakDialog`) opens over an ALREADY-SOLVED day, where the result
           // is mounted from the first frame. Without this it would play its whole reveal
@@ -1132,9 +1098,9 @@ function Round({
             <div className="prompt-zone">
               <div
                 className={`input-area${promptExiting ? ' solving' : ''}${
-                  showResults || gateOpen || locked ? ' retired' : ''
+                  showResults || gateOpen ? ' retired' : ''
                 }`}
-                aria-hidden={promptExiting || showResults || gateOpen || locked || undefined}
+                aria-hidden={promptExiting || showResults || gateOpen || undefined}
               >
                 <WordInput
                   value={input}
@@ -1152,11 +1118,8 @@ function Round({
                   // a guess the player cannot see behind it. The gate holds it back the same
                   // way — the prompt arrives with the keyboard, on PLAY. And the RETIRING
                   // prompt is inactive too, so its field is never a focusable control inside
-                  // the `aria-hidden` box below (#267 gave it one to focus). The night's
-                  // lock (#273) retires it the same way, until the flip brings it back.
-                  active={
-                    !showResults && historyHole === null && !gateOpen && !promptExiting && !locked
-                  }
+                  // the `aria-hidden` box below (#267 gave it one to focus).
+                  active={!showResults && historyHole === null && !gateOpen && !promptExiting}
                 />
                 <p className="hint">{feedback || ' '}</p>
               </div>
@@ -1193,12 +1156,7 @@ function Round({
                   </Button>
                 )}
               </div>
-            ) : resultUp ? null : locked ? (
-              /* THE NIGHT'S LOCK (#273): the countdown to the flip takes the keyboard's
-                 place — the whole statement, in the keys' own footprint, so nothing above
-                 it moves when the keys go or when they come back. */
-              <FlipCountdown lang={lang} onToday={() => navigate(pathForGame(lang))} />
-            ) : (
+            ) : resultUp ? null : (
               <div
                 className={`kb-exit${keyboardLeaving ? ' leaving' : ''}`}
                 onAnimationEnd={(e) => {

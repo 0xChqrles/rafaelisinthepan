@@ -300,7 +300,7 @@ The live routes then share:
   + round creation = two challenges, deliberately) costs no visible wait. Local: accept-all
   verifier.
 - **Clients act on the error CODE, never on the status alone.** What a given code means —
-  a verdict that closes a conversation (`round_solved`), a wait (`too_early`), an input to
+  a verdict that closes a conversation (`round_solved`), a wait (`too_fast`), an input to
   correct (`bad_code`), a confirmation to advance to (`would_erase`, `would_switch`) — is each
   route's own contract, recorded in its section below. What is universal: a 5xx, a transport
   failure or an unparseable body is NEVER a verdict — it never signs anyone out, never resets
@@ -419,24 +419,6 @@ The live routes then share:
   in the day's place, the same payload. `decodeLegacyShareTarget` recognizes ONLY
   versions 1 and 2 (a named list); every other version — the retired Word mode's 3–5
   included — is a flat 404.
-- **EARLY PLAY (#273, user-decided 2026-09-08): after today's result, TOMORROW opens the
-  next day's sentence tonight** — beside SHARE, the result screen's ONE onward action
-  (from TODAY's result only). The web's dated route reaches `activeDate + 1`
-  (`web/src/langs.ts` `ROUTE_FUTURE_DAYS`), the server's own skew window. **Play stops at the
-  FIRST PROGRESS (`holeProgress > 0` on any hole, an exact hit included) or after
-  `EARLY_GUESS_CAP` = 3 guesses (`shared/src/scores.ts`), whichever comes first.** The
-  server enforces it inside the append's own condition for a round whose date is AFTER its
-  active day: accepted only while the stored `progress` is 0 AND the RESULTING log stays
-  within the cap (ROOM, the round cap's shape); the guess that makes progress is STORED and
-  the next append is 409 `early_locked`, which the client adopts and closes on like
-  `round_solved` — until the flip, where the re-registration re-opens the conversation with
-  a read (a client already past the flip on its own clock keeps and retries the guess). The
-  client locks its input from the same reading of its play log (`web/src/game/earlyPlay.ts`)
-  the moment either holds; the countdown to the flip takes the keyboard's place
-  (`FlipCountdown`). The log STAYS: the early guesses count as tries, the on-time verdict is
-  unchanged (the solving append lands on the day). An early SOLVE is impossible by
-  construction (a hit is progress), so the on-time rule never denies an early round a credit.
-  Not done, deliberately: a NEXT-DAY preview beyond +1.
 - **Storage**: the score table, partition `round#<publicId>`, sort key
   `<lang>#sentence#<date>` (language first so a month is one Query; `sentence` is a fixed
   segment, the retired daily `mode`'s, kept so stored rows stay addressable — the score
@@ -456,10 +438,9 @@ The live routes then share:
 - **Wire**: `?bonus=<id>` stands in for `date` on `/` and `/round` (both CloudFront lists
   name it); a malformed id is 400; no future guard (a bonus is out when published). The
   page is `/<lang>/bonus/<id>`.
-- **Nothing reads a bonus address as a date**: the round route's EARLY lock and `onTime`
-  ask `isBonusAddress` first, so a bonus is never early and never on time — the one check
-  both rewards pass through. The history month query and the ledger's key pattern never
-  meet one.
+- **Nothing reads a bonus address as a date**: `onTime` asks `isBonusAddress` first, so a
+  bonus is never on time — the one check both rewards pass through. The history month
+  query and the ledger's key pattern never meet one.
 - **Publish**: `pnpm puzzle:publish <file> --bonus [--s3]` mints a fresh id (never one the
   store holds) and prints the link; `--bonus <id>` republishes it (a correction keeps the
   link). Exclusive with `--day`; never a ledger line.
@@ -467,7 +448,7 @@ The live routes then share:
   the day; the card, the share page and the headline say `BONUS <id>`, and the click opens
   the bonus. The WhatsApp bot never counts a v7 share.
 - **The web**: its own round key (`b:<id>:<lang>`, kept by the outbox cap), never the
-  active day, no TOMORROW, and no `solve`/`share` analytics (the share rate is a day's).
+  active day, and no `solve`/`share` analytics (the share rate is a day's).
 
 ### Server-backed player history (#211, decided 2026-08-23)
 
@@ -488,8 +469,10 @@ The live routes then share:
 - **ON TIME means ON THE DAY; late has no gradations** (user-decided 2026-08-23). A round
   earns the streak credit AND the leaderboard row only when the day played IS the day it was
   played on: ONE server predicate (`rounds.ts` `onTime`), judging a solve by the landing
-  append's arrival. The client makes no comparison: the confirming answer carries the
-  verdict (`credited`); a collection not yet arrived credits and celebrates nothing.
+  append's arrival. A round on the server's TOMORROW (a fast clock, inside the +1-day skew
+  window) is an ordinary round, and its solve is not on time either. The client makes no
+  comparison: the confirming answer carries the verdict (`credited`); a collection not yet
+  arrived credits and celebrates nothing.
 - Unmetered private read; Turnstile does not fit a navigation read. Monitor, act on the
   account; a separate summary row is the lever if read amplification becomes material.
 

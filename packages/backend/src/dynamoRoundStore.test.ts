@@ -13,7 +13,7 @@ import {
   type AttributeValue,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
-import { EARLY_GUESS_CAP, ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
+import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
 import {
   expectConditionSyntax,
   expectExpressionsValid,
@@ -157,7 +157,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     expect(result.outcome).toBe('appended');
@@ -208,7 +207,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     const command = send.mock.calls[0][0] as UpdateItemCommand;
@@ -227,7 +225,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     // A missing attribute has no size, so this half of the cap cannot be a condition —
@@ -248,7 +245,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     // The log is at the cap and any batch would overflow it: the cap refusal, not the
@@ -268,7 +264,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     expect(refused.outcome).toBe('too_fast');
@@ -286,7 +281,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     expect(result.outcome).toBe('appended');
@@ -313,7 +307,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     expect(refused.outcome).toBe('too_fast');
@@ -352,7 +345,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     expect(updates).toBe(2); // the append, then the refused replace
@@ -376,7 +368,6 @@ describe('dynamoRoundStore (#201)', () => {
         puzzle: PUZZLE,
         progress: 0,
         solved: false,
-        early: false,
         now: NOW,
       }),
     ).rejects.toThrow('ProvisionedThroughputExceeded');
@@ -394,7 +385,6 @@ describe('dynamoRoundStore — the derived summary (#203)', () => {
     puzzle: PUZZLE,
     progress,
     solved,
-    early: false,
     now: NOW,
   });
 
@@ -839,88 +829,5 @@ describe('planRoundMove (#204)', () => {
     expect(result.items[1].Delete).toMatchObject({
       ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#v)',
     });
-  });
-});
-
-// CONTRACT (#273): an append to a round played BEFORE its day carries two clauses more in
-// the SAME condition — no stored progress, and room under EARLY_GUESS_CAP — so the night's
-// lock can no more be raced than the cap; today's append carries neither.
-describe('early play (#273)', () => {
-  const earlyInput = (guesses: string[]) => ({
-    ...KEY,
-    publicId: PUBLIC_ID,
-    guesses,
-    puzzle: PUZZLE,
-    progress: 0,
-    solved: false,
-    early: true,
-    now: NOW,
-  });
-
-  it('carries the two early clauses inside the one condition, in legal condition syntax', async () => {
-    const send = vi.fn(async (command: unknown) => ({
-      Attributes: firstWriteResult(command as UpdateItemCommand),
-    }));
-    const { store } = makeStore(send);
-    const result = await store.append(earlyInput(['zzz']));
-    expect(result.outcome).toBe('appended');
-
-    const command = send.mock.calls[0][0] as UpdateItemCommand;
-    expectConditionSyntax(command.input.ConditionExpression);
-    expect(command.input.ConditionExpression).toContain(
-      '(attribute_not_exists(#prog) OR #prog = :zero)',
-    );
-    // ROOM, the cap's own shape: the log may REACH the early cap, never pass it.
-    expect(command.input.ConditionExpression).toContain(
-      '(attribute_not_exists(#g) OR size(#g) <= :earlyRoom)',
-    );
-    expect(command.input.ExpressionAttributeValues![':earlyRoom']).toEqual({
-      N: String(EARLY_GUESS_CAP - 1),
-    });
-    // The four bounds every append carries are still there.
-    expect(command.input.ConditionExpression).toContain('size(#g) <= :room');
-    expect(command.input.ConditionExpression).toContain('attribute_not_exists(#solved)');
-  });
-
-  it("today's append carries neither clause", async () => {
-    const send = vi.fn(async (command: unknown) => ({
-      Attributes: firstWriteResult(command as UpdateItemCommand),
-    }));
-    const { store } = makeStore(send);
-    await store.append({ ...earlyInput(['zzz']), early: false });
-    const command = send.mock.calls[0][0] as UpdateItemCommand;
-    expect(command.input.ConditionExpression).not.toContain('#prog');
-    expect(command.input.ConditionExpression).not.toContain(':earlyRoom');
-  });
-
-  it('classifies a refusal as early_locked when the stored log has made PROGRESS', async () => {
-    const existing = { ...storedItem(['mer'], 1), progress: { N: '25' } };
-    const { store } = makeStore(refuseOnce(existing));
-    const refused = await store.append(earlyInput(['zzz']));
-    expect(refused.outcome).toBe('early_locked');
-    expect(refused.state.guesses).toEqual(['mer']);
-    expect(refused.state.progress).toBe(25);
-  });
-
-  it('…and when the batch would push the log past the early cap — before the round cap', async () => {
-    const existing = { ...storedItem(['a', 'b', 'c'], 1), progress: { N: '0' } };
-    const { store } = makeStore(refuseOnce(existing));
-    const refused = await store.append(earlyInput(['d']));
-    expect(refused.outcome).toBe('early_locked');
-  });
-
-  it('refuses a first batch past the early cap without writing', async () => {
-    const send = vi.fn(async (_command: unknown) => ({}));
-    const { store } = makeStore(send);
-    const refused = await store.append(earlyInput(['a', 'b', 'c', 'd']));
-    expect(refused.outcome).toBe('early_locked');
-    expect(send.mock.calls.every(([command]) => !(command instanceof UpdateItemCommand))).toBe(true);
-  });
-
-  it("today's refusal never reads as the night's lock, whatever the stored progress", async () => {
-    const existing = { ...storedItem(['mer'], NOW.getTime() - 100), progress: { N: '25' } };
-    const { store } = makeStore(refuseOnce(existing));
-    const refused = await store.append({ ...earlyInput(['zzz']), early: false });
-    expect(refused.outcome).toBe('too_fast');
   });
 });

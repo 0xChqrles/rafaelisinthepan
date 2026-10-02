@@ -54,7 +54,8 @@ export function isBoardPeriod(value: unknown): value is BoardPeriod {
 // WHICH DAYS a period board reads, ending on the day the board is addressed by: the
 // calendar WEEK (Monday first — the week people say "this week" about) and the calendar
 // MONTH, both cut at `date` so no day past the one asked about is read (a future day has
-// no recorded score anyway — an early round never solves — but the batch stays small).
+// no recorded score anyway — a solve before its day is never on time, so it records no
+// row — but the batch stays small).
 // Ascending, inclusive, ISO dates; `day` is the one day itself.
 export function periodRange(period: BoardPeriod, date: string): string[] {
   if (period === 'day') return [date];

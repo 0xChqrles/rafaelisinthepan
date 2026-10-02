@@ -359,10 +359,6 @@ const STRINGS = {
   langMenu: { en: 'Change language', fr: 'Changer de langue' },
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
-  // The result screen's ONE onward action (#273): tomorrow's sentence, tonight.
-  tomorrow: { en: 'TOMORROW', fr: 'DEMAIN' },
-  // …and the way back from it, under the night's countdown: today's result.
-  today: { en: 'TODAY', fr: "AUJOURD'HUI" },
   // A music day's track link on the solved page (#270): an ordinary link, new tab.
   listen: { en: 'LISTEN', fr: 'ÉCOUTER' },
   // The solved credit block's one function word (user-decided 2026-08-15): it binds the
@@ -762,11 +758,4 @@ export function srRouteStop(
   if (stop.best) parts.push(fr ? 'vous êtes ici' : 'you are here');
   if (stop.behind) parts.push(fr ? 'derrière le départ' : 'behind the start');
   return parts.join(' — ');
-}
-
-// The early-play countdown (#273): what the clock that took the keyboard's place means —
-// the round continues at the day's flip. Whole minutes: it is a wait, not a run.
-export function srEarlyClock(lang: string, minutes: number): string {
-  if (uiLang(lang) === 'fr') return `La partie reprend dans ${minutes} minutes`;
-  return `The round continues in ${minutes} minutes`;
 }

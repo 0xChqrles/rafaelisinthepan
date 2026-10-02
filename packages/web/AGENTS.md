@@ -13,7 +13,7 @@
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
       hooks/puzzleCache.ts    the last 3 PARSED artifacts kept across mounts, no longer than the
-                              CDN's own 300s (2026-09-11): today <-> tomorrow without a reload
+                              CDN's own 300s (2026-09-11): today <-> an archive day without a reload
       api.ts                  backend client: puzzleUrl, 404->NO PUZZLE, and
                               `readProfile` — the ONE place `GET /profile`'s four answers
                               (shown / blank / GONE / failed) are told apart (#204)
@@ -77,10 +77,6 @@
                             challenge (one module-level conversation per round)
       game/playLog.ts         #214's pure projection: (server log + outbox) -> the play log
                               every client derivation reads, and the outbox remainder
-      game/earlyPlay.ts       #273's lock: when tomorrow's round, played tonight, stops taking
-                              guesses (first progress, or EARLY_GUESS_CAP) — read off the play log
-      components/FlipCountdown.tsx  the clock that takes the keyboard's place while it is locked:
-                              HH:MM:SS to the 22:00-ET flip
       state/history.ts        #211's PRIVATE history: the in-memory month/solved-day cache,
                               its one-flight-per-key reads, the explicit-loading status and
                               the streak credit a fresh solve rides
@@ -557,10 +553,9 @@ These are decided and verified against the code. Treat them as load-bearing.
     secondary directly under a primary (`.btn-primary + .btn-secondary`, `.mix-btn +
     .btn-secondary`) and every quiet act (`.link-quiet-btn`, `.link-danger`) is the label
     alone at 0.7 strength, lifted to 1 on hover — nothing drawn that is not the word. The
-    result row's TOMORROW beside SHARE (an equal, not an answer) and the COMPACT
-    secondary (`.board-chip` EDIT, `.profile-clear`, `.device-signout`, `.device-retry`,
-    40px tall) are the shape. SHARE is the primary on the result screen; the paired row
-    narrows its air to 12px so both fit a phone. No other button dress remains.
+    COMPACT secondary (`.board-chip` EDIT, `.profile-clear`, `.device-signout`,
+    `.device-retry`, 40px tall) is the shape. SHARE is the primary on the result screen.
+    No other button dress remains.
     *(The two paragraphs below are the designs it replaced, kept for their reasoning.)*
   - **THE BUTTONS ARE KEYCAPS WITH A HARD PRINT (user-decided 2026-09-14: "we should
     completely update the buttons design, they're really ugly and boring" — the THIRD
@@ -581,8 +576,7 @@ These are decided and verified against the code. Treat them as load-bearing.
     (user-decided 2026-09-14: "when a label button is below a bigger button it always has
     the same underline design" — `.btn-primary + .btn-secondary`, `.mix-btn +
     .btn-secondary`, restating `.link-quiet-btn`'s dress so the sibling rule wins over the
-    cap's; the result row's TOMORROW beside SHARE is the one sibling that stays a cap, an
-    equal, not an answer). SHARE is the PRIMARY cap on the result screen. The COMPACT CAP
+    cap's). SHARE is the PRIMARY cap on the result screen. The COMPACT CAP
     (`.board-chip` EDIT, `.profile-clear`, `.device-signout`, `.device-retry`) is the
     secondary tile at a row's size with a 3px print. No other button dress remains: the
     header keys, the calendar arrows and the game's own controls are not buttons of this
@@ -1560,13 +1554,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   chrome rounds past 4px, and the references' PILL buttons were not taken (the app's
   buttons stay its own). A CLASS, not a wrapper component. The solved screen is its first
   consumer and only the SCORE block wears it — the well holds the number and its run
-  ruler, SHARE/TOMORROW are the caption row — while the sentence's PAGE stays on the bare
+  ruler, SHARE is the caption row — while the sentence's PAGE stays on the bare
   ground (user-decided the same day, after both were tried as cards: the page is a page,
   not a tile). Two earlier cuts the same day — a `--surface` + `--line` 4px tile on both
   blocks, then a square 3%/6% tile — were reviewed as not it.
   **WHERE IT LIVES (user-decided 2026-09-11: "everywhere in the app where it makes sense —
   view separation, these informations are together, those are separate — but not
-  everything needs a card").** Three consumers: the RESULT (score + ruler in the well, SHARE/TOMORROW the
+  everything needs a card").** Three consumers: the RESULT (score + ruler in the well, SHARE the
   caption row);
   the ACCOUNT's three numbers (`AccountStats`, a panel
   with no well — a simple group takes the panel alone); the archive CALENDAR (`.cal` —
@@ -1583,43 +1577,6 @@ it to the local store — see `packages/backend/AGENTS.md`).
   while the numbers move. `.solved-text` holds its box from frame one and fades in on
   `sentenceIn` (the citation's completion, with its visible-time deadline); the pops ride
   the same flag, and their end is the reveal's END, which disarms the fast-forward.
-- **Early play: tomorrow's sentence tonight (#273, user-decided 2026-09-08).** The
-  product contract — TOMORROW beside SHARE as the result's one onward action, the first
-  progress / `EARLY_GUESS_CAP` stop, the server's `early_locked` — lives in the root
-  `AGENTS.md`. What is this package's:
-  - **The dated route reaches `activeDate + 1`** (`langs.ts` `ROUTE_FUTURE_DAYS`, ONE
-    `dateOf` for both grammars). `GameRoute` reads the day LIVE off `useToday` — `isActiveDay`
-    and `early` both — so a tab open across the flip sees tomorrow become today: the lock
-    lifts, the streak read starts, without a reload. **Tomorrow LIVES AS AN ARCHIVE PLAY
-    in the header (user-decided 2026-09-11, the last of three passes on the way back):**
-    the calendar key lights, HOME is a live key, and the title keeps the `12/09` day tag —
-    so before the night's lock the house is the way back to today's result, exactly as on
-    any dated route. After the lock the round carries its own labelled way back: a
-    ‹ TODAY / AUJOURD'HUI secondary button under the countdown (`FlipCountdown`'s
-    `onToday`, `.flip-today`), because a locked screen with nothing left to do must say
-    where to go. RETIRED the same day: a bare back arrow in the left slot ("a few white
-    pixels appearing in the header might not be very obvious, many might get stuck"), a
-    lit-but-leaving HOME (a lit key that led OUT of the place it lit), and a TODAY under the
-    prompt for the whole round (one commit; the house covers the unlocked round). TOMORROW
-    wears the title's pixel chevron after its word and TODAY the same one turned back
-    (`.btn-arrow`), the two ends of one trip.
-  - **`Game` locks LOCALLY** (`locked` = `early && !finished && earlyLocked(...)`, over the
-    FULL play log rather than the board's deferred view, so the lock lands on the guess that
-    made progress while its floating hit still plays): `submit` refuses, the prompt retires
-    like the gate's, and the TRAY renders `FlipCountdown` where the keyboard stood — the
-    whole statement, no caption (show, don't tell). Holes stay tappable (the wheel is a
-    reading aid).
-  - **The engine (`roundSync.ts`) treats `early_locked` like `round_solved`** — adopt,
-    discard the outbox, close — but remembers WHY (`lockedEarly`): the re-registration that
-    reports `early: false` re-opens the conversation with a READ (another device may have
-    moved the log) and the outbox then flushes. A client whose clock has already flipped
-    (`early` false) that still gets `early_locked` KEEPS the guess and retries behind the
-    backoff — clock skew is not a verdict.
-  - **`SolvedScreen` takes `onTomorrow`** (today's result only; `Game` passes nothing on an
-    archive day), a second secondary button on SHARE's own beat; `.result-actions.paired`
-    gives the pair half the row each (`flex: 1 1 0`, capped 240px) so they share ONE line on
-    a phone. TOMORROW navigates to `pathForDay(lang, tomorrow)`. A capped round offers it too:
-    it is the same result screen.
 - **Local storage is an OUTBOX; a capped round ends at ∞ (#214).** The product contract —
   the three values, the load order, what the cap means, the share token, what was removed —
   lives in the root `AGENTS.md`. What is this package's:
@@ -3280,7 +3237,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the archive ("moving the header icons around on a click is not a great solution").
     A lit key still answers a press (it goes nowhere), so nothing on the row is dead.
     **The one lit key that goes somewhere is the CALENDAR over an archive PLAY** (a past
-    day, or tomorrow's; user-decided 2026-09-11): the day is the archive's, which is why
+    day; user-decided 2026-09-11): the day is the archive's, which is why
     the key is lit, but the calendar is not on screen, and getting back to it took another
     key and then the calendar. It leads to the calendar (`HeaderKeys`' `archivePlay`, set
     by App); on the calendar itself it goes nowhere.

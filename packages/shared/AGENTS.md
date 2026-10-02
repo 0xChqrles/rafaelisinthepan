@@ -11,7 +11,7 @@
   shared/                     cross-cutting TS consumed by web + backend (pkg @whippin/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
-    src/scores.ts             the #201 round bounds, #273's EARLY_GUESS_CAP, the #271 group caps,
+    src/scores.ts             the #201 round bounds, the #271 group caps,
                               VIEWER_IP_HEADER (infra+backend)
     src/scoring.ts            what a guess LOG means (#203): s()/holeProgress, rankCount,
                               guessKey, countTries — the readings BOTH ends now perform
@@ -167,10 +167,6 @@
   round trip inside the interval. Pacing from the send instant leaves zero margin and
   refuses every request that travels faster than its predecessor — the same permanent-429
   outcome this one spelling exists to prevent.
-  **Since #273 it also owns `EARLY_GUESS_CAP` (3)** — how many guesses tomorrow's sentence
-  takes tonight before the first progress: ONE spelling for the server's append condition
-  (`early_locked`) and the web's input lock, so the screen never locks on a guess the server
-  would have stored, nor sends one it refuses (root `AGENTS.md`, Sentence round).
 - **`src/heat.ts` is the app's ONE gradient, and it runs WEIRD → CALM (user-decided
   2026-08-17, the calm redesign — superseding the FLIR iron bow of the same day and the
   crimson→cyan heat stops before it).** Solving is RESTORING PEACE to a weird sentence:
