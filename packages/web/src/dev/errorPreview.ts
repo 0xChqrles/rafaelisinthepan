@@ -24,6 +24,7 @@ const ERROR_VARIANTS = {
   save: { title: 'profileSaveFailed', note: 'failedSaveNote' },
   name: { title: 'profileNameRejected', note: 'profileNameRejectedNote' },
   avatar: { title: 'profileAvatarRejected', note: 'profileAvatarRejectedNote' },
+  giveUp: { title: 'failedGiveUp', note: 'failedGiveUpNote' },
 } as const satisfies Record<string, ErrorVariant>;
 
 export type ErrorVariantName = keyof typeof ERROR_VARIANTS;

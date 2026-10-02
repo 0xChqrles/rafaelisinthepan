@@ -115,7 +115,8 @@ export default function Hole({
   const [rankPopActive, setRankPopActive] = useState(false);
   const previousRank = useRef(hole.rank);
   const [rankVisible, setRankVisible] = useState<boolean>(hole.rank > 0);
-  const showRank = hole.rank > 0 || rankVisible;
+  // A REVEALED secret (a give-up) was never reached: no exponent rolls down to it.
+  const showRank = !hole.revealed && (hole.rank > 0 || rankVisible);
 
   useEffect(() => {
     const improved = hole.rank < previousRank.current;
@@ -175,8 +176,11 @@ export default function Hole({
   }, [displayWord, hole.word, start]);
 
   // Accent ("resolved") styling only once the FINAL secret word is on screen —
-  // not during the exponent drop / scramble that precedes the swap.
+  // not during the exponent drop / scramble that precedes the swap. A REVEALED secret (a
+  // give-up) settles too — the round's exit waits on it — but keeps the held chip: the
+  // cobalt is for a word found.
   const resolved = hole.rank === 0 && displayWord === hole.word;
+  const inked = resolved && !hole.revealed;
 
   // THE ACTIVATION (#301; user-decided 2026-09-22): `charge lands → meter fills → burst →
   // the sea`. The active state is derived and arrives on the same render that fills the
@@ -465,7 +469,7 @@ export default function Hole({
   );
 
   return (
-    <span className={`hole${resolved ? ' resolved' : ''}${veiled ? ' veiled' : ''}`}>
+    <span className={`hole${inked ? ' resolved' : ''}${hole.revealed ? ' revealed' : ''}${veiled ? ' veiled' : ''}`}>
       {explore ? (
         <button
           type="button"

@@ -28,7 +28,8 @@
 // A GROUP'S DAY BOARD IS ALIVE MID-DAY (#206): a member with a stored round but no
 // recorded score is IN PROGRESS, not "not played yet" — their row carries the EXACT
 // deduped try count and the server-derived reconstruction percentage, ordered among
-// themselves below every finished row. Members only, never the global board (a membership
+// themselves below every finished row — a round that ENDED UNSOLVED (given up, or capped)
+// stays there marked `over`, after the live ones. Members only, never the global board (a membership
 // is consented by construction; strangers watching you play is not the same thing), and
 // it leaks nothing about the puzzle — a percentage and a try count say nothing about
 // which words are involved. Getting the try count EXACT needs the day's FULL artifact
@@ -51,6 +52,7 @@ import {
   periodRange,
   rankBoard,
   rankPeriod,
+  roundEnded,
   standingIn,
   GROUP_ID_PATTERN,
   PUBLIC_ID_PATTERN,
@@ -185,6 +187,9 @@ async function loadPlaying(
       // The stored derived percentage (#203) — the calendar's own source, so the board
       // and the archive can never disagree over one log.
       progress: row.progress,
+      // ENDED UNSOLVED — given up, or capped (the shared `roundEnded`): done for the day
+      // with nothing recorded, so the row is drawn `∞` and ordered after the live ones.
+      over: roundEnded(row),
     }));
 }
 
@@ -307,15 +312,16 @@ export async function handleBoard(
   // A member the population already ranks is FINISHED, whatever their round row says —
   // the recorded score is the day's final word on them.
   //
-  // What this subtracts is the RANKED, which is not the DONE (user-decided 2026-08-26, on
-  // review — the reasoning is in the root AGENTS.md #206 section, the fourth state is
-  // #224). A capped round ends at infinity and records no row (#214), a solve past the
-  // 22:00 flip is late and earns none (#211's `onTime`), and one whose row the #169 IP
-  // allowance refused records none either — all three keep their derived summary here and
-  // read as IN PROGRESS for the rest of the day. ACCEPTED: the numbers on the row are the
-  // player's real ones and only the caption over-claims, where the cheap fix would file a
-  // 500-guess round or an actual solve under "not played yet" — the false claim this whole
-  // section exists to refuse.
+  // What this subtracts is the RANKED, which is not the DONE (the root AGENTS.md #206
+  // section). A round that ENDED UNSOLVED — given up, or capped (#214) — records no row and
+  // stays in this section MARKED `over`: drawn `∞` and ordered after every live row, so a
+  // member who gave up at 79% never reads as a rival still playing. A solve past the 22:00
+  // flip is late and earns no row (#211's `onTime`), and one whose row the #169 IP
+  // allowance refused records none either — both keep their derived summary here and read
+  // as IN PROGRESS for the rest of the day. ACCEPTED: the numbers on the row are the
+  // player's real ones and only the caption over-claims, where the cheap fix would file an
+  // actual solve under "not played yet" — the false claim this whole section exists to
+  // refuse.
   const playing = orderPlaying(candidates.filter((row) => !scored.has(row.publicId)));
   const playingIds = new Set(playing.map((row) => row.publicId));
   // Sorted for a stable board between reads; publicId is the only order every waiting

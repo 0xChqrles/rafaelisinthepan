@@ -8,6 +8,22 @@
 export const ROUND_GUESS_CAP = 500;
 export const ROUND_WRITE_MIN_MS = 1_000;
 
+// ENDED UNSOLVED: a round that is over without a solve — the player GAVE UP (the round row's
+// write-only-true `gaveUp`), or the stored RAW log holds the cap. Either way every further
+// append is refused, nothing is recorded, and the round ends at `∞`. `solved` WINS: a solve
+// accepted as the 500th raw entry, or one that landed beside a give-up (two devices racing),
+// is an ordinary solved round. ONE spelling, read by the web's round screen and the group
+// day board alike; a round whose state has not arrived has not ended.
+export function roundEnded(
+  round: { solved?: boolean; gaveUp?: boolean; guesses: readonly unknown[] } | null | undefined,
+): boolean {
+  return (
+    round != null &&
+    round.solved !== true &&
+    (round.gaveUp === true || round.guesses.length >= ROUND_GUESS_CAP)
+  );
+}
+
 // The header a CloudFront viewer-request function stamps the connecting viewer's IP into,
 // and the ONLY client address the round handler trusts in production (#169). Named here
 // because it is a CDN⇔handler contract: infra writes it, the backend reads it, and a

@@ -246,6 +246,7 @@ describe('setRoundLoad — the transient server state', () => {
   const server = {
     guesses: ['bois'],
     solved: false,
+    gaveUp: false,
     solvedByAppend: false,
     credited: false,
   };

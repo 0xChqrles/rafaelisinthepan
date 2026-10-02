@@ -2,10 +2,11 @@
 //
 // The app's number face is Press Start 2P, and it has no `∞` — nor does anything else the
 // OG card could fall back on, since the rasterizer runs with `loadSystemFonts: false` and
-// the bundle's other face, Azeret Mono's bold, has none either. So the capped round's
-// headline ships as PATH DATA, drawn identically by `cardSvg.ts` (the share card) and by
-// the web result in place of `.solved-score-num`. ONE path and ONE view box, here, is what keeps the two surfaces
-// showing the same glyph.
+// the bundle's other face, Azeret Mono's bold, has none either. So the headline of a round
+// that ENDED UNSOLVED (given up, or capped) ships as PATH DATA, drawn identically by
+// `cardSvg.ts` (the share card), by the web result in place of `.solved-score-num`, and by a
+// group board's ended row in place of its try count. ONE path and ONE view box, here, is
+// what keeps the surfaces showing the same glyph.
 
 // The ∞ on a 9×5 pixel grid — two loops that genuinely CROSS, with the outer corners
 // clipped the way the pixel font clips its own `O`, so the glyph reads as a character of

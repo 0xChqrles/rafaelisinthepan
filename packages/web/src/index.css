@@ -2017,6 +2017,12 @@ input {
 .hole.resolved .hole-word {
   color: var(--solve);
 }
+/* A GIVE-UP's reveal keeps the HELD CHIP around the secret (`.hole.revealed`, never
+   `.resolved`): the cobalt is for a word found. Dissolving, the chip goes out with its
+   word's last letter. */
+.hole.chip-out .hole-word::before {
+  content: none;
+}
 /* Shake the hole word when a "hit" lands on it: reinforces impact. */
 .hole-word.hit-shake {
   display: inline-block;
@@ -2121,12 +2127,51 @@ input {
 }
 
 /* --- prompt zone: the row under the sentence, holding the input area ---
-   A one-cell grid (the input area is its grid item — see its `min-width: 0`). The prompt
-   stays mounted for the whole round, visibility-hidden once retired, so the centered
-   sentence never moves when it leaves. */
+   A one-row grid: the input area (its grid item — see its `min-width: 0`), and the
+   GIVE-UP's flag in its own column at the row's right end. The prompt stays mounted for
+   the whole round, visibility-hidden once retired, so the centered sentence never moves
+   when it leaves; the flag's column is held from the first frame, so its arrival never
+   narrows the prompt under a word being typed. */
 .prompt-zone {
   width: 100%;
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+/* THE GIVE-UP'S FLAG: a white flag drawn on the pixel font's own 8-cell grid (the lock's
+   rule: 2-cell pole, ink on the cap rows), its cloth WAVING — a straight cloth on a pole is
+   the face's own `P` — at the prompt's size, in the secondary ink — present, never competing with the
+   line the player types. It stands on the prompt's own line: the same padding, so its 1em
+   sits where the letters do. Hidden in place (`.off`) until the round holds a guess, and
+   whenever it is not the player's to press. */
+.give-up-btn {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  display: flex;
+  align-items: center;
+  margin: 0 0 0 12px;
+  padding: calc(4px + var(--text-shift)) 4px calc(4px - var(--text-shift));
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: clamp(18px, 3.2vw, 30px); /* = .word-input */
+  line-height: inherit;
+  cursor: pointer;
+}
+.give-up-btn svg {
+  display: block;
+  width: auto;
+  height: 1em;
+}
+.give-up-btn:hover:not(:disabled) {
+  color: var(--fg);
+}
+.give-up-btn:active:not(:disabled) {
+  color: var(--fg);
+  filter: brightness(0.8);
+}
+.give-up-btn.off {
+  visibility: hidden;
 }
 .input-area.retired {
   visibility: hidden;
@@ -2702,6 +2747,18 @@ input {
 }
 .solved-secret:hover {
   filter: brightness(1.25);
+}
+/* A secret the player did NOT find (a round that ended unsolved) wears the board's HELD
+   CHIP instead of the cobalt — `--fg` ground, `--bg` ink, the chip's own 0.2em side
+   overhang drawn as shadows so the line's measure does not move. Its own line-height only
+   trims the ground to the word: the line box is the paragraph's strut, so no line moves. */
+.solved-secret.revealed {
+  background: var(--fg);
+  color: var(--bg);
+  line-height: 1.3;
+  box-shadow:
+    0.2em 0 0 var(--fg),
+    -0.2em 0 0 var(--fg);
 }
 /* The secrets POP in, one by one, 200ms apart (user-decided 2026-08-14): the round's
    trophies counted out, back in the gaps they were taken from — the plain words are
@@ -3961,6 +4018,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   .word-input {
     min-width: 0;
     font-size: clamp(13px, 4.2vw, 19px); /* = the phone's .phrase */
+  }
+  .give-up-btn {
+    font-size: clamp(13px, 4.2vw, 19px); /* = the phone's .word-input */
   }
 
   /* Floating hit / MISS scaled down to sit over the smaller hole words. */
@@ -6986,6 +7046,17 @@ figure.l1-fig {
 .board-row.playing .board-score {
   min-width: 39px;
   text-align: right;
+}
+/* A round that ENDED UNSOLVED (`over`: given up, or capped) — done for the day with nothing
+   recorded: `∞` in the tries cell, on the digits' own band, and the % quiet in the
+   secondary ink. */
+.board-inf {
+  display: inline-block;
+  vertical-align: baseline;
+  shape-rendering: crispEdges;
+}
+.board-row.playing.over .board-progress {
+  color: var(--muted);
 }
 .board-progress {
   font-family: var(--pixel-font);

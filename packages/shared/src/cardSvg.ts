@@ -444,7 +444,8 @@ const PORTRAIT_GAP = 72; // the portrait column to the count's
 // The edition, on the top row: the day's own label in the pixel face's accent.
 const EDITION_SIZE = 24;
 
-// The headline: the count, or `∞` for a #214 capped round, over its unit. Press Start 2P
+// The headline: the count, or `∞` for a round that ended unsolved (the v6 capped flag:
+// given up, or capped), over its unit. Press Start 2P
 // advances exactly 1em per glyph, so nothing is measured. The ∞ (a path, since the face has
 // no such glyph) fills the digits' own band on WHOLE cells — the band's height in five rows
 // of the glyph's grid — its ink bottom where the digits' is.
@@ -500,8 +501,8 @@ export function cardPuzzleLabel({ dayNumber, bonusId }: Pick<CardData, 'dayNumbe
 // reader can date the puzzle, and it is the same string the card draws and the shared link
 // resolves to. `dateForDayNumber` is `dayNumber`'s exact inverse, so this is still the
 // SERVER-owned game day, never the sharer's local date.
-// `score` is a number on every ordinary result and the literal `∞` on a #214 capped
-// sentence round — plain text has no font to be missing the glyph, so the character itself
+// `score` is a number on every ordinary result and the literal `∞` on a sentence round
+// that ended unsolved (given up, or capped) — plain text has no font to be missing the glyph, so the character itself
 // is right here (the CARD and the on-screen result draw the shared path data instead,
 // because Press Start 2P has no such glyph).
 //

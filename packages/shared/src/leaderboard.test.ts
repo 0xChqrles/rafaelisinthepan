@@ -128,13 +128,14 @@ describe('boardWindow / boardOwnRows', () => {
   });
 });
 
-// The #206 in-progress rows' order: closest to done first, fewer tries breaking the
-// tie, publicId last — an ORDER, never a rank claim (the rows carry no rank number).
+// The #206 in-progress rows' order: live rows before ENDED ones, then closest to done
+// first, fewer tries breaking the tie, publicId last — an ORDER, never a rank claim (the rows carry no rank number).
 describe('orderPlaying (#206)', () => {
-  const playing = (publicId: string, progress: number, tries: number): PlayingScore => ({
+  const playing = (publicId: string, progress: number, tries: number, over = false): PlayingScore => ({
     publicId,
     tries,
     progress,
+    over,
   });
 
   it('orders by progress down, then tries up, then publicId', () => {
@@ -157,6 +158,22 @@ describe('orderPlaying (#206)', () => {
     const before = [...input];
     orderPlaying(input);
     expect(input).toEqual(before);
+  });
+
+  it('puts an ENDED row (given up, capped) after every live one, whatever its numbers', () => {
+    const ordered = orderPlaying([
+      playing('aaaaaaaaaaaaaaaa', 79, 20, true), // gave up ahead of everybody
+      playing('bbbbbbbbbbbbbbbb', 75, 30),
+      playing('cccccccccccccccc', 10, 4),
+      playing('dddddddddddddddd', 50, 500, true), // capped
+    ]);
+    expect(ordered.map((row) => row.publicId)).toEqual([
+      'bbbbbbbbbbbbbbbb',
+      'cccccccccccccccc',
+      // Among themselves the ended rows keep the section's own order.
+      'aaaaaaaaaaaaaaaa',
+      'dddddddddddddddd',
+    ]);
   });
 
   it('progress dominates tries: a 90% row with many tries leads a 10% row with one', () => {

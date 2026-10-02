@@ -356,6 +356,23 @@ const STRINGS = {
   revealButton: { en: 'REVEAL', fr: 'RÉVÉLER' },
   revealCost: { en: 'Costs one try.', fr: 'Coûte un essai.' },
   revealBack: { en: 'BACK', fr: 'RETOUR' },
+  // THE GIVE-UP: the flag at the prompt's end (its name — the control is an icon), the
+  // confirmation over it (the title asks, the note says what it means, the act is its own
+  // word), the failure on the error screen, and what a screen reader hears as the
+  // sentence is revealed.
+  giveUp: { en: 'Give up', fr: 'Abandonner' },
+  giveUpTitle: { en: 'GIVE UP?', fr: 'ABANDONNER ?' },
+  giveUpNote: {
+    en: 'The sentence is revealed and the round ends.',
+    fr: "La phrase est révélée et la partie s'arrête.",
+  },
+  giveUpAction: { en: 'GIVE UP', fr: 'ABANDONNER' },
+  failedGiveUp: { en: 'GIVE UP FAILED', fr: "ÉCHEC DE L'ABANDON" },
+  failedGiveUpNote: {
+    en: 'The round goes on. Check your connection and try again.',
+    fr: 'La partie continue. Vérifiez votre connexion et réessayez.',
+  },
+  srGaveUp: { en: 'given up, the sentence is revealed', fr: 'abandon, la phrase est révélée' },
   // The score unit stays NAMED in both languages (lower is better must survive the
   // share card); the share text lowercases these.
   try: { en: 'TRY', fr: 'ESSAI' },

@@ -10,7 +10,8 @@
 > reads the signer's profile through the best-effort `readFace` (`no-store` on a failed
 > read, the group preview's 300s otherwise), hands the face to the renderers as a second
 > argument, and bounces into the shared day exactly like a plain share; a deleted signer
-> renders the PLAIN share. A SENTENCE token (**v6**) may be CAPPED (#214):
+> renders the PLAIN share. A SENTENCE token (**v6**) may be CAPPED (#214) — the flag means the
+> round ENDED UNSOLVED, given up or at the cap:
 > `ogCard.renderShareHtml` then titles the result `∞` (the literal character — this page is
 > ordinary HTML in the reader's own fonts) while `renderCardSvg` draws the shared PATH data,
 > because neither font in the Lambda bundle (Press Start 2P, Azeret Mono Bold) has such a
@@ -312,8 +313,11 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   orders with the shared `orderPlaying`; a failure there fails the POST rather than
   letting `waiting` claim "not played yet" over a member mid-game (root `AGENTS.md`,
   #206). The subtraction is the RANKED players, not the DONE ones, so a round that ENDED
-  with no score row — capped, late, or refused by the #169 IP allowance — stays in that
-  section: accepted and reasoned in the root `AGENTS.md`, with the fourth state at #224.
+  with no score row stays in that section: one that ended UNSOLVED (the shared `roundEnded`
+  — given up, or capped; `getMany` projects `solved` and `gaveUp` for it) carries
+  `over: true` and `orderPlaying` puts it after the live rows; a solve with no row (late, or
+  refused by the #169 IP allowance) stays unmarked — accepted and reasoned in the root
+  `AGENTS.md`.
   `waiting` keeps the other members with NEITHER row, profile-dressed and
   publicId-sorted (root `AGENTS.md`). Every response is
   `no-store`; a missing profile dresses as `name: ''` / `avatar: null` — **and so does
@@ -355,7 +359,8 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   #203 overturned it for the APPEND — see its own bullet below — and the READ still reads
   none.)* `{token, puzzle}` reads (404 = none yet, and
   also "nothing stored for THIS puzzle" — the tag's whole job, root `AGENTS.md`);
-  `{token, puzzle, guesses}` appends. Validation is fail-closed BEFORE the store: a
+  `{token, puzzle, guesses}` appends; `{token, puzzle, giveUp: true}` gives up (its own
+  bullet below). Validation is fail-closed BEFORE the store: a
   `PUZZLE_TAG_SHAPE` tag, then a non-empty string array of at most `ROUND_GUESS_CAP`
   entries, each of at most the language's `maxSlugLength` (#200) and each **left alone by
   `fold()`** — the check asks the shared contract rather than restating its pipeline as a
@@ -365,13 +370,14 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   legitimately exceeds the default 4 KB live-body cap. Storage is the score table:
   partition `round#<publicId>`, sort key `<lang>#sentence#<date>` (per PLAYER — the reason is
   in the root `AGENTS.md`; the order is #203's), attributes `guesses` (string list),
-  `puzzle`, `createdAt`, `lastWriteAt` (ms epoch), plus #203's `progress`/`solved`. `lastWriteAt` is the ONE Number here because it is the only one
+  `puzzle`, `createdAt`, `lastWriteAt` (ms epoch), plus #203's `progress`/`solved` and the
+  give-up's `gaveUp`. `lastWriteAt` is the ONE Number here because it is the only one
   compared arithmetically in the condition; `createdAt` is a String, and writing it as a
   Number reads back as `''` on every response for the item's whole life. The append is ONE
   conditional UpdateItem whose ConditionExpression carries every bound —
-  `(attribute_not_exists(#last) OR #last < :cutoff) AND (attribute_not_exists(#g) OR (size(#g) <= :room AND #p = :puzzle)) AND attribute_not_exists(#solved)`
-  (the RESULT may reach the cap, never pass it; the last clause is #203's freeze) — with `ReturnValues: ALL_NEW` so the happy
-  path is one call. **Every clause is path-only CONDITION syntax and must stay that way:**
+  `(attribute_not_exists(#last) OR #last < :cutoff) AND (attribute_not_exists(#g) OR (size(#g) <= :room AND #p = :puzzle)) AND attribute_not_exists(#solved) AND attribute_not_exists(#gave)`
+  (the RESULT may reach the cap, never pass it; the last two clauses are the FREEZES — #203's
+  solve, and the give-up) — with `ReturnValues: ALL_NEW` so the happy path is one call. **Every clause is path-only CONDITION syntax and must stay that way:**
   DynamoDB's condition grammar has NO arithmetic and its whole function list is
   attribute_exists / attribute_not_exists / attribute_type / begins_with / contains /
   size(<path>) — `if_not_exists` and `+` belong to an UPDATE expression, and naming either
@@ -382,9 +388,11 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   and why a batch too large for an EMPTY log — which has no size to compare — is refused in
   the store instead. A failed condition reads the item once, consistently, to classify the
   refusal: a record naming a RETIRED puzzle is a restart, so the batch REPLACES the log
-  (still inside the write interval, or varying the tag would be a way around it); else
-  `round_full` when any batch would overflow the cap — the truer answer, since retrying can
-  never succeed — else `too_fast`. **Every refusal ANSWERS with the unchanged stored
+  (still inside the write interval, or varying the tag would be a way around it) and REMOVES
+  the retired puzzle's `solved` and `gaveUp`, or the fresh round is born frozen; else
+  `round_solved`, else `round_given_up`, else `round_full` when any batch would overflow the
+  cap — the truer answer, since retrying can never succeed — else `too_fast`. The memory
+  store keeps the same order. **Every refusal ANSWERS with the unchanged stored
   state** (`errorResponse`'s `extra`), which is what the client reconciles against and what
   pays for that read — but only ever the state of the PUZZLE ASKED ABOUT (`stateForTag` in
   both stores): a rate-refused RESTART answers empty rather than handing back the retired
@@ -400,6 +408,17 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   a browser reads null for a header only curl and `backend:dev` ever see. Local serve swaps
   in `memoryRoundStore`; no new env or IAM (the table grant already carried GetItem +
   UpdateItem).
+- **The GIVE-UP** (the product rule is the root `AGENTS.md`'s): `{token, puzzle, giveUp:
+  true}`, refused 400 BEFORE authentication when `giveUp` is anything but `true` or travels
+  beside `guesses` or a `turnstileToken`. `roundStore.giveUp` is ONE conditional UpdateItem
+  — `SET #gave = :gave` + the version bump, under `#p = :puzzle AND
+  attribute_not_exists(#solved)`, `ReturnValues: ALL_NEW` — answered 200 with the state, and
+  idempotent (no clause on `gaveUp` itself). A refusal is classified by one consistent read:
+  a SOLVED record of this puzzle is 409 `round_solved` with its state (the solve wins);
+  anything else — no record, a retired puzzle's — is 404 `not_found`. No slice is read, no
+  challenge is asked, and `lastWriteAt` is untouched (a give-up is not paced and does not
+  pace the next write). `settleAppend` never runs, so it records no score row and credits no
+  streak day. The #204 move copies the item whole, so `gaveUp` travels with it.
 - **Two rules the round store's writes carry:** **every command's
   `ExpressionAttributeNames` holds exactly the aliases ITS OWN expressions name** — DynamoDB
   rejects an unused entry, and an undeclared alias, with a ValidationException before
@@ -422,8 +441,8 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   fires `rounds.get(..., { consistent: false })` and `loadSlice` CONCURRENTLY — neither
   depends on the other, so the slice fetch hides inside a round trip already being paid for —
   derives from *(stored log + batch)*, and hands the two values to `append`, which writes
-  them in its own mutation and carries `attribute_not_exists(#solved)` as a fourth clause of
-  the condition it already sends. A missing slice is the day-addressed 404; the READ path
+  them in its own mutation and carries `attribute_not_exists(#solved)` (beside the give-up's
+  `attribute_not_exists(#gave)`) as a freeze clause of the condition it already sends. A missing slice is the day-addressed 404; the READ path
   loads none, so a mount read stays as cheap as it was. After the append, `settleAppend`
   re-derives from the RETURNED log and, on a disagreement, calls `roundStore.settle` behind
   a small bounded RETRY (it is the last chance to record a solve). That write is MONOTONIC

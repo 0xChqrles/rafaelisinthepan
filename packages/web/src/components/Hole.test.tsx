@@ -140,3 +140,32 @@ describe('the burst waits for the fill', () => {
     expect(sea()).not.toBeNull();
   });
 });
+
+// A GIVE-UP's reveal: the hole turns into its secret through its own word change and
+// REPORTS resolved (the round's exit beats wait on it), but keeps the held chip — the
+// cobalt `.resolved` is for a word found — and shows no exponent rolling down to it.
+describe('a revealed secret (a give-up)', () => {
+  it('settles and reports, without the found dress or an exponent', () => {
+    const onResolved = vi.fn();
+    const draw = (hole: { word: string; rank: number; revealed?: boolean }) =>
+      act(() => root.render(
+        <Hole
+          hole={{ pos: 0, secret: 'honnete', startRank: 80, ...hole }}
+          holeIndex={0}
+          hit={null}
+          onHitDone={onHitDone}
+          onResolved={onResolved}
+        />,
+      ));
+    draw({ word: 'sincère', rank: 3 });
+    draw({ word: 'honnête', rank: 0, revealed: true });
+    expect(container.querySelector('.hole-rank')).toBeNull();
+    advance(3_000);
+    const hole = container.querySelector('.hole')!;
+    expect(hole.textContent).toBe('honnête');
+    expect(hole.classList.contains('revealed')).toBe(true);
+    expect(hole.classList.contains('resolved')).toBe(false);
+    expect(container.querySelector('.hole-rank')).toBeNull();
+    expect(onResolved).toHaveBeenCalledWith(0);
+  });
+});

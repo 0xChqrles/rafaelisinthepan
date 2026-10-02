@@ -2,9 +2,12 @@
 //
 // The client STREAMS its guess log (#201):
 //   { token, puzzle }                 — your stored round for that daily (404 = none yet);
-//   { token, puzzle, guesses: [...] } — append to its ordered guess log.
+//   { token, puzzle, guesses: [...] } — append to its ordered guess log;
+//   { token, puzzle, giveUp: true }   — GIVE UP: end the round unsolved (no score, no
+//                                       streak), and the sentence is the player's to read.
 //
-// Every call answers with the FULL stored state `{ guesses, createdAt, progress?, solved? }`
+// Every call answers with the FULL stored state `{ guesses, createdAt, progress?, solved?,
+// gaveUp? }`
 // — a 200 and EVERY refusal — so a write is also a reconciliation: the caller computes
 // against stale local state, the server answers with truth, and the tab re-renders correct.
 // The route is POST-only — the device token is the auth (#216) and
@@ -136,6 +139,23 @@ export async function handleRound(
     );
   }
 
+  // THE GIVE-UP is its own request: no guesses (the client flushes what it owes first, so
+  // the log stays the player's real tries) and no challenge (a give-up never creates a
+  // round — it needs a stored one). Either beside it is a protocol violation, refused before
+  // any I/O.
+  const giveUp = body.giveUp;
+  if (
+    giveUp !== undefined &&
+    (giveUp !== true || body.guesses !== undefined || body.turnstileToken !== undefined)
+  ) {
+    return errorResponse(
+      400,
+      'bad_request',
+      'Body field "giveUp" must be true, and travels without guesses or a challenge.',
+      responseHeaders,
+    );
+  }
+
   // The game's hottest write pays latency directly: the web paces its flushes from the
   // previous write's ANSWER, so every serial round trip here cuts the sustained sync rate.
   // Authentication is two sequential DynamoDB reads since #216 (the device row, then its
@@ -152,6 +172,20 @@ export async function handleRound(
   const auth = await requireDevice(body, responseHeaders, devices, instant);
   if (!auth.ok) return auth.response;
   const publicId = auth.value.account.accountId;
+
+  if (giveUp === true) {
+    // ONE conditional write (roundStore.ts): no slice, no pacing, no challenge. A solve
+    // that landed first WINS, and the refusal carries it, so the client settles on the
+    // solved result; a round with no record of this puzzle has nothing to give up on.
+    const { outcome, state } = await rounds.giveUp({ date, lang, publicId, puzzle });
+    if (outcome === 'round_solved') {
+      return refusal(409, 'round_solved', 'This round is solved.', state, responseHeaders);
+    }
+    if (outcome === 'not_found') {
+      return errorResponse(404, 'not_found', 'No round recorded.', responseHeaders);
+    }
+    return json(200, state, responseHeaders);
+  }
 
   const rawGuesses = body.guesses;
   if (body.turnstileToken !== undefined && rawGuesses === undefined) {
@@ -270,6 +304,18 @@ export async function handleRound(
       409,
       'round_solved',
       'This round is solved and accepts no further guesses.',
+      state,
+      responseHeaders,
+    );
+  }
+  if (outcome === 'round_given_up') {
+    // The second FREEZE: the player GAVE UP and has been shown the sentence, so nothing may
+    // join the log — least of all the answer typed in afterwards. The client adopts and
+    // closes exactly as on `round_solved`; its unsent guesses are dropped for good.
+    return refusal(
+      409,
+      'round_given_up',
+      'This round was given up and accepts no further guesses.',
       state,
       responseHeaders,
     );

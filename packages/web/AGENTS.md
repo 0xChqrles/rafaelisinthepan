@@ -325,7 +325,7 @@ These are decided and verified against the code. Treat them as load-bearing.
   reconstructs the same meter, the same masked hint and the same count; `buildHistory`
   takes the given ranks and names them (`HistoryStop.given` / `masked` / `taken`: masked
   = no word, its rank and key alone; taken = the player's typed stop wearing the foil; the
-  solve, or a round that ends capped (`over`), unmasks the one left, still given — on the
+  solve, or a round that ends unsolved — given up or capped (`over`) — unmasks the one left, still given — on the
   words grid a hint TAKEN wears the foil, one left on the table stands plain). Presentation (user-decided 2026-09-15, the third cut: "try
   something else than a progress bar"): THE
   CHIP CONVERTS TO THE SOLVE INK EDGE TO EDGE ACROSS THE WORD — `.hole-meter`, the chip's
@@ -1591,9 +1591,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   while the numbers move. `.solved-text` holds its box from frame one and fades in on
   `sentenceIn` (the citation's completion, with its visible-time deadline); the pops ride
   the same flag, and their end is the reveal's END, which disarms the fast-forward.
-- **Local storage is an OUTBOX; a capped round ends at ∞ (#214).** The product contract —
-  the three values, the load order, what the cap means, the share token, what was removed —
-  lives in the root `AGENTS.md`. What is this package's:
+- **Local storage is an OUTBOX; a round that ends unsolved ends at ∞ (#214).** The product
+  contract — the three values, the load order, what the cap and the give-up mean, the share
+  token, what was removed — lives in the root `AGENTS.md`. What is this package's:
   - **`game/playLog.ts` is the projection**, and `Round` derives EVERYTHING from it: the
     board (`replayHoles`), the score (its length), the prompt's recall history, the run
     ruler's trajectory and the solve moments. There is no persisted holes/count/progress
@@ -1624,10 +1624,39 @@ it to the local store — see `packages/backend/AGENTS.md`).
     once a second while a player types and recompute every derivation downstream. (The old
     engine avoided the same churn for a sharper reason — a rewrite applied every pending hole
     improvement on the spot — which the `deferred` split now prevents by construction.)
-  - **The capped round's `∞` is `@whippin/shared`'s path data**, drawn in place of
-    `.solved-score-num` (`.solved-score-inf`, `crispEdges`, sized in `em` off the number it
-    replaces) with an `sr-only` `∞` beside it; the unit stays PLURAL, since there is no count
-    for a "1" to agree with. `SolvedScreen` takes `capped` and shares a v6 capped token.
+  - **`Round` reads "ended unsolved" off the shared `roundEnded`** (given up, or capped;
+    `solved` wins) — `ended`, with `gaveUp` the give-up half of it — and `finished` is
+    `solved || ended`.
+  - **The `∞` of a round that ENDED UNSOLVED is `@whippin/shared`'s path data**
+    (`components/InfinityGlyph.tsx`), drawn in place of `.solved-score-num`
+    (`.solved-score-inf`, `crispEdges`, sized in `em` off the number it replaces) with an
+    `sr-only` `∞` beside it; the unit stays PLURAL, since there is no count for a "1" to
+    agree with. `SolvedScreen` takes `unfinished` and shares a v6 token with the capped
+    flag set (the flag means ended unsolved) — a share the `share` event does NOT count
+    (`useShare({tracked: false})`), so share ÷ solve stays the liked-day signal. The group
+    day board draws the same glyph in an `over` row's tries slot (`.board-inf`), its %
+    muted.
+  - **THE GIVE-UP (user-decided 2026-10-02).** A pixel WHITE FLAG (`assets/icons/flag.svg`,
+    the lock's 8-cell grid, monochrome, `--muted`; aria `giveUp`) stands at the RIGHT END of
+    the prompt row: `.prompt-zone` is a two-column grid whose second column the flag holds
+    from the first frame (`.off` = hidden in place), so its arrival never moves the sentence
+    or narrows the prompt — a long guess crops its own head before reaching it. Shown
+    (`canGiveUp`) once the round holds a guess, not finished, the gate closed, no reveal
+    standing or decoding, the prompt not leaving; never in the tutorial (it lives in
+    `Game`, not in `Keyboard`). A tap opens the `ConfirmScreen` (`giveUpTitle` /
+    `giveUpNote` / `giveUpAction`, busy while in flight); its act calls
+    `giveUpRound(roundKey)` (the sync bullet below); a `false` answer raises the
+    `ErrorScreen` (`failedGiveUp` / `failedGiveUpNote`, also an `?error=giveUp` preview).
+    A give-up confirmed on THIS device (`giveUpHere`, set before the request so the render
+    that turns the round over already sees it) PLAYS: the prompt leaves, every unfound hole
+    turns into its SECRET with its own word-change scramble (`boardHoles`: rank 0,
+    `revealed`), then the usual keyboard drop → dissolve → result — no `solve` event, no
+    streak, no celebration. **A REVEALED secret keeps the HELD CHIP** (`.hole.revealed`,
+    never `.resolved`: the white chip, no exponent) — the solve cobalt says "found", and
+    only of a word that was; the dissolve keeps the chip until the word's last letter goes
+    (`revealedAt`, `.chip-out`), and the result page's unfound secrets wear the chip too
+    (`SolvedHole.found`, `.solved-secret.revealed`). A give-up read at mount, or made on
+    another device, lands on the settled result at once, like the cap.
   - **`statusOf` takes a SERVER summary** (`{progress, solved}`), and #211 is its producer —
     the two shipped together, as the Ordering note on both issues required.
 
@@ -1760,6 +1789,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
   leaderboard entry of a round that was never full. When it IS full the conversation closes
   and the ROUND ENDS at `∞` (#214) — the capped state is re-derived on every mount from the
   log the read carries, so a reload never re-opens a settled round for a guaranteed 409.
+  A GIVEN-UP round closes the same way: a read or an answer carrying `gaveUp`, or a 409
+  `round_given_up`, adopts, discards the outbox and closes. **`giveUpRound(roundKey)`** is
+  the conversation's one other write: the flight holds the intent, `pump` FLUSHES the outbox
+  first and only then posts `{token, puzzle, giveUp: true}` (never paced: only an owed append
+  waits on the write interval). It resolves exactly once — TRUE when the round is over on
+  the server's terms (2xx, or a `round_solved` refusal: the solve won and is adopted as
+  history), FALSE on any other 4xx (the round stays open, the conversation too). An UNKNOWN
+  outcome re-READS, and the read answers it: `gaveUp`/`solved` → TRUE, otherwise FALSE —
+  never a second give-up sent behind the player's back; a read that fails answers FALSE at
+  once (no busy button through an outage; should it have landed, the retried read closes
+  the round by itself). A republish, a re-arm and a reset answer a pending give-up FALSE.
   There is no client score submission since
   #203: `useScoreHistogram` launches its population READ only on the SERVER's own `solved`,
   so capped/offline-only play has no row to claim and asks for no standing.
@@ -1786,7 +1826,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   still DEDUPED (`mergeLogs` against an empty local log), because the stored log is RAW and
   two devices can each have sent a surface of one group — the same disagreement from the
   other side.
-  **The `round_solved` 409 must do BOTH**: a plain 4xx
+  **The `round_solved` 409 (and the give-up's `round_given_up`) must do BOTH**: a plain 4xx
   closes WITHOUT adopting, leaving this tab rendering an unsolved board with its guesses
   still on screen — the exact symptom the freeze exists to prevent — and a plain 409 adopts
   WITHOUT closing, so `pump` resends immediately with `failures` reset, at no backoff at all.
@@ -1962,7 +2002,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   create a group, feels like bad UX"), and CREATE GROUP is said in full (`groupCreate`). A group
   has THREE boards under the pager as ONE FRAMED SWITCH of three EQUAL cells (`.period-tabs`;
   user-reported: bare labels "float in the screen with no purpose, no affordance"): TODAY
-  (the live one: finished, IN PROGRESS, NOT PLAYED YET — TODAY, not DAY, user-decided
+  (the live one: finished, IN PROGRESS — a round that ended unsolved, `over`, printing `∞`
+  in its tries slot after the live rows — NOT PLAYED YET — TODAY, not DAY, user-decided
   2026-09-14), WEEK and MONTH (the shared period rule, `PeriodList`: podium POINTS under
   the caption, the days and the total as a quiet detail). THE BOARD CARRIES NO STANDING
   BUTTON (user-reported: "3 huge thick buttons always on screen even if we use them 1% of
@@ -2486,15 +2527,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
       under the credit rather than through it, and **a tap on it scrolls the stage back to
       the top** (`backToTop`, smooth unless reduced motion): the running head is the way
       back to the score and SHARE. On a phone that fits, nothing overflows and nothing
-      moves. **A FINISHED round's secrets open the words MODAL, found or not**: a capped
-      round's unfound holes keep a rank, but the wheel measures the board's own
+      moves. **A FINISHED round's secrets open the words MODAL, found or not**: an
+      unfinished round's (given up, or capped) unfound holes keep a rank, but the wheel measures the board's own
       `[data-hole-explore] .hole-word-wrap`, which the page's secrets do not wear, and a
       pick has nothing to swap into a page that already shows the answer — `wheelOpen` is
       false once `finished`. For the same reason the modal of a finished round masks
       nothing and names the secret, found or not (`Game` passes `buildHistory` its
       `over`).
     - **The SECRETS are BUTTONS inside the line** (`.solved-secret`: the solve blue, font
-      and line inherited, no box, `inline-block` for the pop), one per OCCURRENCE (a slug
+      and line inherited, no box, `inline-block` for the pop — a secret an unfinished round
+      only REVEALED wears the held chip instead, `.solved-secret.revealed`), one per OCCURRENCE (a slug
       appearing twice yields two, sharing one distinct-secret `number` — the ruler ticks'
       own — so they pop on one beat and open ONE history line), with the affixes in a
       nowrap group (Phrase's rule). The tap opens the words modal (a completed hole's own
@@ -2647,7 +2689,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is derived from the play log like everything else, and the archive/chooser read the
   SERVER's summary instead — #211.)* **The SHARE CARD draws the SAME
   ruler (decided 2026-07-25, superseding the bucketed-squares card):** the share token
-  was bumped to **v2** — and to **v6** by #214, which added the CAPPED flag and skipped the retired Word mode's ids 3–5 — carrying the RAW per-try
+  was bumped to **v2** — and to **v6** by #214, which added the CAPPED flag (a round that ended unsolved: given up, or capped) and skipped the retired Word mode's ids 3–5 — carrying the RAW per-try
   trajectory plus the solve moments instead of the `bucketMeans` squares, so `renderCardSvg` renders the on-screen ruler
   scaled to the OG image — same `progressHeatColor` cells, same ticks, same sentence
   indices. v1 tokens (bucketed squares) no longer decode: `decodeResult` rejects them
@@ -3719,7 +3761,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (low-cardinality props only — **NEVER** a typed word/guess): `solve {lang, tries, day,
   archive}` — the play-solve transition in `Game.tsx` (NOT rehydration; `archive` is
   `'yes'` when replaying a past archive day (#55), `'no'` for the live daily puzzle);
-  `share {method:'native'|'clipboard'}` — `SolvedScreen` success paths; `tutorial
+  `share {method:'native'|'clipboard'}` — `SolvedScreen` success paths of a SOLVED day
+  (a bonus, and a round that ended unsolved — given up or capped — share uncounted); `tutorial
   {action:'start'|'finish'|'skip'}` — invite accept / the ending's PLAY / skip
   (fast-forward or invite SKIP). Plus automatic pageviews.
 - **Link previews: a page of its own for each tutorial page.** A chat app reads a link's

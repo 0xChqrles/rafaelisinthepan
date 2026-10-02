@@ -13,14 +13,15 @@
 //
 // The play log drives every client derivation — holes, progress, the unique score, the
 // prompt's recall history, the trajectory and the solve moments. The RAW server log drives
-// only the storage cap. That distinction is load-bearing: aliases (#104), a second device
+// only the storage cap (whether a round ENDED unsolved — given up, or capped — is the
+// shared `roundEnded`, read off the server state). That distinction is load-bearing: aliases (#104), a second device
 // and the read-on-unknown recovery can all put two raw strings in one playable identity, so
 // the two lengths genuinely differ, and each number answers a different question.
 //
 // Nothing here is an authority or a merge watermark. It is a VIEW, recomputed from its two
 // inputs, which is why the old reconciliation problem disappeared with the persisted round.
 
-import { ROUND_GUESS_CAP, type RankMap } from '@whippin/shared';
+import type { RankMap } from '@whippin/shared';
 import { guessKey } from './scoring';
 
 // The two inputs projected into one ordered log: server entries first (they are what the
@@ -51,16 +52,6 @@ export function playLogFor(
   outbox: readonly string[],
 ): string[] {
   return projectPlayLog(serverGuesses, outbox, (typed) => guessKey(ranks, typed));
-}
-
-// CAPPED: the server state is UNSOLVED with the raw cap stored, so every further append is
-// refused and the round ends at `∞`. Read off the RAW stored log — the one length the cap
-// counts — and DERIVED, never a stored flag. `solved` wins: a solve accepted as the last
-// raw entry is an ordinary solved round. A round whose state has not arrived is not capped.
-export function roundCapped(
-  server: { solved: boolean; guesses: readonly string[] } | null | undefined,
-): boolean {
-  return server != null && !server.solved && server.guesses.length >= ROUND_GUESS_CAP;
 }
 
 // Presentation-only view for the sentence board while a newly submitted guess's floating

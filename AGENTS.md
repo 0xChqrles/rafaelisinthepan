@@ -300,9 +300,9 @@ The live routes then share:
   + round creation = two challenges, deliberately) costs no visible wait. Local: accept-all
   verifier.
 - **Clients act on the error CODE, never on the status alone.** What a given code means —
-  a verdict that closes a conversation (`round_solved`), a wait (`too_fast`), an input to
-  correct (`bad_code`), a confirmation to advance to (`would_erase`, `would_switch`) — is each
-  route's own contract, recorded in its section below. What is universal: a 5xx, a transport
+  a verdict that closes a conversation (`round_solved`, `round_given_up`), a wait
+  (`too_fast`), an input to correct (`bad_code`), a confirmation to advance to
+  (`would_erase`, `would_switch`) — is each route's own contract, recorded in its section below. What is universal: a 5xx, a transport
   failure or an unparseable body is NEVER a verdict — it never signs anyone out, never resets
   a round, and on a write whose outcome is unknown the client re-reads before writing again.
 
@@ -359,9 +359,11 @@ The live routes then share:
 ### Sentence round: server-owned log, outbox, derived score (#201/#203/#214)
 
 - **The server owns game state from the first guess**, linked or not. **`POST /round?lang=&date=`**:
-  `{token, puzzle}` reads (404 = none for THIS revision), `{token, puzzle, guesses}` appends.
-  Every answer — refusals included — carries the full stored state of the PUZZLE ASKED ABOUT
-  (`{guesses, createdAt, progress, solved, …}`), never a different revision's log. Archive
+  `{token, puzzle}` reads (404 = none for THIS revision), `{token, puzzle, guesses}` appends,
+  `{token, puzzle, giveUp: true}` GIVES UP (below; 400 beside `guesses` or a
+  `turnstileToken`). Every answer — refusals included — carries the full stored state of the
+  PUZZLE ASKED ABOUT (`{guesses, createdAt, progress, solved, gaveUp, …}`), never a different
+  revision's log. Archive
   days sync exactly like today's. The record NAMES its `puzzle` revision; an append carrying a
   different one REPLACES the log (a republish restarts the round; a solved-day credit already
   earned is kept).
@@ -373,9 +375,10 @@ The live routes then share:
   conditions have no arithmetic); **`ROUND_WRITE_MIN_MS` = 1000 ms** between writes per player
   **per round**, one spelling for the server's condition and the web's pacing, which paces
   from the previous ANSWER, not the send. Refusals: 429 `too_fast` (+`Retry-After: 1`, exposed
-  by CORS), 409 `round_full`, 409 `round_solved`. Nothing is partially appended.
+  by CORS), 409 `round_full`, 409 `round_solved`, 409 `round_given_up`. Nothing is partially
+  appended.
 - **Local storage is an OUTBOX (#214).** Three values kept apart: **SERVER STATE** (raw log +
-  `solved`, in memory only), **OUTBOX** (unacknowledged folded guesses, revision-qualified —
+  `solved` + `gaveUp`, in memory only), **OUTBOX** (unacknowledged folded guesses, revision-qualified —
   the ONLY persisted sentence state), **PLAY LOG** (pure first-occurrence projection of server
   + outbox, deduped by shared `guessKey`). The play log drives every client derivation; the
   RAW log drives only the cap. Load order: puzzle → drop mismatched outbox → read `/round` →
@@ -387,15 +390,20 @@ The live routes then share:
   replace server state and keep only what it does not represent, BY IDENTITY. 429 adopts,
   keeps, paces. 409 `round_full` below the cap = batch overshot another device → adopt, retry
   the fitting prefix; **at the cap with an unsolved log = CAPPED terminal state**. 409
-  `round_solved` adopts the frozen result SERVER-ONLY (deduped by identity), discards the
-  outbox, closes. **An UNKNOWN outcome (transport, 5xx, malformed) READS before writing
-  again** — appends are at-least-once. Any other 4xx closes.
+  `round_solved` and 409 `round_given_up` adopt the frozen result SERVER-ONLY (deduped by
+  identity), discard the outbox, close (a mount read showing either does the same). **An
+  UNKNOWN outcome (transport, 5xx, malformed) READS before writing again** — appends are
+  at-least-once. Any other 4xx closes. The GIVE-UP goes out only once the outbox is FLUSHED
+  (the log it freezes holds every try); its unknown outcome re-reads too, and only the read
+  answers it — a give-up is never re-sent behind the player's back.
 - **Derived scores (#203): the client never claims a score.** `progress` and write-only-true
   `solved` are stored on the round row in the append's own mutation, derived from stored log +
   batch; after the write the handler re-derives from the RETURNED log and, on disagreement,
   issues one retried, progress-monotonic corrective write (the last chance to record a solve).
   **A solved round refuses further appends** (`attribute_not_exists(#solved)`) so a recorded
-  score never changes; the refused device adopts AND closes. The readings are shared
+  score never changes; **so does a given-up one** (`attribute_not_exists(#gave)` in the same
+  condition — the player has been shown the sentence); the refused device adopts AND closes.
+  Classification order: solved → given up → cap → interval. The readings are shared
   (`shared/src/scoring.ts`: `s`/`holeProgress`, `rankCount`, `guessKey`, `countTries`) so the
   screen and the leaderboard cannot disagree over one log.
 - **What the server LOADS:** every append reads the day's **derivation slice** (every key at
@@ -408,14 +416,25 @@ The live routes then share:
   while the solving append is in flight; the result, leaderboard, streak and `solve` event wait
   for confirmation. A solve confirmed by THIS device's batch is fresh (celebrated); one learned
   from a mount read or a `round_solved` refusal is adopted history (shown, never celebrated).
-- **THE CAP IS TERMINAL AND PRINTS `∞`**: unsolved with exactly `ROUND_GUESS_CAP` raw entries
-  (derived, never stored; server `solved: true` wins over the cap check). No leaderboard row,
-  streak, celebration or `solve` event; answer + source shown; shareable (`share` event).
-  `round_full` at the cap is logged server-side as puzzle-curation signal; a client already at
-  the cap spends no request. The `∞` glyph is pixel-art SVG path data in `shared/glyphs.ts`
-  (Press Start 2P has none; the OG card loads no system fonts), used by `cardSvg.ts` and the web.
+- **A ROUND THAT ENDS UNSOLVED PRINTS `∞`** — given up, or capped; ONE reading,
+  `roundEnded` (`shared/src/scores.ts`: `!solved && (gaveUp || raw log ≥ ROUND_GUESS_CAP)`,
+  read by the web round and the group board). **`solved` wins** over both. No leaderboard
+  row, streak, celebration or `solve` event; answer + source shown; shareable, and that share
+  is NOT counted in the `share` event (share ÷ solve stays the liked-day signal).
+  - **THE CAP**: exactly `ROUND_GUESS_CAP` raw entries, derived, never stored. `round_full`
+    at the cap is logged server-side as puzzle-curation signal; a client already at the cap
+    spends no request.
+  - **THE GIVE-UP** (user-decided 2026-10-02: "a way to give up and reveal the sentence"):
+    STORED, `gaveUp` on the round row, write-only-true, set by ONE conditional UpdateItem
+    (`#p = :puzzle AND attribute_not_exists(#solved)`, version bump; no slice, no Turnstile,
+    no pacing) — 200 with the state, idempotent; 409 `round_solved` when a solve won; 404
+    with no record of this puzzle. Only a republish's restart removes it. Offered only once
+    the round holds a guess (the record exists).
+  - The `∞` glyph is pixel-art SVG path data in `shared/glyphs.ts` (Press Start 2P has none;
+    the OG card loads no system fonts), used by `cardSvg.ts` and the web.
 - **Share token v6** is the result format (capped flag + numeric score + trajectory +
-  ticks; a capped token carries no ticks); **v7** is a BONUS puzzle's (below): the bonus id
+  ticks; a capped token carries no ticks — the flag means ENDED UNSOLVED, given up or capped,
+  so the card and the bot never tell the two apart); **v7** is a BONUS puzzle's (below): the bonus id
   in the day's place, the same payload. `decodeLegacyShareTarget` recognizes ONLY
   versions 1 and 2 (a named list); every other version — the retired Word mode's 3–5
   included — is a flat 404.
@@ -423,8 +442,8 @@ The live routes then share:
   `<lang>#sentence#<date>` (language first so a month is one Query; `sentence` is a fixed
   segment, the retired daily `mode`'s, kept so stored rows stay addressable — the score
   rows' `score#<date>#<lang>#sentence` likewise), attributes `guesses`,
-  `puzzle`, `createdAt`, `lastWriteAt`, `progress`, `solved`, `version`. Per PLAYER, not per
-  day: one hot day partition cannot be split. Nothing reads across players.
+  `puzzle`, `createdAt`, `lastWriteAt`, `progress`, `solved`, `gaveUp`, `version`. Per
+  PLAYER, not per day: one hot day partition cannot be split. Nothing reads across players.
 
 ### Bonus puzzles (user-decided 2026-09-24)
 
@@ -685,17 +704,19 @@ The live routes then share:
   row order. Rows equal on all three share a rank.
   The range is `periodRange` (`shared/src/groups.ts`): the calendar WEEK, Monday first, and
   the calendar MONTH, both ending on the day addressed. The read is the day board's own
-  exact-key batch once per day of the range — score rows only, so a late or capped round
-  counts for nothing (#211's on-time rule already decided which rows exist). Not done,
+  exact-key batch once per day of the range — score rows only, so a late, capped or given-up
+  round counts for nothing (#211's on-time rule already decided which rows exist). Not done,
   deliberately: ALL-TIME and the median/outsider stats (an aggregate row per (group, member)
   written by the solving append — the second step, once a group asks).
 - **Three states on the day board**: `waiting` (a member with neither a round nor a score;
   never the caller), **`playing`** (#206: a round for the CURRENT revision and no score row —
   exact `countTries` over the FULL artifact read fresh, stored `progress`, ordered by the shared
   `orderPlaying` with NO rank number; members only; a failed read fails the
-  POST), finished. A round that ended without a score (capped, late, IP-refused) stays IN
-  PROGRESS — accepted; the fourth state is #224. The caller's own playing row never defeats
-  the just-you ghost.
+  POST), finished. A round that ENDED UNSOLVED (`roundEnded`: given up, or capped) stays in
+  `playing` marked **`over`** — `∞` in the tries slot, its % muted, ordered after every live
+  row (`orderPlaying`), so a member who gave up never reads as a live rival. A solve with no
+  score row (late, IP-refused) stays IN PROGRESS unmarked — accepted. The caller's own
+  playing row never defeats the just-you ghost.
 - **The solved screen's standing line is DROPPED (user-decided 2026-09-14, "for now at
   least"): the web reads no standing; `POST /board {token, standing: true}` still answers
   (retiring it is a separate call). What it was, for when it returns:** ONE line — "2ND OF
@@ -703,7 +724,7 @@ The live routes then share:
   card) — for the group last opened
   (`gameStore.lastGroupId`, account-owned, persisted) when the player stands in it, else the
   best standing (lowest rank, then the larger field); a tap opens that group's board; nothing
-  when the player is in no group or holds no row (late, capped). It REPLACED the #170 TOP-%
+  when the player is in no group or holds no row (late, capped, given up). It REPLACED the #170 TOP-%
   badge (`ScoreTop`, `scoreStanding`, `useScoreHistogram` and the web's `/scores` client are
   gone; the `/scores` route itself still answers — no consumer, the user's call to retire).
   `of` is the members who RECORDED a score today, never the group's size: a rank over people

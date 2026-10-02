@@ -79,19 +79,25 @@ export function boardWindow(
 // the raw stored log length: two devices can store one identity twice, and a member
 // must not watch 40 all afternoon and see the final score land at 38) and the server's
 // derived reconstruction percentage (#203's stored value, the calendar's own source).
+// `over`: the round ENDED UNSOLVED (`roundEnded` — given up, or capped): the member is done
+// for the day with nothing recorded, so the row prints `∞` and is never a live rival.
 export interface PlayingScore {
   publicId: string;
   tries: number;
   progress: number;
+  over: boolean;
 }
 
 // The in-progress rows' order — "ranked among themselves", below every finished row,
 // which is an ORDER and never a rank claim (a mid-round position moves with every
-// guess, so the rows carry no rank number): closest to done first, fewer tries breaking
-// the tie (fewer is the score that would record), publicId last for a deterministic
-// board between reads — `rankBoard`'s own tie rule.
+// guess, so the rows carry no rank number): the LIVE rows first and the ENDED ones
+// (`over`) after them — a member who gave up at 79% is not ahead of one still playing at
+// 75% — then closest to done first, fewer tries breaking the tie (fewer is the score that
+// would record), publicId last for a deterministic board between reads — `rankBoard`'s own
+// tie rule.
 export function orderPlaying(rows: readonly PlayingScore[]): PlayingScore[] {
   return [...rows].sort((a, b) => {
+    if (a.over !== b.over) return a.over ? 1 : -1;
     if (a.progress !== b.progress) return b.progress - a.progress;
     if (a.tries !== b.tries) return a.tries - b.tries;
     return byPublicId(a, b);
@@ -135,6 +141,7 @@ export interface BoardRow extends BoardPlayer {
 export interface PlayingRow extends BoardPlayer {
   tries: number;
   progress: number;
+  over: boolean;
 }
 
 export interface Board {

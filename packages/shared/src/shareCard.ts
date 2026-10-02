@@ -18,8 +18,10 @@
 // here derives a cell count (the bounded row itself lives on in web/src/game/share.ts, which
 // summarises the same bar for a text message).
 //
-// **v6 (#214)** adds the CAPPED flag: a round the server refused further appends to at
-// `ROUND_GUESS_CAP`, unsolved, ends at `∞` instead of a try count. The numeric score stays
+// **v6 (#214)** adds the CAPPED flag: a round that ENDED UNSOLVED (`roundEnded` — the
+// player gave up, or the server refused further appends at `ROUND_GUESS_CAP`) ends at `∞`
+// instead of a try count. The flag keeps its wire name; it means "ended unsolved", whichever
+// way the round ended, so nothing downstream (the card, the bot) tells the two apart. The numeric score stays
 // in the token — it is still the ruler's cell count, and the ruler is still one cell per
 // canonical try, never 500 raw storage entries — so the flag changes only what the HEADLINE
 // says. A capped token carries NO solve ticks: the run never finished, and the result the
@@ -85,9 +87,9 @@ export interface ShareResult {
   // Per DISTINCT secret, in sentence order (so the index IS the number under the tick): the
   // 1-based try that dropped it, or null when the run never did (an unfinished run).
   solvedAt: (number | null)[];
-  // The round hit `ROUND_GUESS_CAP` unsolved (#214): every surface says `∞` where it would
-  // say the count. The score still travels — it is the ruler's length — and a capped run
-  // carries no ticks, so this decodes with an empty `solvedAt`.
+  // The round ENDED UNSOLVED — given up, or `ROUND_GUESS_CAP` reached (#214): every surface
+  // says `∞` where it would say the count. The score still travels — it is the ruler's
+  // length — and a capped run carries no ticks, so this decodes with an empty `solvedAt`.
   capped?: boolean;
 }
 

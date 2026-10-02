@@ -14,6 +14,7 @@ describe('errorPreviewFromSearch', () => {
   it('reads a named variant in development', () => {
     expect(errorPreviewFromSearch('?error=account', true)).toBe('account');
     expect(errorPreviewFromSearch('?foo=x&error=avatar', true)).toBe('avatar');
+    expect(errorPreviewFromSearch('?error=giveUp', true)).toBe('giveUp');
   });
 
   it('takes the reported variant for the bare and shorthand forms', () => {

@@ -19,7 +19,8 @@ import { capitalize, sentenceStarts } from '../game/sentenceCase';
 // the uniform draw with no batching machinery at all.
 //
 // This component renders the resolved sentence with EXACTLY Phrase's structure and
-// classes (`.phrase`, `.word`, `.hole-group`, `.hole.resolved`, `.hole-letter`), so the
+// classes (`.phrase`, `.word`, `.hole-group`, `.hole.resolved` — `.hole.revealed` for a
+// secret a give-up revealed —, `.hole-letter`), so the
 // swap from the live Phrase to this one is pixel-identical on its first frame — same
 // wrap, same colours, same shadows. A dissolved letter keeps its own box with
 // `visibility: hidden` (`.gone`), never an actual space: the pixel font is monospace, so
@@ -54,6 +55,9 @@ interface Token {
   // The joining space before this token (Phrase renders it outside the word span).
   space: boolean;
   secret: boolean;
+  // A secret the player did NOT find (a give-up's reveal): it erodes in the held chip it
+  // stood in, and the chip goes with its last letter.
+  revealed?: boolean;
   letters: Letter[];
   prefixLetters?: Letter[];
   suffixLetters?: Letter[];
@@ -62,11 +66,15 @@ interface Token {
 export default function DissolvePhrase({
   words,
   puzzleHoles,
+  revealedAt = [],
   brisk = false,
   onDone,
 }: {
   words: string[];
   puzzleHoles: PuzzleHole[];
+  // Where the secrets the player did NOT find sit in `words` (a round that ended unsolved):
+  // Phrase drew them in the held chip, so the dissolve starts from the same dress.
+  revealedAt?: readonly number[];
   // A quicker erosion with no breath after it: the tutorial's last sentence handing over to
   // the level's card, which has a lesson's pace, not a result's.
   brisk?: boolean;
@@ -95,6 +103,7 @@ export default function DissolvePhrase({
           key: i,
           space,
           secret: true,
+          revealed: revealedAt.includes(i),
           prefixLetters: hole.prefix
             ? plan(starts[i] ? capitalize(hole.prefix) : hole.prefix)
             : undefined,
@@ -157,6 +166,14 @@ export default function DissolvePhrase({
     return () => window.clearTimeout(id);
   }, [tick, lastTick, reduceMotion, brisk]);
 
+  // A found secret is the cobalt word; an unfound one keeps its chip until its last letter
+  // has gone out, and the chip goes with it.
+  const holeClass = (t: Token) => {
+    if (!t.revealed) return 'hole resolved';
+    const out = t.letters.every((l) => tick >= l.startTick + l.churnTicks);
+    return `hole revealed${out ? ' chip-out' : ''}`;
+  };
+
   // One letter's frame: itself, a churning glyph, or its own invisible box.
   const letter = (l: Letter, index: number) => {
     const gone = tick >= l.startTick + l.churnTicks;
@@ -180,7 +197,7 @@ export default function DissolvePhrase({
           {t.secret ? (
             <span className="hole-group">
               {t.prefixLetters && <span className="word">{t.prefixLetters.map(letter)}</span>}
-              <span className="hole resolved">
+              <span className={holeClass(t)}>
                 <span className="hole-word">{t.letters.map(letter)}</span>
               </span>
               {t.suffixLetters && <span className="word">{t.suffixLetters.map(letter)}</span>}

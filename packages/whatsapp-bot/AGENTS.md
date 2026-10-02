@@ -569,7 +569,7 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   the rules … prefer to give links rather than explaining by itself").** The global
   personality carries the RULES a player asks about: a guess lands on every hole it
   improves, holes start with a hint word, a MISS has no rank and still costs a try, an
-  unknown word is refused for free, 500 unsolved is ∞, and closeness is MEANING judged IN
+  unknown word is refused for free, a run given up or 500 tries unsolved is ∞, and closeness is MEANING judged IN
   THE SENTENCE (#308), so a rank of 1 is the nearest word in meaning there and never a
   near-spelling — the few words it says beside a link must be right. The MECHANISM (vectors,
   attention, the judge) is not in any prompt: it is the levels' to tell. The CONVERSATION

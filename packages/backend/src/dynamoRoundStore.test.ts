@@ -519,6 +519,127 @@ describe('dynamoRoundStore — the derived summary (#203)', () => {
   });
 });
 
+// CONTRACT: THE GIVE-UP. Its own small conditional write on this puzzle's record, never
+// over a solve; a given-up round refuses every later append (the second freeze); and a
+// republish's restart clears it like `solved`, or the corrected round is born frozen.
+describe('dynamoRoundStore — the give-up', () => {
+  const append = (solved = false) => ({
+    ...KEY,
+    publicId: PUBLIC_ID,
+    guesses: ['mer'],
+    puzzle: PUZZLE,
+    progress: 10,
+    solved,
+    now: NOW,
+  });
+  const giveUp = { ...KEY, publicId: PUBLIC_ID, puzzle: PUZZLE };
+  const refused = () =>
+    new ConditionalCheckFailedException({ $metadata: {}, message: 'The conditional request failed' });
+
+  it('is ONE conditional update on this puzzle\'s unsolved record, answering the new item', async () => {
+    const send = vi.fn(async (_command: unknown) => ({
+      Attributes: { ...storedItem(['bois'], 1), progress: { N: '40' }, gaveUp: { BOOL: true } },
+    }));
+    const { store } = makeStore(send);
+
+    await expect(store.giveUp(giveUp)).resolves.toEqual({
+      outcome: 'given_up',
+      state: {
+        guesses: ['bois'],
+        createdAt: '2026-08-21T09:00:00.000Z',
+        progress: 40,
+        gaveUp: true,
+      },
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    // The harness has already held the alias correspondence and the version bump.
+    expect(command.input.UpdateExpression).toBe(
+      'SET #gave = :gave, #v = if_not_exists(#v, :zero) + :one',
+    );
+    expect(command.input.ConditionExpression).toBe(
+      '#p = :puzzle AND attribute_not_exists(#solved)',
+    );
+    expectConditionSyntax(command.input.ConditionExpression);
+    expect(command.input.ExpressionAttributeValues![':gave']).toEqual({ BOOL: true });
+    expect(command.input.ReturnValues).toBe('ALL_NEW');
+  });
+
+  it('answers round_solved when the refusal was a SOLVE — the solve wins', async () => {
+    const solved = { ...storedItem(['phare', 'nuit'], 1), solved: { BOOL: true } };
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof UpdateItemCommand) throw refused();
+      return { Item: solved };
+    });
+    const { store } = makeStore(send);
+    const result = await store.giveUp(giveUp);
+    expect(result.outcome).toBe('round_solved');
+    expect(result.state).toMatchObject({ guesses: ['phare', 'nuit'], solved: true });
+    // Classified by ONE consistent read.
+    expect((send.mock.calls[1][0] as GetItemCommand).input.ConsistentRead).toBe(true);
+  });
+
+  it.each([
+    ['no record', undefined],
+    ['a RETIRED puzzle\'s record', storedItem(['ancien'], 1, 'deadbeef')],
+  ])('answers not_found over %s, handing nothing of it back', async (_name, item) => {
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof UpdateItemCommand) throw refused();
+      return item ? { Item: item } : {};
+    });
+    const { store } = makeStore(send);
+    await expect(store.giveUp(giveUp)).resolves.toEqual({
+      outcome: 'not_found',
+      state: { guesses: [], createdAt: '' },
+    });
+  });
+
+  it('surfaces an operational failure instead of reading it as a refusal', async () => {
+    const send = vi.fn(async () => {
+      throw new Error('ProvisionedThroughputExceeded');
+    });
+    const { store } = makeStore(send);
+    await expect(store.giveUp(giveUp)).rejects.toThrow('ProvisionedThroughputExceeded');
+  });
+
+  it('FREEZES a given-up round with a path-only clause on the append\'s own condition', async () => {
+    const send = vi.fn(async (command: unknown) => ({
+      Attributes: firstWriteResult(command as UpdateItemCommand),
+    }));
+    const { store } = makeStore(send);
+    await store.append(append());
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    expect(command.input.ConditionExpression).toContain('attribute_not_exists(#gave)');
+    expectConditionSyntax(command.input.ConditionExpression);
+  });
+
+  it('classifies a refusal on a GIVEN-UP record after solved, above the cap and the interval', async () => {
+    const atCap = Array.from({ length: ROUND_GUESS_CAP }, (_, i) => `g${i}`);
+    const givenUp = { ...storedItem(atCap, NOW.getTime()), gaveUp: { BOOL: true } };
+    const { store } = makeStore(refuseOnce(givenUp));
+    const result = await store.append(append());
+    expect(result.outcome).toBe('round_given_up');
+    expect(result.state.gaveUp).toBe(true);
+
+    // Both flags: the solve wins here too.
+    const both = { ...givenUp, solved: { BOOL: true } };
+    const { store: bothStore } = makeStore(refuseOnce(both));
+    expect((await bothStore.append(append())).outcome).toBe('round_solved');
+  });
+
+  it.each([
+    ['an unsolved restart', false, 'REMOVE #solved, #gave'],
+    ['a solving restart', true, 'REMOVE #gave'],
+  ])('a RESTART clears the retired puzzle\'s give-up (%s)', async (_name, solved, removes) => {
+    const retired = { ...storedItem(['ancien'], 1, 'deadbeef'), gaveUp: { BOOL: true } };
+    const { store, send } = makeStore(refuseOnce(retired));
+    const result = await store.append(append(solved));
+    expect(result.outcome).toBe('appended');
+    const replace = send.mock.calls.at(-1)![0] as UpdateItemCommand;
+    expect(replace.input.UpdateExpression).toContain(removes);
+  });
+});
+
 // CONTRACT (#203, tightened on review): `progress` is written UPWARD only. Two settles can
 // be in flight at once — the corrective write sits behind a retry backoff, and another
 // device's append can land and settle inside it — so the later ARRIVAL may carry the older
@@ -656,7 +777,10 @@ describe('dynamoRoundStore.getMany — the board read (#206)', () => {
       expect(declared.sort()).toEqual(used.sort());
       return {
         Responses: {
-          scores: [item(PUBLIC_ID, ['mer', 'mers'], 62.5), item('aaaaaaaaaaaaaaaa', ['quai'], 10)],
+          scores: [
+            { ...item(PUBLIC_ID, ['mer', 'mers'], 62.5), gaveUp: { BOOL: true } },
+            item('aaaaaaaaaaaaaaaa', ['quai'], 10),
+          ],
         },
       };
     });
@@ -665,9 +789,13 @@ describe('dynamoRoundStore.getMany — the board read (#206)', () => {
     const rows = await store.getMany(KEY, [PUBLIC_ID, 'aaaaaaaaaaaaaaaa']);
     expect(send).toHaveBeenCalledTimes(1);
     expect(rows).toEqual([
-      { publicId: PUBLIC_ID, puzzle: PUZZLE, guesses: ['mer', 'mers'], progress: 62.5 },
-      { publicId: 'aaaaaaaaaaaaaaaa', puzzle: PUZZLE, guesses: ['quai'], progress: 10 },
+      { publicId: PUBLIC_ID, puzzle: PUZZLE, guesses: ['mer', 'mers'], progress: 62.5, solved: false, gaveUp: true },
+      { publicId: 'aaaaaaaaaaaaaaaa', puzzle: PUZZLE, guesses: ['quai'], progress: 10, solved: false, gaveUp: false },
     ]);
+    // What says a round ENDED travels too (the board marks it `over`).
+    const request = (send.mock.calls[0][0] as BatchGetItemCommand).input.RequestItems!.scores;
+    expect(request.ProjectionExpression).toContain('#solved');
+    expect(request.ProjectionExpression).toContain('#gave');
   });
 
   it('retries UnprocessedKeys behind the jittered wait instead of dropping a friend', async () => {
@@ -688,7 +816,9 @@ describe('dynamoRoundStore.getMany — the board read (#206)', () => {
     });
 
     const rows = await store.getMany(KEY, [PUBLIC_ID]);
-    expect(rows).toEqual([{ publicId: PUBLIC_ID, puzzle: PUZZLE, guesses: ['bois'], progress: 40 }]);
+    expect(rows).toEqual([
+      { publicId: PUBLIC_ID, puzzle: PUZZLE, guesses: ['bois'], progress: 40, solved: false, gaveUp: false },
+    ]);
     // Only BETWEEN attempts, never before the first read.
     expect(send).toHaveBeenCalledTimes(2);
     expect(waits).toHaveLength(1);

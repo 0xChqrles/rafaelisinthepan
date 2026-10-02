@@ -23,8 +23,8 @@ import {
 } from './roundStore';
 
 // THE ROUND VERSION (#204's adoption model, decided on the PR-227 review). Every mutation
-// of a round item — the append and its retired-puzzle restart, and the corrective settle —
-// bumps `version`, and the adoption transaction
+// of a round item — the append and its retired-puzzle restart, the corrective settle, and
+// the give-up — bumps `version`, and the adoption transaction
 // conditions on it instead of on any list of fields: a condition written by hand protects
 // exactly the fields somebody remembered (the settle rewrites `progress`/`solved` with the
 // log untouched, which is what a guesses-and-puzzle condition let through). Arithmetic is
@@ -89,6 +89,7 @@ export function dynamoRoundStore(
     createdAt: '#created',
     progress: '#prog',
     solved: '#solved',
+    gaveUp: '#gave',
     version: '#v',
   } as const;
 
@@ -169,11 +170,14 @@ export function dynamoRoundStore(
           // The row's identity comes back out of its own partition key — the publicId is
           // what the key is built from, so no second attribute is stored or read for it.
           // The log crosses the wire because the exact try count is a dedup over it
-          // (#206), which the stored summary cannot answer.
-          ProjectionExpression: `#pk, ${NAMES.guesses}, ${NAMES.puzzle}, ${NAMES.progress}`,
+          // (#206), which the stored summary cannot answer; `solved` and `gaveUp` because
+          // they are what says a round ENDED unsolved (`roundEnded`), which the board marks.
+          ProjectionExpression:
+            `#pk, ${NAMES.guesses}, ${NAMES.puzzle}, ${NAMES.progress}, ` +
+            `${NAMES.solved}, ${NAMES.gaveUp}`,
           ExpressionAttributeNames: {
             '#pk': 'pk',
-            ...aliases('guesses', 'puzzle', 'progress'),
+            ...aliases('guesses', 'puzzle', 'progress', 'solved', 'gaveUp'),
           },
         },
         wait,
@@ -184,6 +188,8 @@ export function dynamoRoundStore(
         puzzle: puzzleOf(item) ?? '',
         guesses: item.guesses?.L?.map((v) => v.S ?? '') ?? [],
         progress: numberOf(item.progress) ?? 0,
+        solved: item.solved?.BOOL === true,
+        gaveUp: item.gaveUp?.BOOL === true,
       }));
     },
 
@@ -245,16 +251,18 @@ export function dynamoRoundStore(
             // size, which bounds the RESULTING log exactly as `size + batch <= cap` would:
             // the result may REACH the cap, never pass it.
             //
-            // The last clause is #203's FREEZE: once `solved` is set, further appends are
-            // refused — evaluated as part of the same write, so it costs no extra read.
-            // It is not an anti-cheat measure: sentence score is unique tries and lower is
-            // better, so padding a log after the solve only ever makes the score worse.
-            // What it prevents is a RECORDED SCORE SILENTLY CHANGING after it is on the
-            // leaderboard, which reads as a bug whoever caused it.
+            // The last two clauses are the FREEZES: once `solved` (#203) or `gaveUp` is set,
+            // further appends are refused — evaluated as part of the same write, so they cost
+            // no extra read. Solved is not an anti-cheat measure: sentence score is unique
+            // tries and lower is better, so padding a log after the solve only ever makes
+            // the score worse. What it prevents is a RECORDED SCORE SILENTLY CHANGING after
+            // it is on the leaderboard, which reads as a bug whoever caused it. Given up is
+            // one: the player has been shown the sentence, so typing it in afterwards must
+            // never turn into a solve, a score, a streak day.
             ConditionExpression:
               '(attribute_not_exists(#last) OR #last < :cutoff) ' +
               'AND (attribute_not_exists(#g) OR (size(#g) <= :room AND #p = :puzzle)) ' +
-              'AND attribute_not_exists(#solved)',
+              'AND attribute_not_exists(#solved) AND attribute_not_exists(#gave)',
             ExpressionAttributeNames: aliases(
               'guesses',
               'puzzle',
@@ -262,6 +270,7 @@ export function dynamoRoundStore(
               'createdAt',
               'progress',
               'solved',
+              'gaveUp',
               'version',
             ),
             ExpressionAttributeValues: values({
@@ -277,7 +286,7 @@ export function dynamoRoundStore(
         if (!isConditionFailure(error)) throw error;
       }
 
-      // The condition named four bounds; classify against the stored item.
+      // The condition named five bounds; classify against the stored item.
       const item = await readItem(input, input.publicId);
       const last = numberOf(item?.lastWriteAt);
       const paced = last === undefined || last < cutoff;
@@ -292,14 +301,14 @@ export function dynamoRoundStore(
             new UpdateItemCommand({
               TableName: tableName,
               Key: roundItemKey(input, input.publicId),
-              // A restart takes the RETIRED puzzle's derived summary with it: its `solved`
-              // would otherwise freeze the fresh round on a sentence nobody is playing any
-              // more.
+              // A restart takes the RETIRED puzzle's derived summary and its give-up with it:
+              // its `solved` or `gaveUp` would otherwise freeze the fresh round on a sentence
+              // nobody is playing any more.
               UpdateExpression:
                 `SET #g = :batch, #p = :puzzle, #last = :now, #created = :created, ${VERSION_BUMP}, ` +
                 (input.solved
-                  ? '#prog = :progress, #solved = :solved'
-                  : '#prog = :progress REMOVE #solved'),
+                  ? '#prog = :progress, #solved = :solved REMOVE #gave'
+                  : '#prog = :progress REMOVE #solved, #gave'),
               // Only a record still naming the retired puzzle may be replaced, so two
               // tabs racing the same restart cannot wipe each other's fresh log.
               ConditionExpression:
@@ -311,6 +320,7 @@ export function dynamoRoundStore(
                 'createdAt',
                 'progress',
                 'solved',
+                'gaveUp',
                 'version',
               ),
               ExpressionAttributeValues: values({ ...VERSION_BUMP_VALUES }),
@@ -335,6 +345,8 @@ export function dynamoRoundStore(
       // A SOLVED round is settled — the truest answer of the three, since neither retrying
       // nor a smaller batch can ever be accepted again (#203).
       if (stored.solved) return { outcome: 'round_solved', state: stored };
+      // A GIVEN-UP round is just as settled: the player has been shown the sentence.
+      if (stored.gaveUp) return { outcome: 'round_given_up', state: stored };
       // A log already at (or within one batch of) the cap is the cap refusal — the truer
       // answer, since retrying can never succeed — and anything else is the interval.
       if (stored.guesses.length + input.guesses.length > ROUND_GUESS_CAP) {
@@ -396,6 +408,40 @@ export function dynamoRoundStore(
       }
     },
 
+    // THE GIVE-UP (roundStore.ts): ONE conditional UpdateItem, the settle's shape. The
+    // record must name THIS puzzle — which also says it exists — and must not be solved:
+    // a solve that landed first wins, and the condition is what keeps a give-up and a solve
+    // from both claiming the round. No clause on `gaveUp` itself: a second give-up (a
+    // retried request whose first answer was lost) simply sets it again.
+    async giveUp(input) {
+      try {
+        const response = await client.send(
+          new UpdateItemCommand({
+            TableName: tableName,
+            Key: roundItemKey(input, input.publicId),
+            UpdateExpression: `SET #gave = :gave, ${VERSION_BUMP}`,
+            ConditionExpression: '#p = :puzzle AND attribute_not_exists(#solved)',
+            ExpressionAttributeNames: aliases('gaveUp', 'puzzle', 'solved', 'version'),
+            ExpressionAttributeValues: {
+              ':gave': { BOOL: true },
+              ':puzzle': { S: input.puzzle },
+              ...VERSION_BUMP_VALUES,
+            },
+            ReturnValues: 'ALL_NEW',
+          }),
+        );
+        return { outcome: 'given_up', state: itemToState(response.Attributes)! };
+      } catch (error) {
+        if (!isConditionFailure(error)) throw error;
+      }
+      // Refused: classify against the stored item, read once, consistently. A solved record
+      // of this puzzle is the solve winning; anything else — no record, a retired puzzle's —
+      // has nothing of this puzzle to give up on.
+      const item = await readItem(input, input.publicId);
+      const stored = puzzleOf(item) === input.puzzle ? itemToState(item) : null;
+      if (stored?.solved) return { outcome: 'round_solved', state: stored };
+      return { outcome: 'not_found', state: empty() };
+    },
   };
 }
 
@@ -430,6 +476,7 @@ function itemToState(item: Item): RoundState | null {
     // test presence.
     ...(progress === undefined ? {} : { progress }),
     ...(item.solved?.BOOL === true ? { solved: true } : {}),
+    ...(item.gaveUp?.BOOL === true ? { gaveUp: true } : {}),
   };
 }
 

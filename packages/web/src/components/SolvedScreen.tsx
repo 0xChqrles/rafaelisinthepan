@@ -1,9 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import {
-  INFINITY_EM_HEIGHT,
-  INFINITY_EM_WIDTH,
-  INFINITY_GLYPH,
   dateForDayNumber,
   isBonusRef,
   shareHeadline,
@@ -17,6 +14,7 @@ import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
 import Button from './Button';
+import InfinityGlyph from './InfinityGlyph';
 import { useDeviceIdentity } from '../identity';
 import { ariaHoleHistory, t } from '../i18n';
 import { capitalize, sentenceStarts } from '../game/sentenceCase';
@@ -79,24 +77,6 @@ const CAPTION_FALLBACK_SLACK_MS = 4_000;
 // landing (the bar full) by a breath.
 const CLOSE_LEAD_MS = 260;
 
-// The capped round's headline (#214). Press Start 2P has no `∞`, so the glyph is drawn from
-// the shared path data — the same path, at the same fraction of the font size, that the OG
-// card draws, so the screen and the card it shares cannot show two different marks. It
-// stands exactly where `.solved-score-num` would, keeping the unit beside it.
-function InfinityScore() {
-  return (
-    <svg
-      className="solved-score-inf"
-      viewBox={INFINITY_GLYPH.viewBox}
-      style={{ height: `${INFINITY_EM_HEIGHT}em`, width: `${INFINITY_EM_WIDTH}em` }}
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d={INFINITY_GLYPH.path} fill="currentColor" />
-    </svg>
-  );
-}
-
 // ONE BEAT of the reveal: false until `ready` has held for `delayMs`, then true. A settled
 // frame (`animate` off — rehydrated, or fast-forwarded) is true at once. Reduced motion
 // collapses the wait: to a 0ms timer, or — `syncWhenReduced` — to a synchronous set.
@@ -134,6 +114,10 @@ export interface SolvedHole {
   number: number; // 1-based distinct-secret position — the ruler ticks' own numbering
   prefix?: string; // display-only affixes, kept around the secret exactly as Phrase keeps them
   suffix?: string;
+  // Did the player FIND it? A round that ended unsolved shows every secret, and the ones it
+  // only revealed wear the held chip — the solve's cobalt says "found", and only says it
+  // of a word that was.
+  found: boolean;
 }
 
 export default function SolvedScreen({
@@ -146,7 +130,7 @@ export default function SolvedScreen({
   words,
   holes,
   onExplore,
-  capped = false,
+  unfinished = false,
   animate = true,
   start = true,
   onRevealEnd,
@@ -162,10 +146,11 @@ export default function SolvedScreen({
   words: string[]; // the sentence's full display tokens (the puzzle's own `words[]`)
   holes: SolvedHole[]; // one entry per occurrence, sorted by `pos` — the secrets inside it
   onExplore: (holeIndex: number) => void;
-  // The round hit the server's guess cap unsolved (#214): the HEADLINE becomes `∞` and no
-  // leaderboard entry exists (a capped round's solve never reached the server). Everything else is an ordinary result: the sentence with its
-  // answer in place, the credit, the ruler at its real length, and SHARE.
-  capped?: boolean;
+  // The round ENDED UNSOLVED — the player gave up, or it hit the server's guess cap (#214):
+  // the HEADLINE becomes `∞` and no leaderboard entry exists. Everything else is an ordinary
+  // result: the sentence with its answer in place, the credit, the ruler at its real length,
+  // and SHARE — whose `share` event it does not count (below).
+  unfinished?: boolean;
   // Rehydrated solves render their final result immediately and replay nothing — and so
   // does a reveal the player has fast-forwarded (#179): the round flips this off, and the
   // settled frame this draws IS the decision's "settled end state".
@@ -301,8 +286,10 @@ export default function SolvedScreen({
   }, [textDone, onRevealEnd]);
 
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
-  // this screen only composes the sentence result's text.
-  const { share, copied } = useShare({ tracked: !isBonusRef(puzzleRef) });
+  // this screen only composes the sentence result's text. A BONUS is no day's, and an
+  // UNFINISHED result's share is not counted either: the `share` event is read as share ÷
+  // solve, the "did they like the day" signal, and a share of a day given up is not that.
+  const { share, copied } = useShare({ tracked: !isBonusRef(puzzleRef) && !unfinished });
   // The stage is the scroller; the sticky credit is its way back to the top (the score,
   // SHARE) once the reader has scrolled them away.
   const stageRef = useRef<HTMLDivElement>(null);
@@ -323,20 +310,21 @@ export default function SolvedScreen({
         score: guessCount,
         trajectory,
         solvedAt: solvedAt ?? [],
-        capped,
+        // The token's v6 flag means ENDED UNSOLVED, whichever way the round ended.
+        capped: unfinished,
       },
       by,
     );
-    // This screen owns only its localized UNIT; the line's shape is @whippin/shared's. A
-    // capped round names no count — `∞` stands where the number would, exactly as the card
-    // draws it — and the unit stays plural, since there is no "1" to agree with.
-    const unit = t(lang, !capped && guessCount === 1 ? 'try' : 'tries').toLowerCase();
-    const headline = shareHeadline(puzzleRef, capped ? '∞' : guessCount, unit);
+    // This screen owns only its localized UNIT; the line's shape is @whippin/shared's. An
+    // unfinished round names no count — `∞` stands where the number would, exactly as the
+    // card draws it — and the unit stays plural, since there is no "1" to agree with.
+    const unit = t(lang, !unfinished && guessCount === 1 ? 'try' : 'tries').toLowerCase();
+    const headline = shareHeadline(puzzleRef, unfinished ? '∞' : guessCount, unit);
     // The card (via the token) draws the run in full; the plain-text row is the bounded
     // summary of that SAME run — trajectory and solve moments both — so the link and its
     // fallback can't disagree.
     await share(shareText(headline, trajectory, solvedAt ?? [], url));
-  }, [lang, puzzleRef, guessCount, trajectory, solvedAt, capped, share, by]);
+  }, [lang, puzzleRef, guessCount, trajectory, solvedAt, unfinished, share, by]);
 
   return (
     <div
@@ -373,15 +361,17 @@ export default function SolvedScreen({
           )}
         </span>
         {/* The primary sentence metric. The hidden final value reserves the count's width
-            so its tally never moves the content below it — a capped round has no tally to
-            reserve for, since `∞` is one fixed shape. (The #271 standing line stood beside
+            so its tally never moves the content below it — an unfinished round has no tally
+            to reserve for, since `∞` is one fixed shape. (The #271 standing line stood beside
             the number here until 2026-09-14, when the user dropped it; the #170 badge
             before it. The slot stays, empty.) */}
         <span className="solved-score">
           <span className="solved-score-line">
-            {capped ? (
+            {unfinished ? (
+              // The headline of a round that ENDED UNSOLVED (given up, or capped, #214): `∞`
+              // stands exactly where the count would, keeping the unit beside it.
               <span className="solved-score-num">
-                <InfinityScore />
+                <InfinityGlyph className="solved-score-inf" />
                 <span className="sr-only">∞</span>
               </span>
             ) : (
@@ -394,7 +384,7 @@ export default function SolvedScreen({
             )}
           </span>
           <span className="solved-score-unit">
-            {t(lang, !capped && guessCount === 1 ? 'try' : 'tries')}
+            {t(lang, !unfinished && guessCount === 1 ? 'try' : 'tries')}
           </span>
         </span>
 
@@ -440,8 +430,9 @@ export default function SolvedScreen({
             words on their own are three adjacent word searches. In the READING face,
             because this is the book's page, not the board: the line is in the ink, and
             #270's sentences around it will be the muted text before and after it. The
-            secrets are the only difference inside the line: the solve blue, the pop, and
-            the tap onto their own history. Prefix and suffix are sentence context and
+            secrets are the only difference inside the line: the solve blue (the held chip
+            for one a round that ended unsolved only revealed), the pop, and the tap onto
+            their own history. Prefix and suffix are sentence context and
             always show, in the nowrap group that keeps them on the secret's own line —
             Phrase's rule, unchanged. */}
         <p className={`solved-text${sentenceIn ? ' in' : ''}`}>
@@ -466,7 +457,7 @@ export default function SolvedScreen({
                     {hole.prefix && starts[i] ? capitalize(hole.prefix) : hole.prefix}
                     <button
                       type="button"
-                      className={`solved-secret${sentenceIn ? ' in' : ''}`}
+                      className={`solved-secret${hole.found ? '' : ' revealed'}${sentenceIn ? ' in' : ''}`}
                       style={{ '--step': hole.number - 1 } as CSSProperties}
                       aria-describedby={`solved-explore-${hole.number}`}
                       onClick={() => onExplore(hole.holeIndex)}

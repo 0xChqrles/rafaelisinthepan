@@ -132,8 +132,8 @@ export function buildHistory({
   // The ranks the meter has GIVEN (`replayCharge`'s `given`), each with whether the
   // player consumed it; none before the activation.
   given?: readonly GivenRank[];
-  // The ROUND is over with this hole unsolved (the cap): its result page already shows the
-  // answer, so the words grid hides nothing — no mask, and the headline names the secret.
+  // The ROUND is over with this hole unsolved (given up, or capped): its result page
+  // already shows the answer, so the words grid hides nothing — no mask, and the headline names the secret.
   // Presentation only: the hole is still unsolved, and nothing it never reached is named.
   over?: boolean;
 }): HistoryModel {

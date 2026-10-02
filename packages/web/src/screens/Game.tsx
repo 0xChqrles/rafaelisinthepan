@@ -7,14 +7,14 @@ import {
   useState,
 } from 'react';
 import { guessKey, replayHoles } from '../game/scoring';
-import { playLogFor, roundCapped, withoutDeferred } from '../game/playLog';
+import { playLogFor, withoutDeferred } from '../game/playLog';
 import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
 import { latestMaskedPick, selectWord, shownHolesFor, withoutMaskedPicks, type WordPick } from '../game/wordWheel';
 import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import useRoundSync from '../hooks/useRoundSync';
-import { notifyGuess, retryRoundSync } from '../state/roundSync';
+import { giveUpRound, notifyGuess, retryRoundSync } from '../state/roundSync';
 import { useGameStore, roundKeyFor } from '../state/gameStore';
 import { noteSolvedDay, usePlayerHistory } from '../state/history';
 import Phrase from '../components/Phrase';
@@ -43,6 +43,7 @@ import {
   fold,
   isBonusRef,
   puzzleAddress,
+  roundEnded,
   type PuzzleRef,
 } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -50,6 +51,8 @@ import { sentenceStarts } from '../game/sentenceCase';
 import { prefetchTurnstileTokens } from '../turnstile';
 import { deviceIdentity, ensureDeviceIdentity, useDeviceIdentity } from '../identity';
 import ErrorScreen from '../components/ErrorScreen';
+import ConfirmScreen from '../components/ConfirmScreen';
+import FlagIcon from '../assets/icons/flag.svg?react';
 import type {
   Hole,
   Puzzle,
@@ -279,11 +282,14 @@ function Round({
   // signal. Keep every resolved hole reported for this round; the round-key dependency on
   // the callback makes already-resolved rehydrated holes report again after navigation.
   const [resolvedHoleIndices, setResolvedHoleIndices] = useState<Set<number>>(() => new Set());
+  // A give-up confirmed on THIS device (see the confirmation below): the round's own fact.
+  const giveUpHere = useRef(false);
   useLayoutEffect(() => {
     setResolvedHoleIndices(new Set());
     // Whatever was still animating belonged to the previous round.
     setDeferred([]);
     setPicked({});
+    giveUpHere.current = false;
   }, [roundKey]);
   const markHoleResolved = useCallback((index: number) => {
     setResolvedHoleIndices((current) => {
@@ -345,22 +351,45 @@ function Round({
   // still be in the air, and the guess that closed it is still on its way to the server —
   // so it owns the prompt's lock and nothing else (#214).
   const boardComplete = holes.every((h) => h.rank === 0);
-  const allWordsResolved = boardComplete && resolvedHoleIndices.size === holes.length;
 
   // AUTHORITATIVE solved: the server's own reading of the log it stores (#203). The local
   // board flips a beat earlier, while the solving append is still in flight, so everything
   // that must not happen twice or too early — the result, the leaderboard, the streak, the
   // `solve` event — hangs off this and never off `boardComplete`.
   const solved = server?.solved === true;
-  // CAPPED (#214): the authoritative state is UNSOLVED with exactly the raw cap stored, so
-  // the server refuses every further append. DERIVED, never a stored flag — the outbox's
-  // own length can never reveal it, since what counts is what was STORED. A legitimate
-  // solve accepted as raw entry 500 is an ordinary solved round: `solved` wins, and the
-  // leaderboard entry it earned stands.
-  const capped = roundCapped(server);
+  // ENDED UNSOLVED (the shared `roundEnded`): the player GAVE UP (a flag the server stores),
+  // or the stored raw log holds the cap (#214, derived — the outbox's own length can never
+  // reveal it, since what counts is what was STORED). `solved` wins over both: a solve
+  // accepted as raw entry 500, or one that raced a give-up, is an ordinary solved round.
+  const ended = roundEnded(server);
+  const gaveUp = ended && server?.gaveUp === true;
   // The round is over either way — the difference is what the headline says and whether
   // anything celebrates.
-  const finished = solved || capped;
+  const finished = solved || ended;
+  // Every word on the board is final: the solve's, or a give-up's reveal (which shows every
+  // hole at its secret — `boardHoles` below).
+  const allWordsResolved = (boardComplete || gaveUp) && resolvedHoleIndices.size === holes.length;
+
+  // THE GIVE-UP: the flag at the prompt's end opens the confirmation; its act asks the sync
+  // engine, which flushes what the outbox owes and then stores the give-up. `giveUpHere`
+  // marks a give-up confirmed on THIS device — set before the request, so it is already true
+  // on the render where the server's answer turns the round over — and that one plays the
+  // reveal; one read at mount, or made on another device, lands on the settled result.
+  const [confirmingGiveUp, setConfirmingGiveUp] = useState(false);
+  const [givingUp, setGivingUp] = useState(false);
+  const [giveUpFailed, setGiveUpFailed] = useState(false);
+  const confirmGiveUp = useCallback(() => {
+    if (givingUp) return;
+    setGivingUp(true);
+    giveUpHere.current = true;
+    void giveUpRound(roundKey).then((over) => {
+      setGivingUp(false);
+      setConfirmingGiveUp(false);
+      if (over) return;
+      giveUpHere.current = false;
+      setGiveUpFailed(true);
+    });
+  }, [givingUp, roundKey]);
 
   // The pre-round GATE (2026-08-11; the #216 triggers 2026-08-24; an INVITATION since #269,
   // user-decided 2026-09-16). Two reasons to hold the round back, one tray:
@@ -473,9 +502,12 @@ function Round({
     // refusal because the same ACCOUNT finished the board in another tab or on another
     // device — is history as far as the beats are concerned: the board IS solved, and it is
     // shown solved, but nothing celebrates a finish that already happened somewhere else.
-    // A CAPPED round is never fresh: it ends, it does not finish.
+    // A CAPPED round is never fresh: it ends, it does not finish. A GIVE-UP confirmed on
+    // this device is played — the unfound words revealed in the sentence, then the exit
+    // beats — but celebrates nothing.
     const justFinished = finished && !prevFinished.current;
     const freshSolve = solved && server?.solvedByAppend === true;
+    const freshGiveUp = gaveUp && giveUpHere.current;
     prevFinished.current = finished;
     setRevealEnded(false);
     if (!finished) {
@@ -489,7 +521,7 @@ function Round({
       setDissolved(false);
       return undefined;
     }
-    if (!justFinished || !freshSolve) {
+    if (!justFinished || !(freshSolve || freshGiveUp)) {
       setShowResults(true); // adopted history, or the cap — reveal without waiting
       setAnimateResults(deferResultsAnimation);
       setShowStreakDialog(false);
@@ -497,6 +529,19 @@ function Round({
       setAwaitingWordAnimations(false);
       setPromptExiting(false);
       setDissolved(true); // nothing to replay — the sentence is already gone
+      return undefined;
+    }
+    if (freshGiveUp) {
+      // THE GIVE-UP's beats: the prompt leaves as on a solve, the unfound holes turn into
+      // their secrets (`boardHoles` below), and once every word has settled the keyboard
+      // drops, the sentence dissolves and the result rises. No `solve` event, no streak, no
+      // celebration: nothing was found.
+      say(t(lang, 'srGaveUp'));
+      setPromptExiting(true);
+      setAnimateResults(true);
+      setStreakAdvanced(false);
+      setDissolved(false);
+      setAwaitingWordAnimations(true);
       return undefined;
     }
     // The one analytics beat for "did the player finish a puzzle": fired ONLY on the
@@ -646,6 +691,20 @@ function Round({
     () => shownHolesFor(holes, picked, shownCharge),
     [holes, picked, shownCharge],
   );
+  // THE GIVE-UP's board: every hole the player did not find shows its SECRET — at rank 0, so
+  // the hole plays its own word change into it and reports resolved, which is what the exit
+  // beats wait on — dressed `revealed`: the held chip with no exponent, never the cobalt of
+  // a word found.
+  const boardHoles = useMemo<RuntimeHole[]>(
+    () =>
+      gaveUp
+        ? holes.map((h, i) =>
+            h.rank === 0 ? h : { ...h, word: puzzleHoles[i].secret.word, rank: 0, revealed: true },
+          )
+        : shownHoles,
+    [gaveUp, holes, puzzleHoles, shownHoles],
+  );
+
   const pickWord = useCallback(
     (index: number, stop: HistoryStop) => {
       const at = holes[index]?.rank;
@@ -681,6 +740,11 @@ function Round({
   // (A mask picked clears the draft, and letters and recall are refused while it stands,
   // so a ghost always stands in an empty prompt.)
   const revealUp = decoding !== null || ghost !== null;
+  // The GIVE-UP's flag stands once the round holds a guess, while it can still be played:
+  // never on the gate, never over a reveal standing or decoding, never once the round is
+  // over or leaving.
+  const canGiveUp =
+    guessCount > 0 && !finished && !gateOpen && !revealUp && !promptExiting && !showResults;
   // BACK: the mask un-picked, the hole's own word back, the keyboard back under the caret,
   // on an empty prompt.
   const unpickMask = useCallback(() => {
@@ -739,8 +803,16 @@ function Round({
         number: holeNumbers[holeIndex],
         prefix: h.prefix,
         suffix: h.suffix,
+        // Found, or only revealed (a round that ended unsolved): the page dresses them apart.
+        found: holes[holeIndex].rank === 0,
       })),
-    [puzzleHoles, holeNumbers],
+    [puzzleHoles, holeNumbers, holes],
+  );
+  // Where the words the player did NOT find sit in the sentence: the dissolve keeps their
+  // revealed dress while it erodes them.
+  const revealedPositions = useMemo(
+    () => solvedHoles.filter((h) => !h.found).map((h) => h.pos),
+    [solvedHoles],
   );
   const historyModel = useMemo(() => {
     if (historyHole === null) return null;
@@ -758,8 +830,8 @@ function Round({
       // The given words as the BOARD shows them: they land with the release beat, like the
       // hole's own swap, so the wheel never names a word the sentence has not caught up to.
       given: shownCharge[historyHole]?.given,
-      // A finished round (solved or capped) shows its answer on the result page, so the
-      // words modal masks nothing and names the secret, found or not.
+      // A finished round (solved, given up or capped) shows its answer on the result page,
+      // so the words modal masks nothing and names the secret, found or not.
       over: finished,
     });
   }, [historyHole, holes, puzzleHoles, ranks, history, shownCharge, finished]);
@@ -769,8 +841,8 @@ function Round({
   // A COMPLETED hole (rank 0) opens the words MODAL — there is nothing to swap in — whether
   // or not the rest of the sentence is done (user-decided 2026-09-01); an open hole opens
   // the WHEEL, and only the wheel veils the word beneath it.
-  // A FINISHED round opens the modal for every hole, found or not (PR-272 review): a
-  // capped round's unfound holes keep a rank, but the wheel measures the board's own
+  // A FINISHED round opens the modal for every hole, found or not (PR-272 review): an
+  // unfinished round's unfound holes keep a rank, but the wheel measures the board's own
   // `[data-hole-explore] .hole-word-wrap` — which the solved page's secrets do not wear —
   // and a pick has nothing to swap into a page that shows the answer already.
   const wheelOpen = historyHole !== null && holes[historyHole]?.rank !== 0 && !finished;
@@ -1057,11 +1129,11 @@ function Round({
           trajectory={trajectory}
           puzzleRef={puzzleRef}
           lang={lang}
-          // A capped round has no solve to tick and no count to name: it ends at `∞`
-          // (#214), with the sentence, its answer and the credit shown like any other
-          // finished round.
-          solvedAt={capped ? undefined : solvedAt}
-          capped={capped}
+          // A round that ENDED UNSOLVED (given up, or capped) has no solve to tick and no
+          // count to name: it ends at `∞` (#214), with the sentence, its answer and the
+          // credit shown like any other finished round.
+          solvedAt={ended ? undefined : solvedAt}
+          unfinished={ended}
           source={source}
           words={words}
           holes={solvedHoles}
@@ -1097,11 +1169,16 @@ function Round({
                 <CellDigits value={guessCount - (decoding !== null ? 1 : 0)} />
               </div>
               {resultUp ? (
-                <DissolvePhrase words={words} puzzleHoles={puzzleHoles} onDone={finishDissolve} />
+                <DissolvePhrase
+                  words={words}
+                  puzzleHoles={puzzleHoles}
+                  revealedAt={revealedPositions}
+                  onDone={finishDissolve}
+                />
               ) : (
                 <Phrase
                   words={words}
-                  holes={shownHoles}
+                  holes={boardHoles}
                   puzzleHoles={puzzleHoles}
                   hits={hits}
                   onHitDone={removeHit}
@@ -1143,10 +1220,29 @@ function Round({
                   // way — the prompt arrives with the keyboard, on PLAY. And the RETIRING
                   // prompt is inactive too, so its field is never a focusable control inside
                   // the `aria-hidden` box below (#267 gave it one to focus).
-                  active={!showResults && historyHole === null && !gateOpen && !promptExiting}
+                  active={
+                    !showResults &&
+                    historyHole === null &&
+                    !gateOpen &&
+                    !promptExiting &&
+                    !confirmingGiveUp
+                  }
                 />
                 <p className="hint">{feedback || ' '}</p>
               </div>
+              {/* THE GIVE-UP's flag, at the prompt row's right end. Its column is held for
+                  the whole round, so neither its arrival (the first guess) nor its leaving
+                  moves the prompt: a long guess crops its own head before reaching it. */}
+              <button
+                type="button"
+                className={`give-up-btn${canGiveUp ? '' : ' off'}`}
+                aria-label={t(lang, 'giveUp')}
+                aria-hidden={!canGiveUp || undefined}
+                disabled={!canGiveUp}
+                onClick={() => setConfirmingGiveUp(true)}
+              >
+                <FlagIcon aria-hidden="true" focusable="false" />
+              </button>
             </div>
           </div>
 
@@ -1226,6 +1322,26 @@ function Round({
           title={t(lang, 'failedAccount')}
           note={t(lang, 'failedAccountNote')}
           onClose={() => setDeployFailed(false)}
+        />
+      )}
+
+      {confirmingGiveUp && (
+        <ConfirmScreen
+          lang={lang}
+          title={t(lang, 'giveUpTitle')}
+          note={t(lang, 'giveUpNote')}
+          action={t(lang, 'giveUpAction')}
+          busy={givingUp}
+          onConfirm={confirmGiveUp}
+          onClose={() => setConfirmingGiveUp(false)}
+        />
+      )}
+      {giveUpFailed && (
+        <ErrorScreen
+          lang={lang}
+          title={t(lang, 'failedGiveUp')}
+          note={t(lang, 'failedGiveUpNote')}
+          onClose={() => setGiveUpFailed(false)}
         />
       )}
 

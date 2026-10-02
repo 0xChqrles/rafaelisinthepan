@@ -28,6 +28,7 @@ import {
 import Avatar from '../components/Avatar';
 import CrownIcon from '../assets/icons/board.svg?react';
 import ConfirmScreen from '../components/ConfirmScreen';
+import InfinityGlyph from '../components/InfinityGlyph';
 import GroupCreate from '../components/GroupCreate';
 import GroupScreen from '../components/GroupScreen';
 import LoadError from '../components/LoadError';
@@ -759,10 +760,13 @@ function Face({ player }: { player: BoardPlayer }) {
   );
 }
 
+// A member mid-round — or done with nothing recorded: a round that ENDED UNSOLVED (`over`:
+// given up, or capped) prints `∞` where the tries would be, its % kept quiet, after the live
+// rows (the shared `orderPlaying`).
 function PlayingRowItem({ row, me, index }: { row: PlayingRow; me: boolean; index: number }) {
   return (
     <li
-      className={`board-row playing${me ? ' me' : ''}`}
+      className={`board-row playing${row.over ? ' over' : ''}${me ? ' me' : ''}`}
       style={{ '--i': index, '--play-heat': progressHeatColor(row.progress) } as CSSProperties}
       aria-current={me || undefined}
     >
@@ -770,7 +774,16 @@ function PlayingRowItem({ row, me, index }: { row: PlayingRow; me: boolean; inde
       <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
       <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
       <span className="board-progress">{Math.round(row.progress)}%</span>
-      <span className="board-score">{row.tries}</span>
+      <span className="board-score">
+        {row.over ? (
+          <>
+            <InfinityGlyph className="board-inf" />
+            <span className="sr-only">∞</span>
+          </>
+        ) : (
+          row.tries
+        )}
+      </span>
     </li>
   );
 }

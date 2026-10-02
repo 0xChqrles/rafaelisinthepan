@@ -194,6 +194,7 @@ interface RoundResponse {
   createdAt: string;
   progress?: number;
   solved?: boolean;
+  gaveUp?: boolean;
   credited?: boolean;
   error?: string;
 }
@@ -791,6 +792,122 @@ describe('the derived summary (#203)', () => {
     const read = await handler(event());
     expect(read.statusCode).toBe(200);
     expect(parsed(read).guesses).toEqual(['mer']);
+  });
+});
+
+// CONTRACT: THE GIVE-UP. `{token, puzzle, giveUp: true}` ends a round unsolved by its own
+// small write — no guesses, no challenge, no slice, no pacing — and answers the full stored
+// state. It earns NOTHING (no score row, no streak day), a solve that landed first wins,
+// every later append is refused (409 `round_given_up`, the state carried), and a republish's
+// restart clears it.
+describe('the give-up', () => {
+  const key = { date: ACTIVE_DATE, lang: 'fr' };
+  const giveUp = (extra: Record<string, unknown> = {}) =>
+    event({ body: body({ giveUp: true, ...extra }) });
+
+  async function played(handler: ReturnType<typeof makeHandler>, guesses = ['mer']) {
+    expect((await handler(event({ body: body({ guesses }) }))).statusCode).toBe(200);
+  }
+
+  it('stores gaveUp and answers the full state — and earns nothing', async () => {
+    const handler = makeHandler();
+    await played(handler);
+    // No pacing: the give-up follows the append at once.
+    const response = await handler(giveUp());
+    expect(response.statusCode).toBe(200);
+    const answer = parsed(response);
+    expect(answer.gaveUp).toBe(true);
+    expect(answer.guesses).toEqual(['mer']);
+    expect(answer.progress).toBeGreaterThan(0);
+    expect(answer.solved).toBeUndefined();
+    expect(answer.credited).toBeUndefined();
+    // A later read says the same: the flag is STORED.
+    expect(parsed(await handler(event())).gaveUp).toBe(true);
+    // No score row, no streak day.
+    expect(await handler.scoreStore.list(key)).toEqual([]);
+    await expect(handler.historyStore.solvedDays(ME.accountId, 'fr')).resolves.toEqual([]);
+  });
+
+  it('is idempotent: a second give-up answers the same state', async () => {
+    const handler = makeHandler();
+    await played(handler);
+    const first = parsed(await handler(giveUp()));
+    const second = await handler(giveUp());
+    expect(second.statusCode).toBe(200);
+    expect(parsed(second)).toEqual(first);
+  });
+
+  it('REFUSES every later append as round_given_up, carrying the stored state, storing nothing', async () => {
+    const handler = makeHandler();
+    await played(handler);
+    await handler(giveUp());
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+
+    // The answer typed in after being shown the sentence is the case that matters.
+    const refused = await handler(event({ body: body({ guesses: ['phare', 'nuit'] }) }));
+    expect(refused.statusCode).toBe(409);
+    expect(parsed(refused).error).toBe('round_given_up');
+    expect(parsed(refused).guesses).toEqual(['mer']);
+    expect(parsed(refused).gaveUp).toBe(true);
+    expect(parsed(await handler(event())).guesses).toEqual(['mer']);
+    expect(await handler.scoreStore.list(key)).toEqual([]);
+  });
+
+  it('answers round_solved over a SOLVED round — the solve wins, nothing changes', async () => {
+    const handler = makeHandler();
+    await played(handler, ['phare', 'nuit']);
+    const response = await handler(giveUp());
+    expect(response.statusCode).toBe(409);
+    expect(parsed(response).error).toBe('round_solved');
+    expect(parsed(response).solved).toBe(true);
+    expect(parsed(response).gaveUp).toBeUndefined();
+    // The recorded score stands.
+    await expect(handler.scoreStore.list(key)).resolves.toHaveLength(1);
+  });
+
+  it('answers 404 when this puzzle has no round to give up on', async () => {
+    const handler = makeHandler();
+    expect((await handler(giveUp())).statusCode).toBe(404);
+    // A record of the RETIRED puzzle is none for this one either.
+    await played(handler);
+    handler.republish(CORRECTED);
+    expect((await handler(giveUp({ puzzle: CORRECTED_TAG }))).statusCode).toBe(404);
+  });
+
+  it.each([
+    ['beside guesses', { guesses: ['mer'] }],
+    ['beside a challenge', { turnstileToken: 'tok' }],
+    ['as anything but true', { giveUp: false }],
+  ])('is a protocol violation %s (400)', async (_name, extra) => {
+    const handler = makeHandler();
+    await played(handler);
+    const response = await handler(event({ body: { token: TOKEN, puzzle: PUZZLE, giveUp: true, ...extra } }));
+    expect(response.statusCode).toBe(400);
+    // Nothing was given up, nothing appended.
+    const read = parsed(await handler(event()));
+    expect(read.gaveUp).toBeUndefined();
+    expect(read.guesses).toEqual(['mer']);
+  });
+
+  it('needs no slice: it reads no puzzle at all', async () => {
+    const handler = makeHandler();
+    await played(handler);
+    handler.republish(null);
+    expect((await handler(giveUp())).statusCode).toBe(200);
+  });
+
+  it('a RESTARTED round loses the retired puzzle\'s give-up rather than staying frozen', async () => {
+    const handler = makeHandler();
+    await played(handler);
+    await handler(giveUp());
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+    handler.republish(CORRECTED);
+    const restarted = await handler(
+      event({ body: { token: TOKEN, puzzle: CORRECTED_TAG, guesses: ['mer'], turnstileToken: 'tok' } }),
+    );
+    expect(restarted.statusCode).toBe(200);
+    expect(parsed(restarted).gaveUp).toBeUndefined();
+    expect(parsed(restarted).guesses).toEqual(['mer']);
   });
 });
 

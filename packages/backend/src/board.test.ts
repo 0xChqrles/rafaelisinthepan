@@ -542,8 +542,8 @@ describe('board in-progress rows (#206)', () => {
     const board = JSON.parse((await handler(post(QUERY, { token: caller.token, group: GROUP }))).body) as Board;
     expect(board.rows.map((row) => row.publicId)).toEqual([finished]);
     expect(board.playing).toEqual([
-      { publicId: midRound, tries: 2, progress: 62.5, name: 'Zoe', avatar: 'A'.repeat(19) },
-      { publicId: me, tries: 1, progress: 10, name: '', avatar: null },
+      { publicId: midRound, tries: 2, progress: 62.5, over: false, name: 'Zoe', avatar: 'A'.repeat(19) },
+      { publicId: me, tries: 1, progress: 10, over: false, name: '', avatar: null },
     ]);
     // A playing friend is never ALSO "not played yet".
     expect(board.waiting.map((row) => row.publicId)).toEqual([notYet]);
@@ -592,23 +592,29 @@ describe('board in-progress rows (#206)', () => {
     expect(board.waiting.map((row) => row.publicId)).toEqual([friend]);
   });
 
-  // ACCEPTED (user-decided 2026-08-26, on review; the fourth state is #224): what the
-  // route subtracts is the players the population RANKS, which is not the players who are
-  // DONE. A round can END with no score row three ways — capped at ROUND_GUESS_CAP (#214),
-  // solved past the 22:00 flip (#211's `onTime`), or solved with its row refused by the
-  // #169 IP allowance — and all three keep their derived summary on the round item, so the
-  // board carries them under IN PROGRESS for the rest of the day. Pinned because it looks
-  // like a bug and is not one: the numbers on the row are the player's real ones, where
-  // the cheap fix would file a 500-guess round or an actual solve under "not played yet".
-  it('keeps a round that ENDED with no recorded score in `playing` (#224)', async () => {
+  // What the route subtracts is the players the population RANKS, which is not the players
+  // who are DONE. A round can END with no score row four ways — given up, capped at
+  // ROUND_GUESS_CAP (#214), solved past the 22:00 flip (#211's `onTime`), or solved with its
+  // row refused by the #169 IP allowance — and all four keep their derived summary on the
+  // round item, so the board carries them under IN PROGRESS. The two that ended UNSOLVED
+  // are marked `over` (drawn `∞`) and ordered after every live row; the two unranked solves
+  // stay as they are — ACCEPTED: the numbers on the row are the player's real ones, where
+  // the cheap fix would file an actual solve under "not played yet".
+  it('keeps a round that ENDED with no recorded score in `playing`, the unsolved ones `over` and last', async () => {
     const me = generatePublicId();
     const solvedUnranked = generatePublicId();
     const capped = generatePublicId();
+    const gaveUp = generatePublicId();
+    const live = generatePublicId();
     const rounds = memoryRoundStore();
     const { handler, groups, devices } = await makeHandler([], { store: artifactStore, rounds });
-    for (const id of [solvedUnranked, capped]) {
+    for (const id of [solvedUnranked, capped, gaveUp, live]) {
       await enroll(groups, me, id);
     }
+    // GAVE UP ahead of the live member: still ordered after them.
+    await seedRound(rounds, gaveUp, ['mer', 'lune'], 80);
+    await rounds.giveUp({ date: DATE, lang: 'fr', publicId: gaveUp, puzzle: ARTIFACT.revision });
+    await seedRound(rounds, live, ['quai'], 10);
     // SOLVED, but the population holds no row for them — the IP allowance refused it, or
     // the solve landed past the flip. The round route records no row for either, silently by design.
     await seedRound(rounds, solvedUnranked, ['phare', 'nuit'], 100, { solved: true });
@@ -620,9 +626,11 @@ describe('board in-progress rows (#206)', () => {
 
     const board = JSON.parse((await handler(post(QUERY, { token: caller.token, group: GROUP }))).body) as Board;
     expect(board.rows).toEqual([]);
-    expect(board.playing.map((row) => [row.publicId, row.progress, row.tries])).toEqual([
-      [solvedUnranked, 100, 2],
-      [capped, 25, ROUND_GUESS_CAP],
+    expect(board.playing.map((row) => [row.publicId, row.progress, row.tries, row.over])).toEqual([
+      [solvedUnranked, 100, 2, false],
+      [live, 10, 1, false],
+      [gaveUp, 80, 2, true],
+      [capped, 25, ROUND_GUESS_CAP, true],
     ]);
     // And neither is ever ALSO "not played yet" — the one claim this section refuses.
     expect(board.waiting).toEqual([]);

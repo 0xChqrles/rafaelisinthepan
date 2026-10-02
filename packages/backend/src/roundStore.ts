@@ -29,6 +29,12 @@ export interface RoundState {
   // is also what makes it usable as the append condition's freeze.
   progress?: number;
   solved?: boolean;
+  // The player GAVE UP: the round ended unsolved by its own small write (`giveUp`), and
+  // the sentence is shown. Write-only-true like `solved`, for the same reason, and the
+  // append condition's second freeze; only a republish's RESTART removes it (the corrected
+  // puzzle is a fresh round). A row holding both is a SOLVED round — solved wins
+  // (`roundEnded`, shared): two devices can race a solve against a give-up.
+  gaveUp?: boolean;
 }
 
 // What one append did:
@@ -36,8 +42,10 @@ export interface RoundState {
 //   too_fast  — the player wrote less than ROUND_WRITE_MIN_MS ago; nothing changed;
 //   round_full — the batch would push the log past ROUND_GUESS_CAP; nothing changed;
 //   round_solved — the round is already SOLVED and accepts no further appends (#203);
-//                  nothing changed.
-type RoundAppendOutcome = 'appended' | 'too_fast' | 'round_full' | 'round_solved';
+//                  nothing changed;
+//   round_given_up — the player GAVE UP on this round, which accepts no further appends
+//                    either; nothing changed.
+type RoundAppendOutcome = 'appended' | 'too_fast' | 'round_full' | 'round_solved' | 'round_given_up';
 
 export interface RoundAppendInput extends RoundKey {
   publicId: string;
@@ -74,6 +82,22 @@ export interface RoundSettleInput extends RoundKey {
   solved: boolean;
 }
 
+// THE GIVE-UP: the player ends the round unsolved and is shown the sentence. Its own small
+// write on a record that already exists for this puzzle (the client only offers it once a
+// guess is stored, and flushes what it still owes first), never a log entry: the log stays
+// the player's real tries.
+export interface RoundGiveUpInput extends RoundKey {
+  publicId: string;
+  puzzle: string;
+}
+
+// What a give-up did:
+//   given_up     — the round is (now, or already) given up; idempotent;
+//   round_solved — the round is SOLVED, and a solve wins: nothing changed;
+//   not_found    — no record for this puzzle (none at all, or a retired one): nothing to
+//                  give up on; nothing changed.
+type RoundGiveUpOutcome = 'given_up' | 'round_solved' | 'not_found';
+
 // What a group board reads of one stored round (#206): the RAW ordered log (the
 // route dedups it against the day's full artifact for the exact try count), the puzzle
 // tag that says which published revision the log answers, and the derived summary the
@@ -85,6 +109,9 @@ export interface RoundBoardRow {
   puzzle: string;
   guesses: string[];
   progress: number;
+  // What says the round ENDED UNSOLVED (`roundEnded`): the board marks such a row `over`.
+  solved: boolean;
+  gaveUp: boolean;
 }
 
 // One month of one language for ONE player — the private calendar read (#211). The month
@@ -134,9 +161,9 @@ export interface RoundStore {
     opts?: { consistent?: boolean },
   ): Promise<RoundState | null>;
   // Append to the log (creating the item on the first write) under EVERY bound in one
-  // atomic decision — including the #203 freeze, since a SOLVED round accepts no further
-  // appends: a refused append changes nothing and answers with the stored state, which is
-  // already the truth the client reconciles against.
+  // atomic decision — including the two freezes, since a SOLVED (#203) or GIVEN-UP round
+  // accepts no further appends: a refused append changes nothing and answers with the
+  // stored state, which is already the truth the client reconciles against.
   append(input: RoundAppendInput): Promise<{ outcome: RoundAppendOutcome; state: RoundState }>;
   // Correct the derived summary against the log the append actually produced (#203). Only
   // ever called when the two disagree, and it must be RETRIED rather than fired and
@@ -169,6 +196,10 @@ export interface RoundStore {
   // thing traded for the derived one. The append's job is to store guesses; the summary
   // rides along.
   settle(input: RoundSettleInput): Promise<boolean>;
+  // THE GIVE-UP: set `gaveUp` on the record of THIS puzzle, unless it is solved — ONE
+  // conditional write, so a give-up and a solve cannot both claim the round (solved wins).
+  // It answers with the full stored state of the puzzle asked about, like every round answer.
+  giveUp(input: RoundGiveUpInput): Promise<{ outcome: RoundGiveUpOutcome; state: RoundState }>;
 }
 
 // A round key is only (date, lang), so RE-PUBLISHING keeps the key while changing the

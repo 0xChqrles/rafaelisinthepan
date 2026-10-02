@@ -48,6 +48,9 @@ export interface RoundServer {
   // yet". It is the authority for the round being over: the local board flips a beat
   // earlier, while the solving append is still in flight.
   solved: boolean;
+  // Has the server stored a GIVE-UP for this round? Only ever written true, like `solved`,
+  // and `solved` wins when both are (`roundEnded`, shared).
+  gaveUp: boolean;
   // Was this solve CONFIRMED by a batch this device just sent, rather than learned from the
   // mount read or a `round_solved` refusal? A solve this device played earns the normal
   // beats; an adopted one is history — shown, never celebrated.
@@ -81,6 +84,7 @@ export function roundLoadFor(load: RoundLoad | undefined, puzzle: string): Round
 export const EMPTY_ROUND_SERVER: RoundServer = {
   guesses: [],
   solved: false,
+  gaveUp: false,
   solvedByAppend: false,
   credited: false,
 };

@@ -162,9 +162,9 @@ describe('buildHistory', () => {
     ]);
   });
 
-  it('a round that is OVER unsolved (the cap) masks nothing and names the secret; the hole stays unsolved', () => {
-    // The capped round's result page already shows the answer, so its words grid has
-    // nothing left to hide: every given hint is named, and the headline is the secret.
+  it('a round that is OVER unsolved (given up, or capped) masks nothing and names the secret; the hole stays unsolved', () => {
+    // A round that ended unsolved shows the answer on its result page, so its words grid
+    // has nothing left to hide: every given hint is named, and the headline is the secret.
     const over = buildHistory({
       rankMap: RANKS, tried: ['branche'], hole: hole(40), startRank: 87, secretWord: 'forêt',
       given: [untaken(3)], over: true,
