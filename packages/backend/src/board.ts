@@ -121,8 +121,8 @@ type Live = (publicId: string) => boolean;
 
 // Dress ranked rows with the public profile a board renders. One read per DISTINCT
 // player (a row and the own window can overlap populations, never within themselves),
-// in parallel — the response is bounded (top 50 + a 5-row window, or GROUP_MEMBERS_MAX
-// rows).
+// in parallel — the response is bounded (top 50 + a 5-row window, GROUP_MEMBERS_MAX
+// rows, or the live read's union of at most GROUPS_MAX groups).
 // Per-id `catch`, never `Promise.all`'s fail-fast: one throttled GetItem must not 500 a
 // board whose every score row and edge already answered.
 async function dressRows(
@@ -435,7 +435,7 @@ async function readStandings(
 // and the solved screen's group boards read this ONE answer, at guess cadence — so it is the
 // day board's own pieces over the UNION of the members, once: one exact-key score batch, one
 // round batch, ONE artifact read (the revision-keyed one, puzzleReads.ts), one profile read
-// per member who has a row. Nothing is ranked here: a rank belongs to ONE group, and the
+// per member of the union. Nothing is ranked here: a rank belongs to ONE group, and the
 // client ranks each group with the shared `rankBoard` over the rows its member list names.
 //
 // Members-only BY CONSTRUCTION: the groups are the caller's own memberships, each kept only
@@ -461,9 +461,11 @@ async function readLive(deps: BoardHandlerDeps, key: ScoreKey, publicId: string)
   // `rankBoard` for a deterministic row order only (fewest tries, then publicId) — its rank
   // is dropped: over a union of groups it would be a claim no group makes.
   const finished = rankBoard(scores);
-  const { dress, live } = await dressRows(deps.profiles, finished, playing);
+  // EVERY member is read, not only the ones with a row: a group board cut from these lists
+  // draws its members who have not played yet, and a deleted account must not be one of
+  // them (#204) — the day board reads its `waiting` members for the same reason.
+  const { dress, live } = await dressRows(deps.profiles, union.map((id) => ({ publicId: id })));
   return {
-    // A member whose account is gone leaves the lists too, wherever a read learned it (#204).
     groups: held.map((group) => ({ ...group, members: group.members.filter(live) })),
     rows: finished
       .filter((row) => live(row.publicId))

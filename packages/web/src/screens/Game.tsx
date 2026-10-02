@@ -1196,7 +1196,9 @@ function Round({
               (bottom) and centers its content, so the sentence + prompt sit in the middle.
               It also anchors the score watermark, so the big try count stays centered
               behind THIS content rather than the full-height .game. */}
-          <div className={`play${showResults ? ' play-finished' : ''}`}>
+          {/* `play-race`: today's sentence keeps the race line's band clear under the prompt
+              (index.css `.play-race`) for the whole round, so the line covers nothing. */}
+          <div className={`play${isActiveDay ? ' play-race' : ''}${showResults ? ' play-finished' : ''}`}>
             {/* The sentence, through every phase that owns it: the live holes/hits while
                 playing, the fully resolved sentence through the solving beats — and then
                 its EXIT: once the keyboard has dropped (`resultUp`), the live Phrase hands

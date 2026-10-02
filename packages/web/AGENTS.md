@@ -459,8 +459,10 @@ These are decided and verified against the code. Treat them as load-bearing.
   comes back; it holds the cost rule (one read per 10 s, one flight, a trailing call) and
   fails SILENTLY, the last answer standing. The line RETIRES with the prompt (the solving
   submit, a give-up) and stays mounted, invisible, until the result takes the column. It
-  lives in the gap above the tray: on a short viewport with a long sentence it lies over the
-  prompt's hint row (empty unless a word was just refused).
+  lies in the column's gap above the tray plus the play area's RACE BAND (`.play-race`):
+  on today's sentence the play area keeps the line's footprint clear under the prompt from
+  the first frame, line or no line, so the line never covers the hint row (a refused word's
+  feedback) nor takes a tap meant for it, and nothing moves when it arrives or leaves.
 - **THE PALETTE IS THREE INDEPENDENT AXES (user-decided 2026-08-17): weird/calm +
   hole/solve + accent — in STAMP-INK tones** (retuned the same day against the user's
   /inspiration set — vintage offset stamps, riso posters — after the first calm cut went

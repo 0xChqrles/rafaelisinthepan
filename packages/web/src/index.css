@@ -649,7 +649,14 @@ input {
   display: flex;
   flex-direction: column;
   align-items: start;
-  gap: clamp(16px, 3vh, 32px);
+  /* The column's gap is a token: the play area's race band (`.play-race`) is measured
+     against it. */
+  --game-gap: clamp(16px, 3vh, 32px);
+  gap: var(--game-gap);
+  /* The race line's footprint above the tray (`.race-line`): its lift off the tray's top
+     edge and its own height (a 20px mark + 2px padding each side). */
+  --race-lift: 8px;
+  --race-h: 24px;
   /* The keyboard sits at the tray's bottom; .app's 24px all-round padding then leaves an
      even 24px gap to the screen bottom, matching the page's side inset (the keyboard is
      centered/narrow on desktop, so the frame inset is the meaningful margin). Mobile
@@ -678,6 +685,15 @@ input {
   justify-content: center;
   align-items: start;
   gap: clamp(24px, 5vh, 48px);
+}
+/* THE RACE BAND: on today's sentence — the only round the race line can show on — the play
+   area keeps the line's footprint clear at its bottom, beyond what the column's gap already
+   leaves, from the first frame and whether or not the line ever arrives. The line then never
+   lies over the prompt's hint row (where a refused word's feedback prints) nor takes a tap
+   meant for it, and its arrival and leaving move nothing: the band is the round's, not the
+   line's. Zero on a tall desktop, whose gap already covers it. */
+.play.play-race {
+  padding-bottom: max(0px, var(--race-lift) + var(--race-h) - var(--game-gap));
 }
 
 /* The game's watermark anchor: a full-width relative wrapper around ONLY the sentence,
@@ -806,14 +822,16 @@ input {
 /* THE RACE LINE (`components/RaceLine`): the player's groups around them, ONE line laid on
    the tray's TOP EDGE — absolutely, so its arrival (the first answer lands after the round is
    on screen) and its leaving move nothing in the column; the sentence's centring never sees
-   it. It sits in the gap the column already keeps above the tray and the play area's own
-   bottom slack. ONE line, never wrapping: at most three entries of a mark and two short
-   numbers, which fit the narrowest phone's column. The game surface's dress: the pixel face
+   it. It sits in the column's gap above the tray plus the play area's race band
+   (`.play-race`), which together hold exactly its footprint. ONE line, never wrapping: at
+   most three entries of a mark and two short numbers, which fit the narrowest phone's
+   column. The game surface's dress: the pixel face
    for the numbers, the % in the heat ramp's ink (the board's playing rows), tries muted, a
    finished member's count in the solve cobalt. */
 .race-line {
   position: absolute;
-  bottom: calc(100% + 8px);
+  bottom: calc(100% + var(--race-lift));
+  height: var(--race-h);
   left: 50%;
   translate: -50% 0;
   display: flex;
@@ -4064,7 +4082,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      and overflowing. */
   .game {
     padding-top: 60px;
-    gap: 16px;
+    --game-gap: 16px;
     align-items: stretch;
     /* Mobile keyboard height (see .kb-key below): 3 rows of clamp(44,6.8vh,52) + gaps. */
     --kb-h: calc(3 * clamp(44px, 6.8vh, 52px) + 2 * 5px);
@@ -4164,7 +4182,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    narrow phone is untouched. */
 @media (max-height: 600px) {
   .game {
-    gap: 8px;
+    --game-gap: 8px;
   }
   .play {
     gap: 14px;

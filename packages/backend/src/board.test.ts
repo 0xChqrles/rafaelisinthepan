@@ -868,7 +868,8 @@ describe('the live read: all my groups, merged', () => {
   // and not as a member of a group the client would cut rows by.
   it('drops a member whose account is gone from rows, playing and the member lists', async () => {
     const me = generatePublicId();
-    const gone = { ranked: generatePublicId(), playing: generatePublicId() };
+    // `idle` holds no row at all today: only the member list could still name them.
+    const gone = { ranked: generatePublicId(), playing: generatePublicId(), idle: generatePublicId() };
     const kept = generatePublicId();
     const rounds = memoryRoundStore();
     const { handler, groups, devices } = await makeHandler(
@@ -878,14 +879,15 @@ describe('the live read: all my groups, merged', () => {
       ],
       { store: makeArtifactStore(), rounds, gone: Object.values(gone) },
     );
-    await group(groups, A, 'Famille', me, gone.ranked, gone.playing, kept);
+    const idle = generatePublicId(); // a LIVE member with no row stays in the list
+    await group(groups, A, 'Famille', me, gone.ranked, gone.playing, gone.idle, kept, idle);
     await seedRound(rounds, gone.playing, ['mer'], 50);
     const caller = await callerOn(devices, me);
 
     const board = await live(handler, caller.token);
     expect(board.rows.map((row) => row.publicId)).toEqual([kept]);
     expect(board.playing).toEqual([]);
-    expect([...board.groups[0].members].sort()).toEqual([me, kept].sort());
+    expect([...board.groups[0].members].sort()).toEqual([me, kept, idle].sort());
   });
 
   it('refuses a malformed live body, and answers only an authenticated caller', async () => {

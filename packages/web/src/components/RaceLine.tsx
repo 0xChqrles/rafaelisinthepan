@@ -11,7 +11,9 @@
 // ORDER (`game/race.ts`), and the names stay on the board — the whole line is the tap onto it.
 //
 // It is an OVERLAY, laid on the tray's top edge rather than in the column: its arrival (the
-// first answer lands after the round is already on screen) and its leaving move nothing.
+// first answer lands after the round is already on screen) and its leaving move nothing. The
+// room it lies in is the play area's race band (index.css `.play-race`), held for the whole
+// round on today's sentence, so it never lies over the prompt.
 import type { CSSProperties } from 'react';
 import { anonName, defaultAvatar, progressHeatColor } from '@whippin/shared';
 import Avatar from './Avatar';

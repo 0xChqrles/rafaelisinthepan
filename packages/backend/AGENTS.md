@@ -288,9 +288,10 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   period, no standing, else 400) answers `readLive` — `listMine`, each group's member list
   (a membership whose list no longer names the caller is dropped), then the day face's own
   pieces over the deduplicated UNION, once: the score `getMany`, `loadPlaying` (one artifact
-  read), the subtraction and `orderPlaying`, one `dressRows` over the rows and players (a
-  GONE account leaves the rows, the players and the member lists); no rank (`rankBoard` only
-  orders the rows); a caller in no group answers empty before any other read.
+  read), the subtraction and `orderPlaying`, one `dressRows` over the whole union (a GONE
+  account leaves the rows, the players and the member lists — a member with no row too); no
+  rank (`rankBoard` only orders the rows); a caller in no group answers empty before any
+  other read.
   `standing: true` (no group, no period) answers the caller's standings — every group's member list, ONE exact-key
   batch over the union for the day, `standingIn` per group; otherwise `group` is required
   (`GROUP_ID_PATTERN`, else 400), `period` optional (`isBoardPeriod`, else 400), and the

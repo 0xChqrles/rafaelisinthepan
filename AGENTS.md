@@ -744,7 +744,7 @@ The live routes then share:
   ranks each group itself with `rankBoard` over the rows its member list names), `playing` =
   the day board's own section over the union (`over` included, `orderPlaying`'s order). The
   day board's pieces, read ONCE per call — one score batch, one round batch, ONE artifact
-  read, one profile per member with a row; members-only by construction (the caller's own
+  read, one profile per member; members-only by construction (the caller's own
   memberships, each kept only while its member list names the caller); a gone account dropped
   from rows, playing and the member lists; a caller in no group answers empty with no
   artifact read. Date-addressed (no bonus). **Its consumers read ONE client module,
