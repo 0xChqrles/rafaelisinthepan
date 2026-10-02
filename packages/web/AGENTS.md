@@ -114,6 +114,11 @@
       components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows);
                               the tracer + the assigned identity are @whippin/shared's since 2026-08-20
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
+      linkPreviews.ts         what a shared link unfurls as: the home card, and the tutorial's list
+                              and every ready level, each BUILT as a page of its own (vite.config.ts
+                              `link-previews`), served under its route by infra's SPA fallback
+      assets/previews/        those cards, 1200×630 PNGs — the home, a list and a level per level ×
+                              language (committed artifacts, emitted hashed)
       timeout.ts              a fetch deadline as an AbortSignal — the ONE spelling, because
                               `AbortSignal.timeout()` is above the browser floor and throws
                               BEFORE the fetch (it took the #216 bootstrap out on iOS 15)
@@ -3723,6 +3728,29 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `share {method:'native'|'clipboard'}` — `SolvedScreen` success paths; `tutorial
   {action:'start'|'finish'|'skip'}` — invite accept / the ending's PLAY / skip
   (fast-forward or invite SKIP). Plus automatic pageviews.
+- **Link previews: a page of its own for each tutorial page.** A chat app reads a link's
+  preview off the page's HTML and runs no JavaScript, so a page with its own card is BUILT as
+  one. `src/linkPreviews.ts` names them — HOME (every route with no page at or above it), the
+  tutorial's LIST per language and every level READY in a language — the tutorial's words
+  taken from the app's own strings (a level's title, what it is about, `levelOf`, its
+  duration), sentence-cased; HOME keeps the site's own sentence. `index.html` carries one
+  `<!-- link-preview -->` slot: the build's `link-previews` plugin (`vite.config.ts`) fills it
+  with HOME's block and writes the same shell once more per page (`fr/learn/2/index.html`), its
+  own block and `<html lang>`; infra's SPA fallback serves a route the NEAREST page the build
+  gave it (so `/en/learn/3`, not ready in English, unfurls as the list it lands on). The
+  plugin loads `linkPreviews.ts` THROUGH Vite (`ssrLoadModule`), because a config file cannot
+  import `@whippin/shared`'s TS source. `<title>` stays `Whippin AI` on every page: the SPA
+  sets no title, so a page's own would hold only on a direct load.
+  - **The cards are committed PNGs** in `src/assets/previews/`, drawn from the app's own
+    scenes (`tutorial/art/scenes`), inks, sprites and fonts. One per level × language,
+    READY OR NOT (`linkPreviews.test.ts`), so a level becoming ready in a language
+    already has its card; a page whose card is missing fails the build. They go out as
+    HASHED assets: chat apps cache a preview image by its URL, so a redrawn card must be
+    a new one. They were rendered offline and no generator is committed: a level added or
+    renamed needs its cards drawn again. They carry no reading time (it changes with the
+    article; the page's description states it) and no SOON (a level's card is the same
+    ready or not). HOME's card says the game in no language — its guesses are words
+    English and French share — since every route without a page of its own wears it.
 - **Stale-tab auto-reload (user-decided 2026-08-16):** a deployed release must reach tabs
   already open — an SPA loads its JS once, and the deploy's `prune: false` deliberately
   keeps old chunks alive, so nothing ever forces a stale tab to refresh (and under the
