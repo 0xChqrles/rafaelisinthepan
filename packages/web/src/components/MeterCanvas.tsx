@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { prefersReducedMotion } from '../hooks/useScramble';
-import { BAYER_8 } from './bayer';
+import { BAYER_8 } from '@whippin/shared';
 import { T0, hash3, noise3 } from './noise';
 
 // THE CHARGE METER'S DRAWING (#301, user-decided 2026-09-15: "improve the dithering, make it

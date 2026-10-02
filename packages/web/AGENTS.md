@@ -131,7 +131,6 @@
                               articles/<lang>.ts (the text, per language; types.ts, Rich.tsx
                               the inline markup, typeset.ts, figures/); art/ (LevelArt.tsx,
                               the dithered canvas, and scenes/, one picture per level)
-      components/bayer.ts     the ordered dither's Bayer 8×8 matrix (the meter, the level art)
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       components/strikeArt.ts the three strike sheets and their animation contract (#301: the
                               sentence's holes land them)
@@ -468,8 +467,8 @@ These are decided and verified against the code. Treat them as load-bearing.
     the grain are all gone; the grain shipped twice and was dropped as "ugly as hell").
   - **`--fg` is PLAIN WHITE** #ffffff (the warm stamp-paper #f4f1e8 is retired), `--muted`
     a neutral cool grey #a6adb8, the hairline/glass tokens white-based, the surfaces
-    neutral dark (#14151c / #1f212a). `shared/src/cardSvg.ts` MIRRORS bg/fg/muted — a
-    palette move edits both, and `heat.test.ts`'s BG_LUMINANCE + `AccountMark.test.ts`'s
+    neutral dark (#14151c / #1f212a). `shared/src/cardSvg.ts` MIRRORS bg/fg/accent (and
+    `--rail` and `--surface`, which its group card wears) — a palette move edits both, and `heat.test.ts`'s BG_LUMINANCE + `AccountMark.test.ts`'s
     GROUND pin the shared value.
   - **ONE GAME ACCENT, and it is the SOLVE COBALT** (user-decided 2026-09-01, third
     pass: "the solved word color, which should be the game accent color"): `--accent` is
