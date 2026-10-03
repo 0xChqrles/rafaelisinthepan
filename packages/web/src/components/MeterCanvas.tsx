@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { prefersReducedMotion } from '../hooks/useScramble';
-import { COUNT_SPARKLE, COUNT_STILL_S, paintCountGlints, paintFoil } from './foil';
+import { COUNT_SPARKLE, COUNT_STILL_S } from '@whippin/shared';
+import { paintCountGlints, paintFoil } from './foil';
 import { cellInked, easeOut, frontIsSolid, rampDensity, travelFront } from './meterRamp';
 
 // THE CHARGE METER'S DRAWING (#301, user-decided 2026-09-15: "improve the dithering, make it
@@ -58,7 +59,7 @@ export interface MeterShape {
   clip: (ctx: CanvasRenderingContext2D) => void;
   // Paints what stands UNDER the meter: the shape as it reads uncharged.
   base: (ctx: CanvasRenderingContext2D) => void;
-  // Where a glint may stand (`countCells.ts` `capCorners`), in the box's CSS pixels.
+  // Where a glint may stand (shared `countCells.ts` `capCorners`), in the box's CSS pixels.
   spots: readonly (readonly [number, number])[];
   // Whether a point of the box is ink: the foil paints only there.
   inside: (x: number, y: number) => boolean;

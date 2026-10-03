@@ -1,4 +1,4 @@
-import { GLYPH_GAP, GLYPH_ROWS, type DigitMask } from '../digitMasks';
+import { GLYPH_GAP, GLYPH_ROWS, type DigitMask } from '@whippin/shared';
 import { LINK_H, LINK_PITCH, LINK_PITCH_TIGHT, LINK_W, type Crown, type LinkPlace } from './sprites';
 
 // THE STREAK CELEBRATION'S GEOMETRY — where everything stands, solved once per screen size,
@@ -14,14 +14,8 @@ export interface NumberCells {
   bits: Uint8Array;
 }
 
-export function numberCells(glyphs: readonly DigitMask[] | null, value: number): NumberCells {
+export function numberCells(glyphs: readonly DigitMask[], value: number): NumberCells {
   const digits = Array.from(String(value), (c) => Number(c));
-  if (!glyphs) {
-    // No glyphs (the sheet failed to decode): a count's width and no ink — the dialog sets
-    // the number as type instead.
-    const w = digits.length * 8 - 1;
-    return { w, h: GLYPH_ROWS, bits: new Uint8Array(w * GLYPH_ROWS) };
-  }
   const w = digits.reduce((sum, d) => sum + glyphs[d].w, 0) + GLYPH_GAP * (digits.length - 1);
   const bits = new Uint8Array(w * GLYPH_ROWS);
   let x0 = 0;

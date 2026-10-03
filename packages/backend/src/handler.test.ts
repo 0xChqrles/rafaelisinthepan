@@ -489,6 +489,9 @@ describe('group invite link (#271) — the shared link, its preview page and its
     expect(res.body).toContain(`${ORIGIN}${groupCardPath(ID)}`);
     // The click continues to the SPA landing — the one that records the membership.
     expect(res.body).toContain(`${ORIGIN}${groupLandingPath(ID)}`);
+    // The page names itself — the invite link, never the landing — and a line under the title.
+    expect(res.body).toContain(`<meta property="og:url" content="${ORIGIN}/${GROUP_SEGMENT}/${ID}">`);
+    expect(res.body).toContain('<meta property="og:description" content="Play Whippin AI">');
     expect(res.headers['Cache-Control']).toBe('public, max-age=300');
   });
 
@@ -610,6 +613,7 @@ describe('a signed share (the result wearing its player)', () => {
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('<title>Chqrles · Whippin AI 2026-07-04 — 6 tries</title>');
     expect(res.body).toContain(`${ORIGIN}${shareCardPath(token, ID)}`);
+    expect(res.body).toContain(`<meta property="og:url" content="${ORIGIN}${sharePath(token, ID)}">`);
     expect(res.body).toContain(`location.replace("${ORIGIN}/en/2026-07-04")`);
     expect(res.body).not.toContain(groupLandingPath(ID));
     expect(res.headers['Cache-Control']).toBe('public, max-age=300');
@@ -642,6 +646,7 @@ describe('a signed share (the result wearing its player)', () => {
     expect(page.statusCode).toBe(200);
     expect(page.body).toContain('<title>Whippin AI 2026-07-04 — 6 tries</title>');
     expect(page.body).toContain(`${ORIGIN}${shareCardPath(token)}`);
+    expect(page.body).toContain(`<meta property="og:url" content="${ORIGIN}${sharePath(token)}">`);
     expect(page.body).toContain(`${ORIGIN}/en/2026-07-04`);
     const card = await handler(event({ path: shareCardPath(token, ID) }));
     expect(card.statusCode).toBe(200);

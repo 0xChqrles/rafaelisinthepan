@@ -7,7 +7,7 @@
 // THE COUNT IS A SLOT MACHINE (user-decided 2026-10-03: "all the digits spinning with a very
 // short delay between them, they almost start at the same time, and they stop from left to
 // right, and on each digit stop, there's a shake"): one REEL per digit of the score — 3 has
-// one, 23 two, 137 three — each the face's ten glyphs on a strip (`countCells.ts` `reelInk`)
+// one, 23 two, 137 three — each the face's ten glyphs on a strip (shared `countCells.ts` `reelInk`)
 // resting on 0. The reels START almost together, COUNT_START_STAGGER_MS apart left to right,
 // spin at COUNT_SPIN_RATE values a second, and STOP LEFT TO RIGHT, COUNT_STOP_GAP_MS apart, the
 // last on COUNT_RUN_MS. A reel lands with a slot machine's snap: it BRAKES over COUNT_BRAKE_MS
@@ -43,7 +43,7 @@ export const COUNT_SHAKE_MS = COUNT_SHAKE.length * COUNT_SHAKE_FRAME_MS;
 // The clock's end: the last reel's shake played out.
 export const COUNT_END_MS = COUNT_RUN_MS + COUNT_SHAKE_MS;
 
-// One font pixel, in values (a glyph and its blank row are 8 font pixels: `countCells.ts`).
+// One font pixel, in values (a glyph and its blank row are 8 font pixels: shared `countCells.ts`).
 const PIXEL = 1 / 8;
 
 // One reel at an instant: where its strip stands, in values (0 ≤ pos < 10; 3.5 is halfway

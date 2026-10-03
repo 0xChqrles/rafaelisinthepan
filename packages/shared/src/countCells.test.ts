@@ -1,23 +1,18 @@
-// The result's count as cells (`countCells.ts`): its size decides whether SHARE stays on the
-// screen, and its layout whether the canvas draws exactly the face's glyphs where the
-// DOM text sets them.
+// The result's count as cells (`countCells.ts`): its layout decides whether the screen's canvas
+// and the share card draw exactly the face's glyphs where the type sets them.
 import { describe, expect, it } from 'vitest';
 import {
   COUNT_EM,
-  COUNT_MAX_PX,
-  COUNT_MAX_WIDE_PX,
-  COUNT_MIN_PX,
   COUNT_ROWS,
+  REEL_ROWS,
   capCorners,
   countInk,
-  countSize,
   glyphBoxes,
   inkEms,
-  REEL_ROWS,
   reelInk,
   reelRow,
 } from './countCells';
-import type { DigitMask } from './digitMasks';
+import { DIGIT_MASKS, GLYPH_ROWS, type DigitMask } from './glyphs';
 
 // Two synthetic glyphs on the 7-row band: a "1" two columns wide (ink at column 1 only, a
 // cap at the top), a "7" seven wide (a full top row).
@@ -36,53 +31,26 @@ const masks: DigitMask[] = [];
 masks[1] = ONE;
 masks[7] = SEVEN;
 
-describe('countSize — the count at a whole scale', () => {
-  // A height that never binds.
-  const TALL = 10_000;
-
-  it('is always a whole multiple of 8px, inside its floor and ceiling', () => {
-    for (let width = 100; width <= 700; width += 7) {
-      for (const height of [20, 90, 140, 400, TALL]) {
-        for (const digits of [1, 2, 3]) {
-          const size = countSize(width, height, inkEms(digits), false);
-          expect(size % 8).toBe(0);
-          expect(size).toBeGreaterThanOrEqual(COUNT_MIN_PX);
-          expect(size).toBeLessThanOrEqual(COUNT_MAX_PX);
-        }
-      }
-    }
-  });
-
-  it('fits its ink in the hero: three digits at 320 (a 260px hero) take 88px', () => {
-    const size = countSize(260, TALL, inkEms(3), false);
-    expect(size).toBe(88);
-    expect(size * inkEms(3)).toBeLessThanOrEqual(260);
-    expect((size + 8) * inkEms(3)).toBeGreaterThan(260);
-  });
-
-  it('fits its box in the height the card spares it: the cap height, 7/8 of the size', () => {
-    // A short desktop window: a wide column, 137px left for the count's box.
-    const size = countSize(616, 137, inkEms(2), true);
-    expect(size).toBe(152);
-    expect((size * COUNT_ROWS) / COUNT_EM).toBeLessThanOrEqual(137);
-    expect(((size + 8) * COUNT_ROWS) / COUNT_EM).toBeGreaterThan(137);
-    // A phone the same.
-    expect(countSize(330, 112, inkEms(2), false)).toBe(128);
-  });
-
-  it('caps a phone at the share card\'s 160, the desktop at 192', () => {
-    expect(countSize(330, TALL, inkEms(2), false)).toBe(COUNT_MAX_PX);
-    expect(countSize(616, TALL, inkEms(2), true)).toBe(COUNT_MAX_WIDE_PX);
-  });
-
-  it('never goes under the floor, even when nothing fits', () => {
-    expect(countSize(40, TALL, inkEms(3), false)).toBe(COUNT_MIN_PX);
-    expect(countSize(616, 10, inkEms(2), true)).toBe(COUNT_MIN_PX);
-  });
-
+describe('inkEms — the count\'s box is its ink', () => {
   it('measures the ink: every advance but the last glyph\'s trailing blank column', () => {
     expect(inkEms(1)).toBe(7 / 8);
     expect(inkEms(3)).toBe(3 - 1 / 8);
+  });
+});
+
+describe('DIGIT_MASKS — the face\'s own digits', () => {
+  it('holds the ten digits on the 7-row band, inked from their first column', () => {
+    expect(DIGIT_MASKS).toHaveLength(10);
+    for (const { w, rows } of DIGIT_MASKS) {
+      expect(rows).toHaveLength(w * GLYPH_ROWS);
+      expect(w).toBeLessThanOrEqual(COUNT_EM - 1); // a blank column ends every advance
+      // Its first and last columns both carry ink: the mask is its ink box.
+      const column = (x: number) => Array.from({ length: GLYPH_ROWS }, (_, y) => rows[y * w + x]).some(Boolean);
+      expect(column(0)).toBe(true);
+      expect(column(w - 1)).toBe(true);
+    }
+    // The 1 is the narrow one.
+    expect(DIGIT_MASKS.map((m) => m.w)).toEqual([7, 6, 7, 7, 7, 7, 7, 7, 7, 7]);
   });
 });
 

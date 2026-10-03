@@ -4,8 +4,8 @@ import { COBALT, DUSK, FOIL, FOIL_DEEP, GROUND, RAIL, WHITE, linkCellsAt } from 
 import { RESERVE_BITS, layout, numberPlace, type NumberCells } from './geometry';
 import { orbitScene, type OrbitDay } from './scene';
 
-// A block "count" stands in for the pixel face's glyphs (the dialog reads those off
-// `assets/digits.png`): `w` glyph pixels wide, seven tall, every one inked.
+// A block "count" stands in for the pixel face's glyphs (the dialog reads shared
+// `DIGIT_MASKS`): `w` glyph pixels wide, seven tall, every one inked.
 const block = (w: number): NumberCells => ({ w, h: 7, bits: new Uint8Array(w * 7).fill(1) });
 
 const SIZES = [

@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { MARK_GLYPH, dateForDayNumber } from '@whippin/shared';
+import { DIGIT_MASKS, MARK_GLYPH, dateForDayNumber } from '@whippin/shared';
 import { coarsePointer, prefersReducedMotion } from '../hooks/useScramble';
 import { useSolvedDays } from '../state/history';
 import { streakTransition, weekView } from '../game/streak';
 import { t } from '../i18n';
-import { loadDigitMasks, type DigitMask } from './digitMasks';
 import { SHOW_STEP_MS, STAR_FRAMES, timeline, wordsAt, type WordsFrame } from './streak/beats';
 import { LINK_H, LINK_W, FOIL, FOIL_DEEP, foilInk } from './streak/sprites';
 import { RESERVE_BITS, layout, numberCells, numberPlace, pastWeeks } from './streak/geometry';
@@ -22,9 +21,6 @@ const HINT_IN_MS = 240;
 // art has nothing to gain from 60fps.
 const IDLE_FRAME_MS = 80;
 const IDLE_RASTER_MS = 160;
-// The digits' sheet is a few hundred bytes the bundle inlines; a decode that has not come
-// back by then never holds the celebration — the count is then set as type.
-const GLYPHS_DEADLINE_MS = 800;
 // Reduced motion holds ONE frame: the settled picture, between two heartbeats.
 const STILL_AFTER_SETTLED_MS = 400;
 // The device frame's corner brackets (CSS px): the cards' arm, inset by the screen.
@@ -119,41 +115,16 @@ export default function StreakDialog({
   const weeks = todayIndex >= 0 ? pastWeeks(streak, todayIndex) : 0;
   const edition = dateForDayNumber(solvedDay);
 
-  // The count's glyphs: the pixel face's digits off their sheet (`assets/digits.png`).
-  // `masks: null` = the sheet never came: the count is set as type.
-  const [glyphs, setGlyphs] = useState<{ masks: DigitMask[] | null } | null>(null);
-  useEffect(() => {
-    let alive = true;
-    const deadline = window.setTimeout(() => {
-      if (alive) setGlyphs((g) => g ?? { masks: null });
-    }, GLYPHS_DEADLINE_MS);
-    loadDigitMasks().then(
-      (masks) => {
-        if (alive) setGlyphs((g) => (g?.masks === null ? g : { masks }));
-      },
-      () => {
-        if (alive) setGlyphs({ masks: null });
-      },
-    );
-    return () => {
-      alive = false;
-      window.clearTimeout(deadline);
-    };
-  }, []);
+  // The count's glyphs: the pixel face's own digits (shared `DIGIT_MASKS`).
   const counts = useMemo(
-    () =>
-      glyphs && {
-        from: numberCells(glyphs.masks, previousStreak),
-        to: numberCells(glyphs.masks, streak),
-        asType: glyphs.masks === null,
-      },
-    [glyphs, previousStreak, streak],
+    () => ({ from: numberCells(DIGIT_MASKS, previousStreak), to: numberCells(DIGIT_MASKS, streak) }),
+    [previousStreak, streak],
   );
 
   // Everything the picture and its words are placed by: the layout, the beats, where the DOM
   // words stand (CSS px) — and the cells under those words, which the orbits leave bare.
   const plan = useMemo(() => {
-    if (!size || !counts) return null;
+    if (!size) return null;
     const { w, h } = size;
     const L = layout(w, h, Math.max(RESERVE_BITS, counts.from.w, counts.to.w), Math.max(counts.from.w, counts.to.w));
     const tl = timeline(hasComet, closes, todayIndex);
@@ -218,7 +189,6 @@ export default function StreakDialog({
       labels,
       todayBox,
       crown: { x: L.crown.x * cell, y: (L.crown.y - L.crown.h * 0.55) * cell },
-      countBox: { x: at.x * cell, y: at.y * cell, w: counts.to.w * L.k * cell, face: 8 * L.k * cell },
     };
   }, [size, counts, days, hasComet, carriesIn, closes, weeks, todayIndex, lang]);
 
@@ -495,14 +465,6 @@ export default function StreakDialog({
 
       <div ref={stageRef} className="streak-stage" aria-hidden="true">
         <canvas ref={canvasRef} className="streak-orbit" />
-        {stage && counts?.asType && (
-          <p
-            className="streak-count-type"
-            style={{ left: stage.countBox.x, top: stage.countBox.y, width: stage.countBox.w, fontSize: stage.countBox.face }}
-          >
-            {streak}
-          </p>
-        )}
         {stage?.todayBox && (
           <span
             ref={starRef}

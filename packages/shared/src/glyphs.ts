@@ -4,9 +4,9 @@
 // OG card could fall back on, since the rasterizer runs with `loadSystemFonts: false` and
 // the bundle's other face, Azeret Mono's bold, has none either. So the headline of a round
 // that ENDED UNSOLVED (given up, or capped) ships as PATH DATA, drawn identically by
-// `cardSvg.ts` (the share card), by the web result in place of `.solved-score-num`, and by a
-// group board's ended row in place of its try count. ONE path and ONE view box, here, is
-// what keeps the surfaces showing the same glyph.
+// `cardSvg.ts` (the share card) and the web result (`SolvedCard`) — both on the count's own
+// grid, a cell per font pixel — and by a group board's ended row in place of its try count.
+// ONE path and ONE view box, here, is what keeps the surfaces showing the same glyph.
 
 // The ∞ on a 9×5 pixel grid — two loops that genuinely CROSS, with the outer corners
 // clipped the way the pixel font clips its own `O`, so the glyph reads as a character of
@@ -35,12 +35,11 @@ export const INFINITY_GLYPH = {
     'M1 4h2v1h-2z M6 4h2v1h-2z',
 } as const;
 
-// How tall the glyph is drawn, as a fraction of the font size it stands in for: Press Start
-// 2P's CAP HEIGHT, MEASURED off the rasterized card (67px of ink at font-size 76), so the ∞
-// fills exactly the band the digits it replaces would have. Stated ONCE because both
-// surfaces have to agree — the card lays its headline out arithmetically (the face advances
-// 1em per glyph, so a lockup's width is a sum of ems) and the web sizes an inline SVG in
-// `em` off the same number.
+// How tall the glyph is drawn BESIDE TYPE, as a fraction of the font size it stands in for:
+// Press Start 2P's CAP HEIGHT, MEASURED off the rasterized card (67px of ink at font-size 76),
+// so an inline ∞ (the web's `InfinityGlyph`, sized in `em`) fills exactly the band the digits
+// it replaces would have. The card reads the same number as the face's ink height, to stand
+// its small pixel type on a line.
 export const INFINITY_EM_HEIGHT = 0.88;
 
 // Its width in ems at that height — the aspect ratio applied, so a caller centring a
@@ -70,3 +69,36 @@ export const MARK_GLYPH = {
 // text baseline subtracts this; the web needs none, because nothing there shares a baseline
 // with it.
 export const PIXEL_INK_LIFT_EM = 0.13;
+
+// THE PIXEL FACE'S DIGITS as cells: Press Start 2P's own 0–9 on their 7-row ink band, each
+// trimmed to its ink columns (the 1 is six wide, the rest seven) — what every surface that
+// draws a number as BLOCKS reads: the result's count (web `SolvedCard`, through `countCells.ts`)
+// and the share card's (`cardSvg.ts`), the score watermark (web `CellDigits`), the streak
+// celebration. Every glyph's ink starts on its first column, so a mask's column x is also the
+// face's column x: a number set on the face's 8-pixel advance draws exactly the type's glyphs.
+// Traced from the face — a redrawn face is traced again.
+export const GLYPH_ROWS = 7;
+// One glyph pixel of spacing between digits set tight (the watermark, the streak).
+export const GLYPH_GAP = 1;
+
+export type DigitMask = { readonly w: number; readonly rows: Uint8Array };
+
+// prettier-ignore
+const DIGIT_ART: readonly (readonly string[])[] = [
+  ['..###..', '.#..##.', '##...##', '##...##', '##...##', '.##..#.', '..###..'], // 0
+  ['..##..', '.###..', '..##..', '..##..', '..##..', '..##..', '######'], // 1
+  ['.#####.', '##...##', '....###', '..####.', '.####..', '###....', '#######'], // 2
+  ['.######', '....##.', '...##..', '..####.', '.....##', '##...##', '.#####.'], // 3
+  ['...###.', '..####.', '.##.##.', '##..##.', '#######', '....##.', '....##.'], // 4
+  ['######.', '##.....', '######.', '.....##', '.....##', '##...##', '.#####.'], // 5
+  ['..####.', '.##....', '##.....', '######.', '##...##', '##...##', '.#####.'], // 6
+  ['#######', '##...##', '....##.', '...##..', '..##...', '..##...', '..##...'], // 7
+  ['.####..', '##...#.', '###..#.', '.####..', '#..####', '#....##', '.#####.'], // 8
+  ['.#####.', '##...##', '##...##', '.######', '.....##', '....##.', '.####..'], // 9
+];
+
+// Indexed by the digit's value.
+export const DIGIT_MASKS: readonly DigitMask[] = DIGIT_ART.map((art) => ({
+  w: art[0].length,
+  rows: Uint8Array.from(art.join(''), (c) => (c === '#' ? 1 : 0)),
+}));

@@ -60,6 +60,9 @@ describe('GET /s/<token>', () => {
     expect(res.body).not.toContain('#20638');
     expect(res.body).toContain('<html lang="fr">');
     expect(res.body).toContain('Jouer à Whippin AI'); // no-JS body link (fr)
+    // The chat's line under the title, in the title's language, and the page's own address.
+    expect(res.body).toContain('<meta property="og:description" content="Jouer à Whippin AI">');
+    expect(res.body).toContain(`<meta property="og:url" content="https://whippin.ai/s/${token}">`);
     // Redirect into the game AT THE SHARED DAY (date-addressed, #55), not bare /fr.
     expect(res.body).toContain(`https://whippin.ai/fr/${dateForDayNumber(20638)}`);
   });
@@ -70,6 +73,8 @@ describe('GET /s/<token>', () => {
     expect(res.body).toContain('12 tries');
     expect(res.body).toContain('<html lang="en">');
     expect(res.body).toContain('Play Whippin AI');
+    expect(res.body).toContain('<meta property="og:description" content="Play Whippin AI">');
+    expect(res.body).toContain(`<meta property="og:url" content="https://whippin.ai/s/${enToken}">`);
     expect(res.body).toContain(`https://whippin.ai/en/${dateForDayNumber(20638)}`);
   });
 

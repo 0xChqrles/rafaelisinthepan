@@ -1,15 +1,34 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode, RefObject } from 'react';
-import { INFINITY_GLYPH, dateForDayNumber, isBonusRef, type PuzzleRef } from '@whippin/shared';
+import {
+  COUNT_EM,
+  COUNT_GLINT_CELL_PX,
+  COUNT_ROWS,
+  DIGIT_MASKS,
+  HEAT_CELL_PX,
+  HEAT_CLEAR_PX,
+  HEAT_UNIT_CLEAR_PX,
+  HEAT_UNIT_RAMP_PX,
+  INFINITY_GLYPH,
+  capCorners,
+  countInk,
+  dateForDayNumber,
+  glyphBoxes,
+  heatKeepOut,
+  inkEms,
+  isBonusRef,
+  reelInk,
+  reelRow,
+  type HeatKeep,
+  type PuzzleRef,
+} from '@whippin/shared';
 import MeterCanvas, { type MeterShape } from './MeterCanvas';
 import Strike from './Strike';
 import { BURST_ART } from './strikeArt';
 import RunHeat, { type HeatKeepOut } from './RunHeat';
 import RunRuler from './RunRuler';
-import { COUNT_GLINT_CELL_PX } from './foil';
-import { COUNT_EM, COUNT_ROWS, capCorners, countInk, countSize, glyphBoxes, inkEms, reelInk, reelRow } from './countCells';
+import { countSize } from './countSize';
 import { COUNT_END_MS, COUNT_RUN_MS, countFilled, countReels, reelShake, reelStop, reelsText, type CountReel } from './countRun';
-import { digitMasksNow, loadDigitMasks, type DigitMask } from './digitMasks';
 import useToday from '../hooks/useToday';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { t } from '../i18n';
@@ -26,14 +45,14 @@ import { t } from '../i18n';
 // portrait and the name took the emphasis from the score — the boards under it name the
 // player). The count stands alone, the biggest thing on the screen, in the pixel face at a
 // WHOLE scale — the largest multiple of 8px that fits the hero for this round's final digits
-// AND leaves SHARE above the fold (`countCells.ts` `countSize`: the card's room down to the
+// AND leaves SHARE above the fold (`countSize.ts`: the card's room down to the
 // stage's fade, less everything in the card but the count), decided on the mount's SMALL
 // viewport (`svh`: a phone's toolbar collapsing on scroll must not resize what has landed)
 // and re-measured only when the column's width changes; its box is its INK, so it centres
 // on what it prints. Nothing is scaled by a transform.
 //
 // THE COUNT IS THE METER: it is drawn cell by cell on the face's own glyph pixels
-// (`digitMasks.ts`, laid out by `countCells.ts`) by a SHAPED `MeterCanvas`. The tally is a
+// (shared `DIGIT_MASKS`, laid out by shared `countCells.ts`) by a SHAPED `MeterCanvas`. The tally is a
 // SLOT MACHINE on those pixels (`countRun.ts`: one fixed length for every score): a REEL per
 // digit of the score, each the face's glyphs rolling at a whole font pixel, all spinning from
 // almost the same instant and STOPPING LEFT TO RIGHT, each with a snap; on its stop the digit
@@ -73,14 +92,9 @@ const CHARGE_MS = 90;
 // on the run's clock, which runs to COUNT_END_MS.
 const FOIL_IN_BURST_MS = BURST_ART.ms * 0.6;
 const FOIL_AT_MS = Math.min(COUNT_END_MS, COUNT_RUN_MS + FOIL_IN_BURST_MS);
-// THE CLEARING in the heat: bare for CLEAR_PX round each digit's ink box, the heat returning
-// over one of the face's pixels; round the unit, bare for UNIT_CLEAR_PX then returning over
-// UNIT_RAMP_PX — long enough to read as a clearing, its corners rounded by the distance.
-const CLEAR_PX = 4;
-const UNIT_CLEAR_PX = 2;
-const UNIT_RAMP_PX = 18;
-// The heat's cells (RunHeat's own).
-const HEAT_CELL_PX = 2;
+// THE CLEARING in the heat (shared `heatKeepOut`): bare for HEAT_CLEAR_PX round each digit's
+// ink box, the heat returning over one of the face's pixels; round the unit, bare for
+// HEAT_UNIT_CLEAR_PX then returning over HEAT_UNIT_RAMP_PX.
 // THE STOPS' BURSTS: the burst sheet's frame (`burst.png`, 53×66), its impact ink centred
 // 44% down the frame, at the whole scale that makes the frame about BURST_DIGIT_SPAN digits
 // wide (never under 2x); the stencil keeps it BURST_TEXT_GAP px off the unit and the
@@ -119,25 +133,6 @@ function cardRoom(card: HTMLElement): number {
   const fade = parseFloat(getComputedStyle(stage).paddingBottom) || 0;
   const lent = Math.max(0, window.innerHeight - smallViewportHeight());
   return stage.clientHeight - top - fade - lent;
-}
-
-// The digits' glyphs: at once when the session has decoded them, `undefined` while the
-// decode is out (the count waits unseen rather than flash white under its foil), `null` if it
-// failed (the count is then set as type).
-function useDigitMasks(): DigitMask[] | null | undefined {
-  const [masks, setMasks] = useState<DigitMask[] | null | undefined>(() => digitMasksNow() ?? undefined);
-  useEffect(() => {
-    if (masks !== undefined) return undefined;
-    let live = true;
-    loadDigitMasks().then(
-      (decoded) => live && setMasks(decoded),
-      () => live && setMasks(null),
-    );
-    return () => {
-      live = false;
-    };
-  }, [masks]);
-  return masks;
 }
 
 // `∞` on the count's own pixel grid: its 9×5 cells are each one pixel of the face at this
@@ -182,10 +177,10 @@ function Typed({ className, text, delayMs }: { className: string; text: string; 
 // glyph the face's own pixels at `size`, each reel's strip at a whole font pixel and each
 // reel's slot at its shake (whole font pixels; the canvas bleeds past the box for it). The
 // glints stand on the cap-line corners.
-function countShape(masks: readonly DigitMask[], reels: readonly CountReel[], size: number): MeterShape {
+function countShape(reels: readonly CountReel[], size: number): MeterShape {
   const px = size / COUNT_EM;
   const rows = reels.map((r) => reelRow(r.pos));
-  const ink = reelInk(masks, rows);
+  const ink = reelInk(DIGIT_MASKS, rows);
   // ONE path, filled once: the clip is a `destination-in`, and every separate fill would
   // keep only its own cell.
   const cells = (ctx: CanvasRenderingContext2D) => {
@@ -263,15 +258,9 @@ function useMeterRun({
 function within(r: DOMRect, origin: { left: number; top: number }): Rect {
   return { x: r.left - origin.left, y: r.top - origin.top, w: r.width, h: r.height };
 }
-// How far a point is from a rect (0 inside it).
-function rectDistance(x: number, y: number, r: Rect): number {
-  const dx = Math.max(0, r.x - x, x - (r.x + r.w));
-  const dy = Math.max(0, r.y - y, y - (r.y + r.h));
-  return Math.hypot(dx, dy);
-}
 // Each glyph's ink box relative to the count's box, in CSS px.
-function digitRects(masks: readonly DigitMask[], text: string, px: number): Rect[] {
-  return glyphBoxes(masks, text).map(({ x0, x1 }) => ({ x: x0 * px, y: 0, w: (x1 - x0) * px, h: COUNT_ROWS * px }));
+function digitRects(text: string, px: number): Rect[] {
+  return glyphBoxes(DIGIT_MASKS, text).map(({ x0, x1 }) => ({ x: x0 * px, y: 0, w: (x1 - x0) * px, h: COUNT_ROWS * px }));
 }
 
 // THE STOPS' BURSTS: each reel's stop goes off IN FRONT of its digit — the burst sheet at the
@@ -289,7 +278,6 @@ function Bursts({
   runRef,
   numRef,
   unitRef,
-  masks,
   text,
   px,
   ms,
@@ -299,7 +287,6 @@ function Bursts({
   runRef: RefObject<HTMLDivElement>;
   numRef: RefObject<HTMLSpanElement>;
   unitRef: RefObject<HTMLSpanElement>;
-  masks: readonly DigitMask[] | null | undefined;
   text: string;
   px: number;
   ms: number;
@@ -309,8 +296,8 @@ function Bursts({
     scale: number;
     field: string;
     bursts: { x: number; y: number }[];
-    // Each digit's own cells (none for the count set as type), at rest.
-    digits: { mask: string; x: number; y: number; w: number; h: number }[] | null;
+    // Each digit's own cells, at rest.
+    digits: { mask: string; x: number; y: number; w: number; h: number }[];
   } | null>(null);
   useLayoutEffect(() => {
     const frame = frameRef.current?.getBoundingClientRect();
@@ -351,38 +338,33 @@ function Bursts({
       ctx.fill();
     });
     if (!field) return;
-    // Each digit's ink box, the burst's centre (the count set as type: its advance).
-    const glyphs = masks
-      ? digitRects(masks, text, px)
-      : Array.from(text, (_, i) => ({ x: i * COUNT_EM * px, y: 0, w: glyphW, h: n.h }));
-    const bursts = glyphs.map((g) => ({
+    // Each digit's ink box, the burst's centre.
+    const bursts = digitRects(text, px).map((g) => ({
       x: Math.round(n.x + g.x + g.w / 2 - (BURST_W * scale) / 2),
       y: Math.round(n.y + n.h / 2 - BURST_H * scale * BURST_INK_Y),
     }));
     // The white's: each digit's cells on its own glyph slot, placed at the slot's rest.
-    const ink = masks ? countInk(masks, text) : null;
+    const ink = countInk(DIGIT_MASKS, text);
     const slotW = COUNT_EM * px;
     const slotH = COUNT_ROWS * px;
-    const digits = ink
-      ? Array.from(text, (_, i) => ({
-          mask:
-            stencil(slotW, slotH, (ctx) => {
-              ctx.beginPath();
-              for (let gx = 0; gx < COUNT_EM; gx += 1) {
-                for (let gy = 0; gy < COUNT_ROWS; gy += 1) {
-                  if (ink(i * COUNT_EM + gx, gy)) ctx.rect(gx * px, gy * px, px, px);
-                }
-              }
-              ctx.fill();
-            }) ?? 'none',
-          x: n.x + i * slotW,
-          y: n.y,
-          w: slotW,
-          h: slotH,
-        }))
-      : null;
+    const digits = Array.from(text, (_, i) => ({
+      mask:
+        stencil(slotW, slotH, (ctx) => {
+          ctx.beginPath();
+          for (let gx = 0; gx < COUNT_EM; gx += 1) {
+            for (let gy = 0; gy < COUNT_ROWS; gy += 1) {
+              if (ink(i * COUNT_EM + gx, gy)) ctx.rect(gx * px, gy * px, px, px);
+            }
+          }
+          ctx.fill();
+        }) ?? 'none',
+      x: n.x + i * slotW,
+      y: n.y,
+      w: slotW,
+      h: slotH,
+    }));
     setGeo({ box, scale, field, bursts, digits });
-  }, [masks, text, px]);
+  }, [text, px]);
   if (!geo) return null;
   const sheet = (at: { x: number; y: number }, mask: CSSProperties, color: string) => (
     <span
@@ -533,19 +515,30 @@ export default function SolvedCard({
   const reading = reelsText(reels);
   // The final number: what the box, the heat's clearing and the bursts are laid out on.
   const text = String(guessCount);
-  const masks = useDigitMasks();
-  // Drawn as cells once the glyphs are in; while they are being decoded the digits wait
-  // unseen. A failed decode sets the count as type.
-  const cells = !unfinished && masks !== null;
-  const shape = useMemo(
-    () => (!unfinished && masks ? countShape(masks, reels, fit.count) : null),
-    [unfinished, masks, reels, fit.count],
-  );
+  const shape = useMemo(() => (unfinished ? null : countShape(reels, fit.count)), [unfinished, reels, fit.count]);
   const px = fit.count / COUNT_EM;
 
   // THE CLEARING: round what stands in the heat — the final number's digits, whatever the
   // reels show on the way — read off the laid-out boxes and cached until one of them changes.
   const clearCache = useRef<{ key: string; grid: Float32Array } | null>(null);
+  // What stands in the heat can move with no change of count — the unit's face arriving after
+  // the card is drawn: its box is watched, and a change redraws the heat's still frame round it.
+  const [boxes, setBoxes] = useState('');
+  useLayoutEffect(() => {
+    const num = numRef.current;
+    const unit = unitRef.current;
+    if (!num || !unit) return undefined;
+    const read = () => {
+      const n = num.getBoundingClientRect();
+      const u = unit.getBoundingClientRect();
+      setBoxes([n.width, n.height, u.left - n.left, u.top - n.top, u.width, u.height].join(','));
+    };
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(num);
+    ro.observe(unit);
+    return () => ro.disconnect();
+  }, []);
   const keepOut = useCallback<HeatKeepOut>(
     (canvas) => {
       const num = numRef.current;
@@ -556,24 +549,20 @@ export default function SolvedCard({
       const u = unitBox ? within(unitBox, c) : null;
       const cols = Math.floor(c.width / HEAT_CELL_PX);
       const rows = Math.floor(c.height / HEAT_CELL_PX);
-      const key = [text, unfinished, Boolean(masks), cols, rows, n.x, n.y, n.w, n.h, u?.x, u?.y, u?.w, u?.h].join('|');
+      const key = [text, unfinished, cols, rows, n.x, n.y, n.w, n.h, u?.x, u?.y, u?.w, u?.h].join('|');
       if (clearCache.current?.key !== key) {
         const grid = new Float32Array(cols * rows);
-        const boxes = (!unfinished && masks ? digitRects(masks, text, px) : [{ x: 0, y: 0, w: n.w, h: n.h }]).map(
-          (b) => ({ ...b, x: b.x + n.x, y: b.y + n.y }),
-        );
+        const keeps: HeatKeep[] = (unfinished ? [{ x: 0, y: 0, w: n.w, h: n.h }] : digitRects(text, px)).map((b) => ({
+          ...b,
+          x: b.x + n.x,
+          y: b.y + n.y,
+          clear: HEAT_CLEAR_PX,
+          ramp: px,
+        }));
+        if (u) keeps.push({ ...u, clear: HEAT_UNIT_CLEAR_PX, ramp: HEAT_UNIT_RAMP_PX });
         for (let cy = 0; cy < rows; cy += 1) {
           for (let cx = 0; cx < cols; cx += 1) {
-            const x = cx * HEAT_CELL_PX + 1;
-            const y = cy * HEAT_CELL_PX + 1;
-            let m = 1;
-            for (const b of boxes) {
-              m = Math.min(m, Math.max(0, Math.min(1, (rectDistance(x, y, b) - CLEAR_PX) / px)));
-            }
-            if (u) {
-              m = Math.min(m, Math.max(0, Math.min(1, (rectDistance(x, y, u) - UNIT_CLEAR_PX) / UNIT_RAMP_PX)));
-            }
-            grid[cy * cols + cx] = m;
+            grid[cy * cols + cx] = heatKeepOut(keeps, cx * HEAT_CELL_PX + 1, cy * HEAT_CELL_PX + 1);
           }
         }
         clearCache.current = { key, grid };
@@ -585,7 +574,7 @@ export default function SolvedCard({
         return grid[cy * cols + cx];
       };
     },
-    [text, unfinished, masks, px],
+    [text, unfinished, px],
   );
 
   return (
@@ -616,7 +605,7 @@ export default function SolvedCard({
                 <span className="sr-only">∞</span>
               </span>
             ) : (
-              <span ref={numRef} className={`solved-card-num${cells ? ' cells' : ''}`}>
+              <span ref={numRef} className="solved-card-num cells">
                 <span className="solved-card-ghost" aria-hidden="true">
                   {guessCount}
                 </span>
@@ -647,7 +636,7 @@ export default function SolvedCard({
             surge={landed && !settled}
             still={settled}
             keepOut={keepOut}
-            keepOutKey={`${text}|${fit.count}|${masks ? 1 : 0}`}
+            keepOutKey={`${text}|${fit.count}|${boxes}`}
           />
           <RunRuler trajectory={trajectory} solvedAt={solvedAt} filled={filled} />
         </div>
@@ -659,7 +648,6 @@ export default function SolvedCard({
             runRef={runRef}
             numRef={numRef}
             unitRef={unitRef}
-            masks={masks}
             text={text}
             px={px}
             ms={ms}

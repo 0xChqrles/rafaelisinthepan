@@ -13,10 +13,12 @@ import { Resvg, initWasm } from '@resvg/resvg-wasm';
 import {
   anonName,
   groupCardPath,
+  groupInvitePath,
   groupLandingPath,
   renderCardSvg,
   renderGroupCardSvg,
   shareCardPath,
+  sharePath,
   bonusPath,
   shareHeadline,
   dateForDayNumber,
@@ -128,13 +130,17 @@ export function renderShareHtml(
     result.bonusId !== undefined
       ? `${base}${bonusPath(lang, result.bonusId)}`
       : `${base}/${lang}/${dateForDayNumber(result.dayNumber ?? 0)}`;
-  return previewPage(
+  // The page's own address: the signed link while it wears its player, the plain one when it
+  // falls back to the plain share (a deleted signer) — what the page shows is that link's.
+  return previewPage({
     lang,
-    shareTitle(title, by),
-    `${base}${shareCardPath(token, by?.publicId)}`,
-    gameUrl,
-    L.play,
-  );
+    title: shareTitle(title, by),
+    description: L.play,
+    pageUrl: `${base}${sharePath(token, by?.publicId)}`,
+    imageUrl: `${base}${shareCardPath(token, by?.publicId)}`,
+    target: gameUrl,
+    linkLabel: L.play,
+  });
 }
 
 // The #271 group invite page: `/g/<groupId>` is the link a member SHARES, so it is the
@@ -145,25 +151,40 @@ export function renderShareHtml(
 // Language-neutral: a group belongs to its members, not to a daily, and the landing
 // resolves the reader's own language the way `/` does.
 export function renderGroupHtml(groupId: string, name: string, base: string): string {
-  const title = `Whippin AI — ${name}`;
-  const landing = `${base}${groupLandingPath(groupId)}`;
-  return previewPage('en', title, `${base}${groupCardPath(groupId)}`, landing, 'Whippin AI');
+  return previewPage({
+    lang: 'en',
+    title: `Whippin AI — ${name}`,
+    description: 'Play Whippin AI',
+    pageUrl: `${base}${groupInvitePath(groupId)}`,
+    imageUrl: `${base}${groupCardPath(groupId)}`,
+    target: `${base}${groupLandingPath(groupId)}`,
+    linkLabel: 'Whippin AI',
+  });
 }
 
-// The preview page every shared link is served as: OG/Twitter meta carrying the card,
-// plus a redirect so a human who clicks lands where the link actually goes.
-function previewPage(
-  lang: string,
-  rawTitle: string,
-  imageUrl: string,
-  target: string,
-  linkLabel: string,
-): string {
+// The preview page every shared link is served as: OG/Twitter meta carrying the card, plus a
+// redirect so a human who clicks lands where the link actually goes. A chat draws the title
+// over the DESCRIPTION — one short line, in the title's language (a preview without one shows
+// the bare domain or nothing under the title) — and `og:url` names the page itself, the
+// shared link, never the place it redirects to: an unfurler that reads it keys the preview to
+// the link that was sent.
+interface PreviewPage {
+  lang: string;
+  title: string;
+  description: string;
+  pageUrl: string;
+  imageUrl: string;
+  target: string;
+  linkLabel: string;
+}
+function previewPage({ lang, title: rawTitle, description, pageUrl, imageUrl, target, linkLabel }: PreviewPage): string {
   const title = escapeAttr(rawTitle);
   const image = escapeAttr(imageUrl);
   return redirectPage(lang, title, target, linkLabel, [
     '<meta property="og:type" content="website">',
     `<meta property="og:title" content="${title}">`,
+    `<meta property="og:description" content="${escapeAttr(description)}">`,
+    `<meta property="og:url" content="${escapeAttr(pageUrl)}">`,
     `<meta property="og:image" content="${image}">`,
     `<meta property="og:image:width" content="${CARD_WIDTH}">`,
     `<meta property="og:image:height" content="${CARD_HEIGHT}">`,

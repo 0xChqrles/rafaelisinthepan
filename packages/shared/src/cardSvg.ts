@@ -6,9 +6,10 @@
 // Both wear the FRAME of the site's own link previews (web `linkPreviews.ts`, the cards in
 // `assets/previews/`): the flat ground, the device frame's corner brackets, and the lockup —
 // the app's mark in the accent beside its name in the chrome's mono. A result is the solved
-// screen's result set on the ground: the count in the pixel face, its unit under it, the run
-// ruler; a group is its name in the title chip, its members' marks on an orbit around it — as
-// the home card holds its hidden word.
+// screen's CARD laid down (web `SolvedCard`): the count in the pixel face's own cells, in the
+// holographic foil, over its unit, the run's heat rising off the run ruler; a group is its name
+// in the title chip, its members' marks on an orbit around it — as the home card holds its
+// hidden word.
 //
 // The day reads "2026-08-02", not "#20667" (decided 2026-08-03): a stranger seeing the card
 // can date the sentence, where the internal day index says nothing to anyone but the game.
@@ -18,13 +19,11 @@
 // carried the day index, and the same date already names the archive URL the card links to.
 //
 // The ruler is the SAME display as the solved screen's (web components/RunRuler.tsx), scaled
-// to the card (decided 2026-07-25, replacing the bucketed heat squares — the v2 token carries
-// the raw run): one cell per counted try on the shared HEAT ramp (progressHeatColor, so the
-// card matches the on-screen bar exactly — and since 2026-08-16 that is the game's one ramp,
-// each try's % read straight as heat), a tick where each secret dropped, and that hole's
-// sentence index (1..3) under it. The share TEXT's emoji row
-// summarises this same bar into a bounded 3..18 cells on the same ramp (it has to fit a text
-// message); the card draws every try AND the ticks, so it stays the richer view.
+// to the card: one cell per counted try on the shared HEAT ramp (progressHeatColor — the
+// game's one ramp, each try's % read straight as heat), a tick where each secret dropped, and
+// that hole's sentence index (1..3) under it. The share TEXT's emoji row summarises this same
+// bar into a bounded 3..18 cells on the same ramp (it has to fit a text message); the card
+// draws every try AND the ticks, so it stays the richer view.
 //
 // Result-card strings are numeric fields plus fixed units. The one free text a card draws is
 // a NAME (a signed share's signer, a group card's group), XML-escaped before interpolation.
@@ -34,8 +33,21 @@ import { AVATAR_PALETTES, AVATAR_SIZE, decodeAvatar } from './avatar';
 import { avatarOutlinePath } from './avatarOutline';
 import { dateForDayNumber } from './day';
 import { bayerThreshold } from './bayer';
-import { INFINITY_EM_HEIGHT, INFINITY_GLYPH, MARK_GLYPH, PIXEL_INK_LIFT_EM } from './glyphs';
+import { COUNT_EM, COUNT_ROWS, capCorners, countInk, glyphBoxes, inkEms } from './countCells';
+import {
+  COUNT_GLINT_CELL_PX,
+  COUNT_SPARKLE,
+  COUNT_STILL_S,
+  FOIL_CELL_PX,
+  FOIL_WHITE,
+  countGlints,
+  foilCells,
+  foilGlitter,
+  foilInkRgb,
+} from './foil';
+import { DIGIT_MASKS, INFINITY_EM_HEIGHT, INFINITY_GLYPH, MARK_GLYPH, PIXEL_INK_LIFT_EM } from './glyphs';
 import { progressHeatColor } from './heat';
+import { HEAT_CLEAR_PX, HEAT_UNIT_CLEAR_PX, HEAT_UNIT_RAMP_PX, heatCells, heatKeepOut, type HeatKeep } from './runHeat';
 import type { ShareResult } from './shareCard';
 
 // Standard OG image size (Twitter/Slack/Discord `summary_large_image`).
@@ -413,36 +425,69 @@ function dropScraps(ink: Uint8Array, cols: number, rows: number, min: number): v
   }
 }
 
+
 // ── The RESULT card ───────────────────────────────────────────────────────────────────
 //
-// The solved screen's result (web `SolvedScreen`'s score block), set straight on the ground
-// as the site's previews set their subject: the count in the pixel face, its unit under it
-// in the mono, and the run ruler across the card's whole column. The day is the top row's
-// EDITION, opposite the lockup: its calendar date (or BONUS and its id).
-// A SIGNED share (user-decided 2026-09-05) sets the player's mark beside the count as a
-// portrait, its name in the title chip under it; a plain share's count stands alone.
-const SCORE_SIZE = 160; // 20px a pixel of the face
-const UNIT_SIZE = 32;
-const UNIT_TRACKING = 0.16;
-const UNIT_GAP = 24; // the count's ink to the unit's capitals
-// Ruler geometry: the on-screen ruler (web `RunRuler`: a 16px bar across the result's column,
-// 4px ticks overhanging 8px, 16px indices) drawn across the card's column, its ticks and
-// indices heavier than one scale would make them so they still read in a chat's thumbnail.
+// The solved screen's CARD (web `SolvedCard`) laid down at the share's size — the screen is
+// this card stood up, so the two wear the same furniture on the same bare ground: the device
+// frame's corner brackets; the top row (the lockup, the EDITION number after it in the pixel
+// face's smallest size, muted, and the day at the right in the accent: its calendar date, or
+// BONUS); the COUNT over its unit as the subject; the run's HEAT rising off the RULER under it.
+//
+// THE COUNT IS THE SUBJECT (user-decided 2026-10-02), drawn as the screen draws it: cell by cell
+// on the pixel face's own glyph pixels (`countCells.ts`), at the largest whole font pixel up to
+// COUNT_FPX_MAX that fits the column, in the DITHERED HOLO FOIL (`foil.ts`) — the screen's one
+// shiny material, at the instant its still count holds (COUNT_STILL_S, its seed: a glint
+// standing in full on a cap-line corner). A round that ENDED UNSOLVED (the v6 capped flag:
+// given up, or capped) wears no shine: a plain white `∞` on the count's own pixel grid.
+//
+// THE RUN'S HEAT (`runHeat.ts`, the screen's own field): the ruler's inks rising off the bar as
+// an ordered dither, each column as tall as that try's reconstruction got, with a CLEARING of
+// bare ground round each digit's ink and round the unit (`heatKeepOut`).
+//
+// THE RULER is the screen's (web `RunRuler`): one cell per counted try on the shared HEAT ramp
+// (`progressHeatColor`) at the shared whole-pixel edges (`runEdges`), a white tick where each
+// secret dropped and that hole's sentence index (1..3) in the pixel face under it.
+//
+// Everything is drawn on CARD_CELL px cells — the house's 2px at CARD_SCALE — so the dither
+// reads as pixels in a chat's preview, and in its thumbnail the foil averages to its inks while
+// the count, the largest thing on the card, still reads at a glance.
+const CARD_CELL = 4;
+const CARD_SCALE = CARD_CELL / FOIL_CELL_PX;
 const BAR_X = 64;
 const BAR_W = CARD_WIDTH - 2 * BAR_X;
-const BAR_H = 48;
-const TICK_W = 8;
-const TICK_OVERHANG = 16;
+// The ruler, bottom up: the indices' ink ends at INDEX_BOTTOM; NUM_GAP over them the ticks'
+// feet; the bar BAR_H tall, the ticks TICK_W wide overhanging it TICK_OVERHANG either side.
+const INDEX_BOTTOM = 562;
 const NUM_SIZE = 32;
-const NUM_GAP = 14; // the tick's foot to the index's ink
-const HERO_GAP = 40; // the hero's foot to the ticks' tops
-// The signed card's portrait: the mark at 16px a cell, its name chip under it.
-const PORTRAIT_PX = 160;
-const PORTRAIT_NAME_SIZE = 28;
-const PORTRAIT_NAME_GAP = 16;
-const PORTRAIT_GAP = 72; // the portrait column to the count's
-// The edition, on the top row: the day's own label in the pixel face's accent.
-const EDITION_SIZE = 24;
+const NUM_GAP = 14;
+const NUM_MIN_GAP = 12; // two indices set side by side never touch
+const TICK_W = 8;
+const TICK_OVERHANG = 12;
+const BAR_H = 24;
+const BAR_Y = INDEX_BOTTOM - inkHeight(NUM_SIZE) - NUM_GAP - TICK_OVERHANG - BAR_H;
+// The unit over the bar, the count over the unit — the screen's spacing at the card's scale.
+const UNIT_SIZE = 28;
+const UNIT_TRACKING = 0.16;
+const UNIT_TO_BAR = 50; // the unit's baseline to the bar's top
+const UNIT_GAP = 38; // the count's ink to the unit's capitals
+const UNIT_BASELINE = BAR_Y - UNIT_TO_BAR;
+const UNIT_CAP_TOP = UNIT_BASELINE - Math.round(UI_CAP_EM * UNIT_SIZE);
+const COUNT_BOTTOM = UNIT_CAP_TOP - UNIT_GAP;
+// The count's font pixel at most (256px type): a multiple of the cell, so the foil's cells
+// tile the glyphs' pixels exactly.
+const COUNT_FPX_MAX = 32;
+const FOIL_SEED = 5; // the screen's count's
+const GLINT_CELL = COUNT_GLINT_CELL_PX * CARD_SCALE;
+// The heat's field: from the bar's top up HEAT_ROWS cells — the count's band and 60px of the
+// screen's over it, as the screen sizes its own.
+const HEAT_ROWS = (COUNT_ROWS * COUNT_FPX_MAX + 60 * (COUNT_FPX_MAX / 20)) / CARD_CELL;
+// The top row: the edition number in the pixel face's smallest whole size (a multiple of 8),
+// muted, EDITION_GAP after the lockup's name; the day in the accent at the right.
+const EDITION_SIZE = 16;
+const EDITION_GAP = 28;
+const DAY_SIZE = 24;
+const MUTED = '#a6adb8';
 
 // THE RUN'S CELL EDGES: where each of `n` tries' cells starts across a bar `width` whole
 // pixels wide, plus the bar's end — integer boundaries tiling [0, width] exactly, so adjacent
@@ -453,50 +498,8 @@ export function runEdges(n: number, width: number): number[] {
   return Array.from({ length: n + 1 }, (_, i) => Math.round((i * width) / n));
 }
 
-// The headline: the count, or `∞` for a round that ended unsolved (the v6 capped flag:
-// given up, or capped), over its unit. Press Start 2P
-// advances exactly 1em per glyph, so nothing is measured. The ∞ (a path, since the face has
-// no such glyph) fills the digits' own band on WHOLE cells — the band's height in five rows
-// of the glyph's grid — its ink bottom where the digits' is.
-function scoreLockup(
-  score: number,
-  capped: boolean,
-  unit: { one: string; many: string },
-  centreX: number,
-  top: number,
-): string {
-  const inkH = Math.round(INFINITY_EM_HEIGHT * SCORE_SIZE);
-  const baseline = Math.round(top + inkH + PIXEL_INK_LIFT_EM * SCORE_SIZE);
-  // A capped round has no count to name, so the unit is always plural.
-  const word = !capped && score === 1 ? unit.one : unit.many;
-  const unitLine = uiText(word, centreX, Math.round(top + inkH + UNIT_GAP + UI_CAP_EM * UNIT_SIZE), UNIT_SIZE, UNIT_TRACKING, FG, 'middle');
-  if (!capped) {
-    const label = String(score);
-    const x = Math.round(centreX - (label.length * SCORE_SIZE) / 2);
-    return `<text x="${x}" y="${baseline}" font-family="${PIXEL_FONT}" font-size="${SCORE_SIZE}" fill="${FG}">${label}</text>` + unitLine;
-  }
-  const cell = Math.round(inkH / INFINITY_GLYPH.height);
-  const w = cell * INFINITY_GLYPH.width;
-  const h = cell * INFINITY_GLYPH.height;
-  const x = Math.round(centreX - w / 2);
-  const y = top + inkH - h;
-  return (
-    `<g class="infinity" transform="translate(${x} ${y}) scale(${cell})" shape-rendering="crispEdges">` +
-    `<path d="${INFINITY_GLYPH.path}" fill="${FG}"/></g>` +
-    unitLine
-  );
-}
-
-// How wide the headline column is: the count (or the ∞) and the unit under it.
-function scoreWidth(score: number, capped: boolean, unit: { one: string; many: string }): number {
-  const inkH = Math.round(INFINITY_EM_HEIGHT * SCORE_SIZE);
-  const head = capped ? Math.round(inkH / INFINITY_GLYPH.height) * INFINITY_GLYPH.width : String(score).length * SCORE_SIZE;
-  const word = !capped && score === 1 ? unit.one : unit.many;
-  return Math.max(head, uiWidth(word.length, UNIT_SIZE, UNIT_TRACKING));
-}
-
-// The card's edition: the day as its calendar date, or — a BONUS puzzle is no day
-// (`bonus.ts`) — "BONUS" and its id.
+// A puzzle's name in a shared result's HEADLINE: the day as its calendar date, or — a BONUS
+// puzzle is no day (`bonus.ts`) — "BONUS" and its id.
 export function cardPuzzleLabel({ dayNumber, bonusId }: Pick<CardData, 'dayNumber' | 'bonusId'>): string {
   return bonusId !== undefined ? `BONUS ${bonusId}` : dateForDayNumber(dayNumber ?? 0);
 }
@@ -524,51 +527,149 @@ export function shareHeadline(
   return `Whippin AI ${cardPuzzleLabel(ref)} — ${score} ${unit}`;
 }
 
-export function renderCardSvg(
-  { lang, dayNumber, bonusId, score, trajectory, solvedAt, capped = false }: CardData,
-  by: CardFace | null = null,
-): string {
-  const n = Math.max(1, trajectory.length);
-  const unit = UNITS[lang] ?? UNITS.en;
+// Cells on a grid (whole-cell coordinates, as a flat x, y list) as ONE path of row runs,
+// `cell` px a cell from (ox, oy): a few thousand cells of one ink cost one element.
+function runsPath(cells: readonly number[], cell: number, ox: number, oy: number): string {
+  const rows = new Map<number, number[]>();
+  for (let k = 0; k < cells.length; k += 2) {
+    const row = rows.get(cells[k + 1]);
+    if (row) row.push(cells[k]);
+    else rows.set(cells[k + 1], [cells[k]]);
+  }
+  const runs: string[] = [];
+  for (const y of [...rows.keys()].sort((a, b) => a - b)) {
+    const xs = rows.get(y)!.sort((a, b) => a - b);
+    for (let i = 0; i < xs.length; ) {
+      let j = i + 1;
+      while (j < xs.length && xs[j] === xs[j - 1] + 1) j += 1;
+      runs.push(`M${ox + xs[i] * cell} ${oy + y * cell}h${(j - i) * cell}v${cell}h${-(j - i) * cell}z`);
+      i = j;
+    }
+  }
+  return runs.join(' ');
+}
 
+// One path per fill, in the order the fills were first met.
+function fillPaths(byFill: Map<string, number[]>, cell: number, ox: number, oy: number): string {
+  return [...byFill].map(([fill, cells]) => `<path d="${runsPath(cells, cell, ox, oy)}" fill="${fill}"/>`).join('');
+}
+const pushCell = (byFill: Map<string, number[]>, fill: string, x: number, y: number) => {
+  const cells = byFill.get(fill);
+  if (cells) cells.push(x, y);
+  else byFill.set(fill, [x, y]);
+};
+const hex = ([r, g, b]: readonly number[]) => `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+
+// A box the heat clears round.
+type Box = { x: number; y: number; w: number; h: number };
+
+// THE COUNT: where it stands and what it is — its font pixel, its ink box, and (a solved
+// round) its digits.
+interface CountLayout {
+  text: string | null; // null: the round ended unsolved (`∞`)
+  fpx: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+function countLayout(score: number, capped: boolean, centreX: number): CountLayout {
+  const text = capped ? null : String(score);
+  const ems = text === null ? INFINITY_GLYPH.width / COUNT_EM : inkEms(text.length);
+  const fpx = Math.max(
+    CARD_CELL,
+    Math.min(COUNT_FPX_MAX, Math.floor(BAR_W / (ems * COUNT_EM) / CARD_CELL) * CARD_CELL),
+  );
+  const w = Math.round(ems * COUNT_EM * fpx);
+  const h = COUNT_ROWS * fpx;
+  return { text, fpx, x: Math.round(centreX - w / 2), y: COUNT_BOTTOM - h, w, h };
+}
+
+// The count in the FOIL: its cells in their inks, the glitter kept to its ink, the glints over
+// all and across its edge — or the white `∞`, centred in the digits' band on the same grid.
+function countSvg({ text, fpx, x, y, w, h }: CountLayout): string {
+  if (text === null) {
+    const iy = y + Math.round((h - INFINITY_GLYPH.height * fpx) / 2 / fpx) * fpx;
+    return (
+      `<g class="infinity" transform="translate(${x} ${iy}) scale(${fpx})" shape-rendering="crispEdges">` +
+      `<path d="${INFINITY_GLYPH.path}" fill="${FG}"/></g>`
+    );
+  }
+  const ink = countInk(DIGIT_MASKS, text);
+  const inside = (px: number, py: number) => ink(Math.floor(px / fpx), Math.floor(py / fpx));
+  const byFill = new Map<string, number[]>();
+  foilCells(w, h, COUNT_STILL_S, FOIL_SEED, 0, inside, CARD_CELL, (k, cx, cy) =>
+    pushCell(byFill, k === FOIL_WHITE ? FG : hex(foilInkRgb(k)), cx / CARD_CELL, cy / CARD_CELL),
+  );
+  const rect = (rx: number, ry: number, rw: number, rh: number) => `M${x + rx} ${y + ry}h${rw}v${rh}h${-rw}z`;
+  const glitter: string[] = [];
+  foilGlitter(w, h, COUNT_STILL_S, FOIL_SEED, inside, COUNT_SPARKLE, CARD_CELL, (...r) => glitter.push(rect(...r)));
+  const glints: string[] = [];
+  countGlints(capCorners(ink, 0, text.length, fpx, GLINT_CELL), w, COUNT_STILL_S, FOIL_SEED, GLINT_CELL, (...r) =>
+    glints.push(rect(...r)),
+  );
+  const inkCells: number[] = [];
+  for (let gy = 0; gy < COUNT_ROWS; gy += 1) {
+    for (let gx = 0; gx < text.length * COUNT_EM; gx += 1) if (ink(gx, gy)) inkCells.push(gx, gy);
+  }
+  return (
+    `<g class="count" data-count="${text}" shape-rendering="crispEdges">` +
+    `<clipPath id="count-ink"><path d="${runsPath(inkCells, fpx, x, y)}"/></clipPath>` +
+    fillPaths(byFill, CARD_CELL, x, y) +
+    (glitter.length ? `<g clip-path="url(#count-ink)"><path d="${glitter.join(' ')}" fill="${FG}"/></g>` : '') +
+    (glints.length ? `<path class="glints" d="${glints.join(' ')}" fill="${FG}"/>` : '') +
+    `</g>`
+  );
+}
+
+// What the heat clears round the count: each digit's ink box, or the `∞`'s whole band.
+function countKeeps({ text, fpx, x, y, w, h }: CountLayout): HeatKeep[] {
+  const clear = HEAT_CLEAR_PX * CARD_SCALE;
+  if (text === null) return [{ x, y, w, h, clear, ramp: fpx }];
+  return glyphBoxes(DIGIT_MASKS, text).map(({ x0, x1 }) => ({ x: x + x0 * fpx, y, w: (x1 - x0) * fpx, h, clear, ramp: fpx }));
+}
+// What the heat clears round a line of the mono, as the screen clears its unit.
+const textKeep = (box: Box): HeatKeep => ({
+  ...box,
+  clear: HEAT_UNIT_CLEAR_PX * CARD_SCALE,
+  ramp: HEAT_UNIT_RAMP_PX * CARD_SCALE,
+});
+// A line of the mono's box: its advance across, its em down round its capitals.
+function textBox(left: number, baseline: number, glyphs: number, size: number, tracking: number): Box {
+  const cap = Math.round(UI_CAP_EM * size);
+  return { x: left, y: baseline - cap - Math.round((size - cap) / 2), w: Math.round(uiWidth(glyphs, size, tracking)), h: size };
+}
+
+// THE RUN'S HEAT over the bar, cleared round `keeps`: one path per ink.
+function heatSvg(trajectory: readonly number[], keeps: readonly HeatKeep[]): string {
+  const byFill = new Map<string, number[]>();
+  heatCells(
+    {
+      cols: BAR_W / CARD_CELL,
+      rows: HEAT_ROWS,
+      width: BAR_W,
+      cell: CARD_CELL,
+      trajectory,
+      shown: trajectory.length,
+      rise: () => 1,
+      lift: 0,
+      clear: (cx, cy) => heatKeepOut(keeps, BAR_X + (cx + 0.5) * CARD_CELL, BAR_Y - (cy + 0.5) * CARD_CELL),
+    },
+    (color, cx, cy) => pushCell(byFill, color, cx, HEAT_ROWS - 1 - cy),
+  );
+  return `<g class="heat" shape-rendering="crispEdges">${fillPaths(byFill, CARD_CELL, BAR_X, BAR_Y - HEAT_ROWS * CARD_CELL)}</g>`;
+}
+
+// THE RULER: the run's cells, the ticks, the indices under them — set side by side when two
+// solves stand closer than an index is wide, and kept inside the frame.
+function rulerSvg(trajectory: readonly number[], solvedAt: readonly (number | null)[]): string {
+  const n = Math.max(1, trajectory.length);
   // Solve moments: one tick per solved secret, on the RIGHT edge of the cell of the try that
-  // solved it (the state AFTER the guess), the hole's sentence index under it. The secrets
-  // are distinct words, so no try solves two: every tick holds one index.
+  // solved it (the state AFTER the guess), the hole's sentence index under it.
   const ticks = solvedAt
     .map((at, i) => (at == null ? null : { at, hole: i + 1 }))
     .filter((tick): tick is { at: number; hole: number } => tick !== null)
     .sort((a, b) => a.at - b.at);
-
-  // The hero (the count, beside the portrait on a signed card), the ruler under it, and the
-  // row of indices — none on a capped round, which has no tick. The block is centred in the
-  // room under the top row.
-  const inkH = Math.round(INFINITY_EM_HEIGHT * SCORE_SIZE);
-  const countH = inkH + UNIT_GAP + Math.round(UI_CAP_EM * UNIT_SIZE);
-  const signer = by ? by.name || anonName(by.publicId) : '';
-  const nameChipH = Math.round(CHIP_HEIGHT * PORTRAIT_NAME_SIZE);
-  const heroH = by ? Math.max(countH, PORTRAIT_PX + PORTRAIT_NAME_GAP + nameChipH) : countH;
-  const numH = ticks.length ? NUM_GAP + inkHeight(NUM_SIZE) : 0;
-  const blockH = heroH + HERO_GAP + 2 * TICK_OVERHANG + BAR_H + numH;
-  const top = Math.round(ROOM_CY - blockH / 2);
-  const barY = top + heroH + HERO_GAP + TICK_OVERHANG;
-
-  // The hero row: the count alone, or the portrait column and the count's side by side.
-  const countW = scoreWidth(score, capped, unit);
-  let hero: string;
-  if (by) {
-    const nameW = Math.round(uiWidth(Array.from(signer).length, PORTRAIT_NAME_SIZE, CHIP_TRACKING) + 2 * CHIP_PAD_X * PORTRAIT_NAME_SIZE);
-    const portraitW = Math.max(PORTRAIT_PX, nameW);
-    const left = Math.round(CARD_WIDTH / 2 - (portraitW + PORTRAIT_GAP + countW) / 2);
-    const pcx = left + portraitW / 2;
-    const portraitTop = top + Math.round((heroH - (PORTRAIT_PX + PORTRAIT_NAME_GAP + nameChipH)) / 2);
-    hero =
-      markTile('sign', by.publicId, by.avatar, Math.round(pcx - PORTRAIT_PX / 2), portraitTop, PORTRAIT_PX) +
-      chip(signer, PORTRAIT_NAME_SIZE, pcx, portraitTop + PORTRAIT_PX + PORTRAIT_NAME_GAP + nameChipH / 2).svg +
-      scoreLockup(score, capped, unit, left + portraitW + PORTRAIT_GAP + countW / 2, top + Math.round((heroH - countH) / 2));
-  } else {
-    hero = scoreLockup(score, capped, unit, CARD_WIDTH / 2, top);
-  }
-
   // Integer cell boundaries so adjacent cells share an edge EXACTLY — no hairline seams
   // under crispEdges — and, because the boundaries tile [BAR_X, BAR_X + BAR_W) exactly,
   // the row can never spill past the bar's right edge.
@@ -585,37 +686,105 @@ export function renderCardSvg(
       const x = edge(i);
       const w = edge(i + 1) - x;
       if (w <= 0) return ''; // fully covered by a later try in the same column
-      return `<rect x="${x}" y="${barY}" width="${w}" height="${BAR_H}" fill="${progressHeatColor(pct)}"/>`;
+      return `<rect x="${x}" y="${BAR_Y}" width="${w}" height="${BAR_H}" fill="${progressHeatColor(pct)}"/>`;
     })
     .join('');
-
-  // The ticks on whole pixels, their indices centred under them.
-  const tickX = (at: number) => edge(Math.min(at, n));
-  const numBaseline = barY + BAR_H + TICK_OVERHANG + NUM_GAP + inkHeight(NUM_SIZE) + Math.round(PIXEL_INK_LIFT_EM * NUM_SIZE);
+  // The indices' lefts: centred under their ticks, then pushed apart left to right and pulled
+  // back inside the frame from the right.
+  const xs = ticks.map(({ at }) => edge(Math.min(at, n)));
+  const lefts = xs.map((x) => x - NUM_SIZE / 2);
+  for (let k = 1; k < lefts.length; k += 1) lefts[k] = Math.max(lefts[k], lefts[k - 1] + NUM_SIZE + NUM_MIN_GAP);
+  const right = BAR_X + BAR_W + NUM_SIZE / 2;
+  for (let k = lefts.length - 1; k >= 0; k -= 1) {
+    const limit = k === lefts.length - 1 ? right - NUM_SIZE : lefts[k + 1] - NUM_SIZE - NUM_MIN_GAP;
+    lefts[k] = Math.min(lefts[k], limit);
+  }
+  const numBaseline = INDEX_BOTTOM + Math.round(PIXEL_INK_LIFT_EM * NUM_SIZE);
   const marks = ticks
-    .map(({ at, hole }) => {
-      const x = tickX(at);
-      return (
-        `<rect x="${x - TICK_W / 2}" y="${barY - TICK_OVERHANG}" width="${TICK_W}" height="${BAR_H + 2 * TICK_OVERHANG}" fill="${FG}"/>` +
-        `<text x="${x - NUM_SIZE / 2}" y="${numBaseline}" font-family="${PIXEL_FONT}" font-size="${NUM_SIZE}" fill="${FG}">${hole}</text>`
-      );
-    })
+    .map(
+      ({ hole }, k) =>
+        `<rect x="${xs[k] - TICK_W / 2}" y="${BAR_Y - TICK_OVERHANG}" width="${TICK_W}" height="${BAR_H + 2 * TICK_OVERHANG}" fill="${FG}"/>` +
+        `<text x="${lefts[k]}" y="${numBaseline}" font-family="${PIXEL_FONT}" font-size="${NUM_SIZE}" fill="${FG}">${hole}</text>`,
+    )
     .join('');
+  return `<g class="run" shape-rendering="crispEdges">${cells}${marks}</g>`;
+}
 
-  // The edition, right-aligned on the top row: the date, or BONUS and its id.
-  const edition = cardPuzzleLabel({ dayNumber, bonusId });
+// ── The SIGNATURE (a signed share, user-decided 2026-09-05) ───────────────────────────
+// The player as a quiet SIGNATURE, never a co-subject — the score is what the card is about,
+// and the page's title already names them: the mark small, at one card cell a mark cell, and
+// the name beside it, standing on the top row just before the day, `right` its right edge —
+// the card's own furniture, read like a byline.
+const SIGN_MARK_PX = 40;
+const SIGN_NAME_SIZE = 22;
+const SIGN_NAME_TRACKING = 0.02;
+const SIGN_MARK_GAP = 14; // the mark to the name
+const SIGN_GAP = 40; // the name to the day
+
+interface Signed {
+  svg: string;
+  // What the heat clears round it (nothing, on the top row).
+  keeps: HeatKeep[];
+}
+
+function signature(by: CardFace, right: number): Signed {
+  const name = by.name || anonName(by.publicId);
+  const nameW = Math.round(uiWidth(Array.from(name).length, SIGN_NAME_SIZE, SIGN_NAME_TRACKING));
+  const nameLeft = right - SIGN_GAP - nameW;
+  const markX = nameLeft - SIGN_MARK_GAP - SIGN_MARK_PX;
+  return {
+    svg:
+      markTile('sign', by.publicId, by.avatar, markX, Math.round(TOP_ROW_CY - SIGN_MARK_PX / 2), SIGN_MARK_PX) +
+      uiText(escapeSvgText(name), nameLeft, onRow(SIGN_NAME_SIZE), SIGN_NAME_SIZE, SIGN_NAME_TRACKING, FG),
+    keeps: [],
+  };
+}
+
+export function renderCardSvg(
+  { lang, dayNumber, bonusId, score, trajectory, solvedAt, capped = false }: CardData,
+  by: CardFace | null = null,
+): string {
+  const unit = UNITS[lang] ?? UNITS.en;
+  const count = countLayout(score, capped, CARD_WIDTH / 2);
+
+  // The unit centred under the count's ink. A capped round has no count to name, so the unit
+  // is always plural.
+  const word = !capped && score === 1 ? unit.one : unit.many;
+  const wordW = Math.round(uiWidth(word.length, UNIT_SIZE, UNIT_TRACKING));
+  const wordLeft = Math.round(count.x + count.w / 2 - wordW / 2);
+
+  // The top row, as the screen's: the edition number (the day's, or the bonus's id) after the
+  // lockup, muted; the day itself at the right in the accent — its calendar date, or BONUS.
+  const bonus = bonusId !== undefined;
+  const number = `N.${bonus ? bonusId : (dayNumber ?? 0)}`;
+  const numberLeft = Math.round(
+    LOCKUP_X + MARK_GLYPH.width * LOCKUP_SCALE + LOCKUP_GAP + uiWidth(APP_NAME.length, LOCKUP_SIZE, LOCKUP_TRACKING) + EDITION_GAP,
+  );
+  const day = bonus ? 'BONUS' : dateForDayNumber(dayNumber ?? 0);
+  const dayLeft = CARD_WIDTH - LOCKUP_X - day.length * DAY_SIZE;
+
+  const signed = by ? signature(by, dayLeft) : null;
+  const keeps = [
+    ...countKeeps(count),
+    textKeep(textBox(wordLeft, UNIT_BASELINE, word.length, UNIT_SIZE, UNIT_TRACKING)),
+    ...(signed?.keeps ?? []),
+  ];
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,
     `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
     brackets(),
     lockup(),
-    `<text x="${CARD_WIDTH - LOCKUP_X - edition.length * EDITION_SIZE}" y="${pixelBaseline(TOP_ROW_CY, EDITION_SIZE)}" font-family="${PIXEL_FONT}" font-size="${EDITION_SIZE}" fill="${ACCENT}">${edition}</text>`,
+    `<text class="edition" x="${numberLeft}" y="${pixelBaseline(TOP_ROW_CY, EDITION_SIZE)}" font-family="${PIXEL_FONT}" font-size="${EDITION_SIZE}" fill="${MUTED}">${number}</text>`,
+    `<text class="day" x="${dayLeft}" y="${pixelBaseline(TOP_ROW_CY, DAY_SIZE)}" font-family="${PIXEL_FONT}" font-size="${DAY_SIZE}" fill="${ACCENT}">${day}</text>`,
+    heatSvg(trajectory, keeps),
+    rulerSvg(trajectory, solvedAt),
     // The count, not "SCORE N": naming the unit is what tells a stranger seeing the card
     // that lower is better. Localized by the token's lang (#59). A capped round draws `∞`
     // instead — same band, same unit, no number (#214).
-    hero,
-    `<g class="run" shape-rendering="crispEdges">${cells}${marks}</g>`,
+    countSvg(count),
+    uiText(word, wordLeft, UNIT_BASELINE, UNIT_SIZE, UNIT_TRACKING, FG),
+    signed?.svg ?? '',
     `</svg>`,
   ].join('');
 }
