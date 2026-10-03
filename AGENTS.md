@@ -727,11 +727,12 @@ The live routes then share:
   playing row never defeats the just-you ghost.
 - **THE SOLVED SCREEN'S BOARDS (user-decided 2026-10-02): how the player's day compares,
   UNDER SHARE, on the ACTIVE day only** (never an archive day or a bonus — the live read is
-  the active day's). Tabs, swiped on the board's pager: each of the player's groups — the
-  group last opened (`gameStore.lastGroupId`) first, then the others; a group where nobody
-  but the player has a row is skipped — then **GLOBAL**, the day's global board, under the
-  board screen's own name for it (one name across the app); a player in no group sees
-  GLOBAL alone. The groups come off the LIVE read below (no read
+  the active day's). Tabs, a row of names (a sideways swipe on the lines turns them too):
+  each of the player's groups — the group last opened (`gameStore.lastGroupId`) first, then
+  the others; a group where nobody but the player has a row is skipped — then **GLOBAL**,
+  the day's global board, under the board screen's own name for it (one name across the
+  app); a player in no group sees GLOBAL alone. At the row's end, always, a **`+`** that
+  opens the board screen's own NEW GROUP. The groups come off the LIVE read below (no read
   of their own), and only off an answer read after the round ended (one asked during play
   lacks the score the solve recorded); GLOBAL is ONE anonymous `GET /board?…&id=<publicId>`
   per result display (score rows + profiles, no artifact), identity-fenced, a failure

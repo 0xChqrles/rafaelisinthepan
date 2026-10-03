@@ -1,20 +1,13 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import {
-  dateForDayNumber,
-  isBonusRef,
-  shareHeadline,
-  type PuzzleRef,
-  type Source,
-} from '@whippin/shared';
+import { isBonusRef, shareHeadline, type PuzzleRef, type Source } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareText, shareUrl } from '../game/share';
-import RunRuler from './RunRuler';
+import SolvedCard from './SolvedCard';
 import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import useAnimatedNumber from '../hooks/useAnimatedNumber';
 import useShare from '../hooks/useShare';
 import Button from './Button';
-import InfinityGlyph from './InfinityGlyph';
 import ResultBoards, { type ResultBoardsData } from './ResultBoards';
 import { useDeviceIdentity } from '../identity';
 import { ariaHoleHistory, t } from '../i18n';
@@ -24,12 +17,12 @@ import { capitalize, sentenceStarts } from '../game/sentenceCase';
 // sentence's page below (user-decided 2026-09-08, on #266's second review). It takes the whole
 // column the dissolved sentence handed over (the 2026-08-14 hand-over, restored), and it stacks:
 //
-//   SCORE   — at the TOP, right under the header: the named `<tries> TRIES` over its run
-//             ruler and SHARE (sharing is what you do with a
-//             RESULT, user-decided 2026-08-14). Its height is the same on
-//             every round, and it is above the fold on every phone — SHARE is the
-//             card's closing beat and the game's one liked-indicator, and it is never
-//             reached by scrolling.
+//   SCORE   — at the TOP, right under the header: THE CARD (`SolvedCard` — the share card
+//             this result sends, live: the edition, the count as its subject, the run)
+//             and SHARE under it (sharing is what you do with a RESULT, user-decided
+//             2026-08-14). Its height is the same on every round, and it is above the fold
+//             on every phone — SHARE is the card's closing beat and the game's one
+//             liked-indicator, and it is never reached by scrolling.
 //   BOARDS  — on the ACTIVE day only: how the day compares, the player's groups then the
 //             GLOBAL (`ResultBoards`), in one fixed box that holds its room from frame one.
 //   CONTEXT — under it, with a gap: the source credit, then the sentence the player
@@ -38,12 +31,12 @@ import { capitalize, sentenceStarts } from '../game/sentenceCase';
 //             long sentence (and, with #270, the sentences of the book around it, read
 //             top-down from the credit) goes under the fold, the score never does.
 //
-// The reveal runs stage → SCORE → SHARE → BOARDS → credit → sentence (user-decided
-// 2026-09-11, reversing 2026-08-15's page-first order now that the score is a CARD above
-// the page): the stage rises in with the card, which lands reading 0 over a bar with no
-// colour in it yet; then the tally counts WHILE the bar colours in, try by try — one beat
-// saying one thing, "here is your run" — then SHARE lands, closing the card, and the boards
-// under it; only THEN, with the score standing above it, the credit types, and
+// The reveal runs stage → CARD drawn → tally → SHARE → BOARDS → credit → sentence
+// (user-decided 2026-09-11, reversing 2026-08-15's page-first order now that the score is a
+// CARD above the page): the stage comes up and the card draws itself reading 0 over a ruler
+// with no colour in it yet; then the tally counts WHILE the ruler colours in, try by try —
+// one beat saying one thing, "here is your run" — and lands; then SHARE lands, closing the
+// card, and the boards under it; only THEN, with the score standing above it, the credit types, and
 // only once it has printed does the sentence appear under it, its secrets popping in. The 2026-08-15 rule survives in the other direction:
 // nothing prints while the numbers move, so the two never read as happening at once. The
 // citation's completion is the screen's one signal-driven beat, so it carries a DEADLINE
@@ -59,10 +52,13 @@ import { capitalize, sentenceStarts } from '../game/sentenceCase';
 // inventing a parallel fast path, which is exactly what the decision asks for. Nothing
 // here listens for the tap: the round owns it, because the beats before this one (the
 // keyboard drop, the dissolve) are its.
-// The result choreography: the stage rises into the whole column the dissolved sentence
-// handed over, then the tally counts. Keep these numbers aligned with `.solved-stage` + its
-// card `.solved-numbers`, whose tally waits out the card's own rise.
-const RESULTS_IN_MS = 250;
+// The result choreography: the stage comes up in the whole column the dissolved sentence
+// handed over (`.solved-stage`'s fade), then the card draws itself, then the tally counts.
+const RESULTS_IN_MS = 140;
+// The card DRAWS itself before the tally starts (index.css `.solved-card.in` and its `--t-*`
+// offsets): the FRAME (the brackets travel out, the edition types), then the INSTRUMENT (the
+// ruler's track is wiped across, the count's zeros blink in) — done by 720ms.
+const DRAW_MS = 720;
 const SCORE_COUNT_MS = 800;
 // The secrets POP into the sentence one by one, 200ms apart, each a fast scale pop — the
 // round's three trophies counted out, back in the gaps they were taken from. Keep aligned
@@ -80,9 +76,9 @@ const CAPTION_FALLBACK_SLACK_MS = 4_000;
 // and the boards follow SHARE by another.
 const CLOSE_LEAD_MS = 260;
 const BOARDS_LEAD_MS = 200;
-// The boards' own arrival (`.solved-boards.in`'s rung-in): they are a tap onto the board only
-// once it has played.
-const BOARDS_ARRIVE_MS = 220;
+// The boards' own arrival (`.solved-boards.in`: the tab's chip wiped across, the first line in):
+// they are a tap onto the board only once it has played.
+const BOARDS_ARRIVE_MS = 420;
 
 // ONE BEAT of the reveal: false until `ready` has held for `delayMs`, then true. A settled
 // frame (`animate` off — rehydrated, or fast-forwarded) is true at once. Reduced motion
@@ -206,19 +202,18 @@ export default function SolvedScreen({
     return () => cancelAnimationFrame(raf);
   }, [animate, start]);
 
-  // THE SCORE block, FIRST: its arrival is what starts the tally, so the number never
-  // counts behind a block that has not appeared yet. It follows the stage's own rise.
+  // THE CARD, FIRST: its drawing is what starts the tally, so the number never counts in a
+  // card that has not been drawn yet. It follows the stage's own fade.
   const scoreIn = useBeat(animate, stageIn, RESULTS_IN_MS, reduceMotion, false);
 
-  // THE TALLY, once the card has LANDED (user-decided 2026-09-11): the card rises in
-  // reading 0 over the whole bar, every cell there and none coloured yet, and only then
-  // does the number climb — the bar colouring in try by try, each tick standing as its
-  // try is reached, WHILE it counts. The ruler reads the count ITSELF (`shownCount`), so
-  // the number and the coloured cells cannot drift apart: at every frame the number says
-  // how many tries are coloured. The ruler reserves its final footprint throughout, so
-  // nothing below it moves.
-  // The card's own rise is the stage's (`.solved-numbers`, the same 250ms).
-  const countIn = useBeat(animate, scoreIn, RESULTS_IN_MS, reduceMotion, false);
+  // THE TALLY, once the card is DRAWN (user-decided 2026-09-11): the card stands reading 0
+  // over the whole ruler, every cell there and none coloured yet, and only then does the
+  // number climb — the ruler colouring in try by try, each tick standing as its try is
+  // reached, WHILE it counts. The ruler reads the count ITSELF (`shownCount`), so the number
+  // and the coloured cells cannot drift apart: at every frame the number says how many tries
+  // are coloured. The card reserves its final footprint throughout, so nothing below it
+  // moves.
+  const countIn = useBeat(animate, scoreIn, DRAW_MS, reduceMotion, false);
 
   const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
   useEffect(() => {
@@ -348,69 +343,22 @@ export default function SolvedScreen({
       ref={stageRef}
       className={`solved-stage pixel-scroll${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}
     >
-      {/* ---- the SCORE block, at the top: how the round went, and what you do with it. */}
-      {/* `landed`: the tally just reached its final count on a PLAYED reveal — the number
-          stamps down and the well's edge flashes once (a rehydrated or skipped result never
-          plays it: it has no count to land). */}
-      <div
-        className={`solved-numbers card${scoreIn ? ' in' : ''}${animate && countLanded ? ' landed' : ''}`}
+      {/* ---- THE CARD, at the top: how the round went — the share card this result sends,
+           stood up in the column — and SHARE under it, what you do with it. */}
+      <SolvedCard
+        puzzleRef={puzzleRef}
+        lang={lang}
+        guessCount={guessCount}
+        shownCount={shownCount}
+        trajectory={trajectory}
+        solvedAt={solvedAt ?? []}
+        unfinished={unfinished}
+        drawn={scoreIn}
+        landed={animate && countLanded}
+        settled={!animate}
       >
-        {/* THE WELL (2026-09-11): the card's inset panel holds the thing the card is
-            about — the number and its run — and the actions are the caption row under it,
-            the references' own shape (a preview in a well, a title under it). */}
-        <div className="card-well">
-        {/* THE EDITION, printed in the well's top corners like a numbered collectible (the
-            interfaces.dev card the device frame's serial comes from): the day in the one
-            spelling the share card, the title and the URL use, and its edition number,
-            `N.<day>`, the desktop frame's own. What day a result is from, said once, where
-            the result is. A BONUS is no day: BONUS, and its id as the edition. */}
-        <span className="card-edition" aria-hidden="true">
-          {isBonusRef(puzzleRef) ? (
-            <>
-              <span>BONUS</span>
-              <span>{`N.${puzzleRef.bonusId}`}</span>
-            </>
-          ) : (
-            <>
-              <span>{dateForDayNumber(puzzleRef.dayNumber)}</span>
-              <span>{`N.${puzzleRef.dayNumber}`}</span>
-            </>
-          )}
-        </span>
-        {/* The primary sentence metric. The hidden final value reserves the count's width
-            so its tally never moves the content below it — an unfinished round has no tally
-            to reserve for, since `∞` is one fixed shape. */}
-        <span className="solved-score">
-          <span className="solved-score-line">
-            {unfinished ? (
-              // The headline of a round that ENDED UNSOLVED (given up, or capped, #214): `∞`
-              // stands exactly where the count would, keeping the unit beside it.
-              <span className="solved-score-num">
-                <InfinityGlyph className="solved-score-inf" />
-                <span className="sr-only">∞</span>
-              </span>
-            ) : (
-              <span className="solved-score-num">
-                <span className="solved-score-ghost" aria-hidden="true">
-                  {guessCount}
-                </span>
-                <span className="solved-score-live">{shownCount}</span>
-              </span>
-            )}
-          </span>
-          <span className="solved-score-unit">
-            {t(lang, !unfinished && guessCount === 1 ? 'try' : 'tries')}
-          </span>
-        </span>
-
-        {/* The player's own run ruler — the share card draws this same ruler from the v2
-            token. */}
-        <div className="run-ruler-frame" aria-hidden="true">
-          <RunRuler trajectory={trajectory} solvedAt={solvedAt ?? []} filled={shownCount} />
-        </div>
-        </div>
-
-        {/* SHARE closes the card: hidden in place (footprint kept) until the count lands. */}
+        {/* SHARE, under the card's frame, the result's ONE action: hidden in place
+            (footprint kept) until the count lands. */}
         <div className={`result-actions${shareIn ? ' in' : ''}`}>
           <Button
             variant="primary"
@@ -420,7 +368,7 @@ export default function SolvedScreen({
             {copied ? t(lang, 'copied') : t(lang, 'share')}
           </Button>
         </div>
-      </div>
+      </SolvedCard>
 
       {/* ---- the BOARDS: how the day compares, the active day only. */}
       {boards && (

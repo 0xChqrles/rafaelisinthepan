@@ -1196,7 +1196,7 @@ function Round({
       {showResults && dissolved ? (
         /* The RESULT (user-decided 2026-09-08, on #266's second review): the sentence has
            dissolved, so the stage takes the WHOLE column the play area and the tray used
-           to split — the score block with SHARE at the TOP, and the sentence's page
+           to split — the card with SHARE at the TOP, and the sentence's page
            (the credit, then the text, read top-down) scrolling under it. The tray goes
            with the keyboard: nothing left down there to reserve a footprint for. */
         <SolvedScreen

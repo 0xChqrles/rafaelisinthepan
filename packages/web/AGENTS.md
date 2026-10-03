@@ -64,7 +64,8 @@
                               group-departure drain behind it (#271)
       state/groups.ts         the player's GROUPS (#271): the ONE transient cache every group
                               surface reads (tabs, marks, the landing's "already in", the race
-                              line's "is there anybody to race")
+                              line's "is there anybody to race"), and NEW GROUP asked from
+                              another screen (`askGroupCreate`, the result's `+`)
       state/liveBoard.ts      the LIVE read (`POST /board {token, live: true}`): all my groups
                               merged — the ONE module asking it, throttled (`LIVE_REFRESH_MS`;
                               the read asked as the round ends goes at once), for the race line
@@ -76,8 +77,18 @@
                               the board
       game/resultBoards.ts    the solved screen's BOARDS (pure): one group's day off the live read,
                               GLOBAL off the global board, the tabs' order, the box's cap
-      components/ResultBoards.tsx  those boards under SHARE: the pager's tabs over a fixed box of
-                              rows, a tap onto the board
+      components/ResultBoards.tsx  those boards under SHARE: a row of tab names (GLOBAL last) and
+                              the dashed `+` (the board's NEW GROUP) over a fixed box of lines,
+                              a tap onto the board
+      components/SolvedCard.tsx  the RESULT as the share card stood up: brackets, the edition
+                              row, the COUNT drawn as a shaped meter (charge, blast, dithered
+                              foil), the run ruler with its heat; draws itself on the reveal
+      components/countCells.ts  the count as the face's own glyph cells (pure, tested): its
+                              whole-pixel size, its ink, each glyph's box, the glints' corners
+      components/RunHeat.tsx  the run's HEAT: the ruler's inks rising off it as an ordered
+                              dither behind the count (screen-only), with a clearing round it
+      components/RunRuler.tsx  the run ruler: one cell per try on the share card's whole-pixel
+                              edges (shared `runEdges`), the solve ticks and their indices
       hooks/useGlobalBoard.ts  the GLOBAL tab's one anonymous global-board read per result display
       components/BoardRows.tsx  a board's ROWS (rank/crown, ranked, playing, waiting), drawn alike
                               by the leaderboard screen and the result's boards
@@ -154,12 +165,17 @@
       components/ChargeLoot.tsx  the blood a charging guess knocks out of the hole, gathered
                               onto the meter
       components/MeterCanvas.tsx  the meter's drawing: the chip converting as an ordered
-                              dither, tweened — and the FOIL of an active hole (`foil.ts`)
+                              dither, tweened — and the FOIL of an active hole (`foil.ts`);
+                              SHAPED (`shape`), the result's count: kept to its glyphs' ink,
+                              its recede a Bayer dissolve, glints on its corners
       components/foil.ts      the holographic FOIL, the app's one shiny material: the active
-                              hole's and the wheel's (`paintFoil`), and its inks + sparkle
-                              curve, which the streak's forged link wears as raster cells
+                              hole's and the wheel's (`paintFoil`), the result count's dithered
+                              one-slab foil and glints (`paintCountFoil`, `paintCountGlints`),
+                              and its inks + sparkle curve, which the streak's forged link
+                              wears as raster cells
       components/digitMasks.ts  the pixel face's digits (`assets/digits.png`) as block masks,
-                              decoded once: the CellDigits watermark and the streak's count
+                              decoded once: the CellDigits watermark, the streak's count and
+                              the result's count
       components/StreakDialog.tsx  the streak celebration (lazy, `LazyStreakDialog`): the
                               native modal, its fast-forward/dismiss machine, the show's ONE
                               clock driving the canvas, the foil and the words
@@ -678,10 +694,13 @@ These are decided and verified against the code. Treat them as load-bearing.
   - **PIXEL (Press Start 2P)** is reserved for the PLAY surfaces: the sentence and its holes, the prompt/input and its hint, the keyboard (keys + its `.kb-icon` pixel
     enter/backspace), the floating hits, the loot, the strike sheets, the CellDigits
     watermark, MixWord — and, since the same day's later passes, the whole SOLVED STACK's data:
-    the result count (`.solved-score-num`), the SOURCE CREDIT (both
+    the result's CARD (`SolvedCard`: the count, drawn on the face's own glyph cells at a
+    whole multiple of 8px, and the edition row — `N.<day>` at 8px, the date at 16px in the
+    accent), the SOURCE CREDIT (both
     lines — the source is the puzzle's content, not chrome, and it is EXEMPT from the
     all-caps chrome rule: quoted content keeps its own casing, the code-uppercased KIND
-    carrying the phrase contrast), the run ruler's tick numbers, and the streak
+    carrying the phrase contrast), the run ruler's tick numbers, the result boards' ranks,
+    numbers and `+N`, and the streak
     celebration's count and edition (the count in the face's own `digits.png` glyphs, each
     glyph pixel a whole square of the celebration's raster cells; the day's date set in the
     face). **Every monospace layout assumption therefore still holds** — MixWord's ch
@@ -710,7 +729,7 @@ These are decided and verified against the code. Treat them as load-bearing.
     week tiles. **THE DESIGN STAYS SHARP (user-decided 2026-08-18): 4px is the absolute
     radius ceiling — no pills, no circles anywhere in the chrome** (the SHARE pill and
     the rounded scrollbar thumb of the first cut are squared back
-    off; the run ruler's filament rounds at 3px).
+    off).
     **ONE INK (user-decided the same day): chrome text and ICONS are `--fg`** — `--muted`
     survives only on GAME surfaces (the route drawing's dresses, the keyboard's control
     keys, the watermark) — with hierarchy carried by weight and opacity, never by a
@@ -788,10 +807,10 @@ These are decided and verified against the code. Treat them as load-bearing.
     trip):** a gradient-filament version and then a colourless flat rule each lived for
     part of the day and both were rejected — "remove the gradient, put back the old
     step by step colors" — so the drawing is the original: one flat cell per counted
-    try at that try's `progressHeatColor`, dead sharp, 16px, filled by the result's tally
-    (see the solved-screen bullet). What SURVIVES from the detour is the ticks' sentence
-    indices in the PIXEL face. The bar therefore still matches the share card's stepped
-    cells exactly.
+    try at that try's `progressHeatColor`, dead sharp, on whole pixels, filled by the
+    result's tally (see the solved-screen bullet). What SURVIVES from the detour is the
+    ticks' sentence indices in the PIXEL face. The bar matches the share card's stepped
+    cells exactly: both split their width at the shared `runEdges`.
 - **A RANK IS WRITTEN BARE — no leading minus, anywhere (user-decided 2026-08-16).** A rank
   is a DISTANCE, and a distance is not negative; `sailor^87`, not `sailor^-87`. This is the
   app's ONE way of writing a rank, so it holds on every surface that shows one: the hole's exponent, the floating hit, the loot, the hole wheel and the words modal,
@@ -1620,35 +1639,27 @@ it to the local store — see `packages/backend/AGENTS.md`).
 - **THE CARD (user-decided 2026-09-11, from the three references in `inspiration/card/`:
   on a phone "it's hard to understand what's on screen quickly").** `.card` is ONE panel for
   a VIEW in those references' language: a LARGE, SOFTLY ROUNDED panel lifted a shade off the
-  ground (`--fg` at 4.5%, a 9% stroke, 24px radius — 22 on a phone), and inside it a darker
-  inset WELL (`.card-well`: back into the ground at 75% `--bg`, a 6% stroke, 16px radius)
-  holding the thing the card is about, with a caption row under the well. Depth by two
-  steps of value, never a shadow or a glow (the flat rule stands). **It is THE ONE
-  EXCEPTION to the 4px radius ceiling**, by the user's own references; nothing else in the
-  chrome rounds past 4px, and the references' PILL buttons were not taken (the app's
-  buttons stay its own). A CLASS, not a wrapper component. The solved screen is its first
-  consumer and only the SCORE block wears it — the well holds the number and its run
-  ruler, SHARE is the caption row — while the sentence's PAGE stays on the bare
-  ground (user-decided the same day, after both were tried as cards: the page is a page,
-  not a tile). Two earlier cuts the same day — a `--surface` + `--line` 4px tile on both
-  blocks, then a square 3%/6% tile — were reviewed as not it.
+  ground (`--fg` at 4.5%, a 9% stroke, 24px radius — 22 on a phone). Depth by value, never a
+  shadow or a glow (the flat rule stands). **It is THE ONE EXCEPTION to the 4px radius
+  ceiling**, by the user's own references; nothing else in the chrome rounds past 4px, and
+  the references' PILL buttons were not taken (the app's buttons stay its own). A CLASS,
+  not a wrapper component.
   **WHERE IT LIVES (user-decided 2026-09-11: "everywhere in the app where it makes sense —
   view separation, these informations are together, those are separate — but not
-  everything needs a card").** Three consumers: the RESULT (score + ruler in the well, SHARE the
-  caption row);
-  the ACCOUNT's three numbers (`AccountStats`, a panel
-  with no well — a simple group takes the panel alone); the archive CALENDAR (`.cal` —
-  nav, weekdays, grid and the failure note in one panel). Deliberately NOT: the sentence's
+  everything needs a card").** Two consumers: the ACCOUNT's three numbers (`AccountStats`)
+  and the archive CALENDAR (`.cal` — nav, weekdays, grid and the failure note in one
+  panel). Deliberately NOT: **the RESULT** (user-decided 2026-10-02, "the card" direction:
+  the result is the SHARE CARD it sends stood up on the bare ground — `SolvedCard`, the
+  device frame's brackets round it, no panel; see the solved-screen bullet), the sentence's
   page (prose is not a tile), the leaderboard (its rows are already tiles — a panel round
   them is a box in a box), the coach/rules boxes (a dialog's own dress), the account's
   device rows (the same row grammar).
-  **THE REVEAL RUNS SCORE FIRST, THEN THE PAGE (user-decided 2026-09-11, reversing the
-  2026-08-15 page-first order):** the stage rises with the card, the tally counts while the
-  ruler colors, SHARE lands, closing the card, and the BOARDS under it — and only then the credit
+  **THE REVEAL RUNS SCORE FIRST, THEN THE PAGE (user-decided 2026-09-11):** the stage comes
+  up and the card draws itself, the tally counts while the ruler colours, SHARE lands under
+  the card, and the BOARDS under it — and only then the credit
   types, and only once it has printed does the SENTENCE appear, its secrets popping in
-  ("score view → source → sentence", the user's second pass the same day: the text used
-  to stand from the first frame). The 2026-08-15 rule survives inverted: nothing prints
-  while the numbers move. `.solved-text` holds its box from frame one and fades in on
+  ("score view → source → sentence"). Nothing prints while the numbers move.
+  `.solved-text` holds its box from frame one and fades in on
   `sentenceIn` (the citation's completion, with its visible-time deadline); the pops ride
   the same flag, and their end is the reveal's END, which disarms the fast-forward.
 - **Local storage is an OUTBOX; a round that ends unsolved ends at ∞ (#214).** The product
@@ -1688,9 +1699,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `solved` wins) — `ended`, with `gaveUp` the give-up half of it — and `finished` is
     `solved || ended`.
   - **The `∞` of a round that ENDED UNSOLVED is `@whippin/shared`'s path data**
-    (`components/InfinityGlyph.tsx`), drawn in place of `.solved-score-num`
-    (`.solved-score-inf`, `crispEdges`, sized in `em` off the number it replaces) with an
-    `sr-only` `∞` beside it; the unit stays PLURAL, since there is no count for a "1" to
+    (`INFINITY_GLYPH`), drawn in place of the result's count (`SolvedCard`, `crispEdges`,
+    each of its 9×5 cells one of the count's own pixels, plain white) with an `sr-only` `∞`
+    beside it; the unit stays PLURAL, since there is no count for a "1" to
     agree with. `SolvedScreen` takes `unfinished` and shares a v6 token with the capped
     flag set (the flag means ended unsolved) — a share the `share` event does NOT count
     (`useShare({tracked: false})`), so share ÷ solve stays the liked-day signal. The group
@@ -2542,7 +2553,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   2026-09-08, on #266's second review). It supersedes the same morning's "keep the
   sentence and RISE it, the result grows around it", which put SHARE below the fold on
   most phones, and it RESTORES the 2026-08-14 hand-over: the sentence DISSOLVES and the
-  result takes the whole column.** The rule: the score block is the same height on every
+  result takes the whole column.** The rule: the score's CARD is the same height on every
   round and sits at the TOP, on screen AT REST on every phone — SHARE is the reveal's
   closing beat and the liked-indicator; the sentence's PAGE is the round's
   variable-height content. **THE WHOLE STAGE SCROLLS AS ONE, AND THE CREDIT STICKS**
@@ -2563,18 +2574,57 @@ it to the local store — see `packages/backend/AGENTS.md`).
     rehydrated solve), and `finishDissolve` is the DOM's own report.
   - **The result is a STAGE** (`components/SolvedScreen` → `.solved-stage`, `flex: 1 1 0`
     + `min-height: 0` so its height is DEFINITE inside `.game`'s auto-with-a-min box — a
-    `1 1 auto` item sized by its content grows the page instead), centred, rising in the
-    way the tray results always have (`RESULTS_IN_MS`), stacking the SCORE, the BOARDS (the
-    active day only) and the PAGE:
-    - **SCORE** (`.solved-numbers`) — the named `<tries> TRIES` headline over the run
-      ruler, **then SHARE**, which
-      belongs to this block (user-decided 2026-08-14, third pass: sharing is
-      what you do with a RESULT). Centred and capped at the keyboard's 680px. Measured on a
-      375×667 phone: SHARE at y 301–349; at 320×568, SHARE at y 287–335.
+    `1 1 auto` item sized by its content grows the page instead), centred, coming up IN
+    PLACE (a 140ms fade, `RESULTS_IN_MS`: the card draws itself on it, so the stage does not
+    travel), stacking THE CARD, the BOARDS (the active day only) and the PAGE, 48px apart,
+    all on whole pixels (`--stage-top` is 32px: a vh offset would set every glyph of the
+    pixel type under it between the screen's pixels):
+    - **THE CARD** (`components/SolvedCard`, `.solved-card`; user-decided 2026-10-02, the
+      design's direction "the card", with the SCORE as its subject) — the share card this
+      result sends (`renderCardSvg`) stood up in the column on the BARE GROUND, capped at
+      the keyboard's 680px: the device frame's corner BRACKETS round exactly what the card
+      shows (2px, 16px arms — 24 on a wide column — white at 38%); the EDITION row
+      (`N.<day>` at the left in the pixel face's 8px `--muted`, not printed where the desktop
+      device frame already prints today's; the date at the right at 16px in the accent;
+      BONUS and `N.<id>` for a bonus); the COUNT over its unit (the `--ui` 16px, tracked,
+      bold), ALONE on the column's axis — no portrait, no name: the boards under it name the
+      player; the run RULER with its HEAT; **then SHARE**, under the frame (the brackets hold
+      what you send, the button sends it; sharing is what you do with a RESULT,
+      user-decided 2026-08-14). Measured: 390×844 and 375×667, a 160px count, SHARE at
+      y 456–504; 320×568 (a short phone), a 128px count, SHARE at y 428–476.
+    - **THE COUNT IS THE SUBJECT, drawn as the METER.** Press Start 2P at the LARGEST whole
+      multiple of 8px whose INK fits the hero (`countCells.ts` `countSize` — the box is the
+      digits' ink, the last glyph's trailing blank column dropped, so the number centres on
+      what it prints): at most 160px on a phone (the share card's own), 128 on a short phone
+      (small viewport ≤ 640px, for SHARE's sake), 192 on a wide column (≥ 552px); three
+      digits at 320 take 88px. Decided per mount off the SMALL viewport (`svh`: a toolbar
+      collapsing on scroll must not resize what has landed) and re-measured only when the
+      column's width changes; nothing is scaled by a transform. It is drawn cell by cell on
+      the face's own glyphs (`digitMasks.ts`, laid out by `countCells.ts`) by a SHAPED
+      `MeterCanvas`: while the tally counts, the digits written charge with the meter's
+      Bayer fill as far as the reconstruction had reached at that try (never past 99), the
+      unreached ones standing as an odometer's zeros in the slate; the landing fills it,
+      ONE cobalt BLAST (the full meter's `BURST_ART`, at the whole scale that spans the
+      frame) goes off from behind the whole number — clipped above the ruler's ticks and
+      stencilled 8px off each digit's ink box and off the unit and the edition's type, so
+      its rays leave the number's edges — and on its impact the cobalt DISSOLVES (Bayer
+      order, eight hard steps) into the DITHERED FOIL (`foil.ts` `paintCountFoil`: the
+      material on the house's 2px cell, one slab across the whole number, slow drift, a
+      narrow sheen whose first pass meets the dissolve), glints taking turns on the cap
+      line's outer corners (`paintCountGlints`). A settled result is BORN in the foil; the
+      foil's clock rests while the count is out of view or the tab hidden. A round that
+      ENDED UNSOLVED wears no shine: a plain white `∞` on the count's own pixel grid.
+    - **THE RUN'S HEAT** (`components/RunHeat`, screen-only — the share card draws none):
+      the ruler's own inks rising off the bar as an ordered dither on 2px cells, each column
+      as tall as that try's reconstruction got, its top ragged and its body grained by the
+      app's value noise, so the climb reads as heat behind the count. It rises off the
+      write head as the tally writes, surges on the landing, and at rest is ONE still frame
+      (no clock runs). The count and its unit stand in a CLEARING of it (`keepOut`): the
+      field thins to bare ground round each digit's ink box and round the unit, through the
+      same Bayer order.
     - **BOARDS** (`ResultBoards`, `.result-boards`; the bullet *Solved-screen BOARDS*
-      below) — how the day compares, 24px under the score (the score's own story, so closer
-      than the stage's gap), in ONE fixed box (258px). At 375×667 it fills y 390–648 and
-      the page starts below the fold (y 702).
+      below) — how the day compares, under SHARE, in ONE fixed box (354px). At 375×667 it
+      starts at y 552, the page below the fold.
     - **PAGE** (`.solved-page`) — the sentence's page, read TOP-DOWN the way a page is
       (user-decided 2026-09-08: "with the source above the text, we can start by a few
       sentences before the puzzle" — no auto-scroll onto the line): the **SOURCE credit**
@@ -2651,12 +2701,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
       lyrics). Not here: excerpts on the archive calendar, the share page or the card.
   - **The reveal reads dissolve → score → SHARE → boards → page since 2026-09-11 (see
     the card bullet above; the paragraph below describes the 2026-09-08 page-first order
-    it replaced, and its beats still hold in their new places).** The stage rises in;
+    it replaced, and its beats still hold in their new places).** The stage comes up;
     the CREDIT types (`SolvedCaption`, hidden with `visibility` until its beat so the text
     never moves when it speaks) while the SECRETS POP into the line one by one
     (`solved-word-pop`, `WORD_STEP_MS` 200 apart, `WORD_POP_MS` 300 — the 2026-08-14 pop,
     back in the gaps the words were taken from; only `opacity`/`transform` move, so the
-    line's layout is final from its first frame); then the SCORE block follows once the
+    line's layout is final from its first frame); then the SCORE's card follows once the
     citation has **FINISHED PRINTING** (user-decided 2026-08-15: numbers arriving over a
     half-typed credit read as two things happening at once, where waiting reads as one
     thing after another). That is the screen's ONE signal-driven beat — it rides
@@ -2665,13 +2715,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
     must never be able to stall the solved sequence), derived from the typewriter's own
     numbers and counting **VISIBLE time only** (the interval is throttled on a hidden tab,
     so a wall-clock deadline could reveal the numbers over a half-printed credit on
-    return). A source-less puzzle's numbers follow the pops. **Inside the block the reveal
-    runs score → SHARE (user-decided 2026-08-16):** the card lands reading 0
-    over the whole bar, every cell there and none coloured (user-decided 2026-09-11); then
-    the tally counts its `SCORE_COUNT_MS` WHILE the bar colours in try by try, each tick
-    standing as its try is reached — `RunRuler` fills off the count itself (`filled`), so
-    the number always says how many tries are coloured — one beat saying "here is your
-    run"; then SHARE lands (`shareIn`), a breath after the count
+    return). A source-less puzzle's numbers follow the pops. **Inside the card the reveal
+    runs draw → tally → SHARE (user-decided 2026-08-16):** the card DRAWS ITSELF in the
+    pixel art's hard steps (`DRAW_MS`, 720ms — the brackets travel out to the corners, the
+    edition types glyph by glyph, the ruler's empty track, the slate's 2px checker, is
+    wiped across, the count's zeros blink in), reading 0 over the whole bar, every cell
+    there and none coloured (user-decided 2026-09-11); then the tally counts its
+    `SCORE_COUNT_MS` WHILE the bar colours in try by try behind a white write head, each
+    tick stamping down as its try is reached, the heat rising off it and the count
+    charging — `RunRuler` fills off the count itself (`filled`), so the number always says
+    how many tries are coloured — one beat saying "here is your run"; on the LANDING the
+    number stamps down in whole steps, the heat surges, the brackets LOCK ON (their arms
+    reach out along the frame at full white and draw back in whole steps — never in over
+    what they hold) and the meter blasts and dissolves into its foil (reduced motion: no
+    blast, the foil at once); then SHARE lands (`shareIn`), a breath after the count
     LANDS (the eased, rounded number shows its final value well before the tween's own
     end, so a timer off `SCORE_COUNT_MS` held a dead beat) — on its own beat, never behind
     another block's rung-in ("way too long", user-reported 2026-09-11). SHARE hides IN PLACE
@@ -2679,8 +2736,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `BOARDS_LEAD_MS`), their box held from frame one, and the page's beat follows them; no
     arrival moves anything. Until its beat the box is INERT as well as invisible
     (`visibility: hidden` off `.in`), so a skip-tap where it sits only skips.
-  - **Nothing that has landed ever moves:** the score block holds its footprint from frame
-    one and arrives at `opacity: 0`, the boards' box is one fixed size whatever it holds,
+  - **Nothing that has landed ever moves:** the card holds its footprint from frame one —
+    every part laid out and drawn IN PLACE, the count's size decided on the mount, the
+    ruler's index lane held on every run — the boards' box is one fixed size whatever it
+    holds,
     the credit holds its box hidden, the secrets' boxes are open before they pop.
     Rehydrated solves render `.settled` and replay nothing.
   - **The score WATERMARK goes with the round** (`.play-finished`): it fades the moment the
@@ -2745,9 +2804,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
   trajectory squares (decided 2026-07-25):** one continuous bar per run
   (`components/RunRuler.tsx`), one cell per counted try — the RAW `replayRun` trajectory,
   no on-screen bucketing — with a white tick at each try that solved a secret and the
-  hole's sentence index (1..3) under it; one guess dropping several secrets stacks its
-  indices under ONE shared tick (`replayRun` in `web/src/game/share.ts` walks the run
-  once and returns the trajectory and the solve moments together).
+  hole's sentence index (1..3) under it; one guess dropping several secrets sets its
+  indices side by side under ONE shared tick, held inside the bar near either end
+  (`replayRun` in `web/src/game/share.ts` walks the run once and returns the trajectory
+  and the solve moments together). **On screen it is the card's ruler at the column's
+  size** (inside `SolvedCard`): a 16px bar (24 on a wide column) across the whole column,
+  4px white ticks overhanging it by 8px, 16px pixel indices in ONE lane held on every run
+  (so the card is one height whatever the round), the unwritten track the slate's 2px
+  checker — and its cells on WHOLE PIXELS, the bar's measured width split at the shared
+  `runEdges` boundaries the card's own bar uses (`shared/src/cardSvg.ts`), so a long run's
+  narrow cells stay hard cells and a tick stands on the edge the card puts it on. The
+  HEAT rising off it (`RunHeat`) is the screen's alone.
   **The cells use the app's ONE weird→calm gradient:** a try's reconstruction percentage
   reads linearly through `progressHeatColor`, from the red MISS/weird terminus through
   amber, coral and orchid to the cobalt solve/calm terminus. Rank surfaces share the same
@@ -2928,11 +2995,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the root `AGENTS.md` (*The solved screen's BOARDS*); what is this package's:
   - **Where and when**: `SolvedScreen` takes `boards` (`ResultBoardsData`) from `Game`, set
     only on the ACTIVE day with an account (`racing`: never an archive day or a bonus), and
-    draws `components/ResultBoards` between the SCORE and the PAGE. It lands a breath after
+    draws `components/ResultBoards` between THE CARD and the PAGE. It lands a breath after
     SHARE (`boardsIn`, hung off `stageIn` like every beat, so the `?streak=N` hold and the
-    #179 skip both answer it), and the page's beat follows it.
-  - **ONE FIXED BOX** (`.result-boards`, 258px): the pager's head, room for
-    `RESULT_LINES_MAX` (6) rows, a gap's rule and the `+N` line — whatever it holds, so it
+    #179 skip both answer it): the shown tab's chip is drawn across, then the lines come in
+    one after another (`BOARDS_ARRIVE_MS`; reduced motion: no arrival at all); the page's
+    beat follows it.
+  - **ONE FIXED BOX** (`.result-boards`, 354px): the tabs' 44px row, room for
+    `RESULT_LINES_MAX` (6) 44px lines and two 20px rails (a gap's, and the `+N`'s) — whatever it holds, so it
     stands EMPTY in its place while the first answers are out and a read landing or a swipe
     moves nothing. It holds its room while the LIVE answer is `awaited` — the groups list
     still unknown, or a group with somebody else and no answer that has seen the round's
@@ -2970,19 +3039,39 @@ it to the local store — see `packages/backend/AGENTS.md`).
     playing row — `∞` among the ended for a round that ended unsolved, 100% for a solve with
     no recorded score — replacing the row the read carries for them. Their face is
     `useOwnFace`'s.
-  - **The tabs turn on the board's own `ScopePager`** (no plus: `onNew` is optional), the
-    dots hidden — their room kept — when there is one tab; the tab the player turned to is
-    kept by KEY, so a tab arriving later never moves them off it. The rows are
-    `components/BoardRows` (`BoardRowItem`, `PlayingRowItem`, with a 20px `mark`), the
-    leaderboard's own, at the block's size (`.result-board .board-row`, 28px). The box is
-    ONE column held to its width (`grid-template-columns: minmax(0, 1fr)`): an `auto` column
-    grows to the pager's min-content — every title side by side — and the rows run off the
-    screen. GLOBAL is the board screen's own `boardGlobal`: one name for the global board
-    across the app. A sideways SWIPE on the rows turns the tab too (`touch-action: pan-y`;
-    40px, mostly sideways) and opens nothing.
-  - **A tap** on the rows, or on the middle tab's name (the keyboard's way), opens that
+  - **The block wears the card's ground** (user-decided 2026-10-02, with the card): no
+    panel, no row boxes — lines of type set on the column.
+    **THE TABS are the groups' NAMES in a row, then GLOBAL** (the board screen's own
+    `boardGlobal`: one name for the global board across the app): `--ui` 14px bold
+    tracked capitals, `--muted`, the one shown wearing the WHITE TITLE CHIP (the cards' one
+    emphasis gesture), each a 44px target. The row scrolls on its own axis where it runs
+    past the column, snapping to names, and THINS OUT through an ordered-dither edge there
+    (a CSS mask of Bayer tiles, never a guillotined name); turning to a tab scrolls its
+    name whole into view. The tab the player turned to is kept by KEY, so a tab arriving
+    later never moves them off it. **At the row's RIGHT EDGE, always in view, the `+`**: an
+    EMPTY GROUP'S SLOT (a 32×24 chip drawn as a dashed outline of 2px cells, the plus in
+    it), the board screen's own NEW GROUP — it asks for it (`state/groups.ts`
+    `askGroupCreate`, one-shot) and goes to the board, whose mount takes the ask and opens
+    its create screen. Pinned to the edge rather than after the last name, so GLOBAL's read
+    landing late never moves it. A sideways SWIPE on the rows turns the tab too
+    (`touch-action: pan-y`; 40px, mostly sideways) and opens nothing.
+    **THE LINES** are `components/BoardRows` (`BoardRowItem`, `PlayingRowItem`), the
+    leaderboard's own, dressed here (`.result-board .board-row`, 44px): the rank in the
+    pixel face's 16px `--muted` — printed bare, the board screen dressing it `#N` — or the
+    CROWN, in ONE rank column every tab shares (`--rank-w`, the widest rank any tab prints,
+    so turning a tab moves no mark); the mark SQUARE at 3px a cell (30px, `sharp`); the
+    name (`--ui` 15px); the number in the pixel face at the far edge, with a gutter at its
+    right that a playing member's % hangs in as the tries' EXPONENT in the heat's ink, so
+    the numbers stay aligned. A member still playing prints their tries `--muted`; a round
+    ENDED unsolved `∞`, its name muted, no %. **The player's own line is FRAMED** by the
+    card's corner brackets, small (8px arms), its rank in the accent, its name bold. Rows
+    left out are a stippled slate RAIL; the `+N` sits in the rank column at 8px with the
+    rail running on beside it. The box is ONE column held to its width
+    (`grid-template-columns: minmax(0, 1fr)`): an `auto` column grows to its content's
+    min-content and the row of names pushes the lines off the screen's edge.
+  - **A tap** on the lines, or on the shown tab's chip (the keyboard's way), opens that
     board: a group sets `lastGroupId` and the board's `group` tab, GLOBAL its `global`
-    tab, then `pathForBoard`. No analytics event.
+    tab, then `pathForBoard`; a tap on another name turns to it. No analytics event.
 - **The game's pre-round GATE is an INVITATION into the tutorial (2026-08-11's rules gate;
   DEPLOY duty added by the #216 trigger rework, user-decided 2026-08-24; remade by #269,
   user-decided 2026-09-16).** It states NO rules: the lesson teaches by playing, and a player

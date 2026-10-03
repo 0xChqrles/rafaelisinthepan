@@ -49,7 +49,8 @@
     src/base64url.ts          INTERNAL (not re-exported): the base64url alphabet + encoder the
                               share-token and avatar codecs share
     src/cardSvg.ts            the OG cards' SVG: a result from a decoded token, and the #271 group card (name + member marks + app name),
-                              in the site previews' frame (brackets + lockup), set in the pixel face and Azeret Mono Bold
+                              in the site previews' frame (brackets + lockup), set in the pixel face and Azeret Mono Bold;
+                              `runEdges`, the run's whole-pixel cell edges, which the web's result ruler splits its bar at too
     src/index.ts              re-exports
 ```
 

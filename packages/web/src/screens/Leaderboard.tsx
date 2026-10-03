@@ -41,7 +41,7 @@ import {
   identityEpochOf,
   useDeviceIdentity,
 } from '../identity';
-import { adoptGroups, loadGroups, useGroups } from '../state/groups';
+import { adoptGroups, loadGroups, takeGroupCreate, useGroups } from '../state/groups';
 import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { prefetchTurnstileTokens } from '../turnstile';
 import ErrorScreen from '../components/ErrorScreen';
@@ -266,6 +266,10 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   const [failure, setFailure] = useState<'account' | 'share' | 'group' | 'limit' | null>(null);
   // WHICH SCREEN is up over the board, and WHICH CONFIRMATION over that.
   const [screen, setScreen] = useState<'group' | 'create' | null>(null);
+  // The result's `+` came here for NEW GROUP (`askGroupCreate`): its create screen opens.
+  useEffect(() => {
+    if (takeGroupCreate()) setScreen('create');
+  }, []);
   const [confirming, setConfirming] = useState<{ kind: 'remove'; member: BoardPlayer } | { kind: 'leave' } | null>(null);
   const [successor, setSuccessor] = useState<string | null>(null);
   // The members DRESSED (name + mark) for the successor picker: the list carries ids

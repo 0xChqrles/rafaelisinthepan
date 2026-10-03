@@ -40,8 +40,7 @@ import type { LangCode } from '../langs';
 // The pager is the ONE control: there is no chip, no wheel and no tab strip left on the
 // board, and the period switch under it is the only other thing before the list. CREATING
 // a group is the PLUS after the last dot (user-decided 2026-09-14: a NEW GROUP page wore
-// the title's dress on what is a button — "feels like bad UX"). The solved screen's boards
-// turn on the same pager, without the plus.
+// the title's dress on what is a button — "feels like bad UX").
 export interface Scope {
   key: string;
   title: string;
@@ -69,8 +68,8 @@ export default function ScopePager({
   onChange: (index: number) => void;
   // A tap on the middle page.
   onOpen: (index: number) => void;
-  // The plus after the dots — the board's CREATE; a pager without it has no plus.
-  onNew?: () => void;
+  // The plus after the dots.
+  onNew: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const dots = useRef<HTMLDivElement>(null);
@@ -268,11 +267,9 @@ export default function ScopePager({
             onClick={() => onChange(i)}
           />
         ))}
-        {onNew && (
-          <button type="button" className="scope-add" aria-label={t(lang, 'groupNew')} onClick={onNew}>
-            <PlusIcon className="ui-icon" aria-hidden />
-          </button>
-        )}
+        <button type="button" className="scope-add" aria-label={t(lang, 'groupNew')} onClick={onNew}>
+          <PlusIcon className="ui-icon" aria-hidden />
+        </button>
       </div>
     </div>
   );

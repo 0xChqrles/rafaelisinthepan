@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { BAYER_8 } from '@whippin/shared';
-import { paintFoil, type FoilScratch } from './foil';
+import {
+  COUNT_STILL_S,
+  paintCountFoil,
+  paintCountGlints,
+  paintFoil,
+  type FoilScratch,
+} from './foil';
 
 // THE CHARGE METER'S DRAWING (#301, user-decided 2026-09-15: "improve the dithering, make it
 // more smooth, and instead of just increasing the progression width with a basic animation,
@@ -28,7 +34,35 @@ import { paintFoil, type FoilScratch } from './foil';
 // (Hole's `METER_MS`), eased out; under reduced motion, or with no change, it draws the
 // value at once. Nothing is laid out and nothing here is state: the value it shows is
 // derived like the meter's reading, this only paces its arrival.
+//
+// A SHAPED meter (`shape`, the result's COUNT — `SolvedCard`): the same ramp and the same
+// sequence, kept to the shape's own ink (`clip`) over the shape as it reads uncharged
+// (`base`: the written digits in white, an odometer's unreached zeros in the slate). Its foil
+// is the count's (`foil.ts` `paintCountFoil`: dithered, one slab), its recede DISSOLVES — the
+// solid's cells drop out in the Bayer matrix's order, in RECEDE_STEPS hard steps, the charge
+// run backwards — and its GLINTS stand on the shape's cap-line corners (`spots`), overhanging
+// the box: the canvas bleeds SHAPE_BLEED_PX past it on every side. A still one (reduced
+// motion) holds the instant a glint stands in full.
+//
+// Wherever it is drawn, THE FOIL'S CLOCK RESTS while nobody can see it — scrolled out of
+// view, or in a hidden tab — and picks the field up where the clock then is: it is a
+// function of time, so nothing is lost.
 const CELL_PX = 2;
+const SHAPE_BLEED_PX = 16;
+const RECEDE_STEPS = 8;
+
+export interface MeterShape {
+  // Names the shape: a new key redraws it.
+  key: string;
+  // Paints the ink the meter is kept to — opaque, any colour — in the box's CSS pixels.
+  clip: (ctx: CanvasRenderingContext2D) => void;
+  // Paints what stands UNDER the meter: the shape as it reads uncharged.
+  base: (ctx: CanvasRenderingContext2D) => void;
+  // Where a glint may stand (`countCells.ts` `capCorners`), in the box's CSS pixels.
+  spots: readonly (readonly [number, number])[];
+  // Whether a point of the box is ink: the foil paints only there.
+  inside: (x: number, y: number) => boolean;
+}
 
 // THE FOIL is the shared material (`foil.ts`): this canvas only says where and when.
 
@@ -45,6 +79,7 @@ export default function MeterCanvas({
   durationMs,
   sea = false,
   seed = 0,
+  shape = null,
   onFull,
 }: {
   value: number; // the meter's reading, 0-100
@@ -54,6 +89,8 @@ export default function MeterCanvas({
   sea?: boolean;
   // Which sea: every hole, and every given word, reads the field at its own place.
   seed?: number;
+  // A SHAPED meter (see `MeterShape`).
+  shape?: MeterShape | null;
   // Told on the frame the fill inks the chip SOLID — its last — so what follows a full
   // meter (the hole's burst) waits for the fill itself, never for a guess at its length.
   onFull?: () => void;
@@ -68,9 +105,27 @@ export default function MeterCanvas({
   const seaSince = useRef<number | null>(null);
   const drewRamp = useRef(false);
   const seaLoop = useRef<{ timer: number; raf: number }>({ timer: 0, raf: 0 });
+  // The shape is read off a ref, so a new one (the tally wrote a digit) redraws without
+  // rebuilding the painters.
+  const shapeRef = useRef(shape);
+  shapeRef.current = shape;
+  const shaped = shape !== null;
+  const bleed = shaped ? SHAPE_BLEED_PX : 0;
 
-  // The canvas, sized to its box at the device's resolution, with a 2d context ready to
-  // draw in CSS pixels; null while the box has no size.
+  // A shaped meter keeps what was just drawn to the shape's ink, and lays the shape's base
+  // under it.
+  const shapeUp = useCallback((ctx: CanvasRenderingContext2D) => {
+    const s = shapeRef.current;
+    if (!s) return;
+    ctx.globalCompositeOperation = 'destination-in';
+    s.clip(ctx);
+    ctx.globalCompositeOperation = 'destination-over';
+    s.base(ctx);
+    ctx.globalCompositeOperation = 'source-over';
+  }, []);
+
+  // The canvas, sized to its box (and a shape's bleed) at the device's resolution, with a 2d
+  // context ready to draw in the BOX's CSS pixels; null while the box has no size.
   const prepare = useCallback(() => {
     const canvas = ref.current;
     const box = canvas?.parentElement;
@@ -79,18 +134,18 @@ export default function MeterCanvas({
     const h = box.clientHeight;
     if (!w || !h) return null;
     const dpr = window.devicePixelRatio || 1;
-    const bw = Math.round(w * dpr);
-    const bh = Math.round(h * dpr);
+    const bw = Math.round((w + 2 * bleed) * dpr);
+    const bh = Math.round((h + 2 * bleed) * dpr);
     if (canvas.width !== bw || canvas.height !== bh) {
       canvas.width = bw;
       canvas.height = bh;
     }
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
+    ctx.setTransform(dpr, 0, 0, dpr, bleed * dpr, bleed * dpr);
+    ctx.clearRect(-bleed, -bleed, w + 2 * bleed, h + 2 * bleed);
     return { canvas, ctx, w, h, cols: Math.ceil(w / CELL_PX), rows: Math.ceil(h / CELL_PX) };
-  }, []);
+  }, [bleed]);
 
   // The RAMP's painting: every cell whose Bayer threshold is under the density at its
   // place is inked in the meter's colour.
@@ -107,8 +162,9 @@ export default function MeterCanvas({
           if (BAYER_8[(cy & 7) * 8 + (cx & 7)] < d * 64) ctx.fillRect(cx * CELL_PX, cy * CELL_PX, CELL_PX, CELL_PX);
         }
       }
+      shapeUp(ctx);
     },
-    [prepare],
+    [prepare, shapeUp],
   );
 
   // The FOIL's painting (`foil.ts`), under what is left of the solid ink while it recedes.
@@ -117,17 +173,37 @@ export default function MeterCanvas({
     (seconds: number, solid: number) => {
       const p = prepare();
       if (!p) return;
-      const { canvas, ctx, w, h } = p;
-      paintFoil(ctx, w, h, seconds, seed, scratch.current);
-      // THE RECEDE: what is left of the solid ink the fill reached.
-      if (solid > 0) {
-        ctx.globalAlpha = solid;
-        ctx.fillStyle = getComputedStyle(canvas).color;
-        ctx.fillRect(0, 0, w, h);
-        ctx.globalAlpha = 1;
+      const { canvas, ctx, w, h, cols, rows } = p;
+      const s = shapeRef.current;
+      if (!s) {
+        paintFoil(ctx, w, h, seconds, seed, scratch.current);
+        // THE RECEDE: what is left of the solid ink the fill reached.
+        if (solid > 0) {
+          ctx.globalAlpha = solid;
+          ctx.fillStyle = getComputedStyle(canvas).color;
+          ctx.fillRect(0, 0, w, h);
+          ctx.globalAlpha = 1;
+        }
+        return;
       }
+      const since = seaSince.current === null ? 0 : seaSince.current / 1000;
+      paintCountFoil(ctx, w, h, seconds, seed, since, s.inside);
+      // A shape's recede DISSOLVES: the solid's cells drop out in Bayer order, whole steps.
+      if (solid > 0) {
+        const level = (Math.ceil(solid * RECEDE_STEPS) / RECEDE_STEPS) * 64;
+        ctx.fillStyle = getComputedStyle(canvas).color;
+        ctx.beginPath();
+        for (let cy = 0; cy < rows; cy += 1) {
+          for (let cx = 0; cx < cols; cx += 1) {
+            if (BAYER_8[(cy & 7) * 8 + (cx & 7)] < level) ctx.rect(cx * CELL_PX, cy * CELL_PX, CELL_PX, CELL_PX);
+          }
+        }
+        ctx.fill();
+      }
+      shapeUp(ctx);
+      paintCountGlints(ctx, s.spots, w, seconds, seed);
     },
-    [prepare, seed],
+    [prepare, seed, shapeUp],
   );
 
   // The ramp: the fill's density falls from solid to nothing over about a chip's height of
@@ -163,11 +239,25 @@ export default function MeterCanvas({
     [foil],
   );
 
+  // The foil's instant: the clock, or — a still shape — the one held instant (a resize must
+  // not pick another).
+  const seaNow = useCallback(
+    () => (shaped && prefersReducedMotion() ? COUNT_STILL_S * 1000 : performance.now()),
+    [shaped],
+  );
+
   // What the canvas shows right now, whichever reading it is on.
   const draw = useCallback(() => {
-    if (sea) drawSea(performance.now());
+    if (sea) drawSea(seaNow());
     else drawRamp(shown.current);
-  }, [sea, drawRamp, drawSea]);
+  }, [sea, drawRamp, drawSea, seaNow]);
+
+  // A new shape (the tally wrote a digit) redraws whatever the canvas is on.
+  const shapeKey = shape?.key;
+  useLayoutEffect(() => {
+    if (shapeKey !== undefined) draw();
+    // A redraw per shape, not per painter (`draw` reads the shape off its ref).
+  }, [shapeKey]);
 
   // The box's size is the word's, which the scramble changes: follow it.
   useLayoutEffect(() => {
@@ -216,7 +306,8 @@ export default function MeterCanvas({
   // THE SEA'S CLOCK: a frame every SEA_FRAME_MS while the sea is up — stepped, so it reads
   // as an animation and not a shader. A canvas that was drawing the ramp when the sea came
   // recedes into it from the solid it had reached; one born in the sea starts on the field.
-  // Reduced motion draws ONE frame and stops.
+  // Reduced motion draws ONE frame and stops. The clock RESTS while the canvas is out of
+  // view or the tab hidden.
   useEffect(() => {
     if (!sea) {
       seaSince.current = null;
@@ -228,9 +319,16 @@ export default function MeterCanvas({
     // A held frame must show the finished foil, without the recede's solid overlay.
     seaSince.current = drewRamp.current && !reducedMotion ? performance.now() : null;
     shown.current = 100;
-    drawSea(performance.now());
+    drawSea(seaNow());
     if (reducedMotion) return undefined;
     const loop = seaLoop.current;
+    let inView = true;
+    let running = false;
+    const stop = () => {
+      running = false;
+      window.clearTimeout(loop.timer);
+      cancelAnimationFrame(loop.raf);
+    };
     const tick = () => {
       loop.timer = window.setTimeout(() => {
         loop.raf = requestAnimationFrame((now) => {
@@ -239,12 +337,47 @@ export default function MeterCanvas({
         });
       }, SEA_FRAME_MS);
     };
-    tick();
-    return () => {
-      window.clearTimeout(loop.timer);
-      cancelAnimationFrame(loop.raf);
+    const sync = () => {
+      const visible = inView && document.visibilityState !== 'hidden';
+      if (visible && !running) {
+        running = true;
+        tick();
+      } else if (!visible && running) stop();
     };
-  }, [sea, drawSea]);
+    const canvas = ref.current;
+    const io =
+      canvas && typeof IntersectionObserver !== 'undefined'
+        ? new IntersectionObserver(([entry]) => {
+            inView = entry.isIntersecting;
+            sync();
+          })
+        : null;
+    if (canvas && io) io.observe(canvas);
+    document.addEventListener('visibilitychange', sync);
+    sync();
+    return () => {
+      stop();
+      io?.disconnect();
+      document.removeEventListener('visibilitychange', sync);
+    };
+  }, [sea, drawSea, seaNow]);
 
-  return <canvas ref={ref} className="hole-meter-canvas" aria-hidden="true" />;
+  return (
+    <canvas
+      ref={ref}
+      className="hole-meter-canvas"
+      style={
+        bleed > 0
+          ? {
+              inset: 'auto',
+              left: -bleed,
+              top: -bleed,
+              width: `calc(100% + ${2 * bleed}px)`,
+              height: `calc(100% + ${2 * bleed}px)`,
+            }
+          : undefined
+      }
+      aria-hidden="true"
+    />
+  );
 }

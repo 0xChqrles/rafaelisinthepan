@@ -85,6 +85,21 @@ export function adoptGroups(answer: GroupsAnswer, accountId: string): void {
   useGroupsStore.setState({ phase: 'ready', groups: answer.groups });
 }
 
+// NEW GROUP, ASKED FROM ANOTHER SCREEN: the result's boards end on an empty group's slot (the
+// `+`), which is the board screen's own NEW GROUP — so it asks for it here and navigates to the
+// board, which takes the ask on its mount and opens its create screen. One-shot.
+let createAsked = false;
+
+export function askGroupCreate(): void {
+  createAsked = true;
+}
+
+export function takeGroupCreate(): boolean {
+  const asked = createAsked;
+  createAsked = false;
+  return asked;
+}
+
 export function useGroups(): GroupsState {
   return useGroupsStore((state) => state);
 }

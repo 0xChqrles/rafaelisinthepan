@@ -425,9 +425,9 @@ const SCORE_SIZE = 160; // 20px a pixel of the face
 const UNIT_SIZE = 32;
 const UNIT_TRACKING = 0.16;
 const UNIT_GAP = 24; // the count's ink to the unit's capitals
-// Ruler geometry: the on-screen bar (340×16, 2px ticks overhanging 3px, 10px indices) drawn
-// across the card's column, its ticks and indices heavier than one scale would make them so
-// they still read in a chat's thumbnail.
+// Ruler geometry: the on-screen ruler (web `RunRuler`: a 16px bar across the result's column,
+// 4px ticks overhanging 8px, 16px indices) drawn across the card's column, its ticks and
+// indices heavier than one scale would make them so they still read in a chat's thumbnail.
 const BAR_X = 64;
 const BAR_W = CARD_WIDTH - 2 * BAR_X;
 const BAR_H = 48;
@@ -443,6 +443,15 @@ const PORTRAIT_NAME_GAP = 16;
 const PORTRAIT_GAP = 72; // the portrait column to the count's
 // The edition, on the top row: the day's own label in the pixel face's accent.
 const EDITION_SIZE = 24;
+
+// THE RUN'S CELL EDGES: where each of `n` tries' cells starts across a bar `width` whole
+// pixels wide, plus the bar's end — integer boundaries tiling [0, width] exactly, so adjacent
+// cells share an edge (no hairline seam under crispEdges) and the row never spills past the
+// bar. A solve's tick stands on the edge after its try. ONE spelling for the card and the
+// solved screen's ruler (web `RunRuler`), so the two draw the same cells and the same ticks.
+export function runEdges(n: number, width: number): number[] {
+  return Array.from({ length: n + 1 }, (_, i) => Math.round((i * width) / n));
+}
 
 // The headline: the count, or `∞` for a round that ended unsolved (the v6 capped flag:
 // given up, or capped), over its unit. Press Start 2P
@@ -563,7 +572,8 @@ export function renderCardSvg(
   // Integer cell boundaries so adjacent cells share an edge EXACTLY — no hairline seams
   // under crispEdges — and, because the boundaries tile [BAR_X, BAR_X + BAR_W) exactly,
   // the row can never spill past the bar's right edge.
-  const edge = (i: number) => BAR_X + Math.round((i * BAR_W) / n);
+  const edges = runEdges(n, BAR_W);
+  const edge = (i: number) => BAR_X + edges[i];
   // ONE rect per occupied PIXEL COLUMN, not per try. Past BAR_W tries several tries land
   // on the same column, and emitting a 1px rect for each only stacks them (the last one
   // painted wins) while handing the rasterizer thousands of invisible rects — a hand-built

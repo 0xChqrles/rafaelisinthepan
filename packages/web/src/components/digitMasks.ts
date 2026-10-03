@@ -2,9 +2,12 @@ import digitsUrl from '../assets/digits.png';
 
 // THE PIXEL DIGITS' GLYPHS (`assets/digits.png`, the pixel face's own 7×7 digits), decoded
 // once per session and shared by every surface that draws a number as BLOCKS: the score
-// watermark (`CellDigits`) and the streak celebration (`components/streak/`). Alpha is the mask —
-// the art's RGB is ignored, so a surface paints the blocks in its own ink — and each slot
-// is trimmed to its ink columns, so widths stay proportional (the 1 is narrower).
+// watermark (`CellDigits`), the streak celebration (`components/streak/`) and the result's
+// count (`SolvedCard`, through `countCells.ts`). Alpha is the mask — the art's RGB is ignored,
+// so a surface paints the blocks in its own ink — and each slot is trimmed to its ink
+// columns, so widths stay proportional (the 1 is narrower). Every glyph's ink starts on its
+// slot's first column, so a mask's column x is also the face's column x: a surface setting
+// the digits on the face's own 8-pixel advance draws exactly the DOM text's glyphs.
 
 export const GLYPH_ROWS = 7;
 // One glyph pixel of spacing between digits (scales with the digits).
@@ -17,6 +20,13 @@ const SHEET_ORDER = '1234567890';
 const SLOT_W = 7;
 
 let masksPromise: Promise<DigitMask[]> | null = null;
+// The decoded glyphs once they are in: a surface mounted after the decode draws them on its
+// first frame (the result's count is born in its foil, never white text first).
+let decoded: DigitMask[] | null = null;
+
+export function digitMasksNow(): DigitMask[] | null {
+  return decoded;
+}
 
 export function loadDigitMasks(): Promise<DigitMask[]> {
   if (!masksPromise) {
@@ -51,6 +61,7 @@ export function loadDigitMasks(): Promise<DigitMask[]> {
           for (let x = 0; x < w; x++) rows[y * w + x] = on(x0 + left + x, y) ? 1 : 0;
         masks[Number(SHEET_ORDER[slot])] = { w, rows };
       }
+      decoded = masks;
       return masks;
     })().catch((error: unknown) => {
       // A failed decode is not cached: the next surface to ask tries again.

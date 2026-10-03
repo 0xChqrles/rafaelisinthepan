@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { anonName, defaultAvatar } from './assigned';
 import { decodeAvatar, encodeAvatar, AVATAR_CELLS, AVATAR_PALETTES } from './avatar';
-import { renderCardSvg, renderGroupCardSvg, shareHeadline, CARD_WIDTH } from './cardSvg';
+import { renderCardSvg, renderGroupCardSvg, runEdges, shareHeadline, CARD_WIDTH } from './cardSvg';
 import { dateForDayNumber, dayNumber } from './day';
 import { INFINITY_EM_HEIGHT, INFINITY_GLYPH, PIXEL_INK_LIFT_EM } from './glyphs';
 import { progressHeatColor } from './heat';
@@ -373,5 +373,32 @@ describe('shareHeadline — the message\'s first line', () => {
     expect(shareHeadline({ dayNumber: dayNumber('2026-08-11') }, '∞', 'tries')).toBe(
       'Whippin AI 2026-08-11 — ∞ tries',
     );
+  });
+});
+
+// The run's cell edges are ONE spelling for the card and the solved screen's ruler (web
+// `RunRuler`): whole pixels tiling the bar exactly, so the two draw the same cells and stand
+// a solve's tick on the same edge.
+describe('runEdges — the ruler\'s cells on whole pixels', () => {
+  it('tiles the bar exactly: from 0 to its width, one edge more than the tries', () => {
+    for (const [n, width] of [[1, 330], [3, 330], [23, 330], [137, 260], [500, 616]]) {
+      const edges = runEdges(n, width);
+      expect(edges).toHaveLength(n + 1);
+      expect(edges[0]).toBe(0);
+      expect(edges[n]).toBe(width);
+      for (const edge of edges) expect(Number.isInteger(edge)).toBe(true);
+      for (let i = 1; i <= n; i += 1) expect(edges[i]).toBeGreaterThanOrEqual(edges[i - 1]);
+    }
+  });
+
+  it('gives every try a cell while the bar has a pixel for each', () => {
+    const edges = runEdges(23, 330);
+    for (let i = 0; i < 23; i += 1) expect(edges[i + 1] - edges[i]).toBeGreaterThanOrEqual(14);
+  });
+
+  it('is the card\'s own bar: its cells start on these edges', () => {
+    const trajectory = Array.from({ length: 23 }, (_, i) => (100 * (i + 1)) / 23);
+    const svg = renderCardSvg({ lang: 'en', dayNumber: 300, score: 23, trajectory, solvedAt: [7, 15, 23] });
+    expect(cellRects(svg).map((cell) => cell.x - BAR.x)).toEqual(runEdges(23, BAR.w).slice(0, 23));
   });
 });

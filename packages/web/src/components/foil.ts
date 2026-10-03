@@ -1,3 +1,4 @@
+import { BAYER_8 } from '@whippin/shared';
 import { T0, hash3, noise3 } from './noise';
 
 // THE HOLOGRAPHIC FOIL — the app's one shiny MATERIAL (user-decided 2026-09-22, the activated
@@ -20,7 +21,9 @@ import { T0, hash3, noise3 } from './noise';
 //      out… it's supposed to be chill"): a cell's clock is offset by its own hash; a star
 //      rises in, HOLDS, then fades out slowly — few at a time.
 // Its consumers: the charge meter's activated hole and the wheel's foil rows (`MeterCanvas`,
-// through `paintFoil`), and the streak celebration's forged link, which wears the same inks
+// through `paintFoil`); the result's COUNT (`MeterCanvas`'s shaped meter, through
+// `paintCountFoil` and `paintCountGlints`, below — the same four layers DITHERED, at a size
+// many times a chip's); and the streak celebration's forged link, which wears the same inks
 // and sparkle curve as a material of its raster's cells (`streak/sprites.ts` `foilInk`). Each
 // surface steps it at its own pace and passes its own `seed` — the same material, never the
 // same picture.
@@ -103,17 +106,25 @@ export function sparkleAt(age: number): number {
   return k <= 0 ? 0 : k * k * k;
 }
 
-// The shimmer at a cell, 0–1: the noise, read at this seed's own place in the field.
-function shimmerAt(cx: number, cy: number, seconds: number, seed: number): number {
+// The shimmer at a cell, 0–1: the noise, read at this seed's own place in the field. `pools`
+// scales the lattice (a larger surface's pools span more cells); `floor` is the least of it.
+function shimmerAt(
+  cx: number,
+  cy: number,
+  seconds: number,
+  seed: number,
+  pools = 1,
+  floor = SHIMMER_FLOOR,
+): number {
   const n = noise3(
-    cx / SHIMMER_CELLS_X - seconds * SHIMMER_DRIFT + seed * 101.7,
-    cy / SHIMMER_CELLS_Y + seed * 53.1,
+    cx / (SHIMMER_CELLS_X * pools) - seconds * SHIMMER_DRIFT + seed * 101.7,
+    cy / (SHIMMER_CELLS_Y * pools) + seed * 53.1,
     T0 + seconds * SHIMMER_EVOLVE,
   );
   // One octave of value noise lives mostly in 0.3–0.7: stretched about the half so the pools
   // reach full and the troughs the floor.
   const v = Math.min(1, Math.max(0, 0.5 + (n - 0.5) * 2.4));
-  return SHIMMER_FLOOR + (1 - SHIMMER_FLOOR) * v;
+  return floor + (1 - floor) * v;
 }
 
 // A surface's scratch: the shimmer's one-pixel-a-cell bitmap, reused frame to frame.
@@ -207,5 +218,188 @@ export function paintFoil(
       ctx.fillStyle = `rgba(255,255,255,${Math.min(1, 1.6 * fade)})`;
       ctx.fillRect(x, y, FOIL_CELL_PX, FOIL_CELL_PX);
     }
+  }
+}
+
+// ── THE COUNT'S FOIL ─────────────────────────────────────────────────────────────────────
+// The result's count (`SolvedCard`) wears the material as its PRIZE: a field many times a
+// chip's height, cut to the digits' own pixels (20px each on a phone). Blended, the foil
+// reads there as an airbrushed gradient in a pixel stencil, so it is DRAWN THE PIXEL ART'S
+// WAY — the same four layers on the house's 2px cell, every colour ORDERED-DITHERED (shared
+// `bayer.ts`) instead of blended: each cell takes ONE of a few inks by its Bayer threshold —
+// one of the two inks of the loop either side of its place on the diagonal, at one of
+// COUNT_DITHER_LEVELS strengths over the white (the shimmer's pools), or white under the
+// sheen. Hard cells in a few inks, like the run's heat under it.
+//
+// ONE SLAB: it shows a WINDOW of COUNT_CYCLES of the loop across the whole number and drifts
+// by sliding that window along the closed loop itself — never a seam, never a sticker per
+// digit in its own colour family — turning slower (COUNT_DRIFT), its pools COUNT_POOLS times
+// larger, its inks a step deeper (less lifted, a higher floor) so the spectrum reads across a
+// big white shape, its sheen a narrower band passing brighter. The sheen's FIRST pass is timed
+// to the foil: it crosses the middle COUNT_FLASH_S after the foil began, as the charge
+// dissolves — the number catching the light the moment it turns. The glitter is sparser
+// (COUNT_SPARKLE of a chip's share) and STEPS: a star's centre, then its arms, then a long
+// star's second cells, and back.
+export const COUNT_FOIL_CELL_PX = 2;
+const COUNT_DITHER_LEVELS = 4;
+const COUNT_CYCLES = 0.34;
+const COUNT_DRIFT = 0.05;
+const COUNT_POOLS = 3;
+const COUNT_PASTEL = 0.3;
+const COUNT_ALPHA = 0.86;
+const COUNT_FLOOR = 0.5;
+const COUNT_SHEEN_WIDTH = 0.15;
+const COUNT_SHEEN_ALPHA = 0.8;
+const COUNT_FLASH_S = 0.45;
+const COUNT_SPARKLE = 0.22;
+
+// The loop's ink `i`, `level` of COUNT_DITHER_LEVELS − 1 of the way from white to its full
+// strength (lifted COUNT_PASTEL, at COUNT_ALPHA), as a fill — memoised: the count is drawn
+// from a couple of dozen colours.
+const countInks = new Map<number, string>();
+function countInk(i: number, level: number): string {
+  const key = i * COUNT_DITHER_LEVELS + level;
+  let hit = countInks.get(key);
+  if (!hit) {
+    const a = (COUNT_ALPHA * level) / (COUNT_DITHER_LEVELS - 1);
+    const c = HOLO_INKS[i].map((v) => {
+      const lifted = v + (255 - v) * COUNT_PASTEL;
+      return Math.round(255 + (lifted - 255) * a);
+    });
+    hit = `rgb(${c[0]} ${c[1]} ${c[2]})`;
+    countInks.set(key, hit);
+  }
+  return hit;
+}
+
+// Paint the count's foil over `ctx`'s (w × h) CSS-pixel box, only where `inside` says the
+// count has ink. `since` is when the foil began on this surface, in seconds of the same clock
+// (0 for one born in the foil): the sheen's first pass is timed off it.
+export function paintCountFoil(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  seconds: number,
+  seed: number,
+  since: number,
+  inside: (x: number, y: number) => boolean,
+): void {
+  const grain = COUNT_FOIL_CELL_PX;
+  const dx = w;
+  const dy = h * 0.9;
+  const diag = dx * dx + dy * dy;
+  const n = HOLO_INKS.length;
+  const shift = wrap(seconds * COUNT_DRIFT + seed * 0.37);
+  const pass = wrap((seconds - since - COUNT_FLASH_S) / SHEEN_PERIOD_S + 0.5);
+  const centre = -COUNT_SHEEN_WIDTH + pass * (1 + 2 * COUNT_SHEEN_WIDTH);
+  const cols = Math.ceil(w / grain);
+  const rows = Math.ceil(h / grain);
+  // One path per ink: a frame is a handful of fills, each a union of cells.
+  const batches = new Map<string, Path2D>();
+  const put = (fill: string, x: number, y: number) => {
+    let path = batches.get(fill);
+    if (!path) {
+      path = new Path2D();
+      batches.set(fill, path);
+    }
+    path.rect(x, y, grain, grain);
+  };
+  // The shimmer's lattice is read on the chip's own 2px cells, whatever this grain.
+  const shimmerScale = grain / FOIL_CELL_PX;
+  for (let cy = 0; cy < rows; cy += 1) {
+    for (let cx = 0; cx < cols; cx += 1) {
+      const x = cx * grain;
+      const y = cy * grain;
+      if (!inside(x + grain / 2, y + grain / 2)) continue;
+      const u = (BAYER_8[(cy & 7) * 8 + (cx & 7)] + 0.5) / 64;
+      const t = ((x + grain / 2) * dx + (y + grain / 2) * dy) / diag;
+      // Under the sheen's band: white, by its density there.
+      const band = 1 - Math.abs(t - centre) / COUNT_SHEEN_WIDTH;
+      if (band > 0 && band * COUNT_SHEEN_ALPHA > u) {
+        put('#fff', x, y);
+        continue;
+      }
+      // Which of the two inks either side of this place on the loop's window.
+      const at = wrap(t * COUNT_CYCLES - shift) * n;
+      const i0 = Math.floor(at);
+      const ink = at - i0 > u ? (i0 + 1) % n : i0;
+      // How strong over the white: the shimmer's pool, dithered between two levels.
+      const pool = shimmerAt(cx * shimmerScale, cy * shimmerScale, seconds, seed, COUNT_POOLS, COUNT_FLOOR);
+      const q = pool * (COUNT_DITHER_LEVELS - 1);
+      const lo = Math.floor(q);
+      const level = Math.min(COUNT_DITHER_LEVELS - 1, q - lo > 1 - u ? lo + 1 : lo);
+      put(level === 0 ? '#fff' : countInk(ink, level), x, y);
+    }
+  }
+  batches.forEach((path, fill) => {
+    ctx.fillStyle = fill;
+    ctx.fill(path);
+  });
+
+  // The glitter: each cell on its own clock, as the chip's, stepping its arms.
+  ctx.fillStyle = '#fff';
+  for (let cy = 1; cy < rows - 1; cy += 1) {
+    for (let cx = 1; cx < cols - 1; cx += 1) {
+      const local = seconds + hash3(cx, cy, seed * 31 + 7) * SPARKLE_PERIOD_S;
+      const cycle = Math.floor(local / SPARKLE_PERIOD_S);
+      const age = local - cycle * SPARKLE_PERIOD_S;
+      if (age >= SPARKLE_LIFE_S) continue;
+      if (hash3(cx + seed * 977, cy, cycle) >= SPARKLE_SHARE * COUNT_SPARKLE) continue;
+      const x = cx * grain;
+      const y = cy * grain;
+      if (!inside(x + grain / 2, y + grain / 2)) continue;
+      const fade = sparkleAt(age);
+      if (fade < 0.2) continue;
+      const long = hash3(cx, cy + 5, cycle) < SPARKLE_LONG;
+      const arm = (fade < 0.55 ? 0 : long && fade > 0.9 ? 2 : 1) * grain;
+      ctx.fillRect(x - arm, y, 2 * arm + grain, grain);
+      ctx.fillRect(x, y - arm, grain, 2 * arm + grain);
+    }
+  }
+}
+
+// THE COUNT'S GLINTS, over everything and across its edge: COUNT_GLINT_SLOTS stars taking
+// turns on the cap line's outer corners (`spots`, `countCells.ts` `capCorners`) — slot 0 in
+// the left half, slot 1 in the right — so one stands at a time, two only while one hands over.
+// Full white on COUNT_GLINT_CELL_PX cells, centred on the corner's ink; a star GROWS its arms
+// in whole cells to COUNT_GLINT_ARM, holds, and draws them back in: a pixel star, not a
+// crosshair. Each cycle picks its corner by hash.
+export const COUNT_GLINT_CELL_PX = 4;
+const COUNT_GLINT_SLOTS = 2;
+const COUNT_GLINT_PERIOD_S = 3.6;
+const COUNT_GLINT_RISE_S = 0.16;
+const COUNT_GLINT_HOLD_S = 1.5;
+const COUNT_GLINT_FADE_S = 0.32;
+const COUNT_GLINT_ARM = 2;
+// A still count (reduced motion) holds this instant of the clock, at which a glint stands in
+// full.
+export const COUNT_STILL_S = 2.9;
+
+export function paintCountGlints(
+  ctx: CanvasRenderingContext2D,
+  spots: readonly (readonly [number, number])[],
+  w: number,
+  seconds: number,
+  seed: number,
+): void {
+  const g = COUNT_GLINT_CELL_PX;
+  const life = COUNT_GLINT_RISE_S + COUNT_GLINT_HOLD_S + COUNT_GLINT_FADE_S;
+  ctx.fillStyle = '#fff';
+  for (let slot = 0; slot < COUNT_GLINT_SLOTS; slot += 1) {
+    const local = seconds + (slot * COUNT_GLINT_PERIOD_S) / COUNT_GLINT_SLOTS;
+    const cycle = Math.floor(local / COUNT_GLINT_PERIOD_S);
+    const age = local - cycle * COUNT_GLINT_PERIOD_S;
+    if (age >= life) continue;
+    let fade: number;
+    if (age < COUNT_GLINT_RISE_S) fade = age / COUNT_GLINT_RISE_S;
+    else if (age < COUNT_GLINT_RISE_S + COUNT_GLINT_HOLD_S) fade = 1;
+    else fade = 1 - (age - COUNT_GLINT_RISE_S - COUNT_GLINT_HOLD_S) / COUNT_GLINT_FADE_S;
+    const east = slot === 1;
+    const mine = spots.filter(([sx]) => sx >= w / 2 === east);
+    if (mine.length === 0) continue;
+    const [x, y] = mine[Math.floor(hash3(slot + seed * 13, cycle, 57) * mine.length)];
+    const arm = Math.round(fade * COUNT_GLINT_ARM) * g;
+    ctx.fillRect(x - arm, y, 2 * arm + g, g);
+    ctx.fillRect(x, y - arm, g, 2 * arm + g);
   }
 }
