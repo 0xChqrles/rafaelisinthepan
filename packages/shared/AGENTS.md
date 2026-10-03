@@ -41,14 +41,29 @@
     src/glyphs.ts             pixel-art glyphs the game DRAWS rather than sets: the #214 `∞`
                               path + view box, shared by the OG card, the web result and a
                               group board's ended row; the
-                              app's mark, traced for the OG cards
+                              app's mark, traced for the OG cards; the pixel face's ten digits
+                              as cells (`DIGIT_MASKS`: the result's count, the card's, the
+                              score watermark, the streak celebration)
+    src/countCells.ts         the result's COUNT as cells on the face's 8-pixel advance:
+                              countInk/glyphBoxes/capCorners/inkEms (the screen + the card) and
+                              the tally's reels (reelInk/reelRow, the screen's)
+    src/noise.ts              the app's ONE value noise (T0/hash3/noise3): the foil, the heat,
+                              the account mark, the streak and the tutorial art, and the card
+    src/foil.ts               the HOLOGRAPHIC FOIL as cells (inks, spectrum, shimmer, sheen,
+                              glitter, the count's glints): the web paints it, the card draws
+                              one still instant
+    src/runHeat.ts            the run's HEAT rising off the ruler (heatCells) and its clearing
+                              round the count and the unit (heatKeepOut): the web animates it,
+                              the card draws it still
     src/bayer.ts              the ordered dither's Bayer 8×8 matrix (the meter, the level art,
                               the OG cards' rings)
     src/heat.ts               the app's ONE weird→calm stop gradient: heatColor() + fixed-cap rankHeatColor()/HIT_HEAT_CAP (exponents, floating hits, loot, route rows) + progressHeatColor()/progressEmoji() (run rulers incl. the card, share-text emoji row, archive fills, chooser strips)
     src/shareCard.ts          the share-token codec, browser + Lambda
     src/base64url.ts          INTERNAL (not re-exported): the base64url alphabet + encoder the
                               share-token and avatar codecs share
-    src/cardSvg.ts            the OG cards' SVG: a result from a decoded token, and the #271 group card (name + member marks + app name),
+    src/cardSvg.ts            the OG cards' SVG: a result from a decoded token — the solved screen's card laid down (the
+                              count on the face's cells in the foil, the run's heat over the ruler, a signed share's
+                              quiet signature) — and the #271 group card (name + member marks + app name),
                               in the site previews' frame (brackets + lockup), set in the pixel face and Azeret Mono Bold;
                               `runEdges`, the run's whole-pixel cell edges, which the web's result ruler splits its bar at too
     src/index.ts              re-exports
@@ -247,9 +262,18 @@
   malformed token stays a flat 404.
 - `src/glyphs.ts` is the ONE `∞` the app draws (#214): Press Start 2P has no such glyph and
   the OG rasterizer runs with `loadSystemFonts: false`, so the headline of a round that ended
-  unsolved (given up, or capped) ships as pixel-art PATH DATA — one path, one view box, and one `INFINITY_EM_HEIGHT` both
-  surfaces size from, since the card lays its headline out arithmetically (the face advances
-  1em per glyph) and the web sizes an inline SVG in `em`. The plain-text share line and the
-  preview page's title use the literal character instead: no font is involved there.
+  unsolved (given up, or capped) ships as pixel-art PATH DATA — one path, one view box. The
+  result's headline (the screen's and the card's) sets it on the count's own grid, a cell per
+  font pixel; inline beside type it sizes from `INFINITY_EM_HEIGHT` in `em`. The plain-text
+  share line and the preview page's title use the literal character instead: no font is
+  involved there.
+- **The result's pixel readings are ONE spelling for the screen and the share card**: the
+  face's digits as cells (`glyphs.ts` `DIGIT_MASKS`, laid out by `countCells.ts`), the value
+  noise (`noise.ts`), the holographic foil (`foil.ts`) and the run's heat with its clearing
+  (`runHeat.ts`). Each is a pure function of (surface, time, seed) measured in CELLS: the web
+  paints it on its 2px cell and animates it; `cardSvg.ts` draws ONE still instant on its own
+  4px cell — the screen's still count's (`COUNT_STILL_S`, its seed) — so the card stays
+  deterministic (same token, same bytes; content-addressed cards are cached a year). Retune
+  a constant here and both change together.
 - Changes here are contract changes by definition: update the Vitest contract tests
   and run `pnpm test` (root testing policy).

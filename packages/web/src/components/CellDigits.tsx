@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { prefersReducedMotion } from '../hooks/useScramble';
-import { GLYPH_GAP as GAP, GLYPH_ROWS, loadDigitMasks, type DigitMask as Mask } from './digitMasks';
+import { DIGIT_MASKS as masks, GLYPH_GAP as GAP, GLYPH_ROWS } from '@whippin/shared';
 
 // The score watermark: the count drawn as big PIXEL BLOCKS behind the play content, solid
 // (user-decided 2026-09-01 — a hollow 1px CONTOUR shipped for one pass the same day and was
@@ -16,8 +16,8 @@ import { GLYPH_GAP as GAP, GLYPH_ROWS, loadDigitMasks, type DigitMask as Mask } 
 // made the canvas 2.8x the number's height and 1.9x its width, cleared and gradient-filled
 // on every draw. Both are deleted; the canvas is now the number plus room for its stroke.
 //
-// SIZED BY THE SCREEN ALONE (same decision): each glyph pixel of assets/digits.png is a
-// px×px block whose size comes continuously from the viewport budgets below (the lesson's
+// SIZED BY THE SCREEN ALONE (same decision): each glyph pixel of the face's digits (shared
+// `DIGIT_MASKS`) is a px×px block whose size comes continuously from the viewport budgets below (the lesson's
 // framed plate passes `fit` and is sized by its anchor instead). The old
 // implementation quantized that size to whole `--cell` grid squares and SNAPPED the
 // number to the graph-paper grid — that existed so the BackgroundWaves field and the
@@ -34,7 +34,7 @@ import { GLYPH_GAP as GAP, GLYPH_ROWS, loadDigitMasks, type DigitMask as Mask } 
 // alpha lives HERE and not on the container, because element opacity would fade the canvas
 // as a whole rather than mixing the ink into the ground.
 const INK_ALPHA = 0.2;
-// The glyphs (`digitMasks.ts`, assets/digits.png) are the streak celebration's too.
+// The glyphs (shared `DIGIT_MASKS`) are the streak celebration's too.
 // Same role as a font-size clamp: min(62vh, 88vw/width) — height sets the ideal scale
 // (a watermark may overflow its band vertically, it always did), width is a hard cap so
 // the number never bleeds off-screen.
@@ -88,24 +88,13 @@ const ARRIVAL: Drawn = { value: -1, px: -1, cells: new Set() };
 // so a count drawn inside a frame stands whole within it. The two-digit rule holds.
 export default function CellDigits({ value, fit }: { value: number; fit?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
-  const [masks, setMasks] = useState<Mask[] | null>(null);
   // What the canvas last showed — the flip's starting point when the count moves.
   const drawn = useRef<Drawn | null>(null);
 
   useEffect(() => {
-    let alive = true;
-    loadDigitMasks().then((m) => {
-      if (alive) setMasks(m);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  useEffect(() => {
     const canvas = ref.current;
     const parent = canvas?.parentElement;
-    if (!canvas || !parent || !masks) return;
+    if (!canvas || !parent) return;
 
     // A count that MOVED since the last drawing flips from it; the FIRST drawing flips in
     // from nothing — the number materializing cell by cell with the sentence decoding over
@@ -273,7 +262,7 @@ export default function CellDigits({ value, fit }: { value: number; fit?: number
       window.clearInterval(interval);
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [masks, value]);
+  }, [value]);
 
   return <canvas ref={ref} className="cell-digits" aria-hidden="true" />;
 }

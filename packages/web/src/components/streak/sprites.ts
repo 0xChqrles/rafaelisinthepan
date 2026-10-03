@@ -1,6 +1,4 @@
-import { bayerThreshold as th } from '@whippin/shared';
-import { T0, hash3, noise3 } from '../noise';
-import { HOLO_INKS } from '../foil';
+import { HOLO_INKS, T0, bayerThreshold as th, hash3, noise3 } from '@whippin/shared';
 import {
   CROWN_MS,
   CROWN_STEPS,

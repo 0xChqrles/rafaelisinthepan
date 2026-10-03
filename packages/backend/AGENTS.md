@@ -24,7 +24,13 @@
 > `location.replace` shell, `noindex`, no OG meta) that moves a person on to the site home:
 > the status keeps a crawler from unfurling anything, and a person's browser gets a page
 > rather than a JSON body. A dead CARD (`/og/…`) stays a JSON 404. Same headers as the JSON
-> answer (CORS, no `Cache-Control`).
+> answer (CORS, no `Cache-Control`). A LIVE preview page (`ogCard.previewPage`: a share, a
+> signed share, a group invite) carries `og:title`, `og:description` — one short line in the
+> title's language (a share's play line, `Jouer à Whippin AI` / `Play Whippin AI`; the
+> language-neutral group page's English one) — `og:url`, the page's OWN link (the signed one
+> while it wears its player, the plain one once it falls back; the invite link, never the
+> landing it bounces to), the card as `og:image` with its size, and the Twitter large-image
+> tags.
 
 ## File map
 

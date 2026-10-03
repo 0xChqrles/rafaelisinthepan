@@ -1,5 +1,4 @@
-import { bayerThreshold as th } from '@whippin/shared';
-import { hash3 } from '../../../components/noise';
+import { bayerThreshold as th, hash3 } from '@whippin/shared';
 
 export { th };
 

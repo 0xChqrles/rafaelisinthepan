@@ -41,12 +41,11 @@
 // information lives in the last frame, never in the movement.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AVATAR_PALETTES, AVATAR_SIZE, decodeAvatar } from '@whippin/shared';
+import { AVATAR_PALETTES, AVATAR_SIZE, T0, decodeAvatar, noise3 } from '@whippin/shared';
 import Avatar from './Avatar';
-import { T0, noise3 } from './noise';
 import { prefersReducedMotion } from '../hooks/useScramble';
 
-// The noise is `components/noise.ts`'s (one octave of 3D value noise, integer-hashed) —
+// The noise is shared `noise.ts`'s (one octave of 3D value noise, integer-hashed) —
 // shared with the activated hole's sea since 2026-09-22.
 // How the field moves. The INK churns at a readable pace; the PALETTE is a slow drift with
 // almost no spatial term at all, which is what keeps the tile reading as ONE mark rather

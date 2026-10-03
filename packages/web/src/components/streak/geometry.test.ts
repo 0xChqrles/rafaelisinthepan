@@ -177,7 +177,7 @@ describe('the streak orbit layout', () => {
 });
 
 describe('the count as cells', () => {
-  // Two glyphs: a 1 three pixels wide, a 2 two wide (the face's own sheet is decoded in the browser).
+  // Two synthetic glyphs: a 1 three pixels wide, a 2 two wide.
   const one = { w: 3, rows: new Uint8Array(3 * 7).fill(1) };
   const two = { w: 2, rows: new Uint8Array(2 * 7).fill(1) };
   const glyphs = [two, one, two, two, two, two, two, two, two, two];
@@ -192,11 +192,5 @@ describe('the count as cells', () => {
       expect(m.bits[y * m.w + 0]).toBe(1);
       expect(m.bits[y * m.w + 5]).toBe(1);
     }
-  });
-
-  it('keeps a count’s width and no ink when the sheet never decoded (the dialog sets it as type)', () => {
-    const m = numberCells(null, 100);
-    expect(m.w).toBe(3 * 8 - 1);
-    expect(m.bits.every((b) => b === 0)).toBe(true);
   });
 });

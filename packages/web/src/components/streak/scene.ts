@@ -1,6 +1,5 @@
 import { easeOutCubic } from '../../hooks/useAnimatedNumber';
-import { T0, hash3, noise3 } from '../noise';
-import { sparkleAt } from '../foil';
+import { T0, hash3, noise3, sparkleAt } from '@whippin/shared';
 import {
   CLIMB_MS,
   CLOSE_MS,
@@ -51,7 +50,7 @@ import { countLayer } from './count';
 // previews draw theirs: bare ground, ONE big subject in whole cells, dithered orbit trails
 // around it.
 //
-//   THE NUMBER at the centre — the pixel face's own digits (`assets/digits.png`), each glyph
+//   THE NUMBER at the centre — the pixel face's own digits (shared `DIGIT_MASKS`), each glyph
 //     pixel a whole square of cells: 120px on a phone, the share card's 160 on a desktop,
 //     and never smaller at 100 than at 10.
 //   THE WEEK under it as a CHAIN, Monday first, left to right — the calendar's grammar (a

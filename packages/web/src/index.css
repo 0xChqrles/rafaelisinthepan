@@ -3985,16 +3985,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   top: 0;
   image-rendering: pixelated;
 }
-/* The count set as type, only if the digits' sheet never decoded (the raster's count is the
-   same face, cell for cell). */
-.streak-count-type {
-  position: absolute;
-  margin: 0;
-  font-family: var(--pixel-font);
-  line-height: 1;
-  text-align: center;
-  color: var(--fg);
-}
 
 /* The ULTRA star (`assets/hits/ultra-slash.png`, 7 frames of 71×66, the exact hit's sheet)
    struck on today's link as the chain reaches it: one walk at a whole scale (its own size on a

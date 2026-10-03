@@ -83,14 +83,15 @@
                               row, the COUNT drawn as a shaped meter (charge, a burst per
                               stopped digit, dithered foil), the run ruler with its heat;
                               draws itself on the reveal
-      components/countCells.ts  the count as the face's own glyph cells (pure, tested): its
-                              whole-pixel size, its ink, each glyph's box, the glints' corners,
-                              each reel's strip at a whole font pixel
+      components/countSize.ts  the count's whole-pixel size on the screen (pure, tested); its
+                              cells — its ink, each glyph's box, the glints' corners, each
+                              reel's strip — are shared `countCells.ts`, the card's too
       components/countRun.ts  the count's RUN (pure, tested): one fixed length for every score,
                               the slot machine's reels (start, stop, position, stop shake) and
                               the ruler's tries at each instant
-      components/RunHeat.tsx  the run's HEAT: the ruler's inks rising off it as an ordered
-                              dither behind the count (screen-only), with a clearing round it
+      components/RunHeat.tsx  the run's HEAT on the screen: shared `runHeat.ts`'s field (the
+                              ruler's inks rising off it as an ordered dither behind the count,
+                              a clearing round it — the share card draws it still), animated
       components/RunRuler.tsx  the run ruler: one cell per try on the share card's whole-pixel
                               edges (shared `runEdges`), the solve ticks and their indices
       hooks/useGlobalBoard.ts  the GLOBAL tab's one anonymous global-board read per result display
@@ -175,14 +176,12 @@
                               glyphs' ink, glints on its corners
       components/meterRamp.ts  the ramp as numbers, pure and tested: the fill's front for a
                               reading, the density, the cell rule, the solid frame
-      components/foil.ts      the holographic FOIL, the app's one shiny material, dithered on
-                              2px cells: ONE painter (`paintFoil`) for the active hole, every
-                              given word and the result's count, the count's glints
-                              (`paintCountGlints`), and its inks + sparkle curve, which the
-                              streak's forged link wears as raster cells
-      components/digitMasks.ts  the pixel face's digits (`assets/digits.png`) as block masks,
-                              decoded once: the CellDigits watermark, the streak's count and
-                              the result's count
+      components/foil.ts      the holographic FOIL on a canvas, on 2px cells: ONE painter
+                              (`paintFoil`) for the active hole, every given word and the
+                              result's count, the count's glints (`paintCountGlints`). The
+                              material itself is shared `foil.ts` (the share card draws one
+                              still instant; its inks + sparkle curve are what the streak's
+                              forged link wears as raster cells)
       components/StreakDialog.tsx  the streak celebration (lazy, `LazyStreakDialog`): the
                               native modal, its fast-forward/dismiss machine, the show's ONE
                               clock driving the canvas, the foil and the words
@@ -219,6 +218,7 @@
                               composed message)
       hooks/useShare.ts       how a RESULT leaves the app (native sheet -> clipboard + COPIED)
     public/                   served at site root (web assets + generated data)
+      robots.txt              every crawler allowed, everywhere (a missing object is the bucket's 403)
       vocab/<lang>.json       full slugged reduced vocab (existence set) — fetched by the SPA
 ```
 
@@ -400,8 +400,8 @@ These are decided and verified against the code. Treat them as load-bearing.
   into HOLOGRAPHIC FOIL (**user-decided 2026-09-22: "something more holographic like a
   pokemon card… make something really beautiful this time"**), **the result count's own
   DITHERED material** (user-asked 2026-10-03: "reuse the effect you've created for the try
-  count with the colors and the dithering, for the filled words too"; `components/foil.ts`
-  `paintFoil`, ONE painter for the chip, every given word and the count — the app's one
+  count with the colors and the dithering, for the filled words too"; shared `foil.ts`, painted
+  by `components/foil.ts` `paintFoil`, ONE painter for the chip, every given word and the count — the app's one
   shiny MATERIAL; the streak celebration's forged link wears its inks too): FOUR LAYERS on
   the chip's 2px cells, every frame, under the dark ink, every colour ORDERED-DITHERED and
   never blended — a SPECTRUM OF THE APP'S OWN INKS (user-asked 2026-09-22, "a more whippin
@@ -409,7 +409,7 @@ These are decided and verified against the code. Treat them as load-bearing.
   → coral and back, one seamless loop), a window of a third of the loop across the
   surface sliding slowly along it, each cell one of the two inks either side of its place;
   the SHIMMER — how strong that ink stands over the white, one of three steps — pooled by
-  one octave of value noise (`components/noise.ts`, shared with `AccountMark`) scrolled
+  one octave of value noise (shared `noise.ts`, also `AccountMark`'s) scrolled
   through the word so it swirls instead of sliding flat; a narrow white SHEEN passing the
   diagonal every `SHEEN_PERIOD_S`, its first pass crossing a chip as its cobalt dissolves
   (a chip born in the foil passes at its seed's own phase; the count, as if its foil began
@@ -720,7 +720,7 @@ These are decided and verified against the code. Treat them as load-bearing.
     all-caps chrome rule: quoted content keeps its own casing, the code-uppercased KIND
     carrying the phrase contrast), the run ruler's tick numbers, the result boards' ranks,
     numbers and `+N`, and the streak
-    celebration's count and edition (the count in the face's own `digits.png` glyphs, each
+    celebration's count and edition (the count in the face's own digits, shared `DIGIT_MASKS`, each
     glyph pixel a whole square of the celebration's raster cells; the day's date set in the
     face). **Every monospace layout assumption therefore still holds** — MixWord's ch
     reservations and CellDigits' grid sit on surfaces that stayed pixel. The coach text's inline `[[b:]]`/`[[w:]]` words are
@@ -2617,7 +2617,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
       435–483; 1366×657 (a laptop's browser window), wide, a 160px count, SHARE at y
       556–604.
     - **THE COUNT IS THE SUBJECT, drawn as the METER.** Press Start 2P at the LARGEST whole
-      multiple of 8px whose INK fits the hero (`countCells.ts` `countSize` — the box is the
+      multiple of 8px whose INK fits the hero (`countSize.ts` — the box is the
       digits' ink, the last glyph's trailing blank column dropped, so the number centres on
       what it prints) AND whose box leaves SHARE above the fold — the card's room from its
       top in the stage down to the stage's bottom fade, less everything in the card but the
@@ -2627,12 +2627,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
       take 88px. Decided per mount off the SMALL viewport (`svh`: a toolbar collapsing on
       scroll must not resize what has landed) and re-measured only when the column's width
       changes; nothing is scaled by a transform. It is drawn cell by cell on
-      the face's own glyphs (`digitMasks.ts`, laid out by `countCells.ts`) by a SHAPED
+      the face's own glyphs (shared `DIGIT_MASKS`, laid out by shared `countCells.ts`) by a SHAPED
       `MeterCanvas`. The tally is a SLOT MACHINE on those pixels (`countRun.ts`; user-decided
       2026-10-03, "all the digits spinning with a very short delay between them … they stop
       from left to right, and on each digit stop, there's a shake"): ONE REEL PER DIGIT of
       the score, no leading zero (3 has one, 137 three), each the face's glyphs (0–9 on a
-      strip, one blank row between, `countCells.ts` `reelInk`) standing at a whole font
+      strip, one blank row between, shared `countCells.ts` `reelInk`) standing at a whole font
       pixel. The reels start almost together and stop left to right, each with a snap (it
       brakes into its last few glyphs, rolls one font pixel past its digit and drops into
       place). On EACH STOP the digit SHAKES — whole font pixels in hard steps, drawn into
@@ -2647,21 +2647,23 @@ it to the local store — see `packages/backend/AGENTS.md`).
       charge with the meter's Bayer fill as far as the reconstruction had reached at the try
       the ruler is writing (never past 99); the last stop fills it, and on its burst's
       impact — read off the run's clock, the one the burst is mounted from, never off the
-      fill's tween — the cobalt DISSOLVES (Bayer order, eight hard steps) into the DITHERED FOIL (`foil.ts` `paintFoil`: the
+      fill's tween — the cobalt DISSOLVES (Bayer order, eight hard steps) into the DITHERED FOIL (shared `foil.ts`, `paintFoil`: the
       material every given word wears, on the house's 2px cell, one slab across the whole
       number, slow drift, a narrow sheen whose first pass meets the dissolve, its glitter
       sparser — `COUNT_SPARKLE`), glints taking turns on the cap line's outer corners
       (`paintCountGlints`). A settled result is BORN in the foil; the
       foil's clock rests while the count is out of view or the tab hidden. A round that
       ENDED UNSOLVED wears no shine: a plain white `∞` on the count's own pixel grid.
-    - **THE RUN'S HEAT** (`components/RunHeat`, screen-only — the share card draws none):
+    - **THE RUN'S HEAT** (`components/RunHeat` painting shared `runHeat.ts` — the share card
+      draws the same field still, on its own cell):
       the ruler's own inks rising off the bar as an ordered dither on 2px cells, each column
       as tall as that try's reconstruction got, its top ragged and its body grained by the
       app's value noise, so the climb reads as heat behind the count. It rises off the
       write head as the tally writes, surges on the landing, and at rest is ONE still frame
       (no clock runs). The count and its unit stand in a CLEARING of it (`keepOut`): the
       field thins to bare ground round each digit's ink box and round the unit, through the
-      same Bayer order.
+      same Bayer order (shared `heatKeepOut`). What stands in the heat is watched: a box that
+      moves with no change of count (the unit's face arriving) redraws the still frame round it.
     - **BOARDS** (`ResultBoards`, `.result-boards`; the bullet *Solved-screen BOARDS*
       below) — how the day compares, under SHARE, in ONE fixed box (354px). At 375×667 it
       starts at y 552, the page below the fold.
@@ -2869,7 +2871,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   checker — and its cells on WHOLE PIXELS, the bar's measured width split at the shared
   `runEdges` boundaries the card's own bar uses (`shared/src/cardSvg.ts`), so a long run's
   narrow cells stay hard cells and a tick stands on the edge the card puts it on. The
-  HEAT rising off it (`RunHeat`) is the screen's alone.
+  HEAT rising off it is shared too (`runHeat.ts`): the card draws the same field still.
   **The cells use the app's ONE weird→calm gradient:** a try's reconstruction percentage
   reads linearly through `progressHeatColor`, from the red MISS/weird terminus through
   amber, coral and orchid to the cobalt solve/calm terminus. Rank surfaces share the same
@@ -2906,7 +2908,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   card image (`renderCardSvg`), the OG/Twitter title (`ogCard.renderShareHtml`) and the
   shared plain text (`SolvedScreen`'s headline) — so a stranger can date the sentence,
   where the internal index says nothing to anyone but the game, and so the card, the title
-  and the archive URL the link resolves to all spell the same day the same way. The TOKEN
+  and the archive URL the link resolves to all spell the same day the same way. (The index
+  appears only as the EDITION number, `N.<index>` muted on the top row of the result screen
+  and of the card alike — furniture, never the day's name.) The TOKEN
   is unchanged (it has always carried the day index, and no version bump is involved):
   every surface formats it with `dateForDayNumber`, `dayNumber`'s exact inverse, so this is
   still the SERVER-owned game day — never the reader's local date, which is what the old
@@ -2983,7 +2987,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   frame's corner brackets with the lockup top left and the solved day's edition top right,
   and ONE subject drawn on a canvas in whole cells (`image-rendering: pixelated`; 3 CSS px a
   cell on a phone, 4 once the short side reaches 600): the COUNT in the pixel face's own
-  glyphs (`digitMasks.ts`), sized for three digits so 99→100 never shrinks it, DAY STREAK
+  glyphs (shared `DIGIT_MASKS`), sized for three digits so 99→100 never shrinks it, DAY STREAK
   under it; the WEEK as a CHAIN of pixel links, Monday first, along the floor of the WEEK'S
   ORBIT, the initials on one line beneath (two solved neighbours joined by an edge-on link
   through both holes, a day to come the link's empty ghost, a day missed an iron link left

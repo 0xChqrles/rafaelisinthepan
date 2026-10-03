@@ -1,8 +1,10 @@
-// One octave of VALUE NOISE in 3D (x, y, TIME) — the app's one noise, shared by the two
-// churning surfaces: the returning door's mark (`AccountMark`, where it was born) and the
-// holographic foil's shimmer (`foil.ts`). Integer-hashed, so the field is the same on every
-// device and every visit; one octave, because a 10-cell tile and a 2px-cell chip cannot
-// resolve more, and gradient noise would cost more code to be indistinguishable.
+// One octave of VALUE NOISE in 3D (x, y, TIME) — the app's one noise, read by every surface
+// that churns or grains: the returning door's mark (web `AccountMark`, where it was born), the
+// holographic foil's shimmer (`foil.ts`), the run's heat (`runHeat.ts`), the streak's forge and
+// the tutorial's scenes — and the share card, which draws the foil and the heat still. Integer-
+// hashed, so the field is the same on every device, every visit and the card's rasterizer; one
+// octave, because a 10-cell tile and a 2px-cell chip cannot resolve more, and gradient noise
+// would cost more code to be indistinguishable.
 //
 // Start a field AWAY from the lattice origin: an integer-hashed value noise is exactly its
 // own hash at (0, 0, 0), and every corner of that cell is the same one — so t=0 paints a

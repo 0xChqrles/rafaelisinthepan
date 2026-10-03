@@ -1,4 +1,4 @@
-import { T0, noise3 } from '../../../components/noise';
+import { T0, noise3 } from '@whippin/shared';
 import { COBALT, CYAN, DEEP, MUTED, ORCHID, RAIL, WHITE, clamp01, rect, rnd, th } from './kit';
 import type { SceneMaker } from './kit';
 
