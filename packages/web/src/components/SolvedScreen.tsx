@@ -5,7 +5,7 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareText, shareUrl } from '../game/share';
 import SolvedCard from './SolvedCard';
 import SolvedCaption, { captionDurationMs } from './SolvedCaption';
-import { COUNT_RUN_MS } from './countRun';
+import { COUNT_END_MS, COUNT_RUN_MS } from './countRun';
 import useShare from '../hooks/useShare';
 import Button from './Button';
 import ResultBoards, { type ResultBoardsData } from './ResultBoards';
@@ -79,33 +79,33 @@ const BOARDS_LEAD_MS = 200;
 // they are a tap onto the board only once it has played.
 const BOARDS_ARRIVE_MS = 420;
 
-// THE TALLY'S CLOCK: the share of COUNT_RUN_MS gone since `on` (0 before, 1 once run), a
-// frame at a time — ONE fixed length for every score (`countRun.ts`). A settled frame is at 1
-// at once, and so is reduced motion.
+// THE TALLY'S CLOCK: ms since `on`, a frame at a time, up to COUNT_END_MS — ONE fixed length
+// for every score (`countRun.ts`: the last reel stops at COUNT_RUN_MS, its shake plays out by
+// COUNT_END_MS). A settled frame is at the end at once, and so is reduced motion.
 function useCountClock(animate: boolean, on: boolean, reduceMotion: boolean): number {
-  const [p, setP] = useState(() => (animate ? 0 : 1));
+  const [ms, setMs] = useState(() => (animate ? 0 : COUNT_END_MS));
   useEffect(() => {
     if (!animate) {
-      setP(1);
+      setMs(COUNT_END_MS);
       return undefined;
     }
     if (!on) return undefined;
     if (reduceMotion) {
-      setP(1);
+      setMs(COUNT_END_MS);
       return undefined;
     }
     let raf = 0;
     let t0: number | null = null;
     const tick = (now: number) => {
       t0 ??= now;
-      const k = Math.min(1, (now - t0) / COUNT_RUN_MS);
-      setP(k);
-      if (k < 1) raf = requestAnimationFrame(tick);
+      const at = Math.min(COUNT_END_MS, now - t0);
+      setMs(at);
+      if (at < COUNT_END_MS) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [animate, on, reduceMotion]);
-  return p;
+  return ms;
 }
 
 // ONE BEAT of the reveal: false until `ready` has held for `delayMs`, then true. A settled
@@ -237,20 +237,20 @@ export default function SolvedScreen({
   // THE TALLY, once the card is DRAWN (user-decided 2026-09-11): the card stands reading 0
   // over the whole ruler, every cell there and none coloured yet, and only then does the
   // number run — the ruler colouring in try by try, each tick standing as its try is
-  // reached, WHILE it counts. ONE clock drives both (`run`, `countRun.ts`): the count's
-  // reels race (a big score) or spin (a small one) for COUNT_RUN_MS whatever the score
-  // (user-decided 2026-10-03), the ruler's tries fill on the same pace, and both land on the
-  // clock's end. The card reserves its final footprint throughout, so nothing below it moves.
+  // reached, WHILE it counts. ONE clock drives both (`ms`, `countRun.ts`): the count's reels
+  // spin and stop left to right, the last on COUNT_RUN_MS whatever the score (user-decided
+  // 2026-10-03), and the ruler's last try is written on that stop. The card reserves its
+  // final footprint throughout, so nothing below it moves.
   const countIn = useBeat(animate, scoreIn, DRAW_MS, reduceMotion, false);
-  const run = useCountClock(animate, countIn, reduceMotion);
+  const ms = useCountClock(animate, countIn, reduceMotion);
 
   // The card's closing beat (user-decided 2026-08-16): SHARE lands once the tally has
   // landed — its own beat, never behind anything else's (user-reported 2026-09-11: waiting
   // out another rung-in put the card's one action far too late). It holds its layout space
   // throughout (SHARE hides in place), so the flip changes when it appears, never where
-  // anything sits. The run lands on its clock: the reels lock on the score and the ruler's
-  // last try is written at COUNT_RUN_MS, never before.
-  const countLanded = countIn && run >= 1;
+  // anything sits. The run lands on its clock: the last reel stops on the score and the
+  // ruler's last try is written at COUNT_RUN_MS, never before.
+  const countLanded = countIn && ms >= COUNT_RUN_MS;
   const shareIn = useBeat(animate, countLanded, CLOSE_LEAD_MS, reduceMotion, true);
 
   // THE BOARDS, under SHARE: their box has held its room since frame one, and lands now —
@@ -368,7 +368,7 @@ export default function SolvedScreen({
         puzzleRef={puzzleRef}
         lang={lang}
         guessCount={guessCount}
-        run={run}
+        ms={ms}
         trajectory={trajectory}
         solvedAt={solvedAt ?? []}
         unfinished={unfinished}

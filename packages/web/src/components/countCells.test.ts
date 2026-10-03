@@ -154,7 +154,7 @@ describe('glyphBoxes — each glyph\'s ink box', () => {
 });
 
 describe('capCorners — where the count\'s glints stand', () => {
-  it('seats a glint in each outer corner of the cap line, the written digits only', () => {
+  it('seats a glint in each outer corner of the cap line, the slots asked for only', () => {
     const ink = countInk(masks, '17');
     // At 10px a font pixel with 4px glints: the 1's cap (columns 0–1), the 7's (8–14).
     expect(capCorners(ink, 0, 2, 10, 4)).toEqual([
@@ -163,7 +163,7 @@ describe('capCorners — where the count\'s glints stand', () => {
       [80, 0],
       [146, 0],
     ]);
-    // The odometer's zero before the tally's digits wears none.
+    // One slot at a time: the 7's alone.
     expect(capCorners(ink, 1, 2, 10, 4)).toEqual([
       [80, 0],
       [146, 0],

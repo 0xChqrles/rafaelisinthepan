@@ -2806,14 +2806,9 @@ input {
   inset: 0 -0.125em 0 0;
   text-align: right;
 }
-/* The tally's unreached digits: the odometer's zeros, in the slate. */
-.solved-card-pad {
-  color: var(--rail);
-}
 /* The count DRAWN AS CELLS: the meter's canvas paints the glyphs — and the charge, and the
    foil — on the face's own pixels; the text keeps the box and the reading, unseen. */
-.solved-card-num.cells .solved-card-live,
-.solved-card-num.cells .solved-card-pad {
+.solved-card-num.cells .solved-card-live {
   color: transparent;
 }
 .solved-card-num .hole-meter-canvas {
@@ -2840,12 +2835,12 @@ input {
 .solved-card.wide .solved-card-unit {
   font-size: 20px;
 }
-/* THE BLAST (`SolvedCard`'s `Blast`): the burst sheet at the whole scale that spans the
-   frame, in a box clipped between the edition row and the ruler's ticks, IN FRONT of the
-   count (over the hero's layer): the cobalt sheet through a stencil that keeps it off the
-   unit and the edition's type, and a white sheet on the same beat kept to the digits' own
-   cells — where the blow crosses the number. */
-.solved-card-blast {
+/* THE STOPS' BURSTS (`SolvedCard`'s `Bursts`): on each reel's stop, the burst sheet at the
+   whole scale sized to a digit, centred on that digit, in a box clipped between the edition
+   row and the ruler's ticks, IN FRONT of the count (over the hero's layer): the cobalt sheet
+   through a stencil that keeps it off the unit and the edition's type, and a white sheet on
+   the same beat kept to the stopped digits' own cells — where the blow crosses the number. */
+.solved-card-burst {
   position: absolute;
   z-index: 2;
   overflow: hidden;
@@ -2855,11 +2850,11 @@ input {
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
 }
-.solved-card-blast .strike.burst {
-  left: var(--blast-x);
-  top: var(--blast-y);
-  width: var(--blast-w);
-  height: var(--blast-h);
+.solved-card-burst .strike.burst {
+  left: var(--burst-x);
+  top: var(--burst-y);
+  width: var(--burst-w);
+  height: var(--burst-h);
   transform: none;
 }
 
@@ -2970,22 +2965,11 @@ input {
     translate: 0 -12px;
   }
 }
-/* ---- THE LANDING (`.landed`): the number STAMPS down in whole steps, the heat surges
-   (RunHeat), the brackets LOCK ON — their arms reach out along the frame at full white and
-   draw back in whole steps, the focus frame finding its subject, never moving over what
-   they hold — and the meter, full, blasts and dissolves into its foil (SolvedCard). */
-.solved-card.landed .solved-card-live,
-.solved-card.landed .solved-card-num .hole-meter-canvas {
-  animation: score-stamp 160ms steps(4, jump-start) backwards;
-}
-@keyframes score-stamp {
-  from {
-    translate: 0 -8px;
-  }
-  to {
-    translate: 0 0;
-  }
-}
+/* ---- THE LANDING (`.landed`, the last reel's stop — each digit's own stop shake and burst
+   are SolvedCard's): the heat surges (RunHeat), the brackets LOCK ON — their arms reach out
+   along the frame at full white and draw back in whole steps, the focus frame finding its
+   subject, never moving over what they hold — and the meter, full, dissolves into its foil
+   (SolvedCard). */
 .solved-card.landed .solved-card-bracket {
   animation: solved-card-lock 320ms steps(4, jump-end);
 }

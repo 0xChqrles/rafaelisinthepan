@@ -37,18 +37,20 @@ import {
 //
 // A SHAPED meter (`shape`, the result's COUNT — `SolvedCard`): the same ramp and the same
 // sequence, kept to the shape's own ink (`clip`) over the shape as it reads uncharged
-// (`base`: the written digits in white, an odometer's unreached zeros in the slate). Its foil
-// is the count's (`foil.ts` `paintCountFoil`: dithered, one slab), its recede DISSOLVES — the
-// solid's cells drop out in the Bayer matrix's order, in RECEDE_STEPS hard steps, the charge
-// run backwards — and its GLINTS stand on the shape's cap-line corners (`spots`), overhanging
-// the box: the canvas bleeds SHAPE_BLEED_PX past it on every side. A still one (reduced
-// motion) holds the instant a glint stands in full.
+// (`base`: the digits in white). Its foil is the count's (`foil.ts` `paintCountFoil`:
+// dithered, one slab), its recede DISSOLVES — the solid's cells drop out in the Bayer
+// matrix's order, in RECEDE_STEPS hard steps, the charge run backwards — and its GLINTS stand
+// on the shape's cap-line corners (`spots`), overhanging the box. The canvas bleeds
+// SHAPE_BLEED_PX past the box on every side — the glints' overhang, and a digit's stop shake
+// (one of the count's font pixels, 24px at its largest) — and the ramp inks the bleed as the
+// box's nearest edge, so a shaken digit keeps its charge. A still one (reduced motion) holds
+// the instant a glint stands in full.
 //
 // Wherever it is drawn, THE FOIL'S CLOCK RESTS while nobody can see it — scrolled out of
 // view, or in a hidden tab — and picks the field up where the clock then is: it is a
 // function of time, so nothing is lost.
 const CELL_PX = 2;
-const SHAPE_BLEED_PX = 16;
+const SHAPE_BLEED_PX = 24;
 const RECEDE_STEPS = 8;
 
 export interface MeterShape {
@@ -148,23 +150,25 @@ export default function MeterCanvas({
   }, [bleed]);
 
   // The RAMP's painting: every cell whose Bayer threshold is under the density at its
-  // place is inked in the meter's colour.
+  // place is inked in the meter's colour — across the bleed too, read at the box's nearest
+  // edge.
   const paint = useCallback(
     (density: (cx: number, cy: number) => number) => {
       const p = prepare();
       if (!p) return;
       const { canvas, ctx, cols, rows } = p;
+      const out = Math.ceil(bleed / CELL_PX);
       ctx.fillStyle = getComputedStyle(canvas).color;
-      for (let cx = 0; cx < cols; cx += 1) {
-        for (let cy = 0; cy < rows; cy += 1) {
-          const d = density(cx, cy);
+      for (let cx = -out; cx < cols + out; cx += 1) {
+        for (let cy = -out; cy < rows + out; cy += 1) {
+          const d = density(Math.min(cols - 1, Math.max(0, cx)), Math.min(rows - 1, Math.max(0, cy)));
           if (d <= 0) continue;
           if (BAYER_8[(cy & 7) * 8 + (cx & 7)] < d * 64) ctx.fillRect(cx * CELL_PX, cy * CELL_PX, CELL_PX, CELL_PX);
         }
       }
       shapeUp(ctx);
     },
-    [prepare, shapeUp],
+    [prepare, shapeUp, bleed],
   );
 
   // The FOIL's painting (`foil.ts`), under what is left of the solid ink while it recedes.

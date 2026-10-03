@@ -14,9 +14,9 @@ import { GLYPH_ROWS, type DigitMask } from './digitMasks';
 // (SHARE must stay above the fold), between a floor and a ceiling that depends on the column
 // (`countSize`): a phone's 160 (the share card's own), the desktop's 192.
 //
-// THE TALLY ROLLS ON THE SAME GRID: each glyph slot is a REEL of the face's digits (`reelInk`)
-// standing at a whole font pixel (`reelRow`), so the odometer `countRun.ts` drives never puts
-// a glyph between two of the face's pixels.
+// THE TALLY SPINS ON THE SAME GRID: each glyph slot is a REEL of the face's digits (`reelInk`)
+// standing at a whole font pixel (`reelRow`), so the slot machine `countRun.ts` drives never
+// puts a glyph between two of the face's pixels.
 
 // Font pixels to the em: a glyph's advance.
 export const COUNT_EM = 8;
@@ -89,10 +89,10 @@ export function glyphBoxes(masks: readonly DigitMask[], text: string): { x0: num
   return boxes;
 }
 
-// Where a count's GLINTS may stand: the cap line's outer corners of the glyphs from `from` to
-// `to` (the digits the tally has written, not the odometer's zeros before them) — the top-left
-// of a `cell`-px glint seated in the corner of the corner's own ink pixel, in CSS px at `px` a
-// font pixel. A glint's centre stands ON the ink; its arms run out past the edge.
+// Where a count's GLINTS may stand: the cap line's outer corners of the glyph slots from
+// `from` to `to` (one reel at a time, so each can carry its own shake) — the top-left of a
+// `cell`-px glint seated in the corner of the corner's own ink pixel, in CSS px at `px` a font
+// pixel. A glint's centre stands ON the ink; its arms run out past the edge.
 export function capCorners(
   ink: (gx: number, gy: number) => boolean,
   from: number,
