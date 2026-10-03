@@ -2624,11 +2624,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
       meter's `BURST_ART` at the whole scale that makes it about 1.5 digits wide, centred on
       the digit, clipped above the ruler's ticks and stencilled off the unit and the
       edition's type, in the meter's cobalt, and in WHITE where it crosses the stopped
-      digits — a second sheet on the same beat kept to their cells: a cobalt ray over the
-      cobalt digits would vanish). There is no end-of-run blast. While it runs, the digits
+      digits — a second sheet on the same beat kept to their cells AS THEY STAND, a mask
+      layer per digit at its shake, so the white recoils with the digit it lights: a cobalt
+      ray over the cobalt digits would vanish). There is no end-of-run blast. While it runs, the digits
       charge with the meter's Bayer fill as far as the reconstruction had reached at the try
       the ruler is writing (never past 99); the last stop fills it, and on its burst's
-      impact the cobalt DISSOLVES (Bayer order, eight hard steps) into the DITHERED FOIL (`foil.ts` `paintCountFoil`: the
+      impact — read off the run's clock, the one the burst is mounted from, never off the
+      fill's tween — the cobalt DISSOLVES (Bayer order, eight hard steps) into the DITHERED FOIL (`foil.ts` `paintCountFoil`: the
       material on the house's 2px cell, one slab across the whole number, slow drift, a
       narrow sheen whose first pass meets the dissolve), glints taking turns on the cap
       line's outer corners (`paintCountGlints`). A settled result is BORN in the foil; the

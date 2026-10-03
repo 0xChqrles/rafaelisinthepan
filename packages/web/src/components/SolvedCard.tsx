@@ -8,7 +8,7 @@ import RunHeat, { type HeatKeepOut } from './RunHeat';
 import RunRuler from './RunRuler';
 import { COUNT_GLINT_CELL_PX } from './foil';
 import { COUNT_EM, COUNT_ROWS, capCorners, countInk, countSize, glyphBoxes, inkEms, reelInk, reelRow } from './countCells';
-import { countFilled, countReels, reelStop, reelsText, type CountReel } from './countRun';
+import { COUNT_END_MS, COUNT_RUN_MS, countFilled, countReels, reelShake, reelStop, reelsText, type CountReel } from './countRun';
 import { digitMasksNow, loadDigitMasks, type DigitMask } from './digitMasks';
 import useToday from '../hooks/useToday';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -69,8 +69,10 @@ const WIDE_PX = 552;
 const WIDE_MIN_HEIGHT_PX = 640;
 // The meter's fill follows the tally this closely (each written try re-aims it).
 const CHARGE_MS = 90;
-// Where in the last stop's burst the foil begins — on its impact frames (Hole's own 60%).
+// Where in the last stop's burst the foil begins — on its impact frames (Hole's own 60%) —
+// on the run's clock, which runs to COUNT_END_MS.
 const FOIL_IN_BURST_MS = BURST_ART.ms * 0.6;
+const FOIL_AT_MS = Math.min(COUNT_END_MS, COUNT_RUN_MS + FOIL_IN_BURST_MS);
 // THE CLEARING in the heat: bare for CLEAR_PX round each digit's ink box, the heat returning
 // over one of the face's pixels; round the unit, bare for UNIT_CLEAR_PX then returning over
 // UNIT_RAMP_PX — long enough to read as a clearing, its corners rounded by the distance.
@@ -223,18 +225,22 @@ function countShape(masks: readonly DigitMask[], reels: readonly CountReel[], si
 
 // THE METER'S SEQUENCE on the count: the fill follows the ruler — the furthest the
 // reconstruction had got by the try being written, never past 99 — the last stop fills it,
-// and on that stop's burst's impact it recedes into the foil. A reduced-motion reveal takes
-// the foil at once; a settled result is born in the foil.
+// and on that stop's burst's impact it recedes into the foil: on the RUN'S CLOCK (`ms`), the
+// one the burst is mounted off, so the dissolve meets the blow whatever the fill's tween
+// took. A reduced-motion reveal's clock is at its end at once, so it takes the foil at once;
+// a settled result is born in the foil.
 function useMeterRun({
   on,
   settled,
   landed,
+  ms,
   filled,
   trajectory,
 }: {
   on: boolean;
   settled: boolean;
   landed: boolean;
+  ms: number;
   filled: number;
   trajectory: number[];
 }) {
@@ -244,24 +250,12 @@ function useMeterRun({
     return trajectory.map((pct) => (best = Math.max(best, pct)));
   }, [trajectory]);
   const charge = charged ? 100 : filled > 0 ? Math.min(99, reach[filled - 1] ?? 0) : 0;
-  const [impact, setImpact] = useState(false);
-  const [full, setFull] = useState(false);
-  const onFull = useCallback(() => {
-    if (prefersReducedMotion()) setFull(true);
-    else setImpact(true);
-  }, []);
-  useEffect(() => {
-    if (!impact) return undefined;
-    const id = window.setTimeout(() => setFull(true), FOIL_IN_BURST_MS);
-    return () => window.clearTimeout(id);
-  }, [impact]);
   return {
     // Keyed on the settled frame: a result that lands settled (rehydrated, or fast-forwarded)
     // is BORN in the foil — no charge, no recede to replay.
     key: settled ? 'settled' : 'live',
     value: settled ? 100 : charge,
-    sea: settled || full,
-    onFull,
+    sea: settled || (charged && ms >= FOIL_AT_MS),
   };
 }
 
@@ -285,9 +279,10 @@ function digitRects(masks: readonly DigitMask[], text: string, px: number): Rect
 // clipped to the frame above the ruler's ticks and stencilled off the unit and the edition's
 // type. In the meter's cobalt round the number, and over the stopped digits' ink — the same
 // cobalt, where a cobalt ray would vanish — in WHITE, a second sheet on the same beat kept
-// to their cells, so the blow reads as light passing over the number. Measured once, when the
-// run starts (the card's boxes are laid out from frame one); each burst is mounted for its
-// one blow from its reel's stop (`ms`, the run's clock).
+// to their cells AS THEY STAND: one stencil per digit, each a mask layer at its digit's
+// shake, so the white recoils with the digit it lights. Measured once, when the run starts
+// (the card's boxes are laid out from frame one); each burst is mounted for its one blow from
+// its reel's stop (`ms`, the run's clock).
 function Bursts({
   frameRef,
   topRef,
@@ -313,7 +308,9 @@ function Bursts({
     box: Rect;
     scale: number;
     field: string;
-    bursts: { at: { x: number; y: number }; digits: string | null }[];
+    bursts: { x: number; y: number }[];
+    // Each digit's own cells (none for the count set as type), at rest.
+    digits: { mask: string; x: number; y: number; w: number; h: number }[] | null;
   } | null>(null);
   useLayoutEffect(() => {
     const frame = frameRef.current?.getBoundingClientRect();
@@ -330,12 +327,12 @@ function Bursts({
     // A full glyph's ink is its advance less the blank column.
     const glyphW = (COUNT_EM - 1) * px;
     const scale = Math.max(2, Math.round((BURST_DIGIT_SPAN * glyphW) / BURST_W));
-    // A stencil over the box, at the device's resolution so its edges land on whole pixels.
+    // A stencil `w`×`h` CSS px, at the device's resolution so its edges land on whole pixels.
     const dpr = window.devicePixelRatio || 1;
-    const stencil = (paint: (ctx: CanvasRenderingContext2D) => void): string | null => {
+    const stencil = (w: number, h: number, paint: (ctx: CanvasRenderingContext2D) => void): string | null => {
       const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(box.w * dpr));
-      canvas.height = Math.max(1, Math.round(box.h * dpr));
+      canvas.width = Math.max(1, Math.round(w * dpr));
+      canvas.height = Math.max(1, Math.round(h * dpr));
       const ctx = canvas.getContext('2d');
       if (!ctx) return null;
       ctx.scale(dpr, dpr);
@@ -344,7 +341,7 @@ function Bursts({
       return `url(${canvas.toDataURL()})`;
     };
     // The cobalt's field: the whole box but the type.
-    const field = stencil((ctx) => {
+    const field = stencil(box.w, box.h, (ctx) => {
       ctx.fillRect(0, 0, box.w, box.h);
       ctx.globalCompositeOperation = 'destination-out';
       ctx.beginPath();
@@ -358,30 +355,36 @@ function Bursts({
     const glyphs = masks
       ? digitRects(masks, text, px)
       : Array.from(text, (_, i) => ({ x: i * COUNT_EM * px, y: 0, w: glyphW, h: n.h }));
-    const ink = masks ? countInk(masks, text) : null;
-    const bursts = glyphs.map((g, i) => ({
-      at: {
-        x: Math.round(n.x + g.x + g.w / 2 - (BURST_W * scale) / 2),
-        y: Math.round(n.y + n.h / 2 - BURST_H * scale * BURST_INK_Y),
-      },
-      // The white's: the cells of the digits stopped by then, this one's included (the
-      // count set as type has none to keep to).
-      digits: ink
-        ? stencil((ctx) => {
-            ctx.beginPath();
-            for (let gx = 0; gx < (i + 1) * COUNT_EM; gx += 1) {
-              for (let gy = 0; gy < COUNT_ROWS; gy += 1) {
-                if (ink(gx, gy)) ctx.rect(n.x + gx * px, n.y + gy * px, px, px);
-              }
-            }
-            ctx.fill();
-          })
-        : null,
+    const bursts = glyphs.map((g) => ({
+      x: Math.round(n.x + g.x + g.w / 2 - (BURST_W * scale) / 2),
+      y: Math.round(n.y + n.h / 2 - BURST_H * scale * BURST_INK_Y),
     }));
-    setGeo({ box, scale, field, bursts });
+    // The white's: each digit's cells on its own glyph slot, placed at the slot's rest.
+    const ink = masks ? countInk(masks, text) : null;
+    const slotW = COUNT_EM * px;
+    const slotH = COUNT_ROWS * px;
+    const digits = ink
+      ? Array.from(text, (_, i) => ({
+          mask:
+            stencil(slotW, slotH, (ctx) => {
+              ctx.beginPath();
+              for (let gx = 0; gx < COUNT_EM; gx += 1) {
+                for (let gy = 0; gy < COUNT_ROWS; gy += 1) {
+                  if (ink(i * COUNT_EM + gx, gy)) ctx.rect(gx * px, gy * px, px, px);
+                }
+              }
+              ctx.fill();
+            }) ?? 'none',
+          x: n.x + i * slotW,
+          y: n.y,
+          w: slotW,
+          h: slotH,
+        }))
+      : null;
+    setGeo({ box, scale, field, bursts, digits });
   }, [masks, text, px]);
   if (!geo) return null;
-  const sheet = (at: { x: number; y: number }, mask: string, color: string) => (
+  const sheet = (at: { x: number; y: number }, mask: CSSProperties, color: string) => (
     <span
       className="solved-card-burst"
       aria-hidden="true"
@@ -391,8 +394,7 @@ function Bursts({
           top: geo.box.y,
           width: geo.box.w,
           height: geo.box.h,
-          WebkitMaskImage: mask,
-          maskImage: mask,
+          ...mask,
           '--burst-x': `${at.x}px`,
           '--burst-y': `${at.y}px`,
           '--burst-w': `${BURST_W * geo.scale}px`,
@@ -403,15 +405,38 @@ function Bursts({
       <Strike id={1} art={BURST_ART} color={color} />
     </span>
   );
+  const reels = geo.bursts.length;
+  // The white over digits 0…i — the stopped ones — each layer where its digit stands now.
+  const white = (i: number): CSSProperties | null => {
+    if (!geo.digits) return null;
+    const layers = geo.digits.slice(0, i + 1);
+    const image = layers.map((d) => d.mask).join(', ');
+    const position = layers
+      .map((d, j) => {
+        const [dx, dy] = reelShake(j, reels, ms);
+        return `${d.x + dx * px}px ${d.y + dy * px}px`;
+      })
+      .join(', ');
+    const size = layers.map((d) => `${d.w}px ${d.h}px`).join(', ');
+    return {
+      WebkitMaskImage: image,
+      maskImage: image,
+      WebkitMaskPosition: position,
+      maskPosition: position,
+      WebkitMaskSize: size,
+      maskSize: size,
+    };
+  };
   return (
     <>
-      {geo.bursts.map((b, i) => {
-        const since = ms - reelStop(i, geo.bursts.length);
+      {geo.bursts.map((at, i) => {
+        const since = ms - reelStop(i, reels);
         if (since < 0 || since >= BURST_ART.ms) return null;
+        const lit = white(i);
         return (
           <Fragment key={i}>
-            {sheet(b.at, geo.field, 'var(--accent)')}
-            {b.digits && sheet(b.at, b.digits, 'var(--fg)')}
+            {sheet(at, { WebkitMaskImage: geo.field, maskImage: geo.field }, 'var(--accent)')}
+            {lit && sheet(at, lit, 'var(--fg)')}
           </Fragment>
         );
       })}
@@ -504,7 +529,7 @@ export default function SolvedCard({
   // its box from the first frame.
   const filled = countFilled(guessCount, ms);
   const reels = useMemo(() => countReels(guessCount, ms), [guessCount, ms]);
-  const meter = useMeterRun({ on: !unfinished, settled, landed, filled, trajectory });
+  const meter = useMeterRun({ on: !unfinished, settled, landed, ms, filled, trajectory });
   const reading = reelsText(reels);
   // The final number: what the box, the heat's clearing and the bursts are laid out on.
   const text = String(guessCount);
@@ -605,7 +630,6 @@ export default function SolvedCard({
                     sea={meter.sea}
                     seed={5}
                     shape={shape}
-                    onFull={meter.onFull}
                   />
                 )}
               </span>
