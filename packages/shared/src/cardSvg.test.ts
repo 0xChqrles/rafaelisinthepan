@@ -32,10 +32,22 @@ const group = (svg: string, name: string) => new RegExp(`<g class="${name}"[^>]*
 // The axis-aligned rects a cell path is made of (`M x y h w v h h -w z` runs).
 const runs = (d: string) =>
   [...d.matchAll(/M(-?\d+) (-?\d+)h(\d+)v(\d+)h-\d+z/g)].map(([, x, y, w, h]) => ({ x: +x, y: +y, w: +w, h: +h }));
-// The count's own ink: the cells its foil is clipped to.
-const countInkRects = (svg: string) => runs(/<clipPath id="count-ink"><path d="([^"]+)"/.exec(svg)![1]);
-const overlap = (a: { x: number; y: number; w: number; h: number }, b: typeof a) =>
-  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+// The count's own ink: its foil's cells — every path of the count but its glitter and glint.
+const countInkRects = (svg: string) =>
+  [...group(svg, 'count')!.matchAll(/<path d="([^"]+)" fill="[^"]+"\/>/g)].flatMap((m) => runs(m[1]));
+// The ink's band, and the font pixel it is COUNT_ROWS of.
+function band(svg: string) {
+  const ink = countInkRects(svg);
+  const top = Math.min(...ink.map((r) => r.y));
+  const bottom = Math.max(...ink.map((r) => r.y + r.h));
+  return { ink, top, bottom, fpx: (bottom - top) / COUNT_ROWS };
+}
+// The card's 4px cells a set of runs covers, as "x,y" keys.
+const cellKeys = (rects: { x: number; y: number; w: number; h: number }[]) => {
+  const keys = new Set<string>();
+  for (const r of rects) for (let y = r.y; y < r.y + r.h; y += 4) for (let x = r.x; x < r.x + r.w; x += 4) keys.add(`${x},${y}`);
+  return keys;
+};
 
 describe('renderCardSvg', () => {
   const data = {
@@ -87,8 +99,9 @@ describe('renderCardSvg', () => {
     expect(svg).toMatch(new RegExp(`class="edition"[^>]*>N\\.${day}</text>`));
     expect(svg.split(String(day))).toHaveLength(2);
     const bonus = renderCardSvg({ ...data, dayNumber: undefined, bonusId: 1234567 });
-    expect(bonus).toMatch(/class="day"[^>]*>BONUS<\/text>/);
-    expect(bonus).toMatch(/class="edition"[^>]*>N\.1234567<\/text>/);
+    // A bonus is no day: named as its headline names it, with no edition number.
+    expect(bonus).toMatch(/class="day"[^>]*>BONUS 1234567<\/text>/);
+    expect(bonus).not.toContain('class="edition"');
   });
 
   it('draws a solved count in the FOIL, on the face\'s own cells, its heat cleared round it', () => {
@@ -104,12 +117,9 @@ describe('renderCardSvg', () => {
     const fills = [...count.matchAll(/fill="([^"]+)"/g)].map((m) => m[1]);
     expect(fills.length).toBeGreaterThan(2);
     for (const fill of fills) expect(inks.has(fill), fill).toBe(true);
-    // The count's ink is the face's 7 cap rows, on whole cells of one font pixel.
-    const ink = countInkRects(svg);
-    const top = Math.min(...ink.map((r) => r.y));
-    const bottom = Math.max(...ink.map((r) => r.y + r.h));
-    const fpx = ink[0].h;
-    expect(bottom - top).toBe(COUNT_ROWS * fpx);
+    // The count's ink is the face's 7 cap rows of a whole font pixel.
+    const { ink, fpx } = band(svg);
+    expect(Number.isInteger(fpx)).toBe(true);
     expect(fpx % 8).toBe(0);
     // The heat wears the run's own inks, and never stands on the count.
     const heat = group(svg, 'heat')!;
@@ -117,7 +127,27 @@ describe('renderCardSvg', () => {
     for (const [, fill] of heat.matchAll(/fill="([^"]+)"/g)) expect(ramp.has(fill)).toBe(true);
     const cells = [...heat.matchAll(/d="([^"]+)"/g)].flatMap((m) => runs(m[1]));
     expect(cells.length).toBeGreaterThan(50);
-    for (const cell of cells) for (const r of ink) expect(overlap(cell, r)).toBe(false);
+    const onInk = cellKeys(ink);
+    for (const key of cellKeys(cells)) expect(onInk.has(key), key).toBe(false);
+  });
+
+  // A still cannot twinkle: a white cross hanging off the last digit's top right reads as a
+  // plus sign ("23+ tries"), and a star cut by the glyph's edge reads as a notch.
+  it('keeps the still\'s shine on the count: the glint inside its ink\'s span, every glitter star on its ink', () => {
+    for (const score of [10, 23, 47, 99, 137, 499, 500, 1000, 32767]) {
+      const svg = renderCardSvg({ ...data, score, trajectory: Array.from({ length: Math.min(score, 600) }, () => 50), solvedAt: [1, 2, 3] });
+      const { ink } = band(svg);
+      const left = Math.min(...ink.map((r) => r.x));
+      const right = Math.max(...ink.map((r) => r.x + r.w));
+      const glint = /class="glints" d="([^"]+)"/.exec(group(svg, 'count')!);
+      for (const r of glint ? runs(glint[1]) : []) {
+        expect(r.x, `${score}`).toBeGreaterThanOrEqual(left);
+        expect(r.x + r.w, `${score}`).toBeLessThanOrEqual(right);
+      }
+      const glitter = /class="glitter" d="([^"]+)"/.exec(group(svg, 'count')!);
+      const onInk = cellKeys(ink);
+      for (const key of cellKeys(glitter ? runs(glitter[1]) : [])) expect(onInk.has(key), `${score} @${key}`).toBe(true);
+    }
   });
 
   it('is deterministic: the same token draws the same bytes (the edge caches it a year)', () => {
@@ -132,6 +162,7 @@ describe('renderCardSvg', () => {
     for (const score of [1, 9, 10, 99, 100, 499, 500, 1000, 9999, 10000, 32767]) {
       const svg = renderCardSvg({ ...data, score, trajectory: Array.from({ length: score }, () => 50), solvedAt: [1, 2, 3] });
       const ink = countInkRects(svg);
+      expect(ink.length).toBeGreaterThan(0);
       expect(Math.min(...ink.map((r) => r.x))).toBeGreaterThanOrEqual(BAR.x);
       expect(Math.max(...ink.map((r) => r.x + r.w))).toBeLessThanOrEqual(BAR.x + BAR.w);
     }
@@ -228,9 +259,7 @@ describe('renderCardSvg', () => {
     it('sets the glyph on the COUNT\'s own grid: whole font pixels, centred in the digits\' band', () => {
       const [, gy, cell] = infinity(renderCardSvg(capped));
       // A two-digit count's band, on a card laid out identically.
-      const ink = countInkRects(renderCardSvg({ ...data, score: 58 }));
-      const top = Math.min(...ink.map((r) => r.y));
-      const fpx = ink[0].h;
+      const { top, fpx } = band(renderCardSvg({ ...data, score: 58 }));
       expect(cell).toBe(fpx);
       expect(gy - top).toBe(((COUNT_ROWS - INFINITY_GLYPH.height) / 2) * fpx);
     });
@@ -350,8 +379,8 @@ describe('renderGroupCardSvg', () => {
 // from a device holding an account — draws the player's mark and name on the result card,
 // and a plain share draws neither. The signature is QUIET — the mark small and the name beside
 // it, on the top row before the day — so the count stays the subject: signing never changes
-// the RESULT drawn, and the widest signature (the profile's own cap) stands between the
-// edition and the day.
+// the RESULT drawn, and the widest signature (the profile's own cap) stands between what the
+// row holds at its left (the lockup, and a day's edition) and the day.
 describe('a signed result card (the share link wearing its player)', () => {
   const id = 'abcdefghij234567';
   const sentence = {
@@ -382,7 +411,7 @@ describe('a signed result card (the share link wearing its player)', () => {
 
   it('draws no face on a plain share', () => {
     const svg = renderCardSvg(sentence);
-    expect(svg).not.toContain('<clipPath id="sign"');
+    expect(svg).not.toContain('id="sign"');
     expect(svg).not.toContain(anonName(id));
   });
 
@@ -391,18 +420,23 @@ describe('a signed result card (the share link wearing its player)', () => {
     const plain = renderCardSvg(sentence);
     for (const name of ['count', 'heat', 'run']) expect(group(signed, name)).toBe(group(plain, name));
     // The signature stands on the top row, above the count.
-    const tile = /<clipPath id="sign"><rect x="\d+" y="(\d+)" width="(\d+)"/.exec(signed)!;
-    expect(Number(tile[1]) + Number(tile[2])).toBeLessThan(Math.min(...countInkRects(signed).map((r) => r.y)));
+    const tile = /<g id="sign" transform="translate\(\d+ (\d+)\)"[^>]*><rect width="(\d+)"/.exec(signed)!;
+    expect(Number(tile[1]) + Number(tile[2])).toBeLessThan(band(signed).top);
   });
 
-  it('keeps the widest signature on the top row, between the edition and the day', () => {
+  it('keeps the widest signature on the top row, between the lockup (and the edition) and the day', () => {
     const name = 'W'.repeat(NAME_MAX_LENGTH);
-    for (const result of [sentence, { ...sentence, dayNumber: undefined, bonusId: 9999999 }]) {
+    for (const result of [sentence, { ...sentence, dayNumber: 20729 }, { ...sentence, dayNumber: undefined, bonusId: 9999999 }]) {
       const svg = renderCardSvg(result, { publicId: id, name, avatar: null });
-      const edition = /<text class="edition" x="(\d+)"[^>]*font-size="(\d+)"[^>]*>([^<]+)</.exec(svg)!;
-      const editionEnd = Number(edition[1]) + edition[3].length * Number(edition[2]);
-      const tile = /<clipPath id="sign"><rect x="(\d+)"/.exec(svg)!;
-      expect(Number(tile[1])).toBeGreaterThan(editionEnd);
+      // What the row holds at its left: the lockup's name, then a day's edition (a bonus has none).
+      const lockup = /<text x="(\d+)"[^>]*font-size="(\d+)" letter-spacing="([\d.]+)"[^>]*>WHIPPIN AI</.exec(svg)!;
+      const [lx, ls, lt] = lockup.slice(1).map(Number);
+      const edition = /<text class="edition" x="(\d+)"[^>]*font-size="(\d+)"[^>]*>([^<]+)</.exec(svg);
+      const leftEnd = edition
+        ? Number(edition[1]) + edition[3].length * Number(edition[2])
+        : lx + 10 * 0.65 * ls + 9 * lt;
+      const tile = /<g id="sign" transform="translate\((\d+) /.exec(svg)!;
+      expect(Number(tile[1])).toBeGreaterThan(leftEnd);
       const signedName = new RegExp(`<text x="(\\d+)"[^>]*font-size="(\\d+)" letter-spacing="([\\d.]+)"[^>]*>${name}<`).exec(svg)!;
       const [nameX, size, tracking] = signedName.slice(1).map(Number);
       const day = Number(/<text class="day" x="(\d+)"/.exec(svg)![1]);

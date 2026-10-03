@@ -11,8 +11,11 @@
 // in the title chip, its members' marks on an orbit around it — as the home card holds its
 // hidden word.
 //
-// The day reads "2026-08-02", not "#20667" (decided 2026-08-03): a stranger seeing the card
-// can date the sentence, where the internal day index says nothing to anyone but the game.
+// The day reads "2026-08-02", not "#20667": a stranger seeing the card can date the sentence,
+// where the internal day index says nothing to anyone but the game — so the DATE, in the
+// accent, is what names the day; the index stands only as the screen's small muted edition
+// number beside the lockup, a flourish nobody has to read. A bonus is no day: it is named
+// "BONUS <id>" in the date's place (`cardPuzzleLabel`), with no edition number.
 // It is still the SERVER-owned day, never the reader's local date — `dateForDayNumber` is the
 // exact inverse of `dayNumber`, so the token's day index maps to the one calendar date that
 // game day IS, identically in every timezone. Nothing about the token changes: it has always
@@ -35,7 +38,6 @@ import { dateForDayNumber } from './day';
 import { bayerThreshold } from './bayer';
 import { COUNT_EM, COUNT_ROWS, capCorners, countInk, glyphBoxes, inkEms } from './countCells';
 import {
-  COUNT_GLINT_CELL_PX,
   COUNT_SPARKLE,
   COUNT_STILL_S,
   FOIL_CELL_PX,
@@ -207,8 +209,9 @@ const TILE_RADIUS = 4;
 // it is the same crisp pixel art the app draws. A stored string that will not decode falls
 // back to the assigned mark rather than leaving a hole — a card must always draw a face,
 // and the store only ever holds validated avatars anyway. Drawn by the group card's ring and
-// by a SIGNED result card's portrait; `id` names the clip, which must be unique within one
-// SVG.
+// by a SIGNED result card's signature; `id` names the clip, which must be unique within one
+// SVG. SHARP (the web `Avatar`'s `sharp`): a mark standing among pixel marks — the result
+// card's top row, beside the lockup and the pixel face — has square corners and no clip.
 function markTile(
   id: string,
   publicId: string,
@@ -216,6 +219,7 @@ function markTile(
   x: number,
   y: number,
   px: number,
+  sharp = false,
 ): string {
   const cell = px / AVATAR_SIZE;
   const draw = (encoded: string) => {
@@ -228,6 +232,10 @@ function markTile(
   } catch {
     drawing = draw(defaultAvatar(publicId));
   }
+  const tile =
+    `<rect width="${px}" height="${px}" fill="${drawing.bg}"/>` +
+    (drawing.outline ? `<path d="${drawing.outline}" fill="${drawing.fg}"/>` : '');
+  if (sharp) return `<g id="${id}" transform="translate(${x} ${y})" shape-rendering="crispEdges">${tile}</g>`;
   return (
     `<clipPath id="${id}"><rect x="${x}" y="${y}" width="${px}" height="${px}" rx="${TILE_RADIUS}"/></clipPath>` +
     // The clip sits on an UNtransformed group, in the same absolute space its rect is
@@ -235,10 +243,7 @@ function markTile(
     // resolves a clip path before or after the referencing element's own transform is
     // exactly the kind of thing renderers disagree about, and this nesting has no
     // opinion to disagree with.
-    `<g clip-path="url(#${id})"><g transform="translate(${x} ${y})" shape-rendering="crispEdges">` +
-    `<rect width="${px}" height="${px}" fill="${drawing.bg}"/>` +
-    (drawing.outline ? `<path d="${drawing.outline}" fill="${drawing.fg}"/>` : '') +
-    `</g></g>`
+    `<g clip-path="url(#${id})"><g transform="translate(${x} ${y})" shape-rendering="crispEdges">${tile}</g></g>`
   );
 }
 
@@ -431,15 +436,20 @@ function dropScraps(ink: Uint8Array, cols: number, rows: number, min: number): v
 // The solved screen's CARD (web `SolvedCard`) laid down at the share's size — the screen is
 // this card stood up, so the two wear the same furniture on the same bare ground: the device
 // frame's corner brackets; the top row (the lockup, the EDITION number after it in the pixel
-// face's smallest size, muted, and the day at the right in the accent: its calendar date, or
-// BONUS); the COUNT over its unit as the subject; the run's HEAT rising off the RULER under it.
+// face's smallest size, muted, and the day at the right in the accent, at the screen's own
+// proportion: its calendar date, or BONUS and its id with no edition); the COUNT over its unit
+// as the subject; the run's HEAT rising off the RULER under it.
 //
 // THE COUNT IS THE SUBJECT (user-decided 2026-10-02), drawn as the screen draws it: cell by cell
 // on the pixel face's own glyph pixels (`countCells.ts`), at the largest whole font pixel up to
 // COUNT_FPX_MAX that fits the column, in the DITHERED HOLO FOIL (`foil.ts`) — the screen's one
-// shiny material, at the instant its still count holds (COUNT_STILL_S, its seed: a glint
-// standing in full on a cap-line corner). A round that ENDED UNSOLVED (the v6 capped flag:
-// given up, or capped) wears no shine: a plain white `∞` on the count's own pixel grid.
+// shiny material, at the instant its still count holds (COUNT_STILL_S, its seed). A still
+// picture cannot twinkle, so it keeps only what reads as shine: its GLINT stands on an INNER
+// cap-line corner, never on the count's outermost two, and on the card's own cell — a white
+// cross hanging off the last digit's top right, at the house cell's double, reads as a plus
+// sign ("23+"); a single digit has no inner corner and wears its glitter alone — and a glitter
+// star is drawn whole on the ink or not at all. A round that ENDED UNSOLVED (the v6 capped flag: given up, or capped) wears no
+// shine: a plain white `∞` on the count's own pixel grid.
 //
 // THE RUN'S HEAT (`runHeat.ts`, the screen's own field): the ruler's inks rising off the bar as
 // an ordered dither, each column as tall as that try's reconstruction got, with a CLEARING of
@@ -478,15 +488,16 @@ const COUNT_BOTTOM = UNIT_CAP_TOP - UNIT_GAP;
 // tile the glyphs' pixels exactly.
 const COUNT_FPX_MAX = 32;
 const FOIL_SEED = 5; // the screen's count's
-const GLINT_CELL = COUNT_GLINT_CELL_PX * CARD_SCALE;
 // The heat's field: from the bar's top up HEAT_ROWS cells — the count's band and 60px of the
 // screen's over it, as the screen sizes its own.
 const HEAT_ROWS = (COUNT_ROWS * COUNT_FPX_MAX + 60 * (COUNT_FPX_MAX / 20)) / CARD_CELL;
 // The top row: the edition number in the pixel face's smallest whole size (a multiple of 8),
-// muted, EDITION_GAP after the lockup's name; the day in the accent at the right.
+// muted, EDITION_GAP after the lockup's name; the day in the accent at the right, twice its
+// size — the screen's 8px and 16px at CARD_SCALE, so the date, the one thing on the row a
+// stranger needs, reads in a chat's thumbnail.
 const EDITION_SIZE = 16;
 const EDITION_GAP = 28;
-const DAY_SIZE = 24;
+const DAY_SIZE = 32;
 const MUTED = '#a6adb8';
 
 // THE RUN'S CELL EDGES: where each of `n` tries' cells starts across a bar `width` whole
@@ -585,8 +596,9 @@ function countLayout(score: number, capped: boolean, centreX: number): CountLayo
   return { text, fpx, x: Math.round(centreX - w / 2), y: COUNT_BOTTOM - h, w, h };
 }
 
-// The count in the FOIL: its cells in their inks, the glitter kept to its ink, the glints over
-// all and across its edge — or the white `∞`, centred in the digits' band on the same grid.
+// The count in the FOIL: its cells in their inks, its whole glitter stars, the glint over all
+// and across its edge on an inner corner — or the white `∞`, centred in the digits' band on
+// the same grid.
 function countSvg({ text, fpx, x, y, w, h }: CountLayout): string {
   if (text === null) {
     const iy = y + Math.round((h - INFINITY_GLYPH.height * fpx) / 2 / fpx) * fpx;
@@ -602,21 +614,31 @@ function countSvg({ text, fpx, x, y, w, h }: CountLayout): string {
     pushCell(byFill, k === FOIL_WHITE ? FG : hex(foilInkRgb(k)), cx / CARD_CELL, cy / CARD_CELL),
   );
   const rect = (rx: number, ry: number, rw: number, rh: number) => `M${x + rx} ${y + ry}h${rw}v${rh}h${-rw}z`;
+  // A glitter star comes as its two arms; it is drawn only when every cell of both is on the
+  // ink — a star cut by the glyph's edge reads as a notch.
+  const onInk = (rx: number, ry: number, rw: number, rh: number) => {
+    for (let cy = ry; cy < ry + rh; cy += CARD_CELL) {
+      for (let cx = rx; cx < rx + rw; cx += CARD_CELL) if (!inside(cx + CARD_CELL / 2, cy + CARD_CELL / 2)) return false;
+    }
+    return true;
+  };
   const glitter: string[] = [];
-  foilGlitter(w, h, COUNT_STILL_S, FOIL_SEED, inside, COUNT_SPARKLE, CARD_CELL, (...r) => glitter.push(rect(...r)));
+  let arms: [number, number, number, number][] = [];
+  foilGlitter(w, h, COUNT_STILL_S, FOIL_SEED, inside, COUNT_SPARKLE, CARD_CELL, (...r) => {
+    arms.push(r);
+    if (arms.length < 2) return;
+    if (arms.every((arm) => onInk(...arm))) glitter.push(...arms.map((arm) => rect(...arm)));
+    arms = [];
+  });
+  // The glint: on the cap line's corners less the count's outermost two (listed left to right),
+  // on the card's own cell — a twinkle at the screen's size for the count, not a sign.
   const glints: string[] = [];
-  countGlints(capCorners(ink, 0, text.length, fpx, GLINT_CELL), w, COUNT_STILL_S, FOIL_SEED, GLINT_CELL, (...r) =>
-    glints.push(rect(...r)),
-  );
-  const inkCells: number[] = [];
-  for (let gy = 0; gy < COUNT_ROWS; gy += 1) {
-    for (let gx = 0; gx < text.length * COUNT_EM; gx += 1) if (ink(gx, gy)) inkCells.push(gx, gy);
-  }
+  const corners = capCorners(ink, 0, text.length, fpx, CARD_CELL).slice(1, -1);
+  countGlints(corners, w, COUNT_STILL_S, FOIL_SEED, CARD_CELL, (...r) => glints.push(rect(...r)));
   return (
     `<g class="count" data-count="${text}" shape-rendering="crispEdges">` +
-    `<clipPath id="count-ink"><path d="${runsPath(inkCells, fpx, x, y)}"/></clipPath>` +
     fillPaths(byFill, CARD_CELL, x, y) +
-    (glitter.length ? `<g clip-path="url(#count-ink)"><path d="${glitter.join(' ')}" fill="${FG}"/></g>` : '') +
+    (glitter.length ? `<path class="glitter" d="${glitter.join(' ')}" fill="${FG}"/>` : '') +
     (glints.length ? `<path class="glints" d="${glints.join(' ')}" fill="${FG}"/>` : '') +
     `</g>`
   );
@@ -712,32 +734,25 @@ function rulerSvg(trajectory: readonly number[], solvedAt: readonly (number | nu
 
 // ── The SIGNATURE (a signed share, user-decided 2026-09-05) ───────────────────────────
 // The player as a quiet SIGNATURE, never a co-subject — the score is what the card is about,
-// and the page's title already names them: the mark small, at one card cell a mark cell, and
-// the name beside it, standing on the top row just before the day, `right` its right edge —
-// the card's own furniture, read like a byline.
+// and the page's title already names them: the mark small, at one card cell a mark cell, with
+// square corners among the row's pixel marks, and the name beside it in the edition's muted
+// ink — quieter than the wordmark, the face carrying who it is — standing on the top row just
+// before the day, `right` its right edge: the card's own furniture, read like a byline.
 const SIGN_MARK_PX = 40;
 const SIGN_NAME_SIZE = 22;
 const SIGN_NAME_TRACKING = 0.02;
 const SIGN_MARK_GAP = 14; // the mark to the name
 const SIGN_GAP = 40; // the name to the day
 
-interface Signed {
-  svg: string;
-  // What the heat clears round it (nothing, on the top row).
-  keeps: HeatKeep[];
-}
-
-function signature(by: CardFace, right: number): Signed {
+function signature(by: CardFace, right: number): string {
   const name = by.name || anonName(by.publicId);
   const nameW = Math.round(uiWidth(Array.from(name).length, SIGN_NAME_SIZE, SIGN_NAME_TRACKING));
   const nameLeft = right - SIGN_GAP - nameW;
   const markX = nameLeft - SIGN_MARK_GAP - SIGN_MARK_PX;
-  return {
-    svg:
-      markTile('sign', by.publicId, by.avatar, markX, Math.round(TOP_ROW_CY - SIGN_MARK_PX / 2), SIGN_MARK_PX) +
-      uiText(escapeSvgText(name), nameLeft, onRow(SIGN_NAME_SIZE), SIGN_NAME_SIZE, SIGN_NAME_TRACKING, FG),
-    keeps: [],
-  };
+  return (
+    markTile('sign', by.publicId, by.avatar, markX, Math.round(TOP_ROW_CY - SIGN_MARK_PX / 2), SIGN_MARK_PX, true) +
+    uiText(escapeSvgText(name), nameLeft, onRow(SIGN_NAME_SIZE), SIGN_NAME_SIZE, SIGN_NAME_TRACKING, MUTED)
+  );
 }
 
 export function renderCardSvg(
@@ -753,21 +768,19 @@ export function renderCardSvg(
   const wordW = Math.round(uiWidth(word.length, UNIT_SIZE, UNIT_TRACKING));
   const wordLeft = Math.round(count.x + count.w / 2 - wordW / 2);
 
-  // The top row, as the screen's: the edition number (the day's, or the bonus's id) after the
-  // lockup, muted; the day itself at the right in the accent — its calendar date, or BONUS.
+  // The top row, as the screen's: the day's edition number after the lockup, muted; the day
+  // itself at the right in the accent — its calendar date, or BONUS and its id (a bonus is no
+  // day, so it has no edition).
   const bonus = bonusId !== undefined;
-  const number = `N.${bonus ? bonusId : (dayNumber ?? 0)}`;
   const numberLeft = Math.round(
     LOCKUP_X + MARK_GLYPH.width * LOCKUP_SCALE + LOCKUP_GAP + uiWidth(APP_NAME.length, LOCKUP_SIZE, LOCKUP_TRACKING) + EDITION_GAP,
   );
-  const day = bonus ? 'BONUS' : dateForDayNumber(dayNumber ?? 0);
+  const day = cardPuzzleLabel({ dayNumber, bonusId });
   const dayLeft = CARD_WIDTH - LOCKUP_X - day.length * DAY_SIZE;
 
-  const signed = by ? signature(by, dayLeft) : null;
   const keeps = [
     ...countKeeps(count),
     textKeep(textBox(wordLeft, UNIT_BASELINE, word.length, UNIT_SIZE, UNIT_TRACKING)),
-    ...(signed?.keeps ?? []),
   ];
 
   return [
@@ -775,7 +788,9 @@ export function renderCardSvg(
     `<rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BG}"/>`,
     brackets(),
     lockup(),
-    `<text class="edition" x="${numberLeft}" y="${pixelBaseline(TOP_ROW_CY, EDITION_SIZE)}" font-family="${PIXEL_FONT}" font-size="${EDITION_SIZE}" fill="${MUTED}">${number}</text>`,
+    bonus
+      ? ''
+      : `<text class="edition" x="${numberLeft}" y="${pixelBaseline(TOP_ROW_CY, EDITION_SIZE)}" font-family="${PIXEL_FONT}" font-size="${EDITION_SIZE}" fill="${MUTED}">N.${dayNumber ?? 0}</text>`,
     `<text class="day" x="${dayLeft}" y="${pixelBaseline(TOP_ROW_CY, DAY_SIZE)}" font-family="${PIXEL_FONT}" font-size="${DAY_SIZE}" fill="${ACCENT}">${day}</text>`,
     heatSvg(trajectory, keeps),
     rulerSvg(trajectory, solvedAt),
@@ -784,7 +799,7 @@ export function renderCardSvg(
     // instead — same band, same unit, no number (#214).
     countSvg(count),
     uiText(word, wordLeft, UNIT_BASELINE, UNIT_SIZE, UNIT_TRACKING, FG),
-    signed?.svg ?? '',
+    by ? signature(by, dayLeft) : '',
     `</svg>`,
   ].join('');
 }
