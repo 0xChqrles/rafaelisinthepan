@@ -22,6 +22,10 @@ const SIZES = [
   [390, 844],
   [844, 390],
   [1280, 800],
+  // Short landscape: the stack's height binds.
+  [568, 320],
+  [740, 360],
+  [1280, 600],
 ] as const;
 
 describe('the streak orbit layout', () => {
@@ -37,7 +41,7 @@ describe('the streak orbit layout', () => {
   });
 
   it('draws in whole CSS pixels: 3 a cell on a phone either way up, 4 from a tablet', () => {
-    expect(SIZES.map(([w, h]) => layout(w, h, RESERVE_BITS).cell)).toEqual([3, 3, 3, 3, 4]);
+    expect(SIZES.map(([w, h]) => layout(w, h, RESERVE_BITS).cell)).toEqual([3, 3, 3, 3, 4, 3, 3, 4]);
   });
 
   it('keeps the week a Monday-first chain, left to right, every link and initial on screen', () => {
@@ -54,9 +58,10 @@ describe('the streak orbit layout', () => {
         expect((n.x - LINK_W / 2) * L.cell).toBeGreaterThanOrEqual(16);
         expect((n.x + LINK_W / 2) * L.cell).toBeLessThanOrEqual(w - 16);
       }
-      // The initials on one line, under the chain's lowest foot.
+      // The initials on one line, under the chain's lowest foot — their chips (18px, centred
+      // on the line) standing 12px at least above the hint (12px, centred on its own).
       expect(new Set(L.labels.map((l) => l.y)).size).toBe(1);
-      for (const label of L.labels) expect(label.y).toBeLessThan(L.hintY - 12);
+      for (const label of L.labels) expect(label.y + 9, `${w}×${h}`).toBeLessThanOrEqual(L.hintY - 6 - 12);
     }
   });
 

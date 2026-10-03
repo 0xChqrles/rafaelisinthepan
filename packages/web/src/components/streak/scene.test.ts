@@ -14,6 +14,10 @@ const SIZES = [
   [390, 844],
   [844, 390],
   [1280, 800],
+  // Short landscape: the stack's height binds.
+  [568, 320],
+  [740, 360],
+  [1280, 600],
 ] as const;
 
 // The scene for a week written S solved, T today, F to come, M missed (Monday first).

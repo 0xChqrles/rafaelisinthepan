@@ -210,18 +210,56 @@ export function layout(width: number, height: number, sizing: number, countBits 
   const chain = chainPlacement();
   const riseMax = Math.max(...chain.rise);
 
-  // The largest face whose whole stack fits (a face of one cell a glyph pixel always does).
+  // The days stand at the chain's pitch, Thursday under the count, each centre on a cell's
+  // middle so its sprite lands whole, each risen off the chain's foot (`rowY`) by its cells.
+  // The wider pitch only where the orbit keeps a link's width of room past the chain's ends.
+  const roomRx = Math.min(cx, cols - cx) - ORBIT_EDGE;
+  const pitch = roomRx >= 3 * LINK_PITCH + LINK_W / 2 + LINK_W ? LINK_PITCH : LINK_PITCH_TIGHT;
+  const dayX = (i: number) => cx + (i - 3) * pitch + 0.5;
+  const unitHalfW = (10 * 0.78 * unitSize) / 2 + 2;
+
+  // The largest face whose whole stack fits (a face of one cell a glyph pixel always does):
+  // the crown, the count, its unit, the week — the arc's rise included — and its initials.
   const fit = (k: number) => {
     const gp = k * cell;
     const countH = GLYPH_ROWS * gp;
     const unitGap = Math.max(12, Math.round(countH * 0.17));
-    // The week's lowest link stands far enough under the unit for the star to clear it.
+    // The chain's highest link stands far enough under the unit for the star to clear it;
+    // the arc's rise hangs the rest below.
     const rowGap = unitGap + unitH + Math.max(starHalfH, LINK_H * cell * 0.5 + 16) + 4;
     const ringGap = Math.max(4 * cell, Math.round(countH * 0.24));
     const flameH = Math.round(countH * 0.72);
-    const total = flameH + ringGap + countH + rowGap + (LINK_H / 2 + 1) * cell + LABEL_GAP + LABEL_H;
+    // The ultra star, struck on any day, must clear the count and its unit (CSS px boxes,
+    // measured from the count's top, with a few pixels of air round the unit): the chain's
+    // foot steps down a cell at a time until it does. `drop` is that foot, in cells under
+    // the count's foot.
+    const countBox: Box = {
+      x0: (cx - (countBits * k) / 2) * cell,
+      y0: 0,
+      x1: (cx + (countBits * k) / 2) * cell,
+      y1: countH,
+    };
+    const unitY = countH + unitGap + unitH / 2;
+    const unitBox: Box = {
+      x0: cx * cell - unitHalfW - 4,
+      y0: unitY - unitH / 2 - 4,
+      x1: cx * cell + unitHalfW + 4,
+      y1: unitY + unitH / 2 + 4,
+    };
+    const starHits = (drop: number) =>
+      chain.rise.some((rise, i) => {
+        const x = dayX(i) * cell;
+        const y = (GLYPH_ROWS * k + drop - rise) * cell;
+        const s: Box = { x0: x - starHalfW, y0: y - starHalfH, x1: x + starHalfW, y1: y + starHalfH };
+        return overlaps(s, countBox) || overlaps(s, unitBox);
+      });
+    let drop = Math.round(rowGap / cell) + riseMax;
+    for (let guard = 0; guard < 40 && starHits(drop); guard += 1) drop += 1;
+    // From the crown's tip to the initials' foot, a cell spare for the count's top landing
+    // on a whole cell.
+    const total = flameH + ringGap + countH + (drop + LINK_H / 2 + 1) * cell + LABEL_GAP + LABEL_H;
     const fits = sizing * gp <= width - 2 * GUTTER_PX && total <= bottomLimit - topBand;
-    return { k, countH, unitGap, rowGap, ringGap, flameH, total, fits };
+    return { k, unitGap, ringGap, flameH, drop, total, fits };
   };
   let f = fit(1);
   for (let k = Math.floor(MAX_GLYPH_PX / cell); k > 1; k -= 1) {
@@ -238,12 +276,6 @@ export function layout(width: number, height: number, sizing: number, countBits 
   const unitY = countBottom * cell + f.unitGap + unitH / 2;
   const ringTop = countTop - Math.round(f.ringGap / cell);
 
-  // The days stand at the chain's pitch, Thursday under the count, each centre on a cell's
-  // middle so its sprite lands whole, each risen off the chain's foot (`rowY`) by its cells.
-  // The wider pitch only where the orbit keeps a link's width of room past the chain's ends.
-  const roomRx = Math.min(cx, cols - cx) - ORBIT_EDGE;
-  const pitch = roomRx >= 3 * LINK_PITCH + LINK_W / 2 + LINK_W ? LINK_PITCH : LINK_PITCH_TIGHT;
-  const dayX = (i: number) => cx + (i - 3) * pitch + 0.5;
   const chainHalf = 3 * pitch + LINK_W / 2;
   const countHalf = (countBits * f.k) / 2;
   // Never wider than the screen: the orbit is a closed shape on every phone.
@@ -252,49 +284,15 @@ export function layout(width: number, height: number, sizing: number, countBits 
     Math.min(cx, cols - cx) - ORBIT_EDGE,
     Math.max(Math.min(cx, cols - cx) - gutter - 1, chainHalf + 2),
   );
-  const place = (rowY: number) => {
-    const links = Array.from({ length: 7 }, (_, i): LinkPlace => ({ x: dayX(i), y: rowY - chain.rise[i] }));
-    // The orbit's middle halfway between the crown's foot and the chain's foot.
-    const cy = (rowY + ringTop) / 2;
-    const ry = cy - ringTop;
-    // As the chain wants it — and always clear of the count and of the chain's own ends.
-    const rx = Math.min(maxRx, Math.max(chain.orbitRx(ry, chainHalf), countHalf + 4, chainHalf + 2));
-    const { p, ryL } = lowerHalf(3 * pitch, rowY - chain.rise[6] - cy, rx, chain.endLean);
-    return { ring: { cy, rx, ry, ryL, p }, links };
-  };
-  // The ultra star, struck on any day, must clear the count and its unit (CSS px boxes): the
-  // chain steps down a cell at a time until it does.
-  const unitHalfW = (10 * 0.78 * unitSize) / 2 + 2;
-  const countBox: Box = {
-    x0: (cx - (countBits * f.k) / 2) * cell,
-    y0: countTop * cell,
-    x1: (cx + (countBits * f.k) / 2) * cell,
-    y1: countBottom * cell,
-  };
-  // … with a few pixels of air round the unit.
-  const unitBox: Box = {
-    x0: cx * cell - unitHalfW - 4,
-    y0: unitY - unitH / 2 - 4,
-    x1: cx * cell + unitHalfW + 4,
-    y1: unitY + unitH / 2 + 4,
-  };
-  let rowY = countBottom + Math.round(f.rowGap / cell) + riseMax;
-  let placed = place(rowY);
-  for (let guard = 0; guard < 40; guard += 1) {
-    const hit = placed.links.some((n) => {
-      const s: Box = {
-        x0: n.x * cell - starHalfW,
-        y0: n.y * cell - starHalfH,
-        x1: n.x * cell + starHalfW,
-        y1: n.y * cell + starHalfH,
-      };
-      return overlaps(s, countBox) || overlaps(s, unitBox);
-    });
-    if (!hit) break;
-    rowY += 1;
-    placed = place(rowY);
-  }
-  const { ring, links } = placed;
+  const rowY = countBottom + f.drop;
+  const links = Array.from({ length: 7 }, (_, i): LinkPlace => ({ x: dayX(i), y: rowY - chain.rise[i] }));
+  // The orbit's middle halfway between the crown's foot and the chain's foot.
+  const cy = (rowY + ringTop) / 2;
+  const ry = cy - ringTop;
+  // As the chain wants it — and always clear of the count and of the chain's own ends.
+  const rx = Math.min(maxRx, Math.max(chain.orbitRx(ry, chainHalf), countHalf + 4, chainHalf + 2));
+  const { p, ryL } = lowerHalf(3 * pitch, rowY - chain.rise[6] - cy, rx, chain.endLean);
+  const ring: Ring = { cy, rx, ry, ryL, p };
   // The initials on ONE line under the chain's foot, each under its own link — the calendar's
   // row, read at a glance; today's title chip sits on the same line.
   const labelY = Math.round((rowY + LINK_H / 2) * cell + LABEL_GAP + LABEL_H / 2);
