@@ -413,13 +413,14 @@ These are decided and verified against the code. Treat them as load-bearing.
   one octave of value noise (`components/noise.ts`, shared with `AccountMark`) scrolled
   through the word so it swirls instead of sliding flat; a narrow white SHEEN passing the
   diagonal every `SHEEN_PERIOD_S`, its first pass crossing a chip as its cobalt dissolves
-  (a surface born in the foil passes at its seed's own phase); and pixel-art four-point
-  GLITTER at hashed cells, EACH ON ITS OWN CLOCK — rising, HELD, going, stepping centre →
-  arms → a long star's second cells and back, about five on a chip at a time (user-asked
-  2026-09-22: "each star be independant, it should not be a batch of stars", then "the
-  stars should stay a bit before fading out… it's supposed to be chill, you're on a word
-  game not an FPS"). **THE DITHER STAYS WITHIN LIGHT TONES** — the inks lifted
-  `FOIL_PASTEL` = 30% toward white and laid at most `FOIL_ALPHA` = 86% over it — so the
+  (a chip born in the foil passes at its seed's own phase; the count, as if its foil began
+  at the clock's zero, so its reduced-motion still frame falls between passes); and
+  pixel-art four-point GLITTER at hashed cells, EACH ON ITS OWN CLOCK — rising, HELD,
+  going, stepping centre → arms → a long star's second cells and back, about five on a
+  chip at a time (user-asked 2026-09-22: "each star be independant, it should not be a
+  batch of stars", then "the stars should stay a bit before fading out… it's supposed to
+  be chill, you're on a word game not an FPS"). **THE DITHER STAYS WITHIN LIGHT TONES** —
+  the inks lifted `FOIL_PASTEL` = 30% toward white and laid at most `FOIL_ALPHA` = 86% over it — so the
   dark ink reads on every cell (a cobalt dither over the white was "still hard to read",
   2026-09-22) — and the SENTENCE's chip alone wears an IRIDESCENT box-shadow turning through the same inks —
   cyan → cobalt → orchid → coral — over 7s (`.hole-meter.sea`, `sea-glow`; static cobalt

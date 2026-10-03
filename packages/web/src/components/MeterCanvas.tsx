@@ -179,7 +179,9 @@ export default function MeterCanvas({
       const { canvas, ctx, w, h, cols, rows } = p;
       const s = shapeRef.current;
       const since = seaSince.current === null ? null : seaSince.current / 1000;
-      if (s) paintFoil(ctx, w, h, seconds, seed, since, s.inside, COUNT_SPARKLE);
+      // A count born in the foil times its sheen off the clock's zero, so its still frame
+      // (COUNT_STILL_S) falls between passes; a chip born in it passes at its seed's phase.
+      if (s) paintFoil(ctx, w, h, seconds, seed, since ?? 0, s.inside, COUNT_SPARKLE);
       else paintFoil(ctx, w, h, seconds, seed, since);
       // THE RECEDE DISSOLVES: the solid's cells drop out in Bayer order, in RECEDE_STEPS
       // whole steps — the charge run backwards.

@@ -20,7 +20,7 @@ import { T0, hash3, noise3 } from './noise';
 //   3. THE SHEEN: a narrow white band passing along the diagonal once every SHEEN_PERIOD_S.
 //      On a surface that turns to foil before the eyes its FIRST pass crosses the middle
 //      FOIL_FLASH_S after the foil began, as the charge dissolves — the thing catching the
-//      light the moment it turns; one born in the foil passes at its seed's own phase;
+//      light the moment it turns; a chip born in the foil passes at its seed's own phase;
 //   4. THE GLITTER: pixel-art four-point stars at hashed cells, EACH ON ITS OWN CLOCK
 //      (user-asked 2026-09-22: "each star be independant… the stars should stay a bit before
 //      fading out… it's supposed to be chill"): a cell's clock is offset by its own hash; a
