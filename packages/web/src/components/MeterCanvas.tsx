@@ -1,13 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { prefersReducedMotion } from '../hooks/useScramble';
-import { BAYER_8 } from '@whippin/shared';
-import {
-  COUNT_STILL_S,
-  paintCountFoil,
-  paintCountGlints,
-  paintFoil,
-  type FoilScratch,
-} from './foil';
+import { COUNT_SPARKLE, COUNT_STILL_S, paintCountGlints, paintFoil } from './foil';
 import { cellInked, easeOut, frontIsSolid, rampDensity, travelFront } from './meterRamp';
 
 // THE CHARGE METER'S DRAWING (#301, user-decided 2026-09-15: "improve the dithering, make it
@@ -22,10 +15,12 @@ import { cellInked, easeOut, frontIsSolid, rampDensity, travelFront } from './me
 // AND THE HOLO (user-decided 2026-09-22, the activated hole — "something more holographic
 // like a pokemon card… make something really beautiful this time"): once the meter is full
 // and the hole ACTIVE, the chip is HOLOGRAPHIC FOIL — the app's shared material (`foil.ts`:
-// spectrum, shimmer, sheen, sparkles), stepped at the strike sheets' own rate. Reduced motion
-// holds one frame. ONE clock (`performance.now()`) on every surface that draws it, and EVERY
-// HOLE ITS OWN FOIL (`seed`, user-decided 2026-09-22: "each hole should have a different
-// seed"). The iridescent GLOW that goes with it on the sentence's chip is CSS
+// the dithered spectrum, shimmer, sheen, glitter), stepped at the strike sheets' own rate.
+// The full chip does not cut to it: its cobalt DISSOLVES into it — the solid's cells drop out
+// in the Bayer matrix's order, in RECEDE_STEPS hard steps, the charge run backwards. Reduced
+// motion holds one frame. ONE clock (`performance.now()`) on every surface that draws it, and
+// EVERY HOLE ITS OWN FOIL (`seed`, user-decided 2026-09-22: "each hole should have a
+// different seed"). The iridescent GLOW that goes with it on the sentence's chip is CSS
 // (`.hole-meter.sea`, `sea-glow`).
 //
 // A canvas, because CSS cannot threshold a gradient through a pattern. It fills the meter's
@@ -41,10 +36,9 @@ import { cellInked, easeOut, frontIsSolid, rampDensity, travelFront } from './me
 //
 // A SHAPED meter (`shape`, the result's COUNT — `SolvedCard`): the same ramp and the same
 // sequence, kept to the shape's own ink (`clip`) over the shape as it reads uncharged
-// (`base`: the digits in white). Its foil is the count's (`foil.ts` `paintCountFoil`:
-// dithered, one slab), its recede DISSOLVES — the solid's cells drop out in the Bayer
-// matrix's order, in RECEDE_STEPS hard steps, the charge run backwards — and its GLINTS stand
-// on the shape's cap-line corners (`spots`), overhanging the box. The canvas bleeds
+// (`base`: the digits in white). Its foil is the same material kept to the shape's ink, its
+// glitter sparser (`COUNT_SPARKLE`), its recede the same dissolve, and its GLINTS stand on
+// the shape's cap-line corners (`spots`), overhanging the box. The canvas bleeds
 // SHAPE_BLEED_PX past the box on every side — the glints' overhang, and a digit's stop shake
 // (one of the count's font pixels, 24px at its largest) — and the ramp inks the bleed as the
 // box's nearest edge, so a shaken digit keeps its charge. A still one (reduced motion) holds
@@ -75,7 +69,7 @@ export interface MeterShape {
 // Pixel art has nothing to gain from 60fps: the sheets' 50ms, a touch slower.
 const SEA_FRAME_MS = 80;
 // A meter filled on screen RECEDES into the foil rather than cutting to it: the solid ink
-// thins to the foil over this long. A surface mounted already active starts on the foil
+// dissolves into the foil over this long. A surface mounted already active starts on the foil
 // (the burst, and the recede, are for the moment it happens, not for history).
 const SEA_RECEDE_MS = 700;
 
@@ -176,39 +170,31 @@ export default function MeterCanvas({
     [prepare, shapeUp, bleed],
   );
 
-  // The FOIL's painting (`foil.ts`), under what is left of the solid ink while it recedes.
-  const scratch = useRef<FoilScratch>({});
+  // The FOIL's painting (`foil.ts`), under what is left of the solid ink while it recedes —
+  // on every surface, the shape's and the chip's alike.
   const foil = useCallback(
     (seconds: number, solid: number) => {
       const p = prepare();
       if (!p) return;
       const { canvas, ctx, w, h, cols, rows } = p;
       const s = shapeRef.current;
-      if (!s) {
-        paintFoil(ctx, w, h, seconds, seed, scratch.current);
-        // THE RECEDE: what is left of the solid ink the fill reached.
-        if (solid > 0) {
-          ctx.globalAlpha = solid;
-          ctx.fillStyle = getComputedStyle(canvas).color;
-          ctx.fillRect(0, 0, w, h);
-          ctx.globalAlpha = 1;
-        }
-        return;
-      }
-      const since = seaSince.current === null ? 0 : seaSince.current / 1000;
-      paintCountFoil(ctx, w, h, seconds, seed, since, s.inside);
-      // A shape's recede DISSOLVES: the solid's cells drop out in Bayer order, whole steps.
+      const since = seaSince.current === null ? null : seaSince.current / 1000;
+      if (s) paintFoil(ctx, w, h, seconds, seed, since, s.inside, COUNT_SPARKLE);
+      else paintFoil(ctx, w, h, seconds, seed, since);
+      // THE RECEDE DISSOLVES: the solid's cells drop out in Bayer order, in RECEDE_STEPS
+      // whole steps — the charge run backwards.
       if (solid > 0) {
-        const level = (Math.ceil(solid * RECEDE_STEPS) / RECEDE_STEPS) * 64;
+        const level = Math.ceil(solid * RECEDE_STEPS) / RECEDE_STEPS;
         ctx.fillStyle = getComputedStyle(canvas).color;
         ctx.beginPath();
         for (let cy = 0; cy < rows; cy += 1) {
           for (let cx = 0; cx < cols; cx += 1) {
-            if (BAYER_8[(cy & 7) * 8 + (cx & 7)] < level) ctx.rect(cx * CELL_PX, cy * CELL_PX, CELL_PX, CELL_PX);
+            if (cellInked(level, cx, cy)) ctx.rect(cx * CELL_PX, cy * CELL_PX, CELL_PX, CELL_PX);
           }
         }
         ctx.fill();
       }
+      if (!s) return;
       shapeUp(ctx);
       paintCountGlints(ctx, s.spots, w, seconds, seed);
     },

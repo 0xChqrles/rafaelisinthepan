@@ -170,16 +170,17 @@
       components/ChargeLoot.tsx  the blood a charging guess knocks out of the hole, gathered
                               onto the meter
       components/MeterCanvas.tsx  the meter's drawing: the chip converting as an ordered
-                              dither, tweened — and the FOIL of an active hole (`foil.ts`);
-                              SHAPED (`shape`), the result's count: kept to its glyphs' ink,
-                              its recede a Bayer dissolve, glints on its corners
+                              dither, tweened — and the FOIL of an active hole or a given
+                              word (`foil.ts`), the full chip dissolving into it in Bayer
+                              order; SHAPED (`shape`), the result's count: kept to its
+                              glyphs' ink, glints on its corners
       components/meterRamp.ts  the ramp as numbers, pure and tested: the fill's front for a
                               reading, the density, the cell rule, the solid frame
-      components/foil.ts      the holographic FOIL, the app's one shiny material: the active
-                              hole's and the wheel's (`paintFoil`), the result count's dithered
-                              one-slab foil and glints (`paintCountFoil`, `paintCountGlints`),
-                              and its inks + sparkle curve, which the streak's forged link
-                              wears as raster cells
+      components/foil.ts      the holographic FOIL, the app's one shiny material, dithered on
+                              2px cells: ONE painter (`paintFoil`) for the active hole, every
+                              given word and the result's count, the count's glints
+                              (`paintCountGlints`), and its inks + sparkle curve, which the
+                              streak's forged link wears as raster cells
       components/digitMasks.ts  the pixel face's digits (`assets/digits.png`) as block masks,
                               decoded once: the CellDigits watermark, the streak's count and
                               the result's count
@@ -395,27 +396,32 @@ These are decided and verified against the code. Treat them as load-bearing.
   (user-reported 2026-10-03: "the burst animation is played BEFORE the word gets 100%
   filled")), a full chip all cobalt (the ink the word wears once found); and then **THE SEA — THE ACTIVE HOLE'S OWN DRESS (user-decided
   2026-09-22: "a new kind of hole design… something between the full blue hole and the
-  empty white one, with moving waves maybe, some perlin noise")**: the full chip RECEDES
-  into HOLOGRAPHIC FOIL (**user-decided 2026-09-22, the fourth pass of the day — a
-  dithered sea in both colour orders was "still hard to read", a smooth cobalt wash with a
-  glow "a bit lame": "something more holographic like a pokemon card… make something
-  really beautiful this time"**): FOUR LAYERS on the chip's white, every frame, under the
-  dark ink (`components/foil.ts` `paintFoil`, the app's one shiny MATERIAL; the streak
-  celebration's forged link wears its inks too) — a PASTEL SPECTRUM OF THE APP'S OWN INKS (user-asked
-  the same day, "a more whippin AI friendly palette", replacing the full rainbow:
-  `HOLO_INKS`, the hole's cyan → the solve cobalt → the ramp's orchid → coral and back, one
-  seamless loop, each lifted `HOLO_PASTEL` = 42% toward white so the ink reads on every
-  one; `HOLO_CYCLES` loops across the diagonal, drifting `HOLO_DRIFT`), MASKED by one
-  octave of value noise (`components/noise.ts`,
-  shared with `AccountMark`) scrolled through the word so it pools and swirls instead of
-  sliding flat (the shimmer, `SHIMMER_*`, never below `SHIMMER_FLOOR` of `HOLO_ALPHA`), a
-  white SHEEN sweeping the diagonal every `SHEEN_PERIOD_S`, and pixel-art four-point
-  SPARKLES at hashed cells, EACH ON ITS OWN CLOCK — rising over 160ms, HELD 300ms, faded
-  out over 550ms with an ease, arms first, centre last, a quarter of them long-armed,
-  about five on a chip at a time (user-asked the same day: "each star be independant, it
-  should not be a batch of stars", then "the stars should stay a bit before fading out…
-  it's supposed to be chill, you're on a word game not an FPS") — and the
-  SENTENCE's chip alone wears an IRIDESCENT box-shadow turning through the same inks —
+  empty white one, with moving waves maybe, some perlin noise")**: the full chip's cobalt
+  DISSOLVES — its cells drop out in Bayer order, eight hard steps over `SEA_RECEDE_MS` —
+  into HOLOGRAPHIC FOIL (**user-decided 2026-09-22: "something more holographic like a
+  pokemon card… make something really beautiful this time"**), **the result count's own
+  DITHERED material** (user-asked 2026-10-03: "reuse the effect you've created for the try
+  count with the colors and the dithering, for the filled words too"; `components/foil.ts`
+  `paintFoil`, ONE painter for the chip, every given word and the count — the app's one
+  shiny MATERIAL; the streak celebration's forged link wears its inks too): FOUR LAYERS on
+  the chip's 2px cells, every frame, under the dark ink, every colour ORDERED-DITHERED and
+  never blended — a SPECTRUM OF THE APP'S OWN INKS (user-asked 2026-09-22, "a more whippin
+  AI friendly palette": `HOLO_INKS`, the hole's cyan → the solve cobalt → the ramp's orchid
+  → coral and back, one seamless loop), a window of a third of the loop across the
+  surface sliding slowly along it, each cell one of the two inks either side of its place;
+  the SHIMMER — how strong that ink stands over the white, one of three steps — pooled by
+  one octave of value noise (`components/noise.ts`, shared with `AccountMark`) scrolled
+  through the word so it swirls instead of sliding flat; a narrow white SHEEN passing the
+  diagonal every `SHEEN_PERIOD_S`, its first pass crossing a chip as its cobalt dissolves
+  (a surface born in the foil passes at its seed's own phase); and pixel-art four-point
+  GLITTER at hashed cells, EACH ON ITS OWN CLOCK — rising, HELD, going, stepping centre →
+  arms → a long star's second cells and back, about five on a chip at a time (user-asked
+  2026-09-22: "each star be independant, it should not be a batch of stars", then "the
+  stars should stay a bit before fading out… it's supposed to be chill, you're on a word
+  game not an FPS"). **THE DITHER STAYS WITHIN LIGHT TONES** — the inks lifted
+  `FOIL_PASTEL` = 30% toward white and laid at most `FOIL_ALPHA` = 86% over it — so the
+  dark ink reads on every cell (a cobalt dither over the white was "still hard to read",
+  2026-09-22) — and the SENTENCE's chip alone wears an IRIDESCENT box-shadow turning through the same inks —
   cyan → cobalt → orchid → coral — over 7s (`.hole-meter.sea`, `sea-glow`; static cobalt
   under reduced motion): the
   one lit thing on the board, by the user's call over the rebrand's no-gradient/no-glow
@@ -423,7 +429,7 @@ These are decided and verified against the code. Treat them as load-bearing.
   `SEA_FRAME_MS` = 80, ONE clock on every surface and **EVERY HOLE ITS OWN
   FOIL** (`seed` — the hole's index, a listed word's rank; user-decided the same day:
   "each hole should have a different seed"); it stands until the hole is inked in. A hole
-  MOUNTED active (a reload) is on the foil at once, no burst, no recede. (The CSS class
+  MOUNTED active (a reload) is on the foil at once, no burst, no dissolve. (The CSS class
   and prop are still `sea`, the name of the first cut.) **THE GIVEN WORDS
   WEAR THE SAME SEA WHEREVER THEY ARE LISTED** (user-decided 2026-09-22, "the given words
   should have the same effect on the guess list"): a `.wheel-given` row and a `.hw-given`
@@ -2640,10 +2646,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
       charge with the meter's Bayer fill as far as the reconstruction had reached at the try
       the ruler is writing (never past 99); the last stop fills it, and on its burst's
       impact — read off the run's clock, the one the burst is mounted from, never off the
-      fill's tween — the cobalt DISSOLVES (Bayer order, eight hard steps) into the DITHERED FOIL (`foil.ts` `paintCountFoil`: the
-      material on the house's 2px cell, one slab across the whole number, slow drift, a
-      narrow sheen whose first pass meets the dissolve), glints taking turns on the cap
-      line's outer corners (`paintCountGlints`). A settled result is BORN in the foil; the
+      fill's tween — the cobalt DISSOLVES (Bayer order, eight hard steps) into the DITHERED FOIL (`foil.ts` `paintFoil`: the
+      material every given word wears, on the house's 2px cell, one slab across the whole
+      number, slow drift, a narrow sheen whose first pass meets the dissolve, its glitter
+      sparser — `COUNT_SPARKLE`), glints taking turns on the cap line's outer corners
+      (`paintCountGlints`). A settled result is BORN in the foil; the
       foil's clock rests while the count is out of view or the tab hidden. A round that
       ENDED UNSOLVED wears no shine: a plain white `∞` on the count's own pixel grid.
     - **THE RUN'S HEAT** (`components/RunHeat`, screen-only — the share card draws none):

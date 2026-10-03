@@ -42,9 +42,9 @@ import { t } from '../i18n';
 // meter's cobalt round it, white light where it crosses the stopped digits. While it runs,
 // the digits charge with the meter's ordered-dither fill, as far as the reconstruction had
 // reached at the try the ruler is writing (never past 99); the last stop fills them, and on
-// its burst's impact the cobalt DISSOLVES into the holographic FOIL (`foil.ts`
-// `paintCountFoil`: dithered on the house's 2px cell, one slab), glints taking turns on the
-// digits' cap-line corners. A round that ENDED UNSOLVED wears no shine: a plain white `∞` on
+// its burst's impact the cobalt DISSOLVES into the holographic FOIL (`foil.ts` `paintFoil`,
+// the material every given word wears: dithered on the house's 2px cell, one slab), glints
+// taking turns on the digits' cap-line corners. A round that ENDED UNSOLVED wears no shine: a plain white `∞` on
 // the count's own pixel grid. A settled result is BORN in the foil.
 //
 // The screen adds ONE thing the still card cannot: THE RUN'S HEAT (`RunHeat`), the ruler's

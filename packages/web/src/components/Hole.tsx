@@ -183,10 +183,10 @@ export default function Hole({
   const inked = resolved && !hole.revealed;
 
   // THE ACTIVATION (#301; user-decided 2026-09-22): `charge lands → meter fills → burst →
-  // the sea`. The active state is derived and arrives on the same render that fills the
-  // meter; the hole holds it back for the fill's travel and the burst's impact, then lets
-  // the full chip recede into the sea (`MeterCanvas`). A hole MOUNTED active (a reload, a
-  // replay on another device) is on the sea at once — a burst is for the moment it
+  // the foil` (the `sea`). The active state is derived and arrives on the same render that
+  // fills the meter; the hole holds it back for the fill's travel and the burst's impact,
+  // then lets the full chip dissolve into the foil (`MeterCanvas`). A hole MOUNTED active (a
+  // reload, a replay on another device) is on the foil at once — a burst is for the moment it
   // happens, not for history. Under reduced motion everything snaps.
   const active = charge?.active === true;
   // An exact hit wins immediately, before the deferred board finishes its word swap.

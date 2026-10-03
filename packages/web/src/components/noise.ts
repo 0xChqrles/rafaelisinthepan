@@ -1,6 +1,6 @@
 // One octave of VALUE NOISE in 3D (x, y, TIME) — the app's one noise, shared by the two
 // churning surfaces: the returning door's mark (`AccountMark`, where it was born) and the
-// activated hole's sea (`MeterCanvas`). Integer-hashed, so the field is the same on every
+// holographic foil's shimmer (`foil.ts`). Integer-hashed, so the field is the same on every
 // device and every visit; one octave, because a 10-cell tile and a 2px-cell chip cannot
 // resolve more, and gradient noise would cost more code to be indistinguishable.
 //

@@ -1777,12 +1777,13 @@ input {
    order across the ramp (user-decided 2026-09-15, the fifth cut: a line along the chip's
    bottom edge was a bar; a level rising inside the chip barely moved; a hard-edged sweep
    behind a checker fringe was "a basic animation"). A full chip is all cobalt — the ink the
-   word will wear once found — and the burst follows; then THE SEA (user-decided 2026-09-22,
-   the ACTIVATED hole, replacing the revealed first letter): the same cells driven by a
-   slow noise field drifting through the word, cobalt swell over the white ground, until
-   the hole is inked in — the third state of a hole, between the held white chip and the
-   solved cobalt word, and the dress of a word the meter GAVE wherever it is listed (the
-   wheel's rows, the words grid — `.wheel-sea`, `.hw-sea`). The box is the chip's
+   word will wear once found — and the burst follows; then THE FOIL (user-decided 2026-09-22,
+   the ACTIVATED hole, replacing the revealed first letter; the class is still `.sea`): the
+   cobalt DISSOLVES in Bayer order into the holographic foil, the pastel inks dithered on
+   the same 2px cells (`foil.ts`, the result count's own material), until the hole is
+   inked in — the third state of a hole, between the held white chip and the solved cobalt
+   word, and the dress of a word the meter GAVE wherever it is listed (the wheel's rows,
+   the words grid — `.wheel-sea`, `.hw-sea`). The box is the chip's
    exact box (same overhang, same height, same centring), in the chip's own stacking layer
    AFTER the `::before` in paint order — over the white ground, under the ink — and clips to
    itself. Nothing is laid out: it is absolute like the chip and rides `.hole-word` like the
@@ -3719,8 +3720,8 @@ input {
   color: var(--bg);
   text-shadow: none;
 }
-/* A word the meter GAVE (user-decided 2026-09-22) wears the activated chip's SEA: the
-   chip's white with the moving cobalt dither over it, the canvas filling the chip's own
+/* A word the meter GAVE (user-decided 2026-09-22) wears the activated chip's FOIL: the
+   chip's white with the foil's dithered inks over it, the canvas filling the chip's own
    box under the ink. */
 .hw-given .hw-text {
   /* inline-block, not inline: a negative-z child of a positioned INLINE paints under
