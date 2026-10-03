@@ -1,8 +1,9 @@
 import type { StreakDialogProps } from './StreakDialog';
 import { lazyChunk } from '../hooks/lazyChunk';
 
-// Keep React Spring and the full celebration out of the startup bundle, but fetch it while
-// an eligible round is idle so a normal solve still opens without a network pause.
+// Keep the full celebration (its canvas scene, the foil) out of the startup bundle, but
+// fetch it while an eligible round is idle so a normal solve still opens without a network
+// pause.
 const chunk = lazyChunk<StreakDialogProps>(() => import('./StreakDialog'));
 
 export function preloadStreakDialog(): void {

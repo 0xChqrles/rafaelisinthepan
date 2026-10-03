@@ -23,8 +23,8 @@ function writeEntry(url: string, replace: boolean): void {
   for (const l of listeners) l();
 }
 
-// Navigate to `path`, preserving the current query string (so dev harnesses like
-// ?tutorial=1 / ?streak= survive route changes). `replace` swaps the current history
+// Navigate to `path`, preserving the current query string (so the dev harnesses
+// ?streak= / ?error= survive route changes). `replace` swaps the current history
 // entry instead of pushing — used for the `/` -> /<lang> redirect so `/` never sits in
 // history and back from the game exits rather than bouncing through the redirect.
 export function navigate(path: string, opts: { replace?: boolean } = {}): void {

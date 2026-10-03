@@ -86,7 +86,6 @@
      one red now, where the ladder's reservation used to hold them 30 apart. */
   --danger: #ff2e38;
   --muted: #a6adb8; /* neutral cool grey (the warm paper tone left with the stamp brand) */
-  --flame: #4642e8; /* streak flame indigo — the sprite's body color (#74); milestone tiers swap it */
 
   --pixel-font: 'Press Start 2P', monospace;
   /* THE one chrome voice (user-decided 2026-08-18, third pass — Azeret Mono replacing
@@ -1121,7 +1120,7 @@ input {
   display: block;
 }
 
-/* The header's single action group, floating top-right: streak stat, language flag,
+/* The header's single action group, floating top-right: language flag,
    then the screen's contextual controls (archive + "?", or skip, or close). A small
    gap — enough that glyphs don't read as one control, while the group still coheres.
    Re-enables pointer events under the click-through .topbar layer. */
@@ -3571,9 +3570,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     background-color: color-mix(in srgb, var(--accent) 48%, transparent);
   }
 }
-/* Player-progression celebration: the native dialog IS the borderless full-screen surface.
-   React Spring owns every staged entrance/bounce; fixed rows reserve the final composition
-   so the flame, number, week, and action never move each other as they appear. */
+/* THE STREAK CELEBRATION — "THE ORBIT" (`StreakDialog`, its picture `components/streak/`): the
+   link previews' language on the full screen. Bare ground, the frame's corner brackets with
+   the lockup and the day's edition, ONE subject drawn in whole cells on a canvas
+   (`image-rendering: pixelated` at an integer cell): the count, the week as a CHAIN of pixel
+   links on its orbit (today's forged into the FOIL), the crown's flame at its top, one cobalt
+   orbit for each earlier week of the run. What stays DOM is type (the initials, the unit, the
+   hint, the furniture) and the ULTRA star's sheet — all moved by the show's one clock
+   (`wordsAt`), the raster's own. */
 .streak-dialog[open] {
   position: fixed;
   inset: 0;
@@ -3583,312 +3587,220 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   height: 100%;
   max-height: none;
   margin: 0;
-  padding: 20px;
+  padding: 0;
   border: 0;
   outline: 0;
   background: var(--bg);
   color: var(--fg);
-  display: flex;
-  /* Sequence centering comes from its auto margins (below), NOT align/justify center:
-     auto margins collapse to 0 when the content is taller than a short viewport, so
-     nothing is clipped and the scroll fallback can always reach CONTINUE. */
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
+  /* The screen fades in over the game on the show's clock (`wordsAt`). */
+  opacity: var(--screen, 0);
 }
 .streak-dialog::backdrop {
   background: transparent;
+}
+.streak-dialog.is-leaving {
+  opacity: 0;
+  transition: opacity 200ms ease-out;
 }
 /* Once the ending hint is up the WHOLE screen dismisses — let the cursor say so. */
 .streak-dialog.done {
   cursor: pointer;
 }
-.streak-sequence {
-  width: min(520px, 100%);
-  margin: auto;
-  display: grid;
-  grid-template-rows: 120px 96px 80px 45px;
-  justify-items: center;
-  align-items: center;
-  gap: 18px;
-}
-.streak-flame-slot {
-  width: 128px;
-  height: 120px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.streak-number-block {
-  height: 96px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-}
-/* The number is PIXEL (user-decided 2026-08-18, after a light-mono cut — the streak is
-   the game's own count, and the big pixel digits are the celebration): the wheel slots
-   are the pixel face's exact 1em advance. */
-.streak-digits {
-  position: relative;
-  height: 1em;
-  font-family: var(--pixel-font);
-  font-weight: 400;
-  font-size: 64px;
-  line-height: 1;
-}
-.streak-digit-layer {
+.streak-stage {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
+  pointer-events: none;
 }
-.streak-digit-old-layer {
-  will-change: transform;
-}
-.streak-digit-slot {
-  position: relative;
-  display: block;
-  width: 1em;
-  height: 1.44em;
-  overflow: hidden;
-}
-.streak-digit {
+.streak-orbit {
   position: absolute;
-  inset: 0.22em 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  will-change: transform, opacity;
-  /* Transparent by default so the flame glow (below) eases in as a COLOR fade when the
-     flame arrives — `text-shadow: none` would pop instead of transitioning. The HARD
-     6px underprint RETURNED with the pixel digits (2026-08-18, unwinding the soft-glow
-     detour): a blur clips square inside the overflow-hidden wheel slots, and the offset
-     print is the pixel idiom anyway. */
-  text-shadow: 0px 6px transparent;
-  transition: text-shadow 260ms ease-out;
-}
-.streak-digit-old {
-  color: var(--surface);
-}
-.streak-digit-new,
-.streak-number-block.final .streak-digit-old {
-  color: var(--fg);
-}
-/* When the flame appears (JS adds `flamed`), the settled number takes a flame-indigo
-   GLOW — the flame's light cast onto the digits. Applied to the whole new number: the
-   changed digits plus the unchanged ones (faded-out old digits are opacity 0, so their
-   glow stays invisible). */
-.streak-number-block.flamed .streak-digit {
-  text-shadow: 0px 6px var(--flame);
-}
-/* The ending hint — arcade "press any key / tap anywhere" idiom: muted pulsing text, no
-   chrome. It is NON-interactive (a plain element, nothing focusable in the celebration);
-   the whole modal dismisses on click/tap/any key, so a boxed, focusable button would both
-   lie about the target being local and show an unwanted focus ring. */
-.streak-hint {
-  font-family: var(--ui);
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--fg);
-  padding: 14px 20px; /* keeps the pulsing text off the tile row above it */
-  cursor: pointer;
-}
-.streak-hint-pulse {
-  display: block;
-  animation: streak-hint-pulse 1.6s ease-in-out infinite;
-}
-/* Ends at full opacity so the reduced-motion rule (duration ~0, one iteration) leaves the
-   hint steady and readable instead of frozen mid-fade. */
-@keyframes streak-hint-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-.streak-hint-slot {
-  height: 45px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-/* The hero flame: TWO stacked 6-frame pixel-art sprite sheets (each 192×30 = six 32×30
-   frames) — streak-glow.png (the halo) behind streak-flamme.png (the flame core) — so the
-   glow's opacity can breathe independently of the core. Drawn at 4× = 128×120px (INTEGER
-   scale so `pixelated` keeps the pixels razor-crisp). Both layers play the same sprite
-   walk as the calendar ripple: `background-size: 600% 100%` fits ONE frame to the box and
-   `steps(6)` walks `background-position-x` — end value 100% × 6/5 so frame 5 lands on 100%
-   and the loop wraps cleanly; same duration + start time keeps the two sheets frame-locked. */
-.streak-flame {
-  position: relative;
-  display: block;
-  flex: none;
-  width: 128px;
-  height: 120px;
-}
-.streak-flame::before,
-.streak-flame::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-repeat: no-repeat;
-  background-size: 600% 100%;
+  left: 0;
+  top: 0;
   image-rendering: pixelated;
-  animation: streak-flame 0.7s steps(6) infinite;
 }
-/* The glow layer, painted BEHIND the core (::before precedes ::after): on top of the
-   frame walk, its opacity BREATHES on a slow, slightly irregular pulse. 2.5s against the
-   0.7s flicker is a non-integer ratio, so the two loops drift and never read as a metronome. */
-.streak-flame::before {
-  background-image: url('./assets/streak-glow.png');
-  animation:
-    streak-flame 0.7s steps(6) infinite,
-    streak-glow-pulse 2.5s ease-in-out infinite;
-}
-.streak-flame::after {
-  background-image: url('./assets/streak-flamme.png');
-}
-@keyframes streak-flame {
-  from {
-    background-position-x: 0%;
-  }
-  to {
-    background-position-x: calc(100% * 6 / 5); /* frame 5 lands on 100%; endpoint wraps */
-  }
-}
-/* Uneven stops so the glow breathing feels organic (fire), not sinusoidal. */
-@keyframes streak-glow-pulse {
-  0% {
-    opacity: 0.95;
-  }
-  30% {
-    opacity: 0.55;
-  }
-  55% {
-    opacity: 0.85;
-  }
-  75% {
-    opacity: 0.5;
-  }
-  100% {
-    opacity: 0.95;
-  }
-}
-/* The flame is the hero, not decorative motion on top of something else — so reduced-motion
-   users KEEP it, frozen on a single frame (animations off, glow at rest) rather than losing
-   the icon. */
-@media (prefers-reduced-motion: reduce) {
-  .streak-flame::before,
-  .streak-flame::after {
-    animation: none;
-  }
-}
-/* The small "DAY STREAK" label under the number. */
-.streak-label {
+/* The count set as type, only if the digits' sheet never decoded (the raster's count is the
+   same face, cell for cell). */
+.streak-count-type {
+  position: absolute;
   margin: 0;
-  font-family: var(--ui);
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-family: var(--pixel-font);
+  line-height: 1;
+  text-align: center;
   color: var(--fg);
-  opacity: 0.8;
 }
 
-/* The Monday-based weekly streak row (#74): 7 flat pixel squares (the streak dialog's
-   heat-grid language — no boxes, no rings, no mini icons), a weekday initial above each.
-   Solved = flame-indigo fill, empty/future = neutral surface; TODAY is marked by its
-   bright label, not a ring. Decorative (aria-hidden). */
-.week-row {
-  display: flex;
-  gap: 10px;
-  align-self: end;
+/* The ULTRA star (`assets/hits/ultra-slash.png`, 7 frames of 71×66, the exact hit's sheet)
+   struck on today's link as the chain reaches it: one walk at a whole scale (its own size on a
+   phone, so it frames the link rather than erasing it; 2× wider), centred — its art's
+   centroid is dead centre — and placed so it never crosses the count or its unit. The show's
+   clock walks its frames; hidden outside the walk. */
+.streak-star {
+  --star-scale: 1;
+  position: absolute;
+  width: calc(71px * var(--star-scale));
+  height: calc(66px * var(--star-scale));
+  transform: translate(-50%, -50%);
+  background-image: url('./assets/hits/ultra-slash.png');
+  background-repeat: no-repeat;
+  background-size: 700% 100%;
+  image-rendering: pixelated;
+  visibility: hidden;
 }
-.week-cell {
+
+/* EVERY WORD BELOW ARRIVES ON THE SHOW'S CLOCK (`wordsAt`): opacity and a rise, written frame
+   by frame — no transition of their own, so a fast-forward lands them all at once. */
+
+/* The week's initials under their days; today's stands in the white title chip — the app's
+   one emphasis — once it lights. */
+.streak-day {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 3px 4px 2px;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  opacity: 0;
+}
+.streak-day.today[data-lit] {
+  background: var(--fg);
+  color: var(--bg);
+  font-weight: 700;
+}
+
+/* The count's unit under it, and the ending hint at the foot: chrome mono, tracked caps. */
+.streak-unit,
+.streak-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  font-family: var(--ui);
+  text-transform: uppercase;
+  line-height: 1;
+  transform: translateY(-50%);
+  opacity: 0;
+}
+.streak-unit {
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--fg);
+}
+.streak-hint {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+/* THE FRAME: the device frame's corner brackets (2px, 24px arms, white at 38% — the cards'
+   own), travelling in from the subject and kicked outward once when the shock reaches them;
+   inside them the cards' furniture — the lockup top left, the day's edition top right. */
+.streak-corner {
+  --inset: 16px;
+  --arm: 24px;
+  position: absolute;
+  width: var(--arm);
+  height: var(--arm);
+  border: 0 solid rgba(255, 255, 255, 0.38);
+  opacity: 0;
+}
+.streak-corner.tl {
+  left: var(--inset);
+  top: var(--inset);
+  border-top-width: 2px;
+  border-left-width: 2px;
+}
+.streak-corner.tr {
+  right: var(--inset);
+  top: var(--inset);
+  border-top-width: 2px;
+  border-right-width: 2px;
+}
+.streak-corner.bl {
+  left: var(--inset);
+  bottom: var(--inset);
+  border-bottom-width: 2px;
+  border-left-width: 2px;
+}
+.streak-corner.br {
+  right: var(--inset);
+  bottom: var(--inset);
+  border-bottom-width: 2px;
+  border-right-width: 2px;
+}
+.streak-lockup {
+  position: absolute;
+  top: 32px;
+  left: 32px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  width: 30px;
-}
-.week-label {
+  gap: 10px;
   font-family: var(--ui);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   line-height: 1;
   color: var(--fg);
-  opacity: 0.55;
+  opacity: 0;
 }
-.week-cell.today .week-label {
-  color: var(--fg);
-  opacity: 1;
-}
-.week-mark {
+.streak-lockup svg {
   display: block;
-  width: 30px;
-  height: 30px;
-  background: var(--surface);
-  border-radius: var(--r-sm);
-  image-rendering: pixelated;
-  transform-origin: center;
-  will-change: transform;
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
 }
-.week-cell.solved .week-mark {
-  background: var(--flame);
-}
-.week-mark-flip,
-.week-cell.solved .week-mark-flip {
-  position: relative;
-  /* The lifted tile grows well past its 30px cell mid-flight; without a raised paint
-     order, later sibling cells would draw over its edges and flatten the illusion. */
-  z-index: 1;
-  background: transparent;
-  transform-style: preserve-3d;
-}
-.week-mark-face {
+/* The edition: the solved day's date in the pixel face, the accent, on the lockup's line. */
+.streak-edition {
   position: absolute;
-  inset: 0;
-  display: block;
-  border-radius: var(--r-sm);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
+  top: 39px;
+  right: 32px;
+  font-family: var(--pixel-font);
+  font-size: 8px;
+  line-height: 1;
+  color: var(--accent);
+  opacity: 0;
 }
-.week-mark-front {
-  background: var(--surface);
+/* The raster's 4px cells (`cellFor`: the short side at 600 or more): the frame at the
+   cards' inset, the furniture at the next whole size. */
+@media (min-width: 600px) and (min-height: 600px) {
+  .streak-corner {
+    --inset: 24px;
+  }
+  .streak-day {
+    font-size: 14px;
+  }
+  .streak-lockup {
+    top: 40px;
+    left: 40px;
+    font-size: 16px;
+  }
+  .streak-lockup svg {
+    width: 44px;
+    height: 44px;
+  }
+  .streak-edition {
+    top: 54px;
+    right: 40px;
+    font-size: 16px;
+  }
 }
-.week-mark-back {
-  background: var(--flame);
-  transform: rotateX(180deg);
+/* A phone on its side: the furniture tucks into the corners. */
+@media (max-height: 499px) {
+  .streak-lockup {
+    top: 22px;
+  }
+  .streak-edition {
+    top: 29px;
+  }
 }
-
-/* Compact composition: narrow phones AND short viewports (landscape phones) — the full
-   composition is ~435px tall, so height must trigger this too, not width alone. */
-@media (max-width: 420px), (max-height: 500px) {
-  .streak-dialog[open] {
-    padding: 16px;
-  }
-  .streak-sequence {
-    grid-template-rows: 90px 82px 80px 45px;
-    gap: 15px;
-  }
-  .streak-flame-slot {
-    width: 96px;
-    height: 90px;
-  }
-  .streak-flame {
-    width: 96px;
-    height: 90px;
-  }
-  .streak-number-block {
-    height: 82px;
-  }
-  .streak-digits {
-    font-size: 52px;
+/* The narrowest phones: the lockup keeps its mark, the edition keeps the line. */
+@media (max-width: 359px) {
+  .streak-lockup span {
+    display: none;
   }
 }
 

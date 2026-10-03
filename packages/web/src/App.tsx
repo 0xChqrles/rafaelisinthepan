@@ -71,8 +71,8 @@ export default function App() {
   const [streakPreview, setStreakPreview] = useState<number | null>(() =>
     streakPreviewFromSearch(window.location.search),
   );
-  // Stable across renders: StreakDialog keys its whole staged sequence on onDismiss, so
-  // an inline closure would restart the animation every time the game route re-renders.
+  // Stable across renders: StreakDialog's open effect depends on onDismiss, so an inline
+  // closure would close and reopen the modal every time the game route re-renders.
   const dismissStreakPreview = useCallback(() => setStreakPreview(null), []);
   // Dev-only preview of the error surface (`?error=<variant>`): the real ErrorScreen over
   // whatever route is on screen, so the box is judged against a real backdrop. Closing

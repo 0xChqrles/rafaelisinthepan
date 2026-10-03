@@ -154,8 +154,22 @@
       components/ChargeLoot.tsx  the blood a charging guess knocks out of the hole, gathered
                               onto the meter
       components/MeterCanvas.tsx  the meter's drawing: the chip converting as an ordered
-                              dither, tweened — and the SEA of an active hole (the same
-                              dither driven by value noise, `components/noise.ts`)
+                              dither, tweened — and the FOIL of an active hole (`foil.ts`)
+      components/foil.ts      the holographic FOIL, the app's one shiny material: the active
+                              hole's and the wheel's (`paintFoil`), and its inks + sparkle
+                              curve, which the streak's forged link wears as raster cells
+      components/digitMasks.ts  the pixel face's digits (`assets/digits.png`) as block masks,
+                              decoded once: the CellDigits watermark and the streak's count
+      components/StreakDialog.tsx  the streak celebration (lazy, `LazyStreakDialog`): the
+                              native modal, its fast-forward/dismiss machine, the show's ONE
+                              clock driving the canvas, the foil and the words
+      components/streak/      its picture, pure and tested: beats.ts (the clock — every beat,
+                              `wordsAt`), geometry.ts (the layout: the count's face, the
+                              week's orbit, `chainPlacement`, the past weeks' orbits, the
+                              week's path), sprites.ts (the inks, the chain's link, the foil
+                              as a cell ink, the glitter star, the crown's flame), field.ts
+                              (the raster's cells measured once), count.ts (the count's
+                              layer), scene.ts (the raster, layer by layer, deterministic in t)
       game/scoring.ts         the SCREEN's reading: applyGuessToHoles + replayHoles +
                               computeProgress over RuntimeHoles (the arithmetic itself is
                               @whippin/shared's since #203)
@@ -359,7 +373,8 @@ These are decided and verified against the code. Treat them as load-bearing.
   dithered sea in both colour orders was "still hard to read", a smooth cobalt wash with a
   glow "a bit lame": "something more holographic like a pokemon card… make something
   really beautiful this time"**): FOUR LAYERS on the chip's white, every frame, under the
-  dark ink (`MeterCanvas`'s `foil`) — a PASTEL SPECTRUM OF THE APP'S OWN INKS (user-asked
+  dark ink (`components/foil.ts` `paintFoil`, the app's one shiny MATERIAL; the streak
+  celebration's forged link wears its inks too) — a PASTEL SPECTRUM OF THE APP'S OWN INKS (user-asked
   the same day, "a more whippin AI friendly palette", replacing the full rainbow:
   `HOLO_INKS`, the hole's cyan → the solve cobalt → the ramp's orchid → coral and back, one
   seamless loop, each lifted `HOLO_PASTEL` = 42% toward white so the ink reads on every
@@ -531,8 +546,10 @@ These are decided and verified against the code. Treat them as load-bearing.
   - **ONE GAME ACCENT, and it is the SOLVE COBALT** (user-decided 2026-09-01, third
     pass: "the solved word color, which should be the game accent color"): `--accent` is
     #4a6aff = `--solve`, retiring the violet #8f7bff of 2026-08-18. The prompt's chevron
-    and cursor, the statuses, COPIED, the +Ns gain, the streak, the credit headline, the
-    rank number and every solved word/trophy/terminus/LED are the same blue — and it is
+    and cursor, the statuses, COPIED, the +Ns gain, the streak (its celebration is drawn in
+    this cobalt, iron and white, with the FOIL on today's link as its one shiny peak), the
+    credit headline, the rank number and every solved word/trophy/terminus/LED are the same
+    blue — and it is
     still the heat ramp's calm terminus, so the ruler, the archive fills and the OG card
     agree with it. The history line's "you are here" square moved to `--hole` so the
     marker and the terminus it walks toward stay two colours.
@@ -665,9 +682,9 @@ These are decided and verified against the code. Treat them as load-bearing.
     lines — the source is the puzzle's content, not chrome, and it is EXEMPT from the
     all-caps chrome rule: quoted content keeps its own casing, the code-uppercased KIND
     carrying the phrase contrast), the run ruler's tick numbers, and the streak
-    celebration's digits (wheel slots at the pixel
-    1em advance, the flame's HARD 6px indigo underprint restored — a soft glow clips
-    square inside the overflow-hidden slots). **Every monospace layout assumption therefore still holds** — MixWord's ch
+    celebration's count and edition (the count in the face's own `digits.png` glyphs, each
+    glyph pixel a whole square of the celebration's raster cells; the day's date set in the
+    face). **Every monospace layout assumption therefore still holds** — MixWord's ch
     reservations and CellDigits' grid sit on surfaces that stayed pixel. The coach text's inline `[[b:]]`/`[[w:]]` words are
     pixel at 0.82em INSIDE modern copy — game words quoted in chrome.
   - **MONO (Azeret Mono variable 100-900, `--ui`)** is EVERYTHING else — body default,
@@ -1190,10 +1207,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     landed: a total summed over one of two is a smaller number stated as a fact. Values
     withheld until then (the slot BREATHES only while a read is in flight — a failure rests
     still, the archive cells' rule), labels and layout always drawn, and ONE fixed value
-    height so nothing moves when the collections land. The STREAK cell briefly wore the
-    archive's flame sprite; it was pulled pending a drawing of its own, which leaves
-    `assets/streak-small.png` unreferenced (the celebration's `streak-flamme`/`streak-glow`
-    sheets are a separate pair and are untouched). The ROW ITSELF is
+    height so nothing moves when the collections land. The STREAK cell wears no
+    icon. The ROW ITSELF is
     `components/AccountStats.tsx`, drawn by three surfaces for three reasons — what this
     account IS, what a deletion is about to COST, and what a recovery just HANDED BACK —
     because a player who reads a streak of 12 on the account screen and is then offered a
@@ -1732,14 +1747,6 @@ it to the local store — see `packages/backend/AGENTS.md`).
     and its tap (the day is playable whether or not we know what happened on it); the chooser
     draws the app's skeleton strip; `srStatus` says `srStatusUnknown`, because silence there
     reads as "not started".
-  - **The ARCHIVE holds its streak hero's BOX while an answer is still COMING**
-    (`.archive-streak-pending`, `visibility: hidden`). The returning player this screen is for
-    almost always has a streak, so reserving keeps the calendar still for them; drawing
-    nothing pulled it up and pushed it back down on every visit. A zero streak collapses the
-    box once the answer lands — and so does a read that FAILED (corrected on review), for the
-    cells' own reason: reserving is a promise, and after a failure nothing is coming to keep
-    it. The failure is not swallowed by that, because the block under the grid says it in
-    words and its RETRY reloads the collection with the month.
   - **A FAILED read speaks whether or not a month is already drawn** (corrected on review).
     A revalidation deliberately keeps its cached month on screen, so gating the block on
     there being nothing to show made every failure after the first good visit SILENT — an
@@ -1763,8 +1770,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     counts its transition off exactly that array. The union is honest as well as safe — the
     collection is monotonic within a language, and the only day this client ever adds is one
     the server is recording anyway. **A merge that changes nothing keeps the held array's
-    IDENTITY** (PR-218 review): `StreakDialog`'s master sequence effect depends on arrays
-    derived from it, and a fresh identity landing mid-celebration restarted the whole show.
+    IDENTITY** (PR-218 review), so nothing derived from it re-derives under a mounted
+    celebration; `StreakDialog` reads the week off it as a PRIMITIVE key and plays on ONE
+    clock, so even a re-derivation re-plans the same moment rather than restarting the show.
     `loadPlayerHistory` is exported for the contract test that drives a real answer through
     the commit path.
   - **The GAME screen loads the collection with NO month** (`usePlayerHistory({lang, enabled:
@@ -2521,10 +2529,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   cells, so a 4-week February and a 6-week month stand the same height and paging never
   moves the calendar.**
   The calendar itself is **vertically centered** (`.archive` flex column, top padding
-  clears the fixed header). **The live streak stat moved out of the archive body and into
-  the shared `TopBar` (decided 2026-07-11):** immediately right of the language control it is
-  only `assets/streak-small.png` (the 8×10 pixel-art source displayed at an exact 3× =
-  24×30) plus a larger bare streak amount; a zero/broken streak remains hidden. Entry: the header's DATE CHIP
+  clears the fixed header). The archive carries no streak stat (the live streak is on
+  `/account`'s stats row). Entry: the header's DATE CHIP
   (since 2026-08-18; a calendar icon in the right group before that); `dateForDayNumber` (`shared/day.ts`) is the `dayNumber`
   inverse. The **OG share page** (`backend/ogCard.ts` `renderShareHtml`) now click-throughs
   to the **shared day's** date-addressed URL (`/<lang>/<dateForDayNumber(dayNumber)>`),
@@ -2850,18 +2856,46 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the exact beats the harness exists to show. Player progression is separate:
   `StreakDialog` is a
   **borderless full-screen** native modal, opened only by a FRESH active-day
-  unsolved→solved transition. Its staged animation uses `@react-spring/web` (v9 for React
-  18): 200ms empty-screen fade → previous streak (derived without the solved day; 0 when
-  broken) 200ms fade → 500ms hold → changed digits wheel down/in from above, staggered
-  90ms right-to-left with a slower, subtly bouncing incoming spring → whole new number
-  foreground → flame → week with the solved day still empty → that tile lifts toward the
-  player, flips onto its completed face, and falls back to the screen plane → its impact
-  sends the prior completed-day scale pulse nearest-first across the week at 65ms intervals
-  → the ending hint. Unchanged streak digits never move, and the previous value stays
-  horizontally centered when the new streak adds a digit. It
+  unsolved→solved transition. **ITS PICTURE IS THE ORBIT, THE FLAME AND THE WEEK'S CHAIN
+  (user-decided 2026-10-02)**, in the link previews' language: bare `--bg`, the device
+  frame's corner brackets with the lockup top left and the solved day's edition top right,
+  and ONE subject drawn on a canvas in whole cells (`image-rendering: pixelated`; 3 CSS px a
+  cell on a phone, 4 once the short side reaches 600): the COUNT in the pixel face's own
+  glyphs (`digitMasks.ts`), sized for three digits so 99→100 never shrinks it, DAY STREAK
+  under it; the WEEK as a CHAIN of pixel links, Monday first, along the floor of the WEEK'S
+  ORBIT, the initials on one line beneath (two solved neighbours joined by an edge-on link
+  through both holes, a day to come the link's empty ghost, a day missed an iron link left
+  open, no link threading it) — where the chain lies is ONE function, `chainPlacement`
+  (`streak/geometry.ts`: the ARC, a smile stepping whole cells; a straight row is the
+  contained alternative); the CROWN's flame where the orbit turns at the top; and one cobalt
+  orbit per earlier week the run crossed (none for a run begun this week; four at most on a
+  phone, five wider), drifting. Inks: the cobalt accent, iron (`--rail`), white, DEEP
+  dither for light (never a CSS glow, nothing ever scales), and today's link in the FOIL
+  (`foil.ts`'s inks as raster cells) — the one shiny thing. **ONE CLOCK** (`streak/beats.ts`):
+  the raster (`streak/scene.ts`, ink indices deterministic in `t`), the foil, every DOM word
+  (`wordsAt`), the ULTRA star sheet and dismissal all read the milliseconds since the show
+  began, stepped every 50ms while it runs and 80ms (foil) / 160ms (raster) at rest — so the
+  fast-forward is a later `t`, a resize re-plans the same moment, and a backgrounded tab
+  steps nothing while a timer still arms dismissal on time. The sequence, about 3s to the
+  hint: the week's orbit and chain draw themselves → the previous count (derived without
+  the solved day; 0 when broken) dithers in → today's link pours in white-hot while the old
+  count heats → THE LANDING: the new count stamps as one frame of a white chip with the
+  number cut out, unwiped in eight steps, a three-frame jolt, one shock front to the corners
+  kicking the brackets, the past weeks' orbits bursting out, the crown catching → the chain
+  runs on into today (from yesterday's link when it was solved) → today's link is STRUCK
+  (the ultra star at its sheet's size on a phone) and cools into the foil cell by cell →
+  its light runs back down the chain, lighting each earlier link iron→cobalt nearest first,
+  and round the orbit to the crown, which flares → the ending hint. A FULL WEEK (today
+  Sunday, the six days before it solved) closes the orbit through the crown instead, the
+  ultra star strikes the crown and the foil runs along the whole chain from Monday — the
+  juice scales, the words do not. At rest a glint runs down the chain every 4.6s with a
+  faint pulse off the orbit. React renders the words where they stand and the show writes
+  only what moves, so a re-render never undoes a beat; the week reaches the show as a
+  primitive key. The digits' sheet decode has an 800ms deadline, after which the count is
+  set as type. It
   never opens for archive solves, the tutorial, a reload, or an
   already-solved revisit. **Dismissal (decided 2026-07-10, replacing the CONTINUE button):**
-  the ending beat is a pulsing arcade-style hint — pure "what to do", never a why (the
+  the ending beat is an arcade-style hint — pure "what to do", never a why (the
   game is done; CONTINUE/CLOSE would beg "continue to what?") — reading TAP ANYWHERE on
   coarse pointers / CLICK ANYWHERE otherwise (localized). **The celebration has NOTHING
   focusable (decided 2026-07-10):** the hint is a plain non-interactive element, not a
@@ -2869,14 +2903,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   nowhere to land (the modal traps focus; Tab is also swallowed). Once the hint appears the
   WHOLE modal dismisses — click/tap anywhere, ANY key (the "press any key" twin of
   tap-anywhere), or Escape. **A touch BEFORE that FAST-FORWARDS the celebration to its
-  final frame instantly** (user-decided 2026-08-14, replacing "every dismissal input is
-  ignored until the hint lands"): the same click/key/Escape aborts the staged sequence the
-  way the effect teardown does (pending waits forced, springs stopped — the async chain
-  falls through its own `stopped()` checks) and snaps every controller to the exact final
-  values the reduced-motion branch writes, hint armed included — so an early touch skips
-  the show and the touch after it leaves. The skip lives on a ref the effect reassigns
-  per run (it needs the run's own closure), and a touch always means something now, which
-  is why the sequence content no longer shields clicks with stopPropagation. Every
+  final frame instantly** (user-decided 2026-08-14): the same click/key/Escape moves the
+  clock to the settled frame — the resting picture, hint landed and dismissal armed — so an
+  early touch skips the show and the touch after it leaves. Reduced motion opens ON that
+  frame (+400ms, between two heartbeats), held still. The skip lives on a ref the show
+  effect reassigns per run (it needs the run's own closure), and a touch always means
+  something, so nothing in the sequence shields clicks with stopPropagation. Every
   dismissal then fades the whole modal opacity over
   200ms before unmounting. **The solved screen then focuses NOTHING** (decided 2026-07-27,
   dropping the focus this dismissal used to hand to the result action): the celebration has no
@@ -3510,7 +3542,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   CSS mask, the same technique the `.cal-ripple` sheet uses), so it takes
   the group's muted → `--fg` hover with the inline SVGs instead of being the one control that
   cannot. The **streak stat is NOT in the
-  header** (moved back to the archive page 2026-07-21). **Any full-screen surface follows this
+  header** (it is on `/account`'s stats row). **Any full-screen surface follows this
   same row** rather than inventing chrome, and since 2026-07-27 there is ONE component for it:
   **`components/ModalHeader.tsx`** — the app's row (`.topbar-inner` / `.topbar-left` /
   `.topbar-title` / `.topbar-right` / `.home-btn`) with a title and one close chip, minus the

@@ -182,11 +182,11 @@ export async function loadPlayerHistory(
       // is a solve the server is recording anyway. `boundSolvedDays` sorts, dedupes and caps
       // the result, so a union of two bounded sets stays one bounded set.
       //
-      // **And a merge that changes NOTHING keeps the array it already holds.** Every commit
-      // minting a fresh identity restarted `StreakDialog`'s whole celebration mid-air: the
-      // dialog's master sequence effect depends on arrays derived from this one, and a
-      // mount-time read landing while the dialog is open replayed it from the opening fade
-      // for an answer that said nothing new.
+      // **And a merge that changes NOTHING keeps the array it already holds**, so a
+      // mount-time read landing while the celebration is open re-derives nothing under it
+      // for an answer that said nothing new (`StreakDialog` also reads its week off this
+      // array as a primitive key and plays on one clock, so a re-derivation re-plans the
+      // same moment rather than restarting the show).
       if (collection) {
         setSolved(lang, (previous) => {
           const merged = boundSolvedDays([...(previous.days ?? []), ...history.solvedDays]);
