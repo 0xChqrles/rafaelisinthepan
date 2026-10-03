@@ -71,12 +71,13 @@ vi.mock('../hooks/useShare', () => ({ default: () => ({ share: vi.fn(), copied: 
 vi.mock('../hooks/useToday', () => ({ default: () => 20700 }));
 vi.mock('../components/TopBar', () => ({ HeaderLeft: () => null }));
 vi.mock('../components/PuzzleTitle', () => ({ default: () => null }));
-vi.mock('../components/ScopePager', () => ({
+vi.mock('../components/BoardTabs', () => ({
   default: (p: { onOpen: (index: number) => void }) => {
     world.open = p.onOpen;
     return null;
   },
 }));
+vi.mock('../components/PeriodSwitch', () => ({ default: () => null }));
 vi.mock('../components/GroupScreen', () => ({
   default: (p: { onLeave: () => void }) => {
     world.leave = p.onLeave;

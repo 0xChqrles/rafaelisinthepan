@@ -3,7 +3,10 @@ import { createPortal } from 'react-dom';
 import { anonName, defaultAvatar, type BoardPlayer, type GroupSummary } from '@whippin/shared';
 import { readGroup } from '../api';
 import Avatar from './Avatar';
+import { DISSOLVES } from './bayerTiles';
+import { MARK } from './BoardRows';
 import LoadingWave from './LoadingWave';
+import CloseIcon from '../assets/icons/close.svg?react';
 import ModalHeader from './ModalHeader';
 import useModalDismiss from '../hooks/useModalDismiss';
 import { t } from '../i18n';
@@ -15,15 +18,20 @@ import type { LangCode } from '../langs';
 // with a group lives here, one tap in from the board's pager, and the board keeps only
 // its list.
 //
-// Top to bottom: the app's header row with the way back and the group's name as the held
-// word; the MEMBERS as the board's own rows (mark + name), the owner tagged, and — for the
-// owner — a ✕ at every other row's end that opens the removal's confirmation; then the
-// screen's one call, INVITE, and under it the quiet way out, LEAVE. The members are
-// dressed by the group's public face (`GET /groups?id=`), the assigned identities standing
-// in until it lands.
+// Top to bottom: the app's header row with the way back and the group's name; the MEMBERS as
+// the board's own LINES (the mark at 3px a cell, the name — your own framed by the corner
+// brackets, as on the board), coming in through the board's Bayer dissolve, the owner tagged
+// under their name, and — for the owner — the header's pixel ✕ at every other line's end that
+// opens the removal's confirmation; then the screen's one call, INVITE, and under it the quiet
+// way out, LEAVE. The members are dressed by the group's public face (`GET /groups?id=`), the
+// assigned identities standing in until it lands.
 //
 // A full-screen dialog on flat `--bg` (the selection's shell), so the board under it is
 // inert; the confirmations stack over it in the top layer.
+// The members come in one after another, a beat after the screen.
+const MEMBER_START_MS = 120;
+const MEMBER_STAGGER_MS = 40;
+
 export default function GroupScreen({
   lang,
   group,
@@ -65,6 +73,7 @@ export default function GroupScreen({
     <dialog
       {...dialogProps}
       className={`wheel-dialog puzzle-select group-screen${closing ? ' closing' : ''}`}
+      style={DISSOLVES}
       aria-label={group.name}
       onClose={onClose}
     >
@@ -80,10 +89,10 @@ export default function GroupScreen({
               <li
                 key={id}
                 className={`board-row member${me ? ' me' : ''}`}
-                style={{ '--i': index } as CSSProperties}
+                style={{ '--delay': `${MEMBER_START_MS + index * MEMBER_STAGGER_MS}ms` } as CSSProperties}
                 aria-current={me || undefined}
               >
-                <Avatar avatar={player.avatar ?? defaultAvatar(id)} size={28} />
+                <Avatar avatar={player.avatar ?? defaultAvatar(id)} size={MARK} sharp />
                 <span className="board-ident">
                   <span className={`board-name${player.name ? '' : ' anon'}`}>{player.name || anonName(id)}</span>
                   {id === group.createdBy && <span className="board-detail">{t(lang, 'groupOwnerTag')}</span>}
@@ -96,7 +105,7 @@ export default function GroupScreen({
                     disabled={busy}
                     onClick={() => onRemove(player)}
                   >
-                    ✕
+                    <CloseIcon className="ui-icon" aria-hidden />
                   </button>
                 )}
               </li>

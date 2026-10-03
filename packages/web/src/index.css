@@ -2996,16 +2996,356 @@ input {
   }
 }
 
+/* ---- THE BOARDS' TABS AND LINES — ONE dress for every surface that lists players on a day
+   (the board screen and the solved screen's boards; user-decided 2026-10-02 on the result,
+   the board screen grown from it): the card's bare ground continued — no panel, no row
+   boxes, no hairlines — LINES OF TYPE set on the column. ---- */
+
+/* THE TAB ROW (`BoardTabs`): the scopes' NAMES in a row, `--ui` 14px bold tracked capitals in
+   the secondary ink, each a 44px target round a 24px label; the one shown under the WHITE
+   TITLE CHIP, GLOBAL pinned at the end. The row scrolls on its own axis where it runs past the
+   column, snapping to names; a name the column cuts is COVERED, never drawn cut. The board
+   screen pins the PLUS after it. */
+.board-tabs {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 44px;
+  flex: none;
+}
+.board-tabs-row {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 44px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+  /* A name snaps to rest clear of the left-out mark's room (BoardTabs' MARK_ROOM_PX). */
+  scroll-padding-left: 24px;
+}
+.board-tabs-row::-webkit-scrollbar {
+  display: none;
+}
+/* THE NAMES LEFT OUT: at each end where a name is cut, a cover of the ground's ink from the
+   row's edge to the nearest whole name (`--cover-l`, `--cover-r-x` / `--cover-r`, written by
+   BoardTabs), and on it the boards' mark for what is left out — the stippled slate rail of the
+   rows a board leaves out, three cells of it, centred. Over the chip too: a chip the row's
+   scroll has cut is cut like any name. */
+.board-tabs-cover {
+  position: absolute;
+  top: 0;
+  z-index: 3;
+  display: none;
+  height: 44px;
+  background: var(--bg);
+  pointer-events: none;
+}
+.board-tabs-cover::after {
+  content: '';
+  position: absolute;
+  top: 21px;
+  left: calc(50% - 7px);
+  width: 14px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 0 / 6px 2px repeat-x;
+}
+.board-tabs[data-cut-l] > .board-tabs-cover.l {
+  display: block;
+  left: 0;
+  width: var(--cover-l, 0px);
+}
+/* At the start, the mark stands against the first whole name (the row's edge is no name). */
+.board-tabs-cover.l::after {
+  left: auto;
+  right: 10px;
+}
+.board-tabs[data-cut-r] > .board-tabs-cover.r {
+  display: block;
+  left: var(--cover-r-x, 0px);
+  width: var(--cover-r, 0px);
+}
+/* The names, and the chip's sheet over them: one positioned line, as wide as its names. */
+.board-tabs-line {
+  position: relative;
+  display: flex;
+  width: max-content;
+  height: 44px;
+}
+.board-tab {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  scroll-snap-align: start;
+}
+.board-tab-label {
+  display: block;
+  height: 24px;
+  padding: 0 7px;
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 24px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.board-tab:not(.on):hover,
+.board-tab.on.bare {
+  color: var(--fg);
+}
+/* GLOBAL, PINNED at the row's end: held there on the row's own axis, on the ground's ink, the
+   names passing under it — and where they all fit, simply the last name. (Its copy on the
+   chip's sheet is pinned the same way, on the sheet's own ink.) */
+.board-tab.pinned {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: var(--bg);
+  scroll-snap-align: none;
+}
+
+/* THE CHIP: the row's names again in the ground's ink on a white sheet, clipped to the shown
+   name's label (`--chip-l` / `--chip-r`, written by BoardTabs) — so its travel is the clip
+   moving, inverting exactly the letters it covers. Each surface draws it in on its own beat
+   (`board-tabs-wipe`: the chip drawn across the name, left to right, in hard steps). */
+.board-tabs-ink {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  background: var(--fg);
+  color: var(--bg);
+  pointer-events: none;
+  clip-path: inset(10px var(--chip-r, 100%) 10px var(--chip-l, 0px));
+}
+.board-tabs-ink {
+  z-index: 2;
+}
+.board-tabs-ink .board-tab {
+  color: var(--bg);
+}
+.board-tabs-ink .board-tab.pinned {
+  background: var(--fg);
+}
+/* A bare tab (a state, not a name) wears no chip. */
+.board-tabs-ink.bare {
+  display: none;
+}
+@keyframes board-tabs-wipe {
+  from {
+    clip-path: inset(10px calc(100% - var(--chip-l, 0px)) 10px var(--chip-l, 0px));
+  }
+}
+/* The pinned PLUS (the board screen's): a new group. The header's own pixel plus at 2px a
+   cell, in the secondary ink, lifted on hover. */
+.board-tabs-new {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.board-tabs-new .ui-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+.board-tabs-new:hover {
+  color: var(--fg);
+}
+
+/* THE LINES (`BoardRows`): the rank (or the crown) in ONE column the list or every tab shares
+   (`--rank-w`, so nothing moves from line to line), the mark SQUARE at 3px a cell, the name
+   (`--ui` 15px), the number in the pixel face at the far edge — with a gutter at its right
+   that a playing member's % hangs in as the tries' EXPONENT, so the numbers stay aligned. The
+   pixel face only ever at 8 or 16px: whole multiples of its grid. */
+.board-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+.board-row {
+  position: relative;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: var(--rank-w, 32px) 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  height: 44px;
+  padding: 0 30px 0 6px;
+  line-height: 1;
+}
+.board-row .avatar {
+  display: block;
+}
+.board-rank {
+  justify-self: center;
+  font-family: var(--pixel-font);
+  font-size: 16px;
+  color: var(--muted);
+}
+/* FIRST PLACE WEARS THE CROWN: the header's own board mark, at its 2px a cell, in the accent
+   — or, on the board screen, in the foil (`.foil-crown`). */
+.board-rank.crown {
+  display: flex;
+  color: var(--accent);
+}
+.board-rank.crown .ui-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+.board-norank {
+  visibility: hidden;
+}
+.board-name {
+  font-family: var(--ui);
+  font-size: 15px;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The pseudonym: a name-shaped placeholder, so only the secondary ink says so. */
+.board-name.anon {
+  color: var(--muted);
+}
+.board-score {
+  justify-self: end;
+  font-family: var(--pixel-font);
+  font-size: 16px;
+  color: var(--fg);
+}
+/* A member still playing: the tries so far in the muted ink, the % they have rebuilt as the
+   tries' EXPONENT, in its heat, hung in the gutter. A round ENDED unsolved: `∞`, its name
+   muted — and its % kept, muted too, on the board screen (how far they got is the day board's
+   to say; the result's few lines drop it). */
+.board-row.playing .board-score {
+  min-width: 0;
+  color: var(--muted);
+}
+.board-progress {
+  position: absolute;
+  top: 10px;
+  left: calc(100% - 28px);
+  font-family: var(--pixel-font);
+  font-size: 8px;
+  line-height: 1;
+  color: var(--play-heat);
+}
+.board-row.playing.over .board-progress {
+  color: var(--muted);
+}
+.result-board .board-row.playing.over .board-progress {
+  display: none;
+}
+.board-row.over .board-name {
+  color: var(--muted);
+}
+/* The `∞` in WHOLE CELLS beside the 16px digits: its 9 × 5 cells at the face's own 2px pixel
+   (the glyph's em sizing is the share card's; here it would land at 2.8px a cell, uneven and
+   heavier than the digits), its right edge on the digits' ink (a digit's last 2px column is
+   the face's spacing). */
+.board-row .board-inf {
+  display: block;
+  margin-right: 2px;
+  shape-rendering: crispEdges;
+}
+/* YOUR line is FRAMED: the card's corner brackets, small, round it — and its rank in the
+   accent, its name at the action weight. */
+.board-row.me,
+.board-row.picked {
+  --bc: rgba(255, 255, 255, 0.38);
+  background:
+    linear-gradient(var(--bc), var(--bc)) left top / 8px 2px,
+    linear-gradient(var(--bc), var(--bc)) left top / 2px 8px,
+    linear-gradient(var(--bc), var(--bc)) right top / 8px 2px,
+    linear-gradient(var(--bc), var(--bc)) right top / 2px 8px,
+    linear-gradient(var(--bc), var(--bc)) left bottom / 8px 2px,
+    linear-gradient(var(--bc), var(--bc)) left bottom / 2px 8px,
+    linear-gradient(var(--bc), var(--bc)) right bottom / 8px 2px,
+    linear-gradient(var(--bc), var(--bc)) right bottom / 2px 8px;
+  background-repeat: no-repeat;
+}
+.board-row.me .board-name,
+.board-row.picked .board-name {
+  font-weight: 700;
+}
+.board-row.me .board-rank:not(.crown) {
+  color: var(--accent);
+}
+/* The rows a board leaves out: a stippled slate rail. */
+.board-gap {
+  flex: none;
+  height: 20px;
+  margin: 0 14px 0 calc(var(--rank-w, 32px) + 18px);
+  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
+}
+
+/* A NUMBER ON THE COUNT'S REELS (`ReelNumber`): one glyph window a digit — the face's fixed
+   1em advance, so the box is the number's own — each holding the face's ten digits on a strip
+   that stands at whole font pixels. */
+.reel-num,
+.reel-set {
+  display: inline-flex;
+}
+.reel {
+  display: block;
+  width: 1em;
+  height: 1em;
+  overflow: hidden;
+}
+.reel-strip,
+.reel-strip > span {
+  display: block;
+  line-height: 1em;
+}
+.reel-strip > span {
+  height: 1em;
+}
+
+/* THE LEADER'S CROWN IN THE FOIL (`FoilCrown`): the crown's 30px box (3px a cell), the canvas
+   exactly it — the foil is clipped to the crown's own cells. */
+.foil-crown {
+  display: block;
+  width: 30px;
+  height: 30px;
+}
+.foil-crown canvas {
+  display: block;
+  width: 30px;
+  height: 30px;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
 /* THE BOARDS (the active day only, `ResultBoards`): how the day compares, under SHARE, on the
-   card's ground continued — no panel, no row boxes: lines of type set on the column. ONE
-   FIXED BOX whatever it holds: the tabs' row, then room for RESULT_LINES_MAX lines (6), a
-   gap's rail and the `+N` line — so it holds its footprint before any read lands, and a read
-   landing or a swipe between tabs moves nothing under it. Hidden IN PLACE until its beat
-   (after SHARE), then the shown name's chip is drawn across and the lines come in one after
-   another; a settled result shows it outright. Hidden means INERT too, and so does ARRIVING
-   (`.armed` once the arrival has played): its rows are a tap onto the board, and the #179
-   skip-tap that lands where the box sits, unseen or still arriving, must only skip. (A settled
-   frame carries `.in` and `.armed` from its first beat.) */
+   card's ground continued. ONE FIXED BOX whatever it holds: the tabs' row, then room for
+   RESULT_LINES_MAX lines (6), a gap's rail and the `+N` line — so it holds its footprint
+   before any read lands, and a read landing or a swipe between tabs moves nothing under it.
+   Hidden IN PLACE until its beat (after SHARE), then the shown name's chip is drawn across and
+   the lines come in one after another; a settled result shows it outright. Hidden means INERT
+   too, and so does ARRIVING (`.armed` once the arrival has played): its rows are a tap onto
+   the board, and the #179 skip-tap that lands where the box sits, unseen or still arriving,
+   must only skip. (A settled frame carries `.in` and `.armed` from its first beat.) */
 .solved-boards {
   flex: none;
   width: 100%;
@@ -3026,188 +3366,24 @@ input {
   gap: 6px;
   height: calc(44px + 6px + 6 * 44px + 2 * 20px);
 }
-/* The row of names: its own scroller, on its own axis. */
-.result-boards-tabs {
-  min-width: 0;
+.result-boards .board-tabs {
   margin: 0 4px;
-  display: flex;
-  align-items: center;
-  overflow-x: auto;
-  scrollbar-width: none;
-  scroll-snap-type: x proximity;
-}
-.result-boards-tabs::-webkit-scrollbar {
-  display: none;
-}
-/* An edge that runs past the column thins out through an ordered dither (the house's
-   texture, `ResultBoards`' tiles), never a guillotined name. */
-.result-boards-tabs.fade-r {
-  -webkit-mask: linear-gradient(#000, #000) left / calc(100% - 32px) 100% no-repeat, var(--fade-r) right / 32px 16px repeat-y;
-  mask: linear-gradient(#000, #000) left / calc(100% - 32px) 100% no-repeat, var(--fade-r) right / 32px 16px repeat-y;
-}
-.result-boards-tabs.fade-l {
-  -webkit-mask: var(--fade-l) left / 32px 16px repeat-y, linear-gradient(#000, #000) right / calc(100% - 32px) 100% no-repeat;
-  mask: var(--fade-l) left / 32px 16px repeat-y, linear-gradient(#000, #000) right / calc(100% - 32px) 100% no-repeat;
-}
-.result-boards-tabs.fade-l.fade-r {
-  -webkit-mask:
-    var(--fade-l) left / 32px 16px repeat-y,
-    linear-gradient(#000, #000) center / calc(100% - 64px) 100% no-repeat,
-    var(--fade-r) right / 32px 16px repeat-y;
-  mask:
-    var(--fade-l) left / 32px 16px repeat-y,
-    linear-gradient(#000, #000) center / calc(100% - 64px) 100% no-repeat,
-    var(--fade-r) right / 32px 16px repeat-y;
-}
-/* A tab is a 44px target round a 24px chip; the one shown wears the white title chip. */
-.result-boards-tab {
-  flex: none;
-  display: flex;
-  align-items: center;
-  height: 44px;
-  margin: 0;
-  padding: 0 4px;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  scroll-snap-align: start;
-}
-.result-boards-chip {
-  display: block;
-  height: 24px;
-  padding: 0 7px;
-  font-family: var(--ui);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 24px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: var(--muted);
-}
-.result-boards-tab.on .result-boards-chip {
-  background: var(--fg);
-  color: var(--bg);
-}
-.result-boards-tab:not(.on):hover .result-boards-chip {
-  color: var(--fg);
 }
 .result-board {
   display: flex;
   flex-direction: column;
   min-height: 0;
   cursor: pointer;
-  /* A sideways swipe on the rows turns the tab (ResultBoards): the page keeps its vertical
+  /* A sideways swipe on the rows turns the tab (`useSwipe`): the page keeps its vertical
      scroll, the horizontal gesture is the script's. */
   touch-action: pan-y;
 }
 .result-board .board-list {
   flex: none;
   overflow: hidden;
-  padding: 0;
-  gap: 0;
 }
-/* The board's own rows (`BoardRows`) as LINES: rank (or the crown) in ONE column every tab
-   shares (`--rank-w`, so turning a tab moves no mark), the mark at 3px a cell, the name, the
-   number in the pixel face at the far edge — with a gutter at its right that a playing
-   member's % hangs in, so the numbers stay aligned. */
-.result-board .board-row {
-  position: relative;
-  box-sizing: border-box;
-  height: 44px;
-  grid-template-columns: var(--rank-w, 32px) 30px minmax(0, 1fr) auto;
-  gap: 12px;
-  padding: 0 30px 0 6px;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-  line-height: 1;
-  animation: none;
-}
-.result-board .board-row .avatar {
-  border-radius: 0;
-}
-.result-board .board-rank {
-  font-size: 16px;
-  translate: none;
-}
-.result-board .board-rank:not(.crown)::before {
-  content: none;
-}
-.result-board .board-rank.crown .ui-icon {
-  display: block;
-  width: 20px;
-  height: 20px;
-}
-.result-board .board-norank {
-  visibility: hidden;
-}
-.result-board .board-name {
-  font-size: 15px;
-  font-weight: 500;
-  letter-spacing: 0;
-}
-.result-board .board-score {
-  justify-self: end;
-  font-size: 16px;
-  translate: none;
-}
-/* A member still playing: the tries so far in the muted ink, the % they have rebuilt as the
-   tries' EXPONENT, in its heat, hung in the gutter. A round ENDED unsolved: `∞`, its name
-   muted, no %. */
-.result-board .board-row.playing {
-  grid-template-columns: var(--rank-w, 32px) 30px minmax(0, 1fr) auto;
-}
-.result-board .board-row.playing .board-score {
-  min-width: 0;
-  color: var(--muted);
-}
-.result-board .board-progress {
-  position: absolute;
-  top: 10px;
-  left: calc(100% - 28px);
-  font-size: 8px;
-  line-height: 1;
-  translate: none;
-}
-.result-board .board-row.playing.over .board-progress {
-  display: none;
-}
-.result-board .board-row.over .board-name {
-  color: var(--muted);
-}
-/* YOUR line is FRAMED: the card's corner brackets, small, round it — and its rank in the
-   accent, its name at the action weight. */
-.result-board .board-row.me {
-  --bc: rgba(255, 255, 255, 0.38);
-  border: 0;
-  box-shadow: none;
-  background:
-    linear-gradient(var(--bc), var(--bc)) left top / 8px 2px,
-    linear-gradient(var(--bc), var(--bc)) left top / 2px 8px,
-    linear-gradient(var(--bc), var(--bc)) right top / 8px 2px,
-    linear-gradient(var(--bc), var(--bc)) right top / 2px 8px,
-    linear-gradient(var(--bc), var(--bc)) left bottom / 8px 2px,
-    linear-gradient(var(--bc), var(--bc)) left bottom / 2px 8px,
-    linear-gradient(var(--bc), var(--bc)) right bottom / 8px 2px,
-    linear-gradient(var(--bc), var(--bc)) right bottom / 2px 8px;
-  background-repeat: no-repeat;
-}
-.result-board .board-row.me .board-name {
-  font-weight: 700;
-}
-.result-board .board-row.me .board-rank:not(.crown) {
-  color: var(--accent);
-}
-/* The rows a board leaves out: a stippled slate rail; and under the lines, how many with a
-   day of their own it leaves out — `+N` in the rank column, the rail running on. */
-.result-board .board-gap {
-  height: 20px;
-  margin: 0 14px 0 calc(var(--rank-w, 32px) + 18px);
-  border: 0;
-  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
-}
+/* Under the lines, how many with a day of their own the box leaves out — `+N` in the rank
+   column, the rail running on. */
 .result-board-more {
   display: flex;
   align-items: center;
@@ -3230,9 +3406,9 @@ input {
   background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
 }
 /* The landing: the shown name's chip drawn across, then the lines in one after another; a
-   turn of the tab plays it again, quicker. */
-.solved-boards.in .result-boards-tab.on .result-boards-chip {
-  animation: mark-wipe 240ms steps(8, jump-end) backwards;
+   turn of the tab sends the chip travelling and plays the lines again, quicker. */
+.solved-boards.in .board-tabs-ink {
+  animation: board-tabs-wipe 240ms steps(8, jump-end) backwards;
 }
 .solved-boards.in .result-board .board-row,
 .solved-boards.in .result-board .board-gap,
@@ -3240,15 +3416,12 @@ input {
   animation: rung-in 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
   animation-delay: calc(140ms + var(--i, 0) * 45ms);
 }
-.solved-boards.moved .result-boards-tab.on .result-boards-chip {
-  animation-duration: 200ms;
-}
 .solved-boards.moved .result-board .board-row,
 .solved-boards.moved .result-board .board-gap,
 .solved-boards.moved .result-board-more {
   animation-delay: calc(var(--i, 0) * 45ms);
 }
-.solved-stage.settled .solved-boards:not(.moved) .result-boards-chip,
+.solved-stage.settled .solved-boards .board-tabs-ink,
 .solved-stage.settled .solved-boards:not(.moved) .board-row,
 .solved-stage.settled .solved-boards:not(.moved) .board-gap,
 .solved-stage.settled .solved-boards:not(.moved) .result-board-more {
@@ -3257,7 +3430,7 @@ input {
 /* Reduced motion lands the lines as the settled frame draws them: no arrival at all (the
    global rule keeps delays, which would hold each line unseen for its beat). */
 @media (prefers-reduced-motion: reduce) {
-  .solved-boards .result-boards-chip,
+  .solved-boards .board-tabs-ink,
   .solved-boards .board-row,
   .solved-boards .board-gap,
   .solved-boards .result-board-more {
@@ -6877,258 +7050,445 @@ figure.l1-fig {
   }
 }
 
-/* ---- The LEADERBOARD screen (#190/#271): the player's groups first, global top 50 as the
-   untrusted tab. A full-height column in the app's chrome voice — glass rows on
-   hairlines, primary `--fg` for what matters and plain `--muted` for SECONDARY text
-   and icons (user-decided 2026-08-20, amending the one-ink rule: never `--fg` +
-   opacity for a resting secondary; opacity stays an interaction treatment) — with
-   the game's numbers (ranks, scores) in the pixel face, since a score is something
-   the game produced. Rows CONNECTED to the reader are marked in the accent — a quiet
-   left edge on one of your people, that edge plus a tint on your own row (user-decided
-   2026-08-20, superseding the inverted selection box here). ---- */
+/* ---- The LEADERBOARD screen (#190/#271): the result's boards given the whole column — the
+   same bare ground, the same tab row, the same lines of type (above), with the screen's own
+   head line (a group's three boards and the door into it) and the room to list everyone.
+   The game's numbers in the pixel face at whole multiples of its grid; the chrome in the
+   mono, secondary text in plain `--muted`. ---- */
 .board-screen {
-  width: min(430px, 100%);
+  width: min(560px, 100%);
   align-self: stretch;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  /* Clears the floating glass band (8px + 50px viewport, minus .app's own 24px), plus a
-     beat: the tabs are the screen's FIRST thing since the identity strip left
-     (2026-08-30), and a hairline box 12px under a hairline band read as two rules of one
-     box. */
+  /* Clears the header row (8px + 50px viewport, minus .app's own 24px), plus a beat. */
   padding-top: 58px;
 }
+/* ONE EDGE each side for the head and the lines: the chip, the brackets' frame and the rank
+   column start 6px in (the lines' own inset, the corner brackets' arms outside it); the plus
+   and the door's chevron end 6px in. */
+.board-screen > .board-tabs {
+  margin: 0 -6px 0 2px;
+}
+/* The tab row's first drawing: the chip drawn across the shown name, once, as the screen
+   opens. A turn sends it travelling (BoardTabs). */
+.board-screen .board-tabs-ink {
+  animation: board-tabs-wipe 240ms steps(8, jump-end) 60ms backwards;
+}
 
-/* The whose-scores tabs. They wore the header's segmented mode switcher's dress by
-   SHARING its class; that switcher was retired on 2026-08-30 (PuzzleTitle's sheet holds
-   which-daily now), so the dress lives here, on its last consumer — the same hairline
-   group and the same inverted-box active state, said in weight. */
-.board-tabs {
+/* THE HEAD LINE, under the tabs, one height whatever it holds: a group's three boards,
+   GLOBAL's caption, or nothing. */
+.board-head {
   display: flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-}
-/* THE SCOPE PAGER (#271, user-decided 2026-09-14 — the third design of this control; the
-   reasoning is in ScopePager.tsx). One horizontal line of PAGES, native scroll-snap: the
-   page in the middle at full strength, one neighbour peeking in at each edge at half,
-   both edges fading into the ground; under it the DOTS, the active one long. */
-.scope {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
-  flex: none;
-}
-.scope-blank {
-  height: 84px;
-}
-.scope-pager {
-  /* THE PEEK: what each end of the line keeps for a neighbour — the first or last few
-     letters of its name, the rest past the edge, the outer part fading. */
-  --peek: 44px;
-  display: flex;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: none;
-  overscroll-behavior-x: contain;
-  -webkit-mask-image: linear-gradient(
-    to right,
-    transparent,
-    #000 calc(var(--peek) * 0.6),
-    #000 calc(100% - var(--peek) * 0.6),
-    transparent
-  );
-  mask-image: linear-gradient(
-    to right,
-    transparent,
-    #000 calc(var(--peek) * 0.6),
-    #000 calc(100% - var(--peek) * 0.6),
-    transparent
-  );
-}
-.scope-pager::-webkit-scrollbar {
-  display: none;
-}
-/* A peek of room at each end, so the first and the last page reach the middle. Real
-   flex items rather than padding, whose inline-end half engines have long left out of a
-   flex scroller's scrollable area. */
-.scope-pager::before,
-.scope-pager::after {
-  content: '';
-  flex: 0 0 var(--peek);
-}
-/* A PAGE: the line less a peek at each end, snapped to its centre — so a neighbour's
-   page begins exactly where the peek does, and the next one out a whole page further,
-   past the edge (user-reported 2026-09-14: the neighbours "should only be on the side,
-   and you should see part of one neighbour per side maximum"). Its name LEANS
-   (`--lean`, written by ScopePager off the scroll position): centred on the middle page,
-   against the inner edge on a neighbour's, so the peek shows the name's end nearest the
-   middle whatever its length. ONE PAGE A SWIPE (`scroll-snap-stop`): a fling would
-   otherwise sail past the neighbour the peek promised.
-   A neighbour is READABLE (user-reported the same day: "the group on the left is almost
-   invisible" at a quarter) — half strength. */
-.scope-page {
-  flex: 0 0 calc(100% - 2 * var(--peek));
-  min-width: 0;
-  scroll-snap-align: center;
-  scroll-snap-stop: always;
-  display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 10px 0 6px;
-  margin: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  color: var(--fg);
-  cursor: pointer;
-  opacity: 0.55;
-  transition: opacity 160ms linear;
+  flex: none;
+  height: 44px;
+  margin-top: 2px;
 }
-.scope-page.on {
-  opacity: 1;
-}
-/* THE TITLE: the scope's name in the chrome's voice, one size, and — on the middle page —
-   the app's CORNER BRACKETS around it (the device frame's selection mark, the focus's
-   own): this is the framed one, and a tap goes into it. */
-.scope-title {
-  position: relative;
-  display: inline-block;
-  padding: 8px 12px;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.board-caption {
+  padding: 0 0 0 13px;
   font-family: var(--ui);
-  font-size: 17px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  line-height: 1;
-}
-.scope-title,
-.scope-sub {
-  translate: var(--lean, 0px) 0;
-}
-.scope-corner {
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  border: 2px solid var(--fg);
-  animation: scope-corner-in 160ms ease-out both;
-}
-.scope-corner.tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
-.scope-corner.tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
-.scope-corner.bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
-.scope-corner.br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
-@keyframes scope-corner-in {
-  from { opacity: 0; scale: 1.6; }
-  to { opacity: 1; scale: 1; }
-}
-.scope-page:hover:not(.on) {
-  opacity: 0.8;
-}
-.scope-page.on:active .scope-title {
-  color: var(--muted);
-}
-/* The line under the name: which of a thing (a group's size, GLOBAL's TOP 50), the
-   archive day's tag dress. The MIDDLE page's alone: a peek is a name's few letters, not
-   a caption. */
-.scope-sub {
-  font-family: var(--ui);
-  font-size: 10px;
-  font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
+}
+/* A GROUP'S THREE BOARDS (`PeriodSwitch`): three EQUAL CELLS said with the corner brackets —
+   every word stands in its own resting corners in the slate rail (the switch's affordance: bare
+   labels "float in the screen with no purpose"), the shown one in the plain ink under the
+   FRAME: one set of white corners, laid over its cell, that travels to the word turned to in
+   hard steps and LOCKS ON when the screen opens (its corners closing in from outside). */
+.period-switch {
+  min-width: 0;
+}
+.period-line {
+  position: relative;
+  display: flex;
+  /* Air between the words, so a framed word's brackets never touch its neighbours. */
+  gap: 10px;
+  margin-left: 6px;
+}
+.period-word {
+  --corner: var(--rail);
+  flex: none;
+  height: 44px;
+  margin: 0;
+  padding: 0 7px;
+  border: 0;
+  /* The cell's resting corners: the frame's own arms (6px, 2px thick) on the frame's own box
+     (8px in from the word's top and bottom), so the frame lands exactly over them. */
+  background:
+    linear-gradient(var(--corner), var(--corner)) left 0 top 8px / 6px 2px,
+    linear-gradient(var(--corner), var(--corner)) left 0 top 8px / 2px 6px,
+    linear-gradient(var(--corner), var(--corner)) right 0 top 8px / 6px 2px,
+    linear-gradient(var(--corner), var(--corner)) right 0 top 8px / 2px 6px,
+    linear-gradient(var(--corner), var(--corner)) left 0 bottom 8px / 6px 2px,
+    linear-gradient(var(--corner), var(--corner)) left 0 bottom 8px / 2px 6px,
+    linear-gradient(var(--corner), var(--corner)) right 0 bottom 8px / 6px 2px,
+    linear-gradient(var(--corner), var(--corner)) right 0 bottom 8px / 2px 6px;
+  background-repeat: no-repeat;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   white-space: nowrap;
-  opacity: 0;
-  transition: opacity 160ms linear;
+  color: var(--muted);
+  cursor: pointer;
 }
-.scope-page.on .scope-sub {
-  opacity: 1;
+.period-word:not(.on):hover {
+  --corner: var(--muted);
+  color: var(--fg);
 }
-/* THE DOTS: one per page, the active one drawn long — and it TRAVELS: the width moves
-   from dot to dot, so the change reads as one mark sliding rather than two appearing.
-   After the last dot, the ADD: a pixel plus that opens the create screen (user-decided
-   2026-09-14 — a NEW GROUP page "is the design of the group title, but it's a button",
-   so creating left the pager's pages and became the row's one control). */
-.scope-dots {
+.period-word.on {
+  color: var(--fg);
+  cursor: default;
+}
+.period-frame {
+  position: absolute;
+  top: 8px;
+  height: 28px;
+  pointer-events: none;
+}
+.period-frame i {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border: 0 solid var(--fg);
+  animation: period-lock 150ms steps(3, jump-end) 120ms backwards;
+}
+.period-frame .tl { top: 0; left: 0; border-width: 2px 0 0 2px; --sx: -1; --sy: -1; }
+.period-frame .tr { top: 0; right: 0; border-width: 2px 2px 0 0; --sx: 1; --sy: -1; }
+.period-frame .bl { bottom: 0; left: 0; border-width: 0 0 2px 2px; --sx: -1; --sy: 1; }
+.period-frame .br { bottom: 0; right: 0; border-width: 0 2px 2px 0; --sx: 1; --sy: 1; }
+@keyframes period-lock {
+  from {
+    opacity: 0;
+    translate: calc(var(--sx) * 6px) calc(var(--sy) * 6px);
+  }
+}
+/* THE LIST'S OWN HEADER, one height whatever it holds: the door on the left, what the numbers
+   count over them on the right. */
+.board-sub {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 0 14px;
+  flex: none;
+  height: 36px;
+  margin-top: 4px;
 }
-.scope-add {
+/* THE DOOR into the group's own screen: its size, said as the quiet word it is, with the
+   header's chevron turned to point in — the list's own caption ("these 8"), and the way to
+   them. Its words start where the chip's do. */
+.board-door {
+  flex: none;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-left: 6px;
-  padding: 0;
+  gap: 8px;
+  height: 36px;
+  margin: 0;
+  padding: 0 10px 0 13px;
   border: 0;
   background: none;
-  color: var(--fg);
-  opacity: 0.55;
-  cursor: pointer;
-  transition: opacity 120ms linear;
-}
-.scope-add:hover {
-  opacity: 1;
-}
-.scope-add .ui-icon {
-  display: block;
-}
-.scope-dot {
-  /* `--grow` is the dot's share of the long mark, written by ScopePager off the scroll
-     position: 0 is a plain dot, 1 the page in the middle. No transition — the scroll IS
-     the animation, and the shares always add up to one long dot, so the row holds still. */
-  width: calc(6px + 12px * var(--grow, 0));
-  height: 6px;
-  padding: 0;
-  border: 0;
-  border-radius: 1px;
-  background: var(--fg);
-  opacity: calc(0.28 + 0.72 * var(--grow, 0));
-  cursor: pointer;
-}
-@media (max-width: 400px) {
-  .scope-title {
-    font-size: 15px;
-  }
-}
-
-/* The three boards of a group: ONE framed switch, three EQUAL cells (user-reported
-   2026-09-14: bare labels of three widths "float in the screen with no purpose, no
-   affordance"). The frame is the affordance; the inverted cell is the state. */
-.period-tabs {
-  flex: none;
-}
-.period-tabs .board-tab {
-  flex: 1 1 0;
-  min-width: 0;
-  padding-left: 4px;
-  padding-right: 4px;
-  letter-spacing: 0.06em;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   white-space: nowrap;
+  color: var(--muted);
+  cursor: pointer;
+  animation: board-door-in 200ms steps(5, jump-end) 160ms backwards;
 }
-@media (max-width: 400px) {
-  .period-tabs .board-tab {
-    font-size: 11px;
-    letter-spacing: 0.04em;
+.board-door .ui-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+  scale: -1 1;
+}
+.board-door:hover {
+  color: var(--fg);
+}
+/* Drawn in the reading order — left to right, as the chip is wiped above it. */
+@keyframes board-door-in {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
   }
 }
 
-/* THE GROUP'S OWN SCREEN (#271, user-decided 2026-09-14: "managing the group should have
-   its own screen"): the selection's shell (flat `--bg`, the header row with the way back
-   and the name), the members as the board's own rows, the owner's ✕ at every other row's
-   end (opening the confirmation — the act lands there, never on the row), then INVITE
-   and the quiet LEAVE. */
+/* The body owns the leftover height; the list fills it and scrolls. A sideways swipe on it
+   turns the tab row. */
+.board-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  touch-action: pan-y;
+}
+/* An empty board's ghost — and a failed read's word and RETRY — stand in the upper part of
+   the body, where the lines would begin, rather than sinking to the middle of a tall phone. */
+.board-body > .board-empty,
+.board-body > .load-error {
+  margin: 64px auto auto;
+}
+/* A failed read speaks in the empty state's voice — the column's small tracked capitals —
+   so its line holds on the narrowest phone; the danger ink says what happened. */
+.board-body > .load-error > p {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+/* The caption over the numbers: what they count — drawn in with the door, left to right. */
+.board-unit {
+  animation: board-door-in 200ms steps(5, jump-end) 200ms backwards;
+  flex: none;
+  margin-left: auto;
+  padding: 0 30px 0 0;
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-align: right;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.board-body .board-list {
+  /* Positioned: its lines' offset parent, so the own line's place reads in its own terms. */
+  position: relative;
+  flex: none;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* A column of WHOLE SLOTS: its height is the body's room floored to the 44px pitch (the
+     screen writes it), every item one slot, and its scroll rests on a line's start — so a
+     line is never cut by the list's edge at rest. */
+  scroll-snap-type: y mandatory;
+}
+.board-body .board-list > * {
+  scroll-snap-align: start;
+}
+/* The rows a board leaves out, and a section's caption, take a whole slot each. */
+.board-body .board-gap {
+  height: 44px;
+}
+.board-body .board-section {
+  height: 44px;
+  margin-top: 0;
+  padding-top: 6px;
+}
+/* YOUR LINE STAYS IN SIGHT: on a board longer than the screen it holds to the list's edge
+   while it is scrolled out of view — on the ground's own ink, so the lines pass under it;
+   held there (`data-stuck`, Leaderboard), the lines passing under thin out through the
+   dithered edge against it instead of being cut. */
+.board-body .board-row.me {
+  position: sticky;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  background-color: var(--bg);
+  /* Held, it moves with the scroll: it is no place to rest on (the lines round it are). */
+  scroll-snap-align: none;
+}
+.board-body .board-row.me[data-stuck]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: var(--bg);
+  pointer-events: none;
+}
+.board-body .board-row.me[data-stuck='bottom']::before {
+  bottom: 100%;
+  -webkit-mask: var(--edge-u) 0 0 / 16px 6px repeat-x;
+  mask: var(--edge-u) 0 0 / 16px 6px repeat-x;
+}
+.board-body .board-row.me[data-stuck='top']::before {
+  top: 100%;
+  -webkit-mask: var(--edge-d) 0 0 / 16px 6px repeat-x;
+  mask: var(--edge-d) 0 0 / 16px 6px repeat-x;
+}
+/* One of YOUR PEOPLE among the global lines: a small accent SQUARE at the line's start, two
+   cells of the house's 2px on the line's middle — the reader's colour, the one thing that
+   tells them apart from strangers (a bar there read as a `1` against a two-digit rank). */
+.board-row.mate::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 20px;
+  width: 4px;
+  height: 4px;
+  background: var(--accent);
+}
+/* A member with no score today: the person, in the secondary ink, nothing where a number
+   would be (the caption above says why, once). */
+.board-row.waiting .board-name {
+  grid-column: 3 / -1;
+  color: var(--muted);
+}
+/* A WEEK or a MONTH: the podium points as the line's number, the tiebreakers as a quiet second
+   line under the name. */
+.board-ident {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.board-detail {
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A SECTION'S CAPTION on the column — IN PROGRESS, NOT PLAYED YET: the words at the marks'
+   edge, then the stippled rail running on to the numbers. */
+.board-section {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  margin-top: 6px;
+  padding: 0 30px 0 calc(6px + var(--rank-w, 32px) + 12px);
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.board-section::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 0 / 6px 2px repeat-x;
+}
+
+/* THE BOARD LANDS (Leaderboard's pace): each line comes in through the BAYER DISSOLVE — its
+   mask stepped through the ordered dither's levels (`--dz-0` … `--dz-7`, `bayerTiles.ts`) to
+   full, cells lighting in threshold order, nothing travelling — one after another
+   (`--delay`); its number then lands on the reels (ReelNumber) and a playing member's % is
+   typed in once it has (`--land`). */
+.board-screen .board-row,
+.board-screen .board-section,
+.board-screen .board-gap,
+.group-screen .board-row {
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  -webkit-mask-repeat: repeat;
+  mask-repeat: repeat;
+  animation: board-dissolve 240ms linear var(--delay, 0ms) backwards;
+}
+.board-screen .board-progress {
+  animation: board-type 160ms steps(4, jump-end) var(--land, 0ms) backwards;
+}
+/* YOUR LINE'S BRACKETS LOCK ON as its number lands — the card's own landing gesture: they come
+   in reaching out along the line and draw back to their arms in whole steps, the frame finding
+   its subject. */
+.board-screen .board-row.me {
+  animation:
+    board-dissolve 240ms linear var(--delay, 0ms) backwards,
+    own-lock 240ms steps(4, jump-end) var(--land, 0ms) backwards;
+}
+@keyframes own-lock {
+  from {
+    background-size:
+      24px 2px, 2px 16px, 24px 2px, 2px 16px,
+      24px 2px, 2px 16px, 24px 2px, 2px 16px;
+  }
+}
+@keyframes board-dissolve {
+  0% { -webkit-mask-image: var(--dz-0); mask-image: var(--dz-0); }
+  12.5% { -webkit-mask-image: var(--dz-1); mask-image: var(--dz-1); }
+  25% { -webkit-mask-image: var(--dz-2); mask-image: var(--dz-2); }
+  37.5% { -webkit-mask-image: var(--dz-3); mask-image: var(--dz-3); }
+  50% { -webkit-mask-image: var(--dz-4); mask-image: var(--dz-4); }
+  62.5% { -webkit-mask-image: var(--dz-5); mask-image: var(--dz-5); }
+  75% { -webkit-mask-image: var(--dz-6); mask-image: var(--dz-6); }
+  87.5% { -webkit-mask-image: var(--dz-7); mask-image: var(--dz-7); }
+  100% { -webkit-mask-image: none; mask-image: none; }
+}
+@keyframes board-type {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+/* Reduced motion draws the board landed: the global rule keeps delays, which would hold each
+   line unseen for its beat. */
+@media (prefers-reduced-motion: reduce) {
+  .board-screen .board-row,
+  .board-screen .board-section,
+  .board-screen .board-gap,
+  .board-screen .board-progress,
+  .board-screen .board-tabs-ink,
+  .board-screen .board-door,
+  .board-screen .board-unit,
+  .board-screen .board-skeleton-line,
+  .period-frame i,
+  .group-screen .board-row {
+    animation: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .board-screen {
+    /* The mobile .app scrolls the page; the board keeps its own internal scroll by
+       taking an explicit viewport height (minus .app's 16px top / 28px bottom pads). */
+    height: calc(100dvh - 44px);
+    /* The full-bleed 48px band plus the same beat the base rule gives the tabs. */
+    padding-top: 60px;
+  }
+}
+
+/* WHILE THE FIRST READ IS OUT: the lines' boxes as stippled slate — a checker where each mark
+   will stand, a rail where each name will — at the lines' own pitch, under the caption's room,
+   so nothing moves when the board lands. They come in only if the read is slow (a quick one
+   never flashes them). */
+.board-skeleton {
+  display: flex;
+  flex-direction: column;
+}
+.board-skeleton-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 44px;
+  padding-left: calc(6px + 32px + 12px);
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
+  animation-delay: calc(320ms + var(--i, 0) * 50ms);
+}
+.board-skeleton-mark {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  background: conic-gradient(var(--rail) 25%, transparent 0 50%, var(--rail) 0 75%, transparent 0) 0 0 / 4px 4px;
+}
+.board-skeleton-name {
+  width: var(--w, 50%);
+  max-width: 200px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 0 / 6px 2px repeat-x;
+}
+
+/* THE GROUP'S OWN SCREEN (#271, user-decided 2026-09-14: "managing the group should have its
+   own screen"): the selection's shell (flat `--bg`, the header row with the way back and the
+   name), the members as the board's own LINES — no rank column — the owner tagged under their
+   name, the owner's ✕ at every other line's end (opening the confirmation — the act lands
+   there, never on the line), then INVITE and the quiet LEAVE. */
 .group-screen .modal-bar .topbar-left {
   display: flex;
   align-items: center;
@@ -7136,22 +7496,25 @@ figure.l1-fig {
   min-width: 0;
 }
 .group-body {
-  width: min(430px, 100% - 28px);
+  width: min(560px, 100% - 28px);
   margin: 0 auto;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
   padding: 8px 0 24px;
 }
 .group-body .board-section {
-  margin-top: 6px;
+  margin-top: 0;
+  padding-left: 6px;
 }
 .group-members {
   flex: none;
-  overflow: visible;
+}
+.board-row.member {
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  padding-right: 6px;
 }
 .group-calls {
   display: flex;
@@ -7163,6 +7526,28 @@ figure.l1-fig {
 }
 .group-calls .btn-primary {
   width: 100%;
+}
+/* The owner's ✕ at a member line's end: the header's own pixel cross, quiet, the danger ink
+   on hover — it opens the confirmation. */
+.board-remove {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0 -6px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.board-remove .ui-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+.board-remove:hover {
+  color: var(--danger);
 }
 /* NAMING A NEW GROUP (user-decided 2026-09-14: "an act of creation that should be
    satisfying — reuse the game prompt input"): the guess prompt's own line — the cobalt
@@ -7207,96 +7592,7 @@ figure.l1-fig {
   width: 100%;
   max-width: 430px;
 }
-/* A MEMBER — on the group's own screen and in the leave's successor picker: a person in
-   the group, not a player on today's board, so the board's plain row (glass on a hairline)
-   with no rank column and none of the WAITING row's dashes (user-reported 2026-09-14: "the
-   member list have dashed rows for no reason" — they were the NOT PLAYED YET dress,
-   borrowed). The last column holds the owner's ✕. */
-.board-row.member {
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-}
-/* The owner's ✕ at a member row's end (the group screen): a small square that opens
-   the confirmation. */
-.board-remove {
-  border: 1px solid var(--line-strong);
-  background: transparent;
-  color: var(--fg);
-  border-radius: var(--r-sm);
-  min-width: 28px;
-  height: 28px;
-  padding: 0 8px;
-  font-family: var(--ui);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  cursor: pointer;
-  text-shadow: none;
-}
-.board-remove:hover {
-  border-color: var(--danger);
-  color: var(--danger);
-}
 
-/* A WEEK or a MONTH row: the podium points under the unit caption, the tiebreakers as a
-   quiet second line under the name (beside it they ate the name on a phone). */
-.board-ident {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.board-detail {
-  font-family: var(--ui);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.board-tab {
-  flex: 1;
-  border: 0;
-  background: transparent;
-  color: var(--fg);
-  opacity: 0.55;
-  font-family: var(--ui);
-  font-size: 12px;
-  /* WEIGHT is the state: light at rest, bold in the box — the mono's fixed advance
-     means the swap moves nothing. */
-  font-weight: 430;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  line-height: 1;
-  padding: 8px 10px 7px;
-  border-radius: 2px;
-  cursor: pointer;
-  text-shadow: none;
-  transition: opacity 0.1s linear, background-color 0.1s linear, color 0.1s linear;
-}
-.board-tab:not(.active):hover {
-  opacity: 0.9;
-}
-.board-tab.active {
-  background: var(--fg);
-  color: var(--bg);
-  opacity: 1;
-  font-weight: 700;
-  cursor: default;
-}
-
-/* The body owns the leftover height; transient states centre in it, the list fills it. */
-.board-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.board-body > .status,
-.board-body > .load-error,
-.board-body > .board-empty {
-  margin: auto;
-}
 /* The empty state: a sad pixel ghost over a terse line (user feedback 2026-08-20 —
    the long sentence said less than the ghost does). One block in the plain SECONDARY
    ink — the ghost inherits it through its mask — centered by the body's auto margins. */
@@ -7308,6 +7604,10 @@ figure.l1-fig {
   color: var(--muted);
   text-align: center;
 }
+.board-empty .btn-primary {
+  margin-top: 8px;
+}
+
 /* The ghost is the USER'S OWN pixel art (assets/ghost.png, 13x18) and it TINTS LIKE AN
    ICON: the sprite is a pure black-on-transparent silhouette, so it is painted through
    a CSS MASK in `currentColor` — the strike sheets' technique (see `.strike`) —
@@ -7335,6 +7635,12 @@ figure.l1-fig {
     arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards,
     ghost-bob 1.6s steps(1) 400ms infinite;
 }
+/* On the board the ghost bobs a few beats and then rests, like every clock on that screen. */
+.board-body .arrive > .board-ghost {
+  animation:
+    arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards,
+    ghost-bob 1.6s steps(1) 400ms 5;
+}
 @keyframes ghost-bob {
   0%,
   100% {
@@ -7345,7 +7651,8 @@ figure.l1-fig {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .arrive > .board-ghost {
+  .arrive > .board-ghost,
+  .board-body .arrive > .board-ghost {
     animation: none;
   }
 }
@@ -7364,102 +7671,6 @@ figure.l1-fig {
   text-transform: uppercase;
 }
 
-.board-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  margin: 0;
-  padding: 0 6px 2px 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-/* The unit caption over the score column: which way is better is the mode's, and
-   naming the unit (TRIES / WORDS) is how the list says it. */
-.board-unit {
-  align-self: flex-end;
-  font-family: var(--ui);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-  padding: 0 12px 2px 0;
-}
-
-/* One player, one glass row: rank + mark + name + score on a hairline. Rows rise in
-   on the app's one rung-in gesture, staggered by index (delays survive reduced
-   motion — the floating numbers' degradation — while the rise itself collapses). */
-.board-row {
-  display: grid;
-  grid-template-columns: 42px 28px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  background: var(--glass);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  animation: rung-in 220ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
-  animation-delay: calc(min(var(--i, 0), 14) * 28ms);
-}
-.board-row .avatar {
-  display: block;
-  border-radius: var(--r-sm);
-}
-/* The rank is the game's own number — pixel face, quiet: the row is about the player,
-   so the number wears the secondary ink. CENTERED in its column like the no-rank tick
-   (user feedback 2026-08-26), so ranked and unranked rows share one axis. */
-.board-rank {
-  justify-self: center;
-  font-family: var(--pixel-font);
-  font-size: 9px;
-  color: var(--muted);
-  /* The pixel face rides high off the mono around it: whole pixels only, via
-     translate. */
-  translate: 0 1px;
-}
-/* The board prints a rank as `#N`: the sign is this screen's dress (`BoardRank` prints the
-   number; the result's lines print it bare). */
-.board-rank:not(.crown)::before {
-  content: '#';
-}
-/* FIRST PLACE WEARS THE CROWN: the header's own board mark, at its 2px a cell, in the
-   accent — the trophy blue — in place of `#1`. */
-.board-rank.crown {
-  display: flex;
-  color: var(--accent);
-  translate: 0 -1px;
-}
-.board-name {
-  font-family: var(--ui);
-  font-size: 14px;
-  font-weight: 550;
-  letter-spacing: 0.02em;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* The pseudonym: a name-shaped placeholder, so only the secondary ink says so. */
-.board-name.anon {
-  color: var(--muted);
-}
-.board-score {
-  font-family: var(--pixel-font);
-  font-size: 13px;
-  color: var(--fg);
-  translate: 0 1px;
-}
-/* No rank yet (a waiting member): a small solid tick, CENTERED in the rank column
-   (user feedback 2026-08-20, second pass — the pixel hyphen sat left and thin), so
-   the cell never reads as a rendering hole. Secondary ink, like the ranks around it. */
-.board-norank {
-  justify-self: center;
-  width: 12px;
-  height: 3px;
-  background: var(--muted);
-}
 /* A SKELETON while a read is in flight (user feedback 2026-08-20, on the board's
    identity strip — retired 2026-08-30, the rule outlived it). A surface used to publish
    the ASSIGNED identity the moment the id derived and correct it a beat later, so every
@@ -7482,119 +7693,6 @@ figure.l1-fig {
 @keyframes skeleton-breathe {
   50% {
     opacity: 0.45;
-  }
-}
-
-/* ROWS CONNECTED TO THE READER wear the ACCENT — the app's "you are here" colour (the
-   history line's own marker), as a 2px inset left edge. It is ONE family said at two
-   strengths (user-decided 2026-08-20, superseding the inverted selection box on the own
-   row: a solid block of foreground in a list of glass rows shouted, and it left nothing
-   quieter for a member to wear).
-     - one of your GROUPS' members among the global rows: the edge alone, nothing else touched;
-     - YOUR row: that edge, plus a whisper of the accent in the fill and the hairline,
-       plus the name at the action weight.
-   The edge is an INSET SHADOW rather than a border-left, so marking a row cannot shift
-   the grid under it by a pixel. Scoped to the GLOBAL list in the screen — on a group's
-   board every row is one of your people (#271), and marking everything marks nothing. */
-.board-row.mate,
-.board-row.me {
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-.board-row.me {
-  background: color-mix(in srgb, var(--accent) 14%, var(--glass));
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
-}
-.board-row.me .board-name {
-  font-weight: 700;
-}
-
-/* A FRIEND STILL PLAYING (#206, friends board only): a glass row like the ranked ones
-   — it carries live numbers, not a promise — with the waiting rows' no-rank tick, the
-   live try count under the unit caption's column, and the reconstruction % spoken in
-   the app's OWN progress vocabulary (user feedback 2026-08-26): the % wears the pixel
-   face in the heat ramp's ink for its value (`--play-heat`, set per row inline) — the
-   exponents' dress, a progress % reading straight as the scale. The ink ALONE says it:
-   the first cut also drew the chooser card's bottom filament, dropped the same day —
-   too much colour pressed against the avatars, and it fattened the playing rows. */
-.board-row.playing {
-  grid-template-columns: 42px 28px minmax(0, 1fr) auto auto;
-}
-/* The tries cell is pinned at three pixel-face digits (the 500 cap's width) and
-   right-aligned, so the % column's right edge cannot wander with the count's digit
-   count from row to row (user feedback 2026-08-26 — the misaligned first cut). */
-.board-row.playing .board-score {
-  min-width: 39px;
-  text-align: right;
-}
-/* A round that ENDED UNSOLVED (`over`: given up, or capped) — done for the day with nothing
-   recorded: `∞` in the tries cell, on the digits' own band, and the % quiet in the
-   secondary ink. */
-.board-inf {
-  display: inline-block;
-  vertical-align: baseline;
-  shape-rendering: crispEdges;
-}
-.board-row.playing.over .board-progress {
-  color: var(--muted);
-}
-.board-progress {
-  font-family: var(--pixel-font);
-  font-size: 11px;
-  color: var(--play-heat);
-  translate: 0 1px;
-}
-
-/* A FRIEND with no score today (friends board only, user-decided 2026-08-20): the row
-   stays — an edge is a person you chose — wearing the app's dashed "not yet" frame
-   with no glass fill. WHY they have no score is said ONCE, by the section caption
-   above the group (second pass, same day: a label repeated on every row read as a
-   stutter), so the row itself carries only the person. */
-.board-row.waiting {
-  background: transparent;
-  border-style: dashed;
-}
-.board-row.waiting .board-name {
-  grid-column: 3 / -1;
-}
-/* The caption between the ranked rows and the waiting group: a small centered title
-   on a hairline — NOT PLAYED YET, once for everyone under it. The wide margins set
-   each caption off as its own section break (the rows themselves stay 6px apart). */
-.board-section {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 18px;
-  margin-bottom: 10px;
-  font-family: var(--ui);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.board-section::before,
-.board-section::after {
-  content: '';
-  flex: 1;
-  border-top: 1px solid var(--line);
-}
-
-/* Between the cut and your own neighborhood, the line continues: the app's dashed
-   "more line beyond this" vocabulary, as a short rule. */
-.board-gap {
-  height: 0;
-  margin: 4px 12px;
-  border-top: 2px dashed var(--rail);
-}
-
-@media (max-width: 640px) {
-  .board-screen {
-    /* The mobile .app scrolls the page; the board keeps its own internal scroll by
-       taking an explicit viewport height (minus .app's 16px top / 28px bottom pads). */
-    height: calc(100dvh - 44px);
-    /* The full-bleed 48px band plus the same beat the base rule gives the tabs. */
-    padding-top: 60px;
-    gap: 12px;
   }
 }
 
@@ -7890,19 +7988,16 @@ figure.l1-fig {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   margin-bottom: 8px;
 }
 .confirm-face .avatar {
   display: block;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
 }
 .confirm-name {
   font-family: var(--ui);
-  font-size: 14px;
-  font-weight: 550;
-  letter-spacing: 0.02em;
+  font-size: 15px;
+  font-weight: 700;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7911,53 +8006,51 @@ figure.l1-fig {
 .confirm-name.anon {
   color: var(--muted);
 }
-/* The group's name as the held word it is on the board's head row. */
+/* The group's name in the WHITE TITLE CHIP it wears on the board's tab row. */
 .confirm-group {
   display: inline-block;
-  padding: 8px 10px 7px;
+  height: 24px;
+  padding: 0 7px;
   margin-bottom: 8px;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--ui);
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
+  line-height: 24px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  line-height: 1;
   background: var(--fg);
   color: var(--bg);
-  border-radius: 2px;
 }
-/* WHO TAKES IT OVER: the board's own rows as radios — the picked one wears the reader's
-   own-row dress (the accent edge and tint), one picked at a time. A row is a <button>,
-   so the list's grid dress is restated on it. */
+/* WHO TAKES IT OVER: the members as the board's lines, radios — the picked one FRAMED by the
+   corner brackets (the house's selection gesture, the reader's own line's dress), one picked
+   at a time. A line is a <button> here, so the reset is restated. */
 .confirm-pick {
   width: 100%;
   flex: none;
   max-height: 40vh;
-  padding: 0;
+  overflow-y: auto;
   margin: 4px 0 8px;
   text-align: left;
 }
 .confirm-pick .board-row {
   width: 100%;
+  margin: 0;
+  border: 0;
+  background-color: transparent;
   cursor: pointer;
   font: inherit;
   text-align: left;
   color: var(--fg);
 }
-.confirm-pick .board-row:hover {
-  border-color: var(--line-strong);
+.confirm-pick .board-row:not(.picked):hover .board-name {
+  color: var(--fg);
 }
-.confirm-pick .board-row.picked {
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
-  background: color-mix(in srgb, var(--accent) 12%, var(--glass));
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-.confirm-pick .board-row.picked .board-name {
-  font-weight: 700;
+.confirm-pick .board-row:not(.picked) .board-name {
+  color: var(--muted);
 }
 @media (max-width: 640px), (max-height: 500px) {
   /* 4x rather than 5x — the standing pixel-art rule allows only WHOLE steps. */

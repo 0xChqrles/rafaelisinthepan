@@ -13,7 +13,8 @@ import {
 // sheen and glitter, the count's glints — is shared (`@whippin/shared` `foil.ts`), ONE spelling
 // for the screen and the share card. This only paints it: on the house's 2px cell, every frame
 // of a surface that wears it — the charge meter's active hole and every GIVEN word it lists
-// (`MeterCanvas`), the result's COUNT (`MeterCanvas`'s shaped meter, plus `paintCountGlints`).
+// (`MeterCanvas`), the result's COUNT (`MeterCanvas`'s shaped meter, plus `paintCountGlints`),
+// and the board's leading CROWN (`FoilCrown`).
 // Each surface steps it at its own pace and passes its own `seed`.
 
 // An ink's fill — memoised: a frame is drawn from a couple of dozen colours.
@@ -32,7 +33,9 @@ function fillOf(ink: number): string {
 // Paint the foil over `ctx`'s (w × h) CSS-pixel box, only where `inside` says the surface is
 // (the whole box when omitted). `since` is when the foil began on this surface, in seconds of
 // the same clock, or null for one born in it: the sheen's pass is timed off it.
-// `sparkleShare` tunes the glitter for a surface much larger than a chip.
+// `sparkleShare` tunes the glitter for a surface much larger than a chip; `grain` puts the
+// foil on a surface's own pixel when that is not the house's 2px (the board's crown, drawn at
+// 3px a cell — the share card's way of drawing it on its own larger cell).
 export function paintFoil(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -42,8 +45,8 @@ export function paintFoil(
   since: number | null,
   inside: ((x: number, y: number) => boolean) | null = null,
   sparkleShare = SPARKLE_SHARE,
+  grain = FOIL_CELL_PX,
 ): void {
-  const grain = FOIL_CELL_PX;
   // One path per ink: a frame is a handful of fills, each a union of cells.
   const batches = new Map<string, Path2D>();
   foilCells(w, h, seconds, seed, since, inside, grain, (ink, x, y) => {
