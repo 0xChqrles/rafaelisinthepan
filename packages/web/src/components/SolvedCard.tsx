@@ -7,7 +7,8 @@ import { BURST_ART } from './strikeArt';
 import RunHeat, { type HeatKeepOut } from './RunHeat';
 import RunRuler from './RunRuler';
 import { COUNT_GLINT_CELL_PX } from './foil';
-import { COUNT_EM, COUNT_ROWS, capCorners, countInk, countSize, glyphBoxes, inkEms } from './countCells';
+import { COUNT_EM, COUNT_ROWS, capCorners, countInk, countSize, glyphBoxes, inkEms, reelInk, reelRow } from './countCells';
+import { countFilled, countReels, reelsText, type CountReel } from './countRun';
 import { digitMasksNow, loadDigitMasks, type DigitMask } from './digitMasks';
 import useToday from '../hooks/useToday';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -32,15 +33,20 @@ import { t } from '../i18n';
 // on what it prints. Nothing is scaled by a transform.
 //
 // THE COUNT IS THE METER: it is drawn cell by cell on the face's own glyph pixels
-// (`digitMasks.ts`, laid out by `countCells.ts`) by a SHAPED `MeterCanvas`. While the tally
-// counts, its digits charge with the meter's ordered-dither fill, as far as the
-// reconstruction had reached at the try being written (never past 99); the landing fills
-// them, ONE BLAST in the meter's cobalt goes off from behind the whole number (`Blast`), and
-// on the blast's impact the cobalt DISSOLVES into the holographic FOIL (`foil.ts`
-// `paintCountFoil`: dithered on the house's 2px cell, one slab), glints taking turns on the
-// digits' cap-line corners. While the tally runs, the digits it has not reached stand as the
-// odometer's zeros in the slate. A round that ENDED UNSOLVED wears no shine: a plain white
-// `∞` on the count's own pixel grid. A settled result is BORN in the foil.
+// (`digitMasks.ts`, laid out by `countCells.ts`) by a SHAPED `MeterCanvas`. The tally is an
+// ODOMETER on those pixels (`countRun.ts`: one fixed length for every score, always a fast
+// counter): each digit a REEL of the face's glyphs rolling a whole font pixel at a time, a
+// big score racing up and braking into its value, a small one spinning and locking on it.
+// While it runs, the reached digits charge with the meter's ordered-dither fill, as far as
+// the reconstruction had reached at the try the ruler is writing (never past 99), and the
+// reels it has not reached stand as the odometer's zeros in the slate. The landing fills
+// them, ONE BLAST goes off IN FRONT of the whole number (`Blast`; user-decided 2026-10-03,
+// "the burst animation being played ABOVE the tries count") — the meter's cobalt round it,
+// white light where it crosses the digits — and on its impact the cobalt DISSOLVES into
+// the holographic FOIL (`foil.ts` `paintCountFoil`: dithered on the house's 2px cell, one
+// slab), glints taking turns on the digits' cap-line corners. A round that ENDED UNSOLVED
+// wears no shine: a plain white `∞` on the count's own pixel grid. A settled result is BORN
+// in the foil.
 //
 // The screen adds ONE thing the still card cannot: THE RUN'S HEAT (`RunHeat`), the ruler's
 // own inks rising off it as an ordered dither, as tall as each try's reconstruction got —
@@ -50,7 +56,8 @@ import { t } from '../i18n';
 //
 // THE REVEAL DRAWS THE CARD (classes the screen drives, `SolvedScreen`'s DRAW_MS): `drawn`
 // — the brackets travel out to the corners, the edition types, the ruler's empty track is
-// wiped across, the count's zeros blink in; then the tally fills the ruler behind a white
+// wiped across, the count's zeros blink in; then the tally (`run`, the share of
+// `COUNT_RUN_MS` gone) rolls the reels and fills the ruler on the same clock behind a white
 // write head, its ticks stamping down, the heat rising off it and the meter charging; on
 // `landed` the number stamps, the heat surges, the brackets LOCK ON (their arms reach out
 // along the frame and draw back in whole steps — never in over what they hold) and the
@@ -75,13 +82,12 @@ const UNIT_RAMP_PX = 18;
 // The heat's cells (RunHeat's own).
 const HEAT_CELL_PX = 2;
 // THE BLAST: the burst sheet's frame (`burst.png`, 53×66), its impact ink centred 44% down
-// the frame; the stencil keeps it BLAST_GAP px off each digit's ink box (a ray through a
-// digit's notch would garble the glyph), BLAST_TEXT_GAP px off the unit and the edition's
-// type, and BLAST_EDGE px above the ruler's ticks (which overhang the bar by TICK_OVERHANG).
+// the frame; the stencil keeps it BLAST_TEXT_GAP px off the unit and the edition's type (a
+// ray through small type garbles it), and BLAST_EDGE px above the ruler's ticks (which
+// overhang the bar by TICK_OVERHANG).
 const BURST_W = 53;
 const BURST_H = 66;
 const BURST_INK_Y = 0.44;
-const BLAST_GAP = 8;
 const BLAST_TEXT_GAP = 6;
 const BLAST_EDGE = 4;
 const TICK_OVERHANG = 8;
@@ -170,18 +176,23 @@ function Typed({ className, text, delayMs }: { className: string; text: string; 
   );
 }
 
-// THE COUNT AS A SHAPE for the meter: `pad` (the odometer's unreached zeros) then `live`,
-// every glyph the face's own pixels at `size`. The meter is kept to the LIVE digits' ink; the
-// zeros stand in the slate under it. Glints stand on the live digits' cap-line corners.
-function countShape(masks: readonly DigitMask[], pad: string, live: string, size: number): MeterShape {
+// THE COUNT AS A SHAPE for the meter: its reels where the run has them (`countRun.ts`), every
+// glyph the face's own pixels at `size`, each reel's strip at a whole font pixel. The leading
+// reels the count has not reached are the odometer's zeros, in the slate; the meter is kept
+// to the REACHED reels' ink, and glints stand on their cap-line corners.
+function countShape(masks: readonly DigitMask[], reels: readonly CountReel[], size: number): MeterShape {
   const px = size / COUNT_EM;
-  const text = pad + live;
-  const ink = countInk(masks, text);
+  const rows = reels.map((r) => reelRow(r.pos));
+  const ink = reelInk(masks, rows);
+  // The reached reels are always the trailing ones: the ones reel is, and a reel above
+  // turns live once the count reaches it.
+  const from = Math.max(0, reels.findIndex((r) => r.live));
+  const to = reels.length;
   // ONE path, filled once: the clip is a `destination-in`, and every separate fill would
   // keep only its own cell.
-  const cells = (from: number, to: number, ctx: CanvasRenderingContext2D) => {
+  const cells = (a: number, b: number, ctx: CanvasRenderingContext2D) => {
     ctx.beginPath();
-    for (let gx = from * COUNT_EM; gx < to * COUNT_EM; gx += 1) {
+    for (let gx = a * COUNT_EM; gx < b * COUNT_EM; gx += 1) {
       for (let gy = 0; gy < COUNT_ROWS; gy += 1) {
         if (ink(gx, gy)) ctx.rect(gx * px, gy * px, px, px);
       }
@@ -189,27 +200,27 @@ function countShape(masks: readonly DigitMask[], pad: string, live: string, size
     ctx.fill();
   };
   return {
-    key: `${pad}|${live}|${size}`,
+    key: `${rows.join(',')}|${from}|${size}`,
     clip: (ctx) => {
       ctx.fillStyle = '#fff';
-      cells(pad.length, text.length, ctx);
+      cells(from, to, ctx);
     },
     base: (ctx) => {
       const style = getComputedStyle(ctx.canvas);
       ctx.fillStyle = style.getPropertyValue('--rail').trim();
-      cells(0, pad.length, ctx);
+      cells(0, from, ctx);
       ctx.fillStyle = style.getPropertyValue('--fg').trim();
-      cells(pad.length, text.length, ctx);
+      cells(from, to, ctx);
     },
-    spots: capCorners(ink, pad.length, text.length, px, COUNT_GLINT_CELL_PX),
+    spots: capCorners(ink, from, to, px, COUNT_GLINT_CELL_PX),
     inside: (x, y) => {
       const gx = Math.floor(x / px);
-      return gx >= pad.length * COUNT_EM && ink(gx, Math.floor(y / px));
+      return gx >= from * COUNT_EM && ink(gx, Math.floor(y / px));
     },
   };
 }
 
-// THE METER'S SEQUENCE on the count: the fill follows the tally — the furthest the
+// THE METER'S SEQUENCE on the count: the fill follows the ruler — the furthest the
 // reconstruction had got by the try being written, never past 99 — the landing fills it, it
 // BLASTS, and on the blast's impact it recedes into the foil. A reduced-motion reveal skips
 // the blast (its sheet would park on a frame); a settled result is born in the foil.
@@ -217,13 +228,13 @@ function useMeterRun({
   on,
   settled,
   landed,
-  shownCount,
+  filled,
   trajectory,
 }: {
   on: boolean;
   settled: boolean;
   landed: boolean;
-  shownCount: number;
+  filled: number;
   trajectory: number[];
 }) {
   const charged = on && (settled || landed);
@@ -231,7 +242,7 @@ function useMeterRun({
     let best = 0;
     return trajectory.map((pct) => (best = Math.max(best, pct)));
   }, [trajectory]);
-  const charge = charged ? 100 : shownCount > 0 ? Math.min(99, reach[shownCount - 1] ?? 0) : 0;
+  const charge = charged ? 100 : filled > 0 ? Math.min(99, reach[filled - 1] ?? 0) : 0;
   const [burst, setBurst] = useState(false);
   const [full, setFull] = useState(false);
   const onFull = useCallback(() => {
@@ -269,10 +280,12 @@ function digitRects(masks: readonly DigitMask[], text: string, px: number): Rect
   return glyphBoxes(masks, text).map(({ x0, x1 }) => ({ x: x0 * px, y: 0, w: (x1 - x0) * px, h: COUNT_ROWS * px }));
 }
 
-// THE BLAST: the full meter's burst, ONCE, from behind the whole number, at the whole scale
-// that spans the frame; clipped to the frame above the ruler's ticks, and STENCILLED off
-// what it must not cover — each digit's ink box grown by BLAST_GAP, the unit and the
-// edition's type with a gap — so the rays visibly leave the number's edges.
+// THE BLAST: the full meter's burst, ONCE, IN FRONT of the whole number, at the whole scale
+// that spans the frame; clipped to the frame above the ruler's ticks, and stencilled off the
+// unit and the edition's type. It CROSSES the digits for its few frames: in the meter's
+// cobalt round them, and over their ink — the same cobalt, where a cobalt ray would vanish
+// — in WHITE, a second sheet on the same beat kept to the digits' cells, so the blow reads
+// as light passing over the number. The dissolve into the foil follows on its impact.
 function Blast({
   frameRef,
   topRef,
@@ -292,7 +305,13 @@ function Blast({
   text: string;
   px: number;
 }) {
-  const [geo, setGeo] = useState<{ box: Rect; at: { x: number; y: number }; scale: number; mask: string } | null>(null);
+  const [geo, setGeo] = useState<{
+    box: Rect;
+    at: { x: number; y: number };
+    scale: number;
+    field: string;
+    digits: string | null;
+  } | null>(null);
   // Measured once, on the landing: the blast is one blow.
   useLayoutEffect(() => {
     const frame = frameRef.current?.getBoundingClientRect();
@@ -311,29 +330,47 @@ function Blast({
       x: Math.round(n.x + n.w / 2 - (BURST_W * scale) / 2),
       y: Math.round(n.y + n.h / 2 - BURST_H * scale * BURST_INK_Y),
     };
-    // The stencil, at the device's resolution so its edges land on whole pixels.
+    // A stencil over the box, at the device's resolution so its edges land on whole pixels.
     const dpr = window.devicePixelRatio || 1;
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(box.w * dpr));
-    canvas.height = Math.max(1, Math.round(box.h * dpr));
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.scale(dpr, dpr);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, box.w, box.h);
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.beginPath();
-    const g = BLAST_GAP;
-    const digits = masks ? digitRects(masks, text, px) : [{ x: 0, y: 0, w: n.w, h: n.h }];
-    for (const d of digits) ctx.rect(n.x + d.x - g, n.y + d.y - g, d.w + 2 * g, d.h + 2 * g);
-    for (const r of unit ? [unit, ...texts] : texts) {
-      ctx.rect(r.x - BLAST_TEXT_GAP, r.y - BLAST_TEXT_GAP, r.w + 2 * BLAST_TEXT_GAP, r.h + 2 * BLAST_TEXT_GAP);
-    }
-    ctx.fill();
-    setGeo({ box, at, scale, mask: `url(${canvas.toDataURL()})` });
+    const stencil = (paint: (ctx: CanvasRenderingContext2D) => void): string | null => {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(box.w * dpr));
+      canvas.height = Math.max(1, Math.round(box.h * dpr));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.scale(dpr, dpr);
+      ctx.fillStyle = '#fff';
+      paint(ctx);
+      return `url(${canvas.toDataURL()})`;
+    };
+    // The cobalt's field: the whole box but the type.
+    const field = stencil((ctx) => {
+      ctx.fillRect(0, 0, box.w, box.h);
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.beginPath();
+      for (const r of unit ? [unit, ...texts] : texts) {
+        ctx.rect(r.x - BLAST_TEXT_GAP, r.y - BLAST_TEXT_GAP, r.w + 2 * BLAST_TEXT_GAP, r.h + 2 * BLAST_TEXT_GAP);
+      }
+      ctx.fill();
+    });
+    if (!field) return;
+    // The white's: the digits' own cells (the count set as type has none to keep to).
+    const digits = masks
+      ? stencil((ctx) => {
+          const ink = countInk(masks, text);
+          ctx.beginPath();
+          for (let gx = 0; gx < text.length * COUNT_EM; gx += 1) {
+            for (let gy = 0; gy < COUNT_ROWS; gy += 1) {
+              if (ink(gx, gy)) ctx.rect(n.x + gx * px, n.y + gy * px, px, px);
+            }
+          }
+          ctx.fill();
+        })
+      : null;
+    setGeo({ box, at, scale, field, digits });
   }, []);
   if (!geo) return null;
-  return (
+  const sheet = (mask: string, color: string) => (
     <span
       className="solved-card-blast"
       aria-hidden="true"
@@ -343,8 +380,8 @@ function Blast({
           top: geo.box.y,
           width: geo.box.w,
           height: geo.box.h,
-          WebkitMaskImage: geo.mask,
-          maskImage: geo.mask,
+          WebkitMaskImage: mask,
+          maskImage: mask,
           '--blast-x': `${geo.at.x}px`,
           '--blast-y': `${geo.at.y}px`,
           '--blast-w': `${BURST_W * geo.scale}px`,
@@ -352,8 +389,14 @@ function Blast({
         } as CSSProperties
       }
     >
-      <Strike id={1} art={BURST_ART} color="var(--accent)" />
+      <Strike id={1} art={BURST_ART} color={color} />
     </span>
+  );
+  return (
+    <>
+      {sheet(geo.field, 'var(--accent)')}
+      {geo.digits && sheet(geo.digits, 'var(--fg)')}
+    </>
   );
 }
 
@@ -361,7 +404,7 @@ export default function SolvedCard({
   puzzleRef,
   lang,
   guessCount,
-  shownCount,
+  run,
   trajectory,
   solvedAt,
   unfinished,
@@ -373,7 +416,9 @@ export default function SolvedCard({
   puzzleRef: PuzzleRef;
   lang: string;
   guessCount: number;
-  shownCount: number; // the tally's current value (the ruler, the heat and the meter fill off it)
+  // The tally's clock: the share of `COUNT_RUN_MS` gone (0 before it starts, 1 landed). The
+  // reels, the ruler, the heat and the meter's fill all read it (`countRun.ts`).
+  run: number;
   trajectory: number[];
   solvedAt: (number | null)[];
   unfinished: boolean; // ended unsolved: `∞`, no shine
@@ -434,25 +479,30 @@ export default function SolvedCard({
   const label = bonus ? 'BONUS' : dateForDayNumber(puzzleRef.dayNumber);
   const unit = t(lang, !unfinished && guessCount === 1 ? 'try' : 'tries');
 
-  const meter = useMeterRun({ on: !unfinished, settled, landed, shownCount, trajectory });
-
-  // While the tally counts, the digits it has not reached yet stand as zeros — an odometer —
-  // so the number fills its box from the first frame.
-  const live = String(shownCount);
-  const pad = shownCount < guessCount ? '0'.repeat(Math.max(0, digits - live.length)) : '';
-  const text = pad + live;
+  // THE TALLY at this instant (`countRun.ts`): how many tries the ruler has written, and
+  // where each reel stands. The reels the count has not reached stand as zeros — an
+  // odometer — so the number fills its box from the first frame.
+  const filled = countFilled(guessCount, run);
+  const reels = useMemo(() => countReels(guessCount, run), [guessCount, run]);
+  const meter = useMeterRun({ on: !unfinished, settled, landed, filled, trajectory });
+  const reading = reelsText(reels);
+  const reached = Math.max(0, reels.findIndex((r) => r.live));
+  const pad = reading.slice(0, reached);
+  const live = reading.slice(reached);
+  // The final number: what the box, the heat's clearing and the blast are laid out on.
+  const text = String(guessCount);
   const masks = useDigitMasks();
   // Drawn as cells once the glyphs are in; while they are being decoded the digits wait
   // unseen. A failed decode sets the count as type.
   const cells = !unfinished && masks !== null;
   const shape = useMemo(
-    () => (!unfinished && masks ? countShape(masks, pad, live, fit.count) : null),
-    [unfinished, masks, pad, live, fit.count],
+    () => (!unfinished && masks ? countShape(masks, reels, fit.count) : null),
+    [unfinished, masks, reels, fit.count],
   );
   const px = fit.count / COUNT_EM;
 
-  // THE CLEARING: round what stands in the heat, read off the laid-out boxes and cached until
-  // one of them (or the digits the tally shows) changes.
+  // THE CLEARING: round what stands in the heat — the final number's digits, whatever the
+  // reels show on the way — read off the laid-out boxes and cached until one of them changes.
   const clearCache = useRef<{ key: string; grid: Float32Array } | null>(null);
   const keepOut = useCallback<HeatKeepOut>(
     (canvas) => {
@@ -559,13 +609,13 @@ export default function SolvedCard({
         <div ref={runRef} className="solved-card-run" aria-hidden="true">
           <RunHeat
             trajectory={trajectory}
-            filled={shownCount}
+            filled={filled}
             surge={landed && !settled}
             still={settled}
             keepOut={keepOut}
             keepOutKey={`${text}|${fit.count}|${masks ? 1 : 0}`}
           />
-          <RunRuler trajectory={trajectory} solvedAt={solvedAt} filled={shownCount} />
+          <RunRuler trajectory={trajectory} solvedAt={solvedAt} filled={filled} />
         </div>
 
         {meter.burst && (
@@ -576,7 +626,7 @@ export default function SolvedCard({
             numRef={numRef}
             unitRef={unitRef}
             masks={masks}
-            text={String(guessCount)}
+            text={text}
             px={px}
           />
         )}

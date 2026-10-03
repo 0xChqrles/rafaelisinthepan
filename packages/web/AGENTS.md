@@ -84,7 +84,10 @@
                               row, the COUNT drawn as a shaped meter (charge, blast, dithered
                               foil), the run ruler with its heat; draws itself on the reveal
       components/countCells.ts  the count as the face's own glyph cells (pure, tested): its
-                              whole-pixel size, its ink, each glyph's box, the glints' corners
+                              whole-pixel size, its ink, each glyph's box, the glints' corners,
+                              the reels' strip at a whole font pixel
+      components/countRun.ts  the count's RUN (pure, tested): one fixed length for every score,
+                              the odometer's reels and the ruler's tries at each instant
       components/RunHeat.tsx  the run's HEAT: the ruler's inks rising off it as an ordered
                               dither behind the count (screen-only), with a clearing round it
       components/RunRuler.tsx  the run ruler: one cell per try on the share card's whole-pixel
@@ -2606,13 +2609,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
       scroll must not resize what has landed) and re-measured only when the column's width
       changes; nothing is scaled by a transform. It is drawn cell by cell on
       the face's own glyphs (`digitMasks.ts`, laid out by `countCells.ts`) by a SHAPED
-      `MeterCanvas`: while the tally counts, the digits written charge with the meter's
-      Bayer fill as far as the reconstruction had reached at that try (never past 99), the
-      unreached ones standing as an odometer's zeros in the slate; the landing fills it,
-      ONE cobalt BLAST (the full meter's `BURST_ART`, at the whole scale that spans the
-      frame) goes off from behind the whole number — clipped above the ruler's ticks and
-      stencilled 8px off each digit's ink box and off the unit and the edition's type, so
-      its rays leave the number's edges — and on its impact the cobalt DISSOLVES (Bayer
+      `MeterCanvas`. The tally is an ODOMETER on those pixels (`countRun.ts`): every digit a
+      REEL of the face's glyphs (0–9 on a strip, one blank row between, `countCells.ts`
+      `reelInk`) standing at a whole font pixel, the ones reel driving the rest — a reel
+      above turns only while the one under it rolls from 9 to 0. While it runs, the reached
+      digits charge with the meter's Bayer fill as far as the reconstruction had reached at
+      the try the ruler is writing (never past 99), the unreached reels standing as the
+      odometer's zeros in the slate; the landing fills it, ONE BLAST (the full meter's
+      `BURST_ART`, at the whole scale that spans the frame) goes off IN FRONT of the whole
+      number (user-decided 2026-10-03, "the burst animation being played ABOVE the tries
+      count") — clipped above the ruler's ticks and stencilled off the unit and the
+      edition's type, in the meter's cobalt, and in WHITE where it crosses the digits (a
+      second sheet on the same beat kept to their cells: a cobalt ray over the cobalt
+      digits would vanish) — and on its impact the cobalt DISSOLVES (Bayer
       order, eight hard steps) into the DITHERED FOIL (`foil.ts` `paintCountFoil`: the
       material on the house's 2px cell, one slab across the whole number, slow drift, a
       narrow sheen whose first pass meets the dissolve), glints taking turns on the cap
@@ -2727,17 +2736,30 @@ it to the local store — see `packages/backend/AGENTS.md`).
     pixel art's hard steps (`DRAW_MS`, 720ms — the brackets travel out to the corners, the
     edition types glyph by glyph, the ruler's empty track, the slate's 2px checker, is
     wiped across, the count's zeros blink in), reading 0 over the whole bar, every cell
-    there and none coloured (user-decided 2026-09-11); then the tally counts its
-    `SCORE_COUNT_MS` WHILE the bar colours in try by try behind a white write head, each
-    tick stamping down as its try is reached, the heat rising off it and the count
-    charging — `RunRuler` fills off the count itself (`filled`), so the number always says
-    how many tries are coloured — one beat saying "here is your run"; on the LANDING the
+    there and none coloured (user-decided 2026-09-11); then the tally RUNS — ONE fixed
+    length for every score, `COUNT_RUN_MS` (2000ms), always reading as a FAST counter
+    (user-decided 2026-10-03: "a FIXED TIME for the animation, but whenever the score is
+    100 or 3, to give the feel of a RAPID COUNTING") — WHILE the bar colours in try by try
+    behind a white write head, each tick stamping down as its try is reached, the heat
+    rising off it and the count charging; one beat saying "here is your run". ONE clock
+    (`SolvedScreen`'s `run`, the share of `COUNT_RUN_MS` gone) drives the reels
+    (`countReels`) and the ruler (`countFilled`): the ones reel travels at least
+    `COUNT_MIN_TURNS` (5) whole turns and then the score's last digit — as many turns as
+    the score has tens when that is more, every value read on the way (137 races up,
+    the tens and hundreds counting under a blur of ones), while a smaller score SPINS its
+    extra turns under slate zeros and its reels above step on the LAST carries only (3
+    spins and locks; 23 spins, then reads 10…19, 20…23); the reels CRUISE at full speed
+    for `COUNT_CRUISE` (0.45) of the run, then brake evenly into the value, still turning
+    `COUNT_LOCK_RATE` (12) values a second as they lock. The ruler's tries are the run's
+    share of its travel, so where every value is read (a score of 50 or more) the number
+    says how many tries are coloured at every frame, and on every score the last try is
+    written as the reels lock. Every glyph rolls a whole font pixel at a time; nothing is
+    scaled. On the LANDING the
     number stamps down in whole steps, the heat surges, the brackets LOCK ON (their arms
     reach out along the frame at full white and draw back in whole steps — never in over
     what they hold) and the meter blasts and dissolves into its foil (reduced motion: no
-    blast, the foil at once); then SHARE lands (`shareIn`), a breath after the count
-    LANDS (the eased, rounded number shows its final value well before the tween's own
-    end, so a timer off `SCORE_COUNT_MS` held a dead beat) — on its own beat, never behind
+    blast, the foil at once); then SHARE lands (`shareIn`), a breath after the run LANDS
+    (its clock reaching 1, at `COUNT_RUN_MS`) — on its own beat, never behind
     another block's rung-in ("way too long", user-reported 2026-09-11). SHARE hides IN PLACE
     with its footprint kept; the BOARDS land a breath after it (`boardsIn`,
     `BOARDS_LEAD_MS`), their box held from frame one, and the page's beat follows them; no
@@ -2889,8 +2911,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   under a shared tick), so the row can reach `MAX_ROW_CELLS + 2`; and since the final try
   always solves, a finished run ALWAYS ends on a keycap (a 3-try perfect game is exactly
   `1️⃣2️⃣3️⃣`, no color at all). `solvedAt` is optional — without it the row is the plain ramp.
-  The ruler has no delays of its own since 2026-09-11 — it fills off the tally's count
-  (`RunRuler`'s `filled`) — so under reduced motion, where the count lands at once, so
+  The ruler has no delays of its own — it fills on the tally's clock (`RunRuler`'s
+  `filled`, `countFilled`) — so under reduced motion, where the count lands at once, so
   does the bar. The keyboard's exit beat
   releases the RESULT through a signal the DOM has to produce (its own
   `animationend`) — so it carries a **deadline** (`KB_EXIT_FALLBACK_MS`

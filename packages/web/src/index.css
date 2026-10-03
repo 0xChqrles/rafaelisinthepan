@@ -2841,8 +2841,10 @@ input {
   font-size: 20px;
 }
 /* THE BLAST (`SolvedCard`'s `Blast`): the burst sheet at the whole scale that spans the
-   frame, in a box clipped between the edition row and the ruler's ticks, through a stencil
-   that keeps it off the digits, the unit and the edition's type. */
+   frame, in a box clipped between the edition row and the ruler's ticks, IN FRONT of the
+   count (over the hero's layer): the cobalt sheet through a stencil that keeps it off the
+   unit and the edition's type, and a white sheet on the same beat kept to the digits' own
+   cells — where the blow crosses the number. */
 .solved-card-blast {
   position: absolute;
   z-index: 2;

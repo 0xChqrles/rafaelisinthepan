@@ -5,7 +5,7 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareText, shareUrl } from '../game/share';
 import SolvedCard from './SolvedCard';
 import SolvedCaption, { captionDurationMs } from './SolvedCaption';
-import useAnimatedNumber from '../hooks/useAnimatedNumber';
+import { COUNT_RUN_MS } from './countRun';
 import useShare from '../hooks/useShare';
 import Button from './Button';
 import ResultBoards, { type ResultBoardsData } from './ResultBoards';
@@ -43,7 +43,7 @@ import { capitalize, sentenceStarts } from '../game/sentenceCase';
 // behind it (the `KB_EXIT_FALLBACK_MS` rule: a lost signal must never be able to stall
 // the solved sequence), derived from the typewriter's own numbers — and it is what ends
 // the reveal now. Everything else hangs off an offset, or — the closing beat — off the
-// count's own landing, which the tween's clock always reaches (no DOM signal to lose).
+// count's own landing, which the run's clock always reaches (no DOM signal to lose).
 // Rehydrated solves render the final frame immediately and replay nothing.
 //
 // THAT LAST SENTENCE IS ALSO THE FAST-FORWARD (#179, user-decided 2026-08-16): a tap
@@ -59,7 +59,6 @@ const RESULTS_IN_MS = 140;
 // offsets): the FRAME (the brackets travel out, the edition types), then the INSTRUMENT (the
 // ruler's track is wiped across, the count's zeros blink in) — done by 720ms.
 const DRAW_MS = 720;
-const SCORE_COUNT_MS = 800;
 // The secrets POP into the sentence one by one, 200ms apart, each a fast scale pop — the
 // round's three trophies counted out, back in the gaps they were taken from. Keep aligned
 // with `.solved-secret.in` / `solved-word-pop`.
@@ -79,6 +78,35 @@ const BOARDS_LEAD_MS = 200;
 // The boards' own arrival (`.solved-boards.in`: the tab's chip wiped across, the first line in):
 // they are a tap onto the board only once it has played.
 const BOARDS_ARRIVE_MS = 420;
+
+// THE TALLY'S CLOCK: the share of COUNT_RUN_MS gone since `on` (0 before, 1 once run), a
+// frame at a time — ONE fixed length for every score (`countRun.ts`). A settled frame is at 1
+// at once, and so is reduced motion.
+function useCountClock(animate: boolean, on: boolean, reduceMotion: boolean): number {
+  const [p, setP] = useState(() => (animate ? 0 : 1));
+  useEffect(() => {
+    if (!animate) {
+      setP(1);
+      return undefined;
+    }
+    if (!on) return undefined;
+    if (reduceMotion) {
+      setP(1);
+      return undefined;
+    }
+    let raf = 0;
+    let t0: number | null = null;
+    const tick = (now: number) => {
+      t0 ??= now;
+      const k = Math.min(1, (now - t0) / COUNT_RUN_MS);
+      setP(k);
+      if (k < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [animate, on, reduceMotion]);
+  return p;
+}
 
 // ONE BEAT of the reveal: false until `ready` has held for `delayMs`, then true. A settled
 // frame (`animate` off — rehydrated, or fast-forwarded) is true at once. Reduced motion
@@ -208,30 +236,21 @@ export default function SolvedScreen({
 
   // THE TALLY, once the card is DRAWN (user-decided 2026-09-11): the card stands reading 0
   // over the whole ruler, every cell there and none coloured yet, and only then does the
-  // number climb — the ruler colouring in try by try, each tick standing as its try is
-  // reached, WHILE it counts. The ruler reads the count ITSELF (`shownCount`), so the number
-  // and the coloured cells cannot drift apart: at every frame the number says how many tries
-  // are coloured. The card reserves its final footprint throughout, so nothing below it
-  // moves.
+  // number run — the ruler colouring in try by try, each tick standing as its try is
+  // reached, WHILE it counts. ONE clock drives both (`run`, `countRun.ts`): the count's
+  // reels race (a big score) or spin (a small one) for COUNT_RUN_MS whatever the score
+  // (user-decided 2026-10-03), the ruler's tries fill on the same pace, and both land on the
+  // clock's end. The card reserves its final footprint throughout, so nothing below it moves.
   const countIn = useBeat(animate, scoreIn, DRAW_MS, reduceMotion, false);
-
-  const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
-  useEffect(() => {
-    if (countIn) setCountTarget(guessCount);
-  }, [countIn, guessCount]);
-  const shownScore = useAnimatedNumber(countTarget, !animate || reduceMotion ? 1 : SCORE_COUNT_MS);
-  const shownCount = Math.round(shownScore);
+  const run = useCountClock(animate, countIn, reduceMotion);
 
   // The card's closing beat (user-decided 2026-08-16): SHARE lands once the tally has
-  // settled — its own beat, never behind anything else's (user-reported 2026-09-11: waiting
+  // landed — its own beat, never behind anything else's (user-reported 2026-09-11: waiting
   // out another rung-in put the card's one action far too late). It holds its layout space
   // throughout (SHARE hides in place), so the flip changes when it appears, never where
-  // anything sits.
-  // It keys off the count LANDING — the number showing its final value, the bar full —
-  // not off `SCORE_COUNT_MS`: the tween eases out and the number is rounded, so the last
-  // visible step comes well before the tween's own end (at 45% of it on a 3-try run), and
-  // a timer off that end would hold everything still before SHARE.
-  const countLanded = countIn && shownCount === guessCount;
+  // anything sits. The run lands on its clock: the reels lock on the score and the ruler's
+  // last try is written at COUNT_RUN_MS, never before.
+  const countLanded = countIn && run >= 1;
   const shareIn = useBeat(animate, countLanded, CLOSE_LEAD_MS, reduceMotion, true);
 
   // THE BOARDS, under SHARE: their box has held its room since frame one, and lands now —
@@ -349,7 +368,7 @@ export default function SolvedScreen({
         puzzleRef={puzzleRef}
         lang={lang}
         guessCount={guessCount}
-        shownCount={shownCount}
+        run={run}
         trajectory={trajectory}
         solvedAt={solvedAt ?? []}
         unfinished={unfinished}

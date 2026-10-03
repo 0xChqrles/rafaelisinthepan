@@ -13,6 +13,10 @@ import { GLYPH_ROWS, type DigitMask } from './digitMasks';
 // multiple of 8 whose box fits both the hero's width and the height the card can spare it
 // (SHARE must stay above the fold), between a floor and a ceiling that depends on the column
 // (`countSize`): a phone's 160 (the share card's own), the desktop's 192.
+//
+// THE TALLY ROLLS ON THE SAME GRID: each glyph slot is a REEL of the face's digits (`reelInk`)
+// standing at a whole font pixel (`reelRow`), so the odometer `countRun.ts` drives never puts
+// a glyph between two of the face's pixels.
 
 // Font pixels to the em: a glyph's advance.
 export const COUNT_EM = 8;
@@ -39,12 +43,37 @@ export function countSize(width: number, height: number, ems: number, wide: bool
 // A string's INK on the face's grid: `ink(gx, gy)` in font pixels, glyph i's columns being
 // i·8 … i·8 + 7. Anything that is not a digit is blank.
 export function countInk(masks: readonly DigitMask[], text: string): (gx: number, gy: number) => boolean {
-  const width = text.length * COUNT_EM;
+  return reelInk(
+    masks,
+    Array.from(text, (c) => (c >= '0' && c <= '9' ? Number(c) * COUNT_EM : NaN)),
+  );
+}
+
+// THE COUNT'S REELS (`countRun.ts`): each glyph slot a strip of the face's ten digits, 0 to 9
+// top to bottom, every glyph its 7 ink rows over one blank row — REEL_ROWS font pixels round.
+// A slot shows the strip's 7 rows from its whole-pixel offset down, so a reel rolls on the
+// face's own grid, one font pixel at a time.
+export const REEL_ROWS = 10 * COUNT_EM;
+
+// A reel standing at `pos` values (`countRun.ts` `CountReel`): its strip offset, in whole
+// font pixels.
+export const reelRow = (pos: number): number =>
+  ((Math.floor(pos * COUNT_EM) % REEL_ROWS) + REEL_ROWS) % REEL_ROWS;
+
+// The ink of reels standing at `rows` (each slot's strip offset, `reelRow`): the same grid as
+// `countInk`, glyph slot i's columns i·8 … i·8 + 7. A slot whose offset is not a whole number
+// is blank, and so is a digit the masks do not know.
+export function reelInk(masks: readonly DigitMask[], rows: readonly number[]): (gx: number, gy: number) => boolean {
+  const width = rows.length * COUNT_EM;
   return (gx, gy) => {
     if (gy < 0 || gy >= COUNT_ROWS || gx < 0 || gx >= width) return false;
-    const mask = masks[Number(text[Math.floor(gx / COUNT_EM)])] as DigitMask | undefined;
+    const row = rows[Math.floor(gx / COUNT_EM)];
+    if (!Number.isInteger(row)) return false;
+    const s = (((row + gy) % REEL_ROWS) + REEL_ROWS) % REEL_ROWS;
+    const mask = masks[Math.floor(s / COUNT_EM)] as DigitMask | undefined;
+    const y = s % COUNT_EM;
     const x = gx % COUNT_EM;
-    return mask !== undefined && x < mask.w && mask.rows[gy * mask.w + x] === 1;
+    return mask !== undefined && y < COUNT_ROWS && x < mask.w && mask.rows[y * mask.w + x] === 1;
   };
 }
 

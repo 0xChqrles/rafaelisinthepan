@@ -13,6 +13,9 @@ import {
   countSize,
   glyphBoxes,
   inkEms,
+  REEL_ROWS,
+  reelInk,
+  reelRow,
 } from './countCells';
 import type { DigitMask } from './digitMasks';
 
@@ -103,6 +106,40 @@ describe('countInk — the face\'s glyphs on its own 8-pixel advance', () => {
     expect(ink(0, 7)).toBe(false);
     expect(ink(2 * COUNT_EM, 0)).toBe(false);
     expect(countInk(masks, '0')(0, 0)).toBe(false);
+  });
+});
+
+describe('reelInk — the count\'s reels on the same grid', () => {
+  // Every cell of the band for `slots` glyph slots, as a string to compare.
+  const band = (ink: (gx: number, gy: number) => boolean, slots: number) =>
+    Array.from({ length: COUNT_ROWS }, (_, gy) =>
+      Array.from({ length: slots * COUNT_EM }, (_, gx) => (ink(gx, gy) ? '#' : '.')).join(''),
+    ).join('\n');
+
+  it('reads exactly the face\'s glyphs on a whole value', () => {
+    expect(band(reelInk(masks, [7 * COUNT_EM, 1 * COUNT_EM]), 2)).toBe(band(countInk(masks, '71'), 2));
+    expect(reelRow(7)).toBe(7 * COUNT_EM);
+  });
+
+  it('rolls a font pixel at a time, the next digit coming up from below over one blank row', () => {
+    // Three rows short of the 7: the 6's last two rows (unknown here, blank), its blank
+    // row, then the 7's top four rows under them.
+    const ink = reelInk(masks, [reelRow(7 - 3 / COUNT_EM)]);
+    for (let x = 0; x < 7; x += 1) {
+      expect(ink(x, 3)).toBe(true); // the 7's top row, now on the band's fourth
+      expect(ink(x, 2)).toBe(false);
+    }
+    expect(ink(6, 4)).toBe(true);
+    expect(ink(0, 4)).toBe(false);
+    // A strip offset between two font pixels is floored to the whole pixel.
+    expect(reelRow(7 - 2.5 / COUNT_EM)).toBe(7 * COUNT_EM - 3);
+  });
+
+  it('wraps from 9 back to 0, and is blank on an offset that is not a whole pixel', () => {
+    expect(reelRow(10)).toBe(0);
+    expect(reelRow(9.99)).toBe(REEL_ROWS - 1);
+    expect(band(reelInk(masks, [REEL_ROWS + COUNT_EM]), 1)).toBe(band(countInk(masks, '1'), 1));
+    expect(reelInk(masks, [0.5])(1, 0)).toBe(false);
   });
 });
 
