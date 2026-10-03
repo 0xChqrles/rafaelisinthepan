@@ -9,10 +9,11 @@ import { coarsePointer } from './useScramble';
 // cleared on unmount.
 //
 // The caller owns the TEXT (the result's headline, its token, its row) and the label; this
-// owns the delivery and — for a RESULT — the `share` analytics event. `tracked: false`
-// opts a non-result caller (the #190 invite link) out of the event: the pinned `share`
-// metric means "a result left the app" (the three-event invariant), and counting invites
-// into it would silently redefine what the number measures.
+// owns the delivery and — for a SOLVED day's result — the `share` analytics event.
+// `tracked: false` opts every other caller out of it: a bonus, an unfinished result (given
+// up or capped) and the #190 invite link. The pinned `share` metric counts a SOLVED DAY's
+// result leaving the app (the three-event invariant, read as share ÷ solve), and counting
+// anything else into it would silently redefine what the number measures.
 //
 // **`share` REPORTS whether delivery reached the player** (PR-219 follow-up review):
 // true when the native sheet ran (a dismissal is the player's choice, not a failed

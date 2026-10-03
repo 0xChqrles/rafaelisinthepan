@@ -11,10 +11,11 @@
 //     departure → word, so a backwards guess is a stop but not a step of the walk;
 //   - SOLVING names the whole walked stretch (departure → word), flagging what the player
 //     never reached as `revealed`; a live hole names nothing it has not been to — EXCEPT
-//     what the meter GIVES (user-decided 2026-09-22): a given rank is a stop flagged
-//     `given` — MASKED (no word, the MASK to display, its rank, a key to reveal it by) until the player
-//     consumes it, when it stands as their typed stop wearing `given`; the solve unmasks
-//     the rest, still given, apart from what it merely names;
+//     what the meter GIVES (user-decided 2026-09-22): the word offered closer than the
+//     best is a stop flagged `given` — MASKED (no word, the MASK to display, its rank, a
+//     key to reveal it by) until the player consumes it, when it stands as their typed
+//     stop wearing `given`; the solve unmasks the one left, still given, apart from what
+//     it merely names;
 //   - a round OVER with the hole unsolved (the cap) is presented like the solve: no mask,
 //     and the secret is named — the hole itself stays unsolved;
 //   - what stays retired: no censored census while the round is LIVE.
@@ -135,41 +136,38 @@ describe('buildHistory', () => {
   });
 
   it('a GIVEN rank is a MASKED stop on a live hole: its rank and a key, no word; consumed, it is the typed stop wearing given', () => {
-    // The meter gave ranks 3 and 40 (and 5, which this map does not hold — skipped),
-    // neither taken: a live hole names them masked — no word, the rank, and the key a
-    // reveal submits — apart from what was played.
-    const live = build(['bois'], 1, [untaken(3), untaken(5), untaken(40)]);
+    // The hole stands at 40 and the meter offers the next word closer, 3, not yet taken: a
+    // live hole names it masked — no word, the rank, and the key a reveal submits — apart
+    // from what was played.
+    const live = build(['branche'], 40, [untaken(3)]);
     expect(live.stops.map((s) => [s.rank, s.word, s.display, s.given, s.masked])).toEqual([
-      [1, 'bois', 'bois', false, false],
       [3, '', MASK, true, true],
-      [40, '', MASK, true, true],
+      [40, 'branche', 'branche', false, false],
       [87, 'prairie', 'prairie', false, false],
     ]);
     expect(live.stops.find((s) => s.rank === 3)!.slug).toBe('arbre');
-    // Taken (guessed after it was given — from the wheel or typed): the player's own stop,
-    // their form, wearing the given dress, unmasked.
-    const consumed = build(['bois', 'arbres'], 1, [taken(3), untaken(40)]);
-    expect(consumed.stops.find((s) => s.rank === 3)).toMatchObject({ word: 'arbres', display: 'arbre', given: true, masked: false, taken: true });
-    expect(consumed.stops.find((s) => s.rank === 40)).toMatchObject({ word: '', given: true, masked: true, taken: false });
+    // Taken (guessed while offered — revealed or typed): the player's own stop, their form,
+    // wearing the given dress, unmasked; the next word closer is then the one masked.
+    const consumed = build(['branche', 'arbres'], 3, [untaken(1), taken(3)]);
+    expect(consumed.stops.find((s) => s.rank === 3)).toMatchObject({ word: 'arbres', display: 'arbre', given: true, masked: false, taken: true, best: true });
+    expect(consumed.stops.find((s) => s.rank === 1)).toMatchObject({ word: '', given: true, masked: true, taken: false });
     // Solved, the untaken hint is unmasked and still given — it was on offer — while the
     // rest of the stretch is the post-mortem's.
-    const solved = build(['bois', 'foret'], 0, [untaken(40)]);
+    const solved = build(['branche', 'foret'], 0, [untaken(3)]);
     expect(solved.stops.map((s) => [s.rank, s.word, s.given, s.masked, s.revealed])).toEqual([
-      [1, 'bois', false, false, false],
-      [3, 'arbre', false, false, true],
-      [40, 'branche', true, false, false],
+      [1, 'bois', false, false, true],
+      [3, 'arbre', true, false, false],
+      [40, 'branche', false, false, false],
       [87, 'prairie', false, false, false],
     ]);
-    // A window given above an unmoved start reaches past the departure: still a stop.
-    expect(build([], 87, [untaken(812)]).stops.find((s) => s.rank === 812)).toMatchObject({ given: true, masked: true, behind: true });
   });
 
-  it('a round that is OVER unsolved (the cap) masks nothing and names the secret; the hole stays unsolved', () => {
-    // The capped round's result page already shows the answer, so its words grid has
-    // nothing left to hide: every given hint is named, and the headline is the secret.
+  it('a round that is OVER unsolved (given up, or capped) masks nothing and names the secret; the hole stays unsolved', () => {
+    // A round that ended unsolved shows the answer on its result page, so its words grid
+    // has nothing left to hide: every given hint is named, and the headline is the secret.
     const over = buildHistory({
-      rankMap: RANKS, tried: ['bois'], hole: hole(1), startRank: 87, secretWord: 'forêt',
-      given: [untaken(3), untaken(40)], over: true,
+      rankMap: RANKS, tried: ['branche'], hole: hole(40), startRank: 87, secretWord: 'forêt',
+      given: [untaken(3)], over: true,
     });
     expect(over.secret).toBe('forêt');
     expect(over.solved).toBe(false);
@@ -177,7 +175,7 @@ describe('buildHistory', () => {
     expect(over.stops.find((s) => s.rank === 3)).toMatchObject({ word: 'arbre', display: 'arbre', given: true, masked: false, taken: false });
     // The same log while the round is live keeps the untaken hint masked and the secret censored.
     const live = buildHistory({
-      rankMap: RANKS, tried: ['bois'], hole: hole(1), startRank: 87, secretWord: 'forêt',
+      rankMap: RANKS, tried: ['branche'], hole: hole(40), startRank: 87, secretWord: 'forêt',
       given: [untaken(3)],
     });
     expect(live.secret).toBeNull();

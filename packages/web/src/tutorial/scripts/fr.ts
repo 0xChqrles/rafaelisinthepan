@@ -20,14 +20,17 @@
 // indice intuitif, colline / vallée / cime font tous avancer le trou. LA PHRASE : « un chien
 // aboie à la lune. » — CHIEN derrière LOUP (52), LUNE derrière PÉNOMBRE (63), dans la bande
 // de départ 50–150 de la génération. LA JAUGE : « le chat suit le sentier. » — CHAT déjà trouvé
-// par le bot ; le secret est SENTIER et l'essai ÉVIDENT, CHEMIN, est son mot le plus proche
-// (rang 1) : le taper vaut un 1, jamais la solution — et taper SENTIER en premier échange les
-// deux (sentier lit 1, chemin devient le secret), pour que la lettre soit toujours vue avant
-// la solution. Les CINQ essais du bot (parcours, randonneur, détour, hameau, tunnel — peu,
-// masculins pour que « le » tienne, et le meilleur un synonyme FACILE de chemin : « belvédère »
-// était bien trop dur, retour utilisateur 2026-09-16) laissent la jauge à ~74 avec PARCOURS
-// (8) pour meilleur mot — assez long pour que le remplissage se lise sur la puce : CHEMIN la
-// remplit, visiblement, et le S apparaît ; un essai raté vaut ensuite l'indice, jamais le mot.
+// par le bot ; le secret est SENTIER et l'essai ÉVIDENT, CHEMIN, est son mot le plus proche —
+// que la leçon lit 2, VALLON (le 2 de la carte) lisant 1 (`meterView`) : taper CHEMIN vaut un
+// 2, jamais la solution, et la jauge pleine offre alors le seul mot plus proche, VALLON¹, à
+// révéler — et taper SENTIER en premier échange les deux (sentier lit 2, chemin devient le
+// secret), taper VALLON en premier aussi (il lit 2, chemin¹ est le mot à révéler), pour que
+// l'activation, avec un mot à révéler, soit toujours vue avant la solution. Les CINQ essais du bot
+// (parcours, randonneur, détour, hameau, ravin — peu, masculins pour que « le » tienne, et le
+// meilleur un synonyme FACILE de chemin : « belvédère » était bien trop dur, retour
+// utilisateur 2026-09-16) laissent la jauge à ~76 avec PARCOURS (8) pour meilleur mot — assez
+// long pour que le remplissage se lise sur la puce : CHEMIN² la remplit, visiblement, et le
+// mot masqué apparaît ; un essai raté vaut ensuite l'indice, jamais le mot.
 import type { LessonScript } from '../script';
 import { hole, single } from './board';
 import ocean from './fr.ocean.json';
@@ -62,7 +65,7 @@ const script: LessonScript = {
         ranks: { [chat.word.slug]: chat.ranks, [sentier.word.slug]: sentier.ranks },
       },
       // La partie du bot jusqu'ici : le chat trouvé, puis le sentier tourné autour sans tomber.
-      played: ['chat', 'parcours', 'randonneur', 'detour', 'hameau', 'tunnel'],
+      played: ['chat', 'parcours', 'randonneur', 'detour', 'hameau', 'ravin'],
       pair: { alt: { word: 'chemin', slug: 'chemin' }, hint: 'tutHintChemin' },
       hints: ['tutHintCat', 'tutHintSentier'],
     },

@@ -351,6 +351,28 @@ const STRINGS = {
   // "not started", which is the one thing an unloaded day must never claim.
   srStatusUnknown: { en: 'status not loaded', fr: 'statut non chargé' },
   notAWord: { en: 'this word does not exist', fr: "ce mot n'existe pas" },
+  // THE REVEAL (#301): a masked hint picked into the sentence takes the keyboard's place —
+  // the button that reveals it, its price over it, and the way back to the keyboard.
+  revealButton: { en: 'REVEAL', fr: 'RÉVÉLER' },
+  revealCost: { en: 'Costs one try.', fr: 'Coûte un essai.' },
+  revealBack: { en: 'BACK', fr: 'RETOUR' },
+  // THE GIVE-UP: the flag at the prompt's end (its name — the control is an icon), the
+  // confirmation over it (the title asks, the note says what it means, the act is its own
+  // word), the failure on the error screen, and what a screen reader hears as the
+  // sentence is revealed.
+  giveUp: { en: 'Give up', fr: 'Abandonner' },
+  giveUpTitle: { en: 'GIVE UP?', fr: 'ABANDONNER ?' },
+  giveUpNote: {
+    en: 'The sentence is revealed and the round ends.',
+    fr: "La phrase est révélée et la partie s'arrête.",
+  },
+  giveUpAction: { en: 'GIVE UP', fr: 'ABANDONNER' },
+  failedGiveUp: { en: 'GIVE UP FAILED', fr: "ÉCHEC DE L'ABANDON" },
+  failedGiveUpNote: {
+    en: 'The round goes on. Check your connection and try again.',
+    fr: 'La partie continue. Vérifiez votre connexion et réessayez.',
+  },
+  srGaveUp: { en: 'given up, the sentence is revealed', fr: 'abandon, la phrase est révélée' },
   // The score unit stays NAMED in both languages (lower is better must survive the
   // share card); the share text lowercases these.
   try: { en: 'TRY', fr: 'ESSAI' },
@@ -359,10 +381,6 @@ const STRINGS = {
   langMenu: { en: 'Change language', fr: 'Changer de langue' },
   share: { en: 'SHARE', fr: 'PARTAGER' },
   copied: { en: 'COPIED', fr: 'COPIÉ' },
-  // The result screen's ONE onward action (#273): tomorrow's sentence, tonight.
-  tomorrow: { en: 'TOMORROW', fr: 'DEMAIN' },
-  // …and the way back from it, under the night's countdown: today's result.
-  today: { en: 'TODAY', fr: "AUJOURD'HUI" },
   // A music day's track link on the solved page (#270): an ordinary link, new tab.
   listen: { en: 'LISTEN', fr: 'ÉCOUTER' },
   // The solved credit block's one function word (user-decided 2026-08-15): it binds the
@@ -466,8 +484,8 @@ const STRINGS = {
     en: 'The 1000 closest words to the secret fill its meter. Once full, you unlock clues.',
     fr: 'Les 1000 mots les plus proches du secret remplissent sa jauge. Une fois pleine, on débloque des indices.',
   },
-  // The activation (user-decided 2026-09-22, replacing the first letter): the given words
-  // are MASKED in the word's tries, and a tap on one reveals it for a try.
+  // The activation (user-decided 2026-09-22, replacing the first letter): the word given
+  // is MASKED in the word's tries; picked, REVEAL takes the keyboard's place, for a try.
   tutActivatedTap: {
     en: 'The meter is full! Tap {word} and reveal a word.',
     fr: 'Jauge pleine ! Touche {word}, et révèle un mot.',
@@ -574,6 +592,8 @@ const STRINGS = {
   // untrusted tab. Terse chrome in the app's register; the tabs and the rows do the
   // explaining. GLOBAL is one word in both languages, like TOP and the grades.
   boardTitle: { en: 'LEADERBOARD', fr: 'CLASSEMENT' },
+  // The board's global tab, and the solved screen's last one (after the player's groups): one
+  // name for the day's global board across the app.
   boardGlobal: { en: 'GLOBAL', fr: 'GLOBAL' },
   boardPeriods: { en: 'Period', fr: 'Période' },
   // TODAY, not DAY (user-decided 2026-09-14): the live board is today's, and a period
@@ -716,16 +736,35 @@ export function srHoleCharge(lang: string, charge: number): string {
   return uiLang(lang) === 'fr' ? `jauge à ${pct} %` : `meter at ${pct}%`;
 }
 
-// The given words (#301; user-decided 2026-09-22, replacing the initial): what a full meter
-// hands over — `count` words near the secret, read in the hole's tries. With `n`, the live
-// announcement the moment they land; without, the hole's standing description.
-export function srHoleGiven(lang: string, count: number, n?: number): string {
+// The given word (#301): what a full meter offers — ONE masked word closer than the hole's
+// best, read in the hole's tries. With `n`, the live announcement the moment it lands;
+// without, the hole's standing description.
+export function srHoleGiven(lang: string, n?: number): string {
   if (uiLang(lang) === 'fr') {
-    const what = `${count} mots masqués proches du secret dans ses essais, un essai chacun à révéler`;
+    const what = 'un mot masqué plus proche que son meilleur dans ses essais, un essai pour le révéler';
     return n === undefined ? what : `mot ${n} : ${what}`;
   }
-  const what = `${count} masked words near the secret in its tries, one try each to reveal`;
+  const what = 'a masked word closer than its best in its tries, one try to reveal';
   return n === undefined ? what : `word ${n}: ${what}`;
+}
+
+// THE RACE LINE, in words (the line itself is wordless): the members of the player's groups
+// around them, in the line's order. A finished member says how many tries; one whose round
+// ended unsolved says so; the player is "you" with their live %.
+export type RaceSpoken =
+  | { name: string; kind: 'done'; score: number }
+  | { name: string; kind: 'playing' | 'over'; percent: number; tries: number; me: boolean };
+
+export function ariaRaceLine(lang: string, entries: readonly RaceSpoken[]): string {
+  const fr = uiLang(lang) === 'fr';
+  const tries = (n: number) => (fr ? `${n} essai${n === 1 ? '' : 's'}` : `${n} ${n === 1 ? 'try' : 'tries'}`);
+  const parts = entries.map((entry) => {
+    if (entry.kind === 'done') return fr ? `${entry.name}, trouvé en ${tries(entry.score)}` : `${entry.name}, solved in ${tries(entry.score)}`;
+    if (entry.me) return fr ? `vous, ${entry.percent} %` : `you, ${entry.percent}%`;
+    if (entry.kind === 'over') return fr ? `${entry.name}, non résolu` : `${entry.name}, unsolved`;
+    return fr ? `${entry.name}, ${entry.percent} %, ${tries(entry.tries)}` : `${entry.name}, ${entry.percent}%, ${tries(entry.tries)}`;
+  });
+  return fr ? `Vos groupes : ${parts.join(' ; ')}` : `Your groups: ${parts.join('; ')}`;
 }
 
 // The history modal's title (2026-08-10, keeping the route map's naming): a hole is named
@@ -762,11 +801,4 @@ export function srRouteStop(
   if (stop.best) parts.push(fr ? 'vous êtes ici' : 'you are here');
   if (stop.behind) parts.push(fr ? 'derrière le départ' : 'behind the start');
   return parts.join(' — ');
-}
-
-// The early-play countdown (#273): what the clock that took the keyboard's place means —
-// the round continues at the day's flip. Whole minutes: it is a wait, not a run.
-export function srEarlyClock(lang: string, minutes: number): string {
-  if (uiLang(lang) === 'fr') return `La partie reprend dans ${minutes} minutes`;
-  return `The round continues in ${minutes} minutes`;
 }

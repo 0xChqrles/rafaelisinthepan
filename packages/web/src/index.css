@@ -86,7 +86,6 @@
      one red now, where the ladder's reservation used to hold them 30 apart. */
   --danger: #ff2e38;
   --muted: #a6adb8; /* neutral cool grey (the warm paper tone left with the stamp brand) */
-  --flame: #4642e8; /* streak flame indigo — the sprite's body color (#74); milestone tiers swap it */
 
   --pixel-font: 'Press Start 2P', monospace;
   /* THE one chrome voice (user-decided 2026-08-18, third pass — Azeret Mono replacing
@@ -301,7 +300,7 @@ input {
    "LOADING..."-style waiting line plays the same wave — a light rolling through the
    letters in a loop, crest at the surface's full ink, trough sunk to 30% of it. It
    rides OPACITY, never colour, so each host keeps its own recorded ink and face (the
-   status line's accent mono, the standing slot's pixel label). Each letter runs the
+   status line's accent mono). Each letter runs the
    one cycle phase-shifted by its index; the delays are NEGATIVE (index step minus a
    whole cycle) so the wave is already mid-roll at mount — positive delays would hold
    every letter flat until its first cycle came round — and the crest travels left to
@@ -649,7 +648,14 @@ input {
   display: flex;
   flex-direction: column;
   align-items: start;
-  gap: clamp(16px, 3vh, 32px);
+  /* The column's gap is a token: the play area's race band (`.play-race`) is measured
+     against it. */
+  --game-gap: clamp(16px, 3vh, 32px);
+  gap: var(--game-gap);
+  /* The race line's footprint above the tray (`.race-line`): its lift off the tray's top
+     edge and its own height (a 20px mark + 2px padding each side). */
+  --race-lift: 8px;
+  --race-h: 24px;
   /* The keyboard sits at the tray's bottom; .app's 24px all-round padding then leaves an
      even 24px gap to the screen bottom, matching the page's side inset (the keyboard is
      centered/narrow on desktop, so the frame inset is the meaningful margin). Mobile
@@ -679,6 +685,15 @@ input {
   align-items: start;
   gap: clamp(24px, 5vh, 48px);
 }
+/* THE RACE BAND: on today's sentence — the only round the race line can show on — the play
+   area keeps the line's footprint clear at its bottom, beyond what the column's gap already
+   leaves, from the first frame and whether or not the line ever arrives. The line then never
+   lies over the prompt's hint row (where a refused word's feedback prints) nor takes a tap
+   meant for it, and its arrival and leaving move nothing: the band is the round's, not the
+   line's. Zero on a tall desktop, whose gap already covers it. */
+.play.play-race {
+  padding-bottom: max(0px, var(--race-lift) + var(--race-h) - var(--game-gap));
+}
 
 /* The game's watermark anchor: a full-width relative wrapper around ONLY the sentence,
    so the big try count centers on the sentence itself — not on sentence + prompt (which
@@ -706,6 +721,8 @@ input {
    moves the sentence between the solved beats), so the bottom edge and everything above
    stay put when the keyboard is replaced by the results — no reflow, no empty gap. */
 .tray {
+  /* The race line's anchor (`.race-line`, laid on this box's top edge). */
+  position: relative;
   width: 100%;
   height: calc(var(--kb-h) + env(safe-area-inset-bottom, 0px));
   display: flex;
@@ -770,6 +787,120 @@ input {
    keyboard in without moving the content above. */
 .tray.tray-gate {
   justify-content: flex-end;
+}
+/* THE REVEAL TRAY (`components/RevealTray`): the price, REVEAL and BACK in the keyboard's
+   exact footprint, anchored to its bottom like the gate's PLAY and LEARN — so the swap moves
+   nothing above it. Tighter than the gate's stack: three lines share the keyboard's height
+   on the smallest phone. */
+.reveal-tray {
+  width: 100%;
+  height: var(--kb-h);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+/* The price: the UI face, muted, centred on the button it explains. */
+.reveal-cost {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+  text-align: center;
+}
+/* The stack stands together at the bottom: the deploy button's own auto margin would part
+   the price from it. */
+.reveal-tray .mix-btn {
+  margin-top: 0;
+}
+.reveal-tray .mix-btn + .btn-secondary {
+  padding-block: 10px;
+}
+/* THE RACE LINE (`components/RaceLine`): the player's groups around them, ONE line laid on
+   the tray's TOP EDGE — absolutely, so its arrival (the first answer lands after the round is
+   on screen) and its leaving move nothing in the column; the sentence's centring never sees
+   it. It sits in the column's gap above the tray plus the play area's race band
+   (`.play-race`), which together hold exactly its footprint. ONE line, never wrapping: at
+   most three entries of a mark and two short numbers, which fit the narrowest phone's
+   column. The game surface's dress: the pixel face
+   for the numbers, the % in the heat ramp's ink (the board's playing rows), tries muted, a
+   finished member's count in the solve cobalt. */
+.race-line {
+  position: absolute;
+  bottom: calc(100% + var(--race-lift));
+  height: var(--race-h);
+  left: 50%;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 100%;
+  margin: 0;
+  padding: 2px 4px;
+  white-space: nowrap;
+  font-family: var(--pixel-font);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--fg);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  animation: race-in 240ms ease-out backwards;
+  transition: opacity 200ms ease-out, visibility 0s linear 0s;
+}
+.race-line.retired {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 200ms ease-out, visibility 0s linear 200ms;
+}
+@keyframes race-in {
+  from {
+    opacity: 0;
+  }
+}
+.race-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.race-entry .avatar,
+.race-mark-box {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+.race-mark-box {
+  display: block;
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+/* The player's own mark is framed in the accent — "you are here", the boards' own marker. */
+.race-entry.me .avatar,
+.race-entry.me .race-mark-box {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+.race-pct {
+  color: var(--race-heat);
+}
+.race-tries {
+  color: var(--muted);
+}
+.race-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--solve);
+}
+.race-solved {
+  width: 10px;
+  height: 10px;
+}
+.race-inf {
+  color: var(--muted);
+  shape-rendering: crispEdges;
 }
 @keyframes kb-drop {
   to {
@@ -989,7 +1120,7 @@ input {
   display: block;
 }
 
-/* The header's single action group, floating top-right: streak stat, language flag,
+/* The header's single action group, floating top-right: language flag,
    then the screen's contextual controls (archive + "?", or skip, or close). A small
    gap — enough that glyphs don't read as one control, while the group still coheres.
    Re-enables pointer events under the click-through .topbar layer. */
@@ -1646,12 +1777,13 @@ input {
    order across the ramp (user-decided 2026-09-15, the fifth cut: a line along the chip's
    bottom edge was a bar; a level rising inside the chip barely moved; a hard-edged sweep
    behind a checker fringe was "a basic animation"). A full chip is all cobalt — the ink the
-   word will wear once found — and the burst follows; then THE SEA (user-decided 2026-09-22,
-   the ACTIVATED hole, replacing the revealed first letter): the same cells driven by a
-   slow noise field drifting through the word, cobalt swell over the white ground, until
-   the hole is inked in — the third state of a hole, between the held white chip and the
-   solved cobalt word, and the dress of a word the meter GAVE wherever it is listed (the
-   wheel's rows, the words grid — `.wheel-sea`, `.hw-sea`). The box is the chip's
+   word will wear once found — and the burst follows; then THE FOIL (user-decided 2026-09-22,
+   the ACTIVATED hole, replacing the revealed first letter; the class is still `.sea`): the
+   cobalt DISSOLVES in Bayer order into the holographic foil, the pastel inks dithered on
+   the same 2px cells (`foil.ts`, the result count's own material), until the hole is
+   inked in — the third state of a hole, between the held white chip and the solved cobalt
+   word, and the dress of a word the meter GAVE wherever it is listed (the wheel's rows,
+   the words grid — `.wheel-sea`, `.hw-sea`). The box is the chip's
    exact box (same overhang, same height, same centring), in the chip's own stacking layer
    AFTER the `::before` in paint order — over the white ground, under the ink — and clips to
    itself. Nothing is laid out: it is absolute like the chip and rides `.hole-word` like the
@@ -1987,6 +2119,12 @@ input {
 .hole.resolved .hole-word {
   color: var(--solve);
 }
+/* A GIVE-UP's reveal keeps the HELD CHIP around the secret (`.hole.revealed`, never
+   `.resolved`): the cobalt is for a word found. Dissolving, the chip goes out with its
+   word's last letter. */
+.hole.chip-out .hole-word::before {
+  content: none;
+}
 /* Shake the hole word when a "hit" lands on it: reinforces impact. */
 .hole-word.hit-shake {
   display: inline-block;
@@ -2091,12 +2229,60 @@ input {
 }
 
 /* --- prompt zone: the row under the sentence, holding the input area ---
-   A one-cell grid (the input area is its grid item — see its `min-width: 0`). The prompt
-   stays mounted for the whole round, visibility-hidden once retired, so the centered
-   sentence never moves when it leaves. */
+   A one-row grid: the input area (its grid item — see its `min-width: 0`), and the
+   GIVE-UP's flag in its own column at the row's right end. The prompt stays mounted for
+   the whole round, visibility-hidden once retired, so the centered sentence never moves
+   when it leaves; the flag's column is held from the first frame, so its arrival never
+   narrows the prompt under a word being typed. */
 .prompt-zone {
   width: 100%;
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+/* THE GIVE-UP'S FLAG: a white flag drawn on the pixel font's own 8-cell grid (the lock's
+   rule: 2-cell pole, ink on the cap rows), its cloth WAVING — a straight cloth on a pole is
+   the face's own `P` — at the prompt's size, in the secondary ink — present, never competing with the
+   line the player types. It stands on the prompt's own line: the same padding, so its 1em
+   sits where the letters do (the prompt's own padding computes to 0 — see `--text-shift` —
+   and so does this one). Its TAP TARGET is wider than the glyph (`::after`, past every
+   edge): a 1em flag is under the 24px minimum on a phone, and growing the button itself
+   would move the prompt row. Hidden in place (`.off`) until the round holds a guess, and
+   whenever it is not the player's to press. */
+.give-up-btn {
+  position: relative;
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  display: flex;
+  align-items: center;
+  margin: 0 0 0 12px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: clamp(18px, 3.2vw, 30px); /* = .word-input */
+  line-height: inherit;
+  cursor: pointer;
+}
+.give-up-btn::after {
+  content: '';
+  position: absolute;
+  inset: -10px -12px;
+}
+.give-up-btn svg {
+  display: block;
+  width: auto;
+  height: 1em;
+}
+.give-up-btn:hover:not(:disabled) {
+  color: var(--fg);
+}
+.give-up-btn:active:not(:disabled) {
+  color: var(--fg);
+  filter: brightness(0.8);
+}
+.give-up-btn.off {
+  visibility: hidden;
 }
 .input-area.retired {
   visibility: hidden;
@@ -2237,9 +2423,9 @@ input {
   }
 }
 /* THE GHOST (user-decided 2026-09-22): a masked hint picked into the sentence stands
-   PRE-TYPED in the prompt — `?????` in the accent — and ENTER, lit, submits it: the
-   reveal is a guess made from the sentence, where the hole uncyphers into the word as
-   the hits land on the others. (The wheel held the control first — a button, a lock on
+   PRE-TYPED in the prompt — `?????` in the accent — and the tray's REVEAL (or Enter)
+   submits it: the reveal is a guess made from the sentence, where the hole improves to
+   the word as the hits land on the others. (The wheel held the control first — a button, a lock on
    the slot, a lock on every row — each reviewed away the same day: the side changed with
    the screen, and the hits played under the dim; then a lock beside the marks and a
    decode-then-hold in the prompt, reviewed away the next: "we don't know if you should
@@ -2343,7 +2529,8 @@ input {
      puzzle's own content, not chrome — still the accent, since it over the quiet line
      beneath is what ranks the two. */
   font-family: var(--pixel-font);
-  font-size: clamp(14px, 1.9vw, 18px);
+  /* A whole size of the face (a fluid one lands its pixels between the screen's). */
+  font-size: 16px;
   font-weight: 400;
   /* NO all-caps here (user-decided 2026-08-18): the source is quoted content — the
      work's own casing stands, and the KIND beside the author is uppercased in code,
@@ -2359,11 +2546,10 @@ input {
 .solved-by {
   margin: -2px 0 0;
   font-family: var(--pixel-font);
-  font-size: 10px;
+  font-size: 8px;
   font-weight: 400;
-  line-height: 1.7;
-  color: var(--fg);
-  opacity: 0.8;
+  line-height: 2;
+  color: var(--muted);
   letter-spacing: 0;
 }
 .source-type-slot {
@@ -2398,19 +2584,20 @@ input {
   flex: 1 1 0;
   min-height: 0;
   position: relative;
-  /* The stage BLEEDS to the screen's edges (user-decided 2026-09-08, the word board's
-     own rule): its scrollbar sits on the screen's border, while the content keeps the
-     page's inset as padding — `.app`'s 52px on desktop, 14px on a phone (below). */
-  width: calc(100% + 104px);
-  margin-left: -52px;
-  margin-right: -52px;
-  padding-left: 52px;
-  padding-right: 52px;
+  /* The stage BLEEDS to the VIEWPORT's edges on every screen: its scrollbar sits on the
+     screen's border (a wide desktop included, where `.game` stops at its max-width short
+     of the window), while the content keeps the column's width as padding. */
+  width: 100vw;
+  margin-left: calc((100% - 100vw) / 2);
+  margin-right: calc((100% - 100vw) / 2);
+  padding-left: calc((100vw - 100%) / 2);
+  padding-right: calc((100vw - 100%) / 2);
   /* Air under the header before the score lands (user-asked 2026-09-11: the block sat
      too close to the bar). Padding INSIDE the scroller rather than a margin on the
      block, so it scrolls away with the score and the sticky credit still meets the
-     scroller's top edge. */
-  --stage-top: clamp(20px, 4vh, 40px);
+     scroller's top edge. Whole pixels, so the pixel type under it lands on the pixel grid
+     (a vh would put every glyph at a fraction of a pixel, and blur its edges). */
+  --stage-top: 32px;
   padding-top: var(--stage-top);
   display: flex;
   flex-direction: column;
@@ -2418,10 +2605,10 @@ input {
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
-  /* The GAP between the score and the page — the seam, stated once. Widened 2026-09-11
-     (user-asked): the two blocks are two different things, and the air between them is
-     what says so. */
-  gap: clamp(44px, 8vh, 76px);
+  /* The GAP between the stage's blocks (the card, the boards, the page) — the seam, stated
+     once. Widened 2026-09-11 (user-asked): the blocks are different things, and the air
+     between them is what says so. */
+  gap: 48px;
   /* The bottom edge fades (the rule every scroller wears); the padding is the fade's own
      height, so the last line rests clear of it. The TOP has no fade: what passes there
      passes under the sticky credit's own ground. */
@@ -2429,31 +2616,27 @@ input {
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
   opacity: 0;
-  /* The stage rises the way the tray results always have (mirrored by `RESULTS_IN_MS`). */
-  transform: translateY(clamp(24px, 5vh, 44px));
-  transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+  /* The stage comes up IN PLACE: the card draws itself on it (`.solved-card.in`), so the
+     stage does not travel (mirrored by `RESULTS_IN_MS`). */
+  transition: opacity 0.14s ease-out;
 }
 .solved-stage.in {
   opacity: 1;
-  transform: translateY(0);
 }
 /* ===================== the CARD (2026-09-11) ===================== */
 /* ONE panel for a VIEW, in the language of the user's three `inspiration/card` references
    (user-decided 2026-09-11, replacing the square hairline tile of the same morning): a
-   LARGE, SOFTLY ROUNDED panel lifted a shade off the near-black ground, a thin
-   low-contrast stroke, and inside it a darker inset WELL holding the thing the card is
-   about, with a caption row under the well. It exists because a phone shows two or three
-   different things stacked in one column, and on the bare ground they read as one run of
-   text: a card says "this is one thing" before a word is read.
+   LARGE, SOFTLY ROUNDED panel lifted a shade off the near-black ground, with a thin
+   low-contrast stroke. It exists because a phone shows two or three different things stacked
+   in one column, and on the bare ground they read as one run of text: a card says "this is
+   one thing" before a word is read. Worn by the account's numbers and the archive calendar.
 
    THE ONE EXCEPTION TO THE 4px RADIUS CEILING (user-decided by the references): the
-   panel's corners are big and soft, and so is the well's. Nothing else in the chrome
-   rounds past 4px; the pill buttons inside the references were NOT taken (the app's
-   buttons stay its own).
+   panel's corners are big and soft. Nothing else in the chrome rounds past 4px; the pill
+   buttons inside the references were NOT taken (the app's buttons stay its own).
 
-   Two surfaces, two strokes, all four a whisper: the panel is `--fg` at 4.5% over the
-   ground with a 9% edge; the well sits BACK INTO the ground (near `--bg` itself) with a
-   6% edge — depth by two steps of value, never by a shadow or a glow (the flat rule). */
+   The panel is `--fg` at 4.5% over the ground with a 9% edge — depth by value, never by a
+   shadow or a glow (the flat rule). */
 .card {
   box-sizing: border-box;
   background: rgba(255, 255, 255, 0.045);
@@ -2461,77 +2644,669 @@ input {
   border-radius: 24px;
   padding: 12px;
 }
-.card-well {
-  position: relative;
-  box-sizing: border-box;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  background: rgba(5, 5, 7, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 16px;
-  padding: clamp(22px, 4vh, 34px) clamp(14px, 3vw, 24px);
-}
-/* THE EDITION: the result's day and its number printed in the well's top corners, the way
-   a numbered collectible carries them (the interfaces.dev card; the desktop frame's
-   `N.<day>` serial) — small tracked mono in the secondary ink, in the room the well's top
-   padding already holds, so nothing below it moves. */
-.card-edition {
-  position: absolute;
-  top: 9px;
-  left: 14px;
-  right: 14px;
-  display: flex;
-  justify-content: space-between;
-  font-family: var(--ui);
-  font-size: 9px;
-  font-weight: 550;
-  line-height: 1;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
-  pointer-events: none;
-}
 @media (max-width: 640px) {
   .card {
     border-radius: 22px;
     padding: 10px;
   }
-  .card-well {
-    border-radius: 14px;
-  }
 }
 
-/* The SCORE block: the named `<tries> TRIES` headline over the run ruler, then SHARE —
-   sharing is what you do with a RESULT (user-decided 2026-08-14). Centred
-   and capped at the keyboard's 680px, as the result always was. It holds its footprint
-   from frame one and arrives at `opacity: 0`, so nothing under it moves when it lands. */
-.solved-numbers {
+/* ===================== THE CARD, LIVE (the result's score, `SolvedCard`) =====================
+   The result IS the share card it sends (shared/cardSvg.ts), stood up in the column — so it
+   wears the card's language, not the app's panels: the BARE GROUND, the device frame's
+   corner BRACKETS round exactly what the card shows (2px, 16px arms, white at 38%), the
+   furniture clinging to the frame's edges (the edition on the top row), ONE subject — the
+   count — in the pixel face at a whole scale. No panel, no well, no stroke. SHARE stands
+   under the frame. It holds its footprint from frame one; the reveal draws it in place
+   (`.in`), the tally lands (`.landed`), and a settled result shows its last frame outright.
+   WIDE (`.wide`, a column of 552px or more in a small viewport 640px tall or more) is the
+   desktop's sizes. */
+.solved-card {
   flex: none;
   width: 100%;
   max-width: 680px;
   display: flex;
   flex-direction: column;
+  /* The drawing's beats, from the card's `.in` (SolvedScreen's DRAW_MS waits them out). */
+  --t-frame: 0ms;
+  --t-instrument: 480ms;
+  --t-zero: 600ms;
+}
+.solved-card-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 16px 12px;
+}
+.solved-card.wide .solved-card-frame {
+  padding: 24px 32px 20px;
+}
+
+/* THE BRACKETS: the device frame's corners, on the card's own weight. */
+.solved-card-bracket {
+  --sx: 1;
+  --sy: 1;
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.38);
+  pointer-events: none;
+}
+.solved-card-bracket.tl {
+  top: 0;
+  left: 0;
+  border-right: 0;
+  border-bottom: 0;
+}
+.solved-card-bracket.tr {
+  --sx: -1;
+  top: 0;
+  right: 0;
+  border-left: 0;
+  border-bottom: 0;
+}
+.solved-card-bracket.bl {
+  --sy: -1;
+  bottom: 0;
+  left: 0;
+  border-right: 0;
+  border-top: 0;
+}
+.solved-card-bracket.br {
+  --sx: -1;
+  --sy: -1;
+  bottom: 0;
+  right: 0;
+  border-left: 0;
+  border-top: 0;
+}
+.solved-card.wide .solved-card-bracket {
+  width: 24px;
+  height: 24px;
+}
+
+/* THE TOP ROW: the edition, clinging to the frame — `N.<day>` at the left in the pixel
+   face's smallest whole size, in the secondary ink; the day at the right in the accent,
+   where the card prints it. Where the desktop device frame shows (its own breakpoint), it
+   prints today's `N.<day>` in its corner, and the card does not print it twice. */
+.solved-card-top {
+  display: flex;
   align-items: center;
-  gap: clamp(14px, 2.6vh, 22px);
-  opacity: 0;
-  transform: translateY(10px);
-  transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+  justify-content: space-between;
+  height: 16px;
+  font-family: var(--pixel-font);
+  line-height: 1;
+  white-space: nowrap;
 }
-.solved-numbers.in {
-  opacity: 1;
-  transform: translateY(0);
+.solved-card-edition {
+  font-size: 8px;
+  color: var(--muted);
 }
-/* SHARE is the reveal's LAST beat (user-decided 2026-08-16): hidden IN PLACE — the row
-   keeps its footprint, so its arrival moves nothing — until the standing has landed, then
-   in on the app's one "list arriving" gesture. A settled result shows it outright. */
-.solved-numbers .result-actions {
+@media (min-width: 641px) {
+  .solved-card-edition.today {
+    visibility: hidden;
+  }
+}
+.solved-card-date {
+  font-size: 16px;
+  color: var(--accent);
+}
+
+/* THE HERO: the count over its unit, alone on the column's axis — the subject. Its whole
+   size is set inline (`--count`). It stands over the run's heat. */
+.solved-card-hero {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  /* An EVEN width from the column's whole-pixel left edge: every part centred in it is an
+     even width too (a count is digits × a multiple of 8), so the pixel face lands on whole
+     pixels. */
+  align-self: flex-start;
   width: 100%;
+  width: round(down, 100%, 2px);
+  margin-top: 28px;
+}
+.solved-card.wide .solved-card-hero {
+  margin-top: 36px;
+}
+.solved-card-count {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+.solved-card.wide .solved-card-count {
+  gap: 32px;
+}
+/* The count: Press Start 2P at a whole multiple of 8px. The box is the digits' INK: their
+   band (the face's cap height, 7/8 of the em) so the unit sits off the ink, and their width
+   without the last glyph's trailing blank column (`--ink-ems`), so the number centres on
+   what it prints. The ghost reserves the final count's box; the live tally is overlaid. */
+.solved-card-num {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: calc(var(--count) * var(--ink-ems));
+  height: calc(var(--count) * 0.875);
+  font-family: var(--pixel-font);
+  font-size: var(--count);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--fg);
+}
+.solved-card-ghost {
+  visibility: hidden;
+}
+.solved-card-live {
+  position: absolute;
+  /* The text's own box runs on by the blank column the ink box drops. */
+  inset: 0 -0.125em 0 0;
+  text-align: right;
+}
+/* The count DRAWN AS CELLS: the meter's canvas paints the glyphs — and the charge, and the
+   foil — on the face's own pixels; the text keeps the box and the reading, unseen. */
+.solved-card-num.cells .solved-card-live {
+  color: transparent;
+}
+.solved-card-num .hole-meter-canvas {
+  z-index: 1;
+}
+/* A round that ended unsolved: `∞`, plain white, on the count's own pixel grid. */
+.solved-card-inf {
+  display: block;
+  shape-rendering: crispEdges;
+}
+/* The unit, standing in its clearing of the heat (RunHeat `keepOut`) — no box. The
+   tracking's trailing space is given back on the left so the word centres on its ink. */
+.solved-card-unit {
+  position: relative;
+  padding-left: 0.16em;
+  font-family: var(--ui);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+.solved-card.wide .solved-card-unit {
+  font-size: 20px;
+}
+/* THE STOPS' BURSTS (`SolvedCard`'s `Bursts`): on each reel's stop, the burst sheet at the
+   whole scale sized to a digit, centred on that digit, in a box clipped between the edition
+   row and the ruler's ticks, IN FRONT of the count (over the hero's layer): the cobalt sheet
+   through a stencil that keeps it off the unit and the edition's type, and a white sheet on
+   the same beat kept to the stopped digits' own cells — where the blow crosses the number. */
+.solved-card-burst {
+  position: absolute;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+.solved-card-burst .strike.burst {
+  left: var(--burst-x);
+  top: var(--burst-y);
+  width: var(--burst-w);
+  height: var(--burst-h);
+  transform: none;
+}
+
+/* THE RUN: the ruler across the frame's whole column (RunRuler, below), with the HEAT
+   standing on the bar's top edge and rising behind the count (`RunHeat`, screen-only). */
+.solved-card-run {
+  position: relative;
+  margin-top: 24px;
+}
+.solved-card.wide .solved-card-run {
+  margin-top: 56px;
+}
+.solved-card-heat {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% - 8px);
+  width: 100%;
+  height: calc(var(--count) * 0.875 + 60px);
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+/* SHARE, under the frame: the brackets hold what you send; the button sends it. It is the
+   card's LAST beat (user-decided 2026-08-16): hidden IN PLACE — its footprint kept, so its
+   arrival moves nothing — until the count has landed. */
+.solved-card .result-actions {
+  width: 100%;
+  margin-top: 16px;
   opacity: 0;
 }
-.solved-numbers .result-actions.in {
-  animation: rung-in 220ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
+.solved-card .result-action {
+  width: 100%;
+}
+.solved-card .result-actions.in {
+  opacity: 1;
+  animation: rung-in 280ms cubic-bezier(0.2, 1.3, 0.4, 1) both;
+}
+
+/* ---- THE CARD BEING DRAWN (`.in`), in the pixel art's hard steps; every part holds its box
+   and is drawn in place. FRAME: the brackets TRAVEL out from the subject to the corners; the
+   edition TYPES. INSTRUMENT: the ruler's empty track is wiped across; the count's zeros
+   blink in. Then the tally. */
+.solved-card:not(.in) .solved-card-bracket,
+.solved-card:not(.in) .solved-card-typed,
+.solved-card:not(.in) .solved-card-count,
+.solved-card:not(.in) .run-bar {
+  visibility: hidden;
+}
+.solved-card.in .solved-card-bracket {
+  animation: solved-card-bracket-in 280ms cubic-bezier(0.2, 1.3, 0.4, 1) var(--t-frame) backwards;
+}
+@keyframes solved-card-bracket-in {
+  from {
+    opacity: 0;
+    translate: calc(var(--sx) * 36px) calc(var(--sy) * 28px);
+  }
+}
+.solved-card.in .solved-card-typed {
+  animation-name: solved-card-type;
+  animation-duration: calc(var(--type-n) * 32ms);
+  animation-delay: var(--type-delay);
+  animation-fill-mode: backwards;
+}
+@keyframes solved-card-type {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+.solved-card.in .solved-card-count {
+  animation: solved-card-blink 120ms steps(2, jump-end) var(--t-zero) backwards;
+}
+@keyframes solved-card-blink {
+  from {
+    opacity: 0;
+  }
+}
+.solved-card.in .run-bar {
+  animation: solved-card-track 240ms steps(10, jump-end) var(--t-instrument) backwards;
+}
+@keyframes solved-card-track {
+  from {
+    clip-path: inset(-40px 100% -80px 0);
+  }
+  to {
+    clip-path: inset(-40px 0 -80px 0);
+  }
+}
+/* The tally fills the run: a cell takes its heat with a white WRITE HEAD in front — it comes
+   on white and settles to its ink over two hard steps — and a tick STAMPS down as its try is
+   reached. A settled result plays neither. */
+.solved-stage:not(.settled) .run-cell.on {
+  animation: run-cell-on 100ms steps(2, jump-end);
+}
+@keyframes run-cell-on {
+  from {
+    background: var(--fg);
+  }
+}
+.solved-stage:not(.settled) .run-tick.on {
+  animation: run-tick-stamp 150ms steps(3, jump-start);
+}
+@keyframes run-tick-stamp {
+  from {
+    translate: 0 -12px;
+  }
+}
+/* ---- THE LANDING (`.landed`, the last reel's stop — each digit's own stop shake and burst
+   are SolvedCard's): the heat surges (RunHeat), the brackets LOCK ON — their arms reach out
+   along the frame at full white and draw back in whole steps, the focus frame finding its
+   subject, never moving over what they hold — and the meter, full, dissolves into its foil
+   (SolvedCard). */
+.solved-card.landed .solved-card-bracket {
+  animation: solved-card-lock 320ms steps(4, jump-end);
+}
+@keyframes solved-card-lock {
+  from {
+    width: 32px;
+    height: 32px;
+    border-color: var(--fg);
+  }
+}
+/* A settled result draws the last frame outright — and so does reduced motion: the global
+   rule keeps the delays, which would hold each part of the card unseen for its beat. Only
+   the DRAWING is stopped (the frame's parts, SHARE's arrival): SHARE itself keeps its
+   COPIED flash, which answers the player's tap, not the reveal. */
+.solved-stage.settled .solved-card-frame *,
+.solved-stage.settled .solved-card .result-actions {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .solved-card-frame *,
+  .solved-card .result-actions {
+    animation: none !important;
+  }
+}
+
+/* THE BOARDS (the active day only, `ResultBoards`): how the day compares, under SHARE, on the
+   card's ground continued — no panel, no row boxes: lines of type set on the column. ONE
+   FIXED BOX whatever it holds: the tabs' row, then room for RESULT_LINES_MAX lines (6), a
+   gap's rail and the `+N` line — so it holds its footprint before any read lands, and a read
+   landing or a swipe between tabs moves nothing under it. Hidden IN PLACE until its beat
+   (after SHARE), then the shown name's chip is drawn across and the lines come in one after
+   another; a settled result shows it outright. Hidden means INERT too, and so does ARRIVING
+   (`.armed` once the arrival has played): its rows are a tap onto the board, and the #179
+   skip-tap that lands where the box sits, unseen or still arriving, must only skip. (A settled
+   frame carries `.in` and `.armed` from its first beat.) */
+.solved-boards {
+  flex: none;
+  width: 100%;
+  max-width: 680px;
+}
+.solved-boards:not(.in) {
+  visibility: hidden;
+}
+.solved-boards:not(.armed) {
+  pointer-events: none;
+}
+.result-boards {
+  /* ONE column, held to the box: an `auto` column grows to its content's min-content, and
+     the row of names would push the lines off the screen's edge. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 44px minmax(0, 1fr);
+  gap: 6px;
+  height: calc(44px + 6px + 6 * 44px + 2 * 20px);
+}
+/* The head: the row of names (its own scroller) and the PLUS at its right edge, always in
+   view (and never moved by a tab arriving after the others). */
+.result-boards-head {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0 4px;
+}
+.result-boards-tabs {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+.result-boards-tabs::-webkit-scrollbar {
+  display: none;
+}
+/* An edge that runs past the column thins out through an ordered dither (the house's
+   texture, `ResultBoards`' tiles), never a guillotined name. */
+.result-boards-tabs.fade-r {
+  -webkit-mask: linear-gradient(#000, #000) left / calc(100% - 32px) 100% no-repeat, var(--fade-r) right / 32px 16px repeat-y;
+  mask: linear-gradient(#000, #000) left / calc(100% - 32px) 100% no-repeat, var(--fade-r) right / 32px 16px repeat-y;
+}
+.result-boards-tabs.fade-l {
+  -webkit-mask: var(--fade-l) left / 32px 16px repeat-y, linear-gradient(#000, #000) right / calc(100% - 32px) 100% no-repeat;
+  mask: var(--fade-l) left / 32px 16px repeat-y, linear-gradient(#000, #000) right / calc(100% - 32px) 100% no-repeat;
+}
+.result-boards-tabs.fade-l.fade-r {
+  -webkit-mask:
+    var(--fade-l) left / 32px 16px repeat-y,
+    linear-gradient(#000, #000) center / calc(100% - 64px) 100% no-repeat,
+    var(--fade-r) right / 32px 16px repeat-y;
+  mask:
+    var(--fade-l) left / 32px 16px repeat-y,
+    linear-gradient(#000, #000) center / calc(100% - 64px) 100% no-repeat,
+    var(--fade-r) right / 32px 16px repeat-y;
+}
+/* A tab is a 44px target round a 24px chip; the one shown wears the white title chip. */
+.result-boards-tab {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  scroll-snap-align: start;
+}
+.result-boards-chip {
+  display: block;
+  height: 24px;
+  padding: 0 7px;
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 24px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.result-boards-tab.on .result-boards-chip {
+  background: var(--fg);
+  color: var(--bg);
+}
+.result-boards-tab:not(.on):hover .result-boards-chip {
+  color: var(--fg);
+}
+/* The PLUS: an EMPTY GROUP'S SLOT — a chip of the tabs' height drawn as a dashed outline of
+   whole 2px cells (the frame's ink), the plus in it — the board screen's NEW GROUP, a 44px
+   target. */
+.result-boards-add {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  margin: 0 0 0 auto;
+  padding: 0 4px 0 8px;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  cursor: pointer;
+}
+.result-boards-add-chip {
+  --dash: rgba(255, 255, 255, 0.38);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 24px;
+  background:
+    repeating-linear-gradient(90deg, var(--dash) 0 4px, transparent 4px 8px) top / 100% 2px no-repeat,
+    repeating-linear-gradient(90deg, var(--dash) 0 4px, transparent 4px 8px) bottom / 100% 2px no-repeat,
+    repeating-linear-gradient(180deg, var(--dash) 0 4px, transparent 4px 8px) left / 2px 100% no-repeat,
+    repeating-linear-gradient(180deg, var(--dash) 0 4px, transparent 4px 8px) right / 2px 100% no-repeat;
+}
+.result-boards-add:hover .result-boards-add-chip {
+  --dash: var(--fg);
+}
+.result-boards-add .ui-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.result-board {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  cursor: pointer;
+  /* A sideways swipe on the rows turns the tab (ResultBoards): the page keeps its vertical
+     scroll, the horizontal gesture is the script's. */
+  touch-action: pan-y;
+}
+.result-board .board-list {
+  flex: none;
+  overflow: hidden;
+  padding: 0;
+  gap: 0;
+}
+/* The board's own rows (`BoardRows`) as LINES: rank (or the crown) in ONE column every tab
+   shares (`--rank-w`, so turning a tab moves no mark), the mark at 3px a cell, the name, the
+   number in the pixel face at the far edge — with a gutter at its right that a playing
+   member's % hangs in, so the numbers stay aligned. */
+.result-board .board-row {
+  position: relative;
+  box-sizing: border-box;
+  height: 44px;
+  grid-template-columns: var(--rank-w, 32px) 30px minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 0 30px 0 6px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  line-height: 1;
+  animation: none;
+}
+.result-board .board-row .avatar {
+  border-radius: 0;
+}
+.result-board .board-rank {
+  font-size: 16px;
+  translate: none;
+}
+.result-board .board-rank:not(.crown)::before {
+  content: none;
+}
+.result-board .board-rank.crown .ui-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+.result-board .board-norank {
+  visibility: hidden;
+}
+.result-board .board-name {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.result-board .board-score {
+  justify-self: end;
+  font-size: 16px;
+  translate: none;
+}
+/* A member still playing: the tries so far in the muted ink, the % they have rebuilt as the
+   tries' EXPONENT, in its heat, hung in the gutter. A round ENDED unsolved: `∞`, its name
+   muted, no %. */
+.result-board .board-row.playing {
+  grid-template-columns: var(--rank-w, 32px) 30px minmax(0, 1fr) auto;
+}
+.result-board .board-row.playing .board-score {
+  min-width: 0;
+  color: var(--muted);
+}
+.result-board .board-progress {
+  position: absolute;
+  top: 10px;
+  left: calc(100% - 28px);
+  font-size: 8px;
+  line-height: 1;
+  translate: none;
+}
+.result-board .board-row.playing.over .board-progress {
+  display: none;
+}
+.result-board .board-row.over .board-name {
+  color: var(--muted);
+}
+/* YOUR line is FRAMED: the card's corner brackets, small, round it — and its rank in the
+   accent, its name at the action weight. */
+.result-board .board-row.me {
+  --bc: rgba(255, 255, 255, 0.38);
+  border: 0;
+  box-shadow: none;
+  background:
+    linear-gradient(var(--bc), var(--bc)) left top / 8px 2px,
+    linear-gradient(var(--bc), var(--bc)) left top / 2px 8px,
+    linear-gradient(var(--bc), var(--bc)) right top / 8px 2px,
+    linear-gradient(var(--bc), var(--bc)) right top / 2px 8px,
+    linear-gradient(var(--bc), var(--bc)) left bottom / 8px 2px,
+    linear-gradient(var(--bc), var(--bc)) left bottom / 2px 8px,
+    linear-gradient(var(--bc), var(--bc)) right bottom / 8px 2px,
+    linear-gradient(var(--bc), var(--bc)) right bottom / 2px 8px;
+  background-repeat: no-repeat;
+}
+.result-board .board-row.me .board-name {
+  font-weight: 700;
+}
+.result-board .board-row.me .board-rank:not(.crown) {
+  color: var(--accent);
+}
+/* The rows a board leaves out: a stippled slate rail; and under the lines, how many with a
+   day of their own it leaves out — `+N` in the rank column, the rail running on. */
+.result-board .board-gap {
+  height: 20px;
+  margin: 0 14px 0 calc(var(--rank-w, 32px) + 18px);
+  border: 0;
+  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
+}
+.result-board-more {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 20px;
+  padding: 0 14px 0 6px;
+}
+.result-board-more-count {
+  flex: none;
+  width: var(--rank-w, 32px);
+  font-family: var(--pixel-font);
+  font-size: 8px;
+  line-height: 1;
+  text-align: center;
+  color: var(--muted);
+}
+.result-board-more-rail {
+  flex: 1 1 auto;
+  align-self: stretch;
+  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
+}
+/* The landing: the shown name's chip drawn across, then the lines in one after another; a
+   turn of the tab plays it again, quicker. */
+.solved-boards.in .result-boards-tab.on .result-boards-chip {
+  animation: mark-wipe 240ms steps(8, jump-end) backwards;
+}
+.solved-boards.in .result-board .board-row,
+.solved-boards.in .result-board .board-gap,
+.solved-boards.in .result-board-more {
+  animation: rung-in 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
+  animation-delay: calc(140ms + var(--i, 0) * 45ms);
+}
+.solved-boards.moved .result-boards-tab.on .result-boards-chip {
+  animation-duration: 200ms;
+}
+.solved-boards.moved .result-board .board-row,
+.solved-boards.moved .result-board .board-gap,
+.solved-boards.moved .result-board-more {
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+.solved-stage.settled .solved-boards:not(.moved) .result-boards-chip,
+.solved-stage.settled .solved-boards:not(.moved) .board-row,
+.solved-stage.settled .solved-boards:not(.moved) .board-gap,
+.solved-stage.settled .solved-boards:not(.moved) .result-board-more {
+  animation: none;
+}
+/* Reduced motion lands the lines as the settled frame draws them: no arrival at all (the
+   global rule keeps delays, which would hold each line unseen for its beat). */
+@media (prefers-reduced-motion: reduce) {
+  .solved-boards .result-boards-chip,
+  .solved-boards .board-row,
+  .solved-boards .board-gap,
+  .solved-boards .result-board-more {
+    animation: none !important;
+  }
 }
 
 /* The PAGE: the credit, then the text, read top-down the way a page is (user-decided
@@ -2673,6 +3448,18 @@ input {
 .solved-secret:hover {
   filter: brightness(1.25);
 }
+/* A secret the player did NOT find (a round that ended unsolved) wears the board's HELD
+   CHIP instead of the cobalt — `--fg` ground, `--bg` ink, the chip's own 0.2em side
+   overhang drawn as shadows so the line's measure does not move. Its own line-height only
+   trims the ground to the word: the line box is the paragraph's strut, so no line moves. */
+.solved-secret.revealed {
+  background: var(--fg);
+  color: var(--bg);
+  line-height: 1.3;
+  box-shadow:
+    0.2em 0 0 var(--fg),
+    -0.2em 0 0 var(--fg);
+}
 /* The secrets POP in, one by one, 200ms apart (user-decided 2026-08-14): the round's
    trophies counted out, back in the gaps they were taken from — the plain words are
    already printed, and these arrive into them. ONE-SHOT and fast, the rank exponent's
@@ -2703,136 +3490,65 @@ input {
    must kill the transitions the rehydrated path never starts (a half-popped word killed
    mid-animation is otherwise stranded at full size). */
 .solved-stage.settled,
-.solved-stage.settled .solved-numbers,
 .solved-stage.settled .solved-text,
 .solved-stage.settled .solved-listen {
   opacity: 1;
-  transform: none;
   transition: none;
 }
-.solved-stage.settled .result-actions,
 .solved-stage.settled .solved-secret {
   opacity: 1;
   animation: none;
 }
 
-/* "45 TRIES" is the result headline: one number/label treatment everywhere, so changing
-   breakpoints never changes the meaning or visual weight of the metric. */
-.solved-score {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--ui);
-  font-variant-numeric: tabular-nums;
-}
-/* A hidden ghost of the final count reserves the exact width (incl. letter-spacing, which
-   `ch` units miss); the live tally is overlaid right-aligned, so counting never reflows.
-   The NUMBER is PIXEL (user-decided 2026-08-18, superseding the light mono — "the
-   numbers of the new font are quite ugly"): the score is game data, the same voice as
-   the watermark it grew from, over the unit as a small tracked mono label. */
-.solved-score-num {
-  position: relative;
-  display: inline-block;
-  font-family: var(--pixel-font);
-  /* Bigger since 2026-09-11 (user-asked): the headline is the result, and it reads as
-     one from across the room. Three digits at the phone floor are 132px,
-     well inside a 347px row with the TOP badge hung off its right edge. */
-  font-size: clamp(44px, 6.5vh, 60px);
-  font-weight: 400;
-  line-height: 1;
-  color: var(--fg);
-}
-.solved-score-ghost {
-  visibility: hidden;
-}
-.solved-score-live {
-  position: absolute;
-  inset: 0;
-  text-align: right;
-}
-/* THE COUNT LANDS: when the tally reaches its final number the digits STAMP — lifted a few
-   pixels and set back down in whole-pixel steps, the thud of a counter stopping — and the
-   well's edge flashes and settles back to its whisper. Once, on a played reveal only. */
-.solved-numbers.landed .solved-score-live {
-  animation: score-stamp 180ms steps(3, jump-start) backwards;
-}
-@keyframes score-stamp {
-  from {
-    translate: 0 -6px;
-  }
-  to {
-    translate: 0 0;
-  }
-}
-.solved-numbers.landed .card-well {
-  animation: well-flash 520ms ease-out;
-}
-@keyframes well-flash {
-  from {
-    border-color: rgba(255, 255, 255, 0.4);
-  }
-}
-/* The CAPPED round's headline (#214): `∞` where the count would be. Press Start 2P has no
-   such glyph, so it is DRAWN from the shared path data — the same path the OG card draws,
-   at the same fraction of the font size — and sized in `em` off `.solved-score-num` so it
-   scales with the number it replaces. `crispEdges` keeps the pixel grid hard at any
-   fractional size, the way every sprite here is rendered; the box is inline so the unit
-   below it sits exactly where it sits under a count. */
-.solved-score-inf {
-  display: block;
-  shape-rendering: crispEdges;
-  color: inherit;
-}
-.solved-score-unit {
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  line-height: 1;
-  color: var(--fg);
-  opacity: 0.8;
-}
 /* Run ruler — the PER-TRY STEPPED CELLS, restored 2026-08-18 (the gradient filament
    built that day read as a lightstrip and its flat-rule replacement lost the colours —
    "put back the old step by step colors"): one flat cell per counted try at that try's
-   `progressHeatColor`, dead sharp, 16px tall, with the white solve TICKS and their
-   pixel sentence indices. The reveal FILLS it (user-decided 2026-09-11): every cell
-   stands neutral from the card's arrival, and takes its colour (`.on`) when the tally's
-   count reaches its try — RunRuler flips the class off the count itself, so there is no
-   delay here to keep in step with the number. */
+   `progressHeatColor`, dead sharp, on whole pixels (`RunRuler`, the share card's own
+   `runEdges`), with the white solve TICKS and their pixel sentence indices — the card's bar,
+   ticks and indices at the result's column: a 16px bar (24 wide), 4px ticks overhanging
+   8px, 16px indices in ONE lane held on every run, so the card is one height whatever the
+   round. The reveal FILLS it (user-decided 2026-09-11): every cell stands as the slate's
+   empty track from the card's drawing, and takes its colour (`.on`) when the tally's count
+   reaches its try — RunRuler flips the class off the count itself, so there is no delay
+   here to keep in step with the number. */
 .run-ruler {
+  position: relative;
   width: 100%;
-  /* Symmetric block padding: the bottom lane holds the tick numbers, the matching top
-     keeps the BAR (not the box) on the row's center line. */
-  padding: 15px 0;
-}
-.run-ruler-frame {
-  width: 100%;
-  max-width: 340px;
+  padding: 8px 0 32px;
 }
 .run-bar {
   position: relative;
   display: flex;
   height: 16px;
 }
+.solved-card.wide .run-bar {
+  height: 24px;
+}
 .run-cell {
   flex: 1 1 0;
   image-rendering: pixelated;
-  background-color: var(--surface-hover);
+}
+.run-bar.snapped .run-cell {
+  flex: none;
+}
+/* The empty track (a cell not yet written) is the slate's 2px checker — the house's dithered
+   rail — never a flat fill. */
+.run-cell:not(.on) {
+  background: conic-gradient(var(--rail) 25%, transparent 0 50%, var(--rail) 0 75%, transparent 0) 0 0 / 4px 4px;
 }
 .run-cell.on {
   background-color: var(--cell-color);
 }
-/* A solve moment: the tick sits on the RIGHT edge of the solving try's cell (the state
-   after that guess), overhanging the bar like a ruler mark; it stands (`.on`) when the
-   fill reaches its try. Several secrets dropped by one guess stack their indices
-   vertically under the single shared tick. */
+/* A solve moment: the tick stands on the RIGHT edge of the solving try's cell (the state
+   after that guess), overhanging the bar like a ruler mark; it stands (`.on`) when the fill
+   reaches its try. Several secrets dropped by one guess set their indices side by side under
+   the one tick; a tick near an END of the bar holds them inside it. */
 .run-tick {
   position: absolute;
-  top: -3px;
-  bottom: -3px;
+  top: -8px;
+  bottom: -8px;
   left: calc(var(--at) / var(--n) * 100%);
-  width: 2px;
+  width: 4px;
   transform: translateX(-50%);
   background-color: var(--fg);
   opacity: 0;
@@ -2842,38 +3558,30 @@ input {
 }
 .run-tick-nums {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
+  gap: 8px;
   font-family: var(--pixel-font);
-  font-size: 10px;
+  font-size: 16px;
   font-weight: 400;
   line-height: 1;
   color: var(--fg);
 }
-/* The score line: the number, and the TOP badge BESIDE it (user-decided 2026-09-05,
-   superseding the `RANK #16 OF 100` line above the score). The badge is ABSOLUTE off the
-   number's right edge, so the number stays centred over its unit and the ruler, and the
-   badge arriving — or never arriving — moves nothing. The line is the positioning box;
-   the number keeps its ghost/live overlay untouched. */
-.solved-score-line {
-  position: relative;
-  display: inline-block;
+.run-tick.end .run-tick-nums {
+  left: auto;
+  right: -6px;
+  transform: none;
 }
-/* Actions row: SHARE (and TOMORROW). Inside the CARD it is the caption row under the
-   well, so it carries the well's side inset and a floor of its own. */
+.run-tick.start .run-tick-nums {
+  left: -6px;
+  transform: none;
+}
+/* Actions row: SHARE, the result's one action. */
 .result-actions {
   display: flex;
-  flex-wrap: wrap;
   justify-content: center;
-  gap: 12px;
-}
-.card > .result-actions {
-  padding: 0 clamp(6px, 1.5vw, 12px) 6px;
 }
 /* ---- the shared modal header (ModalHeader), worn by every full-screen dialog ----
    NOT a modal chrome of its own: it reuses the app's own corner-chip row wholesale
@@ -3012,8 +3720,8 @@ input {
   color: var(--bg);
   text-shadow: none;
 }
-/* A word the meter GAVE (user-decided 2026-09-22) wears the activated chip's SEA: the
-   chip's white with the moving cobalt dither over it, the canvas filling the chip's own
+/* A word the meter GAVE (user-decided 2026-09-22) wears the activated chip's FOIL: the
+   chip's white with the foil's dithered inks over it, the canvas filling the chip's own
    box under the ink. */
 .hw-given .hw-text {
   /* inline-block, not inline: a negative-z child of a positioned INLINE paints under
@@ -3035,11 +3743,12 @@ input {
 /* Tap a hole and its place in the sentence becomes a fixed SLOT that ONE column of the
    words already found for it scrolls THROUGH, item by item (user-decided 2026-09-01, the
    day's fifth approach: the history modal's line, a radial net with lines twice revised,
-   and a plain stack came before it): farther words above, closer words below; the word in
-   the slot wears the hole's own chip at the sentence's own size, the others stand plain
-   and smaller; the word the wheel settles on is the pick. `HistoryWheel` owns every
-   number that has to agree with the sentence (row height = its line box, the slot = the
-   word's own line, all set inline from the measured host); the CSS owns the dress.
+   and a plain stack came before it): farther words above, closer words below; every row
+   stands at the sentence's own size, the slot's included — the word in the slot wearing
+   the hole's own chip, the others plain; the word the wheel settles on is the pick.
+   `HistoryWheel` owns every number that has to agree with the sentence (the rows' size,
+   row height = its line box, the slot = the word's own line, all set inline from the
+   measured host); the CSS owns the dress.
 
    The dialog IS the dim: a transparent full-screen native dialog whose own background is
    the ground at 74%, so the sentence reads through it at about a quarter — the slot's
@@ -3120,11 +3829,12 @@ input {
 .hole.veiled .hole-rank {
   visibility: hidden;
 }
-/* A ROW: one line box of the sentence's own height (inline), the word in the pixel face
-   with its exponent raised as the hole's is — plain text, no tile — snapping to the slot.
-   The one IN the slot wears the hole's own markup (chip + exponent at the sentence's size,
-   `.hole` inside), so it lands exactly on the word it stands for. Rows arrive on a short
-   stagger counted out from the slot (`--i`), each a quick fade. */
+/* A ROW: one line box of the sentence's own height and the sentence's own size (inline,
+   one size in the slot and out of it), the word in the pixel face with its exponent raised
+   as the hole's is — plain text, no tile — snapping to the slot. The one IN the slot wears
+   the hole's own markup (chip + exponent, `.hole` inside), so it lands exactly on the word
+   it stands for. Rows arrive on a short stagger counted out from the slot (`--i`), each a
+   quick fade. */
 .wheel-row {
   position: relative;
   display: block;
@@ -3215,7 +3925,7 @@ input {
 /* A MASKED hint (user-decided 2026-09-22): the foil under a fixed run of `?` whatever the
    word's length — `MASK` — so a masked row and a masked slot read as a sealed card, and
    say so. The wheel holds NO reveal control: picking a mask selects it, and the reveal is
-   the PROMPT's (`.wi-ghost`, below the sentence). */
+   the tray's REVEAL, the mask standing in the prompt (`.wi-ghost`, below the sentence). */
 /* Every plain row's exponent steps clear of its box's right overhang, and a few pixels
    more (user-reported 2026-09-22: "it touches it", then "a few pixel more detached"): the
    sentence chip's own nudge, in the exponent's 0.55em, plus a gap of its own. */
@@ -3260,32 +3970,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .result-action {
   min-width: 180px;
 }
-/* TOMORROW is SHARE's equal on the row, not its answer: the secondary shape, never the
-   bare word. */
-.result-actions .btn-primary + .btn-secondary {
-  --btn: var(--fg);
-  --wash: 6%;
-  min-height: 48px;
-  padding: 14px 40px;
-  border: 1px solid color-mix(in srgb, var(--fg) 45%, transparent);
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--btn) var(--wash), transparent);
-  color: var(--fg);
-  opacity: 1;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-}
-.result-actions .btn-primary + .btn-secondary:hover:not(:disabled) {
-  --wash: 12%;
-  border: 1px solid var(--fg);
-  background: color-mix(in srgb, var(--btn) var(--wash), transparent);
-}
-.result-actions .btn-primary + .btn-secondary:active:not(:disabled) {
-  --wash: 18%;
-  background: color-mix(in srgb, var(--btn) var(--wash), transparent);
-  color: var(--fg);
-}
 /* COPIED lands in the accent's own wash: the primary already is — and it lands LIT, the
    wash flashing deep and settling, so the word swapping in reads as the thing happening. */
 .result-action.copied {
@@ -3297,62 +3981,14 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     background-color: color-mix(in srgb, var(--accent) 48%, transparent);
   }
 }
-/* TOMORROW beside SHARE (#273): two actions share the row as equals — each gives up the
-   lone button's floor width and its 40px of air, and takes half the row instead, capped so
-   the pair does not stretch across the 680px block on a desktop. On a phone (347px of
-   row) that is two buttons of ~167px, on one line. */
-.result-actions.paired .result-action {
-  flex: 1 1 0;
-  min-width: 0;
-  max-width: 240px;
-  padding-left: 12px;
-  padding-right: 12px;
-}
-
-/* The EARLY-PLAY clock (#273): tomorrow's round locked for the night, and in the
-   keyboard's place the time until the day flips and it continues. The pixel face — it is
-   the game's own number — centred in the tray's footprint, so it
-   swaps the keys out and moves nothing above it. */
-.flip-clock {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: clamp(18px, 3.2vh, 28px);
-}
-/* The labelled way back under the clock: the result action's own floor width. */
-.flip-today {
-  min-width: 180px;
-}
-/* A button that POINTS (2026-09-11): TOMORROW carries the title's 7×7 pixel chevron after
-   its word, TODAY carries the same one turned back before its word — the two ends of one
-   trip wearing one mark. The glyph rides the label's line at its in-file 14px. */
-.btn-arrow {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-}
-.btn-arrow .ui-icon {
-  flex: none;
-  /* The pixel chevron sits a hair under the caps' optical centre; lift it onto it. */
-  margin-top: calc(-1 * var(--cap-shift, 0px));
-}
-.flip-timer {
-  font-family: var(--pixel-font);
-  font-size: 24px;
-  line-height: 1;
-  color: var(--fg);
-  pointer-events: none;
-}
-@media (max-width: 640px) {
-  .flip-timer {
-    font-size: 20px;
-  }
-}
-/* Player-progression celebration: the native dialog IS the borderless full-screen surface.
-   React Spring owns every staged entrance/bounce; fixed rows reserve the final composition
-   so the flame, number, week, and action never move each other as they appear. */
+/* THE STREAK CELEBRATION — "THE ORBIT" (`StreakDialog`, its picture `components/streak/`): the
+   link previews' language on the full screen. Bare ground, the frame's corner brackets with
+   the lockup and the day's edition, ONE subject drawn in whole cells on a canvas
+   (`image-rendering: pixelated` at an integer cell): the count, the week as a CHAIN of pixel
+   links on its orbit (today's forged into the FOIL), the crown's flame at its top, one cobalt
+   orbit for each earlier week of the run. What stays DOM is type (the initials, the unit, the
+   hint, the furniture) and the ULTRA star's sheet — all moved by the show's one clock
+   (`wordsAt`), the raster's own. */
 .streak-dialog[open] {
   position: fixed;
   inset: 0;
@@ -3362,312 +3998,220 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   height: 100%;
   max-height: none;
   margin: 0;
-  padding: 20px;
+  padding: 0;
   border: 0;
   outline: 0;
   background: var(--bg);
   color: var(--fg);
-  display: flex;
-  /* Sequence centering comes from its auto margins (below), NOT align/justify center:
-     auto margins collapse to 0 when the content is taller than a short viewport, so
-     nothing is clipped and the scroll fallback can always reach CONTINUE. */
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
+  /* The screen fades in over the game on the show's clock (`wordsAt`). */
+  opacity: var(--screen, 0);
 }
 .streak-dialog::backdrop {
   background: transparent;
+}
+.streak-dialog.is-leaving {
+  opacity: 0;
+  transition: opacity 200ms ease-out;
 }
 /* Once the ending hint is up the WHOLE screen dismisses — let the cursor say so. */
 .streak-dialog.done {
   cursor: pointer;
 }
-.streak-sequence {
-  width: min(520px, 100%);
-  margin: auto;
-  display: grid;
-  grid-template-rows: 120px 96px 80px 45px;
-  justify-items: center;
-  align-items: center;
-  gap: 18px;
-}
-.streak-flame-slot {
-  width: 128px;
-  height: 120px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.streak-number-block {
-  height: 96px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-}
-/* The number is PIXEL (user-decided 2026-08-18, after a light-mono cut — the streak is
-   the game's own count, and the big pixel digits are the celebration): the wheel slots
-   are the pixel face's exact 1em advance. */
-.streak-digits {
-  position: relative;
-  height: 1em;
-  font-family: var(--pixel-font);
-  font-weight: 400;
-  font-size: 64px;
-  line-height: 1;
-}
-.streak-digit-layer {
+.streak-stage {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
+  pointer-events: none;
 }
-.streak-digit-old-layer {
-  will-change: transform;
-}
-.streak-digit-slot {
-  position: relative;
-  display: block;
-  width: 1em;
-  height: 1.44em;
-  overflow: hidden;
-}
-.streak-digit {
+.streak-orbit {
   position: absolute;
-  inset: 0.22em 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  will-change: transform, opacity;
-  /* Transparent by default so the flame glow (below) eases in as a COLOR fade when the
-     flame arrives — `text-shadow: none` would pop instead of transitioning. The HARD
-     6px underprint RETURNED with the pixel digits (2026-08-18, unwinding the soft-glow
-     detour): a blur clips square inside the overflow-hidden wheel slots, and the offset
-     print is the pixel idiom anyway. */
-  text-shadow: 0px 6px transparent;
-  transition: text-shadow 260ms ease-out;
-}
-.streak-digit-old {
-  color: var(--surface);
-}
-.streak-digit-new,
-.streak-number-block.final .streak-digit-old {
-  color: var(--fg);
-}
-/* When the flame appears (JS adds `flamed`), the settled number takes a flame-indigo
-   GLOW — the flame's light cast onto the digits. Applied to the whole new number: the
-   changed digits plus the unchanged ones (faded-out old digits are opacity 0, so their
-   glow stays invisible). */
-.streak-number-block.flamed .streak-digit {
-  text-shadow: 0px 6px var(--flame);
-}
-/* The ending hint — arcade "press any key / tap anywhere" idiom: muted pulsing text, no
-   chrome. It is NON-interactive (a plain element, nothing focusable in the celebration);
-   the whole modal dismisses on click/tap/any key, so a boxed, focusable button would both
-   lie about the target being local and show an unwanted focus ring. */
-.streak-hint {
-  font-family: var(--ui);
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--fg);
-  padding: 14px 20px; /* keeps the pulsing text off the tile row above it */
-  cursor: pointer;
-}
-.streak-hint-pulse {
-  display: block;
-  animation: streak-hint-pulse 1.6s ease-in-out infinite;
-}
-/* Ends at full opacity so the reduced-motion rule (duration ~0, one iteration) leaves the
-   hint steady and readable instead of frozen mid-fade. */
-@keyframes streak-hint-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-.streak-hint-slot {
-  height: 45px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-/* The hero flame: TWO stacked 6-frame pixel-art sprite sheets (each 192×30 = six 32×30
-   frames) — streak-glow.png (the halo) behind streak-flamme.png (the flame core) — so the
-   glow's opacity can breathe independently of the core. Drawn at 4× = 128×120px (INTEGER
-   scale so `pixelated` keeps the pixels razor-crisp). Both layers play the same sprite
-   walk as the calendar ripple: `background-size: 600% 100%` fits ONE frame to the box and
-   `steps(6)` walks `background-position-x` — end value 100% × 6/5 so frame 5 lands on 100%
-   and the loop wraps cleanly; same duration + start time keeps the two sheets frame-locked. */
-.streak-flame {
-  position: relative;
-  display: block;
-  flex: none;
-  width: 128px;
-  height: 120px;
-}
-.streak-flame::before,
-.streak-flame::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-repeat: no-repeat;
-  background-size: 600% 100%;
+  left: 0;
+  top: 0;
   image-rendering: pixelated;
-  animation: streak-flame 0.7s steps(6) infinite;
 }
-/* The glow layer, painted BEHIND the core (::before precedes ::after): on top of the
-   frame walk, its opacity BREATHES on a slow, slightly irregular pulse. 2.5s against the
-   0.7s flicker is a non-integer ratio, so the two loops drift and never read as a metronome. */
-.streak-flame::before {
-  background-image: url('./assets/streak-glow.png');
-  animation:
-    streak-flame 0.7s steps(6) infinite,
-    streak-glow-pulse 2.5s ease-in-out infinite;
-}
-.streak-flame::after {
-  background-image: url('./assets/streak-flamme.png');
-}
-@keyframes streak-flame {
-  from {
-    background-position-x: 0%;
-  }
-  to {
-    background-position-x: calc(100% * 6 / 5); /* frame 5 lands on 100%; endpoint wraps */
-  }
-}
-/* Uneven stops so the glow breathing feels organic (fire), not sinusoidal. */
-@keyframes streak-glow-pulse {
-  0% {
-    opacity: 0.95;
-  }
-  30% {
-    opacity: 0.55;
-  }
-  55% {
-    opacity: 0.85;
-  }
-  75% {
-    opacity: 0.5;
-  }
-  100% {
-    opacity: 0.95;
-  }
-}
-/* The flame is the hero, not decorative motion on top of something else — so reduced-motion
-   users KEEP it, frozen on a single frame (animations off, glow at rest) rather than losing
-   the icon. */
-@media (prefers-reduced-motion: reduce) {
-  .streak-flame::before,
-  .streak-flame::after {
-    animation: none;
-  }
-}
-/* The small "DAY STREAK" label under the number. */
-.streak-label {
+/* The count set as type, only if the digits' sheet never decoded (the raster's count is the
+   same face, cell for cell). */
+.streak-count-type {
+  position: absolute;
   margin: 0;
-  font-family: var(--ui);
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-family: var(--pixel-font);
+  line-height: 1;
+  text-align: center;
   color: var(--fg);
-  opacity: 0.8;
 }
 
-/* The Monday-based weekly streak row (#74): 7 flat pixel squares (the streak dialog's
-   heat-grid language — no boxes, no rings, no mini icons), a weekday initial above each.
-   Solved = flame-indigo fill, empty/future = neutral surface; TODAY is marked by its
-   bright label, not a ring. Decorative (aria-hidden). */
-.week-row {
-  display: flex;
-  gap: 10px;
-  align-self: end;
+/* The ULTRA star (`assets/hits/ultra-slash.png`, 7 frames of 71×66, the exact hit's sheet)
+   struck on today's link as the chain reaches it: one walk at a whole scale (its own size on a
+   phone, so it frames the link rather than erasing it; 2× wider), centred — its art's
+   centroid is dead centre — and placed so it never crosses the count or its unit. The show's
+   clock walks its frames; hidden outside the walk. */
+.streak-star {
+  --star-scale: 1;
+  position: absolute;
+  width: calc(71px * var(--star-scale));
+  height: calc(66px * var(--star-scale));
+  transform: translate(-50%, -50%);
+  background-image: url('./assets/hits/ultra-slash.png');
+  background-repeat: no-repeat;
+  background-size: 700% 100%;
+  image-rendering: pixelated;
+  visibility: hidden;
 }
-.week-cell {
+
+/* EVERY WORD BELOW ARRIVES ON THE SHOW'S CLOCK (`wordsAt`): opacity and a rise, written frame
+   by frame — no transition of their own, so a fast-forward lands them all at once. */
+
+/* The week's initials under their days; today's stands in the white title chip — the app's
+   one emphasis — once it lights. */
+.streak-day {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 3px 4px 2px;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  opacity: 0;
+}
+.streak-day.today[data-lit] {
+  background: var(--fg);
+  color: var(--bg);
+  font-weight: 700;
+}
+
+/* The count's unit under it, and the ending hint at the foot: chrome mono, tracked caps. */
+.streak-unit,
+.streak-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  font-family: var(--ui);
+  text-transform: uppercase;
+  line-height: 1;
+  transform: translateY(-50%);
+  opacity: 0;
+}
+.streak-unit {
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--fg);
+}
+.streak-hint {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+/* THE FRAME: the device frame's corner brackets (2px, 24px arms, white at 38% — the cards'
+   own), travelling in from the subject and kicked outward once when the shock reaches them;
+   inside them the cards' furniture — the lockup top left, the day's edition top right. */
+.streak-corner {
+  --inset: 16px;
+  --arm: 24px;
+  position: absolute;
+  width: var(--arm);
+  height: var(--arm);
+  border: 0 solid rgba(255, 255, 255, 0.38);
+  opacity: 0;
+}
+.streak-corner.tl {
+  left: var(--inset);
+  top: var(--inset);
+  border-top-width: 2px;
+  border-left-width: 2px;
+}
+.streak-corner.tr {
+  right: var(--inset);
+  top: var(--inset);
+  border-top-width: 2px;
+  border-right-width: 2px;
+}
+.streak-corner.bl {
+  left: var(--inset);
+  bottom: var(--inset);
+  border-bottom-width: 2px;
+  border-left-width: 2px;
+}
+.streak-corner.br {
+  right: var(--inset);
+  bottom: var(--inset);
+  border-bottom-width: 2px;
+  border-right-width: 2px;
+}
+.streak-lockup {
+  position: absolute;
+  top: 32px;
+  left: 32px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  width: 30px;
-}
-.week-label {
+  gap: 10px;
   font-family: var(--ui);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   line-height: 1;
   color: var(--fg);
-  opacity: 0.55;
+  opacity: 0;
 }
-.week-cell.today .week-label {
-  color: var(--fg);
-  opacity: 1;
-}
-.week-mark {
+.streak-lockup svg {
   display: block;
-  width: 30px;
-  height: 30px;
-  background: var(--surface);
-  border-radius: var(--r-sm);
-  image-rendering: pixelated;
-  transform-origin: center;
-  will-change: transform;
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
 }
-.week-cell.solved .week-mark {
-  background: var(--flame);
-}
-.week-mark-flip,
-.week-cell.solved .week-mark-flip {
-  position: relative;
-  /* The lifted tile grows well past its 30px cell mid-flight; without a raised paint
-     order, later sibling cells would draw over its edges and flatten the illusion. */
-  z-index: 1;
-  background: transparent;
-  transform-style: preserve-3d;
-}
-.week-mark-face {
+/* The edition: the solved day's date in the pixel face, the accent, on the lockup's line. */
+.streak-edition {
   position: absolute;
-  inset: 0;
-  display: block;
-  border-radius: var(--r-sm);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
+  top: 39px;
+  right: 32px;
+  font-family: var(--pixel-font);
+  font-size: 8px;
+  line-height: 1;
+  color: var(--accent);
+  opacity: 0;
 }
-.week-mark-front {
-  background: var(--surface);
+/* The raster's 4px cells (`cellFor`: the short side at 600 or more): the frame at the
+   cards' inset, the furniture at the next whole size. */
+@media (min-width: 600px) and (min-height: 600px) {
+  .streak-corner {
+    --inset: 24px;
+  }
+  .streak-day {
+    font-size: 14px;
+  }
+  .streak-lockup {
+    top: 40px;
+    left: 40px;
+    font-size: 16px;
+  }
+  .streak-lockup svg {
+    width: 44px;
+    height: 44px;
+  }
+  .streak-edition {
+    top: 54px;
+    right: 40px;
+    font-size: 16px;
+  }
 }
-.week-mark-back {
-  background: var(--flame);
-  transform: rotateX(180deg);
+/* A phone on its side: the furniture tucks into the corners. */
+@media (max-height: 499px) {
+  .streak-lockup {
+    top: 22px;
+  }
+  .streak-edition {
+    top: 29px;
+  }
 }
-
-/* Compact composition: narrow phones AND short viewports (landscape phones) — the full
-   composition is ~435px tall, so height must trigger this too, not width alone. */
-@media (max-width: 420px), (max-height: 500px) {
-  .streak-dialog[open] {
-    padding: 16px;
-  }
-  .streak-sequence {
-    grid-template-rows: 90px 82px 80px 45px;
-    gap: 15px;
-  }
-  .streak-flame-slot {
-    width: 96px;
-    height: 90px;
-  }
-  .streak-flame {
-    width: 96px;
-    height: 90px;
-  }
-  .streak-number-block {
-    height: 82px;
-  }
-  .streak-digits {
-    font-size: 52px;
+/* The narrowest phones: the lockup keeps its mark, the edition keeps the line. */
+@media (max-width: 359px) {
+  .streak-lockup span {
+    display: none;
   }
 }
 
@@ -3970,7 +4514,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      and overflowing. */
   .game {
     padding-top: 60px;
-    gap: 16px;
+    --game-gap: 16px;
     align-items: stretch;
     /* Mobile keyboard height (see .kb-key below): 3 rows of clamp(44,6.8vh,52) + gaps. */
     --kb-h: calc(3 * clamp(44px, 6.8vh, 52px) + 2 * 5px);
@@ -4009,6 +4553,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     min-width: 0;
     font-size: clamp(13px, 4.2vw, 19px); /* = the phone's .phrase */
   }
+  .give-up-btn {
+    font-size: clamp(13px, 4.2vw, 19px); /* = the phone's .word-input */
+  }
 
   /* Floating hit / MISS scaled down to sit over the smaller hole words. */
   .floating-hit {
@@ -4044,14 +4591,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     margin-bottom: -24px;
   }
   /* The result's stage reaches the screen's bottom edge: its last line clears the
-     home-indicator inset as the keyboard's last row does, plus its own fade — and its
-     sides, so the scrollbar sits on the screen's border (the phone's inset is 14px). */
+     home-indicator inset as the keyboard's last row does, plus its own fade. */
   .solved-stage {
-    width: 100vw;
-    margin-left: -14px;
-    margin-right: -14px;
-    padding-left: 14px;
-    padding-right: 14px;
     padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   }
   /* Archive: the centering column carries over from the base rule; just clear the
@@ -4067,7 +4608,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    narrow phone is untouched. */
 @media (max-height: 600px) {
   .game {
-    gap: 8px;
+    --game-gap: 8px;
   }
   .play {
     gap: 14px;
@@ -6928,9 +7469,14 @@ figure.l1-fig {
   font-family: var(--pixel-font);
   font-size: 9px;
   color: var(--muted);
-  /* The pixel face rides high off the mono around it (the standing line's rule):
-     whole pixels only, via translate. */
+  /* The pixel face rides high off the mono around it: whole pixels only, via
+     translate. */
   translate: 0 1px;
+}
+/* The board prints a rank as `#N`: the sign is this screen's dress (`BoardRank` prints the
+   number; the result's lines print it bare). */
+.board-rank:not(.crown)::before {
+  content: '#';
 }
 /* FIRST PLACE WEARS THE CROWN: the header's own board mark, at its 2px a cell, in the
    accent — the trophy blue — in place of `#1`. */
@@ -7033,6 +7579,17 @@ figure.l1-fig {
 .board-row.playing .board-score {
   min-width: 39px;
   text-align: right;
+}
+/* A round that ENDED UNSOLVED (`over`: given up, or capped) — done for the day with nothing
+   recorded: `∞` in the tries cell, on the digits' own band, and the % quiet in the
+   secondary ink. */
+.board-inf {
+  display: inline-block;
+  vertical-align: baseline;
+  shape-rendering: crispEdges;
+}
+.board-row.playing.over .board-progress {
+  color: var(--muted);
 }
 .board-progress {
   font-family: var(--pixel-font);

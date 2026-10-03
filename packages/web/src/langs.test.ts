@@ -130,15 +130,7 @@ describe('parseRoute — archive + past-day deep links (#55)', () => {
 
   it('treats a real date outside [firstDate, activeDate] as unknown -> home', () => {
     expect(parseRoute('/fr/2025-12-31', bounds)).toEqual({ view: 'home' }); // before first
-    expect(parseRoute('/fr/2026-07-02', bounds)).toEqual({ view: 'home' }); // two days past the active day
-  });
-
-  it('reaches ONE day past the active day — tomorrow\'s sentence, started tonight (#273)', () => {
-    expect(parseRoute('/fr/2026-07-01', bounds)).toEqual({
-      view: 'game',
-      lang: 'fr',
-      date: '2026-07-01',
-    });
+    expect(parseRoute('/fr/2026-07-01', bounds)).toEqual({ view: 'home' }); // after active day
   });
 
   it('skips the future bound when no activeDate is supplied', () => {

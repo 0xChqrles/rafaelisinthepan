@@ -1,56 +1,49 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import {
-  INFINITY_EM_HEIGHT,
-  INFINITY_EM_WIDTH,
-  INFINITY_GLYPH,
-  dateForDayNumber,
-  isBonusRef,
-  shareHeadline,
-  type PuzzleRef,
-  type Source,
-} from '@whippin/shared';
+import { isBonusRef, shareHeadline, type PuzzleRef, type Source } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareText, shareUrl } from '../game/share';
-import RunRuler from './RunRuler';
+import SolvedCard from './SolvedCard';
 import SolvedCaption, { captionDurationMs } from './SolvedCaption';
-import useAnimatedNumber from '../hooks/useAnimatedNumber';
+import { COUNT_END_MS, COUNT_RUN_MS } from './countRun';
 import useShare from '../hooks/useShare';
 import Button from './Button';
-import ChevronRightIcon from '../assets/icons/chevron-right.svg?react';
+import ResultBoards, { type ResultBoardsData } from './ResultBoards';
 import { useDeviceIdentity } from '../identity';
 import { ariaHoleHistory, t } from '../i18n';
 import { capitalize, sentenceStarts } from '../game/sentenceCase';
 
-// The sentence result — a STAGE in two parts, the score above and the sentence's page
-// below (user-decided 2026-09-08, on #266's second review). It takes the whole column the
-// dissolved sentence handed over (the 2026-08-14 hand-over, restored), and it stacks:
+// The sentence result — a STAGE: the score above, the player's boards under it, and the
+// sentence's page below (user-decided 2026-09-08, on #266's second review). It takes the whole
+// column the dissolved sentence handed over (the 2026-08-14 hand-over, restored), and it stacks:
 //
-//   SCORE   — at the TOP, right under the header: the named `<tries> TRIES` over its run
-//             ruler and SHARE (sharing is what you do with a
-//             RESULT, user-decided 2026-08-14). Its height is the same on
-//             every round, and it is above the fold on every phone — SHARE is the
-//             reveal's closing beat and the game's one liked-indicator, and it is never
-//             reached by scrolling.
+//   SCORE   — at the TOP, right under the header: THE CARD (`SolvedCard` — the share card
+//             this result sends, live: the edition, the count as its subject, the run)
+//             and SHARE under it (sharing is what you do with a RESULT, user-decided
+//             2026-08-14). Its height is the same on every round, and it is above the fold
+//             on every phone — SHARE is the card's closing beat and the game's one
+//             liked-indicator, and it is never reached by scrolling.
+//   BOARDS  — on the ACTIVE day only: how the day compares, the player's groups then the
+//             GLOBAL (`ResultBoards`), in one fixed box that holds its room from frame one.
 //   CONTEXT — under it, with a gap: the source credit, then the sentence the player
 //             rebuilt in the READING face, its secrets in the solve blue and tappable.
 //             This is the round's variable-height content, so THIS is what scrolls: a
 //             long sentence (and, with #270, the sentences of the book around it, read
 //             top-down from the credit) goes under the fold, the score never does.
 //
-// The reveal runs stage → SCORE → rank + SHARE → credit → sentence (user-decided
-// 2026-09-11, reversing 2026-08-15's page-first order now that the score is a CARD above
-// the page): the stage rises in with the card, which lands reading 0 over a bar with no
-// colour in it yet; then the tally counts WHILE the bar colours in, try by try — one beat
-// saying one thing, "here is your run" — then the standing lands with SHARE,
-// closing the card; only THEN, with the score standing above it, the credit types, and
+// The reveal runs stage → CARD drawn → tally → SHARE → BOARDS → credit → sentence
+// (user-decided 2026-09-11, reversing 2026-08-15's page-first order now that the score is a
+// CARD above the page): the stage comes up and the card draws itself reading 0 over a ruler
+// with no colour in it yet; then the tally counts WHILE the ruler colours in, try by try —
+// one beat saying one thing, "here is your run" — and lands; then SHARE lands, closing the
+// card, and the boards under it; only THEN, with the score standing above it, the credit types, and
 // only once it has printed does the sentence appear under it, its secrets popping in. The 2026-08-15 rule survives in the other direction:
 // nothing prints while the numbers move, so the two never read as happening at once. The
 // citation's completion is the screen's one signal-driven beat, so it carries a DEADLINE
 // behind it (the `KB_EXIT_FALLBACK_MS` rule: a lost signal must never be able to stall
 // the solved sequence), derived from the typewriter's own numbers — and it is what ends
 // the reveal now. Everything else hangs off an offset, or — the closing beat — off the
-// count's own landing, which the tween's clock always reaches (no DOM signal to lose).
+// count's own landing, which the run's clock always reaches (no DOM signal to lose).
 // Rehydrated solves render the final frame immediately and replay nothing.
 //
 // THAT LAST SENTENCE IS ALSO THE FAST-FORWARD (#179, user-decided 2026-08-16): a tap
@@ -59,11 +52,13 @@ import { capitalize, sentenceStarts } from '../game/sentenceCase';
 // inventing a parallel fast path, which is exactly what the decision asks for. Nothing
 // here listens for the tap: the round owns it, because the beats before this one (the
 // keyboard drop, the dissolve) are its.
-// The result choreography: the stage rises into the whole column the dissolved sentence
-// handed over, then the tally counts. Keep these numbers aligned with `.solved-stage` + its
-// card `.solved-numbers`, whose tally waits out the card's own rise.
-const RESULTS_IN_MS = 250;
-const SCORE_COUNT_MS = 800;
+// The result choreography: the stage comes up in the whole column the dissolved sentence
+// handed over (`.solved-stage`'s fade), then the card draws itself, then the tally counts.
+const RESULTS_IN_MS = 140;
+// The card DRAWS itself before the tally starts (index.css `.solved-card.in` and its `--t-*`
+// offsets): the FRAME (the brackets travel out, the edition types), then the INSTRUMENT (the
+// ruler's track is wiped across, the count's zeros blink in) — done by 720ms.
+const DRAW_MS = 720;
 // The secrets POP into the sentence one by one, 200ms apart, each a fast scale pop — the
 // round's three trophies counted out, back in the gaps they were taken from. Keep aligned
 // with `.solved-secret.in` / `solved-word-pop`.
@@ -76,26 +71,41 @@ const TEXT_LEAD_MS = 320;
 // completion signal and moving on anyway. Generous by design: it is a backstop, and the
 // typewriter's intervals are merely THROTTLED on a hidden tab, never dropped.
 const CAPTION_FALLBACK_SLACK_MS = 4_000;
-// The card's closing beat — the standing and SHARE, together — follows the count's
-// landing (the bar full) by a breath.
+// The card's closing beat — SHARE — follows the count's landing (the bar full) by a breath,
+// and the boards follow SHARE by another.
 const CLOSE_LEAD_MS = 260;
+const BOARDS_LEAD_MS = 200;
+// The boards' own arrival (`.solved-boards.in`: the tab's chip wiped across, the first line in):
+// they are a tap onto the board only once it has played.
+const BOARDS_ARRIVE_MS = 420;
 
-// The capped round's headline (#214). Press Start 2P has no `∞`, so the glyph is drawn from
-// the shared path data — the same path, at the same fraction of the font size, that the OG
-// card draws, so the screen and the card it shares cannot show two different marks. It
-// stands exactly where `.solved-score-num` would, keeping the unit beside it.
-function InfinityScore() {
-  return (
-    <svg
-      className="solved-score-inf"
-      viewBox={INFINITY_GLYPH.viewBox}
-      style={{ height: `${INFINITY_EM_HEIGHT}em`, width: `${INFINITY_EM_WIDTH}em` }}
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d={INFINITY_GLYPH.path} fill="currentColor" />
-    </svg>
-  );
+// THE TALLY'S CLOCK: ms since `on`, a frame at a time, up to COUNT_END_MS — ONE fixed length
+// for every score (`countRun.ts`: the last reel stops at COUNT_RUN_MS, its shake plays out by
+// COUNT_END_MS). A settled frame is at the end at once, and so is reduced motion.
+function useCountClock(animate: boolean, on: boolean, reduceMotion: boolean): number {
+  const [ms, setMs] = useState(() => (animate ? 0 : COUNT_END_MS));
+  useEffect(() => {
+    if (!animate) {
+      setMs(COUNT_END_MS);
+      return undefined;
+    }
+    if (!on) return undefined;
+    if (reduceMotion) {
+      setMs(COUNT_END_MS);
+      return undefined;
+    }
+    let raf = 0;
+    let t0: number | null = null;
+    const tick = (now: number) => {
+      t0 ??= now;
+      const at = Math.min(COUNT_END_MS, now - t0);
+      setMs(at);
+      if (at < COUNT_END_MS) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [animate, on, reduceMotion]);
+  return ms;
 }
 
 // ONE BEAT of the reveal: false until `ready` has held for `delayMs`, then true. A settled
@@ -135,6 +145,10 @@ export interface SolvedHole {
   number: number; // 1-based distinct-secret position — the ruler ticks' own numbering
   prefix?: string; // display-only affixes, kept around the secret exactly as Phrase keeps them
   suffix?: string;
+  // Did the player FIND it? A round that ended unsolved shows every secret, and the ones it
+  // only revealed wear the held chip — the solve's cobalt says "found", and only says it
+  // of a word that was.
+  found: boolean;
 }
 
 export default function SolvedScreen({
@@ -147,11 +161,11 @@ export default function SolvedScreen({
   words,
   holes,
   onExplore,
-  capped = false,
+  unfinished = false,
   animate = true,
   start = true,
   onRevealEnd,
-  onTomorrow,
+  boards = null,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
@@ -164,10 +178,11 @@ export default function SolvedScreen({
   words: string[]; // the sentence's full display tokens (the puzzle's own `words[]`)
   holes: SolvedHole[]; // one entry per occurrence, sorted by `pos` — the secrets inside it
   onExplore: (holeIndex: number) => void;
-  // The round hit the server's guess cap unsolved (#214): the HEADLINE becomes `∞` and no
-  // leaderboard entry exists (a capped round's solve never reached the server). Everything else is an ordinary result: the sentence with its
-  // answer in place, the credit, the ruler at its real length, and SHARE.
-  capped?: boolean;
+  // The round ENDED UNSOLVED — the player gave up, or it hit the server's guess cap (#214):
+  // the HEADLINE becomes `∞` and no leaderboard entry exists. Everything else is an ordinary
+  // result: the sentence with its answer in place, the credit, the ruler at its real length,
+  // and SHARE — whose `share` event it does not count (below).
+  unfinished?: boolean;
   // Rehydrated solves render their final result immediately and replay nothing — and so
   // does a reveal the player has fast-forwarded (#179): the round flips this off, and the
   // settled frame this draws IS the decision's "settled end state".
@@ -180,10 +195,9 @@ export default function SolvedScreen({
   // The reveal's last beat has landed (the credit printed under the card, or the settled
   // frame): the round disarms its fast-forward on it.
   onRevealEnd?: () => void;
-  // TOMORROW (#273, user-decided 2026-09-08): the result screen's ONE onward action —
-  // the next day's sentence, opened tonight, beside SHARE. Only today's result offers it
-  // (the round passes nothing on an archive day), and it arrives on SHARE's own beat.
-  onTomorrow?: () => void;
+  // How the day compares, on the ACTIVE day only (null on an archive day or a bonus): the
+  // live answer the play screen keeps and whether one is on its way.
+  boards?: ResultBoardsData | null;
 }) {
   const reduceMotion = prefersReducedMotion();
   const hasSource = Boolean(source?.kind || source?.author || source?.work);
@@ -216,47 +230,43 @@ export default function SolvedScreen({
     return () => cancelAnimationFrame(raf);
   }, [animate, start]);
 
-  // THE SCORE block, FIRST: its arrival is what starts the tally, so the number never
-  // counts behind a block that has not appeared yet. It follows the stage's own rise.
+  // THE CARD, FIRST: its drawing is what starts the tally, so the number never counts in a
+  // card that has not been drawn yet. It follows the stage's own fade.
   const scoreIn = useBeat(animate, stageIn, RESULTS_IN_MS, reduceMotion, false);
 
-  // THE TALLY, once the card has LANDED (user-decided 2026-09-11): the card rises in
-  // reading 0 over the whole bar, every cell there and none coloured yet, and only then
-  // does the number climb — the bar colouring in try by try, each tick standing as its
-  // try is reached, WHILE it counts. The ruler reads the count ITSELF (`shownCount`), so
-  // the number and the coloured cells cannot drift apart: at every frame the number says
-  // how many tries are coloured. The ruler reserves its final footprint throughout, so
-  // nothing below it moves.
-  // The card's own rise is the stage's (`.solved-numbers`, the same 250ms).
-  const countIn = useBeat(animate, scoreIn, RESULTS_IN_MS, reduceMotion, false);
+  // THE TALLY, once the card is DRAWN (user-decided 2026-09-11): the card stands reading 0
+  // over the whole ruler, every cell there and none coloured yet, and only then does the
+  // number run — the ruler colouring in try by try, each tick standing as its try is
+  // reached, WHILE it counts. ONE clock drives both (`ms`, `countRun.ts`): the count's reels
+  // spin and stop left to right, the last on COUNT_RUN_MS whatever the score (user-decided
+  // 2026-10-03), and the ruler's last try is written on that stop. The card reserves its
+  // final footprint throughout, so nothing below it moves.
+  const countIn = useBeat(animate, scoreIn, DRAW_MS, reduceMotion, false);
+  const ms = useCountClock(animate, countIn, reduceMotion);
 
-  const [countTarget, setCountTarget] = useState(() => (animate ? 0 : guessCount));
-  useEffect(() => {
-    if (countIn) setCountTarget(guessCount);
-  }, [countIn, guessCount]);
-  const shownScore = useAnimatedNumber(countTarget, !animate || reduceMotion ? 1 : SCORE_COUNT_MS);
-  const shownCount = Math.round(shownScore);
-
-  // The card's closing beat (user-decided 2026-08-16): the STANDING and SHARE land
-  // TOGETHER, once the tally has settled. SHARE used to wait out the standing's own
-  // rung-in and a breath of its own on top, which put the card's one action far too late
-  // (user-reported 2026-09-11). Both hold their layout space throughout (the rank's slot
-  // is always mounted, SHARE hides in place), so the flip changes when they appear, never
-  // where anything sits.
-  // It keys off the count LANDING — the number showing its final value, the bar full —
-  // not off `SCORE_COUNT_MS`: the tween eases out and the number is rounded, so the last
-  // visible step comes well before the tween's own end (at 45% of it on a 3-try run), and
-  // a timer off that end would hold everything still before SHARE.
-  const countLanded = countIn && shownCount === guessCount;
+  // The card's closing beat (user-decided 2026-08-16): SHARE lands once the tally has
+  // landed — its own beat, never behind anything else's (user-reported 2026-09-11: waiting
+  // out another rung-in put the card's one action far too late). It holds its layout space
+  // throughout (SHARE hides in place), so the flip changes when it appears, never where
+  // anything sits. The run lands on its clock: the last reel stops on the score and the
+  // ruler's last try is written at COUNT_RUN_MS, never before.
+  const countLanded = countIn && ms >= COUNT_RUN_MS;
   const shareIn = useBeat(animate, countLanded, CLOSE_LEAD_MS, reduceMotion, true);
 
-  // THE PAGE, under the finished card: the credit types and the secrets pop into the
-  // sentence — one beat, "here is what you rebuilt, and where it is from" — once SHARE
-  // has closed the card above it. The credit's completion retires its own cursor and
+  // THE BOARDS, under SHARE: their box has held its room since frame one, and lands now —
+  // whatever its reads have answered by then (a read landing later fills the box in place).
+  // Until it has LANDED — through its own arrival, which starts at opacity 0 — it is inert
+  // (CSS), so a tap that skips the reveal never lands on a board the player cannot see yet.
+  const boardsIn = useBeat(animate, shareIn, BOARDS_LEAD_MS, reduceMotion, false);
+  const boardsArmed = useBeat(animate, boardsIn, BOARDS_ARRIVE_MS, reduceMotion, true);
+
+  // THE PAGE, under the finished card and the boards: the credit types and the secrets pop
+  // into the sentence — one beat, "here is what you rebuilt, and where it is from" — once
+  // the blocks above it have landed. The credit's completion retires its own cursor and
   // ends the reveal.
   const [captionDone, setCaptionDone] = useState(false);
   const finishCaption = useCallback(() => setCaptionDone(true), []);
-  const textIn = useBeat(animate, shareIn, TEXT_LEAD_MS, reduceMotion, false);
+  const textIn = useBeat(animate, boards ? boardsIn : shareIn, TEXT_LEAD_MS, reduceMotion, false);
 
   // THE SENTENCE, after the source (user-decided 2026-09-11: "score view → source →
   // sentence"): the text appears — and its secrets pop into it — once the citation has
@@ -307,8 +317,10 @@ export default function SolvedScreen({
   }, [textDone, onRevealEnd]);
 
   // Delivery (native sheet / clipboard + the "COPIED" confirmation) is the shared hook's;
-  // this screen only composes the sentence result's text.
-  const { share, copied } = useShare({ tracked: !isBonusRef(puzzleRef) });
+  // this screen only composes the sentence result's text. A BONUS is no day's, and an
+  // UNFINISHED result's share is not counted either: the `share` event is read as share ÷
+  // solve, the "did they like the day" signal, and a share of a day given up is not that.
+  const { share, copied } = useShare({ tracked: !isBonusRef(puzzleRef) && !unfinished });
   // The stage is the scroller; the sticky credit is its way back to the top (the score,
   // SHARE) once the reader has scrolled them away.
   const stageRef = useRef<HTMLDivElement>(null);
@@ -329,92 +341,44 @@ export default function SolvedScreen({
         score: guessCount,
         trajectory,
         solvedAt: solvedAt ?? [],
-        capped,
+        // The token's v6 flag means ENDED UNSOLVED, whichever way the round ended.
+        capped: unfinished,
       },
       by,
     );
-    // This screen owns only its localized UNIT; the line's shape is @whippin/shared's. A
-    // capped round names no count — `∞` stands where the number would, exactly as the card
-    // draws it — and the unit stays plural, since there is no "1" to agree with.
-    const unit = t(lang, !capped && guessCount === 1 ? 'try' : 'tries').toLowerCase();
-    const headline = shareHeadline(puzzleRef, capped ? '∞' : guessCount, unit);
+    // This screen owns only its localized UNIT; the line's shape is @whippin/shared's. An
+    // unfinished round names no count — `∞` stands where the number would, exactly as the
+    // card draws it — and the unit stays plural, since there is no "1" to agree with.
+    const unit = t(lang, !unfinished && guessCount === 1 ? 'try' : 'tries').toLowerCase();
+    const headline = shareHeadline(puzzleRef, unfinished ? '∞' : guessCount, unit);
     // The card (via the token) draws the run in full; the plain-text row is the bounded
     // summary of that SAME run — trajectory and solve moments both — so the link and its
     // fallback can't disagree.
     await share(shareText(headline, trajectory, solvedAt ?? [], url));
-  }, [lang, puzzleRef, guessCount, trajectory, solvedAt, capped, share, by]);
+  }, [lang, puzzleRef, guessCount, trajectory, solvedAt, unfinished, share, by]);
 
   return (
     <div
       ref={stageRef}
       className={`solved-stage pixel-scroll${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}
     >
-      {/* ---- the SCORE block, at the top: how the round went, and what you do with it. */}
-      {/* `landed`: the tally just reached its final count on a PLAYED reveal — the number
-          stamps down and the well's edge flashes once (a rehydrated or skipped result never
-          plays it: it has no count to land). */}
-      <div
-        className={`solved-numbers card${scoreIn ? ' in' : ''}${animate && countLanded ? ' landed' : ''}`}
+      {/* ---- THE CARD, at the top: how the round went — the share card this result sends,
+           stood up in the column — and SHARE under it, what you do with it. */}
+      <SolvedCard
+        puzzleRef={puzzleRef}
+        lang={lang}
+        guessCount={guessCount}
+        ms={ms}
+        trajectory={trajectory}
+        solvedAt={solvedAt ?? []}
+        unfinished={unfinished}
+        drawn={scoreIn}
+        landed={animate && countLanded}
+        settled={!animate}
       >
-        {/* THE WELL (2026-09-11): the card's inset panel holds the thing the card is
-            about — the number and its run — and the actions are the caption row under it,
-            the references' own shape (a preview in a well, a title under it). */}
-        <div className="card-well">
-        {/* THE EDITION, printed in the well's top corners like a numbered collectible (the
-            interfaces.dev card the device frame's serial comes from): the day in the one
-            spelling the share card, the title and the URL use, and its edition number,
-            `N.<day>`, the desktop frame's own. What day a result is from, said once, where
-            the result is. A BONUS is no day: BONUS, and its id as the edition. */}
-        <span className="card-edition" aria-hidden="true">
-          {isBonusRef(puzzleRef) ? (
-            <>
-              <span>BONUS</span>
-              <span>{`N.${puzzleRef.bonusId}`}</span>
-            </>
-          ) : (
-            <>
-              <span>{dateForDayNumber(puzzleRef.dayNumber)}</span>
-              <span>{`N.${puzzleRef.dayNumber}`}</span>
-            </>
-          )}
-        </span>
-        {/* The primary sentence metric. The hidden final value reserves the count's width
-            so its tally never moves the content below it — a capped round has no tally to
-            reserve for, since `∞` is one fixed shape. (The #271 standing line stood beside
-            the number here until 2026-09-14, when the user dropped it; the #170 badge
-            before it. The slot stays, empty.) */}
-        <span className="solved-score">
-          <span className="solved-score-line">
-            {capped ? (
-              <span className="solved-score-num">
-                <InfinityScore />
-                <span className="sr-only">∞</span>
-              </span>
-            ) : (
-              <span className="solved-score-num">
-                <span className="solved-score-ghost" aria-hidden="true">
-                  {guessCount}
-                </span>
-                <span className="solved-score-live">{shownCount}</span>
-              </span>
-            )}
-          </span>
-          <span className="solved-score-unit">
-            {t(lang, !capped && guessCount === 1 ? 'try' : 'tries')}
-          </span>
-        </span>
-
-        {/* The player's own run ruler — the share card draws this same ruler from the v2
-            token. */}
-        <div className="run-ruler-frame" aria-hidden="true">
-          <RunRuler trajectory={trajectory} solvedAt={solvedAt ?? []} filled={shownCount} />
-        </div>
-        </div>
-
-        {/* SHARE closes the card: hidden in place (footprint kept) until it lands with
-            the standing — and TOMORROW beside it (#273), the onward action, on the same
-            beat: two equals on one row, never a second arrival. */}
-        <div className={`result-actions${onTomorrow ? ' paired' : ''}${shareIn ? ' in' : ''}`}>
+        {/* SHARE, under the card's frame, the result's ONE action: hidden in place
+            (footprint kept) until the count lands. */}
+        <div className={`result-actions${shareIn ? ' in' : ''}`}>
           <Button
             variant="primary"
             className={`result-action${copied ? ' copied' : ''}`}
@@ -422,15 +386,21 @@ export default function SolvedScreen({
           >
             {copied ? t(lang, 'copied') : t(lang, 'share')}
           </Button>
-          {onTomorrow && (
-            <Button variant="secondary" className="result-action btn-arrow" onClick={onTomorrow}>
-              {t(lang, 'tomorrow')}
-              {/* The title's own 7×7 pixel chevron, pointing ONWARD (user-asked 2026-09-11). */}
-              <ChevronRightIcon className="ui-icon" aria-hidden />
-            </Button>
-          )}
         </div>
-      </div>
+      </SolvedCard>
+
+      {/* ---- the BOARDS: how the day compares, the active day only. */}
+      {boards && (
+        <ResultBoards
+          className={`solved-boards${boardsIn ? ' in' : ''}${boardsArmed ? ' armed' : ''}`}
+          lang={lang}
+          {...boards}
+          tries={guessCount}
+          progress={trajectory[trajectory.length - 1] ?? 0}
+          ended={unfinished}
+          pageIn={textIn}
+        />
+      )}
 
       {/* ---- the PAGE: the sentence's page. The credit first, then the text — read
            top-down, the way a page is. The whole stage scrolls; the credit sticks. */}
@@ -455,8 +425,9 @@ export default function SolvedScreen({
             words on their own are three adjacent word searches. In the READING face,
             because this is the book's page, not the board: the line is in the ink, and
             #270's sentences around it will be the muted text before and after it. The
-            secrets are the only difference inside the line: the solve blue, the pop, and
-            the tap onto their own history. Prefix and suffix are sentence context and
+            secrets are the only difference inside the line: the solve blue (the held chip
+            for one a round that ended unsolved only revealed), the pop, and the tap onto
+            their own history. Prefix and suffix are sentence context and
             always show, in the nowrap group that keeps them on the secret's own line —
             Phrase's rule, unchanged. */}
         <p className={`solved-text${sentenceIn ? ' in' : ''}`}>
@@ -481,7 +452,7 @@ export default function SolvedScreen({
                     {hole.prefix && starts[i] ? capitalize(hole.prefix) : hole.prefix}
                     <button
                       type="button"
-                      className={`solved-secret${sentenceIn ? ' in' : ''}`}
+                      className={`solved-secret${hole.found ? '' : ' revealed'}${sentenceIn ? ' in' : ''}`}
                       style={{ '--step': hole.number - 1 } as CSSProperties}
                       aria-describedby={`solved-explore-${hole.number}`}
                       onClick={() => onExplore(hole.holeIndex)}

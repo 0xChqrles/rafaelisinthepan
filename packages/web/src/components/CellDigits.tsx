@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { prefersReducedMotion } from '../hooks/useScramble';
-import digitsUrl from '../assets/digits.png';
+import { GLYPH_GAP as GAP, GLYPH_ROWS, loadDigitMasks, type DigitMask as Mask } from './digitMasks';
 
 // The score watermark: the count drawn as big PIXEL BLOCKS behind the play content, solid
 // (user-decided 2026-09-01 — a hollow 1px CONTOUR shipped for one pass the same day and was
@@ -34,12 +34,7 @@ import digitsUrl from '../assets/digits.png';
 // alpha lives HERE and not on the container, because element opacity would fade the canvas
 // as a whole rather than mixing the ink into the ground.
 const INK_ALPHA = 0.2;
-// digits.png is a 10-slot spritesheet in KEYBOARD order (1..9 then 0), 7px slots.
-const SHEET_ORDER = '1234567890';
-const SLOT_W = 7;
-const GLYPH_ROWS = 7;
-// One glyph pixel of spacing between digits (scales with the digits).
-const GAP = 1;
+// The glyphs (`digitMasks.ts`, assets/digits.png) are the streak celebration's too.
 // Same role as a font-size clamp: min(62vh, 88vw/width) — height sets the ideal scale
 // (a watermark may overflow its band vertically, it always did), width is a hard cap so
 // the number never bleeds off-screen.
@@ -58,8 +53,6 @@ const MIN_PX = 6;
 // for a number with no bound), but 99 -> 100 is a milestone, where 9 -> 10 is the tenth
 // guess of every single round.
 const MIN_SIZED_DIGITS = 2;
-
-type Mask = { w: number; rows: Uint8Array };
 
 // THE TICK: when the count moves, the cells that change FLIP rather than the number being
 // swapped — each cell the new number lights comes on bright on its own hashed beat and
@@ -90,50 +83,6 @@ type Drawn = { value: number; px: number; cells: Set<string> };
 // flips in from nothing.
 const ARRIVAL: Drawn = { value: -1, px: -1, cells: new Set() };
 
-let masksPromise: Promise<Mask[]> | null = null;
-
-// Decode the sheet once per session: alpha is the mask (the art's RGB is ignored, so
-// the PNG can stay black while the blocks paint in the live foreground color); each
-// slot is trimmed to its ink columns so widths stay proportional (1 is narrower).
-function loadMasks(): Promise<Mask[]> {
-  if (!masksPromise) {
-    masksPromise = (async () => {
-      const img = new Image();
-      img.src = digitsUrl;
-      await img.decode();
-      const sheet = document.createElement('canvas');
-      sheet.width = img.width;
-      sheet.height = img.height;
-      const ctx = sheet.getContext('2d')!;
-      ctx.drawImage(img, 0, 0);
-      const data = ctx.getImageData(0, 0, img.width, img.height).data;
-      const on = (x: number, y: number) => data[(y * img.width + x) * 4 + 3] > 127;
-      const masks: Mask[] = new Array(10);
-      for (let slot = 0; slot < 10; slot++) {
-        const x0 = slot * SLOT_W;
-        let left = SLOT_W;
-        let right = -1;
-        for (let x = 0; x < SLOT_W; x++) {
-          for (let y = 0; y < GLYPH_ROWS; y++) {
-            if (on(x0 + x, y)) {
-              if (x < left) left = x;
-              if (x > right) right = x;
-              break;
-            }
-          }
-        }
-        const w = Math.max(1, right - left + 1);
-        const rows = new Uint8Array(w * GLYPH_ROWS);
-        for (let y = 0; y < GLYPH_ROWS; y++)
-          for (let x = 0; x < w; x++) rows[y * w + x] = on(x0 + left + x, y) ? 1 : 0;
-        masks[Number(SHEET_ORDER[slot])] = { w, rows };
-      }
-      return masks;
-    })();
-  }
-  return masksPromise;
-}
-
 // `fit` (the lesson's board, framed in its plate): size the number against its ANCHOR's
 // box — that share of its height, the width budget of its width — instead of the viewport,
 // so a count drawn inside a frame stands whole within it. The two-digit rule holds.
@@ -145,7 +94,7 @@ export default function CellDigits({ value, fit }: { value: number; fit?: number
 
   useEffect(() => {
     let alive = true;
-    loadMasks().then((m) => {
+    loadDigitMasks().then((m) => {
       if (alive) setMasks(m);
     });
     return () => {

@@ -28,11 +28,15 @@
 // when the authoritative state is UNSOLVED with exactly that many raw entries — a fact the
 // screen derives, never a flag anyone stores — and there the round ends at `∞` (#214).
 //
+// A GIVE-UP (`giveUpRound`) is the conversation's one other write: the player ends the round
+// unsolved. It goes out only once the outbox is FLUSHED — the log stays the player's real
+// tries — and the server stores it as a flag that freezes the round like a solve.
+//
 // One conversation per round lives in a MODULE-level map (the activeScoreFlights pattern):
 // a ref would not survive a real unmount, and neither the queue nor the in-flight write may
 // be duplicated by a remount (archive round-trips, StrictMode).
 
-import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, type RankMap } from '@whippin/shared';
+import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, roundEnded, type RankMap } from '@whippin/shared';
 import { parseRound, postRoundBody, roundUrl, type RoundState } from '../api';
 import { guessKey } from '../game/scoring';
 import { unacknowledged } from '../game/playLog';
@@ -59,12 +63,6 @@ export interface RoundSyncContext {
   // Only for the canonical identity (#104's `guessKey`): what "the server already holds
   // this guess" means when two devices typed two surfaces of one group.
   ranks: RankMap;
-  // EARLY PLAY (#273): this round's day is AFTER the client's active day — tomorrow's
-  // sentence, started tonight. The server refuses the append after the first progress or
-  // the third guess (`early_locked`); the screen locks its input from the same reading, so
-  // this engine normally never sends one. LIVE: the day's flip flips it false, and a
-  // conversation the lock closed re-opens with a read.
-  early: boolean;
 }
 
 interface RoundFlight extends RoundSyncContext {
@@ -93,10 +91,11 @@ interface RoundFlight extends RoundSyncContext {
   timer: ReturnType<typeof setTimeout> | null;
   inFlight: Promise<void> | null;
   closed: boolean;
-  // WHY it closed, when the reason is the night (#273): an `early_locked` refusal ends the
-  // conversation until the day flips, where the freeze and the cap end it for good. The
-  // re-registration that reports the flip is what re-opens it.
-  lockedEarly: boolean;
+  // A GIVE-UP the screen asked for (`giveUpRound`), answered exactly once: true once the
+  // round is over on the server's terms, false when it did not land. `sent`: the request
+  // went out and its outcome is UNKNOWN (transport, 5xx, malformed), so the re-read that
+  // follows is what answers it — never a blind re-send.
+  giveUp: { promise: Promise<boolean>; resolve: (ended: boolean) => void; sent: boolean } | null;
 }
 
 const flights = new Map<string, RoundFlight>();
@@ -150,7 +149,7 @@ function pruneFlights(keep: string): void {
   // published state goes with it: the flight is what owns it, and the next mount reads.
   for (const [key, f] of flights) {
     if (flights.size <= MAX_FLIGHTS) return;
-    if (key === keep || f.inFlight) continue;
+    if (key === keep || f.inFlight || f.giveUp) continue;
     if (f.timer !== null) clearTimeout(f.timer);
     flights.delete(key);
     useGameStore.getState().setRoundLoad(key, null);
@@ -168,23 +167,15 @@ export function beginRoundSync(ctx: RoundSyncContext): void {
     // describes the retired puzzle, so the conversation starts over — and re-opens if the
     // old one had closed at the cap or the freeze, since a fresh round is neither.
     if (existing.revision !== puzzle) {
+      // A give-up asked of the retired puzzle is not one of the corrected puzzle's.
+      answerGiveUp(existing, false);
       existing.server = EMPTY_ROUND_SERVER;
       existing.readDone = false;
       existing.settled = false;
       existing.created = false;
       existing.closed = false;
-      existing.lockedEarly = false;
       existing.failures = 0;
       useGameStore.getState().setRoundLoad(ctx.roundKey, { status: 'loading', puzzle });
-    } else if (existing.lockedEarly && !ctx.early) {
-      // THE FLIP (#273): the day this round was locked for has come, and the server's
-      // condition no longer applies. The conversation re-opens with a READ rather than a
-      // write — the night's refusal adopted the stored state, but another device may have
-      // moved it since, and the outbox stands owed to whatever the server now holds.
-      existing.closed = false;
-      existing.lockedEarly = false;
-      existing.readDone = false;
-      existing.failures = 0;
     }
     Object.assign(existing, ctx);
     // Re-insert so the LRU sees this round as the most recent.
@@ -206,7 +197,7 @@ export function beginRoundSync(ctx: RoundSyncContext): void {
     timer: null,
     inFlight: null,
     closed: false,
-    lockedEarly: false,
+    giveUp: null,
   });
   useGameStore.getState().setRoundLoad(ctx.roundKey, { status: 'loading', puzzle });
   pruneFlights(ctx.roundKey);
@@ -219,6 +210,49 @@ export function notifyGuess(roundKey: string): void {
   void pump(roundKey);
 }
 
+// THE GIVE-UP (the screen's confirm): end this round unsolved. Resolves TRUE once the round
+// is over on the server's terms — given up, or a solve that won the race — and FALSE when
+// the give-up did not land (a refusal, a flush whose outcome is unknown, or a give-up the
+// re-read could not confirm); the round then stays open and the player may ask again. What the outbox still owes is FLUSHED
+// first, so the log the give-up freezes holds every try the player made.
+export function giveUpRound(roundKey: string): Promise<boolean> {
+  const f = flights.get(roundKey);
+  if (!f || deviceIdentity() === null) return Promise.resolve(false);
+  if (f.closed) return Promise.resolve(over(f));
+  if (f.giveUp) return f.giveUp.promise;
+  let resolve!: (ended: boolean) => void;
+  const promise = new Promise<boolean>((done) => {
+    resolve = done;
+  });
+  f.giveUp = { promise, resolve, sent: false };
+  // Asked for NOW: a backoff left by an earlier hiccup must not hold the player's answer.
+  f.failures = 0;
+  f.lastFailureAt = 0;
+  void pump(roundKey);
+  return promise;
+}
+
+// Is this round over on the server's terms — solved, or ended unsolved (given up, or capped:
+// the shared `roundEnded`)?
+function over(f: RoundFlight): boolean {
+  return f.server.solved || roundEnded(f.server);
+}
+
+// Answer a pending give-up, once.
+function answerGiveUp(f: RoundFlight, ended: boolean): void {
+  const pendingGiveUp = f.giveUp;
+  if (!pendingGiveUp) return;
+  f.giveUp = null;
+  pendingGiveUp.resolve(ended);
+}
+
+// The conversation is over: nothing more is sent. A give-up waiting on it is answered by
+// how it ended — over on the server's terms is what it asked for.
+function close(f: RoundFlight): void {
+  f.closed = true;
+  answerGiveUp(f, over(f));
+}
+
 // The screen's RETRY on a failed load: spend the backoff now rather than waiting it out,
 // and re-open a conversation a verdict closed — the player asked, and a verdict this
 // client keeps getting wrong will simply be answered again.
@@ -229,7 +263,6 @@ export function retryRoundSync(roundKey: string): void {
   f.lastFailureAt = 0;
   if (!f.settled) {
     f.closed = false;
-    f.lockedEarly = false;
     useGameStore.getState().setRoundLoad(roundKey, { status: 'loading', puzzle: f.revision });
   }
   void pump(roundKey);
@@ -251,8 +284,9 @@ async function pump(key: string): Promise<void> {
   const delay = Math.max(
     backoffDelayMs(f.failures, f.lastFailureAt, now),
     // Only an APPEND waits on the write interval: the server's rate condition lives in
-    // the append's own condition, so a read is never refused for being too soon.
-    f.readDone ? writeDelayMs(f.lastWriteSettledAt, now) : 0,
+    // the append's own condition, so neither a read nor a give-up is refused for being
+    // too soon.
+    f.readDone && pending(f).length > 0 ? writeDelayMs(f.lastWriteSettledAt, now) : 0,
   );
   if (delay > 0) {
     schedule(key, delay);
@@ -278,35 +312,39 @@ async function pump(key: string): Promise<void> {
     f.inFlight = readRound(f);
   } else {
     const owed = pending(f);
-    if (owed.length === 0) return; // nothing pending
-    // NO IDENTITY, NO WRITE (#216 trigger rework): guesses cannot be typed behind the PLAY
-    // gate, so an owed outbox with no identity is the pending-bootstrap recovery case. It
-    // waits here — the append never mints — and the identity listener pumps every
-    // conversation when the gate's deploy lands (`kickRoundSync`).
-    if (deviceIdentity() === null) return;
-    // Never send a batch the route can only refuse. The stored log may hold at most
-    // ROUND_GUESS_CAP entries, so the batch is the OLDEST PREFIX that still fits — and
-    // when nothing fits at all, this round is capped: it has stopped counting, and saying
-    // so locally beats spending a doomed request. (An unclamped batch takes a 400, which is
-    // not the 409 this engine handles: it would re-send the identical body every 30s
-    // forever.)
-    //
-    // Room is measured against the RAW stored count, never the play log's: the two differ
-    // whenever the projection dedups two devices' surfaces of one group, and the cap counts
-    // what is STORED.
-    const room = ROUND_GUESS_CAP - f.server.guesses.length;
-    if (room <= 0) {
-      // The terminal state is DERIVED from the state already published (unsolved, at the
-      // cap), so there is nothing to mark — only guesses that can never be stored to drop.
-      discardOutbox(f);
-      f.closed = true;
-      return;
+    if (owed.length === 0) {
+      // Nothing owed: the give-up, if one is asked for — never before the flush, or the
+      // freeze it stores would refuse the last tries and drop them. One already sent is
+      // waiting on the re-read, not on another send.
+      if (!f.giveUp || f.giveUp.sent) return;
+      f.inFlight = sendGiveUp(f);
+    } else {
+      // NO IDENTITY, NO WRITE (#216 trigger rework): guesses cannot be typed behind the
+      // PLAY gate, so an owed outbox with no identity is the pending-bootstrap recovery
+      // case. It waits here — the append never mints — and the identity listener pumps
+      // every conversation when the gate's deploy lands (`kickRoundSync`).
+      if (deviceIdentity() === null) return;
+      // Never send a batch the route can only refuse. The stored log may hold at most
+      // ROUND_GUESS_CAP entries, so the batch is the OLDEST PREFIX that still fits — and
+      // when nothing fits at all, this round is capped: it has stopped counting, and saying
+      // so locally beats spending a doomed request. (An unclamped batch takes a 400, which
+      // is not the 409 this engine handles: it would re-send the identical body every 30s
+      // forever.)
+      //
+      // Room is measured against the RAW stored count, never the play log's: the two
+      // differ whenever the projection dedups two devices' surfaces of one group, and the
+      // cap counts what is STORED.
+      const room = ROUND_GUESS_CAP - f.server.guesses.length;
+      if (room <= 0) {
+        // The terminal state is DERIVED from the state already published (unsolved, at
+        // the cap), so there is nothing to mark — only guesses that can never be stored to
+        // drop.
+        discardOutbox(f);
+        close(f);
+        return;
+      }
+      f.inFlight = appendBatch(f, owed.slice(0, room));
     }
-    // Early play stops on a GUESS, including within a coalesced outbox. Send one at
-    // a time so the server's atomic progress/cap guard judges each next guess. This
-    // also prevents an oversized batch from refusing a round with one slot left
-    // after another device advanced it.
-    f.inFlight = appendBatch(f, owed.slice(0, f.early ? 1 : room));
   }
   try {
     await f.inFlight;
@@ -314,6 +352,7 @@ async function pump(key: string): Promise<void> {
     // Neither leg is expected to throw — both own their own error paths — but an
     // unexpected one must not escape as an unhandled rejection, and above all must not
     // leave `inFlight` pinned: that wedges this conversation shut for the tab's life.
+    answerGiveUp(f, false);
     retryLater(f);
   } finally {
     f.inFlight = null;
@@ -346,6 +385,7 @@ function adopt(f: RoundFlight, state: RoundState, byAppend: boolean): void {
   publish(f, {
     guesses: state.guesses,
     solved: state.solved,
+    gaveUp: state.gaveUp,
     // Only ever true, like the flag itself: a later answer about an already-known solve
     // must not downgrade the beats this device already earned.
     solvedByAppend: (f.server.solved && f.server.solvedByAppend) || (state.solved && byAppend),
@@ -373,6 +413,7 @@ function sameServer(load: RoundLoad | undefined, puzzle: string, next: RoundServ
   const { server } = load;
   return (
     server.solved === next.solved &&
+    server.gaveUp === next.gaveUp &&
     server.solvedByAppend === next.solvedByAppend &&
     server.credited === next.credited &&
     server.guesses.length === next.guesses.length &&
@@ -394,7 +435,7 @@ function settleOutbox(f: RoundFlight): void {
   store.setOutbox(f.roundKey, f.revision, remaining);
 }
 
-// The round is over on the server's terms (solved, or capped): what this device still had
+// The round is over on the server's terms (solved, given up, or capped): what this device still had
 // pending was REFUSED and will never be stored, so it is dropped for good rather than left
 // to count tries the recorded score does not.
 function discardOutbox(f: RoundFlight): void {
@@ -415,7 +456,7 @@ async function readRound(f: RoundFlight): Promise<void> {
       requestBody(f, identity.token),
     );
   } catch {
-    if (!superseded(f, puzzle, epoch)) retryLater(f);
+    if (!superseded(f, puzzle, epoch)) failRead(f);
     return;
   }
   if (superseded(f, puzzle, epoch)) return;
@@ -424,7 +465,7 @@ async function readRound(f: RoundFlight): Promise<void> {
     try {
       state = parseRound(await response.json());
     } catch {
-      if (!superseded(f, puzzle, epoch)) retryLater(f);
+      if (!superseded(f, puzzle, epoch)) failRead(f);
       return;
     }
     // Re-checked after the body: reading it is another await, and a republish landing
@@ -434,12 +475,13 @@ async function readRound(f: RoundFlight): Promise<void> {
     // carries a challenge.
     f.created = true;
     adopt(f, state, false);
-    // A solved round is FROZEN — it accepts no further appends — so anything still pending
-    // was refused before it could be stored. Every other read merely acknowledges.
-    if (state.solved) {
+    // A solved or GIVEN-UP round is FROZEN — it accepts no further appends — so anything
+    // still pending was refused before it could be stored. Every other read merely
+    // acknowledges.
+    if (state.solved || state.gaveUp) {
       discardOutbox(f);
       f.readDone = true;
-      f.closed = true;
+      close(f);
       return;
     }
     // This is also the recovery from an UNKNOWN write outcome: a write that committed but
@@ -448,6 +490,9 @@ async function readRound(f: RoundFlight): Promise<void> {
     // duplicates the projection then hides, and manufacturing a false "unreachable puzzle"
     // signal near the cap.
     settleOutbox(f);
+    // A give-up whose outcome was unknown did NOT land: the round stays open, and the
+    // player is told so rather than having it sent again behind their back.
+    if (f.giveUp?.sent) answerGiveUp(f, false);
   } else if (response.status === 404) {
     // The server holds nothing for THIS puzzle: a fresh round, or a daily re-published
     // under the same key whose old record is retired. Nothing is acknowledged — the whole
@@ -455,6 +500,7 @@ async function readRound(f: RoundFlight): Promise<void> {
     // carrying the round-start challenge.
     f.created = false;
     publish(f, EMPTY_ROUND_SERVER);
+    if (f.giveUp?.sent) answerGiveUp(f, false);
   } else if (isVerdict(response.status)) {
     // A device signed out from elsewhere learns it HERE first, since the mount read is the
     // earliest private call a game route makes. The screen it raises is the whole answer;
@@ -463,14 +509,78 @@ async function readRound(f: RoundFlight): Promise<void> {
     await adoptSignedOutVerdict(response, epoch);
     if (superseded(f, puzzle, epoch)) return;
     failLoad(f);
-    f.closed = true;
+    close(f);
     return;
   } else {
-    retryLater(f);
+    failRead(f);
     return;
   }
   f.readDone = true;
   f.failures = 0;
+}
+
+// A read that reached no answer: retried behind the backoff, and a give-up waiting on it is
+// answered NOW — it did not land as far as anyone can tell, and the player must not sit on a
+// busy button through an outage. Should it have landed after all, the retried read adopts it
+// and the round closes on its own.
+function failRead(f: RoundFlight): void {
+  answerGiveUp(f, false);
+  retryLater(f);
+}
+
+// THE GIVE-UP's own request (`giveUpRound`): `{token, puzzle, giveUp: true}`, sent once the
+// outbox is flushed. A 2xx is the round given up; a `round_solved` refusal is a solve that
+// won the race — over all the same, on the better terms; any other 4xx did not land (the
+// round stays open); an UNKNOWN outcome re-reads, and the read answers it.
+async function sendGiveUp(f: RoundFlight): Promise<void> {
+  const puzzle = f.revision;
+  const request = currentRequestIdentity();
+  if (!request) {
+    answerGiveUp(f, false);
+    return;
+  }
+  const { identity, epoch } = request;
+  f.giveUp!.sent = true;
+  let response: Response;
+  try {
+    response = await postRoundBody(roundUrl(f.lang, f.date), {
+      token: identity.token,
+      puzzle,
+      giveUp: true,
+    });
+  } catch {
+    if (!superseded(f, puzzle, epoch)) resync(f);
+    return;
+  }
+  if (superseded(f, puzzle, epoch)) return;
+  if (response.ok || response.status === 409) {
+    let state: RoundState;
+    try {
+      state = parseRound(await response.json());
+    } catch {
+      if (!superseded(f, puzzle, epoch)) resync(f);
+      return;
+    }
+    if (superseded(f, puzzle, epoch)) return;
+    f.failures = 0;
+    adopt(f, state, false);
+    if (state.solved || state.gaveUp) {
+      discardOutbox(f);
+      close(f);
+      return;
+    }
+    answerGiveUp(f, false);
+    return;
+  }
+  if (isVerdict(response.status)) {
+    // Nothing was given up (no record of this puzzle, a body refused); the round stays open
+    // and keeps its conversation. A device signed out elsewhere learns it here too.
+    await adoptSignedOutVerdict(response, epoch);
+    answerGiveUp(f, false);
+    return;
+  }
+  // A 5xx may have committed: the re-read says.
+  resync(f);
 }
 
 async function appendBatch(f: RoundFlight, batch: string[]): Promise<void> {
@@ -533,7 +643,6 @@ async function appendBatch(f: RoundFlight, batch: string[]): Promise<void> {
     // left: not its log, not its cap, not its failure count. The republish (or the sign-out)
     // already reset this flight to read again.
     if (superseded(f, puzzle, epoch)) return;
-    const priorFailures = f.failures;
     f.failures = 0;
     // The server holds a record for this puzzle — but only when this answer DEMONSTRATES
     // one (corrected on review). A rate-refused RESTART answers the EMPTY state, because no
@@ -544,37 +653,14 @@ async function appendBatch(f: RoundFlight, batch: string[]): Promise<void> {
     if (response.ok || state.createdAt !== '') f.created = true;
     adopt(f, state, response.ok);
 
-    // The FREEZE (#203/#214): a solved round accepts nothing more. This answer must do
-    // BOTH things — ADOPT the stored state, so the tab renders the round solved instead of
-    // an unsolved board with its guesses still on screen, and CLOSE, so `pump` does not
-    // resend immediately (and, with `failures` reset above, with no backoff at all). What
-    // it still had pending was refused, and is dropped for good.
-    if (state.solved || error === 'round_solved') {
+    // The FREEZES (#203/#214, and the give-up): a solved or given-up round accepts nothing
+    // more. This answer must do BOTH things — ADOPT the stored state, so the tab renders the
+    // round over instead of an unsolved board with its guesses still on screen, and CLOSE,
+    // so `pump` does not resend immediately (and, with `failures` reset above, with no
+    // backoff at all). What it still had pending was refused, and is dropped for good.
+    if (state.solved || state.gaveUp || error === 'round_solved' || error === 'round_given_up') {
       discardOutbox(f);
-      f.closed = true;
-      return;
-    }
-
-    // THE NIGHT'S LOCK (#273): the same two things, for the same reason — the guesses this
-    // batch carried were refused and will never be stored, and the tab has to render the
-    // state the server holds (another device's guess made the progress this one did not
-    // see). It closes only until the day flips: `beginRoundSync` re-opens it then.
-    //
-    // Unless THIS client already believes the day has flipped (`early` false) and the
-    // server has not — device-clock skew, the same minute on two clocks. Then the guess is
-    // one the server WILL accept, so it is kept and retried behind the backoff rather than
-    // dropped on a verdict that expires by itself. The failure count is CARRIED across
-    // these answers (every other answer resets it), so a device whose clock is hours ahead
-    // widens to the 30s ceiling instead of asking every two seconds until the server agrees.
-    if (error === 'early_locked') {
-      if (f.early) {
-        discardOutbox(f);
-        f.closed = true;
-        f.lockedEarly = true;
-      } else {
-        f.failures = priorFailures;
-        retryLater(f);
-      }
+      close(f);
       return;
     }
 
@@ -595,7 +681,7 @@ async function appendBatch(f: RoundFlight, batch: string[]): Promise<void> {
       // suppress its leaderboard entry, which is the harshest consequence this design has.
       if (f.server.guesses.length >= ROUND_GUESS_CAP) {
         discardOutbox(f);
-        f.closed = true;
+        close(f);
       }
       return;
     }
@@ -609,7 +695,7 @@ async function appendBatch(f: RoundFlight, batch: string[]): Promise<void> {
   if (isVerdict(response.status)) {
     await adoptSignedOutVerdict(response, epoch);
     if (superseded(f, puzzle, epoch)) return;
-    f.closed = true;
+    close(f);
     return;
   }
   // A 5xx is an unknown outcome like a transport error: it may have committed.
@@ -646,6 +732,11 @@ function resync(f: RoundFlight): void {
   f.readDone = false;
   f.failures += 1;
   f.lastFailureAt = Date.now();
+  // A give-up still waiting on the FLUSH did not go out, so it did not land: answered FALSE
+  // now. Left pending, it would wait on appends that may keep failing while every re-read
+  // succeeds — a busy button with no end. The outbox keeps retrying as before. (One already
+  // SENT is the re-read's to answer: it may have committed.)
+  if (f.giveUp && !f.giveUp.sent) answerGiveUp(f, false);
   // Deliberately NOT `failLoad`: the round is already interactive, and an unknown write
   // outcome is a sync hiccup, not a load failure.
 }
@@ -660,12 +751,12 @@ function resync(f: RoundFlight): void {
 // tokenless answer stays true (identityScope calls this only on `adopted`).
 export function rearmRoundSync(): void {
   for (const [key, f] of flights) {
+    answerGiveUp(f, false);
     f.server = EMPTY_ROUND_SERVER;
     f.readDone = false;
     f.settled = false;
     f.created = false;
     f.closed = false;
-    f.lockedEarly = false;
     f.failures = 0;
     useGameStore.getState().setRoundLoad(key, { status: 'loading', puzzle: f.revision });
     void pump(key);
@@ -683,6 +774,9 @@ export function kickRoundSync(): void {
 
 // Test seam: drop every conversation (module state must not leak between tests).
 export function resetRoundSync(): void {
-  for (const f of flights.values()) if (f.timer !== null) clearTimeout(f.timer);
+  for (const f of flights.values()) {
+    if (f.timer !== null) clearTimeout(f.timer);
+    answerGiveUp(f, false);
+  }
   flights.clear();
 }

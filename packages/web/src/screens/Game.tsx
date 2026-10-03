@@ -6,21 +6,27 @@ import {
   useRef,
   useState,
 } from 'react';
-import { guessKey, replayHoles } from '../game/scoring';
-import { playLogFor, roundCapped, withoutDeferred } from '../game/playLog';
+import { computeProgress, guessKey, replayHoles } from '../game/scoring';
+import { raceOf } from '../game/race';
+import { liveSawEnd } from '../game/resultBoards';
+import { playLogFor, withoutDeferred } from '../game/playLog';
 import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
-import { latestMaskedPick, retireDisplacedPicks, selectWord, shownHolesFor, type WordPick } from '../game/wordWheel';
+import { latestMaskedPick, selectWord, shownHolesFor, withoutMaskedPicks, type WordPick } from '../game/wordWheel';
 import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import useRoundSync from '../hooks/useRoundSync';
-import { notifyGuess, retryRoundSync } from '../state/roundSync';
+import { giveUpRound, notifyGuess, retryRoundSync } from '../state/roundSync';
 import { useGameStore, roundKeyFor } from '../state/gameStore';
 import { noteSolvedDay, usePlayerHistory } from '../state/history';
+import { loadGroups, useGroups } from '../state/groups';
+import { requestLiveBoard, useLiveBoard, useLiveBoardBusy } from '../state/liveBoard';
 import Phrase from '../components/Phrase';
 import CellDigits from '../components/CellDigits';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
+import RevealTray from '../components/RevealTray';
+import RaceLine from '../components/RaceLine';
 import DissolvePhrase from '../components/DissolvePhrase';
 import SolvedScreen, { type SolvedHole } from '../components/SolvedScreen';
 import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakDialog';
@@ -29,22 +35,20 @@ import HistoryModal from '../components/HistoryModal';
 import Button from '../components/Button';
 import { PLAY_LEVEL } from '../tutorial/levels';
 import LoadError from '../components/LoadError';
-import FlipCountdown from '../components/FlipCountdown';
-import { earlyLocked } from '../game/earlyPlay';
-import { replayCharge, strikeFor } from '../game/charge';
+import { replayCharge, strikeFor, type HoleCharge } from '../game/charge';
 import { navigate } from '../routing';
-import { pathForDay, pathForGame, pathForLesson } from '../langs';
+import { pathForLesson } from '../langs';
 import { MASK, buildHistory } from '../game/history';
 import { SCRAMBLE_MS, useScramble } from '../hooks/useScramble';
-import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, REVEAL_HOLD_MS, STAGGER_MS } from '../game/timing';
+import { FLOATING_HIT_INTRO_MS, GIVE_UP_HOLD_MS, KB_EXIT_FALLBACK_MS, REVEAL_HOLD_MS, STAGGER_MS } from '../game/timing';
 import type { HistoryStop } from '../game/history';
 import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
 import { track } from '../analytics';
 import {
   fold,
-  dateForDayNumber,
   isBonusRef,
   puzzleAddress,
+  roundEnded,
   type PuzzleRef,
 } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -52,6 +56,8 @@ import { sentenceStarts } from '../game/sentenceCase';
 import { prefetchTurnstileTokens } from '../turnstile';
 import { deviceIdentity, ensureDeviceIdentity, useDeviceIdentity } from '../identity';
 import ErrorScreen from '../components/ErrorScreen';
+import ConfirmScreen from '../components/ConfirmScreen';
+import FlagIcon from '../assets/icons/flag.svg?react';
 import type {
   Hole,
   Puzzle,
@@ -85,21 +91,15 @@ export default function Game({
   puzzle,
   puzzleRef,
   isActiveDay,
-  early,
   deferResultsAnimation,
 }: {
   puzzle: Puzzle;
   // WHICH puzzle: a game day, or a BONUS (shared bonus.ts) — no day, so never the active
-  // day, never early, and never a streak or an analytics beat.
+  // day, and never a streak or an analytics beat.
   puzzleRef: PuzzleRef;
   // Whether this is the client's active day (false when replaying an archive day, #55):
   // gates the fresh-solve streak celebration and tags solve analytics as archive/live.
   isActiveDay: boolean;
-  // EARLY PLAY (#273): this day is AFTER the client's active one — tomorrow's sentence,
-  // opened tonight from today's result. Play stops at the first progress or the third
-  // guess, and the keyboard's place counts down to the flip. LIVE: the route reads it off
-  // the app's day signal, so the flip itself unlocks the round in an open tab.
-  early: boolean;
   // The dev streak preview lives above Game in App, so it supplies the same animation gate
   // as the real in-round dialog without coupling the preview to persisted round state.
   deferResultsAnimation: boolean;
@@ -128,7 +128,6 @@ export default function Game({
       revision={puzzle.revision}
       puzzleRef={puzzleRef}
       isActiveDay={isActiveDay}
-      early={early}
       deferResultsAnimation={deferResultsAnimation}
     />
   );
@@ -147,7 +146,6 @@ function Round({
   revision,
   puzzleRef,
   isActiveDay,
-  early,
   deferResultsAnimation,
 }: {
   words: string[];
@@ -161,7 +159,6 @@ function Round({
   revision: string;
   puzzleRef: PuzzleRef;
   isActiveDay: boolean;
-  early: boolean;
   deferResultsAnimation: boolean;
 }) {
   // Fresh per-hole state derived from the puzzle. Used until the persisted store
@@ -239,7 +236,6 @@ function Round({
     // The round's identity on the wire (#203): the version this puzzle was published as.
     revision,
     ranks,
-    early,
   });
   const server = load.status === 'ready' ? load.server : null;
 
@@ -280,9 +276,6 @@ function Round({
     () => replayCharge(freshHoles, ranks, withoutDeferred(ranks, playLog, deferred)),
     [freshHoles, ranks, playLog, deferred],
   );
-  useLayoutEffect(() => {
-    setPicked((current) => retireDisplacedPicks(current, shownCharge));
-  }, [shownCharge]);
   // Score = number of unique tries. A try is a submitted word that exists in the
   // vocabulary, including misses; repeats and inflections of an already-played word are
   // one try (#104), which is exactly what the projection collapsed.
@@ -294,11 +287,14 @@ function Round({
   // signal. Keep every resolved hole reported for this round; the round-key dependency on
   // the callback makes already-resolved rehydrated holes report again after navigation.
   const [resolvedHoleIndices, setResolvedHoleIndices] = useState<Set<number>>(() => new Set());
+  // A give-up confirmed on THIS device (see the confirmation below): the round's own fact.
+  const giveUpHere = useRef(false);
   useLayoutEffect(() => {
     setResolvedHoleIndices(new Set());
     // Whatever was still animating belonged to the previous round.
     setDeferred([]);
     setPicked({});
+    giveUpHere.current = false;
   }, [roundKey]);
   const markHoleResolved = useCallback((index: number) => {
     setResolvedHoleIndices((current) => {
@@ -360,38 +356,45 @@ function Round({
   // still be in the air, and the guess that closed it is still on its way to the server —
   // so it owns the prompt's lock and nothing else (#214).
   const boardComplete = holes.every((h) => h.rank === 0);
-  const allWordsResolved = boardComplete && resolvedHoleIndices.size === holes.length;
 
   // AUTHORITATIVE solved: the server's own reading of the log it stores (#203). The local
   // board flips a beat earlier, while the solving append is still in flight, so everything
   // that must not happen twice or too early — the result, the leaderboard, the streak, the
   // `solve` event — hangs off this and never off `boardComplete`.
   const solved = server?.solved === true;
-  // CAPPED (#214): the authoritative state is UNSOLVED with exactly the raw cap stored, so
-  // the server refuses every further append. DERIVED, never a stored flag — the outbox's
-  // own length can never reveal it, since what counts is what was STORED. A legitimate
-  // solve accepted as raw entry 500 is an ordinary solved round: `solved` wins, and the
-  // leaderboard entry it earned stands.
-  const capped = roundCapped(server);
+  // ENDED UNSOLVED (the shared `roundEnded`): the player GAVE UP (a flag the server stores),
+  // or the stored raw log holds the cap (#214, derived — the outbox's own length can never
+  // reveal it, since what counts is what was STORED). `solved` wins over both: a solve
+  // accepted as raw entry 500, or one that raced a give-up, is an ordinary solved round.
+  const ended = roundEnded(server);
+  const gaveUp = ended && server?.gaveUp === true;
   // The round is over either way — the difference is what the headline says and whether
   // anything celebrates.
-  const finished = solved || capped;
-  // THE NIGHT'S LOCK (#273): tomorrow's round, and the play log already holds the first
-  // progress or the third guess. Judged LOCALLY, off the same play log the board replays
-  // — the input locks right after the guess that made progress, never on the server's
-  // refusal — and read over the FULL log rather than the board's deferred view, so the
-  // lock lands on the guess itself while its floating hit still plays. Lifted by the
-  // flip, when `early` goes false and the keyboard comes back where the clock stood.
-  const locked = useMemo(
-    () => early && !finished && earlyLocked(freshHoles, ranks, playLog),
-    [early, finished, freshHoles, ranks, playLog],
-  );
-  // TOMORROW (#273): the result screen's one onward action, from today's result only —
-  // the next day's sentence, on the dated route the server serves inside its skew window.
-  const goTomorrow = useCallback(() => {
-    if (isBonusRef(puzzleRef)) return;
-    navigate(pathForDay(lang, dateForDayNumber(puzzleRef.dayNumber + 1)));
-  }, [lang, puzzleRef]);
+  const finished = solved || ended;
+  // Every word on the board is final: the solve's, or a give-up's reveal (which shows every
+  // hole at its secret — `boardHoles` below).
+  const allWordsResolved = (boardComplete || gaveUp) && resolvedHoleIndices.size === holes.length;
+
+  // THE GIVE-UP: the flag at the prompt's end opens the confirmation; its act asks the sync
+  // engine, which flushes what the outbox owes and then stores the give-up. `giveUpHere`
+  // marks a give-up confirmed on THIS device — set before the request, so it is already true
+  // on the render where the server's answer turns the round over — and that one plays the
+  // reveal; one read at mount, or made on another device, lands on the settled result.
+  const [confirmingGiveUp, setConfirmingGiveUp] = useState(false);
+  const [givingUp, setGivingUp] = useState(false);
+  const [giveUpFailed, setGiveUpFailed] = useState(false);
+  const confirmGiveUp = useCallback(() => {
+    if (givingUp) return;
+    setGivingUp(true);
+    giveUpHere.current = true;
+    void giveUpRound(roundKey).then((over) => {
+      setGivingUp(false);
+      setConfirmingGiveUp(false);
+      if (over) return;
+      giveUpHere.current = false;
+      setGiveUpFailed(true);
+    });
+  }, [givingUp, roundKey]);
 
   // The pre-round GATE (2026-08-11; the #216 triggers 2026-08-24; an INVITATION since #269,
   // user-decided 2026-09-16). Two reasons to hold the round back, one tray:
@@ -429,6 +432,66 @@ function Round({
       .finally(() => setDeploying(false));
   }, [identity, deploying]);
   const openLesson = useCallback(() => navigate(pathForLesson(lang, PLAY_LEVEL)), [lang]);
+
+  // --- THE RACE LINE: the player's groups, merged, around them while they play
+  // (`state/liveBoard.ts` owns the read and its cost; `game/race.ts` the order). TODAY's
+  // sentence only — a group's competition is the day's (#211), so an archive day or a bonus
+  // races nobody — with an account (no token, no private fetch), and only when one of the
+  // player's groups holds somebody else. The groups list answers that last question.
+  const racing = isActiveDay && !isBonusRef(puzzleRef) && identity !== null;
+  useEffect(() => {
+    if (racing) loadGroups();
+  }, [racing, identity]);
+  const { phase: groupsPhase, groups } = useGroups();
+  const raceable = racing && (groups?.some((group) => group.members.length > 1) ?? false);
+  const raceDate = puzzleAddress(puzzleRef);
+  // ASKED when the round's server state lands and every time it CHANGES — the round's start,
+  // each acknowledged append, and the answer confirming a solve or a give-up (so the result
+  // reads the final rows) — and when the tab comes back. The module throttles; this only asks.
+  // The answer that ENDS the round while it is played on screen (a round already over when it
+  // loads is no such answer) asks `now`: the result's boards wait for an answer that has seen
+  // the end, and the throttle's trailing call would hold them empty for most of a window.
+  const racePlaying = useRef(false);
+  useEffect(() => {
+    const endedHere = finished && racePlaying.current;
+    racePlaying.current = server !== null && !finished;
+    if (raceable && server !== null) requestLiveBoard(lang, raceDate, endedHere);
+  }, [raceable, server, finished, lang, raceDate]);
+  useEffect(() => {
+    if (!raceable) return undefined;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') requestLiveBoard(lang, raceDate);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [raceable, lang, raceDate]);
+  const liveBoard = useLiveBoard(lang, raceDate);
+  const liveBusy = useLiveBoardBusy(lang, raceDate);
+  // The result's boards (SolvedScreen) read the same answer, but only one read AFTER the round
+  // ended (`liveSawEnd`: the server's row for the player shows the end) — the answer in hand
+  // when the solve lands was asked during play and lacks the score the solve just recorded.
+  // They hold their room while such an answer is on its way: the groups list still unknown, or
+  // a group with somebody else and a read still to come. With none coming (a failed read), the
+  // groups are left out rather than drawn off a stale answer.
+  const boards = useMemo(() => {
+    if (!racing) return null;
+    const ended = raceable && liveBoard !== null && identity !== null && liveSawEnd(liveBoard, identity.accountId);
+    return {
+      date: raceDate,
+      live: ended ? liveBoard : null,
+      awaited: (groups === null && groupsPhase !== 'failed') || (raceable && !ended && liveBusy),
+    };
+  }, [racing, raceDate, raceable, liveBoard, identity, groups, groupsPhase, liveBusy]);
+  // The player's own entry is the SCREEN's: the % of the board they see (it moves when a hit
+  // lands) and their own try count — both ahead of the stored summary the read carries.
+  const ownProgress = useMemo(() => computeProgress(holes, ranks), [holes, ranks]);
+  const race = useMemo(
+    () =>
+      raceable && liveBoard !== null && identity !== null
+        ? raceOf(liveBoard, { publicId: identity.accountId, progress: ownProgress, tries: guessCount })
+        : null,
+    [raceable, liveBoard, identity, ownProgress, guessCount],
+  );
   // The celebration is deliberately code-split out of startup. Warm its chunk only while
   // an eligible unsolved daily round is idle; if a player solves before idle fires, the
   // just-solved transition below starts the same preload immediately. Both scheduling paths
@@ -504,9 +567,12 @@ function Round({
     // refusal because the same ACCOUNT finished the board in another tab or on another
     // device — is history as far as the beats are concerned: the board IS solved, and it is
     // shown solved, but nothing celebrates a finish that already happened somewhere else.
-    // A CAPPED round is never fresh: it ends, it does not finish.
+    // A CAPPED round is never fresh: it ends, it does not finish. A GIVE-UP confirmed on
+    // this device is played — the unfound words revealed in the sentence, then the exit
+    // beats — but celebrates nothing.
     const justFinished = finished && !prevFinished.current;
     const freshSolve = solved && server?.solvedByAppend === true;
+    const freshGiveUp = gaveUp && giveUpHere.current;
     prevFinished.current = finished;
     setRevealEnded(false);
     if (!finished) {
@@ -520,7 +586,7 @@ function Round({
       setDissolved(false);
       return undefined;
     }
-    if (!justFinished || !freshSolve) {
+    if (!justFinished || !(freshSolve || freshGiveUp)) {
       setShowResults(true); // adopted history, or the cap — reveal without waiting
       setAnimateResults(deferResultsAnimation);
       setShowStreakDialog(false);
@@ -528,6 +594,19 @@ function Round({
       setAwaitingWordAnimations(false);
       setPromptExiting(false);
       setDissolved(true); // nothing to replay — the sentence is already gone
+      return undefined;
+    }
+    if (freshGiveUp) {
+      // THE GIVE-UP's beats: the prompt leaves as on a solve, the unfound holes turn into
+      // their secrets (`boardHoles` below), and once every word has settled the keyboard
+      // drops, the sentence dissolves and the result rises. No `solve` event, no streak, no
+      // celebration: nothing was found.
+      say(t(lang, 'srGaveUp'));
+      setPromptExiting(true);
+      setAnimateResults(true);
+      setStreakAdvanced(false);
+      setDissolved(false);
+      setAwaitingWordAnimations(true);
       return undefined;
     }
     // The one analytics beat for "did the player finish a puzzle": fired ONLY on the
@@ -570,11 +649,21 @@ function Round({
     // the celebration of a day the collection is holding.
     const willShowStreak = streakAdvanced;
     if (!willShowStreak) {
-      setShowResults(true);
-      setKeyboardLeaving(true);
-      setShowStreakDialog(false);
-      setAwaitingWordAnimations(false);
-      return;
+      const handOver = () => {
+        setShowResults(true);
+        setKeyboardLeaving(true);
+        setShowStreakDialog(false);
+        setAwaitingWordAnimations(false);
+      };
+      // A GIVE-UP's revealed sentence stands a beat first, so the answer is read in place
+      // (only a fresh give-up waits on its words: `gaveUp` here is one confirmed on this
+      // device).
+      if (!gaveUp || prefersReducedMotion()) {
+        handOver();
+        return;
+      }
+      const hold = window.setTimeout(handOver, GIVE_UP_HOLD_MS);
+      return () => window.clearTimeout(hold);
     }
 
     // Let the player see the fully resolved sentence for one clean beat before the
@@ -587,7 +676,7 @@ function Round({
       setAwaitingWordAnimations(false);
     }, STREAK_AFTER_WORDS_MS);
     return () => window.clearTimeout(timer);
-  }, [allWordsResolved, awaitingWordAnimations, streakAdvanced]);
+  }, [allWordsResolved, awaitingWordAnimations, streakAdvanced, gaveUp]);
 
   const dismissStreakDialog = useCallback(() => {
     // StreakDialog calls this only AFTER its 200ms exit fade. On a streak solve it is
@@ -671,37 +760,73 @@ function Round({
   // hole IMPROVES: `at` records the real rank the pick was made against, and the moment that
   // rank moves the new best takes the hole back. A pick at the hole's own rank is simply the
   // hole. Never persisted: a reading aid, not a fact about the round.
-  // A live pick is shown in the hole's place — and a picked MASK shows its WORD the moment
-  // the log holds it (the reveal, or the word typed by hand): derived, so nothing about
-  // the pick has to be rewritten when the guess lands.
+  // A picked MASK shows `?????` until its reveal lands: the word is closer than the best it
+  // was picked against, so the hole then improves to it and shows it as its own.
   const shownHoles = useMemo(
-    () => shownHolesFor(holes, picked, shownCharge, ranks),
-    [holes, picked, shownCharge, ranks],
+    () => shownHolesFor(holes, picked, shownCharge),
+    [holes, picked, shownCharge],
   );
+  // THE GIVE-UP's board: every hole the player did not find shows its SECRET — at rank 0, so
+  // the hole plays its own word change into it and reports resolved, which is what the exit
+  // beats wait on — dressed `revealed`: the held chip with no exponent, never the cobalt of
+  // a word found.
+  const boardHoles = useMemo<RuntimeHole[]>(
+    () =>
+      gaveUp
+        ? holes.map((h, i) =>
+            h.rank === 0 ? h : { ...h, word: puzzleHoles[i].secret.word, rank: 0, revealed: true },
+          )
+        : shownHoles,
+    [gaveUp, holes, puzzleHoles, shownHoles],
+  );
+
   const pickWord = useCallback(
     (index: number, stop: HistoryStop) => {
       const at = holes[index]?.rank;
       if (at === undefined || at === 0) return;
+      // A mask picked puts REVEAL in the keyboard's place: a half-typed draft goes first,
+      // and the message about it, so the prompt is the mask's alone.
+      if (stop.masked) {
+        setInput('');
+        setFeedback(null);
+      }
       setPicked((cur) => selectWord(cur, index, stop, at));
     },
     [holes],
   );
-  // THE GHOST: the masked hint picked into the sentence and not yet revealed — the one an
-  // empty ENTER submits. The latest such pick, should two holes hold one. Read off the
-  // FULL log (`chargeState`): the ghost is spent the instant the guess is in, while the
-  // hole (`shownHoles`, the deferred view) keeps its mask until the release.
+  // THE GHOST: the masked hint picked into the sentence and not yet revealed — the one
+  // REVEAL (or an empty Enter) submits. The latest such pick, should two holes hold one.
+  // Read off the FULL log (`chargeState`): the ghost is spent the instant the guess is in,
+  // while the hole (`shownHoles`, the deferred view) keeps its mask until the release.
   const ghost = useMemo(
     () => latestMaskedPick(picked, holes, chargeState),
     [holes, picked, chargeState],
   );
-  // THE DECODE (user-decided 2026-09-23, the second cut of it): ENTER on the ghost SENDS
-  // THE GUESS AT ONCE — the log, the server, the count — and the prompt UNCYPHERS the
-  // word meanwhile: the marks churn into it (`useScramble`, the hole's own settle) as a
-  // TYPED word, in `--fg`, it stands `REVEAL_HOLD_MS`, then the prompt clears the way it
-  // does on any guess; the guess's whole choreography — the hits, the hole's swap, the
-  // count ticking — is delayed by exactly that, so it plays on a word already read.
+  // THE DECODE (user-decided 2026-09-23, the second cut of it): REVEAL SENDS THE GUESS AT
+  // ONCE — the log, the server, the count — and the prompt UNCYPHERS the word meanwhile:
+  // the marks churn into it (`useScramble`, the hole's own settle) as a TYPED word, in
+  // `--fg`, it stands `REVEAL_HOLD_MS`, then the prompt clears the way it does on any
+  // guess; the guess's whole choreography — the hits, the hole's swap, the count ticking —
+  // is delayed by exactly that, so it plays on a word already read.
   const [decoding, setDecoding] = useState<string | null>(null); // the key being uncyphered
   const decode = useScramble();
+  // THE REVEAL TRAY (user-decided 2026-10-02) holds the keyboard's place while a ghost
+  // stands or decodes — the prompt holds a word already, so no key has anything to add.
+  // (A mask picked clears the draft, and letters and recall are refused while it stands,
+  // so a ghost always stands in an empty prompt.)
+  const revealUp = decoding !== null || ghost !== null;
+  // The GIVE-UP's flag stands once the round holds a guess, while it can still be played:
+  // never on the gate, never over a reveal standing or decoding, never once the round is
+  // over or leaving.
+  const canGiveUp =
+    guessCount > 0 && !finished && !gateOpen && !revealUp && !promptExiting && !showResults;
+  // BACK: the mask un-picked, the hole's own word back, the keyboard back under the caret,
+  // on an empty prompt.
+  const unpickMask = useCallback(() => {
+    setFeedback(null);
+    setPicked(withoutMaskedPicks);
+    guessField.current?.focus({ preventScroll: true });
+  }, []);
   // Tapping a hole is available during normal play only: once the solving beats begin, the
   // sentence belongs to the choreography (and then dissolves), and the tap moves to the
   // result's own secrets in the sentence's page — which are never disabled, because they
@@ -727,11 +852,13 @@ function Round({
   const charges = useMemo(
     () =>
       shownCharge.map((c, i) => {
+        // A full meter with nothing left to offer (its best is the word just before the
+        // secret) is described as the meter it is.
         const hint =
           holes[i].rank === 0
             ? ''
-            : c.active
-              ? srHoleGiven(lang, c.given.filter((g) => !g.consumed).length)
+            : c.given.some((g) => !g.consumed)
+              ? srHoleGiven(lang)
               : srHoleCharge(lang, c.charge);
         return { value: c.charge, active: c.active, hint };
       }),
@@ -751,8 +878,16 @@ function Round({
         number: holeNumbers[holeIndex],
         prefix: h.prefix,
         suffix: h.suffix,
+        // Found, or only revealed (a round that ended unsolved): the page dresses them apart.
+        found: holes[holeIndex].rank === 0,
       })),
-    [puzzleHoles, holeNumbers],
+    [puzzleHoles, holeNumbers, holes],
+  );
+  // Where the words the player did NOT find sit in the sentence: the dissolve keeps their
+  // revealed dress while it erodes them.
+  const revealedPositions = useMemo(
+    () => solvedHoles.filter((h) => !h.found).map((h) => h.pos),
+    [solvedHoles],
   );
   const historyModel = useMemo(() => {
     if (historyHole === null) return null;
@@ -770,8 +905,8 @@ function Round({
       // The given words as the BOARD shows them: they land with the release beat, like the
       // hole's own swap, so the wheel never names a word the sentence has not caught up to.
       given: shownCharge[historyHole]?.given,
-      // A finished round (solved or capped) shows its answer on the result page, so the
-      // words modal masks nothing and names the secret, found or not.
+      // A finished round (solved, given up or capped) shows its answer on the result page,
+      // so the words modal masks nothing and names the secret, found or not.
       over: finished,
     });
   }, [historyHole, holes, puzzleHoles, ranks, history, shownCharge, finished]);
@@ -781,8 +916,8 @@ function Round({
   // A COMPLETED hole (rank 0) opens the words MODAL — there is nothing to swap in — whether
   // or not the rest of the sentence is done (user-decided 2026-09-01); an open hole opens
   // the WHEEL, and only the wheel veils the word beneath it.
-  // A FINISHED round opens the modal for every hole, found or not (PR-272 review): a
-  // capped round's unfound holes keep a rank, but the wheel measures the board's own
+  // A FINISHED round opens the modal for every hole, found or not (PR-272 review): an
+  // unfinished round's unfound holes keep a rank, but the wheel measures the board's own
   // `[data-hole-explore] .hole-word-wrap` — which the solved page's secrets do not wear —
   // and a pick has nothing to swap into a page that shows the answer already.
   const wheelOpen = historyHole !== null && holes[historyHole]?.rank !== 0 && !finished;
@@ -820,45 +955,53 @@ function Round({
       if (promptExiting) return;
       setFeedback(null);
       // A ghost stands, or decodes: the letters are out (the prompt holds a word already).
-      if (decoding !== null || (ghost !== null && input === '')) {
+      if (revealUp) {
         setInvalidAt(Date.now());
         return;
       }
       if (canExtend(prefixSet, input, char)) setInput(input + char);
       else setInvalidAt(Date.now());
     },
-    [prefixSet, input, promptExiting, ghost, decoding],
+    [prefixSet, input, promptExiting, revealUp],
   );
 
+  // Backspace on a standing ghost is BACK (the tray's twin); nothing while it decodes.
   const deleteChar = useCallback(() => {
-    if (promptExiting) return;
+    if (promptExiting || decoding !== null) return;
     setFeedback(null);
-    setInput((cur) => cur.slice(0, -1));
-  }, [promptExiting]);
+    if (ghost !== null) unpickMask();
+    else setInput((cur) => cur.slice(0, -1));
+  }, [promptExiting, decoding, ghost, unpickMask]);
 
   // Replace the whole input (physical-keyboard history recall). Recalled values are
   // past valid words, hence valid prefixes, so no re-validation is needed.
   // The value a recall just put in the prompt, so the keyboard strikes no key for it.
   const recalledInput = useRef<string | null>(null);
+  // Refused like a letter while a ghost stands: a recall would put the keyboard back under
+  // a mask still picked.
   const replaceInput = useCallback((v: string) => {
     if (promptExiting) return;
     setFeedback(null);
+    if (revealUp) {
+      setInvalidAt(Date.now());
+      return;
+    }
     recalledInput.current = v;
     setInput(v);
-  }, [promptExiting]);
+  }, [promptExiting, revealUp]);
 
   const submit = useCallback(
     (raw: string) => {
       // A board already complete takes no more guesses, and neither does a round the server
-      // has closed — solved (frozen) or capped — nor one locked for the night (#273).
-      if (boardComplete || finished || promptExiting || locked) return;
+      // has closed — solved (frozen) or capped.
+      if (boardComplete || finished || promptExiting) return;
       // The next guess is typed where the last one was: a no-op when the field already has
       // the focus, which is every submit but the on-screen ENTER's own keyboard activation.
       guessField.current?.focus({ preventScroll: true });
-      // An EMPTY submit with a masked hint picked is THE REVEAL (user-decided 2026-09-22):
-      // the ghost's key goes in as the guess, at once, and the prompt uncyphers it while
-      // the guess's choreography waits `reveal` ms (the decode above). Everything below is
-      // the guess's usual way, shifted by that.
+      // An EMPTY submit with a masked hint picked is THE REVEAL (user-decided 2026-09-22;
+      // the tray's REVEAL, or Enter): the ghost's key goes in as the guess, at once, and the
+      // prompt uncyphers it while the guess's choreography waits `reveal` ms (the decode
+      // above). Everything below is the guess's usual way, shifted by that.
       if (decoding !== null) return;
       const revealing = !fold(raw) && ghost !== null;
       const typed = fold(raw) || ghost?.slug || '';
@@ -939,13 +1082,12 @@ function Round({
       const parts = impacted.map(({ index, entry }) =>
         srHoleResult(lang, index + 1, entry ? entry.rank : null),
       );
-      // Words this guess gives — the masks it opens on an active hole — are said in the
-      // same breath: they are news. Counted as masks that were not there before, since a
-      // nearer opening can take the place of the farthest one.
+      // The word this guess has a hole offer — the activation's first, or the next one
+      // closer once it moves the best — is said in the same breath: it is news.
+      const offer = (c: HoleCharge) => c.given.find((g) => !g.consumed)?.rank;
       for (const { index } of impacted) {
-        const before = new Set(chargeState[index].given.map((g) => g.rank));
-        const gave = charged[index].given.filter((g) => !g.consumed && !before.has(g.rank)).length;
-        if (gave > 0) parts.push(srHoleGiven(lang, gave, index + 1));
+        const next = offer(charged[index]);
+        if (next !== undefined && next !== offer(chargeState[index])) parts.push(srHoleGiven(lang, index + 1));
       }
       say(solvesAll ? [...parts, t(lang, 'srSolvedAll')].join(', ') : parts.join(', '));
 
@@ -1011,7 +1153,6 @@ function Round({
       boardComplete,
       finished,
       promptExiting,
-      locked,
       vocabSet,
       appendOutbox,
       revision,
@@ -1055,7 +1196,7 @@ function Round({
       {showResults && dissolved ? (
         /* The RESULT (user-decided 2026-09-08, on #266's second review): the sentence has
            dissolved, so the stage takes the WHOLE column the play area and the tray used
-           to split — the score block with SHARE at the TOP, and the sentence's page
+           to split — the card with SHARE at the TOP, and the sentence's page
            (the credit, then the text, read top-down) scrolling under it. The tray goes
            with the keyboard: nothing left down there to reserve a footprint for. */
         <SolvedScreen
@@ -1063,25 +1204,24 @@ function Round({
           trajectory={trajectory}
           puzzleRef={puzzleRef}
           lang={lang}
-          // A capped round has no solve to tick and no count to name: it ends at `∞`
-          // (#214), with the sentence, its answer and the credit shown like any other
-          // finished round.
-          solvedAt={capped ? undefined : solvedAt}
-          capped={capped}
+          // A round that ENDED UNSOLVED (given up, or capped) has no solve to tick and no
+          // count to name: it ends at `∞` (#214), with the sentence, its answer and the
+          // credit shown like any other finished round.
+          solvedAt={ended ? undefined : solvedAt}
+          unfinished={ended}
           source={source}
           words={words}
           holes={solvedHoles}
           onExplore={openHistory}
           animate={animateResults}
           onRevealEnd={() => setRevealEnded(true)}
-          // TOMORROW opens the next day's sentence (#273) — from TODAY's result only: an
-          // archive day's next day is another archive day, and tomorrow's own result
-          // (impossible tonight, ordinary once its day has come) has no day to open.
-          onTomorrow={isActiveDay ? goTomorrow : undefined}
+          // How the day compares — the player's groups, then the global board — on the
+          // active day only: an archive day or a bonus has no live board.
+          boards={boards}
           // The dev `?streak=N` preview (App owns that dialog, so this round never sees
           // it in `showStreakDialog`) opens over an ALREADY-SOLVED day, where the result
           // is mounted from the first frame. Without this it would play its whole reveal
-          // — citation, tally, standing — under a full-screen modal, and dismissal would
+          // — tally, SHARE, boards, citation — under a full-screen modal, and dismissal would
           // land on a finished frame: the exact choreography the harness exists to
           // replay, spent unseen. The prop flips false on dismissal, which is the cue.
           start={!deferResultsAnimation}
@@ -1092,7 +1232,9 @@ function Round({
               (bottom) and centers its content, so the sentence + prompt sit in the middle.
               It also anchors the score watermark, so the big try count stays centered
               behind THIS content rather than the full-height .game. */}
-          <div className={`play${showResults ? ' play-finished' : ''}`}>
+          {/* `play-race`: today's sentence keeps the race line's band clear under the prompt
+              (index.css `.play-race`) for the whole round, so the line covers nothing. */}
+          <div className={`play${isActiveDay ? ' play-race' : ''}${showResults ? ' play-finished' : ''}`}>
             {/* The sentence, through every phase that owns it: the live holes/hits while
                 playing, the fully resolved sentence through the solving beats — and then
                 its EXIT: once the keyboard has dropped (`resultUp`), the live Phrase hands
@@ -1107,11 +1249,16 @@ function Round({
                 <CellDigits value={guessCount - (decoding !== null ? 1 : 0)} />
               </div>
               {resultUp ? (
-                <DissolvePhrase words={words} puzzleHoles={puzzleHoles} onDone={finishDissolve} />
+                <DissolvePhrase
+                  words={words}
+                  puzzleHoles={puzzleHoles}
+                  revealedAt={revealedPositions}
+                  onDone={finishDissolve}
+                />
               ) : (
                 <Phrase
                   words={words}
-                  holes={shownHoles}
+                  holes={boardHoles}
                   puzzleHoles={puzzleHoles}
                   hits={hits}
                   onHitDone={removeHit}
@@ -1132,9 +1279,9 @@ function Round({
             <div className="prompt-zone">
               <div
                 className={`input-area${promptExiting ? ' solving' : ''}${
-                  showResults || gateOpen || locked ? ' retired' : ''
+                  showResults || gateOpen ? ' retired' : ''
                 }`}
-                aria-hidden={promptExiting || showResults || gateOpen || locked || undefined}
+                aria-hidden={promptExiting || showResults || gateOpen || undefined}
               >
                 <WordInput
                   value={input}
@@ -1152,26 +1299,54 @@ function Round({
                   // a guess the player cannot see behind it. The gate holds it back the same
                   // way — the prompt arrives with the keyboard, on PLAY. And the RETIRING
                   // prompt is inactive too, so its field is never a focusable control inside
-                  // the `aria-hidden` box below (#267 gave it one to focus). The night's
-                  // lock (#273) retires it the same way, until the flip brings it back.
+                  // the `aria-hidden` box below (#267 gave it one to focus).
                   active={
-                    !showResults && historyHole === null && !gateOpen && !promptExiting && !locked
+                    !showResults &&
+                    historyHole === null &&
+                    !gateOpen &&
+                    !promptExiting &&
+                    !confirmingGiveUp
                   }
                 />
                 <p className="hint">{feedback || ' '}</p>
               </div>
+              {/* THE GIVE-UP's flag, at the prompt row's right end. Its column is held for
+                  the whole round, so neither its arrival (the first guess) nor its leaving
+                  moves the prompt: a long guess crops its own head before reaching it. */}
+              <button
+                type="button"
+                className={`give-up-btn${canGiveUp ? '' : ' off'}`}
+                aria-label={t(lang, 'giveUp')}
+                aria-hidden={!canGiveUp || undefined}
+                disabled={!canGiveUp}
+                onClick={() => setConfirmingGiveUp(true)}
+              >
+                <FlagIcon aria-hidden="true" focusable="false" />
+              </button>
             </div>
           </div>
 
-          {/* Bottom zone (fixed keyboard-height footprint): the on-screen keyboard, or the
-              gate. The keyboard lingers (inert; submit is guarded) through the last hole's
-              animation, then slides down out of the tray (#110); the tray then sits empty
-              under the dissolving sentence until the result takes the whole column. */}
+          {/* Bottom zone (fixed keyboard-height footprint): the on-screen keyboard (or, a mask
+              picked, the REVEAL tray in its place), or the gate. The keyboard lingers (inert;
+              submit is guarded) through the last hole's animation, then slides down out of
+              the tray (#110); the tray then sits empty under the dissolving sentence until the
+              result takes the whole column. */}
           <div
             className={`tray${keyboardLeaving ? ' kb-leaving' : ''}${
               gateOpen ? ' tray-gate' : ''
             }`}
           >
+            {/* THE RACE LINE, laid on the tray's top edge over whatever it holds. It goes out
+                with the prompt on the solving submit (or the give-up) and stays laid down,
+                invisible, until the result takes the column. Never over the gate, whose
+                stack can rise past the tray's edge. */}
+            {race && !gateOpen && (
+              <RaceLine
+                lang={lang}
+                entries={race.window}
+                retired={promptExiting || finished || showResults}
+              />
+            )}
             {gateOpen ? (
               /* The GATE, in the keyboard's own footprint: PLAY (the tutorial's own full-width
                  button, so the graduation and the gate speak one button) and, while the lesson
@@ -1193,12 +1368,7 @@ function Round({
                   </Button>
                 )}
               </div>
-            ) : resultUp ? null : locked ? (
-              /* THE NIGHT'S LOCK (#273): the countdown to the flip takes the keyboard's
-                 place — the whole statement, in the keys' own footprint, so nothing above
-                 it moves when the keys go or when they come back. */
-              <FlipCountdown lang={lang} onToday={() => navigate(pathForGame(lang))} />
-            ) : (
+            ) : resultUp ? null : (
               <div
                 className={`kb-exit${keyboardLeaving ? ' leaving' : ''}`}
                 onAnimationEnd={(e) => {
@@ -1207,18 +1377,28 @@ function Round({
                   if (keyboardLeaving && e.target === e.currentTarget) setKeyboardLeaving(false);
                 }}
               >
-                <Keyboard
-                  input={input}
-                  prefixSet={prefixSet}
-                  vocabSet={vocabSet}
-                  submittable={ghost !== null && decoding === null}
-                  locked={decoding !== null || (ghost !== null && input === '')}
-                  recalled={recalledInput}
-                  lang={lang}
-                  onType={appendChar}
-                  onBackspace={deleteChar}
-                  onSubmit={submit}
-                />
+                {/* A picked mask takes the keyboard's place with REVEAL — inside this wrapper
+                    all the same: a reveal can solve the board through another hole, and the
+                    solve's drop waits on this element's own animation. */}
+                {revealUp ? (
+                  <RevealTray
+                    lang={lang}
+                    decoding={decoding !== null}
+                    onReveal={() => submit('')}
+                    onBack={unpickMask}
+                  />
+                ) : (
+                  <Keyboard
+                    input={input}
+                    prefixSet={prefixSet}
+                    vocabSet={vocabSet}
+                    recalled={recalledInput}
+                    lang={lang}
+                    onType={appendChar}
+                    onBackspace={deleteChar}
+                    onSubmit={submit}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -1233,6 +1413,26 @@ function Round({
           title={t(lang, 'failedAccount')}
           note={t(lang, 'failedAccountNote')}
           onClose={() => setDeployFailed(false)}
+        />
+      )}
+
+      {confirmingGiveUp && (
+        <ConfirmScreen
+          lang={lang}
+          title={t(lang, 'giveUpTitle')}
+          note={t(lang, 'giveUpNote')}
+          action={t(lang, 'giveUpAction')}
+          busy={givingUp}
+          onConfirm={confirmGiveUp}
+          onClose={() => setConfirmingGiveUp(false)}
+        />
+      )}
+      {giveUpFailed && (
+        <ErrorScreen
+          lang={lang}
+          title={t(lang, 'failedGiveUp')}
+          note={t(lang, 'failedGiveUpNote')}
+          onClose={() => setGiveUpFailed(false)}
         />
       )}
 

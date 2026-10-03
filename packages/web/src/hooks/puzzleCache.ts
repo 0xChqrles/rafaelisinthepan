@@ -1,6 +1,6 @@
 // A day's puzzle, kept once it has been fetched and parsed (user-decided 2026-09-11: going
-// back and forth between today's result and tomorrow's round "makes the navigation slow
-// and interrupted many times by the loading state").
+// back and forth between days "makes the navigation slow and interrupted many times by the
+// loading state") — today's result and an archive day, without a loading beat between.
 //
 // A sentence puzzle is megabytes of rank maps. The browser's HTTP cache usually spares the
 // NETWORK on a revisit (the route is served `max-age=300`), but the app still decompressed
@@ -9,7 +9,7 @@
 // argument:
 //
 //   COUNT — the last `PUZZLE_CACHE_MAX` days, oldest out. Every entry pins megabytes of
-//           heap; three covers today ↔ tomorrow ↔ one archive day, and it is the bound the
+//           heap; three covers today ↔ two archive days, and it is the bound the
 //           round engine already applies to its conversations for the same reason.
 //   AGE   — an entry expires after `PUZZLE_CACHE_TTL_MS`, the SAME 300 seconds the CDN
 //           caches the route for. So this makes nothing staler than it already is: a

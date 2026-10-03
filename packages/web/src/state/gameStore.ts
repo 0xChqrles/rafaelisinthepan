@@ -48,6 +48,9 @@ export interface RoundServer {
   // yet". It is the authority for the round being over: the local board flips a beat
   // earlier, while the solving append is still in flight.
   solved: boolean;
+  // Has the server stored a GIVE-UP for this round? Only ever written true, like `solved`,
+  // and `solved` wins when both are (`roundEnded`, shared).
+  gaveUp: boolean;
   // Was this solve CONFIRMED by a batch this device just sent, rather than learned from the
   // mount read or a `round_solved` refusal? A solve this device played earns the normal
   // beats; an adopted one is history — shown, never celebrated.
@@ -81,6 +84,7 @@ export function roundLoadFor(load: RoundLoad | undefined, puzzle: string): Round
 export const EMPTY_ROUND_SERVER: RoundServer = {
   guesses: [],
   solved: false,
+  gaveUp: false,
   solvedByAppend: false,
   credited: false,
 };
@@ -175,8 +179,8 @@ export interface PersistedState {
   // that forgot it would silently reopen on the old tab forever.
   boardTab: BoardTab;
   // WHICH group the board last showed (#271): the tab the leaderboard reopens on, and the
-  // group whose standing the solved screen prints (user-decided 2026-09-07: "the group
-  // last opened"). Persisted like the tab, and ACCOUNT-owned — a device that leaves an
+  // first of the solved screen's group boards (user-decided 2026-09-07: "the group last
+  // opened"). Persisted like the tab, and ACCOUNT-owned — a device that leaves an
   // account may not keep pointing at a group it is no longer in (`reconcileIdentity`).
   // A stale id (left, removed) is simply not among the groups the server lists, and the
   // screen falls back to the first one.
@@ -209,7 +213,8 @@ interface GameState extends PersistedState {
   setBoardTab: (tab: BoardTab) => void;
   resetBoardTab: () => void;
   // The group the board last showed (#271) — set by the leaderboard on every group tab it
-  // opens, and by the solved screen's standing line on its way to the board.
+  // opens, by a group joined from its invite, and by the solved screen's group boards on
+  // their way to the board.
   setLastGroup: (group: string | null) => void;
 
   // Mark the onboarding tutorial as seen (finish AND skip both count — never re-nag).

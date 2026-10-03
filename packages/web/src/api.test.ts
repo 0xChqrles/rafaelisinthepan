@@ -10,6 +10,7 @@ import {
   devicesUrl,
   groupsUrl,
   parseBoard,
+  parseLiveBoard,
   parseDeviceIdentity,
   puzzleUrl,
   puzzleOutcome,
@@ -625,20 +626,23 @@ describe('parseBoard (shape validation, #190)', () => {
   });
 
   // The #206 in-progress rows: a dressed player with the two live numbers — an exact
-  // try count (positive integer) and a reconstruction percentage (real, 0..100).
-  const playingRow = (over: Partial<Record<string, unknown>> = {}) => ({
+  // try count (positive integer) and a reconstruction percentage (real, 0..100) — and
+  // whether the round ended unsolved (`over`).
+  const playingRow = (fields: Partial<Record<string, unknown>> = {}) => ({
     publicId: 'abcdefghij234567',
     name: '',
     avatar: null,
     tries: 12,
     progress: 62.5,
-    ...over,
+    over: false,
+    ...fields,
   });
 
   it('accepts playing rows, fractional progress included (#206)', () => {
     expect(parseBoard({ ...valid(), playing: [playingRow()] }).playing).toHaveLength(1);
     expect(parseBoard({ ...valid(), playing: [playingRow({ progress: 0 })] }).playing).toHaveLength(1);
     expect(parseBoard({ ...valid(), playing: [playingRow({ progress: 100 })] }).playing).toHaveLength(1);
+    expect(parseBoard({ ...valid(), playing: [playingRow({ over: true })] }).playing[0].over).toBe(true);
   });
 
   it('rejects a malformed playing row (#206)', () => {
@@ -650,6 +654,8 @@ describe('parseBoard (shape validation, #190)', () => {
     expect(() => parseBoard({ ...valid(), playing: [playingRow({ progress: -1 })] })).toThrow(/playing/);
     expect(() => parseBoard({ ...valid(), playing: [playingRow({ progress: 101 })] })).toThrow(/playing/);
     expect(() => parseBoard({ ...valid(), playing: [playingRow({ progress: '40' })] })).toThrow(/playing/);
+    expect(() => parseBoard({ ...valid(), playing: [playingRow({ over: undefined })] })).toThrow(/playing/);
+    expect(() => parseBoard({ ...valid(), playing: [playingRow({ over: 'yes' })] })).toThrow(/playing/);
   });
 
   it('rejects a wrong-shaped body (a failure, never NaN rows)', () => {
@@ -669,6 +675,56 @@ describe('parseBoard (shape validation, #190)', () => {
   });
 });
 
+// The LIVE read (`{token, live: true}`): every group the caller is in, merged — groups with
+// their member lists, finished rows (a whole try count, NO rank: a rank belongs to one group
+// and the client ranks each itself) and the day board's own playing rows.
+describe('parseLiveBoard (the live read)', () => {
+  const group = (over: Partial<Record<string, unknown>> = {}) => ({
+    id: 'gggggggggggggggg',
+    name: 'Famille',
+    members: ['abcdefghij234567', 'bcdefghij234567a'],
+    ...over,
+  });
+  const row = (over: Partial<Record<string, unknown>> = {}) => ({
+    publicId: 'abcdefghij234567',
+    name: 'Zoe',
+    avatar: null,
+    score: 7,
+    ...over,
+  });
+  const playingRow = (over: Partial<Record<string, unknown>> = {}) => ({
+    publicId: 'bcdefghij234567a',
+    name: '',
+    avatar: null,
+    tries: 12,
+    progress: 62.5,
+    over: false,
+    ...over,
+  });
+  const valid = () => ({ groups: [group()], rows: [row()], playing: [playingRow()] });
+
+  it('accepts a well-formed answer, the empty one included', () => {
+    expect(parseLiveBoard(valid())).toEqual(valid());
+    expect(parseLiveBoard({ groups: [], rows: [], playing: [] })).toEqual({ groups: [], rows: [], playing: [] });
+    expect(parseLiveBoard({ ...valid(), playing: [playingRow({ over: true })] }).playing[0].over).toBe(true);
+  });
+
+  it('rejects a wrong-shaped answer (a failure, never NaN rows)', () => {
+    expect(() => parseLiveBoard(null)).toThrow(/live board/);
+    expect(() => parseLiveBoard({ ...valid(), groups: undefined })).toThrow(/groups/);
+    expect(() => parseLiveBoard({ ...valid(), groups: [group({ id: 'NOPE' })] })).toThrow(/groups/);
+    expect(() => parseLiveBoard({ ...valid(), groups: [group({ members: ['NOPE'] })] })).toThrow(/groups/);
+    expect(() => parseLiveBoard({ ...valid(), groups: [group({ name: 3 })] })).toThrow(/groups/);
+    expect(() => parseLiveBoard({ ...valid(), rows: 'none' })).toThrow(/rows/);
+    expect(() => parseLiveBoard({ ...valid(), rows: [row({ score: 1.5 })] })).toThrow(/rows/);
+    expect(() => parseLiveBoard({ ...valid(), rows: [row({ score: 0 })] })).toThrow(/rows/);
+    expect(() => parseLiveBoard({ ...valid(), rows: [row({ avatar: '' })] })).toThrow(/rows/);
+    expect(() => parseLiveBoard({ ...valid(), playing: undefined })).toThrow(/playing/);
+    expect(() => parseLiveBoard({ ...valid(), playing: [playingRow({ tries: 0 })] })).toThrow(/playing/);
+    expect(() => parseLiveBoard({ ...valid(), playing: [playingRow({ progress: 101 })] })).toThrow(/playing/);
+  });
+});
+
 describe('roundUrl + parseRound (#201/#203)', () => {
   const base = 'https://api.example';
   const valid = () => ({ guesses: ['bois'], createdAt: '2026-08-21T09:00:00.000Z' });
@@ -685,6 +741,8 @@ describe('roundUrl + parseRound (#201/#203)', () => {
       // The server's own reading of the log it stores (#203); absent means "not yet",
       // never "no longer", since it is only ever written true.
       solved: false,
+      // Absent means the player has not given up (write-only-true, like `solved`).
+      gaveUp: false,
       // Absent means nothing was earned — only the answer confirming an on-time solve
       // carries it (#211's one predicate, decided on the server's clock).
       credited: false,
@@ -694,6 +752,11 @@ describe('roundUrl + parseRound (#201/#203)', () => {
   it('carries the SERVER\'s solve (#203), which is what says the score row exists', () => {
     expect(parseRound({ ...valid(), solved: true }).solved).toBe(true);
     expect(() => parseRound({ ...valid(), solved: 'yes' })).toThrow(/solved/);
+  });
+
+  it('carries a stored GIVE-UP', () => {
+    expect(parseRound({ ...valid(), gaveUp: true }).gaveUp).toBe(true);
+    expect(() => parseRound({ ...valid(), gaveUp: 'yes' })).toThrow(/gaveUp/);
   });
 
   it('carries the SERVER\'s on-time verdict (#211) on the answer confirming a solve', () => {

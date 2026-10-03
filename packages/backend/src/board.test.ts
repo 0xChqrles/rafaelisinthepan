@@ -4,6 +4,7 @@ import {
   generatePublicId,
   ROUND_GUESS_CAP,
   type Board,
+  type LiveBoard,
   type Puzzle,
 } from '@whippin/shared';
 import { createHandler } from './handler';
@@ -16,6 +17,7 @@ import type { FnUrlEvent } from './respond';
 import type { RoundStore } from './roundStore';
 import type { ScoreRow, ScoreStore } from './scoreStore';
 import type { PuzzleStore } from './store';
+import { buildSlice } from './slice';
 import { seedDevice } from './testDevice';
 
 // The /board route (#190): the GLOBAL top-50 read (anonymous GET) and a GROUP's boards
@@ -458,6 +460,64 @@ describe('group period boards and the standing (#271)', () => {
   });
 });
 
+// Two holes whose maps share one surface family: `mer` and `mers` alias to ONE group in
+// the phare map and are unknown to the nuit map, so both resolve to the same guessKey
+// ("1|-1") and count as ONE try — the raw stored log length would say two.
+const ARTIFACT: Puzzle = {
+  lang: 'fr',
+  revision: 'f0e1d2c3b4a59687',
+  words: ['le', 'phare', 'la', 'nuit'],
+  holes: [
+    { pos: 1, secret: { word: 'phare', slug: 'phare' }, start: { word: 'quai', slug: 'quai' }, start_rank: 2 },
+    { pos: 3, secret: { word: 'nuit', slug: 'nuit' }, start: { word: 'soir', slug: 'soir' }, start_rank: 2 },
+  ],
+  ranks: {
+    phare: {
+      phare: { word: 'phare', rank: 0 },
+      mer: { word: 'mer', rank: 1, dq: 255 },
+      mers: { word: 'mer', rank: 1, dq: 255 },
+      quai: { word: 'quai', rank: 2, dq: 128 },
+    },
+    nuit: {
+      nuit: { word: 'nuit', rank: 0 },
+      lune: { word: 'lune', rank: 1, dq: 255 },
+      soir: { word: 'soir', rank: 2, dq: 128 },
+    },
+  },
+};
+// The day as `puzzle:publish` leaves it: the full artifact and its derivation slice, which
+// names the published revision the boards read the artifact for (puzzleReads.ts). A
+// FUNCTION, so a test counting artifact reads holds a store — and its held memory — of its own.
+function makeArtifactStore(): PuzzleStore {
+  const today = (date: string, lang: string) => date === DATE && lang === 'fr';
+  return {
+    getPuzzle: async (date, lang) => (today(date, lang) ? ARTIFACT : null),
+    hasPuzzle: async (date, lang) => today(date, lang),
+    getSlice: async (date, lang) => (today(date, lang) ? buildSlice(ARTIFACT) : null),
+  };
+}
+const artifactStore = makeArtifactStore();
+
+// Seed one player's stored round the way the round route writes it: the raw log plus
+// the derived summary, tagged with the revision it was played against.
+const seedRound = (
+  rounds: RoundStore,
+  publicId: string,
+  guesses: string[],
+  progress: number,
+  over: { puzzle?: string; solved?: boolean } = {},
+) =>
+  rounds.append({
+    date: DATE,
+    lang: 'fr',
+    publicId,
+    guesses,
+    puzzle: over.puzzle ?? ARTIFACT.revision,
+    progress,
+    solved: over.solved ?? false,
+    now: NOW,
+  });
+
 // CONTRACT (#206): a group's day board is alive mid-day. A member with a stored round for
 // the CURRENT published revision but no recorded score is IN PROGRESS — their row carries
 // the EXACT deduped try count (`countTries` over the raw log against the day's full
@@ -465,58 +525,6 @@ describe('group period boards and the standing (#271)', () => {
 // `orderPlaying` below every finished row. Friends only: the global board never carries a
 // playing row.
 describe('board in-progress rows (#206)', () => {
-  // Two holes whose maps share one surface family: `mer` and `mers` alias to ONE group in
-  // the phare map and are unknown to the nuit map, so both resolve to the same guessKey
-  // ("1|-1") and count as ONE try — the raw stored log length would say two.
-  const ARTIFACT: Puzzle = {
-    lang: 'fr',
-    revision: 'f0e1d2c3b4a59687',
-    words: ['le', 'phare', 'la', 'nuit'],
-    holes: [
-      { pos: 1, secret: { word: 'phare', slug: 'phare' }, start: { word: 'quai', slug: 'quai' }, start_rank: 2 },
-      { pos: 3, secret: { word: 'nuit', slug: 'nuit' }, start: { word: 'soir', slug: 'soir' }, start_rank: 2 },
-    ],
-    ranks: {
-      phare: {
-        phare: { word: 'phare', rank: 0 },
-        mer: { word: 'mer', rank: 1, dq: 255 },
-        mers: { word: 'mer', rank: 1, dq: 255 },
-        quai: { word: 'quai', rank: 2, dq: 128 },
-      },
-      nuit: {
-        nuit: { word: 'nuit', rank: 0 },
-        lune: { word: 'lune', rank: 1, dq: 255 },
-        soir: { word: 'soir', rank: 2, dq: 128 },
-      },
-    },
-  };
-  const artifactStore: PuzzleStore = {
-    getPuzzle: async (date, lang) => (date === DATE && lang === 'fr' ? ARTIFACT : null),
-    hasPuzzle: async (date, lang) => date === DATE && lang === 'fr',
-    getSlice: async () => null,
-  };
-
-  // Seed one player's stored round the way the round route writes it: the raw log plus
-  // the derived summary, tagged with the revision it was played against.
-  const seedRound = (
-    rounds: RoundStore,
-    publicId: string,
-    guesses: string[],
-    progress: number,
-    over: { puzzle?: string; solved?: boolean } = {},
-  ) =>
-    rounds.append({
-      date: DATE,
-      lang: 'fr',
-      publicId,
-      guesses,
-      puzzle: over.puzzle ?? ARTIFACT.revision,
-      progress,
-      solved: over.solved ?? false,
-      early: false,
-      now: NOW,
-    });
-
   it('names mid-round members in `playing` with the EXACT deduped try count', async () => {
     const me = generatePublicId();
     const finished = generatePublicId();
@@ -543,8 +551,8 @@ describe('board in-progress rows (#206)', () => {
     const board = JSON.parse((await handler(post(QUERY, { token: caller.token, group: GROUP }))).body) as Board;
     expect(board.rows.map((row) => row.publicId)).toEqual([finished]);
     expect(board.playing).toEqual([
-      { publicId: midRound, tries: 2, progress: 62.5, name: 'Zoe', avatar: 'A'.repeat(19) },
-      { publicId: me, tries: 1, progress: 10, name: '', avatar: null },
+      { publicId: midRound, tries: 2, progress: 62.5, over: false, name: 'Zoe', avatar: 'A'.repeat(19) },
+      { publicId: me, tries: 1, progress: 10, over: false, name: '', avatar: null },
     ]);
     // A playing friend is never ALSO "not played yet".
     expect(board.waiting.map((row) => row.publicId)).toEqual([notYet]);
@@ -593,23 +601,29 @@ describe('board in-progress rows (#206)', () => {
     expect(board.waiting.map((row) => row.publicId)).toEqual([friend]);
   });
 
-  // ACCEPTED (user-decided 2026-08-26, on review; the fourth state is #224): what the
-  // route subtracts is the players the population RANKS, which is not the players who are
-  // DONE. A round can END with no score row three ways — capped at ROUND_GUESS_CAP (#214),
-  // solved past the 22:00 flip (#211's `onTime`), or solved with its row refused by the
-  // #169 IP allowance — and all three keep their derived summary on the round item, so the
-  // board carries them under IN PROGRESS for the rest of the day. Pinned because it looks
-  // like a bug and is not one: the numbers on the row are the player's real ones, where
-  // the cheap fix would file a 500-guess round or an actual solve under "not played yet".
-  it('keeps a round that ENDED with no recorded score in `playing` (#224)', async () => {
+  // What the route subtracts is the players the population RANKS, which is not the players
+  // who are DONE. A round can END with no score row four ways — given up, capped at
+  // ROUND_GUESS_CAP (#214), solved past the 22:00 flip (#211's `onTime`), or solved with its
+  // row refused by the #169 IP allowance — and all four keep their derived summary on the
+  // round item, so the board carries them under IN PROGRESS. The two that ended UNSOLVED
+  // are marked `over` (drawn `∞`) and ordered after every live row; the two unranked solves
+  // stay as they are — ACCEPTED: the numbers on the row are the player's real ones, where
+  // the cheap fix would file an actual solve under "not played yet".
+  it('keeps a round that ENDED with no recorded score in `playing`, the unsolved ones `over` and last', async () => {
     const me = generatePublicId();
     const solvedUnranked = generatePublicId();
     const capped = generatePublicId();
+    const gaveUp = generatePublicId();
+    const live = generatePublicId();
     const rounds = memoryRoundStore();
     const { handler, groups, devices } = await makeHandler([], { store: artifactStore, rounds });
-    for (const id of [solvedUnranked, capped]) {
+    for (const id of [solvedUnranked, capped, gaveUp, live]) {
       await enroll(groups, me, id);
     }
+    // GAVE UP ahead of the live member: still ordered after them.
+    await seedRound(rounds, gaveUp, ['mer', 'lune'], 80);
+    await rounds.giveUp({ date: DATE, lang: 'fr', publicId: gaveUp, puzzle: ARTIFACT.revision });
+    await seedRound(rounds, live, ['quai'], 10);
     // SOLVED, but the population holds no row for them — the IP allowance refused it, or
     // the solve landed past the flip. The round route records no row for either, silently by design.
     await seedRound(rounds, solvedUnranked, ['phare', 'nuit'], 100, { solved: true });
@@ -621,9 +635,11 @@ describe('board in-progress rows (#206)', () => {
 
     const board = JSON.parse((await handler(post(QUERY, { token: caller.token, group: GROUP }))).body) as Board;
     expect(board.rows).toEqual([]);
-    expect(board.playing.map((row) => [row.publicId, row.progress, row.tries])).toEqual([
-      [solvedUnranked, 100, 2],
-      [capped, 25, ROUND_GUESS_CAP],
+    expect(board.playing.map((row) => [row.publicId, row.progress, row.tries, row.over])).toEqual([
+      [solvedUnranked, 100, 2, false],
+      [live, 10, 1, false],
+      [gaveUp, 80, 2, true],
+      [capped, 25, ROUND_GUESS_CAP, true],
     ]);
     // And neither is ever ALSO "not played yet" — the one claim this section refuses.
     expect(board.waiting).toEqual([]);
@@ -712,5 +728,176 @@ describe('board in-progress rows (#206)', () => {
     const board = JSON.parse((await handler(post(QUERY, { token: caller.token, group: GROUP }))).body) as Board;
     expect(board.playing).toEqual([]);
     expect(board.waiting.map((row) => row.publicId)).toEqual([friend]);
+  });
+});
+
+// CONTRACT: `POST /board {token, live: true}` answers EVERY group the caller is in, MERGED —
+// the play screen's race line reads it at guess cadence, the solved screen's group boards
+// read the same answer. The members of all those groups are ONE deduplicated population
+// (the caller included): their recorded scores as `rows` (unranked — a rank belongs to one
+// group, and the client ranks each with `rankBoard`), their live rounds as `playing` in
+// `orderPlaying`'s order. Members-only by construction, gone accounts dropped, and ONE
+// artifact read per call (none at all for a caller in no group).
+describe('the live read: all my groups, merged', () => {
+  const A = 'aaaaaaaaaaaaaaaa';
+  const B = 'bbbbbbbbbbbbbbbb';
+  const C = 'cccccccccccccccc';
+
+  // A store counting what the live read costs: the slice (fresh, every call) and the full
+  // artifact (held by revision after its first read).
+  function countingArtifactStore() {
+    const store = makeArtifactStore();
+    const getPuzzle = vi.fn(store.getPuzzle);
+    const getSlice = vi.fn(store.getSlice);
+    return { store: { ...store, getPuzzle, getSlice } as PuzzleStore, getPuzzle, getSlice };
+  }
+
+  async function group(
+    groups: ReturnType<typeof memoryGroupStore>,
+    id: string,
+    name: string,
+    owner: string,
+    ...members: string[]
+  ) {
+    await groups.create({ id, name, createdBy: owner, now: NOW.toISOString() });
+    for (const member of members) await groups.join({ id, publicId: member, now: NOW.toISOString() });
+  }
+
+  const live = async (handler: Awaited<ReturnType<typeof makeHandler>>['handler'], token: string) => {
+    const result = await handler(post(QUERY, { token, live: true }));
+    expect(result.statusCode).toBe(200);
+    expect(result.headers['Cache-Control']).toBe('no-store');
+    return JSON.parse(result.body) as LiveBoard;
+  };
+
+  it('merges every group the caller is in into ONE deduplicated population', async () => {
+    const me = generatePublicId();
+    const finished = generatePublicId(); // in BOTH groups: one row, never two
+    const playing = generatePublicId();
+    const stranger = generatePublicId(); // only in a group the caller is NOT in
+    const rounds = memoryRoundStore();
+    const { handler, groups, devices, profiles } = await makeHandler(
+      [
+        { publicId: finished, score: 9 },
+        { publicId: stranger, score: 3 },
+      ],
+      { store: makeArtifactStore(), rounds },
+    );
+    await group(groups, A, 'Famille', me, finished);
+    await group(groups, B, 'Bureau', finished, me, playing);
+    await group(groups, C, 'Autres', stranger, finished);
+    await seedRound(rounds, playing, ['mer', 'mers', 'lune'], 62.5);
+    await seedRound(rounds, me, ['quai'], 10);
+    await seedRound(rounds, stranger, ['soir'], 40);
+    await profiles.upsert({ publicId: finished, name: 'Zoe', avatar: 'A'.repeat(19), now: NOW.toISOString() });
+    const caller = await callerOn(devices, me);
+
+    const board = await live(handler, caller.token);
+    // The caller's own groups, each with its member list — never the group they are not in.
+    // (Members in the store's own order — oldest membership first, ties by id — so compared as sets.)
+    expect(board.groups.map((g) => ({ ...g, members: [...g.members].sort() }))).toEqual([
+      { id: A, name: 'Famille', members: [me, finished].sort() },
+      { id: B, name: 'Bureau', members: [finished, me, playing].sort() },
+    ]);
+    // The finished member once, unranked, dressed; the stranger's score never reaches it.
+    expect(board.rows).toEqual([{ publicId: finished, score: 9, name: 'Zoe', avatar: 'A'.repeat(19) }]);
+    // The day board's playing rows over the union — the caller's own included, exact tries.
+    expect(board.playing).toEqual([
+      { publicId: playing, tries: 2, progress: 62.5, over: false, name: '', avatar: null },
+      { publicId: me, tries: 1, progress: 10, over: false, name: '', avatar: null },
+    ]);
+  });
+
+  it('orders playing rows by the shared rule, a round that ENDED UNSOLVED marked `over` and last', async () => {
+    const me = generatePublicId();
+    const gaveUp = generatePublicId();
+    const behind = generatePublicId();
+    const rounds = memoryRoundStore();
+    const { handler, groups, devices } = await makeHandler([], { store: makeArtifactStore(), rounds });
+    await group(groups, A, 'Famille', me, gaveUp);
+    await group(groups, B, 'Bureau', me, behind);
+    await seedRound(rounds, gaveUp, ['mer', 'lune'], 80);
+    await rounds.giveUp({ date: DATE, lang: 'fr', publicId: gaveUp, puzzle: ARTIFACT.revision });
+    await seedRound(rounds, behind, ['quai'], 10);
+    const caller = await callerOn(devices, me);
+
+    const board = await live(handler, caller.token);
+    expect(board.playing.map((row) => [row.publicId, row.progress, row.over])).toEqual([
+      [behind, 10, false],
+      [gaveUp, 80, true],
+    ]);
+  });
+
+  it('answers EMPTY for a caller in no group, reading no artifact at all', async () => {
+    const me = generatePublicId();
+    const other = generatePublicId();
+    const { store, getPuzzle, getSlice } = countingArtifactStore();
+    const rounds = memoryRoundStore();
+    const { handler, groups, devices } = await makeHandler([{ publicId: other, score: 4 }], { store, rounds });
+    // A group exists — just not one of the caller's.
+    await group(groups, A, 'Autres', other);
+    const caller = await callerOn(devices, me);
+
+    expect(await live(handler, caller.token)).toEqual({ groups: [], rows: [], playing: [] });
+    expect(getSlice).not.toHaveBeenCalled();
+    expect(getPuzzle).not.toHaveBeenCalled();
+  });
+
+  it('reads the artifact ONCE per call over the whole union, and reuses it for the same revision', async () => {
+    const me = generatePublicId();
+    const others = [generatePublicId(), generatePublicId(), generatePublicId()];
+    const { store, getPuzzle, getSlice } = countingArtifactStore();
+    const rounds = memoryRoundStore();
+    const { handler, groups, devices } = await makeHandler([], { store, rounds });
+    await group(groups, A, 'Famille', me, others[0], others[1]);
+    await group(groups, B, 'Bureau', me, others[1], others[2]);
+    for (const id of others) await seedRound(rounds, id, ['quai'], 10);
+    const caller = await callerOn(devices, me);
+
+    await live(handler, caller.token);
+    expect(getPuzzle).toHaveBeenCalledTimes(1);
+    expect(getSlice).toHaveBeenCalledTimes(1);
+    // The next read learns the revision from a FRESH slice, and the held artifact answers.
+    const again = await live(handler, caller.token);
+    expect(getSlice).toHaveBeenCalledTimes(2);
+    expect(getPuzzle).toHaveBeenCalledTimes(1);
+    expect(again.playing.map((row) => row.publicId).sort()).toEqual([...others].sort());
+  });
+
+  // CONTRACT (#204): a deleted account is never rendered — not as a row, not as a player,
+  // and not as a member of a group the client would cut rows by.
+  it('drops a member whose account is gone from rows, playing and the member lists', async () => {
+    const me = generatePublicId();
+    // `idle` holds no row at all today: only the member list could still name them.
+    const gone = { ranked: generatePublicId(), playing: generatePublicId(), idle: generatePublicId() };
+    const kept = generatePublicId();
+    const rounds = memoryRoundStore();
+    const { handler, groups, devices } = await makeHandler(
+      [
+        { publicId: gone.ranked, score: 2 },
+        { publicId: kept, score: 5 },
+      ],
+      { store: makeArtifactStore(), rounds, gone: Object.values(gone) },
+    );
+    const idle = generatePublicId(); // a LIVE member with no row stays in the list
+    await group(groups, A, 'Famille', me, gone.ranked, gone.playing, gone.idle, kept, idle);
+    await seedRound(rounds, gone.playing, ['mer'], 50);
+    const caller = await callerOn(devices, me);
+
+    const board = await live(handler, caller.token);
+    expect(board.rows.map((row) => row.publicId)).toEqual([kept]);
+    expect(board.playing).toEqual([]);
+    expect([...board.groups[0].members].sort()).toEqual([me, kept, idle].sort());
+  });
+
+  it('refuses a malformed live body, and answers only an authenticated caller', async () => {
+    const me = generatePublicId();
+    const { handler, groups, devices } = await makeHandler([], { store: makeArtifactStore() });
+    await group(groups, A, 'Famille', me);
+    const caller = await callerOn(devices, me);
+    for (const extra of [{ live: false }, { live: 'yes' }, { live: true, group: A }, { live: true, period: 'week' }, { live: true, standing: true }]) {
+      expect((await handler(post(QUERY, { token: caller.token, ...extra }))).statusCode).toBe(400);
+    }
+    expect((await handler(post(QUERY, { token: 'f'.repeat(64), live: true }))).statusCode).toBe(401);
   });
 });

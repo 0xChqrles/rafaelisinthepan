@@ -21,3 +21,9 @@ export const FLOATING_HIT_INTRO_MS = 800;
 // a generous multiple of the real duration, so it only ever fires if the DOM signal
 // itself was lost.
 export const KB_EXIT_FALLBACK_MS = 1_200;
+
+// How long a GIVE-UP's revealed sentence stands once its unfound words have settled into
+// their secrets, before the keyboard drops and the sentence dissolves: the answer is read in
+// place. A solve needs no such hold — its last word was the player's own, and a streak's
+// celebration follows it. Never under reduced motion.
+export const GIVE_UP_HOLD_MS = 1_000;

@@ -14,8 +14,10 @@
 //   - a 429 keeps the outbox and paces; a 409 BELOW the cap keeps it and re-sizes; a 409
 //     with an unsolved log AT the cap ends the round (nothing that never fit is kept), and
 //     the capped state itself is DERIVED from that stored state, never a stored flag;
-//   - a SOLVED round is frozen: its answer is adopted and the conversation closes, and what
-//     was still pending is dropped for good;
+//   - a SOLVED or GIVEN-UP round is frozen: its answer is adopted and the conversation
+//     closes, and what was still pending is dropped for good;
+//   - a GIVE-UP goes out only once the outbox is flushed, and answers the screen exactly
+//     once: over on the server's terms (given up, or a solve that won), or not landed;
 //   - a write whose outcome is UNKNOWN re-reads before writing again, so an append is never
 //     stored twice; a 4xx VERDICT closes the conversation instead of spinning.
 
@@ -26,6 +28,7 @@ import { useGameStore, roundKeyForDay } from './gameStore';
 import {
   backoffDelayMs,
   beginRoundSync,
+  giveUpRound,
   kickRoundSync,
   notifyGuess,
   rearmRoundSync,
@@ -33,8 +36,7 @@ import {
   retryRoundSync,
   writeDelayMs,
 } from './roundSync';
-import { roundCapped } from '../game/playLog';
-import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
+import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, roundEnded } from '@whippin/shared';
 
 // `roundUrl` is mocked with the rest (the house pattern — see useScoreHistogram.test.ts's
 // `scoresUrl`, FriendInvite.test.ts's `friendsUrl`): the real builder throws without
@@ -108,15 +110,13 @@ const SECRET_MAP: RankMap = {
 const REVISION = 'a1b2c3d4e5f60718';
 const CORRECTED_REVISION = 'b2c3d4e5f6071829';
 
-function ctx(key: string = KEY, revision: string = REVISION, early = false) {
+function ctx(key: string = KEY, revision: string = REVISION) {
   return {
     roundKey: key,
     lang: 'fr',
     date: '2026-08-21',
     revision,
     ranks: SECRET_MAP,
-    // EARLY PLAY (#273): tomorrow's round, started tonight. Off by default — today's.
-    early,
   } as const;
 }
 
@@ -142,7 +142,7 @@ function ok(guesses: string[], solved = false, credited?: boolean) {
 // exactly like a 200. An EMPTY one (no record of this puzzle yet — a rate-refused restart)
 // carries an empty `createdAt`, which is what tells "refused an existing round" from
 // "refused before creating one".
-function refusal(status: number, guesses: string[], error?: string, solved = false) {
+function refusal(status: number, guesses: string[], error?: string, solved = false, gaveUp = false) {
   return {
     ok: false,
     status,
@@ -151,6 +151,7 @@ function refusal(status: number, guesses: string[], error?: string, solved = fal
       message: 'refused',
       guesses,
       solved,
+      ...(gaveUp ? { gaveUp } : {}),
       createdAt: guesses.length === 0 ? '' : '2026-08-21T09:00:00.000Z',
       now: '2026-08-21T09:30:00.000Z',
     }),
@@ -183,9 +184,10 @@ function server(key: string = KEY) {
   return entry?.status === 'ready' ? entry.server : undefined;
 }
 
-// What the SCREEN derives from that state (#214), by the screen's own reading of it.
+// What the SCREEN derives from that state (#214), by the screen's own reading of it: the
+// round ENDED unsolved — here always by the cap (the give-up has its own cases below).
 function capped(key: string = KEY): boolean {
-  return roundCapped(server(key));
+  return roundEnded(server(key));
 }
 
 function bodyOf(call: number): {
@@ -272,6 +274,7 @@ describe('the mount read — what the screen waits on', () => {
       server: {
         guesses: ['bois', 'chemin'],
         solved: false,
+        gaveUp: false,
         solvedByAppend: false,
         credited: false,
       },
@@ -288,7 +291,7 @@ describe('the mount read — what the screen waits on', () => {
     expect(load()).toEqual({
       status: 'ready',
       puzzle: REVISION,
-      server: { guesses: [], solved: false, solvedByAppend: false, credited: false },
+      server: { guesses: [], solved: false, gaveUp: false, solvedByAppend: false, credited: false },
     });
   });
 
@@ -618,6 +621,7 @@ describe('the four refusals', () => {
     expect(server()).toEqual({
       guesses: ['bois', 'foret', 'ancienne'],
       solved: true,
+      gaveUp: false,
       // Learned from a refusal, not confirmed on this device's batch: adopted history.
       solvedByAppend: false,
       credited: false,
@@ -710,6 +714,7 @@ describe('the SERVER\'s solve (#203/#214)', () => {
     expect(server()).toEqual({
       guesses: ['foret'],
       solved: true,
+      gaveUp: false,
       solvedByAppend: true,
       credited: false,
     });
@@ -730,6 +735,7 @@ describe('the SERVER\'s solve (#203/#214)', () => {
     expect(server()).toEqual({
       guesses: ['foret'],
       solved: true,
+      gaveUp: false,
       solvedByAppend: true,
       credited: true,
     });
@@ -769,6 +775,194 @@ describe('the SERVER\'s solve (#203/#214)', () => {
     beginRoundSync(ctx());
     await settle();
     expect(server()?.solvedByAppend).toBe(true);
+  });
+});
+
+// THE GIVE-UP (`giveUpRound`): its own request, after the flush; the screen's promise is
+// answered exactly once.
+describe('the give-up', () => {
+  function givenUp(guesses: string[]) {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ guesses, createdAt: '2026-08-21T09:00:00.000Z', progress: 10, gaveUp: true }),
+    } as unknown as Response;
+  }
+
+  async function ready(guesses: string[] = ['bois']) {
+    post.mockResolvedValueOnce(ok(guesses));
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+    post.mockReset();
+  }
+
+  function bodyAt(call: number): Record<string, unknown> {
+    return post.mock.calls[call][1] as Record<string, unknown>;
+  }
+
+  it('posts {token, puzzle, giveUp: true}, adopts the answer, closes and answers TRUE', async () => {
+    await ready();
+    post.mockResolvedValueOnce(givenUp(['bois']));
+    const answer = giveUpRound(KEY);
+    await settle();
+    await expect(answer).resolves.toBe(true);
+    expect(bodyAt(0)).toEqual({ token: 'f'.repeat(64), puzzle: REVISION, giveUp: true });
+    expect(server()?.gaveUp).toBe(true);
+    expect(roundEnded(server())).toBe(true);
+    // Closed: a guess typed after it sends nothing.
+    seedOutbox(['chemin']);
+    notifyGuess(KEY);
+    await settle(60_000);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('FLUSHES the outbox first — the give-up never freezes the last tries out', async () => {
+    await ready();
+    seedOutbox(['chemin']);
+    post.mockResolvedValueOnce(ok(['bois', 'chemin']));
+    post.mockResolvedValueOnce(givenUp(['bois', 'chemin']));
+    const answer = giveUpRound(KEY);
+    await settle(ROUND_WRITE_MIN_MS);
+    await expect(answer).resolves.toBe(true);
+    expect(bodyAt(0).guesses).toEqual(['chemin']);
+    expect(bodyAt(0).giveUp).toBeUndefined();
+    expect(bodyAt(1).giveUp).toBe(true);
+    expect(bodyAt(1).guesses).toBeUndefined();
+  });
+
+  it('a SOLVE that won the race answers TRUE, adopted (round_solved)', async () => {
+    await ready();
+    post.mockResolvedValueOnce(refusal(409, ['bois', 'foret', 'ancienne'], 'round_solved', true));
+    const answer = giveUpRound(KEY);
+    await settle();
+    await expect(answer).resolves.toBe(true);
+    expect(server()?.solved).toBe(true);
+    expect(server()?.solvedByAppend).toBe(false);
+    expect(roundEnded(server())).toBe(false);
+  });
+
+  it('a 4xx that is not an answer (no record of this puzzle) answers FALSE and the round stays OPEN', async () => {
+    await ready();
+    post.mockResolvedValueOnce(status(404));
+    const answer = giveUpRound(KEY);
+    await settle();
+    await expect(answer).resolves.toBe(false);
+    expect(server()?.gaveUp).toBe(false);
+    // Still a live conversation: the next guess is sent.
+    seedOutbox(['chemin']);
+    post.mockResolvedValueOnce(ok(['bois', 'chemin']));
+    notifyGuess(KEY);
+    await settle(ROUND_WRITE_MIN_MS);
+    expect(bodyAt(1).guesses).toEqual(['chemin']);
+  });
+
+  it('an UNKNOWN outcome re-READS — and a read showing the give-up answers TRUE', async () => {
+    await ready();
+    post.mockRejectedValueOnce(new Error('gateway timeout'));
+    post.mockResolvedValueOnce(givenUp(['bois']));
+    const answer = giveUpRound(KEY);
+    await settle(2 * ROUND_WRITE_MIN_MS);
+    await expect(answer).resolves.toBe(true);
+    // The second request is a READ, never the give-up sent again.
+    expect(bodyAt(1).giveUp).toBeUndefined();
+    expect(bodyAt(1).guesses).toBeUndefined();
+    expect(server()?.gaveUp).toBe(true);
+  });
+
+  it('an UNKNOWN outcome whose re-read shows NO give-up answers FALSE, and sends it no second time', async () => {
+    await ready();
+    post.mockResolvedValueOnce(status(503));
+    post.mockResolvedValueOnce(ok(['bois']));
+    const answer = giveUpRound(KEY);
+    await settle(2 * ROUND_WRITE_MIN_MS);
+    await expect(answer).resolves.toBe(false);
+    await settle(60_000);
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(server()?.gaveUp).toBe(false);
+  });
+
+  it('answers FALSE when the re-read itself fails — never a busy button through an outage', async () => {
+    await ready();
+    post.mockRejectedValueOnce(new Error('offline'));
+    post.mockRejectedValueOnce(new Error('offline'));
+    const answer = giveUpRound(KEY);
+    await settle(2 * ROUND_WRITE_MIN_MS);
+    await expect(answer).resolves.toBe(false);
+  });
+
+  it('a FLUSH whose outcome is unknown answers FALSE at once — even while every re-read succeeds', async () => {
+    // The give-up waits on the flush. Appends that keep failing (a slice hiccup, a timing-out
+    // Lambda, a challenge that will not mint) behind reads that keep succeeding would
+    // otherwise hold the screen's busy button forever.
+    await ready();
+    seedOutbox(['chemin']);
+    post.mockImplementation(async (_url, body) => (body.guesses ? status(503) : ok(['bois'])));
+    let answered: boolean | undefined;
+    void giveUpRound(KEY).then((ended) => {
+      answered = ended;
+    });
+    await settle();
+    expect(answered).toBe(false);
+    // The outbox keeps retrying as before; the give-up never goes out behind the player.
+    await settle(10_000);
+    expect(post.mock.calls.filter(([, body]) => body.guesses).length).toBeGreaterThan(1);
+    expect(post.mock.calls.some(([, body]) => body.giveUp)).toBe(false);
+    expect(outbox()).toEqual(['chemin']);
+    expect(server()?.gaveUp).toBe(false);
+  });
+
+  it('a GIVEN-UP round read at mount FREEZES: nothing is appended, the outbox is dropped', async () => {
+    post.mockResolvedValueOnce(givenUp(['bois']));
+    seedOutbox(['chemin']);
+    beginRoundSync(ctx());
+    await settle(60_000);
+    expect(server()?.gaveUp).toBe(true);
+    expect(outbox()).toEqual([]);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('409 round_given_up: adopts the frozen state, DISCARDS the outbox, closes', async () => {
+    await ready();
+    seedOutbox(['phare']);
+    post.mockResolvedValueOnce(refusal(409, ['bois'], 'round_given_up', false, true));
+    notifyGuess(KEY);
+    await settle(60_000);
+    expect(server()?.gaveUp).toBe(true);
+    expect(outbox()).toEqual([]);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('a REPUBLISH answers a give-up still in the air FALSE — it was the retired puzzle\'s', async () => {
+    await ready();
+    post.mockReturnValueOnce(new Promise<Response>(() => {})); // never answers
+    const answer = giveUpRound(KEY);
+    await settle();
+    post.mockResolvedValueOnce(status(404));
+    seedOutbox([], KEY, CORRECTED_REVISION);
+    beginRoundSync(ctx(KEY, CORRECTED_REVISION));
+    await expect(answer).resolves.toBe(false);
+  });
+
+  it('a REPUBLISH re-OPENS a conversation the give-up had closed — a fresh round is not given up', async () => {
+    await ready();
+    post.mockResolvedValueOnce(givenUp(['bois']));
+    const answer = giveUpRound(KEY);
+    await settle();
+    await expect(answer).resolves.toBe(true);
+    expect(server()?.gaveUp).toBe(true);
+
+    post.mockReset();
+    post.mockResolvedValueOnce(status(404));
+    seedOutbox([], KEY, CORRECTED_REVISION);
+    beginRoundSync(ctx(KEY, CORRECTED_REVISION));
+    await settle();
+    expect(server()?.gaveUp).toBe(false);
+    seedOutbox(['bois'], KEY, CORRECTED_REVISION);
+    post.mockResolvedValueOnce(ok(['bois']));
+    notifyGuess(KEY);
+    await settle(ROUND_WRITE_MIN_MS);
+    expect(bodyAt(1).guesses).toEqual(['bois']);
   });
 });
 
@@ -896,7 +1090,7 @@ describe('no token, no private fetch (#216)', () => {
     expect(load()).toEqual({
       status: 'ready',
       puzzle: REVISION,
-      server: { guesses: [], solved: false, solvedByAppend: false, credited: false },
+      server: { guesses: [], solved: false, gaveUp: false, solvedByAppend: false, credited: false },
     });
   });
 
@@ -960,125 +1154,5 @@ describe('no token, no private fetch (#216)', () => {
     beginRoundSync(ctx());
     await settle();
     expect(identity.signedOut).not.toHaveBeenCalled();
-  });
-});
-
-// CONTRACT (#273): on TOMORROW's round the server refuses the append after the first
-// progress or the third guess with 409 `early_locked`, which this engine treats like
-// `round_solved` — adopt the stored state, drop what was refused, close — but only until
-// the day flips: the re-registration that reports the flip re-opens the conversation with a
-// read. A client whose clock has already flipped keeps the guess the server still refuses.
-describe('early play: tomorrow\'s round tonight (#273)', () => {
-  async function readyEarly(serverLog: string[] = []) {
-    post.mockResolvedValueOnce(serverLog.length ? ok(serverLog) : status(404));
-    seedOutbox();
-    beginRoundSync(ctx(KEY, REVISION, true));
-    await settle();
-    post.mockReset();
-  }
-
-  it('sends early outbox guesses individually and stops after the first improvement', async () => {
-    await readyEarly();
-    seedOutbox(['zzz', 'bois', 'chemin']);
-    post.mockResolvedValueOnce(ok(['zzz']));
-    post.mockResolvedValueOnce(ok(['zzz', 'bois']));
-    post.mockResolvedValueOnce(refusal(409, ['zzz', 'bois'], 'early_locked'));
-    notifyGuess(KEY);
-    await settle(60_000);
-    expect([bodyOf(0).guesses, bodyOf(1).guesses, bodyOf(2).guesses])
-      .toEqual([['zzz'], ['bois'], ['chemin']]);
-    expect(server()?.guesses).toEqual(['zzz', 'bois']);
-    expect(outbox()).toEqual([]);
-    expect(post).toHaveBeenCalledTimes(3);
-  });
-
-  it('uses the last early slot when another device advanced during a coalesced outbox', async () => {
-    await readyEarly(['zzz']);
-    seedOutbox(['xxx', 'www']);
-    // Another device added yyy; only one of our two pending guesses now fits.
-    post.mockImplementationOnce(async (_url, body) => {
-      expect(body.guesses).toEqual(['xxx']);
-      return ok(['zzz', 'yyy', 'xxx']);
-    });
-    post.mockResolvedValueOnce(refusal(409, ['zzz', 'yyy', 'xxx'], 'early_locked'));
-    notifyGuess(KEY);
-    await settle(60_000);
-    expect(server()?.guesses).toEqual(['zzz', 'yyy', 'xxx']);
-    expect(outbox()).toEqual([]);
-    expect(post).toHaveBeenCalledTimes(2);
-  });
-
-  it('409 early_locked: adopts the stored state, DISCARDS the outbox, closes', async () => {
-    await readyEarly(['zzz']);
-    seedOutbox(['chemin']);
-    // Another device's `bois` made the progress this one did not see.
-    post.mockResolvedValueOnce(refusal(409, ['zzz', 'bois'], 'early_locked'));
-    notifyGuess(KEY);
-    await settle(60_000);
-    expect(server()?.guesses).toEqual(['zzz', 'bois']);
-    expect(outbox()).toEqual([]);
-    expect(post).toHaveBeenCalledTimes(1);
-
-    // Closed for the night: a further guess is not sent.
-    seedOutbox(['sentier']);
-    notifyGuess(KEY);
-    await settle(60_000);
-    expect(post).toHaveBeenCalledTimes(1);
-  });
-
-  it('the flip RE-OPENS the conversation with a read, and play continues where it stopped', async () => {
-    await readyEarly(['zzz']);
-    seedOutbox(['chemin']);
-    post.mockResolvedValueOnce(refusal(409, ['zzz', 'bois'], 'early_locked'));
-    notifyGuess(KEY);
-    await settle(60_000);
-    post.mockReset();
-
-    // The day came: the round re-registers as today's. The engine READS first — the
-    // stored log may have moved since the night's refusal — then flushes what is owed.
-    post.mockResolvedValueOnce(ok(['zzz', 'bois']));
-    beginRoundSync(ctx(KEY, REVISION, false));
-    await settle();
-    expect(post).toHaveBeenCalledTimes(1);
-    expect(bodyOf(0).guesses).toBeUndefined();
-
-    seedOutbox(['chemin']);
-    post.mockResolvedValueOnce(ok(['zzz', 'bois', 'chemin']));
-    notifyGuess(KEY);
-    await settle(ROUND_WRITE_MIN_MS + 1);
-    expect(post).toHaveBeenCalledTimes(2);
-    expect(bodyOf(1).guesses).toEqual(['chemin']);
-    expect(outbox()).toEqual([]);
-  });
-
-  it('a client already past the flip KEEPS a guess the server still refuses — clock skew', async () => {
-    post.mockResolvedValueOnce(ok(['zzz']));
-    seedOutbox();
-    beginRoundSync(ctx(KEY, REVISION, false));
-    await settle();
-    post.mockReset();
-
-    seedOutbox(['chemin']);
-    post.mockResolvedValueOnce(refusal(409, ['zzz', 'bois'], 'early_locked'));
-    post.mockResolvedValueOnce(refusal(409, ['zzz', 'bois'], 'early_locked'));
-    post.mockResolvedValueOnce(refusal(409, ['zzz', 'bois'], 'early_locked'));
-    post.mockResolvedValueOnce(ok(['zzz', 'bois', 'chemin']));
-    notifyGuess(KEY);
-    await settle();
-    expect(post).toHaveBeenCalledTimes(1);
-    // Retried behind the backoff rather than dropped on a verdict that expires by itself —
-    // and the backoff WIDENS across repeated refusals (2s, 4s, 8s…): the failure count is
-    // carried where every other answer resets it, so a clock hours ahead does not ask
-    // every two seconds until the server's day catches up.
-    await settle(ROUND_WRITE_MIN_MS * 2);
-    expect(post).toHaveBeenCalledTimes(2);
-    await settle(ROUND_WRITE_MIN_MS * 2);
-    expect(post).toHaveBeenCalledTimes(2);
-    await settle(ROUND_WRITE_MIN_MS * 2);
-    expect(post).toHaveBeenCalledTimes(3);
-    await settle(60_000);
-    expect(post).toHaveBeenCalledTimes(4);
-    expect(bodyOf(3).guesses).toEqual(['chemin']);
-    expect(outbox()).toEqual([]);
   });
 });

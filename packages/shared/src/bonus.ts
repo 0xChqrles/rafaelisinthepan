@@ -18,8 +18,8 @@ export function isBonusId(id: string): boolean {
 }
 
 // A puzzle's ADDRESS in the store and on its round row: the game day ("YYYY-MM-DD") for a
-// daily, `bonus/<id>` for a bonus. Whatever reads an address AS A DATE (early play, the
-// on-time credit, the future-day guard) asks `isBonusAddress` first.
+// daily, `bonus/<id>` for a bonus. Whatever reads an address AS A DATE (the on-time
+// credit, the future-day guard) asks `isBonusAddress` first.
 export const BONUS_ADDRESS_PREFIX = 'bonus/';
 
 export function bonusAddress(id: string): string {

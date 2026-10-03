@@ -21,6 +21,7 @@ import { resetAccountSummary } from './account';
 import { reconcileGameStateIdentity } from './gameStore';
 import { resetGroups } from './groups';
 import { rearmPlayerHistory, resetPlayerHistory } from './history';
+import { resetLiveBoard } from './liveBoard';
 import { kickRoundSync, rearmRoundSync, resetRoundSync } from './roundSync';
 
 export function installIdentityScope(): () => void {
@@ -67,8 +68,10 @@ export function installIdentityScope(): () => void {
       resetRoundSync();
       resetPlayerHistory();
       resetAccountSummary();
-      // …and the groups (#271): a device that leaves an account may not keep its tabs.
+      // …and the groups (#271): a device that leaves an account may not keep its tabs —
+      // nor its groups' live numbers.
       resetGroups();
+      resetLiveBoard();
     }
     // One state write owns the persisted owner tag and the outbox clearing. It is also the
     // first-acquisition bind above, where the triggering act must survive.

@@ -10,7 +10,8 @@
 > reads the signer's profile through the best-effort `readFace` (`no-store` on a failed
 > read, the group preview's 300s otherwise), hands the face to the renderers as a second
 > argument, and bounces into the shared day exactly like a plain share; a deleted signer
-> renders the PLAIN share. A SENTENCE token (**v6**) may be CAPPED (#214):
+> renders the PLAIN share. A SENTENCE token (**v6**) may be CAPPED (#214) — the flag means the
+> round ENDED UNSOLVED, given up or at the cap:
 > `ogCard.renderShareHtml` then titles the result `∞` (the literal character — this page is
 > ordinary HTML in the reader's own fonts) while `renderCardSvg` draws the shared PATH data,
 > because neither font in the Lambda bundle (Press Start 2P, Azeret Mono Bold) has such a
@@ -40,8 +41,9 @@
       s3Store.ts, fsStore.ts  store impls: S3 (prod) and local FS (#17), both read the same key
       slice.ts                #203's DERIVATION SLICE: build it from a puzzle, read a log against
                               it (progress + solved), its gzip codec and its shape check
-      puzzleReads.ts          #203's artifact reads: the slice (every append) and the full
-                              puzzle (a solve), BOTH fresh, both gated on the caller's revision
+      puzzleReads.ts          #203's artifact reads: the slice (every append, FRESH) and the
+                              full puzzle (a solve, the day board, the live read), held in
+                              memory KEYED BY REVISION; both gated on a revision learned fresh
       scores.ts               /scores GET route (read-only): params, the existence probe, the
                               derived histogram and the caller's band
       liveRoute.ts            what the LIVE routes share: no-store headers, the JSON-body
@@ -89,7 +91,8 @@
                               week and month boards + the caller's standings — shared
                               leaderboard rules over score rows + profiles + member lists;
                               since #206 the day POST also answers `playing` (round rows
-                              deduped against the day's full artifact)
+                              deduped against the day's full artifact); `{token, live: true}`
+                              answers every group of the caller's merged (`readLive`)
       history.ts              POST /history (#211): the PRIVATE player history — one month of
                               one language's summaries + its solved-day collection
       historyStore.ts         solved-day storage contract; the private player#<publicId>
@@ -156,7 +159,7 @@ pnpm puzzle:publish <puzzle.json> --bonus [ID] [--s3]  # a BONUS puzzle (root AG
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--ci]  # publish-buffer coverage (#61); reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
 pnpm puzzle:ledger --s3     # rebuild packages/generation/published.jsonl (gitignored — the bucket is the truth) from every sentence puzzle in the bucket; an S3 publish appends to it itself; the curator refuses to run without it
 pnpm backend:dev                # local server (puzzles + /scores + /profile + /groups + /board + /round + /history + /devices + /link + /today) on :8787; FS puzzles, in-memory scores/profiles/groups/rounds/history/devices/links, local Turnstile accept-all, and #204's link codes PRINTED to this log
-pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server with a #190 board population + a seeded group (in-memory — re-run after a restart); --group also lands five seeds in YOUR group
+pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server with a #190 board population + a seeded group (in-memory — re-run after a restart); --group also lands eight seeds (three of them mid-round) in YOUR group
 ```
 
 ---
@@ -281,8 +284,15 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   below. The GLOBAL GET, the period boards and the standing still read none:* a population
   only exists for a published daily, so an unpublished day answers empty.*)* GET's optional
   `id` is validated against `PUBLIC_ID_PATTERN` (400 malformed); POST authenticates
-  `{token}` like every live route, then DISPATCHES on the body: `standing: true` (no group,
-  no period) answers the caller's standings — every group's member list, ONE exact-key
+  `{token}` like every live route, then DISPATCHES on the body: `live: true` (no group, no
+  period, no standing, else 400) answers `readLive` — `listMine`, each group's member list
+  (a membership whose list no longer names the caller is dropped), then the day face's own
+  pieces over the deduplicated UNION, once: the score `getMany`, `loadPlaying` (one artifact
+  read), the subtraction and `orderPlaying`, one `dressRows` over the whole union (a GONE
+  account leaves the rows, the players and the member lists — a member with no row too); no
+  rank (`rankBoard` only orders the rows); a caller in no group answers empty before any
+  other read.
+  `standing: true` (no group, no period) answers the caller's standings — every group's member list, ONE exact-key
   batch over the union for the day, `standingIn` per group; otherwise `group` is required
   (`GROUP_ID_PATTERN`, else 400), `period` optional (`isBoardPeriod`, else 400), and the
   member list is the TRUST BOUNDARY: a caller not on it is 403 `not_member`, an unknown
@@ -307,13 +317,18 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   revision but no score row is IN PROGRESS — `loadPlaying` reads `RoundStore.getMany`
   (BatchGetItem over the exact keys, EVENTUALLY consistent — the method's comment holds
   the reasoning) CONCURRENTLY with the score `getMany` and the full artifact
-  (`getPuzzle`, fresh — the one puzzle-store read on this route), dedups each raw log
+  (`loadCurrentPuzzle`: a FRESH slice read names the published revision, and the parsed
+  artifact held for that revision answers — puzzleReads.ts; the day face and the live read are
+  the only puzzle-store reads on this route), dedups each raw log
   with `countTries` for the exact try count, carries the STORED derived `progress`, and
   orders with the shared `orderPlaying`; a failure there fails the POST rather than
   letting `waiting` claim "not played yet" over a member mid-game (root `AGENTS.md`,
   #206). The subtraction is the RANKED players, not the DONE ones, so a round that ENDED
-  with no score row — capped, late, or refused by the #169 IP allowance — stays in that
-  section: accepted and reasoned in the root `AGENTS.md`, with the fourth state at #224.
+  with no score row stays in that section: one that ended UNSOLVED (the shared `roundEnded`
+  — given up, or capped; `getMany` projects `solved` and `gaveUp` for it) carries
+  `over: true` and `orderPlaying` puts it after the live rows; a solve with no row (late, or
+  refused by the #169 IP allowance) stays unmarked — accepted and reasoned in the root
+  `AGENTS.md`.
   `waiting` keeps the other members with NEITHER row, profile-dressed and
   publicId-sorted (root `AGENTS.md`). Every response is
   `no-store`; a missing profile dresses as `name: ''` / `avatar: null` — **and so does
@@ -342,8 +357,10 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   **`pnpm board:seed` (src/seedBoard.ts) is the LOCAL-ONLY population seeder**: run it
   against a live `pnpm backend:dev` to fill the in-memory stores with 60 scored players
   (a tie straddling the top-50 cut included), a few unnamed ones, two unplayed
-  profile-only ones, a seeded GROUP of four with its printed invite link (#271);
-  `--group <groupId|/g/link>` also lands five seeds in YOUR group. Re-run after every backend restart (the stores reset —
+  profile-only ones, three MID-ROUND players (a partial, unsolved log each — the board's IN
+  PROGRESS rows and the play screen's race line), a seeded GROUP of seven (the three
+  mid-round among them) with its printed invite link (#271); `--group <groupId|/g/link>`
+  also lands eight seeds (the three mid-round included) in YOUR group. Re-run after every backend restart (the stores reset —
   that is why it is a script, not a fixture); it copies the newest local fr sentence
   puzzle forward to the active day when that key is missing.
 
@@ -355,7 +372,8 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   #203 overturned it for the APPEND — see its own bullet below — and the READ still reads
   none.)* `{token, puzzle}` reads (404 = none yet, and
   also "nothing stored for THIS puzzle" — the tag's whole job, root `AGENTS.md`);
-  `{token, puzzle, guesses}` appends. Validation is fail-closed BEFORE the store: a
+  `{token, puzzle, guesses}` appends; `{token, puzzle, giveUp: true}` gives up (its own
+  bullet below). Validation is fail-closed BEFORE the store: a
   `PUZZLE_TAG_SHAPE` tag, then a non-empty string array of at most `ROUND_GUESS_CAP`
   entries, each of at most the language's `maxSlugLength` (#200) and each **left alone by
   `fold()`** — the check asks the shared contract rather than restating its pipeline as a
@@ -365,13 +383,14 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   legitimately exceeds the default 4 KB live-body cap. Storage is the score table:
   partition `round#<publicId>`, sort key `<lang>#sentence#<date>` (per PLAYER — the reason is
   in the root `AGENTS.md`; the order is #203's), attributes `guesses` (string list),
-  `puzzle`, `createdAt`, `lastWriteAt` (ms epoch), plus #203's `progress`/`solved`. `lastWriteAt` is the ONE Number here because it is the only one
+  `puzzle`, `createdAt`, `lastWriteAt` (ms epoch), plus #203's `progress`/`solved` and the
+  give-up's `gaveUp`. `lastWriteAt` is the ONE Number here because it is the only one
   compared arithmetically in the condition; `createdAt` is a String, and writing it as a
   Number reads back as `''` on every response for the item's whole life. The append is ONE
   conditional UpdateItem whose ConditionExpression carries every bound —
-  `(attribute_not_exists(#last) OR #last < :cutoff) AND (attribute_not_exists(#g) OR (size(#g) <= :room AND #p = :puzzle)) AND attribute_not_exists(#solved)`
-  (the RESULT may reach the cap, never pass it; the last clause is #203's freeze) — with `ReturnValues: ALL_NEW` so the happy
-  path is one call. **Every clause is path-only CONDITION syntax and must stay that way:**
+  `(attribute_not_exists(#last) OR #last < :cutoff) AND (attribute_not_exists(#g) OR (size(#g) <= :room AND #p = :puzzle)) AND attribute_not_exists(#solved) AND attribute_not_exists(#gave)`
+  (the RESULT may reach the cap, never pass it; the last two clauses are the FREEZES — #203's
+  solve, and the give-up) — with `ReturnValues: ALL_NEW` so the happy path is one call. **Every clause is path-only CONDITION syntax and must stay that way:**
   DynamoDB's condition grammar has NO arithmetic and its whole function list is
   attribute_exists / attribute_not_exists / attribute_type / begins_with / contains /
   size(<path>) — `if_not_exists` and `+` belong to an UPDATE expression, and naming either
@@ -382,9 +401,11 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   and why a batch too large for an EMPTY log — which has no size to compare — is refused in
   the store instead. A failed condition reads the item once, consistently, to classify the
   refusal: a record naming a RETIRED puzzle is a restart, so the batch REPLACES the log
-  (still inside the write interval, or varying the tag would be a way around it); else
-  `round_full` when any batch would overflow the cap — the truer answer, since retrying can
-  never succeed — else `too_fast`. **Every refusal ANSWERS with the unchanged stored
+  (still inside the write interval, or varying the tag would be a way around it) and REMOVES
+  the retired puzzle's `solved` and `gaveUp`, or the fresh round is born frozen; else
+  `round_solved`, else `round_given_up`, else `round_full` when any batch would overflow the
+  cap — the truer answer, since retrying can never succeed — else `too_fast`. The memory
+  store keeps the same order. **Every refusal ANSWERS with the unchanged stored
   state** (`errorResponse`'s `extra`), which is what the client reconciles against and what
   pays for that read — but only ever the state of the PUZZLE ASKED ABOUT (`stateForTag` in
   both stores): a rate-refused RESTART answers empty rather than handing back the retired
@@ -400,16 +421,17 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   a browser reads null for a header only curl and `backend:dev` ever see. Local serve swaps
   in `memoryRoundStore`; no new env or IAM (the table grant already carried GetItem +
   UpdateItem).
-  **EARLY PLAY (#273):** the route judges `early = dayNumber(date) > dayNumber(serverDate)`
-  — the +1-day window `requireDayParams` admits — and hands it to `append`, which then adds
-  two clauses to the SAME condition, path-only syntax like the rest:
-  `AND (attribute_not_exists(#prog) OR #prog = :zero) AND (attribute_not_exists(#g) OR size(#g) <= :earlyRoom)`
-  (`:zero` is the version bump's own 0; `:earlyRoom` = `EARLY_GUESS_CAP` minus the batch,
-  the cap's ROOM shape; a first batch past the early cap is refused in the store like the
-  round cap's empty-log half). The classification reads solved → `early_locked`
-  (`roundStore.earlyLocked`, the two clauses restated for the read and for the memory store)
-  → cap → interval. `early_locked` is a 409 carrying the stored state; the day itself lifts
-  it (the route stops asking). The rule lives in the root `AGENTS.md` (Sentence round).
+- **The GIVE-UP** (the product rule is the root `AGENTS.md`'s): `{token, puzzle, giveUp:
+  true}`, refused 400 BEFORE authentication when `giveUp` is anything but `true` or travels
+  beside `guesses` or a `turnstileToken`. `roundStore.giveUp` is ONE conditional UpdateItem
+  — `SET #gave = :gave` + the version bump, under `#p = :puzzle AND
+  attribute_not_exists(#solved)`, `ReturnValues: ALL_NEW` — answered 200 with the state, and
+  idempotent (no clause on `gaveUp` itself). A refusal is classified by one consistent read:
+  a SOLVED record of this puzzle is 409 `round_solved` with its state (the solve wins);
+  anything else — no record, a retired puzzle's — is 404 `not_found`. No slice is read, no
+  challenge is asked, and `lastWriteAt` is untouched (a give-up is not paced and does not
+  pace the next write). `settleAppend` never runs, so it records no score row and credits no
+  streak day. The #204 move copies the item whole, so `gaveUp` travels with it.
 - **Two rules the round store's writes carry:** **every command's
   `ExpressionAttributeNames` holds exactly the aliases ITS OWN expressions name** — DynamoDB
   rejects an unused entry, and an undeclared alias, with a ValidationException before
@@ -432,8 +454,8 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   fires `rounds.get(..., { consistent: false })` and `loadSlice` CONCURRENTLY — neither
   depends on the other, so the slice fetch hides inside a round trip already being paid for —
   derives from *(stored log + batch)*, and hands the two values to `append`, which writes
-  them in its own mutation and carries `attribute_not_exists(#solved)` as a fourth clause of
-  the condition it already sends. A missing slice is the day-addressed 404; the READ path
+  them in its own mutation and carries `attribute_not_exists(#solved)` (beside the give-up's
+  `attribute_not_exists(#gave)`) as a freeze clause of the condition it already sends. A missing slice is the day-addressed 404; the READ path
   loads none, so a mount read stays as cheap as it was. After the append, `settleAppend`
   re-derives from the RETURNED log and, on a disagreement, calls `roundStore.settle` behind
   a small bounded RETRY (it is the last chance to record a solve). That write is MONOTONIC
@@ -441,10 +463,16 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   settle delayed past a better one is refused rather than parking a stale percentage.
   `parseSlice` checks the rank VALUES too, not only the field shapes, and `encodeSlice` runs
   it before writing: a malformed puzzle then fails loudly at PUBLISH instead of shipping a
-  day whose every append answers the day-addressed 404. **NEITHER artifact is cached.** The
-  published revision now makes a revision-keyed cache correct, but fresh remains simpler and
-  cheap: the small slice fetch overlaps the round read, and the full artifact is loaded only
-  on solve. **`publish` stamps a `revision`** on the puzzle and its slice — a hash of the
+  day whose every append answers the day-addressed 404. **The SLICE is read fresh; the FULL
+  artifact is held by REVISION** (`puzzleReads.ts`): a per-store-instance map (one per
+  Lambda container; one per test handler, so tests never share it) of at most
+  `HELD_ARTIFACTS` = 2 entries by store key, least recently used evicted. `loadPuzzle(…,
+  revision)` answers the held artifact when it carries that revision, else reads fresh and
+  keeps it only when it names it; `loadCurrentPuzzle` learns the revision from a fresh slice
+  first (the boards). The revision a caller asks with is always learned fresh — the solve's
+  is the round's own tag, which the append's fresh slice was just checked against — so a held
+  entry can never answer for a corrected day. Why held at all: the live read asks at guess
+  cadence and the API has 10 concurrent Lambdas. **`publish` stamps a `revision`** on the puzzle and its slice — a hash of the
   complete puzzle content, rank maps included, so an identical republish is a no-op — and
   `loadSlice`/`loadPuzzle` refuse anything that does not name the version the caller sent.
   Publish writes the slice FIRST; the shared revision makes the two-object window fail closed
@@ -460,9 +488,9 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   whole. A truth that reads SOLVED
   then records the day's score row — `countTries` over the FULL artifact (`loadPuzzle`), the
   one thing the slice cannot answer — and that write's failures are LOGGED, never surfaced:
-  the answer is about the log. `puzzleReads.ts` holds NO state — both reads are fresh, so
-  there is nothing to reset between tests and nothing an instance can answer a later
-  request from.
+  the answer is about the log. `puzzleReads.ts`'s held artifacts are keyed by the store
+  INSTANCE and the revision, so nothing needs resetting between tests and a held entry can
+  only ever answer for the exact version it was read as.
   Round CREATION is Turnstile-gated: the sentence round has no START message, so the
   challenge rides the append whose pre-read found nothing (`requireTurnstile`), and a bare
   token with no guesses is a 400 rather than a free challenge to burn. `RoundHandlerDeps`

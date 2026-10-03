@@ -1,6 +1,5 @@
-import { EARLY_GUESS_CAP, ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
+import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
 import {
-  earlyLocked,
   roundMonthPrefix,
   roundPartition,
   roundSortKeyDate,
@@ -23,6 +22,8 @@ interface RoundItem {
   // written true, and its presence is what freezes further appends.
   progress?: number;
   solved?: boolean;
+  // The player gave up (roundStore.ts): only ever written true, the second freeze.
+  gaveUp?: boolean;
 }
 
 // Process-local store for `pnpm backend:dev`: the same RoundStore contract as DynamoDB —
@@ -40,6 +41,7 @@ export function memoryRoundStore(): RoundStore & LinkRoundWrites {
     createdAt: item.createdAt,
     ...(item.progress === undefined ? {} : { progress: item.progress }),
     ...(item.solved === true ? { solved: true } : {}),
+    ...(item.gaveUp === true ? { gaveUp: true } : {}),
   });
 
   // The state a caller may be TOLD about, which is only ever the state of the puzzle it
@@ -86,6 +88,8 @@ export function memoryRoundStore(): RoundStore & LinkRoundWrites {
           puzzle: item.puzzle,
           guesses: [...item.guesses],
           progress: item.progress ?? 0,
+          solved: item.solved === true,
+          gaveUp: item.gaveUp === true,
         });
       }
       return rows;
@@ -113,14 +117,11 @@ export function memoryRoundStore(): RoundStore & LinkRoundWrites {
       if (input.guesses.length > ROUND_GUESS_CAP) {
         return { outcome: 'round_full' as const, state: stateForTag(existing, input.puzzle) };
       }
-      // The early-play cap's empty-log half (#273), the Dynamo store's own order.
-      if (input.early && input.guesses.length > EARLY_GUESS_CAP) {
-        return { outcome: 'early_locked' as const, state: stateForTag(existing, input.puzzle) };
-      }
 
       // A RETIRED puzzle's log: the round restarted under the same key, so the batch
-      // REPLACES it rather than growing it — the retired puzzle's derived summary included,
-      // or its `solved` would freeze a round nobody is playing any more. The interval still
+      // REPLACES it rather than growing it — the retired puzzle's derived summary and its
+      // give-up included (a fresh item carries neither), or its `solved` or `gaveUp` would
+      // freeze a round nobody is playing any more. The interval still
       // applies, otherwise varying the tag would be a way around the rate bound.
       if (!existing || existing.puzzle !== input.puzzle) {
         // The refusal answers with the state of the puzzle that was ASKED about — never
@@ -138,14 +139,14 @@ export function memoryRoundStore(): RoundStore & LinkRoundWrites {
         return { outcome: 'appended' as const, state: stateOf(item) };
       }
 
-      // Solved first, then the early-play lock, then cap, then interval — the same order
-      // the Dynamo classification reads them in, so a doubly-refused append answers alike
-      // on both backends.
+      // Solved first, then given up, then cap, then interval — the same order the Dynamo
+      // classification reads them in, so a doubly-refused append answers alike on both
+      // backends.
       if (existing.solved) {
         return { outcome: 'round_solved' as const, state: stateOf(existing) };
       }
-      if (input.early && earlyLocked(stateOf(existing), input.guesses.length)) {
-        return { outcome: 'early_locked' as const, state: stateOf(existing) };
+      if (existing.gaveUp) {
+        return { outcome: 'round_given_up' as const, state: stateOf(existing) };
       }
       if (existing.guesses.length + input.guesses.length > ROUND_GUESS_CAP) {
         return { outcome: 'round_full' as const, state: stateOf(existing) };
@@ -170,6 +171,17 @@ export function memoryRoundStore(): RoundStore & LinkRoundWrites {
       item.progress = input.progress;
       if (input.solved) item.solved = true;
       return true;
+    },
+
+    // THE GIVE-UP (roundStore.ts): only on this puzzle's record, never over a solve.
+    async giveUp(input) {
+      const item = rounds.get(itemKey(input, input.publicId));
+      if (!item || item.puzzle !== input.puzzle) {
+        return { outcome: 'not_found' as const, state: empty() };
+      }
+      if (item.solved) return { outcome: 'round_solved' as const, state: stateOf(item) };
+      item.gaveUp = true;
+      return { outcome: 'given_up' as const, state: stateOf(item) };
     },
 
     // #204's active-day transfer, the process-local half of `dynamoLinkStore`'s one

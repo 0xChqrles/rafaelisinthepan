@@ -558,7 +558,6 @@ describe('email account linking (#204) — one transaction owns the adoption', (
       puzzle: 'rev1',
       progress: 100,
       solved: true,
-      early: false,
       now: NOW,
     });
     return { targets, first, second, key };
@@ -801,7 +800,6 @@ describe('email account linking (#204) — the erase confirmation', () => {
       puzzle: 'rev1',
       progress: 100,
       solved: true,
-      early: false,
       now: NOW,
     });
     await h.scores.submit({
@@ -861,7 +859,6 @@ describe('email account linking (#204) — the active-day transfer', () => {
       puzzle: 'rev1',
       progress: 100,
       solved: true,
-      early: false,
       now: NOW,
     });
     await h.scores.submit({
@@ -912,7 +909,6 @@ describe('email account linking (#204) — the active-day transfer', () => {
       puzzle: 'rev1',
       progress: 20,
       solved: false,
-      early: false,
       now: NOW,
     });
 
@@ -924,7 +920,6 @@ describe('email account linking (#204) — the active-day transfer', () => {
       puzzle: 'rev1',
       progress: 100,
       solved: true,
-      early: false,
       now: NOW,
     });
 

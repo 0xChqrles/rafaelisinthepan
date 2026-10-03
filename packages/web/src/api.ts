@@ -19,6 +19,8 @@ import type {
   BoardPlayer,
   BoardRow,
   GroupSummary,
+  LiveBoard,
+  LiveGroup,
   PeriodBoard,
   PeriodRow,
   PlayingRow,
@@ -286,8 +288,8 @@ export function parseDeviceIdentity(data: unknown): DeviceListing {
 // The round route (#201/#203): the server-authoritative state of one player's play on one
 // daily, one item per (date, lang, account). POST-only — `{token, puzzle}` reads the stored
 // round (404 = none yet); the client streams into it with `{token, puzzle, guesses}`,
-// carrying a `turnstileToken` on the append that CREATES the round. EVERY answer, refusals
-// included, carries the full state, so a write is also a reconciliation. `puzzle` is the
+// carrying a `turnstileToken` on the append that CREATES the round; `{token, puzzle,
+// giveUp: true}` ends it unsolved. EVERY answer, refusals included, carries the full state, so a write is also a reconciliation. `puzzle` is the
 // published revision naming WHICH puzzle the state belongs to, which is how a corrected
 // daily restarts instead of inheriting the retired one's log. The two query parameters are
 // in the round CloudFront behavior's allowList (the root AGENTS.md three-package contract).
@@ -297,7 +299,13 @@ export function roundUrl(lang: string, address: string, base: string = apiBase()
 
 export async function postRoundBody(
   url: string,
-  body: { token: string; puzzle: string; guesses?: string[]; turnstileToken?: string },
+  body: {
+    token: string;
+    puzzle: string;
+    guesses?: string[];
+    turnstileToken?: string;
+    giveUp?: true;
+  },
 ): Promise<Response> {
   return postSignedJson(url, body);
 }
@@ -310,6 +318,10 @@ export interface RoundState {
   // when a standing becomes readable. Only ever written true, so `false` means "not yet",
   // never "no longer".
   solved: boolean;
+  // Did the player GIVE UP on this round? Stored, write-only-true like `solved`: the round
+  // ended unsolved and refuses every later append. `solved` wins when both are set
+  // (`roundEnded`, shared).
+  gaveUp: boolean;
   // Carried by the answer that CONFIRMS a solve: did it earn the day's rewards — the
   // streak credit and the leaderboard row (#211's one on-time predicate, decided on the
   // SERVER's clock)? The celebration rides this rather than re-making the comparison on
@@ -323,13 +335,16 @@ export interface RoundState {
 // round's try log.
 export function parseRound(data: unknown): RoundState {
   if (!isRecord(data)) throw new Error('malformed round: not an object');
-  const { guesses, createdAt, solved, credited } = data;
+  const { guesses, createdAt, solved, gaveUp, credited } = data;
   if (!Array.isArray(guesses) || !guesses.every((g) => typeof g === 'string')) {
     throw new Error('malformed round: "guesses" must be an array of strings');
   }
   if (typeof createdAt !== 'string') throw new Error('malformed round: bad "createdAt"');
   if (solved !== undefined && typeof solved !== 'boolean') {
     throw new Error('malformed round: bad "solved"');
+  }
+  if (gaveUp !== undefined && typeof gaveUp !== 'boolean') {
+    throw new Error('malformed round: bad "gaveUp"');
   }
   if (credited !== undefined && typeof credited !== 'boolean') {
     throw new Error('malformed round: bad "credited"');
@@ -339,6 +354,8 @@ export function parseRound(data: unknown): RoundState {
     createdAt,
     // Absent means the server holds no solve for this round: it is still being played.
     solved: solved === true,
+    // Absent means the player has not given up.
+    gaveUp: gaveUp === true,
     // Absent means nothing was earned (or this answer is not the one confirming a solve).
     credited: credited === true,
   };
@@ -790,7 +807,8 @@ export async function readGroup(id: string, signal?: AbortSignal): Promise<Group
 
 // The #190 leaderboard: GET is the anonymous GLOBAL top 50 (`id` — the caller's PUBLIC
 // id, never the token — widens it with their own below-the-cut window); POST with
-// `{token, group[, period]}` is a GROUP's board (#271), the trusted surface.
+// `{token, group[, period]}` is a GROUP's board (#271), the trusted surface, and
+// `{token, live: true}` every group the caller is in, merged (`parseLiveBoard`).
 // Addressed per (day, lang) like everything else; all three query parameters are in the
 // board CloudFront behavior's allowList (the root AGENTS.md three-package contract).
 export function boardUrl(lang: string, date: string, id?: string, base: string = apiBase()): string {
@@ -800,7 +818,9 @@ export function boardUrl(lang: string, date: string, id?: string, base: string =
   return id ? `${root}&id=${encodeURIComponent(id)}` : root;
 }
 
-export type BoardBody = { token: string; group: string; period?: BoardPeriod };
+export type BoardBody =
+  | { token: string; group: string; period?: BoardPeriod }
+  | { token: string; live: true };
 
 export async function postBoardBody(url: string, body: BoardBody): Promise<Response> {
   return postSignedJson(url, body);
@@ -848,7 +868,8 @@ function checkBoardRows(value: unknown, field: string): asserts value is BoardRo
 
 // The #206 in-progress rows: a profile-dressed player with the two live numbers — an
 // exact try count (a positive integer) and the server-derived reconstruction percentage
-// (a real number in [0, 100], not necessarily whole).
+// (a real number in [0, 100], not necessarily whole) — and `over`, whether the round
+// ended unsolved (given up, or capped).
 function checkPlayingRows(value: unknown, field: string): asserts value is PlayingRow[] {
   if (!Array.isArray(value)) throw new Error(`malformed board: "${field}" must be an array`);
   for (const raw of value) {
@@ -861,7 +882,8 @@ function checkPlayingRows(value: unknown, field: string): asserts value is Playi
       typeof row.progress !== 'number' ||
       !Number.isFinite(row.progress) ||
       row.progress < 0 ||
-      row.progress > 100
+      row.progress > 100 ||
+      typeof row.over !== 'boolean'
     ) {
       throw new Error(`malformed board: bad "${field}" row`);
     }
@@ -876,6 +898,36 @@ export function parseBoard(data: unknown): Board {
   checkPlayingRows(playing, 'playing');
   checkBoardPlayers(waiting, 'waiting');
   return data as unknown as Board;
+}
+
+function isLiveGroup(value: unknown): value is LiveGroup {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    GROUP_ID_PATTERN.test(value.id) &&
+    typeof value.name === 'string' &&
+    isIdList(value.members)
+  );
+}
+
+// The LIVE read (`{token, live: true}`): the caller's groups with their member lists, and
+// the members' finished rows (a dressed player and a whole try count — no rank, which only
+// a single group's board can give) and playing rows (the day board's own shape).
+export function parseLiveBoard(data: unknown): LiveBoard {
+  if (!isRecord(data)) throw new Error('malformed live board: not an object');
+  const { groups, rows, playing } = data;
+  if (!Array.isArray(groups) || !groups.every(isLiveGroup)) {
+    throw new Error('malformed live board: "groups" must be an array of groups');
+  }
+  if (!Array.isArray(rows)) throw new Error('malformed live board: "rows" must be an array');
+  for (const raw of rows) {
+    const row = raw as Record<string, unknown>;
+    if (!isBoardPlayer(raw) || typeof row.score !== 'number' || !Number.isInteger(row.score) || row.score < 1) {
+      throw new Error('malformed live board: bad "rows" row');
+    }
+  }
+  checkPlayingRows(playing, 'playing');
+  return data as unknown as LiveBoard;
 }
 
 const isCount = (value: unknown): value is number =>

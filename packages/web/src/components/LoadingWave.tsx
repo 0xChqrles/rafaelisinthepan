@@ -4,9 +4,7 @@ import type { CSSProperties } from 'react';
 // waiting line plays the same wave — a crest of full ink rolling through letters sunk
 // to a fraction of it, looping until the answer arrives (see `.loading-wave`). The wave
 // rides OPACITY, so each surface keeps its own ink and face: the status line stays
-// accent mono, the standing slot's RANKING... stays the pixel label it resolves into
-// (via `letterClass`). Screen readers get the plain string; the letter boxes are
-// decoration.
+// accent mono. Screen readers get the plain string; the letter boxes are decoration.
 export default function LoadingWave({ text }: { text: string }) {
   return (
     <>

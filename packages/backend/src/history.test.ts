@@ -79,7 +79,6 @@ async function playDay(
     guesses: ['bois'],
     progress,
     solved,
-    early: false,
     now: new Date(`${date}T12:00:00Z`),
   });
 }

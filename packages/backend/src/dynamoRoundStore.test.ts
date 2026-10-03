@@ -13,7 +13,7 @@ import {
   type AttributeValue,
   type DynamoDBClient,
 } from '@aws-sdk/client-dynamodb';
-import { EARLY_GUESS_CAP, ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
+import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
 import {
   expectConditionSyntax,
   expectExpressionsValid,
@@ -157,7 +157,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     expect(result.outcome).toBe('appended');
@@ -208,7 +207,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     const command = send.mock.calls[0][0] as UpdateItemCommand;
@@ -227,7 +225,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     // A missing attribute has no size, so this half of the cap cannot be a condition —
@@ -248,7 +245,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     // The log is at the cap and any batch would overflow it: the cap refusal, not the
@@ -268,7 +264,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     expect(refused.outcome).toBe('too_fast');
@@ -286,7 +281,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     expect(result.outcome).toBe('appended');
@@ -313,7 +307,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     expect(refused.outcome).toBe('too_fast');
@@ -352,7 +345,6 @@ describe('dynamoRoundStore (#201)', () => {
       puzzle: PUZZLE,
       progress: 0,
       solved: false,
-      early: false,
       now: NOW,
     });
     expect(updates).toBe(2); // the append, then the refused replace
@@ -376,7 +368,6 @@ describe('dynamoRoundStore (#201)', () => {
         puzzle: PUZZLE,
         progress: 0,
         solved: false,
-        early: false,
         now: NOW,
       }),
     ).rejects.toThrow('ProvisionedThroughputExceeded');
@@ -394,7 +385,6 @@ describe('dynamoRoundStore — the derived summary (#203)', () => {
     puzzle: PUZZLE,
     progress,
     solved,
-    early: false,
     now: NOW,
   });
 
@@ -526,6 +516,127 @@ describe('dynamoRoundStore — the derived summary (#203)', () => {
     expect((send.mock.calls[0][0] as GetItemCommand).input.ConsistentRead).toBe(false);
     await store.get(KEY, PUBLIC_ID, PUZZLE);
     expect((send.mock.calls[1][0] as GetItemCommand).input.ConsistentRead).toBe(true);
+  });
+});
+
+// CONTRACT: THE GIVE-UP. Its own small conditional write on this puzzle's record, never
+// over a solve; a given-up round refuses every later append (the second freeze); and a
+// republish's restart clears it like `solved`, or the corrected round is born frozen.
+describe('dynamoRoundStore — the give-up', () => {
+  const append = (solved = false) => ({
+    ...KEY,
+    publicId: PUBLIC_ID,
+    guesses: ['mer'],
+    puzzle: PUZZLE,
+    progress: 10,
+    solved,
+    now: NOW,
+  });
+  const giveUp = { ...KEY, publicId: PUBLIC_ID, puzzle: PUZZLE };
+  const refused = () =>
+    new ConditionalCheckFailedException({ $metadata: {}, message: 'The conditional request failed' });
+
+  it('is ONE conditional update on this puzzle\'s unsolved record, answering the new item', async () => {
+    const send = vi.fn(async (_command: unknown) => ({
+      Attributes: { ...storedItem(['bois'], 1), progress: { N: '40' }, gaveUp: { BOOL: true } },
+    }));
+    const { store } = makeStore(send);
+
+    await expect(store.giveUp(giveUp)).resolves.toEqual({
+      outcome: 'given_up',
+      state: {
+        guesses: ['bois'],
+        createdAt: '2026-08-21T09:00:00.000Z',
+        progress: 40,
+        gaveUp: true,
+      },
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    // The harness has already held the alias correspondence and the version bump.
+    expect(command.input.UpdateExpression).toBe(
+      'SET #gave = :gave, #v = if_not_exists(#v, :zero) + :one',
+    );
+    expect(command.input.ConditionExpression).toBe(
+      '#p = :puzzle AND attribute_not_exists(#solved)',
+    );
+    expectConditionSyntax(command.input.ConditionExpression);
+    expect(command.input.ExpressionAttributeValues![':gave']).toEqual({ BOOL: true });
+    expect(command.input.ReturnValues).toBe('ALL_NEW');
+  });
+
+  it('answers round_solved when the refusal was a SOLVE — the solve wins', async () => {
+    const solved = { ...storedItem(['phare', 'nuit'], 1), solved: { BOOL: true } };
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof UpdateItemCommand) throw refused();
+      return { Item: solved };
+    });
+    const { store } = makeStore(send);
+    const result = await store.giveUp(giveUp);
+    expect(result.outcome).toBe('round_solved');
+    expect(result.state).toMatchObject({ guesses: ['phare', 'nuit'], solved: true });
+    // Classified by ONE consistent read.
+    expect((send.mock.calls[1][0] as GetItemCommand).input.ConsistentRead).toBe(true);
+  });
+
+  it.each([
+    ['no record', undefined],
+    ['a RETIRED puzzle\'s record', storedItem(['ancien'], 1, 'deadbeef')],
+  ])('answers not_found over %s, handing nothing of it back', async (_name, item) => {
+    const send = vi.fn(async (command: unknown) => {
+      if (command instanceof UpdateItemCommand) throw refused();
+      return item ? { Item: item } : {};
+    });
+    const { store } = makeStore(send);
+    await expect(store.giveUp(giveUp)).resolves.toEqual({
+      outcome: 'not_found',
+      state: { guesses: [], createdAt: '' },
+    });
+  });
+
+  it('surfaces an operational failure instead of reading it as a refusal', async () => {
+    const send = vi.fn(async () => {
+      throw new Error('ProvisionedThroughputExceeded');
+    });
+    const { store } = makeStore(send);
+    await expect(store.giveUp(giveUp)).rejects.toThrow('ProvisionedThroughputExceeded');
+  });
+
+  it('FREEZES a given-up round with a path-only clause on the append\'s own condition', async () => {
+    const send = vi.fn(async (command: unknown) => ({
+      Attributes: firstWriteResult(command as UpdateItemCommand),
+    }));
+    const { store } = makeStore(send);
+    await store.append(append());
+    const command = send.mock.calls[0][0] as UpdateItemCommand;
+    expect(command.input.ConditionExpression).toContain('attribute_not_exists(#gave)');
+    expectConditionSyntax(command.input.ConditionExpression);
+  });
+
+  it('classifies a refusal on a GIVEN-UP record after solved, above the cap and the interval', async () => {
+    const atCap = Array.from({ length: ROUND_GUESS_CAP }, (_, i) => `g${i}`);
+    const givenUp = { ...storedItem(atCap, NOW.getTime()), gaveUp: { BOOL: true } };
+    const { store } = makeStore(refuseOnce(givenUp));
+    const result = await store.append(append());
+    expect(result.outcome).toBe('round_given_up');
+    expect(result.state.gaveUp).toBe(true);
+
+    // Both flags: the solve wins here too.
+    const both = { ...givenUp, solved: { BOOL: true } };
+    const { store: bothStore } = makeStore(refuseOnce(both));
+    expect((await bothStore.append(append())).outcome).toBe('round_solved');
+  });
+
+  it.each([
+    ['an unsolved restart', false, 'REMOVE #solved, #gave'],
+    ['a solving restart', true, 'REMOVE #gave'],
+  ])('a RESTART clears the retired puzzle\'s give-up (%s)', async (_name, solved, removes) => {
+    const retired = { ...storedItem(['ancien'], 1, 'deadbeef'), gaveUp: { BOOL: true } };
+    const { store, send } = makeStore(refuseOnce(retired));
+    const result = await store.append(append(solved));
+    expect(result.outcome).toBe('appended');
+    const replace = send.mock.calls.at(-1)![0] as UpdateItemCommand;
+    expect(replace.input.UpdateExpression).toContain(removes);
   });
 });
 
@@ -666,7 +777,10 @@ describe('dynamoRoundStore.getMany — the board read (#206)', () => {
       expect(declared.sort()).toEqual(used.sort());
       return {
         Responses: {
-          scores: [item(PUBLIC_ID, ['mer', 'mers'], 62.5), item('aaaaaaaaaaaaaaaa', ['quai'], 10)],
+          scores: [
+            { ...item(PUBLIC_ID, ['mer', 'mers'], 62.5), gaveUp: { BOOL: true } },
+            item('aaaaaaaaaaaaaaaa', ['quai'], 10),
+          ],
         },
       };
     });
@@ -675,9 +789,13 @@ describe('dynamoRoundStore.getMany — the board read (#206)', () => {
     const rows = await store.getMany(KEY, [PUBLIC_ID, 'aaaaaaaaaaaaaaaa']);
     expect(send).toHaveBeenCalledTimes(1);
     expect(rows).toEqual([
-      { publicId: PUBLIC_ID, puzzle: PUZZLE, guesses: ['mer', 'mers'], progress: 62.5 },
-      { publicId: 'aaaaaaaaaaaaaaaa', puzzle: PUZZLE, guesses: ['quai'], progress: 10 },
+      { publicId: PUBLIC_ID, puzzle: PUZZLE, guesses: ['mer', 'mers'], progress: 62.5, solved: false, gaveUp: true },
+      { publicId: 'aaaaaaaaaaaaaaaa', puzzle: PUZZLE, guesses: ['quai'], progress: 10, solved: false, gaveUp: false },
     ]);
+    // What says a round ENDED travels too (the board marks it `over`).
+    const request = (send.mock.calls[0][0] as BatchGetItemCommand).input.RequestItems!.scores;
+    expect(request.ProjectionExpression).toContain('#solved');
+    expect(request.ProjectionExpression).toContain('#gave');
   });
 
   it('retries UnprocessedKeys behind the jittered wait instead of dropping a friend', async () => {
@@ -698,7 +816,9 @@ describe('dynamoRoundStore.getMany — the board read (#206)', () => {
     });
 
     const rows = await store.getMany(KEY, [PUBLIC_ID]);
-    expect(rows).toEqual([{ publicId: PUBLIC_ID, puzzle: PUZZLE, guesses: ['bois'], progress: 40 }]);
+    expect(rows).toEqual([
+      { publicId: PUBLIC_ID, puzzle: PUZZLE, guesses: ['bois'], progress: 40, solved: false, gaveUp: false },
+    ]);
     // Only BETWEEN attempts, never before the first read.
     expect(send).toHaveBeenCalledTimes(2);
     expect(waits).toHaveLength(1);
@@ -839,88 +959,5 @@ describe('planRoundMove (#204)', () => {
     expect(result.items[1].Delete).toMatchObject({
       ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#v)',
     });
-  });
-});
-
-// CONTRACT (#273): an append to a round played BEFORE its day carries two clauses more in
-// the SAME condition — no stored progress, and room under EARLY_GUESS_CAP — so the night's
-// lock can no more be raced than the cap; today's append carries neither.
-describe('early play (#273)', () => {
-  const earlyInput = (guesses: string[]) => ({
-    ...KEY,
-    publicId: PUBLIC_ID,
-    guesses,
-    puzzle: PUZZLE,
-    progress: 0,
-    solved: false,
-    early: true,
-    now: NOW,
-  });
-
-  it('carries the two early clauses inside the one condition, in legal condition syntax', async () => {
-    const send = vi.fn(async (command: unknown) => ({
-      Attributes: firstWriteResult(command as UpdateItemCommand),
-    }));
-    const { store } = makeStore(send);
-    const result = await store.append(earlyInput(['zzz']));
-    expect(result.outcome).toBe('appended');
-
-    const command = send.mock.calls[0][0] as UpdateItemCommand;
-    expectConditionSyntax(command.input.ConditionExpression);
-    expect(command.input.ConditionExpression).toContain(
-      '(attribute_not_exists(#prog) OR #prog = :zero)',
-    );
-    // ROOM, the cap's own shape: the log may REACH the early cap, never pass it.
-    expect(command.input.ConditionExpression).toContain(
-      '(attribute_not_exists(#g) OR size(#g) <= :earlyRoom)',
-    );
-    expect(command.input.ExpressionAttributeValues![':earlyRoom']).toEqual({
-      N: String(EARLY_GUESS_CAP - 1),
-    });
-    // The four bounds every append carries are still there.
-    expect(command.input.ConditionExpression).toContain('size(#g) <= :room');
-    expect(command.input.ConditionExpression).toContain('attribute_not_exists(#solved)');
-  });
-
-  it("today's append carries neither clause", async () => {
-    const send = vi.fn(async (command: unknown) => ({
-      Attributes: firstWriteResult(command as UpdateItemCommand),
-    }));
-    const { store } = makeStore(send);
-    await store.append({ ...earlyInput(['zzz']), early: false });
-    const command = send.mock.calls[0][0] as UpdateItemCommand;
-    expect(command.input.ConditionExpression).not.toContain('#prog');
-    expect(command.input.ConditionExpression).not.toContain(':earlyRoom');
-  });
-
-  it('classifies a refusal as early_locked when the stored log has made PROGRESS', async () => {
-    const existing = { ...storedItem(['mer'], 1), progress: { N: '25' } };
-    const { store } = makeStore(refuseOnce(existing));
-    const refused = await store.append(earlyInput(['zzz']));
-    expect(refused.outcome).toBe('early_locked');
-    expect(refused.state.guesses).toEqual(['mer']);
-    expect(refused.state.progress).toBe(25);
-  });
-
-  it('…and when the batch would push the log past the early cap — before the round cap', async () => {
-    const existing = { ...storedItem(['a', 'b', 'c'], 1), progress: { N: '0' } };
-    const { store } = makeStore(refuseOnce(existing));
-    const refused = await store.append(earlyInput(['d']));
-    expect(refused.outcome).toBe('early_locked');
-  });
-
-  it('refuses a first batch past the early cap without writing', async () => {
-    const send = vi.fn(async (_command: unknown) => ({}));
-    const { store } = makeStore(send);
-    const refused = await store.append(earlyInput(['a', 'b', 'c', 'd']));
-    expect(refused.outcome).toBe('early_locked');
-    expect(send.mock.calls.every(([command]) => !(command instanceof UpdateItemCommand))).toBe(true);
-  });
-
-  it("today's refusal never reads as the night's lock, whatever the stored progress", async () => {
-    const existing = { ...storedItem(['mer'], NOW.getTime() - 100), progress: { N: '25' } };
-    const { store } = makeStore(refuseOnce(existing));
-    const refused = await store.append({ ...earlyInput(['zzz']), early: false });
-    expect(refused.outcome).toBe('too_fast');
   });
 });

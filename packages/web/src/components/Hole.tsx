@@ -38,8 +38,8 @@ function rankTweenDuration(fromRank: number, toRank: number): number {
 }
 
 // THE CHARGE METER (#301): what the hole shows of its meter — the charge, and whether the
-// hole is ACTIVE (the meter full, the given words out — user-decided 2026-09-22, replacing
-// the revealed initial). Both are the round's DERIVED reading of the play log; the hole
+// hole is ACTIVE (the meter full, a word closer offered — user-decided 2026-09-22,
+// replacing the revealed initial). Both are the round's DERIVED reading of the play log; the hole
 // owns only the choreography that lands them.
 export interface HoleChargeView {
   value: number;
@@ -115,7 +115,8 @@ export default function Hole({
   const [rankPopActive, setRankPopActive] = useState(false);
   const previousRank = useRef(hole.rank);
   const [rankVisible, setRankVisible] = useState<boolean>(hole.rank > 0);
-  const showRank = hole.rank > 0 || rankVisible;
+  // A REVEALED secret (a give-up) was never reached: no exponent rolls down to it.
+  const showRank = !hole.revealed && (hole.rank > 0 || rankVisible);
 
   useEffect(() => {
     const improved = hole.rank < previousRank.current;
@@ -175,14 +176,17 @@ export default function Hole({
   }, [displayWord, hole.word, start]);
 
   // Accent ("resolved") styling only once the FINAL secret word is on screen —
-  // not during the exponent drop / scramble that precedes the swap.
+  // not during the exponent drop / scramble that precedes the swap. A REVEALED secret (a
+  // give-up) settles too — the round's exit waits on it — but keeps the held chip: the
+  // cobalt is for a word found.
   const resolved = hole.rank === 0 && displayWord === hole.word;
+  const inked = resolved && !hole.revealed;
 
   // THE ACTIVATION (#301; user-decided 2026-09-22): `charge lands → meter fills → burst →
-  // the sea`. The active state is derived and arrives on the same render that fills the
-  // meter; the hole holds it back for the fill's travel and the burst's impact, then lets
-  // the full chip recede into the sea (`MeterCanvas`). A hole MOUNTED active (a reload, a
-  // replay on another device) is on the sea at once — a burst is for the moment it
+  // the foil` (the `sea`). The active state is derived and arrives on the same render that
+  // fills the meter; the hole holds it back for the fill's travel and the burst's impact,
+  // then lets the full chip dissolve into the foil (`MeterCanvas`). A hole MOUNTED active (a
+  // reload, a replay on another device) is on the foil at once — a burst is for the moment it
   // happens, not for history. Under reduced motion everything snaps.
   const active = charge?.active === true;
   // An exact hit wins immediately, before the deferred board finishes its word swap.
@@ -200,13 +204,12 @@ export default function Hole({
   const meterDelayRef = useRef(meterDelayMs);
   meterDelayRef.current = meterDelayMs;
   // THE BURST WAITS FOR THE FILL: it strikes when the canvas reports the chip inked SOLID
-  // (`onFull`, the fill's own last frame), never on a timer guessed from the fill's length —
-  // the tween starts on the frame after its delay and its eased tail leaves the chip's end
-  // dithered until that last frame, so a timer at delay + METER_MS struck over a meter
-  // still filling (user-reported 2026-09-23: "the burst animation is played before the
-  // filling animation is done. It should actually wait"). A deadline stands behind the
-  // signal, so a lost report can only make the burst late, never missing; the sea follows
-  // the burst it rides.
+  // (`onFull`, the first frame its fill's last cells ink — `meterRamp.ts`), never on a timer
+  // guessed from the fill's length: the tween starts on the frame after its delay, so a
+  // timer at delay + METER_MS struck over a meter still filling (user-reported 2026-09-23:
+  // "the burst animation is played before the filling animation is done. It should
+  // actually wait"). A deadline stands behind the signal, so a lost report can only make
+  // the burst late, never missing; the sea follows the burst it rides.
   const fullRef = useRef<(() => void) | null>(null);
   const onFull = useCallback(() => fullRef.current?.(), []);
   useEffect(() => {
@@ -465,7 +468,7 @@ export default function Hole({
   );
 
   return (
-    <span className={`hole${resolved ? ' resolved' : ''}${veiled ? ' veiled' : ''}`}>
+    <span className={`hole${inked ? ' resolved' : ''}${hole.revealed ? ' revealed' : ''}${veiled ? ' veiled' : ''}`}>
       {explore ? (
         <button
           type="button"

@@ -4,7 +4,6 @@ import {
   anonName,
   dateForDayNumber,
   defaultAvatar,
-  progressHeatColor,
   type Board,
   type BoardPeriod,
   type BoardPlayer,
@@ -12,7 +11,6 @@ import {
   type GroupSummary,
   type PeriodBoard,
   type PeriodRow,
-  type PlayingRow,
 } from '@whippin/shared';
 import {
   boardUrl,
@@ -26,8 +24,8 @@ import {
   type GroupsBody,
 } from '../api';
 import Avatar from '../components/Avatar';
-import CrownIcon from '../assets/icons/board.svg?react';
 import ConfirmScreen from '../components/ConfirmScreen';
+import { BoardRank, BoardRowItem, PlayingRowItem, WaitingRowItem } from '../components/BoardRows';
 import GroupCreate from '../components/GroupCreate';
 import GroupScreen from '../components/GroupScreen';
 import LoadError from '../components/LoadError';
@@ -43,7 +41,7 @@ import {
   identityEpochOf,
   useDeviceIdentity,
 } from '../identity';
-import { adoptGroups, loadGroups, useGroups } from '../state/groups';
+import { adoptGroups, loadGroups, takeGroupCreate, useGroups } from '../state/groups';
 import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { prefetchTurnstileTokens } from '../turnstile';
 import ErrorScreen from '../components/ErrorScreen';
@@ -268,6 +266,10 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   const [failure, setFailure] = useState<'account' | 'share' | 'group' | 'limit' | null>(null);
   // WHICH SCREEN is up over the board, and WHICH CONFIRMATION over that.
   const [screen, setScreen] = useState<'group' | 'create' | null>(null);
+  // The result's `+` came here for NEW GROUP (`askGroupCreate`): its create screen opens.
+  useEffect(() => {
+    if (takeGroupCreate()) setScreen('create');
+  }, []);
   const [confirming, setConfirming] = useState<{ kind: 'remove'; member: BoardPlayer } | { kind: 'leave' } | null>(null);
   const [successor, setSuccessor] = useState<string | null>(null);
   // The members DRESSED (name + mark) for the successor picker: the list carries ids
@@ -706,20 +708,6 @@ function PeriodList({
   );
 }
 
-// A row's rank: `#N` in the quiet pixel face — and FIRST PLACE WEARS THE CROWN instead, the
-// header's own board mark in the accent (the palette's "every solved word/trophy/terminus"
-// blue). Competition ranks share a first, so a tie crowns every row that holds it. The
-// number stays for a screen reader.
-function BoardRank({ rank }: { rank: number }) {
-  if (rank !== 1) return <span className="board-rank">#{rank}</span>;
-  return (
-    <span className="board-rank crown">
-      <CrownIcon className="ui-icon" aria-hidden />
-      <span className="sr-only">#1</span>
-    </span>
-  );
-}
-
 function PeriodRowItem({
   row,
   me,
@@ -756,58 +744,5 @@ function Face({ player }: { player: BoardPlayer }) {
       <Avatar avatar={player.avatar ?? defaultAvatar(player.publicId)} size={44} />
       <span className={`confirm-name${player.name ? '' : ' anon'}`}>{player.name || anonName(player.publicId)}</span>
     </span>
-  );
-}
-
-function PlayingRowItem({ row, me, index }: { row: PlayingRow; me: boolean; index: number }) {
-  return (
-    <li
-      className={`board-row playing${me ? ' me' : ''}`}
-      style={{ '--i': index, '--play-heat': progressHeatColor(row.progress) } as CSSProperties}
-      aria-current={me || undefined}
-    >
-      <span className="board-norank" aria-hidden="true" />
-      <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
-      <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
-      <span className="board-progress">{Math.round(row.progress)}%</span>
-      <span className="board-score">{row.tries}</span>
-    </li>
-  );
-}
-
-function WaitingRowItem({ player, index }: { player: BoardPlayer; index: number }) {
-  return (
-    <li className="board-row waiting" style={{ '--i': index } as CSSProperties}>
-      <span className="board-norank" aria-hidden="true" />
-      <Avatar avatar={player.avatar ?? defaultAvatar(player.publicId)} size={28} />
-      <span className={`board-name${player.name ? '' : ' anon'}`}>{player.name || anonName(player.publicId)}</span>
-    </li>
-  );
-}
-
-function BoardRowItem({
-  row,
-  me,
-  mate,
-  index,
-}: {
-  row: BoardRow;
-  me: boolean;
-  mate: boolean;
-  index: number;
-}) {
-  return (
-    <li
-      // `me` wins over `mate`: your own row is never one of your people, but a stale list
-      // could say so, and two markers on one row is a rendering bug on screen.
-      className={`board-row${me ? ' me' : mate ? ' mate' : ''}`}
-      style={{ '--i': index } as CSSProperties}
-      aria-current={me || undefined}
-    >
-      <BoardRank rank={row.rank} />
-      <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={28} />
-      <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
-      <span className="board-score">{row.score}</span>
-    </li>
   );
 }

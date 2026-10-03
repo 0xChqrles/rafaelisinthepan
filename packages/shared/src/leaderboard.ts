@@ -79,19 +79,25 @@ export function boardWindow(
 // the raw stored log length: two devices can store one identity twice, and a member
 // must not watch 40 all afternoon and see the final score land at 38) and the server's
 // derived reconstruction percentage (#203's stored value, the calendar's own source).
+// `over`: the round ENDED UNSOLVED (`roundEnded` — given up, or capped): the member is done
+// for the day with nothing recorded, so the row prints `∞` and is never a live rival.
 export interface PlayingScore {
   publicId: string;
   tries: number;
   progress: number;
+  over: boolean;
 }
 
 // The in-progress rows' order — "ranked among themselves", below every finished row,
 // which is an ORDER and never a rank claim (a mid-round position moves with every
-// guess, so the rows carry no rank number): closest to done first, fewer tries breaking
-// the tie (fewer is the score that would record), publicId last for a deterministic
-// board between reads — `rankBoard`'s own tie rule.
-export function orderPlaying(rows: readonly PlayingScore[]): PlayingScore[] {
+// guess, so the rows carry no rank number): the LIVE rows first and the ENDED ones
+// (`over`) after them — a member who gave up at 79% is not ahead of one still playing at
+// 75% — then closest to done first, fewer tries breaking the tie (fewer is the score that
+// would record), publicId last for a deterministic board between reads — `rankBoard`'s own
+// tie rule. It sorts the rows it is given, so a dressed row comes back dressed.
+export function orderPlaying<T extends PlayingScore>(rows: readonly T[]): T[] {
   return [...rows].sort((a, b) => {
+    if (a.over !== b.over) return a.over ? 1 : -1;
     if (a.progress !== b.progress) return b.progress - a.progress;
     if (a.tries !== b.tries) return a.tries - b.tries;
     return byPublicId(a, b);
@@ -135,6 +141,7 @@ export interface BoardRow extends BoardPlayer {
 export interface PlayingRow extends BoardPlayer {
   tries: number;
   progress: number;
+  over: boolean;
 }
 
 export interface Board {
@@ -152,6 +159,33 @@ export interface Board {
   // empty on the global board (the population there IS the recorded scores), and never
   // the caller themselves (the header's own face already shows them).
   waiting: BoardPlayer[];
+}
+
+// ---- THE LIVE READ (`POST /board {token, live: true}`): every group the caller is in,
+// MERGED — the play screen's race line and the solved screen's group boards read this one
+// answer. The members of all those groups are one deduplicated population, so nothing in
+// it is ranked: a rank belongs to ONE group, and the client ranks each group itself with
+// `rankBoard` over the rows its member list names.
+
+// A member who FINISHED today: the recorded score, dressed — no rank (see above).
+export interface LiveRow extends BoardPlayer {
+  score: number;
+}
+
+// One of the caller's groups: who is in it, so the client can cut the merged rows per group.
+export interface LiveGroup {
+  id: string;
+  name: string;
+  members: string[];
+}
+
+export interface LiveBoard {
+  groups: LiveGroup[];
+  // Every member of those groups (the caller included) with a recorded score today.
+  rows: LiveRow[];
+  // Every member with a round for the current revision and no score row, in
+  // `orderPlaying`'s order — the day board's own `playing` section, over the union.
+  playing: PlayingRow[];
 }
 
 // ---- A group's WEEK / MONTH (#271, user-decided 2026-09-07): ONE rule, applied by the
@@ -234,9 +268,8 @@ export function rankPeriod(days: readonly PeriodDay[]): RankedPeriod[] {
 }
 
 // Where the caller stands on one group's DAY board (#271): their competition rank among
-// the members who recorded a score today, and how many did — "2nd of 7 today". Null when
-// the caller has no recorded score on that board (not finished, finished late, capped),
-// which the solved screen draws as nothing.
+// the members who recorded a score today, and how many did — "2nd of 7". Null when the
+// caller has no recorded score on that board (not finished, finished late, capped).
 export interface Standing {
   rank: number;
   of: number;
@@ -248,8 +281,8 @@ export function standingIn(ranked: readonly RankedScore[], publicId: string): St
 }
 
 // What `POST /board {token, standing: true}` answers, one entry per group of the caller's
-// in which they stand today. The solved screen picks ONE (the group last opened, else the
-// best), so the whole set travels in one request.
+// in which they stand today, the whole set in one request. No client reads it today (the
+// solved screen's boards read the live read instead).
 export interface GroupStanding extends Standing {
   group: string;
 }

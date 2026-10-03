@@ -10,8 +10,9 @@
 //   - the sentence: silent on every guess (the tap is taught on the meter stage); the away /
 //     miss lines belong to the single-word stages; solved, the bot counts the tries;
 //   - the meter stage, scripted: the bot has played — tap to see its tries, then what they
-//     did; near until the chip fills; the activation (the given words, tap to read them) and
-//     the player's turn; a failed try after it earns the hint, never the word; the end, found.
+//     did; near until the chip fills; the activation (the one word closer, tap to reveal it)
+//     and the revealed word named with its price; a failed try after it earns the hint,
+//     never the word; the end, found.
 //   Every line is written for someone who has never heard of the game: it names the HIDDEN
 //   WORD the numbers are about (coachCopy below).
 import { describe, it, expect } from 'vitest';
@@ -182,11 +183,11 @@ describe('the meter stage — the bot has half played it', () => {
     expect(coachLine(b.state(true))).toEqual({ kind: 'meterTapped' });
     b.guess('x', [null, null], { filled: null });
     expect(coachLine(b.state(true))).toEqual({ kind: 'near', hole: expect.objectContaining({ rank: 24 }) });
-    b.guess('freedom', [null, 1], { filled: 1 });
-    expect(coachLine(b.state(true))).toEqual({ kind: 'activated', word: 'freedom', rank: 1 });
-    // A hint revealed from the wheel: named with its price, the turn handed back.
-    b.guess('rights', [null, 3], { filled: null, revealed: true });
-    expect(coachLine(b.state(true))).toEqual({ kind: 'revealedHint', word: 'rights', rank: 3 });
+    b.guess('freedom', [null, 2], { filled: 1 });
+    expect(coachLine(b.state(true))).toEqual({ kind: 'activated', word: 'freedom', rank: 2 });
+    // The one word closer, revealed: named with its price, the turn handed back.
+    b.guess('unalienable', [null, 1], { filled: null, revealed: true });
+    expect(coachLine(b.state(true))).toEqual({ kind: 'revealedHint', word: 'unalienable', rank: 1 });
     b.guess('y', [null, null], { filled: null });
     expect(coachLine(b.state(true))).toEqual({ kind: 'hint', holeIndex: 1 }); // a failed try: the hint, never the word
     b.guess('z', [null, 300], { filled: null });
@@ -232,14 +233,17 @@ describe('coachCopy', () => {
     expect(coachCopy('en', { kind: 'solved', tries: 7 }, stage, true)).toBe(
       'Found in 7 tries!\nLet’s try a harder sentence.',
     );
-    expect(coachCopy('en', { kind: 'activated', word: 'sea', rank: 1 }, stage, true)).toBe(
-      'The meter is full! Tap [[w:sea^1]] and reveal a word.',
+    expect(coachCopy('en', { kind: 'activated', word: 'freedom', rank: 2 }, stage, true)).toBe(
+      'The meter is full! Tap [[w:freedom^2]] and reveal a word.',
     );
-    expect(coachCopy('fr', { kind: 'activated', word: 'mer', rank: 1 }, stage, false)).toBe(
-      'Jauge pleine ! Clique sur [[w:mer^1]], et révèle un mot.',
+    expect(coachCopy('fr', { kind: 'activated', word: 'chemin', rank: 2 }, stage, false)).toBe(
+      'Jauge pleine ! Clique sur [[w:chemin^2]], et révèle un mot.',
     );
-    expect(coachCopy('fr', { kind: 'revealedHint', word: 'rive', rank: 3 }, stage, true)).toBe(
-      '[[w:rive^3]] est révélé, pour un essai. À toi de trouver le mot secret.',
+    expect(coachCopy('en', { kind: 'revealedHint', word: 'unalienable', rank: 1 }, stage, true)).toBe(
+      '[[w:unalienable^1]] is revealed, for one try. Now find the secret word.',
+    );
+    expect(coachCopy('fr', { kind: 'revealedHint', word: 'vallon', rank: 1 }, stage, true)).toBe(
+      '[[w:vallon^1]] est révélé, pour un essai. À toi de trouver le mot secret.',
     );
     expect(coachCopy('en', { kind: 'introMeter', hole }, stage, true)).toMatch(/sentence\. Tap \[\[w:islands\^10\]\] to see my tries\.$/);
     expect(coachCopy('en', { kind: 'introMeter', hole }, stage, false)).toMatch(/sentence\. Click \[\[w:islands\^10\]\] to see my tries\.$/);

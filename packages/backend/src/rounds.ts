@@ -2,9 +2,12 @@
 //
 // The client STREAMS its guess log (#201):
 //   { token, puzzle }                 — your stored round for that daily (404 = none yet);
-//   { token, puzzle, guesses: [...] } — append to its ordered guess log.
+//   { token, puzzle, guesses: [...] } — append to its ordered guess log;
+//   { token, puzzle, giveUp: true }   — GIVE UP: end the round unsolved (no score, no
+//                                       streak), and the sentence is the player's to read.
 //
-// Every call answers with the FULL stored state `{ guesses, createdAt, progress?, solved? }`
+// Every call answers with the FULL stored state `{ guesses, createdAt, progress?, solved?,
+// gaveUp? }`
 // — a 200 and EVERY refusal — so a write is also a reconciliation: the caller computes
 // against stale local state, the server answers with truth, and the tab re-renders correct.
 // The route is POST-only — the device token is the auth (#216) and
@@ -136,6 +139,23 @@ export async function handleRound(
     );
   }
 
+  // THE GIVE-UP is its own request: no guesses (the client flushes what it owes first, so
+  // the log stays the player's real tries) and no challenge (a give-up never creates a
+  // round — it needs a stored one). Either beside it is a protocol violation, refused before
+  // any I/O.
+  const giveUp = body.giveUp;
+  if (
+    giveUp !== undefined &&
+    (giveUp !== true || body.guesses !== undefined || body.turnstileToken !== undefined)
+  ) {
+    return errorResponse(
+      400,
+      'bad_request',
+      'Body field "giveUp" must be true, and travels without guesses or a challenge.',
+      responseHeaders,
+    );
+  }
+
   // The game's hottest write pays latency directly: the web paces its flushes from the
   // previous write's ANSWER, so every serial round trip here cuts the sustained sync rate.
   // Authentication is two sequential DynamoDB reads since #216 (the device row, then its
@@ -152,6 +172,20 @@ export async function handleRound(
   const auth = await requireDevice(body, responseHeaders, devices, instant);
   if (!auth.ok) return auth.response;
   const publicId = auth.value.account.accountId;
+
+  if (giveUp === true) {
+    // ONE conditional write (roundStore.ts): no slice, no pacing, no challenge. A solve
+    // that landed first WINS, and the refusal carries it, so the client settles on the
+    // solved result; a round with no record of this puzzle has nothing to give up on.
+    const { outcome, state } = await rounds.giveUp({ date, lang, publicId, puzzle });
+    if (outcome === 'round_solved') {
+      return refusal(409, 'round_solved', 'This round is solved.', state, responseHeaders);
+    }
+    if (outcome === 'not_found') {
+      return errorResponse(404, 'not_found', 'No round recorded.', responseHeaders);
+    }
+    return json(200, state, responseHeaders);
+  }
 
   const rawGuesses = body.guesses;
   if (body.turnstileToken !== undefined && rawGuesses === undefined) {
@@ -250,29 +284,6 @@ export async function handleRound(
   // and the derivation describes exactly that.
   const derived = deriveRound(slice, [...(stored?.guesses ?? []), ...guesses]);
 
-  // EARLY PLAY (#273, user-decided 2026-09-08): a round whose date is AFTER this server's
-  // active day — the +1-day window `requireDayParams` already admits — is tomorrow's
-  // sentence being started tonight, and the night's play ends at the first progress or at
-  // `EARLY_GUESS_CAP` guesses. The store enforces both inside the append's own condition;
-  // this is the one place that knows the server's day, so it is where the round is told.
-  // Judged on the SERVER's clock, like `onTime`: the client's own reading of the flip is
-  // what it locks its input on, and a skewed device is refused here rather than trusted.
-  const early = !isBonusAddress(date) && dayNumber(date) > dayNumber(serverDate);
-
-  // The atomic store guard checks progress BEFORE this batch. Reject a batch that
-  // itself continues past an improvement; otherwise three secrets could solve early.
-  // Progress is monotonic, so checking the prefix before the last guess is enough.
-  // Refuse the whole batch, preserving the append's all-or-nothing contract.
-  if (early && guesses.length > 1 && deriveRound(slice, guesses.slice(0, -1)).progress > 0) {
-    return refusal(
-      409,
-      'early_locked',
-      'This batch continues past the first early-play improvement.',
-      (await rounds.get(key, publicId, puzzle)) ?? { guesses: [], createdAt: '' },
-      responseHeaders,
-    );
-  }
-
   const { outcome, state } = await rounds.append({
     date,
     lang,
@@ -281,22 +292,8 @@ export async function handleRound(
     puzzle,
     progress: derived.progress,
     solved: derived.solved,
-    early,
     now: instant,
   });
-  if (outcome === 'early_locked') {
-    // The night's play is over (#273): the guess that made progress is STORED — it is
-    // what moved `progress` — and this one is refused. The client adopts and CLOSES, the
-    // `round_solved` shape: what it still held pending was never stored, and the day
-    // itself is what unlocks the round, not a retry.
-    return refusal(
-      409,
-      'early_locked',
-      `This round is played before its day and accepts no further guesses until ${date}.`,
-      state,
-      responseHeaders,
-    );
-  }
   if (outcome === 'round_solved') {
     // The FREEZE (#203): this round is finished and its score is recorded, so nothing more
     // may join its log. The client must do BOTH things here — ADOPT the state (so the tab
@@ -307,6 +304,18 @@ export async function handleRound(
       409,
       'round_solved',
       'This round is solved and accepts no further guesses.',
+      state,
+      responseHeaders,
+    );
+  }
+  if (outcome === 'round_given_up') {
+    // The second FREEZE: the player GAVE UP and has been shown the sentence, so nothing may
+    // join the log — least of all the answer typed in afterwards. The client adopts and
+    // closes exactly as on `round_solved`; its unsent guesses are dropped for good.
+    return refusal(
+      409,
+      'round_given_up',
+      'This round was given up and accepts no further guesses.',
       state,
       responseHeaders,
     );
@@ -447,8 +456,8 @@ async function settleAppend(
     // **A LATE finish records NOTHING** (the owner's rule). It is one rule about the
     // day's competition: a leaderboard is a day's, so a round not played on it is not
     // competing in it, whether by a millisecond or by ten years. An archive replay therefore
-    // records no row and draws no standing — `/scores` answers `bucket: null` for a caller
-    // the population does not hold, and the solved screen simply shows no rank line. It also
+    // records no row, so no board ranks it: the solved screen's boards draw the player's own
+    // row unranked. It also
     // stops spending a #169 address allowance on a day nobody is competing in.
     const earned = onTime(key.date, instant);
     let credited = false;
@@ -527,9 +536,10 @@ async function creditSolvedDay(round: AppendedRound, deps: RoundHandlerDeps): Pr
 // THE SCORE, derived rather than claimed (#203): one recorded row per player per daily
 // (#187), written by the SERVER from the stored log. It counts UNIQUE tries, and `guessKey`
 // dedups on a guess's rank in EVERY map — so this is the one thing the slice cannot answer
-// and the full artifact has to be loaded for. It happens ONCE per round, and the artifact is
-// read FRESH. A corrected published version starts a new round and replaces this player's
-// retired-version score row (puzzleReads.ts).
+// and the full artifact has to be loaded for. It happens ONCE per round, for the revision this
+// append's own fresh slice was checked against — a warm Lambda reuses the parsed artifact it
+// holds for that revision (puzzleReads.ts). A corrected published version starts a new round
+// and replaces this player's retired-version score row.
 //
 // Only an ON-TIME solve gets here — the caller (`settleAppend`) makes that one check.
 //

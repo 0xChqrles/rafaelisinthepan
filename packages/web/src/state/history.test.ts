@@ -195,9 +195,8 @@ describe('noteSolvedDay — the streak credit the celebration rides', () => {
   });
 
   it('an answer that changes NOTHING keeps the collection\'s array identity', async () => {
-    // StreakDialog's master sequence effect depends on arrays derived from this one, so a
-    // read landing mid-celebration with nothing new must not mint a fresh identity — that
-    // restarted the whole celebration from the opening fade.
+    // A read landing mid-celebration with nothing new must not mint a fresh identity:
+    // nothing derived from the collection should re-derive under a mounted StreakDialog.
     loaded('fr', [11, 12]);
     const before = held('fr');
     await adoptServerAnswer('fr', [11]);

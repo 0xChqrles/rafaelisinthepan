@@ -1,78 +1,35 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { ComponentPropsWithRef, ComponentType } from 'react';
-import { animated, to, useReducedMotion, useSpring, useSprings } from '@react-spring/web';
-import { easeOutCubic } from '../hooks/useAnimatedNumber';
-import { coarsePointer } from '../hooks/useScramble';
+import type { CSSProperties } from 'react';
+import { MARK_GLYPH, dateForDayNumber } from '@whippin/shared';
+import { coarsePointer, prefersReducedMotion } from '../hooks/useScramble';
 import { useSolvedDays } from '../state/history';
 import { streakTransition, weekView } from '../game/streak';
-import { streakDigitDelays, streakDigitSlots } from '../game/streakDigits';
 import { t } from '../i18n';
+import { loadDigitMasks, type DigitMask } from './digitMasks';
+import { SHOW_STEP_MS, STAR_FRAMES, timeline, wordsAt, type WordsFrame } from './streak/beats';
+import { LINK_H, LINK_W, FOIL, FOIL_DEEP, foilInk } from './streak/sprites';
+import { RESERVE_BITS, layout, numberCells, numberPlace, pastWeeks } from './streak/geometry';
+import type { ClearRect } from './streak/field';
+import { orbitScene, type FoilField, type OrbitDay } from './streak/scene';
 
 const NO_SOLVED_DAYS: number[] = [];
 
-const FADE_MS = 200;
 const DISMISS_FADE_MS = 200;
-const PREVIOUS_HOLD_MS = 500;
-const DIGIT_STAGGER_MS = 90;
-const OLD_DIGIT_SPRING = { mass: 1, tension: 150, friction: 26 };
-// The incoming digit must not overshoot THROUGH the baseline the way a raw spring does:
-// falling from above, a spring settles by first dipping BELOW its rest point (reads as
-// sinking through the floor). Instead it lands and takes ONE small hop, like a tile
-// dropped on a surface — drop (accelerating) → a short rebound above the line → settle
-// back onto it — scripted as three fixed phases so it's a single controlled bounce, not
-// a residual oscillation.
-const DIGIT_DROP_MS = 170; // fall from above onto the baseline (ease-in, gravity-like)
-const DIGIT_HOP_MS = 90; // baseline → the small rebound peak (ease-out)
-const DIGIT_SETTLE_MS = 120; // rebound peak → rest back on the baseline
-// Rebound height, in em of the digit. Small AND within the slot's glyph headroom (the
-// pixel glyph sits well inside its 1em box), so the hop is never clipped by the odometer
-// slot's `overflow: hidden`.
-const DIGIT_BOUNCE_EM = 0.1;
-const easeInQuad = (t: number) => t * t;
-const easeOutQuad = (t: number) => 1 - (1 - t) * (1 - t);
-const APPEAR_SPRING = { mass: 0.7, tension: 280, friction: 18 };
-// The tile animates TWO decoupled values — `flip` (rotation) and `lift` (height) — so it
-// can complete its half-turn WHILE airborne: phase 1 rises and fully flips it, a short
-// hang holds it above the screen on its completed face, then phase 2 drops it straight
-// down and slams it through the plane, launching the wave. The rise and the fall also
-// need opposite spring characters: one spring can't be slow going up AND land hard.
-const DAY_RISE_MS = 300; // rise + full rotation, completion-driven at this fixed duration
-const DAY_HANG_MS = 150; // the airborne pause on the completed face before the drop
-const DAY_SLAM_SPRING = { mass: 1, tension: 210, friction: 13 }; // ~20% undershoot: hard landing
-// The eye sees contact slightly before the height reaches 0 (the last px are sub-visual).
-// Fire the wave at this descending height so its beat zero is the visual contact; the
-// latch makes it fire once even as the undershoot keeps values below the threshold.
-const DAY_CONTACT_LIFT = 0.06;
-const DAY_WAVE_STAGGER_MS = 65;
-const DAY_BOUNCE_SPRING = { mass: 0.75, tension: 300, friction: 11 };
-
-// A tile catches light as it nears the player: its fill brightens toward this tint at its
-// closest point and fades back on the way down. The wave tiles rise far less than the
-// flipped tile (a scale pop, no Z-lift), so their glow is capped well below full.
-const FLAME_GLOW_COLOR = '#8fa0ff';
-const WAVE_POP_SCALE = 1.2; // the pop peak — maps to the wave's brightest moment
-const WAVE_GLOW_MAX = 0.45; // waved tiles never approach the flip's brightness
-
-// Mix FROM --flame (not a hardcoded base) toward the bright tint by `t` in [0,1], so the
-// glow stays correct if the flame color is ever swapped per milestone tier while still
-// landing on the exact target at t = 1.
-function flameGlow(t: number): string {
-  const pct = Math.max(0, Math.min(1, t)) * 100;
-  return `color-mix(in srgb, var(--flame), ${FLAME_GLOW_COLOR} ${pct}%)`;
-}
-
-// React Spring v9 targets the React 18 runtime used here, while this repo intentionally
-// carries the newer React 19 type packages. Their intrinsic-element definitions disagree,
-// so contain that interop mismatch here while retaining each element's normal DOM props.
-type AnimatedIntrinsicProps<Tag extends keyof React.JSX.IntrinsicElements> = Omit<
-  ComponentPropsWithRef<Tag>,
-  'style'
-> & { style?: Record<string, unknown> };
-const AnimatedDialog = animated.dialog as unknown as ComponentType<
-  AnimatedIntrinsicProps<'dialog'>
->;
-const AnimatedDiv = animated.div as unknown as ComponentType<AnimatedIntrinsicProps<'div'>>;
-const AnimatedSpan = animated.span as unknown as ComponentType<AnimatedIntrinsicProps<'span'>>;
+// The hint's own entrance; dismissal arms once it has landed.
+const HINT_IN_MS = 240;
+// The raster steps like the strike sheets while the show runs (`SHOW_STEP_MS`), like the foil
+// once it rests — and the orbits' slow drift redraws at half that once all has landed: pixel
+// art has nothing to gain from 60fps.
+const IDLE_FRAME_MS = 80;
+const IDLE_RASTER_MS = 160;
+// The digits' sheet is a few hundred bytes the bundle inlines; a decode that has not come
+// back by then never holds the celebration — the count is then set as type.
+const GLYPHS_DEADLINE_MS = 800;
+// Reduced motion holds ONE frame: the settled picture, between two heartbeats.
+const STILL_AFTER_SETTLED_MS = 400;
+// The device frame's corner brackets (CSS px): the cards' arm, inset by the screen.
+const bracketInset = (w: number, h: number) => (Math.min(w, h) >= 600 ? 24 : 16);
+const BRACKET_ARM = 24;
 
 // A fresh daily solve changes player-level progression, so that moment gets a full-screen
 // temporal sequence instead of competing with the sentence result. Game controls when this
@@ -91,29 +48,45 @@ export default function StreakDialog({
   onDismiss,
 }: StreakDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const dismissingRef = useRef(false);
   const mountedRef = useRef(false);
   // A touch before the sequence has finished FAST-FORWARDS it to its final frame
-  // (user-decided 2026-08-14, replacing "every dismissal input is ignored until the hint
-  // lands"): the player who has seen the celebration before should not have to sit
-  // through it. The effect below assigns the real skip each run — it needs the run's own
-  // closure (the pending waits, the `skipped` flag) — and the handlers only ever call
-  // through this ref.
+  // (user-decided 2026-08-14): the player who has seen the celebration before should not
+  // have to sit through it. The show effect assigns the real skip each run; the handlers
+  // only ever call through this ref.
   const skipRef = useRef<() => void>(() => {});
+  // THE CLOCK: when the celebration began. One clock for every beat — the raster, the foil,
+  // the labels, the star, the hint, dismissal — so a fast-forward is only a later start, and
+  // a resize redraws the same moment rather than restarting the show.
+  const startRef = useRef<number | null>(null);
   const titleId = useId();
-  const reducedMotion = useReducedMotion();
+  const [reducedMotion] = useState(prefersReducedMotion);
+  const [dismissEnabled, setDismissEnabled] = useState(false);
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  // THE WORDS the clock moves (`wordsAt`): React renders them where they stand; each frame of
+  // the show writes only what moves — opacity, a rise, a jolt, a star's frame — so a re-render
+  // never undoes a beat.
+  const stageRef = useRef<HTMLDivElement>(null);
+  const dayRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const unitRef = useRef<HTMLParagraphElement>(null);
+  const hintRef = useRef<HTMLParagraphElement>(null);
+  const lockupRef = useRef<HTMLDivElement>(null);
+  const editionRef = useRef<HTMLSpanElement>(null);
+  const cornerRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const starRef = useRef<HTMLSpanElement>(null);
+  const crownStarRef = useRef<HTMLSpanElement>(null);
+  const [leaving, setLeaving] = useState(false);
 
-  // The language's solved days, held transiently since #211 (the collection is the
-  // server's, loaded by the game screen this dialog mounts inside). It is never null here
-  // by construction: `Game` only opens the celebration when `noteSolvedDay` INSERTED this
-  // day, which it refuses to do on a collection that has not arrived.
+  // The language's solved days, held transiently since #211 (the collection is the server's,
+  // loaded by the game screen this dialog mounts inside). It is never null here by
+  // construction: `Game` only opens the celebration when `noteSolvedDay` INSERTED this day,
+  // which it refuses to do on a collection that has not arrived.
   const solvedDays = useSolvedDays(lang) ?? NO_SOLVED_DAYS;
   const previewDays = useMemo(() => {
     if (previewPreviousStreak == null) return null;
     const previewLength = Math.min(previewPreviousStreak + 1, 7);
-    return Array.from({ length: previewLength }, (_, index) =>
-      solvedDay - previewLength + index + 1,
-    );
+    return Array.from({ length: previewLength }, (_, index) => solvedDay - previewLength + index + 1);
   }, [previewPreviousStreak, solvedDay]);
   const displayedDays = previewDays ?? solvedDays;
   // Anchor both values to the game day that was solved. This preserves the correct before
@@ -127,58 +100,127 @@ export default function StreakDialog({
   );
   const week = useMemo(() => weekView(displayedDays, solvedDay), [displayedDays, solvedDay]);
   const weekdayLabels = useMemo(() => mondayNarrowLabels(lang), [lang]);
-  const slots = useMemo(
-    () => streakDigitSlots(previousStreak, streak),
-    [previousStreak, streak],
+  // The week as a PRIMITIVE, so a revalidated collection that changes nothing — or a merge
+  // that does — can never hand the show a new identity and restart it mid-celebration.
+  const weekKey = week.cells
+    .map((cell) => (cell.dayNumber === solvedDay ? 'T' : cell.solved ? 'S' : cell.isFuture ? 'F' : 'M'))
+    .join('');
+  const days = useMemo<OrbitDay[]>(
+    () => Array.from(weekKey, (c) => ({ solved: c === 'S', today: c === 'T', future: c === 'F' })),
+    [weekKey],
   );
-  const digitDelays = useMemo(
-    () => streakDigitDelays(slots, DIGIT_STAGGER_MS),
-    [slots],
-  );
-  const completedWaveIndices = useMemo(() => {
-    const solvedIndex = week.cells.findIndex((cell) => cell.dayNumber === solvedDay);
-    return week.cells
-      .map((cell, index) => ({ cell, index }))
-      .filter(({ cell }) => cell.solved && cell.dayNumber !== solvedDay)
-      .sort(
-        (a, b) =>
-          Math.abs(a.index - solvedIndex) - Math.abs(b.index - solvedIndex),
-      )
-      .map(({ index }) => index);
-  }, [solvedDay, week.cells]);
-  const previousLayerOffset = -(slots.length - String(previousStreak).length) / 2;
+  const todayIndex = weekKey.indexOf('T');
+  const hasComet = todayIndex > 0 && weekKey[todayIndex - 1] === 'S';
+  // The run reaches Monday from last week: every day to today is in it, and more.
+  const carriesIn = todayIndex >= 0 && streak > todayIndex + 1;
+  // A FULL WEEK — today is Sunday and the six days before it are solved: the orbit closes
+  // through the crown (the juice scales, the words do not).
+  const closes = weekKey === 'SSSSSST';
+  const weeks = todayIndex >= 0 ? pastWeeks(streak, todayIndex) : 0;
+  const edition = dateForDayNumber(solvedDay);
 
-  const [numberFinal, setNumberFinal] = useState(false);
-  const [flameShown, setFlameShown] = useState(false);
-  const [dayComplete, setDayComplete] = useState(false);
-  const [hintMounted, setHintMounted] = useState(false);
-  const [dismissEnabled, setDismissEnabled] = useState(false);
+  // The count's glyphs: the pixel face's digits off their sheet (`assets/digits.png`).
+  // `masks: null` = the sheet never came: the count is set as type.
+  const [glyphs, setGlyphs] = useState<{ masks: DigitMask[] | null } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const deadline = window.setTimeout(() => {
+      if (alive) setGlyphs((g) => g ?? { masks: null });
+    }, GLYPHS_DEADLINE_MS);
+    loadDigitMasks().then(
+      (masks) => {
+        if (alive) setGlyphs((g) => (g?.masks === null ? g : { masks }));
+      },
+      () => {
+        if (alive) setGlyphs({ masks: null });
+      },
+    );
+    return () => {
+      alive = false;
+      window.clearTimeout(deadline);
+    };
+  }, []);
+  const counts = useMemo(
+    () =>
+      glyphs && {
+        from: numberCells(glyphs.masks, previousStreak),
+        to: numberCells(glyphs.masks, streak),
+        asType: glyphs.masks === null,
+      },
+    [glyphs, previousStreak, streak],
+  );
 
-  const [screenSpring, screenApi] = useSpring(() => ({ opacity: 0 }));
-  const [numberSpring, numberApi] = useSpring(() => ({ opacity: 0 }));
-  const [flameSpring, flameApi] = useSpring(() => ({ opacity: 0, y: 14, scale: 0.78 }));
-  const [weekSpring, weekApi] = useSpring(() => ({ opacity: 0, y: 10 }));
-  const [dayFlipSpring, dayFlipApi] = useSpring(() => ({ lift: 0, flip: 0 }));
-  const [dayWaveSprings, dayWaveApi] = useSprings(
-    week.cells.length,
-    () => ({ scale: 1 }),
-    [week.cells.length],
-  );
-  const [hintSpring, hintApi] = useSpring(() => ({ opacity: 0, y: 10, scale: 0.96 }));
-  const [oldDigitSprings, oldDigitApi] = useSprings(
-    slots.length,
-    () => ({ opacity: 1, y: 0, immediate: true }),
-    [slots.length],
-  );
-  const [newDigitSprings, newDigitApi] = useSprings(
-    slots.length,
-    (index) => ({
-      opacity: slots[index].changed ? 0 : 1,
-      y: slots[index].changed ? -1.05 : 0,
-      immediate: true,
-    }),
-    [slots],
-  );
+  // Everything the picture and its words are placed by: the layout, the beats, where the DOM
+  // words stand (CSS px) — and the cells under those words, which the orbits leave bare.
+  const plan = useMemo(() => {
+    if (!size || !counts) return null;
+    const { w, h } = size;
+    const L = layout(w, h, Math.max(RESERVE_BITS, counts.from.w, counts.to.w), Math.max(counts.from.w, counts.to.w));
+    const tl = timeline(hasComet, closes, todayIndex);
+    const cell = L.cell;
+    const labels = L.labels;
+    const today = todayIndex >= 0 ? L.links[todayIndex] : null;
+    const todayBox = today ? { cx: today.x * cell, cy: today.y * cell } : null;
+    const unitText = t(lang, 'dayStreak');
+    // A tracked mono line's half-width, close enough to keep the orbits off it.
+    const halfWidth = (text: string, px: number, tracking: number) => (text.length * (0.6 + tracking) * px) / 2;
+    const px = (v: number) => v / cell;
+    const rect = (x0: number, y0: number, x1: number, y1: number, margin: number, subject = false): ClearRect => ({
+      x0: px(x0),
+      y0: px(y0),
+      x1: px(x1),
+      y1: px(y1),
+      margin: px(margin),
+      subject,
+    });
+    const linkHalfW = (LINK_W / 2) * cell;
+    const linkHalfH = (LINK_H / 2 + 1) * cell;
+    const at = numberPlace(L, counts.to);
+    const inset = bracketInset(w, h);
+    const arm = BRACKET_ARM;
+    const lockupTop = h < 500 ? 22 : inset + 16;
+    const lockupLeft = inset + 16;
+    const clear: ClearRect[] = [
+      // The frame: each corner bracket, and the lockup's row along the top.
+      rect(inset, inset, inset + arm, inset + arm, 22),
+      rect(w - inset - arm, inset, w - inset, inset + arm, 22),
+      rect(inset, h - inset - arm, inset + arm, h - inset, 22),
+      rect(w - inset - arm, h - inset - arm, w - inset, h - inset, 22),
+      rect(lockupLeft, lockupTop, lockupLeft + 22 + 10 + halfWidth('WHIPPIN AI', 13, 0.14) * 2, lockupTop + 22, 18),
+      rect(w - lockupLeft - 84, lockupTop, w - lockupLeft, lockupTop + 22, 18),
+      // A bare band across the screen behind the hint — down from the initials when the two
+      // stand too close for an orbit to pass between them (a phone on its side).
+      rect(0, L.hintY - 10, w, L.hintY + 10, 26),
+      ...(L.hintY - labels[0].y < 90 ? [rect(0, labels[0].y, w, L.hintY, 12)] : []),
+      // The subject: the count, its unit, the week's days and their initials. The orbits thin
+      // out well before the count and the chain, so neither is ever knotted into a trail.
+      rect(at.x * cell, at.y * cell, (at.x + counts.to.w * L.k) * cell, L.countCy * cell * 2 - at.y * cell, 20, true),
+      ...L.links.map((n) =>
+        rect(n.x * cell - linkHalfW, n.y * cell - linkHalfH, n.x * cell + linkHalfW, n.y * cell + linkHalfH, 24, true),
+      ),
+      rect(w / 2 - halfWidth(unitText, L.unitSize, 0.16) - 6, L.unitY - 10, w / 2 + halfWidth(unitText, L.unitSize, 0.16) + 6, L.unitY + 10, 8),
+      ...labels.map(({ x, y }) => rect(x - 10, y - 10, x + 10, y + 10, 8)),
+      // The crown's flame and its light.
+      rect(
+        (L.crown.x - L.crown.w * 2.2) * cell,
+        (L.crown.y - L.crown.h * 1.45) * cell,
+        (L.crown.x + L.crown.w * 2.2) * cell,
+        (L.crown.y + 2) * cell,
+        12,
+        true,
+      ),
+    ];
+    const scene = orbitScene({ L, days, from: counts.from, to: counts.to, weeks, carriesIn, closes, clear, tl });
+    return {
+      L,
+      tl,
+      scene,
+      labels,
+      todayBox,
+      crown: { x: L.crown.x * cell, y: (L.crown.y - L.crown.h * 0.55) * cell },
+      countBox: { x: at.x * cell, y: at.y * cell, w: counts.to.w * L.k * cell, face: 8 * L.k * cell },
+    };
+  }, [size, counts, days, hasComet, carriesIn, closes, weeks, todayIndex, lang]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -190,318 +232,233 @@ export default function StreakDialog({
   const dismiss = useCallback(() => {
     if (dismissingRef.current) return;
     dismissingRef.current = true;
-    void (async () => {
-      await Promise.all(
-        screenApi.start({
-          opacity: 0,
-          immediate: Boolean(reducedMotion),
-          config: { duration: DISMISS_FADE_MS },
-        }),
-      );
-      if (mountedRef.current) onDismiss();
-    })();
-  }, [onDismiss, reducedMotion, screenApi]);
+    setLeaving(true);
+    window.setTimeout(
+      () => {
+        if (mountedRef.current) onDismiss();
+      },
+      reducedMotion ? 0 : DISMISS_FADE_MS,
+    );
+  }, [onDismiss, reducedMotion]);
 
+  // OPEN: the native modal over the solved sentence, measured as it opens and on every resize.
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog || streak <= 0) {
       onDismiss();
       return undefined;
     }
-
-    let cancelled = false;
-    let skipped = false;
-    const waitIds = new Set<number>();
-    const resolveWaits = new Set<() => void>();
-    const immediate = Boolean(reducedMotion);
-    const wait = (ms: number) =>
-      new Promise<void>((resolve) => {
-        let id = 0;
-        const finish = () => {
-          waitIds.delete(id);
-          resolveWaits.delete(finish);
-          resolve();
-        };
-        resolveWaits.add(finish);
-        id = window.setTimeout(finish, immediate ? 0 : ms);
-        waitIds.add(id);
-      });
-    const stopped = () => cancelled || skipped;
-    const controllers = [
-      screenApi,
-      numberApi,
-      flameApi,
-      weekApi,
-      dayFlipApi,
-      dayWaveApi,
-      hintApi,
-      oldDigitApi,
-      newDigitApi,
-    ];
-
-    // FAST-FORWARD: abort the sequence exactly the way the teardown does (force every
-    // pending wait, stop every spring — the chain then falls through its own `stopped()`
-    // checks), and snap each controller to the final frame the sequence was heading for —
-    // the same values the reduced-motion branch writes. One extra state flip arms
-    // dismissal, so the NEXT touch is the tap-anywhere the hint advertises.
-    skipRef.current = () => {
-      if (stopped() || dismissingRef.current) return;
-      skipped = true;
-      waitIds.forEach((id) => window.clearTimeout(id));
-      resolveWaits.forEach((resolve) => resolve());
-      controllers.forEach((api) => api.stop());
-      screenApi.set({ opacity: 1 });
-      numberApi.set({ opacity: 1 });
-      flameApi.set({ opacity: 1, y: 0, scale: 1 });
-      weekApi.set({ opacity: 1, y: 0 });
-      dayFlipApi.set({ lift: 0, flip: 1 });
-      dayWaveApi.set(() => ({ scale: 1 }));
-      hintApi.set({ opacity: 1, y: 0, scale: 1 });
-      oldDigitApi.set((index) =>
-        slots[index].changed ? { opacity: 0, y: 1.05 } : { opacity: 1, y: 0 },
-      );
-      newDigitApi.set(() => ({ opacity: 1, y: 0 }));
-      setNumberFinal(true);
-      setFlameShown(true);
-      setDayComplete(true);
-      setHintMounted(true);
-      setDismissEnabled(true);
-    };
-
-    // StrictMode replays effects in development, so reset every controller before opening.
-    setNumberFinal(false);
-    setFlameShown(false);
-    setDayComplete(false);
-    setHintMounted(false);
-    setDismissEnabled(false);
-    screenApi.set({ opacity: 0 });
-    numberApi.set({ opacity: 0 });
-    flameApi.set({ opacity: 0, y: 14, scale: 0.78 });
-    weekApi.set({ opacity: 0, y: 10 });
-    dayFlipApi.set({ lift: 0, flip: 0 });
-    dayWaveApi.set(() => ({ scale: 1 }));
-    hintApi.set({ opacity: 0, y: 10, scale: 0.96 });
-    oldDigitApi.set(() => ({ opacity: 1, y: 0 }));
-    newDigitApi.set((index) => ({
-      opacity: slots[index].changed ? 0 : 1,
-      y: slots[index].changed ? -1.05 : 0,
-    }));
-
     dialog.showModal();
     dismissingRef.current = false;
-
-    void (async () => {
-      // 1. The full-screen surface fades over the solved sentence with no visible content.
-      await Promise.all(
-        screenApi.start({ opacity: 1, immediate, config: { duration: FADE_MS } }),
-      );
-      if (stopped()) return;
-
-      // 2. Reveal and hold the previous streak in the secondary color.
-      await Promise.all(
-        numberApi.start({ opacity: 1, immediate, config: { duration: FADE_MS } }),
-      );
-      if (stopped()) return;
-      await wait(PREVIOUS_HOLD_MS);
-      if (stopped()) return;
-
-      // 3. Roll changed slots from right to left like an odometer carry. Each changed digit
-      // gets its own delayed spring; unchanged slots receive no update and remain still.
-      await Promise.all([
-        ...oldDigitApi.start((index) =>
-          slots[index].changed
-            ? {
-                opacity: 0,
-                y: 1.05,
-                delay: immediate ? 0 : digitDelays[index],
-                immediate,
-                config: OLD_DIGIT_SPRING,
-              }
-            : null,
-        ),
-        ...newDigitApi.start((index) => {
-          if (!slots[index].changed) return null;
-          if (immediate) return { opacity: 1, y: 0, immediate: true };
-          // Drop onto the baseline, then a single small rebound. The delay (the odometer
-          // carry stagger) rides the first phase, so the bounces cascade right-to-left.
-          return {
-            to: async (next: (props: Record<string, unknown>) => Promise<unknown>) => {
-              await next({
-                opacity: 1,
-                y: 0,
-                delay: digitDelays[index],
-                config: { duration: DIGIT_DROP_MS, easing: easeInQuad },
-              });
-              if (stopped()) return;
-              await next({ y: -DIGIT_BOUNCE_EM, config: { duration: DIGIT_HOP_MS, easing: easeOutQuad } });
-              if (stopped()) return;
-              await next({ y: 0, config: { duration: DIGIT_SETTLE_MS, easing: easeOutQuad } });
-            },
-          };
-        }),
-      ]);
-      if (stopped()) return;
-      setNumberFinal(true);
-      await wait(20); // commit the whole-number foreground color before the next beat
-      if (stopped()) return;
-
-      // 4. Bring the existing animated sprite in above the now-final number — and, on the
-      // same beat, drop the flame-indigo shadow off the digits (the flame's cast light).
-      setFlameShown(true);
-      await Promise.all(
-        flameApi.start({
-          opacity: 1,
-          y: 0,
-          scale: 1,
-          immediate,
-          config: APPEAR_SPRING,
-        }),
-      );
-      if (stopped()) return;
-
-      // 5. Reveal the week with this solve deliberately still unfilled.
-      await Promise.all(
-        weekApi.start({ opacity: 1, y: 0, immediate, config: APPEAR_SPRING }),
-      );
-      if (stopped()) return;
-
-      // 6. Turn today's neutral tile over: rise + full half-turn in the air, a hang on the
-      // completed face, then a straight vertical slam back onto the plane (see constants).
-      if (immediate) {
-        dayFlipApi.set({ lift: 0, flip: 1 });
-        dayWaveApi.set(() => ({ scale: 1 }));
-        setDayComplete(true);
-      } else {
-        // Phase 1 — the tile lifts off and completes its rotation while airborne, then
-        // hangs above the screen on its completed face. The fixed-duration controller is
-        // awaited: a backgrounded/throttled tab cannot advance to the slam before the rise
-        // has actually committed its final frame.
-        await Promise.all(
-          dayFlipApi.start({
-            lift: 1,
-            flip: 1,
-            config: { duration: DAY_RISE_MS, easing: easeOutCubic },
-          }),
-        );
-        if (stopped()) return;
-        await wait(DAY_HANG_MS);
-        if (stopped()) return;
-
-        // Phase 2 — the slam. The wave must read as CAUSED by the tile hitting the plane,
-        // so it launches off the fall's own trajectory (the first frame at/below the
-        // contact height), not on a fixed clock that would drift from the physics.
-        // Racing the fall's settle promise guarantees no hang if the spring is stopped.
-        let impactSignalled = false;
-        let signalImpact = () => {};
-        const impact = new Promise<void>((resolve) => {
-          signalImpact = resolve;
-        });
-        const flip = Promise.all(
-          dayFlipApi.start({
-            lift: 0,
-            config: DAY_SLAM_SPRING,
-            onChange: (result: unknown) => {
-              const lift = (result as { value?: { lift?: number } }).value?.lift;
-              if (!impactSignalled && lift != null && lift <= DAY_CONTACT_LIFT) {
-                impactSignalled = true;
-                signalImpact();
-              }
-            },
-          }),
-        );
-
-        // First contact launches the old completion pulse across the other completed
-        // days, on ONE rhythm: each tile's squish starts an interval before its pop, and
-        // the pops land DAY_WAVE_STAGGER_MS apart — so the impact -> first-pop gap EQUALS
-        // the tile -> tile gap (the nearest tile squishes on the impact frame itself).
-        // The squish is deliberately not awaited to spring rest: its imperceptible settle
-        // tail read as the wave stalling after the landing.
-        await Promise.race([impact, flip]);
-        if (stopped()) return;
-        setDayComplete(true);
-        // Drive the 65ms rhythm from each squish's actual completion rather than timers
-        // racing requestAnimationFrame. A tab resumed after throttling therefore continues
-        // nearest-first instead of collapsing every expired delay into one frame. Each pop
-        // may overlap the following tile's squish, preserving the impact-wave cadence.
-        const wavePops: Array<Promise<unknown[]>> = [];
-        for (const cellIndex of completedWaveIndices) {
-          await Promise.all(
-            dayWaveApi.start((index) =>
-              index === cellIndex
-                ? {
-                    scale: 0.9,
-                    config: { duration: DAY_WAVE_STAGGER_MS, easing: easeOutQuad },
-                  }
-                : null,
-            ),
-          );
-          if (stopped()) return;
-          wavePops.push(
-            Promise.all(
-              dayWaveApi.start((index) =>
-                index === cellIndex
-                  ? { scale: 1, from: { scale: 1.2 }, config: DAY_BOUNCE_SPRING }
-                  : null,
-              ),
-            ),
-          );
-        }
-        await Promise.all([flip, ...wavePops]);
-        if (stopped()) return;
-        dayWaveApi.set(() => ({ scale: 1 }));
-      }
-
-      // 7. The final beat: the ending hint ("tap/click anywhere" — pure what-to-do; the
-      // game is done, so there is nothing to name as a why). Nothing here is focusable;
-      // dismissal arms once its entrance has fully landed — or immediately on a
-      // fast-forward (see skipRef), which jumps straight to this armed final frame.
-      setHintMounted(true);
-      await wait(20);
-      if (stopped()) return;
-      await Promise.all(
-        hintApi.start({
-          opacity: 1,
-          y: 0,
-          scale: 1,
-          immediate,
-          config: APPEAR_SPRING,
-        }),
-      );
-      if (stopped()) return;
-      setDismissEnabled(true);
-    })();
-
+    const measure = () => {
+      const w = dialog.clientWidth;
+      const h = dialog.clientHeight;
+      if (!w || !h) return;
+      setSize((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
+    };
+    measure();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    ro?.observe(dialog);
     return () => {
-      cancelled = true;
-      skipRef.current = () => {};
-      waitIds.forEach((id) => window.clearTimeout(id));
-      resolveWaits.forEach((resolve) => resolve());
-      controllers.forEach((api) => api.stop());
+      ro?.disconnect();
       if (dialog.open) dialog.close();
     };
-  }, [
-    completedWaveIndices,
-    hintApi,
-    dayFlipApi,
-    dayWaveApi,
-    digitDelays,
-    flameApi,
-    newDigitApi,
-    numberApi,
-    oldDigitApi,
-    onDismiss,
-    reducedMotion,
-    screenApi,
-    slots,
-    streak,
-    weekApi,
-  ]);
+  }, [streak, onDismiss]);
 
+  // THE SHOW: one clock, stepped frames, every beat read off it.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!plan || !canvas) return undefined;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      // No canvas to draw on: no show — the screen stands, and the first touch leaves.
+      dialogRef.current?.style.setProperty('--screen', '1');
+      setDismissEnabled(true);
+      return undefined;
+    }
+    const { L, tl, scene, todayBox } = plan;
+    const now = () => performance.now();
+    startRef.current ??= reducedMotion ? now() - tl.settled - STILL_AFTER_SETTLED_MS : now();
+    const elapsed = () => now() - (startRef.current ?? now());
+
+    canvas.width = L.cols;
+    canvas.height = L.rows;
+    canvas.style.width = `${L.cols * L.cell}px`;
+    canvas.style.height = `${L.rows * L.cell}px`;
+    const image = ctx.createImageData(L.cols, L.rows);
+    const px = new Uint32Array(image.data.buffer);
+    const ink = new Uint8Array(L.cols * L.rows);
+    const palette = new Uint32Array([0, ...scene.inks.map(hexToAbgr)]);
+    // THE FOIL is painted per cell (`foilInk`): the raster says where it is and where on its
+    // link each cell sits; at rest only those cells are repainted between the raster's steps.
+    const foil: FoilField = { u: new Float32Array(ink.length), phase: new Float32Array(ink.length) };
+    const foilCells = new Int32Array(ink.length);
+    let foilCount = 0;
+    const foilBox = { x0: 0, y0: 0, x1: 0, y1: 0 };
+    const seed = (solvedDay % 997) + 0.5;
+    const paintFoilCells = (t: number) => {
+      const seconds = t / 1000;
+      for (let j = 0; j < foilCount; j += 1) {
+        const i = foilCells[j];
+        const x = i % L.cols;
+        const y = (i - x) / L.cols;
+        px[i] = foilInk(x, y, foil.u[i], foil.phase[i], seconds, seed, ink[i] === FOIL_DEEP);
+      }
+    };
+
+    let armed = dismissEnabled;
+    let shownWords = '';
+    const paintWords = (w: WordsFrame) => {
+      const key = JSON.stringify(w);
+      if (key === shownWords) return;
+      shownWords = key;
+      dialogRef.current?.style.setProperty('--screen', String(w.screen));
+      dayRefs.current.forEach((el, i) => {
+        if (!el) return;
+        el.style.opacity = String(w.days[i]);
+        if (i === todayIndex) el.toggleAttribute('data-lit', w.lit);
+      });
+      for (const [el, v] of [
+        [unitRef.current, w.unit],
+        [hintRef.current, w.hint],
+      ] as const) {
+        if (!el) continue;
+        el.style.opacity = String(v.o);
+        el.style.translate = `0 ${v.dy}px`;
+      }
+      for (const el of [lockupRef.current, editionRef.current]) if (el) el.style.opacity = String(w.furniture);
+      cornerRefs.current.forEach((el, i) => {
+        if (!el) return;
+        // Each bracket's way in: toward the subject, from its own corner.
+        const ix = i % 2 === 0 ? 1 : -1;
+        const iy = i < 2 ? 1 : -1;
+        el.style.opacity = String(w.corners.o);
+        el.style.translate = `${ix * w.corners.inward}px ${iy * w.corners.inward}px`;
+      });
+      walkStar(starRef.current, w.star);
+      walkStar(crownStarRef.current, w.crownStar);
+      if (stageRef.current) stageRef.current.style.translate = `${w.shake[0] * L.cell}px ${w.shake[1] * L.cell}px`;
+    };
+    let rasterStep = -1;
+    let timer = 0;
+    let stopped = false;
+
+    const draw = () => {
+      const t = elapsed();
+      // The raster: every frame while the show runs; at rest only when the drift's slower
+      // step has moved.
+      const step = t < tl.settled ? -2 - Math.floor(t / SHOW_STEP_MS) : Math.floor(t / IDLE_RASTER_MS);
+      if (step !== rasterStep) {
+        rasterStep = step;
+        ink.fill(0);
+        scene.draw(ink, t, foil);
+        foilCount = 0;
+        foilBox.x0 = L.cols;
+        foilBox.y0 = L.rows;
+        foilBox.x1 = 0;
+        foilBox.y1 = 0;
+        for (let i = 0; i < ink.length; i += 1) {
+          const v = ink[i];
+          px[i] = palette[v];
+          if (v === FOIL || v === FOIL_DEEP) {
+            foilCells[foilCount] = i;
+            foilCount += 1;
+            const x = i % L.cols;
+            const y = (i - x) / L.cols;
+            if (x < foilBox.x0) foilBox.x0 = x;
+            if (y < foilBox.y0) foilBox.y0 = y;
+            if (x >= foilBox.x1) foilBox.x1 = x + 1;
+            if (y >= foilBox.y1) foilBox.y1 = y + 1;
+          }
+        }
+        paintFoilCells(t);
+        ctx.putImageData(image, 0, 0);
+      } else if (foilCount > 0) {
+        // Between the raster's resting steps only the foil moves.
+        paintFoilCells(t);
+        ctx.putImageData(
+          image,
+          0,
+          0,
+          foilBox.x0,
+          foilBox.y0,
+          foilBox.x1 - foilBox.x0,
+          foilBox.y1 - foilBox.y0,
+        );
+      }
+
+      paintWords(wordsAt(t, tl));
+
+      if (!armed && t >= tl.hint + HINT_IN_MS) {
+        armed = true;
+        setDismissEnabled(true);
+      }
+      return t;
+    };
+
+    const tick = () => {
+      timer = 0;
+      if (stopped || document.hidden) return;
+      const t = draw();
+      timer = window.setTimeout(tick, t < tl.settled ? SHOW_STEP_MS : IDLE_FRAME_MS);
+    };
+    const wake = () => {
+      if (!stopped && !reducedMotion && !document.hidden && !timer) tick();
+    };
+
+    // FAST-FORWARD: the clock jumps to the settled frame, which IS the resting picture; the
+    // next touch is the tap-anywhere the hint advertises.
+    skipRef.current = () => {
+      if (dismissingRef.current) return;
+      if (elapsed() < tl.settled) startRef.current = now() - tl.settled;
+      armed = true;
+      setDismissEnabled(true);
+      draw();
+    };
+
+    if (reducedMotion) {
+      draw();
+      armed = true;
+      setDismissEnabled(true);
+    } else {
+      tick();
+      document.addEventListener('visibilitychange', wake);
+    }
+    // A backgrounded tab steps no frames; the hint's moment still arms dismissal on time.
+    const armTimer = window.setTimeout(
+      () => {
+        if (!armed && !stopped) {
+          armed = true;
+          setDismissEnabled(true);
+        }
+      },
+      Math.max(0, tl.hint + HINT_IN_MS - elapsed()),
+    );
+
+    return () => {
+      stopped = true;
+      skipRef.current = () => {};
+      window.clearTimeout(timer);
+      window.clearTimeout(armTimer);
+      document.removeEventListener('visibilitychange', wake);
+    };
+    // `dismissEnabled` is read once as the starting state of a re-planned show (a resize
+    // after the hint must not disarm it); it must not restart the show by changing.
+  }, [plan, reducedMotion, solvedDay, todayIndex]);
+
+  const className = [
+    'streak-dialog',
+    dismissEnabled && 'done',
+    leaving && 'is-leaving',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const stage = plan;
   return (
-    <AnimatedDialog
+    <dialog
       ref={dialogRef}
-      className={`streak-dialog${dismissEnabled ? ' done' : ''}`}
-      style={{ opacity: screenSpring.opacity }}
+      className={className}
       aria-labelledby={titleId}
       tabIndex={-1}
       onCancel={(event) => {
@@ -512,11 +469,10 @@ export default function StreakDialog({
       onKeyDown={(event) => {
         // The modal has nothing focusable, so swallow Tab entirely — it can neither move
         // focus into the inert game behind nor onto a hint that would show a ring. Once the
-        // ending hint is fully visible, any OTHER key dismisses (the arcade "press any
-        // key" idiom, the keyboard twin of tap-anywhere); BEFORE that, the same key
-        // FAST-FORWARDS the sequence to its final frame instead (user-decided 2026-08-14
-        // — an early touch skips the show, the touch after it leaves). Escape is handled
-        // by onCancel and follows the same two-step.
+        // ending hint is fully visible, any OTHER key dismisses (the arcade "press any key"
+        // idiom, the keyboard twin of tap-anywhere); BEFORE that, the same key FAST-FORWARDS
+        // the sequence to its final frame instead (user-decided 2026-08-14). Escape is
+        // handled by onCancel and follows the same two-step.
         if (event.key === 'Tab') {
           event.preventDefault();
           return;
@@ -526,9 +482,9 @@ export default function StreakDialog({
         else skipRef.current();
       }}
       onClick={() => {
-        // Once the ending hint is fully visible, the WHOLE screen is the dismiss target
-        // (the hint says "anywhere" and must not lie). Before that, the same touch
-        // fast-forwards the celebration to its final frame.
+        // Once the ending hint is fully visible, the WHOLE screen is the dismiss target (the
+        // hint says "anywhere" and must not lie). Before that, the same touch fast-forwards
+        // the celebration to its final frame.
         if (dismissEnabled) dismiss();
         else skipRef.current();
       }}
@@ -537,171 +493,99 @@ export default function StreakDialog({
         {streak} {t(lang, 'dayStreak')}
       </h2>
 
-      {/* Clicks bubble to the dialog everywhere — on the sequence's content included —
-          because a touch always means something now: fast-forward before the hint,
-          dismiss after it. (The stopPropagation shield this wrapper carried guarded the
-          old ignore-until-armed rule and went with it.) */}
-      <div className="streak-sequence">
-        <div className="streak-flame-slot" aria-hidden="true">
-          <AnimatedSpan
-            className="streak-flame"
-            style={{
-              opacity: flameSpring.opacity,
-              transform: to(
-                [flameSpring.y, flameSpring.scale],
-                (y, scale) => `translateY(${y}px) scale(${scale})`,
-              ),
-            }}
+      <div ref={stageRef} className="streak-stage" aria-hidden="true">
+        <canvas ref={canvasRef} className="streak-orbit" />
+        {stage && counts?.asType && (
+          <p
+            className="streak-count-type"
+            style={{ left: stage.countBox.x, top: stage.countBox.y, width: stage.countBox.w, fontSize: stage.countBox.face }}
+          >
+            {streak}
+          </p>
+        )}
+        {stage?.todayBox && (
+          <span
+            ref={starRef}
+            className="streak-star"
+            style={{ left: stage.todayBox.cx, top: stage.todayBox.cy, '--star-scale': stage.L.starScale } as CSSProperties}
           />
+        )}
+        {stage?.tl.close != null && (
+          <span
+            ref={crownStarRef}
+            className="streak-star crown"
+            style={{ left: stage.crown.x, top: stage.crown.y, '--star-scale': stage.L.starScale } as CSSProperties}
+          />
+        )}
+        {/* The week's initials under their days; today's in the white title chip. */}
+        {stage?.labels.map((at, index) => (
+          <span
+            key={index}
+            ref={(el) => {
+              dayRefs.current[index] = el;
+            }}
+            className={index === todayIndex ? 'streak-day today' : 'streak-day'}
+            style={{ left: at.x, top: at.y }}
+          >
+            {weekdayLabels[index]}
+          </span>
+        ))}
+        {stage && (
+          <>
+            <p ref={unitRef} className="streak-unit" style={{ top: stage.L.unitY, fontSize: stage.L.unitSize }}>
+              {t(lang, 'dayStreak')}
+            </p>
+            {/* NOT a button: the celebration has NOTHING focusable, so no focus ring appears
+                and a stray Tab has nowhere to land. Dismissal is the whole screen — click/tap
+                anywhere (bubbles to the dialog's onClick), any key, or Escape — once its
+                entrance finishes; see the dialog handlers. */}
+            <p ref={hintRef} className="streak-hint" style={{ top: stage.L.hintY }}>
+              {t(lang, coarsePointer() ? 'tapAnywhere' : 'clickAnywhere')}
+            </p>
+          </>
+        )}
+        {/* The frame's furniture, as on the cards: the lockup and the day's edition. */}
+        <div ref={lockupRef} className="streak-lockup">
+          <svg viewBox={`0 0 ${MARK_GLYPH.width} ${MARK_GLYPH.height}`} shapeRendering="crispEdges">
+            <path d={MARK_GLYPH.path} fill="currentColor" />
+          </svg>
+          <span>WHIPPIN AI</span>
         </div>
-
-        <AnimatedDiv
-          className={`streak-number-block${numberFinal ? ' final' : ''}${flameShown ? ' flamed' : ''}`}
-          style={{ opacity: numberSpring.opacity }}
-          aria-hidden="true"
-        >
-          <div className="streak-digits" style={{ width: `${slots.length}em` }}>
-            <div
-              className="streak-digit-layer streak-digit-old-layer"
-              style={{ transform: `translateX(${previousLayerOffset}em)` }}
-            >
-              {slots.map((slot, index) => (
-                <span
-                  className="streak-digit-slot"
-                  key={`old-${index}-${slot.from}-${slot.to}`}
-                >
-                  <AnimatedSpan
-                    className="streak-digit streak-digit-old"
-                    style={{
-                      opacity: oldDigitSprings[index].opacity,
-                      transform: oldDigitSprings[index].y.to((y) => `translateY(${y}em)`),
-                    }}
-                  >
-                    {slot.from === ' ' ? '\u00a0' : slot.from}
-                  </AnimatedSpan>
-                </span>
-              ))}
-            </div>
-            <div className="streak-digit-layer">
-              {slots.map((slot, index) => (
-                <span
-                  className="streak-digit-slot"
-                  key={`new-${index}-${slot.from}-${slot.to}`}
-                >
-                  {slot.changed && (
-                    <AnimatedSpan
-                      className="streak-digit streak-digit-new"
-                      style={{
-                        opacity: newDigitSprings[index].opacity,
-                        transform: newDigitSprings[index].y.to((y) => `translateY(${y}em)`),
-                      }}
-                    >
-                      {slot.to}
-                    </AnimatedSpan>
-                  )}
-                </span>
-              ))}
-            </div>
-          </div>
-          <p className="streak-label">{t(lang, 'dayStreak')}</p>
-        </AnimatedDiv>
-
-        <AnimatedDiv
-          className="week-row"
-          aria-hidden="true"
-          style={{
-            opacity: weekSpring.opacity,
-            transform: weekSpring.y.to((y) => `translateY(${y}px)`),
-          }}
-        >
-          {week.cells.map((cell, index) => {
-            const isSolved = cell.dayNumber === solvedDay ? dayComplete : cell.solved;
-            const className =
-              'week-cell' + (isSolved ? ' solved' : '') + (cell.isToday ? ' today' : '');
-            return (
-              <div key={cell.dayNumber} className={className}>
-                <span className="week-label">{weekdayLabels[index]}</span>
-                {cell.dayNumber === solvedDay ? (
-                  <AnimatedSpan
-                    className="week-mark week-mark-flip"
-                    style={{
-                      transform: to([dayFlipSpring.lift, dayFlipSpring.flip], (lift, flip) => {
-                        const z = 48 * lift;
-                        const rotation = 180 * flip;
-                        // Deliberately theatrical (~1.7x visually with the Z lift at the
-                        // hang): the tile must clearly leave the screen. The slam's
-                        // negative-lift undershoot then squashes it below 1 and behind the
-                        // plane, selling the impact that launches the wave.
-                        const scale = 1 + 0.5 * lift;
-                        return `perspective(420px) translateZ(${z}px) rotateX(${rotation}deg) scale(${scale})`;
-                      }),
-                    }}
-                  >
-                    <span className="week-mark-face week-mark-front" />
-                    <AnimatedSpan
-                      className="week-mark-face week-mark-back"
-                      // Brightens with height: full glow at the apex/hang (lift = 1), back
-                      // to resting flame as it slams down (the undershoot clamps at base).
-                      style={{ backgroundColor: dayFlipSpring.lift.to(flameGlow) }}
-                    />
-                  </AnimatedSpan>
-                ) : (
-                  <AnimatedSpan
-                    className="week-mark"
-                    style={{
-                      transform: dayWaveSprings[index].scale.to((scale) => `scale(${scale})`),
-                      // A solved day glows with its pop like the flip tile glows with its
-                      // rise, but capped far lower — the scale pop rises much less than the
-                      // lifted flip. Unsolved/future days get no inline fill, so their
-                      // neutral surface shows through.
-                      backgroundColor: cell.solved
-                        ? dayWaveSprings[index].scale.to((scale) =>
-                            flameGlow(((scale - 1) / (WAVE_POP_SCALE - 1)) * WAVE_GLOW_MAX),
-                          )
-                        : undefined,
-                    }}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </AnimatedDiv>
-
-        <div className="streak-hint-slot" aria-hidden="true">
-          {hintMounted && (
-            // NOT a button: the celebration has NOTHING focusable, so no focus ring appears
-            // and a stray Tab has nowhere to land (the modal traps focus, so it can't reach
-            // the game behind). Dismissal is the whole screen — click/tap anywhere (bubbles
-            // to the dialog's onClick), any key, or Escape — once its entrance finishes;
-            // see the dialog handlers.
-            <AnimatedDiv
-              className="streak-hint"
-              style={{
-                opacity: hintSpring.opacity,
-                transform: to(
-                  [hintSpring.y, hintSpring.scale],
-                  (y, scale) => `translateY(${y}px) scale(${scale})`,
-                ),
-              }}
-            >
-              {/* The pulse lives on a child: the wrapper's own opacity belongs to the
-                  entrance spring, and a CSS animation on the same element would win
-                  the cascade over that inline style. */}
-              <span className="streak-hint-pulse">
-                {t(lang, coarsePointer() ? 'tapAnywhere' : 'clickAnywhere')}
-              </span>
-            </AnimatedDiv>
-          )}
-        </div>
+        <span ref={editionRef} className="streak-edition">
+          {edition}
+        </span>
+        {(['tl', 'tr', 'bl', 'br'] as const).map((corner, i) => (
+          <span
+            key={corner}
+            ref={(el) => {
+              cornerRefs.current[i] = el;
+            }}
+            className={`streak-corner ${corner}`}
+          />
+        ))}
       </div>
-    </AnimatedDialog>
+    </dialog>
   );
+}
+
+// A star sheet's frame `f` (hidden outside its walk).
+function walkStar(el: HTMLElement | null, f: number) {
+  if (!el) return;
+  const on = f >= 0 && f < STAR_FRAMES;
+  el.style.visibility = on ? 'visible' : 'hidden';
+  if (on) el.style.backgroundPositionX = `${(f * 100) / (STAR_FRAMES - 1)}%`;
 }
 
 // Monday-first narrow weekday initials, localized for the puzzle language.
 function mondayNarrowLabels(lang: string): string[] {
   const fmt = new Intl.DateTimeFormat(lang, { weekday: 'narrow', timeZone: 'UTC' });
-  return Array.from({ length: 7 }, (_, index) =>
-    fmt.format(new Date(Date.UTC(2024, 0, 1 + index))),
-  );
+  return Array.from({ length: 7 }, (_, index) => fmt.format(new Date(Date.UTC(2024, 0, 1 + index))));
+}
+
+function hexToAbgr(hex: string): number {
+  const v = parseInt(hex.slice(1), 16);
+  const r = (v >> 16) & 255;
+  const g = (v >> 8) & 255;
+  const b = v & 255;
+  return ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0;
 }

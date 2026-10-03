@@ -24,12 +24,6 @@ interface KeyboardProps {
   prefixSet: Set<string>;
   // Exact existence set — decides whether Enter is active (input is a complete word).
   vocabSet: Set<string>;
-  // A masked hint stands pre-typed in the prompt (the ghost): ENTER is lit with an empty
-  // input (`submittable` — it is what reveals it) and EVERY LETTER IS OUT (`locked`;
-  // user-decided 2026-09-22, "no letters should be available on the keyboard at this
-  // point").
-  submittable?: boolean;
-  locked?: boolean;
   // The value the prompt's history RECALL last wrote (the caller's `replaceInput`): an input
   // change to exactly that is no keystroke, and strikes no key. Read and cleared here.
   recalled?: MutableRefObject<string | null>;
@@ -87,8 +81,6 @@ export default function Keyboard({
   onType,
   onBackspace,
   onSubmit,
-  submittable = false,
-  locked = false,
   recalled,
 }: KeyboardProps) {
   const [shake, setShake] = useState<Shake>(null);
@@ -148,10 +140,10 @@ export default function Keyboard({
     [],
   );
 
-  const enterActive = vocabSet.has(input) || (input === '' && submittable);
+  const enterActive = vocabSet.has(input);
 
   const renderLetter = (char: string, label?: string) => {
-    const active = !locked && canExtend(prefixSet, input, char);
+    const active = canExtend(prefixSet, input, char);
     const shaking = shake?.id === char;
     return (
       <button

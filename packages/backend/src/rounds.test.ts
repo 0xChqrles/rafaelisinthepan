@@ -19,7 +19,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   dayNumber,
-  EARLY_GUESS_CAP,
   ROUND_GUESS_CAP,
   ROUND_WRITE_MIN_MS,
   SUPPORTED_LANGS,
@@ -157,9 +156,9 @@ function makeHandler(
     advance(ms: number) {
       current += ms;
     },
-    // A republish under a LIVE handler. Artifact reads are fresh, so later requests must see
-    // the new revision without resetting any process-local state. `null` takes the day's
-    // artifacts away altogether.
+    // A republish under a LIVE handler. The slice is read fresh and the held full artifact is
+    // keyed by revision, so later requests must see the new revision without resetting any
+    // process-local state. `null` takes the day's artifacts away altogether.
     republish(puzzle: Puzzle | null) {
       sentence.current = puzzle;
     },
@@ -195,6 +194,7 @@ interface RoundResponse {
   createdAt: string;
   progress?: number;
   solved?: boolean;
+  gaveUp?: boolean;
   credited?: boolean;
   error?: string;
 }
@@ -668,14 +668,19 @@ describe('the derived summary (#203)', () => {
     await expect(handler.scoreStore.list(solvedKey)).resolves.toHaveLength(0);
   });
 
-  // LATE HAS NO GRADATIONS (user-decided 2026-08-23): a millisecond late is a decade late,
-  // and neither earns the day's rewards — not the streak credit, not the leaderboard row.
+  // ON TIME MEANS ON THE DAY, and late has no gradations (user-decided 2026-08-23): a
+  // millisecond late is a decade late, and neither earns the day's rewards — not the streak
+  // credit, not the leaderboard row. Nor does a solve that lands BEFORE its day.
   it.each([
     ['an ARCHIVE solve', PAST_DATE],
     // YESTERDAY is the case that used to be tolerated, for the 22:00 flip-edge. It reads
     // here exactly as it reads for a deliberate archive replay of yesterday — which is why
     // the tolerance could never be applied honestly server-side, and why it is gone.
     ['a solve carried past the 22:00 flip', YESTERDAY_DATE],
+    // The server's TOMORROW, inside the +1-day clock-skew window every day-addressed route
+    // serves (a device whose clock runs ahead of the flip). It is an ORDINARY round — the
+    // whole solve lands in one batch, nothing bounds it — and it is simply not on time.
+    ['a solve BEFORE its day', '2026-08-22'],
   ])('%s earns NOTHING the day gives', async (_name, date) => {
     const handler = makeHandler();
     const late = await handler(
@@ -694,8 +699,8 @@ describe('the derived summary (#203)', () => {
 
     const me = ME.accountId;
     await expect(handler.historyStore.solvedDays(me, 'fr')).resolves.toEqual([]);
-    // No leaderboard row either: a board is a day's competition, and this finished after
-    // that day ended. The solved screen then draws no standing at all (`bucket: null`).
+    // No leaderboard row either: a board is a day's competition, and this did not finish
+    // on that day.
     expect(await handler.scoreStore.list({ date, lang: 'fr' })).toEqual([]);
   });
 
@@ -787,6 +792,122 @@ describe('the derived summary (#203)', () => {
     const read = await handler(event());
     expect(read.statusCode).toBe(200);
     expect(parsed(read).guesses).toEqual(['mer']);
+  });
+});
+
+// CONTRACT: THE GIVE-UP. `{token, puzzle, giveUp: true}` ends a round unsolved by its own
+// small write — no guesses, no challenge, no slice, no pacing — and answers the full stored
+// state. It earns NOTHING (no score row, no streak day), a solve that landed first wins,
+// every later append is refused (409 `round_given_up`, the state carried), and a republish's
+// restart clears it.
+describe('the give-up', () => {
+  const key = { date: ACTIVE_DATE, lang: 'fr' };
+  const giveUp = (extra: Record<string, unknown> = {}) =>
+    event({ body: body({ giveUp: true, ...extra }) });
+
+  async function played(handler: ReturnType<typeof makeHandler>, guesses = ['mer']) {
+    expect((await handler(event({ body: body({ guesses }) }))).statusCode).toBe(200);
+  }
+
+  it('stores gaveUp and answers the full state — and earns nothing', async () => {
+    const handler = makeHandler();
+    await played(handler);
+    // No pacing: the give-up follows the append at once.
+    const response = await handler(giveUp());
+    expect(response.statusCode).toBe(200);
+    const answer = parsed(response);
+    expect(answer.gaveUp).toBe(true);
+    expect(answer.guesses).toEqual(['mer']);
+    expect(answer.progress).toBeGreaterThan(0);
+    expect(answer.solved).toBeUndefined();
+    expect(answer.credited).toBeUndefined();
+    // A later read says the same: the flag is STORED.
+    expect(parsed(await handler(event())).gaveUp).toBe(true);
+    // No score row, no streak day.
+    expect(await handler.scoreStore.list(key)).toEqual([]);
+    await expect(handler.historyStore.solvedDays(ME.accountId, 'fr')).resolves.toEqual([]);
+  });
+
+  it('is idempotent: a second give-up answers the same state', async () => {
+    const handler = makeHandler();
+    await played(handler);
+    const first = parsed(await handler(giveUp()));
+    const second = await handler(giveUp());
+    expect(second.statusCode).toBe(200);
+    expect(parsed(second)).toEqual(first);
+  });
+
+  it('REFUSES every later append as round_given_up, carrying the stored state, storing nothing', async () => {
+    const handler = makeHandler();
+    await played(handler);
+    await handler(giveUp());
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+
+    // The answer typed in after being shown the sentence is the case that matters.
+    const refused = await handler(event({ body: body({ guesses: ['phare', 'nuit'] }) }));
+    expect(refused.statusCode).toBe(409);
+    expect(parsed(refused).error).toBe('round_given_up');
+    expect(parsed(refused).guesses).toEqual(['mer']);
+    expect(parsed(refused).gaveUp).toBe(true);
+    expect(parsed(await handler(event())).guesses).toEqual(['mer']);
+    expect(await handler.scoreStore.list(key)).toEqual([]);
+  });
+
+  it('answers round_solved over a SOLVED round — the solve wins, nothing changes', async () => {
+    const handler = makeHandler();
+    await played(handler, ['phare', 'nuit']);
+    const response = await handler(giveUp());
+    expect(response.statusCode).toBe(409);
+    expect(parsed(response).error).toBe('round_solved');
+    expect(parsed(response).solved).toBe(true);
+    expect(parsed(response).gaveUp).toBeUndefined();
+    // The recorded score stands.
+    await expect(handler.scoreStore.list(key)).resolves.toHaveLength(1);
+  });
+
+  it('answers 404 when this puzzle has no round to give up on', async () => {
+    const handler = makeHandler();
+    expect((await handler(giveUp())).statusCode).toBe(404);
+    // A record of the RETIRED puzzle is none for this one either.
+    await played(handler);
+    handler.republish(CORRECTED);
+    expect((await handler(giveUp({ puzzle: CORRECTED_TAG }))).statusCode).toBe(404);
+  });
+
+  it.each([
+    ['beside guesses', { guesses: ['mer'] }],
+    ['beside a challenge', { turnstileToken: 'tok' }],
+    ['as anything but true', { giveUp: false }],
+  ])('is a protocol violation %s (400)', async (_name, extra) => {
+    const handler = makeHandler();
+    await played(handler);
+    const response = await handler(event({ body: { token: TOKEN, puzzle: PUZZLE, giveUp: true, ...extra } }));
+    expect(response.statusCode).toBe(400);
+    // Nothing was given up, nothing appended.
+    const read = parsed(await handler(event()));
+    expect(read.gaveUp).toBeUndefined();
+    expect(read.guesses).toEqual(['mer']);
+  });
+
+  it('needs no slice: it reads no puzzle at all', async () => {
+    const handler = makeHandler();
+    await played(handler);
+    handler.republish(null);
+    expect((await handler(giveUp())).statusCode).toBe(200);
+  });
+
+  it('a RESTARTED round loses the retired puzzle\'s give-up rather than staying frozen', async () => {
+    const handler = makeHandler();
+    await played(handler);
+    await handler(giveUp());
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+    handler.republish(CORRECTED);
+    const restarted = await handler(
+      event({ body: { token: TOKEN, puzzle: CORRECTED_TAG, guesses: ['mer'], turnstileToken: 'tok' } }),
+    );
+    expect(restarted.statusCode).toBe(200);
+    expect(parsed(restarted).gaveUp).toBeUndefined();
+    expect(parsed(restarted).guesses).toEqual(['mer']);
   });
 });
 
@@ -934,169 +1055,11 @@ describe('a declined corrective write is not a solve (#203)', () => {
   });
 });
 
-// CONTRACT (#273, user-decided 2026-09-08): TOMORROW'S sentence opens TONIGHT, on the +1-day
-// window the route already serves, and the night's play stops at the FIRST PROGRESS or after
-// EARLY_GUESS_CAP guesses, whichever comes first. The server enforces both inside the
-// append's own condition: for a round whose date is AFTER the server's active day an append
-// is accepted only while the stored `progress` is 0 and the resulting log stays within the
-// cap; the guess that makes progress is STORED (it is what moves `progress`) and the next
-// append is refused 409 `early_locked`. A hit is progress, so an early SOLVE cannot happen.
-describe('early play: tomorrow\'s sentence tonight (#273)', () => {
-  const TOMORROW_DATE = '2026-08-22';
-  const TOMORROW_QUERY = { lang: 'fr', date: TOMORROW_DATE };
-  const tomorrow = (guesses?: string[]) =>
-    event({ query: TOMORROW_QUERY, body: body(guesses ? { guesses } : {}) });
-
-  async function play(handler: ReturnType<typeof makeHandler>, ...batches: string[][]) {
-    let last = await handler(tomorrow(batches[0]));
-    for (const batch of batches.slice(1)) {
-      handler.advance(ROUND_WRITE_MIN_MS + 1);
-      last = await handler(tomorrow(batch));
-    }
-    return last;
-  }
-
-  it(`accepts guesses that move nothing, ${EARLY_GUESS_CAP} at most, and refuses the next`, async () => {
-    const handler = makeHandler();
-    const third = await play(handler, ['zzz'], ['yyy'], ['xxx']);
-    expect(third.statusCode).toBe(200);
-    expect(parsed(third).guesses).toEqual(['zzz', 'yyy', 'xxx']);
-    expect(parsed(third).progress).toBe(0);
-
-    handler.advance(ROUND_WRITE_MIN_MS + 1);
-    const refused = await handler(tomorrow(['www']));
-    expect(refused.statusCode).toBe(409);
-    expect(parsed(refused).error).toBe('early_locked');
-    // The refusal is an ANSWER: it carries the unchanged stored log the client adopts.
-    expect(parsed(refused).guesses).toEqual(['zzz', 'yyy', 'xxx']);
-    expect(parsed(await handler(tomorrow())).guesses).toHaveLength(EARLY_GUESS_CAP);
-  });
-
-  it('stores the guess that makes progress, and refuses everything after it', async () => {
-    const handler = makeHandler();
-    // `mer` beats the `phare` hole's start word (rank 1 against a start of 2).
-    const hit = await play(handler, ['zzz'], ['mer']);
-    expect(hit.statusCode).toBe(200);
-    expect(parsed(hit).progress).toBeGreaterThan(0);
-
-    handler.advance(ROUND_WRITE_MIN_MS + 1);
-    const refused = await handler(tomorrow(['yyy']));
-    expect(refused.statusCode).toBe(409);
-    expect(parsed(refused).error).toBe('early_locked');
-    expect(parsed(refused).guesses).toEqual(['zzz', 'mer']);
-  });
-
-  it('cannot be SOLVED early: the hit is stored, the batch that would finish it is refused', async () => {
-    const handler = makeHandler();
-    const hit = parsed(await play(handler, ['phare']));
-    expect(hit.progress).toBeGreaterThan(0);
-    expect(hit.solved).toBeUndefined();
-
-    handler.advance(ROUND_WRITE_MIN_MS + 1);
-    const refused = await handler(tomorrow(['nuit']));
-    expect(parsed(refused).error).toBe('early_locked');
-    expect(parsed(refused).solved).toBeUndefined();
-    // So the on-time rule never has to deny an early round anything: no row, no day.
-    await expect(
-      handler.scoreStore.list({ date: TOMORROW_DATE, lang: 'fr' }),
-    ).resolves.toHaveLength(0);
-    await expect(handler.historyStore.solvedDays(ME.accountId, 'fr')).resolves.toEqual([]);
-  });
-
-  it('refuses a three-secret batch without freezing an early solve', async () => {
-    const sentence: Puzzle = {
-      ...SENTENCE,
-      words: [...SENTENCE.words, 'mer'],
-      holes: [...SENTENCE.holes, {
-        pos: 4, secret: { word: 'mer', slug: 'mer' },
-        start: { word: 'eau', slug: 'eau' }, start_rank: 1,
-      }],
-      ranks: { ...SENTENCE.ranks, mer: {
-        mer: { word: 'mer', rank: 0 }, eau: { word: 'eau', rank: 1, dq: 255 },
-      } },
-    };
-    const handler = makeHandler({ sentence });
-    const refused = await handler(tomorrow(['phare', 'nuit', 'mer']));
-    expect(refused.statusCode).toBe(409);
-    expect(parsed(refused).error).toBe('early_locked');
-    expect(parsed(refused).guesses).toEqual([]);
-    expect((await handler(tomorrow())).statusCode).toBe(404);
-
-    // A valid retry remains playable and can earn the day after the flip.
-    expect((await handler(tomorrow(['phare']))).statusCode).toBe(200);
-    handler.advance(24 * 60 * 60 * 1000);
-    expect(parsed(await handler(tomorrow(['nuit', 'mer']))).credited).toBe(true);
-  });
-
-  it('accepts a batch ending at its first improvement, but nothing after it', async () => {
-    const handler = makeHandler();
-    const accepted = await handler(tomorrow(['zzz', 'mer']));
-    expect(accepted.statusCode).toBe(200);
-    expect(parsed(accepted).guesses).toEqual(['zzz', 'mer']);
-    handler.advance(ROUND_WRITE_MIN_MS + 1);
-    expect(parsed(await handler(tomorrow(['yyy']))).error).toBe('early_locked');
-  });
-
-  it('refuses a batch with an improvement before its end without partially appending', async () => {
-    const handler = makeHandler();
-    await handler(tomorrow(['zzz']));
-    handler.advance(ROUND_WRITE_MIN_MS + 1);
-    const refused = await handler(tomorrow(['mer', 'yyy']));
-    expect(refused.statusCode).toBe(409);
-    expect(parsed(refused).guesses).toEqual(['zzz']);
-    expect(parsed(await handler(tomorrow())).guesses).toEqual(['zzz']);
-  });
-
-  it('bounds the RESULTING log: a first batch past the cap creates nothing', async () => {
-    const handler = makeHandler();
-    const refused = await handler(tomorrow(['a', 'b', 'c', 'd']));
-    expect(refused.statusCode).toBe(409);
-    expect(parsed(refused).error).toBe('early_locked');
-    expect((await handler(tomorrow())).statusCode).toBe(404);
-  });
-
-  it('is the early round\'s bound alone — today\'s round plays on past it', async () => {
-    const handler = makeHandler();
-    const misses = ['zzz', 'yyy', 'xxx', 'www', 'vvv'];
-    let last = await handler(event({ body: body({ guesses: [misses[0]] }) }));
-    for (const miss of misses.slice(1)) {
-      handler.advance(ROUND_WRITE_MIN_MS + 1);
-      last = await handler(event({ body: body({ guesses: [miss] }) }));
-    }
-    expect(last.statusCode).toBe(200);
-    expect(parsed(last).guesses).toEqual(misses);
-  });
-
-  it('the log STAYS, and the day itself unlocks it — the early guesses count as tries', async () => {
-    const handler = makeHandler();
-    await play(handler, ['zzz'], ['mer']);
-    handler.advance(ROUND_WRITE_MIN_MS + 1);
-    expect(parsed(await handler(tomorrow(['yyy']))).error).toBe('early_locked');
-
-    // The flip: a day later the server's active day IS this round's day, and the same
-    // append that was refused lands on the same log.
-    handler.advance(24 * 60 * 60 * 1000);
-    const resumed = await handler(tomorrow(['yyy']));
-    expect(resumed.statusCode).toBe(200);
-    expect(parsed(resumed).guesses).toEqual(['zzz', 'mer', 'yyy']);
-
-    // …and the solve, ON THE DAY, earns the day like any other: the try count includes
-    // the night's guesses.
-    handler.advance(ROUND_WRITE_MIN_MS + 1);
-    const solved = parsed(await handler(tomorrow(['phare', 'nuit'])));
-    expect(solved.solved).toBe(true);
-    expect(solved.credited).toBe(true);
-    const rows = await handler.scoreStore.list({ date: TOMORROW_DATE, lang: 'fr' });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].score).toBe(5);
-  });
-});
-
 // CONTRACT (bonus puzzles, 2026-09-24): a BONUS is a test puzzle outside the calendar,
 // addressed by its seven-digit id (shared bonus.ts). Its round is an ordinary server-owned
-// log — the same guards, the same derived score — but it is NO DAY: never early (the
-// night's lock cannot apply), never on time (no score row, no streak day, `credited`
-// false), and its log is its own, apart from every day's.
+// log — the same guards, the same derived score — but it is NO DAY: never on time (no
+// score row, no streak day, `credited` false), and its log is its own, apart from every
+// day's.
 describe('a bonus round (bonus puzzles)', () => {
   const BONUS_ID = '1234567';
   const bonus = (guesses?: string[]) =>
@@ -1107,18 +1070,6 @@ describe('a bonus round (bonus puzzles)', () => {
       const response = await makeHandler()(event({ query: { lang: 'fr', bonus: id } }));
       expect(response.statusCode).toBe(400);
     }
-  });
-
-  it('is never early: progress and guesses past the night cap are accepted', async () => {
-    const handler = makeHandler();
-    const batches = [['mer'], ...Array.from({ length: EARLY_GUESS_CAP }, (_, i) => [`zz${'z'.repeat(i)}`])];
-    let last = await handler(bonus(batches[0]));
-    for (const batch of batches.slice(1)) {
-      handler.advance(ROUND_WRITE_MIN_MS + 1);
-      last = await handler(bonus(batch));
-    }
-    expect(last.statusCode).toBe(200);
-    expect(parsed(last).guesses).toHaveLength(EARLY_GUESS_CAP + 1);
   });
 
   it('solves like a day but earns nothing: no score row, no streak day', async () => {

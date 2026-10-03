@@ -2,12 +2,12 @@
 // client derivation reads, and the outbox's own "what is still owed" rule. Asserts the SPEC
 // in the root AGENTS.md, not the implementation: server entries first, first spelling of
 // each canonical identity wins, and identity — never a raw string — decides what the server
-// already holds. And the CAP: unsolved with exactly `ROUND_GUESS_CAP` raw entries, derived,
-// the server's `solved: true` winning over the cap check.
+// already holds. (Whether a round ENDED — given up, or capped — is the shared `roundEnded`,
+// pinned in shared/src/scores.test.ts.)
 
 import { describe, it, expect } from 'vitest';
-import { ROUND_GUESS_CAP, type RankMap } from '@whippin/shared';
-import { playLogFor, projectPlayLog, roundCapped, unacknowledged, withoutDeferred } from './playLog';
+import type { RankMap } from '@whippin/shared';
+import { playLogFor, projectPlayLog, unacknowledged, withoutDeferred } from './playLog';
 import { guessKey } from './scoring';
 
 // A tiny two-secret puzzle where `prive` and `privees` are ONE ranked group in both maps
@@ -111,20 +111,3 @@ describe('unacknowledged — what the outbox still owes', () => {
   });
 });
 
-describe('roundCapped — unsolved with the raw cap stored, and `solved` wins', () => {
-  const raw = (length: number) => Array.from({ length }, (_, i) => `s-${i.toString(36)}`);
-
-  it('an unsolved round holding exactly the cap is capped; one entry short is not', () => {
-    expect(roundCapped({ solved: false, guesses: raw(ROUND_GUESS_CAP) })).toBe(true);
-    expect(roundCapped({ solved: false, guesses: raw(ROUND_GUESS_CAP - 1) })).toBe(false);
-  });
-
-  it('a solve accepted as the last raw entry is an ordinary solved round, not capped', () => {
-    expect(roundCapped({ solved: true, guesses: raw(ROUND_GUESS_CAP) })).toBe(false);
-  });
-
-  it('a round whose server state has not arrived is not capped', () => {
-    expect(roundCapped(null)).toBe(false);
-    expect(roundCapped(undefined)).toBe(false);
-  });
-});

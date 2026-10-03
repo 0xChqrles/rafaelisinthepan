@@ -1,6 +1,7 @@
 // The player's GROUPS (#271), as every surface that draws them needs them: the leaderboard's
 // tabs, the global board's member marks, the invite landing's "already a member" and the
-// solved screen's standing line all read ONE answer to "which groups am I in".
+// play screen's question "is there anybody to race?" (the live read's eligibility,
+// state/liveBoard.ts) all read ONE answer to "which groups am I in".
 //
 // TRANSIENT, never persisted: it is the server's answer about the caller, and #211's rule
 // applies — a list that has not arrived is UNKNOWN, never a guessed empty one. The one
@@ -82,6 +83,21 @@ export function adoptGroups(answer: GroupsAnswer, accountId: string): void {
   flight = null;
   loadedFor = accountId;
   useGroupsStore.setState({ phase: 'ready', groups: answer.groups });
+}
+
+// NEW GROUP, ASKED FROM ANOTHER SCREEN: the result's boards end on an empty group's slot (the
+// `+`), which is the board screen's own NEW GROUP — so it asks for it here and navigates to the
+// board, which takes the ask on its mount and opens its create screen. One-shot.
+let createAsked = false;
+
+export function askGroupCreate(): void {
+  createAsked = true;
+}
+
+export function takeGroupCreate(): boolean {
+  const asked = createAsked;
+  createAsked = false;
+  return asked;
 }
 
 export function useGroups(): GroupsState {

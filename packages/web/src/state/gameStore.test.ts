@@ -246,6 +246,7 @@ describe('setRoundLoad — the transient server state', () => {
   const server = {
     guesses: ['bois'],
     solved: false,
+    gaveUp: false,
     solvedByAppend: false,
     credited: false,
   };
@@ -318,7 +319,7 @@ describe('boardTab — the leaderboard tab, scoped to a visit', () => {
     expect(useGameStore.getState().boardTab).toBe('group');
   });
 
-  // The group last opened (#271) OUTLIVES the visit — the standing line reads it — and it
+  // The group last opened (#271) OUTLIVES the visit — the result's boards open on it — and it
   // belongs to the ACCOUNT: leaving one drops it.
   it('remembers the group last opened, and drops it with the account', () => {
     const { setLastGroup } = useGameStore.getState();

@@ -8,6 +8,9 @@ export interface RuntimeHole {
   word: string; // currently displayed (accented) word
   rank: number;
   startRank: number;
+  // A GIVE-UP's reveal: the hole shows its secret at rank 0 without having been found — the
+  // held chip stays, the exponent goes, and it never wears the found cobalt.
+  revealed?: boolean;
 }
 
 export interface HitState {

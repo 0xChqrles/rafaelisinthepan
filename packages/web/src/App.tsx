@@ -71,8 +71,8 @@ export default function App() {
   const [streakPreview, setStreakPreview] = useState<number | null>(() =>
     streakPreviewFromSearch(window.location.search),
   );
-  // Stable across renders: StreakDialog keys its whole staged sequence on onDismiss, so
-  // an inline closure would restart the animation every time the game route re-renders.
+  // Stable across renders: StreakDialog's open effect depends on onDismiss, so an inline
+  // closure would close and reopen the modal every time the game route re-renders.
   const dismissStreakPreview = useCallback(() => setStreakPreview(null), []);
   // Dev-only preview of the error surface (`?error=<variant>`): the real ErrorScreen over
   // whatever route is on screen, so the box is judged against a real backdrop. Closing
@@ -242,11 +242,7 @@ function headerPlace(route: Route, surface: GameSurface, today: string): HeaderP
   switch (route.view) {
     case 'game':
       if (surface === 'invite') return null;
-      // Any OTHER day is the ARCHIVE's — tomorrow's sentence included (#273, user-decided
-      // 2026-09-11 on the second pass: it "should actually live as an archive play, so you
-      // can just click the house to go back"). HOME unlit is a live key, which is the way
-      // back before the night's lock; the locked round's own TODAY button is the way back
-      // after it.
+      // Any OTHER day is the ARCHIVE's; HOME unlit is a live key, the way back to today.
       // A BONUS puzzle is played like an archive day (bonus puzzles, 2026-09-24).
       if (route.bonusId !== undefined) return 'archive';
       return route.date == null || route.date === today ? 'home' : 'archive';
@@ -271,15 +267,15 @@ function headerPlace(route: Route, surface: GameSurface, today: string): HeaderP
 }
 
 // One puzzle route: /<lang> plays today's sentence and /<lang>/<date> replays a past
-// archive day (#55) — or tomorrow's (#273). Loads the day's puzzle for the language and
-// records it as the last-played language. What the route puts in the header's left slot is
-// identical through loading, error, missing-puzzle and the loaded game, so the header stays
-// put while the body swaps.
+// archive day (#55). Loads the day's puzzle for the language and records it as the
+// last-played language. What the route puts in the header's left slot is identical through
+// loading, error, missing-puzzle and the loaded game, so the header stays put while the
+// body swaps.
 function GameRoute({
   lang,
   date,
-  // A BONUS puzzle (shared bonus.ts), in place of a day: no date, never the active day,
-  // never early — played like an archive day, credited nothing.
+  // A BONUS puzzle (shared bonus.ts), in place of a day: no date, never the active day —
+  // played like an archive day, credited nothing.
   bonusId,
   // WHICH surface is App's call, because the header is (see `headerPlace`); rendering it is
   // this route's, because the puzzle and the callbacks live here.
@@ -306,12 +302,10 @@ function GameRoute({
 
   // A dated route replays a past day when its date is not today's active game day; the
   // undated route is always the active day. Gates the streak celebration + solve analytics.
-  // LIVE, off the app's one day signal (#273): a dated route can also be TOMORROW's
-  // sentence, started tonight, and a tab held open across the 22:00 flip has to see it
-  // become the active day — the lock lifts, the streak read starts — without a reload.
+  // LIVE, off the app's one day signal: a dated route held open across the 22:00 flip
+  // stops being the active day without a reload.
   const today = useToday();
   const isActiveDay = bonusId === undefined && (date == null || dayNumberOf(date) === today);
-  const early = date != null && dayNumberOf(date) > today;
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
   useEffect(() => {
@@ -357,7 +351,6 @@ function GameRoute({
           puzzle={puzzle}
           puzzleRef={ref}
           isActiveDay={isActiveDay}
-          early={early}
           deferResultsAnimation={preview.streak != null}
         />
       )}

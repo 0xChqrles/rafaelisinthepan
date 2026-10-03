@@ -13,7 +13,7 @@
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
       hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
       hooks/puzzleCache.ts    the last 3 PARSED artifacts kept across mounts, no longer than the
-                              CDN's own 300s (2026-09-11): today <-> tomorrow without a reload
+                              CDN's own 300s (2026-09-11): today <-> an archive day without a reload
       api.ts                  backend client: puzzleUrl, 404->NO PUZZLE, and
                               `readProfile` — the ONE place `GET /profile`'s four answers
                               (shown / blank / GONE / failed) are told apart (#204)
@@ -63,10 +63,40 @@
       state/account.ts        what `/account` shows — the `{token}` summary and the
                               group-departure drain behind it (#271)
       state/groups.ts         the player's GROUPS (#271): the ONE transient cache every group
-                              surface reads (tabs, marks, the landing's "already in")
-      hooks/useGroupStanding.ts  the solved screen's standing read: one request, the group last
-                              opened else the best standing (`pickStanding`)
-      components/GroupStanding.tsx  the "2ND OF 7" line beside the score, a tap onto the board
+                              surface reads (tabs, marks, the landing's "already in", the race
+                              line's "is there anybody to race"), and NEW GROUP asked from
+                              another screen (`askGroupCreate`, the result's `+`)
+      state/liveBoard.ts      the LIVE read (`POST /board {token, live: true}`): all my groups
+                              merged — the ONE module asking it, throttled (`LIVE_REFRESH_MS`;
+                              the read asked as the round ends goes at once), for the race line
+                              and the solved screen's group boards
+      game/race.ts            the race line's ORDER (pure): finished, then playing by the shared
+                              `orderPlaying` with my own entry off the screen; the ahead/me/behind
+                              window; `shownPercent` (floored)
+      components/RaceLine.tsx  the race line: marks + % + tries on the tray's top edge, a tap onto
+                              the board
+      game/resultBoards.ts    the solved screen's BOARDS (pure): one group's day off the live read,
+                              GLOBAL off the global board, the tabs' order, the box's cap
+      components/ResultBoards.tsx  those boards under SHARE: a row of tab names (GLOBAL last) and
+                              the dashed `+` (the board's NEW GROUP) over a fixed box of lines,
+                              a tap onto the board
+      components/SolvedCard.tsx  the RESULT as the share card stood up: brackets, the edition
+                              row, the COUNT drawn as a shaped meter (charge, a burst per
+                              stopped digit, dithered foil), the run ruler with its heat;
+                              draws itself on the reveal
+      components/countCells.ts  the count as the face's own glyph cells (pure, tested): its
+                              whole-pixel size, its ink, each glyph's box, the glints' corners,
+                              each reel's strip at a whole font pixel
+      components/countRun.ts  the count's RUN (pure, tested): one fixed length for every score,
+                              the slot machine's reels (start, stop, position, stop shake) and
+                              the ruler's tries at each instant
+      components/RunHeat.tsx  the run's HEAT: the ruler's inks rising off it as an ordered
+                              dither behind the count (screen-only), with a clearing round it
+      components/RunRuler.tsx  the run ruler: one cell per try on the share card's whole-pixel
+                              edges (shared `runEdges`), the solve ticks and their indices
+      hooks/useGlobalBoard.ts  the GLOBAL tab's one anonymous global-board read per result display
+      components/BoardRows.tsx  a board's ROWS (rank/crown, ranked, playing, waiting), drawn alike
+                              by the leaderboard screen and the result's boards
       components/DeviceList.tsx  the account's devices + SIGN OUT rows (#216), on the profile editor
       components/ErrorScreen.tsx  the app's error surface: a FULL-SCREEN modal led by the
                               user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet);
@@ -77,10 +107,6 @@
                             challenge (one module-level conversation per round)
       game/playLog.ts         #214's pure projection: (server log + outbox) -> the play log
                               every client derivation reads, and the outbox remainder
-      game/earlyPlay.ts       #273's lock: when tomorrow's round, played tonight, stops taking
-                              guesses (first progress, or EARLY_GUESS_CAP) — read off the play log
-      components/FlipCountdown.tsx  the clock that takes the keyboard's place while it is locked:
-                              HH:MM:SS to the 22:00-ET flip
       state/history.ts        #211's PRIVATE history: the in-memory month/solved-day cache,
                               its one-flight-per-key reads, the explicit-loading status and
                               the streak credit a fresh solve rides
@@ -140,27 +166,52 @@
                               and falling away
       game/charge.ts          #301's hole CHARGE METER: the rank -> charge function, the replay
                               of the play log onto every hole's meter, the ACTIVATION and the
-                              ranks it GIVES (2026-09-22)
+                              ONE masked word it offers closer than the hole's best
       components/ChargeLoot.tsx  the blood a charging guess knocks out of the hole, gathered
                               onto the meter
       components/MeterCanvas.tsx  the meter's drawing: the chip converting as an ordered
-                              dither, tweened — and the SEA of an active hole (the same
-                              dither driven by value noise, `components/noise.ts`)
+                              dither, tweened — and the FOIL of an active hole or a given
+                              word (`foil.ts`), the full chip dissolving into it in Bayer
+                              order; SHAPED (`shape`), the result's count: kept to its
+                              glyphs' ink, glints on its corners
+      components/meterRamp.ts  the ramp as numbers, pure and tested: the fill's front for a
+                              reading, the density, the cell rule, the solid frame
+      components/foil.ts      the holographic FOIL, the app's one shiny material, dithered on
+                              2px cells: ONE painter (`paintFoil`) for the active hole, every
+                              given word and the result's count, the count's glints
+                              (`paintCountGlints`), and its inks + sparkle curve, which the
+                              streak's forged link wears as raster cells
+      components/digitMasks.ts  the pixel face's digits (`assets/digits.png`) as block masks,
+                              decoded once: the CellDigits watermark, the streak's count and
+                              the result's count
+      components/StreakDialog.tsx  the streak celebration (lazy, `LazyStreakDialog`): the
+                              native modal, its fast-forward/dismiss machine, the show's ONE
+                              clock driving the canvas, the foil and the words
+      components/streak/      its picture, pure and tested: beats.ts (the clock — every beat,
+                              `wordsAt`), geometry.ts (the layout: the count's face, the
+                              week's orbit, `chainPlacement`, the past weeks' orbits, the
+                              week's path), sprites.ts (the inks, the chain's link, the foil
+                              as a cell ink, the glitter star, the crown's flame), field.ts
+                              (the raster's cells measured once), count.ts (the count's
+                              layer), scene.ts (the raster, layer by layer, deterministic in t)
       game/scoring.ts         the SCREEN's reading: applyGuessToHoles + replayHoles +
                               computeProgress over RuntimeHoles (the arithmetic itself is
                               @whippin/shared's since #203)
       game/types.ts           the screen's own types: RuntimeHole (a hole as the round
                               holds it) and HitState (one floating hit)
       game/timing.ts          the guess choreography's shared beats (STAGGER_MS,
-                              FLOATING_HIT_INTRO_MS, REVEAL_HOLD_MS, KB_EXIT_FALLBACK_MS),
-                              one spelling for the game and the lesson board
+                              FLOATING_HIT_INTRO_MS, REVEAL_HOLD_MS, KB_EXIT_FALLBACK_MS,
+                              GIVE_UP_HOLD_MS), one spelling for the game and the lesson board
       hooks/lazyChunk.ts      one component kept out of the startup bundle: preload, the
                               lazy render, and the retry a failed preload must not poison
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
       hooks/useLetterWave.ts  #129's ambient ripple on the holes
       game/history.ts         a hole's guess log ranked against its secret (buildHistory)
       game/wordWheel.ts       the order those words scroll through the tapped hole in
-                              (wheelOrder): farther above, closer below, behind-the-start apart
+                              (wheelOrder): farther above, closer below, behind-the-start apart;
+                              the picks, the ghost a REVEAL submits, BACK's un-pick
+      components/RevealTray.tsx  a picked mask's tray, in the keyboard's place: the price,
+                              REVEAL, BACK
       components/HistoryWheel.tsx  an OPEN hole's tap: a picker drum (`useDrum`) through the
                               word's own place — the word the wheel folds on is the sentence's
       components/HistoryModal.tsx  a COMPLETED hole's tap: its words as a plain grid, full
@@ -246,28 +297,26 @@ These are decided and verified against the code. Treat them as load-bearing.
   logical secret (repeated occurrences share it), capped at `CHARGE_TARGET` = 100, and
   reaching it ACTIVATES THE HOLE (user-decided 2026-09-22, REPLACING the secret's first
   letter — "it goes against the game core logic which is to guess with meaning not
-  letters"): **EVERY WORD THE HOLE HOLDS OPENS THE NEXT ONE (user-decided 2026-09-25,
-  replacing the 5 words drawn ONCE from the best at the activation): once the meter is
-  full, each word the player has in the hole — the visible start, every rank reached,
-  every hint revealed — opens the nearest word FARTHER than it that the player does not
-  have ("if I found 4 and 6, let's give 5 and 7, and if I unlock 7 and find 2, let's give
-  8 and 3"), and the hole shows the `GIVEN` = 5 openings NEAREST THE SECRET as MASKED
-  HINTS in its tries ("max 5 available words at the same time"), recomputed after every
-  guess — a revealed hint opens the next, and a nearer word can push the farthest
-  UNTAKEN mask out; a hint TAKEN is given for good; never a word closer than one the
-  player has** (`replayCharge`, `game/charge.ts`). Why: a player stuck on a joke they had
-  not seen got nothing after the one draw; the user accepted the trade-off that the
-  first masks now sit one past each word held instead of five in a row past the best.
-  (History: 10 words from the best on 2026-09-22, "10 more words actually always give a
-  better idea of the concept"; 5, drawn once, nothing after, on 2026-09-23, "lower is
-  safer at first".) A full meter takes no more charge. **THE HINTS ARE MASKED, AND REVEALING ONE
+  letters"): **AN ACTIVE HOLE OFFERS ONE WORD CLOSER THAN ITS BEST (user-decided
+  2026-10-02: "instead of revealing 5 words before the closest one, we should be able to
+  reveal ONE word CLOSER than the closest word"): once the meter is full, the hole offers
+  exactly ONE MASKED HINT in its tries — the nearest rank in the secret's map strictly
+  BELOW the hole's best (the visible start, every rank reached, every hint revealed: the
+  lowest of them), walked through the ranks the map holds. Taking it makes it the new
+  best, so the next closer word is offered AT ONCE, one try each, down to the word just
+  before the secret: THE SECRET IS NEVER OFFERED (a best of 1 offers nothing — a hint
+  that solved would make every hole buyable, and "solved" would stop meaning "found"). A
+  closer word typed by hand moves the offer under it the same way; a farther guess leaves
+  it where it is; a hint TAKEN is given for good** (`replayCharge`, `game/charge.ts`).
+  Repeated occurrences of one secret share one meter and one offer. A reveal therefore
+  buys PROGRESS — the hole improves, and the score with it. A full meter takes no more
+  charge. **THE HINTS ARE MASKED, AND REVEALING ONE
   IS A GUESS (user-decided 2026-09-22: "making the hint words masked, and you can just
   select them with the wheel, it counts as a guess, but this way users who don't want help
   don't get penalized, and those who need help just increase their score in return… you
   manage your own pace")**: a masked hint is a foil block of FIXED width (the wheel's
   `MASK`, `?????` — never the word's length; "????? instead of nothing", same day) wearing
-  its EXPONENT, so the player
-  chooses which distance to spend a try on. **A mask turns through the wheel and is PICKED
+  its EXPONENT, so the player sees how close the word it hides is before spending a try. **A mask turns through the wheel and is PICKED
   like any row** — fold on it and the sentence shows `?????²` on the hole's foil, display
   only (user-decided 2026-09-22 on the first cut, where the fold could not pick a mask
   and the hole snapped back to its best word: "it feels weird to have the closest word
@@ -275,10 +324,22 @@ These are decided and verified against the code. Treat them as load-bearing.
   PRE-TYPED in the prompt — `.wi-ghost`, `?????` in the accent with the OPEN LOCK, a
   glyph on the pixel font's own 8-cell grid at 1em (`assets/icons/unlock.svg`; the
   20px header-grid mark "doesn't work near the thick and fat question mark glyphs",
-  user-reviewed 2026-09-23, and the lock itself was to stay) — ENTER is
-  lit (`Keyboard`'s `submittable`) and EVERY LETTER IS OUT (`locked`; "no letters should
-  be available on the keyboard at this point"), and an empty ENTER SUBMITS its key
-  (`HistoryStop.slug`) as the guess AT ONCE — the log, the server, the try — while the
+  user-reviewed 2026-09-23, and the lock itself was to stay) — and THE KEYBOARD LEAVES THE
+  TRAY (user-decided 2026-10-02: "instead of having the keyboard with the 'enter' key
+  only, we shouldn't have the keyboard at all, but a 'reveal' button with a caption
+  saying that it will cost one try"): while the ghost stands in the empty prompt, and
+  while it decodes, the tray holds `components/RevealTray` in the keyboard's own `--kb-h`
+  footprint, anchored to its bottom so nothing above moves — the price ("Costs one try." /
+  « Coûte un essai. », the UI face, muted, the button's `aria-describedby`), REVEAL (the
+  `.mix-btn`, disabled while it decodes) and BACK / RETOUR under it in the gate's quiet
+  secondary dress, which un-picks every masked pick (`withoutMaskedPicks`): the holes show
+  their own words again and the keyboard returns. The tray sits INSIDE `.kb-exit`, because
+  a reveal can solve the board through another hole and the solve's drop waits on that
+  wrapper's own `animationend`. A physical Enter is REVEAL's twin and Backspace BACK's;
+  letters and the history recall are refused with the prompt's shake while it stands, and
+  picking a mask clears a half-typed draft first, so the ghost always stands in an empty
+  prompt. REVEAL SUBMITS the ghost's key (`HistoryStop.slug`) as the guess AT ONCE — the
+  log, the server, the try — while the
   PROMPT UNCYPHERS IT (user-decided 2026-09-23, the settled cut): the marks churn into
   the word (`useScramble`, the hole's own settle, `SCRAMBLE_MS`), EACH LETTER TURNING
   `--fg` — a typed letter — THE MOMENT IT SETTLES while the rest churn in the accent
@@ -290,7 +351,7 @@ These are decided and verified against the code. Treat them as load-bearing.
   `startDelayMs` and the release's `fadeDelayMs`), so it plays on a word already read. The ghost is spent off the FULL log (`chargeState`) the
   instant the guess is in; the hole keeps its mask off the deferred view until the
   release. Never two steps — a decode a player could read and back out of would be a
-  hint for free, outside the log. (Reviewed away on the way: a 900ms hold BEFORE the send
+  hint for free, outside the log; BACK is out while it decodes. (Reviewed away on the way: a 900ms hold BEFORE the send
   — "we don't know if you should hit enter, or what".)** (user-decided 2026-09-22, after three reveal
   controls in the wheel — a button, a lock on the slot, a lock on every row — were each
   reviewed away: the side changed with the screen, a lock at a line's start went off a
@@ -298,13 +359,11 @@ These are decided and verified against the code. Treat them as load-bearing.
   button when the word has been selected, so you can only unlock it once back on the
   sentence and you can see the hits on the other words as well then"). The word enters
   the play log like any typed guess, counts as a try, charges the other holes, syncs, can
-  hit another hole — its floats land on the board — and the picked hole shows the WORD
-  the moment the log holds it (`shownHoles` derives it; the pick is never rewritten). The
-  first keystroke types over the ghost; the wheel holds no reveal control at all. A rank
-  the player had ALREADY reached is never given (they knew the word) — the next farther
-  one is given in its place. **THE HINTS TAKEN are
-  derived from the log** (`GivenRank.consumed`: a given rank guessed after it was given —
-  typed by hand counts the same, "it's on them") and **NO COUNT OF THEM IS DISPLAYED
+  hit another hole — its floats land on the board — and the picked hole, improved to the
+  revealed word on the release, shows it as its own (`shownHoles` derives it; the pick is
+  never rewritten). The wheel holds no reveal control at all. **THE HINTS TAKEN are
+  derived from the log** (`GivenRank.consumed`: the offered rank guessed while it was
+  offered — typed by hand counts the same, "it's on them") and **NO COUNT OF THEM IS DISPLAYED
   ANYWHERE** (user-decided 2026-09-23: "remove the hint count on the card and anywhere
   else… on the frontend side, just don't display it anywhere", retiring the `N HINTS` /
   `N INDICES` line under the tries, `hintsTaken` and `.solved-score-hints`; the server
@@ -315,10 +374,10 @@ These are decided and verified against the code. Treat them as load-bearing.
   play log, never persisted — THE SERVER STORES NOTHING FOR IT** (the user's "store the
   closest rank at activation" was declined as a second copy of a fact the log states):
   `replayCharge` over the same log the board replays, so a reload or another device
-  reconstructs the same meter, the same masked hints and the same count; `buildHistory`
+  reconstructs the same meter, the same masked hint and the same count; `buildHistory`
   takes the given ranks and names them (`HistoryStop.given` / `masked` / `taken`: masked
   = no word, its rank and key alone; taken = the player's typed stop wearing the foil; the
-  solve, or a round that ends capped (`over`), unmasks the untaken, still given — on the
+  solve, or a round that ends unsolved — given up or capped (`over`) — unmasks the one left, still given — on the
   words grid a hint TAKEN wears the foil, one left on the table stands plain). Presentation (user-decided 2026-09-15, the third cut: "try
   something else than a progress bar"): THE
   CHIP CONVERTS TO THE SOLVE INK EDGE TO EDGE ACROSS THE WORD — `.hole-meter`, the chip's
@@ -330,29 +389,40 @@ These are decided and verified against the code. Treat them as load-bearing.
   with a checker fringe, "a basic animation"; **the front is the reading's exact share of
   the width and the ramp trails BEHIND it, so a chip short of 100 always ends in white —
   only 100 inks it solid** (user-reported 2026-09-22: a ramp running past the edge read as
-  full at 95, "some users think that there's a bug")), a full chip all cobalt (the ink the word
-  wears once found); and then **THE SEA — THE ACTIVE HOLE'S OWN DRESS (user-decided
+  full at 95, "some users think that there's a bug"); **a full reading's front stands a
+  ramp PAST the edge and the tween moves the FRONT, not the reading** (`components/meterRamp.ts`,
+  tested), so the trailing ramp sweeps out of the chip and its last cells ink frame by frame —
+  the chip turns solid as part of the fill, never in one snap under the burst
+  (user-reported 2026-10-03: "the burst animation is played BEFORE the word gets 100%
+  filled")), a full chip all cobalt (the ink the word wears once found); and then **THE SEA — THE ACTIVE HOLE'S OWN DRESS (user-decided
   2026-09-22: "a new kind of hole design… something between the full blue hole and the
-  empty white one, with moving waves maybe, some perlin noise")**: the full chip RECEDES
-  into HOLOGRAPHIC FOIL (**user-decided 2026-09-22, the fourth pass of the day — a
-  dithered sea in both colour orders was "still hard to read", a smooth cobalt wash with a
-  glow "a bit lame": "something more holographic like a pokemon card… make something
-  really beautiful this time"**): FOUR LAYERS on the chip's white, every frame, under the
-  dark ink (`MeterCanvas`'s `foil`) — a PASTEL SPECTRUM OF THE APP'S OWN INKS (user-asked
-  the same day, "a more whippin AI friendly palette", replacing the full rainbow:
-  `HOLO_INKS`, the hole's cyan → the solve cobalt → the ramp's orchid → coral and back, one
-  seamless loop, each lifted `HOLO_PASTEL` = 42% toward white so the ink reads on every
-  one; `HOLO_CYCLES` loops across the diagonal, drifting `HOLO_DRIFT`), MASKED by one
-  octave of value noise (`components/noise.ts`,
-  shared with `AccountMark`) scrolled through the word so it pools and swirls instead of
-  sliding flat (the shimmer, `SHIMMER_*`, never below `SHIMMER_FLOOR` of `HOLO_ALPHA`), a
-  white SHEEN sweeping the diagonal every `SHEEN_PERIOD_S`, and pixel-art four-point
-  SPARKLES at hashed cells, EACH ON ITS OWN CLOCK — rising over 160ms, HELD 300ms, faded
-  out over 550ms with an ease, arms first, centre last, a quarter of them long-armed,
-  about five on a chip at a time (user-asked the same day: "each star be independant, it
-  should not be a batch of stars", then "the stars should stay a bit before fading out…
-  it's supposed to be chill, you're on a word game not an FPS") — and the
-  SENTENCE's chip alone wears an IRIDESCENT box-shadow turning through the same inks —
+  empty white one, with moving waves maybe, some perlin noise")**: the full chip's cobalt
+  DISSOLVES — its cells drop out in Bayer order, eight hard steps over `SEA_RECEDE_MS` —
+  into HOLOGRAPHIC FOIL (**user-decided 2026-09-22: "something more holographic like a
+  pokemon card… make something really beautiful this time"**), **the result count's own
+  DITHERED material** (user-asked 2026-10-03: "reuse the effect you've created for the try
+  count with the colors and the dithering, for the filled words too"; `components/foil.ts`
+  `paintFoil`, ONE painter for the chip, every given word and the count — the app's one
+  shiny MATERIAL; the streak celebration's forged link wears its inks too): FOUR LAYERS on
+  the chip's 2px cells, every frame, under the dark ink, every colour ORDERED-DITHERED and
+  never blended — a SPECTRUM OF THE APP'S OWN INKS (user-asked 2026-09-22, "a more whippin
+  AI friendly palette": `HOLO_INKS`, the hole's cyan → the solve cobalt → the ramp's orchid
+  → coral and back, one seamless loop), a window of a third of the loop across the
+  surface sliding slowly along it, each cell one of the two inks either side of its place;
+  the SHIMMER — how strong that ink stands over the white, one of three steps — pooled by
+  one octave of value noise (`components/noise.ts`, shared with `AccountMark`) scrolled
+  through the word so it swirls instead of sliding flat; a narrow white SHEEN passing the
+  diagonal every `SHEEN_PERIOD_S`, its first pass crossing a chip as its cobalt dissolves
+  (a chip born in the foil passes at its seed's own phase; the count, as if its foil began
+  at the clock's zero, so its reduced-motion still frame falls between passes); and
+  pixel-art four-point GLITTER at hashed cells, EACH ON ITS OWN CLOCK — rising, HELD,
+  going, stepping centre → arms → a long star's second cells and back, about five on a
+  chip at a time (user-asked 2026-09-22: "each star be independant, it should not be a
+  batch of stars", then "the stars should stay a bit before fading out… it's supposed to
+  be chill, you're on a word game not an FPS"). **THE DITHER STAYS WITHIN LIGHT TONES** —
+  the inks lifted `FOIL_PASTEL` = 30% toward white and laid at most `FOIL_ALPHA` = 86% over it — so the
+  dark ink reads on every cell (a cobalt dither over the white was "still hard to read",
+  2026-09-22) — and the SENTENCE's chip alone wears an IRIDESCENT box-shadow turning through the same inks —
   cyan → cobalt → orchid → coral — over 7s (`.hole-meter.sea`, `sea-glow`; static cobalt
   under reduced motion): the
   one lit thing on the board, by the user's call over the rebrand's no-gradient/no-glow
@@ -360,7 +430,7 @@ These are decided and verified against the code. Treat them as load-bearing.
   `SEA_FRAME_MS` = 80, ONE clock on every surface and **EVERY HOLE ITS OWN
   FOIL** (`seed` — the hole's index, a listed word's rank; user-decided the same day:
   "each hole should have a different seed"); it stands until the hole is inked in. A hole
-  MOUNTED active (a reload) is on the foil at once, no burst, no recede. (The CSS class
+  MOUNTED active (a reload) is on the foil at once, no burst, no dissolve. (The CSS class
   and prop are still `sea`, the name of the first cut.) **THE GIVEN WORDS
   WEAR THE SAME SEA WHEREVER THEY ARE LISTED** (user-decided 2026-09-22, "the given words
   should have the same effect on the guess list"): a `.wheel-given` row and a `.hw-given`
@@ -372,7 +442,7 @@ These are decided and verified against the code. Treat them as load-bearing.
   MOVES**: the word the wheel holds wears the regular white chip, active hole or given
   word ("when wheel focused, a word should not have a moving background, just the regular
   white for a better UX") — except a MASKED hint in the slot, which keeps its foil: it is
-  the thing to pick, and the prompt's ghost then reveals.
+  the thing to pick, and the tray's REVEAL then reveals it.
   RETIRED with it: `.hole-initial` (the first-cell tile), `initialOf`, `srHoleInitial`, the
   `.spent` fade. Retired the same day, each on the
   user's review: a line along the chip's bottom edge and the band the chip grew for it (a
@@ -397,7 +467,8 @@ These are decided and verified against the code. Treat them as load-bearing.
   deferred-board beat, `shownCharge`) and the fill's transition WAITS for the landing
   (`--meter-delay`, `sparkLandMs`), the burst and the sea waiting with it; at 100 `meter
   fills → BURST → the sea`, the BURST striking on the canvas's own SOLID frame (`MeterCanvas`'s
-  `onFull`, a deadline behind it), never on a timer (user-reported 2026-09-23: "the burst
+  `onFull`, told on the FIRST frame every cell is inked — `meterRamp.ts` `frontIsSolid`, the
+  painter's own rule — a deadline behind it), never on a timer (user-reported 2026-09-23: "the burst
   animation is played before the filling animation is done. It should actually wait"). The exact hit wears the ULTRA star and takes
   no cut, loot or burst (the solve supersedes); **A GUESS IS CUT ONLY WHEN IT GIVES THE HOLE
   SOMETHING** — charge on its meter, or a rank closer than its best (user-decided
@@ -408,12 +479,49 @@ These are decided and verified against the code. Treat them as load-bearing.
   choreography (charging is additive). The sheets are `components/strikeArt.ts` +
   `Strike.tsx` (`.strike`, its own integer scales under `.phrase`; see THE HIT ART) —
   never the heat. A11y: the meter and the
-  given words are the hole button's DESCRIPTION (`srHoleCharge` / `srHoleGiven`, sr-only
-  spans outside the sentence like the exploration hints, never words in the prose); words
-  given by a guess are also announced with it. Reduced motion keeps the state and snaps:
+  offered word are the hole button's DESCRIPTION (`srHoleCharge` / `srHoleGiven` — "a
+  masked word closer than its best in its tries, one try to reveal"; a full meter with
+  nothing left to offer is described as its meter — sr-only spans outside the sentence
+  like the exploration hints, never words in the prose); a word a guess has the hole
+  offer is also announced with it. Reduced motion keeps the state and snaps:
   no sparks, no fill travel, the sea holds one frame. Not done, deliberately: a second
-  payout (the letter as a second fill was proposed and not taken), a manual hint button,
+  payout (the letter as a second fill was proposed and not taken), a manual hint button
+  (a hint asked for with no mask picked — REVEAL only reveals the mask the player picked),
   a hint currency, adaptive thresholds.
+- **THE RACE LINE: MY GROUPS' PLAYERS AROUND ME WHILE I PLAY (user-decided 2026-10-02: "I'm
+  at 75% and this friend from this group is at 79% with 20 tries, and this other one is
+  just behind me with 67% at 14 tries").** ONE wordless line (`components/RaceLine`) laid
+  on the tray's TOP EDGE — absolutely positioned, so its arrival (the first answer lands
+  after the round is on screen) and its leaving move NOTHING: it sits in the gap above the
+  tray and the play area's bottom slack, over whatever the tray holds (the keyboard, a
+  mask's REVEAL), never in the header, never over the gate (whose stack can rise past the
+  tray). Who sees it: TODAY's sentence (never an archive day, never a bonus — a group's
+  competition is the day's), with an account, in a group that holds somebody else (the
+  `state/groups.ts` list answers it; the game screen loads it), and somebody else has a row
+  today. What it shows: the one just ahead, ME, the one just behind — two after me when I
+  lead, two before when I trail (`game/race.ts`) — over ALL my groups merged (the root
+  `AGENTS.md` live read): each other member's MARK (`Avatar`, 20px, sharp — 2px cells), then
+  a member still playing prints their % in the heat ramp's ink (the board's playing-row
+  dress) and their tries muted; a FINISHED member wears the pixel check
+  (`assets/icons/check.svg`) and their score in the solve cobalt; one whose round ended
+  unsolved wears `∞`. MY entry is my mark (framed in the accent) and my LIVE % —
+  `computeProgress` over the board I SEE, so it moves when a hit lands — **the one place the
+  play screen prints the player's own percentage.** The order is the boards' own (finished
+  by fewest tries, then `orderPlaying`, my entry taken from the screen, never my server
+  row); NO RANK NUMBER and no names (#206: a position mid-round moves with every guess; the
+  names are on the board, and the WHOLE LINE is the tap onto it — the aria-label,
+  `ariaRaceLine`, says it in words). A % is FLOORED (`shownPercent`, the board's playing rows
+  too): 100% is only ever a solve. The read is `state/liveBoard.ts`, asked when the round's
+  server state lands or CHANGES (round start, each acknowledged append, the answer
+  confirming the solve or the give-up — so the result reads the final rows) and when the tab
+  comes back; it holds the cost rule (one read per 10 s, one flight, a trailing call — save
+  the read asked by the answer that ENDS the round on screen, which goes at once, `now`) and
+  fails SILENTLY, the last answer standing. The line RETIRES with the prompt (the solving
+  submit, a give-up) and stays mounted, invisible, until the result takes the column. It
+  lies in the column's gap above the tray plus the play area's RACE BAND (`.play-race`):
+  on today's sentence the play area keeps the line's footprint clear under the prompt from
+  the first frame, line or no line, so the line never covers the hint row (a refused word's
+  feedback) nor takes a tap meant for it, and nothing moves when it arrives or leaves.
 - **THE PALETTE IS THREE INDEPENDENT AXES (user-decided 2026-08-17): weird/calm +
   hole/solve + accent — in STAMP-INK tones** (retuned the same day against the user's
   /inspiration set — vintage offset stamps, riso posters — after the first calm cut went
@@ -446,8 +554,7 @@ These are decided and verified against the code. Treat them as load-bearing.
     REMOVING the stamp orange outright — "keep the blue/violet palette for all accent
     and actions"; the hex is the ground's violet orb lifted to text contrast, chosen
     clear of the solve cobalt and the pale hole blue): the chrome (prompt caret, loading status, COPIED), the `+Ns` gain, the
-    history "you are here" node, the streak, the source credit's headline, the
-    standing's rank number. The keyboard's ENTER cap is the one exception, lit in a
+    history "you are here" node, the streak, the source credit's headline. The keyboard's ENTER cap is the one exception, lit in a
     COBALT gradient (the macropad's "Publish" blue — submitting is the step toward the
     solve); the ground's old orange corner orb went cobalt with the accent. Never a
     scale value, never a word state.
@@ -474,8 +581,10 @@ These are decided and verified against the code. Treat them as load-bearing.
   - **ONE GAME ACCENT, and it is the SOLVE COBALT** (user-decided 2026-09-01, third
     pass: "the solved word color, which should be the game accent color"): `--accent` is
     #4a6aff = `--solve`, retiring the violet #8f7bff of 2026-08-18. The prompt's chevron
-    and cursor, the statuses, COPIED, the +Ns gain, the streak, the credit headline, the
-    rank number and every solved word/trophy/terminus/LED are the same blue — and it is
+    and cursor, the statuses, COPIED, the +Ns gain, the streak (its celebration is drawn in
+    this cobalt, iron and white, with the FOIL on today's link as its one shiny peak), the
+    credit headline, the rank number and every solved word/trophy/terminus/LED are the same
+    blue — and it is
     still the heat ramp's calm terminus, so the ruler, the archive fills and the OG card
     agree with it. The history line's "you are here" square moved to `--hole` so the
     marker and the terminus it walks toward stay two colours.
@@ -557,10 +666,9 @@ These are decided and verified against the code. Treat them as load-bearing.
     secondary directly under a primary (`.btn-primary + .btn-secondary`, `.mix-btn +
     .btn-secondary`) and every quiet act (`.link-quiet-btn`, `.link-danger`) is the label
     alone at 0.7 strength, lifted to 1 on hover — nothing drawn that is not the word. The
-    result row's TOMORROW beside SHARE (an equal, not an answer) and the COMPACT
-    secondary (`.board-chip` EDIT, `.profile-clear`, `.device-signout`, `.device-retry`,
-    40px tall) are the shape. SHARE is the primary on the result screen; the paired row
-    narrows its air to 12px so both fit a phone. No other button dress remains.
+    COMPACT secondary (`.board-chip` EDIT, `.profile-clear`, `.device-signout`,
+    `.device-retry`, 40px tall) is the shape. SHARE is the primary on the result screen.
+    No other button dress remains.
     *(The two paragraphs below are the designs it replaced, kept for their reasoning.)*
   - **THE BUTTONS ARE KEYCAPS WITH A HARD PRINT (user-decided 2026-09-14: "we should
     completely update the buttons design, they're really ugly and boring" — the THIRD
@@ -581,8 +689,7 @@ These are decided and verified against the code. Treat them as load-bearing.
     (user-decided 2026-09-14: "when a label button is below a bigger button it always has
     the same underline design" — `.btn-primary + .btn-secondary`, `.mix-btn +
     .btn-secondary`, restating `.link-quiet-btn`'s dress so the sibling rule wins over the
-    cap's; the result row's TOMORROW beside SHARE is the one sibling that stays a cap, an
-    equal, not an answer). SHARE is the PRIMARY cap on the result screen. The COMPACT CAP
+    cap's). SHARE is the PRIMARY cap on the result screen. The COMPACT CAP
     (`.board-chip` EDIT, `.profile-clear`, `.device-signout`, `.device-retry`) is the
     secondary tile at a row's size with a 3px print. No other button dress remains: the
     header keys, the calendar arrows and the game's own controls are not buttons of this
@@ -606,19 +713,20 @@ These are decided and verified against the code. Treat them as load-bearing.
   - **PIXEL (Press Start 2P)** is reserved for the PLAY surfaces: the sentence and its holes, the prompt/input and its hint, the keyboard (keys + its `.kb-icon` pixel
     enter/backspace), the floating hits, the loot, the strike sheets, the CellDigits
     watermark, MixWord — and, since the same day's later passes, the whole SOLVED STACK's data:
-    the result count (`.solved-score-num`), the ENTIRE standing line (labels, the
-    accent rank number AND the TOP badge — one face, so `standingUnits` is back to
-    rank-digits-count-DOUBLE with one unit = one label glyph), the SOURCE CREDIT (both
+    the result's CARD (`SolvedCard`: the count, drawn on the face's own glyph cells at a
+    whole multiple of 8px, and the edition row — `N.<day>` at 8px, the date at 16px in the
+    accent), the SOURCE CREDIT (both
     lines — the source is the puzzle's content, not chrome, and it is EXEMPT from the
     all-caps chrome rule: quoted content keeps its own casing, the code-uppercased KIND
-    carrying the phrase contrast), the run ruler's tick numbers, and the streak
-    celebration's digits (wheel slots at the pixel
-    1em advance, the flame's HARD 6px indigo underprint restored — a soft glow clips
-    square inside the overflow-hidden slots). **Every monospace layout assumption therefore still holds** — MixWord's ch
+    carrying the phrase contrast), the run ruler's tick numbers, the result boards' ranks,
+    numbers and `+N`, and the streak
+    celebration's count and edition (the count in the face's own `digits.png` glyphs, each
+    glyph pixel a whole square of the celebration's raster cells; the day's date set in the
+    face). **Every monospace layout assumption therefore still holds** — MixWord's ch
     reservations and CellDigits' grid sit on surfaces that stayed pixel. The coach text's inline `[[b:]]`/`[[w:]]` words are
     pixel at 0.82em INSIDE modern copy — game words quoted in chrome.
   - **MONO (Azeret Mono variable 100-900, `--ui`)** is EVERYTHING else — body default,
-    header (title/date), buttons, coach copy, the standing line,
+    header (title/date), buttons, coach copy,
     calendar, streak, statuses, and every moment the retired serif
     used to headline (chooser names, the invite title — the credit, the result numbers
     and the streak digits all moved ON to the pixel face the same day, see above). A monospace is tabular by construction, so everything that ticks is stable
@@ -636,11 +744,11 @@ These are decided and verified against the code. Treat them as load-bearing.
     (`--r-sm/md/lg` = 2/3/4px), hairlines (`--line`/`--line-strong`), glass (`--glass`) —
     worn by every non-game box: aura-gradient chooser cards (cobalt/violet/orange by
     nth-child), glass coach dialogs (both gates + the tutorial), gradient-and-bloom
-    primary buttons, the outlined TOP badge, glass result actions, calendar cells and
+    primary buttons, glass result actions, calendar cells and
     week tiles. **THE DESIGN STAYS SHARP (user-decided 2026-08-18): 4px is the absolute
-    radius ceiling — no pills, no circles anywhere in the chrome** (the SHARE pill, the
-    TOP-badge pill and the rounded scrollbar thumb of the first cut are all squared back
-    off; the run ruler's filament rounds at 3px).
+    radius ceiling — no pills, no circles anywhere in the chrome** (the SHARE pill and
+    the rounded scrollbar thumb of the first cut are squared back
+    off).
     **ONE INK (user-decided the same day): chrome text and ICONS are `--fg`** — `--muted`
     survives only on GAME surfaces (the route drawing's dresses, the keyboard's control
     keys, the watermark) — with hierarchy carried by weight and opacity, never by a
@@ -718,10 +826,10 @@ These are decided and verified against the code. Treat them as load-bearing.
     trip):** a gradient-filament version and then a colourless flat rule each lived for
     part of the day and both were rejected — "remove the gradient, put back the old
     step by step colors" — so the drawing is the original: one flat cell per counted
-    try at that try's `progressHeatColor`, dead sharp, 16px, filled by the result's tally
-    (see the solved-screen bullet). What SURVIVES from the detour is the ticks' sentence
-    indices in the PIXEL face. The bar therefore still matches the share card's stepped
-    cells exactly.
+    try at that try's `progressHeatColor`, dead sharp, on whole pixels, filled by the
+    result's tally (see the solved-screen bullet). What SURVIVES from the detour is the
+    ticks' sentence indices in the PIXEL face. The bar matches the share card's stepped
+    cells exactly: both split their width at the shared `runEdges`.
 - **A RANK IS WRITTEN BARE — no leading minus, anywhere (user-decided 2026-08-16).** A rank
   is a DISTANCE, and a distance is not negative; `sailor^87`, not `sailor^-87`. This is the
   app's ONE way of writing a rank, so it holds on every surface that shows one: the hole's exponent, the floating hit, the loot, the hole wheel and the words modal,
@@ -1137,10 +1245,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     landed: a total summed over one of two is a smaller number stated as a fact. Values
     withheld until then (the slot BREATHES only while a read is in flight — a failure rests
     still, the archive cells' rule), labels and layout always drawn, and ONE fixed value
-    height so nothing moves when the collections land. The STREAK cell briefly wore the
-    archive's flame sprite; it was pulled pending a drawing of its own, which leaves
-    `assets/streak-small.png` unreferenced (the celebration's `streak-flamme`/`streak-glow`
-    sheets are a separate pair and are untouched). The ROW ITSELF is
+    height so nothing moves when the collections land. The STREAK cell wears no
+    icon. The ROW ITSELF is
     `components/AccountStats.tsx`, drawn by three surfaces for three reasons — what this
     account IS, what a deletion is about to COST, and what a recovery just HANDED BACK —
     because a player who reads a streak of 12 on the account screen and is then offered a
@@ -1552,77 +1658,32 @@ it to the local store — see `packages/backend/AGENTS.md`).
 - **THE CARD (user-decided 2026-09-11, from the three references in `inspiration/card/`:
   on a phone "it's hard to understand what's on screen quickly").** `.card` is ONE panel for
   a VIEW in those references' language: a LARGE, SOFTLY ROUNDED panel lifted a shade off the
-  ground (`--fg` at 4.5%, a 9% stroke, 24px radius — 22 on a phone), and inside it a darker
-  inset WELL (`.card-well`: back into the ground at 75% `--bg`, a 6% stroke, 16px radius)
-  holding the thing the card is about, with a caption row under the well. Depth by two
-  steps of value, never a shadow or a glow (the flat rule stands). **It is THE ONE
-  EXCEPTION to the 4px radius ceiling**, by the user's own references; nothing else in the
-  chrome rounds past 4px, and the references' PILL buttons were not taken (the app's
-  buttons stay its own). A CLASS, not a wrapper component. The solved screen is its first
-  consumer and only the SCORE block wears it — the well holds the number and its run
-  ruler, SHARE/TOMORROW are the caption row — while the sentence's PAGE stays on the bare
-  ground (user-decided the same day, after both were tried as cards: the page is a page,
-  not a tile). Two earlier cuts the same day — a `--surface` + `--line` 4px tile on both
-  blocks, then a square 3%/6% tile — were reviewed as not it.
+  ground (`--fg` at 4.5%, a 9% stroke, 24px radius — 22 on a phone). Depth by value, never a
+  shadow or a glow (the flat rule stands). **It is THE ONE EXCEPTION to the 4px radius
+  ceiling**, by the user's own references; nothing else in the chrome rounds past 4px, and
+  the references' PILL buttons were not taken (the app's buttons stay its own). A CLASS,
+  not a wrapper component.
   **WHERE IT LIVES (user-decided 2026-09-11: "everywhere in the app where it makes sense —
   view separation, these informations are together, those are separate — but not
-  everything needs a card").** Three consumers: the RESULT (score + ruler in the well, SHARE/TOMORROW the
-  caption row);
-  the ACCOUNT's three numbers (`AccountStats`, a panel
-  with no well — a simple group takes the panel alone); the archive CALENDAR (`.cal` —
-  nav, weekdays, grid and the failure note in one panel). Deliberately NOT: the sentence's
+  everything needs a card").** Two consumers: the ACCOUNT's three numbers (`AccountStats`)
+  and the archive CALENDAR (`.cal` — nav, weekdays, grid and the failure note in one
+  panel). Deliberately NOT: **the RESULT** (user-decided 2026-10-02, "the card" direction:
+  the result is the SHARE CARD it sends stood up on the bare ground — `SolvedCard`, the
+  device frame's brackets round it, no panel; see the solved-screen bullet), the sentence's
   page (prose is not a tile), the leaderboard (its rows are already tiles — a panel round
   them is a box in a box), the coach/rules boxes (a dialog's own dress), the account's
   device rows (the same row grammar).
-  **THE REVEAL RUNS SCORE FIRST, THEN THE PAGE (user-decided 2026-09-11, reversing the
-  2026-08-15 page-first order):** the stage rises with the card, the tally counts while the
-  ruler colors, the standing lands with SHARE, closing the card — and only then the credit
+  **THE REVEAL RUNS SCORE FIRST, THEN THE PAGE (user-decided 2026-09-11):** the stage comes
+  up and the card draws itself, the tally counts while the ruler colours, SHARE lands under
+  the card, and the BOARDS under it — and only then the credit
   types, and only once it has printed does the SENTENCE appear, its secrets popping in
-  ("score view → source → sentence", the user's second pass the same day: the text used
-  to stand from the first frame). The 2026-08-15 rule survives inverted: nothing prints
-  while the numbers move. `.solved-text` holds its box from frame one and fades in on
+  ("score view → source → sentence"). Nothing prints while the numbers move.
+  `.solved-text` holds its box from frame one and fades in on
   `sentenceIn` (the citation's completion, with its visible-time deadline); the pops ride
   the same flag, and their end is the reveal's END, which disarms the fast-forward.
-- **Early play: tomorrow's sentence tonight (#273, user-decided 2026-09-08).** The
-  product contract — TOMORROW beside SHARE as the result's one onward action, the first
-  progress / `EARLY_GUESS_CAP` stop, the server's `early_locked` — lives in the root
-  `AGENTS.md`. What is this package's:
-  - **The dated route reaches `activeDate + 1`** (`langs.ts` `ROUTE_FUTURE_DAYS`, ONE
-    `dateOf` for both grammars). `GameRoute` reads the day LIVE off `useToday` — `isActiveDay`
-    and `early` both — so a tab open across the flip sees tomorrow become today: the lock
-    lifts, the streak read starts, without a reload. **Tomorrow LIVES AS AN ARCHIVE PLAY
-    in the header (user-decided 2026-09-11, the last of three passes on the way back):**
-    the calendar key lights, HOME is a live key, and the title keeps the `12/09` day tag —
-    so before the night's lock the house is the way back to today's result, exactly as on
-    any dated route. After the lock the round carries its own labelled way back: a
-    ‹ TODAY / AUJOURD'HUI secondary button under the countdown (`FlipCountdown`'s
-    `onToday`, `.flip-today`), because a locked screen with nothing left to do must say
-    where to go. RETIRED the same day: a bare back arrow in the left slot ("a few white
-    pixels appearing in the header might not be very obvious, many might get stuck"), a
-    lit-but-leaving HOME (a lit key that led OUT of the place it lit), and a TODAY under the
-    prompt for the whole round (one commit; the house covers the unlocked round). TOMORROW
-    wears the title's pixel chevron after its word and TODAY the same one turned back
-    (`.btn-arrow`), the two ends of one trip.
-  - **`Game` locks LOCALLY** (`locked` = `early && !finished && earlyLocked(...)`, over the
-    FULL play log rather than the board's deferred view, so the lock lands on the guess that
-    made progress while its floating hit still plays): `submit` refuses, the prompt retires
-    like the gate's, and the TRAY renders `FlipCountdown` where the keyboard stood — the
-    whole statement, no caption (show, don't tell). Holes stay tappable (the wheel is a
-    reading aid).
-  - **The engine (`roundSync.ts`) treats `early_locked` like `round_solved`** — adopt,
-    discard the outbox, close — but remembers WHY (`lockedEarly`): the re-registration that
-    reports `early: false` re-opens the conversation with a READ (another device may have
-    moved the log) and the outbox then flushes. A client whose clock has already flipped
-    (`early` false) that still gets `early_locked` KEEPS the guess and retries behind the
-    backoff — clock skew is not a verdict.
-  - **`SolvedScreen` takes `onTomorrow`** (today's result only; `Game` passes nothing on an
-    archive day), a second secondary button on SHARE's own beat; `.result-actions.paired`
-    gives the pair half the row each (`flex: 1 1 0`, capped 240px) so they share ONE line on
-    a phone. TOMORROW navigates to `pathForDay(lang, tomorrow)`. A capped round offers it too:
-    it is the same result screen.
-- **Local storage is an OUTBOX; a capped round ends at ∞ (#214).** The product contract —
-  the three values, the load order, what the cap means, the share token, what was removed —
-  lives in the root `AGENTS.md`. What is this package's:
+- **Local storage is an OUTBOX; a round that ends unsolved ends at ∞ (#214).** The product
+  contract — the three values, the load order, what the cap and the give-up mean, the share
+  token, what was removed — lives in the root `AGENTS.md`. What is this package's:
   - **`game/playLog.ts` is the projection**, and `Round` derives EVERYTHING from it: the
     board (`replayHoles`), the score (its length), the prompt's recall history, the run
     ruler's trajectory and the solve moments. There is no persisted holes/count/progress
@@ -1653,10 +1714,43 @@ it to the local store — see `packages/backend/AGENTS.md`).
     once a second while a player types and recompute every derivation downstream. (The old
     engine avoided the same churn for a sharper reason — a rewrite applied every pending hole
     improvement on the spot — which the `deferred` split now prevents by construction.)
-  - **The capped round's `∞` is `@whippin/shared`'s path data**, drawn in place of
-    `.solved-score-num` (`.solved-score-inf`, `crispEdges`, sized in `em` off the number it
-    replaces) with an `sr-only` `∞` beside it; the unit stays PLURAL, since there is no count
-    for a "1" to agree with. `SolvedScreen` takes `capped` and shares a v6 capped token.
+  - **`Round` reads "ended unsolved" off the shared `roundEnded`** (given up, or capped;
+    `solved` wins) — `ended`, with `gaveUp` the give-up half of it — and `finished` is
+    `solved || ended`.
+  - **The `∞` of a round that ENDED UNSOLVED is `@whippin/shared`'s path data**
+    (`INFINITY_GLYPH`), drawn in place of the result's count (`SolvedCard`, `crispEdges`,
+    each of its 9×5 cells one of the count's own pixels, plain white) with an `sr-only` `∞`
+    beside it; the unit stays PLURAL, since there is no count for a "1" to
+    agree with. `SolvedScreen` takes `unfinished` and shares a v6 token with the capped
+    flag set (the flag means ended unsolved) — a share the `share` event does NOT count
+    (`useShare({tracked: false})`), so share ÷ solve stays the liked-day signal. The group
+    day board draws the same glyph in an `over` row's tries slot (`.board-inf`), its %
+    muted.
+  - **THE GIVE-UP (user-decided 2026-10-02).** A pixel WHITE FLAG (`assets/icons/flag.svg`,
+    the lock's 8-cell grid, monochrome, `--muted`; aria `giveUp`) stands at the RIGHT END of
+    the prompt row: `.prompt-zone` is a two-column grid whose second column the flag holds
+    from the first frame (`.off` = hidden in place), so its arrival never moves the sentence
+    or narrows the prompt — a long guess crops its own head before reaching it. Its tap
+    target is a box past the glyph's edges (`.give-up-btn::after`), never padding: the 1em
+    flag is under 24px on a phone, and a bigger button would move the prompt row. Shown
+    (`canGiveUp`) once the round holds a guess, not finished, the gate closed, no reveal
+    standing or decoding, the prompt not leaving; never in the tutorial (it lives in
+    `Game`, not in `Keyboard`). A tap opens the `ConfirmScreen` (`giveUpTitle` /
+    `giveUpNote` / `giveUpAction`, busy while in flight); its act calls
+    `giveUpRound(roundKey)` (the sync bullet below); a `false` answer raises the
+    `ErrorScreen` (`failedGiveUp` / `failedGiveUpNote`, also an `?error=giveUp` preview).
+    A give-up confirmed on THIS device (`giveUpHere`, set before the request so the render
+    that turns the round over already sees it) PLAYS: the prompt leaves, every unfound hole
+    turns into its SECRET with its own word-change scramble (`boardHoles`: rank 0,
+    `revealed`), the revealed sentence STANDS `GIVE_UP_HOLD_MS` (1 s, `game/timing.ts`) once
+    every word has settled — the answer is read in place (never under reduced
+    motion) — then the usual keyboard drop → dissolve → result — no `solve`
+    event, no streak, no celebration. **A REVEALED secret keeps the HELD CHIP** (`.hole.revealed`,
+    never `.resolved`: the white chip, no exponent) — the solve cobalt says "found", and
+    only of a word that was; the dissolve keeps the chip until the word's last letter goes
+    (`revealedAt`, `.chip-out`), and the result page's unfound secrets wear the chip too
+    (`SolvedHole.found`, `.solved-secret.revealed`). A give-up read at mount, or made on
+    another device, lands on the settled result at once, like the cap.
   - **`statusOf` takes a SERVER summary** (`{progress, solved}`), and #211 is its producer —
     the two shipped together, as the Ordering note on both issues required.
 
@@ -1683,14 +1777,6 @@ it to the local store — see `packages/backend/AGENTS.md`).
     and its tap (the day is playable whether or not we know what happened on it); the chooser
     draws the app's skeleton strip; `srStatus` says `srStatusUnknown`, because silence there
     reads as "not started".
-  - **The ARCHIVE holds its streak hero's BOX while an answer is still COMING**
-    (`.archive-streak-pending`, `visibility: hidden`). The returning player this screen is for
-    almost always has a streak, so reserving keeps the calendar still for them; drawing
-    nothing pulled it up and pushed it back down on every visit. A zero streak collapses the
-    box once the answer lands — and so does a read that FAILED (corrected on review), for the
-    cells' own reason: reserving is a promise, and after a failure nothing is coming to keep
-    it. The failure is not swallowed by that, because the block under the grid says it in
-    words and its RETRY reloads the collection with the month.
   - **A FAILED read speaks whether or not a month is already drawn** (corrected on review).
     A revalidation deliberately keeps its cached month on screen, so gating the block on
     there being nothing to show made every failure after the first good visit SILENT — an
@@ -1714,8 +1800,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     counts its transition off exactly that array. The union is honest as well as safe — the
     collection is monotonic within a language, and the only day this client ever adds is one
     the server is recording anyway. **A merge that changes nothing keeps the held array's
-    IDENTITY** (PR-218 review): `StreakDialog`'s master sequence effect depends on arrays
-    derived from it, and a fresh identity landing mid-celebration restarted the whole show.
+    IDENTITY** (PR-218 review), so nothing derived from it re-derives under a mounted
+    celebration; `StreakDialog` reads the week off it as a PRIMITIVE key and plays on ONE
+    clock, so even a re-derivation re-plans the same moment rather than restarting the show.
     `loadPlayerHistory` is exported for the contract test that drives a real answer through
     the commit path.
   - **The GAME screen loads the collection with NO month** (`usePlayerHistory({lang, enabled:
@@ -1789,9 +1876,23 @@ it to the local store — see `packages/backend/AGENTS.md`).
   leaderboard entry of a round that was never full. When it IS full the conversation closes
   and the ROUND ENDS at `∞` (#214) — the capped state is re-derived on every mount from the
   log the read carries, so a reload never re-opens a settled round for a guaranteed 409.
+  A GIVEN-UP round closes the same way: a read or an answer carrying `gaveUp`, or a 409
+  `round_given_up`, adopts, discards the outbox and closes. **`giveUpRound(roundKey)`** is
+  the conversation's one other write: the flight holds the intent, `pump` FLUSHES the outbox
+  first and only then posts `{token, puzzle, giveUp: true}` (never paced: only an owed append
+  waits on the write interval). It resolves exactly once — TRUE when the round is over on
+  the server's terms (2xx, or a `round_solved` refusal: the solve won and is adopted as
+  history), FALSE on any other 4xx (the round stays open, the conversation too). An UNKNOWN
+  outcome re-READS, and the read answers it: `gaveUp`/`solved` → TRUE, otherwise FALSE —
+  never a second give-up sent behind the player's back. Whatever leaves the outcome unknown
+  before an answer can come answers FALSE at once, so the button is never busy without end: a
+  read that fails (should the give-up have landed, the retried read closes the round by
+  itself), and a FLUSH append whose outcome is unknown — the give-up never went out, and
+  appends can keep failing behind re-reads that succeed; the outbox retries as before. A
+  republish, a re-arm and a reset answer a pending give-up FALSE.
   There is no client score submission since
-  #203: `useScoreHistogram` launches its population READ only on the SERVER's own `solved`,
-  so capped/offline-only play has no row to claim and asks for no standing.
+  #203: the server records the score row itself from the log it stores, so capped, given-up
+  or offline-only play has no row to claim.
   **An ADOPTED solve is not a fresh solve** — the beats belong to a solve the server
   confirmed on a batch THIS device sent (`solvedByAppend`, #214, replacing the submit-time
   `solvedByPlay` guess), so a second tab finishing the board under this one replays no
@@ -1806,7 +1907,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
 - **Derived scores (#203):** the sync engine gained two jobs. (1) ROUND CREATION carries a
   Turnstile challenge — the sentence round has no START message, so the token rides the
   append whose read found nothing (`RoundFlight.created`), and every later append carries
-  none. A failure there is an ordinary failed write, retried with the rest: the round keeps
+  none; `prefetchTurnstileTokens` asks for it while the puzzle is on screen (TWO on a device
+  with no identity — the bootstrap, then round creation — one otherwise), each token
+  consumed exactly once. A failure there is an ordinary failed write, retried with the rest: the round keeps
   playing locally, which is why nothing is said on screen. (2) The SERVER's `solved` is adopted as a
   FACT (`markRoundRecorded`) — it says the day's score row exists, and it says the round is
   FROZEN, so the conversation closes — and its log is adopted SERVER-ONLY, where every other
@@ -1815,7 +1918,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   still DEDUPED (`mergeLogs` against an empty local log), because the stored log is RAW and
   two devices can each have sent a surface of one group — the same disagreement from the
   other side.
-  **The `round_solved` 409 must do BOTH**: a plain 4xx
+  **The `round_solved` 409 (and the give-up's `round_given_up`) must do BOTH**: a plain 4xx
   closes WITHOUT adopting, leaving this tab rendering an unsolved board with its guesses
   still on screen — the exact symptom the freeze exists to prevent — and a plain 409 adopts
   WITHOUT closing, so `pump` resends immediately with `failures` reset, at no backoff at all.
@@ -1991,7 +2094,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   create a group, feels like bad UX"), and CREATE GROUP is said in full (`groupCreate`). A group
   has THREE boards under the pager as ONE FRAMED SWITCH of three EQUAL cells (`.period-tabs`;
   user-reported: bare labels "float in the screen with no purpose, no affordance"): TODAY
-  (the live one: finished, IN PROGRESS, NOT PLAYED YET — TODAY, not DAY, user-decided
+  (the live one: finished, IN PROGRESS — a round that ended unsolved, `over`, printing `∞`
+  in its tries slot after the live rows — NOT PLAYED YET — TODAY, not DAY, user-decided
   2026-09-14), WEEK and MONTH (the shared period rule, `PeriodList`: podium POINTS under
   the caption, the days and the total as a quiet detail). THE BOARD CARRIES NO STANDING
   BUTTON (user-reported: "3 huge thick buttons always on screen even if we use them 1% of
@@ -2000,8 +2104,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **WHICH TAB belongs to a VISIT** (user feedback 2026-08-20; `boardTab` is `'group' |
   'global'` since persist **v19**, App resets it on any non-board route); **WHICH GROUP
   outlives it** — `gameStore.lastGroupId` (v19, account-owned: `reconcileIdentity` drops it
-  with the account), set by every group tab opened and by the standing line's tap, the
-  first listed group standing in for a stale or missing one. The period is the screen's own
+  with the account), set by every group tab opened, a group created, a group JOINED from
+  its invite and a group's board opened from the result, the first listed group standing in
+  for a stale or missing one. The period is the screen's own
   state. The groups themselves are `state/groups.ts` — ONE transient cache (`loadGroups`,
   `adoptGroups` after every write, `resetGroups` in `identityScope`), tokenless
   known-empty without a request. The list refreshes on board/invite entry and on opening
@@ -2088,9 +2193,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `navigator.share` wants a fresh gesture, so a browser refusing the native sheet after
   the bootstrap round trip falls back to useShare's clipboard path (COPIED).
   Both are the #188/#189 wiring; both work before ever playing — and the invite
-  share is the ONE `useShare` caller that passes `tracked: false`, because the pinned
-  `share` analytics event means "a RESULT left the app" (the three-event invariant) and
-  counting invite links into it would silently redefine what the number measures. Rows rise on
+  share passes `useShare`'s `tracked: false`, because the pinned `share` analytics event
+  counts a SOLVED DAY's result leaving the app (the three-event invariant; a bonus and an
+  unfinished result — given up or capped — opt out the same way) and counting invite links
+  into it would silently redefine what the number measures. Rows rise on
   the `rung-in` gesture staggered by index (delays survive reduced motion, the rise
   collapses). Board VISUALS carry no tests per policy; the contract-y parts are the
   shared ranking rules, `parseBoard`, and the route grammar (langs.test.ts).
@@ -2147,9 +2253,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
 - **Hole WHEEL (user-decided 2026-09-01, REPLACING the history modal below):** tapping a
   HOLE no longer opens a screen — its place in the sentence becomes a fixed SLOT, and the
   words already found for it stand in ONE column that SCROLLS THROUGH that slot with
-  mandatory snap, item by item, a picker drum: **farther words above, closer below; the word
-  in the slot wears the hole's own chip at the sentence's own size, the others stand plain
-  at 0.8× of it; and the word in the slot when the wheel FOLDS is the pick** (`Game`'s
+  mandatory snap, item by item, a picker drum: **farther words above, closer below; EVERY
+  row stands at the sentence's own size, the slot's included — ONE type size while the
+  wheel is open (user-decided: rows of mixed sizes "look messy") — the word in the slot
+  wearing the hole's own chip, the others plain; and the word in the slot when the wheel
+  FOLDS is the pick** (`Game`'s
   `picked`, DISPLAY-ONLY: the round's state, score, progress and history all read the real
   holes; never persisted; it lasts until the hole next IMPROVES). Tap a row and it glides
   into the slot; tap the slot, outside the column, or Escape, and it folds — ONE door
@@ -2220,14 +2328,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   model (`buildHistory`, which gained `display`, the canonical form the slot shows), the
   `given` dress — THE SEA, see the #301 bullet — and the hole's TRUE position wearing an LED in `--hole` when the
   slot holds a pick, `holeTitle` as the dialog's name, `srRouteStop` per row.
-  A word too near the right edge of a phone (`MIN_COLUMN`) stands the column on its RIGHT
-  edge. The scroller hides its scrollbar and fades both ends (a mask). **A PLAIN ROW
+  **A row has ONE size, in the slot and out of it**: its width is arithmetic in the pixel
+  face (1em a glyph) — the LONGER of its typed form (a plain row's) and its canonical form
+  (the slot's), so nothing changes size as it crosses the slot, plus the best row's LED and
+  the exponent — and it stands at the sentence's size unless its column cannot hold it.
+  The column stands on the word's left edge, or on its RIGHT edge when the room on the
+  right is under `MIN_COLUMN` or the longest row does not fit there and the left has more
+  room; only a row that fits NEITHER side shrinks, alone, to fit (floor `ROW_MIN_PX`) — the
+  words modal's rule. The scroller hides its scrollbar and fades both ends (a mask). **A PLAIN ROW
   STANDS ON ITS OWN GROUND** (user-decided 2026-09-02: at the quarter dim the rows printed
   over the sentence's words — "you don't have wheel items over sentence text"): `.wheel-plain`
   boxes the WORD on the `--surface` tone, drawn as the chip is drawn (an absolutely
   positioned em-sized pseudo, no layout, so the letters keep the slot's x), a little
   taller than the chip — 1.5em against 1.267 (user-asked the same day, "a few more pixels
-  of vertical padding") — and since 2026-09-22 the EXPONENT stands OUTSIDE it on the
+  of vertical padding"), so at the sentence's size it fills the whole line box and the
+  rows stand `GAP` (10px) apart to read as separate boxes, never a shorter ground — and
+  since 2026-09-22 the EXPONENT stands OUTSIDE it on the
   ground, a clear gap past the box's overhang, on every plain row, given or typed
   (user-decided in three passes: "out of the background", "it touches it", "a few pixel
   more detached… the same for non holo words"). Buttons carry `font-variant-ligatures:
@@ -2238,7 +2354,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   day: "when you click on a hole word, the left padding disappears"; the scroller began
   exactly on the word's x with `overflow: hidden`, so the slot chip's and the grounds' left
   overhang were clipped; the rows' text still starts on the word's x, measured at both
-  breakpoints). **AND THE FOLD LEAVES THE SLOT ROW STANDING** (user-reported the same day, "the hole word
+  breakpoints); a column on the word's RIGHT edge is inset on that side by what the rows draw
+  past their box there instead — the exponent's nudge and its 2px print. **AND THE FOLD LEAVES THE SLOT ROW STANDING** (user-reported the same day, "the hole word
   blinking on wheel close"): `wheel-out` fades the DIM (background-color) and
   `fade-out` the plain rows, while the slot row — the hole's own markup at the hole's
   own place — holds at full strength until the dialog leaves; and the fold itself (the
@@ -2442,10 +2559,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   cells, so a 4-week February and a 6-week month stand the same height and paging never
   moves the calendar.**
   The calendar itself is **vertically centered** (`.archive` flex column, top padding
-  clears the fixed header). **The live streak stat moved out of the archive body and into
-  the shared `TopBar` (decided 2026-07-11):** immediately right of the language control it is
-  only `assets/streak-small.png` (the 8×10 pixel-art source displayed at an exact 3× =
-  24×30) plus a larger bare streak amount; a zero/broken streak remains hidden. Entry: the header's DATE CHIP
+  clears the fixed header). The archive carries no streak stat (the live streak is on
+  `/account`'s stats row). Entry: the header's DATE CHIP
   (since 2026-08-18; a calendar icon in the right group before that); `dateForDayNumber` (`shared/day.ts`) is the `dayNumber`
   inverse. The **OG share page** (`backend/ogCard.ts` `renderShareHtml`) now click-throughs
   to the **shared day's** date-addressed URL (`/<lang>/<dateForDayNumber(dayNumber)>`),
@@ -2457,7 +2572,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   2026-09-08, on #266's second review). It supersedes the same morning's "keep the
   sentence and RISE it, the result grows around it", which put SHARE below the fold on
   most phones, and it RESTORES the 2026-08-14 hand-over: the sentence DISSOLVES and the
-  result takes the whole column.** The rule: the score block is the same height on every
+  result takes the whole column.** The rule: the score's CARD is the same height on every
   round and sits at the TOP, on screen AT REST on every phone — SHARE is the reveal's
   closing beat and the liked-indicator; the sentence's PAGE is the round's
   variable-height content. **THE WHOLE STAGE SCROLLS AS ONE, AND THE CREDIT STICKS**
@@ -2466,7 +2581,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   have the source somewhere on the screen"): once the reader reads, the score and SHARE
   scroll away with the page, the credit sticks at the scroller's top edge on its own
   ground, and a tap on it returns to the top. The earlier "the page is the one thing that
-  scrolls" (the same morning's second pass) is superseded by this.
+  scrolls" (the same morning's second pass) is superseded by this. The stage spans the
+  whole VIEWPORT's width, so its scrollbar stands on the screen's edge on every screen,
+  a wide desktop included, while its content keeps the column's width (user-decided
+  2026-10-03: "stick the scrollbar to side of the screen on desktop").
   - **The sentence's EXIT is the DISSOLVE** (`components/DissolvePhrase.tsx`, the
     2026-08-14 decision unchanged): once the keyboard has dropped, the live `Phrase`
     hands its exact pixels to a letter-boxed copy that erodes them through the
@@ -2478,14 +2596,75 @@ it to the local store — see `packages/backend/AGENTS.md`).
     rehydrated solve), and `finishDissolve` is the DOM's own report.
   - **The result is a STAGE** (`components/SolvedScreen` → `.solved-stage`, `flex: 1 1 0`
     + `min-height: 0` so its height is DEFINITE inside `.game`'s auto-with-a-min box — a
-    `1 1 auto` item sized by its content grows the page instead), centred, rising in the
-    way the tray results always have (`RESULTS_IN_MS`), stacking TWO parts with ONE gap:
-    - **SCORE** (`.solved-numbers`) — the named `<tries> TRIES` headline (the #170 TOP
-      badge beside the number since 2026-09-05) over the run ruler, **then SHARE**, which
-      belongs to this block (user-decided 2026-08-14, third pass: sharing is
-      what you do with a RESULT). Centred and capped at the keyboard's 680px. Measured on a
-      375×667 phone: 197px tall, SHARE landing at y 226–273, where the block ends, with
-      the whole page still below it.
+    `1 1 auto` item sized by its content grows the page instead), centred, coming up IN
+    PLACE (a 140ms fade, `RESULTS_IN_MS`: the card draws itself on it, so the stage does not
+    travel), stacking THE CARD, the BOARDS (the active day only) and the PAGE, 48px apart,
+    all on whole pixels (`--stage-top` is 32px: a vh offset would set every glyph of the
+    pixel type under it between the screen's pixels):
+    - **THE CARD** (`components/SolvedCard`, `.solved-card`; user-decided 2026-10-02, the
+      design's direction "the card", with the SCORE as its subject) — the share card this
+      result sends (`renderCardSvg`) stood up in the column on the BARE GROUND, capped at
+      the keyboard's 680px: the device frame's corner BRACKETS round exactly what the card
+      shows (2px, 16px arms — 24 on a WIDE card — white at 38%); the EDITION row
+      (`N.<day>` at the left in the pixel face's 8px `--muted`, not printed where the desktop
+      device frame already prints today's; the date at the right at 16px in the accent;
+      BONUS and `N.<id>` for a bonus); the COUNT over its unit (the `--ui` 16px, tracked,
+      bold), ALONE on the column's axis — no portrait, no name: the boards under it name the
+      player; the run RULER with its HEAT; **then SHARE**, under the frame (the brackets hold
+      what you send, the button sends it; sharing is what you do with a RESULT,
+      user-decided 2026-08-14). Measured: 390×844 and 375×667, a 160px count, SHARE at
+      y 456–504; 320×568, a two-digit count at 136px (the hero's width), SHARE at y
+      435–483; 1366×657 (a laptop's browser window), wide, a 160px count, SHARE at y
+      556–604.
+    - **THE COUNT IS THE SUBJECT, drawn as the METER.** Press Start 2P at the LARGEST whole
+      multiple of 8px whose INK fits the hero (`countCells.ts` `countSize` — the box is the
+      digits' ink, the last glyph's trailing blank column dropped, so the number centres on
+      what it prints) AND whose box leaves SHARE above the fold — the card's room from its
+      top in the stage down to the stage's bottom fade, less everything in the card but the
+      count's box: at most 160px on a phone (the share card's own), 192 on a WIDE card (a
+      column ≥ 552px in a small viewport ≥ 640px tall — a shorter window keeps the phone's
+      sizes, so its room goes to the count, not to the air round it); three digits at 320
+      take 88px. Decided per mount off the SMALL viewport (`svh`: a toolbar collapsing on
+      scroll must not resize what has landed) and re-measured only when the column's width
+      changes; nothing is scaled by a transform. It is drawn cell by cell on
+      the face's own glyphs (`digitMasks.ts`, laid out by `countCells.ts`) by a SHAPED
+      `MeterCanvas`. The tally is a SLOT MACHINE on those pixels (`countRun.ts`; user-decided
+      2026-10-03, "all the digits spinning with a very short delay between them … they stop
+      from left to right, and on each digit stop, there's a shake"): ONE REEL PER DIGIT of
+      the score, no leading zero (3 has one, 137 three), each the face's glyphs (0–9 on a
+      strip, one blank row between, `countCells.ts` `reelInk`) standing at a whole font
+      pixel. The reels start almost together and stop left to right, each with a snap (it
+      brakes into its last few glyphs, rolls one font pixel past its digit and drops into
+      place). On EACH STOP the digit SHAKES — whole font pixels in hard steps, drawn into
+      the meter's shape (never a scale; the canvas bleeds 24px past the box for it) — and
+      gets ITS OWN BURST IN FRONT of it ("the burst animation on each spotted digit": the
+      meter's `BURST_ART` at the whole scale that makes it about 1.5 digits wide, centred on
+      the digit, clipped above the ruler's ticks and stencilled off the unit and the
+      edition's type, in the meter's cobalt, and in WHITE where it crosses the stopped
+      digits — a second sheet on the same beat kept to their cells AS THEY STAND, a mask
+      layer per digit at its shake, so the white recoils with the digit it lights: a cobalt
+      ray over the cobalt digits would vanish). There is no end-of-run blast. While it runs, the digits
+      charge with the meter's Bayer fill as far as the reconstruction had reached at the try
+      the ruler is writing (never past 99); the last stop fills it, and on its burst's
+      impact — read off the run's clock, the one the burst is mounted from, never off the
+      fill's tween — the cobalt DISSOLVES (Bayer order, eight hard steps) into the DITHERED FOIL (`foil.ts` `paintFoil`: the
+      material every given word wears, on the house's 2px cell, one slab across the whole
+      number, slow drift, a narrow sheen whose first pass meets the dissolve, its glitter
+      sparser — `COUNT_SPARKLE`), glints taking turns on the cap line's outer corners
+      (`paintCountGlints`). A settled result is BORN in the foil; the
+      foil's clock rests while the count is out of view or the tab hidden. A round that
+      ENDED UNSOLVED wears no shine: a plain white `∞` on the count's own pixel grid.
+    - **THE RUN'S HEAT** (`components/RunHeat`, screen-only — the share card draws none):
+      the ruler's own inks rising off the bar as an ordered dither on 2px cells, each column
+      as tall as that try's reconstruction got, its top ragged and its body grained by the
+      app's value noise, so the climb reads as heat behind the count. It rises off the
+      write head as the tally writes, surges on the landing, and at rest is ONE still frame
+      (no clock runs). The count and its unit stand in a CLEARING of it (`keepOut`): the
+      field thins to bare ground round each digit's ink box and round the unit, through the
+      same Bayer order.
+    - **BOARDS** (`ResultBoards`, `.result-boards`; the bullet *Solved-screen BOARDS*
+      below) — how the day compares, under SHARE, in ONE fixed box (354px). At 375×667 it
+      starts at y 552, the page below the fold.
     - **PAGE** (`.solved-page`) — the sentence's page, read TOP-DOWN the way a page is
       (user-decided 2026-09-08: "with the source above the text, we can start by a few
       sentences before the puzzle" — no auto-scroll onto the line): the **SOURCE credit**
@@ -2504,15 +2683,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
       under the credit rather than through it, and **a tap on it scrolls the stage back to
       the top** (`backToTop`, smooth unless reduced motion): the running head is the way
       back to the score and SHARE. On a phone that fits, nothing overflows and nothing
-      moves. **A FINISHED round's secrets open the words MODAL, found or not**: a capped
-      round's unfound holes keep a rank, but the wheel measures the board's own
+      moves. **A FINISHED round's secrets open the words MODAL, found or not**: an
+      unfinished round's (given up, or capped) unfound holes keep a rank, but the wheel measures the board's own
       `[data-hole-explore] .hole-word-wrap`, which the page's secrets do not wear, and a
       pick has nothing to swap into a page that already shows the answer — `wheelOpen` is
       false once `finished`. For the same reason the modal of a finished round masks
       nothing and names the secret, found or not (`Game` passes `buildHistory` its
       `over`).
     - **The SECRETS are BUTTONS inside the line** (`.solved-secret`: the solve blue, font
-      and line inherited, no box, `inline-block` for the pop), one per OCCURRENCE (a slug
+      and line inherited, no box, `inline-block` for the pop — a secret an unfinished round
+      only REVEALED wears the held chip instead, `.solved-secret.revealed`), one per OCCURRENCE (a slug
       appearing twice yields two, sharing one distinct-secret `number` — the ruler ticks'
       own — so they pop on one beat and open ONE history line), with the affixes in a
       nowrap group (Phrase's rule). The tap opens the words modal (a completed hole's own
@@ -2524,10 +2704,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
       them):
 
       ```
-         Les Misérables         the WORK — the credit's headline: the accent, `clamp(14px,
-                                1.9vw, 18px)`, the biggest type in the block
-         BOOK by Victor Hugo    what it IS and who it is by — muted, 10px, ONE phrase
+         Les Misérables         the WORK — the credit's headline: the accent, the pixel
+                                face's 16px, the biggest type in the block
+         BOOK by Victor Hugo    what it IS and who it is by — `--muted`, 8px, ONE phrase
       ```
+
+      Both are whole sizes of the pixel face, so its glyphs land on the screen's pixels.
 
       The earlier cuts stacked the fields as peers, which left the reader guessing which
       name was a person: a separator only ever says "these are two things", never which is
@@ -2559,14 +2741,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
       nothing) and a non-`http(s)` url (it becomes an href). Songs get NO lyrics (the
       #270 decision stands, reaffirmed 2026-09-08: a verse or chorus is still reproduced
       lyrics). Not here: excerpts on the archive calendar, the share page or the card.
-  - **The reveal reads dissolve → score → standing + SHARE → page since 2026-09-11 (see
+  - **The reveal reads dissolve → score → SHARE → boards → page since 2026-09-11 (see
     the card bullet above; the paragraph below describes the 2026-09-08 page-first order
-    it replaced, and its beats still hold in their new places).** The stage rises in;
+    it replaced, and its beats still hold in their new places).** The stage comes up;
     the CREDIT types (`SolvedCaption`, hidden with `visibility` until its beat so the text
     never moves when it speaks) while the SECRETS POP into the line one by one
     (`solved-word-pop`, `WORD_STEP_MS` 200 apart, `WORD_POP_MS` 300 — the 2026-08-14 pop,
     back in the gaps the words were taken from; only `opacity`/`transform` move, so the
-    line's layout is final from its first frame); then the SCORE block follows once the
+    line's layout is final from its first frame); then the SCORE's card follows once the
     citation has **FINISHED PRINTING** (user-decided 2026-08-15: numbers arriving over a
     half-typed credit read as two things happening at once, where waiting reads as one
     thing after another). That is the screen's ONE signal-driven beat — it rides
@@ -2575,21 +2757,46 @@ it to the local store — see `packages/backend/AGENTS.md`).
     must never be able to stall the solved sequence), derived from the typewriter's own
     numbers and counting **VISIBLE time only** (the interval is throttled on a hidden tab,
     so a wall-clock deadline could reveal the numbers over a half-printed credit on
-    return). A source-less puzzle's numbers follow the pops. **Inside the block the reveal
-    runs score → standing → SHARE (user-decided 2026-08-16):** the card lands reading 0
-    over the whole bar, every cell there and none coloured (user-decided 2026-09-11); then
-    the tally counts its `SCORE_COUNT_MS` WHILE the bar colours in try by try, each tick
-    standing as its try is reached — `RunRuler` fills off the count itself (`filled`), so
-    the number always says how many tries are coloured — one beat saying "here is your
-    run"; then the STANDING and SHARE land TOGETHER (`shareIn`), a breath after the count
-    LANDS (the eased, rounded number shows its final value well before the tween's own
-    end, so a timer off `SCORE_COUNT_MS` held a dead beat). SHARE also waiting out the
-    standing's own rung-in was "way too long" (user-reported 2026-09-11). The standing's
-    slot is always mounted; SHARE hides IN PLACE with its footprint kept, so neither
-    arrival moves anything.
-  - **Nothing that has landed ever moves:** the score block holds its footprint from frame
-    one and arrives at `opacity: 0`, the credit holds its box hidden, the secrets' boxes
-    are open before they pop. Rehydrated solves render `.settled` and replay nothing.
+    return). A source-less puzzle's numbers follow the pops. **Inside the card the reveal
+    runs draw → tally → SHARE (user-decided 2026-08-16):** the card DRAWS ITSELF in the
+    pixel art's hard steps (`DRAW_MS`, 720ms — the brackets travel out to the corners, the
+    edition types glyph by glyph, the ruler's empty track, the slate's 2px checker, is
+    wiped across, the count's reels blink in on 0), reading 0 over the whole bar, every cell
+    there and none coloured (user-decided 2026-09-11); then the tally RUNS — ONE fixed
+    length for every score, `COUNT_RUN_MS` (2000ms), always reading as a FAST counter
+    (user-decided 2026-10-03: "a FIXED TIME for the animation, but whenever the score is
+    100 or 3, to give the feel of a RAPID COUNTING") — WHILE the bar colours in try by try
+    behind a white write head, each tick stamping down as its try is reached, the heat
+    rising off it and the count charging; one beat saying "here is your run". ONE clock
+    (`SolvedScreen`'s `ms`, run up to `COUNT_END_MS`) drives the reels (`countReels`),
+    their stop shakes and bursts, and the ruler (`countFilled`): the reels START
+    `COUNT_START_STAGGER_MS` (60ms) apart left to right, spin at about `COUNT_SPIN_RATE`
+    (30) values a second, and STOP left to right `COUNT_STOP_GAP_MS` (350ms) apart, the
+    last on `COUNT_RUN_MS` (137 stops at 1300, 1650, 2000ms; 3 spins the whole run); each
+    brakes over `COUNT_BRAKE_MS` (560ms) down to `COUNT_LOCK_RATE` (4) values a second,
+    rolls one font pixel past its digit, holds `COUNT_SETTLE_MS` (50ms) and drops into
+    place — its stop — then shakes `COUNT_SHAKE` (a slam down, then side to side, one
+    font pixel a 50ms frame, 200ms) and never moves again. Each reel travels whole turns
+    and its digit, its speed trimmed from the spin rate to land exactly. The ruler's tries
+    fill at an even pace, the last written on the last stop. Every glyph rolls a whole
+    font pixel at a time; nothing is scaled. On the LANDING (the last stop) the heat
+    surges, the brackets LOCK ON (their arms reach out along the frame at full white and
+    draw back in whole steps — never in over what they hold) and the meter, full,
+    dissolves into its foil on the last burst's impact (reduced motion: no reels, shakes
+    or bursts, the foil at once) — the number itself does not move again: each digit's
+    stop was its landing. Then SHARE lands (`shareIn`), a breath after the run LANDS (its
+    clock reaching `COUNT_RUN_MS`) — on its own beat, never behind
+    another block's rung-in ("way too long", user-reported 2026-09-11). SHARE hides IN PLACE
+    with its footprint kept; the BOARDS land a breath after it (`boardsIn`,
+    `BOARDS_LEAD_MS`), their box held from frame one, and the page's beat follows them; no
+    arrival moves anything. Until its beat the box is INERT as well as invisible
+    (`visibility: hidden` off `.in`), so a skip-tap where it sits only skips.
+  - **Nothing that has landed ever moves:** the card holds its footprint from frame one —
+    every part laid out and drawn IN PLACE, the count's size decided on the mount, the
+    ruler's index lane held on every run — the boards' box is one fixed size whatever it
+    holds,
+    the credit holds its box hidden, the secrets' boxes are open before they pop.
+    Rehydrated solves render `.settled` and replay nothing.
   - **The score WATERMARK goes with the round** (`.play-finished`): it fades the moment the
     board is solved — the count's next appearance is the result's own headline — so it is
     already gone when the sentence dissolves.
@@ -2615,17 +2822,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
     page) produces no click and must not read as a skip.
     **It is armed for the reveal's own span only** (`revealPlaying`): from the hand-over
     (`showResults`, which is also when the drop starts) until the result reports its LAST
-    BEAT (`onRevealEnd`, on SHARE's arrival — `revealEnded`, reset with the round; PR-272
+    BEAT (`onRevealEnd`, once the secrets have popped — `revealEnded`, reset with the round; PR-272
     review: `animateResults` stays true after the reveal, so the listener never stood
     down), never while the streak
     celebration stands — that screen keeps its OWN fast-forward → dismiss handling, and
     the tap that dismisses it must not spend the reveal it is handing over to (its
     dismissal lands 200ms later, past its exit fade, so the arming cannot catch that same
     gesture either) — and never under the dev `?streak=N` preview, which holds the result
-    at frame zero behind a modal this round never sees. The standing slot snaps to
-    whatever is true right now: `ScoreTop` renders nothing while the population read is
-    out and appears settled when it lands, so the skip never blocks on, or fakes, the
-    network. Reduced motion is unchanged (already near-instant). **Skipping the SOLVING
+    at frame zero behind a modal this round never sees. The boards' box is INERT until it
+    has LANDED (`.solved-boards.armed`, its rung-in played — `BOARDS_ARRIVE_MS`): before
+    that the skip-tap that lands where it sits, unseen or at the arrival's first
+    transparent frames, only skips; once it shows, a tap on it skips AND opens that board,
+    like any other target. The boards' box snaps to whatever
+    is true right now: it stands empty while a read is out and fills in place when one
+    lands, so the skip never blocks on, or fakes, the network. Reduced motion is unchanged (already near-instant). **Skipping the SOLVING
     choreography is deliberately out of scope.**
   - **REMOVED with the 2026-08-14 redesign** (no-back-compat rule, all were left without a
     consumer): the caption's `masked` veil and its prompt-zone overlay (the caption mounts
@@ -2649,9 +2859,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
   trajectory squares (decided 2026-07-25):** one continuous bar per run
   (`components/RunRuler.tsx`), one cell per counted try — the RAW `replayRun` trajectory,
   no on-screen bucketing — with a white tick at each try that solved a secret and the
-  hole's sentence index (1..3) under it; one guess dropping several secrets stacks its
-  indices under ONE shared tick (`replayRun` in `web/src/game/share.ts` walks the run
-  once and returns the trajectory and the solve moments together).
+  hole's sentence index (1..3) under it; one guess dropping several secrets sets its
+  indices side by side under ONE shared tick, held inside the bar near either end
+  (`replayRun` in `web/src/game/share.ts` walks the run once and returns the trajectory
+  and the solve moments together). **On screen it is the card's ruler at the column's
+  size** (inside `SolvedCard`): a 16px bar (24 on a WIDE card) across the whole column,
+  4px white ticks overhanging it by 8px, 16px pixel indices in ONE lane held on every run
+  (so the card is one height whatever the round), the unwritten track the slate's 2px
+  checker — and its cells on WHOLE PIXELS, the bar's measured width split at the shared
+  `runEdges` boundaries the card's own bar uses (`shared/src/cardSvg.ts`), so a long run's
+  narrow cells stay hard cells and a tick stands on the edge the card puts it on. The
+  HEAT rising off it (`RunHeat`) is the screen's alone.
   **The cells use the app's ONE weird→calm gradient:** a try's reconstruction percentage
   reads linearly through `progressHeatColor`, from the red MISS/weird terminus through
   amber, coral and orchid to the cobalt solve/calm terminus. Rank surfaces share the same
@@ -2665,7 +2883,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is derived from the play log like everything else, and the archive/chooser read the
   SERVER's summary instead — #211.)* **The SHARE CARD draws the SAME
   ruler (decided 2026-07-25, superseding the bucketed-squares card):** the share token
-  was bumped to **v2** — and to **v6** by #214, which added the CAPPED flag and skipped the retired Word mode's ids 3–5 — carrying the RAW per-try
+  was bumped to **v2** — and to **v6** by #214, which added the CAPPED flag (a round that ended unsolved: given up, or capped) and skipped the retired Word mode's ids 3–5 — carrying the RAW per-try
   trajectory plus the solve moments instead of the `bucketMeans` squares, so `renderCardSvg` renders the on-screen ruler
   scaled to the OG image — same `progressHeatColor` cells, same ticks, same sentence
   indices. v1 tokens (bucketed squares) no longer decode: `decodeResult` rejects them
@@ -2719,8 +2937,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   under a shared tick), so the row can reach `MAX_ROW_CELLS + 2`; and since the final try
   always solves, a finished run ALWAYS ends on a keycap (a 3-try perfect game is exactly
   `1️⃣2️⃣3️⃣`, no color at all). `solvedAt` is optional — without it the row is the plain ramp.
-  The ruler has no delays of its own since 2026-09-11 — it fills off the tally's count
-  (`RunRuler`'s `filled`) — so under reduced motion, where the count lands at once, so
+  The ruler has no delays of its own — it fills on the tally's clock (`RunRuler`'s
+  `filled`, `countFilled`) — so under reduced motion, where the count lands at once, so
   does the bar. The keyboard's exit beat
   releases the RESULT through a signal the DOM has to produce (its own
   `animationend`) — so it carries a **deadline** (`KB_EXIT_FALLBACK_MS`
@@ -2732,8 +2950,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   streak solve the exit beat does NOT play hidden behind the celebration — the keyboard
   holds still under the modal and the drop starts at its dismissal (decided 2026-07-24).
   **The sentence must NOT move between the solved beats (decided 2026-07-24):** through
-  the streak and the drop the tray keeps the keyboard's fixed height and the retired prompt
-  keeps its layout, so `.play`'s centering never shifts the phrase — the sentence holds
+  the streak and the drop the tray keeps the keyboard's fixed height, the retired prompt
+  keeps its layout and the race line — an overlay on the tray's edge, out of the column's
+  flow — retires in place, so `.play`'s centering never shifts the phrase — the sentence holds
   perfectly still right up until it dissolves in place (the 2026-08-14 exit, restored
   2026-09-08). **Fresh-solve
   sequence (decided 2026-07-10):** the
@@ -2754,23 +2973,51 @@ it to the local store — see `packages/backend/AGENTS.md`).
   opts one back into the choreography so the post-streak sequence can be watched. **That
   replay is held at frame zero until the preview dismisses** (`SolvedScreen`'s `start`,
   restored 2026-08-16): App owns the preview dialog, so this round never sees it in
-  `showStreakDialog`, and without the gate the whole reveal — citation, tally, standing —
+  `showStreakDialog`, and without the gate the whole reveal — tally, SHARE, boards, citation —
   plays under a full-screen modal and dismissal lands on a finished frame, spending unseen
   the exact beats the harness exists to show. Player progression is separate:
   `StreakDialog` is a
   **borderless full-screen** native modal, opened only by a FRESH active-day
-  unsolved→solved transition. Its staged animation uses `@react-spring/web` (v9 for React
-  18): 200ms empty-screen fade → previous streak (derived without the solved day; 0 when
-  broken) 200ms fade → 500ms hold → changed digits wheel down/in from above, staggered
-  90ms right-to-left with a slower, subtly bouncing incoming spring → whole new number
-  foreground → flame → week with the solved day still empty → that tile lifts toward the
-  player, flips onto its completed face, and falls back to the screen plane → its impact
-  sends the prior completed-day scale pulse nearest-first across the week at 65ms intervals
-  → the ending hint. Unchanged streak digits never move, and the previous value stays
-  horizontally centered when the new streak adds a digit. It
+  unsolved→solved transition. **ITS PICTURE IS THE ORBIT, THE FLAME AND THE WEEK'S CHAIN
+  (user-decided 2026-10-02)**, in the link previews' language: bare `--bg`, the device
+  frame's corner brackets with the lockup top left and the solved day's edition top right,
+  and ONE subject drawn on a canvas in whole cells (`image-rendering: pixelated`; 3 CSS px a
+  cell on a phone, 4 once the short side reaches 600): the COUNT in the pixel face's own
+  glyphs (`digitMasks.ts`), sized for three digits so 99→100 never shrinks it, DAY STREAK
+  under it; the WEEK as a CHAIN of pixel links, Monday first, along the floor of the WEEK'S
+  ORBIT, the initials on one line beneath (two solved neighbours joined by an edge-on link
+  through both holes, a day to come the link's empty ghost, a day missed an iron link left
+  open, no link threading it) — where the chain lies is ONE function, `chainPlacement`
+  (`streak/geometry.ts`: the ARC, a smile stepping whole cells; a straight row is the
+  contained alternative); the CROWN's flame where the orbit turns at the top; and one cobalt
+  orbit per earlier week the run crossed (none for a run begun this week; four at most on a
+  phone, five wider), drifting. Inks: the cobalt accent, iron (`--rail`), white, DEEP
+  dither for light (never a CSS glow, nothing ever scales), and today's link in the FOIL
+  (`foil.ts`'s inks as raster cells) — the one shiny thing. **ONE CLOCK** (`streak/beats.ts`):
+  the raster (`streak/scene.ts`, ink indices deterministic in `t`), the foil, every DOM word
+  (`wordsAt`), the ULTRA star sheet and dismissal all read the milliseconds since the show
+  began, stepped every 50ms while it runs and 80ms (foil) / 160ms (raster) at rest — so the
+  fast-forward is a later `t`, a resize re-plans the same moment, and a backgrounded tab
+  steps nothing while a timer still arms dismissal on time. The sequence, about 3s to the
+  hint: the week's orbit and chain draw themselves → the previous count (derived without
+  the solved day; 0 when broken) dithers in → today's link pours in white-hot while the old
+  count heats → THE LANDING: the new count stamps as one frame of a white chip with the
+  number cut out, unwiped in eight steps, a three-frame jolt, one shock front to the corners
+  kicking the brackets, the past weeks' orbits bursting out, the crown catching → the chain
+  runs on into today (from yesterday's link when it was solved) → today's link is STRUCK
+  (the ultra star at its sheet's size on a phone) and cools into the foil cell by cell →
+  its light runs back down the chain, lighting each earlier link iron→cobalt nearest first,
+  and round the orbit to the crown, which flares → the ending hint. A FULL WEEK (today
+  Sunday, the six days before it solved) closes the orbit through the crown instead, the
+  ultra star strikes the crown and the foil runs along the whole chain from Monday — the
+  juice scales, the words do not. At rest a glint runs down the chain every 4.6s with a
+  faint pulse off the orbit. React renders the words where they stand and the show writes
+  only what moves, so a re-render never undoes a beat; the week reaches the show as a
+  primitive key. The digits' sheet decode has an 800ms deadline, after which the count is
+  set as type. It
   never opens for archive solves, the tutorial, a reload, or an
   already-solved revisit. **Dismissal (decided 2026-07-10, replacing the CONTINUE button):**
-  the ending beat is a pulsing arcade-style hint — pure "what to do", never a why (the
+  the ending beat is an arcade-style hint — pure "what to do", never a why (the
   game is done; CONTINUE/CLOSE would beg "continue to what?") — reading TAP ANYWHERE on
   coarse pointers / CLICK ANYWHERE otherwise (localized). **The celebration has NOTHING
   focusable (decided 2026-07-10):** the hint is a plain non-interactive element, not a
@@ -2778,14 +3025,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   nowhere to land (the modal traps focus; Tab is also swallowed). Once the hint appears the
   WHOLE modal dismisses — click/tap anywhere, ANY key (the "press any key" twin of
   tap-anywhere), or Escape. **A touch BEFORE that FAST-FORWARDS the celebration to its
-  final frame instantly** (user-decided 2026-08-14, replacing "every dismissal input is
-  ignored until the hint lands"): the same click/key/Escape aborts the staged sequence the
-  way the effect teardown does (pending waits forced, springs stopped — the async chain
-  falls through its own `stopped()` checks) and snaps every controller to the exact final
-  values the reduced-motion branch writes, hint armed included — so an early touch skips
-  the show and the touch after it leaves. The skip lives on a ref the effect reassigns
-  per run (it needs the run's own closure), and a touch always means something now, which
-  is why the sequence content no longer shields clicks with stopPropagation. Every
+  final frame instantly** (user-decided 2026-08-14): the same click/key/Escape moves the
+  clock to the settled frame — the resting picture, hint landed and dismissal armed — so an
+  early touch skips the show and the touch after it leaves. Reduced motion opens ON that
+  frame (+400ms, between two heartbeats), held still. The skip lives on a ref the show
+  effect reassigns per run (it needs the run's own closure), and a touch always means
+  something, so nothing in the sequence shields clicks with stopPropagation. Every
   dismissal then fades the whole modal opacity over
   200ms before unmounting. **The solved screen then focuses NOTHING** (decided 2026-07-27,
   dropping the focus this dismissal used to hand to the result action): the celebration has no
@@ -2799,103 +3044,91 @@ it to the local store — see `packages/backend/AGENTS.md`).
   opens the sequence immediately with `N` as the PREVIOUS value (`?streak=9` → `9→10`),
   suppresses the first-visit invitation, and synthesizes its visual week without mutating
   persisted rounds/solved days; production builds ignore the parameter.
-- **Solved-screen STANDING — DROPPED 2026-09-14 (user-decided: "just drop this part for
-  now at least"): neither result screen shows a standing; `GroupStanding`,
-  `useGroupStanding`, `tStanding`/`ordinal`, `parseStandings` and `.standing-line` are
-  deleted, the `.solved-score-line` slot stays empty, and the server's `standing: true`
-  read still answers with no consumer. The paragraph below is what it was.**
-- **Solved-screen STANDING — the GROUP line (#271, user-decided 2026-09-07; it REPLACED
-  the #170 TOP-% badge below; DROPPED 2026-09-14):** the result stack showed `2ND OF 7` beside the score (no
-  "today": the result screen is today's, and the word clipped at a 375px card's edge)
-  (`components/GroupStanding`, in the badge's exact `.standing-line` slot, a BUTTON onto the
-  group's board that sets `lastGroupId` first), read by `hooks/useGroupStanding` — ONE
-  request, `POST /board {token, standing: true}`, once the SERVER holds the round (the #203
-  gate below, unchanged) — and `pickStanding` chooses the group last opened when the player
-  stands in it, else the best (lowest rank, then the larger field). `of` is the members who
-  RECORDED a score today. Nothing is drawn for a player in no group, with no row (late,
-  capped), with no identity, or on a silent failure; the ordinal is `i18n.ordinal`
-  (`1ST`/`2ND`… and `1ER`/`2E`…), the line `tStanding`. **REMOVED** (no-back-compat):
-  `ScoreTop`, `game/scores.ts` (`scoreStanding`, the three gates, `formatTopPct`),
-  `hooks/useScoreHistogram`, `api.scoresUrl`/`parseScoreHistogram`, the `scoreTop` string —
-  the backend's `/scores` route still answers with no consumer (the user's call).
-  *(The paragraphs below describe the #170 badge this replaced; what survives of them is the
-  SERVER-holds-the-round gate, the one-conversation-per-round flight and the silent failure.)*
-  The result stack used to show where the finished score sits
-  in the day's anonymous population (#169), above its own metrics and SHARE — the
-  comparison story that replaced the removed LLM benchmark.
-  ONE rule (`hooks/useScoreHistogram`), and since #203 it is a plain READ: a round the
-  SERVER holds — its transient `solved` since #214 dropped the
-  persisted `recorded` mirror —
-  GETs the day's bands and locates itself in them by its own score. Both ends read the same
-  log — and the read NAMES the caller (`id`, the PUBLIC id, the /board rule) so the band it
-  gets back is THEIRS, not whoever else recorded the same number (corrected on review:
-  matching by value gave a round the IP cap refused an unrelated player's rank). A population holding no row for the caller
-  answers `bucket: null` and no standing is drawn; `bucketIndexOf` retired with the guess.
-  **What #203 RETIRED here** (no-back-compat): the score POST, the invisible Turnstile token
-  it carried (`turnstile.ts` serves ROUND START instead, and gained
-  `prefetchTurnstileTokens` — asked for while the puzzle loads, so the challenges are in hand before the player acts; a device with no identity
-  fills TWO slots (bootstrap then round creation), while an existing identity fills one, and
-  each prefetched token is consumed EXACTLY ONCE), the OAC-hashed `api.postScoreBody`, the
-  persisted `scoreRecorded` VALUE and the whole ask-until-recorded state machine of
-  2026-08-20, plus `game/scores.ts`'s `shouldSubmitScore`/`shouldAskPopulation` and the
-  `canSubmit` cap gate. The server derives the score from the log it already holds and
-  records the row itself, so there is nothing to claim, nothing to validate and nothing to
-  retry — and the #201 cap needs no client rule either, since a capped round's appends were
-  refused and its solve never reached the server.
-  **The gate is the SERVER's fact, not the local board's**: `solved` flips a beat before the
-  solving append lands, and reading the population then would find nothing and — with no
-  retry left — leave the standing blank for good. That fact is the SERVER state the
-  sync engine publishes off any round answer that says `solved`, and since #214 it is
-  TRANSIENT (store **v14** drops the sentence rounds map outright, taking the persisted
-  `recorded` with it, exactly as **v12** stripped `scoreRecorded` and **v13** dropped the
-  pre-revision rounds — the standing no-back-compat rule, the v7/v11 precedent). A reload
-  therefore learns the standing from the round it re-reads, which is also what makes it
-  correct on a device that never played the day.
-  The completion is keyed to the round that launched it (never whichever round navigation
-  made active later), and an in-flight read is shared across real component remounts so
-  leaving for the archive/tutorial and returning cannot mint a second request. EVERY
-  failure is silent by decision: the solved screen simply shows no standing, never an
-  error. **An ARCHIVE solve now shows none either** (user-decided 2026-08-23): a leaderboard
-  is a DAY's competition and a late finish is not competing in it, so the server records no
-  row and answers `bucket: null`, which this slot already draws as nothing. The read still
-  fires — the client does not second-guess which days have a population, and that guess is
-  exactly the kind of local rule the same decision removed from the streak. **What it shows is ONE BADGE — `TOP 25%` — BESIDE THE SCORE** (`components/ScoreTop`,
-  user-decided 2026-09-05: "the rank # line should be dropped, we could keep the TOP% only,
-  displayed next to the score, above the score bar" — superseding the `RANK #16 OF 100`
-  line of 2026-08-15, which itself replaced the brick histogram):
-
-  - **The rank is still COMPUTED, never drawn** (`game/scores.ts` `scoreStanding`,
-    contract-tested): competition ranking — everyone strictly ahead, plus one — (the bands BEFORE mine),
-    clamped to the population. It exists because the second gate below reads it.
-  - **TOP uses the MIDPOINT of the shared bucket** (user-decided 2026-08-16):
-    `(strictly ahead + bucket count / 2) / total`, the standard percentile-rank treatment
-    for ties; an empty bucket carries no badge, and an inconsistent stale snapshot is
-    capped at 100% and silenced by the median gate.
-  - **The badge is gated THREE times, and every gate only ever silences it**: above
-    `PERCENT_MIN_TOTAL` (10) recorded scores (a percentage of a handful is arithmetic, not
-    a standing); from `PERCENT_MIN_RANK` (10) on (a single-digit standing is too small a
-    field to blur into a percentage); at or above the MEDIAN — `PERCENT_MAX` (50) is the
-    largest number it prints (#176: TOP is a claim, and `TOP 99%` is that claim turned
-    against the player wearing it; the boundary is inclusive). The population floor is
-    implied by the other two and stays because it states its own claim.
-  - `formatTopPct` prints at most ONE decimal with the trailing zero stripped (`8.5`, `50`).
-  - **It is an OUTLINED stamp — a hairline `--line-strong` rule around `--fg` pixel type,
-    no ground** (user-decided 2026-08-17 over the filled chip), ABSOLUTELY placed off the
-    number's right edge (`.solved-score-line` is the box, `.score-top` the badge): the
-    number stays centred over its unit and the ruler, and the badge arriving — on the
-    `rung-in` gesture, at the reveal's standing beat — or never arriving (a silent failure,
-    a pending read, a gated standing) moves NOTHING. A rehydrated result renders `.settled`
-    and replays nothing. There is no RANKING... placeholder any more: a badge that may not
-    come is not announced. **REMOVED with the line** (no-back-compat): `ScoreRank`, the
-    `.score-slot`/`.score-rank-*` CSS and its three size tiers, `standingUnits` /
-    `TIGHT_STANDING_UNITS`, `LoadingWave`'s `letterClass`, and the `scoreRank` / `scoreOf`
-    / `scoreRanking` strings.
-  **REMOVED with it** (no-back-compat): the whole chart — `ScoreChart`, `chartField`,
-  `chartUnits`, `MAX_CHART_BANDS`, `MAX_COLUMN_UNITS`, the band-merging and its `+N`
-  legend, the `.score-field`/`.score-col`/`.score-brick`/`.score-stub`/`.score-plot`/
-  `.score-legend` CSS — and the N-adaptive copy line with it (`histogramCopy`,
-  `beatenCount`, `scoreFirst`/`scoreOther`/`scoreOthers`/`scoreBeat`): `TOP x%` and "you
-  beat x%" are the same claim inverted, and the rank says it once.
+- **Solved-screen BOARDS (user-decided 2026-10-02: "on the solved screen, it would be nice
+  to have a way to see how you scored compared to your group"; the GLOBAL tab the same day,
+  "when you have no group, we need something to show instead").** The product rule lives in
+  the root `AGENTS.md` (*The solved screen's BOARDS*); what is this package's:
+  - **Where and when**: `SolvedScreen` takes `boards` (`ResultBoardsData`) from `Game`, set
+    only on the ACTIVE day with an account (`racing`: never an archive day or a bonus), and
+    draws `components/ResultBoards` between THE CARD and the PAGE. It lands a breath after
+    SHARE (`boardsIn`, hung off `stageIn` like every beat, so the `?streak=N` hold and the
+    #179 skip both answer it): the shown tab's chip is drawn across, then the lines come in
+    one after another (`BOARDS_ARRIVE_MS`; reduced motion: no arrival at all); the page's
+    beat follows it.
+  - **ONE FIXED BOX** (`.result-boards`, 354px): the tabs' 44px row, room for
+    `RESULT_LINES_MAX` (6) 44px lines and two 20px rails (a gap's, and the `+N`'s) — whatever it holds, so it
+    stands EMPTY in its place while the first answers are out and a read landing or a swipe
+    moves nothing. It holds its room while the LIVE answer is `awaited` — the groups list
+    still unknown, or a group with somebody else and no answer that has seen the round's
+    end while a read is still to come (`useLiveBoardBusy`) — rather than draw GLOBAL
+    first and turn to a group a moment later; and it holds it until the GLOBAL read has
+    answered too (a failure counts), so every tab and the rank column they share are
+    decided together — a global rank of three digits landing late would widen that column
+    under a group's lines already shown. **Its fate is decided ONCE, by the page under it**: a block whose reads all
+    answer with no tab (every read failed, or empty) BEFORE the page's beat (`pageIn`)
+    leaves the stage's flow for good; once the page has landed — at once on a settled
+    frame — the box keeps its room for good, empty if it must, since removing it would
+    pull the visible page up.
+  - **The data is not fetched twice**: the groups are the LIVE read `Game` already keeps
+    for the race line (`state/liveBoard.ts`, asked once more when the solve or the give-up
+    is confirmed), drawn only off an answer read AFTER the round ended (`liveSawEnd`: the
+    server's row for the player is their recorded score, an ended round or a complete
+    one). The answer in hand when the solve lands was asked during play and lacks the score
+    it recorded. The answer that ENDS the round asks its read `now` — past the throttle's
+    window, behind a flight already out — so the newer one lands about a round-trip later,
+    long before the box does; the box waits for it rather than draw the player unranked and
+    re-rank them in place. With no
+    such answer and none coming (a failed read), the groups are left out. GLOBAL is
+    `hooks/useGlobalBoard` — ONE anonymous `GET /board…&id=` per mount, identity-fenced, a
+    failure silent and final for the mount.
+  - **The reading is `game/resultBoards.ts`** (pure, contract-tested): `groupResult` cuts
+    the merged live rows by the group's member list, ranks them with the shared
+    `rankBoard`, orders the playing members with the shared `orderPlaying` (generic over
+    dressed rows), and shows the whole day when it fits the box, else the podium (first
+    three ranked rows), the player's ±1 window with a gap between, up to two playing rows,
+    the room still left FILLED (`pickRanked`: the next rows down the ranking, then more
+    playing rows — a player on the podium never gets a half-empty box beside a `+N`) and
+    `more`; `globalResult` does the same over the global cut + own window (no `+N`: the cut
+    does not say how many there are); `resultTabs` orders the group last opened first, skips
+    a group where nobody but the player has a row, and ends on GLOBAL.
+  - **The player's own row is drawn from their own result** (`tries`, the trajectory's last
+    %, `ended`): ranked only when the live rows hold their recorded score; else an unranked
+    playing row — `∞` among the ended for a round that ended unsolved, 100% for a solve with
+    no recorded score — replacing the row the read carries for them. Their face is
+    `useOwnFace`'s.
+  - **The block wears the card's ground** (user-decided 2026-10-02, with the card): no
+    panel, no row boxes — lines of type set on the column.
+    **THE TABS are the groups' NAMES in a row, then GLOBAL** (the board screen's own
+    `boardGlobal`: one name for the global board across the app): `--ui` 14px bold
+    tracked capitals, `--muted`, the one shown wearing the WHITE TITLE CHIP (the cards' one
+    emphasis gesture), each a 44px target. The row scrolls on its own axis where it runs
+    past the column, snapping to names, and THINS OUT through an ordered-dither edge there
+    (a CSS mask of Bayer tiles, never a guillotined name); turning to a tab scrolls its
+    name whole into view. The tab the player turned to is kept by KEY, so a tab arriving
+    later never moves them off it. **At the row's RIGHT EDGE, always in view, the `+`**: an
+    EMPTY GROUP'S SLOT (a 32×24 chip drawn as a dashed outline of 2px cells, the plus in
+    it), the board screen's own NEW GROUP — it asks for it (`state/groups.ts`
+    `askGroupCreate`, one-shot) and goes to the board, whose mount takes the ask and opens
+    its create screen. Pinned to the edge rather than after the last name, so it stays in
+    view however far the names run. A sideways SWIPE on the rows turns the tab too
+    (`touch-action: pan-y`; 40px, mostly sideways) and opens nothing.
+    **THE LINES** are `components/BoardRows` (`BoardRowItem`, `PlayingRowItem`), the
+    leaderboard's own, dressed here (`.result-board .board-row`, 44px): the rank in the
+    pixel face's 16px `--muted` — printed bare, the board screen dressing it `#N` — or the
+    CROWN, in ONE rank column every tab shares (`--rank-w`, the widest rank any tab prints,
+    so turning a tab moves no mark); the mark SQUARE at 3px a cell (30px, `sharp`); the
+    name (`--ui` 15px); the number in the pixel face at the far edge, with a gutter at its
+    right that a playing member's % hangs in as the tries' EXPONENT in the heat's ink, so
+    the numbers stay aligned. A member still playing prints their tries `--muted`; a round
+    ENDED unsolved `∞`, its name muted, no %. **The player's own line is FRAMED** by the
+    card's corner brackets, small (8px arms), its rank in the accent, its name bold. Rows
+    left out are a stippled slate RAIL; the `+N` sits in the rank column at 8px with the
+    rail running on beside it. The box is ONE column held to its width
+    (`grid-template-columns: minmax(0, 1fr)`): an `auto` column grows to its content's
+    min-content and the row of names pushes the lines off the screen's edge.
+  - **A tap** on the lines, or on the shown tab's chip (the keyboard's way), opens that
+    board: a group sets `lastGroupId` and the board's `group` tab, GLOBAL its `global`
+    tab, then `pathForBoard`; a tap on another name turns to it. No analytics event.
 - **The game's pre-round GATE is an INVITATION into the tutorial (2026-08-11's rules gate;
   DEPLOY duty added by the #216 trigger rework, user-decided 2026-08-24; remade by #269,
   user-decided 2026-09-16).** It states NO rules: the lesson teaches by playing, and a player
@@ -3050,28 +3283,37 @@ it to the local store — see `packages/backend/AGENTS.md`).
     SHOWN for the first time. **THE SECRET IS THE CLOSE SYNONYM OF THE OBVIOUS WORD** (user-
     decided 2026-09-16 after solving it in one try: "if you type the word 0 it should become
     the word -1"): the sentence begs for FREEDOM / CHEMIN, and that word is the secret's
-    rank-1 neighbour (`pair.alt`) — typing it earns a 1 and fills the chip, never the solve;
-    both words read in the sentence ("both words relevant, e.g. mer/océan"). **AND THE TWO
-    SWAP ROLES if the secret is typed first, before the hole is active** (user-decided
-    2026-09-16 after typing « sentier » in one try): the secret reads 1 and `alt` becomes the
-    secret the bot lands. ONE map serves both readings — swapped, every rank-0 entry reads 1
-    and every rank-1 entry reads 0 (`ranks` view in `LessonBoard`), and the board, the
-    meters, the wheel and every later guess replay against it. Once the hole is active there
-    is no swap: the goal is only that the activation is seen before the solve. `played` is the
+    rank-1 neighbour (`pair.alt`) — typing it fills the chip, never the solve; both words
+    read in the sentence ("both words relevant, e.g. mer/océan"). **THE LESSON READS THE
+    MAP THROUGH ONE VIEW** (`meterView`, `tutorial/script.ts`; user-decided 2026-10-02 with
+    the one-closer offer): `alt` reads 2 and the map's rank-2 word (UNALIENABLE / VALLON)
+    reads 1, so once FREEDOM² fills the meter one word is left closer than it for the reveal
+    to hand over. **AND A WORD READ CLOSER THAN `alt`, typed before the hole is active,
+    TRADES PLACES WITH IT** (`MeterTrade` / `tradeFor`): on top of that view it reads 2 and
+    fills the meter. The SECRET traded (user-decided 2026-09-16 after typing « sentier » in
+    one try), `alt` becomes the secret the player then finds; the word read 1 traded, `alt`
+    reads 1 and is the word the reveal hands over (the same trick, so the one-closer offer
+    never meets a best of 1). A full meter therefore always holds a best of 2 and a word to
+    reveal. ONE map serves every reading (`ranks` in `LessonBoard`), and the board, the
+    meters, the wheel and every later guess replay against it. Once the hole is active
+    there is no trade: the goal is only that the activation, with a word to reveal, is
+    seen before the solve. `played` is the
     bot's log — FEW tries, five, the best one an EASY SYNONYM of the obvious word (en: cat,
-    independence, equality, happiness, justice, dignity — on the fastText map (#317) the
-    synonyms sit past rank 40 and five of them cannot reach the ~72 FREEDOM needs to fill the
-    meter alone, so en's best try is the easy word EQUALITY, an exception for the user to
+    independence, equality, autonomy, justice, dignity — on the fastText map (#317) the
+    synonyms sit past rank 40 and five of them cannot reach the ~75 FREEDOM² needs to fill
+    the meter alone, so en's best try is the easy word EQUALITY, an exception for the user to
     re-judge; fr: chat, parcours, randonneur, détour,
-    hameau, tunnel — masculine so « le » holds; « belvédère » "was way too hard: the goal is
+    hameau, ravin — masculine so « le » holds; « belvédère » "was way too hard: the goal is
     easy guesses that teach the other mechanics", user-decided 2026-09-16) — replayed onto the board, the meters and the tries wheel exactly as a
     round's log would be, chosen so the open word's meter stands at ABOUT THREE QUARTERS
-    (~73 en / ~74 fr, the day's own `replayCharge` — no lesson boost; "almost full, we don't
+    (~75 en / ~76 fr, the day's own `replayCharge` — no lesson boost; "almost full, we don't
     see it getting filled") with a best try that is no giveaway AND LONG ENOUGH for the fill
     to read on its chip (`equality^11` / `parcours^8` — `col` "was too short to understand
     the notion of progression", 2026-09-16;
-    the test wants rank ≥ 5 and ≥ 6 letters, 65–80, ≤ 6 tries, `alt` at rank 1, untried, and
-    filling it alone). THE WATERMARK COUNTS THE WHOLE LOG, the bot's tries included.
+    the test wants rank ≥ 5 and ≥ 6 letters, 65–80, ≤ 6 tries, `alt` at rank 1 in the map
+    and 2 in the view, untried, filling it alone, the full meter offering the word read 1,
+    and no first word solving or filling the meter with nothing to reveal). THE WATERMARK
+    COUNTS THE WHOLE LOG, the bot's tries included.
     THE KEYBOARD IS HELD BACK UNTIL THE TAP (user-decided 2026-09-16): the stage opens with
     the prompt retired and the tray empty, so the bot's tries are the first thing to look
     at; the keys arrive with the line that hands the turn over — which types only once the
@@ -3082,13 +3324,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     click twin) → tapped: "The 1000 closest words to the secret fill its meter. Once full,
     you unlock clues." (fr « on débloque des indices », never « on gagne un indice ») → a
     guess that does not fill: `tutNear` → the obvious guess FILLS IT — no progress needed —
-    and the hole ACTIVATES: "The meter is full! Click freedom¹ and reveal a word."
+    and the hole ACTIVATES: "The meter is full! Click freedom² and reveal a word."
     (`tutActivatedTap`/`Click`, 2026-09-22; the tap teaches the wheel a second time)
     (user-decided 2026-09-30, cutting the long lines: « J'ai déjà avancé sur cette phrase.
     Clique sur parcours pour voir mes essais. », « Jauge pleine ! Touche {word}, et révèle
-    un mot. ») → a hint REVEALED by an empty ENTER on the ghost: "unalienable² is revealed, for one try. Now find the secret word."
-    (`tutRevealed`, off the event's `revealed` flag) → a FAILED TRY typed after it earns the HINT
-    (`hints[]`, or `pair.hint` once swapped), NEVER THE WORD (user-decided 2026-09-16,
+    un mot. ») → the one word closer, picked in the wheel and REVEALED from the tray (the
+    game's REVEAL, Enter its twin): "unalienable¹ is revealed, for one try. Now find the
+    secret word."
+    (`tutRevealed`, off the event's `revealed` flag; it types once the prompt's DECODE has
+    ended — while the prompt uncyphers the word the coach says nothing new, the last line
+    holding, so the line never names the word under the marks) → a FAILED TRY typed after it earns the HINT
+    (`hints[]`, or `pair.hint` once the secret is traded), NEVER THE WORD (user-decided 2026-09-16,
     retiring the bot's own closing guess) → found: "You found it! You are ready for the real
     game." → PLAY. `STUCK` has no `meter` row
     (the stage is its own script). Not taught: the exact rate.
@@ -3280,7 +3526,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the archive ("moving the header icons around on a click is not a great solution").
     A lit key still answers a press (it goes nowhere), so nothing on the row is dead.
     **The one lit key that goes somewhere is the CALENDAR over an archive PLAY** (a past
-    day, or tomorrow's; user-decided 2026-09-11): the day is the archive's, which is why
+    day; user-decided 2026-09-11): the day is the archive's, which is why
     the key is lit, but the calendar is not on screen, and getting back to it took another
     key and then the calendar. It leads to the calendar (`HeaderKeys`' `archivePlay`, set
     by App); on the calendar itself it goes nowhere.
@@ -3413,7 +3659,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (ARCHIVE / TUTORIAL, plus any inline stat like the tutorial's counter), or a loaded game's
   own left chip: **the sentence game's is the DAY'S DATE** (`components/PuzzleDate`,
   user-decided 2026-08-16, replacing the reconstruction-% counter that held this corner —
-  the percentage now speaks only through the run ruler's colours at the end of the round).
+  mid-round, the player's own percentage prints only in the RACE LINE, beside their
+  groups' players, and otherwise speaks through the run ruler's colours at the end).
   The date is `dateForDayNumber(dayNumber)`, the same
   `2026-08-16` spelling the card, the OG title, the shared text and the archive URL use, so
   an archived day reads as the day it is from the moment it loads. CHROME, not a stat:
@@ -3441,7 +3688,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   CSS mask, the same technique the `.cal-ripple` sheet uses), so it takes
   the group's muted → `--fg` hover with the inline SVGs instead of being the one control that
   cannot. The **streak stat is NOT in the
-  header** (moved back to the archive page 2026-07-21). **Any full-screen surface follows this
+  header** (it is on `/account`'s stats row). **Any full-screen surface follows this
   same row** rather than inventing chrome, and since 2026-07-27 there is ONE component for it:
   **`components/ModalHeader.tsx`** — the app's row (`.topbar-inner` / `.topbar-left` /
   `.topbar-title` / `.topbar-right` / `.home-btn`) with a title and one close chip, minus the
@@ -3650,7 +3897,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     keyboard**: on mount, and again whenever `active` flips back true (a modal closing hands
     focus to the control that opened it — the hole, never the prompt). Each screen also
     refocuses it from its own `submit`, which moves anything only when the on-screen ENTER
-    was reached by Tab.
+    (or the reveal tray's REVEAL) was reached by Tab; BACK refocuses it as it brings the
+    keyboard back. The reveal tray's buttons, like the keys, take no focus from a press.
   - **It TAKES THE FOCUS BACK when a click lands on nothing** (`relatedTarget: null`, a turn
     later, and only if `document.activeElement` is `<body>`): the on-screen keys deliberately
     take no focus, so one stray click on the sentence's margin would otherwise leave physical
@@ -3725,7 +3973,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (low-cardinality props only — **NEVER** a typed word/guess): `solve {lang, tries, day,
   archive}` — the play-solve transition in `Game.tsx` (NOT rehydration; `archive` is
   `'yes'` when replaying a past archive day (#55), `'no'` for the live daily puzzle);
-  `share {method:'native'|'clipboard'}` — `SolvedScreen` success paths; `tutorial
+  `share {method:'native'|'clipboard'}` — `SolvedScreen` success paths of a SOLVED day
+  (a bonus, and a round that ended unsolved — given up or capped — share uncounted); `tutorial
   {action:'start'|'finish'|'skip'}` — invite accept / the ending's PLAY / skip
   (fast-forward or invite SKIP). Plus automatic pageviews.
 - **Link previews: a page of its own for each tutorial page.** A chat app reads a link's

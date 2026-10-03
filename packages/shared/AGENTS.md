@@ -11,8 +11,8 @@
   shared/                     cross-cutting TS consumed by web + backend (pkg @whippin/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
-    src/scores.ts             the #201 round bounds, #273's EARLY_GUESS_CAP, the #271 group caps,
-                              VIEWER_IP_HEADER (infra+backend)
+    src/scores.ts             the #201 round bounds, `roundEnded` (given up or capped),
+                              the #271 group caps, VIEWER_IP_HEADER (infra+backend)
     src/scoring.ts            what a guess LOG means (#203): s()/holeProgress, rankCount,
                               guessKey, countTries — the readings BOTH ends now perform
     src/identity.ts           #216's device-token shape + server-assigned account/device id minting
@@ -20,7 +20,8 @@
                               backend stores), the 6-digit code's shape/TTL/attempts, the send bounds
     src/leaderboard.ts        the #190 board rules: competition tie ranks, the plain top-50 cut,
                               own-row window, #271's period rule (rankPeriod) and standing
-                              (standingIn) + the Board API types (backend cuts, web renders)
+                              (standingIn) + the Board API types (backend cuts, web renders),
+                              and the LIVE read's (`LiveBoard`: all my groups, merged, unranked)
     src/groups.ts             #271: the group id's shape, the GroupSummary/PublicGroup wire
                               types, the three board periods and periodRange (week/month days)
     src/history.ts            the #211 PRIVATE player history: the month/day summary types,
@@ -38,7 +39,8 @@
                               set IS (size, longest key, corpus build). Never hand-edited.
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
     src/glyphs.ts             pixel-art glyphs the game DRAWS rather than sets: the #214 `∞`
-                              path + view box, shared by the OG card and the web result; the
+                              path + view box, shared by the OG card, the web result and a
+                              group board's ended row; the
                               app's mark, traced for the OG cards
     src/bayer.ts              the ordered dither's Bayer 8×8 matrix (the meter, the level art,
                               the OG cards' rings)
@@ -47,7 +49,8 @@
     src/base64url.ts          INTERNAL (not re-exported): the base64url alphabet + encoder the
                               share-token and avatar codecs share
     src/cardSvg.ts            the OG cards' SVG: a result from a decoded token, and the #271 group card (name + member marks + app name),
-                              in the site previews' frame (brackets + lockup), set in the pixel face and Azeret Mono Bold
+                              in the site previews' frame (brackets + lockup), set in the pixel face and Azeret Mono Bold;
+                              `runEdges`, the run's whole-pixel cell edges, which the web's result ruler splits its bar at too
     src/index.ts              re-exports
 ```
 
@@ -166,11 +169,10 @@
   than from its send (`web/state/roundSync.ts` `writeDelayMs`), which puts the server's
   round trip inside the interval. Pacing from the send instant leaves zero margin and
   refuses every request that travels faster than its predecessor — the same permanent-429
-  outcome this one spelling exists to prevent.
-  **Since #273 it also owns `EARLY_GUESS_CAP` (3)** — how many guesses tomorrow's sentence
-  takes tonight before the first progress: ONE spelling for the server's append condition
-  (`early_locked`) and the web's input lock, so the screen never locks on a guess the server
-  would have stored, nor sends one it refuses (root `AGENTS.md`, Sentence round).
+  outcome this one spelling exists to prevent. It also owns `roundEnded`, the ONE reading of
+  "the round ENDED UNSOLVED" (given up, or the raw log at `ROUND_GUESS_CAP`; `solved` wins)
+  — the web's round screen and the backend's group day board (`over`) both read it, so the
+  two can never disagree about whether a member is still playing (`scores.test.ts`).
 - **`src/heat.ts` is the app's ONE gradient, and it runs WEIRD → CALM (user-decided
   2026-08-17, the calm redesign — superseding the FLIR iron bow of the same day and the
   crimson→cyan heat stops before it).** Solving is RESTORING PEACE to a weird sentence:
@@ -209,10 +211,15 @@
   rank 0 is a GROUP, that is exactly what a correction moves.
 - `src/leaderboard.ts` is the ONE definition of the #190 board's ranking rules —
   competition-style tie ranks, the plain top-50 cut (nothing folded, user-decided
-  2026-08-20), the own-row ±2 window — and, since #271, of the PERIOD rule (`rankPeriod`:
+  2026-08-20), the own-row ±2 window, the in-progress ORDER (`orderPlaying`: live rows before
+  the ENDED ones — `over`, given up or capped — then progress down, tries up; generic, so a
+  dressed row comes back dressed) — and, since
+  #271, of the PERIOD rule (`rankPeriod`:
   podium points 3/2/1 per day by competition rank, then solved days, then the total, fewer
   tries first) and the STANDING (`standingIn`) — plus the `Board`/`BoardRow`/
-  `PeriodBoard` API types. The BACKEND applies them before attaching profiles and the WEB
+  `PeriodBoard` API types and the live read's `LiveBoard`/`LiveRow`/`LiveGroup` (its rows
+  carry NO rank: the union of several groups has none, and the web ranks each group with
+  `rankBoard`). The BACKEND applies them before attaching profiles and the WEB
   renders what they produced; a fork would let the ranks a board shows drift from the
   rows the server selected. Contract-tested (`leaderboard.test.ts`); the product rules
   live in the root `AGENTS.md` (Leaderboard reads). `src/groups.ts` carries the id shape,
@@ -230,16 +237,17 @@
 - `src/shareCard.ts` is the share-token codec, running byte-identically in the
   browser and the Lambda; the token's product behavior and evolution rules are in the
   solved-result bullet of `packages/web/AGENTS.md`. Its leading VERSION field is a
-  **format id**: **v6 = the result** (the #214 CAPPED flag, then the ruler trajectory and —
-  on an uncapped run only — its solve ticks; v2, the same payload without the flag, is
+  **format id**: **v6 = the result** (the #214 CAPPED flag — the round ENDED UNSOLVED, given
+  up or at the cap, one bit for both — then the ruler trajectory and — on an uncapped run
+  only — its solve ticks; v2, the same payload without the flag, is
   retired). v3–v5 were the retired Word mode's (2026-09-16) and decode as nothing; a future
   bump must SKIP them. **`decodeLegacyShareTarget` recognizes a NAMED LIST of retired
   versions (1 and 2), never a range** — #214 bumped the format PAST Word mode's ids, and a
   range test would hand a retired Word token the redirect the codec exists to refuse. A
   malformed token stays a flat 404.
 - `src/glyphs.ts` is the ONE `∞` the app draws (#214): Press Start 2P has no such glyph and
-  the OG rasterizer runs with `loadSystemFonts: false`, so the capped round's headline ships
-  as pixel-art PATH DATA — one path, one view box, and one `INFINITY_EM_HEIGHT` both
+  the OG rasterizer runs with `loadSystemFonts: false`, so the headline of a round that ended
+  unsolved (given up, or capped) ships as pixel-art PATH DATA — one path, one view box, and one `INFINITY_EM_HEIGHT` both
   surfaces size from, since the card lays its headline out arithmetically (the face advances
   1em per glyph) and the web sizes an inline SVG in `em`. The plain-text share line and the
   preview page's title use the literal character instead: no font is involved there.

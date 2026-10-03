@@ -59,6 +59,7 @@ vi.mock('../identity', () => ({
 vi.mock('../state/groups', () => ({
   adoptGroups: vi.fn(),
   loadGroups: vi.fn(),
+  takeGroupCreate: () => false,
   useGroups: () => ({ phase: 'ready', groups: world.groups }),
 }));
 vi.mock('../state/gameStore', () => {
