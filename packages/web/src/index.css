@@ -3026,17 +3026,10 @@ input {
   gap: 6px;
   height: calc(44px + 6px + 6 * 44px + 2 * 20px);
 }
-/* The head: the row of names (its own scroller) and the PLUS at its right edge, always in
-   view (and never moved by a tab arriving after the others). */
-.result-boards-head {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  padding: 0 4px;
-}
+/* The row of names: its own scroller, on its own axis. */
 .result-boards-tabs {
-  flex: 0 1 auto;
   min-width: 0;
+  margin: 0 4px;
   display: flex;
   align-items: center;
   overflow-x: auto;
@@ -3098,43 +3091,6 @@ input {
 }
 .result-boards-tab:not(.on):hover .result-boards-chip {
   color: var(--fg);
-}
-/* The PLUS: an EMPTY GROUP'S SLOT — a chip of the tabs' height drawn as a dashed outline of
-   whole 2px cells (the frame's ink), the plus in it — the board screen's NEW GROUP, a 44px
-   target. */
-.result-boards-add {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 44px;
-  margin: 0 0 0 auto;
-  padding: 0 4px 0 8px;
-  border: 0;
-  background: none;
-  color: var(--fg);
-  cursor: pointer;
-}
-.result-boards-add-chip {
-  --dash: rgba(255, 255, 255, 0.38);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 24px;
-  background:
-    repeating-linear-gradient(90deg, var(--dash) 0 4px, transparent 4px 8px) top / 100% 2px no-repeat,
-    repeating-linear-gradient(90deg, var(--dash) 0 4px, transparent 4px 8px) bottom / 100% 2px no-repeat,
-    repeating-linear-gradient(180deg, var(--dash) 0 4px, transparent 4px 8px) left / 2px 100% no-repeat,
-    repeating-linear-gradient(180deg, var(--dash) 0 4px, transparent 4px 8px) right / 2px 100% no-repeat;
-}
-.result-boards-add:hover .result-boards-add-chip {
-  --dash: var(--fg);
-}
-.result-boards-add .ui-icon {
-  display: block;
-  width: 16px;
-  height: 16px;
 }
 .result-board {
   display: flex;

@@ -11,9 +11,7 @@
 // THE TABS are the groups' NAMES in a row, the one shown wearing the white title chip — the
 // share and group cards' one emphasis gesture — then GLOBAL; the row scrolls on its own axis
 // where it runs past the column and thins out through an ordered dither there (the house's
-// texture), never a guillotined name, and the name turned to scrolls whole into view. At its
-// right edge, always in view, the PLUS: an empty group's slot (a dashed chip), the board
-// screen's own NEW GROUP — where the player is looking at what a group gives them.
+// texture), never a guillotined name, and the name turned to scrolls whole into view.
 //
 // The data is not this screen's to fetch twice: the groups come off the LIVE read the play
 // screen already keeps (`state/liveBoard.ts`), passed in; GLOBAL is one anonymous read of the
@@ -40,7 +38,6 @@ import type { CSSProperties } from 'react';
 import { BAYER_8, type LiveGroup, type LiveBoard } from '@whippin/shared';
 import { BoardRowItem, PlayingRowItem } from './BoardRows';
 import { shownFace, useOwnFace } from './AccountFace';
-import PlusIcon from '../assets/icons/plus.svg?react';
 import { resultTabs, type ResultTab } from '../game/resultBoards';
 import useGlobalBoard from '../hooks/useGlobalBoard';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -49,7 +46,6 @@ import { t } from '../i18n';
 import { pathForBoard } from '../langs';
 import { navigate } from '../routing';
 import { useGameStore } from '../state/gameStore';
-import { askGroupCreate } from '../state/groups';
 
 // A mark at an INTEGER cell scale: 10 cells of 3px.
 const MARK = 30;
@@ -206,11 +202,6 @@ export default function ResultBoards({
     }
     navigate(pathForBoard(lang));
   };
-  const newGroup = () => {
-    askGroupCreate();
-    setBoardTab('group');
-    navigate(pathForBoard(lang));
-  };
   const rankWidth = Math.max(2, ...tabs.map(rankDigits)) * RANK_DIGIT_PX;
 
   return (
@@ -221,30 +212,23 @@ export default function ResultBoards({
     >
       {shown && (
         <>
-          <div className="result-boards-head">
-            <div
-              ref={tabsRef}
-              className={`result-boards-tabs${edges.left ? ' fade-l' : ''}${edges.right ? ' fade-r' : ''}`}
-              style={FADES}
-              onScroll={onTabsScroll}
-            >
-              {tabs.map((tab, i) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  className={`result-boards-tab${i === index ? ' on' : ''}`}
-                  aria-current={i === index || undefined}
-                  onClick={() => (i === index ? open(tab.group) : turn(i))}
-                >
-                  <span className="result-boards-chip">{tab.group ? tab.group.name : t(lang, 'boardGlobal')}</span>
-                </button>
-              ))}
-            </div>
-            <button type="button" className="result-boards-add" aria-label={t(lang, 'groupNew')} onClick={newGroup}>
-              <span className="result-boards-add-chip">
-                <PlusIcon className="ui-icon" aria-hidden />
-              </span>
-            </button>
+          <div
+            ref={tabsRef}
+            className={`result-boards-tabs${edges.left ? ' fade-l' : ''}${edges.right ? ' fade-r' : ''}`}
+            style={FADES}
+            onScroll={onTabsScroll}
+          >
+            {tabs.map((tab, i) => (
+              <button
+                key={tab.key}
+                type="button"
+                className={`result-boards-tab${i === index ? ' on' : ''}`}
+                aria-current={i === index || undefined}
+                onClick={() => (i === index ? open(tab.group) : turn(i))}
+              >
+                <span className="result-boards-chip">{tab.group ? tab.group.name : t(lang, 'boardGlobal')}</span>
+              </button>
+            ))}
           </div>
           {/* The rows are a picture of the board, and the whole of it is the tap onto it; the
               keyboard's way there is the shown tab's name above. */}

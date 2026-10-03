@@ -64,22 +64,21 @@
                               group-departure drain behind it (#271)
       state/groups.ts         the player's GROUPS (#271): the ONE transient cache every group
                               surface reads (tabs, marks, the landing's "already in", the race
-                              line's "is there anybody to race"), and NEW GROUP asked from
-                              another screen (`askGroupCreate`, the result's `+`)
+                              line's "is there anybody to race")
       state/liveBoard.ts      the LIVE read (`POST /board {token, live: true}`): all my groups
                               merged — the ONE module asking it, throttled (`LIVE_REFRESH_MS`;
                               the read asked as the round ends goes at once), for the race line
                               and the solved screen's group boards
       game/race.ts            the race line's ORDER (pure): finished, then playing by the shared
-                              `orderPlaying` with my own entry off the screen; the ahead/me/behind
-                              window; `shownPercent` (floored)
+                              `orderPlaying` with my own entry off the screen; the window, left
+                              to right from below to above (behind/me/ahead); `shownPercent`
+                              (floored)
       components/RaceLine.tsx  the race line: marks + % + tries on the tray's top edge, a tap onto
                               the board
       game/resultBoards.ts    the solved screen's BOARDS (pure): one group's day off the live read,
                               GLOBAL off the global board, the tabs' order, the box's cap
-      components/ResultBoards.tsx  those boards under SHARE: a row of tab names (GLOBAL last) and
-                              the dashed `+` (the board's NEW GROUP) over a fixed box of lines,
-                              a tap onto the board
+      components/ResultBoards.tsx  those boards under SHARE: a row of tab names (GLOBAL last) over
+                              a fixed box of lines, a tap onto the board
       components/SolvedCard.tsx  the RESULT as the share card stood up: brackets, the edition
                               row, the COUNT drawn as a shaped meter (charge, a burst per
                               stopped digit, dithered foil), the run ruler with its heat;
@@ -498,8 +497,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   tray). Who sees it: TODAY's sentence (never an archive day, never a bonus — a group's
   competition is the day's), with an account, in a group that holds somebody else (the
   `state/groups.ts` list answers it; the game screen loads it), and somebody else has a row
-  today. What it shows: the one just ahead, ME, the one just behind — two after me when I
-  lead, two before when I trail (`game/race.ts`) — over ALL my groups merged (the root
+  today. What it shows, READ LEFT TO RIGHT FROM BELOW TO ABOVE: the one just behind, ME, the
+  one just ahead — the two behind on my left when I lead, the two ahead on my right when I
+  trail (`game/race.ts`'s `window`, in the line's order) — over ALL my groups merged (the root
   `AGENTS.md` live read): each other member's MARK (`Avatar`, 20px, sharp — 2px cells), then
   a member still playing prints their % in the heat ramp's ink (the board's playing-row
   dress) and their tries muted; a FINISHED member wears the pixel check
@@ -3105,12 +3105,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     past the column, snapping to names, and THINS OUT through an ordered-dither edge there
     (a CSS mask of Bayer tiles, never a guillotined name); turning to a tab scrolls its
     name whole into view. The tab the player turned to is kept by KEY, so a tab arriving
-    later never moves them off it. **At the row's RIGHT EDGE, always in view, the `+`**: an
-    EMPTY GROUP'S SLOT (a 32×24 chip drawn as a dashed outline of 2px cells, the plus in
-    it), the board screen's own NEW GROUP — it asks for it (`state/groups.ts`
-    `askGroupCreate`, one-shot) and goes to the board, whose mount takes the ask and opens
-    its create screen. Pinned to the edge rather than after the last name, so it stays in
-    view however far the names run. A sideways SWIPE on the rows turns the tab too
+    later never moves them off it. The row holds the tabs alone: no group is created from
+    the result — NEW GROUP is the board screen's. A sideways SWIPE on the rows turns the tab too
     (`touch-action: pan-y`; 40px, mostly sideways) and opens nothing.
     **THE LINES** are `components/BoardRows` (`BoardRowItem`, `PlayingRowItem`), the
     leaderboard's own, dressed here (`.result-board .board-row`, 44px): the rank in the
