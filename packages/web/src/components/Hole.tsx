@@ -204,13 +204,12 @@ export default function Hole({
   const meterDelayRef = useRef(meterDelayMs);
   meterDelayRef.current = meterDelayMs;
   // THE BURST WAITS FOR THE FILL: it strikes when the canvas reports the chip inked SOLID
-  // (`onFull`, the fill's own last frame), never on a timer guessed from the fill's length —
-  // the tween starts on the frame after its delay and its eased tail leaves the chip's end
-  // dithered until that last frame, so a timer at delay + METER_MS struck over a meter
-  // still filling (user-reported 2026-09-23: "the burst animation is played before the
-  // filling animation is done. It should actually wait"). A deadline stands behind the
-  // signal, so a lost report can only make the burst late, never missing; the sea follows
-  // the burst it rides.
+  // (`onFull`, the first frame its fill's last cells ink — `meterRamp.ts`), never on a timer
+  // guessed from the fill's length: the tween starts on the frame after its delay, so a
+  // timer at delay + METER_MS struck over a meter still filling (user-reported 2026-09-23:
+  // "the burst animation is played before the filling animation is done. It should
+  // actually wait"). A deadline stands behind the signal, so a lost report can only make
+  // the burst late, never missing; the sea follows the burst it rides.
   const fullRef = useRef<(() => void) | null>(null);
   const onFull = useCallback(() => fullRef.current?.(), []);
   useEffect(() => {

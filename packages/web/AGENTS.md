@@ -173,6 +173,8 @@
                               dither, tweened — and the FOIL of an active hole (`foil.ts`);
                               SHAPED (`shape`), the result's count: kept to its glyphs' ink,
                               its recede a Bayer dissolve, glints on its corners
+      components/meterRamp.ts  the ramp as numbers, pure and tested: the fill's front for a
+                              reading, the density, the cell rule, the solid frame
       components/foil.ts      the holographic FOIL, the app's one shiny material: the active
                               hole's and the wheel's (`paintFoil`), the result count's dithered
                               one-slab foil and glints (`paintCountFoil`, `paintCountGlints`),
@@ -386,8 +388,12 @@ These are decided and verified against the code. Treat them as load-bearing.
   with a checker fringe, "a basic animation"; **the front is the reading's exact share of
   the width and the ramp trails BEHIND it, so a chip short of 100 always ends in white —
   only 100 inks it solid** (user-reported 2026-09-22: a ramp running past the edge read as
-  full at 95, "some users think that there's a bug")), a full chip all cobalt (the ink the word
-  wears once found); and then **THE SEA — THE ACTIVE HOLE'S OWN DRESS (user-decided
+  full at 95, "some users think that there's a bug"); **a full reading's front stands a
+  ramp PAST the edge and the tween moves the FRONT, not the reading** (`components/meterRamp.ts`,
+  tested), so the trailing ramp sweeps out of the chip and its last cells ink frame by frame —
+  the chip turns solid as part of the fill, never in one snap under the burst
+  (user-reported 2026-10-03: "the burst animation is played BEFORE the word gets 100%
+  filled")), a full chip all cobalt (the ink the word wears once found); and then **THE SEA — THE ACTIVE HOLE'S OWN DRESS (user-decided
   2026-09-22: "a new kind of hole design… something between the full blue hole and the
   empty white one, with moving waves maybe, some perlin noise")**: the full chip RECEDES
   into HOLOGRAPHIC FOIL (**user-decided 2026-09-22, the fourth pass of the day — a
@@ -454,7 +460,8 @@ These are decided and verified against the code. Treat them as load-bearing.
   deferred-board beat, `shownCharge`) and the fill's transition WAITS for the landing
   (`--meter-delay`, `sparkLandMs`), the burst and the sea waiting with it; at 100 `meter
   fills → BURST → the sea`, the BURST striking on the canvas's own SOLID frame (`MeterCanvas`'s
-  `onFull`, a deadline behind it), never on a timer (user-reported 2026-09-23: "the burst
+  `onFull`, told on the FIRST frame every cell is inked — `meterRamp.ts` `frontIsSolid`, the
+  painter's own rule — a deadline behind it), never on a timer (user-reported 2026-09-23: "the burst
   animation is played before the filling animation is done. It should actually wait"). The exact hit wears the ULTRA star and takes
   no cut, loot or burst (the solve supersedes); **A GUESS IS CUT ONLY WHEN IT GIVES THE HOLE
   SOMETHING** — charge on its meter, or a rank closer than its best (user-decided

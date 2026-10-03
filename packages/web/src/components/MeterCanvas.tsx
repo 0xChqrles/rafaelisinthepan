@@ -8,6 +8,7 @@ import {
   paintFoil,
   type FoilScratch,
 } from './foil';
+import { cellInked, easeOut, frontIsSolid, rampDensity, travelFront } from './meterRamp';
 
 // THE CHARGE METER'S DRAWING (#301, user-decided 2026-09-15: "improve the dithering, make it
 // more smooth, and instead of just increasing the progression width with a basic animation,
@@ -33,7 +34,10 @@ import {
 // a change to `value` waits `delayMs` (the blood's landing) and travels `durationMs`
 // (Hole's `METER_MS`), eased out; under reduced motion, or with no change, it draws the
 // value at once. Nothing is laid out and nothing here is state: the value it shows is
-// derived like the meter's reading, this only paces its arrival.
+// derived like the meter's reading, this only paces its arrival. What travels is the fill's
+// FRONT (`meterRamp.ts`): a full reading's front stands a ramp past the edge, so the chip
+// turns solid as the fill's own last cells ink, and `onFull` is told on THAT frame — the
+// first the chip is solid — which is what the hole's burst strikes on.
 //
 // A SHAPED meter (`shape`, the result's COUNT — `SolvedCard`): the same ramp and the same
 // sequence, kept to the shape's own ink (`clip`) over the shape as it reads uncharged
@@ -93,14 +97,16 @@ export default function MeterCanvas({
   seed?: number;
   // A SHAPED meter (see `MeterShape`).
   shape?: MeterShape | null;
-  // Told on the frame the fill inks the chip SOLID — its last — so what follows a full
-  // meter (the hole's burst) waits for the fill itself, never for a guess at its length.
+  // Told on the first frame the fill inks the chip SOLID, so what follows a full meter (the
+  // hole's burst) waits for the fill itself, never for a guess at its length.
   onFull?: () => void;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const onFullRef = useRef(onFull);
   onFullRef.current = onFull;
-  const shown = useRef(value); // what is on the canvas right now
+  // What is on the canvas right now: a travel from one reading to another, `eased` of the way
+  // (the front is what moves — `meterRamp.ts`); at rest, `eased` is 1.
+  const shown = useRef({ from: value, to: value, eased: 1 });
   const pending = useRef<{ timer: number; raf: number }>({ timer: 0, raf: 0 });
   // When the sea began on this canvas, for the recede; null on a canvas born in the sea
   // (`drewRamp` says whether it ever showed the ramp).
@@ -162,8 +168,7 @@ export default function MeterCanvas({
       for (let cx = -out; cx < cols + out; cx += 1) {
         for (let cy = -out; cy < rows + out; cy += 1) {
           const d = density(Math.min(cols - 1, Math.max(0, cx)), Math.min(rows - 1, Math.max(0, cy)));
-          if (d <= 0) continue;
-          if (BAYER_8[(cy & 7) * 8 + (cx & 7)] < d * 64) ctx.fillRect(cx * CELL_PX, cy * CELL_PX, CELL_PX, CELL_PX);
+          if (cellInked(d, cx, cy)) ctx.fillRect(cx * CELL_PX, cy * CELL_PX, CELL_PX, CELL_PX);
         }
       }
       shapeUp(ctx);
@@ -211,27 +216,20 @@ export default function MeterCanvas({
   );
 
   // The ramp: the fill's density falls from solid to nothing over about a chip's height of
-  // cells BEHIND the front, and the front — where the ink ends and the white begins — is
-  // exactly the reading's share of the width, so a chip short of 100 always shows white at
-  // its end (user-reported 2026-09-22: a front that ran past the edge by the ramp's length
-  // inked the last column ~80% at 95, and "some users think that there's a bug" when the
-  // full-looking chip gives nothing). Only 100 inks it solid, in one step: the fill's own
-  // last frame, the burst on its heels.
-  const drawRamp = useCallback(
-    (p: number) => {
-      const box = ref.current?.parentElement;
-      if (!box) return;
-      const cols = Math.ceil(box.clientWidth / CELL_PX);
-      const ramp = Math.max(4, Math.round(box.clientHeight / CELL_PX));
-      if (p >= 100) {
-        paint(() => 1);
-        return;
-      }
-      const front = (p / 100) * cols;
-      paint((cx) => Math.min(1, (front - cx) / ramp));
-    },
-    [paint],
-  );
+  // cells BEHIND the front (`meterRamp.ts`: a chip short of 100 always ends in white; a full
+  // one's front stands a ramp past the edge). Read off the box each time — the word's width
+  // changes as it scrambles. Says whether it drew the chip SOLID.
+  const drawRamp = useCallback(() => {
+    const box = ref.current?.parentElement;
+    if (!box) return false;
+    const cols = Math.ceil(box.clientWidth / CELL_PX);
+    const rows = Math.ceil(box.clientHeight / CELL_PX);
+    const ramp = Math.max(4, Math.round(box.clientHeight / CELL_PX));
+    const { from, to, eased } = shown.current;
+    const front = travelFront(from, to, eased, cols, ramp);
+    paint((cx) => rampDensity(front, cx, ramp));
+    return cols > 0 && rows > 0 && frontIsSolid(front, cols, rows, ramp);
+  }, [paint]);
 
   // The foil at this instant, under what is left of the solid chip while the recede runs.
   const drawSea = useCallback(
@@ -253,7 +251,7 @@ export default function MeterCanvas({
   // What the canvas shows right now, whichever reading it is on.
   const draw = useCallback(() => {
     if (sea) drawSea(seaNow());
-    else drawRamp(shown.current);
+    else drawRamp();
   }, [sea, drawRamp, drawSea, seaNow]);
 
   // A new shape (the tally wrote a digit) redraws whatever the canvas is on.
@@ -281,24 +279,32 @@ export default function MeterCanvas({
       cancelAnimationFrame(pending.current.raf);
     };
     cancel();
-    const from = shown.current;
+    // A travel starts from the reading on the canvas now (one in flight is cut where it is).
+    const at = shown.current;
+    const from = at.from + (at.to - at.from) * at.eased;
     const to = value;
     if (from === to) return undefined;
     if (prefersReducedMotion() || durationMs <= 0) {
-      shown.current = to;
-      drawRamp(to);
+      shown.current = { from: to, to, eased: 1 };
+      drawRamp();
       if (to >= 100) onFullRef.current?.();
       return undefined;
     }
+    shown.current = { from, to, eased: 0 };
     pending.current.timer = window.setTimeout(() => {
       const t0 = performance.now();
+      let told = false;
       const step = (now: number) => {
-        const k = Math.min(1, (now - t0) / durationMs);
-        const eased = 1 - (1 - k) ** 3;
-        shown.current = from + (to - from) * eased;
-        drawRamp(shown.current);
+        const k = Math.min(1, Math.max(0, now - t0) / durationMs);
+        shown.current = { from, to, eased: easeOut(k) };
+        const solid = drawRamp();
+        // The burst's cue: the FIRST frame the chip is solid — or, with no box to draw in,
+        // the travel's end.
+        if (to >= 100 && !told && (solid || k >= 1)) {
+          told = true;
+          onFullRef.current?.();
+        }
         if (k < 1) pending.current.raf = requestAnimationFrame(step);
-        else if (to >= 100) onFullRef.current?.();
       };
       pending.current.raf = requestAnimationFrame(step);
     }, delayMs);
@@ -322,7 +328,7 @@ export default function MeterCanvas({
     const reducedMotion = prefersReducedMotion();
     // A held frame must show the finished foil, without the recede's solid overlay.
     seaSince.current = drewRamp.current && !reducedMotion ? performance.now() : null;
-    shown.current = 100;
+    shown.current = { from: 100, to: 100, eased: 1 };
     drawSea(seaNow());
     if (reducedMotion) return undefined;
     const loop = seaLoop.current;
