@@ -5,9 +5,10 @@ import { raceOf, shownPercent, type RaceEntry } from './race';
 // CONTRACT: the race line orders the live read the way the boards do — finished members
 // first by score (the shared `rankBoard` order), then the playing ones by the shared
 // `orderPlaying` (closest to done, fewer tries, publicId; ended-unsolved rounds last) — with
-// the player's OWN entry taken from the screen, never their server row. The line shows the one
-// just ahead, the player and the one just behind (two after when leading, two before when
-// trailing), and nothing when nobody else has a row.
+// the player's OWN entry taken from the screen, never their server row. The line reads LEFT TO
+// RIGHT FROM BELOW TO ABOVE: the one just behind, the player, the one just ahead (the two
+// behind on the left when leading, the two ahead on the right when trailing), and nothing when
+// nobody else has a row.
 
 const ME = 'mmmmmmmmmmmmmmmm';
 const id = (c: string) => c.repeat(16);
@@ -77,30 +78,34 @@ describe('raceOf', () => {
     expect(ids(race!.entries)).toEqual([id('a'), ME, id('z')]);
   });
 
-  it('windows one ahead, me, one behind', () => {
+  it('reads left to right from below to above: one behind, me, one ahead', () => {
     const race = raceOf(
       live([done(id('a'), 10)], [playing(id('b'), 80, 5), playing(id('c'), 40, 5), playing(id('d'), 20, 5)]),
       { publicId: ME, progress: 60, tries: 5 },
     );
-    expect(ids(race!.window)).toEqual([id('b'), ME, id('c')]);
+    expect(ids(race!.window)).toEqual([id('c'), ME, id('b')]);
   });
 
-  it('shows the two behind when I lead, and the two ahead when I trail', () => {
+  it('puts the two behind on my left when I lead, and the two ahead on my right when I trail', () => {
     const others = [playing(id('a'), 80, 5), playing(id('b'), 40, 5), playing(id('c'), 20, 5)];
     expect(ids(raceOf(live([], others), { publicId: ME, progress: 90, tries: 5 })!.window)).toEqual([
-      ME,
-      id('a'),
       id('b'),
+      id('a'),
+      ME,
     ]);
     expect(ids(raceOf(live([], others), { publicId: ME, progress: 5, tries: 5 })!.window)).toEqual([
-      id('b'),
-      id('c'),
       ME,
+      id('c'),
+      id('b'),
     ]);
   });
 
-  it('shows just the two of us when there is one other row', () => {
+  it('shows just the two of us when there is one other row, the one ahead on my right', () => {
     expect(ids(raceOf(live([done(id('a'), 7)], []), { publicId: ME, progress: 30, tries: 9 })!.window)).toEqual([
+      ME,
+      id('a'),
+    ]);
+    expect(ids(raceOf(live([], [playing(id('a'), 10, 7)]), { publicId: ME, progress: 30, tries: 9 })!.window)).toEqual([
       id('a'),
       ME,
     ]);

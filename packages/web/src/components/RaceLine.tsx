@@ -34,7 +34,7 @@ export default function RaceLine({
   retired,
 }: {
   lang: string;
-  // The window: the one just ahead, the player, the one just behind.
+  // The window, left to right: below the player to above (`game/race.ts`).
   entries: readonly RaceEntry[];
   // The round is ending: the line goes out with the prompt and stays laid down, invisible.
   retired: boolean;

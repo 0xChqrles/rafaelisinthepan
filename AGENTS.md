@@ -732,8 +732,8 @@ The live routes then share:
   each of the player's groups — the group last opened (`gameStore.lastGroupId`) first, then
   the others; a group where nobody but the player has a row is skipped — then **GLOBAL**,
   the day's global board, under the board screen's own name for it (one name across the
-  app); a player in no group sees GLOBAL alone. At the row's end, always, a **`+`** that
-  opens the board screen's own NEW GROUP. The groups come off the LIVE read below (no read
+  app); a player in no group sees GLOBAL alone. No group is created from here: NEW GROUP is
+  the board screen's. The groups come off the LIVE read below (no read
   of their own), and only off an answer read after the round ended (one asked during play
   lacks the score the solve recorded); GLOBAL is ONE anonymous `GET /board?…&id=<publicId>`
   per result display (score rows + profiles, no artifact), identity-fenced, a failure
@@ -776,7 +776,9 @@ The live routes then share:
   The race line is an ORDER, never a rank (#206):
   finished members first (fewest tries), then the playing ones by `orderPlaying` with the
   player's own entry taken from the screen (their live % and tries), the ended-unsolved last;
-  it shows the one just ahead, the player and the one just behind.
+  it reads LEFT TO RIGHT FROM BELOW TO ABOVE — the one just behind, the player, the one just
+  ahead (the two behind on the left when the player leads, the two ahead on the right when
+  they trail).
 - Entry: the header's crown on every game surface (archive days included since 2026-08-31),
   the race line's tap during play, and the solved screen's boards.
 

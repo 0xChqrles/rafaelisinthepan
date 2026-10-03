@@ -7,9 +7,10 @@
 // the board they see and their own try count, which are ahead of any stored summary. It is an
 // ORDER, never a rank (#206: a position mid-round moves with every guess).
 //
-// The line shows a WINDOW of it: the one just ahead, the player, the one just behind — two
-// after the player when they lead, two before when they trail. Null when nobody else has a
-// row today: there is nobody to race.
+// The line shows a WINDOW of it, READ LEFT TO RIGHT FROM BELOW TO ABOVE: the one just behind
+// the player, the player, the one just ahead — the two behind when they lead (both on their
+// left), the two ahead when they trail (both on their right). `window` is in the line's own
+// order, the lowest first. Null when nobody else has a row today: there is nobody to race.
 
 import { orderPlaying, rankBoard, type LiveBoard } from '@whippin/shared';
 
@@ -31,7 +32,9 @@ export interface RaceMe {
 }
 
 export interface Race {
+  // The whole order, the top first.
   entries: RaceEntry[];
+  // The line, left to right: below the player to above.
   window: RaceEntry[];
 }
 
@@ -64,7 +67,7 @@ export function raceOf(live: LiveBoard, me: RaceMe): Race | null {
 
   const at = entries.findIndex((entry) => entry.kind !== 'done' && entry.me);
   const start = Math.min(Math.max(at - 1, 0), Math.max(entries.length - WINDOW, 0));
-  return { entries, window: entries.slice(start, start + WINDOW) };
+  return { entries, window: entries.slice(start, start + WINDOW).reverse() };
 }
 
 // The % a line prints: FLOORED, so 100% is only ever a solve — an unfinished 99.6 is 99%.
