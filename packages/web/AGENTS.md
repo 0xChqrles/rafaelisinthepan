@@ -2567,7 +2567,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   have the source somewhere on the screen"): once the reader reads, the score and SHARE
   scroll away with the page, the credit sticks at the scroller's top edge on its own
   ground, and a tap on it returns to the top. The earlier "the page is the one thing that
-  scrolls" (the same morning's second pass) is superseded by this.
+  scrolls" (the same morning's second pass) is superseded by this. The stage spans the
+  whole VIEWPORT's width, so its scrollbar stands on the screen's edge on every screen,
+  a wide desktop included, while its content keeps the column's width (user-decided
+  2026-10-03: "stick the scrollbar to side of the screen on desktop").
   - **The sentence's EXIT is the DISSOLVE** (`components/DissolvePhrase.tsx`, the
     2026-08-14 decision unchanged): once the keyboard has dropped, the live `Phrase`
     hands its exact pixels to a letter-boxed copy that erodes them through the
