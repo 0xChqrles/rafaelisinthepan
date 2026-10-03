@@ -2583,7 +2583,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
       design's direction "the card", with the SCORE as its subject) — the share card this
       result sends (`renderCardSvg`) stood up in the column on the BARE GROUND, capped at
       the keyboard's 680px: the device frame's corner BRACKETS round exactly what the card
-      shows (2px, 16px arms — 24 on a wide column — white at 38%); the EDITION row
+      shows (2px, 16px arms — 24 on a WIDE card — white at 38%); the EDITION row
       (`N.<day>` at the left in the pixel face's 8px `--muted`, not printed where the desktop
       device frame already prints today's; the date at the right at 16px in the accent;
       BONUS and `N.<id>` for a bonus); the COUNT over its unit (the `--ui` 16px, tracked,
@@ -2591,15 +2591,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
       player; the run RULER with its HEAT; **then SHARE**, under the frame (the brackets hold
       what you send, the button sends it; sharing is what you do with a RESULT,
       user-decided 2026-08-14). Measured: 390×844 and 375×667, a 160px count, SHARE at
-      y 456–504; 320×568 (a short phone), a 128px count, SHARE at y 428–476.
+      y 456–504; 320×568, a two-digit count at 136px (the hero's width), SHARE at y
+      435–483; 1366×657 (a laptop's browser window), wide, a 160px count, SHARE at y
+      556–604.
     - **THE COUNT IS THE SUBJECT, drawn as the METER.** Press Start 2P at the LARGEST whole
       multiple of 8px whose INK fits the hero (`countCells.ts` `countSize` — the box is the
       digits' ink, the last glyph's trailing blank column dropped, so the number centres on
-      what it prints): at most 160px on a phone (the share card's own), 128 on a short phone
-      (small viewport ≤ 640px, for SHARE's sake), 192 on a wide column (≥ 552px); three
-      digits at 320 take 88px. Decided per mount off the SMALL viewport (`svh`: a toolbar
-      collapsing on scroll must not resize what has landed) and re-measured only when the
-      column's width changes; nothing is scaled by a transform. It is drawn cell by cell on
+      what it prints) AND whose box leaves SHARE above the fold — the card's room from its
+      top in the stage down to the stage's bottom fade, less everything in the card but the
+      count's box: at most 160px on a phone (the share card's own), 192 on a WIDE card (a
+      column ≥ 552px in a small viewport ≥ 640px tall — a shorter window keeps the phone's
+      sizes, so its room goes to the count, not to the air round it); three digits at 320
+      take 88px. Decided per mount off the SMALL viewport (`svh`: a toolbar collapsing on
+      scroll must not resize what has landed) and re-measured only when the column's width
+      changes; nothing is scaled by a transform. It is drawn cell by cell on
       the face's own glyphs (`digitMasks.ts`, laid out by `countCells.ts`) by a SHAPED
       `MeterCanvas`: while the tally counts, the digits written charge with the meter's
       Bayer fill as far as the reconstruction had reached at that try (never past 99), the
@@ -2664,10 +2669,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
       them):
 
       ```
-         Les Misérables         the WORK — the credit's headline: the accent, `clamp(14px,
-                                1.9vw, 18px)`, the biggest type in the block
-         BOOK by Victor Hugo    what it IS and who it is by — muted, 10px, ONE phrase
+         Les Misérables         the WORK — the credit's headline: the accent, the pixel
+                                face's 16px, the biggest type in the block
+         BOOK by Victor Hugo    what it IS and who it is by — `--muted`, 8px, ONE phrase
       ```
+
+      Both are whole sizes of the pixel face, so its glyphs land on the screen's pixels.
 
       The earlier cuts stacked the fields as peers, which left the reader guessing which
       name was a person: a separator only ever says "these are two things", never which is
@@ -2808,7 +2815,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   indices side by side under ONE shared tick, held inside the bar near either end
   (`replayRun` in `web/src/game/share.ts` walks the run once and returns the trajectory
   and the solve moments together). **On screen it is the card's ruler at the column's
-  size** (inside `SolvedCard`): a 16px bar (24 on a wide column) across the whole column,
+  size** (inside `SolvedCard`): a 16px bar (24 on a WIDE card) across the whole column,
   4px white ticks overhanging it by 8px, 16px pixel indices in ONE lane held on every run
   (so the card is one height whatever the round), the unwritten track the slate's 2px
   checker — and its cells on WHOLE PIXELS, the bar's measured width split at the shared
@@ -3006,8 +3013,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     moves nothing. It holds its room while the LIVE answer is `awaited` — the groups list
     still unknown, or a group with somebody else and no answer that has seen the round's
     end while a read is still to come (`useLiveBoardBusy`) — rather than draw GLOBAL
-    first and turn to a group a moment later; the GLOBAL tab is appended when its own read
-    lands. **Its fate is decided ONCE, by the page under it**: a block whose reads all
+    first and turn to a group a moment later; and it holds it until the GLOBAL read has
+    answered too (a failure counts), so every tab and the rank column they share are
+    decided together — a global rank of three digits landing late would widen that column
+    under a group's lines already shown. **Its fate is decided ONCE, by the page under it**: a block whose reads all
     answer with no tab (every read failed, or empty) BEFORE the page's beat (`pageIn`)
     leaves the stage's flow for good; once the page has landed — at once on a settled
     frame — the box keeps its room for good, empty if it must, since removing it would
@@ -3052,8 +3061,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     EMPTY GROUP'S SLOT (a 32×24 chip drawn as a dashed outline of 2px cells, the plus in
     it), the board screen's own NEW GROUP — it asks for it (`state/groups.ts`
     `askGroupCreate`, one-shot) and goes to the board, whose mount takes the ask and opens
-    its create screen. Pinned to the edge rather than after the last name, so GLOBAL's read
-    landing late never moves it. A sideways SWIPE on the rows turns the tab too
+    its create screen. Pinned to the edge rather than after the last name, so it stays in
+    view however far the names run. A sideways SWIPE on the rows turns the tab too
     (`touch-action: pan-y`; 40px, mostly sideways) and opens nothing.
     **THE LINES** are `components/BoardRows` (`BoardRowItem`, `PlayingRowItem`), the
     leaderboard's own, dressed here (`.result-board .board-row`, 44px): the rank in the

@@ -25,10 +25,11 @@ import { t } from '../i18n';
 // portrait and the name took the emphasis from the score — the boards under it name the
 // player). The count stands alone, the biggest thing on the screen, in the pixel face at a
 // WHOLE scale — the largest multiple of 8px that fits the hero for this round's final digits
-// (`countCells.ts` `countSize`), decided on the mount's SMALL viewport (`svh`: a phone's
-// toolbar collapsing on scroll must not resize what has landed) and re-measured only when
-// the column's width changes; its box is its INK, so it centres on what it prints. Nothing
-// is scaled by a transform.
+// AND leaves SHARE above the fold (`countCells.ts` `countSize`: the card's room down to the
+// stage's fade, less everything in the card but the count), decided on the mount's SMALL
+// viewport (`svh`: a phone's toolbar collapsing on scroll must not resize what has landed)
+// and re-measured only when the column's width changes; its box is its INK, so it centres
+// on what it prints. Nothing is scaled by a transform.
 //
 // THE COUNT IS THE METER: it is drawn cell by cell on the face's own glyph pixels
 // (`digitMasks.ts`, laid out by `countCells.ts`) by a SHAPED `MeterCanvas`. While the tally
@@ -56,11 +57,11 @@ import { t } from '../i18n';
 // meter, full, blasts and dissolves. Every box is laid out from frame one, so nothing that
 // has landed moves.
 
-// The card goes WIDE (the desktop's sizes) on a column this wide.
+// The card goes WIDE (the desktop's sizes) on a column this wide, in a small viewport this
+// tall: a shorter window keeps the phone's sizes, so its room goes to the count, not to the
+// air round it.
 const WIDE_PX = 552;
-// A phone whose SMALL viewport is this short or shorter keeps the count a step smaller, for
-// SHARE's sake.
-const SHORT_PX = 640;
+const WIDE_MIN_HEIGHT_PX = 640;
 // The meter's fill follows the tally this closely (each written try re-aims it).
 const CHARGE_MS = 90;
 // Where in the blast the foil begins — on its impact frames (Hole's own 60%).
@@ -97,6 +98,19 @@ function smallViewportHeight(): number {
   const h = probe.getBoundingClientRect().height || window.innerHeight;
   probe.remove();
   return h;
+}
+
+// THE CARD'S ROOM: how tall the card (SHARE included) may stand on the mount's small viewport
+// and keep SHARE above the fold — from its top in the stage it opens (the scroller it is the
+// first block of) down to the stage's bottom fade (its padding), less what a toolbar out at
+// the mount lends the viewport and takes back.
+function cardRoom(card: HTMLElement): number {
+  const stage = card.parentElement;
+  if (!stage) return Infinity;
+  const top = card.getBoundingClientRect().top - stage.getBoundingClientRect().top - stage.clientTop + stage.scrollTop;
+  const fade = parseFloat(getComputedStyle(stage).paddingBottom) || 0;
+  const lent = Math.max(0, window.innerHeight - smallViewportHeight());
+  return stage.clientHeight - top - fade - lent;
 }
 
 // The digits' glyphs: at once when the session has decoded them, `undefined` while the
@@ -380,18 +394,27 @@ export default function SolvedCard({
   const ems = unfinished ? INFINITY_GLYPH.width / COUNT_EM : inkEms(digits);
 
   // THE COUNT'S SIZE (see the header). WIDE is read off the card's own width, which its
-  // padding does not change; the size off the hero's, which it does.
+  // padding does not change, and the mount's small viewport; the size off the hero's width,
+  // which it does, and off the height the card can spare the count's box above the fold —
+  // read once per run of this effect, under the sizes the card wears (a change of WIDE runs
+  // it again), never off a later reflow.
   const [fit, setFit] = useState({ count: 64, wide: false });
-  const short = useMemo(() => smallViewportHeight() < SHORT_PX, []);
+  const tall = useMemo(() => smallViewportHeight() >= WIDE_MIN_HEIGHT_PX, []);
   useLayoutEffect(() => {
     const root = rootRef.current;
     const hero = heroRef.current;
-    if (!root || !hero) return undefined;
+    const num = numRef.current;
+    if (!root || !hero || !num) return undefined;
+    const room = cardRoom(root) - (root.offsetHeight - num.offsetHeight);
     const measure = () => {
       const w = hero.clientWidth;
       if (!w) return;
-      const wide = root.clientWidth >= WIDE_PX;
-      const count = countSize(w, ems, wide, short);
+      const wide = tall && root.clientWidth >= WIDE_PX;
+      if (wide !== fit.wide) {
+        setFit((prev) => ({ ...prev, wide }));
+        return;
+      }
+      const count = countSize(w, room, ems, wide);
       setFit((prev) => (prev.count === count && prev.wide === wide ? prev : { count, wide }));
     };
     measure();
@@ -399,7 +422,7 @@ export default function SolvedCard({
     ro.observe(root);
     ro.observe(hero);
     return () => ro.disconnect();
-  }, [ems, short]);
+  }, [ems, fit.wide, tall]);
 
   const bonus = isBonusRef(puzzleRef);
   // Today's own number is the desktop device frame's corner serial too: where that frame

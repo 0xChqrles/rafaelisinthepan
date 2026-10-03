@@ -10,9 +10,9 @@ import { GLYPH_ROWS, type DigitMask } from './digitMasks';
 // it prints, not on an advance that ends in a blank.
 //
 // WHOLE SCALES ONLY: the face is crisp at multiples of 8px, so the count's size is the LARGEST
-// multiple of 8 whose ink fits the hero's width, between a floor and a ceiling that depend on
-// the column (`countSize`): a phone's 160 (the share card's own), a short phone's 128 (SHARE
-// must stay on screen), the desktop's 192.
+// multiple of 8 whose box fits both the hero's width and the height the card can spare it
+// (SHARE must stay above the fold), between a floor and a ceiling that depends on the column
+// (`countSize`): a phone's 160 (the share card's own), the desktop's 192.
 
 // Font pixels to the em: a glyph's advance.
 export const COUNT_EM = 8;
@@ -20,19 +20,20 @@ export const COUNT_ROWS = GLYPH_ROWS;
 
 export const COUNT_MIN_PX = 32;
 export const COUNT_MAX_PX = 160;
-export const COUNT_MAX_SHORT_PX = 128;
 export const COUNT_MAX_WIDE_PX = 192;
 
 // A string of `glyphs` digits is this many ems wide on its ink: every advance but the last
 // one's trailing blank column.
 export const inkEms = (glyphs: number): number => glyphs - 1 / COUNT_EM;
 
-// The count's size in px: the largest whole multiple of 8 at which a box `ems` wide fits
-// `width`, under the column's ceiling (`wide`: the desktop's; `short`: a short phone's).
-export function countSize(width: number, ems: number, wide: boolean, short: boolean): number {
-  const max = wide ? COUNT_MAX_WIDE_PX : short ? COUNT_MAX_SHORT_PX : COUNT_MAX_PX;
-  const fit = Math.floor(width / (ems * COUNT_EM)) * COUNT_EM;
-  return Math.max(COUNT_MIN_PX, Math.min(max, fit));
+// The count's size in px: the largest whole multiple of 8 at which its box — `ems` wide on
+// its ink, the face's cap height (COUNT_ROWS of the em's 8 rows) tall — fits `width` and
+// `height`, under the column's ceiling (`wide`: the desktop's), never under the floor.
+export function countSize(width: number, height: number, ems: number, wide: boolean): number {
+  const max = wide ? COUNT_MAX_WIDE_PX : COUNT_MAX_PX;
+  const fitWidth = Math.floor(width / (ems * COUNT_EM)) * COUNT_EM;
+  const fitHeight = Math.floor(height / COUNT_ROWS) * COUNT_EM;
+  return Math.max(COUNT_MIN_PX, Math.min(max, fitWidth, fitHeight));
 }
 
 // A string's INK on the face's grid: `ink(gx, gy)` in font pixels, glyph i's columns being

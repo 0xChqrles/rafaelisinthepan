@@ -2658,7 +2658,8 @@ input {
    count — in the pixel face at a whole scale. No panel, no well, no stroke. SHARE stands
    under the frame. It holds its footprint from frame one; the reveal draws it in place
    (`.in`), the tally lands (`.landed`), and a settled result shows its last frame outright.
-   WIDE (`.wide`, a column of 552px or more) is the desktop's sizes. */
+   WIDE (`.wide`, a column of 552px or more in a small viewport 640px tall or more) is the
+   desktop's sizes. */
 .solved-card {
   flex: none;
   width: 100%;
@@ -2994,12 +2995,16 @@ input {
   }
 }
 /* A settled result draws the last frame outright — and so does reduced motion: the global
-   rule keeps the delays, which would hold each part of the card unseen for its beat. */
-.solved-stage.settled .solved-card * {
+   rule keeps the delays, which would hold each part of the card unseen for its beat. Only
+   the DRAWING is stopped (the frame's parts, SHARE's arrival): SHARE itself keeps its
+   COPIED flash, which answers the player's tap, not the reveal. */
+.solved-stage.settled .solved-card-frame *,
+.solved-stage.settled .solved-card .result-actions {
   animation: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  .solved-card * {
+  .solved-card-frame *,
+  .solved-card .result-actions {
     animation: none !important;
   }
 }

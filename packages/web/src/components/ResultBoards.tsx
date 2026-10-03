@@ -22,6 +22,9 @@
 //
 // ONE FIXED BOX, whatever it holds: empty while the first answers are out, the same height on
 // every tab, so nothing that has landed moves when a read arrives or a swipe turns the page.
+// It draws nothing until the GLOBAL read has answered too (a failure is an answer): the tabs
+// and the rank column they share are decided together, and a global rank of three digits
+// landing late would widen that column under a group's lines already shown.
 // Its fate is decided ONCE, by the page under it: a box whose reads have all answered with
 // nothing to show BEFORE the page lands leaves the stage's flow (the page has not shown, so
 // nothing seen moves) and never comes back; once the page has landed — at once on a settled
@@ -130,8 +133,11 @@ export default function ResultBoards({
   const tabsRef = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
 
+  // The box waits for EVERY read it draws from — the live answer and the GLOBAL one — before
+  // it draws a tab (see the header).
+  const pending = identity !== null && (awaited || globalBoard === null);
   const tabs: ResultTab[] =
-    identity === null || awaited
+    identity === null || pending
       ? []
       : resultTabs(live, globalBoard === 'failed' ? null : globalBoard, lastGroupId, {
           publicId: identity.accountId,
@@ -141,7 +147,6 @@ export default function ResultBoards({
           progress,
           ended,
         });
-  const pending = identity !== null && (awaited || (tabs.length === 0 && globalBoard === null));
   const empty = tabs.length === 0 && !pending;
   const index = Math.max(0, tabs.findIndex((tab) => tab.key === chosen));
   const shown = tabs[index] as ResultTab | undefined;
