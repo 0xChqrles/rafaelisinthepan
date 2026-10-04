@@ -1,4 +1,3 @@
-import type { CSSProperties } from 'react';
 import { BAYER_8 } from '@whippin/shared';
 
 // THE BOARDS' ORDERED DITHER AS CSS MASKS: the house's texture (the run's heat, the meter's
@@ -18,7 +17,7 @@ const tile = (w: number, h: number, rects: string) =>
 // it guards) and thinning to nothing away from it. As deep as a line's empty margin above and
 // below its mark, so on a list resting on whole lines it falls on bare ground and only ever
 // touches a name while one is passing.
-export const EDGE_CELLS = 3;
+const EDGE_CELLS = 3;
 function edgeTile(towardBottom: boolean): string {
   let rects = '';
   for (let r = 0; r < EDGE_CELLS; r += 1) {
@@ -30,10 +29,10 @@ function edgeTile(towardBottom: boolean): string {
   }
   return tile(8 * CELL, EDGE_CELLS * CELL, rects);
 }
-export const EDGES = {
+const EDGES = {
   '--edge-d': edgeTile(true),
   '--edge-u': edgeTile(false),
-} as CSSProperties;
+};
 
 // THE DISSOLVE: the matrix's own tile at DISSOLVE_LEVELS densities, from nothing (`--dz-0`) to
 // all but the last cells (`--dz-7`) — the board's `board-dissolve` keyframes step a line's mask
@@ -41,9 +40,8 @@ export const EDGES = {
 // order, in hard steps, nothing travelling. And the same levels' COMPLEMENT (`--dzo-1` …
 // `--dzo-7`, the cells not yet lit): what goes out as something comes in over it — the
 // podium's players giving their place to the next — goes through exactly the cells the newcomer
-// has not taken (`board-dissolve-out`). Worn by the surfaces whose lines arrive that way (the
-// board screen, the group's own screen), as custom properties on their root.
-export const DISSOLVE_LEVELS = 8;
+// has not taken (`board-dissolve-out`).
+const DISSOLVE_LEVELS = 8;
 function levelTile(level: number, lit: boolean): string {
   let rects = '';
   for (let r = 0; r < 8; r += 1) {
@@ -55,9 +53,26 @@ function levelTile(level: number, lit: boolean): string {
   }
   return tile(8 * CELL, 8 * CELL, rects);
 }
-export const DISSOLVES = Object.fromEntries(
+const DISSOLVES: Record<string, string> = Object.fromEntries(
   Array.from({ length: DISSOLVE_LEVELS }, (_, level) => [
     [`--dz-${level}`, levelTile(level, true)],
     [`--dzo-${level}`, levelTile(level, false)],
   ]).flat(),
-) as CSSProperties;
+);
+
+// The tiles are custom properties on the DOCUMENT'S ROOT, set once as this module loads: every
+// surface whose lines arrive that way (the board screen, its podium, the group's own screen in
+// the top layer) inherits them, and none carries them in its own style.
+if (typeof document !== 'undefined') {
+  for (const [name, value] of Object.entries({ ...DISSOLVES, ...EDGES })) {
+    document.documentElement.style.setProperty(name, value);
+  }
+}
+
+// THE DISSOLVE'S BEAT, for what script times against it: a slot's dissolve, in or out (the
+// CSS keyframes' own 240ms) — the podium's raster gives way over the same — and the loading
+// skeleton's lines, which come in only if the read is slow: this long, this far apart, then a
+// dissolve each.
+export const DISSOLVE_MS = 240;
+export const SKELETON_WAIT_MS = 320;
+export const SKELETON_STAGGER_MS = 50;

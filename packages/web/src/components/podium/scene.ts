@@ -18,8 +18,18 @@ import {
   type HeatKeep,
 } from '@whippin/shared';
 import { stepTier } from '../../game/podium';
+import { DISSOLVE_MS, SKELETON_WAIT_MS } from '../bayerTiles';
 import { LINE_PX } from '../boardMetrics';
 import { runEnd, runReel } from '../countRun';
+import { abgr, hexToAbgr } from '../raster';
+import {
+  COBALT as I_COBALT,
+  DUSK as I_DUSK,
+  INKS,
+  MUTED as I_MUTED,
+  RAIL as I_RAIL,
+  WHITE as I_WHITE,
+} from '../streak/sprites';
 
 // THE PODIUM SCENE (the board's subject, the way the result has its count): the day's — or
 // the period's — top three standing on a stepped PODIUM, drawn as the streak celebration draws
@@ -37,9 +47,7 @@ import { runEnd, runReel } from '../countRun';
 //     ink, the accent on the reader's own) — each cut out of the face's dither by a cell of
 //     outline. A number on a step is always a place.
 //   THE VALUES under the floor, in each player's CAPTION (the DOM's name over it, its unit under
-//     it — and on a WEEK or a MONTH the period rule's tiebreakers under that, the lines' own
-//     detail, so three equal points never read as a tie drawn wrong): the tries, or a
-//     period's points, in the pixel face's digits — LANDING ON THE COUNT'S
+//     it): the tries, or a period's points, in the pixel face's digits — LANDING ON THE COUNT'S
 //     REELS (`countRun.ts`, the board's compressed run: every reel spinning from almost the same
 //     instant, stopping left to right with a whole-font-pixel shake), the others in white at
 //     the lines' 16px, FIRST PLACE'S at the largest whole size that fits (its neighbours'
@@ -82,24 +90,19 @@ export const CELL_PX = 2;
 // on whole lines.
 const SLOT_CELLS = LINE_PX / CELL_PX;
 
-// ── The inks: the tokens, nothing else (ABGR, for the canvas's ImageData) ─────────────────
-function abgr(r: number, g: number, b: number): number {
-  return ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0;
-}
-function hex(value: string): number {
-  const v = parseInt(value.slice(1), 16);
-  return abgr((v >> 16) & 255, (v >> 8) & 255, v & 255);
-}
+// ── The inks: the streak raster's own — the tokens, nothing else — packed for the canvas ──
+// (`INKS` is indexed from the streak's first ink: its index 0 is the ground.)
+const ink = (index: number) => hexToAbgr(INKS[index - 1]);
 // `rgb(r, g, b)`, as `heat.ts` writes a colour.
 function rgb(value: string): number {
   const [r, g, b] = value.match(/\d+/g)?.map(Number) ?? [0, 0, 0];
   return abgr(r, g, b);
 }
-const WHITE = hex('#ffffff'); // --fg
-const MUTED = hex('#a6adb8'); // --muted: the lines' ranks
-const RAIL = hex('#4a5578'); // --rail: iron
-const DUSK = hex('#1f212a'); // --surface-hover: iron's face
-const COBALT = hex('#4a6aff'); // --accent / --solve: the trophy, and you
+const WHITE = ink(I_WHITE); // --fg
+const MUTED = ink(I_MUTED); // --muted: the lines' ranks
+const RAIL = ink(I_RAIL); // --rail: iron
+const DUSK = ink(I_DUSK); // --surface-hover: iron's face
+const COBALT = ink(I_COBALT); // --accent / --solve: the trophy, and you
 
 // ── The crown: `assets/icons/board.svg`, the header's own board mark, traced (rows 1–9 of
 // its 10×10 grid — a redrawn icon is traced again) ────────────────────────────────────────
@@ -124,8 +127,8 @@ const crownInk = (x: number, y: number) => CROWN[y]?.[x] === '#';
 // compact one would leave the lines no room. Each is the steps' widths (the middle one wider),
 // the three tiers' heights, the marks (first place's larger — every mark 10 avatar cells of a
 // whole px), the places' font pixel, a first's value's largest font pixel, the heat's least
-// room over the winner's head, the CAPTION BLOCK under the names (a value, its unit and, on a
-// period, its two tiebreak lines) and the foot.
+// room over the winner's head, the CAPTION BLOCK under the names (a value and its unit) and the
+// foot.
 interface Dims {
   wide: number;
   narrow: number;
@@ -147,15 +150,12 @@ const SIZES: Record<PodiumSize, Dims> = {
 // Under the floor, every place's CAPTION: a gap of bare ground, the NAME's band (the DOM's: two
 // 13px lines and the 3px either side your brackets stand in — a name wraps rather than being
 // cut, and the band holds two lines whatever it holds, so nothing under it moves), a gap, then
-// the block: the VALUE's row, a gap, the UNIT's line (the DOM's, 12px) and, on a period, the
-// DETAIL's two lines (the DOM's, 12px each).
+// the block: the VALUE's row, a gap, the UNIT's line (the DOM's, 12px).
 const NAME_GAP = 6;
-const NAME_ROWS = 16;
+export const NAME_ROWS = 16;
 const VALUE_GAP = 2;
 const UNIT_GAP = 2;
 const UNIT_ROWS = 6;
-const DETAIL_ROWS = 6;
-const DETAIL_LINES = 2;
 // The step's top LIP (the iron's lit face), in rows.
 const LIP = 2;
 // How far a step's heat spills past its sides (cells), and the bare ground kept beyond that at
@@ -167,10 +167,9 @@ const EDGE = 2;
 const GUTTER = 2;
 // A first's value keeps this much bare ground from whatever stands beside it — the slot's edge
 // for two tied firsts (side by side, their foils must never read as one number), else its
-// neighbours' footprints: their value, and the widest a unit (or a period's detail) runs.
+// neighbours' footprints: their value, and the widest a unit runs.
 const VALUE_MARGIN = 6;
 const UNIT_FOOT = 24;
-const DETAIL_FOOT = 32;
 // The rooms the screen weighs the sizes by: the podium, the list's header and at least this
 // many lines under them (one line of hysteresis, so a phone's toolbar never flips a size).
 const ROOMY_LINES = 4;
@@ -185,7 +184,7 @@ export interface Box {
 
 // One of the three places: its step, its mark at rest, its place glyph's box, its value's
 // row and the slot its caption owns.
-export interface PlaceLayout {
+interface PlaceLayout {
   step: Box;
   mark: Box;
   place: Box; // the crown, or the 2 or 3, on the step's face
@@ -193,14 +192,13 @@ export interface PlaceLayout {
   slot: { x: number; w: number }; // the caption's share of the line, centred on the step
   value: Box; // the value's digits — or, the place unheld, its dash
   vpx: number; // cells a font pixel of the value
-  unit: number; // the unit line's top row (the period's detail follows it)
+  unit: number; // the unit line's top row
 }
 
 export interface PodiumLayout {
   cols: number;
   rows: number;
   floor: number; // the floor's row: the steps stand on it
-  ceiling: number; // the heat's top
   compact: boolean;
   glyph: number;
   name: number; // the name band's top row
@@ -248,19 +246,16 @@ export function podiumSize(widthPx: number, slots: number, was: PodiumSize | nul
 }
 
 // `ranks`: each place's rank (null for a place nobody holds — it stands at its own place's
-// tier); `values`, the numbers its captions carry (a first place's size follows its digits);
-// `period`: its captions carry the period's detail under their units.
+// tier); `values`, the numbers its captions carry (a first place's size follows its digits).
 export function layout(
   widthPx: number,
   size: PodiumSize,
   ranks: readonly (number | null)[],
   values: readonly (number | null)[],
-  period: boolean,
 ): PodiumLayout {
   const cols = Math.floor(widthPx / CELL_PX);
   const d = dimsFor(size, cols);
   const rows = podiumHeightPx(size) / CELL_PX;
-  const ceiling = 0;
   const floor = rows - (contentRows(d) - d.air - d.mark1 - d.tiers[0]);
   const name = floor + 1 + NAME_GAP;
   const valueY = name + NAME_ROWS + VALUE_GAP;
@@ -274,9 +269,9 @@ export function layout(
   const tiers = ranks.map((rank, p) => (rank === null ? (p as 0 | 1 | 2) : stepTier(rank)));
   const tied = tiers.filter((tier, p) => tier === 0 && ranks[p] !== null).length > 1;
   // What stands under each place's name besides a first's value: its value at the lines' size
-  // (or its dash), and the widest its unit or detail runs.
-  const foot = values.map((v) => Math.max(v === null ? 6 : digitsW(v, 1), period ? DETAIL_FOOT : UNIT_FOOT));
-  const below = UNIT_GAP + UNIT_ROWS + (period ? DETAIL_LINES * DETAIL_ROWS : 0);
+  // (or its dash), and the widest its unit runs.
+  const foot = values.map((v) => Math.max(v === null ? 6 : digitsW(v, 1), UNIT_FOOT));
+  const below = UNIT_GAP + UNIT_ROWS;
   const place = (p: number): PlaceLayout => {
     const slot = SLOT_OF[p];
     const tier = tiers[p];
@@ -301,8 +296,8 @@ export function layout(
     const right = Math.min(cols, Math.round(centre + pitch / 2));
     const slotBox = { x: left + GUTTER, w: right - left - 2 * GUTTER };
     const v = values[p] ?? null;
-    // A first place's value at its largest font pixel that leaves its block its unit (and
-    // detail), and leaves bare ground to its slot's edges (a tie) or to its neighbours'
+    // A first place's value at its largest font pixel that leaves its block its unit, and
+    // leaves bare ground to its slot's edges (a tie) or to its neighbours'
     // footprints — else the others' one (the lines' 16px).
     let vpx = 1;
     if (tier === 0 && v !== null) {
@@ -325,7 +320,6 @@ export function layout(
     cols,
     rows,
     floor,
-    ceiling,
     compact: size === 'compact',
     glyph: d.glyph,
     name,
@@ -335,9 +329,7 @@ export function layout(
 
 // The caption's rows from the name band's top to its block's last line (the DOM's box: what
 // dissolves as one).
-export const NAME_BAND_ROWS = NAME_ROWS;
-export const captionRows = (L: PodiumLayout, p: number, period: boolean): number =>
-  L.places[p].unit + UNIT_ROWS + (period ? DETAIL_LINES * DETAIL_ROWS : 0) - L.name;
+export const captionRows = (L: PodiumLayout, p: number): number => L.places[p].unit + UNIT_ROWS - L.name;
 
 // How a step's face is lit: its light dithers down from the lip over its first SHADE rows,
 // and its foot falls off into the ground over its last FOOT — each a share of its height, so
@@ -381,17 +373,13 @@ const HEAT_RISE_MS = 160;
 const HEAT_STEPS = 4;
 // How many hard steps a place's dissolve takes (the Bayer levels it lights in).
 const DISSOLVE_STEPS = 6;
-// THE GIVING WAY: a scene replaces the one before cell by cell in the Bayer order over this
-// long, in these steps — a line's own dissolve (`board-dissolve`).
-export const TURN_MS = 240;
+// THE GIVING WAY: a scene replaces the one before cell by cell in the Bayer order over a line's
+// own dissolve (`board-dissolve`), in these steps.
+const TURN_MS = DISSOLVE_MS;
 const TURN_STEPS = 8;
 // Long since: what stands from a scene's first frame (a step already up, a player who stays,
 // everything on a board already shown) stood this long before it.
 const PAST = -10_000;
-// A read still out: the skeleton's rails come in after the lines' skeleton's own wait (a quick
-// read never flashes them), through a line's dissolve.
-const LOAD_MS = 320;
-const LOAD_IN_MS = 240;
 
 export interface BeatSpec {
   // A board: its steps stand (not a read still out, a failure or the ghost). A read still out.
@@ -432,7 +420,7 @@ export function beats(spec: BeatSpec): Beats {
   const foil: (number | null)[] = [null, null, null];
   const ends = [TURN_MS];
   if (!spec.steps) {
-    return { rise, land, fall, reel, run, foil, lines: 0, settled: spec.loading ? LOAD_MS + LOAD_IN_MS : TURN_MS };
+    return { rise, land, fall, reel, run, foil, lines: 0, settled: spec.loading ? SKELETON_WAIT_MS + DISSOLVE_MS : TURN_MS };
   }
   const start = spec.startMs;
   let lastDrop = -Infinity;
@@ -513,13 +501,13 @@ export const turnLevel = (t: number): number => Math.floor(clamp01(t / TURN_MS) 
 // What the box shows (see FOUR PICTURES above).
 export type PodiumMode = 'loading' | 'failed' | 'ghost' | 'board';
 
-export interface PodiumData {
+interface PodiumData {
   mode: PodiumMode;
   // Per place, or null for a place nobody holds. `me`: the reader's own place.
   places: readonly ({ rank: number; value: number; near: number; me: boolean } | null)[];
 }
 
-export interface PodiumScene {
+interface PodiumScene {
   // Paint the whole frame at `t` into `px` (cols × rows, ABGR) — first place's foil with it,
   // or not (the resting frame the foil is repainted over).
   draw: (px: Uint32Array, t: number, withFoil: boolean) => void;
@@ -718,8 +706,10 @@ export function podiumScene(L: PodiumLayout, data: PodiumData, tl: Beats, seed: 
     // THE FLOOR: the result's stippled rail, across the column.
     for (let x = 4; x < cols - 4; x += 3) put(px, x, L.floor, RAIL);
     if (data.mode === 'loading') {
-      // A slow read: the skeleton's rails where each name will stand, on the floor's lattice.
-      const lv = level(LOAD_MS, LOAD_IN_MS, t);
+      // A slow read: the skeleton's rails where each name will stand, on the floor's lattice —
+      // after the lines' skeleton's own wait (a quick read never flashes them), through a
+      // line's dissolve.
+      const lv = level(SKELETON_WAIT_MS, DISSOLVE_MS, t);
       if (lv <= 0) return;
       const y = L.name + NAME_ROWS - 5;
       for (const { slot } of L.places) {
@@ -740,17 +730,16 @@ export function podiumScene(L: PodiumLayout, data: PodiumData, tl: Beats, seed: 
       if (!held) return;
       const { up, lift } = heatAt(p, t);
       if (up <= 0) return;
-      // THE HEAT off the step's top, behind its player: one column a cell, in this place's
-      // nearness ink, spilling SPILL cells past the step's sides.
+      // THE HEAT off the step's top to the box's, behind its player: one column a cell, in this
+      // place's nearness ink, spilling SPILL cells past the step's sides.
       const s = place.step;
-      const field = s.y - L.ceiling;
       const color = rgb(progressHeatColor(held.near));
       const x0 = s.x - SPILL;
       const w = s.w + 2 * SPILL;
       heatCells(
         {
           cols: w,
-          rows: field,
+          rows: s.y,
           width: w,
           cell: 1,
           trajectory: [held.near],

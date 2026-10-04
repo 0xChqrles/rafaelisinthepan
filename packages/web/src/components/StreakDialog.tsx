@@ -10,6 +10,7 @@ import { LINK_H, LINK_W, FOIL, FOIL_DEEP, foilInk } from './streak/sprites';
 import { RESERVE_BITS, layout, numberCells, numberPlace, pastWeeks } from './streak/geometry';
 import type { ClearRect } from './streak/field';
 import { orbitScene, type FoilField, type OrbitDay } from './streak/scene';
+import { hexToAbgr } from './raster';
 
 const NO_SOLVED_DAYS: number[] = [];
 
@@ -542,12 +543,4 @@ function walkStar(el: HTMLElement | null, f: number) {
 function mondayNarrowLabels(lang: string): string[] {
   const fmt = new Intl.DateTimeFormat(lang, { weekday: 'narrow', timeZone: 'UTC' });
   return Array.from({ length: 7 }, (_, index) => fmt.format(new Date(Date.UTC(2024, 0, 1 + index))));
-}
-
-function hexToAbgr(hex: string): number {
-  const v = parseInt(hex.slice(1), 16);
-  const r = (v >> 16) & 255;
-  const g = (v >> 8) & 255;
-  const b = v & 255;
-  return ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0;
 }

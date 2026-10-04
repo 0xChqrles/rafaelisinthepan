@@ -94,9 +94,9 @@ export function reelShake(i: number, reels: number, ms: number): readonly [numbe
 // THE RUN COMPRESSED — the board's numbers (a line's `ReelNumber`, the podium's values on its
 // raster): the count's own curve and stops, played in `runMs` rather than the hero's
 // COUNT_RUN_MS. Reel `i` of `reels` stops at `runStop`; at `ms` of the run it stands where
-// `runReel` says (values, unwrapped) with its stop's shake (font pixels: the count's own frames
-// at RUN_SHAKE_FRAME_MS whatever the compression — a shake is a hit, not part of the curve).
-export const RUN_SHAKE_FRAME_MS = 40;
+// `runReel` says (values, unwrapped) with its stop's shake (font pixels: the count's frames, at
+// RUN_SHAKE_FRAME_MS a frame whatever the compression — a shake is a hit, not part of the curve).
+const RUN_SHAKE_FRAME_MS = 40;
 export const RUN_SHAKE_MS = COUNT_SHAKE.length * RUN_SHAKE_FRAME_MS;
 export const runStop = (i: number, reels: number, runMs: number): number => (reelStop(i, reels) * runMs) / COUNT_RUN_MS;
 export function runReel(

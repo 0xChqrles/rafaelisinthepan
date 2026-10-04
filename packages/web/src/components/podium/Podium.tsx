@@ -1,14 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { COUNT_STILL_S, anonName, bayerThreshold, defaultAvatar, progressHeatColor, type BoardPlayer } from '@whippin/shared';
-import Avatar from './Avatar';
-import Strike from './Strike';
-import { BURST_ART } from './strikeArt';
+import Avatar from '../Avatar';
+import { clockNow, onClock } from '../animationClock';
+import { DISSOLVE_MS } from '../bayerTiles';
+import Strike from '../Strike';
+import { BURST_ART } from '../strikeArt';
 import {
   CELL_PX,
   FRAME_MS,
-  NAME_BAND_ROWS,
-  TURN_MS,
+  NAME_ROWS,
   captionRows,
   layout,
   markAt,
@@ -20,20 +21,19 @@ import {
   type PodiumLayout,
   type PodiumMode,
   type PodiumSize,
-} from './podium/scene';
-import { stepTier } from '../game/podium';
-import { prefersReducedMotion } from '../hooks/useScramble';
+} from './scene';
+import { NO_PLACES, stepTier } from '../../game/podium';
+import { prefersReducedMotion } from '../../hooks/useScramble';
 
 // THE BOARD'S PODIUM — the board screen's subject, the way the result has its count (the scene
-// itself, its steps, places, values, heat and beats, is `podium/scene.ts`): standing on the bare
+// itself, its steps, places, values, heat and beats, is `scene.ts`): standing on the bare
 // ground between the board's head and its lines, ONE scene the screen keeps across every board
 // it turns to — the raster on ONE clock, with the players' MARKS (`Avatar`, square, at 10 cells
 // of a whole px) standing on it where the scene's layout says and moved by its `markAt`, each
 // landing's BURST (the strike sheet, behind the mark in that place's heat ink — the winner's the
 // trophy cobalt), and under the floor each player's CAPTION: the NAME in the chrome's voice, over
 // the value the raster draws, over its UNIT (the result's own lockup: the count, then what it
-// counts — so a period's 3 points never read as third) and, on a WEEK or a MONTH, the period
-// rule's tiebreakers under that (the lines' own detail, a line each).
+// counts — so a period's 3 points never read as third).
 //
 // A NAME IS NEVER CUT: it owns a third of the podium (its slot, less a gutter each side) and
 // wraps onto a second line at its joints — after an underscore, between a word and the next
@@ -66,40 +66,38 @@ export interface PodiumEntry {
   player: BoardPlayer;
   rank: number;
   value: number;
-  // The value's unit, under it in the caption — and a period's tiebreakers under that.
+  // The value's unit, under it in the caption.
   unit: string;
-  detail: readonly string[];
   near: number;
   me: boolean;
   // One of the reader's groups' members (the GLOBAL board's mark).
   mate: boolean;
 }
 
-// WHAT THE PODIUM SHOWS, and how it came to show it: the scene's identity (a new one is a new
-// scene), its picture, its places, and — read off the scene before it — whether it builds, who
-// stays, which values run, and when it begins. Latched by the screen (`nextStage`) when what it
-// shows changes, so the lines under it are timed off the same beats.
-export interface PodiumStage {
+// WHAT THE PODIUM SHOWS: the scene's identity (`build`: a new one is a new scene), its picture,
+// its places, and the board its foil's seed is read off.
+export interface PodiumShow {
   build: string;
   mode: PodiumMode;
   places: readonly (PodiumEntry | null)[];
-  // The captions carry a period's tiebreakers.
-  period: boolean;
+  seedKey: string;
+}
+
+// …and how it came to show it: read off the scene before it, whether it builds, who stays,
+// which values run, and when it begins. Latched by the screen (`nextStage`) when what it shows
+// changes, so the lines under it are timed off the same beats.
+export interface PodiumStage extends PodiumShow {
   spec: BeatSpec;
   // Per place: the unit it said before, where it changed under a player who stays (the unit
   // gives way, not the name) — else null.
   unitWas: readonly (string | null)[];
-  seedKey: string;
 }
-
-// Nobody on any place: every picture but a board's.
-export const NO_PLACES = [null, null, null] as const;
 
 // THE NEXT STAGE, from the one on screen: `fresh` — the board has not been shown in this
 // visit (it builds; else it is settled) — `startMs` and `runMs` from the screen's pace.
 export function nextStage(
   prev: PodiumStage | null,
-  next: { build: string; mode: PodiumMode; places: readonly (PodiumEntry | null)[]; period: boolean; seedKey: string },
+  next: PodiumShow,
   fresh: boolean,
   startMs: number,
   runMs: number,
@@ -111,7 +109,6 @@ export function nextStage(
     build: next.build,
     mode: next.mode,
     places,
-    period: next.period,
     seedKey: next.seedKey,
     unitWas: places.map((entry, p) => (stood[p] && before[p]?.unit !== entry?.unit ? (before[p]?.unit ?? null) : null)),
     spec: {
@@ -146,12 +143,6 @@ function seedOf(key: string): number {
   return ((h >>> 0) % 997) + 0.5;
 }
 
-// The document's animation clock (the frames' own; the wall clock where it has none).
-const clock = () => {
-  const time = document.timeline?.currentTime;
-  return typeof time === 'number' ? time : performance.now();
-};
-
 // A name with its JOINTS marked as break opportunities (`<wbr>`): after an underscore, before
 // a capital that follows a small letter, and before digits that follow a letter.
 function jointed(name: string): ReactNode[] {
@@ -181,7 +172,7 @@ interface Placed {
   mark: { left: number; top: number; size: number };
   caption: { left: number; width: number; top: number; height: number; unitTop: number };
 }
-function placed(L: PodiumLayout, places: readonly (PodiumEntry | null)[], period: boolean): Placed[] {
+function placed(L: PodiumLayout, places: readonly (PodiumEntry | null)[]): Placed[] {
   const top = L.name * CELL_PX;
   return places.flatMap((entry, p) => {
     if (!entry) return [];
@@ -196,7 +187,7 @@ function placed(L: PodiumLayout, places: readonly (PodiumEntry | null)[], period
           left: place.slot.x * CELL_PX,
           width: place.slot.w * CELL_PX,
           top,
-          height: captionRows(L, p, period) * CELL_PX,
+          height: captionRows(L, p) * CELL_PX,
           unitTop: place.unit * CELL_PX - top,
         },
       },
@@ -224,7 +215,7 @@ function Caption({
     >
       <span
         className={`podium-name${entry.me ? ' me' : entry.mate ? ' mate' : ''}${entry.player.name ? '' : ' anon'}`}
-        style={{ height: NAME_BAND_ROWS * CELL_PX }}
+        style={{ height: NAME_ROWS * CELL_PX }}
       >
         <span className="podium-name-text">{jointed(entry.player.name || anonName(entry.player.publicId))}</span>
       </span>
@@ -235,11 +226,6 @@ function Caption({
       )}
       <span key={entry.unit} className={`podium-unit${unitWas !== null ? ' in' : ''}`} style={unitStyle}>
         {entry.unit}
-        {entry.detail.map((line) => (
-          <span key={line} className="podium-detail">
-            {line}
-          </span>
-        ))}
       </span>
     </span>
   );
@@ -277,12 +263,12 @@ export default function Podium({
   const fromFrame = useRef<{ build: string; frame: typeof lastFrame.current } | null>(null);
   const [width, setWidth] = useState(0);
   const [reduced] = useState(prefersReducedMotion);
-  const { mode, places, period } = stage;
+  const { mode, places } = stage;
   const ranks = places.map((p) => p?.rank ?? null);
   const values = places.map((p) => p?.value ?? null);
-  const shapeKey = `${ranks.join(',')}|${values.join(',')}|${period}`;
-  const L = useMemo(() => layout(width, size, ranks, values, period), [width, size, shapeKey]);
-  const shown = placed(L, places, period);
+  const shapeKey = `${ranks.join(',')}|${values.join(',')}`;
+  const L = useMemo(() => layout(width, size, ranks, values), [width, size, shapeKey]);
+  const shown = placed(L, places);
 
   // THE ONES LEAVING: the scene before's players who do not stand in this one, kept where they
   // stood for the giving way, dissolving out through the cells the newcomers take.
@@ -303,16 +289,12 @@ export default function Podium({
     lastShown.current = { build: stage.build, entries: shown };
   });
   useEffect(() => {
-    const el = box.current;
-    if (leaving.entries.length === 0 || !el) return undefined;
+    if (leaving.entries.length === 0) return undefined;
     // Gone once the giving way has played — on the page's own animation clock, as the
     // dissolve itself is.
-    const done = el.animate([], { duration: TURN_MS });
-    done.finished.then(
-      () => setLeaving((now) => (now === leaving ? { ...now, entries: [] } : now)),
-      () => {},
+    return onClock(box.current, DISSOLVE_MS, () =>
+      setLeaving((now) => (now === leaving ? { ...now, entries: [] } : now)),
     );
-    return () => done.cancel();
   }, [leaving]);
 
   useLayoutEffect(() => {
@@ -347,9 +329,9 @@ export default function Podium({
     // What this scene gives way from: the frame on screen as it came, at the same size.
     const taken = fromFrame.current?.build === stage.build ? fromFrame.current.frame : null;
     const from = !reduced && taken && taken.cols === L.cols && taken.rows === L.rows ? taken.px : null;
-    if (startRef.current?.build !== stage.build) startRef.current = { build: stage.build, at: clock() };
+    if (startRef.current?.build !== stage.build) startRef.current = { build: stage.build, at: clockNow() };
     const start = startRef.current.at;
-    const elapsed = () => clock() - start;
+    const elapsed = () => clockNow() - start;
 
     const placeMarks = (t: number) => {
       markPos.current.clear();
@@ -364,7 +346,7 @@ export default function Podium({
     };
     // The scene before, still standing on the cells this one has not reached.
     const giveWay = (t: number) => {
-      if (!from || t >= TURN_MS) return;
+      if (!from || t >= DISSOLVE_MS) return;
       const lv = turnLevel(t);
       for (let y = 0; y < L.rows; y += 1) {
         for (let x = 0; x < L.cols; x += 1) if (bayerThreshold(x, y) >= lv) px[y * L.cols + x] = from[y * L.cols + x];
@@ -542,7 +524,7 @@ export default function Podium({
           one height in every empty state, bare ground where there is no line. */}
       {mode === 'ghost' && ghost && (
         <div className="podium-hold caption" style={{ top: L.name * CELL_PX }}>
-          <span className="podium-hold-line" style={{ height: NAME_BAND_ROWS * CELL_PX }}>
+          <span className="podium-hold-line" style={{ height: NAME_ROWS * CELL_PX }}>
             {ghost.line}
           </span>
           {ghost.call}

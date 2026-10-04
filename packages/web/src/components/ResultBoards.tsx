@@ -38,6 +38,7 @@ import type { CSSProperties } from 'react';
 import type { LiveGroup, LiveBoard } from '@whippin/shared';
 import BoardTabs from './BoardTabs';
 import { BoardRowItem, PlayingRowItem } from './BoardRows';
+import { rankColumnPx } from './boardMetrics';
 import { shownFace, useOwnFace } from './AccountFace';
 import { resultTabs, type ResultTab } from '../game/resultBoards';
 import useGlobalBoard from '../hooks/useGlobalBoard';
@@ -47,10 +48,6 @@ import { t } from '../i18n';
 import { pathForBoard } from '../langs';
 import { navigate } from '../routing';
 import { useGameStore } from '../state/gameStore';
-
-// One rank column for every tab, as wide as the widest rank any of them prints in the ranks'
-// 16px digits (two at the least; the `+N` under the rows is set at half that size).
-const RANK_DIGIT_PX = 16;
 
 export interface ResultBoardsData {
   // The active day, as the boards address it.
@@ -62,7 +59,8 @@ export interface ResultBoardsData {
   awaited: boolean;
 }
 
-// The widest rank a tab prints, in the ranks' digits.
+// The widest rank a tab prints, in the ranks' digits (the `+N` under the rows is set at half
+// their size) — one rank column for every tab (`rankColumnPx`).
 function rankDigits(tab: ResultTab): number {
   return Math.max(
     Math.ceil(String(`+${tab.board.more}`).length / 2),
@@ -144,7 +142,7 @@ export default function ResultBoards({
     }
     navigate(pathForBoard(lang));
   };
-  const rankWidth = Math.max(2, ...tabs.map(rankDigits)) * RANK_DIGIT_PX;
+  const rankWidth = rankColumnPx(Math.max(0, ...tabs.map(rankDigits)));
 
   return (
     <section
@@ -172,7 +170,7 @@ export default function ResultBoards({
                 line.kind === 'gap' ? (
                   <li key={`gap-${i}`} className="board-gap" style={{ '--i': i } as CSSProperties} aria-hidden="true" />
                 ) : line.kind === 'ranked' ? (
-                  <BoardRowItem key={line.row.publicId} row={line.row} me={line.me} index={i} />
+                  <BoardRowItem key={line.row.publicId} row={line.row} value={line.row.score} me={line.me} index={i} />
                 ) : (
                   <PlayingRowItem key={line.row.publicId} row={line.row} me={line.me} index={i} />
                 ),

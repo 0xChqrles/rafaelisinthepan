@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from 'react';
+import { COUNT_EM } from '@whippin/shared';
 import { COUNT_SHAKE, RUN_SHAKE_MS, runReel, runStop } from './countRun';
 import { prefersReducedMotion } from '../hooks/useScramble';
 
@@ -12,7 +13,7 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 // Each reel is the face's ten digits on a strip in a one-glyph window, and the strip only
 // ever stands at a WHOLE FONT PIXEL (an eighth of the em: 2px at the board's 16px), sampled
 // in hard steps — the count's grid, never a glyph between two of the face's pixels. A stop
-// shakes the digit by whole font pixels, the count's own frames. The motion is the Web
+// shakes the digit by whole font pixels, the compressed run's own shake. The motion is the Web
 // Animations API, so the reels cost nothing once they have stopped and follow the page's
 // playback rate; nothing here is state. The window is the final number's own box from the
 // first frame (one glyph a digit, the face's fixed advance), so nothing moves as it lands —
@@ -22,9 +23,8 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 const FRAME_MS = 33;
 // The strip: 0 to 9, and 0 again, so a reel rolling past 9 shows the next 0 coming up.
 const STRIP = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
-const EM_PX = 8;
 
-const at = (pos: number) => `translateY(-${Math.floor(pos * EM_PX) / EM_PX}em)`;
+const at = (pos: number) => `translateY(-${Math.floor(pos * COUNT_EM) / COUNT_EM}em)`;
 
 export default function ReelNumber({
   value,
@@ -57,7 +57,7 @@ export default function ReelNumber({
       running.push(strip.animate(frames, { duration: runMs, delay: delayMs, fill: 'backwards' }));
       // The stop's shake, in whole font pixels, the moment this reel lands.
       const shake: Keyframe[] = COUNT_SHAKE.map(([dx, dy], k) => ({
-        transform: `translate(${dx / EM_PX}em, ${dy / EM_PX}em)`,
+        transform: `translate(${dx / COUNT_EM}em, ${dy / COUNT_EM}em)`,
         offset: k / COUNT_SHAKE.length,
         easing: 'steps(1, end)',
       }));

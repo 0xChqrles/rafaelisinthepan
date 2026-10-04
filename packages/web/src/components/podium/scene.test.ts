@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { LINE_PX } from '../boardMetrics';
-import { runEnd, runReel, runStop } from '../countRun';
 import { CELL_PX, beats, layout, podiumHeightPx, podiumSize, type BeatSpec } from './scene';
 
 // The podium's box and beats carry the board screen's promises: the box is whole lines (so the
 // column under it rests on whole lines and your held line covers exactly one), the size never
 // leaves the lines no room, the three captions never run into each other, the winner's number
-// is never the smallest, a board turned back to never replays its build, and a turn never leaves
-// the list bare.
+// is never the smallest — and stands at its full size whatever the board counts — a board turned
+// back to never replays its build, and a turn never leaves the list bare.
 
 describe('podiumHeightPx — the box is whole lines', () => {
   it('is a whole number of the lines\' pitch in both sizes', () => {
@@ -48,7 +47,7 @@ describe('layout — where the three stand', () => {
   it('keeps every caption inside the column, the three apart', () => {
     for (const w of widths) {
       for (const size of ['roomy', 'compact'] as const) {
-        const L = layout(w, size, [1, 2, 3], [8, 14, 34], false);
+        const L = layout(w, size, [1, 2, 3], [8, 14, 34]);
         const [first, second, third] = L.places;
         for (const place of L.places) {
           expect(place.slot.x).toBeGreaterThanOrEqual(0);
@@ -64,14 +63,14 @@ describe('layout — where the three stand', () => {
 
   it('never draws the winner\'s number smaller than the others\', three digits on the compact podium included', () => {
     for (const size of ['roomy', 'compact'] as const) {
-      const L = layout(347, size, [1, 2, 3], [187, 190, 204], false);
+      const L = layout(347, size, [1, 2, 3], [187, 190, 204]);
       expect(L.places[0].vpx).toBeGreaterThan(L.places[1].vpx);
       expect(L.places[0].value.w).toBeLessThanOrEqual(L.cols);
     }
   });
 
   it('keeps a first\'s value clear of its neighbours\' numbers', () => {
-    const L = layout(347, 'compact', [1, 2, 3], [187, 190, 204], false);
+    const L = layout(347, 'compact', [1, 2, 3], [187, 190, 204]);
     const [first, second, third] = L.places;
     expect(second.value.x + second.value.w).toBeLessThan(first.value.x);
     expect(first.value.x + first.value.w).toBeLessThan(third.value.x);
@@ -79,18 +78,27 @@ describe('layout — where the three stand', () => {
 
   it('sets the floor, the names and every caption\'s block inside the box', () => {
     for (const size of ['roomy', 'compact'] as const) {
-      for (const period of [false, true]) {
-        const L = layout(362, size, [1, 2, 3], [period ? 9 : 8, 14, 34], period);
-        expect(L.rows * CELL_PX).toBe(podiumHeightPx(size));
-        expect(L.name).toBeGreaterThan(L.floor);
-        // The unit's line and a period's two detail lines (6 rows each) end inside the box.
-        for (const place of L.places) expect(place.unit + 6 * (period ? 3 : 1)).toBeLessThanOrEqual(L.rows);
-      }
+      const L = layout(362, size, [1, 2, 3], [8, 14, 34]);
+      expect(L.rows * CELL_PX).toBe(podiumHeightPx(size));
+      expect(L.name).toBeGreaterThan(L.floor);
+      // The unit's line (6 rows) ends inside the box.
+      for (const place of L.places) expect(place.unit + 6).toBeLessThanOrEqual(L.rows);
     }
   });
 
+  it('draws a period\'s first as large as a day\'s: its points carry nothing under their unit', () => {
+    for (const size of ['roomy', 'compact'] as const) {
+      // A week's 9 / 6 / 3 points, and a day's 9 tries over 14 and 34: one size for the 9.
+      const week = layout(362, size, [1, 2, 3], [9, 6, 3]);
+      const day = layout(362, size, [1, 2, 3], [9, 14, 34]);
+      expect(week.places[0].vpx).toBe(day.places[0].vpx);
+      expect(week.places[0].vpx).toBeGreaterThan(week.places[1].vpx);
+    }
+    expect(layout(347, 'compact', [1, 2, 3], [9, 6, 3]).places[0].vpx).toBeGreaterThan(1);
+  });
+
   it('stands two tied firsts equally tall, each number inside its own slot', () => {
-    const L = layout(362, 'roomy', [1, 1, 3], [12, 12, 17], false);
+    const L = layout(362, 'roomy', [1, 1, 3], [12, 12, 17]);
     expect(L.places[0].step.h).toBe(L.places[1].step.h);
     for (const place of L.places.slice(0, 2)) {
       expect(place.value.x).toBeGreaterThan(place.slot.x);
@@ -145,16 +153,5 @@ describe('beats — a build, a turn, a board shown again', () => {
 
   it('settles the whole arrival within about two seconds', () => {
     expect(beats(spec({})).settled).toBeLessThanOrEqual(2400);
-  });
-});
-
-describe('the compressed run — the lines\' numbers and the podium\'s, one curve', () => {
-  it('stops its reels left to right inside the run, and lands on the digits', () => {
-    const runMs = 650;
-    expect(runStop(0, 3, runMs)).toBeLessThan(runStop(1, 3, runMs));
-    expect(runStop(2, 3, runMs)).toBe(runMs);
-    [1, 8, 7].forEach((digit, i) => {
-      expect(runReel(digit, i, 3, runEnd(runMs), runMs).travelled % 10).toBe(digit);
-    });
   });
 });

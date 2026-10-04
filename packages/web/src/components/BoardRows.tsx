@@ -8,21 +8,13 @@
 // (`run`); the result's lines do not, the count above them being that screen's subject (as the
 // board screen's is its podium, whose leader's count is the foil).
 import type { CSSProperties } from 'react';
-import {
-  anonName,
-  defaultAvatar,
-  progressHeatColor,
-  type BoardPlayer,
-  type BoardRow,
-  type PlayingRow,
-} from '@whippin/shared';
+import { anonName, defaultAvatar, progressHeatColor, type BoardPlayer, type PlayingRow } from '@whippin/shared';
 import Avatar from './Avatar';
 import { MARK } from './boardMetrics';
 import InfinityGlyph from './InfinityGlyph';
 import ReelNumber from './ReelNumber';
 import CrownIcon from '../assets/icons/board.svg?react';
 import { shownPercent } from '../game/race';
-
 
 // A line's arrival on the board screen: when it comes in (its mask dissolving through the
 // Bayer levels, CSS `--delay`) and how long its number's reels then run; the number LANDS at
@@ -38,9 +30,10 @@ const runStyle = (run: LineRun | undefined, i: number): CSSProperties =>
     ...(run ? { '--delay': `${run.delayMs}ms`, '--land': `${run.delayMs + run.runMs}ms` } : {}),
   }) as CSSProperties;
 
-// The number: on the count's reels when the surface runs them, else simply printed.
+// The number: on the count's reels when the surface runs them, else simply printed (in the
+// face's fixed advance, the reels' own box: nothing moves either way).
 function Count({ value, run }: { value: number; run?: LineRun }) {
-  return run ? <ReelNumber value={value} delayMs={run.delayMs} runMs={run.runMs} /> : <>{value}</>;
+  return run && run.runMs > 0 ? <ReelNumber value={value} delayMs={run.delayMs} runMs={run.runMs} /> : <>{value}</>;
 }
 
 // A row's rank: the number in the quiet pixel face, printed bare (a rank is written bare) —
@@ -61,14 +54,17 @@ const Name = ({ player }: { player: BoardPlayer }) => (
   <span className={`board-name${player.name ? '' : ' anon'}`}>{player.name || anonName(player.publicId)}</span>
 );
 
+// A ranked row: its number is the day's tries, or a WEEK's or a MONTH's points.
 export function BoardRowItem({
   row,
+  value,
   me,
   mate = false,
   index,
   run,
 }: {
-  row: BoardRow;
+  row: BoardPlayer & { rank: number };
+  value: number;
   me: boolean;
   mate?: boolean;
   index: number;
@@ -86,7 +82,7 @@ export function BoardRowItem({
       <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={MARK} sharp />
       <Name player={row} />
       <span className="board-score">
-        <Count value={row.score} run={run} />
+        <Count value={value} run={run} />
       </span>
     </li>
   );
@@ -130,8 +126,8 @@ export function PlayingRowItem({
   );
 }
 
-// A member with no score today (the board screen's NOT PLAYED YET): the person, and nothing
-// where a number would be — WHY is said once, by the caption above them.
+// A member with no score today: the person, muted, and no rank and nothing where a number
+// would be — which says they have not played yet, with no caption to say it.
 export function WaitingRowItem({ player, index, run }: { player: BoardPlayer; index: number; run?: LineRun }) {
   return (
     <li className="board-row waiting" style={runStyle(run, index)}>

@@ -3001,7 +3001,7 @@ input {
    the board screen grown from it): the card's bare ground continued — no panel, no row
    boxes, no hairlines — LINES OF TYPE set on the column. ---- */
 
-/* THE TAB ROW (`BoardTabs`): the scopes' NAMES in a row, `--ui` 14px bold tracked capitals in
+/* THE TAB ROW (`BoardTabs`): the boards' NAMES in a row, `--ui` 14px bold tracked capitals in
    the secondary ink, each a 44px target round a 24px label; the one shown under the WHITE
    TITLE CHIP, GLOBAL pinned at the end. The row scrolls on its own axis where it runs past the
    column, snapping to names; a name the column cuts is COVERED, never drawn cut. The board
@@ -3120,14 +3120,12 @@ input {
 .board-tabs-ink {
   position: absolute;
   inset: 0;
+  z-index: 2;
   display: flex;
   background: var(--fg);
   color: var(--bg);
   pointer-events: none;
   clip-path: inset(10px var(--chip-r, 100%) 10px var(--chip-l, 0px));
-}
-.board-tabs-ink {
-  z-index: 2;
 }
 .board-tabs-ink .board-tab {
   color: var(--bg);
@@ -3174,6 +3172,7 @@ input {
    that a playing member's % hangs in as the tries' EXPONENT, so the numbers stay aligned. The
    pixel face only ever at 8 or 16px: whole multiples of its grid. */
 .board-list {
+  flex: none;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -3269,9 +3268,10 @@ input {
   shape-rendering: crispEdges;
 }
 /* YOUR line is FRAMED: the card's corner brackets, small, round it — and its rank in the
-   accent, its name at the action weight. */
+   accent, its name at the action weight. (Your name on the podium wears the same.) */
 .board-row.me,
-.board-row.picked {
+.board-row.picked,
+.podium-name.me .podium-name-text {
   --bc: rgba(255, 255, 255, 0.38);
   background:
     linear-gradient(var(--bc), var(--bc)) left top / 8px 2px,
@@ -3363,7 +3363,6 @@ input {
   touch-action: pan-y;
 }
 .result-board .board-list {
-  flex: none;
   overflow: hidden;
 }
 /* Under the lines, how many with a day of their own the box leaves out — `+N` in the rank
@@ -7256,12 +7255,11 @@ figure.l1-fig {
 /* A CAPTION under its step, one box from the name's band to its last line (what dissolves,
    dissolves whole): the NAME in the chrome's voice — a third of the podium wide, less a gutter
    each side, wrapping at its joints onto a second line rather than being cut, set on the band's
-   last line so it sits on its value — then (the raster's) VALUE, then its UNIT and, on a
-   period, the tiebreakers under it. A player who drops
-   brings it up as they land, in a stepped rise at full ink; one who comes onto a board already
-   shown dissolves in with it; one who stays keeps it standing (only a unit that changed gives
-   way). YOUR name wears your line's corner brackets; one of your people (GLOBAL) carries the
-   lines' accent square. */
+   last line so it sits on its value — then (the raster's) VALUE, then its UNIT. A player who
+   drops brings it up as they land, in a stepped rise at full ink; one who comes onto a board
+   already shown dissolves in with it; one who stays keeps it standing (only a unit that changed
+   gives way). YOUR name wears your line's corner brackets; one of your people (GLOBAL) carries
+   the lines' accent square. */
 .podium-caption {
   position: absolute;
   z-index: 2;
@@ -7301,21 +7299,10 @@ figure.l1-fig {
 .podium-name.anon {
   color: var(--muted);
 }
-/* Your line's own brackets: its 8px arms, 2px thick. */
+/* Your line's own brackets (`.board-row.me`'s rule): its 8px arms, 2px thick. */
 .podium-name.me .podium-name-text {
   padding: 3px 6px;
   font-weight: 700;
-  --bc: rgba(255, 255, 255, 0.38);
-  background:
-    linear-gradient(var(--bc), var(--bc)) left top / 8px 2px,
-    linear-gradient(var(--bc), var(--bc)) left top / 2px 8px,
-    linear-gradient(var(--bc), var(--bc)) right top / 8px 2px,
-    linear-gradient(var(--bc), var(--bc)) right top / 2px 8px,
-    linear-gradient(var(--bc), var(--bc)) left bottom / 8px 2px,
-    linear-gradient(var(--bc), var(--bc)) left bottom / 2px 8px,
-    linear-gradient(var(--bc), var(--bc)) right bottom / 8px 2px,
-    linear-gradient(var(--bc), var(--bc)) right bottom / 2px 8px;
-  background-repeat: no-repeat;
 }
 .podium-name.mate .podium-name-text {
   padding-left: 8px;
@@ -7345,11 +7332,6 @@ figure.l1-fig {
   white-space: nowrap;
   color: var(--muted);
 }
-/* A period's tiebreakers under the unit, a line each: the lines' own detail. */
-.podium-detail {
-  display: block;
-  letter-spacing: 0.06em;
-}
 /* The ghost board's sad ghost, on the middle step, at 3x (39 × 54): it bobs a few beats, a
    texel at a time, and rests, like every clock on this screen. */
 .podium-sprite.board-ghost {
@@ -7374,15 +7356,11 @@ figure.l1-fig {
 .podium-mark.in,
 .podium-caption.in,
 .podium-unit.in {
-  -webkit-mask-size: 16px 16px;
-  mask-size: 16px 16px;
   animation: board-dissolve 240ms linear backwards;
 }
 .podium-mark.out,
 .podium-caption.out,
 .podium-unit.out {
-  -webkit-mask-size: 16px 16px;
-  mask-size: 16px 16px;
   animation: board-dissolve-out 240ms linear forwards;
 }
 @keyframes board-dissolve-out {
@@ -7417,8 +7395,6 @@ figure.l1-fig {
   height: 44px;
 }
 .board-screen .board-sub {
-  -webkit-mask-size: 16px 16px;
-  mask-size: 16px 16px;
   animation: board-dissolve 240ms linear var(--delay, 0ms) backwards;
 }
 /* THE DOOR into the group's own screen: its size, said as the quiet word it is, with the
@@ -7512,11 +7488,8 @@ figure.l1-fig {
 }
 .board-screen .board-under-out .board-sub,
 .board-screen .board-under-out .board-row,
-.board-screen .board-under-out .board-section,
 .board-screen .board-under-out .board-gap,
 .board-screen .board-under-out .board-skeleton-line {
-  -webkit-mask-size: 16px 16px;
-  mask-size: 16px 16px;
   animation: board-dissolve-out 240ms linear var(--delay, 0ms) forwards;
 }
 .board-screen .board-under-out .board-row.me {
@@ -7551,17 +7524,9 @@ figure.l1-fig {
   text-transform: uppercase;
   color: var(--muted);
 }
-.board-body .board-list {
-  flex: none;
-}
-/* The rows a board leaves out, and a section's caption, take a whole slot each. */
+/* The rows a board leaves out take a whole slot. */
 .board-body .board-gap {
   height: 44px;
-}
-.board-body .board-section {
-  height: 44px;
-  margin-top: 0;
-  padding-top: 6px;
 }
 /* YOUR LINE STAYS IN SIGHT: on a board longer than the screen it holds to the column's edge
    while it is scrolled out of view — on the ground's own ink, so the lines pass under it;
@@ -7607,14 +7572,13 @@ figure.l1-fig {
   height: 4px;
   background: var(--accent);
 }
-/* A member with no score today: the person, in the secondary ink, nothing where a number
-   would be (the caption above says why, once). */
+/* A member with no score today: the person, in the secondary ink, and nothing where a rank or
+   a number would be — which is what says they have not played yet. */
 .board-row.waiting .board-name {
   grid-column: 3 / -1;
   color: var(--muted);
 }
-/* A WEEK or a MONTH: the podium points as the line's number, the tiebreakers as a quiet second
-   line under the name. */
+/* A name with a quiet second line under it (the group's own screen: its owner's tag). */
 .board-ident {
   min-width: 0;
   display: flex;
@@ -7632,16 +7596,15 @@ figure.l1-fig {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A SECTION'S CAPTION on the column — IN PROGRESS, NOT PLAYED YET: the words at the marks'
-   edge, then the stippled rail running on to the numbers. */
+/* A SECTION'S CAPTION over a list (the group's own screen: its MEMBERS): the words at the
+   marks' edge, then the stippled rail running on to the lines' end. */
 .board-section {
   flex: none;
   display: flex;
   align-items: center;
   gap: 10px;
   height: 36px;
-  margin-top: 6px;
-  padding: 0 30px 0 calc(6px + var(--rank-w, 32px) + 12px);
+  padding: 0 30px 0 6px;
   font-family: var(--ui);
   font-size: 10px;
   font-weight: 700;
@@ -7661,15 +7624,22 @@ figure.l1-fig {
    mask stepped through the ordered dither's levels (`--dz-0` … `--dz-7`, `bayerTiles.ts`) to
    full, cells lighting in threshold order, nothing travelling — one after another
    (`--delay`); its number then lands on the reels (ReelNumber) and a playing member's % is
-   typed in once it has (`--land`). */
+   typed in once it has (`--land`). Everything that comes in or goes out that way wears the
+   tiles at their size (8 cells of the house's 2px). */
+.podium-mark,
+.podium-caption,
+.podium-unit,
+.board-screen .board-sub,
 .board-screen .board-row,
-.board-screen .board-section,
 .board-screen .board-gap,
+.board-skeleton-line,
 .group-screen .board-row {
   -webkit-mask-size: 16px 16px;
   mask-size: 16px 16px;
-  -webkit-mask-repeat: repeat;
-  mask-repeat: repeat;
+}
+.board-screen .board-row,
+.board-screen .board-gap,
+.group-screen .board-row {
   animation: board-dissolve 240ms linear var(--delay, 0ms) backwards;
 }
 .board-screen .board-progress {
@@ -7713,7 +7683,6 @@ figure.l1-fig {
    line unseen for its beat. */
 @media (prefers-reduced-motion: reduce) {
   .board-screen .board-row,
-  .board-screen .board-section,
   .board-screen .board-gap,
   .board-screen .board-progress,
   .board-screen .board-tabs-ink,
@@ -7736,9 +7705,9 @@ figure.l1-fig {
 }
 
 /* WHILE THE FIRST READ IS OUT: the lines' boxes as stippled slate — a checker where each mark
-   will stand, a rail where each name will — at the lines' own pitch, under the caption's room,
+   will stand, a rail where each name will — at the lines' own pitch, under the header's room,
    so nothing moves when the board lands. They come in only if the read is slow (a quick one
-   never flashes them). */
+   never flashes them: `--delay`, written by the screen). */
 .board-skeleton {
   display: flex;
   flex-direction: column;
@@ -7749,10 +7718,7 @@ figure.l1-fig {
   gap: 12px;
   height: 44px;
   padding-left: calc(6px + 32px + 12px);
-  -webkit-mask-size: 16px 16px;
-  mask-size: 16px 16px;
-  animation: board-dissolve 240ms linear backwards;
-  animation-delay: calc(320ms + var(--i, 0) * 50ms);
+  animation: board-dissolve 240ms linear var(--delay, 0ms) backwards;
 }
 .board-skeleton-mark {
   flex: none;
@@ -7787,13 +7753,6 @@ figure.l1-fig {
   display: flex;
   flex-direction: column;
   padding: 8px 0 24px;
-}
-.group-body .board-section {
-  margin-top: 0;
-  padding-left: 6px;
-}
-.group-members {
-  flex: none;
 }
 .board-row.member {
   grid-template-columns: 30px minmax(0, 1fr) auto;
@@ -8306,7 +8265,6 @@ figure.l1-fig {
    at a time. A line is a <button> here, so the reset is restated. */
 .confirm-pick {
   width: 100%;
-  flex: none;
   max-height: 40vh;
   overflow-y: auto;
   margin: 4px 0 8px;

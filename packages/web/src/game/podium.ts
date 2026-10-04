@@ -29,7 +29,10 @@ export interface PodiumPick<T> {
   lines: T[];
 }
 
-export const PODIUM_PLACES = 3;
+const PODIUM_PLACES = 3;
+
+// Nobody on any place: every picture of the podium but a board's.
+export const NO_PLACES = [null, null, null] as const;
 
 function pick<T extends { rank: number }>(
   rows: readonly T[],

@@ -1,7 +1,9 @@
 import { useLayoutEffect, useRef } from 'react';
 import { BOARD_PERIODS, type BoardPeriod } from '@whippin/shared';
+import { travelFrames } from './travel';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { t } from '../i18n';
+import type { LangCode } from '../langs';
 
 // A GROUP'S THREE BOARDS — TODAY, WEEK, MONTH — as three EQUAL CELLS said with the corner
 // BRACKETS (the house's selection gesture: the device frame's, the card's, the player's own
@@ -24,7 +26,7 @@ export default function PeriodSwitch({
   period,
   onChange,
 }: {
-  lang: string;
+  lang: LangCode;
   period: BoardPeriod;
   onChange: (period: BoardPeriod) => void;
 }) {
@@ -47,17 +49,10 @@ export default function PeriodSwitch({
       frame.style.width = `${next.w}px`;
       if (!animate || prev === null || (prev.x === next.x && prev.w === next.w) || prefersReducedMotion()) return;
       travel.current?.cancel();
-      const frames: Keyframe[] = [];
-      for (let k = 0; k <= TRAVEL_STEPS; k += 1) {
-        const at = k / TRAVEL_STEPS;
-        const e = 1 - (1 - at) * (1 - at);
-        frames.push({
-          left: `${Math.round(prev.x + (next.x - prev.x) * e)}px`,
-          width: `${Math.round(prev.w + (next.w - prev.w) * e)}px`,
-          offset: at,
-          easing: 'steps(1, end)',
-        });
-      }
+      const frames = travelFrames(TRAVEL_STEPS, (e) => ({
+        left: `${Math.round(prev.x + (next.x - prev.x) * e)}px`,
+        width: `${Math.round(prev.w + (next.w - prev.w) * e)}px`,
+      }));
       travel.current = frame.animate(frames, { duration: TRAVEL_MS });
     };
     seat(true);

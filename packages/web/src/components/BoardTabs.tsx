@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type KeyboardEvent } from 'react';
+import { travelFrames } from './travel';
 import PlusIcon from '../assets/icons/plus.svg?react';
 import { prefersReducedMotion } from '../hooks/useScramble';
 
 // WHICH BOARD: the boards' ONE control across the app — the solved screen's boards and the
-// board screen both turn through it. The scopes are NAMES IN A ROW (each group, then GLOBAL),
+// board screen both turn through it. The tabs are NAMES IN A ROW (each group, then GLOBAL),
 // `--ui` bold tracked capitals in the secondary ink, the one shown wearing the WHITE TITLE
 // CHIP (the cards' one emphasis gesture).
 //
@@ -33,7 +34,7 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 // the result opens that board; the board screen opens a group's own screen). The board screen
 // pins the PLUS at the row's end (`onNew`): creating a group is the row's one other act, and
 // pinned it never scrolls out of reach.
-export interface BoardTab {
+export interface BoardTabItem {
   key: string;
   label: string;
   pinned?: boolean;
@@ -58,16 +59,14 @@ export default function BoardTabs({
   onOpen,
   onNew,
   newLabel,
-  className = '',
 }: {
-  tabs: readonly BoardTab[];
+  tabs: readonly BoardTabItem[];
   shown: number;
   onTurn: (index: number) => void;
   onOpen: (index: number) => void;
   // The pinned plus, and its accessible name.
   onNew?: () => void;
   newLabel?: string;
-  className?: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
@@ -101,14 +100,11 @@ export default function BoardTabs({
       ink.style.setProperty('--chip-r', `${next.r}px`);
       if (bare || !animate || prev === null || (prev.l === next.l && prev.r === next.r) || prefersReducedMotion()) return;
       travel.current?.cancel();
-      const frames: Keyframe[] = [];
-      for (let k = 0; k <= TRAVEL_STEPS; k += 1) {
-        const t = k / TRAVEL_STEPS;
-        const e = 1 - (1 - t) * (1 - t);
+      const frames = travelFrames(TRAVEL_STEPS, (e) => {
         const l = Math.round(prev.l + (next.l - prev.l) * e);
         const r = Math.round(prev.r + (next.r - prev.r) * e);
-        frames.push({ clipPath: `inset(${CHIP_INSET_Y}px ${r}px ${CHIP_INSET_Y}px ${l}px)`, offset: t, easing: 'steps(1, end)' });
-      }
+        return { clipPath: `inset(${CHIP_INSET_Y}px ${r}px ${CHIP_INSET_Y}px ${l}px)` };
+      });
       travel.current = ink.animate(frames, { duration: TRAVEL_MS });
     },
     [shown, bare],
@@ -242,7 +238,7 @@ export default function BoardTabs({
   };
 
   return (
-    <div ref={rootRef} className={`board-tabs ${className}`}>
+    <div ref={rootRef} className="board-tabs">
       <div ref={rowRef} className="board-tabs-row" onScroll={onScroll}>
         <div ref={lineRef} className="board-tabs-line" role="tablist" aria-orientation="horizontal" onKeyDown={onKeyDown}>
           {tabs.map((tab, i) => (

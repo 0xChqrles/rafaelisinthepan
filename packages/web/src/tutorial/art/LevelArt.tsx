@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { bayerThreshold as th } from '@whippin/shared';
+import { hexToAbgr } from '../../components/raster';
 import { prefersReducedMotion } from '../../hooks/useScramble';
 import type { LevelArtName } from '../levels';
 import type { Raster, Scene } from './scenes';
@@ -50,14 +51,6 @@ export function preloadScenes(): void {
   loadScenes().catch(() => {
     // Decoration: the picture's box keeps its ground.
   });
-}
-
-function hexToAbgr(hex: string): number {
-  const v = parseInt(hex.slice(1), 16);
-  const r = (v >> 16) & 255;
-  const g = (v >> 8) & 255;
-  const b = v & 255;
-  return ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0;
 }
 
 export default function LevelArt({

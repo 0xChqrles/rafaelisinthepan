@@ -1,16 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import {
-  anonName,
-  dateForDayNumber,
-  defaultAvatar,
-  type Board,
-  type BoardPeriod,
-  type BoardPlayer,
-  type BoardRow,
-  type GroupSummary,
-  type PeriodBoard,
-  type PeriodRow,
-} from '@whippin/shared';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { anonName, dateForDayNumber, defaultAvatar, type BoardPeriod, type BoardPlayer, type GroupSummary } from '@whippin/shared';
 import {
   boardUrl,
   groupsUrl,
@@ -22,23 +11,23 @@ import {
   readGroup,
   type GroupsBody,
 } from '../api';
+import { clockNow, onClock } from '../components/animationClock';
 import Avatar from '../components/Avatar';
-import BoardTabs, { type BoardTab as Scope } from '../components/BoardTabs';
+import { DISSOLVE_MS } from '../components/bayerTiles';
+import BoardTabs, { type BoardTabItem } from '../components/BoardTabs';
+import Under, { ARRIVE, PACE_CAP, TURN, lineRun, type ListRun, type Shown, type UnderView } from '../components/BoardUnder';
 import ConfirmScreen from '../components/ConfirmScreen';
-import { BoardRank, BoardRowItem, PlayingRowItem, WaitingRowItem, type LineRun } from '../components/BoardRows';
 import { LINE_PX, MARK } from '../components/boardMetrics';
-import { DISSOLVES, EDGES } from '../components/bayerTiles';
 import GroupCreate from '../components/GroupCreate';
 import GroupScreen from '../components/GroupScreen';
 import LoadError from '../components/LoadError';
 import PeriodSwitch from '../components/PeriodSwitch';
-import Podium, { NO_PLACES, nextStage, type PodiumEntry, type PodiumStage } from '../components/Podium';
-import { beats, podiumHeightPx, podiumSize, type PodiumMode, type PodiumSize } from '../components/podium/scene';
+import Podium, { nextStage, type PodiumStage } from '../components/podium/Podium';
+import { beats, podiumHeightPx, podiumSize, type PodiumSize } from '../components/podium/scene';
 import PuzzleTitle from '../components/PuzzleTitle';
-import ReelNumber from '../components/ReelNumber';
 import { HeaderLeft } from '../components/TopBar';
-import ChevronIcon from '../assets/icons/chevron-left.svg?react';
 import useShare from '../hooks/useShare';
+import useStuckOwnLine from '../hooks/useStuckOwnLine';
 import useSwipe from '../hooks/useSwipe';
 import useToday from '../hooks/useToday';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -54,7 +43,7 @@ import { prefetchTurnstileTokens } from '../turnstile';
 import ErrorScreen from '../components/ErrorScreen';
 import { useGameStore, type BoardTab } from '../state/gameStore';
 import { pathForGroupInvite, type LangCode } from '../langs';
-import { dayPodium, periodPodium } from '../game/podium';
+import { isPeriodBoard, listCounts, ownLineKey, podiumShows, type AnyBoard } from '../game/boardView';
 import { t } from '../i18n';
 
 // The #190 leaderboard screen, drawn over GROUPS since #271 (user-decided 2026-09-07:
@@ -113,9 +102,9 @@ import { t } from '../i18n';
 // and the global read stays anonymous. The deliberate acts that mint are NEW GROUP and
 // INVITE, and every identity-reading effect keys on the live identity, so a mint (or a
 // cross-tab adoption) populates the screen without a remount.
-type AnyBoard = Board | PeriodBoard;
-
-const isPeriodBoard = (board: AnyBoard): board is PeriodBoard => 'from' in board;
+//
+// The screen keeps the state, the reads and the acts; what stands under the podium is
+// `BoardUnder`, the board's readings `game/boardView.ts`, its list's order `game/boardSlots.ts`.
 
 // The succession a LEAVE carries, read off the list the server last answered (the same
 // rule the server applies — `successionFor`; root AGENTS.md, Groups): a member who is not
@@ -137,6 +126,9 @@ export function leaveBody(token: string, group: string, kind: LeaveKind, success
   return { token, leave: group, ...(named ? { successor: named } : {}) };
 }
 
+// How long a turn keeps the board before on screen while the new one's read is out.
+const HOLD_MS = 400;
+
 export default function Leaderboard({ lang }: { lang: LangCode }) {
   // The tab belongs to the VISIT (user feedback 2026-08-20): it lives in the store because
   // this screen remounts without the visit ending, and App resets it on any non-board route.
@@ -152,7 +144,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   const epoch = identity ? identityEpochOf(identity) : null;
   const meId = identity?.accountId ?? null;
 
-  // The player's groups — the pages. Read off the ONE cache every group surface shares;
+  // The player's groups — the tabs. Read off the ONE cache every group surface shares;
   // tokenless it is known-empty without a request.
   const { phase: groupsPhase, groups } = useGroups();
   useEffect(() => {
@@ -166,10 +158,10 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // group they are in, which the list already carries.
   const mates = new Set(groups?.flatMap((group) => group.members) ?? []);
 
-  // THE SCOPES, in the tab row's order: every group — or, with none, the one tab that SAYS
-  // so (a state, not a name: `bare`, no chip; its body carries CREATE GROUP) — then GLOBAL,
-  // pinned at the row's end (every player has it, however long the groups' names run).
-  const scopes: Scope[] =
+  // THE TABS, in the row's order: every group — or, with none, the one tab that SAYS so (a
+  // state, not a name: `bare`, no chip; its body carries CREATE GROUP) — then GLOBAL, pinned
+  // at the row's end (every player has it, however long the groups' names run).
+  const tabs: BoardTabItem[] =
     groups === null
       ? []
       : [
@@ -181,20 +173,20 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // body is LOADING, so a player who has groups never sees CREATE GROUP flash first.
   const onNone = tab === 'group' && groups?.length === 0;
   const activeIndex =
-    scopes.length === 0
+    tabs.length === 0
       ? 0
       : tab === 'global'
-        ? scopes.length - 1
+        ? tabs.length - 1
         : active === null
           ? 0
-          : Math.max(0, scopes.findIndex((scope) => scope.key === active.id));
-  const showScope = (index: number) => {
-    const scope = scopes[index];
-    if (!scope) return;
-    if (scope.key === 'global') {
+          : Math.max(0, tabs.findIndex((item) => item.key === active.id));
+  const turnTo = (index: number) => {
+    const item = tabs[index];
+    if (!item) return;
+    if (item.key === 'global') {
       setTab('global');
     } else {
-      if (scope.key !== 'none') setLastGroup(scope.key);
+      if (item.key !== 'none') setLastGroup(item.key);
       setTab('group');
     }
   };
@@ -247,9 +239,9 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     dropped = true;
   }
 
-  // One fetch per board ACTIVATION — the route is a zero-TTL live read, so a page turn
-  // re-reads rather than trusting a snapshot; the cached board holds the screen while the
-  // fresh one is in flight (stale-but-good beats a spinner), and RETRY refetches. A GROUP
+  // One fetch per board ACTIVATION — the route is a zero-TTL live read, so a turn re-reads
+  // rather than trusting a snapshot; the cached board holds the screen while the fresh one
+  // is in flight (stale-but-good beats a spinner), and RETRY refetches. A GROUP
   // board is the authenticated POST naming the group (the server refuses a non-member);
   // GLOBAL is the anonymous GET, widened with the caller's own window via their PUBLIC id.
   useEffect(() => {
@@ -257,7 +249,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     const key = boardKey;
     let cancelled = false;
     setBoards((prev) => (prev[key] === 'failed' ? { ...prev, [key]: undefined } : prev));
-    // No token, no private fetch (#216): a group page cannot exist tokenless (the list is
+    // No token, no private fetch (#216): a group's board cannot exist tokenless (the list is
     // empty), so only the global read runs without an identity.
     if (tab === 'group' && !identity) return;
     (async () => {
@@ -439,7 +431,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     setScreen('group');
   };
   // A sideways swipe on the lines turns the tab row; its click opens nothing.
-  const { handlers: swipe, swiped } = useSwipe((step) => showScope(activeIndex + step));
+  const { handlers: swipe, swiped } = useSwipe((step) => turnTo(activeIndex + step));
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const columnRef = useRef<HTMLDivElement>(null);
@@ -675,7 +667,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   };
 
   return (
-    <div className="board-screen" style={SCREEN_TILES}>
+    <div className="board-screen">
       {/* THE BOARD KEEPS THE PUZZLE'S TITLE and takes no title of its own (user-decided
           2026-08-30): a board is a view OF a daily, and the lit crown says what the screen
           is. The way OUT is any other key of the same, unmoving row. */}
@@ -686,9 +678,9 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
       {/* WHICH BOARD: the tab row — the result's own. A tap on the shown group goes into it;
           the pinned plus creates. Held at its height while the list of groups is unknown. */}
       <BoardTabs
-        tabs={scopes}
+        tabs={tabs}
         shown={activeIndex}
-        onTurn={showScope}
+        onTurn={turnTo}
         onOpen={(index) => {
           if (index === activeIndex) openGroup();
         }}
@@ -703,7 +695,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
         {tab === 'group' && active ? (
           <PeriodSwitch lang={lang} period={period} onChange={setPeriod} />
         ) : tab === 'global' ? (
-          <span className="board-caption">{t(lang, 'scopeGlobalSub')}</span>
+          <span className="board-caption">{t(lang, 'boardGlobalSub')}</span>
         ) : null}
       </div>
 
@@ -722,7 +714,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
           className="board-column pixel-scroll"
           role="tabpanel"
           tabIndex={0}
-          aria-label={scopes[activeIndex]?.label}
+          aria-label={tabs[activeIndex]?.label}
           aria-busy={pending || undefined}
           style={slots > 0 ? { maxHeight: `${slots * LINE_PX}px` } : undefined}
         >
@@ -856,498 +848,6 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
         />
       )}
     </div>
-  );
-}
-
-// THE PACE of a board: when it begins, how far apart its lines follow, and how long each
-// number's reels run. The ARRIVAL leaves the head its beats first (the chip drawn across, the
-// brackets locking on) and lands slower; a TURN comes straight in. The lines themselves start
-// on the podium's own beat (`Beats.lines`).
-interface Pace {
-  startMs: number;
-  staggerMs: number;
-  runMs: number;
-}
-const ARRIVE: Pace = { startMs: 260, staggerMs: 55, runMs: 650 };
-const TURN: Pace = { startMs: 0, staggerMs: 30, runMs: 420 };
-// Past the FOLD (the column's last whole slot on screen, and never past PACE_CAP) the lines
-// come in together with the last one shown — and so does your line held at the column's edge,
-// which covers exactly that slot: the two dissolve in through the same cells at the same
-// instant, so the one under it never shows through.
-const PACE_CAP = 14;
-const SCREEN_TILES = { ...DISSOLVES, ...EDGES } as CSSProperties;
-// How a list's lines come in: the pace (from the podium's beat) and the fold.
-interface ListRun {
-  pace: Pace;
-  fold: number;
-}
-const lineRun = ({ pace, fold }: ListRun, i: number): LineRun => ({
-  delayMs: pace.startMs + Math.min(i, fold) * pace.staggerMs,
-  runMs: pace.runMs,
-});
-const listStyle = (rankDigits: number) => ({ '--rank-w': `${rankDigits * 16}px` }) as CSSProperties;
-// A slot's dissolve, in or out (CSS `board-dissolve`).
-const DISSOLVE_MS = 240;
-// How long a turn keeps the board before on screen while the new one's read is out.
-const HOLD_MS = 400;
-// The skeleton's lines come in only if the read is slow (CSS `.board-skeleton-line`): this
-// long, this far apart, then a dissolve.
-const SKELETON_WAIT_MS = 320;
-const SKELETON_STAGGER_MS = 50;
-const SKELETON_LINES = [62, 48, 70, 54, 40];
-
-// The page's animation clock (the dissolves' own): what time it is, and `fn` once `ms` of it
-// has passed (an empty animation on `el`) — the wall clock where there is none. Returns the
-// cancel.
-function clockNow(): number {
-  const time = document.timeline?.currentTime;
-  return typeof time === 'number' ? time : performance.now();
-}
-function onClock(el: HTMLElement | null, ms: number, fn: () => void): () => void {
-  if (!el || typeof el.animate !== 'function') {
-    const timer = window.setTimeout(fn, ms);
-    return () => window.clearTimeout(timer);
-  }
-  const timer = el.animate([], { duration: ms });
-  timer.finished.then(fn, () => {});
-  return () => timer.cancel();
-}
-
-// The board on screen: which board, read for which tab (and which group), and the pace it came
-// in at.
-interface Shown {
-  key: string;
-  board: AnyBoard;
-  tab: BoardTab;
-  group: string | null;
-  pace: Pace;
-}
-
-// WHAT STANDS UNDER THE PODIUM, as one view: its identity (a new one gives way to the one
-// before), the header slot (`sub`: a group's, holding its DOOR — the group's size — and the
-// UNIT when nothing above says what the numbers count), and its body: the lines of the board
-// shown, the skeleton, the empty board's own block (with no podium to hold it), or nothing.
-// `shownFor`: how long it had been on screen when it began to give way.
-interface UnderView {
-  key: string;
-  sub: boolean;
-  door: number | null;
-  unit: 'tries' | 'points' | null;
-  body: 'list' | 'skeleton' | 'hold' | null;
-  shown: Shown | null;
-  shownFor: number;
-}
-
-// A view under the podium, slot after slot: the header slot first (a group's), then the body.
-// `out`: the view before, giving way — every slot dissolving OUT on the beat the slot that
-// takes it dissolves in (the same `run`), its numbers standing, nothing in it reachable.
-function Under({
-  view,
-  out = false,
-  run,
-  lang,
-  meId,
-  mates,
-  places,
-  onDoor,
-  hold,
-}: {
-  view: UnderView;
-  out?: boolean;
-  run: ListRun;
-  lang: LangCode;
-  meId?: string;
-  mates: ReadonlySet<string>;
-  // The podium's places, said first in the list for a screen reader (null: no podium — the
-  // lines start at the first).
-  places: readonly (PodiumEntry | null)[] | null;
-  onDoor: () => void;
-  hold: ReactNode;
-}) {
-  const offset = view.sub ? 1 : 0;
-  const { shown } = view;
-  const list = { lang, meId, run, offset, out, podium: places !== null, places: out ? null : places };
-  return (
-    <div className={out ? 'board-under-out' : 'board-under-in'} aria-hidden={out || undefined}>
-      {view.sub && (
-        <div className="board-sub" style={{ '--delay': `${lineRun(run, 0).delayMs}ms` } as CSSProperties}>
-          {view.door !== null &&
-            (out ? (
-              <span className="board-door">
-                <DoorLabel lang={lang} count={view.door} />
-              </span>
-            ) : (
-              <button type="button" className="board-door" onClick={onDoor}>
-                <DoorLabel lang={lang} count={view.door} />
-              </button>
-            ))}
-          {view.unit && (
-            <span className="board-unit" aria-hidden="true">
-              {t(lang, view.unit)}
-            </span>
-          )}
-        </div>
-      )}
-      {view.body === 'list' && shown ? (
-        isPeriodBoard(shown.board) ? (
-          <PeriodList board={shown.board} {...list} />
-        ) : (
-          <BoardList
-            board={shown.board}
-            // Only the GLOBAL list marks the reader's people: on a group's board every row is
-            // one, and marking everything marks nothing.
-            mates={shown.tab === 'global' ? mates : null}
-            {...list}
-          />
-        )
-      ) : view.body === 'skeleton' ? (
-        <Skeleton lang={lang} run={run} offset={offset} out={out} shownFor={view.shownFor} />
-      ) : view.body === 'hold' && !out ? (
-        hold
-      ) : null}
-    </div>
-  );
-}
-
-// The door's words: the group's size, the quiet word, the header's chevron turned to point in.
-function DoorLabel({ lang, count }: { lang: LangCode; count: number }) {
-  return (
-    <>
-      {count} {t(lang, count === 1 ? 'memberUnit' : 'membersUnit')}
-      <ChevronIcon className="ui-icon" aria-hidden />
-    </>
-  );
-}
-
-// Which line of a board is yours, and where (its section and rank): the held-edge watch starts
-// again whenever it changes — a re-read bringing your line, your row turning from playing to
-// ranked.
-function ownLineKey(shown: Shown | null, meId: string | null): string {
-  if (!shown || !meId) return '';
-  const board = shown.board;
-  if (isPeriodBoard(board)) return `p${board.rows.find((row) => row.publicId === meId)?.rank ?? ''}`;
-  const ranked = [...board.rows, ...(board.own ?? [])].find((row) => row.publicId === meId);
-  if (ranked) return `r${ranked.rank}`;
-  return board.playing.some((row) => row.publicId === meId) ? 'playing' : '';
-}
-
-// Whether a board draws its podium and LINES rather than its empty state (the podium's ghost).
-// Empty is per TAB. The GLOBAL board is empty when nobody played. A GROUP's
-// board is empty when the caller is ALONE in it: the server includes the caller's own row
-// once they played, and a board of exactly yourself still means "nobody else yet", which is
-// what the ghost says and INVITE remedies (a member who merely has not played is a waiting
-// row, never empty). A period is empty when nobody in the group recorded a score in it.
-function hasLines(board: AnyBoard, tab: BoardTab, meId: string | null): boolean {
-  if (isPeriodBoard(board)) return board.rows.length > 0;
-  const others = board.rows.filter((row) => row.publicId !== meId);
-  const playingOthers = board.playing.filter((row) => row.publicId !== meId);
-  return !(
-    (tab === 'group' ? others.length === 0 && playingOthers.length === 0 : board.rows.length === 0) &&
-    (board.own?.length ?? 0) === 0 &&
-    board.waiting.length === 0
-  );
-}
-
-// YOUR LINE STAYS IN SIGHT (CSS: sticky at both edges of the column): this says WHEN it is
-// held at an edge rather than standing in its place — `data-stuck` on it, `top` or `bottom` —
-// so the lines passing under it thin out through a dithered edge there instead of being cut.
-// Its place is read off the line before it (or its list's top); `data-` because the line's
-// class is React's. `watch` names what the column shows: a new board, a refresh bringing your
-// line or moving it starts the watch again.
-function useStuckOwnLine(column: { current: HTMLDivElement | null }, watch: string) {
-  useEffect(() => {
-    const scroller = column.current;
-    const me = scroller?.querySelector<HTMLElement>('.board-under-in .board-row.me');
-    if (!scroller || !me) return undefined;
-    const read = () => {
-      const before = me.previousElementSibling as HTMLElement | null;
-      const edge = before ? before.getBoundingClientRect().bottom : (me.parentElement?.getBoundingClientRect().top ?? 0);
-      const top = edge - scroller.getBoundingClientRect().top;
-      const stuck = top < -0.5 ? 'top' : top + me.offsetHeight > scroller.clientHeight + 0.5 ? 'bottom' : null;
-      if (stuck) me.dataset.stuck = stuck;
-      else delete me.dataset.stuck;
-    };
-    read();
-    scroller.addEventListener('scroll', read, { passive: true });
-    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(read);
-    ro?.observe(scroller);
-    return () => {
-      scroller.removeEventListener('scroll', read);
-      ro?.disconnect();
-    };
-  }, [column, watch]);
-}
-
-// WHAT THE PODIUM SHOWS for the body's state: a failure, no group at all, a read still out, an
-// empty board (the ghost) — or the board's first three rows on their places (`game/podium.ts`:
-// never re-ranked), each with the unit its value counts in (and a period's tiebreakers). Its
-// `build` names the picture: a board whose podium changes is a new scene, one shown before is
-// the same.
-function podiumShows({
-  failed,
-  none,
-  shown,
-  meId,
-  mates,
-  lang,
-}: {
-  failed: boolean;
-  none: boolean;
-  shown: Shown | null;
-  meId: string | null;
-  mates: ReadonlySet<string>;
-  lang: LangCode;
-}): { build: string; mode: PodiumMode; places: readonly (PodiumEntry | null)[]; period: boolean; seedKey: string } {
-  const still = (build: string, mode: PodiumMode) => ({ build, mode, places: NO_PLACES, period: false, seedKey: '' });
-  if (failed) return still('failed', 'failed');
-  if (none) return still('none', 'ghost');
-  if (!shown) return still('loading', 'loading');
-  if (!hasLines(shown.board, shown.tab, meId)) return still(`${shown.key}:empty`, 'ghost');
-  const board = shown.board;
-  const period = isPeriodBoard(board);
-  const picked = period ? periodPodium(board.rows).places : dayPodium(board.rows).places;
-  const unit = (value: number) => t(lang, period ? (value === 1 ? 'point' : 'points') : value === 1 ? 'try' : 'tries');
-  const places = picked.map((place) =>
-    place
-      ? {
-          player: place.row,
-          rank: place.rank,
-          value: place.value,
-          unit: unit(place.value),
-          detail: 'solvedDays' in place.row ? periodDetail(place.row, lang) : [],
-          near: place.near,
-          me: place.row.publicId === meId,
-          // Only GLOBAL marks the reader's people (on a group's board every row is one).
-          mate: shown.tab === 'global' && place.row.publicId !== meId && mates.has(place.row.publicId),
-        }
-      : null,
-  );
-  const id = places.map((p) =>
-    p ? `${p.player.publicId}:${p.rank}=${p.value}${p.detail.join('/')}${p.me ? '*' : ''}${p.mate ? '+' : ''}` : '-',
-  );
-  return { build: `${shown.key}|${id.join(',')}`, mode: 'board', places, period, seedKey: shown.key };
-}
-
-// A period row's TIEBREAKERS, the lines' own words: the days that recorded a score, and the
-// total of their tries.
-function periodDetail(row: PeriodRow, lang: LangCode): string[] {
-  return [
-    `${row.solvedDays} ${t(lang, row.solvedDays === 1 ? 'dayUnit' : 'daysUnit')}`,
-    `${row.total} ${t(lang, 'tries').toLowerCase()}`,
-  ];
-}
-
-// Whether a board's lines carry numbers.
-function listCounts(board: AnyBoard): boolean {
-  if (isPeriodBoard(board)) return board.rows.length > 0;
-  return board.rows.length > 0 || (board.own?.length ?? 0) > 0 || board.playing.length > 0;
-}
-
-// A section's caption on the column (IN PROGRESS, NOT PLAYED YET): the words, then the
-// stippled rail running on — said once for every line under it.
-function Section({ text, slot, run: list }: { text: string; slot: number; run: ListRun }) {
-  const run = lineRun(list, slot);
-  return (
-    <li className="board-section" style={{ '--delay': `${run.delayMs}ms` } as CSSProperties}>
-      <span>{text}</span>
-    </li>
-  );
-}
-
-// WHILE THE FIRST READ IS OUT: the board's lines as stippled rails where the marks and the
-// names will stand — the box of what is coming, at its pitch, so nothing moves when it lands.
-// Giving way (`out`), only the lines that had come in by then are there to go.
-function Skeleton({
-  lang,
-  run,
-  offset,
-  out,
-  shownFor,
-}: {
-  lang: string;
-  run: ListRun;
-  offset: number;
-  out: boolean;
-  shownFor: number;
-}) {
-  const lines = out
-    ? SKELETON_LINES.filter((_, i) => shownFor >= SKELETON_WAIT_MS + i * SKELETON_STAGGER_MS + DISSOLVE_MS)
-    : SKELETON_LINES;
-  return (
-    <div className="board-skeleton" role={out ? undefined : 'status'}>
-      {!out && <span className="sr-only">{t(lang, 'loading')}</span>}
-      {lines.map((width, i) => (
-        <span
-          key={i}
-          className="board-skeleton-line"
-          style={
-            {
-              '--w': `${width}%`,
-              '--i': i,
-              ...(out ? { '--delay': `${lineRun(run, offset + i).delayMs}ms` } : {}),
-            } as CSSProperties
-          }
-          aria-hidden="true"
-        >
-          <span className="board-skeleton-mark" />
-          <span className="board-skeleton-name" />
-        </span>
-      ))}
-    </div>
-  );
-}
-
-// The podium's places, said for a screen reader as the board's first items (the podium itself
-// is a picture): rank, name, value, unit — and a period's tiebreakers.
-function PodiumItems({ places }: { places: readonly (PodiumEntry | null)[] | null }) {
-  if (!places) return null;
-  return (
-    <>
-      {places.map((place) =>
-        place ? (
-          <li key={place.player.publicId} className="sr-only" aria-current={place.me || undefined}>
-            #{place.rank} {place.player.name || anonName(place.player.publicId)} {place.value} {place.unit.toLowerCase()}
-            {place.detail.length > 0 && ` · ${place.detail.join(' · ')}`}
-          </li>
-        ) : null,
-      )}
-    </>
-  );
-}
-
-interface ListProps {
-  lang: LangCode;
-  meId?: string;
-  run: ListRun;
-  // The slot the list's first line stands in (after the header's), and whether it is giving way.
-  offset: number;
-  out: boolean;
-  // A podium stands over the list (its three are not lines), and its places, said first for a
-  // screen reader (null: not said — giving way, or no podium).
-  podium: boolean;
-  places: readonly (PodiumEntry | null)[] | null;
-}
-
-// A list's run, latched as it came on screen (a re-read never re-times its lines) — giving way,
-// its numbers stand.
-function useListRun(props: ListProps): ListRun {
-  const [run] = useState(props.run);
-  return props.out ? { ...run, pace: { ...run.pace, runMs: 0 } } : run;
-}
-
-// A DAY's lines past the podium's three (or all of them, with no podium): the ranked rows, the
-// caller's own window under the rail of the rows left out (GLOBAL, below the cut), then IN
-// PROGRESS and NOT PLAYED YET, each under its caption. (An empty board is the podium's ghost:
-// no list.)
-function BoardList(props: ListProps & { board: Board; mates: ReadonlySet<string> | null }) {
-  const { board, lang, meId, mates, offset, podium, places } = props;
-  const run = useListRun(props);
-  // The ranked rows past the podium's three, then the caller's own window.
-  const ranked = podium ? dayPodium(board.rows).lines : board.rows;
-  // ONE rank column for the whole list, as wide as its widest rank (two digits at the least).
-  const rankDigits = Math.max(2, ...[...ranked, ...(board.own ?? [])].map((row) => String(row.rank).length));
-  // (Every item takes a slot, the rail too: the slot it stands in times it.)
-  let slot = offset;
-  const item = (row: BoardRow) => {
-    const i = slot++;
-    return (
-      <BoardRowItem
-        key={row.publicId}
-        row={row}
-        me={row.publicId === meId}
-        mate={mates?.has(row.publicId) ?? false}
-        index={i}
-        run={lineRun(run, i)}
-      />
-    );
-  };
-  const gap = () => {
-    const i = slot++;
-    return <li className="board-gap" aria-hidden="true" style={{ '--delay': `${lineRun(run, i).delayMs}ms` } as CSSProperties} />;
-  };
-  return (
-    <ol className="board-list" style={listStyle(rankDigits)}>
-      <PodiumItems places={places} />
-      {ranked.map(item)}
-      {board.own && board.own.length > 0 && (
-        <>
-          {gap()}
-          {board.own.map(item)}
-        </>
-      )}
-      {board.playing.length > 0 && <Section text={t(lang, 'boardPlaying')} slot={slot++} run={run} />}
-      {board.playing.map((row) => {
-        const i = slot++;
-        return <PlayingRowItem key={row.publicId} row={row} me={row.publicId === meId} index={i} run={lineRun(run, i)} />;
-      })}
-      {board.waiting.length > 0 && <Section text={t(lang, 'boardNotPlayed')} slot={slot++} run={run} />}
-      {board.waiting.map((player) => {
-        const i = slot++;
-        return <WaitingRowItem key={player.publicId} player={player} index={i} run={lineRun(run, i)} />;
-      })}
-    </ol>
-  );
-}
-
-// A WEEK or a MONTH (#271), past the podium's three (or all of them): the shared period rule's
-// three numbers per member — podium POINTS as the line's number, then the days and the total as
-// a quiet detail under the name.
-function PeriodList(props: ListProps & { board: PeriodBoard }) {
-  const { board, lang, meId, offset, podium, places } = props;
-  const run = useListRun(props);
-  const ranked = podium ? periodPodium(board.rows).lines : board.rows;
-  const rankDigits = Math.max(2, ...ranked.map((row) => String(row.rank).length));
-  return (
-    <ol className="board-list" style={listStyle(rankDigits)}>
-      <PodiumItems places={places} />
-      {ranked.map((row, index) => (
-        <PeriodRowItem
-          key={row.publicId}
-          row={row}
-          me={row.publicId === meId}
-          index={offset + index}
-          lang={lang}
-          run={lineRun(run, offset + index)}
-        />
-      ))}
-    </ol>
-  );
-}
-
-function PeriodRowItem({
-  row,
-  me,
-  index,
-  lang,
-  run,
-}: {
-  row: PeriodRow;
-  me: boolean;
-  index: number;
-  lang: LangCode;
-  run: LineRun;
-}) {
-  return (
-    <li
-      className={`board-row period${me ? ' me' : ''}`}
-      style={{ '--i': index, '--delay': `${run.delayMs}ms`, '--land': `${run.delayMs + run.runMs}ms` } as CSSProperties}
-      aria-current={me || undefined}
-    >
-      <BoardRank rank={row.rank} />
-      <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={MARK} sharp />
-      <span className="board-ident">
-        <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>
-        {/* The tiebreakers, said small under the name: the days that recorded a score,
-            and the total of their tries. */}
-        <span className="board-detail">
-          {row.solvedDays} {t(lang, row.solvedDays === 1 ? 'dayUnit' : 'daysUnit')} · {row.total}{' '}
-          {t(lang, 'tries').toLowerCase()}
-        </span>
-      </span>
-      <span className="board-score">
-        <ReelNumber value={row.points} delayMs={run.delayMs} runMs={run.runMs} />
-      </span>
-    </li>
   );
 }
 

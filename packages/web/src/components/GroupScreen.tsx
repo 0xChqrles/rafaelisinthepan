@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { anonName, defaultAvatar, type BoardPlayer, type GroupSummary } from '@whippin/shared';
 import { readGroup } from '../api';
 import Avatar from './Avatar';
-import { DISSOLVES } from './bayerTiles';
+// (The dissolve's tiles its members come in through: on the document's root.)
+import './bayerTiles';
 import { MARK } from './boardMetrics';
 import LoadingWave from './LoadingWave';
 import CloseIcon from '../assets/icons/close.svg?react';
@@ -73,7 +74,6 @@ export default function GroupScreen({
     <dialog
       {...dialogProps}
       className={`wheel-dialog puzzle-select group-screen${closing ? ' closing' : ''}`}
-      style={DISSOLVES}
       aria-label={group.name}
       onClose={onClose}
     >
@@ -81,7 +81,7 @@ export default function GroupScreen({
 
       <div className="group-body pixel-scroll">
         <div className="board-section">{t(lang, 'groupMembers')}</div>
-        <ol className="board-list group-members">
+        <ol className="board-list">
           {group.members.map((id, index) => {
             const player = face(id);
             const me = id === meId;
