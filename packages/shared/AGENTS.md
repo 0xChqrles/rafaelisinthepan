@@ -13,6 +13,8 @@
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
     src/scores.ts             the #201 round bounds, `roundEnded` (given up or capped),
                               the #271 group caps, VIEWER_IP_HEADER (infra+backend)
+    src/cors.ts               the API's CORS answer and its PREFLIGHT's (`preflightHeaders`):
+                              the handler sends them, the CDN's edge functions answer with them
     src/scoring.ts            what a guess LOG means (#203): s()/holeProgress, rankCount,
                               guessKey, countTries — the readings BOTH ends now perform
     src/identity.ts           #216's device-token shape + server-assigned account/device id minting

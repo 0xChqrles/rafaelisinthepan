@@ -39,8 +39,8 @@
     src/
       handler.ts              createHandler() — the ONE day/404/CORS/Puzzle logic (Lambda + local);
                               also the share routes and #271's group invite preview (/g/<groupId>)
-      respond.ts              the Function-URL event/result shapes, CORS + the preflight max-age,
-                              the json/html/png/redirect answers, and the puzzle's brotli/gzip
+      respond.ts              the Function-URL event/result shapes (CORS is `@whippin/shared`'s
+                              `cors.ts`), the json/html/png/redirect answers, and the puzzle's brotli/gzip
                               negotiation + the response-envelope budget
       store.ts                PuzzleStore interface (date+lang -> Puzzle | PuzzleSlice | null,
                               + the `hasPuzzle` existence probe) and the one not-found reading
@@ -448,11 +448,13 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   carries NO DeviceStore (PR-219 review): every authenticated route resolves its caller
   through the ONE top-level `HandlerDeps.deviceStore`, so two routes can never be wired to
   two different stores.
-  **The CORS PREFLIGHT is cached** (`PREFLIGHT_MAX_AGE_SECONDS`, applied on the OPTIONS
-  branch and deliberately WITHOUT the live routes' `no-store` — a preflight carries no
-  data, and what governs its reuse is `Access-Control-Max-Age`). /round POSTs continuously,
-  about once a second while a player types, so the default few-second preflight cache costs
-  an extra OPTIONS invocation and an RTT stall every few writes.
+  **The CORS PREFLIGHT is cached** (`@whippin/shared`'s `preflightHeaders`, with
+  `PREFLIGHT_MAX_AGE_SECONDS`, on the OPTIONS branch and deliberately WITHOUT the live
+  routes' `no-store` — a preflight carries no data, and what governs its reuse is
+  `Access-Control-Max-Age`). /round POSTs continuously, about once a second while a player
+  types, so the default few-second preflight cache costs an extra OPTIONS round trip every
+  few writes. In production a live route's preflight never reaches this branch: the CDN
+  answers it at the edge with the same shared headers (root `AGENTS.md`, API routes).
 
 - **Derived scores (#203):** the same route. The product contract (why the
   score stops being claimed, the slice, the loading rule, the freeze, the corrective write,
@@ -502,9 +504,9 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   token with no guesses is a 400 rather than a free challenge to burn. `RoundHandlerDeps`
   therefore carries `scoreStore` + `ipHmacSecret` beside its verifier — explicitly, rather
   than reaching into `deps.scores` for them, which would make that file a utility module for
-  a route it knows nothing about. **`round*` gained the CDN's viewer-request function**
-  (`infra/lib/backend-stack.ts`): both the gate and the IP-metered score row need a trusted
-  address.
+  a route it knows nothing about. **`round*` wears the CDN's viewer-IP function**
+  (`ScoreViewerIpFn`, `infra/lib/backend-stack.ts`): both the gate and the IP-metered score
+  row need a trusted address.
   **`pnpm board:seed` PLAYS the day** now rather than posting numbers: one append per seed
   carrying the puzzle's secrets plus enough distinct misses to land on the score it wants
   (`playthrough`), which is also why it reads the day's puzzle and copies a slice forward

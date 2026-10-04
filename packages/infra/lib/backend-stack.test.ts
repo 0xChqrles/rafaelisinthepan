@@ -2,7 +2,7 @@ import { App, Aspects } from 'aws-cdk-lib';
 import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
 import { AwsSolutionsChecks } from 'cdk-nag';
 import { describe, expect, it } from 'vitest';
-import { VIEWER_IP_HEADER } from '@whippin/shared';
+import { VIEWER_IP_HEADER, preflightHeaders } from '@whippin/shared';
 import { BackendStack } from './backend-stack';
 
 const ACCOUNT = '111122223333';
@@ -13,11 +13,14 @@ const IP_HMAC_PARAMETER = '/test/ip-hmac-secret';
 // zone lookup would need real credentials), so the sender is named outright — the same
 // escape hatch a domain-less deployment uses.
 const MAIL_FROM = 'hello@test.invalid';
+// The web origin the API answers CORS for — the handler (its env) and the edge preflight alike.
+const ALLOWED_ORIGIN = 'https://whippin.test';
 
 function backendTemplate(): Template {
   const app = new App();
   const stack = new BackendStack(app, 'TestBackendStack', {
     env: { account: ACCOUNT, region: REGION },
+    allowedOrigin: ALLOWED_ORIGIN,
     turnstileSecretParameter: TURNSTILE_PARAMETER,
     ipHmacSecretParameter: IP_HMAC_PARAMETER,
     mailFrom: MAIL_FROM,
@@ -33,6 +36,31 @@ const liveBehaviors = () =>
   distributions()[0].Properties.DistributionConfig.CacheBehaviors as Record<string, unknown>[];
 const originRequestPolicies = () =>
   template.findResources('AWS::CloudFront::OriginRequestPolicy');
+
+// What a live behavior's viewer-request function is, and what its code does.
+function viewerRequestFunction(pattern: string): string {
+  const behavior = liveBehaviors().find(({ PathPattern }) => PathPattern === pattern);
+  const associations = behavior?.FunctionAssociations as
+    | { EventType: string; FunctionARN: { 'Fn::GetAtt': [string, string] } }[]
+    | undefined;
+  expect(associations, pattern).toHaveLength(1);
+  expect(associations![0].EventType, pattern).toBe('viewer-request');
+  return associations![0].FunctionARN['Fn::GetAtt'][0];
+}
+function functionCode(logicalId: string): string {
+  return template.findResources('AWS::CloudFront::Function')[logicalId].Properties.FunctionCode as string;
+}
+function viewerIpFunctionId(): string {
+  const [id] = Object.entries(template.findResources('AWS::CloudFront::Function')).find(([, fn]) =>
+    (fn.Properties.FunctionCode as string).includes(VIEWER_IP_HEADER),
+  )!;
+  return id;
+}
+// Run an edge function's code on a viewer request of `method` (the CloudFront event's shape).
+function runEdgeFunction(code: string, method: string): unknown {
+  const handler = new Function(`${code}\nreturn handler;`)() as (event: unknown) => unknown;
+  return handler({ request: { method, uri: '/board', headers: {} }, viewer: { ip: '203.0.113.7' } });
+}
 
 // AWS's managed CachingDisabled cache policy.
 const CACHING_DISABLED_POLICY_ID = '4135ea2d-6df8-44a3-9df3-4b5a84be39ad';
@@ -209,9 +237,7 @@ describe('score production boundary (#169)', () => {
     // Turnstile-gated round creation against the connecting address and records the day's
     // score row metered by its HMAC; `/devices` verifies the gated bootstrap that mints an
     // identity; `/scores` keeps the association because its own shape is unchanged.
-    const functions = Object.values(template.findResources('AWS::CloudFront::Function'));
-    expect(functions).toHaveLength(1);
-    const code = functions[0].Properties.FunctionCode as string;
+    const code = functionCode(viewerIpFunctionId());
     expect(code).toContain(VIEWER_IP_HEADER);
     // CloudFront's own read of the connection, assigned outright — a merge or a
     // conditional would let a viewer choose the identity their submissions dedup on.
@@ -219,26 +245,53 @@ describe('score production boundary (#169)', () => {
     expect(code).toMatch(
       new RegExp(`headers\\['${VIEWER_IP_HEADER}'\\]\\s*=\\s*\\{\\s*value:\\s*event\\.viewer\\.ip`),
     );
+    const stamped = runEdgeFunction(code, 'POST') as { headers: Record<string, { value: string }> };
+    expect(stamped.headers[VIEWER_IP_HEADER]).toEqual({ value: '203.0.113.7' });
 
-    const distributions = Object.values(template.findResources('AWS::CloudFront::Distribution'));
-    const behaviors = distributions[0].Properties.DistributionConfig.CacheBehaviors as Record<
-      string,
-      unknown
-    >[];
     // #204's link SEND is Turnstile-gated and metered per address, so it needs the trusted
-    // address too.
+    // address too. VIEWER_REQUEST runs before the cache lookup, so what it stamps IS a viewer
+    // header by the time the origin request policy decides what to forward.
     for (const pattern of ['scores*', 'round*', 'devices*', 'link*']) {
-      const behavior = behaviors.find(({ PathPattern }) => PathPattern === pattern);
-      const associations = behavior?.FunctionAssociations as { EventType: string }[];
-      expect(associations, pattern).toHaveLength(1);
-      // VIEWER_REQUEST runs before the cache lookup, so what it stamps IS a viewer header
-      // by the time the origin request policy decides what to forward.
-      expect(associations[0].EventType, pattern).toBe('viewer-request');
+      expect(viewerRequestFunction(pattern), pattern).toBe(viewerIpFunctionId());
     }
-    // The routes with no per-address logic stay clean.
+    // The routes with no per-address logic never receive the address.
     for (const pattern of ['profile*', 'board*', 'groups*', 'history*']) {
-      const behavior = behaviors.find(({ PathPattern }) => PathPattern === pattern);
-      expect(behavior?.FunctionAssociations, pattern).toBeUndefined();
+      expect(viewerRequestFunction(pattern), pattern).not.toBe(viewerIpFunctionId());
+      expect(functionCode(viewerRequestFunction(pattern))).not.toContain(VIEWER_IP_HEADER);
+    }
+  });
+
+  it('answers EVERY live route\'s CORS preflight at the edge, with the handler\'s own headers', () => {
+    // The permission check in front of each live POST never reaches the Lambda: the
+    // behavior's viewer-request function answers it with the SHARED preflight headers, so the
+    // edge and the handler (`backend:dev`, the puzzle route) cannot answer it two ways.
+    const functions = template.findResources('AWS::CloudFront::Function');
+    expect(Object.keys(functions)).toHaveLength(2);
+    // Every behavior the distribution adds is a live route (the table above, row for row) —
+    // so a new one wearing no function fails here.
+    const patterns = liveBehaviors().map(({ PathPattern }) => PathPattern as string);
+    expect([...patterns].sort()).toEqual(LIVE_ROUTES.map(({ pattern }) => pattern).sort());
+    // The two speakers answer for ONE origin: the handler's env, and the edge's code.
+    const lambdas = Object.values(template.findResources('AWS::Lambda::Function')).filter(
+      (fn) => fn.Properties.Environment?.Variables?.ALLOWED_ORIGIN !== undefined,
+    );
+    expect(lambdas).toHaveLength(1);
+    expect(lambdas[0].Properties.Environment.Variables.ALLOWED_ORIGIN).toBe(ALLOWED_ORIGIN);
+    for (const pattern of patterns) {
+      const answer = runEdgeFunction(functionCode(viewerRequestFunction(pattern)), 'OPTIONS') as {
+        statusCode: number;
+        headers: Record<string, { value: string }>;
+      };
+      expect(answer.statusCode, pattern).toBe(204);
+      expect(answer.headers, pattern).toEqual(
+        Object.fromEntries(
+          Object.entries(preflightHeaders(ALLOWED_ORIGIN)).map(([name, value]) => [name.toLowerCase(), { value }]),
+        ),
+      );
+      // Any other method goes on to the origin.
+      expect(runEdgeFunction(functionCode(viewerRequestFunction(pattern)), 'POST'), pattern).toMatchObject({
+        method: 'POST',
+      });
     }
   });
 });

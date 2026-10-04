@@ -11,6 +11,7 @@ import {
   encodeResult,
   groupCardPath,
   groupLandingPath,
+  preflightHeaders,
   shareCardPath,
   sharePath,
   GROUP_SEGMENT,
@@ -735,6 +736,8 @@ describe('CORS preflight', () => {
     expect(res.headers['Access-Control-Allow-Origin']).toBe(ORIGIN);
     expect(res.headers['Access-Control-Allow-Methods']).toMatch(/GET/);
     expect(res.body).toBe('');
+    // The shared answer, whole: the CDN's edge preflight sends the very same.
+    expect(res.headers).toEqual(preflightHeaders(ORIGIN));
   });
 });
 

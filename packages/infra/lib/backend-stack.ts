@@ -15,6 +15,7 @@ import {
   DEVICE_INDEX_PARTITION_KEY,
   DEVICE_INDEX_SORT_KEY,
   VIEWER_IP_HEADER,
+  preflightHeaders,
 } from '@whippin/shared';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -186,8 +187,12 @@ export class BackendStack extends Stack {
       // Graviton: cheaper per-ms and typically faster than x86 for this pure-JS handler
       // (no native deps; the AWS SDK ships in the runtime, so the bundle is arch-agnostic).
       architecture: lambda.Architecture.ARM_64,
-      // Headroom for the resvg WebAssembly module (compile + a 1200×630 render, #8).
-      memorySize: 512,
+      // ONE full vCPU (Lambda's CPU grows with memory up to 1769 MB, and Node runs a request on
+      // one core): what is slow here is CPU — the cold start, the day's 3.5–4.7 MB artifact
+      // parsed on a board read or a solve, the puzzle's brotli, the card render (resvg's
+      // WebAssembly, #8) — and at 512 MB it ran on under a third of one. The bill stays pennies
+      // a month: the per-ms price grows with memory, the CPU-bound milliseconds shrink with it.
+      memorySize: 1769,
       timeout: Duration.seconds(10),
       // Cost/abuse ceiling: /og/<token>.png is unauthenticated compute and every distinct
       // token misses the CDN, so cap the blast radius until the game warrants WAF rate
@@ -384,11 +389,12 @@ export class BackendStack extends Stack {
     });
 
     // The Turnstile-gated WRITES need TWO things at the origin, and no single header mode
-    // carries both — which is the whole reason this function exists. It was the score POST
-    // when it was written; since #203 that POST is retired and the writes are `/round`'s
-    // (round creation verifies a challenge against the connecting address, and a finished
-    // round records the score row the POST used to, IP-metered the same way), so
-    // the function is associated with BOTH behaviors.
+    // carries both — which is why this function stamps the address (it also answers the
+    // preflight, below). It was the score POST when it was written; since #203 that POST is
+    // retired and the writes are `/round`'s (round creation verifies a challenge against the
+    // connecting address, and a finished round records the score row the POST used to,
+    // IP-metered the same way), so the function is associated with every behavior whose
+    // handler needs a trusted address.
     //
     //  - The viewer's `x-amz-content-sha256`: OAC cannot sign a POST to a Lambda URL
     //    without the exact viewer-computed body hash. CloudFront REFUSES to name any
@@ -413,12 +419,37 @@ export class BackendStack extends Stack {
     // Anyone tempted to "simplify" this back to one policy: an `allExcept: Host` policy
     // ALONE ships a Lambda that throws on every POST (no trusted address), and neither
     // `pnpm backend:dev` nor a synthesized template can show it — only a real edge request.
+    //
+    // THE CORS PREFLIGHT, answered at the EDGE (user-decided 2026-10-05), by every live
+    // behavior's viewer-request function — alone, or ahead of the stamp. Every POST to a live
+    // route is preceded by the browser's OPTIONS (a JSON body and the OAC payload hash make it
+    // a non-simple request), and WebKit keeps the answer ten minutes whatever the max-age
+    // says. Sent to the Lambda, that permission check is a round trip to the origin and an
+    // invocation — a cold start, at times — before the POST it gates. Its answer is a constant
+    // of the deploy (the configured origin), so CloudFront gives it: a 204 with the SHARED
+    // headers (`preflightHeaders`), the very ones the handler would send.
+    const edgePreflightHeaders = Object.fromEntries(
+      Object.entries(preflightHeaders(allowedOrigin)).map(([name, value]) => [name.toLowerCase(), { value }]),
+    );
+    const edgePreflight = [
+      "  if (event.request.method === 'OPTIONS') {",
+      `    return { statusCode: 204, statusDescription: 'No Content', headers: ${JSON.stringify(edgePreflightHeaders)} };`,
+      '  }',
+    ];
+    const preflightFn = new cloudfront.Function(this, 'LivePreflightFn', {
+      comment: 'Answer a live route\'s CORS preflight at the edge.',
+      runtime: cloudfront.FunctionRuntime.JS_2_0,
+      code: cloudfront.FunctionCode.fromInline(
+        ['function handler(event) {', ...edgePreflight, '  return event.request;', '}'].join('\n'),
+      ),
+    });
     const viewerIpFn = new cloudfront.Function(this, 'ScoreViewerIpFn', {
-      comment: 'Stamp the connecting viewer address into the live routes\' trusted header.',
+      comment: 'Answer the CORS preflight; stamp the viewer address into the trusted header.',
       runtime: cloudfront.FunctionRuntime.JS_2_0,
       code: cloudfront.FunctionCode.fromInline(
         [
           'function handler(event) {',
+          ...edgePreflight,
           '  var request = event.request;',
           // Unconditional assignment, never a merge: a viewer sending this header must not
           // be able to influence what the origin reads.
@@ -535,12 +566,17 @@ export class BackendStack extends Stack {
       ['lang', 'month'],
     );
 
-    // Security response headers for the API. CORS stays owned by the Lambda (it echoes the
-    // configured origin + Vary), so this policy adds ONLY transport/sniffing hardening and
-    // deliberately sets no CORS/CSP (CSP is a document concern, not a JSON API's).
+    // Security response headers for the API. CORS is `@whippin/shared`'s (`cors.ts`): the
+    // Lambda sends it on every answer and the live behaviors' edge functions on the preflight
+    // (above), so this policy adds ONLY transport/sniffing hardening and deliberately sets no
+    // CORS/CSP (CSP is a document concern, not a JSON API's).
+    // It also carries CloudFront's `Server-Timing` on every response (`cdn-upstream-connect`,
+    // `cdn-upstream-fbl`, `cdn-pop`, …): where a live request's time goes between the edge and
+    // the origin, readable from any browser's network panel.
     const apiHeaders = new cloudfront.ResponseHeadersPolicy(this, 'ApiSecurityHeaders', {
       responseHeadersPolicyName: 'WhippinApiSecurityHeaders',
-      comment: 'API: HSTS + nosniff + referrer-policy (CORS owned by the Lambda).',
+      comment: 'API: HSTS + nosniff + referrer-policy + Server-Timing (CORS from the origin and the edge preflight).',
+      serverTimingSamplingRate: 100,
       securityHeadersBehavior: {
         strictTransportSecurity: {
           accessControlMaxAge: Duration.days(365),
@@ -560,9 +596,15 @@ export class BackendStack extends Stack {
     // ONE association, worn by every behavior whose handler reads a trusted client
     // address. Removing it from `/round` ships a Lambda that throws on every round start,
     // which neither `backend:dev` nor a synthesized template can show — only a real edge
-    // request — which is why `backend-stack.test.ts` pins both associations.
+    // request — which is why `backend-stack.test.ts` pins every association and runs the
+    // functions' code.
     const viewerIpAssociation: cloudfront.FunctionAssociation = {
       function: viewerIpFn,
+      eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+    };
+    // …and the preflight's alone, on every other live behavior.
+    const preflightAssociation: cloudfront.FunctionAssociation = {
+      function: preflightFn,
       eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
     };
 
@@ -611,9 +653,10 @@ export class BackendStack extends Stack {
       },
       // Every LIVE route wears the same behavior — zero-TTL (the data IS live), ALL
       // methods (each but the read-only `/scores` has a write or an authenticated POST),
-      // and its own origin-request policy. Each pattern also catches a harmless trailing
+      // and its own origin-request policy, and a viewer-request function that answers its CORS
+      // preflight at the edge (above). Each pattern also catches a harmless trailing
       // slash; the handler still accepts only the exact normalized route. Four of them
-      // differ, by the one thing that is not shared: the viewer-IP function, wanted
+      // differ, by the one thing that is not shared: the viewer-IP stamp, wanted
       // wherever the handler needs a TRUSTED client address — `/round` (its Turnstile-gated
       // round creation verifies the challenge against it, and a finished round records the
       // day's score row metered by its HMAC), `/devices` and `/link` (below), and `/scores`,
@@ -623,22 +666,30 @@ export class BackendStack extends Stack {
         'scores*': liveBehavior(scoreOriginRequestPolicy, {
           functionAssociations: [viewerIpAssociation],
         }),
-        'profile*': liveBehavior(profileOriginRequestPolicy),
-        'board*': liveBehavior(boardOriginRequestPolicy),
+        'profile*': liveBehavior(profileOriginRequestPolicy, {
+          functionAssociations: [preflightAssociation],
+        }),
+        'board*': liveBehavior(boardOriginRequestPolicy, {
+          functionAssociations: [preflightAssociation],
+        }),
         'round*': liveBehavior(roundOriginRequestPolicy, {
           functionAssociations: [viewerIpAssociation],
         }),
-        'groups*': liveBehavior(groupsOriginRequestPolicy),
-        'history*': liveBehavior(historyOriginRequestPolicy),
+        'groups*': liveBehavior(groupsOriginRequestPolicy, {
+          functionAssociations: [preflightAssociation],
+        }),
+        'history*': liveBehavior(historyOriginRequestPolicy, {
+          functionAssociations: [preflightAssociation],
+        }),
         // The device BOOTSTRAP is Turnstile-gated (#216), so this route needs a trusted
         // client address exactly as the round start does — the third behavior wearing the
-        // viewer-request function.
+        // viewer-IP function.
         'devices*': liveBehavior(devicesOriginRequestPolicy, {
           functionAssociations: [viewerIpAssociation],
         }),
         // Sending a #204 link code is Turnstile-gated AND metered per address, so this
         // route needs a trusted client address exactly as the round start does — the fourth
-        // behavior wearing the viewer-request function.
+        // behavior wearing the viewer-IP function.
         'link*': liveBehavior(linkOriginRequestPolicy, {
           functionAssociations: [viewerIpAssociation],
         }),

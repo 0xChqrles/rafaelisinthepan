@@ -274,6 +274,15 @@ packages agree on each list; `backend:dev` has no CDN and cannot show a drift.
   (its query allowList plus the Lambda-URL-safe `allExcept: Host` headers) and `no-store`
   answers; an unlisted parameter never reaches the origin. The day a handler reads a new
   parameter, name it in that policy too.
+- **A live route's CORS PREFLIGHT is answered at the EDGE** (user-decided 2026-10-05): every
+  live behavior carries a viewer-request CloudFront Function that answers `OPTIONS` itself —
+  a 204 with `shared/src/cors.ts`'s `preflightHeaders` for the configured origin — so the
+  permission check in front of a live POST never reaches the Lambda (WebKit asks again every
+  ten minutes, whatever the max-age). On the four behaviors that stamp `VIEWER_IP_HEADER`
+  (`/scores`, `/round`, `/devices`, `/link`; below) it is that same function, answering
+  first. The handler answers the
+  same shared headers wherever a preflight does reach it (`backend:dev`, the puzzle route).
+  A new live behavior wears one of the two functions.
 - **The share page (`/s/*`), the cards (`/og/*`) and the group invite preview (`/g/*`) are
   NOT live routes**: they are CACHED behaviors on the WEB distribution (`infra/lib/web-stack.ts`)
   handed to the API origin — a year for content-addressed share tokens, 300s for the group

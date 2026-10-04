@@ -160,6 +160,9 @@ export class WebStack extends Stack {
     const cardHeaders = new cloudfront.ResponseHeadersPolicy(this, 'CardHeaders', {
       responseHeadersPolicyName: 'WhippinCardHeaders',
       comment: 'Share card (#8): HSTS + nosniff/frame; CSP permits the /s inline redirect.',
+      // The API answers these with CloudFront's Server-Timing (one fill's timings); this
+      // distribution caches them a year, so it would replay that fill to every viewer.
+      removeHeaders: ['Server-Timing'],
       securityHeadersBehavior: {
         strictTransportSecurity: {
           accessControlMaxAge: Duration.days(365),
