@@ -68,7 +68,8 @@ const ACCENT = '#4a6aff';
 // the pixel face advances 1em a glyph, the mono 0.65em.
 const PIXEL_FONT = 'Press Start 2P';
 const UI_FONT = 'Azeret Mono';
-const UI_ADVANCE_EM = 0.65;
+// (Exported: the web sets the mono's names to fit off the same advance.)
+export const UI_ADVANCE_EM = 0.65;
 // The mono's cap height (its OS/2 table), to stand a line of capitals on a centre.
 const UI_CAP_EM = 0.698;
 
