@@ -8,7 +8,17 @@ import Button from '../components/Button';
 // (For its side effect: the dissolve masks the hold's note comes in through.)
 import '../components/bayerTiles';
 import MonthRaster from '../components/calendar/MonthRaster';
-import { calGeometry, NOTE_NARROW_BELOW_PX, type CalGeometry } from '../components/calendar/geometry';
+import {
+  BLEED,
+  CELL_PX,
+  HEADROOM,
+  HOLD_GAP_PX,
+  HOLD_PX,
+  NOTE_NARROW_BELOW_PX,
+  WEEKDAYS_PX,
+  calGeometry,
+  type CalGeometry,
+} from '../components/calendar/geometry';
 import type { KeyState, KeysModel } from '../components/calendar/keysScene';
 import { lastMonth, rememberMonth } from '../components/calendar/memory';
 import { monthTabs } from '../components/calendar/months';
@@ -53,7 +63,8 @@ const EDGE_SHAKE: Keyframe[] = [
   { translate: '0 0', offset: 1 },
 ];
 const EDGE_SHAKE_MS = 160;
-// Before the column is measured: a phone's month.
+// Before the column is measured (the one render before the layout effect, never painted): a
+// phone's month for the buttons, and no raster yet.
 const FIRST_GEOMETRY = calGeometry(362, 844, true);
 
 // THE ARCHIVE (#55): the player's record, one month at a time, drawn as a month of IRON KEYS
@@ -93,10 +104,10 @@ export default function Archive({ lang }: { lang: LangCode }) {
     [lang, firstKey, activeKey],
   );
 
-  // The month on screen: the one last turned to in this tab, kept inside the window, else the
-  // active month.
+  // The month on screen: the one last turned to in this tab today, kept inside the window, else
+  // the active month.
   const [current, setCurrent] = useState<YearMonth>(() =>
-    clampYearMonth(lastMonth(lang) ?? yearMonthOf(today), yearMonthOf(firstDate), yearMonthOf(today)),
+    clampYearMonth(lastMonth(lang, activeDay) ?? yearMonthOf(today), yearMonthOf(firstDate), yearMonthOf(today)),
   );
   const month = isoMonth(current);
   const shown = Math.max(0, tabs.findIndex((tab) => tab.key === month));
@@ -153,7 +164,8 @@ export default function Archive({ lang }: { lang: LangCode }) {
   // THE ROOM: the column's width (the board's, measured off `.app`'s content box) and the
   // window's height choose the keys' size and the layout (`calGeometry`); a resize re-seats it.
   const rootRef = useRef<HTMLDivElement>(null);
-  const [G, setG] = useState<CalGeometry>(FIRST_GEOMETRY);
+  const [measured, setG] = useState<CalGeometry | null>(null);
+  const G = measured ?? FIRST_GEOMETRY;
   useLayoutEffect(() => {
     const parent = rootRef.current?.parentElement;
     if (!parent) return undefined;
@@ -162,7 +174,8 @@ export default function Archive({ lang }: { lang: LangCode }) {
       const room = parent.clientWidth - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0');
       const phone = window.matchMedia?.('(max-width: 640px)').matches ?? window.innerWidth <= 640;
       const next = calGeometry(Math.min(560, Math.floor(room)), window.innerHeight, phone);
-      setG((was) => (JSON.stringify(was) === JSON.stringify(next) ? was : next));
+      // (A size is its candidate and where the column centres it.)
+      setG((was) => (was && was.name === next.name && was.gridX === next.gridX ? was : next));
     };
     measure();
     window.addEventListener('resize', measure);
@@ -211,7 +224,7 @@ export default function Archive({ lang }: { lang: LangCode }) {
     if (!tab) return;
     const ym = yearMonthOf(`${tab.key}-01`);
     setCurrent(ym);
-    rememberMonth(lang, ym);
+    rememberMonth(lang, activeDay, ym);
     release();
   };
   const shakeChip = () => {
@@ -225,9 +238,22 @@ export default function Archive({ lang }: { lang: LangCode }) {
     else turnTo(next);
   });
 
-  const todayIndex = cells.indexOf(today);
   const failed = history.daysPhase === 'failed';
+  const holdRef = useRef<HTMLDivElement>(null);
+  // RETRY leaves with the note (the read is out again), so the focus it held goes back to the
+  // month it asks for, never dropped to the page.
+  const retry = () => {
+    if (holdRef.current?.contains(document.activeElement)) {
+      document.getElementById(tabIds('cal-').tab(month))?.focus();
+    }
+    history.retry();
+  };
   const style = {
+    '--bleed': `${BLEED * CELL_PX}px`,
+    '--headroom': `${HEADROOM * CELL_PX}px`,
+    '--weekdays-h': `${WEEKDAYS_PX}px`,
+    '--hold-gap': `${HOLD_GAP_PX}px`,
+    '--hold-h': `${HOLD_PX}px`,
     '--grid-w': `${G.gridW}px`,
     '--grid-h': `${G.gridH}px`,
     '--grid-x': `${G.gridX}px`,
@@ -269,22 +295,24 @@ export default function Archive({ lang }: { lang: LangCode }) {
             plain ink. */}
         <div className="cal-weekdays" aria-hidden="true">
           {weekdayLabels.map((label, i) => (
-            <span key={i} className={todayIndex >= 0 && todayIndex % 7 === i ? 'on' : undefined}>
+            <span key={i} className={model.today >= 0 && model.today % 7 === i ? 'on' : undefined}>
               {label}
             </span>
           ))}
         </div>
 
         <div className="cal-stage" {...swipe}>
-          <MonthRaster
-            G={G}
-            lang={lang}
-            month={month}
-            activeDay={activeDay}
-            cells={cells}
-            model={model}
-            pressed={pressed}
-          />
+          {measured && (
+            <MonthRaster
+              G={measured}
+              lang={lang}
+              month={month}
+              activeDay={activeDay}
+              cells={cells}
+              model={model}
+              pressed={pressed}
+            />
+          )}
           <div className="cal-grid">
             {cells.map((date, i) => {
               if (date === null) return <span key={`pad-${i}`} className="cal-pad" aria-hidden="true" />;
@@ -296,6 +324,7 @@ export default function Archive({ lang }: { lang: LangCode }) {
                   className={`cal-day${date === today ? ' cal-day-today' : ''}`}
                   data-cal-day={date}
                   aria-label={`${longDate.format(new Date(`${date}T00:00:00Z`))}${srStatus(lang, shownStatus(date) ?? { kind: 'none' })}`}
+                  aria-current={date === today ? 'date' : undefined}
                   disabled={!playable}
                   {...(playable ? pressHandlers(i) : {})}
                   onClick={(e) => {
@@ -322,14 +351,16 @@ export default function Archive({ lang }: { lang: LangCode }) {
           that after one good visit every later failure was silent. What CHANGES with cached
           data is the claim: nothing loaded is a failure to load, in the danger ink; an older
           month still on screen is a note about it, in the plain status ink. Always reserved,
-          so nothing above it moves when it speaks. */}
-      <div className={`cal-hold${G.gridW < NOTE_NARROW_BELOW_PX ? ' narrow' : ''}`}>
+          so nothing above it moves when it speaks — and a LIVE REGION for the same reason,
+          mounted before its note, so the note is heard when it comes (and again on a second
+          failure). */}
+      <div ref={holdRef} className={`cal-hold${G.gridW < NOTE_NARROW_BELOW_PX ? ' narrow' : ''}`} role="status">
         {failed && (
           <div className="cal-hold-in">
             <p className={`cal-note${history.days === null ? ' error' : ''}`}>
               {t(lang, history.days === null ? 'failedHistory' : 'staleHistory')}
             </p>
-            <Button variant="secondary" onClick={history.retry}>
+            <Button variant="secondary" onClick={retry}>
               {t(lang, 'retry')}
             </Button>
           </div>

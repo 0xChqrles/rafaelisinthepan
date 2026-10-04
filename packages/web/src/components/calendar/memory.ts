@@ -12,7 +12,8 @@ import type { YearMonth } from '../../calendar';
 //            the month shown again with a day that says something else since (played here, or
 //            on another device) plays that day's CHANGE — the reason a return to the archive
 //            after a game shows what the player just did.
-//   LAST     the month last turned to, per language: the archive reopens on it.
+//   LAST     the month last turned to, per language, today: the archive reopens on it (a day
+//            played from September comes back to September). A new day opens on its own month.
 
 // A day's reading as the calendar drew it: none, a % (`p<pct>`), or solved.
 export type DrawnCode = 'n' | `p${number}` | 's';
@@ -20,7 +21,7 @@ export type DrawnCode = 'n' | `p${number}` | 's';
 const built = { scope: '', months: new Set<string>() };
 const stamped = new Set<string>();
 const drawn = new Map<string, Map<string, DrawnCode>>();
-const last = new Map<string, YearMonth>();
+const last = { day: -1, months: new Map<string, YearMonth>() };
 
 function builtSet(activeDay: number, accountId: string | null): Set<string> {
   const scope = `${activeDay}|${accountId ?? '-'}`;
@@ -60,12 +61,20 @@ export function rememberDrawn(
   drawn.set(`${accountId ?? '-'}|${lang}|${month}`, new Map(codes));
 }
 
-export function lastMonth(lang: string): YearMonth | undefined {
-  return last.get(lang);
+function lastMonths(activeDay: number): Map<string, YearMonth> {
+  if (last.day !== activeDay) {
+    last.day = activeDay;
+    last.months = new Map();
+  }
+  return last.months;
 }
 
-export function rememberMonth(lang: string, month: YearMonth): void {
-  last.set(lang, month);
+export function lastMonth(lang: string, activeDay: number): YearMonth | undefined {
+  return lastMonths(activeDay).get(lang);
+}
+
+export function rememberMonth(lang: string, activeDay: number, month: YearMonth): void {
+  lastMonths(activeDay).set(lang, month);
 }
 
 // For tests: a fresh tab.
@@ -74,5 +83,6 @@ export function resetCalendarMemory(): void {
   built.months = new Set();
   stamped.clear();
   drawn.clear();
-  last.clear();
+  last.day = -1;
+  last.months = new Map();
 }

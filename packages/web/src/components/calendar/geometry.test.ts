@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BLEED, CELL_PX, calGeometry, stackedHeightPx } from './geometry';
+import { BLEED, CELL_PX, HEADROOM, calGeometry, stackedHeightPx } from './geometry';
 
 // The calendar's raster stands on WHOLE PIXELS only if every size it is laid out with is a whole
 // number of 2px cells; and the month must fit the room it is given — a desktop window never
@@ -19,6 +19,7 @@ describe('calGeometry — the first candidate that fits', () => {
     expect(room(320, 568).G.name).toBe('narrow');
     expect(room(360, 800).G.name).toBe('compact');
     expect(room(412, 915).G.name).toBe('regular');
+    expect(room(280, 653).G.name).toBe('tiny');
   });
 
   it('stands the wide month on a desktop, and the mid one in a short window', () => {
@@ -37,6 +38,7 @@ describe('calGeometry — the first candidate that fits', () => {
 
   it('keeps every pixel size even, so every cell is whole', () => {
     for (const [w, h] of [
+      [280, 653],
       [320, 568],
       [360, 800],
       [390, 844],
@@ -53,7 +55,7 @@ describe('calGeometry — the first candidate that fits', () => {
       expect(G.gridW).toBe(7 * G.keyWPx + 6 * G.colGapPx);
       expect(G.gridH).toBe(6 * G.keyHPx + 5 * G.rowGapPx);
       expect(G.cols).toBe(G.gridW / CELL_PX + 2 * BLEED);
-      expect(G.rows).toBe(G.gridH / CELL_PX + 2 * BLEED);
+      expect(G.rows).toBe(HEADROOM + G.gridH / CELL_PX + BLEED);
     }
   });
 
@@ -67,6 +69,11 @@ describe('calGeometry — the first candidate that fits', () => {
       const { G, column } = room(w, h);
       expect(G.gridX + G.gridW).toBeLessThanOrEqual(column);
       expect(Number.isInteger(G.gridX)).toBe(true);
+    }
+    // …down to a fold's cover screen: no phone under 320 scrolls sideways.
+    for (let w = 278; w <= 640; w += 1) {
+      const { G, column } = room(w, 700);
+      expect(G.gridX + G.gridW).toBeLessThanOrEqual(column);
     }
   });
 

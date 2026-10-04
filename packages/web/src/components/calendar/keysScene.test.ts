@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { COUNT_EM, COUNT_ROWS, DIGIT_MASKS, countInk, inkEms, progressHeatColor } from '@whippin/shared';
 import { abgr, hexToAbgr } from '../raster';
-import { BLEED, calGeometry, type CalGeometry } from './geometry';
+import { BURST_ART } from '../strikeArt';
+import { BLEED, HEADROOM, calGeometry, type CalGeometry } from './geometry';
 import { keysBeats, keysScene, type KeyState, type KeysModel, type KeysSpec } from './keysScene';
 
 // The month's keys carry the archive's promises (contract.md K9, K16; the direction's own):
 // a day under 100 is never drawn finished — its cap and light band stay iron, it never takes a
-// run's link — while 1% still shows ink; a finished day is charged through and through; a
-// number never breaks into dither; a day not known yet is never drawn as one not started; a day
-// out of the window is a number and no key; runs join only finished days of one week, across a
-// week's end only inside the month; and the one shiny thing is today's, only once it is done.
+// run's link — while 1% still shows ink; a finished day is charged through and through, lit on
+// top and dark at its foot, the other way up from a high %; a number never breaks into dither
+// or slivers; a day not known yet is never drawn as one not started; a day out of the window is
+// a number and no key; runs join only finished days of one week, across a week's end only
+// inside the month; and the one shiny thing is today's, only once it is done.
 
 const WHITE = hexToAbgr('#ffffff');
 const MUTED = hexToAbgr('#a6adb8');
@@ -46,7 +48,7 @@ function frame(model: KeysModel, spec: Partial<KeysSpec> = {}, t?: number, withF
   scene.draw(px, t ?? tl.settled + 5000, withFoil, -1);
   return { px, scene, tl };
 }
-const keyAt = (i: number) => ({ x: BLEED + (i % 7) * (W + G.colGap), y: BLEED + Math.floor(i / 7) * (H + G.rowGap) });
+const keyAt = (i: number) => ({ x: BLEED + (i % 7) * (W + G.colGap), y: HEADROOM + Math.floor(i / 7) * (H + G.rowGap) });
 const cell = (px: Uint32Array, i: number, lx: number, ly: number) => {
   const { x, y } = keyAt(i);
   return px[(y + ly) * G.cols + x + lx];
@@ -120,6 +122,29 @@ describe('a finished day is charged through', () => {
     // Its foot is the deep: the last row whole.
     for (let lx = 1; lx < W - 1; lx += 1) expect(cell(px, 12, lx, H - 1)).toBe(DEEP);
   });
+
+  it('is lit on top and dark at its foot — the other way up from a high %, whatever the hue', () => {
+    const model = month((d) => (d === 12 ? { kind: 'solved', day: d } : d === 13 ? { kind: 'progress', day: d, pct: 87 } : none(d)));
+    const { px } = frame(model);
+    const share = (i: number, from: number, to: number, ink: (v: number) => boolean) => {
+      let on = 0;
+      let all = 0;
+      for (let ly = from; ly < to; ly += 1) {
+        for (let lx = 1; lx < W - 1; lx += 1) {
+          all += 1;
+          if (ink(cell(px, i, lx, ly))) on += 1;
+        }
+      }
+      return on / all;
+    };
+    const top = Math.floor(H / 2);
+    // Finished: its top half all lit cobalt; its lower half at least a third deep.
+    expect(share(12, 0, 4, (v) => v === COBALT)).toBe(1);
+    expect(share(12, top, H, (v) => v === DEEP)).toBeGreaterThan(1 / 3);
+    // 87%: its top four rows are iron (no cobalt, no ink), its foot solid ink.
+    expect(share(13, 0, 4, (v) => v === RAIL || v === DUSK)).toBe(1);
+    expect(share(13, H - 3, H, (v) => v === heat(87))).toBe(1);
+  });
 });
 
 describe('a number never breaks', () => {
@@ -149,6 +174,23 @@ describe('a number never breaks', () => {
       }
     }
   });
+
+  it('never cuts a number into a sliver: three rows or more on each side of its edge, or none', () => {
+    const y0 = 1 + Math.floor((H - 1 - COUNT_ROWS) / 2);
+    for (let pct = 1; pct <= 99; pct += 1) {
+      const model = month((d) => (d === 23 ? { kind: 'progress', day: d, pct } : none(d)));
+      const { px } = frame(model);
+      const m = digitMap(23);
+      let cut = 0;
+      for (let r = 0; r < COUNT_ROWS; r += 1) {
+        const ly = y0 + r;
+        let lx = 0;
+        while (m[ly * W + lx] !== 1) lx += 1;
+        if (cell(px, 23, lx, ly) === GROUND) cut += 1;
+      }
+      expect([0, 3, 4, COUNT_ROWS]).toContain(cut);
+    }
+  });
 });
 
 describe('a day not known yet is never a day not started', () => {
@@ -168,6 +210,15 @@ describe('a day not known yet is never a day not started', () => {
       // …and keeps its number.
       const m = digitMap(8);
       for (let k = 0; k < m.length; k += 1) if (m[k] === 1) expect(cell(px, 8, k % W, Math.floor(k / W))).toBe(WHITE);
+    }
+  });
+
+  it("keeps today's white cap on its ghost — still no slate one", () => {
+    const { px } = frame(month((d) => ({ kind: 'unknown', day: d }), 8, 'resting'));
+    for (let lx = 1; lx < W - 1; lx += 1) {
+      expect(cell(px, 8, lx, 0)).toBe(WHITE);
+      expect(cell(px, 8, lx, 1)).toBe(WHITE);
+      expect(cell(px, 9, lx, 0)).not.toBe(WHITE);
     }
   });
 
@@ -248,16 +299,90 @@ describe('today', () => {
     expect(unfinished.scene.foilBoxes).toEqual([]);
   });
 
-  it('drops once in the arrival: held back, then the silhouette, then it lands', () => {
-    const model = month(none, 4);
+  it('falls once in the arrival: held back as bare ground, falling as itself, then it lands', () => {
+    const model = month(none, 11);
     const tl = keysBeats({ ...SETTLED, model, build: 'arrive', drop: 'build' });
     expect(tl.drop).not.toBeNull();
-    expect(tl.bursts.map((b) => b.index)).toEqual([4]);
-    const scene = keysScene(G, model, tl, 1);
+    // Whatever stood in its place before (a loading ghost) is gone while it is held back.
+    const before = new Uint32Array(G.cols * G.rows).fill(RAIL);
+    const scene = keysScene(G, model, tl, 1, before);
     const px = new Uint32Array(G.cols * G.rows);
     scene.draw(px, tl.drop! - 40, false, -1);
-    expect(cell(px, 4, 5, 10)).toBe(0);
+    for (let ly = 0; ly < H; ly += 1) for (let lx = 0; lx < W; lx += 1) expect(cell(px, 11, lx, ly)).toBe(0);
+    // Falling: the key itself (its white cap, its iron), above its place — never a white block.
+    scene.draw(px, tl.drop! + 40, false, -1);
+    const { x, y } = keyAt(11);
+    const lifted = (ly: number, lx: number) => px[(y + ly - 9) * G.cols + x + lx];
+    expect(lifted(0, 5)).toBe(WHITE);
+    expect(lifted(5, 5)).toBe(DUSK);
     scene.draw(px, tl.impact! + 200, false, -1);
-    expect(cell(px, 4, 5, 10)).toBe(DUSK);
+    expect(cell(px, 11, 5, 5)).toBe(DUSK);
+  });
+
+  it('lands as loud as it is full: no burst and no white for a day never opened', () => {
+    const land = (state: KeyState) => keysBeats({ ...SETTLED, model: month((d) => (d === 4 ? state : none(d)), 4), drop: 'build' });
+    const quiet = land(none(4));
+    expect(quiet.bursts).toEqual([]);
+    expect(quiet.impactFlash).toBe(false);
+    for (const state of [{ kind: 'progress', day: 4, pct: 40 }, { kind: 'solved', day: 4 }] as const) {
+      const loud = land(state);
+      expect(loud.bursts).toEqual([{ index: 4, at: loud.impact }]);
+      expect(loud.impactFlash).toBe(true);
+    }
+  });
+});
+
+describe('the beats', () => {
+  it('spends no white on the arrival but the write heads: caps lock and links join in cobalt', () => {
+    const model = month((d) => (d <= 12 ? { kind: 'solved', day: d } : none(d)));
+    const tl = keysBeats({ ...SETTLED, model, build: 'arrive' });
+    expect(tl.flash.some(Boolean)).toBe(false);
+    expect(tl.links.length).toBeGreaterThan(0);
+    expect(tl.links.some((l) => l.flash)).toBe(false);
+  });
+
+  it("lets a new solve's ceremony flash: its cap and its links white", () => {
+    const model = month((d) => ({ kind: 'solved', day: d }));
+    const tl = keysBeats({ ...SETTLED, model, changes: [{ index: 10, from: 'n' }] });
+    expect(tl.flash[10]).toBe(true);
+    expect(tl.links.filter((l) => l.flash).map((l) => [l.a, l.b])).toEqual([
+      [9, 10],
+      [10, 11],
+    ]);
+  });
+
+  it('settles only once every burst has blown out', () => {
+    const specs: Partial<KeysSpec>[] = [
+      { build: 'arrive', drop: 'build' },
+      { drop: 'flip' },
+      { changes: [{ index: 10, from: 'n' }, { index: 11, from: 'p40' }] },
+    ];
+    for (const spec of specs) {
+      const tl = keysBeats({ ...SETTLED, ...spec, model: month((d) => ({ kind: 'solved', day: d }), 4) });
+      expect(tl.bursts.length).toBeGreaterThan(0);
+      for (const burst of tl.bursts) expect(tl.settled).toBeGreaterThanOrEqual(burst.at + BURST_ART.ms);
+    }
+  });
+
+  it('lets no ghost rise in a scene replaced before it began', () => {
+    const model = month((d) => ({ kind: 'unknown', day: d }), -1, 'loading');
+    const tl = keysBeats({ ...SETTLED, model, digitsIn: true, ghostsIn: true });
+    const scene = keysScene(G, model, tl, 1);
+    const px = new Uint32Array(G.cols * G.rows);
+    // Replaced at 100ms (its read landed): at 900ms, the numbers stand and no ghost cell does.
+    scene.draw(px, 900, false, -1, 100);
+    const m = digitMap(8);
+    let checker = 0;
+    for (let ly = 0; ly < H; ly += 1) {
+      for (let lx = 0; lx < W; lx += 1) if (m[ly * W + lx] === 0 && cell(px, 8, lx, ly) !== 0) checker += 1;
+    }
+    expect(checker).toBe(0);
+    // Not replaced, it would stand by then.
+    scene.draw(px, 900, false, -1);
+    let standing = 0;
+    for (let ly = 0; ly < H; ly += 1) {
+      for (let lx = 0; lx < W; lx += 1) if (m[ly * W + lx] === 0 && cell(px, 8, lx, ly) !== 0) standing += 1;
+    }
+    expect(standing).toBeGreaterThan(0);
   });
 });

@@ -22,7 +22,7 @@ import { stepTier } from '../../game/podium';
 import { DISSOLVE_MS, SKELETON_WAIT_MS } from '../bayerTiles';
 import { LINE_PX } from '../boardMetrics';
 import { runEnd, runReel } from '../countRun';
-import { abgr, hexToAbgr } from '../raster';
+import { abgr, hexToAbgr, rgbToAbgr } from '../raster';
 import {
   COBALT as I_COBALT,
   DUSK as I_DUSK,
@@ -94,11 +94,6 @@ const SLOT_CELLS = LINE_PX / CELL_PX;
 // ── The inks: the streak raster's own — the tokens, nothing else — packed for the canvas ──
 // (`INKS` is indexed from the streak's first ink: its index 0 is the ground.)
 const ink = (index: number) => hexToAbgr(INKS[index - 1]);
-// `rgb(r, g, b)`, as `heat.ts` writes a colour.
-function rgb(value: string): number {
-  const [r, g, b] = value.match(/\d+/g)?.map(Number) ?? [0, 0, 0];
-  return abgr(r, g, b);
-}
 const WHITE = ink(I_WHITE); // --fg
 const MUTED = ink(I_MUTED); // --muted: the lines' ranks
 const RAIL = ink(I_RAIL); // --rail: iron
@@ -423,8 +418,8 @@ export const SHAKE: readonly (readonly [number, number])[] = [
 ];
 export const SHAKE_FRAME_MS = 40;
 const FIRST_RUN_MS = 650;
-const RECEDE_MS = 400;
-const RECEDE_STEPS = 8;
+export const RECEDE_MS = 400;
+export const RECEDE_STEPS = 8;
 // The winner's crown flashes white on the landing's impact, for this long.
 const FLASH_MS = 2 * FRAME_MS;
 const SURGE_MS = 480;
@@ -793,7 +788,7 @@ export function podiumScene(L: PodiumLayout, data: PodiumData, tl: Beats, seed: 
       // THE HEAT off the step's top to the box's, behind its player: one column a cell, in this
       // place's nearness ink, spilling SPILL cells past the step's sides.
       const s = place.step;
-      const color = rgb(progressHeatColor(held.near));
+      const color = rgbToAbgr(progressHeatColor(held.near));
       const x0 = s.x - SPILL;
       const w = s.w + 2 * SPILL;
       heatCells(

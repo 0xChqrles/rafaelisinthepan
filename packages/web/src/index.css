@@ -417,7 +417,9 @@ input {
    failed read speaks. A window too short for a stacked month (a landscape phone) lays it
    SIDEWAYS: the month row and the hold on the left, the weekdays and the grid on the right.
    Every size is the calendar's geometry (`calGeometry`: whole cells, even gaps), handed down
-   as custom properties. No panel: the month is the screen's one subject. */
+   as custom properties — the column's heights too, so the fit it measures is the column drawn
+   (its `padding-top` here is geometry.ts's STACK_TOP_PX; move one, move the other). No panel:
+   the month is the screen's one subject. */
 .archive {
   width: min(560px, 100%);
   margin-left: auto;
@@ -452,6 +454,13 @@ input {
   width: auto;
   min-width: 0;
   margin-left: -4px;
+  /* The chip's middle on the first week's: down by the weekday row, its air and half a key,
+     less half the tab row. */
+  margin-top: calc(var(--weekdays-h) + var(--air) + var(--key-h) / 2 - 22px);
+}
+/* The shown month's chip goes nowhere: no pointer over it. */
+.archive .board-tab.on {
+  cursor: default;
 }
 /* The tab row's first drawing: the chip drawn across the shown month, once, as the screen
    opens. A turn sends it travelling (BoardTabs). */
@@ -474,12 +483,12 @@ input {
   display: grid;
   grid-template-columns: repeat(7, var(--key-w));
   column-gap: var(--col-gap);
-  height: 12px;
+  height: var(--weekdays-h);
   margin-top: var(--air);
   font-family: var(--ui);
   font-size: 11px;
   font-weight: 700;
-  line-height: 12px;
+  line-height: var(--weekdays-h);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
@@ -495,11 +504,12 @@ input {
 .cal-weekdays > span.on {
   color: var(--fg);
 }
-/* THE STAGE: exactly the grid's box. The raster lies over it with a bleed of 8px every side
-   (a run's wrap stubs, today's drop and shake), the landings' bursts UNDER the raster, clipped
-   to its box — the raster's ground is transparent, so a burst flares through the ground round
-   its key and never over a neighbour's face — and the days' buttons over everything. A
-   sideways swipe on it turns the month. */
+/* THE STAGE: exactly the grid's box. The raster lies over it with a bleed on its sides and foot
+   (a run's wrap stubs, today's shake, a pressed key's sink) and its headroom over the top (the
+   height today falls from, over the weekday letters), the landings' bursts UNDER the raster,
+   clipped to its box — the raster's ground is transparent, so a burst flares through the
+   ground round its key and never over a neighbour's face — and the days' buttons over
+   everything. A sideways swipe on it turns the month. */
 .cal-stage {
   position: relative;
   width: var(--grid-w);
@@ -509,8 +519,8 @@ input {
 }
 .cal-raster {
   position: absolute;
-  left: -8px;
-  top: -8px;
+  left: calc(-1 * var(--bleed));
+  top: calc(-1 * var(--headroom));
   z-index: 1;
   display: block;
   image-rendering: pixelated;
@@ -518,7 +528,7 @@ input {
 }
 .cal-bursts {
   position: absolute;
-  inset: -8px;
+  inset: calc(-1 * var(--headroom)) calc(-1 * var(--bleed)) calc(-1 * var(--bleed));
   z-index: 0;
   clip-path: inset(0);
   pointer-events: none;
@@ -528,8 +538,9 @@ input {
   width: 0;
   height: 0;
 }
-/* The burst sheet at 2x round a key, dropped by its impact ink's 44% (`.strike.burst`), in
-   whole pixels. */
+/* The burst sheet at 2x (106 × 132) on a key's centre: half its width (53) to the left, and
+   half its height (66) less the art's own drop (8 at 2x: its impact ink centres at 44% of the
+   frame, `.strike.burst`) above — whole pixels, as the podium's. */
 .cal-burst .strike.burst {
   width: 106px;
   height: 132px;
@@ -609,8 +620,8 @@ input {
 .cal-hold {
   flex: none;
   width: var(--grid-w);
-  height: 72px;
-  margin-top: 8px;
+  height: var(--hold-h);
+  margin-top: var(--hold-gap);
   margin-left: var(--grid-x);
 }
 .archive[data-layout='sideways'] .cal-hold {
@@ -662,7 +673,8 @@ input {
     animation: none;
   }
 }
-/* Forced colours: the raster's inks are gone, so the days' own numbers stand. */
+/* Forced colours: the raster's inks are gone, so the days' own numbers stand — today's
+   underlined — and the chip (a painted sheet, dropped) gives the shown month an outline. */
 @media (forced-colors: active) {
   .cal-raster {
     display: none;
@@ -672,6 +684,14 @@ input {
   }
   .cal-day[disabled] .cal-day-num {
     color: GrayText;
+  }
+  .cal-day-today .cal-day-num {
+    text-decoration: underline 2px;
+    text-underline-offset: 3px;
+  }
+  .archive .board-tab[aria-selected='true'] .board-tab-label {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
   }
 }
 

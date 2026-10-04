@@ -36,7 +36,8 @@ vi.mock('../components/BoardTabs', async (importOriginal) => {
 });
 
 import Archive from './Archive';
-import { resetCalendarMemory } from '../components/calendar/memory';
+import { rememberMonth, resetCalendarMemory } from '../components/calendar/memory';
+import { todayDayNumberAt } from '../hooks/useToday';
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -93,5 +94,46 @@ describe('the archive calendar follows the 22:00-ET flip', () => {
     await act(async () => nextMonth()!.click());
     expect(day(1).classList.contains('cal-day-today')).toBe(true);
     expect(day(2).disabled).toBe(true);
+  });
+});
+
+// The screen reopens on the month last turned to in this tab — the way a day played from
+// September comes back to September — kept inside the playable months, and only that day.
+describe('the archive reopens on the month last turned to', () => {
+  const prevMonth = () => host.querySelector<HTMLButtonElement>('[data-cal="prev"]');
+  const remount = async () => {
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await act(async () => root.render(<Archive lang="fr" />));
+  };
+
+  it('opens on August again after August was turned to', async () => {
+    vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    await act(async () => root.render(<Archive lang="fr" />));
+    expect(nextMonth()).toBeNull();
+    await act(async () => prevMonth()!.click());
+    await act(async () => prevMonth()!.click());
+    expect(prevMonth()).toBeNull();
+
+    await remount();
+    // August: the first month (nothing before it), September after it.
+    expect(prevMonth()).toBeNull();
+    expect(nextMonth()!.textContent).toBe('SEPT');
+    expect(day(31).disabled).toBe(false);
+  });
+
+  it('keeps it inside the playable months, and forgets it on a new day', async () => {
+    vi.setSystemTime(new Date('2026-10-04T12:00:00Z'));
+    const today = todayDayNumberAt(new Date());
+    rememberMonth('fr', today, { year: 2027, month: 1 });
+    await act(async () => root.render(<Archive lang="fr" />));
+    // Clamped to the active month: October, the last there is.
+    expect(nextMonth()).toBeNull();
+    expect(prevMonth()!.textContent).toBe('SEPT');
+
+    rememberMonth('fr', today, { year: 2026, month: 8 });
+    vi.setSystemTime(new Date('2026-10-05T12:00:00Z'));
+    await remount();
+    expect(nextMonth()).toBeNull();
   });
 });

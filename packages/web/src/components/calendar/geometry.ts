@@ -1,3 +1,5 @@
+import { CELL_PX } from '../podium/scene';
+
 // THE CALENDAR'S SIZES, off the room it is given: the keys of the month (`keysScene.ts` draws
 // them) at one of a few whole sizes, each a WHOLE number of the house's 2px cells with even gaps,
 // so every key, digit and dither of the raster lands on whole pixels — never a fractional `1fr`
@@ -10,6 +12,9 @@
 //             gaps — the narrow month would stand lost in that room, its gaps half the rows'.
 //   NARROW    a phone under 328px of column (320 wide): 38px keys on 4px gaps, "31" with two
 //             cells of air each side.
+//   TINY      a column under 290px (a fold's cover screen, a zoomed-in browser): 34px keys a
+//             cell apart, "31" with one cell of air — the least that still holds two digits.
+//             Under 250px of column nothing fits, and the page scrolls.
 //   SIDEWAYS  a desktop-width window too short for any stacked month (a landscape phone): the
 //             month row and its note on the left, the weekdays and 44 × 32 keys on the right.
 //
@@ -18,24 +23,30 @@
 // frame's texts) or the month goes sideways. A resize re-seats the picture (`MonthRaster`) and
 // never replays its build.
 
-export const CELL_PX = 2;
-// The raster reaches this many cells past the grid on every side: room for a run's wrap stubs,
-// today's drop and shake, a pressed key's sink.
+// The house's cell, a raster pixel: the podium's.
+export { CELL_PX };
+// The raster reaches this many cells past the grid on its sides and foot: room for a run's
+// wrap stubs, today's shake, a pressed key's sink — and HEADROOM cells over its top, the
+// height today FALLS from (over the weekday letters, where the raster's ground is clear).
 export const BLEED = 4;
+export const HEADROOM = 10;
 // The stacked column, top to bottom: the month row, its air, the weekday letters, their air,
 // the grid, a gap, and the HOLD (the failed read's note over RETRY, reserved in every state).
+// The CSS reads these heights off the archive's custom properties (`Archive.tsx`), so the fit
+// below and the column drawn are one set of numbers.
 export const TABS_PX = 44;
 export const WEEKDAYS_PX = 12;
 export const HOLD_GAP_PX = 8;
 export const HOLD_PX = 72;
 // Where the month row's top stands in a desktop window (`.app`'s 24px + the column's 58px:
-// the board screen's own), and how far above the window's foot a stacked month must end.
+// the board screen's own, `.archive`'s `padding-top`), and how far above the window's foot a
+// stacked month must end.
 const STACK_TOP_PX = 82;
 const FOOT_PX = 40;
 // Under this grid width the hold's note steps down a size (fr's failure line on one line).
 export const NOTE_NARROW_BELOW_PX = 356;
 
-export type CalName = 'wide' | 'mid' | 'regular' | 'compact' | 'narrow' | 'sideways';
+export type CalName = 'wide' | 'mid' | 'regular' | 'compact' | 'narrow' | 'tiny' | 'sideways';
 export type CalLayout = 'stacked' | 'sideways';
 
 interface Candidate {
@@ -56,6 +67,7 @@ const CANDIDATES: readonly Candidate[] = [
   { name: 'regular', phone: true, layout: 'stacked', keyW: 22, keyH: 22, colGapPx: 8, rowGapPx: 8, airPx: 8 },
   { name: 'compact', phone: true, layout: 'stacked', keyW: 20, keyH: 20, colGapPx: 8, rowGapPx: 8, airPx: 8 },
   { name: 'narrow', phone: true, layout: 'stacked', keyW: 19, keyH: 19, colGapPx: 4, rowGapPx: 8, airPx: 4 },
+  { name: 'tiny', phone: true, layout: 'stacked', keyW: 17, keyH: 17, colGapPx: 2, rowGapPx: 8, airPx: 4 },
   { name: 'sideways', phone: false, layout: 'sideways', keyW: 22, keyH: 16, colGapPx: 8, rowGapPx: 8, airPx: 8 },
 ];
 
@@ -77,7 +89,7 @@ export interface CalGeometry {
   // Where the grid stands in its column (whole px), and the air between the column's rows.
   gridX: number;
   airPx: number;
-  // The raster, in cells: the grid and its bleed.
+  // The raster, in cells: the grid, its bleed and its headroom.
   cols: number;
   rows: number;
 }
@@ -103,7 +115,7 @@ function geometryOf(c: Candidate, columnPx: number): CalGeometry {
     gridX: c.layout === 'stacked' ? Math.max(0, Math.floor((columnPx - gridW) / 2)) : 0,
     airPx: c.airPx,
     cols: gridW / CELL_PX + 2 * BLEED,
-    rows: gridH / CELL_PX + 2 * BLEED,
+    rows: HEADROOM + gridH / CELL_PX + BLEED,
   };
 }
 

@@ -11,6 +11,7 @@ import {
 import Avatar from '../Avatar';
 import { clockNow, onClock } from '../animationClock';
 import { DISSOLVE_MS } from '../bayerTiles';
+import { foilSeed } from '../foil';
 import Strike from '../Strike';
 import { BURST_ART } from '../strikeArt';
 import {
@@ -149,13 +150,6 @@ const IDLE_MS = 9000;
 const GHOST_W = 39;
 const GHOST_H = 54;
 const GHOST_LIFT = 4;
-
-// A scene's foil seed, off its board: every board's foil its own picture.
-function seedOf(key: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < key.length; i += 1) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
-  return ((h >>> 0) % 997) + 0.5;
-}
 
 // Where an entry's DOM stands in a layout, in CSS px: its mark, and its caption's box — from
 // the name band's top to its block's last line, so what dissolves dissolves whole.
@@ -393,7 +387,7 @@ export default function Podium({
       L,
       { mode, places: places.map((p) => (p ? { rank: p.rank, value: p.value, near: p.near, me: p.me } : null)) },
       tl,
-      seedOf(stage.seedKey),
+      foilSeed(stage.seedKey),
     );
     // What this scene gives way from: the frame on screen as it came, at the same size.
     const taken = fromFrame.current?.build === stage.build ? fromFrame.current.frame : null;
