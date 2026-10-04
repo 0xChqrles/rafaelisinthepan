@@ -150,8 +150,9 @@
       screens/GroupInvite.tsx  the #271 group invite link's landing (/join/g/<groupId>): JOIN
                               with this device's token, then the board or the game. The link
                               members SHARE is /g/<groupId>, served by the backend for its preview
-      components/PeriodSwitch.tsx  a group's three boards (TODAY / WEEK / MONTH): words in their
-                              resting corner brackets, the white frame travelling to the one shown
+      components/PeriodSwitch.tsx  a group's three boards (TODAY / WEEK / MONTH): three equal cells
+                              across the line in resting corner brackets, the white frame
+                              travelling to the one shown
       components/GroupScreen.tsx  a group's own screen (#271): members (the owner's ✕),
                               scrolling in whole lines, over INVITE and LEAVE at its foot —
                               everything there is to do with a group
@@ -2138,10 +2139,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     One control across the app — not a pager of this screen's own.
   - **THE HEAD LINE** (`.board-head`, 44px whatever it holds): a group's THREE BOARDS on
     `PeriodSwitch` — TODAY (the live one; TODAY, not DAY), WEEK and MONTH (the shared period
-    rule) — the chrome's words, each in its own resting corner brackets in the slate rail
-    (the switch's affordance: bare labels "float in the screen with no purpose, no
-    affordance"), the shown one under the WHITE FRAME, which travels to the word turned to
-    in whole pixels and hard steps and LOCKS ON as the screen opens; GLOBAL's `TOP 50`
+    rule) — the chrome's words, THREE EQUAL CELLS sharing the line evenly (user-decided
+    2026-10-04: "evenly positioned … it's better"), each a whole pixel wide (`round()` on the
+    grid's tracks, the spare pixel left at the line's end) and in its own resting corner
+    brackets in the slate rail (the switch's affordance: bare labels "float in the screen with
+    no purpose, no affordance"), the shown one under the WHITE FRAME, which travels to the
+    cell turned to in whole pixels and hard steps and LOCKS ON as the screen opens. A third of
+    a phone's line is narrower than « AUJOURD'HUI » at 12px: at ≤400px the words are 11px and
+    tighter, and under 360 the line takes the head's whole width; GLOBAL's `TOP 50`
     (`boardGlobalSub`); nothing in the no-group state.
   - **THE COLUMN** (`.board-column`, the tab row's `tabpanel` labelled by the shown tab —
     `tabIds` — and a keyboard stop) is the body's room floored to WHOLE slots of `LINE_PX`

@@ -7099,21 +7099,27 @@ figure.l1-fig {
    FRAME: one set of white corners, laid over its cell, that travels to the word turned to in
    hard steps and LOCKS ON when the screen opens (its corners closing in from outside). */
 .period-switch {
+  flex: 1;
   min-width: 0;
 }
+/* The three cells share the line evenly, each a WHOLE pixel wide (the resting corners and the
+   frame, measured off the cell, land on the same pixels); the line's spare pixel or two stays at
+   its end. The plain `1fr` line is the fallback where `round()` is missing. */
 .period-line {
+  --gap: 8px;
   position: relative;
-  display: flex;
-  /* Air between the words, so a framed word's brackets never touch its neighbours. */
-  gap: 10px;
-  margin-left: 6px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, round(down, calc((100% - 2 * var(--gap)) / 3), 1px));
+  gap: var(--gap);
+  margin: 0 6px;
 }
 .period-word {
   --corner: var(--rail);
-  flex: none;
+  min-width: 0;
   height: 44px;
   margin: 0;
-  padding: 0 7px;
+  padding: 0;
   border: 0;
   /* The cell's resting corners: the frame's own arms (6px, 2px thick) on the frame's own box
      (8px in from the word's top and bottom), so the frame lands exactly over them. */
@@ -7165,6 +7171,21 @@ figure.l1-fig {
   from {
     opacity: 0;
     translate: calc(var(--sx) * 6px) calc(var(--sy) * 6px);
+  }
+}
+/* A third of a phone's line is narrower than the longest word at 12px (« AUJOURD'HUI » is 96px,
+   a cell 88 at 320): the words step down and tighten, and under 360 the line takes the head's
+   whole width, so the longest word keeps a few pixels of ground inside its corners. */
+@media (max-width: 400px) {
+  .period-word {
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+}
+@media (max-width: 359px) {
+  .period-line {
+    --gap: 6px;
+    margin: 0;
   }
 }
 /* THE PODIUM (`Podium` + `podium/scene.ts`), the board's subject: standing on the bare ground
