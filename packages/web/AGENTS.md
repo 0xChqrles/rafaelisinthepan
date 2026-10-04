@@ -100,14 +100,29 @@
                               dress, drawn alike by the board screen and the result's boards;
                               the board screen passes each line its run (`LineRun`)
       components/boardMetrics.ts  what every list of players shares (pure): `MARK` (30px, 10
-                              cells of 3px) and `LINE_PX` (44px, a list's pitch)
+                              cells of 3px), `LINE_PX` (44px, a list's pitch) and the rank
+                              column's width (`rankColumnPx`: 16px a digit, two at the least)
       components/BoardTabs.tsx  WHICH BOARD, the boards' ONE control (the result's and the board
-                              screen's): the scopes' names in a row, GLOBAL pinned last, the
-                              white chip travelling to the name shown, a cut name covered
-      hooks/useSwipe.ts       a sideways swipe on a board's lines turns its tab (both surfaces)
+                              screen's): the boards' names in a row, GLOBAL pinned last, the
+                              white chip travelling to the name shown, a cut name covered, a
+                              name past its room ending in an ellipsis; `tabIds` ties each tab
+                              to the panel it controls
+      hooks/useSwipe.ts       a sideways swipe on a board's lines turns its tab (both surfaces):
+                              a finger's or a pen's, never the mouse; its trailing click
+                              opens nothing
       components/ReelNumber.tsx  a board line's number on the count's reels (the compressed run)
-      components/bayerTiles.ts  the ordered dither as CSS masks on 2px cells: a line coming in
-                              and giving way (`DISSOLVES`), your held line's edge (`EDGES`)
+      components/bayerTiles.ts  the ordered dither as CSS masks on 2px cells, set ONCE on the
+                              document's root as it loads: a line coming in and giving way
+                              (`--dz-*` / `--dzo-*`), your held line's edge (`--edge-d/-u`);
+                              and the dissolve's beat script times against (`DISSOLVE_MS`,
+                              `SKELETON_WAIT_MS`, `SKELETON_STAGGER_MS`)
+      components/animationClock.ts  the page's animation clock (`clockNow`, `onClock`): every
+                              beat the board screen and its podium time, on the clock their
+                              CSS and Web Animations play on
+      components/travel.ts    a control's stepped TRAVEL (`travelFrames`): the tab row's chip,
+                              the period switch's frame
+      components/raster.ts    a canvas raster's ABGR pixel (`abgr`, `hexToAbgr`): the streak's
+                              orbit, the podium, the tutorial's art
       components/DeviceList.tsx  the account's devices + SIGN OUT rows (#216), on the profile editor
       components/ErrorScreen.tsx  the app's error surface: a FULL-SCREEN modal led by the
                               user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet);
@@ -138,7 +153,8 @@
       components/PeriodSwitch.tsx  a group's three boards (TODAY / WEEK / MONTH): words in their
                               resting corner brackets, the white frame travelling to the one shown
       components/GroupScreen.tsx  a group's own screen (#271): members (the owner's ✕),
-                              INVITE, LEAVE — everything there is to do with a group
+                              scrolling in whole lines, over INVITE and LEAVE at its foot —
+                              everything there is to do with a group
       components/GroupCreate.tsx  naming a new group (#271): the GAME'S PROMPT alone on the
                               screen, the name inked in on CREATE (the solve's beat)
       components/ConfirmScreen.tsx  the app's CONFIRMATION surface (#271): the error screen's
@@ -146,15 +162,31 @@
                               over CANCEL; the leave's successor picker rides it
       screens/Leaderboard.tsx the #190/#271 leaderboard (/<lang>/board): the tab row (the groups,
                               then GLOBAL), a group's TODAY / WEEK / MONTH, the PODIUM over the
-                              lines from the 4th, the door into a group's screen, NEW GROUP
-      components/Podium.tsx   the board's PODIUM, its subject: the scene's raster on one clock,
-                              the marks, the landings' bursts, the captions; `nextStage` latches
-                              what it shows and how it comes (builds, stays, gives way)
-      components/podium/      its picture, pure and tested: scene.ts (the two sizes and
-                              `podiumSize`, the layout, the beats, the raster deterministic in
-                              t — steps, places, values on the reels, heat, foil)
+                              lines from the 4th, the door into a group's screen, NEW GROUP —
+                              the screen's state, reads and acts (the hold, the turn's views,
+                              the boards' caches, what the podium has built today)
+      components/BoardUnder.tsx  what stands UNDER the podium: the header slot (the door, the
+                              unit), the lines (`BoardList`, slot by slot), the skeleton, the
+                              no-podium empty block; the pace (`ARRIVE` / `TURN`, `PACE_CAP`),
+                              a view giving way to the next with what of it had come in (`cameIn`)
+      game/boardView.ts       the board screen's READINGS of the board shown (pure, tested):
+                              `hasLines` (lines or the ghost), `listCounts`, `ownLineKey`, and
+                              `podiumShows` (the podium's picture, and the build naming it)
+      game/boardSlots.ts      the list's ORDER, one item a slot (pure, tested): `boardSlots`
+                              (ranked, the left-out rail + your window, playing, waiting; a
+                              week's or a month's points alone), `rankDigits`
+      hooks/useStuckOwnLine.ts  whether your line is HELD at the column's edge (`data-stuck`,
+                              `top` / `bottom`), so the lines passing under it thin out there
+      components/podium/      the board's PODIUM, its subject: Podium.tsx (the scene's raster on
+                              one clock, the marks, the landings' bursts, the captions;
+                              `nextStage` latches what it shows and how it comes — builds,
+                              stays, gives way), and its picture, pure and tested: scene.ts (the
+                              two sizes and `podiumSize`, the layout, the names' setting
+                              `runsOf` / `setName`, the beats, the raster deterministic in t —
+                              steps, places, values on the reels, heat, foil)
       game/podium.ts          the podium's PICK (pure, tested): the first three ranked rows in
-                              the server's order, the rest lines; each place's value and `near`
+                              the server's order, the rest lines; each place's value and `near`;
+                              `NO_PLACES`, every picture's but a board's
       components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows);
                               the tracer + the assigned identity are @whippin/shared's since 2026-08-20
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
@@ -2087,8 +2119,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
 
 - **Leaderboard screen (#190; drawn over GROUPS since #271; its design user-decided
   2026-10-04 — "A with B's podium": the result's boards given the whole column, a PODIUM as
-  its subject):** `/<lang>/board` (`pathForBoard`; a board is per (day, lang), always the
-  ACTIVE day), `screens/Leaderboard.tsx`, entered from the header's CROWN KEY (lit while the
+  its subject; approved the same day, "Let's go for the A+B version"):** `/<lang>/board`
+  (`pathForBoard`; a board is per (day, lang), always the ACTIVE day),
+  `screens/Leaderboard.tsx` (the state, the reads and the acts; what stands under the
+  podium is `components/BoardUnder.tsx`, the board's readings `game/boardView.ts`, its
+  list's order `game/boardSlots.ts`), entered from the header's CROWN KEY (lit while the
   board is up; the way out is any other key, HOME above all). Top to bottom: the TAB ROW,
   the HEAD LINE, then ONE COLUMN that scrolls as one — the podium, a group's header slot,
   the lines.
@@ -2096,50 +2131,64 @@ it to the local store — see `packages/backend/AGENTS.md`).
     dress in *Solved-screen BOARDS*): every group's name, then GLOBAL (the untrusted top 50)
     PINNED at the row's end; with no group at all, ONE bare tab that says so
     (`boardEmptyGroups`: a state, not a name — no chip). A tap on another name, the arrow
-    keys (a roving tablist) or a sideways SWIPE on the column (`useSwipe`) turns it; a tap
-    on the shown group's chip goes INTO the group — its own screen; GLOBAL opens nothing.
-    **CREATING is the PLUS pinned at the row's end** (`groupNew`), absent in the no-group
-    state, whose CREATE GROUP (`groupCreate`) is then the one way. One control across the
-    app: a pager of this screen's own (scroll-snap pages under dots) is what it replaced.
+    keys (a roving tablist) or a sideways SWIPE on the column (`useSwipe`: a finger's or a
+    pen's) turns it; a tap on the shown group's chip goes INTO the group — its own screen;
+    GLOBAL opens nothing. **CREATING is the PLUS pinned at the row's end** (`groupNew`),
+    absent in the no-group state, whose CREATE GROUP (`groupCreate`) is then the one way.
+    One control across the app — not a pager of this screen's own.
   - **THE HEAD LINE** (`.board-head`, 44px whatever it holds): a group's THREE BOARDS on
     `PeriodSwitch` — TODAY (the live one; TODAY, not DAY), WEEK and MONTH (the shared period
     rule) — the chrome's words, each in its own resting corner brackets in the slate rail
     (the switch's affordance: bare labels "float in the screen with no purpose, no
     affordance"), the shown one under the WHITE FRAME, which travels to the word turned to
     in whole pixels and hard steps and LOCKS ON as the screen opens; GLOBAL's `TOP 50`
-    (`scopeGlobalSub`); nothing in the no-group state.
-  - **THE COLUMN** (`.board-column`, the tab row's `tabpanel`, a keyboard stop named after
-    its tab) is the body's room floored to WHOLE slots of `LINE_PX` (44px,
-    `components/boardMetrics.ts`), its scroll snapping to them, so a line is never cut at
-    rest; the podium and every item are whole slots. A board turned to opens at its top.
-  - **THE PODIUM** (`components/Podium` over `components/podium/scene.ts`) stands on EVERY
-    board that has ranked rows — a group's TODAY, WEEK and MONTH, and GLOBAL — and the lines
-    under it start at the 4th. Its pick is `game/podium.ts`: the FIRST THREE ROWS in the
-    server's order, never re-ranked. ONE raster of 2px cells (`pixelated`) in the app's
-    inks: three iron STEPS — second left, first in the middle and widest, third right — each
-    as tall as its place's RANK (a tie for first stands two firsts equally tall, two crowns);
-    ON EACH STEP'S FACE ITS PLACE — the crown (`assets/icons/board.svg`, traced) in cobalt on
-    a first's, the 2 and the 3 in the face's own digits in `--muted` (the accent on your
-    own); the players' MARKS (square, 10 cells of a whole px) standing on them; the HEAT
-    (shared `runHeat.ts`) rising behind each in the ink of how near that place is to the
-    best (`near`), the players in a clearing of it. Under the floor each player's CAPTION:
-    the NAME, the VALUE, its UNIT (`point` / `try` for one) and, on a WEEK or a MONTH, the
-    period rule's two tiebreakers (days, tries) a line each — so equal points never read as
-    a tie drawn wrong. **A value stands with its name, never on a step: a number on a step
-    reads as a place.** **A NAME IS NEVER CUT**: it owns a third of the podium less a 4px
-    gutter each side and wraps at its JOINTS (`<wbr>` after an underscore, before a capital
-    after a small letter, before digits after a letter; balanced — `SwiftCactus45` reads
-    `Swift` / `Cactus45`), in a band that holds two lines whatever it holds. YOUR name wears
-    your line's brackets (8px arms) and the bold; on GLOBAL one of your people carries the
-    lines' accent square.
+    (`boardGlobalSub`); nothing in the no-group state.
+  - **THE COLUMN** (`.board-column`, the tab row's `tabpanel` labelled by the shown tab —
+    `tabIds` — and a keyboard stop) is the body's room floored to WHOLE slots of `LINE_PX`
+    (44px, `components/boardMetrics.ts`), its scroll snapping to them, so a line is never
+    cut at rest; the podium and every item are whole slots. While a view gives way (below)
+    it keeps that whole room, so a shorter board coming in never cuts the lines going out;
+    it closes up to its content once they are gone. The no-podium empty block alone is not
+    floored (it never scrolls). A board turned to opens at its top. The screen's 560px
+    column stands on a WHOLE pixel (`.board-screen`'s left margin rounded down): centred at
+    an odd width, the podium, the marks and the ghost would land on half pixels.
+  - **THE PODIUM** (`components/podium/Podium.tsx` over `components/podium/scene.ts`) stands
+    on EVERY board that has ranked rows — a group's TODAY, WEEK and MONTH, and GLOBAL — and
+    the lines under it start at the 4th. Its pick is `game/podium.ts`: the FIRST THREE ROWS
+    in the server's order, never re-ranked. ONE raster of 2px cells (`pixelated`) in the
+    app's inks: three iron STEPS — second left, first in the middle and widest, third right
+    — each as tall as its place's RANK (a tie for first stands two firsts equally tall, two
+    crowns, on steps of one width: their widths' floored mean); ON EACH STEP'S FACE ITS
+    PLACE — the crown (`assets/icons/board.svg`, traced) in cobalt on a first's, the 2 and
+    the 3 in the face's own digits in `--muted` (the accent on your own); the players' MARKS
+    (square, 10 cells of a whole px) standing on them; the HEAT (shared `runHeat.ts`) rising
+    behind each in the ink of how near that place is to the best (`near`), the players in a
+    clearing of it. Under the floor each player's CAPTION: the NAME, the VALUE, its UNIT
+    (`point` / `try` for one). **A WEEK OR A MONTH SHOWS ONE NUMBER, THE POINTS**
+    (user-decided 2026-10-04, of the tiebreakers stacked under the points: "nobody
+    understands it"), on the podium and on the lines alike: the period rule's solved days
+    and tries ORDER the rows (the server's order) and are shown nowhere. **A value stands
+    with its name, never on a step: a number on a step reads as a place.** **A NAME IS
+    NEVER CUT**: it owns a third of the podium less a 4px gutter each side and wraps at its
+    JOINTS (`<wbr>` after an underscore, before a capital after a small letter, before
+    digits after a letter; balanced — `SwiftCactus45` reads `Swift` / `Cactus45`), in a band
+    that holds two lines whatever it holds. A name whose runs will not set in those two
+    lines at the face's 12px steps down to 11, then 10 (`setName` / `runsOf`,
+    `podium/scene.ts`: by glyph count off the mono's fixed advance, shared `cardSvg.ts`
+    `UI_ADVANCE_EM` — nothing measured), so it is set smaller before it is broken; at 10 a
+    run still too long splits evenly in its middle (never a letter alone), and a name that
+    would still take three lines is cut at its own middle — never a third line, never under
+    10px. YOUR name wears your line's brackets (8px arms) and the bold; on GLOBAL one of
+    your people carries the lines' accent square.
   - **FIRST PLACE'S COUNT IS THE SCREEN'S ONE SHINY THING** (the #1 line carries no foil of
     its own: the leader is on the podium). The other values are white at the lines' 16px;
-    the first's is the largest whole size that fits (its neighbours' slack included), lands
-    on the result count's reels (`countRun.ts`'s compressed run, `FIRST_RUN_MS` 650) in
-    cobalt, then the cobalt dissolves into the FOIL (shared `foil.ts`) in Bayer order
-    (`RECEDE_MS` 400, 8 steps) — the result's own gesture, so the two screens share it. Only
-    its sheen and glitter move, inside the digits' ink: no glints (the result count's corner
-    glints read as a `+` at this size). Tied firsts are ONE foil under one sheen.
+    the first's is the largest whole size that fits (its neighbours' slack included) — a
+    week's or a month's as large as a day's — lands on the result count's reels
+    (`countRun.ts`'s compressed run, `FIRST_RUN_MS` 650) in cobalt, then the cobalt
+    dissolves into the FOIL (shared `foil.ts`) in Bayer order (`RECEDE_MS` 400, 8 steps) —
+    the result's own gesture, so the two screens share it. Only its sheen and glitter move,
+    inside the digits' ink: no glints (the result count's corner glints read as a `+` at
+    this size). Tied firsts are ONE foil under one sheen.
   - **ITS BOX IS ONE HEIGHT on every board and in every state** (whole slots), so the list
     never jumps. Its SIZE is measured off the room (`podiumSize`): ROOMY (6 slots) where the
     column is at least 340px wide (its steps fit) and it leaves the header slot and 4 lines,
@@ -2149,68 +2198,96 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **FOUR PICTURES, so no state passes for another** (`PodiumMode`): a read still out
     draws the FLOOR and, if it is slow, skeleton rails where the names will stand (the
     lines' skeleton under it on the same beat); a FAILED read draws nothing, `LoadError`'s
-    RETRY standing in the box (with no podium, under the head); an EMPTY board is the GHOST
-    — the steps' silhouettes in the floor's stipple, the user's sad ghost on the middle step
-    (at 3x there; 4x in `.board-empty`, the no-podium block), its terse line on the names'
-    band and its one call at the values' row, one height in every empty state: `NO GROUP`
-    (the bare tab says it; the call is CREATE GROUP — where a tokenless device lands),
-    `JUST YOU` (a group of one, counted WITHOUT the caller's own row; the call is INVITE, on
-    TODAY), `NOBODY YET` (a period nobody recorded in; GLOBAL with nobody); a BOARD draws
-    its steps with whoever finished — nobody yet (TODAY early) is the bare steps, a dash for
-    each value, the playing members listed below; fewer than three, the empty places'
-    dashes.
-  - **THE LINES** are `BoardRows` in the result's dress (*Solved-screen BOARDS*): the ranked
-    rows past the podium; on GLOBAL below the cut the caller's own window under the
-    left-out rail, the rank column as wide as the widest rank (`--rank-w`, 16px a digit,
-    two at the least); then IN PROGRESS and NOT PLAYED YET, each under one caption with the
-    stippled rail running on — a round that ended unsolved (`over`) printing `∞` (at the
-    face's 2px cells) after the live rows, its % muted; a waiting member's name muted,
-    nothing where a number would be. A WEEK/MONTH line prints its points and stacks its
-    tiebreakers under the name (`.board-ident`) — beside it they ate the name on a phone.
-    A group's list is headed by its HEADER SLOT (`.board-sub`): the DOOR into its screen —
-    the group's size, `N MEMBERS` with the header's chevron turned in, counting the group it
+    RETRY standing in the box; an EMPTY board is the GHOST — the steps' silhouettes in the
+    floor's stipple, the user's sad ghost on the middle step (3x, 39 × 54, bobbing five beats
+    and resting), its terse line on the names' band and its one call at the values' row,
+    one height in every empty state: `NO GROUP` (the bare tab says it; the call is CREATE
+    GROUP — where a tokenless device lands), `JUST YOU` (a group of one, counted WITHOUT the
+    caller's own row; the call is INVITE, on TODAY), `NOBODY YET` (a period nobody recorded
+    in; GLOBAL with nobody); a BOARD draws its steps with whoever finished — nobody yet
+    (TODAY early) is the bare steps, a dash for each value, the playing members listed
+    below; fewer than three, the empty places' dashes. **With no podium** the empty board —
+    or the failed read — is ONE ROW under the header slot (`.board-hold`): the same 3x ghost
+    beside its line over its call (`.board-empty`), or the message over RETRY, starting at
+    the lines' 6px inset so the ghost stands on whole pixels, coming in through a slot's
+    dissolve — so the two lines' room the shortest landscape phone leaves holds it whole.
+    Over an empty or a failed board the header slot stands only for a door (none with no
+    group, none on GLOBAL).
+  - **THE LINES** are `BoardRows` in the result's dress (*Solved-screen BOARDS*), in the
+    order `game/boardSlots.ts` gives them, one slot each: the ranked rows past the podium;
+    on GLOBAL below the cut the caller's own window under the left-out rail; then the
+    members still playing (or done with nothing recorded), then those who have not played
+    yet. **NO SECTION CAPTIONS**
+    (user-decided 2026-10-04, the result's boards' own way — one dress for both surfaces):
+    the rows say it — no rank and the heat's % is a round being played, `∞` (at the face's
+    2px cells, its % muted, after the live rows) one that ended unsolved (`over`), a muted
+    name with nothing where a number would be a member who has not played; no separator
+    either. The rank column is as wide as the widest rank (`--rank-w`, `rankColumnPx`). A
+    WEEK/MONTH line prints its points alone at the far edge, nothing under the name. A
+    group's list is headed by its HEADER SLOT (`.board-sub`): the DOOR into its screen — the
+    group's size, `N MEMBERS` with the header's chevron turned in, counting the group it
     opens (the podium's three included), not the lines under it — and the UNIT when nothing
     above says what the numbers count (no podium, or nobody on it); GLOBAL has none under a
-    podium.
+    podium. A header slot that says the same on the board turned to STANDS across the turn
+    (`.board-sub.still`). Under 360px wide a list with no playing member's % to hang in the
+    numbers' gutter gives that gutter to the names (`.plays`, set by `BoardUnder`).
   - **Rows CONNECTED to the reader**: YOUR line is FRAMED (the brackets, the rank in the
     accent, the name bold) and STAYS IN SIGHT — sticky at both edges of the column, and
-    held there (`data-stuck`) the lines passing under it thin out through a 3-cell Bayer
-    edge (`bayerTiles.ts` `EDGES`) instead of being cut; on GLOBAL a member of any of your
-    groups (the union of the cached groups' member ids — no extra read) carries a 4px
-    ACCENT SQUARE at the line's start (`.board-row.mate`; a bar there read as a `1` against
-    a two-digit rank).
-  - **MOTION**, every beat on the document's animation clock (the lines' CSS, the reels'
-    Web Animations, the podium's raster), in whole pixels and hard steps; nothing that has
-    landed moves. **The podium BUILDS the FIRST time a board is shown in a visit**
-    (`played`): the steps rise a whole row at a time (third, second, first) and their
-    places dissolve on; each player DROPS in whole cells and lands with a whole-pixel shake
-    and the strike sheet's BURST behind the mark (in their place's heat ink, the winner's in
-    the accent); the crown flashes white and the heat surges on the winner's impact; the
-    values run from their landings. **A board turned BACK to is SETTLED** — no build
-    replayed on a tab tap, its numbers standing. The lines come in through the BAYER
-    DISSOLVE (`board-dissolve` over `bayerTiles.ts` `DISSOLVES`), one after another, their
-    numbers on the reels (`ReelNumber`) only where the board builds, a playing member's %
-    typed in as it lands, your brackets locking on. The FIRST board on screen ARRIVES
-    (`ARRIVE`: after the head's own beats — the chip wiped across, the brackets locking on —
-    lines 55ms apart, reels 650ms) and its lines wait until the last landing's shake has
-    played, so the impact owns its beat (all landed in about two seconds); every board
-    after it TURNS in (`TURN`: lines 30ms apart, reels 420ms), its lines starting at once —
-    on a first turn to a board, the drops play over them. Past the FOLD (the column's last
-    slot on screen, at most `PACE_CAP` 14) the lines come in together with the last one
-    shown, your held line with them.
+    held there (`data-stuck`, `hooks/useStuckOwnLine.ts`) the lines passing under it thin
+    out through a 3-cell Bayer edge (`bayerTiles.ts`' `--edge-*` tiles) instead of being
+    cut; on GLOBAL a member of any of your groups (the union of the cached groups' member
+    ids — no extra read) carries a 4px ACCENT SQUARE at the line's start (`.board-row.mate`;
+    a bar there read as a `1` against a two-digit rank), and a list that marks one keeps 8px
+    more before its ranks (`.marks`, `MATE_ROOM_PX`), so the square stands as clear of `10`
+    as of `4`.
+  - **MOTION**, every beat on the document's animation clock (`components/animationClock.ts`:
+    the lines' CSS, the reels' Web Animations, the podium's raster), in whole pixels and
+    hard steps; nothing that has landed moves. **The podium BUILDS ONCE PER BOARD PER DAY,
+    in this tab** (user-decided 2026-10-04; `builtFor`, a module-level set in
+    `Leaderboard.tsx` scoped by the day and the identity epoch, its entries `lang|build`, so
+    a language switch keeps it): the steps rise a whole row at a time (third, second,
+    first) and their places dissolve on; each player DROPS in whole cells and lands with a
+    whole-pixel shake and the strike sheet's BURST behind the mark (in their place's heat
+    ink, the winner's in the accent); the crown flashes white and the heat surges on the
+    winner's impact; the values run from their landings. **A board shown again is
+    SETTLED** — turned back to, or on a later visit to the screen: a crown tap replays no
+    build, its numbers standing; a re-read that changes the podium is a new picture
+    (`podiumShows`' `build`) and builds. A rotation that takes the podium away and brings
+    it back shows it settled (the stage is latched with the size). The lines come in
+    through the BAYER DISSOLVE (`board-dissolve` over the root's `--dz-*` tiles), one after
+    another, their numbers on the reels (`ReelNumber`) only where the board builds — put
+    away once the last has stopped and shaken, so a list at rest prints bare numbers — a
+    playing member's % typed in as it lands, your brackets locking on. The FIRST board on
+    screen ARRIVES (`ARRIVE`: after the head's own beats — the chip wiped across, the
+    brackets locking on — lines 55ms apart, reels 650ms) and its lines wait until the last
+    landing's shake has played, so the impact owns its beat (all landed in about two
+    seconds); every board after it TURNS in (`TURN`: lines 30ms apart, reels 420ms), its
+    lines starting at once — on a first turn to a board, the drops play over them. Past the
+    FOLD (the column's last slot on screen, at most `PACE_CAP` 14) the lines come in
+    together with the last one shown, your held line with them.
   - **A TURN IS NEVER A BLANK.** The podium gives way cell by cell in the Bayer order
-    (`TURN_MS` 240): a player on the same place on both boards STAYS, one leaving dissolves
-    out from where their mark stands. What stands under it (`Under`: the header slot and the
-    lines, or the skeleton) keeps the view before (`board-under-out`), each of whose slots
-    dissolves out through exactly the cells its replacement dissolves in through, on the
-    same beat. The board on screen is HELD while the next one's first read is out — for at
-    most `HOLD_MS` (400ms), then it gives way to the loading picture (a podium crowning
-    another tab's winner says something false); `aria-busy` while what is shown is not what
-    was asked for, and the door names the board on screen.
+    (`TURN_MS` = `DISSOLVE_MS`, 240): a player on the same place on both boards STAYS, one
+    leaving dissolves out from where their mark stands. What stands under it (`Under`: the
+    header slot and the lines, the skeleton, or the no-podium block) keeps the view before
+    (`board-under-out`, inert), each of whose slots dissolves out through exactly the cells
+    its replacement dissolves in through, on the same beat — your own line with them. **A
+    turn caught halfway turns from what is on screen**: only what had COME IN goes out
+    (`cameIn`; a slot, a podium mark, caption or unit still dissolving in simply goes —
+    drawn whole to leave, it would flash at full ink first), and a view already leaving goes
+    on leaving on its own beat. A size change (a rotation) is a new layout, not a turn:
+    nothing gives way. The board on screen is HELD while the next one's first read is out —
+    for at most `HOLD_MS` (400ms), then it gives way to the loading picture (a podium
+    crowning another tab's winner says something false); the hold's clock starts again on
+    every turn, and only a board ON SCREEN is held (a turn made from the loading picture or
+    a failure starts lapsed). A board whose last read failed is asked again from scratch
+    when turned to, its failure dropped in that render (no frame of RETRY); RETRY shows the
+    loading picture. `aria-busy` while what is shown is not what was asked for, and the
+    door names the board on screen.
   - **THE CLOCK RESTS**: the podium steps every `FRAME_MS` (32) until it has settled, then
     only the foil moves (80ms), stopping while the podium is out of view, the tab is hidden,
-    or `IDLE_MS` (9s) after the last pointer, key, wheel or scroll. **Reduced motion draws
-    the board landed**, no clock running.
+    or `IDLE_MS` (9s) after the last pointer, key, wheel or scroll; the ghost bobs five
+    beats and rests. **Reduced motion draws the board landed**, no clock running: no reels,
+    nothing giving way.
   - **A screen reader** hears the podium's places as the board list's first items
     (`PodiumItems`); the scene is a picture (only `.podium-art` is hidden), and what its box
     holds besides — the empty board's call, RETRY — stays reachable.
@@ -2236,20 +2313,24 @@ it to the local store — see `packages/backend/AGENTS.md`).
     is stale.
   - **OPENING THIS SCREEN IS NOT A TRIGGER (user-decided 2026-08-24)**: the deliberate acts
     are NEW GROUP (`GroupCreate`, below) and INVITE (shares `boardInviteText` + `/g/<id>` via
-    `useShare`, `tracked: false`). NEW GROUP is ONE TAP for a tokenless device (the mint,
-    then the create, the button holding a LoadingWave); INVITE needs a group, hence an
-    account. Failures land on the `ErrorScreen` — `failedAccount`, `failedShare`,
-    `groupLimit`, `failedGroup`.
+    `useShare`, `tracked: false` — the pinned `share` analytics event counts a SOLVED DAY's
+    result leaving the app (the three-event invariant), and counting invite links into it
+    would silently redefine what the number measures). NEW GROUP is ONE TAP for a tokenless
+    device (the mint, then the create, the button holding a LoadingWave); INVITE needs a
+    group, hence an account. Failures land on the `ErrorScreen` — `failedAccount`,
+    `failedShare`, `groupLimit`, `failedGroup`.
   - **THE GROUP'S OWN SCREEN (`GroupScreen`, user-decided 2026-09-14: "managing the group
     should have its own screen")** is a full-screen dialog in the selection's shell — the
     way back and the name in the header, the MEMBERS as the board's LINES
     (`.board-row.member`: no rank column, the mark at 3px a cell, your own framed) coming
     in through the board's Bayer dissolve, dressed by `readGroup`, the owner tagged under
     their name, the owner's pixel ✕ (the modal header's, `assets/icons/close.svg`) at every
-    other line's end (`.board-remove`), INVITE as the primary cap, LEAVE as the quiet danger
-    word — there is
-    no MANAGE toggle, the screen is the management. **NAMING A GROUP is THE GAME'S PROMPT
-    (`GroupCreate`, user-decided 2026-09-14: "an act of creation that should be satisfying
+    other line's end (`.board-remove`); the members SCROLL in whole lines (their room floored
+    to `LINE_PX`, one line at the least, the scroll snapping to a line's start; a screen too
+    short for that scrolls whole), so INVITE as the primary cap and LEAVE as the quiet
+    danger word stand at the screen's foot whatever the group's size —
+    there is no MANAGE toggle, the screen is the management. **NAMING A GROUP is THE GAME'S
+    PROMPT (`GroupCreate`, user-decided 2026-09-14: "an act of creation that should be satisfying
     — reuse the game prompt input")**: `WordInput`'s dress — the cobalt `>`, the name in
     the pixel face, the blinking cursor — alone in the middle of its own screen over CREATE
     GROUP, on an EDITABLE field of its own (a name takes digits and underscores the
@@ -2265,49 +2346,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the SUCCESSION RULE (root `AGENTS.md`, Groups) off the list on screen: last member →
     "the group will be deleted"; owner of two → "the other member takes it over"; owner of
     three or more → a PICKER of the others (the board's lines as radios, the one picked
-    FRAMED, dressed by `readGroup`), LEAVE held back until one is picked, sent as
-    `successor`; a stale list's 409 `successor_required` re-reads the list.
+    FRAMED, dressed by `readGroup`, in whole rows — `round(down, 40vh, 44px)`, snapping),
+    LEAVE held back until one is picked, sent as `successor`; a stale list's 409
+    `successor_required` is no failure: the confirmation stays up, its pick cleared, and
+    the list is read again (the candidates dressed again when its members change).
   - **A member already skips the landing onto the board, but never one this tab just
     joined** (`GroupInvite`'s module-level `joinedHere`): the tap that joins can also MINT
     the identity, and an acquired identity remounts the routed surface, so a remounted
     landing would otherwise read "member already" and skip the confirmation it just earned.
-  - **Tests**: the podium's pick (`game/podium.test.ts`) and its scene's box, sizes, layout
-    and beats (`components/podium/scene.test.ts`) are tested; the rest of the board's
-    visuals carry none, per policy. The contract-y parts are the shared ranking and period
-    rules, `parseBoard`/`parsePeriodBoard`/`parseGroups`, `leaveKindOf`/`leaveBody`
+  - **Tests**: the podium's pick (`game/podium.test.ts`), its scene's box, sizes, layout,
+    beats and name setting (`components/podium/scene.test.ts`), and the board's readings
+    and list order (`game/boardView.test.ts`, `game/boardSlots.test.ts`) are tested; the
+    rest of the board's visuals carry none, per policy. The contract-y parts are the shared
+    ranking and period rules, `parseBoard`/`parsePeriodBoard`/`parseGroups`,
+    `leaveKindOf`/`leaveBody` and the leave's `successor_required` answer
     (`Leaderboard.test.tsx`) and the route grammar (`langs.test.ts`).
-  - **THE IDENTITY STRIP IS GONE (2026-08-30, with the header rework).** *(Historical — the
-  INVITE paragraph below describes the #189 friends button; the shape is the group INVITE's
-  now, per the bullet above.)* The board opened on
-  the player's own mark + name as a row (from 2026-08-20; the door to `/account` from
-  2026-08-26), and the header's right group now ends in the player's own face on every
-  game surface — the same drawing, the same door, 40px above where the strip sat. Two
-  identical faces stacked at the top of one screen read as a rendering fault, so the strip
-  went, its duplicate profile read with it (`useOwnFace` is the ONE read now). Its rules
-  OUTLIVE it and moved to the face key: it shows NOTHING until its read settles — a
-  SKELETON, never a name (user feedback 2026-08-20: the first cut published the id the
-  moment the bootstrap resolved it, rendered the ASSIGNED identity and swapped it for the
-  real profile a beat later, so every named player watched a stranger's face flash on
-  every visit); a read that FAILS still settles on the assigned identity; a 404 is the
-  answer "never customized", whose display IS that identity; and **a device with NO
-  account shows the LOCAL placeholder at once** (#216 trigger rework, user-decided
-  2026-08-24): the persisted seed (`gameStore.localSeed`) derives the mark exactly as a
-  board row would — an ANSWER, not a pending read. Nothing on this screen mints an account
-  (opening the leaderboard is no longer a trigger; the tokenless friends board is the
-  honest empty one without a request). The INVITE device-card button on the bottom edge —
-  **at the tutorial's MIX's own 14px phone inset since 2026-09-02** (user-reported: it sat
-  at 38, `.app`'s 28px pad plus the `.mix-btn` margin, "a weird feeling of the same button
-  being moved around" between the two screens; `.board-invite` gives the pad back) — is
-  always live: with an account it shares at once; without one the tap IS the deploy button — it
-  bootstraps (loading wave in the button, `ErrorScreen` on failure, a prefetched challenge
-  so the tap is fast) and then shares. The single tap accepts one degradation:
-  `navigator.share` wants a fresh gesture, so a browser refusing the native sheet after
-  the bootstrap round trip falls back to useShare's clipboard path (COPIED).
-  Both are the #188/#189 wiring; both work before ever playing — and the invite
-  share passes `useShare`'s `tracked: false`, because the pinned `share` analytics event
-  counts a SOLVED DAY's result leaving the app (the three-event invariant; a bonus and an
-  unfinished result — given up or capped — opt out the same way) and counting invite links
-  into it would silently redefine what the number measures.
 
 - **THE HIT ART (decided 2026-08-09 to 2026-08-11; the sentence's holes land it since #301).**
   `components/strikeArt.ts` + `Strike.tsx` + `Loot.tsx`; every measured number lives in
@@ -3220,17 +3273,27 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `TRAVEL_MS` 200), inverting the letters it crosses. The row scrolls on its own axis
     where it runs past the column, snapping to names, and shows ONLY WHOLE NAMES: a name
     the column cuts is COVERED by the ground, the cover carrying the boards' own left-out
-    rail; turning to a tab scrolls its name whole into view. A roving tablist for the
-    keyboard (the arrows, Home, End). The tab the player turned to is kept by KEY, so a tab
+    rail against the whole name next to it (on whole pixels; no rail on a cover under 24px,
+    `COVER_MARK_PX`); turning to a tab scrolls its name whole into view. A name too long for
+    the room the row leaves it once scrolled to (clear of the left-out rails and of the
+    pinned name) ENDS IN AN ELLIPSIS there (`--label-max`, floored to whole glyphs, written
+    when the row's width or names change, never on a scroll), so the SHOWN name is never
+    under a cover. A roving tablist for the keyboard (the arrows, Home, End), each tab
+    naming the panel it controls (`tabIds`; here `.result-board`, `role="tabpanel"`,
+    labelled by the shown tab). The tab the player turned to is kept by KEY, so a tab
     arriving later never moves them off it. Here the row holds the tabs alone: no group is
     created from the result — NEW GROUP is the board screen's pinned plus. A sideways SWIPE
     on the rows turns the tab too (`hooks/useSwipe`, the board screen's too: `touch-action:
-    pan-y`; 40px, mostly sideways) and opens nothing.
+    pan-y pinch-zoom`; 40px, mostly sideways; a finger's or a pen's, the first one down —
+    a mouse dragging across the lines is selecting, turns nothing, and its click opens
+    nothing) and opens nothing: the click a swipe ends in is swallowed only within
+    `SWIPE_CLICK_MS` (400) of it, so a key's click later is a click.
     **THE LINES** are `components/BoardRows` (`BoardRowItem`, `PlayingRowItem`) in their ONE
     dress, the board screen's too (`.board-row`, 44px): the rank in the pixel face's 16px
     `--muted`, printed bare, or the CROWN, in ONE rank column every tab shares (`--rank-w`,
-    the widest rank any tab prints, so turning a tab moves no mark); the mark SQUARE at 3px
-    a cell (`MARK`, 30px, `components/boardMetrics.ts`); the name (`--ui` 15px); the number
+    `rankColumnPx` of the widest rank any tab prints, so turning a tab moves no mark); the
+    mark SQUARE at 3px a cell (`MARK`, 30px, `components/boardMetrics.ts`); the name (`--ui`
+    15px); the number
     in the pixel face at the far edge — standing: the result passes no run, its count above
     being the subject that lands — with a gutter at its
     right that a playing member's % hangs in as the tries' EXPONENT in the heat's ink, so
