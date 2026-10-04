@@ -5,9 +5,10 @@ import PlusIcon from '../assets/icons/plus.svg?react';
 import { prefersReducedMotion } from '../hooks/useScramble';
 
 // WHICH BOARD: the boards' ONE control across the app — the solved screen's boards and the
-// board screen both turn through it. The tabs are NAMES IN A ROW (each group, then GLOBAL),
-// `--ui` bold tracked capitals in the secondary ink, the one shown wearing the WHITE TITLE
-// CHIP (the cards' one emphasis gesture).
+// board screen both turn through it, and so does the archive's month (a selection among
+// months, the active one pinned: `calendar/months.ts`). The tabs are NAMES IN A ROW (each
+// group, then GLOBAL), `--ui` bold tracked capitals in the secondary ink, the one shown
+// wearing the WHITE TITLE CHIP (the cards' one emphasis gesture).
 //
 // GLOBAL IS PINNED (`pinned`): the one tab every player has stays at the row's end whatever
 // the groups' names add up to — sticky on the row's own axis, the groups passing UNDER it.
@@ -36,10 +37,11 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 // A ROVING TABLIST for the keyboard: Tab lands on the shown name alone; the arrow keys (and
 // Home / End) move the focus AND turn, and a name taking the focus scrolls whole into view. A
 // tap on another name turns to it; a tap (or Enter) on the SHOWN chip goes INTO it (`onOpen`:
-// the result opens that board; the board screen opens a group's own screen). The board screen
-// pins the PLUS at the row's end (`onNew`): creating a group is the row's one other act, and
-// pinned it never scrolls out of reach. Each tab names the PANEL it controls — the surface's
-// board, which takes its name from the shown tab (`tabIds`, off one id the surface owns).
+// the result opens that board; the board screen opens a group's own screen; the archive's
+// shown month goes nowhere, and passes none). The board screen pins the PLUS at the row's end
+// (`onNew`): creating a group is the row's one other act, and pinned it never scrolls out of
+// reach. Each tab names the PANEL it controls — the surface's board, which takes its name from
+// the shown tab (`tabIds`, off one id the surface owns).
 export const tabIds = (base: string) => ({ panel: `${base}panel`, tab: (key: string) => `${base}tab-${key}` });
 export interface BoardTabItem {
   key: string;
@@ -86,7 +88,7 @@ export default function BoardTabs({
   // The surface's id for the tabs and their panel (`tabIds`).
   idBase: string;
   onTurn: (index: number) => void;
-  onOpen: (index: number) => void;
+  onOpen?: (index: number) => void;
   // The pinned plus, and its accessible name.
   onNew?: () => void;
   newLabel?: string;
@@ -322,7 +324,7 @@ export default function BoardTabs({
               aria-selected={i === shown}
               tabIndex={i === shown ? 0 : -1}
               onFocus={() => reveal(i)}
-              onClick={() => (i === shown ? onOpen(i) : onTurn(i))}
+              onClick={() => (i === shown ? onOpen?.(i) : onTurn(i))}
             >
               <span className="board-tab-label" data-focus-box>
                 {tab.label}

@@ -4,11 +4,12 @@ import { clockNow } from '../animationClock';
 import { DISSOLVE_MS } from '../bayerTiles';
 import { foilSeed } from '../foil';
 import { FRAME_MS, turnLevel } from '../podium/scene';
+import { LOOP_FRAME_MS, watchRaster } from '../rasterWatch';
 import Strike from '../Strike';
 import { BURST_ART } from '../strikeArt';
 import { useDeviceIdentity } from '../../identity';
 import { prefersReducedMotion } from '../../hooks/useScramble';
-import { BLEED, CELL_PX, HEADROOM, type CalGeometry } from './geometry';
+import { CELL_PX, keyAt, type CalGeometry } from './geometry';
 import { keysScene, type KeysModel, type KeysScene } from './keysScene';
 import { markBuilt, markStamped, rememberDrawn } from './memory';
 import { codesOf, nextStage, stageId, type Shown, type Stage, type Viewer } from './plan';
@@ -18,27 +19,18 @@ import { codesOf, nextStage, stageId, type Shown, type Stage, type Viewer } from
 // round it — on the page's ONE animation clock (`clockNow`: the CSS dissolves' own timeline,
 // so a slowed recording slows both), stepping every FRAME_MS until the scene has settled. Then
 // THE CLOCK RESTS: only today's foil moves, repainted over a stored resting frame at the foil's
-// own slow pace, and only while somebody can see it (on screen, a visible tab, a touch, key,
-// wheel or scroll in the last IDLE_MS); a month still being read keeps its read wave going
-// while it is seen, idle or not — a loading month must keep reading as one. Reduced motion
-// draws the landed frame once and runs no clock.
+// own slow pace, and only while somebody can see it and is there (`rasterWatch`); a month
+// still being read keeps its read wave going while it is seen, idle or not — a loading month
+// must keep reading as one. Reduced motion draws the landed frame once and runs no clock.
 //
-// WHICH SCENE (`plan.ts`) is LATCHED whenever what the raster shows changes, read off the
-// stage before it — never for a re-render (a press, a resize). A turn gives way from the frame
-// on screen cell by cell (the podium's `turnLevel`); a read landing on the month on screen
-// gives way KEY BY KEY — the scene before plays on under each key's cells not lit yet (the
-// loading checker and its wave, a turn still finishing), though nothing in it that had not
-// begun to come in by then ever does — as does a changed day. A resize re-seats the scene at
-// the same moment, never replaying it. The press is a one-shot redraw: it shows whether the
-// clock runs or rests.
+// WHICH SCENE, and how it gives way from the one before, is `plan.ts`'s: LATCHED whenever what
+// the raster shows changes — never for a re-render (a press, a resize). A resize re-seats the
+// scene at the same moment, never replaying it — though, mid-arrival, it drops what played
+// under it (a turn still giving way, the loading checker under keys not yet in: they come in
+// over bare ground). The press is a one-shot redraw: it shows whether the clock runs or rests.
 //
 // A PICTURE only (hidden from a screen reader): the grid's buttons over it carry every day's
 // date, status and tap.
-
-// The foil and the read wave step at the meter's pace: pixel art has nothing to gain from 60fps.
-const LOOP_FRAME_MS = 80;
-// After this long without a touch, a key, a wheel or a scroll, the foil holds its frame.
-const IDLE_MS = 9000;
 
 // A scene on screen: its clock's start, what a turn gives way from (the frame on screen as it
 // began), and — a read landing, a day changing — the scene it replaced, still playing under the
@@ -188,13 +180,10 @@ export default function MonthRaster({
 
     let timer = 0;
     let stopped = false;
-    let inView = true;
-    let awake = true;
-    let idle = 0;
     if (fresh) setBursting(staged.beats.bursts.length > 0 ? id : null);
     const tick = () => {
       timer = 0;
-      if (stopped || !inView || document.hidden) return;
+      if (stopped || !watch.seen()) return;
       const t = elapsed();
       if (t < until) {
         compose(layer, px, start + t, pressedRef.current, G.cols);
@@ -211,14 +200,11 @@ export default function MonthRaster({
         ctx.putImageData(image, 0, 0);
       } else if (scene.loop === 'foil') {
         // Nobody there: the foil holds its frame until a touch wakes it.
-        if (!awake) return;
+        if (!watch.awake()) return;
         scene.foil(px, rest, t, pressedRef.current);
         for (const b of scene.foilBoxes) ctx.putImageData(image, 0, 0, b.x, b.y, b.w, b.h);
       }
       if (scene.loop !== null) timer = window.setTimeout(tick, LOOP_FRAME_MS);
-    };
-    const wake = () => {
-      if (!stopped && !timer && inView && !document.hidden) tick();
     };
     // A press shown or released: the running clock draws it on its next frame; at rest it is
     // drawn now.
@@ -226,47 +212,25 @@ export default function MonthRaster({
       if (rest === null || stopped) return;
       settle(elapsed());
     };
-    const touched = () => {
-      window.clearTimeout(idle);
-      idle = window.setTimeout(() => {
-        awake = false;
-      }, IDLE_MS);
-      if (!awake) {
-        awake = true;
-        wake();
-      }
-    };
-    const io =
-      typeof IntersectionObserver !== 'undefined'
-        ? new IntersectionObserver((entries) => {
-            inView = entries[entries.length - 1].isIntersecting;
-            wake();
-          })
-        : null;
-    io?.observe(canvas);
-    document.addEventListener('visibilitychange', wake);
-    const events = ['pointerdown', 'keydown', 'wheel', 'scroll'] as const;
-    for (const name of events) window.addEventListener(name, touched, { capture: true, passive: true });
-    touched();
+    const watch = watchRaster(canvas, () => {
+      if (!stopped && !timer && watch.seen()) tick();
+    });
     // The first frame before paint — the scene before, as it stood.
     tick();
     return () => {
       stopped = true;
       redrawRef.current = null;
       window.clearTimeout(timer);
-      window.clearTimeout(idle);
-      io?.disconnect();
-      document.removeEventListener('visibilitychange', wake);
-      for (const name of events) window.removeEventListener(name, touched, { capture: true });
+      watch.stop();
     };
     // A scene per stage and per layout; the data is the stage's.
   }, [G, id, reduced]);
 
   // A key's centre in the raster's box, in CSS px.
-  const centre = (i: number) => ({
-    left: (BLEED + (i % 7) * (G.keyW + G.colGap) + G.keyW / 2) * CELL_PX,
-    top: (HEADROOM + Math.floor(i / 7) * (G.keyH + G.rowGap) + G.keyH / 2) * CELL_PX,
-  });
+  const centre = (i: number) => {
+    const { x, y } = keyAt(G, i);
+    return { left: x * CELL_PX + G.keyWPx / 2, top: y * CELL_PX + G.keyHPx / 2 };
+  };
   const burstInk = (i: number) => {
     const key = staged.model.keys[i];
     return key.kind === 'solved' ? 'var(--accent)' : key.kind === 'progress' ? progressHeatColor(key.pct) : 'var(--fg)';

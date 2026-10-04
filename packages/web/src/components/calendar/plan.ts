@@ -6,9 +6,12 @@ import { drawnOf, isBuilt, isStamped, type DrawnCode } from './memory';
 // (built once per day and account, the memory's BUILT) — at the opening's pace, or under a
 // turn's quicker one — and today DROPS once per day (STAMPED); a month already built stands
 // SETTLED, and any day that says something else than when it was last DRAWN plays its change.
-// A turn gives way from the frame on screen cell by cell; a read landing on the month on
-// screen gives way KEY BY KEY (the scene before plays on under each key's cells not lit yet),
-// as does a changed day. Reduced motion has no arrival and no give: the landed frame, marked
+//
+// HOW IT GIVES WAY (`MonthRaster` composes it): a turn, from the frame on screen cell by cell
+// (the podium's `turnLevel`); a read landing on the month on screen, KEY BY KEY — the scene
+// before plays on under each key's cells not lit yet (the loading checker and its wave, a turn
+// still finishing), though nothing in it that had not begun to come in by then ever does — as
+// does a changed day. Reduced motion has no arrival and no give: the landed frame, marked
 // built and stamped as it is shown.
 
 // What a scene shows: the month, the active game day it is shown on, and what its days say.

@@ -11,10 +11,12 @@ import MonthRaster from '../components/calendar/MonthRaster';
 import {
   BLEED,
   CELL_PX,
+  COLUMN_PX,
   HEADROOM,
   HOLD_GAP_PX,
   HOLD_PX,
   NOTE_NARROW_BELOW_PX,
+  TABS_PX,
   WEEKDAYS_PX,
   calGeometry,
   type CalGeometry,
@@ -173,7 +175,7 @@ export default function Archive({ lang }: { lang: LangCode }) {
       const style = getComputedStyle(parent);
       const room = parent.clientWidth - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0');
       const phone = window.matchMedia?.('(max-width: 640px)').matches ?? window.innerWidth <= 640;
-      const next = calGeometry(Math.min(560, Math.floor(room)), window.innerHeight, phone);
+      const next = calGeometry(Math.min(COLUMN_PX, Math.floor(room)), window.innerHeight, phone);
       // (A size is its candidate and where the column centres it.)
       setG((was) => (was && was.name === next.name && was.gridX === next.gridX ? was : next));
     };
@@ -251,6 +253,7 @@ export default function Archive({ lang }: { lang: LangCode }) {
   const style = {
     '--bleed': `${BLEED * CELL_PX}px`,
     '--headroom': `${HEADROOM * CELL_PX}px`,
+    '--tabs-h': `${TABS_PX}px`,
     '--weekdays-h': `${WEEKDAYS_PX}px`,
     '--hold-gap': `${HOLD_GAP_PX}px`,
     '--hold-h': `${HOLD_PX}px`,
@@ -280,7 +283,6 @@ export default function Archive({ lang }: { lang: LangCode }) {
           shown={shown}
           idBase="cal-"
           onTurn={turnTo}
-          onOpen={() => {}}
         />
       </div>
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BLEED, CELL_PX, HEADROOM, calGeometry, stackedHeightPx } from './geometry';
+import { BLEED, CELL_PX, FOOT_PX, HEADROOM, STACK_TOP_PX, calGeometry, stackedHeightPx } from './geometry';
 
 // The calendar's raster stands on WHOLE PIXELS only if every size it is laid out with is a whole
 // number of 2px cells; and the month must fit the room it is given — a desktop window never
@@ -80,7 +80,7 @@ describe('calGeometry — the first candidate that fits', () => {
   it('ends a stacked desktop month above the window foot, else goes sideways', () => {
     for (let h = 300; h <= 1000; h += 7) {
       const { G } = room(1366, h);
-      if (G.layout === 'stacked') expect(82 + stackedHeightPx(G)).toBeLessThanOrEqual(h - 40);
+      if (G.layout === 'stacked') expect(STACK_TOP_PX + stackedHeightPx(G)).toBeLessThanOrEqual(h - FOOT_PX);
     }
   });
 });

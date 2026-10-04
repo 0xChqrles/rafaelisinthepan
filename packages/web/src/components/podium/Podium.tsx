@@ -12,6 +12,7 @@ import Avatar from '../Avatar';
 import { clockNow, onClock } from '../animationClock';
 import { DISSOLVE_MS } from '../bayerTiles';
 import { foilSeed } from '../foil';
+import { LOOP_FRAME_MS, watchRaster } from '../rasterWatch';
 import Strike from '../Strike';
 import { BURST_ART } from '../strikeArt';
 import {
@@ -69,9 +70,8 @@ import { prefersReducedMotion } from '../../hooks/useScramble';
 // Animations run on it, so the podium and the lines never drift apart, whatever the page's
 // playback rate). It steps every FRAME_MS until the scene has settled; then only first place's
 // FOIL moves (its sheen and its glitter), repainted over a stored resting frame at the foil's
-// own slow pace — and THE CLOCK RESTS while nobody can see it (scrolled out of view, a hidden
-// tab) or nobody is there (IDLE_MS after the last touch, key, wheel or scroll, the next one
-// waking it). Reduced motion draws the settled frame and runs no clock at all.
+// own slow pace — and THE CLOCK RESTS while nobody can see it or nobody is there
+// (`rasterWatch`). Reduced motion draws the settled frame and runs no clock at all.
 //
 // The whole scene is a PICTURE (hidden from a screen reader: the screen says the places in its
 // list); what the box HOLDS besides it — the empty board's line and its call, a failed read's
@@ -141,10 +141,6 @@ export function nextStage(
   };
 }
 
-// The foil at rest steps at the meter's pace: pixel art has nothing to gain from 60fps.
-const FOIL_FRAME_MS = 80;
-// After this long without a touch, a key, a wheel or a scroll, the foil holds its frame.
-const IDLE_MS = 9000;
 // The ghost on an empty board's middle step: the user's sprite at 3x (39 × 54), its feet this
 // far over the step.
 const GHOST_W = 39;
@@ -436,16 +432,13 @@ export default function Podium({
 
     let timer = 0;
     let stopped = false;
-    let inView = true;
-    let awake = true;
-    let idle = 0;
     setBursting(stage.build);
     const tick = () => {
       timer = 0;
-      if (stopped || !inView || document.hidden) return;
+      if (stopped || !watch.seen()) return;
       const t = elapsed();
       // Nobody there: the foil at rest holds its frame (a build always plays out).
-      if (t >= tl.settled && rest !== null && !awake) return;
+      if (t >= tl.settled && rest !== null && !watch.awake()) return;
       if (t < tl.settled) {
         scene.draw(px, t, true);
         giveWay(t);
@@ -463,43 +456,17 @@ export default function Podium({
         for (const b of scene.foilBoxes) ctx.putImageData(image, 0, 0, b.x, b.y, b.w, b.h);
       }
       // A podium with no foil on it (nobody first) has nothing left to move.
-      if (scene.foilBoxes.length > 0) timer = window.setTimeout(tick, FOIL_FRAME_MS);
+      if (scene.foilBoxes.length > 0) timer = window.setTimeout(tick, LOOP_FRAME_MS);
     };
-    const wake = () => {
-      if (!stopped && !timer && inView && !document.hidden) tick();
-    };
-    const touched = () => {
-      window.clearTimeout(idle);
-      idle = window.setTimeout(() => {
-        awake = false;
-      }, IDLE_MS);
-      if (!awake) {
-        awake = true;
-        wake();
-      }
-    };
-    const io =
-      typeof IntersectionObserver !== 'undefined'
-        ? new IntersectionObserver((entries) => {
-            // The latest word on it: a batch can hold an entry and the exit after it.
-            inView = entries[entries.length - 1].isIntersecting;
-            wake();
-          })
-        : null;
-    io?.observe(canvas);
-    document.addEventListener('visibilitychange', wake);
-    const events = ['pointerdown', 'keydown', 'wheel', 'scroll'] as const;
-    for (const name of events) window.addEventListener(name, touched, { capture: true, passive: true });
-    touched();
+    const watch = watchRaster(canvas, () => {
+      if (!stopped && !timer && watch.seen()) tick();
+    });
     // The first frame before paint — the scene before, as it stood.
     tick();
     return () => {
       stopped = true;
       window.clearTimeout(timer);
-      window.clearTimeout(idle);
-      io?.disconnect();
-      document.removeEventListener('visibilitychange', wake);
-      for (const name of events) window.removeEventListener(name, touched, { capture: true });
+      watch.stop();
     };
     // A scene per stage (its build) and per layout; the data is the stage's.
   }, [L, stage.build, reduced]);

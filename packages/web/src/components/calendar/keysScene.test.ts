@@ -1,9 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { COUNT_EM, COUNT_ROWS, DIGIT_MASKS, countInk, inkEms, progressHeatColor } from '@whippin/shared';
-import { abgr, hexToAbgr } from '../raster';
+import { COUNT_ROWS, progressHeatColor } from '@whippin/shared';
+import { rgbToAbgr } from '../raster';
 import { BURST_ART } from '../strikeArt';
-import { BLEED, HEADROOM, calGeometry, type CalGeometry } from './geometry';
-import { keysBeats, keysScene, type KeyState, type KeysModel, type KeysSpec } from './keysScene';
+import {
+  COBALT as I_COBALT,
+  DEEP as I_DEEP,
+  DUSK as I_DUSK,
+  GROUND as I_GROUND,
+  MUTED as I_MUTED,
+  RAIL as I_RAIL,
+  WHITE as I_WHITE,
+  inkAbgr,
+} from '../streak/sprites';
+import { HEADROOM, calGeometry, keyAt, type CalGeometry } from './geometry';
+import { keysBeats, keysScene, numberCells, type KeyState, type KeysModel, type KeysSpec } from './keysScene';
 
 // The month's keys carry the archive's promises (contract.md K9, K16; the direction's own):
 // a day under 100 is never drawn finished — its cap and light band stay iron, it never takes a
@@ -13,17 +23,15 @@ import { keysBeats, keysScene, type KeyState, type KeysModel, type KeysSpec } fr
 // a number and no key; runs join only finished days of one week, across a week's end only
 // inside the month; and the one shiny thing is today's, only once it is done.
 
-const WHITE = hexToAbgr('#ffffff');
-const MUTED = hexToAbgr('#a6adb8');
-const RAIL = hexToAbgr('#4a5578');
-const COBALT = hexToAbgr('#4a6aff');
-const DEEP = hexToAbgr('#1c2566');
-const GROUND = hexToAbgr('#050507');
-const DUSK = hexToAbgr('#1f212a');
-const heat = (pct: number) => {
-  const [r, g, b] = progressHeatColor(pct).match(/\d+/g)!.map(Number);
-  return abgr(r, g, b);
-};
+// The streak raster's inks, the scene's own.
+const WHITE = inkAbgr(I_WHITE);
+const MUTED = inkAbgr(I_MUTED);
+const RAIL = inkAbgr(I_RAIL);
+const COBALT = inkAbgr(I_COBALT);
+const DEEP = inkAbgr(I_DEEP);
+const GROUND = inkAbgr(I_GROUND);
+const DUSK = inkAbgr(I_DUSK);
+const heat = (pct: number) => rgbToAbgr(progressHeatColor(pct));
 
 const G: CalGeometry = calGeometry(362, 844, true);
 const W = G.keyW;
@@ -48,35 +56,13 @@ function frame(model: KeysModel, spec: Partial<KeysSpec> = {}, t?: number, withF
   scene.draw(px, t ?? tl.settled + 5000, withFoil, -1);
   return { px, scene, tl };
 }
-const keyAt = (i: number) => ({ x: BLEED + (i % 7) * (W + G.colGap), y: HEADROOM + Math.floor(i / 7) * (H + G.rowGap) });
 const cell = (px: Uint32Array, i: number, lx: number, ly: number) => {
-  const { x, y } = keyAt(i);
+  const { x, y } = keyAt(G, i);
   return px[(y + ly) * G.cols + x + lx];
 };
 const corner = (lx: number, ly: number) => (lx === 0 || lx === W - 1) && (ly === 0 || ly === H - 1);
 // The number's cells (1) and its ring (2), where the scene stands them.
-function digitMap(day: number): Uint8Array {
-  const m = new Uint8Array(W * H);
-  const text = String(day);
-  const x0 = Math.floor((W - Math.round(inkEms(text.length) * COUNT_EM)) / 2);
-  const y0 = 1 + Math.floor((H - 1 - COUNT_ROWS) / 2);
-  const on = countInk(DIGIT_MASKS, text);
-  for (let gy = 0; gy < COUNT_ROWS; gy += 1) {
-    for (let gx = 0; gx < text.length * COUNT_EM; gx += 1) if (on(gx, gy)) m[(y0 + gy) * W + x0 + gx] = 1;
-  }
-  for (let y = 0; y < H; y += 1) {
-    for (let x = 0; x < W; x += 1) {
-      if (m[y * W + x] !== 1) continue;
-      for (let dy = -1; dy <= 1; dy += 1) {
-        for (let dx = -1; dx <= 1; dx += 1) {
-          const k = (y + dy) * W + x + dx;
-          if (x + dx >= 0 && x + dx < W && y + dy >= 0 && y + dy < H && m[k] === 0) m[k] = 2;
-        }
-      }
-    }
-  }
-  return m;
-}
+const digitMap = (day: number) => numberCells(W, H, day);
 const none = (day: number): KeyState => ({ kind: 'none', day });
 
 describe('a day under 100 is never finished', () => {
@@ -91,7 +77,7 @@ describe('a day under 100 is never finished', () => {
       }
       expect(tl.links.some((l) => l.a === 10 || l.b === 10)).toBe(false);
       // Nothing in the gaps either side of it.
-      const { x, y } = keyAt(10);
+      const { x, y } = keyAt(G, 10);
       for (let r = 0; r < H; r += 1) {
         for (let g = 1; g <= G.colGap; g += 1) {
           expect(px[(y + r) * G.cols + x - g]).toBe(0);
@@ -176,16 +162,16 @@ describe('a number never breaks', () => {
   });
 
   it('never cuts a number into a sliver: three rows or more on each side of its edge, or none', () => {
-    const y0 = 1 + Math.floor((H - 1 - COUNT_ROWS) / 2);
+    const m = digitMap(23);
+    // The number's rows: each with a cell of its ink.
+    const rows = Array.from({ length: H }, (_, ly) => ly).filter((ly) => m.subarray(ly * W, ly * W + W).includes(1));
+    expect(rows).toHaveLength(COUNT_ROWS);
     for (let pct = 1; pct <= 99; pct += 1) {
       const model = month((d) => (d === 23 ? { kind: 'progress', day: d, pct } : none(d)));
       const { px } = frame(model);
-      const m = digitMap(23);
       let cut = 0;
-      for (let r = 0; r < COUNT_ROWS; r += 1) {
-        const ly = y0 + r;
-        let lx = 0;
-        while (m[ly * W + lx] !== 1) lx += 1;
+      for (const ly of rows) {
+        const lx = m.subarray(ly * W, ly * W + W).indexOf(1);
         if (cell(px, 23, lx, ly) === GROUND) cut += 1;
       }
       expect([0, 3, 4, COUNT_ROWS]).toContain(cut);
@@ -257,8 +243,8 @@ describe('the runs', () => {
       [6, 7, true],
     ]);
     // The wrap's stubs: out of the 6th into the right bleed, into the 7th from the left one.
-    const six = keyAt(6);
-    const seven = keyAt(7);
+    const six = keyAt(G, 6);
+    const seven = keyAt(G, 7);
     const m = Math.floor(H / 2);
     expect(px[(six.y + m - 1) * G.cols + six.x + W]).toBe(COBALT);
     expect(px[(seven.y + m - 1) * G.cols + seven.x - 1]).toBe(COBALT);
@@ -281,7 +267,7 @@ describe('today', () => {
   it('is the one foil, and only once it is finished', () => {
     const allSolved = month((d) => ({ kind: 'solved', day: d }), 4);
     const shiny = frame(allSolved);
-    expect(shiny.scene.foilBoxes).toEqual([{ ...keyAt(4), w: W, h: H + 1 }]);
+    expect(shiny.scene.foilBoxes).toEqual([{ ...keyAt(G, 4), w: W, h: H + 1 }]);
     expect(shiny.scene.loop).toBe('foil');
     // Its body is no longer the plain cobalt; its neighbours are.
     let foiled = 0;
@@ -309,12 +295,16 @@ describe('today', () => {
     const px = new Uint32Array(G.cols * G.rows);
     scene.draw(px, tl.drop! - 40, false, -1);
     for (let ly = 0; ly < H; ly += 1) for (let lx = 0; lx < W; lx += 1) expect(cell(px, 11, lx, ly)).toBe(0);
-    // Falling: the key itself (its white cap, its iron), above its place — never a white block.
+    // Falling: the key itself — its white cap somewhere in the headroom above its place, its
+    // iron under it, never a white block — and its place's foot still bare.
     scene.draw(px, tl.drop! + 40, false, -1);
-    const { x, y } = keyAt(11);
-    const lifted = (ly: number, lx: number) => px[(y + ly - 9) * G.cols + x + lx];
-    expect(lifted(0, 5)).toBe(WHITE);
-    expect(lifted(5, 5)).toBe(DUSK);
+    const { x, y } = keyAt(G, 11);
+    const at = (Y: number, lx: number) => px[Y * G.cols + x + lx];
+    const capped = (Y: number) => Array.from({ length: W - 2 }, (_, k) => at(Y, k + 1)).every((v) => v === WHITE);
+    const cap = Array.from({ length: HEADROOM }, (_, k) => y - HEADROOM + k).filter(capped);
+    expect(cap.length).toBeGreaterThan(0);
+    expect(at(cap[cap.length - 1] + 3, 5)).toBe(DUSK);
+    for (let lx = 0; lx < W; lx += 1) expect(cell(px, 11, lx, H - 1)).toBe(0);
     scene.draw(px, tl.impact! + 200, false, -1);
     expect(cell(px, 11, 5, 5)).toBe(DUSK);
   });

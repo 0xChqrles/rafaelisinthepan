@@ -12,21 +12,22 @@ import {
   progressHeatColor,
 } from '@whippin/shared';
 import { DISSOLVE_MS, SKELETON_WAIT_MS } from '../bayerTiles';
-import { easeOut } from '../meterRamp';
-import { FRAME_MS, RECEDE_MS, RECEDE_STEPS, SHAKE, SHAKE_FRAME_MS } from '../podium/scene';
-import { abgr, hexToAbgr, rgbToAbgr } from '../raster';
+import { easeOut, rampDensity } from '../meterRamp';
+import { FRAME_MS, RECEDE_MS, SHAKE, SHAKE_FRAME_MS, framed, recedeLevel, type Box } from '../podium/scene';
+import { abgr, rgbToAbgr } from '../raster';
 import { BURST_ART } from '../strikeArt';
+import { clamp01 } from '../streak/beats';
 import {
   COBALT as I_COBALT,
   DEEP as I_DEEP,
   DUSK as I_DUSK,
   GROUND as I_GROUND,
-  INKS,
   MUTED as I_MUTED,
   RAIL as I_RAIL,
   WHITE as I_WHITE,
+  inkAbgr,
 } from '../streak/sprites';
-import { BLEED, HEADROOM, type CalGeometry } from './geometry';
+import { keyAt, type CalGeometry } from './geometry';
 import type { DrawnCode } from './memory';
 
 // THE MONTH AS IRON KEYS (the archive's subject): ONE raster of whole cells on the bare ground —
@@ -74,14 +75,13 @@ import type { DrawnCode } from './memory';
 // bursts and welds its run). Then the clock rests: nothing moves but today's foil.
 
 // ── The inks: the streak raster's own — the tokens, nothing else — packed for the canvas ──
-const ink = (index: number) => hexToAbgr(INKS[index - 1]);
-const WHITE = ink(I_WHITE); // --fg: a playable number, the write head, today's cap
-const MUTED = ink(I_MUTED); // --muted: the read wave's light
-const RAIL = ink(I_RAIL); // --rail: iron's lit cap, a slate number, the ghost's checker
-const COBALT = ink(I_COBALT); // --solve: a finished day
-const DEEP = ink(I_DEEP); // cobalt's under-face: a finished key's foot, a link's shade
-const GROUND = ink(I_GROUND); // --bg, opaque: a number cut out of its key
-const DUSK = ink(I_DUSK); // iron's face
+const WHITE = inkAbgr(I_WHITE); // --fg: a playable number, the write head, today's cap
+const MUTED = inkAbgr(I_MUTED); // --muted: the read wave's light
+const RAIL = inkAbgr(I_RAIL); // --rail: iron's lit cap, a slate number, the ghost's checker
+const COBALT = inkAbgr(I_COBALT); // --solve: a finished day
+const DEEP = inkAbgr(I_DEEP); // cobalt's under-face: a finished key's foot, a link's shade
+const GROUND = inkAbgr(I_GROUND); // --bg, opaque: a number cut out of its key
+const DUSK = inkAbgr(I_DUSK); // iron's face
 
 // ── The model: what each of the grid's 42 cells shows ──────────────────────────────────────
 export type KeyState =
@@ -314,11 +314,11 @@ export function keysBeats(spec: KeysSpec): KeysBeats {
   // The runs: a link between two finished keys of a week, a pair of stubs across its end — each
   // joining once both its keys are still (today's after its shake), white where a ceremony
   // closes it.
-  const still = (i: number) => (i === today && b.impact !== null ? b.impact + SHAKE_MS : b.lock[i] + LINK_AFTER_MS);
+  const settledAt = (i: number) => (i === today && b.impact !== null ? b.impact + SHAKE_MS : b.lock[i] + LINK_AFTER_MS);
   const loud = (i: number) => b.flash[i] || (i === today && b.impact !== null);
   for (let i = 0; i < n; i += 1) {
     if (!solved(i) || !solved(i + 1)) continue;
-    const at = Math.max(still(i), still(i + 1));
+    const at = Math.max(settledAt(i), settledAt(i + 1));
     const flash = loud(i) || loud(i + 1);
     b.links.push({ a: i, b: i + 1, wrap: i % 7 === 6, at, flash });
     ends.push(at + (flash ? FLASH_MS : 0));
@@ -345,11 +345,37 @@ export function keysBeats(spec: KeysSpec): KeysBeats {
 const settledAfter = (ends: readonly number[]) => Math.max(...ends) + FRAME_MS;
 
 // ── The raster ────────────────────────────────────────────────────────────────────────────
-export interface Box {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+// THE NUMBER on a `W` × `H` key: the 16px face on the type grid (a font pixel a cell), centred
+// on its ink box in the rows under the cap — and the cell of RING round it (its eight
+// neighbours), where the hard edge stands. 1: the digit's ink; 2: its ring; 0: the key's face.
+const numberTop = (H: number) => 1 + Math.floor((H - 1 - COUNT_ROWS) / 2);
+export function numberCells(W: number, H: number, day: number): Uint8Array {
+  const m = new Uint8Array(W * H);
+  const text = String(day);
+  const inkW = Math.round(inkEms(text.length) * COUNT_EM);
+  const x0 = Math.floor((W - inkW) / 2);
+  const y0 = numberTop(H);
+  const on = countInk(DIGIT_MASKS, text);
+  for (let gy = 0; gy < COUNT_ROWS; gy += 1) {
+    for (let gx = 0; gx < text.length * COUNT_EM; gx += 1) {
+      const x = x0 + gx;
+      const y = y0 + gy;
+      if (on(gx, gy) && x >= 0 && x < W && y >= 0 && y < H) m[y * W + x] = 1;
+    }
+  }
+  for (let y = 0; y < H; y += 1) {
+    for (let x = 0; x < W; x += 1) {
+      if (m[y * W + x] !== 1) continue;
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          const rx = x + dx;
+          const ry = y + dy;
+          if (rx >= 0 && ry >= 0 && rx < W && ry < H && m[ry * W + rx] === 0) m[ry * W + rx] = 2;
+        }
+      }
+    }
+  }
+  return m;
 }
 
 export interface KeysScene {
@@ -366,9 +392,6 @@ export interface KeysScene {
   loop: 'wave' | 'foil' | null;
 }
 
-// The frame a time falls in: the raster steps at FRAME_MS, so a beat lands on a frame.
-const framed = (t: number) => Math.floor(t / FRAME_MS) * FRAME_MS;
-const clamp01 = (k: number) => Math.max(0, Math.min(1, k));
 // A dissolve's level at `t` from `from`, in `steps` hard steps over `ms` (1: whole).
 const level = (from: number, ms: number, steps: number, ft: number) =>
   from === PAST ? 1 : Math.ceil(clamp01((ft - from) / ms) * steps) / steps;
@@ -401,10 +424,6 @@ export function keysScene(
     if (x < 0 || y < 0 || x >= cols || y >= rows) return;
     px[y * cols + x] = v;
   };
-  const keyAt = (i: number) => ({
-    x: BLEED + (i % 7) * (W + G.colGap),
-    y: HEADROOM + Math.floor(i / 7) * (H + G.rowGap),
-  });
   const corner = (lx: number, ly: number) => (lx === 0 || lx === W - 1) && (ly === 0 || ly === H - 1);
   // A key held down has lost its cap row: its new top row wears the cut corners.
   const shape = (lx: number, ly: number, down: number) =>
@@ -428,39 +447,15 @@ export function keysScene(
     return v;
   };
 
-  // THE NUMBER: the 16px face on the type grid (a font pixel a cell), centred on its ink box in
-  // the rows under the cap — and the cell of RING round it (its eight neighbours), where the
-  // hard edge stands. 1: the digit's ink; 2: its ring.
-  const y0 = 1 + Math.floor((H - 1 - COUNT_ROWS) / 2);
+  // THE NUMBER's cells (`numberCells`), worked out once per day number and kept; its top row.
+  const y0 = numberTop(H);
   const maps = new Map<number, Uint8Array>();
   const digitMap = (day: number) => {
     let m = maps.get(day);
-    if (m) return m;
-    m = new Uint8Array(W * H);
-    const text = String(day);
-    const inkW = Math.round(inkEms(text.length) * COUNT_EM);
-    const x0 = Math.floor((W - inkW) / 2);
-    const on = countInk(DIGIT_MASKS, text);
-    for (let gy = 0; gy < COUNT_ROWS; gy += 1) {
-      for (let gx = 0; gx < text.length * COUNT_EM; gx += 1) {
-        const x = x0 + gx;
-        const y = y0 + gy;
-        if (on(gx, gy) && x >= 0 && x < W && y >= 0 && y < H) m[y * W + x] = 1;
-      }
+    if (!m) {
+      m = numberCells(W, H, day);
+      maps.set(day, m);
     }
-    for (let y = 0; y < H; y += 1) {
-      for (let x = 0; x < W; x += 1) {
-        if (m[y * W + x] !== 1) continue;
-        for (let dy = -1; dy <= 1; dy += 1) {
-          for (let dx = -1; dx <= 1; dx += 1) {
-            const rx = x + dx;
-            const ry = y + dy;
-            if (rx >= 0 && ry >= 0 && rx < W && ry < H && m[ry * W + rx] === 0) m[ry * W + rx] = 2;
-          }
-        }
-      }
-    }
-    maps.set(day, m);
     return m;
   };
   // THE NUMBER'S EDGE: the first of its rows the ink takes (cut out from there down), off the
@@ -550,7 +545,7 @@ export function keysScene(
     if (ly === 0 && k.capFlash) return WHITE;
     if (ly <= 1 && k.todayCap) return WHITE;
     if (k.front > 0 && u < k.front) {
-      if (k.flat || bayerThreshold(lx, ly) < Math.min(1, (k.front - u) / 3)) return k.fill;
+      if (k.flat || bayerThreshold(lx, ly) < rampDensity(k.front, u, 3)) return k.fill;
     }
     // Bare iron, lit from above: the slate cap, its light dithered into the dusk face.
     if (ly === 0) return RAIL;
@@ -583,7 +578,7 @@ export function keysScene(
   const drawKey = (px: Uint32Array, i: number, ft: number, pressed: number, until: number) => {
     const key = model.keys[i];
     if (key.kind === 'pad') return;
-    const { x, y } = keyAt(i);
+    const { x, y } = keyAt(G, i);
     const dmap = digitMap(key.day);
     const isToday = i === model.today;
 
@@ -612,8 +607,8 @@ export function keysScene(
     const was = !under && iron && tl.from[i] !== null ? wasOf(i) : null;
     const lit = key.kind === 'unknown' ? waveOn(diagOf(i), ft) : 0;
     // (Offsets only once the key has come in whole: what gives way gives way where it stood.)
-    const still = lvIn < 1 || lvDigit < 1;
-    if (still) dx = dy = 0;
+    const arriving = lvIn < 1 || lvDigit < 1;
+    if (arriving) dx = dy = 0;
     for (let ly = 0; ly < H; ly += 1) {
       for (let lx = 0; lx < W; lx += 1) {
         const X = x + lx;
@@ -637,17 +632,17 @@ export function keysScene(
   // A LINK between two finished keys of a week — the streak's edge-on bar across the gap, its
   // lit face over its under-face — or a WRAP's two short stubs, out into the bleed and in from
   // it, ending square. A link follows a key held down; a ceremony's stamps white two frames.
-  const m = Math.floor(H / 2);
-  const linkInk = (row: number, white: boolean) => (white ? WHITE : row < m ? COBALT : DEEP);
+  const linkMid = Math.floor(H / 2);
+  const linkInk = (row: number, white: boolean) => (white ? WHITE : row < linkMid ? COBALT : DEEP);
   const STUB = 2;
   const drawLink = (px: Uint32Array, link: LinkBeat, ft: number, pressed: number) => {
     if (ft < link.at) return;
     const white = link.flash && ft < link.at + FLASH_MS;
-    const a = keyAt(link.a);
-    const b = keyAt(link.b);
+    const a = keyAt(G, link.a);
+    const b = keyAt(G, link.b);
     const downA = link.a === pressed ? 1 : 0;
     const downB = link.b === pressed ? 1 : 0;
-    for (let r = m - 2; r <= m + 1; r += 1) {
+    for (let r = linkMid - 2; r <= linkMid + 1; r += 1) {
       if (!link.wrap) {
         for (let x = a.x + W; x < b.x; x += 1) put(px, x, a.y + r + Math.max(downA, downB), linkInk(r, white));
         continue;
@@ -664,7 +659,7 @@ export function keysScene(
   // cell in the Bayer order, then glitter once it is whole.
   const today = model.today;
   const foilOn = today >= 0 && tl.foil !== undefined && model.keys[today]?.kind === 'solved';
-  const foilBoxes: Box[] = foilOn ? [{ ...keyAt(today), w: W, h: H + 1 }] : [];
+  const foilBoxes: Box[] = foilOn ? [{ ...keyAt(G, today), w: W, h: H + 1 }] : [];
   const paintFoil = (px: Uint32Array, t: number, pressed: number) => {
     const from = tl.foil;
     if (!foilOn || from === undefined) return;
@@ -672,7 +667,7 @@ export function keysScene(
     if (from !== null && ft < from) return;
     const key = model.keys[today];
     if (key.kind === 'pad') return;
-    const { x, y } = keyAt(today);
+    const { x, y } = keyAt(G, today);
     const down = pressed === today ? 1 : 0;
     const dmap = digitMap(key.day);
     // (Asked at a cell's centre.)
@@ -681,7 +676,7 @@ export function keysScene(
       const ly = Math.floor(cy);
       return lx >= 0 && ly >= 0 && lx < W && ly < H && shape(lx, ly, down) && dmap[ly * W + lx] !== 1 && !footDeep(lx, ly);
     };
-    const solid = from === null ? 0 : Math.ceil((1 - clamp01((ft - from) / RECEDE_MS)) * RECEDE_STEPS) / RECEDE_STEPS;
+    const solid = from === null ? 0 : recedeLevel(ft, from);
     const seconds = t / 1000;
     foilCells(W, H, seconds, seed, from === null ? null : from / 1000, inside, 1, (v, fx, fy) => {
       const X = x + fx;

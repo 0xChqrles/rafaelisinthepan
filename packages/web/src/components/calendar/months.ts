@@ -11,7 +11,9 @@ import type { BoardTabItem } from '../BoardTabs';
 // the first tab and on each January. A reader hears the whole month and year (`ariaLabel`).
 // The ACTIVE month is pinned at the row's end: the way back to now stays one tap away when a
 // year of months scrolls under it.
-const month = (ym: YearMonth) => new Date(Date.UTC(ym.year, ym.month - 1, 1));
+
+// A month as its first day, the Date the formats read.
+const firstOf = (ym: YearMonth) => new Date(Date.UTC(ym.year, ym.month - 1, 1));
 
 export function monthTabs(lang: string, first: YearMonth, active: YearMonth): BoardTabItem[] {
   const short = new Intl.DateTimeFormat(lang, { month: 'short', timeZone: 'UTC' });
@@ -19,12 +21,12 @@ export function monthTabs(lang: string, first: YearMonth, active: YearMonth): Bo
   const spansYears = first.year !== active.year;
   const tabs: BoardTabItem[] = [];
   for (let ym = first; compareYearMonth(ym, active) <= 0; ym = addMonths(ym, 1)) {
-    const name = short.format(month(ym)).replace(/\.$/, '').toLocaleUpperCase(lang);
+    const name = short.format(firstOf(ym)).replace(/\.$/, '').toLocaleUpperCase(lang);
     const yearShown = spansYears && (tabs.length === 0 || ym.month === 1);
     tabs.push({
       key: isoMonth(ym),
       label: yearShown ? `${name} ${ym.year}` : name,
-      ariaLabel: long.format(month(ym)),
+      ariaLabel: long.format(firstOf(ym)),
       ...(compareYearMonth(ym, active) === 0 ? { pinned: true } : {}),
     });
   }

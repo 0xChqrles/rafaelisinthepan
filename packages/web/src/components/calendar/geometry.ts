@@ -30,10 +30,15 @@ export { CELL_PX };
 // height today FALLS from (over the weekday letters, where the raster's ground is clear).
 export const BLEED = 4;
 export const HEADROOM = 10;
+// The board's column (`.board-screen, .archive`): the archive stands in it at most this wide.
+export const COLUMN_PX = 560;
 // The stacked column, top to bottom: the month row, its air, the weekday letters, their air,
 // the grid, a gap, and the HOLD (the failed read's note over RETRY, reserved in every state).
-// The CSS reads these heights off the archive's custom properties (`Archive.tsx`), so the fit
-// below and the column drawn are one set of numbers.
+// `Archive.tsx` hands them to the CSS as custom properties, so the fit below and the column
+// drawn are one set of numbers: the weekday row, the gap and the hold are drawn at
+// `--weekdays-h`, `--hold-gap` and `--hold-h` (the air between rows at `--air`); the month row
+// is the boards' tab row, 44px by its own CSS (`.board-tabs`), and `--tabs-h` is read only to
+// seat it SIDEWAYS.
 export const TABS_PX = 44;
 export const WEEKDAYS_PX = 12;
 export const HOLD_GAP_PX = 8;
@@ -41,8 +46,8 @@ export const HOLD_PX = 72;
 // Where the month row's top stands in a desktop window (`.app`'s 24px + the column's 58px:
 // the board screen's own, `.archive`'s `padding-top`), and how far above the window's foot a
 // stacked month must end.
-const STACK_TOP_PX = 82;
-const FOOT_PX = 40;
+export const STACK_TOP_PX = 82;
+export const FOOT_PX = 40;
 // Under this grid width the hold's note steps down a size (fr's failure line on one line).
 export const NOTE_NARROW_BELOW_PX = 356;
 
@@ -117,6 +122,12 @@ function geometryOf(c: Candidate, columnPx: number): CalGeometry {
     cols: gridW / CELL_PX + 2 * BLEED,
     rows: HEADROOM + gridH / CELL_PX + BLEED,
   };
+}
+
+// Where key `i` of the grid (seven a week, the first week on top) stands in the raster: its
+// top-left cell.
+export function keyAt(G: Pick<CalGeometry, 'keyW' | 'keyH' | 'colGap' | 'rowGap'>, i: number): { x: number; y: number } {
+  return { x: BLEED + (i % 7) * (G.keyW + G.colGap), y: HEADROOM + Math.floor(i / 7) * (G.keyH + G.rowGap) };
 }
 
 // The stacked column's height from the month row's top to the hold's foot.

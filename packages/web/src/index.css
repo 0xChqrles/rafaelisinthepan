@@ -417,9 +417,14 @@ input {
    failed read speaks. A window too short for a stacked month (a landscape phone) lays it
    SIDEWAYS: the month row and the hold on the left, the weekdays and the grid on the right.
    Every size is the calendar's geometry (`calGeometry`: whole cells, even gaps), handed down
-   as custom properties — the column's heights too, so the fit it measures is the column drawn
-   (its `padding-top` here is geometry.ts's STACK_TOP_PX; move one, move the other). No panel:
-   the month is the screen's one subject. */
+   as custom properties — the column's heights too, so the fit it measures is the column drawn.
+   No panel: the month is the screen's one subject. */
+/* THE BOARD'S COLUMN, the board screen's and the archive's: the board's 560 at most
+   (geometry.ts's COLUMN_PX), centred on a WHOLE pixel — an odd offset would set the podium,
+   the marks, the ghost and the month's raster on half of one — and top-aligned, clearing the
+   header row (8px + 50px viewport, minus .app's own 24px) plus a beat. (The 58px is
+   geometry.ts's STACK_TOP_PX less .app's 24px; move one, move the other.) */
+.board-screen,
 .archive {
   width: min(560px, 100%);
   margin-left: auto;
@@ -428,8 +433,6 @@ input {
   align-self: stretch;
   display: flex;
   flex-direction: column;
-  /* Clears the header row (8px + 50px viewport, minus .app's own 24px), plus a beat: the
-     board screen's own. */
   padding-top: 58px;
 }
 .archive[data-layout='sideways'] {
@@ -456,14 +459,15 @@ input {
   margin-left: -4px;
   /* The chip's middle on the first week's: down by the weekday row, its air and half a key,
      less half the tab row. */
-  margin-top: calc(var(--weekdays-h) + var(--air) + var(--key-h) / 2 - 22px);
+  margin-top: calc(var(--weekdays-h) + var(--air) + var(--key-h) / 2 - var(--tabs-h) / 2);
 }
 /* The shown month's chip goes nowhere: no pointer over it. */
 .archive .board-tab.on {
   cursor: default;
 }
-/* The tab row's first drawing: the chip drawn across the shown month, once, as the screen
-   opens. A turn sends it travelling (BoardTabs). */
+/* The tab row's first drawing, the board screen's and the archive's: the chip drawn across
+   the shown name, once, as the screen opens. A turn sends it travelling (BoardTabs). */
+.board-screen .board-tabs-ink,
 .archive .board-tabs-ink {
   animation: board-tabs-wipe 240ms steps(8, jump-end) 60ms backwards;
 }
@@ -533,19 +537,6 @@ input {
   clip-path: inset(0);
   pointer-events: none;
 }
-.cal-burst {
-  position: absolute;
-  width: 0;
-  height: 0;
-}
-/* The burst sheet at 2x (106 × 132) on a key's centre: half its width (53) to the left, and
-   half its height (66) less the art's own drop (8 at 2x: its impact ink centres at 44% of the
-   frame, `.strike.burst`) above — whole pixels, as the podium's. */
-.cal-burst .strike.burst {
-  width: 106px;
-  height: 132px;
-  transform: translate(-53px, -58px);
-}
 /* THE DAYS: real buttons over the picture, each tiling its key and half the gaps round it, so
    the month has no dead gaps to miss. */
 .cal-grid {
@@ -588,9 +579,6 @@ input {
   text-align: center;
   color: transparent;
   user-select: none;
-}
-.cal-pad {
-  display: block;
 }
 /* HOVER (a mouse): the corner brackets of a thing that can be tapped — four arms in the
    secondary ink, just outside the key, in one hard step; never on a day out of range, never at
@@ -668,6 +656,7 @@ input {
   text-align: left;
 }
 @media (prefers-reduced-motion: reduce) {
+  .board-screen .board-tabs-ink,
   .archive .board-tabs-ink,
   .cal-hold-in {
     animation: none;
@@ -7106,30 +7095,13 @@ figure.l1-fig {
    same bare ground, the same tab row, the same lines of type (above), with the screen's own
    head line (a group's three boards and the door into it) and the room to list everyone.
    The game's numbers in the pixel face at whole multiples of its grid; the chrome in the
-   mono, secondary text in plain `--muted`. ---- */
-.board-screen {
-  width: min(560px, 100%);
-  /* Centred on a WHOLE pixel (an odd width would set the podium, the marks and the ghost on
-     half of one). */
-  margin-left: auto;
-  margin-left: max(0px, round(down, (100% - 560px) / 2, 1px));
-  margin-right: auto;
-  align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  /* Clears the header row (8px + 50px viewport, minus .app's own 24px), plus a beat. */
-  padding-top: 58px;
-}
+   mono, secondary text in plain `--muted`. Its column is the archive's (`.board-screen,
+   .archive`, with the archive's rules). ---- */
 /* ONE EDGE each side for the head and the lines: the chip, the brackets' frame and the rank
    column start 6px in (the lines' own inset, the corner brackets' arms outside it); the plus
    and the door's chevron end 6px in. */
 .board-screen > .board-tabs {
   margin: 0 -6px 0 2px;
-}
-/* The tab row's first drawing: the chip drawn across the shown name, once, as the screen
-   opens. A turn sends it travelling (BoardTabs). */
-.board-screen .board-tabs-ink {
-  animation: board-tabs-wipe 240ms steps(8, jump-end) 60ms backwards;
 }
 
 /* THE HEAD LINE, under the tabs, one height whatever it holds: a group's three boards,
@@ -7322,17 +7294,21 @@ figure.l1-fig {
   clip-path: inset(0);
   pointer-events: none;
 }
-/* A landing's BURST (the strike sheet, `burst.png`, 53×66 a frame) behind the mark, centred
-   on it at a whole scale — 2x round a 40px mark, 3x round the winner's — dropped by its
-   impact ink's 44% (the sheet's own measure, `.strike.burst`). */
-.podium-burst {
+/* A landing's BURST (the strike sheet, `burst.png`, 53×66 a frame), the podium's behind a
+   mark and the archive's behind a key, centred on it at a whole scale — 2x (106 × 132) round
+   a 40px mark or a key, 3x round the winner's — dropped by its impact ink's 44% (the sheet's
+   own measure, `.strike.burst`): half its width to the left, half its height less that drop
+   (8 at 2x) above. */
+.podium-burst,
+.cal-burst {
   position: absolute;
   width: 0;
   height: 0;
 }
 /* (Offsets in WHOLE PIXELS, not the percentage: half of the 3x sheet's 159 would land the
    burst on half a device pixel.) */
-.podium-burst .strike.burst {
+.podium-burst .strike.burst,
+.cal-burst .strike.burst {
   width: 106px;
   height: 132px;
   transform: translate(-53px, -58px);
@@ -7821,7 +7797,6 @@ figure.l1-fig {
   .board-screen .board-row,
   .board-screen .board-gap,
   .board-screen .board-progress,
-  .board-screen .board-tabs-ink,
   .board-screen .board-sub,
   .board-screen .board-skeleton-line,
   .period-frame i,
