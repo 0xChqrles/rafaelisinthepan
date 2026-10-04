@@ -91,6 +91,28 @@ export function reelShake(i: number, reels: number, ms: number): readonly [numbe
   return COUNT_SHAKE[Math.floor(since / COUNT_SHAKE_FRAME_MS)];
 }
 
+// THE RUN COMPRESSED — the board's numbers (a line's `ReelNumber`, the podium's values on its
+// raster): the count's own curve and stops, played in `runMs` rather than the hero's
+// COUNT_RUN_MS. Reel `i` of `reels` stops at `runStop`; at `ms` of the run it stands where
+// `runReel` says (values, unwrapped) with its stop's shake (font pixels: the count's own frames
+// at RUN_SHAKE_FRAME_MS whatever the compression — a shake is a hit, not part of the curve).
+export const RUN_SHAKE_FRAME_MS = 40;
+export const RUN_SHAKE_MS = COUNT_SHAKE.length * RUN_SHAKE_FRAME_MS;
+export const runStop = (i: number, reels: number, runMs: number): number => (reelStop(i, reels) * runMs) / COUNT_RUN_MS;
+export function runReel(
+  digit: number,
+  i: number,
+  reels: number,
+  ms: number,
+  runMs: number,
+): { travelled: number; dx: number; dy: number } {
+  const since = ms - runStop(i, reels, runMs);
+  const [dx, dy] = since < 0 ? [0, 0] : (COUNT_SHAKE[Math.floor(since / RUN_SHAKE_FRAME_MS)] ?? [0, 0]);
+  return { travelled: reelTravelled(digit, i, reels, (ms * COUNT_RUN_MS) / runMs), dx, dy };
+}
+// When a compressed run has played out: its last stop's shake done.
+export const runEnd = (runMs: number): number => runMs + RUN_SHAKE_MS;
+
 // The reels at `ms`, the leftmost first — one per digit of the score. At rest every reel
 // stands on 0; once the last has stopped they read the score.
 export function countReels(score: number, ms: number): CountReel[] {

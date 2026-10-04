@@ -4,7 +4,7 @@ import { anonName, defaultAvatar, type BoardPlayer, type GroupSummary } from '@w
 import { readGroup } from '../api';
 import Avatar from './Avatar';
 import { DISSOLVES } from './bayerTiles';
-import { MARK } from './BoardRows';
+import { MARK } from './boardMetrics';
 import LoadingWave from './LoadingWave';
 import CloseIcon from '../assets/icons/close.svg?react';
 import ModalHeader from './ModalHeader';
@@ -15,8 +15,8 @@ import type { LangCode } from '../langs';
 // A GROUP'S OWN SCREEN (#271, user-decided 2026-09-14: "managing the group should have
 // its own screen"; and the board's three standing buttons — LEAVE, MANAGE, INVITE — "are
 // weird… always on screen even if we use them 1% of the time"). Everything there is to DO
-// with a group lives here, one tap in from the board's pager, and the board keeps only
-// its list.
+// with a group lives here, one tap in from the board (its door over the lines, or the shown
+// tab's chip), and the board keeps only its list.
 //
 // Top to bottom: the app's header row with the way back and the group's name; the MEMBERS as
 // the board's own LINES (the mark at 3px a cell, the name — your own framed by the corner

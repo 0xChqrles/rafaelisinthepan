@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   anonName,
   dateForDayNumber,
@@ -25,19 +25,15 @@ import {
 import Avatar from '../components/Avatar';
 import BoardTabs, { type BoardTab as Scope } from '../components/BoardTabs';
 import ConfirmScreen from '../components/ConfirmScreen';
-import {
-  BoardRank,
-  BoardRowItem,
-  MARK,
-  PlayingRowItem,
-  WaitingRowItem,
-  type LineRun,
-} from '../components/BoardRows';
+import { BoardRank, BoardRowItem, PlayingRowItem, WaitingRowItem, type LineRun } from '../components/BoardRows';
+import { LINE_PX, MARK } from '../components/boardMetrics';
 import { DISSOLVES, EDGES } from '../components/bayerTiles';
 import GroupCreate from '../components/GroupCreate';
 import GroupScreen from '../components/GroupScreen';
 import LoadError from '../components/LoadError';
 import PeriodSwitch from '../components/PeriodSwitch';
+import Podium, { NO_PLACES, nextStage, type PodiumEntry, type PodiumStage } from '../components/Podium';
+import { beats, podiumHeightPx, podiumSize, type PodiumMode, type PodiumSize } from '../components/podium/scene';
 import PuzzleTitle from '../components/PuzzleTitle';
 import ReelNumber from '../components/ReelNumber';
 import { HeaderLeft } from '../components/TopBar';
@@ -45,6 +41,7 @@ import ChevronIcon from '../assets/icons/chevron-left.svg?react';
 import useShare from '../hooks/useShare';
 import useSwipe from '../hooks/useSwipe';
 import useToday from '../hooks/useToday';
+import { prefersReducedMotion } from '../hooks/useScramble';
 import {
   ensureRequestIdentity,
   identityEpoch,
@@ -57,6 +54,7 @@ import { prefetchTurnstileTokens } from '../turnstile';
 import ErrorScreen from '../components/ErrorScreen';
 import { useGameStore, type BoardTab } from '../state/gameStore';
 import { pathForGroupInvite, type LangCode } from '../langs';
+import { dayPodium, periodPodium } from '../game/podium';
 import { t } from '../i18n';
 
 // The #190 leaderboard screen, drawn over GROUPS since #271 (user-decided 2026-09-07:
@@ -84,20 +82,31 @@ import { t } from '../i18n';
 // the SUCCESSION the server demands (root AGENTS.md, Groups): alone, the group is deleted;
 // with one other member that member takes it; with more, the owner picks one here.
 //
-// THE BOARD LANDS: its lines come in one after another through the Bayer dissolve (CSS
-// `board-dissolve`, the ordered dither stepping each line's mask to full), each number lands on
-// the result count's REELS (`ReelNumber`), and on the leader's number landing the crown's
-// cobalt dissolves into the FOIL (`FoilCrown`) — the screen's one shiny thing. The first board
-// on screen ARRIVES (slower, after the head's own beats); every board turned to after it comes
-// in quicker. Every line's box is laid out from its first frame, so nothing that has landed
-// moves; reduced motion draws the board landed.
+// THE BOARD HAS A SUBJECT, the way the result has its count: its PODIUM (`Podium`), the top
+// three standing on their steps between the head and the lines — first place's count in the
+// FOIL, the screen's one shiny thing — and the lines under it start at the fourth. The first
+// time a board is shown in a visit the podium BUILDS (its steps rising, its players dropping
+// onto them, the values landing on the result count's reels and first place's cobalt
+// dissolving into the foil — the result's own gesture) and its lines follow it in, one after
+// another through the Bayer dissolve (CSS `board-dissolve`), their numbers on the same reels
+// (`ReelNumber`); a board turned back to is SETTLED, its lines simply dissolving in. The
+// first board on screen ARRIVES (after the head's own beats); every board turned to after it
+// comes in quicker, and GIVES WAY to the one before slot by slot — the one before keeping
+// every slot until the new one's line dissolves in through it — so no frame of a turn is a
+// bare list; a read that keeps it waiting long lets it give way to the loading picture
+// instead (a podium crowning another tab's winner says something false). Every box is laid
+// out from its first frame — the podium's the same height in every state, its size chosen
+// off the room the screen has (none at all where it would leave the lines none: they start
+// at the first, crowned, in the result's dress) — so nothing that has landed moves; reduced
+// motion draws the board landed.
 //
 // The rows come ranked from the server (competition ties, the plain top-50 cut, the
 // own-row window, the period rule — @whippin/shared's leaderboard rules); this screen only
-// draws what the API returned. Rows CONNECTED to the reader stay apart: your own line is
-// FRAMED by the corner brackets (and stays in sight on a long board, held to the list's edge
-// while it is scrolled out of view); among the global rows, a member of one of your groups
-// carries a small accent mark at the line's start.
+// draws what the API returned, the podium being its first three rows (`game/podium.ts`). Rows
+// CONNECTED to the reader stay apart: your own line is FRAMED by the corner brackets (and stays
+// in sight on a long board, held to the column's edge while it is scrolled out of view), on
+// the podium your name is and your place is in the accent; among the global rows, a member of
+// one of your groups carries a small accent mark.
 //
 // **OPENING THIS SCREEN IS NOT A TRIGGER (user-decided 2026-08-24).** A navigation must not
 // create server state: tokenless, the groups list is the KNOWN-EMPTY answer (#216's rule)
@@ -197,10 +206,18 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   const [boards, setBoards] = useState<Partial<Record<string, AnyBoard | 'failed'>>>({});
   const [attempt, setAttempt] = useState(0);
   // THE BOARD ON SCREEN — the last one resolved, HELD while the next one's first read is out,
-  // so a turn to a board not read yet keeps its lines (and the caption over them) until the
-  // new lines dissolve in over them: a read lands as one board giving way to the next, never
-  // as a blank column. Same cache scope as `boards` (dropped with it below).
+  // so a turn to a board not read yet keeps its lines (and the door over them) until the new
+  // lines dissolve in over them: a read lands as one board giving way to the next, never as a
+  // blank column. HELD FOR HOLD_MS AT MOST: a read that outlasts it (`lapsed`, the key it was
+  // for) lets the board before give way to the loading picture — a held board under another
+  // tab's name says something false, and a podium says it loudly. Same cache scope as `boards`
+  // (dropped with it below).
   const [held, setHeld] = useState<Shown | null>(null);
+  const [lapsed, setLapsed] = useState<string | null>(null);
+  // WHAT THE PODIUM HAS BUILT this visit (its scenes' identities): a board shown again is that
+  // board, settled — its build is never replayed on a turn back (that would be a wait, and would
+  // move what had landed). Same cache scope as `boards`.
+  const played = useRef(new Set<string>());
 
   // THE DAY IS A LIVE VALUE: a board is left open across the 22:00-ET flip routinely, and a
   // new day is a new board, so every cache goes with it — dropped during render so
@@ -213,6 +230,8 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     setCachedDate(date);
     setBoards({});
     setHeld(null);
+    setLapsed(null);
+    played.current.clear();
     dropped = true;
   }
   // AND THE CACHES ARE IDENTITY-SCOPED: a board cached under a previous identity is not the
@@ -223,6 +242,8 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     setCachedEpoch(epoch);
     setBoards({});
     setHeld(null);
+    setLapsed(null);
+    played.current.clear();
     dropped = true;
   }
 
@@ -420,6 +441,9 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // A sideways swipe on the lines turns the tab row; its click opens nothing.
   const { handlers: swipe, swiped } = useSwipe((step) => showScope(activeIndex + step));
 
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const columnRef = useRef<HTMLDivElement>(null);
+
   // HOW THE LINES COME IN: the first board on screen ARRIVES, every board turned to after it
   // TURNS in, quicker (see the header). Latched as STATE, set during render (React's own way
   // to derive from a prop change — a discarded render latches nothing): the first key that
@@ -435,25 +459,220 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // A board resolving takes the screen (it keeps the pace it came in at across refreshes of
   // its own key, so a re-read never re-times its lines).
   if (!dropped && board && boardKey !== null && (held?.key !== boardKey || held.board !== board)) {
-    setHeld({ key: boardKey, board, tab, pace: held?.key === boardKey ? held.pace : pace });
+    setHeld({
+      key: boardKey,
+      board,
+      tab,
+      group: tab === 'group' ? (active?.id ?? null) : null,
+      pace: held?.key === boardKey ? held.pace : pace,
+    });
   }
-  // What the body draws: that board — or, while this one's read is out, the one held.
-  const shown = entry === 'failed' ? null : held;
-
-  // THE LIST'S HEIGHT IN WHOLE LINES: the body's room, floored to the lines' pitch, so a list
-  // that scrolls rests on whole lines (its scroll snaps to them) and your line held at its
-  // edge covers exactly one — never half a name. Its count also says where the FOLD is: the
-  // lines past it come in with the last one on screen.
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const [slots, setSlots] = useState(0);
+  // A read out for another board than the one held: the hold's clock.
+  // (On the page's animation clock, as every beat of the screen is.)
+  const holding = boardKey !== null && held !== null && held.key !== boardKey && entry === undefined;
   useEffect(() => {
+    if (!holding || boardKey === null) return undefined;
+    return onClock(columnRef.current, HOLD_MS, () => setLapsed(boardKey));
+  }, [holding, boardKey]);
+  // What the body draws: that board — or, while this one's read is out (and not for long), the
+  // one held.
+  const shown = entry === 'failed' || (held !== null && held.key !== boardKey && lapsed === boardKey) ? null : held;
+  // What is on screen is not yet what was asked for.
+  const pending = boardKey !== null && entry !== 'failed' && shown?.key !== boardKey;
+  // The group the board on screen belongs to — its door, its size — so the door, the podium and
+  // the lines always say the same group (a failed read's door is the group asked for).
+  const shownGroup =
+    shown !== null
+      ? shown.tab === 'group'
+        ? (groups?.find((group) => group.id === shown.group) ?? null)
+        : null
+      : entry === 'failed' && tab === 'group'
+        ? active
+        : null;
+
+  // THE ROOM, measured: the body's height in whole lines and its width — the podium's size
+  // follows it (`podiumSize`: roomy, compact, or none at all where it would leave the lines no
+  // room), with a line's grace for the size it has, so a phone's toolbar never flips it.
+  const [room, setRoom] = useState<{ slots: number; width: number } | null>(null);
+  useLayoutEffect(() => {
     const body = bodyRef.current;
-    if (!body || typeof ResizeObserver === 'undefined') return undefined;
-    const ro = new ResizeObserver(() => setSlots(Math.floor(body.clientHeight / LINE_PX)));
+    if (!body) return undefined;
+    const measure = () => {
+      const next = { slots: Math.floor(body.clientHeight / LINE_PX), width: body.clientWidth };
+      setRoom((was) => (was && was.slots === next.slots && was.width === next.width ? was : next));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(measure);
     ro.observe(body);
     return () => ro.disconnect();
   }, []);
-  const fold = slots > 0 ? Math.min(PACE_CAP, slots - 1) : PACE_CAP;
+  const [size, setSize] = useState<PodiumSize | null>(null);
+  const sizeNow = room ? podiumSize(room.width, room.slots, size) : size;
+  if (sizeNow !== size) setSize(sizeNow);
+
+  // THE PODIUM: what it shows — the board's top three, or the state the body is in, each its
+  // own picture in its one box — latched as a STAGE whenever that changes, read off the stage
+  // before it (`nextStage`: whether it builds, who stays, which values run again), so the
+  // lines under it are timed off the very beats it plays. A board builds the first time it is
+  // shown in the visit; the first board ARRIVES, leaving the head its beats.
+  const now = podiumShows({
+    failed: (tab === 'group' && groupsPhase === 'failed' && groups === null) || entry === 'failed',
+    none: tab === 'group' && onNone,
+    shown,
+    meId,
+    mates,
+    lang,
+  });
+  const [stage, setStage] = useState<PodiumStage | null>(null);
+  let staged = stage;
+  const shownPace = shown?.pace ?? ARRIVE;
+  if (staged === null || staged.build !== now.build) {
+    staged = nextStage(
+      stage,
+      now,
+      now.mode === 'board' && !played.current.has(now.build),
+      shownPace === ARRIVE ? shownPace.startMs : 0,
+      shownPace.runMs,
+    );
+    setStage(staged);
+  }
+  const tl = useMemo(() => beats(staged.spec), [staged]);
+  useEffect(() => {
+    if (staged.mode === 'board') played.current.add(staged.build);
+  }, [staged]);
+
+  // THE COLUMN SCROLLS AS ONE — the podium, the list's header, the lines — so a long board
+  // carries the podium away and the reader down to their own line. Its height is the body's
+  // room in WHOLE LINES (the podium and the header are whole slots too), so it rests on whole
+  // lines (its scroll snaps to them) and your line held at its edge covers exactly one — never
+  // half a name. Its count also says where the FOLD is: the slots past it come in with the
+  // last one on screen.
+  const slots = room?.slots ?? 0;
+  const fold = slots > 0 ? Math.max(0, Math.min(PACE_CAP, slots - (size ? podiumHeightPx(size) / LINE_PX : 0) - 1)) : PACE_CAP;
+  // How the lines come in: on the podium's own beat (on their own, with no podium), quicker on
+  // a turn, their numbers on the reels only where the board is shown for the first time (a
+  // board shown again is settled: its lines dissolve in, their numbers standing).
+  const run: ListRun = {
+    pace: {
+      startMs: size ? tl.lines : shownPace.startMs,
+      staggerMs: shownPace.staggerMs,
+      runMs: staged.spec.build ? shownPace.runMs : 0,
+    },
+    fold,
+  };
+  // A board turned to opens at its top.
+  useLayoutEffect(() => {
+    if (columnRef.current) columnRef.current.scrollTop = 0;
+  }, [shown?.key]);
+
+  // WHAT STANDS UNDER THE PODIUM (`Under`): a group's header slot — its door, and the unit
+  // when nothing above says it — then the lines, the skeleton, or (with no podium) the empty
+  // board's own block. A new one GIVES WAY to the one before slot by slot: the one before
+  // stays (`out`) and each of its slots dissolves out through exactly the cells the new one's
+  // slot dissolves in through, on the new one's beat — so no frame of a turn is a bare list.
+  const holdKind = now.mode === 'failed' || now.mode === 'ghost' ? now.mode : null;
+  const viewTab = shown?.tab ?? tab;
+  const sub = viewTab === 'group' || size === null;
+  const counts =
+    shown !== null &&
+    now.mode === 'board' &&
+    (size === null || staged.places.every((place) => place === null)) &&
+    listCounts(shown.board);
+  const view: UnderView = {
+    key: holdKind
+      ? `${holdKind}:${now.build}:${size ?? ''}`
+      : shown
+        ? `list:${shown.key}:${size ?? ''}`
+        : `skeleton:${viewTab}`,
+    sub,
+    door: sub && shownGroup ? shownGroup.members.length : null,
+    unit: counts && shown ? (isPeriodBoard(shown.board) ? 'points' : 'tries') : null,
+    body: holdKind ? (size ? null : 'hold') : shown ? 'list' : 'skeleton',
+    shown: holdKind ? null : shown,
+    shownFor: 0,
+  };
+  // The view on screen (its key, since when), and the one before giving way under it, on the
+  // run of the one it gives way to.
+  const lastView = useRef(view);
+  const [under, setUnder] = useState<{ key: string; since: number; out: UnderView | null; outRun: ListRun }>(() => ({
+    key: view.key,
+    since: clockNow(),
+    out: null,
+    outRun: run,
+  }));
+  if (under.key !== view.key) {
+    const was = lastView.current;
+    const at = clockNow();
+    setUnder({
+      key: view.key,
+      since: at,
+      out:
+        !prefersReducedMotion() &&
+        was.key === under.key &&
+        (was.body === 'list' || was.body === 'skeleton' || was.door !== null)
+          ? { ...was, shownFor: at - under.since }
+          : null,
+      outRun: run,
+    });
+  }
+  useLayoutEffect(() => {
+    lastView.current = view;
+  });
+  // The one before is gone once its last slot has dissolved out (on the page's animation
+  // clock, as the dissolve itself is).
+  useEffect(() => {
+    const out = under.out;
+    if (!out) return undefined;
+    return onClock(columnRef.current, lineRun(under.outRun, under.outRun.fold).delayMs + DISSOLVE_MS, () =>
+      setUnder((now) => (now.out === out ? { ...now, out: null } : now)),
+    );
+  }, [under.out, under.outRun]);
+  useStuckOwnLine(columnRef, `${view.key}|${now.build}|${ownLineKey(shown, meId)}`);
+
+  const ghostLine =
+    now.mode === 'ghost' && !onNone && shown ? (
+      <p>
+        {t(lang, isPeriodBoard(shown.board) ? 'boardEmptyPeriod' : shown.tab === 'group' ? 'boardEmptyGroup' : 'boardEmptyGlobal')}
+      </p>
+    ) : null;
+  // The empty board's one call: CREATE GROUP with no group at all; INVITE in a group of one
+  // (the moment it matters).
+  const ghostCall =
+    now.mode !== 'ghost' ? null : tab === 'group' && onNone ? (
+      <button type="button" className="btn btn-primary" disabled={busy !== null} onClick={() => setScreen('create')}>
+        {t(lang, 'groupCreate')}
+      </button>
+    ) : shown && shown.tab === 'group' && !isPeriodBoard(shown.board) ? (
+      <button type="button" className="btn btn-primary" onClick={() => void invite()}>
+        {copied ? t(lang, 'copied') : t(lang, 'boardInvite')}
+      </button>
+    ) : null;
+  const retry =
+    now.mode === 'failed' ? (
+      <LoadError
+        message={t(lang, 'failedBoard')}
+        lang={lang}
+        onRetry={() => (entry === 'failed' ? setAttempt((n) => n + 1) : loadGroups())}
+      />
+    ) : null;
+  const underProps = {
+    lang,
+    meId: meId ?? undefined,
+    mates,
+    places: size ? staged.places : null,
+    onDoor: openGroup,
+    hold:
+      now.mode === 'failed' ? (
+        retry
+      ) : (
+        <div className="board-empty arrive">
+          <span className="board-ghost" aria-hidden="true" />
+          {ghostLine}
+          {ghostCall}
+        </div>
+      ),
+  };
 
   return (
     <div className="board-screen" style={SCREEN_TILES}>
@@ -488,23 +707,6 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
         ) : null}
       </div>
 
-      {/* THE LIST'S OWN HEADER, one height whatever it holds: on a group, the DOOR into it —
-          its size, the quiet word — and over the numbers what they count, for the lines on
-          screen (held with them while the next board's read is out). */}
-      <div className="board-sub">
-        {tab === 'group' && active && (
-          <button type="button" className="board-door" onClick={openGroup}>
-            {active.members.length} {t(lang, active.members.length === 1 ? 'memberUnit' : 'membersUnit')}
-            <ChevronIcon className="ui-icon" aria-hidden />
-          </button>
-        )}
-        {shown && hasLines(shown.board, shown.tab, meId) && (
-          <span className="board-unit" aria-hidden="true">
-            {t(lang, isPeriodBoard(shown.board) ? 'points' : 'tries')}
-          </span>
-        )}
-      </div>
-
       <div
         ref={bodyRef}
         className="board-body"
@@ -514,50 +716,33 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
           if (swiped()) e.stopPropagation();
         }}
       >
-        {tab === 'group' && groupsPhase === 'failed' && groups === null ? (
-          <LoadError message={t(lang, 'failedBoard')} lang={lang} onRetry={() => loadGroups()} />
-        ) : tab === 'group' && onNone ? (
-          // No group at all: the ghost and the one call.
-          <div className="board-empty arrive">
-            <span className="board-ghost" aria-hidden="true" />
-            <button type="button" className="btn btn-primary" disabled={busy !== null} onClick={() => setScreen('create')}>
-              {t(lang, 'groupCreate')}
-            </button>
+        {/* The board shown: the tab row's panel, a stop for the keyboard (it scrolls). */}
+        <div
+          ref={columnRef}
+          className="board-column pixel-scroll"
+          role="tabpanel"
+          tabIndex={0}
+          aria-label={scopes[activeIndex]?.label}
+          aria-busy={pending || undefined}
+          style={slots > 0 ? { maxHeight: `${slots * LINE_PX}px` } : undefined}
+        >
+          {/* THE PODIUM, in every state the body can be in: a failed read stands its RETRY in
+              the podium's own box; the ghost's caption is the empty board's terse line and its
+              one call. */}
+          {size && (
+            <Podium
+              stage={staged}
+              tl={tl}
+              size={size}
+              ghost={{ line: ghostLine, call: ghostCall }}
+              failed={retry}
+            />
+          )}
+          <div className="board-under">
+            {under.out && <Under view={under.out} out run={under.outRun} {...underProps} />}
+            <Under key={view.key} view={view} run={run} {...underProps} />
           </div>
-        ) : entry === 'failed' ? (
-          <LoadError
-            message={t(lang, 'failedBoard')}
-            lang={lang}
-            onRetry={() => setAttempt((n) => n + 1)}
-          />
-        ) : shown ? (
-          isPeriodBoard(shown.board) ? (
-            <PeriodList
-              key={shown.key}
-              board={shown.board}
-              lang={lang}
-              meId={meId ?? undefined}
-              run={{ pace: shown.pace, fold, slots }}
-            />
-          ) : (
-            <BoardList
-              key={shown.key}
-              board={shown.board}
-              tab={shown.tab}
-              lang={lang}
-              meId={meId ?? undefined}
-              // Only the GLOBAL list marks the reader's people: on a group's board every
-              // row is one, and marking everything marks nothing.
-              mates={shown.tab === 'global' ? mates : null}
-              // A group of one is the moment INVITE matters: it is the empty state's call.
-              onInvite={shown.tab === 'group' ? () => void invite() : undefined}
-              inviteLabel={copied ? t(lang, 'copied') : t(lang, 'boardInvite')}
-              run={{ pace: shown.pace, fold, slots }}
-            />
-          )
-        ) : (
-          <Skeleton lang={lang} />
-        )}
+        </div>
       </div>
 
       {screen === 'group' && active && (
@@ -674,9 +859,10 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   );
 }
 
-// THE PACE of a board's lines: when the first comes in, how far apart the next ones follow,
-// and how long each number's reels run. The ARRIVAL leaves the head its beats first (the chip
-// drawn across, the brackets locking on) and lands slower; a TURN comes straight in.
+// THE PACE of a board: when it begins, how far apart its lines follow, and how long each
+// number's reels run. The ARRIVAL leaves the head its beats first (the chip drawn across, the
+// brackets locking on) and lands slower; a TURN comes straight in. The lines themselves start
+// on the podium's own beat (`Beats.lines`).
 interface Pace {
   startMs: number;
   staggerMs: number;
@@ -684,42 +870,169 @@ interface Pace {
 }
 const ARRIVE: Pace = { startMs: 260, staggerMs: 55, runMs: 650 };
 const TURN: Pace = { startMs: 0, staggerMs: 30, runMs: 420 };
-// The lines' PITCH: every item of a board's list — a line, a section's caption, the rail
-// where rows are left out — is this tall, so the list is a column of whole slots.
-const LINE_PX = 44;
-// Past the FOLD (the list's last whole slot on screen, and never past PACE_CAP) the lines come
-// in together with the last one shown — and so does your line held at the list's edge, which
-// covers exactly that slot: the two dissolve in through the same cells at the same instant, so
-// the one under it never shows through.
+// Past the FOLD (the column's last whole slot on screen, and never past PACE_CAP) the lines
+// come in together with the last one shown — and so does your line held at the column's edge,
+// which covers exactly that slot: the two dissolve in through the same cells at the same
+// instant, so the one under it never shows through.
 const PACE_CAP = 14;
 const SCREEN_TILES = { ...DISSOLVES, ...EDGES } as CSSProperties;
-// How a list's lines come in: the pace, the fold, and the slots the list may fill (0 until the
-// body is measured: no cap on its height).
+// How a list's lines come in: the pace (from the podium's beat) and the fold.
 interface ListRun {
   pace: Pace;
   fold: number;
-  slots: number;
 }
 const lineRun = ({ pace, fold }: ListRun, i: number): LineRun => ({
   delayMs: pace.startMs + Math.min(i, fold) * pace.staggerMs,
   runMs: pace.runMs,
 });
-const listStyle = (run: ListRun, rankDigits: number) =>
-  ({
-    '--rank-w': `${rankDigits * 16}px`,
-    ...(run.slots > 0 ? { maxHeight: `${run.slots * LINE_PX}px` } : {}),
-  }) as CSSProperties;
+const listStyle = (rankDigits: number) => ({ '--rank-w': `${rankDigits * 16}px` }) as CSSProperties;
+// A slot's dissolve, in or out (CSS `board-dissolve`).
+const DISSOLVE_MS = 240;
+// How long a turn keeps the board before on screen while the new one's read is out.
+const HOLD_MS = 400;
+// The skeleton's lines come in only if the read is slow (CSS `.board-skeleton-line`): this
+// long, this far apart, then a dissolve.
+const SKELETON_WAIT_MS = 320;
+const SKELETON_STAGGER_MS = 50;
+const SKELETON_LINES = [62, 48, 70, 54, 40];
 
-// The board on screen: which board, read for which tab, and the pace it came in at.
+// The page's animation clock (the dissolves' own): what time it is, and `fn` once `ms` of it
+// has passed (an empty animation on `el`) — the wall clock where there is none. Returns the
+// cancel.
+function clockNow(): number {
+  const time = document.timeline?.currentTime;
+  return typeof time === 'number' ? time : performance.now();
+}
+function onClock(el: HTMLElement | null, ms: number, fn: () => void): () => void {
+  if (!el || typeof el.animate !== 'function') {
+    const timer = window.setTimeout(fn, ms);
+    return () => window.clearTimeout(timer);
+  }
+  const timer = el.animate([], { duration: ms });
+  timer.finished.then(fn, () => {});
+  return () => timer.cancel();
+}
+
+// The board on screen: which board, read for which tab (and which group), and the pace it came
+// in at.
 interface Shown {
   key: string;
   board: AnyBoard;
   tab: BoardTab;
+  group: string | null;
   pace: Pace;
 }
 
-// Whether a board draws LINES rather than its empty state — the caption over the numbers
-// waits for them. Empty is per TAB. The GLOBAL board is empty when nobody played. A GROUP's
+// WHAT STANDS UNDER THE PODIUM, as one view: its identity (a new one gives way to the one
+// before), the header slot (`sub`: a group's, holding its DOOR — the group's size — and the
+// UNIT when nothing above says what the numbers count), and its body: the lines of the board
+// shown, the skeleton, the empty board's own block (with no podium to hold it), or nothing.
+// `shownFor`: how long it had been on screen when it began to give way.
+interface UnderView {
+  key: string;
+  sub: boolean;
+  door: number | null;
+  unit: 'tries' | 'points' | null;
+  body: 'list' | 'skeleton' | 'hold' | null;
+  shown: Shown | null;
+  shownFor: number;
+}
+
+// A view under the podium, slot after slot: the header slot first (a group's), then the body.
+// `out`: the view before, giving way — every slot dissolving OUT on the beat the slot that
+// takes it dissolves in (the same `run`), its numbers standing, nothing in it reachable.
+function Under({
+  view,
+  out = false,
+  run,
+  lang,
+  meId,
+  mates,
+  places,
+  onDoor,
+  hold,
+}: {
+  view: UnderView;
+  out?: boolean;
+  run: ListRun;
+  lang: LangCode;
+  meId?: string;
+  mates: ReadonlySet<string>;
+  // The podium's places, said first in the list for a screen reader (null: no podium — the
+  // lines start at the first).
+  places: readonly (PodiumEntry | null)[] | null;
+  onDoor: () => void;
+  hold: ReactNode;
+}) {
+  const offset = view.sub ? 1 : 0;
+  const { shown } = view;
+  const list = { lang, meId, run, offset, out, podium: places !== null, places: out ? null : places };
+  return (
+    <div className={out ? 'board-under-out' : 'board-under-in'} aria-hidden={out || undefined}>
+      {view.sub && (
+        <div className="board-sub" style={{ '--delay': `${lineRun(run, 0).delayMs}ms` } as CSSProperties}>
+          {view.door !== null &&
+            (out ? (
+              <span className="board-door">
+                <DoorLabel lang={lang} count={view.door} />
+              </span>
+            ) : (
+              <button type="button" className="board-door" onClick={onDoor}>
+                <DoorLabel lang={lang} count={view.door} />
+              </button>
+            ))}
+          {view.unit && (
+            <span className="board-unit" aria-hidden="true">
+              {t(lang, view.unit)}
+            </span>
+          )}
+        </div>
+      )}
+      {view.body === 'list' && shown ? (
+        isPeriodBoard(shown.board) ? (
+          <PeriodList board={shown.board} {...list} />
+        ) : (
+          <BoardList
+            board={shown.board}
+            // Only the GLOBAL list marks the reader's people: on a group's board every row is
+            // one, and marking everything marks nothing.
+            mates={shown.tab === 'global' ? mates : null}
+            {...list}
+          />
+        )
+      ) : view.body === 'skeleton' ? (
+        <Skeleton lang={lang} run={run} offset={offset} out={out} shownFor={view.shownFor} />
+      ) : view.body === 'hold' && !out ? (
+        hold
+      ) : null}
+    </div>
+  );
+}
+
+// The door's words: the group's size, the quiet word, the header's chevron turned to point in.
+function DoorLabel({ lang, count }: { lang: LangCode; count: number }) {
+  return (
+    <>
+      {count} {t(lang, count === 1 ? 'memberUnit' : 'membersUnit')}
+      <ChevronIcon className="ui-icon" aria-hidden />
+    </>
+  );
+}
+
+// Which line of a board is yours, and where (its section and rank): the held-edge watch starts
+// again whenever it changes — a re-read bringing your line, your row turning from playing to
+// ranked.
+function ownLineKey(shown: Shown | null, meId: string | null): string {
+  if (!shown || !meId) return '';
+  const board = shown.board;
+  if (isPeriodBoard(board)) return `p${board.rows.find((row) => row.publicId === meId)?.rank ?? ''}`;
+  const ranked = [...board.rows, ...(board.own ?? [])].find((row) => row.publicId === meId);
+  if (ranked) return `r${ranked.rank}`;
+  return board.playing.some((row) => row.publicId === meId) ? 'playing' : '';
+}
+
+// Whether a board draws its podium and LINES rather than its empty state (the podium's ghost).
+// Empty is per TAB. The GLOBAL board is empty when nobody played. A GROUP's
 // board is empty when the caller is ALONE in it: the server includes the caller's own row
 // once they played, and a board of exactly yourself still means "nobody else yet", which is
 // what the ghost says and INVITE remedies (a member who merely has not played is a waiting
@@ -735,47 +1048,105 @@ function hasLines(board: AnyBoard, tab: BoardTab, meId: string | null): boolean 
   );
 }
 
-// YOUR LINE STAYS IN SIGHT (CSS: sticky at both edges of the list): this says WHEN it is held
-// at an edge rather than standing in its place — `data-stuck` on it, `top` or `bottom` — so
-// the lines passing under it thin out through a dithered edge there instead of being cut. Its
-// place is read off the line before it (the list is its lines' offset parent); `data-` because
-// the line's class is React's. `mine` says whether the list draws your line at all: a refresh
-// of the same board can bring it (or the list itself, after an empty state), and the watch
-// then starts.
-function useStuckOwnLine(mine: boolean) {
-  const ref = useRef<HTMLOListElement>(null);
+// YOUR LINE STAYS IN SIGHT (CSS: sticky at both edges of the column): this says WHEN it is
+// held at an edge rather than standing in its place — `data-stuck` on it, `top` or `bottom` —
+// so the lines passing under it thin out through a dithered edge there instead of being cut.
+// Its place is read off the line before it (or its list's top); `data-` because the line's
+// class is React's. `watch` names what the column shows: a new board, a refresh bringing your
+// line or moving it starts the watch again.
+function useStuckOwnLine(column: { current: HTMLDivElement | null }, watch: string) {
   useEffect(() => {
-    const list = ref.current;
-    const me = list?.querySelector<HTMLElement>('.board-row.me');
-    if (!list || !me) return undefined;
+    const scroller = column.current;
+    const me = scroller?.querySelector<HTMLElement>('.board-under-in .board-row.me');
+    if (!scroller || !me) return undefined;
     const read = () => {
       const before = me.previousElementSibling as HTMLElement | null;
-      const top = before ? before.offsetTop + before.offsetHeight : 0;
-      const stuck =
-        top < list.scrollTop
-          ? 'top'
-          : top + me.offsetHeight > list.scrollTop + list.clientHeight
-            ? 'bottom'
-            : null;
+      const edge = before ? before.getBoundingClientRect().bottom : (me.parentElement?.getBoundingClientRect().top ?? 0);
+      const top = edge - scroller.getBoundingClientRect().top;
+      const stuck = top < -0.5 ? 'top' : top + me.offsetHeight > scroller.clientHeight + 0.5 ? 'bottom' : null;
       if (stuck) me.dataset.stuck = stuck;
       else delete me.dataset.stuck;
     };
     read();
-    list.addEventListener('scroll', read, { passive: true });
+    scroller.addEventListener('scroll', read, { passive: true });
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(read);
-    ro?.observe(list);
+    ro?.observe(scroller);
     return () => {
-      list.removeEventListener('scroll', read);
+      scroller.removeEventListener('scroll', read);
       ro?.disconnect();
     };
-  }, [mine]);
-  return ref;
+  }, [column, watch]);
+}
+
+// WHAT THE PODIUM SHOWS for the body's state: a failure, no group at all, a read still out, an
+// empty board (the ghost) — or the board's first three rows on their places (`game/podium.ts`:
+// never re-ranked), each with the unit its value counts in (and a period's tiebreakers). Its
+// `build` names the picture: a board whose podium changes is a new scene, one shown before is
+// the same.
+function podiumShows({
+  failed,
+  none,
+  shown,
+  meId,
+  mates,
+  lang,
+}: {
+  failed: boolean;
+  none: boolean;
+  shown: Shown | null;
+  meId: string | null;
+  mates: ReadonlySet<string>;
+  lang: LangCode;
+}): { build: string; mode: PodiumMode; places: readonly (PodiumEntry | null)[]; period: boolean; seedKey: string } {
+  const still = (build: string, mode: PodiumMode) => ({ build, mode, places: NO_PLACES, period: false, seedKey: '' });
+  if (failed) return still('failed', 'failed');
+  if (none) return still('none', 'ghost');
+  if (!shown) return still('loading', 'loading');
+  if (!hasLines(shown.board, shown.tab, meId)) return still(`${shown.key}:empty`, 'ghost');
+  const board = shown.board;
+  const period = isPeriodBoard(board);
+  const picked = period ? periodPodium(board.rows).places : dayPodium(board.rows).places;
+  const unit = (value: number) => t(lang, period ? (value === 1 ? 'point' : 'points') : value === 1 ? 'try' : 'tries');
+  const places = picked.map((place) =>
+    place
+      ? {
+          player: place.row,
+          rank: place.rank,
+          value: place.value,
+          unit: unit(place.value),
+          detail: 'solvedDays' in place.row ? periodDetail(place.row, lang) : [],
+          near: place.near,
+          me: place.row.publicId === meId,
+          // Only GLOBAL marks the reader's people (on a group's board every row is one).
+          mate: shown.tab === 'global' && place.row.publicId !== meId && mates.has(place.row.publicId),
+        }
+      : null,
+  );
+  const id = places.map((p) =>
+    p ? `${p.player.publicId}:${p.rank}=${p.value}${p.detail.join('/')}${p.me ? '*' : ''}${p.mate ? '+' : ''}` : '-',
+  );
+  return { build: `${shown.key}|${id.join(',')}`, mode: 'board', places, period, seedKey: shown.key };
+}
+
+// A period row's TIEBREAKERS, the lines' own words: the days that recorded a score, and the
+// total of their tries.
+function periodDetail(row: PeriodRow, lang: LangCode): string[] {
+  return [
+    `${row.solvedDays} ${t(lang, row.solvedDays === 1 ? 'dayUnit' : 'daysUnit')}`,
+    `${row.total} ${t(lang, 'tries').toLowerCase()}`,
+  ];
+}
+
+// Whether a board's lines carry numbers.
+function listCounts(board: AnyBoard): boolean {
+  if (isPeriodBoard(board)) return board.rows.length > 0;
+  return board.rows.length > 0 || (board.own?.length ?? 0) > 0 || board.playing.length > 0;
 }
 
 // A section's caption on the column (IN PROGRESS, NOT PLAYED YET): the words, then the
 // stippled rail running on — said once for every line under it.
-function Section({ text, index, run: list }: { text: string; index: number; run: ListRun }) {
-  const run = lineRun(list, index);
+function Section({ text, slot, run: list }: { text: string; slot: number; run: ListRun }) {
+  const run = lineRun(list, slot);
   return (
     <li className="board-section" style={{ '--delay': `${run.delayMs}ms` } as CSSProperties}>
       <span>{text}</span>
@@ -785,12 +1156,39 @@ function Section({ text, index, run: list }: { text: string; index: number; run:
 
 // WHILE THE FIRST READ IS OUT: the board's lines as stippled rails where the marks and the
 // names will stand — the box of what is coming, at its pitch, so nothing moves when it lands.
-function Skeleton({ lang }: { lang: string }) {
+// Giving way (`out`), only the lines that had come in by then are there to go.
+function Skeleton({
+  lang,
+  run,
+  offset,
+  out,
+  shownFor,
+}: {
+  lang: string;
+  run: ListRun;
+  offset: number;
+  out: boolean;
+  shownFor: number;
+}) {
+  const lines = out
+    ? SKELETON_LINES.filter((_, i) => shownFor >= SKELETON_WAIT_MS + i * SKELETON_STAGGER_MS + DISSOLVE_MS)
+    : SKELETON_LINES;
   return (
-    <div className="board-skeleton" role="status">
-      <span className="sr-only">{t(lang, 'loading')}</span>
-      {[62, 48, 70, 54, 40].map((width, i) => (
-        <span key={i} className="board-skeleton-line" style={{ '--w': `${width}%`, '--i': i } as CSSProperties} aria-hidden="true">
+    <div className="board-skeleton" role={out ? undefined : 'status'}>
+      {!out && <span className="sr-only">{t(lang, 'loading')}</span>}
+      {lines.map((width, i) => (
+        <span
+          key={i}
+          className="board-skeleton-line"
+          style={
+            {
+              '--w': `${width}%`,
+              '--i': i,
+              ...(out ? { '--delay': `${lineRun(run, offset + i).delayMs}ms` } : {}),
+            } as CSSProperties
+          }
+          aria-hidden="true"
+        >
           <span className="board-skeleton-mark" />
           <span className="board-skeleton-name" />
         </span>
@@ -799,49 +1197,59 @@ function Skeleton({ lang }: { lang: string }) {
   );
 }
 
-function BoardList({
-  board,
-  tab,
-  lang,
-  meId,
-  mates,
-  onInvite,
-  inviteLabel,
-  run,
-}: {
-  board: Board;
-  tab: BoardTab;
+// The podium's places, said for a screen reader as the board's first items (the podium itself
+// is a picture): rank, name, value, unit — and a period's tiebreakers.
+function PodiumItems({ places }: { places: readonly (PodiumEntry | null)[] | null }) {
+  if (!places) return null;
+  return (
+    <>
+      {places.map((place) =>
+        place ? (
+          <li key={place.player.publicId} className="sr-only" aria-current={place.me || undefined}>
+            #{place.rank} {place.player.name || anonName(place.player.publicId)} {place.value} {place.unit.toLowerCase()}
+            {place.detail.length > 0 && ` · ${place.detail.join(' · ')}`}
+          </li>
+        ) : null,
+      )}
+    </>
+  );
+}
+
+interface ListProps {
   lang: LangCode;
   meId?: string;
-  mates: ReadonlySet<string> | null;
-  // A group of one: the empty state's call is INVITE.
-  onInvite?: () => void;
-  inviteLabel?: string;
   run: ListRun;
-}) {
-  const lines = hasLines(board, tab, meId ?? null);
-  // (Every hook before the empty state's early return: a refresh can turn one into the other.)
-  const list = useStuckOwnLine(
-    lines && [...board.rows, ...(board.own ?? []), ...board.playing].some((row) => row.publicId === meId),
-  );
-  if (!lines) {
-    return (
-      <div className="board-empty arrive">
-        <span className="board-ghost" aria-hidden="true" />
-        <p>{t(lang, tab === 'group' ? 'boardEmptyGroup' : 'boardEmptyGlobal')}</p>
-        {onInvite && (
-          <button type="button" className="btn btn-primary" onClick={onInvite}>
-            {inviteLabel}
-          </button>
-        )}
-      </div>
-    );
-  }
+  // The slot the list's first line stands in (after the header's), and whether it is giving way.
+  offset: number;
+  out: boolean;
+  // A podium stands over the list (its three are not lines), and its places, said first for a
+  // screen reader (null: not said — giving way, or no podium).
+  podium: boolean;
+  places: readonly (PodiumEntry | null)[] | null;
+}
+
+// A list's run, latched as it came on screen (a re-read never re-times its lines) — giving way,
+// its numbers stand.
+function useListRun(props: ListProps): ListRun {
+  const [run] = useState(props.run);
+  return props.out ? { ...run, pace: { ...run.pace, runMs: 0 } } : run;
+}
+
+// A DAY's lines past the podium's three (or all of them, with no podium): the ranked rows, the
+// caller's own window under the rail of the rows left out (GLOBAL, below the cut), then IN
+// PROGRESS and NOT PLAYED YET, each under its caption. (An empty board is the podium's ghost:
+// no list.)
+function BoardList(props: ListProps & { board: Board; mates: ReadonlySet<string> | null }) {
+  const { board, lang, meId, mates, offset, podium, places } = props;
+  const run = useListRun(props);
+  // The ranked rows past the podium's three, then the caller's own window.
+  const ranked = podium ? dayPodium(board.rows).lines : board.rows;
   // ONE rank column for the whole list, as wide as its widest rank (two digits at the least).
-  const rankDigits = Math.max(2, ...[...board.rows, ...(board.own ?? [])].map((row) => String(row.rank).length));
-  let index = 0;
+  const rankDigits = Math.max(2, ...[...ranked, ...(board.own ?? [])].map((row) => String(row.rank).length));
+  // (Every item takes a slot, the rail too: the slot it stands in times it.)
+  let slot = offset;
   const item = (row: BoardRow) => {
-    const i = index++;
+    const i = slot++;
     return (
       <BoardRowItem
         key={row.publicId}
@@ -850,71 +1258,56 @@ function BoardList({
         mate={mates?.has(row.publicId) ?? false}
         index={i}
         run={lineRun(run, i)}
-        shine
       />
     );
   };
-  // (Every item takes a slot, the rail too: the index is the slot it stands in.)
   const gap = () => {
-    const i = index++;
+    const i = slot++;
     return <li className="board-gap" aria-hidden="true" style={{ '--delay': `${lineRun(run, i).delayMs}ms` } as CSSProperties} />;
   };
   return (
-    <ol ref={list} className="board-list pixel-scroll" style={listStyle(run, rankDigits)}>
-      {board.rows.map(item)}
+    <ol className="board-list" style={listStyle(rankDigits)}>
+      <PodiumItems places={places} />
+      {ranked.map(item)}
       {board.own && board.own.length > 0 && (
         <>
           {gap()}
           {board.own.map(item)}
         </>
       )}
-      {board.playing.length > 0 && <Section text={t(lang, 'boardPlaying')} index={index++} run={run} />}
+      {board.playing.length > 0 && <Section text={t(lang, 'boardPlaying')} slot={slot++} run={run} />}
       {board.playing.map((row) => {
-        const i = index++;
+        const i = slot++;
         return <PlayingRowItem key={row.publicId} row={row} me={row.publicId === meId} index={i} run={lineRun(run, i)} />;
       })}
-      {board.waiting.length > 0 && <Section text={t(lang, 'boardNotPlayed')} index={index++} run={run} />}
+      {board.waiting.length > 0 && <Section text={t(lang, 'boardNotPlayed')} slot={slot++} run={run} />}
       {board.waiting.map((player) => {
-        const i = index++;
+        const i = slot++;
         return <WaitingRowItem key={player.publicId} player={player} index={i} run={lineRun(run, i)} />;
       })}
     </ol>
   );
 }
 
-// A WEEK or a MONTH (#271): the shared period rule's three numbers per member — podium
-// POINTS as the line's number, then the days and the total as a quiet detail under the name.
-function PeriodList({
-  board,
-  lang,
-  meId,
-  run,
-}: {
-  board: PeriodBoard;
-  lang: LangCode;
-  meId?: string;
-  run: ListRun;
-}) {
-  const list = useStuckOwnLine(board.rows.some((row) => row.publicId === meId));
-  if (board.rows.length === 0) {
-    return (
-      <div className="board-empty arrive">
-        <span className="board-ghost" aria-hidden="true" />
-        <p>{t(lang, 'boardEmptyPeriod')}</p>
-      </div>
-    );
-  }
-  const rankDigits = Math.max(2, ...board.rows.map((row) => String(row.rank).length));
+// A WEEK or a MONTH (#271), past the podium's three (or all of them): the shared period rule's
+// three numbers per member — podium POINTS as the line's number, then the days and the total as
+// a quiet detail under the name.
+function PeriodList(props: ListProps & { board: PeriodBoard }) {
+  const { board, lang, meId, offset, podium, places } = props;
+  const run = useListRun(props);
+  const ranked = podium ? periodPodium(board.rows).lines : board.rows;
+  const rankDigits = Math.max(2, ...ranked.map((row) => String(row.rank).length));
   return (
-    <ol ref={list} className="board-list pixel-scroll" style={listStyle(run, rankDigits)}>
-      {board.rows.map((row, index) => (
+    <ol className="board-list" style={listStyle(rankDigits)}>
+      <PodiumItems places={places} />
+      {ranked.map((row, index) => (
         <PeriodRowItem
           key={row.publicId}
           row={row}
           me={row.publicId === meId}
-          index={index}
+          index={offset + index}
           lang={lang}
-          run={lineRun(run, index)}
+          run={lineRun(run, offset + index)}
         />
       ))}
     </ol>
@@ -940,7 +1333,7 @@ function PeriodRowItem({
       style={{ '--i': index, '--delay': `${run.delayMs}ms`, '--land': `${run.delayMs + run.runMs}ms` } as CSSProperties}
       aria-current={me || undefined}
     >
-      <BoardRank rank={row.rank} shine={{ litMs: run.delayMs + run.runMs, seed: index + 3 }} />
+      <BoardRank rank={row.rank} />
       <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={MARK} sharp />
       <span className="board-ident">
         <span className={`board-name${row.name ? '' : ' anon'}`}>{row.name || anonName(row.publicId)}</span>

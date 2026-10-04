@@ -5,8 +5,8 @@
 // ground — the rank in the pixel face or the crown, the mark SQUARE at 3px a cell (30px, among
 // pixel type), the name, the number in the pixel face at the far edge. What differs is only the
 // MOTION, which each surface passes in: the board screen's numbers land on the count's reels
-// (`run`) and its leader's crown in the foil (`shine`); the result's lines carry neither, the
-// count above them being that screen's shiny subject.
+// (`run`); the result's lines do not, the count above them being that screen's subject (as the
+// board screen's is its podium, whose leader's count is the foil).
 import type { CSSProperties } from 'react';
 import {
   anonName,
@@ -17,14 +17,12 @@ import {
   type PlayingRow,
 } from '@whippin/shared';
 import Avatar from './Avatar';
-import FoilCrown from './FoilCrown';
+import { MARK } from './boardMetrics';
 import InfinityGlyph from './InfinityGlyph';
 import ReelNumber from './ReelNumber';
 import CrownIcon from '../assets/icons/board.svg?react';
 import { shownPercent } from '../game/race';
 
-// A mark at an INTEGER cell scale: 10 cells of 3px.
-export const MARK = 30;
 
 // A line's arrival on the board screen: when it comes in (its mask dissolving through the
 // Bayer levels, CSS `--delay`) and how long its number's reels then run; the number LANDS at
@@ -47,14 +45,13 @@ function Count({ value, run }: { value: number; run?: LineRun }) {
 
 // A row's rank: the number in the quiet pixel face, printed bare (a rank is written bare) —
 // and FIRST PLACE WEARS THE CROWN instead, the header's own board mark in the accent (the
-// palette's "every solved word/trophy/terminus" blue), or, on the board screen, in the FOIL
-// (`shine`: it lights when the leader's number lands). Competition ranks share a first, so a
+// palette's "every solved word/trophy/terminus" blue). Competition ranks share a first, so a
 // tie crowns every row that holds it. The number stays for a screen reader.
-export function BoardRank({ rank, shine }: { rank: number; shine?: { litMs: number; seed: number } }) {
+export function BoardRank({ rank }: { rank: number }) {
   if (rank !== 1) return <span className="board-rank">{rank}</span>;
   return (
     <span className="board-rank crown">
-      {shine ? <FoilCrown litMs={shine.litMs} seed={shine.seed} /> : <CrownIcon className="ui-icon" aria-hidden />}
+      <CrownIcon className="ui-icon" aria-hidden />
       <span className="sr-only">#1</span>
     </span>
   );
@@ -70,15 +67,12 @@ export function BoardRowItem({
   mate = false,
   index,
   run,
-  shine = false,
 }: {
   row: BoardRow;
   me: boolean;
   mate?: boolean;
   index: number;
   run?: LineRun;
-  // The crown in the foil (first place, on the board screen).
-  shine?: boolean;
 }) {
   return (
     <li
@@ -88,7 +82,7 @@ export function BoardRowItem({
       style={runStyle(run, index)}
       aria-current={me || undefined}
     >
-      <BoardRank rank={row.rank} shine={shine ? { litMs: run ? run.delayMs + run.runMs : 0, seed: index + 3 } : undefined} />
+      <BoardRank rank={row.rank} />
       <Avatar avatar={row.avatar ?? defaultAvatar(row.publicId)} size={MARK} sharp />
       <Name player={row} />
       <span className="board-score">

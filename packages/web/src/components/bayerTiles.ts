@@ -38,14 +38,17 @@ export const EDGES = {
 // THE DISSOLVE: the matrix's own tile at DISSOLVE_LEVELS densities, from nothing (`--dz-0`) to
 // all but the last cells (`--dz-7`) — the board's `board-dissolve` keyframes step a line's mask
 // through them, so a line comes in the way the meter charges: its cells lighting in threshold
-// order, in hard steps, nothing travelling. Worn by the surfaces whose lines arrive that way
-// (the board screen, the group's own screen), as custom properties on their root.
+// order, in hard steps, nothing travelling. And the same levels' COMPLEMENT (`--dzo-1` …
+// `--dzo-7`, the cells not yet lit): what goes out as something comes in over it — the
+// podium's players giving their place to the next — goes through exactly the cells the newcomer
+// has not taken (`board-dissolve-out`). Worn by the surfaces whose lines arrive that way (the
+// board screen, the group's own screen), as custom properties on their root.
 export const DISSOLVE_LEVELS = 8;
-function levelTile(level: number): string {
+function levelTile(level: number, lit: boolean): string {
   let rects = '';
   for (let r = 0; r < 8; r += 1) {
     for (let c = 0; c < 8; c += 1) {
-      if (BAYER_8[r * 8 + c] < (level * 64) / DISSOLVE_LEVELS) {
+      if (BAYER_8[r * 8 + c] < (level * 64) / DISSOLVE_LEVELS === lit) {
         rects += `<rect x='${c * CELL}' y='${r * CELL}' width='2' height='2'/>`;
       }
     }
@@ -53,5 +56,8 @@ function levelTile(level: number): string {
   return tile(8 * CELL, 8 * CELL, rects);
 }
 export const DISSOLVES = Object.fromEntries(
-  Array.from({ length: DISSOLVE_LEVELS }, (_, level) => [`--dz-${level}`, levelTile(level)]),
+  Array.from({ length: DISSOLVE_LEVELS }, (_, level) => [
+    [`--dz-${level}`, levelTile(level, true)],
+    [`--dzo-${level}`, levelTile(level, false)],
+  ]).flat(),
 ) as CSSProperties;

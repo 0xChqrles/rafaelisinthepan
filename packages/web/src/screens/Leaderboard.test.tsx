@@ -78,6 +78,11 @@ vi.mock('../components/BoardTabs', () => ({
   },
 }));
 vi.mock('../components/PeriodSwitch', () => ({ default: () => null }));
+// The podium's picture is a canvas (jsdom has none); its stage logic stays real.
+vi.mock('../components/Podium', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../components/Podium')>()),
+  default: () => null,
+}));
 vi.mock('../components/GroupScreen', () => ({
   default: (p: { onLeave: () => void }) => {
     world.leave = p.onLeave;

@@ -611,9 +611,10 @@ const STRINGS = {
   boardEmptyGlobal: { en: 'NOBODY YET', fr: 'ENCORE PERSONNE' },
   boardEdit: { en: 'EDIT', fr: 'MODIFIER' },
   boardInvite: { en: 'INVITE', fr: 'INVITER' },
-  // The period rule's numbers: podium POINTS as the unit caption, the tiebreakers as a
-  // small detail on the row.
+  // The period rule's numbers: podium POINTS as the unit caption (and under a podium's values,
+  // one POINT for a value of one), the tiebreakers as a small detail on the row.
   points: { en: 'POINTS', fr: 'POINTS' },
+  point: { en: 'POINT', fr: 'POINT' },
   dayUnit: { en: 'day', fr: 'jour' },
   daysUnit: { en: 'days', fr: 'jours' },
   // A member on the day board who has no recorded score today (user-decided 2026-08-20):
@@ -640,8 +641,8 @@ const STRINGS = {
   // PLAY below it.
   groupJoined: { en: 'JOINED', fr: 'REJOINT' },
   groupLeave: { en: 'LEAVE GROUP', fr: 'QUITTER LE GROUPE' },
-  // The board's SCOPE pager (user-decided 2026-09-14, the third control design): a
-  // group's page reads its name over its size, GLOBAL's over what it is.
+  // The board's line under the tabs on GLOBAL (a group's holds its three periods), and the
+  // group's door over its lines: its size.
   scopeGlobalSub: { en: 'TOP 50', fr: 'TOP 50' },
   memberUnit: { en: 'MEMBER', fr: 'MEMBRE' },
   membersUnit: { en: 'MEMBERS', fr: 'MEMBRES' },
