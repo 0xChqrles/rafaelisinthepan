@@ -33,10 +33,10 @@
 // board: a group's (it becomes the group last opened) or the global one; a tap on another name
 // turns to it. No analytics event. A sideways SWIPE on the rows turns the tab like a tap on a
 // name (the rows are most of the box, and where a thumb swipes); it opens nothing.
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { CSSProperties } from 'react';
 import type { LiveGroup, LiveBoard } from '@whippin/shared';
-import BoardTabs from './BoardTabs';
+import BoardTabs, { tabIds } from './BoardTabs';
 import { BoardRowItem, PlayingRowItem } from './BoardRows';
 import { rankColumnPx } from './boardMetrics';
 import { shownFace, useOwnFace } from './AccountFace';
@@ -126,6 +126,7 @@ export default function ResultBoards({
     setMoved(true);
   };
   const { handlers: swipe, swiped } = useSwipe((step) => turn(index + step));
+  const tabsId = useId();
 
   // The box's fate, latched (see the header): gone, kept, or still open.
   const [fate, setFate] = useState<'gone' | 'kept' | null>(null);
@@ -161,10 +162,18 @@ export default function ResultBoards({
             shown={index}
             onTurn={turn}
             onOpen={(i) => open(tabs[i]?.group ?? null)}
+            idBase={tabsId}
           />
           {/* The rows are a picture of the board, and the whole of it is the tap onto it; the
               keyboard's way there is the shown tab's name above. */}
-          <div className="result-board" {...swipe} onClick={() => !swiped() && open(shown.group)}>
+          <div
+            className="result-board"
+            role="tabpanel"
+            id={tabIds(tabsId).panel}
+            aria-labelledby={tabIds(tabsId).tab(shown.key)}
+            {...swipe}
+            onClick={(e) => !swiped(e) && open(shown.group)}
+          >
             <ol key={shown.key} className="board-list">
               {shown.board.lines.map((line, i) =>
                 line.kind === 'gap' ? (

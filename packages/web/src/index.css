@@ -3031,8 +3031,8 @@ input {
 /* THE NAMES LEFT OUT: at each end where a name is cut, a cover of the ground's ink from the
    row's edge to the nearest whole name (`--cover-l`, `--cover-r-x` / `--cover-r`, written by
    BoardTabs), and on it the boards' mark for what is left out — the stippled slate rail of the
-   rows a board leaves out, three cells of it, centred. Over the chip too: a chip the row's
-   scroll has cut is cut like any name. */
+   rows a board leaves out, three cells of it, against that name. Over the chip too: a chip the
+   row's scroll has cut is cut like any name. */
 .board-tabs-cover {
   position: absolute;
   top: 0;
@@ -3046,20 +3046,27 @@ input {
   content: '';
   position: absolute;
   top: 21px;
-  left: calc(50% - 7px);
   width: 14px;
   height: 2px;
   background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 0 / 6px 2px repeat-x;
+}
+/* (Only on a cover that holds it whole: `data-mark-l` / `data-mark-r`, BoardTabs.) */
+.board-tabs:not([data-mark-l]) > .board-tabs-cover.l::after,
+.board-tabs:not([data-mark-r]) > .board-tabs-cover.r::after {
+  display: none;
 }
 .board-tabs[data-cut-l] > .board-tabs-cover.l {
   display: block;
   left: 0;
   width: var(--cover-l, 0px);
 }
-/* At the start, the mark stands against the first whole name (the row's edge is no name). */
+/* Each end's mark stands against the whole name next to it — on whole pixels, the covers'
+   edges being whole. */
 .board-tabs-cover.l::after {
-  left: auto;
   right: 10px;
+}
+.board-tabs-cover.r::after {
+  left: 10px;
 }
 .board-tabs[data-cut-r] > .board-tabs-cover.r {
   display: block;
@@ -3088,6 +3095,11 @@ input {
 }
 .board-tab-label {
   display: block;
+  /* A name longer than its room ends in an ellipsis there (BoardTabs writes the room). */
+  max-width: var(--label-max, none);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
   height: 24px;
   padding: 0 7px;
   font-family: var(--ui);
@@ -3359,8 +3371,8 @@ input {
   min-height: 0;
   cursor: pointer;
   /* A sideways swipe on the rows turns the tab (`useSwipe`): the page keeps its vertical
-     scroll, the horizontal gesture is the script's. */
-  touch-action: pan-y;
+     scroll and its pinch, the horizontal gesture is the script's. */
+  touch-action: pan-y pinch-zoom;
 }
 .result-board .board-list {
   overflow: hidden;
@@ -7332,14 +7344,16 @@ figure.l1-fig {
   white-space: nowrap;
   color: var(--muted);
 }
-/* The ghost board's sad ghost, on the middle step, at 3x (39 × 54): it bobs a few beats, a
-   texel at a time, and rests, like every clock on this screen. */
+/* The ghost board's sad ghost, on the middle step, at 3x (39 × 54, `.board-screen
+   .board-ghost`): it bobs a few beats, a texel at a time, and rests, like every clock on this
+   screen — and so does the one in the empty board's block where there is no podium. */
 .podium-sprite.board-ghost {
   position: absolute;
   z-index: 2;
-  width: 39px;
-  height: 54px;
   color: var(--muted);
+}
+.podium-sprite.board-ghost,
+.board-empty > .board-ghost {
   animation: podium-ghost-bob 1.6s steps(1) 400ms 5;
 }
 @keyframes podium-ghost-bob {
@@ -7378,6 +7392,8 @@ figure.l1-fig {
 }
 @media (prefers-reduced-motion: reduce) {
   .podium-sprite,
+  .board-empty > .board-ghost,
+  .board-hold,
   .podium-caption,
   .podium-mark,
   .podium-unit {
@@ -7396,6 +7412,10 @@ figure.l1-fig {
 }
 .board-screen .board-sub {
   animation: board-dissolve 240ms linear var(--delay, 0ms) backwards;
+}
+/* …unless it says what the one before said: then it STANDS across the turn. */
+.board-screen .board-sub.still {
+  animation: none;
 }
 /* THE DOOR into the group's own screen: its size, said as the quiet word it is, with the
    header's chevron turned to point in — the list's own caption ("these 8"), and the way to
@@ -7436,7 +7456,7 @@ figure.l1-fig {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  touch-action: pan-y;
+  touch-action: pan-y pinch-zoom;
 }
 .board-column {
   /* Positioned: its lines' sticky edge reads in its own terms. */
@@ -7453,9 +7473,9 @@ figure.l1-fig {
      ending where the result's do. */
   scrollbar-gutter: stable both-edges;
   margin: 0 -6px;
-  /* The vertical scroll is the browser's; a sideways swipe is the screen's (it turns the tab
-     row). */
-  touch-action: pan-y;
+  /* The vertical scroll and the pinch are the browser's; a sideways swipe is the screen's (it
+     turns the tab row). */
+  touch-action: pan-y pinch-zoom;
   /* A column of WHOLE SLOTS: its height is the body's room floored to the 44px pitch (the
      screen writes it), the podium and every item whole slots, and its scroll rests on a slot's
      start — so a line is never cut by the column's edge at rest. */
@@ -7468,7 +7488,7 @@ figure.l1-fig {
 }
 /* What stands under the podium, and the view before it giving way over it, slot for slot —
    each of its slots dissolving out through the cells the new slot dissolves in through, its
-   numbers standing; your line in it simply stands in its place. */
+   numbers standing; your line in it stands in its place and goes out the same way. */
 .board-under {
   position: relative;
   flex: none;
@@ -7492,20 +7512,39 @@ figure.l1-fig {
 .board-screen .board-under-out .board-skeleton-line {
   animation: board-dissolve-out 240ms linear var(--delay, 0ms) forwards;
 }
+/* (Your line, never held at the edge here: four classes, so they outweigh its own dissolve-in
+   and lock-on.) */
 .board-screen .board-under-out .board-row.me {
   position: relative;
+  z-index: auto;
+  animation: board-dissolve-out 240ms linear var(--delay, 0ms) forwards;
 }
 .board-screen .board-under-out .board-progress {
   animation: none;
 }
-/* With no podium (a screen too short for one), the empty board's own block under the head. */
-.board-under-in > .board-empty,
-.board-under-in > .load-error {
-  padding-top: 24px;
+/* With no podium (a screen too short for one: a landscape phone), the empty board's own block
+   — or a failed read's RETRY — under the header slot, as ONE ROW: the ghost at the podium's 3x
+   beside its line over its call, the message over RETRY — so the column's room the shortest
+   phone leaves it (two lines) holds it whole. It starts where the lines do (6px in), so the
+   ghost stands on whole pixels whatever its words measure, and comes in as a line does, through
+   the dissolve, on its slot's beat (their `.arrive` glide is the other screens'). */
+.board-hold {
+  display: flex;
+  padding: 0 6px;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear var(--delay, 0ms) backwards;
+}
+.board-hold .load-error {
+  align-items: flex-start;
+  gap: 8px;
+}
+.board-screen .load-error.arrive > * {
+  animation: none;
 }
 /* A failed read speaks in the empty state's voice — the column's small tracked capitals —
    so its line holds on the narrowest phone; the danger ink says what happened. */
-.podium-hold .load-error > p {
+.board-screen .load-error > p {
   margin: 0;
   font-size: 12px;
   font-weight: 700;
@@ -7523,6 +7562,14 @@ figure.l1-fig {
   text-align: right;
   text-transform: uppercase;
   color: var(--muted);
+}
+/* A narrow phone keeps the numbers' gutter only on a board with a playing member's % to hang
+   in it: elsewhere the names take its room (`.plays`, BoardUnder). */
+@media (max-width: 359px) {
+  .board-under > :not(.plays) .board-row,
+  .board-under > :not(.plays) .board-unit {
+    padding-right: 6px;
+  }
 }
 /* The rows a board leaves out take a whole slot. */
 .board-body .board-gap {
@@ -7571,6 +7618,12 @@ figure.l1-fig {
   width: 4px;
   height: 4px;
   background: var(--accent);
+}
+/* …in its own room: a list that marks your people keeps 8px more before its ranks (its rank
+   column 8px wider, BoardUnder's MATE_ROOM_PX, the ranks set in the rest), so the square sits
+   as clear of `10` as of `4`. */
+.board-list.marks .board-rank {
+  padding-left: 8px;
 }
 /* A member with no score today: the person, in the secondary ink, and nothing where a rank or
    a number would be — which is what says they have not played yet. */
@@ -7749,22 +7802,31 @@ figure.l1-fig {
   margin: 0 auto;
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 8px 0 24px;
+}
+/* The members' room: what the caption and the acts leave; the list in it scrolls, as tall as
+   the whole lines that fit (GroupScreen writes it). */
+.group-room {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.group-room > .board-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .board-row.member {
   grid-template-columns: 30px minmax(0, 1fr) auto;
   padding-right: 6px;
 }
 .group-calls {
+  flex: none;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 18px;
-  margin-top: auto;
-  padding-top: 32px;
+  padding-top: 24px;
 }
 .group-calls .btn-primary {
   width: 100%;
@@ -7835,19 +7897,26 @@ figure.l1-fig {
   max-width: 430px;
 }
 
-/* The empty state: a sad pixel ghost over a terse line (user feedback 2026-08-20 —
-   the long sentence said less than the ghost does). One block in the plain SECONDARY
-   ink — the ghost inherits it through its mask — centered by the body's auto margins. */
+/* The empty state: a sad pixel ghost beside a terse line (user feedback 2026-08-20 —
+   the long sentence said less than the ghost does) and its one call under the line. One block
+   in the plain SECONDARY ink — the ghost inherits it through its mask. */
 .board-empty {
   display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 16px;
   color: var(--muted);
-  text-align: center;
 }
-.board-empty .btn-primary {
-  margin-top: 8px;
+.board-empty-say {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+/* On the board screen the ghost is the podium's, at 3x (its bob: `.podium-sprite`'s). */
+.board-screen .board-ghost {
+  flex: none;
+  width: 39px;
+  height: 54px;
 }
 
 /* The ghost is the USER'S OWN pixel art (assets/ghost.png, 13x18) and it TINTS LIKE AN
@@ -7897,7 +7966,7 @@ figure.l1-fig {
   color: var(--muted);
   margin-bottom: 8px;
 }
-.board-empty > p {
+.board-empty-say > p {
   margin: 0;
   font-family: var(--ui);
   font-size: 12px;
@@ -8265,7 +8334,8 @@ figure.l1-fig {
    at a time. A line is a <button> here, so the reset is restated. */
 .confirm-pick {
   width: 100%;
-  max-height: 40vh;
+  /* Whole lines, so the last one the room holds is never cut. */
+  max-height: round(down, 40vh, 44px);
   overflow-y: auto;
   margin: 4px 0 8px;
   text-align: left;

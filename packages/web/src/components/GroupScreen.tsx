@@ -1,11 +1,11 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { anonName, defaultAvatar, type BoardPlayer, type GroupSummary } from '@whippin/shared';
 import { readGroup } from '../api';
 import Avatar from './Avatar';
 // (The dissolve's tiles its members come in through: on the document's root.)
 import './bayerTiles';
-import { MARK } from './boardMetrics';
+import { LINE_PX, MARK } from './boardMetrics';
 import LoadingWave from './LoadingWave';
 import CloseIcon from '../assets/icons/close.svg?react';
 import ModalHeader from './ModalHeader';
@@ -24,8 +24,10 @@ import type { LangCode } from '../langs';
 // brackets, as on the board), coming in through the board's Bayer dissolve, the owner tagged
 // under their name, and — for the owner — the header's pixel ✕ at every other line's end that
 // opens the removal's confirmation; then the screen's one call, INVITE, and under it the quiet
-// way out, LEAVE. The members are dressed by the group's public face (`GET /groups?id=`), the
-// assigned identities standing in until it lands.
+// way out, LEAVE — standing at the screen's foot whatever the group's size: the MEMBERS scroll,
+// in whole lines (the room left them floored to the lines' pitch, so a line is never cut at
+// rest), and the acts stay in reach. The members are dressed by the group's public face
+// (`GET /groups?id=`), the assigned identities standing in until it lands.
 //
 // A full-screen dialog on flat `--bg` (the selection's shell), so the board under it is
 // inert; the confirmations stack over it in the top layer.
@@ -70,6 +72,20 @@ export default function GroupScreen({
   const face = (id: string): BoardPlayer =>
     faces[id] ?? { publicId: id, name: '', avatar: null };
 
+  // The members' room, in whole lines.
+  const roomRef = useRef<HTMLDivElement>(null);
+  const [lines, setLines] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const room = roomRef.current;
+    if (!room) return undefined;
+    const measure = () => setLines(Math.max(1, Math.floor(room.clientHeight / LINE_PX)));
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(room);
+    return () => ro.disconnect();
+  }, []);
+
   return createPortal(
     <dialog
       {...dialogProps}
@@ -79,39 +95,41 @@ export default function GroupScreen({
     >
       <ModalHeader lang={lang} title={group.name} back onClose={beginClose} />
 
-      <div className="group-body pixel-scroll">
+      <div className="group-body">
         <div className="board-section">{t(lang, 'groupMembers')}</div>
-        <ol className="board-list">
-          {group.members.map((id, index) => {
-            const player = face(id);
-            const me = id === meId;
-            return (
-              <li
-                key={id}
-                className={`board-row member${me ? ' me' : ''}`}
-                style={{ '--delay': `${MEMBER_START_MS + index * MEMBER_STAGGER_MS}ms` } as CSSProperties}
-                aria-current={me || undefined}
-              >
-                <Avatar avatar={player.avatar ?? defaultAvatar(id)} size={MARK} sharp />
-                <span className="board-ident">
-                  <span className={`board-name${player.name ? '' : ' anon'}`}>{player.name || anonName(id)}</span>
-                  {id === group.createdBy && <span className="board-detail">{t(lang, 'groupOwnerTag')}</span>}
-                </span>
-                {owner && !me && (
-                  <button
-                    type="button"
-                    className="board-remove"
-                    aria-label={t(lang, 'groupRemove')}
-                    disabled={busy}
-                    onClick={() => onRemove(player)}
-                  >
-                    <CloseIcon className="ui-icon" aria-hidden />
-                  </button>
-                )}
-              </li>
-            );
-          })}
-        </ol>
+        <div ref={roomRef} className="group-room">
+          <ol className="board-list pixel-scroll" style={lines === null ? undefined : { maxHeight: lines * LINE_PX }}>
+            {group.members.map((id, index) => {
+              const player = face(id);
+              const me = id === meId;
+              return (
+                <li
+                  key={id}
+                  className={`board-row member${me ? ' me' : ''}`}
+                  style={{ '--delay': `${MEMBER_START_MS + index * MEMBER_STAGGER_MS}ms` } as CSSProperties}
+                  aria-current={me || undefined}
+                >
+                  <Avatar avatar={player.avatar ?? defaultAvatar(id)} size={MARK} sharp />
+                  <span className="board-ident">
+                    <span className={`board-name${player.name ? '' : ' anon'}`}>{player.name || anonName(id)}</span>
+                    {id === group.createdBy && <span className="board-detail">{t(lang, 'groupOwnerTag')}</span>}
+                  </span>
+                  {owner && !me && (
+                    <button
+                      type="button"
+                      className="board-remove"
+                      aria-label={t(lang, 'groupRemove')}
+                      disabled={busy}
+                      onClick={() => onRemove(player)}
+                    >
+                      <CloseIcon className="ui-icon" aria-hidden />
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
 
         <div className="group-calls">
           <button type="button" className="btn btn-primary" disabled={busy} onClick={onInvite}>

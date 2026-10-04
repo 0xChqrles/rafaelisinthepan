@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { anonName, dateForDayNumber, defaultAvatar, type BoardPeriod, type BoardPlayer, type GroupSummary } from '@whippin/shared';
 import {
   boardUrl,
@@ -14,8 +14,18 @@ import {
 import { clockNow, onClock } from '../components/animationClock';
 import Avatar from '../components/Avatar';
 import { DISSOLVE_MS } from '../components/bayerTiles';
-import BoardTabs, { type BoardTabItem } from '../components/BoardTabs';
-import Under, { ARRIVE, PACE_CAP, TURN, lineRun, type ListRun, type Shown, type UnderView } from '../components/BoardUnder';
+import BoardTabs, { tabIds, type BoardTabItem } from '../components/BoardTabs';
+import Under, {
+  ARRIVE,
+  PACE_CAP,
+  TURN,
+  cameIn,
+  lineRun,
+  type Gone,
+  type ListRun,
+  type Shown,
+  type UnderView,
+} from '../components/BoardUnder';
 import ConfirmScreen from '../components/ConfirmScreen';
 import { LINE_PX, MARK } from '../components/boardMetrics';
 import GroupCreate from '../components/GroupCreate';
@@ -74,20 +84,20 @@ import { t } from '../i18n';
 // THE BOARD HAS A SUBJECT, the way the result has its count: its PODIUM (`Podium`), the top
 // three standing on their steps between the head and the lines — first place's count in the
 // FOIL, the screen's one shiny thing — and the lines under it start at the fourth. The first
-// time a board is shown in a visit the podium BUILDS (its steps rising, its players dropping
-// onto them, the values landing on the result count's reels and first place's cobalt
-// dissolving into the foil — the result's own gesture) and its lines follow it in, one after
-// another through the Bayer dissolve (CSS `board-dissolve`), their numbers on the same reels
-// (`ReelNumber`); a board turned back to is SETTLED, its lines simply dissolving in. The
-// first board on screen ARRIVES (after the head's own beats); every board turned to after it
-// comes in quicker, and GIVES WAY to the one before slot by slot — the one before keeping
-// every slot until the new one's line dissolves in through it — so no frame of a turn is a
-// bare list; a read that keeps it waiting long lets it give way to the loading picture
-// instead (a podium crowning another tab's winner says something false). Every box is laid
-// out from its first frame — the podium's the same height in every state, its size chosen
-// off the room the screen has (none at all where it would leave the lines none: they start
-// at the first, crowned, in the result's dress) — so nothing that has landed moves; reduced
-// motion draws the board landed.
+// time a board is shown in the day (in this tab) the podium BUILDS (its steps rising, its
+// players dropping onto them, the values landing on the result count's reels and first place's
+// cobalt dissolving into the foil — the result's own gesture) and its lines follow it in, one
+// after another through the Bayer dissolve (CSS `board-dissolve`), their numbers on the same
+// reels (`ReelNumber`); a board shown again — turned back to, or on a later visit — is SETTLED,
+// its lines simply dissolving in. The first board on screen ARRIVES (after the head's own
+// beats); every board turned to after it comes in quicker, and GIVES WAY to the one before
+// slot by slot — the one before keeping every slot until the new one's line dissolves in
+// through it — so no frame of a turn is a bare list; a read that keeps it waiting long lets it
+// give way to the loading picture instead (a podium crowning another tab's winner says
+// something false). Every box is laid out from its first frame — the podium's the same height
+// in every state, its size chosen off the room the screen has (none at all where it would
+// leave the lines none: they start at the first, crowned, in the result's dress) — so nothing
+// that has landed moves; reduced motion draws the board landed.
 //
 // The rows come ranked from the server (competition ties, the plain top-50 cut, the
 // own-row window, the period rule — @whippin/shared's leaderboard rules); this screen only
@@ -128,6 +138,30 @@ export function leaveBody(token: string, group: string, kind: LeaveKind, success
 
 // How long a turn keeps the board before on screen while the new one's read is out.
 const HOLD_MS = 400;
+
+// A view under the podium GIVING WAY: what it was and how it had been shown, whether its header
+// slot stands for the one after it, and the run of the one it gives way to, from when it began.
+interface Leaving {
+  view: UnderView;
+  gone: Gone;
+  still: boolean;
+  run: ListRun;
+  since: number;
+}
+
+// WHAT THE PODIUM HAS BUILT today in this tab (its scenes' identities), for the language and
+// the identity it was built under: a board shown again — turned back to, or on the next visit
+// to the screen — is that board, settled; its build is never replayed (that would be a wait
+// every time the crown is tapped, and would move what had landed). A new day or a new identity
+// starts it again, as it drops the screen's caches.
+const built = { scope: '', builds: new Set<string>() };
+function builtFor(scope: string): Set<string> {
+  if (built.scope !== scope) {
+    built.scope = scope;
+    built.builds = new Set();
+  }
+  return built.builds;
+}
 
 export default function Leaderboard({ lang }: { lang: LangCode }) {
   // The tab belongs to the VISIT (user feedback 2026-08-20): it lives in the store because
@@ -203,18 +237,21 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // blank column. HELD FOR HOLD_MS AT MOST: a read that outlasts it (`lapsed`, the key it was
   // for) lets the board before give way to the loading picture — a held board under another
   // tab's name says something false, and a podium says it loudly. Same cache scope as `boards`
-  // (dropped with it below).
+  // (dropped with it below). The hold's clock starts again on every turn to a board: a board
+  // whose read lapsed once is held again the next time it is turned to.
   const [held, setHeld] = useState<Shown | null>(null);
   const [lapsed, setLapsed] = useState<string | null>(null);
-  // WHAT THE PODIUM HAS BUILT this visit (its scenes' identities): a board shown again is that
-  // board, settled — its build is never replayed on a turn back (that would be a wait, and would
-  // move what had landed). Same cache scope as `boards`.
-  const played = useRef(new Set<string>());
+  const [lapseKey, setLapseKey] = useState(boardKey);
+  if (lapseKey !== boardKey) {
+    setLapseKey(boardKey);
+    setLapsed(null);
+  }
 
   // THE DAY IS A LIVE VALUE: a board is left open across the 22:00-ET flip routinely, and a
   // new day is a new board, so every cache goes with it — dropped during render so
   // yesterday's rows are never committed under today's date.
   const date = dateForDayNumber(useToday());
+  const played = builtFor(`${lang}|${date}|${epoch ?? ''}`);
   const [cachedDate, setCachedDate] = useState(date);
   // (This render still reads the dropped caches: nothing is taken from them below.)
   let dropped = false;
@@ -223,7 +260,6 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     setBoards({});
     setHeld(null);
     setLapsed(null);
-    played.current.clear();
     dropped = true;
   }
   // AND THE CACHES ARE IDENTITY-SCOPED: a board cached under a previous identity is not the
@@ -235,7 +271,6 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     setBoards({});
     setHeld(null);
     setLapsed(null);
-    played.current.clear();
     dropped = true;
   }
 
@@ -244,11 +279,16 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // is in flight (stale-but-good beats a spinner), and RETRY refetches. A GROUP
   // board is the authenticated POST naming the group (the server refuses a non-member);
   // GLOBAL is the anonymous GET, widened with the caller's own window via their PUBLIC id.
+  // A board whose last read failed is asked again from scratch — its failure dropped on the
+  // fetch's own keys but BEFORE paint, so re-entering it never shows its RETRY for a frame.
+  useLayoutEffect(() => {
+    if (boardKey === null) return;
+    setBoards((prev) => (prev[boardKey] === 'failed' ? { ...prev, [boardKey]: undefined } : prev));
+  }, [boardKey, tab, active?.id, period, lang, date, attempt, identity]);
   useEffect(() => {
     if (boardKey === null) return;
     const key = boardKey;
     let cancelled = false;
-    setBoards((prev) => (prev[key] === 'failed' ? { ...prev, [key]: undefined } : prev));
     // No token, no private fetch (#216): a group's board cannot exist tokenless (the list is
     // empty), so only the global read runs without an identity.
     if (tab === 'group' && !identity) return;
@@ -345,7 +385,8 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
         } catch {
           error = null;
         }
-        setFailure(error === 'group_limit' ? 'limit' : 'group');
+        // (A stale succession is no failure: the leave asks again, below.)
+        if (error !== 'successor_required') setFailure(error === 'group_limit' ? 'limit' : 'group');
         return { ok: false, error };
       }
       const answer = parseGroups(await response.json());
@@ -386,7 +427,8 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
 
   // The succession the LEAVE carries: who else is in the group decides whether the owner
   // names somebody. A list gone stale by the time the tap lands is the server's 409
-  // `successor_required`, which re-reads the list below.
+  // `successor_required`: the confirmation stays up, its pick cleared, and the list is read
+  // again — the picker then asks among the members as they now stand.
   const others = active ? active.members.filter((id) => id !== meId) : [];
   const leaveKind = leaveKindOf(active, meId);
 
@@ -399,22 +441,22 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
       setFaces(Object.fromEntries(read.group.members.map((member) => [member.publicId, member])));
     });
     return () => controller.abort();
-    // Deliberately `active?.id`, not `active`: the list object is re-read, the group is not.
-  }, [confirming?.kind, leaveKind, active?.id]);
+    // Deliberately `active?.id`, not `active`: the list object is re-read, the group is not —
+    // but a re-read that changes who is in it dresses the newcomers.
+  }, [confirming?.kind, leaveKind, active?.id, active?.members.length]);
 
   const leave = async () => {
     if (busy || !active) return;
     if (leaveKind === 'pick' && successor === null) return;
     const id = active.id;
     const result = await write('leave', (token) => leaveBody(token, id, leaveKind, successor));
-    setConfirming(null);
     setSuccessor(null);
-    if (result.ok) {
-      setScreen(null);
-    } else if (result.error === 'successor_required') {
-      // The list this screen decided from was stale: re-read it, and the next LEAVE asks.
+    if (!result.ok && result.error === 'successor_required') {
       loadGroups();
+      return;
     }
+    setConfirming(null);
+    if (result.ok) setScreen(null);
   };
 
   const remove = async (member: string) => {
@@ -435,6 +477,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const columnRef = useRef<HTMLDivElement>(null);
+  const tabsId = useId();
 
   // HOW THE LINES COME IN: the first board on screen ARRIVES, every board turned to after it
   // TURNS in, quicker (see the header). Latched as STATE, set during render (React's own way
@@ -507,7 +550,9 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // own picture in its one box — latched as a STAGE whenever that changes, read off the stage
   // before it (`nextStage`: whether it builds, who stays, which values run again), so the
   // lines under it are timed off the very beats it plays. A board builds the first time it is
-  // shown in the visit; the first board ARRIVES, leaving the head its beats.
+  // shown in the day (`builtFor`); the first board ARRIVES, leaving the head its beats. Latched
+  // with the SIZE too: a rotation that takes the podium away and brings it back shows the same
+  // board again, settled — never its build replayed.
   const now = podiumShows({
     failed: (tab === 'group' && groupsPhase === 'failed' && groups === null) || entry === 'failed',
     none: tab === 'group' && onNone,
@@ -516,23 +561,26 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     mates,
     lang,
   });
-  const [stage, setStage] = useState<PodiumStage | null>(null);
+  const [stage, setStage] = useState<(PodiumStage & { size: PodiumSize | null }) | null>(null);
   let staged = stage;
   const shownPace = shown?.pace ?? ARRIVE;
-  if (staged === null || staged.build !== now.build) {
-    staged = nextStage(
-      stage,
-      now,
-      now.mode === 'board' && !played.current.has(now.build),
-      shownPace === ARRIVE ? shownPace.startMs : 0,
-      shownPace.runMs,
-    );
+  if (staged === null || staged.build !== now.build || staged.size !== size) {
+    staged = {
+      ...nextStage(
+        stage,
+        now,
+        now.mode === 'board' && !played.has(now.build),
+        shownPace === ARRIVE ? shownPace.startMs : 0,
+        shownPace.runMs,
+      ),
+      size,
+    };
     setStage(staged);
   }
   const tl = useMemo(() => beats(staged.spec), [staged]);
   useEffect(() => {
-    if (staged.mode === 'board') played.current.add(staged.build);
-  }, [staged]);
+    if (staged.mode === 'board') played.add(staged.build);
+  }, [staged, played]);
 
   // THE COLUMN SCROLLS AS ONE — the podium, the list's header, the lines — so a long board
   // carries the podium away and the reader down to their own line. Its height is the body's
@@ -561,11 +609,18 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // WHAT STANDS UNDER THE PODIUM (`Under`): a group's header slot — its door, and the unit
   // when nothing above says it — then the lines, the skeleton, or (with no podium) the empty
   // board's own block. A new one GIVES WAY to the one before slot by slot: the one before
-  // stays (`out`) and each of its slots dissolves out through exactly the cells the new one's
-  // slot dissolves in through, on the new one's beat — so no frame of a turn is a bare list.
+  // stays (`outs`) and each of its slots dissolves out through exactly the cells the new one's
+  // slot dissolves in through, on the new one's beat — so no frame of a turn is a bare list. A
+  // turn caught halfway is turned again from what is on screen: the view still coming in gives
+  // way with what of it had come in (`cameIn`), and the one it was replacing goes on going out
+  // through the cells it was leaving by. A header slot both views say the same stands.
   const holdKind = now.mode === 'failed' || now.mode === 'ghost' ? now.mode : null;
   const viewTab = shown?.tab ?? tab;
-  const sub = viewTab === 'group' || size === null;
+  // The header slot heads a group's list (its door), and — with no podium to say it — what the
+  // numbers count; an empty board's block takes it only for a door (no group, a failed or empty
+  // GLOBAL: nothing to say there, and on a landscape phone no room to say it in).
+  const door = shownGroup ? shownGroup.members.length : null;
+  const sub = door !== null || (holdKind === null && (viewTab === 'group' || size === null));
   const counts =
     shown !== null &&
     now.mode === 'board' &&
@@ -577,49 +632,61 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
       : shown
         ? `list:${shown.key}:${size ?? ''}`
         : `skeleton:${viewTab}`,
+    size,
     sub,
-    door: sub && shownGroup ? shownGroup.members.length : null,
+    door,
     unit: counts && shown ? (isPeriodBoard(shown.board) ? 'points' : 'tries') : null,
     body: holdKind ? (size ? null : 'hold') : shown ? 'list' : 'skeleton',
     shown: holdKind ? null : shown,
-    shownFor: 0,
   };
-  // The view on screen (its key, since when), and the one before giving way under it, on the
-  // run of the one it gives way to.
+  // The view on screen — its key, since when, the run it came in on, whether its header slot
+  // stands — and the ones before it giving way under it (`Leaving`).
   const lastView = useRef(view);
-  const [under, setUnder] = useState<{ key: string; since: number; out: UnderView | null; outRun: ListRun }>(() => ({
-    key: view.key,
-    since: clockNow(),
-    out: null,
-    outRun: run,
-  }));
+  const [under, setUnder] = useState<{ key: string; since: number; run: ListRun; still: boolean; outs: Leaving[] }>(
+    () => ({ key: view.key, since: clockNow(), run, still: false, outs: [] }),
+  );
   if (under.key !== view.key) {
     const was = lastView.current;
     const at = clockNow();
+    const gone = { shownFor: at - under.since, inRun: under.run };
+    const gives =
+      !prefersReducedMotion() &&
+      was.key === under.key &&
+      was.size === view.size &&
+      (was.body === 'list' || was.body === 'skeleton' || was.door !== null);
+    const still =
+      gives &&
+      was.sub &&
+      view.sub &&
+      was.door === view.door &&
+      was.unit === view.unit &&
+      (under.still || cameIn(lineRun(under.run, 0).delayMs, gone.shownFor));
     setUnder({
       key: view.key,
       since: at,
-      out:
-        !prefersReducedMotion() &&
-        was.key === under.key &&
-        (was.body === 'list' || was.body === 'skeleton' || was.door !== null)
-          ? { ...was, shownFor: at - under.since }
-          : null,
-      outRun: run,
+      run,
+      still,
+      outs: gives ? [...under.outs, { view: was, gone, still, run, since: at }] : [],
     });
   }
   useLayoutEffect(() => {
     lastView.current = view;
   });
-  // The one before is gone once its last slot has dissolved out (on the page's animation
-  // clock, as the dissolve itself is).
+  // A view before is gone once its last slot has dissolved out (on the page's animation clock,
+  // as the dissolve itself is).
   useEffect(() => {
-    const out = under.out;
-    if (!out) return undefined;
-    return onClock(columnRef.current, lineRun(under.outRun, under.outRun.fold).delayMs + DISSOLVE_MS, () =>
-      setUnder((now) => (now.out === out ? { ...now, out: null } : now)),
+    const cancels = under.outs.map((leaving) =>
+      onClock(
+        columnRef.current,
+        Math.max(0, leaving.since + lineRun(leaving.run, leaving.run.fold).delayMs + DISSOLVE_MS - clockNow()),
+        () =>
+          setUnder((now) =>
+            now.outs.includes(leaving) ? { ...now, outs: now.outs.filter((o) => o !== leaving) } : now,
+          ),
+      ),
     );
-  }, [under.out, under.outRun]);
+    return () => cancels.forEach((cancel) => cancel());
+  }, [under.outs]);
   useStuckOwnLine(columnRef, `${view.key}|${now.build}|${ownLineKey(shown, meId)}`);
 
   const ghostLine =
@@ -658,10 +725,15 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
       now.mode === 'failed' ? (
         retry
       ) : (
-        <div className="board-empty arrive">
+        // ONE ROW, the ghost beside its line over its call: the room a landscape phone has.
+        <div className="board-empty">
           <span className="board-ghost" aria-hidden="true" />
-          {ghostLine}
-          {ghostCall}
+          {(ghostLine || ghostCall) && (
+            <div className="board-empty-say">
+              {ghostLine}
+              {ghostCall}
+            </div>
+          )}
         </div>
       ),
   };
@@ -687,6 +759,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
         // With no group the body's CREATE GROUP is the one way to make one.
         onNew={onNone ? undefined : () => setScreen('create')}
         newLabel={t(lang, 'groupNew')}
+        idBase={tabsId}
       />
 
       {/* THE LINE UNDER THE TABS, one height whatever it holds: a group's three boards,
@@ -704,8 +777,8 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
         className="board-body"
         {...swipe}
         onClickCapture={(e) => {
-          // A swipe's trailing click (a mouse's) lands on nothing.
-          if (swiped()) e.stopPropagation();
+          // A swipe's trailing click lands on nothing.
+          if (swiped(e)) e.stopPropagation();
         }}
       >
         {/* The board shown: the tab row's panel, a stop for the keyboard (it scrolls). */}
@@ -713,10 +786,12 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
           ref={columnRef}
           className="board-column pixel-scroll"
           role="tabpanel"
+          id={tabIds(tabsId).panel}
           tabIndex={0}
-          aria-label={tabs[activeIndex]?.label}
+          aria-labelledby={tabs[activeIndex] ? tabIds(tabsId).tab(tabs[activeIndex].key) : undefined}
           aria-busy={pending || undefined}
-          style={slots > 0 ? { maxHeight: `${slots * LINE_PX}px` } : undefined}
+          // (The empty board's block is never scrolled: it takes the body's room as it is.)
+          style={slots > 0 && view.body !== 'hold' ? { maxHeight: `${slots * LINE_PX}px` } : undefined}
         >
           {/* THE PODIUM, in every state the body can be in: a failed read stands its RETRY in
               the podium's own box; the ghost's caption is the empty board's terse line and its
@@ -731,8 +806,17 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
             />
           )}
           <div className="board-under">
-            {under.out && <Under view={under.out} out run={under.outRun} {...underProps} />}
-            <Under key={view.key} view={view} run={run} {...underProps} />
+            {under.outs.map((leaving) => (
+              <Under
+                key={`out:${leaving.since}:${leaving.view.key}`}
+                view={leaving.view}
+                gone={leaving.gone}
+                still={leaving.still}
+                run={leaving.run}
+                {...underProps}
+              />
+            ))}
+            <Under key={view.key} view={view} still={under.still} run={under.run} {...underProps} />
           </div>
         </div>
       </div>

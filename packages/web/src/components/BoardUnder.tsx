@@ -4,9 +4,10 @@ import { DISSOLVE_MS, SKELETON_STAGGER_MS, SKELETON_WAIT_MS } from './bayerTiles
 import { rankColumnPx } from './boardMetrics';
 import { BoardRowItem, PlayingRowItem, WaitingRowItem, type LineRun } from './BoardRows';
 import type { PodiumEntry } from './podium/Podium';
+import type { PodiumSize } from './podium/scene';
 import ChevronIcon from '../assets/icons/chevron-left.svg?react';
 import { boardSlots, rankDigits } from '../game/boardSlots';
-import type { AnyBoard, ShownBoard } from '../game/boardView';
+import { isPeriodBoard, type AnyBoard, type ShownBoard } from '../game/boardView';
 import { t } from '../i18n';
 import type { LangCode } from '../langs';
 
@@ -41,6 +42,8 @@ export const lineRun = ({ pace, fold }: ListRun, i: number): LineRun => ({
   runMs: pace.runMs,
 });
 const SKELETON_LINES = [62, 48, 70, 54, 40];
+// The room a list that marks your people keeps before its ranks for the mark (`.board-list.marks`).
+const MATE_ROOM_PX = 8;
 
 // The board on screen: which board, read for which tab (and which group), and the pace it came
 // in at.
@@ -50,26 +53,42 @@ export interface Shown extends ShownBoard {
 }
 
 // WHAT STANDS UNDER THE PODIUM, as one view: its identity (a new one gives way to the one
-// before), the header slot (`sub`: a group's, holding its DOOR — the group's size — and the
-// UNIT when nothing above says what the numbers count), and its body: the lines of the board
-// shown, the skeleton, the empty board's own block (with no podium to hold it), or nothing.
-// `shownFor`: how long it had been on screen when it began to give way.
+// before), the podium's size over it (a new size is a new layout, not a turn: nothing gives
+// way), the header slot (`sub`: a group's, holding its DOOR — the group's size — and the UNIT
+// when nothing above says what the numbers count), and its body: the lines of the board shown,
+// the skeleton, the empty board's own block (with no podium to hold it), or nothing.
 export interface UnderView {
   key: string;
+  size: PodiumSize | null;
   sub: boolean;
   door: number | null;
   unit: 'tries' | 'points' | null;
   body: 'list' | 'skeleton' | 'hold' | null;
   shown: Shown | null;
-  shownFor: number;
 }
 
+// A view GIVING WAY: how long it had been on screen when it began to, and the run it had come
+// in on — which says what of it had come in by then.
+export interface Gone {
+  shownFor: number;
+  inRun: ListRun;
+}
+
+// Whether a slot dissolving in from `delayMs` had come in after `shownFor` on screen. A view
+// giving way sends out only the slots that had: one still coming in simply goes (drawn whole to
+// leave, it would flash in at full ink first). A view's slots come in in order, so those are
+// always its first ones, and every slot they leave in place is where it was.
+export const cameIn = (delayMs: number, shownFor: number): boolean => shownFor >= delayMs + DISSOLVE_MS;
+
 // A view under the podium, slot after slot: the header slot first (a group's), then the body.
-// `out`: the view before, giving way — every slot dissolving OUT on the beat the slot that
-// takes it dissolves in (the same `run`), its numbers standing, nothing in it reachable.
+// `gone`: the view before, giving way — every slot that had come in dissolving OUT on the beat
+// the slot that takes it dissolves in (the same `run`), its numbers standing, nothing in it
+// reachable. `still`: the header slot says the same in this view as in the one before, so it
+// STANDS — the view on screen draws it outright, the one giving way leaves its place empty.
 export default function Under({
   view,
-  out = false,
+  gone = null,
+  still = false,
   run,
   lang,
   meId,
@@ -79,7 +98,8 @@ export default function Under({
   hold,
 }: {
   view: UnderView;
-  out?: boolean;
+  gone?: Gone | null;
+  still?: boolean;
   run: ListRun;
   lang: LangCode;
   meId?: string;
@@ -90,13 +110,23 @@ export default function Under({
   onDoor: () => void;
   hold: ReactNode;
 }) {
+  const out = gone !== null;
   const offset = view.sub ? 1 : 0;
+  const came = (i: number) => gone === null || cameIn(lineRun(gone.inRun, i).delayMs, gone.shownFor);
   const { shown } = view;
-  const list = { meId, run, offset, out, podium: places !== null, places: out ? null : places };
+  const list = { meId, run, offset, out, came, podium: places !== null, places: out ? null : places };
+  // Whether its lines hang a playing member's % in the numbers' gutter (`.plays`: a narrow phone
+  // gives that gutter to the names on a board with no % to hang there).
+  const plays = shown !== null && !isPeriodBoard(shown.board) && shown.board.playing.length > 0;
   return (
-    <div className={out ? 'board-under-out' : 'board-under-in'} aria-hidden={out || undefined}>
-      {view.sub && (
-        <div className="board-sub" style={{ '--delay': `${lineRun(run, 0).delayMs}ms` } as CSSProperties}>
+    <div className={`${out ? 'board-under-out' : 'board-under-in'}${plays ? ' plays' : ''}`} aria-hidden={out || undefined}>
+      {view.sub && out && (still || !came(0)) ? (
+        <div className="board-sub" />
+      ) : view.sub ? (
+        <div
+          className={`board-sub${still ? ' still' : ''}`}
+          style={{ '--delay': `${lineRun(run, 0).delayMs}ms` } as CSSProperties}
+        >
           {view.door !== null &&
             (out ? (
               <span className="board-door">
@@ -113,7 +143,7 @@ export default function Under({
             </span>
           )}
         </div>
-      )}
+      ) : null}
       {view.body === 'list' && shown ? (
         <BoardList
           board={shown.board}
@@ -123,9 +153,11 @@ export default function Under({
           {...list}
         />
       ) : view.body === 'skeleton' ? (
-        <Skeleton lang={lang} run={run} offset={offset} out={out} shownFor={view.shownFor} />
+        <Skeleton lang={lang} run={run} offset={offset} shownFor={gone?.shownFor ?? null} />
       ) : view.body === 'hold' && !out ? (
-        hold
+        <div className="board-hold" style={{ '--delay': `${lineRun(run, offset).delayMs}ms` } as CSSProperties}>
+          {hold}
+        </div>
       ) : null}
     </div>
   );
@@ -144,22 +176,22 @@ function DoorLabel({ lang, count }: { lang: LangCode; count: number }) {
 // WHILE THE FIRST READ IS OUT: the board's lines as stippled rails where the marks and the
 // names will stand — the box of what is coming, at its pitch, so nothing moves when it lands.
 // They come in only if the read is slow (SKELETON_WAIT_MS, then SKELETON_STAGGER_MS apart).
-// Giving way (`out`), only the lines that had come in by then are there to go.
+// Giving way (`shownFor`: how long it had been on screen), only the lines that had come in by
+// then are there to go.
 function Skeleton({
   lang,
   run,
   offset,
-  out,
   shownFor,
 }: {
   lang: LangCode;
   run: ListRun;
   offset: number;
-  out: boolean;
-  shownFor: number;
+  shownFor: number | null;
 }) {
+  const out = shownFor !== null;
   const lines = out
-    ? SKELETON_LINES.filter((_, i) => shownFor >= SKELETON_WAIT_MS + i * SKELETON_STAGGER_MS + DISSOLVE_MS)
+    ? SKELETON_LINES.filter((_, i) => cameIn(SKELETON_WAIT_MS + i * SKELETON_STAGGER_MS, shownFor))
     : SKELETON_LINES;
   return (
     <div className="board-skeleton" role={out ? undefined : 'status'}>
@@ -204,9 +236,11 @@ function PodiumItems({ places }: { places: readonly (PodiumEntry | null)[] | nul
 interface ListProps {
   meId?: string;
   run: ListRun;
-  // The slot the list's first line stands in (after the header's), and whether it is giving way.
+  // The slot the list's first line stands in (after the header's), whether it is giving way, and
+  // which of its slots had come in (all of them, on screen).
   offset: number;
   out: boolean;
+  came: (slot: number) => boolean;
   // A podium stands over the list (its three are not lines), and its places, said first for a
   // screen reader (null: not said — giving way, or no podium).
   podium: boolean;
@@ -222,13 +256,21 @@ function useListRun(props: ListProps): ListRun {
 
 // A board's lines past the podium's three (or all of them, with no podium), slot by slot
 // (`boardSlots`), each coming in on its slot's beat — ONE rank column for the whole list, as
-// wide as its widest rank.
+// wide as its widest rank, and, where the list marks one of your people, a mark's room more
+// before the ranks (`.marks`: the square never touches a two-digit rank).
 function BoardList(props: ListProps & { board: AnyBoard; mates: ReadonlySet<string> | null }) {
-  const { board, meId, mates, offset, podium, places } = props;
+  const { board, meId, mates, offset, came, podium, places } = props;
   const run = useListRun(props);
-  const slots = boardSlots(board, podium);
+  const all = boardSlots(board, podium);
+  const slots = all.filter((_, k) => came(offset + k));
+  const marks =
+    mates !== null &&
+    all.some((slot) => slot.kind === 'ranked' && slot.row.publicId !== meId && mates.has(slot.row.publicId));
   return (
-    <ol className="board-list" style={{ '--rank-w': `${rankColumnPx(rankDigits(slots))}px` } as CSSProperties}>
+    <ol
+      className={`board-list${marks ? ' marks' : ''}`}
+      style={{ '--rank-w': `${rankColumnPx(rankDigits(all)) + (marks ? MATE_ROOM_PX : 0)}px` } as CSSProperties}
+    >
       <PodiumItems places={places} />
       {slots.map((slot, k) => {
         const i = offset + k;

@@ -71,7 +71,8 @@ vi.mock('../hooks/useShare', () => ({ default: () => ({ share: vi.fn(), copied: 
 vi.mock('../hooks/useToday', () => ({ default: () => 20700 }));
 vi.mock('../components/TopBar', () => ({ HeaderLeft: () => null }));
 vi.mock('../components/PuzzleTitle', () => ({ default: () => null }));
-vi.mock('../components/BoardTabs', () => ({
+vi.mock('../components/BoardTabs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../components/BoardTabs')>()),
   default: (p: { onOpen: (index: number) => void }) => {
     world.open = p.onOpen;
     return null;

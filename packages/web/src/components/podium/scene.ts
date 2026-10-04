@@ -72,7 +72,7 @@ import {
 // for the board's sad ghost to stand on; and a board draws its steps, with whoever finished on
 // them — none yet is the steps alone, each place's value a quiet dash.
 //
-// THE BUILD (`beats`), the first time a board is shown in a visit: the steps RISE off the floor
+// THE BUILD (`beats`), the first time a board is shown in the day: the steps RISE off the floor
 // a whole cell row at a time (third, second, first; steps already standing — the screen turned
 // from a board that had them — stay standing) and their places dissolve onto them; each player
 // DROPS onto their step under gravity in whole cells and lands with a shake (and the strike
@@ -80,7 +80,7 @@ import {
 // value runs again if it changed; each value runs on its reels from its player's landing; the
 // heat SURGES as the winner lands and the crown flashes white on the impact; the lines under
 // it start once that impact has played (an arrival), or at once (a turn: the steps stand, and
-// the lines give way with the podium). A board already shown this visit is SETTLED from its
+// the lines give way with the podium). A board already shown today is SETTLED from its
 // first frame. Either way the scene before it gives way cell by cell (the component's
 // cross-dissolve). Then it is still but for the foil.
 
@@ -259,15 +259,23 @@ export function layout(
   const floor = rows - (contentRows(d) - d.air - d.mark1 - d.tiers[0]);
   const name = floor + 1 + NAME_GAP;
   const valueY = name + NAME_ROWS + VALUE_GAP;
+  const tiers = ranks.map((rank, p) => (rank === null ? (p as 0 | 1 | 2) : stepTier(rank)));
+  const firsts = [0, 1, 2].filter((p) => tiers[p] === 0 && ranks[p] !== null);
+  const tied = firsts.length > 1;
+  // The steps' widths by slot (second, first, third) — tied firsts on steps of ONE width, their
+  // widths' mean (a tie that stood on a wider and a narrower step would read unequal).
   const widths = [d.narrow, d.wide, d.narrow];
+  if (tied) {
+    const slots = firsts.map((p) => SLOT_OF[p]);
+    const mean = Math.floor(slots.reduce((sum: number, slot) => sum + widths[slot], 0) / slots.length);
+    for (const slot of slots) widths[slot] = mean;
+  }
   const total = widths[0] + d.gap + widths[1] + d.gap + widths[2];
   const x0 = Math.floor((cols - total) / 2);
   const slotX = [x0, x0 + widths[0] + d.gap, x0 + widths[0] + d.gap + widths[1] + d.gap];
   // A caption's slot: the pitch between neighbouring steps' centres, centred on its own and
   // kept inside the column — so the three never overlap — less its gutters.
   const pitch = Math.floor((d.narrow + d.wide) / 2) + d.gap;
-  const tiers = ranks.map((rank, p) => (rank === null ? (p as 0 | 1 | 2) : stepTier(rank)));
-  const tied = tiers.filter((tier, p) => tier === 0 && ranks[p] !== null).length > 1;
   // What stands under each place's name besides a first's value: its value at the lines' size
   // (or its dash), and the widest its unit runs.
   const foot = values.map((v) => Math.max(v === null ? 6 : digitsW(v, 1), UNIT_FOOT));
