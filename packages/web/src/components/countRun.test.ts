@@ -23,6 +23,9 @@ import {
   reelStop,
   reelTravelled,
   reelsText,
+  runEnd,
+  runReel,
+  runStop,
 } from './countRun';
 
 const SCORES = Array.from({ length: ROUND_GUESS_CAP }, (_, i) => i + 1);
@@ -211,5 +214,16 @@ describe('countRun — the stop\'s shake', () => {
     }
     for (let k = 1; k < COUNT_SHAKE.length; k += 1) expect(COUNT_SHAKE[k]).not.toEqual(COUNT_SHAKE[k - 1]);
     expect(COUNT_END_MS).toBe(COUNT_RUN_MS + COUNT_SHAKE_MS);
+  });
+});
+
+describe('the compressed run — the lines\' numbers and the podium\'s, one curve', () => {
+  it('stops its reels left to right inside the run, and lands on the digits', () => {
+    const runMs = 650;
+    expect(runStop(0, 3, runMs)).toBeLessThan(runStop(1, 3, runMs));
+    expect(runStop(2, 3, runMs)).toBe(runMs);
+    [1, 8, 7].forEach((digit, i) => {
+      expect(runReel(digit, i, 3, runEnd(runMs), runMs).travelled % 10).toBe(digit);
+    });
   });
 });

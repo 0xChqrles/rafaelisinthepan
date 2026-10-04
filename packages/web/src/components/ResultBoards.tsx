@@ -8,10 +8,10 @@
 // few still playing, the box filled with the rows next in line, a stippled rail where rows are
 // left out and a `+N` under them.
 //
-// THE TABS are the groups' NAMES in a row, the one shown wearing the white title chip — the
-// share and group cards' one emphasis gesture — then GLOBAL; the row scrolls on its own axis
-// where it runs past the column and thins out through an ordered dither there (the house's
-// texture), never a guillotined name, and the name turned to scrolls whole into view.
+// THE TABS are the groups' NAMES in a row, then GLOBAL — the boards' one control across the app
+// (`BoardTabs`, the board screen's own): the one shown wearing the white title chip, which
+// TRAVELS to the name turned to; GLOBAL pinned at the row's end, and where the names run past
+// the column only whole ones show, the cut ones under the boards' left-out rail.
 //
 // The data is not this screen's to fetch twice: the groups come off the LIVE read the play
 // screen already keeps (`state/liveBoard.ts`), passed in; GLOBAL is one anonymous read of the
@@ -33,43 +33,21 @@
 // board: a group's (it becomes the group last opened) or the global one; a tap on another name
 // turns to it. No analytics event. A sideways SWIPE on the rows turns the tab like a tap on a
 // name (the rows are most of the box, and where a thumb swipes); it opens nothing.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useId, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { BAYER_8, type LiveGroup, type LiveBoard } from '@whippin/shared';
+import type { LiveGroup, LiveBoard } from '@whippin/shared';
+import BoardTabs, { tabIds } from './BoardTabs';
 import { BoardRowItem, PlayingRowItem } from './BoardRows';
+import { rankColumnPx } from './boardMetrics';
 import { shownFace, useOwnFace } from './AccountFace';
 import { resultTabs, type ResultTab } from '../game/resultBoards';
 import useGlobalBoard from '../hooks/useGlobalBoard';
-import { prefersReducedMotion } from '../hooks/useScramble';
+import useSwipe from '../hooks/useSwipe';
 import { useDeviceIdentity } from '../identity';
 import { t } from '../i18n';
 import { pathForBoard } from '../langs';
 import { navigate } from '../routing';
 import { useGameStore } from '../state/gameStore';
-
-// A mark at an INTEGER cell scale: 10 cells of 3px.
-const MARK = 30;
-// A swipe on the rows: this far sideways, and mostly sideways (a scroll of the page is not one).
-const SWIPE_PX = 40;
-// One rank column for every tab, as wide as the widest rank any of them prints in the ranks'
-// 16px digits (two at the least; the `+N` under the rows is set at half that size).
-const RANK_DIGIT_PX = 16;
-// The row of names' dithered edge: a tile of 2px cells, FADE_CELLS across and the Bayer
-// matrix's 8 down, solid at its inner side and thinning to nothing at the outer — a CSS mask.
-const FADE_CELLS = 16;
-function fadeTile(towardRight: boolean): string {
-  let rects = '';
-  for (let r = 0; r < 8; r += 1) {
-    for (let c = 0; c < FADE_CELLS; c += 1) {
-      const k = (c + 0.5) / FADE_CELLS;
-      const density = towardRight ? 1 - k : k;
-      if (BAYER_8[r * 8 + (c & 7)] < density * 64) rects += `<rect x='${c * 2}' y='${r * 2}' width='2' height='2'/>`;
-    }
-  }
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${FADE_CELLS * 2}' height='16' shape-rendering='crispEdges'>${rects}</svg>`;
-  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
-}
-const FADES = { '--fade-r': fadeTile(true), '--fade-l': fadeTile(false) } as CSSProperties;
 
 export interface ResultBoardsData {
   // The active day, as the boards address it.
@@ -81,7 +59,8 @@ export interface ResultBoardsData {
   awaited: boolean;
 }
 
-// The widest rank a tab prints, in the ranks' digits.
+// The widest rank a tab prints, in the ranks' digits (the `+N` under the rows is set at half
+// their size) — one rank column for every tab (`rankColumnPx`).
 function rankDigits(tab: ResultTab): number {
   return Math.max(
     Math.ceil(String(`+${tab.board.more}`).length / 2),
@@ -118,16 +97,9 @@ export default function ResultBoards({
   const setBoardTab = useGameStore((s) => s.setBoardTab);
   const globalBoard = useGlobalBoard(lang, date);
   // The tab the player turned to, by key: a tab arriving later never moves them off it. Once
-  // they have turned, the chip is drawn across the name it moves to and the rows come in again.
+  // they have turned, the chip travels to the name it moves to and the rows come in again.
   const [chosen, setChosen] = useState<string | null>(null);
   const [moved, setMoved] = useState(false);
-  // A swipe on the rows in progress, and whether the last gesture was one (its click, a
-  // mouse's, opens nothing).
-  const swipe = useRef<{ id: number; x: number; y: number } | null>(null);
-  const swiped = useRef(false);
-  // The row of names: which of its edges run past the column (each then thins out).
-  const tabsRef = useRef<HTMLDivElement>(null);
-  const [edges, setEdges] = useState({ left: false, right: false });
 
   // The box waits for EVERY read it draws from — the live answer and the GLOBAL one — before
   // it draws a tab (see the header).
@@ -147,39 +119,14 @@ export default function ResultBoards({
   const index = Math.max(0, tabs.findIndex((tab) => tab.key === chosen));
   const shown = tabs[index] as ResultTab | undefined;
 
-  const onTabsScroll = useCallback(() => {
-    const row = tabsRef.current;
-    if (!row) return;
-    const left = row.scrollLeft > 1;
-    const right = row.scrollLeft + row.clientWidth < row.scrollWidth - 1;
-    setEdges((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
-  }, []);
-  const tabCount = tabs.length;
-  useEffect(() => {
-    const row = tabsRef.current;
-    if (!row) return undefined;
-    onTabsScroll();
-    const ro = new ResizeObserver(onTabsScroll);
-    ro.observe(row);
-    return () => ro.disconnect();
-  }, [onTabsScroll, tabCount]);
-  // The name shown stays WHOLE in view: the row scrolls (on its own axis only) to the nearest
-  // name's start that shows it entire, clear of the dithered edge.
-  useEffect(() => {
-    const row = tabsRef.current;
-    const tab = row?.children[index] as HTMLElement | undefined;
-    if (!row || !tab) return;
-    const left = tab.offsetLeft;
-    const right = left + tab.offsetWidth;
-    const room = row.clientWidth - (right < row.scrollWidth - 1 ? FADE_CELLS * 2 : 0);
-    let target: number | null = null;
-    if (left < row.scrollLeft) target = left;
-    else if (right > row.scrollLeft + room) {
-      const starts = Array.from(row.children as HTMLCollectionOf<HTMLElement>, (el) => el.offsetLeft);
-      target = starts.find((start) => start >= right - room) ?? left;
-    }
-    if (target !== null) row.scrollTo({ left: target, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
-  }, [index, tabCount]);
+  const turn = (i: number) => {
+    const tab = tabs[i];
+    if (!tab) return;
+    setChosen(tab.key);
+    setMoved(true);
+  };
+  const { handlers: swipe, swiped } = useSwipe((step) => turn(index + step));
+  const tabsId = useId();
 
   // The box's fate, latched (see the header): gone, kept, or still open.
   const [fate, setFate] = useState<'gone' | 'kept' | null>(null);
@@ -187,12 +134,6 @@ export default function ResultBoards({
   if (decided !== fate) setFate(decided);
   if (decided === 'gone') return null;
 
-  const turn = (i: number) => {
-    const tab = tabs[i];
-    if (!tab) return;
-    setChosen(tab.key);
-    setMoved(true);
-  };
   const open = (group: LiveGroup | null) => {
     if (group) {
       setLastGroup(group.id);
@@ -202,7 +143,7 @@ export default function ResultBoards({
     }
     navigate(pathForBoard(lang));
   };
-  const rankWidth = Math.max(2, ...tabs.map(rankDigits)) * RANK_DIGIT_PX;
+  const rankWidth = rankColumnPx(Math.max(0, ...tabs.map(rankDigits)));
 
   return (
     <section
@@ -212,57 +153,35 @@ export default function ResultBoards({
     >
       {shown && (
         <>
-          <div
-            ref={tabsRef}
-            className={`result-boards-tabs${edges.left ? ' fade-l' : ''}${edges.right ? ' fade-r' : ''}`}
-            style={FADES}
-            onScroll={onTabsScroll}
-          >
-            {tabs.map((tab, i) => (
-              <button
-                key={tab.key}
-                type="button"
-                className={`result-boards-tab${i === index ? ' on' : ''}`}
-                aria-current={i === index || undefined}
-                onClick={() => (i === index ? open(tab.group) : turn(i))}
-              >
-                <span className="result-boards-chip">{tab.group ? tab.group.name : t(lang, 'boardGlobal')}</span>
-              </button>
-            ))}
-          </div>
+          <BoardTabs
+            tabs={tabs.map((tab) => ({
+              key: tab.key,
+              label: tab.group ? tab.group.name : t(lang, 'boardGlobal'),
+              pinned: tab.group === null,
+            }))}
+            shown={index}
+            onTurn={turn}
+            onOpen={(i) => open(tabs[i]?.group ?? null)}
+            idBase={tabsId}
+          />
           {/* The rows are a picture of the board, and the whole of it is the tap onto it; the
               keyboard's way there is the shown tab's name above. */}
           <div
             className="result-board"
-            onPointerDown={(e) => {
-              swipe.current = { id: e.pointerId, x: e.clientX, y: e.clientY };
-              swiped.current = false;
-            }}
-            onPointerUp={(e) => {
-              const start = swipe.current;
-              swipe.current = null;
-              if (start === null || start.id !== e.pointerId) return;
-              const dx = e.clientX - start.x;
-              if (Math.abs(dx) < SWIPE_PX || Math.abs(dx) < 2 * Math.abs(e.clientY - start.y)) return;
-              swiped.current = true;
-              turn(index + (dx < 0 ? 1 : -1));
-            }}
-            onPointerCancel={() => {
-              swipe.current = null;
-            }}
-            onClick={() => {
-              if (swiped.current) swiped.current = false;
-              else open(shown.group);
-            }}
+            role="tabpanel"
+            id={tabIds(tabsId).panel}
+            aria-labelledby={tabIds(tabsId).tab(shown.key)}
+            {...swipe}
+            onClick={(e) => !swiped(e) && open(shown.group)}
           >
             <ol key={shown.key} className="board-list">
               {shown.board.lines.map((line, i) =>
                 line.kind === 'gap' ? (
                   <li key={`gap-${i}`} className="board-gap" style={{ '--i': i } as CSSProperties} aria-hidden="true" />
                 ) : line.kind === 'ranked' ? (
-                  <BoardRowItem key={line.row.publicId} row={line.row} me={line.me} index={i} mark={MARK} sharp />
+                  <BoardRowItem key={line.row.publicId} row={line.row} value={line.row.score} me={line.me} index={i} />
                 ) : (
-                  <PlayingRowItem key={line.row.publicId} row={line.row} me={line.me} index={i} mark={MARK} sharp />
+                  <PlayingRowItem key={line.row.publicId} row={line.row} me={line.me} index={i} />
                 ),
               )}
             </ol>
