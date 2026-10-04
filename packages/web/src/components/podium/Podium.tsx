@@ -52,9 +52,9 @@ import { prefersReducedMotion } from '../../hooks/useScramble';
 // it moves. A name whose runs between joints will not set in those two lines at the face's 12px
 // steps down a pixel at a time, to 10 (`setName`), so `mellowbiscuit` is set smaller before it
 // is broken; one that will not set even at 10 breaks evenly in its middle (never a letter alone,
-// never a third line: 10px is the floor the house sets a name at). YOUR name wears your line's
-// corner brackets and your place is in the accent; on GLOBAL one of your people carries the
-// lines' accent square.
+// never a third line: 10px is the floor the house sets a name at). YOUR place is in the accent
+// on your step and your name at the action weight — never the corner brackets, which are what a
+// thing that can be tapped wears; on GLOBAL one of your people carries the lines' accent square.
 //
 // A TURN IS ONE SCENE GIVING WAY TO THE NEXT, never a blank: the raster is replaced cell by cell
 // in the Bayer order (`turnLevel`, a line's own dissolve), so what both boards share — the
@@ -213,10 +213,10 @@ function Caption({
 }) {
   const { entry } = at;
   const unitStyle = { top: at.caption.unitTop };
-  // The letters' room: the slot, less what your brackets (or a mate's square) take of it.
+  // The letters' room: the slot, less what a mate's square takes of it.
   const name = setName(
     runsOf(entry.player.name || anonName(entry.player.publicId)),
-    at.caption.width - (entry.me ? 12 : entry.mate ? 8 : 0),
+    at.caption.width - (entry.mate ? 8 : 0),
   );
   return (
     <span

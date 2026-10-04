@@ -2183,8 +2183,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `UI_ADVANCE_EM` — nothing measured), so it is set smaller before it is broken; at 10 a
     run still too long splits evenly in its middle (never a letter alone), and a name that
     would still take three lines is cut at its own middle — never a third line, never under
-    10px. YOUR name wears your line's brackets (8px arms) and the bold; on GLOBAL one of
-    your people carries the lines' accent square.
+    10px. YOUR place is the accent on your step and your name the bold — never the corner
+    brackets (user-decided 2026-10-04: they are the language of what can be tapped, and the
+    podium is a picture); on GLOBAL one of your people carries the lines' accent square.
   - **FIRST PLACE'S COUNT IS THE SCREEN'S ONE SHINY THING** (the #1 line carries no foil of
     its own: the leader is on the podium). The other values are white at the lines' 16px;
     the first's is the largest whole size that fits (its neighbours' slack included) — a

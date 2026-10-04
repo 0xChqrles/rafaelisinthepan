@@ -3280,10 +3280,9 @@ input {
   shape-rendering: crispEdges;
 }
 /* YOUR line is FRAMED: the card's corner brackets, small, round it — and its rank in the
-   accent, its name at the action weight. (Your name on the podium wears the same.) */
+   accent, its name at the action weight. */
 .board-row.me,
-.board-row.picked,
-.podium-name.me .podium-name-text {
+.board-row.picked {
   --bc: rgba(255, 255, 255, 0.38);
   background:
     linear-gradient(var(--bc), var(--bc)) left top / 8px 2px,
@@ -7326,8 +7325,7 @@ figure.l1-fig {
 .podium-name-text {
   position: relative;
   max-width: 100%;
-  /* The slot for the letters (its gutters are the layout's); only your own name gives a little
-     of it to its brackets — the band's 3px over and under are theirs. */
+  /* The slot for the letters (its gutters are the layout's), 3px of air over and under. */
   padding: 3px 0;
   /* Breaks at the joints alone (`<wbr>`, balanced) — inside a run of letters only if that run
      cannot fit the slot at all. */
@@ -7337,9 +7335,9 @@ figure.l1-fig {
 .podium-name.anon {
   color: var(--muted);
 }
-/* Your line's own brackets (`.board-row.me`'s rule): its 8px arms, 2px thick. */
+/* YOUR name, at the action weight — and no brackets: the corner brackets are what a thing that
+   can be tapped wears, and the podium is a picture. Your place is the accent on your step. */
 .podium-name.me .podium-name-text {
-  padding: 3px 6px;
   font-weight: 700;
 }
 .podium-name.mate .podium-name-text {

@@ -149,7 +149,7 @@ const SIZES: Record<PodiumSize, Dims> = {
   compact: { wide: 50, narrow: 44, gap: 1, tiers: [24, 19, 15], mark1: 25, mark: 20, glyph: 1, value: 2, air: 8, block: 27, bottom: 1 },
 };
 // Under the floor, every place's CAPTION: a gap of bare ground, the NAME's band (the DOM's: two
-// 13px lines and the 3px either side your brackets stand in — a name wraps rather than being
+// 13px lines and 3px of air over and under them — a name wraps rather than being
 // cut, and the band holds two lines whatever it holds, so nothing under it moves), a gap, then
 // the block: the VALUE's row, a gap, the UNIT's line (the DOM's, 12px).
 const NAME_GAP = 6;
