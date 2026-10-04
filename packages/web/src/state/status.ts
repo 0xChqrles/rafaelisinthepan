@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 
 // A play status for one (day, lang), read WITHOUT loading the puzzle — the archive
-// calendar's (#55, each day cell's status): absent = not started, solved = gold, in
+// calendar's (#55, each day cell's status): absent = not started, solved = cobalt, in
 // progress = a % on the app's one heat ramp.
 //
 // UNKNOWN is #211's: the private summary this day's status comes from has not ARRIVED, so

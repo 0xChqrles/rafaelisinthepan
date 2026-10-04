@@ -16,8 +16,27 @@ vi.mock('../state/history', () => ({
   usePlayerHistory: () => ({ days: new Map(), daysPhase: 'ready', retry: () => {} }),
   daySummaryStatus: () => ({ kind: 'none' }),
 }));
+// The month's picture is a canvas, which jsdom has none of; the days are the screen's buttons.
+vi.mock('../components/calendar/MonthRaster', () => ({ default: () => null }));
+// The month row: one plain tab per month, carrying its hooks, turning on a click.
+vi.mock('../components/BoardTabs', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../components/BoardTabs')>();
+  return {
+    ...real,
+    default: (p: { tabs: readonly import('../components/BoardTabs').BoardTabItem[]; onTurn: (i: number) => void }) => (
+      <div>
+        {p.tabs.map((tab, i) => (
+          <button key={tab.key} type="button" role="tab" {...tab.attrs} onClick={() => p.onTurn(i)}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+    ),
+  };
+});
 
 import Archive from './Archive';
+import { resetCalendarMemory } from '../components/calendar/memory';
 
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -34,9 +53,10 @@ async function crossTheFlip(): Promise<void> {
 }
 const day = (n: number) =>
   [...host.querySelectorAll<HTMLButtonElement>('button.cal-day')].find((cell) => cell.textContent === String(n))!;
-const nextMonth = () => host.querySelectorAll<HTMLButtonElement>('button.cal-arrow')[1];
+const nextMonth = () => host.querySelector<HTMLButtonElement>('[data-cal="next"]');
 
 beforeEach(() => {
+  resetCalendarMemory();
   vi.useFakeTimers();
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   host = document.createElement('div');
@@ -61,16 +81,16 @@ describe('the archive calendar follows the 22:00-ET flip', () => {
   });
 
   it("on a month's last night the new month can be paged to after the flip", async () => {
-    // 21:59:30 ET on September 30: September is the last month there is.
+    // 21:59:30 ET on September 30: September is the last month there is — no month after it.
     await mountBeforeFlip('2026-10-01');
     expect(day(30).classList.contains('cal-day-today')).toBe(true);
-    expect(nextMonth().disabled).toBe(true);
+    expect(nextMonth()).toBeNull();
 
     await crossTheFlip();
-    // The month on screen does not jump; the way to October opens.
+    // The month on screen does not jump; the way to October opens (its tab now exists).
     expect(day(30).classList.contains('cal-day-today')).toBe(false);
-    expect(nextMonth().disabled).toBe(false);
-    await act(async () => nextMonth().click());
+    expect(nextMonth()).not.toBeNull();
+    await act(async () => nextMonth()!.click());
     expect(day(1).classList.contains('cal-day-today')).toBe(true);
     expect(day(2).disabled).toBe(true);
   });

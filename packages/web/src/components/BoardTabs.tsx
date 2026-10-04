@@ -46,6 +46,11 @@ export interface BoardTabItem {
   label: string;
   pinned?: boolean;
   bare?: boolean;
+  // What a reader hears for the tab, where its label is a short form (the archive's month
+  // names: `SEPT` is read "septembre 2026").
+  ariaLabel?: string;
+  // Data attributes for the tab's button (the archive's test hooks).
+  attrs?: Readonly<Record<`data-${string}`, string>>;
 }
 
 const TRAVEL_MS = 200;
@@ -311,6 +316,8 @@ export default function BoardTabs({
               role="tab"
               id={tabIds(idBase).tab(tab.key)}
               aria-controls={tabIds(idBase).panel}
+              aria-label={tab.ariaLabel}
+              {...tab.attrs}
               className={`board-tab${i === shown ? ' on' : ''}${tab.pinned ? ' pinned' : ''}${tab.bare ? ' bare' : ''}`}
               aria-selected={i === shown}
               tabIndex={i === shown ? 0 : -1}

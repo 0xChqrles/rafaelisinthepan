@@ -1,25 +1,27 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
-import { dateForDayNumber, progressHeatColor } from '@whippin/shared';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties, PointerEvent } from 'react';
+import { dateForDayNumber } from '@whippin/shared';
 import PuzzleTitle from '../components/PuzzleTitle';
 import { HeaderLeft } from '../components/TopBar';
+import BoardTabs, { tabIds } from '../components/BoardTabs';
+import Button from '../components/Button';
+// (For its side effect: the dissolve masks the hold's note comes in through.)
+import '../components/bayerTiles';
+import MonthRaster from '../components/calendar/MonthRaster';
+import { calGeometry, NOTE_NARROW_BELOW_PX, type CalGeometry } from '../components/calendar/geometry';
+import type { KeyState, KeysModel } from '../components/calendar/keysScene';
+import { lastMonth, rememberMonth } from '../components/calendar/memory';
+import { monthTabs } from '../components/calendar/months';
+import useSwipe from '../hooks/useSwipe';
 import useToday from '../hooks/useToday';
+import { prefersReducedMotion } from '../hooks/useScramble';
 import { navigate } from '../routing';
 import { pathForDay, type LangCode } from '../langs';
 import { FIRST_PUZZLE_DATE } from '../config';
 import { daySummaryStatus, usePlayerHistory } from '../state/history';
 import { srStatus, type Status } from '../state/status';
-import Button from '../components/Button';
 import { t } from '../i18n';
-import {
-  yearMonthOf,
-  compareYearMonth,
-  addMonths,
-  clampYearMonth,
-  monthGrid,
-  isoMonth,
-  type YearMonth,
-} from '../calendar';
+import { yearMonthOf, clampYearMonth, monthGrid, isoMonth, type YearMonth } from '../calendar';
 
 // The locale's first weekday (0 = Sunday … 6 = Saturday). Prefers Intl's `weekInfo`
 // (fr weeks start Monday, en-US Sunday); falls back to a per-language default where it
@@ -38,30 +40,66 @@ function firstDayOfWeek(lang: string): number {
   return lang === 'fr' ? 1 : 0;
 }
 
-// The archive calendar (#55): one month of playable past days at a time. Each cell is a
-// flat key that navigates to that day's game (/<lang>/<date>); days before the first
-// puzzle or after the client's active day are disabled. A cell's SOURCE IS THE SERVER since
-// #214 removed the persisted rounds map — ONE private Query per (month, language),
-// revalidated whenever a month becomes the view on screen (#211, `state/history.ts`).
+// A press shows on the key two frames after the finger lands — so a scroll that starts on a
+// day never flashes it — and a finger travelling this far is a scroll or a swipe, not a press.
+const PRESS_DELAY_MS = 64;
+const PRESS_SLOP_PX = 8;
+// A swipe past either end of the months answers like an invalid guess: the chip shakes.
+const EDGE_SHAKE: Keyframe[] = [
+  { translate: '-2px 0', offset: 0, easing: 'steps(1, end)' },
+  { translate: '2px 0', offset: 0.25, easing: 'steps(1, end)' },
+  { translate: '-2px 0', offset: 0.5, easing: 'steps(1, end)' },
+  { translate: '0 0', offset: 0.75 },
+  { translate: '0 0', offset: 1 },
+];
+const EDGE_SHAKE_MS = 160;
+// Before the column is measured: a phone's month.
+const FIRST_GEOMETRY = calGeometry(362, 844, true);
+
+// THE ARCHIVE (#55): the player's record, one month at a time, drawn as a month of IRON KEYS
+// (`components/calendar/keysScene.ts`) on the bare ground of the board's own column — and each
+// day a key that opens that day's game (/<lang>/<date>). Days before the language's first
+// puzzle or after the client's active day are disabled. A day's SOURCE IS THE SERVER since
+// #214 — ONE private Query per (month, language), revalidated whenever a month becomes the view
+// on screen (#211, `state/history.ts`).
 //
-// **Loading is EXPLICIT**: a month whose summary has not arrived paints its cells as
-// UNKNOWN — dimmed and breathing — never as a full calendar of untouched days, which is a
-// claim, and a false one. A month that could not be read says so and offers to ask again;
-// there is no local fallback to fall back to.
+// THE MONTH is a selection among months, so it turns through the boards' ONE control: the tab
+// row (`BoardTabs`), every month from the first to the active one under the white chip —
+// which is the clamp — and a sideways swipe on the grid turns it too; a swipe past either end
+// shakes the chip. The screen reopens on the month last turned to (this tab's memory), so a
+// day played from September comes back to September, where its change plays.
+//
+// **Loading is EXPLICIT**: a month whose summary has not arrived paints its days as UNKNOWN —
+// the key's ghost, never a month of untouched days, which is a claim, and a false one — and a
+// month that could not be read says so in the HOLD under the grid, reserved in every state so
+// nothing above it moves when it speaks, with the one thing that can help: asking again.
+//
+// The picture is ONE canvas (`MonthRaster`); the DAYS are real buttons laid over it, each
+// tiling its key and half the gaps round it, carrying the date, the status and the tap — a
+// screen reader, the keyboard's focus brackets and forced colours all read the buttons.
 export default function Archive({ lang }: { lang: LangCode }) {
   // The window of playable days: [the language's first day, the client's active game day].
   // Both are ISO labels, so cells compare against them by string order (offset-free).
   // The day is a LIVE value: a calendar left open across the 22:00-ET flip opens the new
-  // day (and, on a month's last night, the new month) without a remount.
-  const today = dateForDayNumber(useToday());
+  // day (and, on a month's last night, the new month's tab) without a remount.
+  const activeDay = useToday();
+  const today = dateForDayNumber(activeDay);
   const firstDate = FIRST_PUZZLE_DATE[lang];
-  const firstMonth = useMemo<YearMonth>(() => yearMonthOf(firstDate), [firstDate]);
-  const activeMonth = useMemo<YearMonth>(() => yearMonthOf(today), [today]);
-
-  // The month on screen, clamped into range (start on the current month).
-  const [current, setCurrent] = useState<YearMonth>(() =>
-    clampYearMonth(activeMonth, firstMonth, activeMonth),
+  const firstKey = isoMonth(yearMonthOf(firstDate));
+  const activeKey = isoMonth(yearMonthOf(today));
+  const tabs = useMemo(
+    () => monthTabs(lang, yearMonthOf(firstDate), yearMonthOf(today)),
+    // (The months change only when the first or the active month does.)
+    [lang, firstKey, activeKey],
   );
+
+  // The month on screen: the one last turned to in this tab, kept inside the window, else the
+  // active month.
+  const [current, setCurrent] = useState<YearMonth>(() =>
+    clampYearMonth(lastMonth(lang) ?? yearMonthOf(today), yearMonthOf(firstDate), yearMonthOf(today)),
+  );
+  const month = isoMonth(current);
+  const shown = Math.max(0, tabs.findIndex((tab) => tab.key === month));
 
   // The month's summaries (#211).
   //
@@ -69,23 +107,11 @@ export default function Archive({ lang }: { lang: LangCode }) {
   // `/account`): the cells read the MONTH, and nothing here reads the solved-day collection
   // any more, so asking for it would spend a consistent GetItem per archive open on an
   // answer nobody renders — the language chooser's own rule.
-  const history = usePlayerHistory({ lang, month: isoMonth(current), collection: false });
-  const canPrev = compareYearMonth(current, firstMonth) > 0;
-  const canNext = compareYearMonth(current, activeMonth) < 0;
-  const step = (delta: number) =>
-    setCurrent((c) => clampYearMonth(addMonths(c, delta), firstMonth, activeMonth));
+  const history = usePlayerHistory({ lang, month, collection: false });
 
-  // Locale-owned chrome: the month title, the weekday header letters (in the locale's
-  // week order), and the per-cell long date for aria-labels. All UTC so a cell's label
-  // matches its ISO date exactly.
+  // Locale-owned chrome: the weekday letters (in the locale's week order) and the per-day long
+  // date for aria-labels. All UTC so a day's label matches its ISO date exactly.
   const weekStart = useMemo(() => firstDayOfWeek(lang), [lang]);
-  const monthTitle = useMemo(
-    () =>
-      new Intl.DateTimeFormat(lang, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
-        new Date(Date.UTC(current.year, current.month - 1, 1)),
-      ),
-    [lang, current],
-  );
   const weekdayLabels = useMemo(() => {
     const fmt = new Intl.DateTimeFormat(lang, { weekday: 'narrow', timeZone: 'UTC' });
     // Jan 1 2023 is a Sunday — offset it to each weekday in the locale's order.
@@ -99,97 +125,208 @@ export default function Archive({ lang }: { lang: LangCode }) {
   );
 
   const cells = useMemo(() => monthGrid(current, weekStart), [current, weekStart]);
+  const inRange = (date: string) => date >= firstDate && date <= today;
+  // What each day SAYS: out of the window, nothing — it could not have been played, so a month
+  // still loading never sets it waiting; in it, the month's summary. A day the month does not
+  // name has NO round on the server, which is exactly "not started"; a MONTH that has not
+  // arrived is a different thing, and `daySummaryStatus` is where the two stop being the same
+  // answer.
+  const shownStatus = (date: string): Status | null => (inRange(date) ? daySummaryStatus(history, date) : null);
+  const model = useMemo<KeysModel>(() => {
+    const keys = cells.map((date): KeyState => {
+      if (date === null) return { kind: 'pad' };
+      const day = Number(date.slice(8, 10));
+      const status = shownStatus(date);
+      if (status === null) return { kind: 'out', day };
+      if (status.kind === 'unknown') return { kind: 'unknown', day };
+      if (status.kind === 'solved') return { kind: 'solved', day };
+      // A % is drawn at most 99: 100 is only ever a solve (`statusOf` rounds 99.6 up).
+      if (status.kind === 'progress') return { kind: 'progress', day, pct: Math.min(99, status.pct) };
+      return { kind: 'none', day };
+    });
+    // A month not arrived waits — or, its read failed, rests (`idle` is the one render before
+    // the read is asked for, drawn as the wait it is about to be).
+    const phase = history.days !== null ? 'data' : history.daysPhase === 'failed' ? 'resting' : 'loading';
+    return { keys, today: cells.indexOf(today), phase };
+  }, [cells, history.days, history.daysPhase, today, firstDate]);
+
+  // THE ROOM: the column's width (the board's, measured off `.app`'s content box) and the
+  // window's height choose the keys' size and the layout (`calGeometry`); a resize re-seats it.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [G, setG] = useState<CalGeometry>(FIRST_GEOMETRY);
+  useLayoutEffect(() => {
+    const parent = rootRef.current?.parentElement;
+    if (!parent) return undefined;
+    const measure = () => {
+      const style = getComputedStyle(parent);
+      const room = parent.clientWidth - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0');
+      const phone = window.matchMedia?.('(max-width: 640px)').matches ?? window.innerWidth <= 640;
+      const next = calGeometry(Math.min(560, Math.floor(room)), window.innerHeight, phone);
+      setG((was) => (JSON.stringify(was) === JSON.stringify(next) ? was : next));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    ro?.observe(parent);
+    return () => {
+      window.removeEventListener('resize', measure);
+      ro?.disconnect();
+    };
+  }, []);
+
+  // THE PRESS: a finger held on a day sinks its key (the raster draws it), after two frames.
+  const [pressed, setPressed] = useState(-1);
+  const press = useRef<{ timer: number; x: number; y: number } | null>(null);
+  const release = () => {
+    if (press.current) window.clearTimeout(press.current.timer);
+    press.current = null;
+    setPressed(-1);
+  };
+  // (A tap navigates away mid-press: nothing is left to fire.)
+  useEffect(
+    () => () => {
+      if (press.current) window.clearTimeout(press.current.timer);
+    },
+    [],
+  );
+  const pressHandlers = (index: number) => ({
+    onPointerDown: (e: PointerEvent) => {
+      if (!e.isPrimary || e.button !== 0) return;
+      release();
+      press.current = { timer: window.setTimeout(() => setPressed(index), PRESS_DELAY_MS), x: e.clientX, y: e.clientY };
+    },
+    onPointerMove: (e: PointerEvent) => {
+      const at = press.current;
+      if (at && Math.hypot(e.clientX - at.x, e.clientY - at.y) > PRESS_SLOP_PX) release();
+    },
+    onPointerUp: release,
+    onPointerCancel: release,
+    onPointerLeave: release,
+  });
+
+  // TURNING: the shown month changes at once (the days are the new month's on the same tick);
+  // the raster gives way in its own time.
+  const turnTo = (index: number) => {
+    const tab = tabs[index];
+    if (!tab) return;
+    const ym = yearMonthOf(`${tab.key}-01`);
+    setCurrent(ym);
+    rememberMonth(lang, ym);
+    release();
+  };
+  const shakeChip = () => {
+    if (prefersReducedMotion()) return;
+    const ink = rootRef.current?.querySelector<HTMLElement>('.board-tabs-ink');
+    ink?.animate?.(EDGE_SHAKE, { duration: EDGE_SHAKE_MS });
+  };
+  const { handlers: swipe, swiped } = useSwipe((step) => {
+    const next = shown + step;
+    if (next < 0 || next >= tabs.length) shakeChip();
+    else turnTo(next);
+  });
+
+  const todayIndex = cells.indexOf(today);
+  const failed = history.daysPhase === 'failed';
+  const style = {
+    '--grid-w': `${G.gridW}px`,
+    '--grid-h': `${G.gridH}px`,
+    '--grid-x': `${G.gridX}px`,
+    '--key-w': `${G.keyWPx}px`,
+    '--key-h': `${G.keyHPx}px`,
+    '--col-gap': `${G.colGapPx}px`,
+    '--row-gap': `${G.rowGapPx}px`,
+    '--air': `${G.airPx}px`,
+  } as CSSProperties;
 
   return (
-    <div className="archive">
+    <div ref={rootRef} className="archive" data-layout={G.layout} style={style}>
       <HeaderLeft>
         <PuzzleTitle lang={lang} surface="archive" />
       </HeaderLeft>
 
-      {/* The calendar is ONE thing, and it wears the CARD (2026-09-11): the month's
-          navigation, its weekdays and its grid inside one panel, the failure note with
-          them. */}
-      <div className="cal card">
-        {/* Month navigation, clamped to [first puzzle month, current month]. */}
-        <div className="cal-nav">
-          <button
-            type="button"
-            className="cal-arrow"
-            aria-label={t(lang, 'ariaPrevMonth')}
-            aria-disabled={!canPrev}
-            disabled={!canPrev}
-            onClick={() => canPrev && step(-1)}
-          >
-            {'‹'}
-          </button>
-          <span className="cal-month">{monthTitle}</span>
-          <button
-            type="button"
-            className="cal-arrow"
-            aria-label={t(lang, 'ariaNextMonth')}
-            aria-disabled={!canNext}
-            disabled={!canNext}
-            onClick={() => canNext && step(1)}
-          >
-            {'›'}
-          </button>
-        </div>
+      {/* WHICH MONTH: the boards' tab row, the month before and after the shown one named for
+          the tests. */}
+      <div className="cal-head">
+        <BoardTabs
+          tabs={tabs.map((tab, i) =>
+            i === shown - 1 ? { ...tab, attrs: { 'data-cal': 'prev' } } : i === shown + 1 ? { ...tab, attrs: { 'data-cal': 'next' } } : tab,
+          )}
+          shown={shown}
+          idBase="cal-"
+          onTurn={turnTo}
+          onOpen={() => {}}
+        />
+      </div>
 
-        {/* Weekday header — decorative (each day cell carries the full date). */}
-        <div className="cal-grid cal-weekdays" aria-hidden="true">
+      <div
+        className="cal-body"
+        role="tabpanel"
+        id={tabIds('cal-').panel}
+        aria-labelledby={tabIds('cal-').tab(month)}
+        aria-busy={history.daysPhase === 'loading' && history.days === null}
+      >
+        {/* Weekday letters — decorative (each day carries the full date); today's in the
+            plain ink. */}
+        <div className="cal-weekdays" aria-hidden="true">
           {weekdayLabels.map((label, i) => (
-            <span key={i} className="cal-weekday">
+            <span key={i} className={todayIndex >= 0 && todayIndex % 7 === i ? 'on' : undefined}>
               {label}
             </span>
           ))}
         </div>
 
-        <div className="cal-grid">
-          {cells.map((date, i, all) =>
-            date === null ? (
-              <span key={`pad-${i}`} className="cal-pad" aria-hidden="true" />
-            ) : (
-              <DayCell
-                key={date}
-                wave={Math.floor(i / 7) + (i % 7)}
-                // THE STREAK IS A CHAIN: a solved day whose next day — beside it, in the same
-                // week — is solved too is linked to it, so a run reads as one thing at a glance.
-                chained={
-                  i % 7 !== 6 &&
-                  all[i + 1] != null &&
-                  isSolved(history, date, firstDate, today) &&
-                  isSolved(history, all[i + 1] as string, firstDate, today)
-                }
-                date={date}
-                lang={lang}
-                inRange={date >= firstDate && date <= today}
-                isToday={date === today}
-                // A day the month does not name has NO round on the server, which is
-                // exactly "not started". A MONTH that has not arrived is a different thing,
-                // and `daySummaryStatus` is where the two stop being the same answer.
-                status={daySummaryStatus(history, date)}
-                longDate={longDate}
-              />
-            ),
-          )}
+        <div className="cal-stage" {...swipe}>
+          <MonthRaster
+            G={G}
+            lang={lang}
+            month={month}
+            activeDay={activeDay}
+            cells={cells}
+            model={model}
+            pressed={pressed}
+          />
+          <div className="cal-grid">
+            {cells.map((date, i) => {
+              if (date === null) return <span key={`pad-${i}`} className="cal-pad" aria-hidden="true" />;
+              const playable = inRange(date);
+              return (
+                <button
+                  key={date}
+                  type="button"
+                  className={`cal-day${date === today ? ' cal-day-today' : ''}`}
+                  data-cal-day={date}
+                  aria-label={`${longDate.format(new Date(`${date}T00:00:00Z`))}${srStatus(lang, shownStatus(date) ?? { kind: 'none' })}`}
+                  disabled={!playable}
+                  {...(playable ? pressHandlers(i) : {})}
+                  onClick={(e) => {
+                    // A swipe's trailing click opens nothing.
+                    if (swiped(e) || !playable) return;
+                    navigate(pathForDay(lang, date));
+                  }}
+                >
+                  <span className="cal-day-box" data-focus-box>
+                    <span className="cal-day-num">{Number(date.slice(8, 10))}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
+      </div>
 
-        {/* A read that could not be had says so, under the grid, with the one thing that
-            can help — asking again. LOUD like the round's own load failure and for the same
-            reason: there is no local history left to quietly fall back to.
-            **It speaks whether or not a month is already drawn** (corrected on review): a
-            REVALIDATION deliberately keeps the cached month on screen, so gating the block
-            on there being nothing to show meant that after one good visit every later
-            failure was silent — an offline player reading a stale calendar as the truth.
-            What CHANGES with cached data is the claim, not the presence: nothing loaded is a
-            failure to load, where an older answer still on screen is a failure to REFRESH,
-            and saying the first over a filled calendar would be plainly false. */}
-        {history.daysPhase === 'failed' && (
-          <div className="cal-failed">
-            {/* Nothing to show is a FAILURE and wears the danger ink; an older month still
-                on screen is a NOTE about it, so it takes the plain status ink rather than
-                painting a working calendar red. */}
-            <p className={history.days === null ? 'status error' : 'status'}>
+      {/* THE HOLD: a read that could not be had says so, under the grid, with the one thing
+          that can help — asking again. LOUD like the round's own load failure and for the same
+          reason: there is no local history left to quietly fall back to. **It speaks whether
+          or not a month is already drawn** (corrected on review): a REVALIDATION deliberately
+          keeps the cached month on screen, so gating it on there being nothing to show meant
+          that after one good visit every later failure was silent. What CHANGES with cached
+          data is the claim: nothing loaded is a failure to load, in the danger ink; an older
+          month still on screen is a note about it, in the plain status ink. Always reserved,
+          so nothing above it moves when it speaks. */}
+      <div className={`cal-hold${G.gridW < NOTE_NARROW_BELOW_PX ? ' narrow' : ''}`}>
+        {failed && (
+          <div className="cal-hold-in">
+            <p className={`cal-note${history.days === null ? ' error' : ''}`}>
               {t(lang, history.days === null ? 'failedHistory' : 'staleHistory')}
             </p>
             <Button variant="secondary" onClick={history.retry}>
@@ -199,113 +336,5 @@ export default function Archive({ lang }: { lang: LangCode }) {
         )}
       </div>
     </div>
-  );
-}
-
-// Whether a day of the grid is SOLVED as the calendar shows it (in range, and the month's
-// summary says so) — the reading the streak chain links on.
-function isSolved(
-  history: Parameters<typeof daySummaryStatus>[0],
-  date: string,
-  firstDate: string,
-  today: string,
-): boolean {
-  return date >= firstDate && date <= today && daySummaryStatus(history, date).kind === 'solved';
-}
-
-// The calendar's arrival: the arrive gesture (index.css), one diagonal of days a beat. Only
-// where a day comes FROM is named (offset 0): each lands on its own opacity — a dimmed day
-// on its dim, a waiting one on its breath — rather than flashing full before settling.
-const ARRIVE_FRAMES: Keyframe[] = [{ offset: 0, opacity: 0, translate: '0 10px' }];
-const CELL_WAVE_MS = 22;
-
-// One day: a flat key that navigates to that day's game when in range, disabled (dimmed)
-// otherwise. A day with any reconstruction (>0%) is FILLED with its heat-ramp color
-// (solved = 100%), and its number is drawn in the app background color so it reads on the
-// fill; disabled and not-started/0% days stay the neutral surface. A SOLVED day also
-// carries the shading ripple — an `ultracode.png` 12-frame sprite animated in CSS
-// (.cal-ripple) — so a validated day differs from an in-progress one by MOTION, not only
-// color. The aria-label speaks the full date + status.
-function DayCell({
-  wave,
-  chained,
-  date,
-  lang,
-  inRange,
-  isToday,
-  status,
-  longDate,
-}: {
-  // The cell's place on the grid's DIAGONAL (row + column), the beat it arrives on.
-  wave: number;
-  // Solved, and so is the day beside it: the link into the gap between them.
-  chained: boolean;
-  date: string;
-  lang: LangCode;
-  inRange: boolean;
-  isToday: boolean;
-  status: Status;
-  longDate: Intl.DateTimeFormat;
-}) {
-  const day = Number(date.slice(8, 10));
-  const dateObj = new Date(`${date}T00:00:00Z`);
-  // OUT OF RANGE has no status at all and never waits for one: a day before the first
-  // puzzle or after today could not have been played, so a month still loading must not
-  // set the disabled half of the grid breathing.
-  const shown: Status = inRange ? status : { kind: 'none' };
-  // Reconstruction %: a solved day counts as 100, not-started as 0. Only an in-range day
-  // with progress is filled; disabled and 0% days keep the neutral surface + number color.
-  const solved = shown.kind === 'solved';
-  const pct = solved ? 100 : shown.kind === 'progress' ? shown.pct : 0;
-  const filled = pct > 0;
-  // The month's summary has not arrived (#211): the cell keeps its number and its tap —
-  // what is missing is what HAPPENED on the day, never whether it can be played — and
-  // withholds the one claim it cannot make. It breathes while the read is still out.
-  const unknown = shown.kind === 'unknown';
-  const className =
-    'cal-day' +
-    (inRange ? '' : ' cal-day-disabled') +
-    (isToday ? ' cal-day-today' : '') +
-    (unknown ? ' cal-day-unknown' : '') +
-    (unknown && shown.loading ? ' cal-day-waiting' : '') +
-    (filled ? ' cal-day-filled' : '') +
-    (solved ? ' cal-day-solved' : '') +
-    (chained ? ' cal-day-chained' : '');
-  // THE MONTH ARRIVES AS A WAVE: each day rises in on the grid's diagonal, top-left to
-  // bottom-right, when it mounts — the screen's first frame, and every page to another
-  // month (the days are keyed by date, so a new month is new cells). Played through the
-  // Web Animations API rather than a CSS class because a cell's `animation` is already
-  // spoken for — a day whose month is still loading BREATHES — and a class-driven arrival
-  // would replay the moment the month landed and the breathing stopped.
-  const cell = useRef<HTMLButtonElement>(null);
-  useLayoutEffect(() => {
-    const node = cell.current;
-    if (!node || typeof node.animate !== 'function') return;
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-    node.animate(ARRIVE_FRAMES, {
-      duration: 260,
-      delay: wave * CELL_WAVE_MS,
-      easing: 'cubic-bezier(0.2, 1.3, 0.4, 1)',
-      fill: 'backwards',
-    });
-    // Mount only: the wave is the month's arrival, never a re-render's.
-  }, []);
-  return (
-    <button
-      ref={cell}
-      type="button"
-      className={className}
-      aria-label={`${longDate.format(dateObj)}${srStatus(lang, shown)}`}
-      aria-disabled={!inRange}
-      disabled={!inRange}
-      onClick={() => inRange && navigate(pathForDay(lang, date))}
-      // Only the fill color is dynamic (per-day %); the bg-colored number is static CSS
-      // (.cal-day-filled). Neutral days pass no style, so the surface default stands.
-      style={filled ? ({ background: progressHeatColor(pct) } as CSSProperties) : undefined}
-    >
-      {/* A solved day ripples (motion differentiates it from an in-progress day). */}
-      {solved && <span className="cal-ripple" aria-hidden="true" />}
-      <span className="cal-day-num">{day}</span>
-    </button>
   );
 }

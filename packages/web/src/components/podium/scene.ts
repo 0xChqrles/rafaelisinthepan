@@ -415,13 +415,13 @@ const DROP_AFTER_RISE_MS = 20;
 const DROP_GAP_MS = 100;
 const DROP_MS = 220;
 const DROP_CELLS = 24;
-const SHAKE: readonly (readonly [number, number])[] = [
+export const SHAKE: readonly (readonly [number, number])[] = [
   [0, 1],
   [1, 0],
   [-1, 0],
   [1, 0],
 ];
-const SHAKE_FRAME_MS = 40;
+export const SHAKE_FRAME_MS = 40;
 const FIRST_RUN_MS = 650;
 const RECEDE_MS = 400;
 const RECEDE_STEPS = 8;
