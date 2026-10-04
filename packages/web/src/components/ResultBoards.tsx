@@ -47,6 +47,7 @@ import { useDeviceIdentity } from '../identity';
 import { t } from '../i18n';
 import { pathForBoard } from '../langs';
 import { navigate } from '../routing';
+import { startOpening } from '../state/boardOpening';
 import { useGameStore } from '../state/gameStore';
 
 export interface ResultBoardsData {
@@ -141,6 +142,9 @@ export default function ResultBoards({
     } else {
       setBoardTab('global');
     }
+    // The board's read starts here, before the screen it opens is mounted (a swipe's press
+    // opens nothing, so it waits for the tap).
+    startOpening(lang);
     navigate(pathForBoard(lang));
   };
   const rankWidth = rankColumnPx(Math.max(0, ...tabs.map(rankDigits)));

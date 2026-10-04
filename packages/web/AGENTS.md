@@ -69,6 +69,10 @@
                               merged — the ONE module asking it, throttled (`LIVE_REFRESH_MS`;
                               the read asked as the round ends goes at once), for the race line
                               and the solved screen's group boards
+      state/boardOpening.ts   the board screen's READ (`readBoard`), and its OPENING: the read
+                              the tap that opens the screen starts (`startOpening`: the crown's
+                              and the race line's press, a result board's tap), which the
+                              screen takes on mount (`takeOpening`)
       game/race.ts            the race line's ORDER (pure): finished, then playing by the shared
                               `orderPlaying` with my own entry off the screen; the window, left
                               to right from below to above (behind/me/ahead); `shownPercent`
@@ -170,7 +174,8 @@
                               then GLOBAL), a group's TODAY / WEEK / MONTH, the PODIUM over the
                               lines from the 4th, the door into a group's screen, NEW GROUP —
                               the screen's state, reads and acts (the hold, the turn's views,
-                              the boards' caches, what the podium has built today)
+                              the boards' caches, what the podium has built today; the board's
+                              read itself is `state/boardOpening.ts`)
       components/BoardUnder.tsx  what stands UNDER the podium: the header slot (the door, the
                               unit), the lines (`BoardList`, slot by slot), the skeleton, the
                               no-podium empty block; the pace (`ARRIVE` / `TURN`, `PACE_CAP`),
@@ -2143,8 +2148,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   2026-10-04 — "A with B's podium": the result's boards given the whole column, a PODIUM as
   its subject; approved the same day, "Let's go for the A+B version"):** `/<lang>/board`
   (`pathForBoard`; a board is per (day, lang), always the ACTIVE day),
-  `screens/Leaderboard.tsx` (the state, the reads and the acts; what stands under the
-  podium is `components/BoardUnder.tsx`, the board's readings `game/boardView.ts`, its
+  `screens/Leaderboard.tsx` (the state, the reads and the acts — the board's read itself
+  `state/boardOpening.ts`; what stands under the podium is `components/BoardUnder.tsx`, the board's readings `game/boardView.ts`, its
   list's order `game/boardSlots.ts`), entered from the header's CROWN KEY (lit while the
   board is up; the way out is any other key, HOME above all). Top to bottom: the TAB ROW,
   the HEAD LINE, then ONE COLUMN that scrolls as one — the podium, a group's header slot,
@@ -2295,7 +2300,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     seconds); every board after it TURNS in (`TURN`: lines 30ms apart, reels 420ms), its
     lines starting at once — on a first turn to a board, the drops play over them. Past the
     FOLD (the column's last slot on screen, at most `PACE_CAP` 14) the lines come in
-    together with the last one shown, your held line with them.
+    together with the last one shown, your held line with them. **The head's beats are
+    counted from the commit that first SHOWS the tab row's chip** (a bare tab shows none),
+    so a board read that lands after they have played does not wait them out again: a
+    first build out of a loading picture wholly its own (one stood alone, or given way into
+    `DISSOLVE_MS` before) starts at once, and so do the lines with no podium; a settled
+    podium's lines still wait `ARRIVE`'s 260ms from the landing, behind its dissolve out of
+    the loading picture, and a build out of a picture still giving way waits them too.
   - **A TURN IS NEVER A BLANK.** The podium gives way cell by cell in the Bayer order
     (`TURN_MS` = `DISSOLVE_MS`, 240): a player on the same place on both boards STAYS, one
     leaving dissolves out from where their mark stands. What stands under it (`Under`: the
@@ -2306,7 +2317,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (`cameIn`; a slot, a podium mark, caption or unit still dissolving in simply goes —
     drawn whole to leave, it would flash at full ink first), and a view already leaving goes
     on leaving on its own beat. A size change (a rotation) is a new layout, not a turn:
-    nothing gives way. The board on screen is HELD while the next one's first read is out —
+    nothing gives way. An ARRIVAL building out of the loading picture lets only what that
+    picture DREW give way (`outOfLoading`: a loading picture wholly its own holds the floor,
+    the board's own, and the rails under it), so steps rising inside those 240ms rise whole,
+    as on a board that landed at once. The board on screen is HELD while the next one's
+    first read is out —
     for at most `HOLD_MS` (400ms), then it gives way to the loading picture (a podium
     crowning another tab's winner says something false); the hold's clock starts again on
     every turn, and only a board ON SCREEN is held (a turn made from the loading picture or
@@ -2341,9 +2356,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     IDENTITY-SCOPED** (a new day or a new epoch drops, during render, every board, the
     board held on screen and what the podium has built); one fetch per board ACTIVATION
     with the outcome per board key (`<group>:<period>` / `global`), stale-but-good over a
-    failed refresh. A group's read is `POST /board {token, group[, period]}`; a 403
-    `not_member` (left elsewhere, removed) re-reads the groups list, since the list is what
-    is stale.
+    failed refresh. **The OPENING's fetch is the one its TAP started**
+    (`state/boardOpening.ts` `startOpening`: on the crown's and the race line's primary
+    press — and their click, for a keyboard — and on a result board's tap, for the board
+    the screen will open on: GLOBAL at once, a group only once the groups list names it,
+    never tokenless): the screen TAKES it on
+    mount instead of asking again, for the same board, identity, language and day within
+    `OPENING_MS` (1.5s) of the press, and never after; a read that failed is dropped at once,
+    and an activation that ends before its answer (React's development re-run, a screen left
+    at once) hands it back. Never a cache. A group's read is `POST /board {token,
+    group[, period]}`; a 403 `not_member` (left elsewhere, removed) re-reads the groups
+    list, since the list is what is stale.
   - **OPENING THIS SCREEN IS NOT A TRIGGER (user-decided 2026-08-24)**: the deliberate acts
     are NEW GROUP (`GroupCreate`, below) and INVITE (shares `boardInviteText` + `/g/<id>` via
     `useShare`, `tracked: false` — the pinned `share` analytics event counts a SOLVED DAY's
