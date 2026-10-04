@@ -42,13 +42,15 @@ import type { DrawnCode } from './memory';
 //     played day is drawn on.
 //   A PLAYED DAY is charged from its foot to its % — the meter's ramp stood upright: solid
 //     ink, then three rows of dither behind the front — never under the foot's solid row (1%
-//     still shows one) and never into the iron's top four rows (a key under 100 always shows
-//     its slate cap, its light and a row of its face). Its number reads the front as a HARD
-//     EDGE: cut out of the ink below it, white on the iron above it, each with a cell of solid
-//     ring — never dithered, and never cut into a sliver: the edge crosses a number between
-//     its third and fifth rows or not at all, so no digit ever breaks. The front AGREES with
-//     that edge (it moves with it, about two rows at most): no ink ring over a row barely
-//     inked, no dusk ring in a row mostly ink — the eye reads the number's edge as the %.
+//     still shows one) and never into the iron's top four rows: a key under 100 always shows
+//     its slate cap, its two rows of light and a row of its face (the ramp itself leaves a
+//     second face row too; only a whole number's ring, on the smallest keys, stands in it).
+//     Its number reads the front as a HARD EDGE: cut out of the ink below it, white on the
+//     iron above it, each with a cell of solid ring — never dithered, and never cut into a
+//     sliver: the edge crosses a number between its third and fifth rows or not at all, so no
+//     digit ever breaks. The edge is the %'s, the same on every day at that %, and the front
+//     AGREES with it where it can, two rows away at most: no ink ring over a row barely
+//     inked, no dusk ring in a row mostly ink. Where it cannot, the height wins.
 //   A FINISHED DAY is charged THROUGH its cap and cooled to metal: lit cobalt from its cap
 //     down, falling into the deep under-face under its number — the streak link's lit face
 //     over its shade, so a month of them reads as rows of lit tops over dark feet, never a
@@ -474,21 +476,28 @@ export function keysScene(
     else if (inked > COUNT_ROWS - 3) inked = inked >= COUNT_ROWS - 1 ? COUNT_ROWS : COUNT_ROWS - 3;
     return y0 + COUNT_ROWS - inked;
   };
-  // …AND THE FRONT AGREES WITH IT: where the edge snaps, the ramp's front (`raw`) moves with
-  // it — up or down, to the nearest place inside [3, n − 4] (a charge's own front where it is
-  // still under 3) at which the edge it splits the number at and its ramp agree: no ring cell
-  // disagrees with its row's ramp — an ink ring only on a row a third inked or more, a dusk
-  // ring only on a row under two thirds. So no ink HAT stands over a number, and no dusk NOTCH
-  // in the ink. Read on the row as it shows: its face cells (outside the number and its ring),
-  // a row with under four of them saying nothing.
+  // …AND THE FRONT AGREES WITH IT where it can. The edge is the %'s (`splitOf(raw)`), never the
+  // digit's: the ramp's front (`raw`) moves to the nearest place at most EDGE_REACH rows away,
+  // inside [3, n − 4] (a charge's own front where it is still under 3), that splits the number
+  // at that same edge and where no ring cell disagrees with its row's ramp — an ink ring only on
+  // a row a third inked or more, a dusk ring only on a row under two thirds. So no ink HAT
+  // stands over a number, and no dusk NOTCH in the ink. Read on the row as it shows: its face
+  // cells (outside the number and its ring), a row with under four of them saying nothing.
+  // Where nothing that close agrees, the front stays where its % puts it, hat or notch and all:
+  // the height is the reading. (On the smallest keys a whole number's top ring stands over the
+  // highest front a day under 100 reaches, so a number cut out whole there wears its hat.) The
+  // places are eighths of a row on one grid, the same for every front, so a higher % never
+  // stands lower.
   const EDGE_STEP = 1 / 8;
+  const EDGE_REACH = 2;
   const edges = new Map<string, { front: number; split: number }>();
   const edgeOf = (raw: number, day: number) => {
     const known = edges.get(`${day}|${raw}`);
     if (known) return known;
     const dmap = digitMap(day);
+    const split = splitOf(raw);
     const agrees = (front: number) => {
-      const split = splitOf(front);
+      if (splitOf(front) !== split) return false;
       for (let ly = y0 - 1; ly <= y0 + COUNT_ROWS; ly += 1) {
         const density = rampDensity(front, H - 1 - ly, 3);
         let ring = false;
@@ -508,22 +517,24 @@ export function keysScene(
       }
       return true;
     };
-    const lo = Math.min(3, raw);
-    const hi = n - 4;
+    const lo = Math.max(Math.min(3, raw), raw - EDGE_REACH);
+    const hi = Math.min(n - 4, raw + EDGE_REACH);
     let front = raw;
-    for (let k = 0; raw > 0 && k * EDGE_STEP <= hi - lo; k += 1) {
-      const up = Math.min(hi, raw + k * EDGE_STEP);
-      const down = Math.max(lo, raw - k * EDGE_STEP);
-      if (agrees(up)) {
-        front = up;
-        break;
-      }
-      if (agrees(down)) {
-        front = down;
+    // The grid's places, nearest `raw` first, the higher of two as near.
+    let up = Math.ceil(raw / EDGE_STEP);
+    let down = up - 1;
+    while (raw > 0) {
+      const takeUp = up * EDGE_STEP - raw <= raw - down * EDGE_STEP;
+      const at = (takeUp ? up : down) * EDGE_STEP;
+      if (Math.abs(at - raw) > EDGE_REACH) break;
+      if (takeUp) up += 1;
+      else down -= 1;
+      if (at >= lo && at <= hi && agrees(at)) {
+        front = at;
         break;
       }
     }
-    const edge = { front, split: splitOf(front) };
+    const edge = { front, split };
     edges.set(`${day}|${raw}`, edge);
     return edge;
   };

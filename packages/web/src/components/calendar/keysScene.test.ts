@@ -114,38 +114,101 @@ describe('a day under 100 is never finished', () => {
   });
 });
 
-describe("a number's edge is the ink's", () => {
-  it('stands an ink ring only on a row a third inked or more, a dusk ring only on one at most two thirds', () => {
+describe("a played day's height is its %", () => {
+  // Every day of the month at one %, settled, at a size.
+  const allAt = (g: CalGeometry, pct: number) => frameAt(g, month((d) => ({ kind: 'progress', day: d, pct })));
+  const DAYS = Array.from({ length: 30 }, (_, i) => i + 1);
+
+  it('cuts every day at a % at the same edge, never lower at a higher %, its ink within two rows of the %', () => {
     expect(new Set(SIZES.map((g) => g.name)).size).toBe(7);
+    const wrong: string[] = [];
     for (const g of SIZES) {
+      const n = g.keyH - 1;
       const corners = (lx: number, ly: number) => (lx === 0 || lx === g.keyW - 1) && (ly === 0 || ly === g.keyH - 1);
+      const maps = DAYS.map((day) => numberCells(g.keyW, g.keyH, day));
+      let lastCut = 0;
+      let lastTaken: Uint8Array[] | null = null;
       for (let pct = 1; pct <= 99; pct += 1) {
-        const read = frameAt(g, month((d) => (d === 7 || d === 23 ? { kind: 'progress', day: d, pct } : none(d))));
-        for (const day of [7, 23]) {
-          const m = numberCells(g.keyW, g.keyH, day);
+        const read = allAt(g, pct);
+        const ink = heat(pct);
+        // The %'s front: its share of the rows under the cap, never under 3, never past n − 4.
+        const front = Math.min(n - 4, Math.max(3, (pct / 100) * n));
+        const cuts = new Set<number>();
+        const taken = DAYS.map((day, d) => {
+          const m = maps[d];
+          const at = `${g.name} ${pct}% day ${day}`;
+          let cut = 0;
+          // The cells the charge has taken: its ink, or a digit cut out of it.
+          const cells = new Uint8Array(g.keyW * g.keyH);
+          for (let ly = 0; ly < g.keyH; ly += 1) {
+            const u = g.keyH - 1 - ly;
+            let rowCut = false;
+            for (let lx = 0; lx < g.keyW; lx += 1) {
+              const v = read(day, lx, ly);
+              const c = ly * g.keyW + lx;
+              if (m[c] === 1 && v === GROUND) rowCut = true;
+              cells[c] = v === ink || (m[c] === 1 && v === GROUND) ? 1 : 0;
+              // More done never draws less: what the % below took, this one still takes.
+              if (lastTaken && lastTaken[d][c] && !cells[c]) wrong.push(`${at}: lost cell ${lx},${ly}`);
+              if (m[c] !== 0 || corners(lx, ly)) continue;
+              // The face: solid two rows under the %'s solid ink, bare two rows over its front.
+              if (u < front - 5 && v !== ink) wrong.push(`${at}: row ${ly} not solid`);
+              if (u >= front + 2 && v === ink) wrong.push(`${at}: row ${ly} inked`);
+            }
+            if (rowCut) cut += 1;
+          }
+          cuts.add(cut);
+          return cells;
+        });
+        // The edge is the %'s, never the digit's.
+        const [cut] = cuts;
+        if (cuts.size !== 1) wrong.push(`${g.name} ${pct}%: cut at ${[...cuts].join(', ')} rows`);
+        else if (cut < lastCut) wrong.push(`${g.name} ${pct}%: cut lower than at ${pct - 1}%`);
+        lastCut = cut;
+        lastTaken = taken;
+      }
+    }
+    expect(wrong.slice(0, 10)).toEqual([]);
+  });
+
+  it("stands no hat and no notch where the key leaves its number room: the ring is its row's ramp", () => {
+    // From WIDE to REGULAR, the front finds a place within its two rows where every ring cell
+    // agrees: ink only on a row a third inked or more, dusk only on one at most two thirds.
+    // (On the smaller keys the number nearly fills the face, and the height wins.)
+    const wrong: string[] = [];
+    for (const g of SIZES.filter((s) => s.name === 'wide' || s.name === 'mid' || s.name === 'regular')) {
+      const corners = (lx: number, ly: number) => (lx === 0 || lx === g.keyW - 1) && (ly === 0 || ly === g.keyH - 1);
+      const maps = DAYS.map((day) => numberCells(g.keyW, g.keyH, day));
+      for (let pct = 1; pct <= 99; pct += 1) {
+        const read = allAt(g, pct);
+        const ink = heat(pct);
+        DAYS.forEach((day, d) => {
+          const m = maps[d];
           for (let ly = 0; ly < g.keyH; ly += 1) {
             // The row's face: its cells in the key's shape, outside the number and its ring.
             let face = 0;
             let inked = 0;
-            const ring: number[] = [];
+            let inkRing = false;
+            let duskRing = false;
             for (let lx = 0; lx < g.keyW; lx += 1) {
               const v = read(day, lx, ly);
-              if (m[ly * g.keyW + lx] === 2) ring.push(v);
-              else if (m[ly * g.keyW + lx] === 0 && !corners(lx, ly)) {
+              const dc = m[ly * g.keyW + lx];
+              if (dc === 2) {
+                inkRing ||= v === ink;
+                duskRing ||= v === DUSK;
+              } else if (dc === 0 && !corners(lx, ly)) {
                 face += 1;
-                if (v === heat(pct)) inked += 1;
+                if (v === ink) inked += 1;
               }
             }
             if (face < 4) continue;
-            const at = `${g.name} ${pct}% day ${day} row ${ly}`;
-            for (const v of ring) {
-              if (v === heat(pct)) expect(inked / face, at).toBeGreaterThanOrEqual(1 / 3);
-              if (v === DUSK) expect(inked / face, at).toBeLessThanOrEqual(2 / 3);
-            }
+            if (inkRing && inked / face < 1 / 3) wrong.push(`${g.name} ${pct}% day ${day} row ${ly}: a hat`);
+            if (duskRing && inked / face > 2 / 3) wrong.push(`${g.name} ${pct}% day ${day} row ${ly}: a notch`);
           }
-        }
+        });
       }
     }
+    expect(wrong.slice(0, 10)).toEqual([]);
   });
 });
 

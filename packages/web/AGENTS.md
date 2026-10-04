@@ -106,8 +106,8 @@
                               screen's, and the archive's month row): the names in a row, one
                               pinned last, the white chip travelling to the name shown, a cut
                               name covered, a name past its room ending in an ellipsis; a tab's
-                              optional `ariaLabel` and data `attrs`; `tabIds` ties each tab to
-                              the panel it controls
+                              optional `ariaLabel`; `tabIds` ties each tab to the panel it
+                              controls
       hooks/useSwipe.ts       a sideways swipe on a board's lines turns its tab (both surfaces),
                               on the archive's grid its month: a finger's or a pen's, never the
                               mouse; its trailing click opens nothing (a tap right after does)
@@ -199,12 +199,13 @@
                               `calGeometry`, the press, the swipe
       components/calendar/    the archive's MONTH as IRON KEYS: MonthRaster.tsx (the ONE canvas on
                               the page's clock — the stage latched, its give-ways, the bursts
-                              under it, the press redraw), and pure and tested: keysScene.ts (the
+                              under it, the press redraw); pure and tested: keysScene.ts (the
                               keys' beats and their raster, deterministic in t), plan.ts (which
-                              scene plays next and how it gives way), memory.ts (what this tab
-                              remembers: BUILT, STAMPED, DRAWN, the LAST month), geometry.ts
+                              scene plays next and how it gives way), geometry.ts
                               (`calGeometry`: the keys' size and the layout off the room;
-                              `keyAt`), months.ts (`monthTabs`: the months as tabs)
+                              `keyAt`), months.ts (`monthTabs`: the months as tabs); and
+                              memory.ts (what this tab remembers, module state: BUILT, STAMPED,
+                              DRAWN, the LAST month)
       components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows);
                               the tracer + the assigned identity are @whippin/shared's since 2026-08-20
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
@@ -1841,17 +1842,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **A month that has not arrived is `days: null`, never an empty Map** — an empty Map is the
     claim "none of these days was started". `daySummaryStatus` is the ONE place the difference
     is turned into something a surface can draw: a missing DAY is `{kind:'none'}`, a missing
-    MONTH is `{kind:'unknown', loading}` — the third `Status` kind, whose `loading` half only
-    decides whether the placeholder BREATHES. **It is read off the phase being `loading`, never
-    off "not failed"** (corrected on review): breathing PROMISES an answer is coming, so a read
-    that failed and a surface that never asked both rest still. An idle read (`enabled: false`)
-    rests too: a placeholder breathing forever with no request behind it is the same false
-    claim the explicit-loading rule exists to prevent. The calendar draws unknown as its key's
-    GHOST — a slate checker round the number, never the bare key of a day not started; sparse
-    under the read wave while the read is out, a still 50% checker once it rests — that keeps
-    its number and its tap (the day is playable whether or not we know what happened on it); the chooser
-    draws the app's skeleton strip; `srStatus` says `srStatusUnknown`, because silence there
-    reads as "not started".
+    MONTH is `{kind:'unknown'}` — the third `Status` kind. The calendar draws unknown as its
+    key's GHOST — a slate checker round the number, never the bare key of a day not started —
+    that keeps its number and its tap (the day is playable whether or not we know what
+    happened on it). Whether the month is ON ITS WAY is the read's own phase, which the
+    calendar reads itself: a read out, and the one frame before the read is asked for, are the
+    WAIT (sparse ghosts under the read wave); a FAILED read RESTS (a still 50% checker). Drawn
+    resting, the frame before the ask would stand its ghosts before the wait began, and they
+    would flash in without the skeleton's 320ms. The chooser draws the app's skeleton strip;
+    `srStatus` says `srStatusUnknown`, because silence there reads as "not started".
   - **A FAILED read speaks whether or not a month is already drawn** (corrected on review).
     A revalidation deliberately keeps its cached month on screen, so gating the block on
     there being nothing to show made every failure after the first good visit SILENT — an
@@ -2762,8 +2761,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     OCT`), the year said only where the row spans two years (on the first tab, each January
     and the pinned one), each read whole (`ariaLabel`: "septembre 2026"); the ACTIVE month
     PINNED at the row's end, the way back to now one tap away. A tap, the arrow keys or a
-    sideways SWIPE on the grid (`useSwipe`) turn it; a swipe past either end SHAKES the chip
-    (±2px held frames, 40ms each — the invalid guess's own answer); the shown chip goes
+    sideways SWIPE on the grid (`useSwipe`) turn it; a swipe past either end SHAKES the chip,
+    as an invalid guess shakes (its own ±2px held frames, 40ms each); the shown chip goes
     nowhere. The chip is wiped across its name as the screen opens, as on the board. At
     22:00 on a month's last night the new month's tab appears; the month on screen stays.
   - **THE REMEMBERED MONTH** (`calendar/memory.ts`, this tab only): the screen opens on the
@@ -2788,20 +2787,25 @@ it to the local store — see `packages/backend/AGENTS.md`).
     solid foot row) and never past H − 5 (an unfinished key always shows its cap, its light
     and its top face rows in iron). **ITS NUMBER READS THE FRONT AS A HARD EDGE**: cut out of
     the ink below, white on the iron above, each with a 1-cell solid ring — never dithered,
-    never cut into a sliver (three of its rows or more on each side of the edge, or none) —
-    and the front moves, inside [3, H − 5], to the nearest place where the edge it makes and
-    its ramp agree (an ink ring only on a row a third inked or more, a dusk ring only on one
-    under two thirds), so the number's edge reads as the %. **A FINISHED DAY is charged
-    THROUGH its cap and cooled to metal**: cobalt from the cap down, falling into the deep
-    under-face over its lower half (Bayer, its last row whole) but solid round its number,
-    which is cut out. **Finished reads as SHAPE — a bright top over a dark foot — against a
-    high %'s iron top over ink solid to the foot, never by hue alone** (orchid at 87% and
-    cobalt are neighbours on the ramp; a colour-blind eye takes one for the other). **A
-    RUN**: two finished keys side by side in a week are JOINED by the streak's edge-on link
-    across the gap (4 rows, cobalt over deep), and a run carries on across a week's end as
-    two square 2-cell stubs, out of the last key and into the next week's first (this
-    month's days only) — never foil, never called a streak: a late solve joins a run. **A
-    DAY TO COME** is its number in slate on bare ground, no key; a pad is nothing.
+    never cut into a sliver (three of its rows or more on each side of the edge, or none).
+    **The edge is the %'s, never the digit's** (the same on every day at that %, never lower
+    at a higher %), and the front moves to AGREE with it where it can — two rows at most,
+    inside [3, H − 5], on one grid of eighths of a row (so a higher % never stands lower) —
+    to the nearest place where the ramp and the edge agree (an ink ring only on a row a third
+    inked or more, a dusk ring only on one under two thirds). Where nothing that close agrees,
+    the front stays at its %, a hat or a notch and all: the height is the reading (on the
+    smallest keys a whole number's top ring stands over the highest front, so it wears its
+    hat). **A FINISHED DAY is charged THROUGH its cap and cooled to metal**: cobalt from the
+    cap down, falling into the deep under-face over its lower half (Bayer, its last row whole)
+    but solid round its number, which is cut out. **Finished reads as SHAPE — a bright top
+    over a dark foot — against a high %'s iron top over ink solid to the foot, never by hue
+    alone** (orchid at 87% and cobalt are neighbours on the ramp; a colour-blind eye takes
+    one for the other). **A RUN**: two finished keys side by side in a week are JOINED by
+    the streak's edge-on link across the gap (4 rows, cobalt over deep), and a run carries on
+    across a week's end as two square 2-cell stubs, out of the last key and into the next
+    week's first (this month's days only) — never foil, never called a streak: a late solve
+    joins a run. **A DAY TO COME** is its number in slate on bare ground, no key; a pad is
+    nothing.
   - **TODAY** (the month on screen holds it) wears a WHITE CAP, its top two rows — the key
     that is lit — over whatever it holds, its ghost included; `aria-current="date"`; never a
     ring, brackets or a chip. **FINISHED, it is the screen's ONE shiny thing**: the shared
@@ -3422,7 +3426,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     board screen wears it too): no panel, no row boxes — lines of type set on the column.
     **THE TABS are the boards' ONE control, `components/BoardTabs`** (the board screen's
     own, and the archive's month row — a tab may carry an `ariaLabel`, what a reader hears
-    where its label is a short form, and data `attrs`): the groups' NAMES in a row, then GLOBAL (the board screen's own `boardGlobal`: one
+    where its label is a short form): the groups' NAMES in a row, then GLOBAL (the board screen's own `boardGlobal`: one
     name for the global board across the app) PINNED at the row's end — `--ui` 14px bold
     tracked capitals, `--muted`, the one shown wearing the WHITE TITLE CHIP (the cards' one
     emphasis gesture), each a 44px target. The chip is ONE white sheet over the row, the
@@ -3434,12 +3438,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     where it runs past the column, snapping to names, and shows ONLY WHOLE NAMES: a name
     the column cuts is COVERED by the ground, the cover carrying the boards' own left-out
     rail against the whole name next to it (on whole pixels); a cover too narrow for the
-    rail (under 24px, `COVER_MARK_PX`) takes the next whole name too (never the shown
-    one), so the cut stands marked; turning to a tab scrolls its name whole into view. A name too long for
-    the room the row leaves it once scrolled to (clear of the left-out rails and of the
-    pinned name) ENDS IN AN ELLIPSIS there (`--label-max`, floored to whole glyphs, written
-    when the row's width or names change, never on a scroll), so the SHOWN name is never
-    under a cover. A roving tablist for the keyboard (the arrows, Home, End), each tab
+    rail (under 24px, `COVER_MARK_PX`) takes the next whole name too — never the shown one,
+    so a cover against the shown name can stand unmarked; turning to a tab scrolls its name
+    whole into view. A name too long for the room the row leaves it once scrolled to (clear
+    of the left-out rails and of the pinned name) ENDS IN AN ELLIPSIS there (`--label-max`,
+    floored to whole glyphs, written when the row's width or names change, never on a
+    scroll), so the SHOWN name is never under a cover. A roving tablist for the keyboard (the arrows, Home, End), each tab
     naming the panel it controls (`tabIds`; here `.result-board`, `role="tabpanel"`,
     labelled by the shown tab). The tab the player turned to is kept by KEY, so a tab
     arriving later never moves them off it. Here the row holds the tabs alone: no group is

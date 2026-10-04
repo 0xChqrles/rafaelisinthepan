@@ -18,12 +18,12 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 // (snapping to names), and a name the column cuts is not drawn cut, nor thinned to a few stray
 // cells: it is COVERED, and the cover carries the boards' own mark for what is left out — the
 // stippled rail of the rows a board leaves out (`.board-gap`) — at that end, against the whole
-// name next to it, on whole pixels. A cut name is never drawn without its mark: a cover too
-// narrow to hold one takes the next whole name too (left out with the rest), never the shown
-// one. Turning to a tab scrolls its name whole into view; a swipe of the row lets names in
-// whole, a step at a time. A name too long to show whole in the room the row leaves it,
-// scrolled to (clear of the left-out marks and of the pinned name), ENDS IN AN ELLIPSIS at
-// that room — so the shown name is always there to read, never under a cover.
+// name next to it, on whole pixels. A cover too narrow to hold its mark takes the next whole
+// name too (left out with the rest) — never the shown one, so a cover against the shown name
+// can stand unmarked. Turning to a tab scrolls its name whole into view; a swipe of the row
+// lets names in whole, a step at a time. A name too long to show whole in the room the row
+// leaves it, scrolled to (clear of the left-out marks and of the pinned name), ENDS IN AN
+// ELLIPSIS at that room — so the shown name is always there to read, never under a cover.
 //
 // THE CHIP TRAVELS. It is not a class on the shown name but ONE white sheet over the whole
 // row, carrying the row's names again in the ground's ink (the pinned one pinned too),
@@ -53,8 +53,6 @@ export interface BoardTabItem {
   // What a reader hears for the tab, where its label is a short form (the archive's month
   // names: `SEPT` is read "septembre 2026").
   ariaLabel?: string;
-  // Data attributes for the tab's button (the archive's test hooks).
-  attrs?: Readonly<Record<`data-${string}`, string>>;
 }
 
 const TRAVEL_MS = 200;
@@ -330,7 +328,6 @@ export default function BoardTabs({
               id={tabIds(idBase).tab(tab.key)}
               aria-controls={tabIds(idBase).panel}
               aria-label={tab.ariaLabel}
-              {...tab.attrs}
               className={`board-tab${i === shown ? ' on' : ''}${tab.pinned ? ' pinned' : ''}${tab.bare ? ' bare' : ''}`}
               aria-selected={i === shown}
               tabIndex={i === shown ? 0 : -1}

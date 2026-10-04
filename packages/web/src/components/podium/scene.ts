@@ -417,7 +417,7 @@ export const SHAKE: readonly (readonly [number, number])[] = [
 export const SHAKE_FRAME_MS = 40;
 const FIRST_RUN_MS = 650;
 export const RECEDE_MS = 400;
-export const RECEDE_STEPS = 8;
+const RECEDE_STEPS = 8;
 // The winner's crown flashes white on the landing's impact, for this long.
 const FLASH_MS = 2 * FRAME_MS;
 const SURGE_MS = 480;

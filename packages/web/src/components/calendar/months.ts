@@ -3,7 +3,7 @@ import type { BoardTabItem } from '../BoardTabs';
 
 // THE MONTHS AS TABS: the archive's month is a SELECTION among months, so it turns through the
 // boards' one control (`BoardTabs`) — every month from the language's first to the active one,
-// oldest on the left, and no other. The clamp the old pager enforced is now which tabs exist.
+// oldest on the left, and no other: the tabs ARE the clamp, nothing out of them to turn to.
 //
 // Each name is the locale's SHORT month in capitals (fr `AOÛT · SEPT · OCT`, en `AUG · SEP`),
 // its abbreviation's dot dropped — a tab row reads as names, not as a sentence. The year is

@@ -157,8 +157,9 @@ export default function Archive({ lang }: { lang: LangCode }) {
       if (status.kind === 'progress') return { kind: 'progress', day, pct: Math.min(99, status.pct) };
       return { kind: 'none', day };
     });
-    // A month not arrived waits — or, its read failed, rests (`idle` is the one render before
-    // the read is asked for, drawn as the wait it is about to be).
+    // A month not arrived waits — or, its read failed, rests. `idle` is the one render before
+    // the read is asked for, drawn as the wait it is about to be: drawn resting, its ghosts
+    // would already stand when the wait began, and flash in without the skeleton's wait.
     const phase = history.days !== null ? 'data' : history.daysPhase === 'failed' ? 'resting' : 'loading';
     return { keys, today: cells.indexOf(today), phase };
   }, [cells, history.days, history.daysPhase, today, firstDate]);
@@ -283,17 +284,9 @@ export default function Archive({ lang }: { lang: LangCode }) {
         <PuzzleTitle lang={lang} surface="archive" />
       </HeaderLeft>
 
-      {/* WHICH MONTH: the boards' tab row, the month before and after the shown one named for
-          the tests. */}
+      {/* WHICH MONTH: the boards' tab row. */}
       <div className="cal-head">
-        <BoardTabs
-          tabs={tabs.map((tab, i) =>
-            i === shown - 1 ? { ...tab, attrs: { 'data-cal': 'prev' } } : i === shown + 1 ? { ...tab, attrs: { 'data-cal': 'next' } } : tab,
-          )}
-          shown={shown}
-          idBase="cal-"
-          onTurn={turnTo}
-        />
+        <BoardTabs tabs={tabs} shown={shown} idBase="cal-" onTurn={turnTo} />
       </div>
 
       <div
@@ -334,7 +327,6 @@ export default function Archive({ lang }: { lang: LangCode }) {
                   key={date}
                   type="button"
                   className={`cal-day${date === today ? ' cal-day-today' : ''}`}
-                  data-cal-day={date}
                   aria-label={`${longDate.format(new Date(`${date}T00:00:00Z`))}${srStatus(lang, shownStatus(date) ?? { kind: 'none' })}`}
                   aria-current={date === today ? 'date' : undefined}
                   disabled={!playable}

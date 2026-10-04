@@ -18,15 +18,22 @@ vi.mock('../state/history', () => ({
 }));
 // The month's picture is a canvas, which jsdom has none of; the days are the screen's buttons.
 vi.mock('../components/calendar/MonthRaster', () => ({ default: () => null }));
-// The month row: one plain tab per month, carrying its hooks, turning on a click.
+// The month row: one plain tab per month, the months either side of the shown one marked,
+// turning on a click.
 vi.mock('../components/BoardTabs', async (importOriginal) => {
   const real = await importOriginal<typeof import('../components/BoardTabs')>();
   return {
     ...real,
-    default: (p: { tabs: readonly import('../components/BoardTabs').BoardTabItem[]; onTurn: (i: number) => void }) => (
+    default: (p: { tabs: readonly import('../components/BoardTabs').BoardTabItem[]; shown: number; onTurn: (i: number) => void }) => (
       <div>
         {p.tabs.map((tab, i) => (
-          <button key={tab.key} type="button" role="tab" {...tab.attrs} onClick={() => p.onTurn(i)}>
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            data-cal={i === p.shown - 1 ? 'prev' : i === p.shown + 1 ? 'next' : undefined}
+            onClick={() => p.onTurn(i)}
+          >
             {tab.label}
           </button>
         ))}

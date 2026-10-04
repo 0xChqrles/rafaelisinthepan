@@ -85,28 +85,16 @@ function view(days: HistoryView['days'], daysPhase: HistoryView['daysPhase']): H
 }
 
 describe('daySummaryStatus — a month that has not arrived is UNKNOWN, not "not started"', () => {
-  it('is unknown-and-waiting while the read is in flight', () => {
-    expect(daySummaryStatus(view(null, 'loading'), '2026-08-03')).toEqual({
-      kind: 'unknown',
-      loading: true,
-    });
+  it('is unknown while the read is in flight', () => {
+    expect(daySummaryStatus(view(null, 'loading'), '2026-08-03')).toEqual({ kind: 'unknown' });
   });
 
-  it('is unknown-and-still once the read has FAILED — there is no local fallback', () => {
-    expect(daySummaryStatus(view(null, 'failed'), '2026-08-03')).toEqual({
-      kind: 'unknown',
-      loading: false,
-    });
+  it('is unknown once the read has FAILED — there is no local fallback', () => {
+    expect(daySummaryStatus(view(null, 'failed'), '2026-08-03')).toEqual({ kind: 'unknown' });
   });
 
-  // IDLE claims nothing either — and it does NOT breathe: `loading` means a read is in
-  // flight, so a surface with no request behind it rests still rather than promising an
-  // answer that nobody asked for.
   it('is unknown before anything has asked, so an idle surface claims nothing either', () => {
-    expect(daySummaryStatus(view(null, 'idle'), '2026-08-03')).toEqual({
-      kind: 'unknown',
-      loading: false,
-    });
+    expect(daySummaryStatus(view(null, 'idle'), '2026-08-03')).toEqual({ kind: 'unknown' });
   });
 
   it('a day the ARRIVED month does not name is NONE — the server holds no round for it', () => {
