@@ -21,9 +21,9 @@ describe('monthTabs — the months in range, as names', () => {
     }
   });
 
-  it('says the year only across two years, on the first tab and on January', () => {
+  it('says the year only across two years: on the first tab, each January, and the pinned month', () => {
     const tabs = monthTabs('fr', { year: 2026, month: 11 }, { year: 2027, month: 2 });
-    expect(tabs.map((tab) => tab.label)).toEqual(['NOV 2026', 'DÉC', 'JANV 2027', 'FÉVR']);
+    expect(tabs.map((tab) => tab.label)).toEqual(['NOV 2026', 'DÉC', 'JANV 2027', 'FÉVR 2027']);
     const one = monthTabs('fr', { year: 2026, month: 8 }, { year: 2026, month: 12 });
     for (const tab of one) expect(tab.label).not.toMatch(/\d/);
   });
@@ -33,6 +33,11 @@ describe('monthTabs — the months in range, as names', () => {
     expect(fr[0].ariaLabel).toBe('septembre 2026');
     const en = monthTabs('en', { year: 2026, month: 10 }, { year: 2026, month: 10 });
     expect(en[0].ariaLabel).toBe('October 2026');
+  });
+
+  it('gives one tab for an active month before the first: the first month, pinned', () => {
+    const tabs = monthTabs('en', { year: 2026, month: 10 }, { year: 2026, month: 9 });
+    expect(tabs.map((tab) => [tab.key, tab.pinned === true])).toEqual([['2026-10', true]]);
   });
 
   it('pins the active month alone', () => {

@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { KeyState, KeysModel } from './keysScene';
-import { isBuilt, isStamped, markBuilt, markStamped, rememberDrawn, resetCalendarMemory } from './memory';
-import { codesOf, nextStage, type Shown, type Stage, type Viewer } from './plan';
+import { isBuilt, isStamped, markBuilt, resetCalendarMemory } from './memory';
+import { markShown, nextStage, type Shown, type Stage, type Viewer } from './plan';
 
 // The calendar's memory keeps the archive's promise that NOTHING THAT HAS LANDED MOVES: a
 // month arrives once per day and account — a remount, a resize, a refetch never replays it —
 // today drops once per day, and a month shown again plays only what changed since it was last
-// drawn, a ceremony only for what went up. Reduced motion lands at once, and is remembered so.
+// drawn, a ceremony only for what went up — once, even left halfway. A month that arrives goes
+// on arriving. Reduced motion lands at once, and is remembered so.
 
 const viewer: Viewer = { lang: 'fr', accountId: 'acc', motion: true };
 const DAY = 100;
@@ -19,12 +20,10 @@ function sep(state: (day: number) => KeyState, today = -1, phase: KeysModel['pha
 }
 const none = (day: number): KeyState => ({ kind: 'none', day });
 const unknown = (day: number): KeyState => ({ kind: 'unknown', day });
-// Shown, then the memory marked as the raster marks it once the stage is on screen and settles.
-function show(prev: Stage | null, next: Shown, as: Viewer = viewer): Stage {
-  const stage = nextStage(prev, next, as);
-  if (stage.marks.built) markBuilt(next.activeDay, as.accountId, as.lang, next.month);
-  if (stage.marks.stamped) markStamped(as.lang, next.activeDay);
-  if (next.model.phase === 'data') rememberDrawn(as.accountId, as.lang, next.month, codesOf(next.model, next.cells));
+// Latched, then shown: the memory marked as the raster marks it once the stage is on screen.
+function show(prev: Stage | null, next: Shown, as: Viewer = viewer, arriving = false): Stage {
+  const stage = nextStage(prev, next, as, arriving);
+  markShown(stage, as);
   return stage;
 }
 
@@ -126,5 +125,39 @@ describe('a month shown again plays what changed since it was drawn', () => {
     const answer = show(shown, sep((d) => (d === 12 ? { kind: 'solved', day: d } : none(d))));
     expect(answer.give).toBe('keys');
     expect(answer.spec.changes).toEqual([{ index: 12, from: 'n' }]);
+  });
+});
+
+describe('a ceremony plays once', () => {
+  it('plays a change once, even left halfway', () => {
+    const arrival = show(null, sep(none));
+    // A fresh answer, Sep 10 solved: its change is shown — and never settles (the player leaves).
+    const solved = sep((d) => (d === 10 ? { kind: 'solved', day: d } : none(d)));
+    const answer = show(arrival, solved);
+    expect(answer.spec.changes).toEqual([{ index: 10, from: 'n' }]);
+    // Back on the archive (a remount, nothing on screen before it): nothing left to play.
+    const back = show(null, solved);
+    expect(back.spec.changes).toEqual([]);
+  });
+});
+
+describe('a month that arrives goes on arriving', () => {
+  const changed = sep((d) => (d === 10 ? { kind: 'solved', day: d } : none(d)), 4);
+
+  it('joins the arrival with a fresh answer landing while it plays', () => {
+    const arrival = show(null, sep(none, 4));
+    const joined = show(arrival, changed, viewer, true);
+    expect(joined.spec.build).toBe(arrival.spec.build);
+    expect(joined.spec.drop).toBe(arrival.spec.drop);
+    expect(joined.spec.changes).toEqual([]);
+    expect(joined.carries).toBe(true);
+  });
+
+  it('plays the change of a fresh answer landing once the arrival has settled', () => {
+    const arrival = show(null, sep(none, 4));
+    const after = show(arrival, changed, viewer, false);
+    expect(after.spec.build).toBe(null);
+    expect(after.spec.changes).toEqual([{ index: 10, from: 'n' }]);
+    expect(after.carries).toBe(false);
   });
 });

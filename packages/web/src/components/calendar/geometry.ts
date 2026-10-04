@@ -3,24 +3,28 @@ import { CELL_PX } from '../podium/scene';
 // THE CALENDAR'S SIZES, off the room it is given: the keys of the month (`keysScene.ts` draws
 // them) at one of a few whole sizes, each a WHOLE number of the house's 2px cells with even gaps,
 // so every key, digit and dither of the raster lands on whole pixels — never a fractional `1fr`
-// track. The first candidate that fits wins:
+// track. The first candidate that fits wins — a desktop-width window trying WIDE, MID, REGULAR,
+// COMPACT, then SIDEWAYS; a phone REGULAR, COMPACT, NARROW, then TINY:
 //
 //   WIDE      a desktop column (560): 64px keys, the board's own column filled.
 //   MID       a short desktop window: 52px keys, still stacked under the month row.
-//   REGULAR   a phone: 44px keys — one line of the boards' pitch, a real target.
+//   REGULAR   a phone: 44px keys — one line of the boards' pitch, a real target — and a
+//             desktop window too short for MID.
 //   COMPACT   the commonest Android width (360: a 332px column): 40px keys on the regular
-//             gaps — the narrow month would stand lost in that room, its gaps half the rows'.
+//             gaps — the narrow month would stand lost in that room, its gaps half the rows'
+//             — and a desktop window too short for REGULAR.
 //   NARROW    a phone under 328px of column (320 wide): 38px keys on 4px gaps, "31" with two
 //             cells of air each side.
 //   TINY      a column under 290px (a fold's cover screen, a zoomed-in browser): 34px keys a
 //             cell apart, "31" with one cell of air — the least that still holds two digits.
 //             Under 250px of column nothing fits, and the page scrolls.
-//   SIDEWAYS  a desktop-width window too short for any stacked month (a landscape phone): the
-//             month row and its note on the left, the weekdays and 44 × 32 keys on the right.
+//   SIDEWAYS  a desktop-width window too short for any stacked month — in practice a landscape
+//             phone: the month row and its note on the left, the weekdays and 44 × 32 keys on
+//             the right.
 //
 // Phones are always STACKED (their page scrolls if it must); above 640px the page does not
 // scroll, so the stacked month must end above the window's foot (`FOOT_PX` clear of the device
-// frame's texts) or the month goes sideways. A resize re-seats the picture (`MonthRaster`) and
+// frame's texts) or the next size is tried. A resize re-seats the picture (`MonthRaster`) and
 // never replays its build.
 
 // The house's cell, a raster pixel: the podium's.
@@ -56,7 +60,8 @@ export type CalLayout = 'stacked' | 'sideways';
 
 interface Candidate {
   name: CalName;
-  phone: boolean;
+  // The windows it is tried in: a desktop-width one, a phone's, or both.
+  use: 'desk' | 'phone' | 'both';
   layout: CalLayout;
   // The key (cells), the gaps between keys (px, even), and the air between the column's rows.
   keyW: number;
@@ -67,13 +72,13 @@ interface Candidate {
 }
 
 const CANDIDATES: readonly Candidate[] = [
-  { name: 'wide', phone: false, layout: 'stacked', keyW: 32, keyH: 32, colGapPx: 8, rowGapPx: 8, airPx: 8 },
-  { name: 'mid', phone: false, layout: 'stacked', keyW: 26, keyH: 26, colGapPx: 8, rowGapPx: 8, airPx: 8 },
-  { name: 'regular', phone: true, layout: 'stacked', keyW: 22, keyH: 22, colGapPx: 8, rowGapPx: 8, airPx: 8 },
-  { name: 'compact', phone: true, layout: 'stacked', keyW: 20, keyH: 20, colGapPx: 8, rowGapPx: 8, airPx: 8 },
-  { name: 'narrow', phone: true, layout: 'stacked', keyW: 19, keyH: 19, colGapPx: 4, rowGapPx: 8, airPx: 4 },
-  { name: 'tiny', phone: true, layout: 'stacked', keyW: 17, keyH: 17, colGapPx: 2, rowGapPx: 8, airPx: 4 },
-  { name: 'sideways', phone: false, layout: 'sideways', keyW: 22, keyH: 16, colGapPx: 8, rowGapPx: 8, airPx: 8 },
+  { name: 'wide', use: 'desk', layout: 'stacked', keyW: 32, keyH: 32, colGapPx: 8, rowGapPx: 8, airPx: 8 },
+  { name: 'mid', use: 'desk', layout: 'stacked', keyW: 26, keyH: 26, colGapPx: 8, rowGapPx: 8, airPx: 8 },
+  { name: 'regular', use: 'both', layout: 'stacked', keyW: 22, keyH: 22, colGapPx: 8, rowGapPx: 8, airPx: 8 },
+  { name: 'compact', use: 'both', layout: 'stacked', keyW: 20, keyH: 20, colGapPx: 8, rowGapPx: 8, airPx: 8 },
+  { name: 'narrow', use: 'phone', layout: 'stacked', keyW: 19, keyH: 19, colGapPx: 4, rowGapPx: 8, airPx: 4 },
+  { name: 'tiny', use: 'phone', layout: 'stacked', keyW: 17, keyH: 17, colGapPx: 2, rowGapPx: 8, airPx: 4 },
+  { name: 'sideways', use: 'desk', layout: 'sideways', keyW: 22, keyH: 16, colGapPx: 8, rowGapPx: 8, airPx: 8 },
 ];
 
 export interface CalGeometry {
@@ -135,7 +140,7 @@ export function stackedHeightPx(G: Pick<CalGeometry, 'gridH' | 'airPx'>): number
   return TABS_PX + G.airPx + WEEKDAYS_PX + G.airPx + G.gridH + HOLD_GAP_PX + HOLD_PX;
 }
 
-// `columnPx`: the column's width (the board's, `min(560, room)`); `roomH`: the window's
+// `columnPx`: the column's width (the board's, `min(COLUMN_PX, room)`); `roomH`: the window's
 // height; `phone`: a phone-width window (≤ 640).
 export function calGeometry(columnPx: number, roomH: number, phone: boolean): CalGeometry {
   const fits = (c: Candidate) => {
@@ -144,7 +149,7 @@ export function calGeometry(columnPx: number, roomH: number, phone: boolean): Ca
     if (G.gridW > columnPx) return false;
     return phone || STACK_TOP_PX + stackedHeightPx(G) <= roomH - FOOT_PX;
   };
-  const mine = CANDIDATES.filter((c) => c.phone === phone || (!phone && c.layout === 'sideways'));
+  const mine = CANDIDATES.filter((c) => c.use === 'both' || c.use === (phone ? 'phone' : 'desk'));
   const pick = mine.find(fits) ?? mine[mine.length - 1];
   return geometryOf(pick, columnPx);
 }

@@ -165,19 +165,28 @@ export default function Archive({ lang }: { lang: LangCode }) {
 
   // THE ROOM: the column's width (the board's, measured off `.app`'s content box) and the
   // window's height choose the keys' size and the layout (`calGeometry`); a resize re-seats it.
+  // The room past the grid's sides to the screen's edge (the column's offset and `.app`'s side
+  // padding) is the bursts' reach (`.cal-bursts`).
   const rootRef = useRef<HTMLDivElement>(null);
-  const [measured, setG] = useState<CalGeometry | null>(null);
-  const G = measured ?? FIRST_GEOMETRY;
+  const [measured, setMeasured] = useState<{ G: CalGeometry; sideRoom: number } | null>(null);
+  const G = measured?.G ?? FIRST_GEOMETRY;
   useLayoutEffect(() => {
     const parent = rootRef.current?.parentElement;
     if (!parent) return undefined;
     const measure = () => {
       const style = getComputedStyle(parent);
-      const room = parent.clientWidth - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0');
+      const padL = parseFloat(style.paddingLeft || '0');
+      const padR = parseFloat(style.paddingRight || '0');
+      const room = parent.clientWidth - padL - padR;
       const phone = window.matchMedia?.('(max-width: 640px)').matches ?? window.innerWidth <= 640;
       const next = calGeometry(Math.min(COLUMN_PX, Math.floor(room)), window.innerHeight, phone);
+      const sideRoom = Math.floor(next.gridX + Math.min(padL, padR));
       // (A size is its candidate and where the column centres it.)
-      setG((was) => (was && was.name === next.name && was.gridX === next.gridX ? was : next));
+      setMeasured((was) => {
+        const same = was !== null && was.G.name === next.name && was.G.gridX === next.gridX;
+        if (same && was.sideRoom === sideRoom) return was;
+        return { G: same ? was.G : next, sideRoom };
+      });
     };
     measure();
     window.addEventListener('resize', measure);
@@ -260,6 +269,7 @@ export default function Archive({ lang }: { lang: LangCode }) {
     '--grid-w': `${G.gridW}px`,
     '--grid-h': `${G.gridH}px`,
     '--grid-x': `${G.gridX}px`,
+    '--side-room': `${measured?.sideRoom ?? 0}px`,
     '--key-w': `${G.keyWPx}px`,
     '--key-h': `${G.keyHPx}px`,
     '--col-gap': `${G.colGapPx}px`,
@@ -306,7 +316,7 @@ export default function Archive({ lang }: { lang: LangCode }) {
         <div className="cal-stage" {...swipe}>
           {measured && (
             <MonthRaster
-              G={measured}
+              G={measured.G}
               lang={lang}
               month={month}
               activeDay={activeDay}
@@ -353,19 +363,21 @@ export default function Archive({ lang }: { lang: LangCode }) {
           that after one good visit every later failure was silent. What CHANGES with cached
           data is the claim: nothing loaded is a failure to load, in the danger ink; an older
           month still on screen is a note about it, in the plain status ink. Always reserved,
-          so nothing above it moves when it speaks — and a LIVE REGION for the same reason,
-          mounted before its note, so the note is heard when it comes (and again on a second
-          failure). */}
-      <div ref={holdRef} className={`cal-hold${G.gridW < NOTE_NARROW_BELOW_PX ? ' narrow' : ''}`} role="status">
-        {failed && (
-          <div className="cal-hold-in">
-            <p className={`cal-note${history.days === null ? ' error' : ''}`}>
+          so nothing above it moves when it speaks — and its note in a LIVE REGION mounted
+          before it, so the note is heard when it comes (and again on a second failure); RETRY
+          stands beside it, outside the region, so the region says the note alone. */}
+      <div ref={holdRef} className={`cal-hold${G.gridW < NOTE_NARROW_BELOW_PX ? ' narrow' : ''}`}>
+        <div role="status">
+          {failed && (
+            <p className={`cal-note cal-hold-in${history.days === null ? ' error' : ''}`}>
               {t(lang, history.days === null ? 'failedHistory' : 'staleHistory')}
             </p>
-            <Button variant="secondary" onClick={retry}>
-              {t(lang, 'retry')}
-            </Button>
-          </div>
+          )}
+        </div>
+        {failed && (
+          <Button variant="secondary" className="cal-hold-in" onClick={retry}>
+            {t(lang, 'retry')}
+          </Button>
         )}
       </div>
     </div>

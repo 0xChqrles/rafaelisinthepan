@@ -510,10 +510,10 @@ input {
 }
 /* THE STAGE: exactly the grid's box. The raster lies over it with a bleed on its sides and foot
    (a run's wrap stubs, today's shake, a pressed key's sink) and its headroom over the top (the
-   height today falls from, over the weekday letters), the landings' bursts UNDER the raster,
-   clipped to its box — the raster's ground is transparent, so a burst flares through the
-   ground round its key and never over a neighbour's face — and the days' buttons over
-   everything. A sideways swipe on it turns the month. */
+   height today falls from, over the weekday letters), the landings' bursts UNDER the raster —
+   the raster's ground is transparent, so a burst flares through the ground round its key and
+   never over a neighbour's face — and the days' buttons over everything. A sideways swipe on
+   it turns the month. */
 .cal-stage {
   position: relative;
   width: var(--grid-w);
@@ -530,12 +530,21 @@ input {
   image-rendering: pixelated;
   pointer-events: none;
 }
+/* The bursts' box: the headroom over the grid, and past its sides and its foot into open ground
+   — half the burst sheet (53px), sideways no further than the screen's edge (`--side-room`,
+   Archive's measure) — so a landing is cut only where the screen ends, and the box, clipping
+   what it holds, never widens the page. (Sideways, no hold is reserved under the grid: the
+   foot stays at the bleed.) */
 .cal-bursts {
+  --reach: min(53px, var(--side-room));
   position: absolute;
-  inset: calc(-1 * var(--headroom)) calc(-1 * var(--bleed)) calc(-1 * var(--bleed));
+  inset: calc(-1 * var(--headroom)) calc(-1 * var(--reach)) -53px;
   z-index: 0;
-  clip-path: inset(0);
+  overflow: clip;
   pointer-events: none;
+}
+.archive[data-layout='sideways'] .cal-bursts {
+  bottom: calc(-1 * var(--bleed));
 }
 /* THE DAYS: real buttons over the picture, each tiling its key and half the gaps round it, so
    the month has no dead gaps to miss. */
@@ -604,9 +613,13 @@ input {
 }
 /* THE HOLD under the grid, one height in every state: a failed read's note over RETRY —
    `failedHistory` in the danger ink when nothing is drawn, `staleHistory` in the plain status
-   ink over a month still on screen — dissolving in as it comes. */
+   ink over a month still on screen — each dissolving in as it comes. */
 .cal-hold {
   flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
   width: var(--grid-w);
   height: var(--hold-h);
   margin-top: var(--hold-gap);
@@ -615,21 +628,15 @@ input {
 .archive[data-layout='sideways'] .cal-hold {
   grid-column: 1;
   grid-row: 2;
+  align-items: flex-start;
   width: auto;
   height: auto;
   margin: 16px 0 0;
 }
 .cal-hold-in {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
   -webkit-mask-size: 16px 16px;
   mask-size: 16px 16px;
   animation: board-dissolve 240ms linear backwards;
-}
-.archive[data-layout='sideways'] .cal-hold-in {
-  align-items: flex-start;
 }
 .cal-note {
   margin: 0;

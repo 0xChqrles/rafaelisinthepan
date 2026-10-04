@@ -1,11 +1,16 @@
 import { codeOf, keysBeats, type KeyChange, type KeysBeats, type KeysModel, type KeysSpec } from './keysScene';
-import { drawnOf, isBuilt, isStamped, type DrawnCode } from './memory';
+import { drawnOf, isBuilt, isStamped, markBuilt, markStamped, rememberDrawn, type DrawnCode } from './memory';
 
 // WHICH SCENE the month raster plays next, off the one on screen before it (`MonthRaster`
 // latches one per change of what it shows). A month shown for the first time today ARRIVES
 // (built once per day and account, the memory's BUILT) — at the opening's pace, or under a
 // turn's quicker one — and today DROPS once per day (STAMPED); a month already built stands
 // SETTLED, and any day that says something else than when it was last DRAWN plays its change.
+// A fresh answer for the month on screen plays what it changes — unless the month is still
+// ARRIVING: then it JOINS the arrival (the same build, the same drop, on the arrival's own
+// clock), so a month that arrives goes on arriving. A ceremony plays ONCE: all three memories
+// are written as a stage is SHOWN (`markShown`), so a player who leaves halfway through one
+// does not see it again.
 //
 // HOW IT GIVES WAY (`MonthRaster` composes it): a turn, from the frame on screen cell by cell
 // (the podium's `turnLevel`); a read landing on the month on screen, KEY BY KEY — the scene
@@ -40,6 +45,8 @@ export interface Stage extends Shown {
   give: 'turn' | 'keys' | null;
   // What showing it settles in the memory: the month built, today dropped.
   marks: { built: boolean; stamped: boolean };
+  // It goes on along the clock of the stage it replaces (a fresh answer joining an arrival).
+  carries: boolean;
 }
 
 export function stageId(next: Shown, viewer: Viewer): string {
@@ -70,18 +77,25 @@ function changesFrom(next: Shown, was: ReadonlyMap<string, DrawnCode>): KeyChang
   return changes;
 }
 
-export function nextStage(prev: Stage | null, next: Shown, viewer: Viewer): Stage {
+// `arriving`: the stage on screen is an arrival whose scene has not settled yet.
+export function nextStage(prev: Stage | null, next: Shown, viewer: Viewer, arriving = false): Stage {
   const { model, month, activeDay } = next;
   const { lang, accountId, motion } = viewer;
   const same = prev !== null && prev.month === month;
   const base: KeysSpec = { model, build: null, drop: null, changes: [], digitsIn: false, ghostsIn: false, motion };
-  const stage = (spec: KeysSpec, give: Stage['give'], marks = { built: false, stamped: false }): Stage => ({
+  const stage = (
+    spec: KeysSpec,
+    give: Stage['give'],
+    marks = { built: false, stamped: false },
+    carries = false,
+  ): Stage => ({
     ...next,
     id: stageId(next, viewer),
     spec,
     beats: keysBeats(spec),
     give: motion ? give : null,
     marks,
+    carries,
   });
   if (!motion) {
     const marks = { built: model.phase === 'data', stamped: model.phase === 'data' && model.today >= 0 };
@@ -104,9 +118,10 @@ export function nextStage(prev: Stage | null, next: Shown, viewer: Viewer): Stag
       { built: true, stamped: stampNow },
     );
   }
-  // A fresh answer for the month on screen: what it says now against what the frame on screen
-  // was drawn saying.
+  // A fresh answer for the month on screen: still arriving, it joins the arrival; else what it
+  // says now against what the frame on screen was drawn saying.
   if (same && prev.model.phase === 'data') {
+    if (arriving) return stage({ ...base, build: prev.spec.build, drop: prev.spec.drop }, null, prev.marks, true);
     return stage({ ...base, changes: changesFrom(next, codesOf(prev.model, prev.cells)) }, 'keys');
   }
   // A read landing on the month on screen, or a month turned to, or the screen's opening.
@@ -117,4 +132,14 @@ export function nextStage(prev: Stage | null, next: Shown, viewer: Viewer): Stag
   }
   const drawn = drawnOf(accountId, lang, month);
   return stage({ ...base, changes: drawn ? changesFrom(next, drawn) : [] }, give);
+}
+
+// What showing a stage settles in the memory, written as it is shown: the month BUILT, today
+// STAMPED, and — a month with data — what its days say, DRAWN.
+export function markShown(stage: Stage, viewer: Viewer): void {
+  if (stage.marks.built) markBuilt(stage.activeDay, viewer.accountId, viewer.lang, stage.month);
+  if (stage.marks.stamped) markStamped(viewer.lang, stage.activeDay);
+  if (stage.model.phase === 'data') {
+    rememberDrawn(viewer.accountId, viewer.lang, stage.month, codesOf(stage.model, stage.cells));
+  }
 }

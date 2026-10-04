@@ -65,6 +65,27 @@ const corner = (lx: number, ly: number) => (lx === 0 || lx === W - 1) && (ly ===
 const digitMap = (day: number) => numberCells(W, H, day);
 const none = (day: number): KeyState => ({ kind: 'none', day });
 
+// Every size the calendar lays its keys out at, one geometry each.
+const SIZES: CalGeometry[] = [
+  calGeometry(560, 1000, false),
+  calGeometry(560, 657, false),
+  calGeometry(362, 844, true),
+  calGeometry(332, 800, true),
+  calGeometry(292, 568, true),
+  calGeometry(262, 653, true),
+  calGeometry(536, 360, false),
+];
+// A settled frame at a size, and a reader of one key's cells there.
+function frameAt(g: CalGeometry, model: KeysModel) {
+  const tl = keysBeats({ ...SETTLED, model });
+  const px = new Uint32Array(g.cols * g.rows);
+  keysScene(g, model, tl, 3.5).draw(px, tl.settled + 5000, false, -1);
+  return (i: number, lx: number, ly: number) => {
+    const { x, y } = keyAt(g, i);
+    return px[(y + ly) * g.cols + x + lx];
+  };
+}
+
 describe('a day under 100 is never finished', () => {
   it('leaves the cap and the first light row iron at 99 — and at a rounded 100 — and takes no link', () => {
     for (const pct of [99, 100]) {
@@ -93,7 +114,65 @@ describe('a day under 100 is never finished', () => {
   });
 });
 
+describe("a number's edge is the ink's", () => {
+  it('stands an ink ring only on a row a third inked or more, a dusk ring only on one at most two thirds', () => {
+    expect(new Set(SIZES.map((g) => g.name)).size).toBe(7);
+    for (const g of SIZES) {
+      const corners = (lx: number, ly: number) => (lx === 0 || lx === g.keyW - 1) && (ly === 0 || ly === g.keyH - 1);
+      for (let pct = 1; pct <= 99; pct += 1) {
+        const read = frameAt(g, month((d) => (d === 7 || d === 23 ? { kind: 'progress', day: d, pct } : none(d))));
+        for (const day of [7, 23]) {
+          const m = numberCells(g.keyW, g.keyH, day);
+          for (let ly = 0; ly < g.keyH; ly += 1) {
+            // The row's face: its cells in the key's shape, outside the number and its ring.
+            let face = 0;
+            let inked = 0;
+            const ring: number[] = [];
+            for (let lx = 0; lx < g.keyW; lx += 1) {
+              const v = read(day, lx, ly);
+              if (m[ly * g.keyW + lx] === 2) ring.push(v);
+              else if (m[ly * g.keyW + lx] === 0 && !corners(lx, ly)) {
+                face += 1;
+                if (v === heat(pct)) inked += 1;
+              }
+            }
+            if (face < 4) continue;
+            const at = `${g.name} ${pct}% day ${day} row ${ly}`;
+            for (const v of ring) {
+              if (v === heat(pct)) expect(inked / face, at).toBeGreaterThanOrEqual(1 / 3);
+              if (v === DUSK) expect(inked / face, at).toBeLessThanOrEqual(2 / 3);
+            }
+          }
+        }
+      }
+    }
+  });
+});
+
 describe('a finished day is charged through', () => {
+  it('keeps its number band solid: no deep from its ring top to its ring foot, its last row deep, its foot darker than its top', () => {
+    for (const g of SIZES) {
+      const read = frameAt(g, month((d) => (d === 7 || d === 23 ? { kind: 'solved', day: d } : none(d))));
+      for (const day of [7, 23]) {
+        const m = numberCells(g.keyW, g.keyH, day);
+        const ringRows = Array.from({ length: g.keyH }, (_, ly) => ly).filter((ly) =>
+          m.subarray(ly * g.keyW, (ly + 1) * g.keyW).includes(2),
+        );
+        const top = ringRows[0];
+        const foot = ringRows[ringRows.length - 1];
+        const deep = (from: number, to: number) => {
+          let n = 0;
+          for (let ly = from; ly < to; ly += 1) for (let lx = 1; lx < g.keyW - 1; lx += 1) if (read(day, lx, ly) === DEEP) n += 1;
+          return n / ((to - from) * (g.keyW - 2));
+        };
+        const at = `${g.name} day ${day}`;
+        expect(deep(top, foot + 1), at).toBe(0);
+        expect(deep(g.keyH - 1, g.keyH), at).toBe(1);
+        expect(deep(foot + 1, g.keyH), at).toBeGreaterThan(deep(0, Math.floor(g.keyH / 2)));
+      }
+    }
+  });
+
   it('inks every cell of its key cobalt or deep, its number cut out', () => {
     const { px } = frame(month((d) => (d === 12 ? { kind: 'solved', day: d } : none(d))));
     const m = digitMap(12);

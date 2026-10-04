@@ -8,10 +8,11 @@ import type { YearMonth } from '../../calendar';
 //            frame. Nothing that has landed moves; a remount, a resize or a refetch never
 //            replays it. A new day or another account starts the set again.
 //   STAMPED  the days whose TODAY has dropped, per language: once per day per tab.
-//   DRAWN    what each month was last drawn SAYING, day by day, once its frame settled with data:
-//            the month shown again with a day that says something else since (played here, or
-//            on another device) plays that day's CHANGE — the reason a return to the archive
-//            after a game shows what the player just did.
+//   DRAWN    what each month was last drawn SAYING, day by day, as it is shown with data: the
+//            month shown again with a day that says something else since (played here, or on
+//            another device) plays that day's CHANGE — the reason a return to the archive after
+//            a game shows what the player just did. Written as the change is shown, so a
+//            change plays once, even left halfway.
 //   LAST     the month last turned to, per language, today: the archive reopens on it (a day
 //            played from September comes back to September). A new day opens on its own month.
 

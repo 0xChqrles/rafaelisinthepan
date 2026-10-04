@@ -46,13 +46,16 @@ import type { DrawnCode } from './memory';
 //     its slate cap, its light and a row of its face). Its number reads the front as a HARD
 //     EDGE: cut out of the ink below it, white on the iron above it, each with a cell of solid
 //     ring — never dithered, and never cut into a sliver: the edge crosses a number between
-//     its third and fifth rows or not at all, so no digit ever breaks.
+//     its third and fifth rows or not at all, so no digit ever breaks. The front AGREES with
+//     that edge (it moves with it, about two rows at most): no ink ring over a row barely
+//     inked, no dusk ring in a row mostly ink — the eye reads the number's edge as the %.
 //   A FINISHED DAY is charged THROUGH its cap and cooled to metal: lit cobalt from its cap
-//     down, falling into the deep under-face over its lower half — the streak link's lit face
+//     down, falling into the deep under-face under its number — the streak link's lit face
 //     over its shade, so a month of them reads as rows of lit tops over dark feet, never a
-//     wall — its number cut out. Finished reads as SHAPE — a bright top, a dark foot — against
-//     a high % (a dark iron top, ink solid to the foot), never by hue alone: orchid at 87% and
-//     cobalt are neighbours on the ramp, and a colour-blind eye takes one for the other.
+//     wall — its number cut out of a band of solid cobalt. Finished reads as SHAPE — a bright
+//     top, a dark foot — against a high % (a dark iron top, ink solid to the foot), never by
+//     hue alone: orchid at 87% and cobalt are neighbours on the ramp, and a colour-blind eye
+//     takes one for the other.
 //   A RUN: finished keys side by side are JOINED by the streak's edge-on link across the gap
 //     (cobalt over deep), and a run carries on across a week's end — a short stub out of the
 //     last key, one into the next week's first. Never foil, never called a streak (a late
@@ -433,10 +436,6 @@ export function keysScene(
   const n = H - 1;
   const frontOf = (pct: number) => (pct <= 0 ? 0 : Math.min(n - 4, Math.max(3, (pct / 100) * n)));
   const FULL = H;
-  // A finished key's foot: its lower half falls into the deep, row by row, its last row whole.
-  const footFrom = Math.floor(H / 2);
-  const footDeep = (lx: number, ly: number) =>
-    ly >= footFrom && (ly === H - 1 || bayerThreshold(lx, ly) < (ly - footFrom) / (H - 1 - footFrom));
   const heats = new Map<number, number>();
   const heat = (pct: number) => {
     let v = heats.get(pct);
@@ -449,6 +448,13 @@ export function keysScene(
 
   // THE NUMBER's cells (`numberCells`), worked out once per day number and kept; its top row.
   const y0 = numberTop(H);
+  // A finished key's foot: its lower half falls into the deep, row by row, its last row whole —
+  // but never in the number's band (its rows and its ring's), which stays solid cobalt round
+  // the cut-out digits: under the ring the ramp picks up at the density it has there.
+  const footFrom = Math.floor(H / 2);
+  const footDeep = (lx: number, ly: number) =>
+    ly === H - 1 ||
+    (ly > y0 + COUNT_ROWS && ly >= footFrom && bayerThreshold(lx, ly) < (ly - footFrom) / (H - 1 - footFrom));
   const maps = new Map<number, Uint8Array>();
   const digitMap = (day: number) => {
     let m = maps.get(day);
@@ -468,17 +474,67 @@ export function keysScene(
     else if (inked > COUNT_ROWS - 3) inked = inked >= COUNT_ROWS - 1 ? COUNT_ROWS : COUNT_ROWS - 3;
     return y0 + COUNT_ROWS - inked;
   };
+  // …AND THE FRONT AGREES WITH IT: where the edge snaps, the ramp's front (`raw`) moves with
+  // it — up or down, to the nearest place inside [3, n − 4] (a charge's own front where it is
+  // still under 3) at which the edge it splits the number at and its ramp agree: no ring cell
+  // disagrees with its row's ramp — an ink ring only on a row a third inked or more, a dusk
+  // ring only on a row under two thirds. So no ink HAT stands over a number, and no dusk NOTCH
+  // in the ink. Read on the row as it shows: its face cells (outside the number and its ring),
+  // a row with under four of them saying nothing.
+  const EDGE_STEP = 1 / 8;
+  const edges = new Map<string, { front: number; split: number }>();
+  const edgeOf = (raw: number, day: number) => {
+    const known = edges.get(`${day}|${raw}`);
+    if (known) return known;
+    const dmap = digitMap(day);
+    const agrees = (front: number) => {
+      const split = splitOf(front);
+      for (let ly = y0 - 1; ly <= y0 + COUNT_ROWS; ly += 1) {
+        const density = rampDensity(front, H - 1 - ly, 3);
+        let ring = false;
+        let face = 0;
+        let inked = 0;
+        for (let lx = 0; lx < W; lx += 1) {
+          const dc = dmap[ly * W + lx];
+          if (dc === 2) ring = true;
+          else if (dc === 0 && !corner(lx, ly)) {
+            face += 1;
+            if (bayerThreshold(lx, ly) < density) inked += 1;
+          }
+        }
+        if (!ring || face < 4) continue;
+        const ink = Math.min(Math.max(ly, y0), y0 + COUNT_ROWS - 1) >= split;
+        if (ink ? inked / face < 1 / 3 : inked / face >= 2 / 3) return false;
+      }
+      return true;
+    };
+    const lo = Math.min(3, raw);
+    const hi = n - 4;
+    let front = raw;
+    for (let k = 0; raw > 0 && k * EDGE_STEP <= hi - lo; k += 1) {
+      const up = Math.min(hi, raw + k * EDGE_STEP);
+      const down = Math.max(lo, raw - k * EDGE_STEP);
+      if (agrees(up)) {
+        front = up;
+        break;
+      }
+      if (agrees(down)) {
+        front = down;
+        break;
+      }
+    }
+    const edge = { front, split: splitOf(front) };
+    edges.set(`${day}|${raw}`, edge);
+    return edge;
+  };
 
-  const ironAt = (front: number, fill: number, i: number): Iron => ({
-    front,
-    split: splitOf(front),
-    fill,
-    flat: false,
-    head: -1,
-    locked: false,
-    capFlash: false,
-    todayCap: i === model.today,
-  });
+  // A key's front and its number's edge off the front `raw`: agreeing (`edgeOf`) on a ramp of
+  // ink, as they stand on a FLAT fill (a finished charge, solid to its front).
+  const ironAt = (raw: number, fill: number, i: number, flat: boolean): Iron => {
+    const key = model.keys[i];
+    const { front, split } = flat || key.kind === 'pad' ? { front: raw, split: splitOf(raw) } : edgeOf(raw, key.day);
+    return { front, split, fill, flat, head: -1, locked: false, capFlash: false, todayCap: i === model.today };
+  };
   // A played key's front and ink as it said `code` (a changed day's reading before its change).
   const readingOf = (code: DrawnCode | null) =>
     code === null || code === 'n'
@@ -488,14 +544,16 @@ export function keysScene(
         : { front: frontOf(Number(code.slice(1))), fill: heat(Number(code.slice(1))) };
   const wasOf = (i: number): Iron => {
     const was = readingOf(tl.from[i]);
-    return { ...ironAt(was.front, was.fill, i), locked: tl.from[i] === 's' };
+    const done = tl.from[i] === 's';
+    return { ...ironAt(was.front, was.fill, i, done), locked: done };
   };
 
   const ironOf = (i: number, ft: number): Iron => {
     const key = model.keys[i];
     const done = key.kind === 'solved';
     const front = done ? FULL : key.kind === 'progress' ? frontOf(key.pct) : 0;
-    const iron = ironAt(front, done ? COBALT : key.kind === 'progress' ? heat(key.pct) : 0, i);
+    const fill = done ? COBALT : key.kind === 'progress' ? heat(key.pct) : 0;
+    const iron = ironAt(front, fill, i, done);
     const lock = tl.lock[i];
     if (done && ft >= lock + (tl.flash[i] ? FLASH_MS : 0)) {
       iron.locked = true;
@@ -506,17 +564,15 @@ export function keysScene(
     if (ft < c0) return wasOf(i);
     const end = c0 + tl.chargeMs;
     if (ft < end) {
-      // Rising in whole rows, eased out, its top row the white write head.
+      // Rising, eased out, its top row the white write head — the front and the number's edge
+      // agreeing on every frame as at rest, so its last frame is the resting one.
       const f0 = readingOf(tl.from[i]).front;
-      iron.front = Math.round(f0 + (front - f0) * easeOut((ft - c0) / tl.chargeMs));
-      iron.split = splitOf(iron.front);
-      iron.head = iron.front - 1;
-      iron.flat = done;
-      return iron;
+      const rising = ironAt(f0 + (front - f0) * easeOut((ft - c0) / tl.chargeMs), fill, i, done);
+      rising.head = Math.ceil(rising.front) - 1;
+      return rising;
     }
     if (done) {
       // A ceremony's lock: through the cap, the cap white for two frames.
-      iron.flat = true;
       iron.capFlash = true;
       return iron;
     }

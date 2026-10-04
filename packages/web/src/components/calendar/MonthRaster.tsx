@@ -9,10 +9,9 @@ import Strike from '../Strike';
 import { BURST_ART } from '../strikeArt';
 import { useDeviceIdentity } from '../../identity';
 import { prefersReducedMotion } from '../../hooks/useScramble';
-import { CELL_PX, keyAt, type CalGeometry } from './geometry';
+import { BLEED, CELL_PX, keyAt, type CalGeometry } from './geometry';
 import { keysScene, type KeysModel, type KeysScene } from './keysScene';
-import { markBuilt, markStamped, rememberDrawn } from './memory';
-import { codesOf, nextStage, stageId, type Shown, type Stage, type Viewer } from './plan';
+import { markShown, nextStage, stageId, type Shown, type Stage, type Viewer } from './plan';
 
 // THE MONTH'S ONE CANVAS: the keys scene (`keysScene.ts`) on the raster recipe the podium
 // uses — one backing pixel a house cell, upscaled `pixelated`, laid over the grid with a bleed
@@ -24,23 +23,28 @@ import { codesOf, nextStage, stageId, type Shown, type Stage, type Viewer } from
 // must keep reading as one. Reduced motion draws the landed frame once and runs no clock.
 //
 // WHICH SCENE, and how it gives way from the one before, is `plan.ts`'s: LATCHED whenever what
-// the raster shows changes — never for a re-render (a press, a resize). A resize re-seats the
-// scene at the same moment, never replaying it — though, mid-arrival, it drops what played
-// under it (a turn still giving way, the loading checker under keys not yet in: they come in
-// over bare ground). The press is a one-shot redraw: it shows whether the clock runs or rests.
+// the raster shows changes — never for a re-render (a press, a resize) — and shown at once
+// (`markShown`). A TURN'S GIVING WAY, once begun, FINISHES on its own schedule whatever lands
+// under it (a read, a changed day): the scene that replaces it carries the frame it gives way
+// from and when it began. A stage that CARRIES an arrival goes on along that arrival's clock,
+// with what plays under it and its bursts. A resize re-seats the scene at the same moment,
+// never replaying it — though, mid-arrival, it drops what played under it (a turn still giving
+// way, the loading checker under keys not yet in: they come in over bare ground). The press is
+// a one-shot redraw: it shows whether the clock runs or rests.
 //
 // A PICTURE only (hidden from a screen reader): the grid's buttons over it carry every day's
 // date, status and tap.
 
 // A scene on screen: its clock's start, what a turn gives way from (the frame on screen as it
-// began), and — a read landing, a day changing — the scene it replaced, still playing under the
-// keys not come in yet, drawn each frame into `buf` (the frame the keys give way from), up to
-// `until`, its own time when it was replaced.
+// began) and when that turn began, and — a read landing, a day changing — the scene it
+// replaced, still playing under the keys not come in yet, drawn each frame into `buf` (the
+// frame the keys give way from), up to `until`, its own time when it was replaced.
 interface Layer {
   id: string;
   scene: KeysScene;
   start: number;
   from: Uint32Array | null;
+  fromAt: number;
   under: Layer | null;
   buf: Uint32Array | null;
   size: number;
@@ -57,9 +61,10 @@ function compose(layer: Layer, px: Uint32Array, now: number, pressed: number, co
     else layer.under = null;
   }
   layer.scene.draw(px, t, true, pressed, layer.until);
-  if (!layer.from || t >= DISSOLVE_MS) return;
+  const turned = now - layer.fromAt;
+  if (!layer.from || turned >= DISSOLVE_MS) return;
   const from = layer.from;
-  const lv = turnLevel(t);
+  const lv = turnLevel(turned);
   for (let i = 0; i < px.length; i += 1) if (bayerThreshold(i % cols, Math.floor(i / cols)) >= lv) px[i] = from[i];
 }
 
@@ -91,17 +96,27 @@ export default function MonthRaster({
   const viewer: Viewer = { lang, accountId, motion: !reduced };
   const shown: Shown = { month, activeDay, model, cells };
   const [stage, setStage] = useState<Stage | null>(null);
+  // The frame on screen (what the next scene gives way from); the scene's clock start and the
+  // frame it turns from with the turn's start, once per scene (a new layout redraws the same
+  // moment); the scene on screen, with what plays on under it.
+  const lastFrame = useRef<Uint32Array | null>(null);
+  const startRef = useRef<{ id: string; at: number; from: Uint32Array | null; fromAt: number } | null>(null);
+  const layerRef = useRef<Layer | null>(null);
   let staged = stage;
   if (staged === null || staged.id !== stageId(shown, viewer)) {
-    staged = nextStage(stage, shown, viewer);
+    // Still arriving: the stage on screen is an arrival its scene has not settled.
+    const layer = layerRef.current;
+    const arriving =
+      stage !== null &&
+      stage.spec.build !== null &&
+      layer?.id === stage.id &&
+      clockNow() - layer.start < layer.scene.settled;
+    staged = nextStage(stage, shown, viewer, arriving);
     setStage(staged);
   }
   const id = staged.id;
 
-  useEffect(() => {
-    if (staged.marks.built) markBuilt(staged.activeDay, accountId, lang, staged.month);
-    if (staged.marks.stamped) markStamped(lang, staged.activeDay);
-  }, [staged]);
+  useEffect(() => markShown(staged, viewer), [staged]);
 
   // The press reaches the clock through a ref; at rest it redraws once.
   const pressedRef = useRef(pressed);
@@ -111,26 +126,34 @@ export default function MonthRaster({
     redrawRef.current?.();
   }, [pressed]);
 
-  // The frame on screen (what the next scene gives way from); the scene's clock start and the
-  // frame it turns from, once per scene (a new layout redraws the same moment); the scene on
-  // screen, with what plays on under it.
-  const lastFrame = useRef<Uint32Array | null>(null);
-  const startRef = useRef<{ id: string; at: number; from: Uint32Array | null } | null>(null);
-  const layerRef = useRef<Layer | null>(null);
-  // The bursts are up while the scene plays out.
-  const [bursting, setBursting] = useState<string | null>(null);
+  // The bursts are up while the scene plays out, on its clock (its start).
+  const [bursting, setBursting] = useState<number | null>(null);
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return undefined;
-    // (A new layout keeps the scene's start; only a new scene starts the clock, and its bursts.)
+    const previous = layerRef.current;
+    // (A new layout keeps the scene's start; only a new scene starts the clock, and its bursts —
+    // unless it carries the clock of the one it replaces.)
     const fresh = startRef.current?.id !== id;
     if (fresh) {
-      const turnFrom = staged.give === 'turn' && lastFrame.current ? lastFrame.current.slice() : null;
-      startRef.current = { id, at: clockNow(), from: turnFrom };
+      const now = clockNow();
+      // A turn gives way from the frame on screen; a scene replacing a turn still giving way
+      // takes that giving way on, to finish on its own schedule.
+      const turn = staged.give === 'turn' && lastFrame.current ? lastFrame.current.slice() : null;
+      const giving =
+        (staged.give === 'keys' || staged.carries) && previous?.from && now - previous.fromAt < DISSOLVE_MS
+          ? previous
+          : null;
+      startRef.current = {
+        id,
+        at: staged.carries && previous ? previous.start : now,
+        from: turn ?? giving?.from ?? null,
+        fromAt: turn ? now : (giving?.fromAt ?? now),
+      };
     }
-    const { at: start, from: taken } = startRef.current!;
+    const { at: start, from: taken, fromAt } = startRef.current!;
     canvas.width = G.cols;
     canvas.height = G.rows;
     const image = ctx.createImageData(G.cols, G.rows);
@@ -139,24 +162,26 @@ export default function MonthRaster({
     const elapsed = () => clockNow() - start;
     const from = !reduced && taken && taken.length === px.length ? taken : null;
     // A read landing, a day changing: the scene it replaces plays on under the keys not come in
-    // yet (the loading wave going on, a turn still giving way finishing) — at the same size —
-    // but begins nothing new from here.
-    const previous = layerRef.current;
-    const below = reduced || staged.give !== 'keys' ? null : previous?.id === id ? previous.under : previous;
+    // yet (the loading wave going on, a turn's arrival finishing) — at the same size — but
+    // begins nothing new from here. A new layout, or a stage carrying the arrival, keeps what
+    // played under the scene before it.
+    const below =
+      reduced || !previous
+        ? null
+        : previous.id === id || staged.carries
+          ? previous.under
+          : staged.give === 'keys'
+            ? previous
+            : null;
     const under = below && below.size === px.length ? below : null;
     if (under && fresh) under.until = Math.min(under.until, start - under.start);
     const buf = under ? new Uint32Array(px.length) : null;
     const today = staged.model.today;
     const seed = foilSeed(`${lang}${today >= 0 ? staged.cells[today] : staged.month}`);
     const scene = keysScene(G, staged.model, staged.beats, seed, buf);
-    const layer: Layer = { id, scene, start, from, under, buf, size: px.length, until: Infinity };
+    const layer: Layer = { id, scene, start, from, fromAt, under, buf, size: px.length, until: Infinity };
     layerRef.current = layer;
-    const until = Math.max(scene.settled, from ? DISSOLVE_MS : 0);
-
-    // What the scene settles SAYING, for the next showing's changes.
-    const remember = () => {
-      if (staged.model.phase === 'data') rememberDrawn(accountId, lang, staged.month, codesOf(staged.model, staged.cells));
-    };
+    const until = Math.max(scene.settled, from ? fromAt - start + DISSOLVE_MS : 0);
     // At rest, the frame without its foil is kept, and the foil alone is repainted over it.
     let rest: Uint32Array | null = null;
     const settle = (t: number) => {
@@ -171,7 +196,6 @@ export default function MonthRaster({
       // The held frame: the landed picture, its foil at the count's own still instant.
       const t = Math.max(scene.settled, COUNT_STILL_S * 1000);
       settle(t);
-      remember();
       redrawRef.current = () => settle(t);
       return () => {
         redrawRef.current = null;
@@ -180,7 +204,7 @@ export default function MonthRaster({
 
     let timer = 0;
     let stopped = false;
-    if (fresh) setBursting(staged.beats.bursts.length > 0 ? id : null);
+    if (fresh) setBursting(staged.beats.bursts.length > 0 ? start : null);
     const tick = () => {
       timer = 0;
       if (stopped || !watch.seen()) return;
@@ -193,7 +217,6 @@ export default function MonthRaster({
       }
       if (rest === null) {
         settle(t);
-        remember();
         setBursting(null);
       } else if (scene.loop === 'wave') {
         scene.draw(px, t, false, pressedRef.current);
@@ -226,25 +249,31 @@ export default function MonthRaster({
     // A scene per stage and per layout; the data is the stage's.
   }, [G, id, reduced]);
 
-  // A key's centre in the raster's box, in CSS px.
-  const centre = (i: number) => {
-    const { x, y } = keyAt(G, i);
-    return { left: x * CELL_PX + G.keyWPx / 2, top: y * CELL_PX + G.keyHPx / 2 };
-  };
+  // The clock the stage shown is on: its own, or — a stage carrying an arrival, before its
+  // layout has run — the arrival's.
+  const clock =
+    startRef.current?.id === id ? startRef.current.at : staged.carries ? (layerRef.current?.start ?? null) : null;
   const burstInk = (i: number) => {
     const key = staged.model.keys[i];
     return key.kind === 'solved' ? 'var(--accent)' : key.kind === 'progress' ? progressHeatColor(key.pct) : 'var(--fg)';
   };
   return (
     <>
-      {/* The bursts UNDER the raster, clipped to its box: a landing flares through the ground
-          round its key, never over a neighbour's face. */}
+      {/* The bursts UNDER the raster, in their box (`.cal-bursts`: past the grid into open
+          ground, to the screen's edge): a landing flares through the ground round its key,
+          never over a neighbour's face. Keyed by the clock, so a stage carrying the arrival
+          neither restarts nor cuts one already up. */}
       <div className="cal-bursts" aria-hidden="true">
-        {bursting === id &&
+        {bursting !== null &&
+          bursting === clock &&
           staged.beats.bursts.map((burst) => (
-            <span key={`${id}:${burst.index}`} className="cal-burst" style={centre(burst.index)}>
-              <Strike id={burst.index} art={BURST_ART} color={burstInk(burst.index)} delayMs={burst.at} />
-            </span>
+            <KeyBurst
+              key={`${bursting}:${burst.index}`}
+              G={G}
+              index={burst.index}
+              at={bursting + burst.at}
+              color={burstInk(burst.index)}
+            />
           ))}
       </div>
       <canvas
@@ -254,5 +283,19 @@ export default function MonthRaster({
         style={{ width: G.cols * CELL_PX, height: G.rows * CELL_PX }}
       />
     </>
+  );
+}
+
+// A landing's BURST behind key `index`, centred on it in the bursts' box (its top the raster's,
+// its left the reach past the grid's), landing at `at` on the page's clock — its delay taken
+// once, as it mounts: a burst a carried stage adds lands on the arrival's beat.
+function KeyBurst({ G, index, at, color }: { G: CalGeometry; index: number; at: number; color: string }) {
+  const [delayMs] = useState(() => at - clockNow());
+  const { x, y } = keyAt(G, index);
+  const left = `calc(var(--reach) + ${(x - BLEED) * CELL_PX + G.keyWPx / 2}px)`;
+  return (
+    <span className="cal-burst" style={{ left, top: y * CELL_PX + G.keyHPx / 2 }}>
+      <Strike id={index} art={BURST_ART} color={color} delayMs={delayMs} />
+    </span>
   );
 }

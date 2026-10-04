@@ -29,6 +29,17 @@ describe('calGeometry — the first candidate that fits', () => {
     expect(room(1366, 657).G.name).toBe('mid');
   });
 
+  it('stands the phone keys stacked in a desktop window too short for MID, before going sideways', () => {
+    const regular = room(1280, 610).G;
+    expect(regular.name).toBe('regular');
+    expect(regular.layout).toBe('stacked');
+    expect(room(1280, 560).G.name).toBe('compact');
+    expect(room(740, 360).G.name).toBe('sideways');
+    expect(room(844, 390).G.name).toBe('sideways');
+    expect(room(1366, 657).G.name).toBe('mid');
+    expect(room(1366, 800).G.name).toBe('wide');
+  });
+
   it('lays a landscape phone sideways', () => {
     const G = room(740, 360).G;
     expect(G.name).toBe('sideways');
