@@ -9,7 +9,8 @@ import { useRef, type PointerEvent } from 'react';
 // nothing, and the click it ends in opens nothing either), and a second finger or another
 // button is not a swipe. `onSwipe` is told -1 (toward the start) or +1 (toward the end);
 // `swiped()` says whether a swipe or a drag ended just now (SWIPE_CLICK_MS), so the click it can
-// fire after it opens nothing — and a click long after (a key's) is a click.
+// fire after it opens nothing — and a click long after (a key's) is a click, as is a tap right
+// after one: a new gesture disarms the guard.
 const SWIPE_PX = 40;
 const SWIPE_CLICK_MS = 400;
 
@@ -18,6 +19,7 @@ export default function useSwipe(onSwipe: (step: -1 | 1) => void) {
   const endedAt = useRef(-Infinity);
   const handlers = {
     onPointerDown: (e: PointerEvent) => {
+      endedAt.current = -Infinity;
       start.current =
         e.isPrimary && e.button === 0
           ? { id: e.pointerId, x: e.clientX, y: e.clientY, mouse: e.pointerType === 'mouse' }

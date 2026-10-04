@@ -10,3 +10,9 @@ export function hexToAbgr(hex: string): number {
   const v = parseInt(hex.slice(1), 16);
   return abgr((v >> 16) & 255, (v >> 8) & 255, v & 255);
 }
+
+// An `rgb(r, g, b)` ink, as `heat.ts` writes a colour.
+export function rgbToAbgr(value: string): number {
+  const [r, g, b] = value.match(/\d+/g)?.map(Number) ?? [0, 0, 0];
+  return abgr(r, g, b);
+}

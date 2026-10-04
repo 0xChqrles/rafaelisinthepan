@@ -74,3 +74,11 @@ export function paintCountGlints(
   ctx.fillStyle = '#fff';
   countGlints(spots, w, seconds, seed, COUNT_GLINT_CELL_PX, (x, y, rw, rh) => ctx.fillRect(x, y, rw, rh));
 }
+
+// A surface's foil SEED off a key naming what it shows (a board, a day): every one its own
+// picture, the same on every visit.
+export function foilSeed(key: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i += 1) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  return ((h >>> 0) % 997) + 0.5;
+}

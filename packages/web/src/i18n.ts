@@ -417,8 +417,6 @@ const STRINGS = {
   // The account area's way OUT, on the header's own title (2026-08-29). The visible words
   // are the screen's NAME; this is what the control is called for a reader.
   ariaBack: { en: 'Back', fr: 'Retour' },
-  ariaPrevMonth: { en: 'Previous month', fr: 'Mois précédent' },
-  ariaNextMonth: { en: 'Next month', fr: 'Mois suivant' },
   // ---- tutorial invitation (#51): the tutorial never starts without an action.
   inviteTitle: {
     en: 'First time playing?',

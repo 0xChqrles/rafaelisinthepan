@@ -22,14 +22,14 @@ import { stepTier } from '../../game/podium';
 import { DISSOLVE_MS, SKELETON_WAIT_MS } from '../bayerTiles';
 import { LINE_PX } from '../boardMetrics';
 import { runEnd, runReel } from '../countRun';
-import { abgr, hexToAbgr } from '../raster';
+import { abgr, rgbToAbgr } from '../raster';
 import {
   COBALT as I_COBALT,
   DUSK as I_DUSK,
-  INKS,
   MUTED as I_MUTED,
   RAIL as I_RAIL,
   WHITE as I_WHITE,
+  inkAbgr,
 } from '../streak/sprites';
 
 // THE PODIUM SCENE (the board's subject, the way the result has its count): the day's — or
@@ -92,18 +92,11 @@ export const CELL_PX = 2;
 const SLOT_CELLS = LINE_PX / CELL_PX;
 
 // ── The inks: the streak raster's own — the tokens, nothing else — packed for the canvas ──
-// (`INKS` is indexed from the streak's first ink: its index 0 is the ground.)
-const ink = (index: number) => hexToAbgr(INKS[index - 1]);
-// `rgb(r, g, b)`, as `heat.ts` writes a colour.
-function rgb(value: string): number {
-  const [r, g, b] = value.match(/\d+/g)?.map(Number) ?? [0, 0, 0];
-  return abgr(r, g, b);
-}
-const WHITE = ink(I_WHITE); // --fg
-const MUTED = ink(I_MUTED); // --muted: the lines' ranks
-const RAIL = ink(I_RAIL); // --rail: iron
-const DUSK = ink(I_DUSK); // --surface-hover: iron's face
-const COBALT = ink(I_COBALT); // --accent / --solve: the trophy, and you
+const WHITE = inkAbgr(I_WHITE); // --fg
+const MUTED = inkAbgr(I_MUTED); // --muted: the lines' ranks
+const RAIL = inkAbgr(I_RAIL); // --rail: iron
+const DUSK = inkAbgr(I_DUSK); // --surface-hover: iron's face
+const COBALT = inkAbgr(I_COBALT); // --accent / --solve: the trophy, and you
 
 // ── The crown: `assets/icons/board.svg`, the header's own board mark, traced (rows 1–9 of
 // its 10×10 grid — a redrawn icon is traced again) ────────────────────────────────────────
@@ -415,15 +408,15 @@ const DROP_AFTER_RISE_MS = 20;
 const DROP_GAP_MS = 100;
 const DROP_MS = 220;
 const DROP_CELLS = 24;
-const SHAKE: readonly (readonly [number, number])[] = [
+export const SHAKE: readonly (readonly [number, number])[] = [
   [0, 1],
   [1, 0],
   [-1, 0],
   [1, 0],
 ];
-const SHAKE_FRAME_MS = 40;
+export const SHAKE_FRAME_MS = 40;
 const FIRST_RUN_MS = 650;
-const RECEDE_MS = 400;
+export const RECEDE_MS = 400;
 const RECEDE_STEPS = 8;
 // The winner's crown flashes white on the landing's impact, for this long.
 const FLASH_MS = 2 * FRAME_MS;
@@ -527,7 +520,11 @@ export function beats(spec: BeatSpec): Beats {
 const easeOut = (k: number) => 1 - (1 - k) ** 3;
 const clamp01 = (k: number) => Math.max(0, Math.min(1, k));
 // The frame a time falls in: the raster steps at FRAME_MS, so a beat lands on a frame.
-const framed = (t: number) => Math.floor(t / FRAME_MS) * FRAME_MS;
+export const framed = (t: number) => Math.floor(t / FRAME_MS) * FRAME_MS;
+// How much of a cobalt receding into the foil from `from` still stands at the frame `t`: 1
+// whole, 0 gone, in RECEDE_STEPS hard steps over RECEDE_MS.
+export const recedeLevel = (t: number, from: number) =>
+  Math.ceil((1 - clamp01((t - from) / RECEDE_MS)) * RECEDE_STEPS) / RECEDE_STEPS;
 
 // How many of its `h` rows a step rising from `at` stands at `t`: whole rows, eased out.
 function risenRows(at: number | null, h: number, t: number): number {
@@ -727,7 +724,7 @@ export function podiumScene(L: PodiumLayout, data: PodiumData, tl: Beats, seed: 
     });
     let receding = false;
     for (const { value: box, cells, from } of come) {
-      const solid = from === null ? 0 : Math.ceil((1 - clamp01((at - from) / RECEDE_MS)) * RECEDE_STEPS) / RECEDE_STEPS;
+      const solid = from === null ? 0 : recedeLevel(at, from);
       if (solid <= 0) continue;
       receding = true;
       for (let y = 0; y < box.h; y += 1) {
@@ -793,7 +790,7 @@ export function podiumScene(L: PodiumLayout, data: PodiumData, tl: Beats, seed: 
       // THE HEAT off the step's top to the box's, behind its player: one column a cell, in this
       // place's nearness ink, spilling SPILL cells past the step's sides.
       const s = place.step;
-      const color = rgb(progressHeatColor(held.near));
+      const color = rgbToAbgr(progressHeatColor(held.near));
       const x0 = s.x - SPILL;
       const w = s.w + 2 * SPILL;
       heatCells(

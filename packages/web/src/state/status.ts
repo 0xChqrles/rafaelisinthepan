@@ -1,18 +1,17 @@
 import { t } from '../i18n';
 
 // A play status for one (day, lang), read WITHOUT loading the puzzle — the archive
-// calendar's (#55, each day cell's status): absent = not started, solved = gold, in
+// calendar's (#55, each day cell's status): absent = not started, solved = cobalt, in
 // progress = a % on the app's one heat ramp.
 //
 // UNKNOWN is #211's: the private summary this day's status comes from has not ARRIVED, so
 // nothing can honestly be said about it. It is deliberately NOT `none` — "not started" is a
 // CLAIM, and a whole calendar of false ones is exactly what the explicit-loading rule
-// exists to prevent. `loading` only decides whether the placeholder breathes, and it means
-// a read is IN FLIGHT: breathing promises an answer is coming, so a read that failed — and
-// a surface that never asked — both rest still.
+// exists to prevent. Whether a read is on its way is the month's, not the day's: the
+// calendar reads it off the read's own phase.
 export type Status =
   | { kind: 'none' }
-  | { kind: 'unknown'; loading: boolean }
+  | { kind: 'unknown' }
   | { kind: 'solved' }
   | { kind: 'progress'; pct: number };
 
@@ -49,8 +48,8 @@ export function statusOf(summary: RoundSummary | undefined): Status {
 export function srStatus(uiLang: string, status: Status): string {
   if (status.kind === 'solved') return ` — ${t(uiLang, 'srLangSolved')}`;
   if (status.kind === 'progress') return ` — ${status.pct}%`;
-  // The visual placeholder says "not yet" by breathing; a reader gets it in words rather
-  // than the silence a not-started day answers with.
+  // The ghost says "not yet" to the eye; a reader gets it in words rather than the silence a
+  // not-started day answers with.
   if (status.kind === 'unknown') return ` — ${t(uiLang, 'srStatusUnknown')}`;
   return '';
 }

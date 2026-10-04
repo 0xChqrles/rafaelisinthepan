@@ -5,9 +5,10 @@ import PlusIcon from '../assets/icons/plus.svg?react';
 import { prefersReducedMotion } from '../hooks/useScramble';
 
 // WHICH BOARD: the boards' ONE control across the app — the solved screen's boards and the
-// board screen both turn through it. The tabs are NAMES IN A ROW (each group, then GLOBAL),
-// `--ui` bold tracked capitals in the secondary ink, the one shown wearing the WHITE TITLE
-// CHIP (the cards' one emphasis gesture).
+// board screen both turn through it, and so does the archive's month (a selection among
+// months, the active one pinned: `calendar/months.ts`). The tabs are NAMES IN A ROW (each
+// group, then GLOBAL), `--ui` bold tracked capitals in the secondary ink, the one shown
+// wearing the WHITE TITLE CHIP (the cards' one emphasis gesture).
 //
 // GLOBAL IS PINNED (`pinned`): the one tab every player has stays at the row's end whatever
 // the groups' names add up to — sticky on the row's own axis, the groups passing UNDER it.
@@ -17,35 +18,41 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 // (snapping to names), and a name the column cuts is not drawn cut, nor thinned to a few stray
 // cells: it is COVERED, and the cover carries the boards' own mark for what is left out — the
 // stippled rail of the rows a board leaves out (`.board-gap`) — at that end, against the whole
-// name next to it (on whole pixels; no mark on a cover too narrow to hold one). Turning to a tab
-// scrolls its name whole into view; a swipe of the row lets names in whole, a step at a time. A
-// name too long to show whole in the room the row leaves it, scrolled to (clear of the left-out
-// marks and of the pinned name), ENDS IN AN ELLIPSIS at that room — so the shown name is always
-// there to read, never under a cover.
+// name next to it, on whole pixels. A cover too narrow to hold its mark takes the next whole
+// name too (left out with the rest) — never the shown one, so a cover against the shown name
+// can stand unmarked. Turning to a tab scrolls its name whole into view; a swipe of the row
+// lets names in whole, a step at a time. A name too long to show whole in the room the row
+// leaves it, scrolled to (clear of the left-out marks and of the pinned name), ENDS IN AN
+// ELLIPSIS at that room — so the shown name is always there to read, never under a cover.
 //
 // THE CHIP TRAVELS. It is not a class on the shown name but ONE white sheet over the whole
 // row, carrying the row's names again in the ground's ink (the pinned one pinned too),
 // clipped to the shown name's box — so a turn moves the clip from one name to the next and
 // the white block slides along the row, inverting exactly the letters it covers on the way.
-// It moves in whole pixels and HARD STEPS (TRAVEL_STEPS over TRAVEL_MS, eased out), the
-// house's motion; under reduced motion it is simply there. Its first drawing — the chip WIPED
-// across the name — is each surface's CSS, timed to its own beat. A `bare` tab is a STATE, not
-// a name (the board screen's "no group"): shown, it wears no chip — a white chip would make it
-// a group of that name — only the plain ink.
+// It travels only on a turn (the shown tab changing): names added or resized round it re-seat
+// it in place. It moves in whole pixels and HARD STEPS (TRAVEL_STEPS over TRAVEL_MS, eased
+// out), the house's motion; under reduced motion it is simply there. Its first drawing — the
+// chip WIPED across the name — is each surface's CSS, timed to its own beat. A `bare` tab is a
+// STATE, not a name (the board screen's "no group"): shown, it wears no chip — a white chip
+// would make it a group of that name — only the plain ink.
 //
 // A ROVING TABLIST for the keyboard: Tab lands on the shown name alone; the arrow keys (and
 // Home / End) move the focus AND turn, and a name taking the focus scrolls whole into view. A
 // tap on another name turns to it; a tap (or Enter) on the SHOWN chip goes INTO it (`onOpen`:
-// the result opens that board; the board screen opens a group's own screen). The board screen
-// pins the PLUS at the row's end (`onNew`): creating a group is the row's one other act, and
-// pinned it never scrolls out of reach. Each tab names the PANEL it controls — the surface's
-// board, which takes its name from the shown tab (`tabIds`, off one id the surface owns).
+// the result opens that board; the board screen opens a group's own screen; the archive's
+// shown month goes nowhere, and passes none). The board screen pins the PLUS at the row's end
+// (`onNew`): creating a group is the row's one other act, and pinned it never scrolls out of
+// reach. Each tab names the PANEL it controls — the surface's board, which takes its name from
+// the shown tab (`tabIds`, off one id the surface owns).
 export const tabIds = (base: string) => ({ panel: `${base}panel`, tab: (key: string) => `${base}tab-${key}` });
 export interface BoardTabItem {
   key: string;
   label: string;
   pinned?: boolean;
   bare?: boolean;
+  // What a reader hears for the tab, where its label is a short form (the archive's month
+  // names: `SEPT` is read "septembre 2026").
+  ariaLabel?: string;
 }
 
 const TRAVEL_MS = 200;
@@ -81,7 +88,7 @@ export default function BoardTabs({
   // The surface's id for the tabs and their panel (`tabIds`).
   idBase: string;
   onTurn: (index: number) => void;
-  onOpen: (index: number) => void;
+  onOpen?: (index: number) => void;
   // The pinned plus, and its accessible name.
   onNew?: () => void;
   newLabel?: string;
@@ -91,6 +98,8 @@ export default function BoardTabs({
   const lineRef = useRef<HTMLDivElement>(null);
   const inkRef = useRef<HTMLDivElement>(null);
   const chip = useRef<Chip | null>(null);
+  // The tab the chip was last seated on (its key): the chip travels only when that changes.
+  const chipOn = useRef<string | null>(null);
   const travel = useRef<Animation | null>(null);
   const bare = tabs[shown]?.bare === true;
   const pin = tabs.findIndex((tab) => tab.pinned);
@@ -100,10 +109,11 @@ export default function BoardTabs({
 
   // THE CHIP: measured off the shown name's box in the line's own coordinates — read off the
   // rendered boxes, so a pinned name held at the row's end is measured where it stands —
-  // written as the clip's two insets, and, when it was somewhere else, travelled there.
+  // written as the clip's two insets, and, when it was on another tab, travelled there.
   // `animate` is false for a re-measure (the web font landing, the column resizing, the row
-  // scrolling under a pinned chip): the chip is simply re-seated. Off a bare tab it has
-  // nowhere to travel from: it is drawn in afresh.
+  // scrolling under a pinned chip): the chip is simply re-seated — as it is when the tab it is
+  // on stays and the names round it change (a month added at 22:00, a group appended). Off a
+  // bare tab it has nowhere to travel from: it is drawn in afresh.
   const seat = useCallback(
     (animate: boolean) => {
       const line = lineRef.current;
@@ -114,10 +124,14 @@ export default function BoardTabs({
       const at = label.getBoundingClientRect();
       const next = { l: Math.round(at.left - box.left), r: Math.round(box.right - at.right) };
       const prev = chip.current;
+      const on = tabs[shown]?.key ?? null;
+      const turned = chipOn.current !== on;
       chip.current = bare ? null : next;
+      chipOn.current = on;
       ink.style.setProperty('--chip-l', `${next.l}px`);
       ink.style.setProperty('--chip-r', `${next.r}px`);
-      if (bare || !animate || prev === null || (prev.l === next.l && prev.r === next.r) || prefersReducedMotion()) return;
+      const still = prev === null || (prev.l === next.l && prev.r === next.r);
+      if (bare || !animate || !turned || still || prefersReducedMotion()) return;
       travel.current?.cancel();
       const frames = travelFrames(TRAVEL_STEPS, (e) => {
         const l = Math.round(prev.l + (next.l - prev.l) * e);
@@ -126,7 +140,8 @@ export default function BoardTabs({
       });
       travel.current = ink.animate(frames, { duration: TRAVEL_MS });
     },
-    [shown, bare],
+    // `keys` stands for `tabs`: the tabs' content, not the array a parent re-creates.
+    [shown, bare, keys],
   );
 
   // EACH NAME'S ROOM: the most it can show whole once scrolled to (`--label-max`, on the name and
@@ -161,9 +176,9 @@ export default function BoardTabs({
 
   // THE COVERS: at each end, from the row's edge to the nearest WHOLE name (the label's box —
   // the chip's), drawn only when a name is left out there; at the far end the pinned name is
-  // the edge. The SHOWN name is never left out (it is scrolled to, and its room capped above):
-  // a cover stops short of it. Written straight onto the control's style (a scroll frame
-  // re-renders nothing).
+  // the edge. A cover too narrow for the mark takes the next whole name too, and so on. The
+  // SHOWN name is never left out (it is scrolled to, and its room capped above): a cover stops
+  // short of it. Written straight onto the control's style (a scroll frame re-renders nothing).
   const cover = useCallback(() => {
     const root = rootRef.current;
     const row = rowRef.current;
@@ -173,8 +188,9 @@ export default function BoardTabs({
     const box = row.getBoundingClientRect();
     const pinned = pinnedTab?.firstElementChild ?? null;
     const end = pinned ? pinned.getBoundingClientRect().left - box.left : box.width;
-    let first = Infinity;
-    let last = -Infinity;
+    // The whole names in row order (the shown one always whole), and whether one is cut at
+    // either end.
+    const whole: { l: number; r: number; shown: boolean }[] = [];
     let cutLeft = false;
     let cutRight = false;
     for (let i = 0; i < tabs.length; i += 1) {
@@ -183,20 +199,20 @@ export default function BoardTabs({
       const at = label.getBoundingClientRect();
       const l = at.left - box.left;
       const r = at.right - box.left;
-      if (i === shown) {
-        first = Math.min(first, Math.max(0, l));
-        last = Math.max(last, Math.min(end, r));
-      } else if (l < -0.5) cutLeft = true;
+      if (i === shown) whole.push({ l: Math.max(0, l), r: Math.min(end, r), shown: true });
+      else if (l < -0.5) cutLeft = true;
       else if (r > end + 0.5) cutRight = true;
-      else {
-        first = Math.min(first, l);
-        last = Math.max(last, r);
-      }
+      else whole.push({ l, r, shown: false });
     }
-    const coverL = cutLeft && first < Infinity ? Math.round(first) : 0;
-    const coverR = cutRight ? Math.max(0, Math.round(end - (last > -Infinity ? last : 0))) : 0;
+    let a = 0;
+    let b = whole.length - 1;
+    if (cutLeft) while (a < b && !whole[a].shown && whole[a].l < COVER_MARK_PX) a += 1;
+    if (cutRight) while (b > a && !whole[b].shown && end - whole[b].r < COVER_MARK_PX) b -= 1;
+    const last = b >= 0 ? whole[b].r : 0;
+    const coverL = cutLeft && a <= b ? Math.round(whole[a].l) : 0;
+    const coverR = cutRight ? Math.max(0, Math.round(end - last)) : 0;
     root.style.setProperty('--cover-l', `${coverL}px`);
-    root.style.setProperty('--cover-r-x', `${Math.round(last > -Infinity ? last : 0)}px`);
+    root.style.setProperty('--cover-r-x', `${Math.round(last)}px`);
     root.style.setProperty('--cover-r', `${coverR}px`);
     root.toggleAttribute('data-cut-l', cutLeft);
     root.toggleAttribute('data-cut-r', cutRight);
@@ -311,11 +327,12 @@ export default function BoardTabs({
               role="tab"
               id={tabIds(idBase).tab(tab.key)}
               aria-controls={tabIds(idBase).panel}
+              aria-label={tab.ariaLabel}
               className={`board-tab${i === shown ? ' on' : ''}${tab.pinned ? ' pinned' : ''}${tab.bare ? ' bare' : ''}`}
               aria-selected={i === shown}
               tabIndex={i === shown ? 0 : -1}
               onFocus={() => reveal(i)}
-              onClick={() => (i === shown ? onOpen(i) : onTurn(i))}
+              onClick={() => (i === shown ? onOpen?.(i) : onTurn(i))}
             >
               <span className="board-tab-label" data-focus-box>
                 {tab.label}

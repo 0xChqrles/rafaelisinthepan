@@ -13,6 +13,7 @@ import {
   clamp01,
   type Timeline,
 } from './beats';
+import { hexToAbgr } from '../raster';
 
 // THE STREAK CELEBRATION'S INKS AND SPRITES — the small drawn things the scene (`scene.ts`)
 // stamps into its raster: the inks themselves (the app's tokens, nothing else), the chain's
@@ -43,6 +44,9 @@ export const INKS: readonly string[] = [
   '#ffffff', // FOIL   (painted per cell by `foilInk`; white where it is not)
   '#1c2566', // FOIL_DEEP
 ];
+// An ink packed for a canvas raster seen through a Uint32Array (`raster.ts`), by its index
+// above (1 is INKS' first: the raster's 0 is the ground).
+export const inkAbgr = (index: number) => hexToAbgr(INKS[index - 1]);
 
 // The under-face of a material: cobalt's deep, iron's dusk, the foil's darker self; white-hot
 // metal is white through.

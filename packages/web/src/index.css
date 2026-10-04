@@ -238,13 +238,12 @@ input {
    near-black ground is the same thing — everything blends toward the same black — and
    composes with the opacity a control already carries (a resting tab, a greyed key)
    instead of overwriting it. 20% where the control has contrast to spare; 10% on the
-   dark tiles that have little to give (a key, a calendar day). */
+   dark tiles that have little to give (a key). */
 [data-bracketed] {
   filter: brightness(0.8);
   transition: filter 140ms linear;
 }
-.kb-key[data-bracketed],
-.cal-day[data-bracketed] {
+.kb-key[data-bracketed] {
   filter: brightness(0.9);
 }
 .fb-tl {
@@ -410,231 +409,285 @@ input {
 }
 
 /* ===================== archive calendar (issue #55) ===================== */
-/* A month of playable past days under the app header (no progress-bar row). Day cells are
-   flat keys like the language cards / keyboard — surface tiles that brighten on hover /
-   press — filled with the heat-ramp color (solved = 100%, and a solved day also
-   ripples; see .cal-ripple), plain surface when not started. The calendar is centered
-   vertically: .archive fills the app height as a flex column that centers .cal, with top
-   padding so the centering region starts BELOW the fixed header (the TopBar inside is
-   position:fixed, out of flow, so only .cal participates). */
+/* THE ARCHIVE: the player's record a month at a time, drawn as a month of IRON KEYS on the bare
+   ground (`MonthRaster`, `keysScene.ts`) in the board screen's own column — top-aligned under
+   the header as the board is, centred on a WHOLE pixel (an odd offset would set every cell of
+   the raster on half of one). Top to bottom: the month row (the boards' tabs), the weekday
+   letters, the grid, and the HOLD — reserved in every state, so nothing above it moves when a
+   failed read speaks. A window too short for a stacked month (a landscape phone) lays it
+   SIDEWAYS: the month row and the hold on the left, the weekdays and the grid on the right.
+   Every size is the calendar's geometry (`calGeometry`: whole cells, even gaps), handed down
+   as custom properties — the column's heights too, so the fit it measures is the column drawn.
+   No panel: the month is the screen's one subject. */
+/* THE BOARD'S COLUMN, the board screen's and the archive's: the board's 560 at most
+   (geometry.ts's COLUMN_PX), centred on a WHOLE pixel — an odd offset would set the podium,
+   the marks, the ghost and the month's raster on half of one — and top-aligned, clearing the
+   header row (8px + 50px viewport, minus .app's own 24px) plus a beat. (The 58px is
+   geometry.ts's STACK_TOP_PX less .app's 24px; move one, move the other.) */
+.board-screen,
 .archive {
-  width: min(420px, 100%);
+  width: min(560px, 100%);
+  margin-left: auto;
+  margin-left: max(0px, round(down, (100% - 560px) / 2, 1px));
+  margin-right: auto;
   align-self: stretch;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  padding-top: 70px;
+  padding-top: 58px;
 }
-
-/* Month navigation, clamped to [first puzzle month, current month] — the ‹ › ends dim
-   when the range runs out. The month/year title (locale-formatted) fills the middle. */
-.cal-nav {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 18px;
-}
-.cal-month {
-  flex: 1;
-  text-align: center;
-  /* The month is the page's headline: the mono at a medium weight, the locale's own
-     capitalisation standing. */
-  font-family: var(--ui);
-  font-size: clamp(16px, 2.5vh, 20px);
-  font-weight: 550;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--fg);
-  padding-top: var(--cap-shift);
-}
-.cal-arrow {
-  flex: none;
-  padding: 2px 14px 6px;
-  font-family: var(--ui);
-  font-size: clamp(22px, 3.2vh, 26px);
-  font-weight: 400;
-  line-height: 1;
-  background: transparent;
-  border: 0;
-  border-radius: var(--r-sm);
-  color: var(--fg);
-  opacity: 0.8;
-  cursor: pointer;
-  transition: opacity 0.08s linear;
-}
-.cal-arrow:hover:not([disabled]) {
-  opacity: 1;
-}
-.cal-arrow[disabled] {
-  opacity: 0.26;
-  cursor: default;
-}
-
-/* One 7-column grid, shared by the weekday header and the day cells so columns align. */
-.cal-grid {
-  --cal-gap: 6px;
+.archive[data-layout='sideways'] {
+  width: 100%;
+  margin-left: 0;
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: var(--cal-gap);
+  grid-template-columns: minmax(0, 1fr) var(--grid-w);
+  grid-template-rows: auto 1fr;
+  align-content: start;
+  column-gap: 44px;
+  padding-top: 42px;
 }
-.cal-weekdays {
-  margin-bottom: 6px;
+/* The month row, its first chip's left edge on the grid's (a tab pads its name 4px). */
+.cal-head {
+  flex: none;
+  width: calc(var(--grid-w) + 8px);
+  margin-left: calc(var(--grid-x) - 4px);
 }
-.cal-weekday {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--ui);
-  font-size: clamp(11px, 2.4vw, 12px);
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--fg);
-  opacity: 0.7;
-  padding-bottom: 2px;
+.archive[data-layout='sideways'] .cal-head {
+  grid-column: 1;
+  grid-row: 1;
+  width: auto;
+  min-width: 0;
+  margin-left: -4px;
+  /* The chip's middle on the first week's: down by the weekday row, its air and half a key,
+     less half the tab row. */
+  margin-top: calc(var(--weekdays-h) + var(--air) + var(--key-h) / 2 - var(--tabs-h) / 2);
 }
-
-/* A day tile: a flat key that navigates to that day's game. Square (aspect-ratio) so the
-   grid stays regular; the day number is centered. A day with progress is FILLED with its
-   heat-ramp color (set inline per-day, .cal-day-filled below); a neutral day keeps the
-   surface. */
-.cal-day {
-  position: relative;
-  /* NOT `overflow: hidden`: the streak chain's link hangs into the gap past the cell's
-     edge. The ripple, the one thing that needed clipping, rounds itself (`inherit`). */
-  aspect-ratio: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  background: var(--surface-hover);
-  border: 0;
-  border-radius: var(--r-sm);
-  color: var(--fg);
-  font-family: var(--ui);
-  cursor: pointer;
-  text-shadow: none;
-  transition: filter 0.08s linear;
-}
-/* Brighten only PLAYABLE days — a disabled day is inert, so it must not react to hover
-   (native :disabled can still match :hover). */
-.cal-day:not([disabled]):hover {
-  filter: brightness(1.2);
-}
-.cal-day:not([disabled]):active {
-  filter: brightness(1.35);
-}
-/* Out of range (before the first puzzle or after today): dimmed, inert — no hover, no shake. */
-.cal-day-disabled {
-  opacity: 0.26;
-  color: var(--muted);
+/* The shown month's chip goes nowhere: no pointer over it. */
+.archive .board-tab.on {
   cursor: default;
 }
-/* #211's UNKNOWN day: the month's private summary has not arrived, so the cell withholds
-   the one claim it cannot make — no fill, no ripple — while keeping its number and its tap
-   (the day is playable whether or not we know what happened on it). It BREATHES while the
-   read is still out (`.cal-day-waiting`, the app's skeleton beat) and rests still once it
-   has failed, which is what tells "not yet" apart from "not started". The global
-   reduced-motion rule collapses the loop to one instant pass, leaving it resting. */
-.cal-day-unknown {
+/* The tab row's first drawing, the board screen's and the archive's: the chip drawn across
+   the shown name, once, as the screen opens. A turn sends it travelling (BoardTabs). */
+.board-screen .board-tabs-ink,
+.archive .board-tabs-ink {
+  animation: board-tabs-wipe 240ms steps(8, jump-end) 60ms backwards;
+}
+.cal-body {
+  flex: none;
+  width: var(--grid-w);
+  margin-left: var(--grid-x);
+}
+.archive[data-layout='sideways'] .cal-body {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  margin-left: 0;
+}
+/* The weekday letters, each centred over its column of keys, in the secondary ink — today's
+   in the plain one. */
+.cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, var(--key-w));
+  column-gap: var(--col-gap);
+  height: var(--weekdays-h);
+  margin-top: var(--air);
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: var(--weekdays-h);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--muted);
 }
-.cal-day-waiting {
-  animation: skeleton-breathe 1.4s ease-in-out infinite;
+.archive[data-layout='sideways'] .cal-weekdays {
+  margin-top: 0;
 }
-/* A month that could not be read, stated under the grid with the one thing that helps. */
-.cal-failed {
+.cal-weekdays > span {
+  text-align: center;
+  /* The tracking trails a letter; the same before it centres it. */
+  padding-left: 0.12em;
+}
+.cal-weekdays > span.on {
+  color: var(--fg);
+}
+/* THE STAGE: exactly the grid's box. The raster lies over it with a bleed on its sides and foot
+   (a run's wrap stubs, today's shake, a pressed key's sink) and its headroom over the top (the
+   height today falls from, over the weekday letters), the landings' bursts UNDER the raster —
+   the raster's ground is transparent, so a burst flares through the ground round its key and
+   never over a neighbour's face — and the days' buttons over everything. A sideways swipe on
+   it turns the month. */
+.cal-stage {
+  position: relative;
+  width: var(--grid-w);
+  height: var(--grid-h);
+  margin-top: var(--air);
+  touch-action: pan-y pinch-zoom;
+}
+.cal-raster {
+  position: absolute;
+  left: calc(-1 * var(--bleed));
+  top: calc(-1 * var(--headroom));
+  z-index: 1;
+  display: block;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+/* The bursts' box: the headroom over the grid, and past its sides and its foot into open ground
+   — half the burst sheet (53px), sideways no further than the screen's edge (`--side-room`,
+   Archive's measure) — so a landing is cut only where the screen ends, and the box, clipping
+   what it holds, never widens the page. (Sideways, no hold is reserved under the grid: the
+   foot stays at the bleed.) */
+.cal-bursts {
+  --reach: min(53px, var(--side-room));
+  position: absolute;
+  inset: calc(-1 * var(--headroom)) calc(-1 * var(--reach)) -53px;
+  z-index: 0;
+  overflow: clip;
+  pointer-events: none;
+}
+.archive[data-layout='sideways'] .cal-bursts {
+  bottom: calc(-1 * var(--bleed));
+}
+/* THE DAYS: real buttons over the picture, each tiling its key and half the gaps round it, so
+   the month has no dead gaps to miss. */
+.cal-grid {
+  position: absolute;
+  z-index: 2;
+  left: calc(var(--col-gap) / -2);
+  top: calc(var(--row-gap) / -2);
+  display: grid;
+  grid-template-columns: repeat(7, calc(var(--key-w) + var(--col-gap)));
+  grid-template-rows: repeat(6, calc(var(--key-h) + var(--row-gap)));
+}
+.cal-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.cal-day[disabled] {
+  cursor: default;
+}
+/* The drawn key's box: what the focus brackets frame, and where the hover's corners stand. */
+.cal-day-box {
+  position: relative;
+  display: block;
+  width: var(--key-w);
+  height: var(--key-h);
+}
+/* The raster paints every number; this text is for the tests, a screen reader and forced
+   colours. */
+.cal-day-num {
+  display: block;
+  font-family: var(--ui);
+  font-size: 12px;
+  line-height: var(--key-h);
+  text-align: center;
+  color: transparent;
+  user-select: none;
+}
+/* HOVER (a mouse): the corner brackets of a thing that can be tapped — four arms in the
+   secondary ink, just outside the key, in one hard step; never on a day out of range, never at
+   rest, and the focus brackets take over where they stand. */
+@media (hover: hover) and (pointer: fine) {
+  .cal-day:not([disabled]):hover .cal-day-box:not([data-bracketed])::after {
+    --corner: var(--muted);
+    content: '';
+    position: absolute;
+    inset: -4px;
+    background:
+      linear-gradient(var(--corner), var(--corner)) left 0 top 0 / 6px 2px,
+      linear-gradient(var(--corner), var(--corner)) left 0 top 0 / 2px 6px,
+      linear-gradient(var(--corner), var(--corner)) right 0 top 0 / 6px 2px,
+      linear-gradient(var(--corner), var(--corner)) right 0 top 0 / 2px 6px,
+      linear-gradient(var(--corner), var(--corner)) left 0 bottom 0 / 6px 2px,
+      linear-gradient(var(--corner), var(--corner)) left 0 bottom 0 / 2px 6px,
+      linear-gradient(var(--corner), var(--corner)) right 0 bottom 0 / 6px 2px,
+      linear-gradient(var(--corner), var(--corner)) right 0 bottom 0 / 2px 6px;
+    background-repeat: no-repeat;
+    pointer-events: none;
+  }
+}
+/* THE HOLD under the grid, one height in every state: a failed read's note over RETRY —
+   `failedHistory` in the danger ink when nothing is drawn, `staleHistory` in the plain status
+   ink over a month still on screen — each dissolving in as it comes. */
+.cal-hold {
+  flex: none;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  margin-top: 18px;
+  gap: 8px;
+  width: var(--grid-w);
+  height: var(--hold-h);
+  margin-top: var(--hold-gap);
+  margin-left: var(--grid-x);
 }
-/* The active (today) day, marked with an inset --fg ring. Drawn as a pseudo-element rather
-   than `outline` so it paints ABOVE the solved-day ripple — a positioned child (inset: 0)
-   that would otherwise cover an outline — so today stays outlined even once it is completed.
-   z-index sits the ring over the ripple (auto) and the day number (1). */
-.cal-day-today::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border: 2px solid var(--fg);
-  border-radius: inherit;
-  pointer-events: none;
+.archive[data-layout='sideways'] .cal-hold {
+  grid-column: 1;
+  grid-row: 2;
+  align-items: flex-start;
+  width: auto;
+  height: auto;
+  margin: 16px 0 0;
 }
-/* Filled (>0% reconstruction): the fill color is inline (per-day % on the heat ramp);
-   the number is drawn in the app background so it reads on the fill. Compound selector so
-   it beats the base .cal-day color. */
-.cal-day.cal-day-filled {
-  color: var(--bg);
+.cal-hold-in {
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
 }
-/* A COMPLETE (solved) day keeps its number in --fg — legible over the darker frames of
-   the ripple. Placed after .cal-day-filled (same specificity) so it wins for solved days. */
-.cal-day.cal-day-solved {
-  color: var(--fg);
+.cal-note {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--accent);
 }
-/* THE STREAK IS A CHAIN: a solved day linked to the solved day beside it by a solid
-   cobalt LINK across the gap — a run reads as one thing, the way the week tiles of the
-   streak screen do. Square-cut, the gap's own width, a third of the cell tall. */
-.cal-day-chained::before {
-  content: '';
-  position: absolute;
-  left: 100%;
-  top: calc(50% - 4px);
-  width: var(--cal-gap);
-  height: 8px;
-  background: var(--solve);
-  pointer-events: none;
+.cal-note.error {
+  color: var(--danger);
 }
-.cal-day-num {
-  position: relative; /* above the ripple */
-  z-index: 1;
-  font-size: clamp(14px, 3.2vw, 17px);
-  font-weight: 550;
-  padding-top: var(--cap-shift);
-  font-variant-numeric: tabular-nums;
+/* A grid under 356px: the note a size down, so fr's failure line holds one line. */
+.cal-hold.narrow .cal-note {
+  font-size: 11px;
+  letter-spacing: 0.06em;
 }
-/* Empty leading cells so day 1 lands under its weekday column. */
-.cal-pad {
-  aspect-ratio: 1;
+.archive[data-layout='sideways'] .cal-note {
+  white-space: normal;
+  text-align: left;
 }
-
-/* Solved-day ripple: the shading WAVE that marks a solved (validated) day so it differs
-   from an in-progress one by motion, not only color. It plays `ultracode.png` — a
-   horizontal sprite sheet of 12 square (12×12) frames — as a CSS background. `background-
-   size: 1200% 100%` scales the sheet so ONE frame fills the square cell; `steps(12)` then
-   walks `background-position-x` frame by frame. The end value is 100% × 12/11 so frame 11
-   lands exactly on 100% (each of the 12 frames shown 1/12 of the cycle, looping cleanly).
-   `image-rendering: pixelated` keeps the 12px pixels crisp; the number paints above. */
-.cal-ripple {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  --ripple-dur: 1.5s;
-  background-image: url('./assets/ultracode.png');
-  background-repeat: no-repeat;
-  background-size: 1200% 100%;
-  image-rendering: pixelated;
-  animation: cal-ripple var(--ripple-dur) steps(12) infinite;
-}
-@keyframes cal-ripple {
-  from {
-    background-position-x: 0%;
-  }
-  to {
-    background-position-x: calc(100% * 12 / 11); /* frame 11 lands on 100%; endpoint wraps */
-  }
-}
-/* Motion is a progressive enhancement: reduced-motion users get the solid cobalt base
-   fill, never a frozen frame. The small solved-day number switches to --bg so the static
-   pairing keeps normal-text contrast; the animated ripple needs --fg over its dark frames. */
 @media (prefers-reduced-motion: reduce) {
-  .cal-ripple {
+  .board-screen .board-tabs-ink,
+  .archive .board-tabs-ink,
+  .cal-hold-in {
+    animation: none;
+  }
+}
+/* Forced colours: the raster's inks are gone, so the days' own numbers stand — today's
+   underlined — and the chip (a painted sheet, dropped) gives the shown month an outline. */
+@media (forced-colors: active) {
+  .cal-raster {
     display: none;
   }
-  .cal-day.cal-day-solved {
-    color: var(--bg);
+  .cal-day-num {
+    color: CanvasText;
+  }
+  .cal-day[disabled] .cal-day-num {
+    color: GrayText;
+  }
+  .cal-day-today .cal-day-num {
+    text-decoration: underline 2px;
+    text-underline-offset: 3px;
+  }
+  .archive .board-tab[aria-selected='true'] .board-tab-label {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
   }
 }
 
@@ -2629,7 +2682,8 @@ input {
    LARGE, SOFTLY ROUNDED panel lifted a shade off the near-black ground, with a thin
    low-contrast stroke. It exists because a phone shows two or three different things stacked
    in one column, and on the bare ground they read as one run of text: a card says "this is
-   one thing" before a word is read. Worn by the account's numbers and the archive calendar.
+   one thing" before a word is read. Worn by the account's numbers. (The archive calendar is
+   one subject on its screen, so it stands on the bare ground.)
 
    THE ONE EXCEPTION TO THE 4px RADIUS CEILING (user-decided by the references): the
    panel's corners are big and soft. Nothing else in the chrome rounds past 4px; the pill
@@ -4708,10 +4762,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   .solved-stage {
     padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   }
-  /* Archive: the centering column carries over from the base rule; just clear the
-     compact (48px) mobile header. */
+  /* Archive: the board's top on a phone — the month row's top 76px down. */
   .archive {
-    padding-top: 56px;
+    padding-top: 60px;
   }
 }
 
@@ -5057,9 +5110,10 @@ figure.l1-fig {
 }
 /* THE PLAYER SPEAKS THE LESSON (user-decided 2026-09-16): the old lineup's PLAYER idle sheet
    — `player-idle.png`, 8 frames of 22x31, restored from the benchmark display's removal — at
-   an INTEGER 2x, standing on the byline's rule. The walk is the `.cal-ripple` way:
-   background-size fits ONE frame (800% x 100%) and steps(8) walks background-position-x, the
-   end value 100% x 8/7 so frame 7 lands on 100% and the loop wraps cleanly. */
+   an INTEGER 2x, standing on the byline's rule. A LOOPING sprite walk needs the n/(n-1)
+   overshoot: background-size fits ONE frame (800% x 100%) and steps(8) walks
+   background-position-x, the end value 100% x 8/7 so frame 7 lands on 100% and the loop wraps
+   cleanly. */
 .coach-bot {
   position: relative;
   flex: none;
@@ -5450,8 +5504,8 @@ figure.l1-fig {
 
    `mask-size: 500%` lays all five frames across five element-widths and the animation walks
    `mask-position` from one end to the other in `steps(5, jump-none)` — which lands exactly on
-   0/25/50/75/100% with no sixth position past the end, where the looping `.cal-ripple` needs
-   its `n/(n-1)` overshoot instead. */
+   0/25/50/75/100% with no sixth position past the end, where a LOOPING walk needs its
+   `n/(n-1)` overshoot instead. */
 .strike {
   position: absolute;
   left: 50%;
@@ -7048,30 +7102,13 @@ figure.l1-fig {
    same bare ground, the same tab row, the same lines of type (above), with the screen's own
    head line (a group's three boards and the door into it) and the room to list everyone.
    The game's numbers in the pixel face at whole multiples of its grid; the chrome in the
-   mono, secondary text in plain `--muted`. ---- */
-.board-screen {
-  width: min(560px, 100%);
-  /* Centred on a WHOLE pixel (an odd width would set the podium, the marks and the ghost on
-     half of one). */
-  margin-left: auto;
-  margin-left: max(0px, round(down, (100% - 560px) / 2, 1px));
-  margin-right: auto;
-  align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  /* Clears the header row (8px + 50px viewport, minus .app's own 24px), plus a beat. */
-  padding-top: 58px;
-}
+   mono, secondary text in plain `--muted`. Its column is the archive's (`.board-screen,
+   .archive`, with the archive's rules). ---- */
 /* ONE EDGE each side for the head and the lines: the chip, the brackets' frame and the rank
    column start 6px in (the lines' own inset, the corner brackets' arms outside it); the plus
    and the door's chevron end 6px in. */
 .board-screen > .board-tabs {
   margin: 0 -6px 0 2px;
-}
-/* The tab row's first drawing: the chip drawn across the shown name, once, as the screen
-   opens. A turn sends it travelling (BoardTabs). */
-.board-screen .board-tabs-ink {
-  animation: board-tabs-wipe 240ms steps(8, jump-end) 60ms backwards;
 }
 
 /* THE HEAD LINE, under the tabs, one height whatever it holds: a group's three boards,
@@ -7264,17 +7301,21 @@ figure.l1-fig {
   clip-path: inset(0);
   pointer-events: none;
 }
-/* A landing's BURST (the strike sheet, `burst.png`, 53×66 a frame) behind the mark, centred
-   on it at a whole scale — 2x round a 40px mark, 3x round the winner's — dropped by its
-   impact ink's 44% (the sheet's own measure, `.strike.burst`). */
-.podium-burst {
+/* A landing's BURST (the strike sheet, `burst.png`, 53×66 a frame), the podium's behind a
+   mark and the archive's behind a key, centred on it at a whole scale — 2x (106 × 132) round
+   a 40px mark or a key, 3x round the winner's — dropped by its impact ink's 44% (the sheet's
+   own measure, `.strike.burst`): half its width to the left, half its height less that drop
+   (8 at 2x) above. */
+.podium-burst,
+.cal-burst {
   position: absolute;
   width: 0;
   height: 0;
 }
 /* (Offsets in WHOLE PIXELS, not the percentage: half of the 3x sheet's 159 would land the
    burst on half a device pixel.) */
-.podium-burst .strike.burst {
+.podium-burst .strike.burst,
+.cal-burst .strike.burst {
   width: 106px;
   height: 132px;
   transform: translate(-53px, -58px);
@@ -7763,7 +7804,6 @@ figure.l1-fig {
   .board-screen .board-row,
   .board-screen .board-gap,
   .board-screen .board-progress,
-  .board-screen .board-tabs-ink,
   .board-screen .board-sub,
   .board-screen .board-skeleton-line,
   .period-frame i,
@@ -8205,7 +8245,7 @@ figure.l1-fig {
   background-repeat: no-repeat;
   background-size: 400% 100%; /* 4 frames laid horizontally */
   image-rendering: pixelated;
-  /* A LOOPING walk needs the n/(n-1) overshoot (the .cal-ripple rule): steps(4) over
+  /* A LOOPING sprite walk needs the n/(n-1) overshoot: steps(4) over
      0 -> 133.333% lands exactly on 0 / 33.3 / 66.7 / 100%, the four frame positions,
      and restarts clean. A bare 0 -> 100% would land BETWEEN frames. */
   animation: bot-idle 640ms steps(4) infinite;
