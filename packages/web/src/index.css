@@ -7052,6 +7052,11 @@ figure.l1-fig {
    mono, secondary text in plain `--muted`. ---- */
 .board-screen {
   width: min(560px, 100%);
+  /* Centred on a WHOLE pixel (an odd width would set the podium, the marks and the ghost on
+     half of one). */
+  margin-left: auto;
+  margin-left: max(0px, round(down, (100% - 560px) / 2, 1px));
+  margin-right: auto;
   align-self: stretch;
   display: flex;
   flex-direction: column;
@@ -7509,7 +7514,8 @@ figure.l1-fig {
 .board-screen .board-under-out .board-sub,
 .board-screen .board-under-out .board-row,
 .board-screen .board-under-out .board-gap,
-.board-screen .board-under-out .board-skeleton-line {
+.board-screen .board-under-out .board-skeleton-line,
+.board-screen .board-under-out .board-hold {
   animation: board-dissolve-out 240ms linear var(--delay, 0ms) forwards;
 }
 /* (Your line, never held at the edge here: four classes, so they outweigh its own dissolve-in
@@ -7539,7 +7545,7 @@ figure.l1-fig {
   align-items: flex-start;
   gap: 8px;
 }
-.board-screen .load-error.arrive > * {
+.board-hold .load-error.arrive > * {
   animation: none;
 }
 /* A failed read speaks in the empty state's voice — the column's small tracked capitals —
@@ -7804,17 +7810,25 @@ figure.l1-fig {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
   padding: 8px 0 24px;
 }
 /* The members' room: what the caption and the acts leave; the list in it scrolls, as tall as
    the whole lines that fit (GroupScreen writes it). */
 .group-room {
   flex: 1 1 auto;
-  min-height: 0;
+  /* (One line at the least: a screen too short for even that scrolls the body.) */
+  min-height: 44px;
 }
+/* Its scroll, like the board's column, rests on a line's start: never a line cut at rest. */
 .group-room > .board-list {
   overflow-y: auto;
   overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+}
+.group-room > .board-list > .board-row,
+.confirm-pick > .board-row {
+  scroll-snap-align: start;
 }
 .board-row.member {
   grid-template-columns: 30px minmax(0, 1fr) auto;
@@ -8334,9 +8348,11 @@ figure.l1-fig {
    at a time. A line is a <button> here, so the reset is restated. */
 .confirm-pick {
   width: 100%;
-  /* Whole lines, so the last one the room holds is never cut. */
+  /* Whole lines, so the last one the room holds is never cut — at rest too (it snaps). */
+  max-height: 40vh;
   max-height: round(down, 40vh, 44px);
   overflow-y: auto;
+  scroll-snap-type: y mandatory;
   margin: 4px 0 8px;
   text-align: left;
 }

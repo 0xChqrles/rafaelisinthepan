@@ -10,5 +10,5 @@ export const MARK = 30;
 export const LINE_PX = 44;
 // The RANK COLUMN a list (or every tab of the result's boards) shares, so nothing moves from line
 // to line: as wide as its widest rank in the ranks' 16px digits, two at the least.
-export const RANK_DIGIT_PX = 16;
+const RANK_DIGIT_PX = 16;
 export const rankColumnPx = (digits: number): number => Math.max(2, digits) * RANK_DIGIT_PX;

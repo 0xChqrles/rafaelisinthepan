@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import {
   COUNT_STILL_S,
-  UI_ADVANCE_EM,
   anonName,
   bayerThreshold,
   defaultAvatar,
@@ -17,12 +16,15 @@ import { BURST_ART } from '../strikeArt';
 import {
   CELL_PX,
   FRAME_MS,
+  NAME_PX,
   NAME_ROWS,
   captionRows,
   layout,
   markAt,
   podiumHeightPx,
   podiumScene,
+  runsOf,
+  setName,
   turnLevel,
   type BeatSpec,
   type Beats,
@@ -48,10 +50,11 @@ import { prefersReducedMotion } from '../../hooks/useScramble';
 // capital, before a run of digits; the browser balances the two lines, so `SwiftCactus45` reads
 // `Swift` / `Cactus45` — inside a band that holds two lines whatever it holds, so nothing under
 // it moves. A name whose runs between joints will not set in those two lines at the face's 12px
-// steps down a pixel at a time, to 10 (`setName`) — so `mellowbiscuit` is set smaller, not
-// broken mid-word; only a run too long for the line even then breaks, in its middle. YOUR name
-// wears your line's corner brackets and your place is in the accent; on GLOBAL one of your
-// people carries the lines' accent square.
+// steps down a pixel at a time, to 10 (`setName`), so `mellowbiscuit` is set smaller before it
+// is broken; one that will not set even at 10 breaks evenly in its middle (never a letter alone,
+// never a third line: 10px is the floor the house sets a name at). YOUR name wears your line's
+// corner brackets and your place is in the accent; on GLOBAL one of your people carries the
+// lines' accent square.
 //
 // A TURN IS ONE SCENE GIVING WAY TO THE NEXT, never a blank: the raster is replaced cell by cell
 // in the Bayer order (`turnLevel`, a line's own dissolve), so what both boards share — the
@@ -154,57 +157,6 @@ function seedOf(key: string): number {
   return ((h >>> 0) % 997) + 0.5;
 }
 
-// A name's RUNS, split at its JOINTS: after an underscore, before a capital that follows a small
-// letter, and before digits that follow a letter.
-function runsOf(name: string): string[] {
-  const runs: string[] = [];
-  let run = '';
-  for (let i = 0; i < name.length; i += 1) {
-    const prev = name[i - 1] ?? '';
-    const ch = name[i];
-    const joint =
-      prev === '_' || (/[a-z]/.test(prev) && /[A-Z]/.test(ch)) || (/[A-Za-z]/.test(prev) && /[0-9]/.test(ch));
-    if (joint && run) {
-      runs.push(run);
-      run = '';
-    }
-    run += ch;
-  }
-  runs.push(run);
-  return runs;
-}
-
-// How a name SETS in a line `roomPx` wide: the face's 12px, or the first size a pixel smaller
-// (to 10) at which its runs set in the band's two lines, none broken — the chrome's mono advances
-// a fixed 0.65em a glyph, so a run's width is its length, nothing measured. At 10, a run still
-// too long for the line is split in its middle, so it breaks into two even halves rather than
-// leaving a letter alone on the second line.
-const NAME_PX = [12, 11, 10];
-function setName(runs: readonly string[], roomPx: number): { px: number; runs: readonly string[] } {
-  const fits = (glyphs: number, px: number) => glyphs * UI_ADVANCE_EM * px <= roomPx;
-  const sets = (px: number) => {
-    let lines = 1;
-    let line = 0;
-    for (const run of runs) {
-      if (!fits(run.length, px)) return false;
-      if (fits(line + run.length, px)) line += run.length;
-      else {
-        lines += 1;
-        line = run.length;
-      }
-    }
-    return lines <= 2;
-  };
-  const px = NAME_PX.find(sets);
-  if (px !== undefined) return { px, runs };
-  const least = NAME_PX[NAME_PX.length - 1];
-  const half = (run: string) => Math.ceil(run.length / 2);
-  return {
-    px: least,
-    runs: runs.flatMap((run) => (fits(run.length, least) ? [run] : [run.slice(0, half(run)), run.slice(half(run))])),
-  };
-}
-
 // Where an entry's DOM stands in a layout, in CSS px: its mark, and its caption's box — from
 // the name band's top to its block's last line, so what dissolves dissolves whole.
 interface Placed {
@@ -237,19 +189,26 @@ function placed(L: PodiumLayout, places: readonly (PodiumEntry | null)[]): Place
   });
 }
 
+// A unit GIVING WAY under a player who stays: which place, whose, what it said, and since when.
+interface UnitOut {
+  since: number;
+  key: string;
+  unit: string;
+}
+
 // A caption: its name, then its unit — and, where the unit changed under a player who stays,
-// the one before giving way (`unitWas`) as the new one dissolves in (`unitIn`).
+// the ones before giving way (`unitsOut`) as the new one dissolves in (`unitIn`).
 function Caption({
   at,
   className,
   style,
-  unitWas = null,
+  unitsOut = [],
   unitIn = false,
 }: {
   at: Placed;
   className: string;
   style?: CSSProperties;
-  unitWas?: string | null;
+  unitsOut?: readonly UnitOut[];
   unitIn?: boolean;
 }) {
   const { entry } = at;
@@ -272,11 +231,11 @@ function Caption({
           {name.runs.flatMap((run, i) => (i === 0 ? [run] : [<wbr key={i} />, run]))}
         </span>
       </span>
-      {unitWas !== null && (
-        <span key={`out:${unitWas}`} className="podium-unit out" style={unitStyle}>
-          {unitWas}
+      {unitsOut.map((out) => (
+        <span key={`out:${out.since}:${out.unit}`} className="podium-unit out" style={unitStyle}>
+          {out.unit}
         </span>
-      )}
+      ))}
       <span key={entry.unit} className={`podium-unit${unitIn ? ' in' : ''}`} style={unitStyle}>
         {entry.unit}
       </span>
@@ -325,15 +284,16 @@ export default function Podium({
 
   // How each player shown COMES — standing there already, dropping (a build), or dissolving in
   // (a board already shown) — and, a unit having changed under a player who stays, whether the
-  // new one dissolves in and the one before gives way (latched below, as the scene changes).
+  // new one dissolves in (latched below, as the scene changes) while the one before gives way
+  // (`unitsOut`: each kept until its dissolve has played, whatever turns come after it — the
+  // pattern of the players leaving, below).
   const how = places.map((_, p) => (stage.spec.stood[p] ? '' : tl.fall[p] ? ' drop' : ' in'));
   const [units, setUnits] = useState(() => ({
     build: stage.build,
-    out: places.map(() => null as string | null),
     in: stage.unitWas.map((unit) => unit !== null),
   }));
-  const unitOut = (p: number) => (reduced || units.build !== stage.build ? null : units.out[p]);
   const unitIn = (p: number) => (units.build === stage.build ? units.in[p] : stage.unitWas[p] !== null);
+  const [unitsOut, setUnitsOut] = useState<UnitOut[]>([]);
 
   // THE ONES LEAVING: the scene before's players who do not stand in this one, kept where they
   // stood for the giving way, dissolving out through the cells the newcomers take. ONLY WHAT HAD
@@ -373,10 +333,16 @@ export default function Podium({
       });
       setUnits({
         build: stage.build,
-        out: places.map((_, p) => (unitCame[p] ? stage.unitWas[p] : null)),
         in: places.map((_, p) => stage.unitWas[p] !== null || !unitCame[p]),
       });
-      if (!reduced && entries.length > 0) setLeaving((now) => [...now, { since: clockNow(), entries }]);
+      // (Under reduced motion nothing gives way: the new unit is simply there.)
+      const since = clockNow();
+      const going = shown.flatMap((at) => {
+        const unit = stage.unitWas[at.p];
+        return unitCame[at.p] && unit !== null ? [{ since, key: at.key, unit }] : [];
+      });
+      if (!reduced && going.length > 0) setUnitsOut((now) => [...now, ...going]);
+      if (!reduced && entries.length > 0) setLeaving((now) => [...now, { since, entries }]);
       fromFrame.current = { build: stage.build, frame: lastFrame.current };
     }
     lastShown.current = { build: stage.build, entries: shown.map((at, i) => ({ ...at, came: came[i] })) };
@@ -391,6 +357,14 @@ export default function Podium({
     );
     return () => cancels.forEach((cancel) => cancel());
   }, [leaving]);
+  useEffect(() => {
+    const cancels = unitsOut.map((out) =>
+      onClock(box.current, Math.max(0, out.since + DISSOLVE_MS - clockNow()), () =>
+        setUnitsOut((now) => now.filter((o) => o !== out)),
+      ),
+    );
+    return () => cancels.forEach((cancel) => cancel());
+  }, [unitsOut]);
 
   useLayoutEffect(() => {
     const el = box.current;
@@ -609,8 +583,8 @@ export default function Podium({
                 at={at}
                 className={how[p]}
                 style={{ '--at': `${tl.land[p] ?? 0}ms` } as CSSProperties}
-                // (Under reduced motion nothing gives way: the new unit is simply there.)
-                unitWas={unitOut(p)}
+                // (A player gone from the place takes the units giving way under them with them.)
+                unitsOut={unitsOut.filter((out) => out.key === at.key)}
                 unitIn={unitIn(p)}
               />
             </span>

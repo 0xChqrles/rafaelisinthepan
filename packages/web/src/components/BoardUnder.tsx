@@ -1,8 +1,10 @@
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { anonName } from '@whippin/shared';
+import { onClock } from './animationClock';
 import { DISSOLVE_MS, SKELETON_STAGGER_MS, SKELETON_WAIT_MS } from './bayerTiles';
 import { rankColumnPx } from './boardMetrics';
 import { BoardRowItem, PlayingRowItem, WaitingRowItem, type LineRun } from './BoardRows';
+import { runEnd } from './countRun';
 import type { PodiumEntry } from './podium/Podium';
 import type { PodiumSize } from './podium/scene';
 import ChevronIcon from '../assets/icons/chevron-left.svg?react';
@@ -20,7 +22,7 @@ import type { LangCode } from '../langs';
 // number's reels run. The ARRIVAL leaves the head its beats first (the chip drawn across, the
 // brackets locking on) and lands slower; a TURN comes straight in. The lines themselves start
 // on the podium's own beat (`Beats.lines`).
-export interface Pace {
+interface Pace {
   startMs: number;
   staggerMs: number;
   runMs: number;
@@ -56,7 +58,8 @@ export interface Shown extends ShownBoard {
 // before), the podium's size over it (a new size is a new layout, not a turn: nothing gives
 // way), the header slot (`sub`: a group's, holding its DOOR — the group's size — and the UNIT
 // when nothing above says what the numbers count), and its body: the lines of the board shown,
-// the skeleton, the empty board's own block (with no podium to hold it), or nothing.
+// the skeleton, the empty board's own block (with no podium to hold it: `hold`, as it was drawn,
+// so a view giving way sends out what was on screen), or nothing.
 export interface UnderView {
   key: string;
   size: PodiumSize | null;
@@ -65,6 +68,7 @@ export interface UnderView {
   unit: 'tries' | 'points' | null;
   body: 'list' | 'skeleton' | 'hold' | null;
   shown: Shown | null;
+  hold: ReactNode;
 }
 
 // A view GIVING WAY: how long it had been on screen when it began to, and the run it had come
@@ -83,8 +87,8 @@ export const cameIn = (delayMs: number, shownFor: number): boolean => shownFor >
 // A view under the podium, slot after slot: the header slot first (a group's), then the body.
 // `gone`: the view before, giving way — every slot that had come in dissolving OUT on the beat
 // the slot that takes it dissolves in (the same `run`), its numbers standing, nothing in it
-// reachable. `still`: the header slot says the same in this view as in the one before, so it
-// STANDS — the view on screen draws it outright, the one giving way leaves its place empty.
+// reachable (inert). `still`: the header slot says the same in this view as in the one before,
+// so it STANDS — the view on screen draws it outright, the one giving way leaves its place empty.
 export default function Under({
   view,
   gone = null,
@@ -95,7 +99,6 @@ export default function Under({
   mates,
   places,
   onDoor,
-  hold,
 }: {
   view: UnderView;
   gone?: Gone | null;
@@ -108,7 +111,6 @@ export default function Under({
   // lines start at the first).
   places: readonly (PodiumEntry | null)[] | null;
   onDoor: () => void;
-  hold: ReactNode;
 }) {
   const out = gone !== null;
   const offset = view.sub ? 1 : 0;
@@ -119,7 +121,11 @@ export default function Under({
   // gives that gutter to the names on a board with no % to hang there).
   const plays = shown !== null && !isPeriodBoard(shown.board) && shown.board.playing.length > 0;
   return (
-    <div className={`${out ? 'board-under-out' : 'board-under-in'}${plays ? ' plays' : ''}`} aria-hidden={out || undefined}>
+    <div
+      ref={out ? (el) => el?.setAttribute('inert', '') : undefined}
+      className={`${out ? 'board-under-out' : 'board-under-in'}${plays ? ' plays' : ''}`}
+      aria-hidden={out || undefined}
+    >
       {view.sub && out && (still || !came(0)) ? (
         <div className="board-sub" />
       ) : view.sub ? (
@@ -154,9 +160,9 @@ export default function Under({
         />
       ) : view.body === 'skeleton' ? (
         <Skeleton lang={lang} run={run} offset={offset} shownFor={gone?.shownFor ?? null} />
-      ) : view.body === 'hold' && !out ? (
+      ) : view.body === 'hold' && came(offset) ? (
         <div className="board-hold" style={{ '--delay': `${lineRun(run, offset).delayMs}ms` } as CSSProperties}>
-          {hold}
+          {view.hold}
         </div>
       ) : null}
     </div>
@@ -247,10 +253,19 @@ interface ListProps {
   places: readonly (PodiumEntry | null)[] | null;
 }
 
-// A list's run, latched as it came on screen (a re-read never re-times its lines) — giving way,
-// its numbers stand.
-function useListRun(props: ListProps): ListRun {
-  const [run] = useState(props.run);
+// A list's run, latched as it came on screen (a re-read never re-times its lines) — its reels
+// put away once the last of them has stopped and shaken, and the landing gestures keyed off it
+// (a dissolve's length) have played (its numbers then printed bare, as a settled board's are:
+// what a search or a copy finds is the number) — and giving way, its numbers stand.
+function useListRun(props: ListProps, list: RefObject<HTMLElement | null>): ListRun {
+  const [run, setRun] = useState(props.run);
+  useEffect(() => {
+    if (props.out || run.pace.runMs <= 0) return undefined;
+    const end = lineRun(run, run.fold).delayMs + runEnd(run.pace.runMs) + DISSOLVE_MS;
+    return onClock(list.current, end, () =>
+      setRun((was) => ({ ...was, pace: { ...was.pace, runMs: 0 } })),
+    );
+  }, [run]);
   return props.out ? { ...run, pace: { ...run.pace, runMs: 0 } } : run;
 }
 
@@ -260,7 +275,8 @@ function useListRun(props: ListProps): ListRun {
 // before the ranks (`.marks`: the square never touches a two-digit rank).
 function BoardList(props: ListProps & { board: AnyBoard; mates: ReadonlySet<string> | null }) {
   const { board, meId, mates, offset, came, podium, places } = props;
-  const run = useListRun(props);
+  const ref = useRef<HTMLOListElement>(null);
+  const run = useListRun(props, ref);
   const all = boardSlots(board, podium);
   const slots = all.filter((_, k) => came(offset + k));
   const marks =
@@ -268,6 +284,7 @@ function BoardList(props: ListProps & { board: AnyBoard; mates: ReadonlySet<stri
     all.some((slot) => slot.kind === 'ranked' && slot.row.publicId !== meId && mates.has(slot.row.publicId));
   return (
     <ol
+      ref={ref}
       className={`board-list${marks ? ' marks' : ''}`}
       style={{ '--rank-w': `${rankColumnPx(rankDigits(all)) + (marks ? MATE_ROOM_PX : 0)}px` } as CSSProperties}
     >

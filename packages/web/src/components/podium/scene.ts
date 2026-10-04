@@ -4,6 +4,7 @@ import {
   DIGIT_MASKS,
   FOIL_WHITE,
   SPARKLE_SHARE,
+  UI_ADVANCE_EM,
   bayerThreshold,
   countInk,
   foilCells,
@@ -338,6 +339,57 @@ export function layout(
 // The caption's rows from the name band's top to its block's last line (the DOM's box: what
 // dissolves as one).
 export const captionRows = (L: PodiumLayout, p: number): number => L.places[p].unit + UNIT_ROWS - L.name;
+
+// A name's RUNS, split at its JOINTS: after an underscore, before a capital that follows a small
+// letter, and before digits that follow a letter.
+export function runsOf(name: string): string[] {
+  const runs: string[] = [];
+  let run = '';
+  for (let i = 0; i < name.length; i += 1) {
+    const prev = name[i - 1] ?? '';
+    const ch = name[i];
+    const joint =
+      prev === '_' || (/[a-z]/.test(prev) && /[A-Z]/.test(ch)) || (/[A-Za-z]/.test(prev) && /[0-9]/.test(ch));
+    if (joint && run) {
+      runs.push(run);
+      run = '';
+    }
+    run += ch;
+  }
+  runs.push(run);
+  return runs;
+}
+
+// How a name SETS in the band's TWO lines, each `roomPx` wide: the face's 12px, or the first size
+// a pixel smaller (to 10) at which its runs set in them, none broken — the chrome's mono advances
+// a fixed 0.65em a glyph, so a run's width is its length, nothing measured. At 10, a run still
+// too long for a line is split in its middle (two even halves rather than a letter left alone);
+// and a name whose runs take three lines even so is cut in two at its own middle — a name is at
+// most 16 glyphs, 8 a line, which every slot holds at 10. The browser breaks only at the runs'
+// joints, so it sets what this says: never a third line.
+export const NAME_PX = [12, 11, 10];
+export function setName(runs: readonly string[], roomPx: number): { px: number; runs: readonly string[] } {
+  const fits = (glyphs: number, px: number) => glyphs * UI_ADVANCE_EM * px <= roomPx;
+  const lines = (parts: readonly string[], px: number) => {
+    let count = 1;
+    let line = 0;
+    for (const part of parts) {
+      if (!fits(part.length, px)) return Infinity;
+      if (fits(line + part.length, px)) line += part.length;
+      else {
+        count += 1;
+        line = part.length;
+      }
+    }
+    return count;
+  };
+  const px = NAME_PX.find((size) => lines(runs, size) <= 2);
+  if (px !== undefined) return { px, runs };
+  const least = NAME_PX[NAME_PX.length - 1];
+  const halves = (text: string) => [text.slice(0, Math.ceil(text.length / 2)), text.slice(Math.ceil(text.length / 2))];
+  const halved = runs.flatMap((run) => (fits(run.length, least) ? [run] : halves(run)));
+  return { px: least, runs: lines(halved, least) <= 2 ? halved : halves(runs.join('')) };
+}
 
 // How a step's face is lit: its light dithers down from the lip over its first SHADE rows,
 // and its foot falls off into the ground over its last FOOT — each a share of its height, so

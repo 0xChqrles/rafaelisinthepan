@@ -8,6 +8,8 @@
 //   - Devices, accounts: every private request captures the (accountId, deviceId) epoch its
 //     inputs were built under and stands down if the identity changes — a group write
 //     built from account A's screen is never sent as account B.
+//   - Clients act on the error CODE: a leave answered 409 `successor_required` (the list on
+//     screen was stale) is no failure — the confirmation stays up and the list is read again.
 
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -35,6 +37,9 @@ const world = vi.hoisted(() => ({
   open: (_index: number) => {},
   leave: () => {},
   confirm: () => {},
+  // Whether the confirmation is mounted, and whether the error surface was drawn.
+  confirmUp: false,
+  errorShown: false,
 }));
 const postGroupsBody = vi.hoisted(() => vi.fn());
 const ensureRequestIdentity = vi.hoisted(() => vi.fn());
@@ -90,18 +95,33 @@ vi.mock('../components/GroupScreen', () => ({
     return null;
   },
 }));
-vi.mock('../components/ConfirmScreen', () => ({
-  default: (p: { onConfirm: () => void }) => {
-    world.confirm = p.onConfirm;
+vi.mock('../components/ConfirmScreen', async () => {
+  const { useEffect } = await import('react');
+  return {
+    default: (p: { onConfirm: () => void }) => {
+      world.confirm = p.onConfirm;
+      useEffect(() => {
+        world.confirmUp = true;
+        return () => {
+          world.confirmUp = false;
+        };
+      }, []);
+      return null;
+    },
+  };
+});
+vi.mock('../components/GroupCreate', () => ({ default: () => null }));
+vi.mock('../components/ErrorScreen', () => ({
+  default: () => {
+    world.errorShown = true;
     return null;
   },
 }));
-vi.mock('../components/GroupCreate', () => ({ default: () => null }));
-vi.mock('../components/ErrorScreen', () => ({ default: () => null }));
 vi.mock('../components/LoadError', () => ({ default: () => null }));
 vi.mock('../components/LoadingWave', () => ({ default: () => null }));
 vi.mock('../components/Avatar', () => ({ default: () => null }));
 
+import { loadGroups } from '../state/groups';
 import Leaderboard, { leaveBody, leaveKindOf } from './Leaderboard';
 
 const group = (createdBy: string, members: string[]): GroupSummary => ({
@@ -190,5 +210,22 @@ describe('a group write travels as the account its screen was drawn for', () => 
     world.held = B;
     await act(async () => world.confirm());
     expect(postGroupsBody).not.toHaveBeenCalled();
+  });
+
+  it('keeps the confirmation up and reads the list again when the server asks for a successor', async () => {
+    // The list on screen was stale: the player has become the owner of a bigger group.
+    postGroupsBody.mockResolvedValue({
+      ok: false,
+      status: 409,
+      clone: () => ({ json: async () => ({ error: 'successor_required' }) }),
+    });
+    vi.mocked(loadGroups).mockClear();
+    world.errorShown = false;
+    expect(world.confirmUp).toBe(true);
+    await act(async () => world.confirm());
+    expect(postGroupsBody).toHaveBeenCalledTimes(1);
+    expect(loadGroups).toHaveBeenCalled();
+    expect(world.errorShown).toBe(false);
+    expect(world.confirmUp).toBe(true);
   });
 });

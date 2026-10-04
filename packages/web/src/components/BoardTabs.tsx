@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type KeyboardEvent } from 'react';
+import { UI_ADVANCE_EM } from '@whippin/shared';
 import { travelFrames } from './travel';
 import PlusIcon from '../assets/icons/plus.svg?react';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -59,6 +60,10 @@ const MARK_ROOM_PX = 24;
 // left-out mark (its 14px, 10px from the whole name it stands against).
 const TAB_PAD_PX = 4;
 const COVER_MARK_PX = 24;
+// A name's label (`.board-tab-label`): its padding each side, and a glyph's advance — the
+// mono's at 14px, tracked 0.08em.
+const LABEL_PAD_PX = 7;
+const GLYPH_PX = 14 * (UI_ADVANCE_EM + 0.08);
 
 type Chip = { l: number; r: number };
 
@@ -124,18 +129,16 @@ export default function BoardTabs({
     [shown, bare],
   );
 
-  // THE COVERS: at each end, from the row's edge to the nearest WHOLE name (the label's box —
-  // the chip's), drawn only when a name is left out there; at the far end the pinned name is
-  // the edge. The SHOWN name is never left out (it is scrolled to, and its room capped below):
-  // a cover stops short of it. Written straight onto the control's style (a scroll frame
-  // re-renders nothing) — and first each name's room, the most it can show whole once scrolled
-  // to (`--label-max`, on the name and on its copy on the chip's sheet).
-  const cover = useCallback(() => {
-    const root = rootRef.current;
+  // EACH NAME'S ROOM: the most it can show whole once scrolled to (`--label-max`, on the name and
+  // on its copy on the chip's sheet), floored to whole glyphs — so a name cut there ends its
+  // ellipsis one padding short of the chip's edge, as it starts one padding in. Written straight
+  // onto the names' style when the row's width or its names change (never on a scroll: it does
+  // not move with one).
+  const caps = useCallback(() => {
     const row = rowRef.current;
     const line = lineRef.current;
     const ink = inkRef.current;
-    if (!root || !row || !line) return;
+    if (!row || !line) return;
     const pinnedTab = pin >= 0 ? button(pin) : undefined;
     const held = pinnedTab ? pinnedTab.offsetWidth - TAB_PAD_PX : 0;
     const lastName = tabs.reduce((at, t, i) => (t.pinned ? at : i), -1);
@@ -145,10 +148,28 @@ export default function BoardTabs({
       // and ends before the pinned name and, unless it is the last, the mark's room before it.
       const room =
         row.clientWidth - held - (i < lastName ? MARK_ROOM_PX : 0) - (i > 0 ? MARK_ROOM_PX : 0) - TAB_PAD_PX;
+      const glyphs = Math.max(0, Math.floor((room - 2 * LABEL_PAD_PX) / GLYPH_PX));
       for (const el of [line.children[i], ink?.children[i]]) {
-        (el as HTMLElement | undefined)?.style.setProperty('--label-max', `${Math.floor(room)}px`);
+        (el as HTMLElement | undefined)?.style.setProperty(
+          '--label-max',
+          `${Math.ceil(2 * LABEL_PAD_PX + glyphs * GLYPH_PX)}px`,
+        );
       }
     }
+    // `keys` stands for `tabs`: the tabs' content, not the array a parent re-creates.
+  }, [pin, keys]);
+
+  // THE COVERS: at each end, from the row's edge to the nearest WHOLE name (the label's box —
+  // the chip's), drawn only when a name is left out there; at the far end the pinned name is
+  // the edge. The SHOWN name is never left out (it is scrolled to, and its room capped above):
+  // a cover stops short of it. Written straight onto the control's style (a scroll frame
+  // re-renders nothing).
+  const cover = useCallback(() => {
+    const root = rootRef.current;
+    const row = rowRef.current;
+    const line = lineRef.current;
+    if (!root || !row || !line) return;
+    const pinnedTab = pin >= 0 ? button(pin) : undefined;
     const box = row.getBoundingClientRect();
     const pinned = pinnedTab?.firstElementChild ?? null;
     const end = pinned ? pinned.getBoundingClientRect().left - box.left : box.width;
@@ -191,11 +212,12 @@ export default function BoardTabs({
     if (shown === pin) seat(false);
   }, [cover, seat, shown, pin]);
 
-  // (The covers first: they cap the names' room, which the chip is measured off.)
+  // (The names' room first: the covers and the chip are measured off it.)
   useLayoutEffect(() => {
+    caps();
     cover();
     seat(true);
-  }, [seat, cover, keys]);
+  }, [seat, caps, cover, keys]);
   // A name's width moves when the web font lands, and the row's with the column: re-seat.
   useEffect(() => {
     const row = rowRef.current;
@@ -203,13 +225,14 @@ export default function BoardTabs({
     if (!row || !line || typeof ResizeObserver === 'undefined') return undefined;
     onScroll();
     const ro = new ResizeObserver(() => {
+      caps();
       onScroll();
       seat(false);
     });
     ro.observe(row);
     ro.observe(line);
     return () => ro.disconnect();
-  }, [onScroll, seat, keys]);
+  }, [caps, onScroll, seat, keys]);
   useEffect(() => () => travel.current?.cancel(), []);
 
   // A NAME STAYS WHOLE IN VIEW: the row scrolls (on its own axis only) the least it takes to

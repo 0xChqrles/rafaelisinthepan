@@ -67,7 +67,7 @@ export default function GroupScreen({
       setFaces(Object.fromEntries(read.group.members.map((member) => [member.publicId, member])));
     });
     return () => controller.abort();
-  }, [group.id, group.members.length]);
+  }, [group.id, group.members.join(',')]);
 
   const face = (id: string): BoardPlayer =>
     faces[id] ?? { publicId: id, name: '', avatar: null };

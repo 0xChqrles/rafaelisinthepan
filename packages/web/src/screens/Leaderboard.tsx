@@ -149,11 +149,11 @@ interface Leaving {
   since: number;
 }
 
-// WHAT THE PODIUM HAS BUILT today in this tab (its scenes' identities), for the language and
-// the identity it was built under: a board shown again — turned back to, or on the next visit
-// to the screen — is that board, settled; its build is never replayed (that would be a wait
-// every time the crown is tapped, and would move what had landed). A new day or a new identity
-// starts it again, as it drops the screen's caches.
+// WHAT THE PODIUM HAS BUILT today in this tab (its scenes' identities, each with its language),
+// for the identity it was built under: a board shown again — turned back to, or on the next
+// visit to the screen, in either language — is that board, settled; its build is never replayed
+// (that would be a wait every time the crown is tapped, and would move what had landed). A new
+// day or a new identity starts it again, as it drops the screen's caches.
 const built = { scope: '', builds: new Set<string>() };
 function builtFor(scope: string): Set<string> {
   if (built.scope !== scope) {
@@ -238,20 +238,29 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // for) lets the board before give way to the loading picture — a held board under another
   // tab's name says something false, and a podium says it loudly. Same cache scope as `boards`
   // (dropped with it below). The hold's clock starts again on every turn to a board: a board
-  // whose read lapsed once is held again the next time it is turned to.
+  // whose read lapsed once is held again the next time it is turned to — but only a board ON
+  // SCREEN is held: a turn made from the loading picture or a failure starts lapsed (the board
+  // before them is long gone, and bringing it back would say it under this tab's name).
+  // A board whose last read FAILED is asked again from scratch on that turn — its failure
+  // dropped in the same render, so re-entering it shows neither its RETRY nor a frame of the
+  // failed view giving way.
   const [held, setHeld] = useState<Shown | null>(null);
   const [lapsed, setLapsed] = useState<string | null>(null);
   const [lapseKey, setLapseKey] = useState(boardKey);
+  const shownKey = useRef<string | null>(null);
+  const cached = boardKey === null ? undefined : boards[boardKey];
+  const reentered = lapseKey !== boardKey && cached === 'failed';
   if (lapseKey !== boardKey) {
     setLapseKey(boardKey);
-    setLapsed(null);
+    setLapsed(held !== null && shownKey.current !== held.key ? boardKey : null);
+    if (reentered && boardKey !== null) setBoards((prev) => ({ ...prev, [boardKey]: undefined }));
   }
 
   // THE DAY IS A LIVE VALUE: a board is left open across the 22:00-ET flip routinely, and a
   // new day is a new board, so every cache goes with it — dropped during render so
   // yesterday's rows are never committed under today's date.
   const date = dateForDayNumber(useToday());
-  const played = builtFor(`${lang}|${date}|${epoch ?? ''}`);
+  const played = builtFor(`${date}|${epoch ?? ''}`);
   const [cachedDate, setCachedDate] = useState(date);
   // (This render still reads the dropped caches: nothing is taken from them below.)
   let dropped = false;
@@ -279,12 +288,6 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // is in flight (stale-but-good beats a spinner), and RETRY refetches. A GROUP
   // board is the authenticated POST naming the group (the server refuses a non-member);
   // GLOBAL is the anonymous GET, widened with the caller's own window via their PUBLIC id.
-  // A board whose last read failed is asked again from scratch — its failure dropped on the
-  // fetch's own keys but BEFORE paint, so re-entering it never shows its RETRY for a frame.
-  useLayoutEffect(() => {
-    if (boardKey === null) return;
-    setBoards((prev) => (prev[boardKey] === 'failed' ? { ...prev, [boardKey]: undefined } : prev));
-  }, [boardKey, tab, active?.id, period, lang, date, attempt, identity]);
   useEffect(() => {
     if (boardKey === null) return;
     const key = boardKey;
@@ -336,7 +339,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     // `active?.id` rather than `active`: the list object is re-read, the group is not.
   }, [boardKey, tab, active?.id, period, lang, date, attempt, identity]);
 
-  const entry = boardKey === null ? undefined : boards[boardKey];
+  const entry = reentered ? undefined : cached;
   const board = entry === 'failed' ? undefined : entry;
 
   // ---- the deliberate acts: CREATE, INVITE, LEAVE, REMOVE — on the group's own screens,
@@ -443,7 +446,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     return () => controller.abort();
     // Deliberately `active?.id`, not `active`: the list object is re-read, the group is not —
     // but a re-read that changes who is in it dresses the newcomers.
-  }, [confirming?.kind, leaveKind, active?.id, active?.members.length]);
+  }, [confirming?.kind, leaveKind, active?.id, active?.members.join(',')]);
 
   const leave = async () => {
     if (busy || !active) return;
@@ -569,7 +572,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
       ...nextStage(
         stage,
         now,
-        now.mode === 'board' && !played.has(now.build),
+        now.mode === 'board' && !played.has(`${lang}|${now.build}`),
         shownPace === ARRIVE ? shownPace.startMs : 0,
         shownPace.runMs,
       ),
@@ -579,8 +582,8 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   }
   const tl = useMemo(() => beats(staged.spec), [staged]);
   useEffect(() => {
-    if (staged.mode === 'board') played.add(staged.build);
-  }, [staged, played]);
+    if (staged.mode === 'board') played.add(`${lang}|${staged.build}`);
+  }, [staged, played, lang]);
 
   // THE COLUMN SCROLLS AS ONE — the podium, the list's header, the lines — so a long board
   // carries the podium away and the reader down to their own line. Its height is the body's
@@ -592,12 +595,13 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   const fold = slots > 0 ? Math.max(0, Math.min(PACE_CAP, slots - (size ? podiumHeightPx(size) / LINE_PX : 0) - 1)) : PACE_CAP;
   // How the lines come in: on the podium's own beat (on their own, with no podium), quicker on
   // a turn, their numbers on the reels only where the board is shown for the first time (a
-  // board shown again is settled: its lines dissolve in, their numbers standing).
+  // board shown again is settled: its lines dissolve in, their numbers standing — and so does
+  // every board under reduced motion).
   const run: ListRun = {
     pace: {
       startMs: size ? tl.lines : shownPace.startMs,
       staggerMs: shownPace.staggerMs,
-      runMs: staged.spec.build ? shownPace.runMs : 0,
+      runMs: staged.spec.build && !prefersReducedMotion() ? shownPace.runMs : 0,
     },
     fold,
   };
@@ -605,6 +609,60 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   useLayoutEffect(() => {
     if (columnRef.current) columnRef.current.scrollTop = 0;
   }, [shown?.key]);
+
+  const ghostLine =
+    now.mode === 'ghost' && !onNone && shown ? (
+      <p>
+        {t(lang, isPeriodBoard(shown.board) ? 'boardEmptyPeriod' : shown.tab === 'group' ? 'boardEmptyGroup' : 'boardEmptyGlobal')}
+      </p>
+    ) : null;
+  // The empty board's one call: CREATE GROUP with no group at all; INVITE in a group of one
+  // (the moment it matters).
+  const ghostCall =
+    now.mode !== 'ghost' ? null : tab === 'group' && onNone ? (
+      <button type="button" className="btn btn-primary" disabled={busy !== null} onClick={() => setScreen('create')}>
+        {t(lang, 'groupCreate')}
+      </button>
+    ) : shown && shown.tab === 'group' && !isPeriodBoard(shown.board) ? (
+      <button type="button" className="btn btn-primary" onClick={() => void invite()}>
+        {copied ? t(lang, 'copied') : t(lang, 'boardInvite')}
+      </button>
+    ) : null;
+  // RETRY asks the failed board again from scratch: its failure dropped, and the loading picture
+  // standing for it (never a board held from before the failure).
+  const retry =
+    now.mode === 'failed' ? (
+      <LoadError
+        message={t(lang, 'failedBoard')}
+        lang={lang}
+        onRetry={() => {
+          if (entry !== 'failed' || boardKey === null) {
+            loadGroups();
+            return;
+          }
+          setBoards((prev) => ({ ...prev, [boardKey]: undefined }));
+          setLapsed(boardKey);
+          setAttempt((n) => n + 1);
+        }}
+      />
+    ) : null;
+  // (With no podium, the empty board's block — or the failed read's RETRY — stands under the
+  // header slot as ONE ROW, the ghost beside its line over its call: the room a landscape phone
+  // has.)
+  const hold =
+    now.mode === 'failed' ? (
+      retry
+    ) : (
+      <div className="board-empty">
+        <span className="board-ghost" aria-hidden="true" />
+        {(ghostLine || ghostCall) && (
+          <div className="board-empty-say">
+            {ghostLine}
+            {ghostCall}
+          </div>
+        )}
+      </div>
+    );
 
   // WHAT STANDS UNDER THE PODIUM (`Under`): a group's header slot — its door, and the unit
   // when nothing above says it — then the lines, the skeleton, or (with no podium) the empty
@@ -638,6 +696,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     unit: counts && shown ? (isPeriodBoard(shown.board) ? 'points' : 'tries') : null,
     body: holdKind ? (size ? null : 'hold') : shown ? 'list' : 'skeleton',
     shown: holdKind ? null : shown,
+    hold: holdKind && !size ? hold : null,
   };
   // The view on screen — its key, since when, the run it came in on, whether its header slot
   // stands — and the ones before it giving way under it (`Leaving`).
@@ -653,7 +712,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
       !prefersReducedMotion() &&
       was.key === under.key &&
       was.size === view.size &&
-      (was.body === 'list' || was.body === 'skeleton' || was.door !== null);
+      (was.body !== null || was.door !== null);
     const still =
       gives &&
       was.sub &&
@@ -671,6 +730,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   }
   useLayoutEffect(() => {
     lastView.current = view;
+    shownKey.current = shown?.key ?? null;
   });
   // A view before is gone once its last slot has dissolved out (on the page's animation clock,
   // as the dissolve itself is).
@@ -688,55 +748,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     return () => cancels.forEach((cancel) => cancel());
   }, [under.outs]);
   useStuckOwnLine(columnRef, `${view.key}|${now.build}|${ownLineKey(shown, meId)}`);
-
-  const ghostLine =
-    now.mode === 'ghost' && !onNone && shown ? (
-      <p>
-        {t(lang, isPeriodBoard(shown.board) ? 'boardEmptyPeriod' : shown.tab === 'group' ? 'boardEmptyGroup' : 'boardEmptyGlobal')}
-      </p>
-    ) : null;
-  // The empty board's one call: CREATE GROUP with no group at all; INVITE in a group of one
-  // (the moment it matters).
-  const ghostCall =
-    now.mode !== 'ghost' ? null : tab === 'group' && onNone ? (
-      <button type="button" className="btn btn-primary" disabled={busy !== null} onClick={() => setScreen('create')}>
-        {t(lang, 'groupCreate')}
-      </button>
-    ) : shown && shown.tab === 'group' && !isPeriodBoard(shown.board) ? (
-      <button type="button" className="btn btn-primary" onClick={() => void invite()}>
-        {copied ? t(lang, 'copied') : t(lang, 'boardInvite')}
-      </button>
-    ) : null;
-  const retry =
-    now.mode === 'failed' ? (
-      <LoadError
-        message={t(lang, 'failedBoard')}
-        lang={lang}
-        onRetry={() => (entry === 'failed' ? setAttempt((n) => n + 1) : loadGroups())}
-      />
-    ) : null;
-  const underProps = {
-    lang,
-    meId: meId ?? undefined,
-    mates,
-    places: size ? staged.places : null,
-    onDoor: openGroup,
-    hold:
-      now.mode === 'failed' ? (
-        retry
-      ) : (
-        // ONE ROW, the ghost beside its line over its call: the room a landscape phone has.
-        <div className="board-empty">
-          <span className="board-ghost" aria-hidden="true" />
-          {(ghostLine || ghostCall) && (
-            <div className="board-empty-say">
-              {ghostLine}
-              {ghostCall}
-            </div>
-          )}
-        </div>
-      ),
-  };
+  const underProps = { lang, meId: meId ?? undefined, mates, places: size ? staged.places : null, onDoor: openGroup };
 
   return (
     <div className="board-screen">
@@ -790,8 +802,17 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
           tabIndex={0}
           aria-labelledby={tabs[activeIndex] ? tabIds(tabsId).tab(tabs[activeIndex].key) : undefined}
           aria-busy={pending || undefined}
-          // (The empty board's block is never scrolled: it takes the body's room as it is.)
-          style={slots > 0 && view.body !== 'hold' ? { maxHeight: `${slots * LINE_PX}px` } : undefined}
+          // (The empty board's block is never scrolled: it takes the body's room as it is.) While a
+          // view gives way the column keeps its whole room, so a shorter one coming in never cuts
+          // the lines going out; it closes up to its content once they are gone (bare ground).
+          style={
+            slots > 0
+              ? {
+                  ...(view.body !== 'hold' ? { maxHeight: `${slots * LINE_PX}px` } : {}),
+                  ...(under.outs.length > 0 ? { minHeight: `${slots * LINE_PX}px` } : {}),
+                }
+              : undefined
+          }
         >
           {/* THE PODIUM, in every state the body can be in: a failed read stands its RETRY in
               the podium's own box; the ghost's caption is the empty board's terse line and its
