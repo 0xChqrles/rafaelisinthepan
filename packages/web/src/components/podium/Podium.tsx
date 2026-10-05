@@ -12,7 +12,7 @@ import Avatar from '../Avatar';
 import { clockNow, onClock } from '../animationClock';
 import { DISSOLVE_MS } from '../bayerTiles';
 import { foilSeed } from '../foil';
-import { LOOP_FRAME_MS, watchRaster } from '../rasterWatch';
+import { watchRaster } from '../rasterWatch';
 import Strike from '../Strike';
 import { BURST_ART } from '../strikeArt';
 import {
@@ -69,9 +69,9 @@ import { prefersReducedMotion } from '../../hooks/useScramble';
 // THE CLOCK is the document's animation timeline (the lines' CSS and their reels' Web
 // Animations run on it, so the podium and the lines never drift apart, whatever the page's
 // playback rate). It steps every FRAME_MS until the scene has settled; then only first place's
-// FOIL moves (its sheen and its glitter), repainted over a stored resting frame at the foil's
-// own slow pace — and THE CLOCK RESTS while nobody can see it or nobody is there
-// (`rasterWatch`). Reduced motion draws the settled frame and runs no clock at all.
+// FOIL moves (its sheen and its glitter), repainted over a stored resting frame on every frame
+// the display draws — and THE CLOCK RESTS only while nobody can see it (`rasterWatch`).
+// Reduced motion draws the settled frame and runs no clock at all.
 //
 // The whole scene is a PICTURE (hidden from a screen reader: the screen says the places in its
 // list); what the box HOLDS besides it — the empty board's line and its call, a failed read's
@@ -442,15 +442,17 @@ export default function Podium({
       return undefined;
     }
 
+    // The build steps on a timer (FRAME_MS: a beat lands on a frame); the foil at rest on the
+    // display's own frames.
     let timer = 0;
+    let raf = 0;
     let stopped = false;
     setBursting(stage.build);
     const tick = () => {
       timer = 0;
+      raf = 0;
       if (stopped || !watch.seen()) return;
       const t = elapsed();
-      // Nobody there: the foil at rest holds its frame (a build always plays out).
-      if (t >= tl.settled && rest !== null && !watch.awake()) return;
       if (t < tl.settled) {
         scene.draw(px, t, true);
         giveWay(t);
@@ -468,16 +470,17 @@ export default function Podium({
         for (const b of scene.foilBoxes) ctx.putImageData(image, 0, 0, b.x, b.y, b.w, b.h);
       }
       // A podium with no foil on it (nobody first) has nothing left to move.
-      if (scene.foilBoxes.length > 0) timer = window.setTimeout(tick, LOOP_FRAME_MS);
+      if (scene.foilBoxes.length > 0) raf = window.requestAnimationFrame(tick);
     };
     const watch = watchRaster(canvas, () => {
-      if (!stopped && !timer && watch.seen()) tick();
+      if (!stopped && !timer && !raf && watch.seen()) tick();
     });
     // The first frame before paint — the scene before, as it stood.
     tick();
     return () => {
       stopped = true;
       window.clearTimeout(timer);
+      window.cancelAnimationFrame(raf);
       watch.stop();
     };
     // A scene per stage (its build) and per layout; the data is the stage's.

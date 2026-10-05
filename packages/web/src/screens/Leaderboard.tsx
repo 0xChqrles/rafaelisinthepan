@@ -507,22 +507,34 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
         ? active
         : null;
 
-  // THE ROOM, measured: the body's height in whole lines and its width — the podium's size
-  // follows it (`podiumSize`: roomy, compact, or none at all where it would leave the lines no
-  // room), with a line's grace for the size it has, so a phone's toolbar never flips it.
+  // THE ROOM, measured: the first screen's height under the held head in whole lines (the
+  // window's, less the shell's foot) and the body's width — the podium's size follows it
+  // (`podiumSize`: roomy, compact, or none at all where it would leave the lines no room), with
+  // a line's grace for the size it has, so a phone's toolbar never flips it. The head's height
+  // is published too (`--board-top`): where your own line holds under it.
   const [room, setRoom] = useState<{ slots: number; width: number } | null>(null);
+  const screenRef = useRef<HTMLDivElement>(null);
+  const topRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const body = bodyRef.current;
-    if (!body) return undefined;
+    const top = topRef.current;
+    if (!body || !top) return undefined;
     const measure = () => {
-      const next = { slots: Math.floor(body.clientHeight / LINE_PX), width: body.clientWidth };
+      const head = top.getBoundingClientRect().bottom;
+      screenRef.current?.style.setProperty('--board-top', `${Math.round(head)}px`);
+      const foot = parseFloat(getComputedStyle(body.closest('.app') ?? body).paddingBottom) || 0;
+      const next = { slots: Math.floor((window.innerHeight - head - foot) / LINE_PX), width: body.clientWidth };
       setRoom((was) => (was && was.slots === next.slots && was.width === next.width ? was : next));
     };
     measure();
-    if (typeof ResizeObserver === 'undefined') return undefined;
-    const ro = new ResizeObserver(measure);
-    ro.observe(body);
-    return () => ro.disconnect();
+    window.addEventListener('resize', measure);
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    ro?.observe(body);
+    ro?.observe(top);
+    return () => {
+      window.removeEventListener('resize', measure);
+      ro?.disconnect();
+    };
   }, []);
   const [size, setSize] = useState<PodiumSize | null>(null);
   const sizeNow = room ? podiumSize(room.width, room.slots, size) : size;
@@ -577,11 +589,9 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     if (staged.mode === 'board') played.add(`${lang}|${staged.build}`);
   }, [staged, played, lang]);
 
-  // THE COLUMN SCROLLS AS ONE — the podium, the list's header, the lines — so a long board
-  // carries the podium away and the reader down to their own line. Its height is the body's
-  // room in WHOLE LINES (the podium and the header are whole slots too), so it rests on whole
-  // lines (its scroll snaps to them) and your line held at its edge covers exactly one — never
-  // half a name. Its count also says where the FOLD is: the slots past it come in with the
+  // THE PAGE SCROLLS AS ONE under the held head — the podium, the list's header, the lines — so
+  // a long board carries the podium away and the reader down to their own line. The first
+  // screen's room in WHOLE LINES says where the FOLD is: the slots past it come in with the
   // last one on screen.
   const slots = room?.slots ?? 0;
   const fold = slots > 0 ? Math.max(0, Math.min(PACE_CAP, slots - (size ? podiumHeightPx(size) / LINE_PX : 0) - 1)) : PACE_CAP;
@@ -598,8 +608,13 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     fold,
   };
   // A board turned to opens at its top.
+  const openedOn = useRef(true);
   useLayoutEffect(() => {
-    if (columnRef.current) columnRef.current.scrollTop = 0;
+    if (openedOn.current) {
+      openedOn.current = false;
+      return;
+    }
+    if (window.scrollY > 0) window.scrollTo(0, 0);
   }, [shown?.key]);
 
   const ghostLine =
@@ -743,7 +758,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   const underProps = { lang, meId: meId ?? undefined, mates, places: size ? staged.places : null, onDoor: openGroup };
 
   return (
-    <div className="board-screen">
+    <div ref={screenRef} className="board-screen">
       {/* THE BOARD KEEPS THE PUZZLE'S TITLE and takes no title of its own (user-decided
           2026-08-30): a board is a view OF a daily, and the lit crown says what the screen
           is. The way OUT is any other key of the same, unmoving row. */}
@@ -751,6 +766,8 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
         <PuzzleTitle lang={lang} surface="board" />
       </HeaderLeft>
 
+      {/* THE HEAD, held while the page scrolls under it (`.board-top`). */}
+      <div ref={topRef} className="board-top">
       {/* WHICH BOARD: the tab row — the result's own. A tap on the shown group goes into it;
           the pinned plus creates. Held at its height while the list of groups is unknown. */}
       <BoardTabs
@@ -775,6 +792,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
           <span className="board-caption">{t(lang, 'boardGlobalSub')}</span>
         ) : null}
       </div>
+      </div>
 
       <div
         ref={bodyRef}
@@ -785,26 +803,19 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
           if (swiped(e)) e.stopPropagation();
         }}
       >
-        {/* The board shown: the tab row's panel, a stop for the keyboard (it scrolls). */}
+        {/* The board shown: the tab row's panel. */}
         <div
           ref={columnRef}
-          className="board-column pixel-scroll"
+          className="board-column"
           role="tabpanel"
           id={tabIds(tabsId).panel}
           tabIndex={0}
           aria-labelledby={tabs[activeIndex] ? tabIds(tabsId).tab(tabs[activeIndex].key) : undefined}
           aria-busy={pending || undefined}
-          // (The empty board's block is never scrolled: it takes the body's room as it is.) While a
-          // view gives way the column keeps its whole room, so a shorter one coming in never cuts
-          // the lines going out; it closes up to its content once they are gone (bare ground).
-          style={
-            slots > 0
-              ? {
-                  ...(view.body !== 'hold' ? { maxHeight: `${slots * LINE_PX}px` } : {}),
-                  ...(under.outs.length > 0 ? { minHeight: `${slots * LINE_PX}px` } : {}),
-                }
-              : undefined
-          }
+          // While a view gives way the column keeps a screen's room, so a shorter one coming in
+          // never cuts the lines going out; it closes up to its content once they are gone (bare
+          // ground).
+          style={slots > 0 && under.outs.length > 0 ? { minHeight: `${slots * LINE_PX}px` } : undefined}
         >
           {/* THE PODIUM, in every state the body can be in: a failed read stands its RETRY in
               the podium's own box; the ghost's caption is the empty board's terse line and its
