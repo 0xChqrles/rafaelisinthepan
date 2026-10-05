@@ -28,8 +28,9 @@ import {
 // screen began — so a frame is the same on every device and reduced motion is one `t` held.
 //
 //   THE FLAME over the number: the celebration's crown (`flame`), lit when the account has a
-//     live streak — and on a streak of nothing, its PILOT: the spark that breathes at the foot
-//     of an unlit flame, waiting to catch. Never a broken picture: a zero is a fire not lit.
+//     live streak — and on a streak of nothing, its GHOST in the floor's stipple with the
+//     PILOT breathing at its foot: the spark of an unlit flame, waiting to catch, a faint
+//     ember drifting off it. Never a broken picture: a zero is a fire not lit.
 //   THE COUNT: the streak in the pixel face's own digits, a glyph pixel a square of `K` cells,
 //     LANDING ON THE COUNT'S REELS (`countRun.ts`, the board's compressed run: every reel
 //     spinning from almost the same instant, stopping left to right with a whole-pixel shake).
@@ -37,7 +38,8 @@ import {
 //     unlit link's own ink), dropping into place in two whole steps and shaking as it lands.
 //     As the last reel stops the count throws its LIGHT (the celebration's halo: a DEEP
 //     dither round its strokes, cooling away, kept off the unit's line) and the flame
-//     catches — or, on a zero, the pilot lights and today's open link starts breathing.
+//     catches — or, on a zero, the pilot lights, the ghost rises off it and today's open
+//     link starts breathing.
 //   THE WEEK under it as the celebration's CHAIN, Monday first: a played day's link solid
 //     cobalt, an edge-on link threaded through two played neighbours; a day to come the
 //     link's empty ghost; a day missed an iron link left open; TODAY, solved, the holographic
@@ -245,9 +247,15 @@ function clearAround(ink: Uint8Array, cols: number, rows: number, x: number, y: 
   }
   return true;
 }
-// THE ZERO'S BREATH: the unlit flame's ghost and today's open link breathe on ONE clock, in
-// hard steps — fuller, then back.
+// TODAY'S BREATH: the open link's ghost to white and back, in hard steps, on this period.
 const BREATH_S = 2.4;
+// The moment of the flame's flicker the unlit ghost's silhouette is taken at, by the count's
+// face size (`k`): one where the tip licks up thin off the body, a lone ember over it — the
+// flame, not a cone. Chosen by eye, one per size.
+const GHOST_AT: Record<number, number> = { 6: 1.66, 5: 0.4, 4: 1.12, 3: 1.03 };
+// The unlit flame's ghost rising off the pilot as a zero lands: its rows, foot to tip.
+const GHOST_RISE_STEPS = 4;
+const GHOST_RISE_STEP_MS = 60;
 
 // The flame's timeline: the celebration's own, its beats moved onto the record's — the orbit
 // long met at the top, the crown catching on the impact (never, on a streak of nothing: the
@@ -316,7 +324,8 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
 
   const todayFoil = todayIndex >= 0 && days[todayIndex].solved;
 
-  // The unlit flame's silhouette: the flame at rest, drawn once into a mask.
+  // The unlit flame's silhouette: the flame at rest, drawn once into a mask — caught at the
+  // moment of its flicker its face size licks best at (`GHOST_AT`).
   const ghostFlame = new Uint8Array(lit ? 0 : cols * rows);
   if (!lit) {
     const rest = { ...tl, crown: PAST, flare: Infinity };
@@ -330,25 +339,27 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
       L.crown,
       0,
       rest,
-      0.4,
+      GHOST_AT[K] ?? GHOST_AT[5],
       false,
     );
   }
 
-  // …its outline, dashed: every cell of the silhouette with ground beside it, but one in three
-  // along the diagonal left out — the ghost links' own broken stroke.
-  const ghostEdge: number[] = [];
+  // …and its GHOST: that silhouette in the FLOOR'S STIPPLE, a dot every other cell on the
+  // raster's own even grid (the podium's ghost steps' grammar: never an outline) — where the
+  // fire will burn, standing quietly over the iron count. Its rows are kept so it can RISE.
+  const ghostDots: number[] = [];
+  let ghostTop = L.crown.y;
   if (!lit) {
-    const inMask = (x: number, y: number) => x >= 0 && y >= 0 && x < cols && y < rows && ghostFlame[y * cols + x] === 1;
     for (let i = 0; i < ghostFlame.length; i += 1) {
       if (!ghostFlame[i]) continue;
       const x = i % cols;
       const y = (i - x) / cols;
-      const around = +inMask(x - 1, y) + +inMask(x + 1, y) + +inMask(x, y - 1) + +inMask(x, y + 1);
-      // (A lone cell is an ember the frozen flame threw: no part of its outline.)
-      if (around > 0 && around < 4 && (x + y) % 3 !== 2) ghostEdge.push(i);
+      if (x % 2 !== 0 || y % 2 !== 0) continue;
+      ghostDots.push(i);
+      if (y < ghostTop) ghostTop = y;
     }
   }
+  const ghostFoot = L.crown.y - 1;
 
   return {
     alive: true,
@@ -379,16 +390,18 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
         }
       }
 
-      // ── 2. THE FLAME — or, unlit, its GHOST: the flame's own outline, EMPTY and DASHED in
-      // iron, the chain's grammar for a thing still to come (a day to come is its link's
-      // dashed ghost; a fire to come is its flame's), lifting from iron to the muted ink on
-      // the beat today's open link breathes on — and the pilot waiting at its foot.
-      // (A zero's fire waits for its count to land: then the outline, the pilot and the breath.)
+      // ── 2. THE FLAME — or, unlit, its GHOST: where it will burn, in the floor's stipple,
+      // the pilot breathing at its foot and a faint ember drifting off it (below). A zero's
+      // fire waits for its count to land: then the pilot lights and the ghost RISES off it,
+      // foot to tip, in GHOST_RISE_STEPS hard steps — and stands, still, from then on.
       const waiting = !lit && t >= b.impact;
       if (waiting) {
-        const beat = Math.floor(((seconds / BREATH_S) % 1) * 8);
-        const v = beat === 3 || beat === 4 ? MUTED : RAIL;
-        for (const at of ghostEdge) put(at % cols, Math.floor(at / cols), v);
+        const step = Math.min(GHOST_RISE_STEPS, Math.floor((t - b.impact) / GHOST_RISE_STEP_MS) + 1);
+        const reach = ghostFoot - ((ghostFoot - ghostTop) * step) / GHOST_RISE_STEPS;
+        for (const at of ghostDots) {
+          const y = Math.floor(at / cols);
+          if (y >= reach) put(at % cols, y, RAIL);
+        }
       }
       if (lit) flame(put, L.crown, Math.max(0, t), tl, seconds, false);
       // The pilot, held a touch larger than the celebration's spark: on a zero it is the one
@@ -567,7 +580,7 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
       }
 
       // A faint cobalt EMBER drifts off the pilot now and then — the zero is waiting, not dead.
-      if (!lit) {
+      if (waiting) {
         const period = 1.9;
         const cycle = Math.floor(seconds / period);
         const age = (seconds - cycle * period) / period;

@@ -7,11 +7,11 @@
 // its own steps, and what is left here is the account itself:
 //
 //   THE ROW   the mark, the name, the saved ADDRESS under it — the identity as the page's
-//             MASTHEAD (a page's identity is a masthead, not a monument), and the door to
-//             the editor: the WHOLE ROW is the one tap, in the corner brackets a tappable
-//             thing wears, a pixel pencil in its corner. The address took the place and the
-//             dress of the account's AGE (user-decided 2026-09-05), on a line that is always
-//             held, so nothing moves when it lands.
+//             MASTHEAD (a page's identity is a masthead, not a monument), standing STILL:
+//             nothing in it is framed but its one key, the pixel PENCIL in the corner
+//             brackets a tappable thing wears, the door to the editor. The address took
+//             the place and the dress of the account's AGE (user-decided 2026-09-05); the
+//             words land once both their reads have, so nothing in the row moves after.
 //   RECORD    the three numbers the account IS, as the screen's SUBJECT (`record/Record`):
 //             the live STREAK in the streak celebration's own language — its flame over the
 //             count, the week as the chain under it, today's link in foil once played —
@@ -42,7 +42,7 @@
 // rather than claiming UNSAVED before it knows (#211's explicit-loading rule). SAVE is live
 // either way — its tap leads to the flow whose CONTINUE is the account-deploying trigger.
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import type { RecordSize } from '../components/record/scene';
 import { defaultAvatar } from '@whippin/shared';
 import { faceSettled, shownFace, useOwnFace } from '../components/AccountFace';
@@ -128,9 +128,15 @@ export default function Account() {
   // flash SAVE and swap it for the address on every visit of a linked player.
   const known = identity === null || phase === 'ready' || summary !== null;
   const accountUnknown = phase === 'failed' && summary === null;
+  // THE MASTHEAD'S WORDS LAND ONCE, with both their facts: the name (the face) and whether an
+  // address goes under it (the summary — or its failed read, which leaves the name alone). The
+  // row is centred on the mark either way — the name alone, or name and address as one block
+  // — so a row that printed the name before it knew would have to move it when an address
+  // landed.
+  const words = face !== null && (known || phase === 'failed');
 
-  // THE DOOR TO THE EDITOR hands the mark's on-screen box over, so the editor's canvas grows
-  // out of exactly where the mark stood (`markHandoff`).
+  // THE DOOR TO THE EDITOR (the pencil key) hands the MARK's on-screen box over, so the
+  // editor's canvas grows out of exactly where the mark stood (`markHandoff`).
   const markRef = useRef<HTMLSpanElement>(null);
   const handedAvatar = face ? (face.avatar ?? defaultAvatar(face.publicId)) : null;
   const openEditor = useCallback(() => {
@@ -149,16 +155,16 @@ export default function Account() {
         <LangTitle lang={lang} title={t(lang, 'accountTitle')} />
       </HeaderLeft>
       <div className="account-screen account-page">
-        {/* THE MASTHEAD — the identity, and the door to the editor: ONE tap target in the
-            corner brackets of a tappable thing, the pixel pencil in its corner saying what
-            the tap does (no word, no chevron). The mark at 50px, five whole pixels a cell;
-            the name in the boards' face; the saved address on a line held whether or not
-            it is there, so nothing moves when the summary lands. The face holds its boxes
-            until the read settles rather than flashing a pseudonym it may be about to
-            correct (the leaderboard strip's finding). */}
-        {/* (Named by what it shows — the name, the address once saved — and the word for
-            what the tap does, said to a screen reader only: the pencil says it on screen.) */}
-        <button type="button" className="account-id" onClick={openEditor}>
+        {/* THE MASTHEAD — the identity, STILL: a plain row on one axis, the mark at 50px
+            (five whole pixels a cell), the name in the boards' face with the saved address
+            under it, the pair centred on the mark (the name alone when there is none), and,
+            at the trailing edge, the ONE thing in the row that is tapped: the pixel pencil
+            in a tappable thing's corner brackets, the editor's door (its name said to a
+            screen reader; the pencil says it on screen). Nothing else is framed, so nothing
+            else reads as editable. The boxes hold until their reads settle rather than
+            flashing a pseudonym it may be about to correct (the leaderboard strip's
+            finding), and the words land ONCE (`words`), so nothing moves after. */}
+        <div className="account-id">
           <span ref={markRef} className="account-id-mark">
             {face ? (
               <Avatar avatar={face.avatar ?? defaultAvatar(face.publicId)} size={MARK_PX} sharp />
@@ -167,25 +173,30 @@ export default function Account() {
             )}
           </span>
           <span className="account-id-text">
-            {face ? (
+            {words ? (
               <span className="account-id-name">{face.name}</span>
             ) : (
-              <span className={`account-id-name-slot${facePending ? '' : ' gone'}`} aria-hidden="true" />
+              <span className={`account-id-name-slot${facePending || face ? '' : ' gone'}`} aria-hidden="true" />
             )}
             {/* The saved ADDRESS (2026-09-05, in the place the account's age held): a fact,
                 no control — an account carries at most one address and the server refuses a
-                second. It hangs under the name in the row's own padding, so the name stands
-                centred on the mark whether or not it is there, and nothing moves when it
-                lands; it shows only once SAVED. */}
-            <span className="account-id-mail">
-              {saved !== null && <AddressLine address={saved} className="account-id-mail-line" />}
-            </span>
+                second. It prints only once SAVED. */}
+            {words && saved !== null && (
+              <span className="account-id-mail">
+                <AddressLine address={saved} className="account-id-mail-line" />
+              </span>
+            )}
           </span>
-          <span className="account-id-pen" aria-hidden="true">
-            <PencilIcon className="ui-icon" />
-          </span>
-          <span className="sr-only">{t(lang, 'boardEdit')}</span>
-        </button>
+          <button
+            type="button"
+            className="account-edit"
+            aria-label={t(lang, 'boardEdit')}
+            title={t(lang, 'boardEdit')}
+            onClick={openEditor}
+          >
+            <PencilIcon className="ui-icon" aria-hidden="true" />
+          </button>
+        </div>
 
         {/* THE RECORD — what this account has DONE, as the screen's subject (`record/`): the
             streak in the celebration's own language, BEST and DAYS beside the rail — the

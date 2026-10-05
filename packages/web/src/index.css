@@ -9805,68 +9805,23 @@ figure.l1-fig {
   }
 }
 
-/* THE MASTHEAD — ONE tap target, the editor's door: the corner brackets of a tappable thing
-   (the board line's own — 2px, 8px arms, white at 38%: one bordered box masked to its four
-   corners, so the corners can STEP to white), the pixel pencil in its top corner, the mark
-   at 50px (five whole pixels a cell), the name in the boards' face at the action weight, the
-   saved address on a caption line that is always held. A hover steps the corners and the
-   pencil to white in two steps; a press sinks the mark two pixels. */
+/* THE MASTHEAD — the identity as a plain row, STILL, on ONE axis: the mark at 50px (five whole
+   pixels a cell) on the column's left edge, the name in the boards' face at the action weight
+   over the saved address's caption line (held whether or not it prints, so the pair is one
+   block centred on the mark and nothing moves when the summary lands), and on the column's
+   right edge the row's ONE key — the pixel pencil in a tappable thing's corner brackets (SIGN
+   OUT's own: 2px, 6px arms, white at 38%), the editor's door. Nothing else is framed, so
+   nothing else reads as editable. A hover steps the corners to white in two steps; a press
+   sinks the pencil two pixels. */
 .account-id {
-  --bc: rgba(255, 255, 255, 0.38);
-  position: relative;
   flex: none;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   width: 100%;
-  min-height: 82px;
-  margin: 0;
-  padding: 16px 48px 16px 16px;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  color: var(--fg);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.account-id::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 2px solid var(--bc);
-  pointer-events: none;
-  -webkit-mask:
-    linear-gradient(#000 0 0) 0 0 / 8px 8px no-repeat,
-    linear-gradient(#000 0 0) 100% 0 / 8px 8px no-repeat,
-    linear-gradient(#000 0 0) 0 100% / 8px 8px no-repeat,
-    linear-gradient(#000 0 0) 100% 100% / 8px 8px no-repeat;
-  mask:
-    linear-gradient(#000 0 0) 0 0 / 8px 8px no-repeat,
-    linear-gradient(#000 0 0) 100% 0 / 8px 8px no-repeat,
-    linear-gradient(#000 0 0) 0 100% / 8px 8px no-repeat,
-    linear-gradient(#000 0 0) 100% 100% / 8px 8px no-repeat;
-  transition: border-color 120ms steps(2, jump-end);
-}
-.account-id:focus-visible {
-  outline: none;
-}
-@media (hover: hover) and (pointer: fine) {
-  .account-id:hover::before {
-    border-color: var(--fg);
-  }
-  .account-id:hover .account-id-pen {
-    color: var(--fg);
-  }
-}
-/* Under the keyboard's focus the app's ONE indicator speaks alone (`FocusBrackets`, just
-   outside the row): the row's own corners give way to it, never a second frame nested inside. */
-.account-id[data-bracketed]::before {
-  border-color: transparent;
+  padding: 8px 0;
 }
 .account-id-mark {
-  position: relative;
   flex: none;
   display: block;
   width: 50px;
@@ -9875,17 +9830,12 @@ figure.l1-fig {
 .account-id-mark .avatar {
   display: block;
 }
-.account-id:active .account-id-mark {
-  translate: 0 2px;
-}
-/* The name stands centred on the mark; the address HANGS under it in the row's bottom padding
-   (absolute), so the row reads centred whether or not there is an address, and nothing moves
-   when it lands. */
 .account-id-text {
-  position: relative;
   flex: 1;
   min-width: 0;
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .account-id-name {
   display: block;
@@ -9910,11 +9860,8 @@ figure.l1-fig {
   visibility: hidden;
 }
 .account-id-mail {
-  position: absolute;
-  top: calc(100% + 7px);
-  left: 0;
-  right: 0;
   display: flex;
+  height: 14px;
   font-family: var(--ui);
   font-size: 11px;
   font-weight: 500;
@@ -9927,21 +9874,60 @@ figure.l1-fig {
    probe is the whole address, unseen, the ruler its advance is read off. */
 .account-id-mail-line {
   flex: 1;
+  min-width: 0;
 }
-/* The pencil, clinging to the frame's top corner — where the result's card prints its date:
-   what the tap does, in the chrome's quiet ink. */
-.account-id-pen {
+.account-edit {
+  --bc: color-mix(in srgb, var(--fg) 38%, transparent);
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--fg);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.account-edit::before {
+  content: '';
   position: absolute;
-  top: 12px;
-  right: 12px;
-  display: block;
-  color: var(--muted);
-  transition: color 120ms steps(2, jump-end);
+  inset: 0;
+  border: 2px solid var(--bc);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) 0 0 / 6px 6px no-repeat,
+    linear-gradient(#000 0 0) 100% 0 / 6px 6px no-repeat,
+    linear-gradient(#000 0 0) 0 100% / 6px 6px no-repeat,
+    linear-gradient(#000 0 0) 100% 100% / 6px 6px no-repeat;
+  mask:
+    linear-gradient(#000 0 0) 0 0 / 6px 6px no-repeat,
+    linear-gradient(#000 0 0) 100% 0 / 6px 6px no-repeat,
+    linear-gradient(#000 0 0) 0 100% / 6px 6px no-repeat,
+    linear-gradient(#000 0 0) 100% 100% / 6px 6px no-repeat;
+  transition: border-color 120ms steps(2, jump-end);
 }
-.account-id-pen .ui-icon {
+@media (hover: hover) and (pointer: fine) {
+  .account-edit:hover::before {
+    border-color: var(--fg);
+  }
+}
+/* Under the keyboard's focus the app's ONE indicator speaks alone (`FocusBrackets`, just
+   outside the key): the key's own corners give way to it, never a frame nested in a frame. */
+.account-edit[data-bracketed]::before {
+  border-color: transparent;
+}
+.account-edit .ui-icon {
   display: block;
   width: 20px;
   height: 20px;
+}
+.account-edit:active .ui-icon {
+  translate: 0 2px;
 }
 
 /* THE RECORD (`components/record/`) — one raster of 3px cells (the celebration's phone cell)
@@ -10373,11 +10359,10 @@ figure.l1-fig {
   .account-page .account-cta + .account-foot {
     margin-top: 2px;
   }
-  /* The masthead hugs its 50px mark a little closer (the address still hangs in its foot). */
+  /* The masthead hugs its 50px mark. */
   .account-id {
-    min-height: 74px;
-    padding-top: 12px;
-    padding-bottom: 12px;
+    padding-top: 4px;
+    padding-bottom: 4px;
   }
 }
 @media (max-width: 380px) and (max-height: 600px) {
@@ -10388,10 +10373,6 @@ figure.l1-fig {
 @media (max-width: 360px) {
   .account-id {
     gap: 12px;
-    padding-left: 12px;
-  }
-  .account-id {
-    padding-right: 40px;
   }
   /* French is what bites here: the call's label keeps its one line by giving up padding,
      never type; the device line hands its label the gutter. */
