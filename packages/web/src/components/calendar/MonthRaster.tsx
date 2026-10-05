@@ -17,10 +17,10 @@ import { markShown, nextStage, stageId, type Shown, type Stage, type Viewer } fr
 // uses — one backing pixel a house cell, upscaled `pixelated`, laid over the grid with a bleed
 // round it — on the page's ONE animation clock (`clockNow`: the CSS dissolves' own timeline,
 // so a slowed recording slows both), stepping every FRAME_MS until the scene has settled. Then
-// THE CLOCK RESTS: only today's foil moves, repainted over a stored resting frame at the foil's
-// own slow pace, and only while somebody can see it and is there (`rasterWatch`); a month
-// still being read keeps its read wave going while it is seen, idle or not — a loading month
-// must keep reading as one. Reduced motion draws the landed frame once and runs no clock.
+// THE CLOCK RESTS: only today's foil moves, repainted over a stored resting frame on every frame
+// the display draws, while somebody can see it (`rasterWatch`); a month still being read keeps
+// its read wave going at its stepped pace while it is seen. Reduced motion draws the landed
+// frame once and runs no clock.
 //
 // WHICH SCENE, and how it gives way from the one before, is `plan.ts`'s: LATCHED whenever what
 // the raster shows changes — never for a re-render (a press, a resize) — and shown at once
@@ -202,11 +202,15 @@ export default function MonthRaster({
       };
     }
 
+    // The build steps on a timer (FRAME_MS), the read wave at its own stepped pace
+    // (LOOP_FRAME_MS); the foil at rest on the display's own frames.
     let timer = 0;
+    let raf = 0;
     let stopped = false;
     if (fresh) setBursting(staged.beats.bursts.length > 0 ? start : null);
     const tick = () => {
       timer = 0;
+      raf = 0;
       if (stopped || !watch.seen()) return;
       const t = elapsed();
       if (t < until) {
@@ -222,12 +226,11 @@ export default function MonthRaster({
         scene.draw(px, t, false, pressedRef.current);
         ctx.putImageData(image, 0, 0);
       } else if (scene.loop === 'foil') {
-        // Nobody there: the foil holds its frame until a touch wakes it.
-        if (!watch.awake()) return;
         scene.foil(px, rest, t, pressedRef.current);
         for (const b of scene.foilBoxes) ctx.putImageData(image, 0, 0, b.x, b.y, b.w, b.h);
       }
-      if (scene.loop !== null) timer = window.setTimeout(tick, LOOP_FRAME_MS);
+      if (scene.loop === 'foil') raf = window.requestAnimationFrame(tick);
+      else if (scene.loop !== null) timer = window.setTimeout(tick, LOOP_FRAME_MS);
     };
     // A press shown or released: the running clock draws it on its next frame; at rest it is
     // drawn now.
@@ -236,7 +239,7 @@ export default function MonthRaster({
       settle(elapsed());
     };
     const watch = watchRaster(canvas, () => {
-      if (!stopped && !timer && watch.seen()) tick();
+      if (!stopped && !timer && !raf && watch.seen()) tick();
     });
     // The first frame before paint — the scene before, as it stood.
     tick();
@@ -244,6 +247,7 @@ export default function MonthRaster({
       stopped = true;
       redrawRef.current = null;
       window.clearTimeout(timer);
+      window.cancelAnimationFrame(raf);
       watch.stop();
     };
     // A scene per stage and per layout; the data is the stage's.

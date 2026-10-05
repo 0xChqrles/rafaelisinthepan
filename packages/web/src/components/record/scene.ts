@@ -1,5 +1,5 @@
 import { COUNT_EM, COUNT_ROWS, DIGIT_MASKS, bayerThreshold as th, hash3, reelInk, reelRow, sparkleAt } from '@whippin/shared';
-import { COUNT_SHAKE, runEnd, runReel } from '../countRun';
+import { COUNT_END_MS, COUNT_RUN_MS, COUNT_SHAKE, reelShake, reelStop, reelTravelled } from '../countRun';
 import { CROWN_MS, timeline, type Timeline } from '../streak/beats';
 import {
   COBALT,
@@ -32,8 +32,9 @@ import {
 //     PILOT breathing at its foot: the spark of an unlit flame, waiting to catch, a faint
 //     ember drifting off it. Never a broken picture: a zero is a fire not lit.
 //   THE COUNT: the streak in the pixel face's own digits, a glyph pixel a square of `K` cells,
-//     LANDING ON THE COUNT'S REELS (`countRun.ts`, the board's compressed run: every reel
-//     spinning from almost the same instant, stopping left to right with a whole-pixel shake).
+//     LANDING ON THE RESULT'S SLOT MACHINE (`countRun.ts`, the solved count's own run: every
+//     reel spinning from almost the same instant, stopping left to right, each stop with its
+//     whole-pixel shake and its own burst in front of the digit — `Record`'s `recordStops`).
 //     White-hot when it burns; a zero never spins — it is IRON from its first frame (the
 //     unlit link's own ink), dropping into place in two whole steps and shaking as it lands.
 //     As the last reel stops the count throws its LIGHT (the celebration's halo: a DEEP
@@ -179,13 +180,12 @@ export interface RecordDay {
 
 // ── The beats, in ms since the screen began ───────────────────────────────────────────────
 // The chain dithers in over LINKS_IN_MS, Monday first; the count's reels start at REEL_AT and
-// run RUN_MS (the board's compressed run); as the last one stops the count throws its light
+// run the solved count's COUNT_RUN_MS; as the last one stops the count throws its light
 // (HALO_MS) and the flame catches (the celebration's CROWN_MS), flaring; RUN_AFTER_MS later the
 // light runs along the chain, RUN_STEP_MS a link — each played link white for one step, today's
 // struck white for STRIKE_MS and cooling into the foil over COOL_MS.
 const LINKS_IN_MS = 300;
 const REEL_AT = 80;
-export const RECORD_RUN_MS = 900;
 // A ZERO's landing: no spin — two whole steps of drop (a glyph pixel each), then the reels'
 // own stop shake.
 const ZERO_DROP: readonly number[] = [-2, -1];
@@ -211,13 +211,22 @@ export interface RecordBeats {
 
 // `lit`: a streak that burns spins its reels; a zero drops into place instead.
 export function recordBeats(build: boolean, lit = true): RecordBeats {
-  if (!build) return { linksIn: PAST, reel: PAST, impact: PAST + RECORD_RUN_MS, run: PAST, settled: 0 };
+  if (!build) return { linksIn: PAST, reel: PAST, impact: PAST + COUNT_RUN_MS, run: PAST, settled: 0 };
   const reel = REEL_AT;
-  const impact = reel + (lit ? RECORD_RUN_MS : ZERO_LAND_MS);
+  const impact = reel + (lit ? COUNT_RUN_MS : ZERO_LAND_MS);
   const run = impact + RUN_AFTER_MS;
-  const landed = lit ? reel + runEnd(RECORD_RUN_MS) : impact + COUNT_SHAKE.length * ZERO_SHAKE_STEP_MS;
+  const landed = lit ? reel + COUNT_END_MS : impact + COUNT_SHAKE.length * ZERO_SHAKE_STEP_MS;
   const settled = Math.max(landed, impact + HALO_MS, run + 7 * RUN_STEP_MS + STRIKE_MS + COOL_MS + BURST_MS);
   return { linksIn: 0, reel, impact, run, settled };
+}
+
+// WHEN EACH REEL STOPS, in ms of the record's clock — the beat its burst goes off on (the
+// solved count's `Bursts`): none for a zero, which drops in rather than spins, nor for a
+// record already standing.
+export function recordStops(b: RecordBeats, value: number, build: boolean): number[] {
+  if (!build || value <= 0) return [];
+  const n = String(Math.floor(value)).length;
+  return Array.from({ length: n }, (_, i) => b.reel + reelStop(i, n));
 }
 
 // When the record has CALMED, in ms of its clock: today's foil link cooled from its strike —
@@ -429,7 +438,7 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
       }
       if (t >= b.reel) {
         const ms = t - b.reel;
-        const running = lit && ms < runEnd(RECORD_RUN_MS);
+        const running = lit && ms < COUNT_END_MS;
         const v = WHITE;
         // A count of nothing is IRON, the unlit link's metal, cut the iron keys' way: lit from
         // above — the top row of every stroke catching the light, the body falling off into
@@ -446,8 +455,9 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
               : { dx: 0, dy: 0 }
           : null;
         for (let i = 0; i < n; i += 1) {
-          const r = running
-            ? runReel(digits[i], i, n, ms, RECORD_RUN_MS)
+          const shaken = running ? reelShake(i, n, ms) : null;
+          const r = shaken
+            ? { travelled: reelTravelled(digits[i], i, n, ms), dx: shaken[0], dy: shaken[1] }
             : { travelled: digits[i], dx: zeroAt?.dx ?? 0, dy: zeroAt?.dy ?? 0 };
           const glyph = reelInk(DIGIT_MASKS, [reelRow(r.travelled % 10)]);
           for (let gy = 0; gy < COUNT_ROWS; gy += 1) {

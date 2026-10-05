@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties } from 'react';
 import { mondayNarrowLabels, weekView } from '../../game/streak';
 import { t } from '../../i18n';
@@ -8,8 +8,11 @@ import type { AccountWeekDay } from '../../state/history';
 import { clockNow } from '../animationClock';
 import { foilSeed } from '../foil';
 import { hexToAbgr } from '../raster';
-import { LOOP_FRAME_MS, watchRaster } from '../rasterWatch';
+import { COUNT_EM, COUNT_ROWS } from '@whippin/shared';
+import { watchRaster } from '../rasterWatch';
 import ReelNumber from '../ReelNumber';
+import Strike from '../Strike';
+import { BURST_ART } from '../strikeArt';
 import { FOIL, FOIL_DEEP, INKS, RAIL, foilInk } from '../streak/sprites';
 import { StatSlot } from '../AccountStats';
 import {
@@ -20,6 +23,7 @@ import {
   recordCalm,
   recordLayout,
   recordScene,
+  recordStops,
   sideReelsAt,
   slotCells,
   slotLevel,
@@ -48,7 +52,6 @@ import {
 // each box stands until its own number's reels start, each link's slot until the link dithers
 // in over it.
 
-const FRAME_MS = 50;
 // Held frame under reduced motion: the settled picture, its foil and flame at this instant.
 const STILL_T = 2600;
 
@@ -78,6 +81,61 @@ export function useRecordCalm(): number | null {
 }
 
 export type RecordPhase = 'loading' | 'failed' | 'ready';
+
+// THE STOPS' BURSTS — the solved count's own (`SolvedCard`'s `Bursts`): each reel's stop goes
+// off IN FRONT of its digit, the burst sheet at the whole scale that makes it about one and a
+// half digits wide (never under 2x), in the accent, its impact ink centred 44% down the frame on
+// the digit's ink. Kept above the unit's line (a ray through small type garbles it). Each is
+// mounted once, timed off the record's clock, and gone when its blow has played.
+const BURST_W = 53;
+const BURST_H = 66;
+const BURST_INK_Y = 0.44;
+const BURST_DIGIT_SPAN = 1.5;
+const BURST_TEXT_GAP = 12;
+
+function RecordBursts({
+  L,
+  stops,
+  start,
+}: {
+  L: ReturnType<typeof recordLayout>;
+  stops: readonly number[];
+  start: number;
+}) {
+  // Each stop's delay from NOW, read once: a burst whose blow is already over is never mounted.
+  const [delays] = useState(() => stops.map((at) => start + at - clockNow()));
+  const [done, setDone] = useState<ReadonlySet<number>>(() => new Set());
+  const finish = useCallback((id: number) => setDone((d) => new Set(d).add(id)), []);
+  const glyphPx = L.k * RECORD_CELL_PX;
+  const scale = Math.max(2, Math.round((BURST_DIGIT_SPAN * (COUNT_EM - 1) * glyphPx) / BURST_W));
+  const w = BURST_W * scale;
+  const h = BURST_H * scale;
+  const cy = (L.count.y * RECORD_CELL_PX) + (COUNT_ROWS * glyphPx) / 2;
+  return (
+    <span className="record-bursts" style={{ height: Math.max(0, L.unitY - BURST_TEXT_GAP) }} aria-hidden="true">
+      {delays.map((delay, i) => {
+        if (done.has(i) || delay < -BURST_ART.ms) return null;
+        const cx = L.ox + (L.count.x + (i * COUNT_EM + (COUNT_EM - 1) / 2) * L.k) * RECORD_CELL_PX;
+        return (
+          <span
+            key={i}
+            className="record-burst"
+            style={
+              {
+                '--burst-x': `${Math.round(cx - w / 2)}px`,
+                '--burst-y': `${Math.round(cy - h * BURST_INK_Y)}px`,
+                '--burst-w': `${w}px`,
+                '--burst-h': `${h}px`,
+              } as CSSProperties
+            }
+          >
+            <Strike id={i} art={BURST_ART} color="var(--accent)" delayMs={Math.max(0, delay)} onDone={finish} />
+          </span>
+        );
+      })}
+    </span>
+  );
+}
 
 export default function Record({
   lang,
@@ -137,6 +195,8 @@ export default function Record({
 
   // A clock per scene: its start is the moment the numbers landed, kept across a re-layout.
   const startRef = useRef<number | null>(null);
+  // The build's start, for the stops' bursts (null until the build has begun).
+  const [burstsFrom, setBurstsFrom] = useState<number | null>(null);
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
@@ -167,6 +227,7 @@ export default function Record({
     const seed = foilSeed(`record:${today}`);
     startRef.current ??= clockNow();
     const start = startRef.current;
+    if (build) setBurstsFrom(start);
     setCalm(build ? start + recordCalm(beats, week) : clockNow());
     const paint = (at: number) => {
       scene.draw(ink, at, foil);
@@ -184,24 +245,24 @@ export default function Record({
       paint(STILL_T);
       return undefined;
     }
-    let timer = 0;
+    // EVERY FRAME THE DISPLAY DRAWS, while the record can be seen — the build's reels as often as
+    // the solved count's, the flame and the foil at rest the same: a raster stepped on a timer
+    // beat against the flame's own stepped flicker and read as a stutter.
+    let raf = 0;
     let stopped = false;
     const tick = () => {
-      timer = 0;
+      raf = 0;
       if (stopped || !watch.seen()) return;
-      const at = clockNow() - start;
-      // At rest the loop steps only while somebody is there; the build always runs out.
-      if (at >= beats.settled && !watch.awake()) return;
-      paint(at);
-      timer = window.setTimeout(tick, at < beats.settled ? FRAME_MS : LOOP_FRAME_MS);
+      paint(clockNow() - start);
+      raf = window.requestAnimationFrame(tick);
     };
     const watch = watchRaster(canvas, () => {
-      if (!stopped && !timer && watch.seen()) tick();
+      if (!stopped && !raf && watch.seen()) tick();
     });
     tick();
     return () => {
       stopped = true;
-      window.clearTimeout(timer);
+      window.cancelAnimationFrame(raf);
       watch.stop();
     };
   }, [L, ready, build, beats, week, streak, reduced, today, width, phase]);
@@ -256,6 +317,9 @@ export default function Record({
           style={{ left: L.ox, width: L.cols * RECORD_CELL_PX, height: L.rows * RECORD_CELL_PX }}
           aria-hidden="true"
         />
+        {burstsFrom !== null && width > 0 && (
+          <RecordBursts L={L} stops={recordStops(beats, streak, build === true)} start={burstsFrom} />
+        )}
         {/* A failed read: the count's held box (the raster's still checker) is the tap that
             asks again. */}
         {width > 0 && phase === 'failed' && !ready && (

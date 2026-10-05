@@ -289,6 +289,8 @@ input {
 }
 
 .app {
+  /* Its top padding, which the board screen's held head covers (`.board-top`). */
+  --app-pad-top: 24px;
   position: relative;
   height: 100%;
   display: flex;
@@ -297,7 +299,20 @@ input {
   /* The sides clear the device frame's vertical rail (2026-08-18: the sentence sat
      against the WHIPPIN rail on mid-size screens). The mobile block narrows this back
      down along with the frame it clears. */
-  padding: 24px 52px;
+  padding: var(--app-pad-top) 52px 24px;
+}
+/* THE BOARD SCREEN SCROLLS AS A PAGE (user-asked 2026-10-05: "the scrollbar should be on the
+   side of the screen, as always. The whole page is scrollable, what doesn't move is fixed"):
+   the shell grows with it, so the document is the scroller — its bar on the window's edge, a
+   wheel anywhere on the page scrolling it, a phone's toolbars folding away as on any page. */
+.app:has(> .board-screen) {
+  height: auto;
+  min-height: 100%;
+  align-items: flex-start;
+}
+body:has(.app > .board-screen) {
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .status {
@@ -4662,12 +4677,13 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     height: auto;
   }
   .app {
+    --app-pad-top: 16px;
     height: auto;
     /* The custom keyboard (#36) is always visible in the layout — no native soft
        keyboard opens — so the viewport no longer resizes under a focused input. */
     min-height: 100dvh;
     align-items: flex-start;
-    padding: 16px 14px 28px;
+    padding: var(--app-pad-top) 14px 28px;
   }
 
   /* Screens with no HUD stay vertically centered (auto margins beat align-items).
@@ -7201,8 +7217,39 @@ figure.l1-fig {
 /* ONE EDGE each side for the head and the lines: the chip, the brackets' frame and the rank
    column start 6px in (the lines' own inset, the corner brackets' arms outside it); the plus
    and the door's chevron end 6px in. */
-.board-screen > .board-tabs {
+.board-top > .board-tabs {
   margin: 0 -6px 0 2px;
+}
+/* THE HEAD HOLDS (the tab row and the line under it): sticky on the window's top, over the
+   shell's own padding and the header's clearance, on the ground — so it never moves while the
+   page scrolls the podium and the lines up under it, and they thin out through the dither at
+   its foot instead of being cut. Its height is the screen's `--board-top`, where your own
+   line holds. */
+.board-screen {
+  padding-top: 0;
+}
+.board-top {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  margin-top: calc(-1 * var(--app-pad-top));
+  padding-top: calc(var(--app-pad-top) + 58px);
+  background: var(--bg);
+}
+.board-top::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 6px;
+  background: var(--bg);
+  pointer-events: none;
+  -webkit-mask: var(--edge-d) 0 0 / 16px 6px repeat-x;
+  mask: var(--edge-d) 0 0 / 16px 6px repeat-x;
 }
 
 /* THE HEAD LINE, under the tabs, one height whatever it holds: a group's three boards,
@@ -7608,42 +7655,23 @@ figure.l1-fig {
   color: var(--fg);
 }
 
-/* The body owns the leftover height; the COLUMN fills it and scrolls as one — the podium, the
-   list's header, the lines. A sideways swipe on it turns the tab row. */
+/* The body and its COLUMN — the podium, the list's header, the lines — are the page under the
+   held head, scrolled by the window. A sideways swipe on them turns the tab row. */
 .board-body {
-  flex: 1;
-  min-height: 0;
+  flex: none;
   display: flex;
   flex-direction: column;
   touch-action: pan-y pinch-zoom;
 }
 .board-column {
-  /* Positioned: its lines' sticky edge reads in its own terms. */
+  /* Positioned: what gives way in it stands over it. */
   position: relative;
   flex: none;
-  min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  /* The bar's room kept whether it shows or not, and kept on BOTH edges, the column reaching
-     that far past the body's each side: its content is exactly the body's box, centred on the
-     screen, whether a board overflows or not — the podium on the same cells, the lines' numbers
-     ending where the result's do. */
-  scrollbar-gutter: stable both-edges;
-  margin: 0 -6px;
   /* The vertical scroll and the pinch are the browser's; a sideways swipe is the screen's (it
      turns the tab row). */
   touch-action: pan-y pinch-zoom;
-  /* A column of WHOLE SLOTS: its height is the body's room floored to the 44px pitch (the
-     screen writes it), the podium and every item whole slots, and its scroll rests on a slot's
-     start — so a line is never cut by the column's edge at rest. */
-  scroll-snap-type: y mandatory;
-}
-.board-column > .podium,
-.board-under-in > *,
-.board-under-in .board-list > :not(.sr-only) {
-  scroll-snap-align: start;
 }
 /* What stands under the podium, and the view before it giving way over it, slot for slot —
    each of its slots dissolving out through the cells the new slot dissolves in through, its
@@ -7741,12 +7769,11 @@ figure.l1-fig {
    dithered edge against it instead of being cut. */
 .board-body .board-row.me {
   position: sticky;
-  top: 0;
+  /* Under the held head (`.board-top`), and on the window's foot. */
+  top: var(--board-top, 0px);
   bottom: 0;
   z-index: 1;
   background-color: var(--bg);
-  /* Held, it moves with the scroll: it is no place to rest on (the lines round it are). */
-  scroll-snap-align: none;
 }
 .board-body .board-row.me[data-stuck]::before {
   content: '';
@@ -7907,12 +7934,10 @@ figure.l1-fig {
 }
 
 @media (max-width: 640px) {
-  .board-screen {
-    /* The mobile .app scrolls the page; the board keeps its own internal scroll by
-       taking an explicit viewport height (minus .app's 16px top / 28px bottom pads). */
-    height: calc(100dvh - 44px);
-    /* The full-bleed 48px band plus the same beat the base rule gives the tabs. */
-    padding-top: 60px;
+  /* The held head clears the full-bleed 48px band plus the same beat the base rule gives the
+     tabs. */
+  .board-top {
+    padding-top: calc(var(--app-pad-top) + 60px);
   }
 }
 
@@ -9944,6 +9969,24 @@ figure.l1-fig {
   flex-direction: column;
   margin-top: -14px;
   pointer-events: none;
+}
+/* THE STOPS' BURSTS over the count (`Record`'s `RecordBursts`): the solved count's own sheet,
+   clipped above the unit's line. */
+.record-bursts {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+.record-burst .strike.burst {
+  left: var(--burst-x);
+  top: var(--burst-y);
+  width: var(--burst-w);
+  height: var(--burst-h);
+  transform: none;
 }
 .record-art {
   position: relative;
