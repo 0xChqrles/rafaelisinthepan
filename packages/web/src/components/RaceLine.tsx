@@ -24,6 +24,7 @@ import { shownPercent, type RaceEntry } from '../game/race';
 import { ariaRaceLine, type RaceSpoken } from '../i18n';
 import { pathForBoard } from '../langs';
 import { navigate } from '../routing';
+import { primaryPress, startOpening } from '../state/boardOpening';
 
 // A mark at an INTEGER cell scale: 10 cells of 2px — the header face's own size.
 const MARK = 20;
@@ -53,7 +54,14 @@ export default function RaceLine({
       aria-label={ariaRaceLine(lang, spoken)}
       aria-hidden={retired || undefined}
       disabled={retired}
-      onClick={() => navigate(pathForBoard(lang))}
+      // The board's read starts on the press (state/boardOpening.ts).
+      onPointerDown={(e) => {
+        if (primaryPress(e)) startOpening(lang);
+      }}
+      onClick={() => {
+        startOpening(lang);
+        navigate(pathForBoard(lang));
+      }}
     >
       {entries.map((entry) => {
         const me = entry.kind !== 'done' && entry.me;

@@ -106,16 +106,22 @@ export interface PodiumStage extends PodiumShow {
   // Per place: the unit it said before, where it changed under a player who stays (the unit
   // gives way, not the name) — else null.
   unitWas: readonly (string | null)[];
+  // The screen's ARRIVAL building out of a loading picture wholly its own: only what that
+  // picture DREW gives way (its floor is the board's own; its rails stand under the floor), so
+  // steps that rise before the give-way is over rise whole — as on a board that landed at once.
+  outOfLoading: boolean;
 }
 
 // THE NEXT STAGE, from the one on screen: `fresh` — the board has not been shown yet today
-// (it builds; else it is settled) — `startMs` and `runMs` from the screen's pace.
+// (it builds; else it is settled) — `startMs` and `runMs` from the screen's pace, and whether
+// it is the screen's ARRIVAL building out of a loading picture wholly its own (`outOfLoading`).
 export function nextStage(
   prev: PodiumStage | null,
   next: PodiumShow,
   fresh: boolean,
   startMs: number,
   runMs: number,
+  outOfLoading: boolean,
 ): PodiumStage {
   const { places } = next;
   const before = prev?.places ?? NO_PLACES;
@@ -126,6 +132,7 @@ export function nextStage(
     places,
     seedKey: next.seedKey,
     unitWas: places.map((entry, p) => (stood[p] && before[p]?.unit !== entry?.unit ? (before[p]?.unit ?? null) : null)),
+    outOfLoading,
     spec: {
       steps: next.mode === 'board',
       loading: next.mode === 'loading',
@@ -403,12 +410,17 @@ export default function Podium({
         el.style.translate = `${at.dx * CELL_PX}px ${at.dy * CELL_PX}px`;
       });
     };
-    // The scene before, still standing on the cells this one has not reached.
+    // The scene before, still standing on the cells this one has not reached — out of the
+    // loading picture on an arrival, only on the cells it drew (`outOfLoading`).
+    const drawnOnly = stage.outOfLoading;
     const giveWay = (t: number) => {
       if (!from || t >= DISSOLVE_MS) return;
       const lv = turnLevel(t);
       for (let y = 0; y < L.rows; y += 1) {
-        for (let x = 0; x < L.cols; x += 1) if (bayerThreshold(x, y) >= lv) px[y * L.cols + x] = from[y * L.cols + x];
+        for (let x = 0; x < L.cols; x += 1) {
+          const i = y * L.cols + x;
+          if (bayerThreshold(x, y) >= lv && (!drawnOnly || from[i] !== 0)) px[i] = from[i];
+        }
       }
     };
 

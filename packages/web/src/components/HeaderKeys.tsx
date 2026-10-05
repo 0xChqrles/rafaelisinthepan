@@ -27,6 +27,7 @@
 // does not sink into the band and a loud one is contained.
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type React from 'react';
+import { primaryPress, startOpening } from '../state/boardOpening';
 import { useGameStore } from '../state/gameStore';
 import AccountKey from './AccountKey';
 import HomeIcon from '../assets/icons/home.svg?react';
@@ -165,8 +166,19 @@ export default function HeaderKeys({
         className={`home-btn${here ? ' on' : ''}`}
         aria-label={label}
         aria-current={here ? 'page' : lit ? 'true' : undefined}
+        // The BOARD's read starts on the press, before the screen it opens is mounted
+        // (state/boardOpening.ts); the click starts it too, for a keyboard's press.
+        onPointerDown={
+          place === 'board' && !here
+            ? (e) => {
+                if (primaryPress(e)) startOpening(lang);
+              }
+            : undefined
+        }
         onClick={() => {
-          if (!here) go(to);
+          if (here) return;
+          if (place === 'board') startOpening(lang);
+          go(to);
         }}
       >
         <Icon className="ui-icon" aria-hidden />

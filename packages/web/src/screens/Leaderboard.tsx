@@ -1,16 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { anonName, dateForDayNumber, defaultAvatar, type BoardPeriod, type BoardPlayer, type GroupSummary } from '@whippin/shared';
-import {
-  boardUrl,
-  groupsUrl,
-  parseBoard,
-  parseGroups,
-  parsePeriodBoard,
-  postBoardBody,
-  postGroupsBody,
-  readGroup,
-  type GroupsBody,
-} from '../api';
+import { groupsUrl, parseGroups, postGroupsBody, readGroup, type GroupsBody } from '../api';
 import { clockNow, onClock } from '../components/animationClock';
 import Avatar from '../components/Avatar';
 import { DISSOLVE_MS } from '../components/bayerTiles';
@@ -47,6 +37,7 @@ import {
   identityEpochOf,
   useDeviceIdentity,
 } from '../identity';
+import { boardTargetKey, openingGroup, readBoard, takeOpening, type BoardTarget } from '../state/boardOpening';
 import { adoptGroups, loadGroups, useGroups } from '../state/groups';
 import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { prefetchTurnstileTokens } from '../turnstile';
@@ -113,8 +104,9 @@ import { t } from '../i18n';
 // INVITE, and every identity-reading effect keys on the live identity, so a mint (or a
 // cross-tab adoption) populates the screen without a remount.
 //
-// The screen keeps the state, the reads and the acts; what stands under the podium is
-// `BoardUnder`, the board's readings `game/boardView.ts`, its list's order `game/boardSlots.ts`.
+// The screen keeps the state, the reads and the acts (the board's read itself is
+// `state/boardOpening.ts`); what stands under the podium is `BoardUnder`, the board's
+// readings `game/boardView.ts`, its list's order `game/boardSlots.ts`.
 
 // The succession a LEAVE carries, read off the list the server last answered (the same
 // rule the server applies — `successionFor`; root AGENTS.md, Groups): a member who is not
@@ -184,10 +176,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   useEffect(() => {
     loadGroups();
   }, [identity]);
-  const active: GroupSummary | null =
-    groups === null
-      ? null
-      : (groups.find((group) => group.id === lastGroupId) ?? groups[0] ?? null);
+  const active: GroupSummary | null = openingGroup(groups, lastGroupId);
   // The reader's own people, for marking rows among the global ones: the union of every
   // group they are in, which the list already carries.
   const mates = new Set(groups?.flatMap((group) => group.members) ?? []);
@@ -228,7 +217,9 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // ONE outcome slot per board — a board, or that board's own failure — keyed by what it
   // shows. Screen-global failure state would paint a FAILED frame over another board's
   // perfectly good rows for a render when flipping back.
-  const boardKey = tab === 'global' ? 'global' : active ? `${active.id}:${period}` : null;
+  const boardTarget: BoardTarget | null =
+    tab === 'global' ? { tab: 'global' } : active ? { tab: 'group', group: active.id, period } : null;
+  const boardKey = boardTarget === null ? null : boardTargetKey(boardTarget);
   const [boards, setBoards] = useState<Partial<Record<string, AnyBoard | 'failed'>>>({});
   const [attempt, setAttempt] = useState(0);
   // THE BOARD ON SCREEN — the last one resolved, HELD while the next one's first read is out,
@@ -285,45 +276,30 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
 
   // One fetch per board ACTIVATION — the route is a zero-TTL live read, so a turn re-reads
   // rather than trusting a snapshot; the cached board holds the screen while the fresh one
-  // is in flight (stale-but-good beats a spinner), and RETRY refetches. A GROUP
-  // board is the authenticated POST naming the group (the server refuses a non-member);
-  // GLOBAL is the anonymous GET, widened with the caller's own window via their PUBLIC id.
+  // is in flight (stale-but-good beats a spinner), and RETRY refetches. The read is
+  // `readBoard` (state/boardOpening.ts); the screen's OPENING takes the one the tap that opened
+  // it already started, for exactly this board, instead of asking again.
   useEffect(() => {
-    if (boardKey === null) return;
+    if (boardTarget === null || boardKey === null) return;
     const key = boardKey;
+    const target = boardTarget;
     let cancelled = false;
     // No token, no private fetch (#216): a group's board cannot exist tokenless (the list is
     // empty), so only the global read runs without an identity.
-    if (tab === 'group' && !identity) return;
+    if (target.tab === 'group' && !identity) return;
+    const epochNow = identity ? identityEpochOf(identity) : null;
+    // The screen's FIRST activation only (a remove's re-read, a retry: afresh).
+    const opened = attempt === 0 ? takeOpening(lang, date, key, epochNow) : null;
+    let answered = false;
     (async () => {
-      const epochNow = identity ? identityEpochOf(identity) : null;
       try {
-        let board: AnyBoard;
-        if (tab === 'group' && identity !== null && active !== null) {
-          const response = await postBoardBody(boardUrl(lang, date), {
-            token: identity.token,
-            group: active.id,
-            ...(period === 'day' ? {} : { period }),
-          });
-          if (cancelled || (epochNow !== null && identityEpoch() !== epochNow)) return;
-          if (!response.ok) {
-            await adoptSignedOutVerdict(response, epochNow ?? '');
-            // Not a member any more (left elsewhere, removed): the list is what is stale.
-            if (response.status === 403) loadGroups();
-            throw new Error(`board answered ${response.status}`);
-          }
-          const data: unknown = await response.json();
-          board = period === 'day' ? parseBoard(data) : parsePeriodBoard(data);
-        } else {
-          const response = await fetch(boardUrl(lang, date, identity?.accountId));
-          if (cancelled || (epochNow !== null && identityEpoch() !== epochNow)) return;
-          if (!response.ok) throw new Error(`board answered ${response.status}`);
-          board = parseBoard(await response.json());
-        }
+        const board = await (opened?.answer ?? readBoard(lang, date, target, identity));
+        answered = true;
         if (!cancelled && (epochNow === null || identityEpoch() === epochNow)) {
           setBoards((prev) => ({ ...prev, [key]: board }));
         }
       } catch {
+        answered = true;
         // FAILED only when there is nothing to show: an error frame over rows already on
         // screen helps nobody — the cached board stands until a refresh succeeds.
         if (!cancelled && (epochNow === null || identityEpoch() === epochNow)) {
@@ -335,6 +311,9 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     })();
     return () => {
       cancelled = true;
+      // An activation ended before its opening answered hands it back (React's development
+      // re-run of this effect; the screen left at once): the next opening of this board takes it.
+      if (!answered) opened?.release();
     };
     // `active?.id` rather than `active`: the list object is re-read, the group is not.
   }, [boardKey, tab, active?.id, period, lang, date, attempt, identity]);
@@ -549,6 +528,15 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   const sizeNow = room ? podiumSize(room.width, room.slots, size) : size;
   if (sizeNow !== size) setSize(sizeNow);
 
+  // WHEN THE HEAD'S BEATS BEGAN: the commit that first shows the tab row's chip (wiped across
+  // it, a group's period brackets locking on — CSS, timed from their elements' showing). A bare
+  // tab shows no chip, and a row drawn again from nothing plays them again.
+  const headAt = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (tabs.length === 0 || tabs[activeIndex]?.bare) headAt.current = null;
+    else if (headAt.current === null) headAt.current = clockNow();
+  });
+
   // THE PODIUM: what it shows — the board's top three, or the state the body is in, each its
   // own picture in its one box — latched as a STAGE whenever that changes, read off the stage
   // before it (`nextStage`: whether it builds, who stays, which values run again), so the
@@ -564,20 +552,24 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     mates,
     lang,
   });
-  const [stage, setStage] = useState<(PodiumStage & { size: PodiumSize | null }) | null>(null);
+  // (Each stage also keeps when its picture became its own: at once for the screen's first, else
+  // once it has given way from the one before — a new size is a new layout, not a new picture.)
+  const [stage, setStage] = useState<(PodiumStage & { size: PodiumSize | null; ownAt: number }) | null>(null);
   let staged = stage;
   const shownPace = shown?.pace ?? ARRIVE;
   if (staged === null || staged.build !== now.build || staged.size !== size) {
-    staged = {
-      ...nextStage(
-        stage,
-        now,
-        now.mode === 'board' && !played.has(`${lang}|${now.build}`),
-        shownPace === ARRIVE ? shownPace.startMs : 0,
-        shownPace.runMs,
-      ),
-      size,
-    };
+    const at = clockNow();
+    const fresh = now.mode === 'board' && !played.has(`${lang}|${now.build}`);
+    const arriving = shown?.pace === ARRIVE;
+    // The ARRIVAL leaves the head its beats, counted from when they began: a board that lands
+    // after they have played starts at once — its build, out of a loading picture wholly its
+    // own (`outOfLoading`), or with no podium its lines; a settled podium's lines still wait
+    // its dissolve. Decided as the stage latches, the one moment it is read.
+    const outOfLoading = arriving && fresh && stage?.mode === 'loading' && at >= stage.ownAt;
+    const late = arriving && headAt.current !== null && (size === null || outOfLoading);
+    const startMs = late ? Math.max(0, ARRIVE.startMs - (at - headAt.current!)) : shownPace.startMs;
+    const ownAt = stage === null ? at : stage.build === now.build ? stage.ownAt : at + DISSOLVE_MS;
+    staged = { ...nextStage(stage, now, fresh, startMs, shownPace.runMs, outOfLoading), size, ownAt };
     setStage(staged);
   }
   const tl = useMemo(() => beats(staged.spec), [staged]);
@@ -599,7 +591,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // every board under reduced motion).
   const run: ListRun = {
     pace: {
-      startMs: size ? tl.lines : shownPace.startMs,
+      startMs: size ? tl.lines : staged.spec.startMs,
       staggerMs: shownPace.staggerMs,
       runMs: staged.spec.build && !prefersReducedMotion() ? shownPace.runMs : 0,
     },

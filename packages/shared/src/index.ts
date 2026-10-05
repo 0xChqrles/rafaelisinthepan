@@ -14,6 +14,7 @@ export * from './bayer';
 export * from './cardSvg';
 export * from './day';
 export * from './scores';
+export * from './cors';
 export * from './scoring';
 export * from './leaderboard';
 export * from './history';

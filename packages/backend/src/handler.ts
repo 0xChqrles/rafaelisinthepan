@@ -17,6 +17,8 @@ import {
   SHARE_TOKEN_SOURCE,
   RESET_HOUR,
   TIME_ZONE,
+  corsHeaders,
+  preflightHeaders,
   type CardFace,
 } from '@whippin/shared';
 import {
@@ -24,8 +26,6 @@ import {
   type FnUrlResult,
   ENVELOPE_BUDGET_BYTES,
   LAMBDA_MAX_RESPONSE_BYTES,
-  PREFLIGHT_MAX_AGE_SECONDS,
-  corsHeaders,
   envelopeBytes,
   errorResponse,
   html,
@@ -205,13 +205,12 @@ export function createHandler(deps: HandlerDeps) {
     // CORS preflight. It carries no data, so `no-store` belongs on the live ROUTES and
     // not on the permission check in front of them — what governs its reuse is
     // Access-Control-Max-Age, and a live route that writes on every guess (#201's
-    // /round) is exactly the one that must not re-ask for permission each time.
+    // /round) is exactly the one that must not re-ask for permission each time. In
+    // production the CDN answers a live route's preflight at the edge with these same
+    // shared headers (infra `backend-stack.ts`); this answers `backend:dev`'s, and any
+    // that reaches the origin.
     if (method === 'OPTIONS') {
-      return {
-        statusCode: 204,
-        headers: { ...cors, 'Access-Control-Max-Age': PREFLIGHT_MAX_AGE_SECONDS },
-        body: '',
-      };
+      return { statusCode: 204, headers: preflightHeaders(origin), body: '' };
     }
     if ((isLiveRoute && method !== 'GET' && method !== 'POST') || (!isLiveRoute && method !== 'GET')) {
       return errorResponse(405, 'method_not_allowed', `Method ${method} not allowed.`, routeHeaders);

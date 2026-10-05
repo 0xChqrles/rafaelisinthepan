@@ -26,7 +26,9 @@
     vitest.config.ts          excludes `cdk.out/**`: the image asset stages the repo root, so a local synth
                               leaves copies of other packages' tests there for the default glob to collect
     lib/backend-stack.ts      BackendStack: private S3 + DynamoDB + Lambda(Fn URL) + CloudFront; opt api.<domain>; us-east-1
-    lib/backend-stack.test.ts synthesized score-boundary contract (SSM names/IAM + deployable zero-cache/OAC policies) + the #230 mail shape + cdk-nag
+    lib/backend-stack.test.ts synthesized score-boundary contract (SSM names/IAM + deployable zero-cache/OAC policies)
+                              + every live behavior's edge function, RUN (the preflight against `preflightHeaders`,
+                              the viewer-IP stamp) + the #230 mail shape + cdk-nag
     lib/web-stack.test.ts     synthesized contract: the three API-routed path patterns, the SPA fallback (a
                               default-behavior function run against sample paths, the routes with a page of their
                               own included; no error responses), the route-page scan, the upload order (a fake
@@ -58,8 +60,14 @@
   that bundles `backend/src/index.ts` with esbuild (ESM, `@aws-sdk/*` left external) and
   carries `PUZZLE_BUCKET`/`ALLOWED_ORIGIN`, and a **CloudFront** distribution in front of an
   **IAM-auth Function URL via OAC** (only CloudFront may invoke it). The Lambda gets
-  **read-only** S3 (`bucket.grantRead`) and a **reserved concurrency of 10** (cost/abuse
-  ceiling for the unauthenticated `/og` render until WAF is warranted). Cache policy keys
+  **read-only** S3 (`bucket.grantRead`), a **reserved concurrency of 10** (cost/abuse
+  ceiling for the unauthenticated `/og` render until WAF is warranted) and **1769 MB** — one
+  full vCPU, since what is slow there is CPU (the cold start, the artifact's parse, the
+  puzzle's brotli, the card render) and Node runs a request on one core. The API's response
+  headers policy carries CloudFront's `Server-Timing` on every response
+  (`serverTimingSamplingRate: 100`), the edge→origin timings a browser's network panel
+  shows; the web distribution's card routes strip it (`removeHeaders`), so a year-cached share
+  page never replays one fill's timings. Cache policy keys
   on path + the `lang`, `date` and `bonus` query strings and honours the origin
   `Cache-Control`. **Every query string the handler reads must be in that allowList:** with
   no origin request policy on the behavior, CloudFront forwards to the origin exactly the
@@ -97,7 +105,10 @@
   fully-zero custom cache policy with cache-key values and an origin allow-list that
   explicitly names a reserved `x-amz-*` header, so neither narrower-looking representation
   is deployable. **`allExcept` carries NO CloudFront-generated header**, so a
-  `ScoreViewerIpFn` viewer-request FUNCTION stamps the connecting address into
+  `ScoreViewerIpFn` viewer-request FUNCTION — which first answers the route's CORS preflight,
+  as `LivePreflightFn` alone does on `/profile`, `/board`, `/groups` and `/history` (root
+  `AGENTS.md`, API routes; its headers are `@whippin/shared`'s `preflightHeaders`, and the
+  test runs both functions' code against them) — stamps the connecting address into
   `@whippin/shared`'s `VIEWER_IP_HEADER` instead, on `/scores`, `/round` (its
   Turnstile-gated round creation, and the day's score row metered by its HMAC), `/devices`
   (the Turnstile-gated bootstrap) and `/link` (the Turnstile-gated, per-address-metered code
