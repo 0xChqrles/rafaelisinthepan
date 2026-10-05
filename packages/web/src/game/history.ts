@@ -62,11 +62,11 @@ export interface HistoryStop {
   // recede. Never true while the hole is live: an unsolved line shows only where the
   // player has been.
   revealed: boolean;
-  // GIVEN by the meter (user-decided 2026-09-22; one at a time since 2026-10-02,
-  // `game/charge.ts`): the hint an active hole offers — the next word closer than its best.
-  // MASKED until the player takes it: a masked stop has no word (`word` empty, `display`
-  // the MASK), only its rank; taking it — revealing it, or typing it — is a guess, and the
-  // stop is then a hint CONSUMED: given, unmasked, wearing the foil. The solve unmasks
+  // GIVEN by the meter (user-decided 2026-09-22, `game/charge.ts`): the hint a full meter
+  // offers — one at a time, the word at half the hole's best. MASKED until the player takes
+  // it: a masked stop has no word (`word` empty, `display` the MASK), only its rank; taking
+  // it — revealing it, or typing it — is a guess, and the stop is then a hint CONSUMED:
+  // given, unmasked, wearing the foil, the hole's meter halved under it. The solve unmasks
   // what was never taken.
   given: boolean;
   masked: boolean;
@@ -214,12 +214,13 @@ export function buildHistory({
     if (here) here.best = true;
   }
 
-  // THE GIVEN WORDS (user-decided 2026-09-22): the hints the active hole has offered. One
+  // THE GIVEN WORDS (user-decided 2026-09-22): the hints the hole's meter has offered. One
   // the player CONSUMED — guessed while it was offered — is in the log already and stands
-  // as a typed stop; visiting it again marks it given (the foil). The one on offer is
-  // MASKED while the hole is live: a stop with a rank and no word. The solve — or the round
-  // being over — unmasks it, named with the canonical form, still given (it was on offer,
-  // not merely named afterwards).
+  // as a typed stop; visiting it again marks it given (the foil). It stays given while the
+  // halved meter fills again, with nothing on offer. The one on offer, if any, is MASKED
+  // while the hole is live: a stop with a rank and no word. The solve — or the round being
+  // over — unmasks it, named with the canonical form, still given (it was on offer, not
+  // merely named afterwards).
   for (const { rank, consumed } of given) {
     const found = field.get(rank);
     if (found) {

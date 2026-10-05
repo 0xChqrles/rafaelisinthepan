@@ -136,9 +136,9 @@ describe('buildHistory', () => {
   });
 
   it('a GIVEN rank is a MASKED stop on a live hole: its rank and a key, no word; consumed, it is the typed stop wearing given', () => {
-    // The hole stands at 40 and the meter offers the next word closer, 3, not yet taken: a
-    // live hole names it masked — no word, the rank, and the key a reveal submits — apart
-    // from what was played.
+    // The hole stands at 40 and the full meter offers the word at half of it — 3, the map's
+    // nearest under 20 — not yet taken: a live hole names it masked — no word, the rank, and
+    // the key a reveal submits — apart from what was played.
     const live = build(['branche'], 40, [untaken(3)]);
     expect(live.stops.map((s) => [s.rank, s.word, s.display, s.given, s.masked])).toEqual([
       [3, '', MASK, true, true],
@@ -147,7 +147,12 @@ describe('buildHistory', () => {
     ]);
     expect(live.stops.find((s) => s.rank === 3)!.slug).toBe('arbre');
     // Taken (guessed while offered — revealed or typed): the player's own stop, their form,
-    // wearing the given dress, unmasked; the next word closer is then the one masked.
+    // wearing the given dress, unmasked. Taking it halved the meter, so nothing is masked
+    // until the meter fills again…
+    const halved = build(['branche', 'arbres'], 3, [taken(3)]);
+    expect(halved.stops.find((s) => s.rank === 3)).toMatchObject({ word: 'arbres', display: 'arbre', given: true, masked: false, taken: true, best: true });
+    expect(halved.stops.some((s) => s.masked)).toBe(false);
+    // …and then the word at half the new best is the one masked.
     const consumed = build(['branche', 'arbres'], 3, [untaken(1), taken(3)]);
     expect(consumed.stops.find((s) => s.rank === 3)).toMatchObject({ word: 'arbres', display: 'arbre', given: true, masked: false, taken: true, best: true });
     expect(consumed.stops.find((s) => s.rank === 1)).toMatchObject({ word: '', given: true, masked: true, taken: false });

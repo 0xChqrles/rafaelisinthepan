@@ -1,13 +1,13 @@
 // CONTRACT (#301, user-decided 2026-09-15; the activation user-decided 2026-09-22; the
-// offer user-decided 2026-10-02): every counted guess charges every unsolved hole by its
+// offer user-decided 2026-10-06): every counted guess charges every unsolved hole by its
 // rank in that secret's map, best word or not; the meter caps at 100 and a full meter
-// ACTIVATES the hole — it offers exactly ONE masked word, the nearest rank in the map
-// strictly BELOW the hole's best (the start, every rank reached, every hint revealed),
-// never the secret (a best of 1 offers nothing); the offered word guessed (typed or
-// revealed) is a hint CONSUMED, stays given, and is the new best, so the next closer word
-// is offered at once; rank 0 is the solve and pays nothing; repeated occurrences of one
-// secret share one meter and one mask; charge is DERIVED from the play log, so a replay
-// reconstructs it exactly.
+// ACTIVATES the hole — it offers exactly ONE masked word, the rank at HALF the hole's best
+// (the start, every rank reached, every hint revealed), rounded down, the next word closer
+// where the map holds nothing that near, never the secret (a best of 1 offers nothing);
+// the offered word guessed (typed or revealed) is a hint CONSUMED, stays given, is the new
+// best, pays no charge and HALVES the meter, so the next offer waits for a full meter;
+// rank 0 is the solve and pays nothing; repeated occurrences of one secret share one meter
+// and one mask; charge is DERIVED from the play log, so a replay reconstructs it exactly.
 
 import { describe, expect, it } from 'vitest';
 import type { RankMap } from '@whippin/shared';
@@ -18,10 +18,11 @@ import { replayHoles } from './scoring';
 import { buildHistory } from './history';
 
 // A meter's reading, its charge compared with a float's tolerance: the pay is continuous.
+// A meter under its target offers nothing (the hints it already gave stay taken).
 function expectMeter(meter: HoleCharge, charge: number, active: boolean) {
   expect(meter.charge).toBeCloseTo(charge, 9);
   expect(meter.active).toBe(active);
-  if (!active) expect(meter.given).toEqual([]);
+  if (!active) expect(meter.given.filter((g) => !g.consumed)).toEqual([]);
 }
 
 // One secret's map with a key at every rank the tests below name.
@@ -58,7 +59,7 @@ const ranksOf = (c: HoleCharge) => c.given.map((g) => g.rank);
 const consumedOf = (c: HoleCharge) => c.given.filter((g) => g.consumed).map((g) => g.rank);
 
 // Four near guesses that leave the meter just under full, and the fifth that fills it.
-const FOUR = ['honnete1', 'honnete5', 'honnete10', 'honnete11'];
+const FOUR = ['honnete2', 'honnete5', 'honnete10', 'honnete11'];
 const FILLS = 'honnete14';
 
 describe('chargeForRank — a continuous function of the rank', () => {
@@ -125,8 +126,8 @@ describe('replayCharge — the meter as the play log describes it', () => {
     const nearest = ['honnete1', 'honnete2', 'honnete3'];
     const nearestPay = chargeForRank(1) + chargeForRank(2) + chargeForRank(3);
     expectMeter(replayCharge(holes(), RANKS, nearest)[0], nearestPay, false);
-    // Four near guesses, ≈ 28 + 21.8 + 19.2 + 18.8 = 87.8: still not.
-    const fourPay = chargeForRank(1) + chargeForRank(5) + chargeForRank(10) + chargeForRank(11);
+    // Four near guesses, ≈ 25.3 + 21.8 + 19.2 + 18.8 = 85.1: still not.
+    const fourPay = chargeForRank(2) + chargeForRank(5) + chargeForRank(10) + chargeForRank(11);
     expectMeter(replayCharge(holes(), RANKS, FOUR)[0], fourPay, false);
     // + ≈ 17.9 ≥ 100: capped, active.
     const full = replayCharge(holes(), RANKS, [...FOUR, FILLS])[0];
@@ -178,13 +179,16 @@ describe('replayCharge — the meter as the play log describes it', () => {
   });
 });
 
-// CONTRACT (user-decided 2026-10-02): "instead of revealing 5 words before the closest one,
-// we should be able to reveal ONE word CLOSER than the closest word" — once full, the hole
-// offers one mask just under its best, the next one at once after each reveal, down to the
-// word just before the secret.
-describe('the offer — one masked word closer than the best', () => {
+// CONTRACT (user-decided 2026-10-06): "we go from n to n/2, but using the hint also unfill
+// the word by half" — once full, the hole offers one mask at half its best; taking it halves
+// the meter, and the next one waits for the meter to fill again, down to the word just
+// before the secret.
+describe('the offer — one masked word at half the best, paid with half the meter', () => {
   // 4, 6, 30 … 33 fill the meter on 33: the best is 4.
   const BASE = [4, 6, 30, 31, 32, 33].map((r) => `honnete${r}`);
+  // After the hint at 2 is taken, three near words fill the halved meter again: 50 plus
+  // 3, 5 and 7's pay (≈ 66) — 3 and 5 alone leave it just under full.
+  const REFILL = [3, 5, 7].map((r) => `honnete${r}`);
   const offered = (c: HoleCharge) => c.given.filter((g) => !g.consumed).map((g) => g.rank);
 
   it('nothing is given before the activation, whatever the hole did', () => {
@@ -194,11 +198,11 @@ describe('the offer — one masked word closer than the best', () => {
     expect(replayCharge(holes(), RANKS, ['honnete1', 'honnete2', 'honnete3'])[0].given).toEqual([]);
   });
 
-  it('once full, exactly ONE mask: the nearest rank below the best', () => {
+  it('once full, exactly ONE mask: the rank at half the best, rounded down', () => {
     const active = replayCharge(holes(), RANKS, BASE)[0];
     expect(active.active).toBe(true);
     expect(replayHoles(holes(), RANKS, BASE)[0].rank).toBe(4);
-    expect(active.given).toEqual([{ rank: 3, consumed: false }]);
+    expect(active.given).toEqual([{ rank: 2, consumed: false }]);
   });
 
   it('the visible start is the best while nothing closer was found', () => {
@@ -206,39 +210,63 @@ describe('the offer — one masked word closer than the best', () => {
     const log = [60, 61, 62, 63, 64, 65, 66, 67, 68, 69].map((r) => `honnete${r}`);
     const meter = replayCharge(holes(), RANKS, log)[0];
     expect(meter.active).toBe(true);
-    expect(meter.given).toEqual([{ rank: 49, consumed: false }]);
+    expect(meter.given).toEqual([{ rank: 25, consumed: false }]);
     // The start itself typed is no hint taken.
     expect(consumedOf(replayCharge(holes(), RANKS, [...log, 'honnete50'])[0])).toEqual([]);
   });
 
-  it('a best of 1 offers nothing: the secret is never given', () => {
-    // FOUR + FILLS reach rank 1 on the way to filling the meter.
-    const meter = replayCharge(holes(), RANKS, [...FOUR, FILLS])[0];
-    expect(meter.active).toBe(true);
+  it('a best of 1 offers nothing: the secret is never given, and the full meter is not active', () => {
+    // These reach rank 1 on the way to filling the meter.
+    const meter = replayCharge(holes(), RANKS, ['honnete1', 'honnete5', 'honnete10', 'honnete11', FILLS])[0];
+    expectMeter(meter, CHARGE_TARGET, false);
     expect(meter.given).toEqual([]);
+    // …and a meter filled again after the last hint, at 1, wears no activation either.
+    const refilled = replayCharge(holes(), RANKS, [...BASE, 'honnete2', ...REFILL, 'honnete1', 'honnete8', 'honnete10', 'honnete11'])[0];
+    expectMeter(refilled, CHARGE_TARGET, false);
+    expect(refilled.given).toEqual([
+      { rank: 1, consumed: true },
+      { rank: 2, consumed: true },
+    ]);
   });
 
-  it('the offer guessed — revealed or typed — is CONSUMED, the hole improves to it, and the next is offered at once', () => {
-    const one = replayCharge(holes(), RANKS, [...BASE, 'honnete3'])[0];
-    expect(replayHoles(holes(), RANKS, [...BASE, 'honnete3'])[0].rank).toBe(3);
-    expect(one.given).toEqual([
-      { rank: 2, consumed: false },
-      { rank: 3, consumed: true },
+  it('the offer guessed — revealed or typed — is CONSUMED, the hole improves to it, and it costs half the meter', () => {
+    const one = replayCharge(holes(), RANKS, [...BASE, 'honnete2'])[0];
+    expect(replayHoles(holes(), RANKS, [...BASE, 'honnete2'])[0].rank).toBe(2);
+    expectMeter(one, CHARGE_TARGET / 2, false);
+    expect(one.given).toEqual([{ rank: 2, consumed: true }]);
+  });
+
+  it('the next offer waits for the meter to fill again, then halves the new best', () => {
+    const almost = replayCharge(holes(), RANKS, [...BASE, 'honnete2', ...REFILL.slice(0, -1)])[0];
+    expectMeter(almost, CHARGE_TARGET / 2 + chargeForRank(3) + chargeForRank(5), false);
+    expect(almost.given).toEqual([{ rank: 2, consumed: true }]);
+    const full = replayCharge(holes(), RANKS, [...BASE, 'honnete2', ...REFILL])[0];
+    expect(full.active).toBe(true);
+    expect(full.given).toEqual([
+      { rank: 1, consumed: false },
+      { rank: 2, consumed: true },
     ]);
-    // …down to the word just before the secret, one try each, and no further.
-    const down = replayCharge(holes(), RANKS, [...BASE, 'honnete3', 'honnete2', 'honnete1'])[0];
+    // …down to the word just before the secret, and no further.
+    const down = replayCharge(holes(), RANKS, [...BASE, 'honnete2', ...REFILL, 'honnete1'])[0];
+    expectMeter(down, CHARGE_TARGET / 2, false);
     expect(down.given).toEqual([
       { rank: 1, consumed: true },
       { rank: 2, consumed: true },
-      { rank: 3, consumed: true },
     ]);
   });
 
-  it('a closer word typed by hand moves the offer under it; the old offer is neither given nor taken', () => {
-    const jumped = replayCharge(holes(), RANKS, [...BASE, 'honnete2'])[0];
+  it('a hint pays no charge: only the guesses after it refill the meter', () => {
+    // Rank 2 would pay ≈ 24 as a typed word; taken as the offer, it pays nothing.
+    const taken = replayCharge(holes(), RANKS, [...BASE, 'honnete2', 'honnete70'])[0];
+    expectMeter(taken, CHARGE_TARGET / 2 + chargeForRank(70), false);
+  });
+
+  it('a closer word typed by hand moves the offer to half of it, the meter full; the old offer is neither given nor taken', () => {
+    const jumped = replayCharge(holes(), RANKS, [...BASE, 'honnete3'])[0];
+    expectMeter(jumped, CHARGE_TARGET, true);
     expect(jumped.given).toEqual([{ rank: 1, consumed: false }]);
     // The skipped rank typed afterwards is just a word the player found.
-    expect(consumedOf(replayCharge(holes(), RANKS, [...BASE, 'honnete2', 'honnete3'])[0])).toEqual([]);
+    expect(consumedOf(replayCharge(holes(), RANKS, [...BASE, 'honnete3', 'honnete2'])[0])).toEqual([]);
   });
 
   it('a farther guess leaves the offer where it is', () => {
@@ -246,25 +274,23 @@ describe('the offer — one masked word closer than the best', () => {
     expect(replayCharge(holes(), RANKS, [...BASE, 'honnete50', 'honnete999'])[0]).toEqual(active);
   });
 
-  it('the offer walks through the ranks the map holds, a gap included', () => {
+  it('the half is walked through the ranks the map holds; nothing that near, the next word closer', () => {
     // A map with gaps: nothing between 2 and 7, nothing between 7 and 20.
     const sparse: RankMap = { lune: mapAt('lune', [1, 2, 7, 20, 21, 22, 23, 24, 900]) };
     const hole: RuntimeHole[] = [{ pos: 0, secret: 'lune', word: 'lune900', rank: 900, startRank: 900 }];
     const log = [7, 20, 21, 22, 23, 24].map((r) => `lune${r}`);
+    // the best is 7: the half is 3, and the map's nearest word at or under it is 2
     expect(offered(replayCharge(hole, sparse, log)[0])).toEqual([2]);
-    expect(replayCharge(hole, sparse, [...log, 'lune2'])[0].given).toEqual([
-      { rank: 1, consumed: false },
-      { rank: 2, consumed: true },
-    ]);
-    expect(replayCharge(hole, sparse, [...log, 'lune2', 'lune1'])[0].given).toEqual([
-      { rank: 1, consumed: true },
-      { rank: 2, consumed: true },
-    ]);
+    expect(replayCharge(hole, sparse, [...log, 'lune2'])[0].given).toEqual([{ rank: 2, consumed: true }]);
+    // nothing at or under the half (9 → 4): the next word closer than the best
+    const gap: RankMap = { lune: mapAt('lune', [5, 9, 20, 21, 22, 23, 24, 900]) };
+    const fills = [9, 20, 21, 22, 23, 24].map((r) => `lune${r}`);
+    expect(offered(replayCharge(hole, gap, fills)[0])).toEqual([5]);
   });
 
   it('a hole solved before its meter fills gives nothing, and the solve ends the giving', () => {
     expect(replayCharge(holes(), RANKS, ['honnete5', 'honnete'])[0].given).toEqual([]);
-    const solved = replayCharge(holes(), RANKS, [...BASE, 'honnete', 'honnete3'])[0];
+    const solved = replayCharge(holes(), RANKS, [...BASE, 'honnete', 'honnete2'])[0];
     expect(solved.given).toEqual(replayCharge(holes(), RANKS, BASE)[0].given);
     // A guess after the solve consumes nothing either.
     expect(consumedOf(solved)).toEqual([]);
@@ -277,24 +303,25 @@ describe('the offer — one masked word closer than the best', () => {
     ];
     const meters = replayCharge(twice, RANKS, BASE);
     expect(meters[2]).toEqual(meters[0]);
-    expect(ranksOf(meters[0])).toEqual([3]);
-    // …and a hint taken is taken on the ONE meter they share.
-    const after = replayCharge(twice, RANKS, [...BASE, 'honnete3']);
-    expect(consumedOf(after[0])).toEqual([3]);
+    expect(ranksOf(meters[0])).toEqual([2]);
+    // …and a hint taken is taken on the ONE meter they share, halving it once.
+    const after = replayCharge(twice, RANKS, [...BASE, 'honnete2']);
+    expect(consumedOf(after[0])).toEqual([2]);
+    expectMeter(after[0], CHARGE_TARGET / 2, false);
     expect(after[2]).toEqual(after[0]);
   });
 
   it('replaying the same log reconstructs the same offer, and the history masks it below the best', () => {
-    const log = [...BASE, 'honnete3', 'honnete70'];
+    const log = [...BASE, 'honnete2', ...REFILL, 'honnete70'];
     const meter = replayCharge(holes(), RANKS, log)[0];
     expect(replayCharge(holes(), RANKS, [...log])[0]).toEqual(meter);
     const model = buildHistory({
       rankMap: RANKS.honnete, tried: log, hole: replayHoles(holes(), RANKS, log)[0],
       startRank: 50, secretWord: 'honnête', given: meter.given,
     });
-    expect(model.stops.filter((s) => s.masked).map((s) => s.rank)).toEqual([2]);
-    expect(model.stops.find((s) => s.best)!.rank).toBe(3);
-    expect(model.stops.find((s) => s.rank === 3)).toMatchObject({ given: true, taken: true, masked: false });
+    expect(model.stops.filter((s) => s.masked).map((s) => s.rank)).toEqual([1]);
+    expect(model.stops.find((s) => s.best)!.rank).toBe(2);
+    expect(model.stops.find((s) => s.rank === 2)).toMatchObject({ given: true, taken: true, masked: false });
   });
 });
 

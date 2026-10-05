@@ -143,7 +143,15 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   every word that can be hidden BEFORE the choice — the floor, below — with its real-play
   meaning: at `GIVEAWAY_MAX` 0.45 and above, a third of the players typed the hole within
   three guesses; under `GIVEAWAY_HARD` 0.20 the hole plays hard and its start comes from
-  nearer, below); and, once the map is built, where the reader's nearest word
+  nearer, below); the WOULD-SAY test (user-decided 2026-10-06, on « faux-monnayeur »),
+  one call per word (`llm.would_say`: the line with that word blanked AND the word named —
+  would a player who has roughly the meaning ever say it, or keep to commoner words
+  meaning nearly the same?) as a note (`rules.said`): under `WOULD_SAY_HARD` 0.4 it is a
+  word players don't say; ONE makes a hard day a loved day may hold (« moucheron »,
+  « mammifères »), TWO or more made the worst days (finished by a median 40 % of the
+  players, against 57 % with one and 71 % with none), so a trio holding two
+  carries that fact on each of them (`rules.unsaid`) and the taste keeps at most one;
+  and, once the map is built, where the reader's nearest word
   lands in the hole's own map (`rules.map_nearest_filler`). With those notes and each
   hole's band, `llm.pick_starts` chooses the three starts by the taste — or
   names ONE hidden word no start can save and another word of the line to hide instead
@@ -324,7 +332,7 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   puzzles they beat them most days and miss what people find easily, and the result moves
   with the model, the run and the prompt). Difficulty is read off real play: the taste
   skill's examples and code's calibrated notes. The reader, filling a blank the way the
-  user reads, is not play.
+  user reads, is not play; nor is the would-say test, which is told the word.
 - Don't commit the shelf (copyrighted files, the artist list) or the runs.
 - Don't put a Genius token anywhere but the environment.
 

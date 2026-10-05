@@ -7,14 +7,16 @@
 // tries, a hint the player picks from the wheel and REVEALS at the price of a try. The
 // letter was a spelling clue in a meaning game; a neighbour says what the word IS.
 //
-// ONE WORD CLOSER THAN THE BEST (user-decided 2026-10-02: "instead of revealing 5 words
-// before the closest one, we should be able to reveal ONE word CLOSER than the closest
-// word"): once the meter is full, the hole offers exactly one masked word — the nearest
-// rank in the secret's map BELOW the hole's best (the visible start, every rank the log
-// reached, every hint revealed: the lowest of them). Taking it makes it the new best, so
-// the next closer word is offered AT ONCE, one try each, down to the word just before the
-// secret: the secret itself is never offered, so a best of 1 offers nothing. A closer
-// word typed by hand moves the offer under it the same way. A hint TAKEN stays given.
+// ONE WORD AT HALF THE DISTANCE, PAID WITH HALF THE METER (user-decided 2026-10-06, after
+// "j'ai l'impression d'être un hamster coincé dans sa roue": one rank closer a try walked
+// a player stuck at 133 through some 120 reveals; "we go from n to n/2, but using the hint
+// also unfill the word by half"): once the meter is full, the hole offers exactly one
+// masked word — the rank at HALF the hole's best (the visible start, every rank the log
+// reached, every hint revealed: the lowest of them), rounded down, the next word closer
+// where the map holds nothing that near. Taking it makes it the new best and HALVES THE
+// METER, so the next one is earned by filling it again. The secret itself is never
+// offered, so a best of 1 offers nothing. A closer word typed by hand moves the offer to
+// half of it the same way, the meter full. A hint TAKEN stays given.
 //
 // THE HINTS ARE MASKED, AND A REVEAL IS A GUESS (user-decided 2026-09-22: "making the hint
 // words masked, and you can just select them with the wheel, it counts as a guess, but
@@ -23,8 +25,8 @@
 // submitting it as a guess — it enters the play log like any typed word, counts as a try,
 // charges the other holes, syncs. So the log alone says what was CONSUMED: the offered
 // rank guessed while it was offered, revealed or typed by hand ("it's on them").
-// The meter's guesses are the cost of the first offer; each hint taken is one more try. A
-// fast solve never fills it.
+// The meter's guesses are the cost of every offer; each hint taken is one more try and half
+// the meter. A fast solve never fills it.
 //
 // DERIVED FROM THE PLAY LOG, never persisted: replaying the same log reconstructs the same
 // meter and the same given words on any device, exactly like the board — the server stores
@@ -78,7 +80,8 @@ export function strikeFor(rank: number | undefined, isNew: boolean, gained: numb
 }
 
 // One hole's meter: its charge in [0, CHARGE_TARGET], whether the hole is ACTIVE (the meter
-// reached its target), and the ranks it has GIVEN — ascending, empty until the activation:
+// reached its target AND it has a word to offer — a full meter at a best of 1 has none), and
+// the ranks it has GIVEN — ascending, empty until the activation:
 // the hints TAKEN (CONSUMED: guessed while offered, the try spent) and the one mask it
 // offers now, if any. Repeated occurrences of one secret slug share one meter and one
 // mask (one logical target, as reconstruction progress already treats them), so two holes
@@ -125,15 +128,23 @@ function closerThan(rankMap: Record<string, RankEntry>, best: number): number | 
   return lo > 0 ? rungs[lo - 1] : undefined;
 }
 
+// THE OFFER: the rank the map holds at HALF the best or nearer, rounded down (133 → 66),
+// else the next word closer — a map with a gap under the half still offers its next word,
+// and a best of 1 offers nothing (the secret is never a rung).
+function offerFor(rankMap: Record<string, RankEntry>, best: number): number | undefined {
+  return closerThan(rankMap, Math.floor(best / 2) + 1) ?? closerThan(rankMap, best);
+}
+
 // The whole log replayed onto the holes' meters — the meters as the play log describes
 // them, per hole index. A guess charges every secret whose map ranks it above zero and
 // that is not yet solved; the guess that solves a secret pays it nothing (the solve is the
 // reward), and nothing after the solve touches it either.
 //
-// THE OFFER, from the guess that fills the meter on: after every guess, the one rank
-// closer than the hole's best. The offered rank guessed is a hint taken and stays given;
-// it is the new best, so the next one is offered with it. A hole solved before its meter
-// fills gives nothing; the post-mortem names its stretch anyway.
+// THE OFFER, while the meter is full: after every guess, the rank at half the hole's best.
+// The offered rank guessed is a hint taken and stays given; it is the new best, it pays
+// no charge, and it HALVES the meter, so the next offer waits for the meter to fill again.
+// A hole solved before its meter fills gives nothing; the post-mortem names its stretch
+// anyway.
 export function replayCharge(
   freshHoles: readonly RuntimeHole[],
   ranks: RankMap,
@@ -162,11 +173,17 @@ export function replayCharge(
         continue;
       }
       // The offered word guessed — revealed from the wheel or typed, the log cannot tell
-      // and need not — is a hint consumed.
-      if (entry.rank === meter.offered) meter.taken.add(entry.rank);
+      // and need not — is a hint consumed: the new best, paid with half the meter.
+      if (entry.rank === meter.offered) {
+        meter.taken.add(entry.rank);
+        meter.best = Math.min(meter.best, entry.rank);
+        meter.charge /= 2;
+        meter.offered = undefined;
+        continue;
+      }
       meter.best = Math.min(meter.best, entry.rank);
       meter.charge = Math.min(CHARGE_TARGET, meter.charge + chargeForRank(entry.rank));
-      if (meter.charge >= CHARGE_TARGET) meter.offered = closerThan(ranks[secret], meter.best);
+      if (meter.charge >= CHARGE_TARGET) meter.offered = offerFor(ranks[secret], meter.best);
     }
   }
   return freshHoles.map((h) => {
@@ -175,7 +192,7 @@ export function replayCharge(
     if (meter.offered !== undefined) given.push({ rank: meter.offered, consumed: false });
     return {
       charge: meter.charge,
-      active: meter.charge >= CHARGE_TARGET,
+      active: meter.charge >= CHARGE_TARGET && meter.offered !== undefined,
       given: given.sort((a, b) => a.rank - b.rank),
     };
   });

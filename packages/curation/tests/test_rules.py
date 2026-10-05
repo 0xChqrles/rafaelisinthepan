@@ -8,11 +8,14 @@ from rules import (
     PLAIN_WORD_RANK,
     TWIN_RANK,
     WEAK_VERBS,
+    WOULD_SAY_HARD,
     Token,
     initial_candidates,
     is_twin,
     map_nearest_filler,
     reading,
+    said,
+    unsaid,
 )
 
 
@@ -168,6 +171,26 @@ def test_a_rare_word_is_never_said_to_be_what_most_readers_write():
     # a word AT the boundary is still one a player knows
     note = reading(CHAT, ["chat", "ronde"], "chat", frequency_rank=lambda t: PLAIN_WORD_RANK)
     assert note.startswith("most readers would write the secret itself")
+
+
+# --- the word players say: a note per hole, and the trio's fact past one -----------------
+
+def test_the_said_note_gives_the_chance_and_the_word_kept_instead():
+    assert said(0.8, None) == "a player who has the meaning says this exact word at 0.80"
+    note = said(0.3, "faussaire")
+    assert "at 0.30" in note and "« faussaire »" in note and "a word players don't say" in note
+    assert "don't say" not in said(WOULD_SAY_HARD, "x")  # the cut itself is said
+    assert said(None, "x") == "whether players would say this word: not measured"
+
+
+def test_one_word_players_dont_say_is_a_hard_day_two_are_the_fact_to_act_on():
+    # « moucheron », « mammifères », « stagnation »: a loved day hides one
+    assert unsaid({"moucheron": 0.38, "humain": 0.9, "archives": 0.57}) is None
+    assert unsaid({"a": 0.9, "b": 0.8, "c": None}) is None
+    note = unsaid({"faux-monnayeur": 0.3, "autre": 0.2, "plain": 0.9})
+    assert note is not None and "2 words" in note and "faux-monnayeur, autre" in note and "plain" not in note
+    assert unsaid({"a": WOULD_SAY_HARD, "b": 0.1, "c": 0.9}) is None  # the cut itself is said
+    assert unsaid({"a": None, "b": 0.1, "c": 0.2}) is not None  # an unmeasured word counts for nothing
 
 
 # --- where the reader's words land in the hole's own map -----------------------------

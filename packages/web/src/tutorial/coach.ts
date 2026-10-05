@@ -7,6 +7,7 @@
 // This module is the whole rule, pure: the board's state in, the line to say out. The
 // component renders it; coach.test.ts replays guess sequences against it.
 import type { RankEntry } from '@whippin/shared';
+import type { HoleCharge } from '../game/charge';
 import type { RuntimeHole } from '../game/types';
 import { t } from '../i18n';
 import type { LessonStage, StageKind } from './script';
@@ -21,11 +22,23 @@ export interface GuessEvent {
   entries: (RankEntry | undefined)[];
   improved: boolean[];
   holeRanks: number[]; // each hole's rank BEFORE this guess landed
-  // The meter stage: the hole whose meter this guess FILLED (the hole is active, the word
-  // closer than its best offered), if any.
+  // The meter stage: the hole this guess ACTIVATED (`activatedHole`: its meter full, a masked
+  // word offered that was not before), if any.
   filled?: number | null;
   // This guess was a masked hint REVEALED (the meter stage: picked in the wheel, REVEAL).
   revealed?: boolean;
+}
+
+// WHICH HOLE A GUESS ACTIVATED, read off the meters before and after it: the one that now
+// offers a masked word and did not. A meter fills more than once — a hint taken halves it and
+// the guesses after it fill it again, to offer the word at half the new best — so an
+// activation is any fill that offers a word, the first or a later one. A closer word typed on
+// a full meter only moves the offer, and a meter filled again with nothing left to offer (a
+// best of 1: the secret is never given) activates nothing a line could send the player to.
+export function activatedHole(before: readonly HoleCharge[], after: readonly HoleCharge[]): number | null {
+  const offers = (c: HoleCharge | undefined) => c?.given.some((g) => !g.consumed) ?? false;
+  const index = after.findIndex((c, i) => offers(c) && !offers(before[i]));
+  return index >= 0 ? index : null;
 }
 
 export interface CoachState {
@@ -61,13 +74,15 @@ export type CoachLine =
   | { kind: 'answer'; holeIndex: number }
   // The sentence solved: the tries it took — the score, said once.
   | { kind: 'solved'; tries: number }
-  // The meter stage: a chip filled to the top and the word it offers — tap the word to
-  // reveal it; the end, found. The word named is READ OFF THE FILLING GUESS, never the live hole:
+  // The meter stage: a chip filled to the top with a word to reveal — the first fill, or a
+  // later one after a hint halved it — tap the word to reveal it; the end, found. The word
+  // named is READ OFF THE FILLING GUESS, never the live hole:
   // the hole swaps its word on the floating hit's beat, after the line is already on
   // screen, and a line that changes under the typewriter restarts it (user-reported
   // 2026-09-22: "Jauge pleine ! 1" typed, erased, typed again).
   | { kind: 'activated'; word: string; rank: number }
-  // A hint revealed: the word, and the try it cost — the player's turn.
+  // A hint revealed: the word, and the try it cost (the chip shows the half meter it cost
+  // too) — the player's turn.
   | { kind: 'revealedHint'; word: string; rank: number }
   | { kind: 'found' };
 
@@ -101,27 +116,28 @@ export function coachLine(state: CoachState): CoachLine | null {
   if (stage === 'meter') {
     if (finished) return { kind: 'found' };
     if (events.length === 0) return tapped ? { kind: 'meterTapped' } : { kind: 'introMeter', hole: holes[open] };
-    // The hole is active: the player's turn — and a failed try after it earns the HINT, never
-    // the word (user-decided 2026-09-16).
-    const filledAt = events.findIndex((e) => e.filled != null);
-    if (filledAt >= 0) {
-      const filling = events[filledAt];
-      const holeIndex = filling.filled as number;
-      const last = events[events.length - 1];
-      // A hint just revealed is named, with its price; a typed try that failed after the
-      // activation earns the board's hint.
-      if (filledAt !== events.length - 1) {
-        const entry = last.revealed ? last.entries[holeIndex] : undefined;
-        return entry ? { kind: 'revealedHint', word: entry.word, rank: entry.rank } : { kind: 'hint', holeIndex };
-      }
+    // Once the hole has activated it is the player's turn: every activation is named — the
+    // first, and any later one the guesses after a hint earn by filling the halved meter
+    // again — and a failed try earns the HINT, never the word (user-decided 2026-09-16).
+    const last = events[events.length - 1];
+    if (last.filled != null) {
+      const holeIndex = last.filled;
       // The word the hole shows once the guess lands: the guess itself where it improved
       // the hole, else the word the hole already held.
-      const entry = filling.entries[holeIndex];
+      const entry = last.entries[holeIndex];
       const shown =
-        filling.improved[holeIndex] && entry
+        last.improved[holeIndex] && entry
           ? { word: entry.word, rank: entry.rank }
           : { word: holes[holeIndex].word, rank: holes[holeIndex].rank };
       return { kind: 'activated', ...shown };
+    }
+    const activation = [...events].reverse().find((e) => e.filled != null);
+    if (activation) {
+      const holeIndex = activation.filled as number;
+      // A hint just revealed is named, with its price; a typed try that failed after the
+      // activation earns the board's hint.
+      const entry = last.revealed ? last.entries[holeIndex] : undefined;
+      return entry ? { kind: 'revealedHint', word: entry.word, rank: entry.rank } : { kind: 'hint', holeIndex };
     }
     // Not full yet: look near the word it shows.
     return { kind: 'near', hole: holes[open] };

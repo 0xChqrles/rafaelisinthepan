@@ -384,16 +384,19 @@ def test_start_words_are_re_picked_at_most_start_rounds_times(monkeypatch):
 
 # --- a word no start can save is swapped, REPLACE_ROUNDS times at most --------------------
 
-def _build_day(monkeypatch, generate, log, given=None):
+def _build_day(monkeypatch, generate, log, given=None, says=None):
     """build_day on a song's line with chat · dort · pierre chosen and « froide » left to
-    swap in, each word's giveaway judged before the choice (`given`, 0.3 by default);
-    returns (its result, the words the reader was asked)."""
+    swap in, each word's giveaway judged before the choice (`given`, 0.3 by default) and
+    the chance a player says it (`says`, 0.8 by default); returns (its result, the words
+    the reader was asked)."""
     tokens = _line_tokens()
     allowed = [t for t in tokens if t.text in ("chat", "dort", "pierre", "froide")]
     asked = []
     monkeypatch.setattr(curate.llm, "widely_known", lambda *_a, **_k: {"known": False, "why": ""})
     monkeypatch.setattr(curate.llm, "context_guesses",
                         lambda _c, toks, _blanks, mark, _n, lang: asked.append(toks[mark].text) or ([], None))
+    monkeypatch.setattr(curate.llm, "would_say",
+                        lambda _c, _toks, _blanks, _mark, word, lang: ((says or {}).get(word, 0.8), None))
     monkeypatch.setattr(curate, "generate", generate)
     line = {"sentence": "Le chat dort sur la pierre froide.", "tokens": tokens, "allowed": allowed,
             "given": given or {t.slug: 0.3 for t in allowed}}
@@ -480,6 +483,23 @@ def test_a_hard_hole_draws_its_start_from_nearer_and_the_model_is_told(monkeypat
     assert seen["hard"] == {"chat"}                            # at the threshold a hole is not hard
     assert "start candidates come from nearer (ranks 50-100)" in seen["context"]["chat"]
     assert "nearer" not in seen["context"]["dort"]
+
+
+def test_two_words_players_dont_say_are_told_to_the_start_step_one_is_not(monkeypatch):
+    # User-decided 2026-10-06: one such word is a hard day (a loved day may hide one); two
+    # made the worst days, and the model is told to keep at most one.
+    seen = {}
+
+    def generate(_c, _l, _sentence, _words, _source, _lang, context, *_a, **_k):
+        seen.update(context)
+        return "out/x_y_z.json"
+
+    _build_day(monkeypatch, generate, Log(), says={"chat": 0.3})
+    assert "a word players don't say" in seen["chat"] and "keep at most one" not in seen["chat"]
+    _build_day(monkeypatch, generate, Log(), says={"chat": 0.3, "pierre": 0.2})
+    for word in ("chat", "pierre"):
+        assert "this trio hides 2 words players don't say (chat, pierre)" in seen[word]
+    assert "keep at most one" not in seen["dort"] and "says this exact word at 0.80" in seen["dort"]
 
 
 def test_the_start_choice_offers_a_hard_hole_the_nearer_band(tmp_path, monkeypatch):

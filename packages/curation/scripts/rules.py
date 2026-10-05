@@ -4,8 +4,9 @@ TASTE CHOOSES, CODE STATES FACTS (2026-09-24): which line, which three words and
 start words make a day is the model's call, read off the `taste` skill. Code only says
 which words CAN be a secret (`initial_candidates`: a content word the game admits, not
 in its cooldown) and turns what it measures into plain notes the model reads — what a
-reader would put in a blank (`reading`), where the reader's words land in the hole's own
-map (`map_nearest_filler`). Nothing here refuses a trio. The judgements are injected as
+reader would put in a blank (`reading`), whether a player who has the meaning would say
+the word (`said`), where the reader's words land in the hole's own map
+(`map_nearest_filler`). Nothing here refuses a trio. The judgements are injected as
 callables, so everything is testable without a parser, a model or a vector file.
 """
 
@@ -52,6 +53,18 @@ TWIN_RANK = 3
 # `starts.MAX_START_FREQ_RANK`): a reader's expected word there is the model's
 # knowledge, not every player's.
 PLAIN_WORD_RANK = 40000
+# The WORD PLAYERS SAY (the user's test, 2026-10-06): would a player who has roughly the
+# meaning ever say this word, or keep to commoner words meaning nearly the same
+# (`llm.would_say`, the chance they say it)? Asked blind of 123 French holes played
+# 2026-08-26 → 10-05, it told the holes fewer than half the players found within 30 tries
+# from the rest at AUC 0.84 (two runs, 0.81 and 0.86, agreeing at 0.93; the giveaway
+# score: 0.70). Under WOULD_SAY_HARD sat 25 holes, found within 30 tries by a median 41 %
+# of the players against 76 % above. ONE such word is a hard day the user may love
+# (« moucheron », « mammifères », « stagnation », « cafard » sit under it); TWO or more
+# made the worst days: finished by a median 40 % of the players (6 days, none reaching
+# the taste's 70 %), against 57 % with one (12) and 71 % with none (23) —
+# « faux-monnayeur » (0.30) shared 2026-10-05 with a second one, and 30 % finished it.
+WOULD_SAY_HARD = 0.4
 # Secrets per puzzle (the sentence schema: exactly three distinct slugs).
 TRIO = 3
 
@@ -141,6 +154,31 @@ def reading(
         lead = "readers would split"
     alternatives = ", ".join(others) if others else "nothing else"
     return f"{lead}; other words a reader puts there: {alternatives}"
+
+
+def said(chance: float | None, instead: str | None) -> str:
+    """What the would-say test means for this hole, in one plain line for the model: the
+    chance a player who has the meaning says this exact word, and the commoner word they
+    would keep saying."""
+    if chance is None:
+        return "whether players would say this word: not measured"
+    note = f"a player who has the meaning says this exact word at {chance:.2f}"
+    if instead:
+        note += f" (they would keep saying « {instead} »)"
+    if chance < WOULD_SAY_HARD:
+        note += f", under {WOULD_SAY_HARD}: a word players don't say"
+    return note
+
+
+def unsaid(chances: dict[str, float | None]) -> str | None:
+    """The trio's fact when it hides two or more words players don't say (under
+    WOULD_SAY_HARD), keyed by the hidden word; None when it hides one or none."""
+    under = [w for w, c in chances.items() if c is not None and c < WOULD_SAY_HARD]
+    if len(under) < 2:
+        return None
+    return (f"this trio hides {len(under)} words players don't say ({', '.join(under)}): on real play the "
+            f"days with two or more were finished by a median 40% of the players (none reached 70%), against "
+            f"57% with one and 71% with none — keep at most one, replace another by a word of the line")
 
 
 def map_nearest_filler(rank_map: dict, secret_slug: str, fillers: list[str]) -> tuple[str, int | None] | None:

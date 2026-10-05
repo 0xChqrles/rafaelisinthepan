@@ -262,8 +262,9 @@
       components/Loot.tsx     what a hit knocks off a game word: the rank exponent popping up
                               and falling away
       game/charge.ts          #301's hole CHARGE METER: the rank -> charge function, the replay
-                              of the play log onto every hole's meter, the ACTIVATION and the
-                              ONE masked word it offers closer than the hole's best
+                              of the play log onto every hole's meter, the ACTIVATION, the
+                              ONE masked word it offers at half the hole's best, and the half
+                              meter a hint taken costs
       components/ChargeLoot.tsx  the blood a charging guess knocks out of the hole, gathered
                               onto the meter
       components/MeterCanvas.tsx  the meter's drawing: the chip converting as an ordered
@@ -396,20 +397,29 @@ These are decided and verified against the code. Treat them as load-bearing.
   logical secret (repeated occurrences share it), capped at `CHARGE_TARGET` = 100, and
   reaching it ACTIVATES THE HOLE (user-decided 2026-09-22, REPLACING the secret's first
   letter — "it goes against the game core logic which is to guess with meaning not
-  letters"): **AN ACTIVE HOLE OFFERS ONE WORD CLOSER THAN ITS BEST (user-decided
-  2026-10-02: "instead of revealing 5 words before the closest one, we should be able to
-  reveal ONE word CLOSER than the closest word"): once the meter is full, the hole offers
-  exactly ONE MASKED HINT in its tries — the nearest rank in the secret's map strictly
-  BELOW the hole's best (the visible start, every rank reached, every hint revealed: the
-  lowest of them), walked through the ranks the map holds. Taking it makes it the new
-  best, so the next closer word is offered AT ONCE, one try each, down to the word just
-  before the secret: THE SECRET IS NEVER OFFERED (a best of 1 offers nothing — a hint
-  that solved would make every hole buyable, and "solved" would stop meaning "found"). A
-  closer word typed by hand moves the offer under it the same way; a farther guess leaves
-  it where it is; a hint TAKEN is given for good** (`replayCharge`, `game/charge.ts`).
-  Repeated occurrences of one secret share one meter and one offer. A reveal therefore
-  buys PROGRESS — the hole improves, and the score with it. A full meter takes no more
-  charge. **THE HINTS ARE MASKED, AND REVEALING ONE
+  letters"): **AN ACTIVE HOLE OFFERS ONE WORD AT HALF ITS BEST, AND TAKING IT HALVES THE
+  METER (user-decided 2026-10-06: "we go from n to n/2, but using the hint also unfill the
+  word by half"): once the meter is full, the hole offers exactly ONE MASKED HINT in its
+  tries — the rank at HALF the hole's best, rounded down (133 → 66, 4 → 2; the best = the
+  visible start, every rank reached, every hint revealed: the lowest of them), walked
+  through the ranks the map holds: the nearest rank at or under the half, else, where the
+  map holds nothing that near, the next word closer than the best. Taking it makes it the
+  new best, PAYS NO CHARGE and HALVES THE METER (100 → 50): the hole is no longer active
+  and offers nothing until further guesses fill the meter again, and then it offers half
+  of the new best — so a hole can go full, half, full again several times in one round,
+  its charge FALLING between two guesses, and its given words can hold hints taken while
+  it is inactive. (Why: one rank closer per reveal, offered again at once, walked a player
+  stuck at 133 through some 120 reveals — "j'ai l'impression d'être un hamster coincé dans
+  sa roue".) THE SECRET IS NEVER OFFERED (a best of 1 offers nothing — a hint that solved
+  would make every hole buyable, and "solved" would stop meaning "found"), so ACTIVE means
+  the meter full AND a word to offer: a full meter at a best of 1 shows the full chip, no
+  burst, no foil. A closer word
+  typed by hand while the meter is full moves the offer to half of it, the meter staying
+  full; a farther guess leaves it where it is; a hint TAKEN is given for good**
+  (`replayCharge`, `game/charge.ts`). Repeated occurrences of one secret share one meter
+  and one offer, and a hint taken halves that one meter once. A reveal therefore buys
+  PROGRESS — the hole improves, and the score with it — for a try and half the meter. A
+  full meter takes no more charge. **THE HINTS ARE MASKED, AND REVEALING ONE
   IS A GUESS (user-decided 2026-09-22: "making the hint words masked, and you can just
   select them with the wheel, it counts as a guess, but this way users who don't want help
   don't get penalized, and those who need help just increase their score in return… you
@@ -428,8 +438,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   only, we shouldn't have the keyboard at all, but a 'reveal' button with a caption
   saying that it will cost one try"): while the ghost stands in the empty prompt, and
   while it decodes, the tray holds `components/RevealTray` in the keyboard's own `--kb-h`
-  footprint, anchored to its bottom so nothing above moves — the price ("Costs one try." /
-  « Coûte un essai. », the UI face, muted, the button's `aria-describedby`), REVEAL (the
+  footprint, anchored to its bottom so nothing above moves — the price ("Costs one try and
+  half the meter." / « Coûte un essai et la moitié de la jauge. », the UI face, muted, the
+  button's `aria-describedby`), REVEAL (the
   `.mix-btn`, disabled while it decodes) and BACK / RETOUR under it in the gate's quiet
   secondary dress, which un-picks every masked pick (`withoutMaskedPicks`): the holes show
   their own words again and the keyboard returns. The tray sits INSIDE `.kb-exit`, because
@@ -528,8 +539,11 @@ These are decided and verified against the code. Treat them as load-bearing.
   rule. A listed given word carries the foil without the light. STEPPED at
   `SEA_FRAME_MS` = 80, ONE clock on every surface and **EVERY HOLE ITS OWN
   FOIL** (`seed` — the hole's index, a listed word's rank; user-decided the same day:
-  "each hole should have a different seed"); it stands until the hole is inked in. A hole
-  MOUNTED active (a reload) is on the foil at once, no burst, no dissolve. (The CSS class
+  "each hole should have a different seed"); it stands while the hole is active — until
+  the hole is inked in, or a hint taken halves its meter: then the foil goes on that
+  guess's release, the chip stands full again and drains to its half, and the next fill
+  plays the whole activation again (fill → burst → the foil). A hole MOUNTED active (a reload) is on the foil at once, no
+  burst, no dissolve; one mounted on a halved meter shows the meter. (The CSS class
   and prop are still `sea`, the name of the first cut.) **THE GIVEN WORDS
   WEAR THE SAME SEA WHEREVER THEY ARE LISTED** (user-decided 2026-09-22, "the given words
   should have the same effect on the guess list"): a `.wheel-given` row and a `.hw-given`
@@ -579,8 +593,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   `Strike.tsx` (`.strike`, its own integer scales under `.phrase`; see THE HIT ART) —
   never the heat. A11y: the meter and the
   offered word are the hole button's DESCRIPTION (`srHoleCharge` / `srHoleGiven` — "a
-  masked word closer than its best in its tries, one try to reveal"; a full meter with
-  nothing left to offer is described as its meter — sr-only spans outside the sentence
+  masked word closer than its best in its tries, one try and half the meter to reveal"; a
+  full meter with nothing left to offer, and a meter a hint taken halved, are described as
+  their meter — sr-only spans outside the sentence
   like the exploration hints, never words in the prose); a word a guess has the hole
   offer is also announced with it. Reduced motion keeps the state and snaps:
   no sparks, no fill travel, the sea holds one frame. Not done, deliberately: a second
@@ -3863,15 +3878,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the word -1"): the sentence begs for FREEDOM / CHEMIN, and that word is the secret's
     rank-1 neighbour (`pair.alt`) — typing it fills the chip, never the solve; both words
     read in the sentence ("both words relevant, e.g. mer/océan"). **THE LESSON READS THE
-    MAP THROUGH ONE VIEW** (`meterView`, `tutorial/script.ts`; user-decided 2026-10-02 with
-    the one-closer offer): `alt` reads 2 and the map's rank-2 word (UNALIENABLE / VALLON)
-    reads 1, so once FREEDOM² fills the meter one word is left closer than it for the reveal
-    to hand over. **AND A WORD READ CLOSER THAN `alt`, typed before the hole is active,
+    MAP THROUGH ONE VIEW** (`meterView`, `tutorial/script.ts`; user-decided 2026-10-02):
+    `alt` reads 2 and the map's rank-2 word (UNALIENABLE / VALLON) reads 1, so once FREEDOM²
+    fills the meter one word is left closer than it — the offer at half its best — for the
+    reveal to hand over. **AND A WORD READ CLOSER THAN `alt`, typed before the hole is active,
     TRADES PLACES WITH IT** (`MeterTrade` / `tradeFor`): on top of that view it reads 2 and
     fills the meter. The SECRET traded (user-decided 2026-09-16 after typing « sentier » in
     one try), `alt` becomes the secret the player then finds; the word read 1 traded, `alt`
-    reads 1 and is the word the reveal hands over (the same trick, so the one-closer offer
-    never meets a best of 1). A full meter therefore always holds a best of 2 and a word to
+    reads 1 and is the word the reveal hands over (the same trick, so the offer never meets
+    a best of 1). The FIRST fill therefore always holds a best of 2 or more and a word to
     reveal. ONE map serves every reading (`ranks` in `LessonBoard`), and the board, the
     meters, the wheel and every later guess replay against it. Once the hole is active
     there is no trade: the goal is only that the activation, with a word to reveal, is
@@ -3906,14 +3921,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (`tutActivatedTap`/`Click`, 2026-09-22; the tap teaches the wheel a second time)
     (user-decided 2026-09-30, cutting the long lines: « J'ai déjà avancé sur cette phrase.
     Clique sur parcours pour voir mes essais. », « Jauge pleine ! Touche {word}, et révèle
-    un mot. ») → the one word closer, picked in the wheel and REVEALED from the tray (the
-    game's REVEAL, Enter its twin): "unalienable¹ is revealed, for one try. Now find the
-    secret word."
+    un mot. ») → the word offered, picked in the wheel and REVEALED from the tray (the
+    game's REVEAL, Enter its twin): "unalienable¹ is revealed, for one try and half the
+    meter. Now find the secret word." — the reveal halving the meter, as in the day
     (`tutRevealed`, off the event's `revealed` flag; it types once the prompt's DECODE has
     ended — while the prompt uncyphers the word the coach says nothing new, the last line
     holding, so the line never names the word under the marks) → a FAILED TRY typed after it earns the HINT
     (`hints[]`, or `pair.hint` once the secret is traded), NEVER THE WORD (user-decided 2026-09-16,
-    retiring the bot's own closing guess) → found: "You found it! You are ready for the real
+    retiring the bot's own closing guess), and a meter filled again with a word to offer is
+    named again, the activation's line (`activatedHole`, `tutorial/coach.ts`) → found: "You
+    found it! You are ready for the real
     game." → PLAY. `STUCK` has no `meter` row
     (the stage is its own script). Not taught: the exact rate.
   **A WHEEL ROW'S HIT AREA IS ITS WORD** (`.wheel-row` `width: fit-content`, user-reported

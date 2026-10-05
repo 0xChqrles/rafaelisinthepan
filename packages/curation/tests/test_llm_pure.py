@@ -3,6 +3,7 @@
 import pytest
 
 from llm import LLMError, parse_json, stands_alone
+from rules import Token
 
 
 def test_parse_json_reads_fenced_and_trailing_text():
@@ -56,6 +57,23 @@ def test_choose_excerpt_takes_two_integers_and_nothing_else():
     assert empty.calls == 0
 
 
+# The would-say test: a chance in [0, 1] and the word kept instead, or nothing usable.
+@pytest.mark.parametrize("answer, expected", [
+    ({"would_say": 0.3, "instead": " faussaire "}, (0.3, "faussaire")),
+    ({"would_say": 1, "instead": None}, (1, None)),
+    ({"would_say": 0, "instead": "  "}, (0, None)),
+    ({"would_say": True, "instead": "x"}, (None, "x")),
+    ({"would_say": "0.3", "instead": "x"}, (None, "x")),
+    ({"would_say": 1.5}, (None, None)),
+    ({"would_say": -0.1}, (None, None)),
+    ([0.3], (None, None)),
+])
+def test_would_say_keeps_a_chance_in_range_and_nothing_else(answer, expected):
+    from llm import would_say
+    tokens = [Token(0, "le", "le", "DET", "le", True), Token(1, "faussaire", "faussaire", "NOUN", "faussaire", False)]
+    assert would_say(_Canned(answer), tokens, set(), 1, "faussaire", lang="fr") == expected
+
+
 # --- #317: every question speaks the day's language ----------------------------------
 import inspect
 
@@ -95,6 +113,7 @@ QUESTIONS = {
     "pick_starts": lambda c, lang: llm.pick_starts(c, "The [cat].", [_HOLE], None, lang=lang),
     "choose_excerpt": lambda c, lang: llm.choose_excerpt(c, "The cat.", {"before": ["B."], "after": []}, lang=lang),
     "pick_start": lambda c, lang: llm.pick_start(c, "The [____].", "cat", _HOLE["options"], lang=lang),
+    "would_say": lambda c, lang: llm.would_say(c, _TOKENS, set(), 1, "cat", lang=lang),
 }
 
 

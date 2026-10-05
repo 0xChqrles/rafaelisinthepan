@@ -305,8 +305,9 @@ export default function MeterCanvas({
   // THE SEA'S CLOCK: a frame every SEA_FRAME_MS while the sea is up — stepped, so it reads
   // as an animation and not a shader. A canvas that was drawing the ramp when the sea came
   // recedes into it from the solid it had reached; one born in the sea starts on the field.
-  // Reduced motion draws ONE frame and stops. The clock RESTS while the canvas is out of
-  // view or the tab hidden.
+  // LEAVING the sea (a hint taken halves the meter) hands the ramp a full chip, and the
+  // reading's travel drains it from there. Reduced motion draws ONE frame and stops. The
+  // clock RESTS while the canvas is out of view or the tab hidden.
   useEffect(() => {
     if (!sea) {
       seaSince.current = null;

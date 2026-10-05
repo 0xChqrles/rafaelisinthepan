@@ -40,7 +40,8 @@ function rankTweenDuration(fromRank: number, toRank: number): number {
 // THE CHARGE METER (#301): what the hole shows of its meter — the charge, and whether the
 // hole is ACTIVE (the meter full, a word closer offered — user-decided 2026-09-22,
 // replacing the revealed initial). Both are the round's DERIVED reading of the play log; the hole
-// owns only the choreography that lands them.
+// owns only the choreography that lands them. Neither only rises: a hint taken halves the
+// meter, and the hole is no longer active (`game/charge.ts`).
 export interface HoleChargeView {
   value: number;
   active: boolean;
@@ -187,7 +188,9 @@ export default function Hole({
   // fills the meter; the hole holds it back for the fill's travel and the burst's impact,
   // then lets the full chip dissolve into the foil (`MeterCanvas`). A hole MOUNTED active (a
   // reload, a replay on another device) is on the foil at once — a burst is for the moment it
-  // happens, not for history. Under reduced motion everything snaps.
+  // happens, not for history. A hint TAKEN ends it: the foil goes on the release, the chip
+  // stands full again and drains to its half, and the meter filling again plays the whole
+  // sequence anew. Under reduced motion everything snaps.
   const active = charge?.active === true;
   // An exact hit wins immediately, before the deferred board finishes its word swap.
   const solving = hole.rank === 0 || hit?.strike === 'ultra';

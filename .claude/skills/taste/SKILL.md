@@ -254,15 +254,30 @@ Fun dies at both ends, and real rounds show it:
   gives no reason to go there: 4% of the players found it within 30 tries. 2026-09-23:
   « elle aimait le [héros] (Janko) », from « capitaine »: 4%. 2026-09-13: « j'ai appris à
   [lâcher] d'emblée que… », from « avancer »: 6%.
-- **The loved days** (the September ones; August had too few players to measure) played
-  between 30% and 75% of the players within 30 tries, medians of 9 to 28 — the Machado
-  day at 75% (median 10), Brillat-Savarin at 57% (median 9), Fabre at 38% (median 28).
-  Fun comes first; the start words tune the rest.
+- **The loved days** (the September ones; August had too few players to measure) were
+  finished by 55% to 89% of their players, medians of 8 to 28 tries — the Machado day by
+  89% (median 10), Graeber by 81% (median 19), Fabre by 70% (median 28), Houellebecq's
+  « mammifères » by 55% (median 16). Fun comes first; the start words tune the rest.
 
-The aim: about 80% of the players find all three within 30 tries. A day is as hard as its
-hardest hole. Tune difficulty with the start word — nearer or farther, plainer or more
+The aim: never frustrating for the slow players, never handed to the fast ones. At least
+70% of the players finish the day — below that, too many stop playing the game — and the
+fast ones still search: 09-21, finished by 69% with a median of 5 tries, was dead. A day
+is as hard as its hardest hole. Tune difficulty with the start word — nearer or farther, plainer or more
 oblique — never by trading a living word for a dead one: a great word that plays too
 hard needs a better start, not a duller word.
+
+**The word players don't say.** Players find the meaning first, then type the words
+they would use for it. A word they would never say for that meaning — the learned or
+rare one beside a common word that means the same — keeps them circling its neighbours,
+and no start word changes that: on 2026-10-05, players reached « faussaire » and
+« contrefacteur », a third of them never got to « faux-monnayeur », and 30% of the
+players finished the day. ONE such word makes a hard day, and a loved day may hide one —
+« moucheron », « mammifères », « stagnation », « cafard » are that word, and they are the
+punch or the exact word. TWO in one trio made the worst days (2026-09-16, 09-22, 09-23,
+10-05: a median 40% of the players finished, against 57% with one and 71% with none; no
+such day reached 70%). Keep at most one, and only when it is worth the search.
+
+Ask: when a player has the meaning, would they say this word — or the common one beside it?
 
 ## How to judge
 

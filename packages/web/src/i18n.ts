@@ -354,7 +354,7 @@ const STRINGS = {
   // THE REVEAL (#301): a masked hint picked into the sentence takes the keyboard's place —
   // the button that reveals it, its price over it, and the way back to the keyboard.
   revealButton: { en: 'REVEAL', fr: 'RÉVÉLER' },
-  revealCost: { en: 'Costs one try.', fr: 'Coûte un essai.' },
+  revealCost: { en: 'Costs one try and half the meter.', fr: 'Coûte un essai et la moitié de la jauge.' },
   revealBack: { en: 'BACK', fr: 'RETOUR' },
   // THE GIVE-UP: the flag at the prompt's end (its name — the control is an icon), the
   // confirmation over it (the title asks, the note says what it means, the act is its own
@@ -483,7 +483,8 @@ const STRINGS = {
     fr: 'Les 1000 mots les plus proches du secret remplissent sa jauge. Une fois pleine, on débloque des indices.',
   },
   // The activation (user-decided 2026-09-22, replacing the first letter): the word given
-  // is MASKED in the word's tries; picked, REVEAL takes the keyboard's place, for a try.
+  // is MASKED in the word's tries; picked, REVEAL takes the keyboard's place, for a try and
+  // half the meter.
   tutActivatedTap: {
     en: 'The meter is full! Tap {word} and reveal a word.',
     fr: 'Jauge pleine ! Touche {word}, et révèle un mot.',
@@ -494,8 +495,8 @@ const STRINGS = {
   },
   // A hint revealed: named, priced, and the turn handed back.
   tutRevealed: {
-    en: '{word} is revealed, for one try. Now find the secret word.',
-    fr: '{word} est révélé, pour un essai. À toi de trouver le mot secret.',
+    en: '{word} is revealed, for one try and half the meter. Now find the secret word.',
+    fr: '{word} est révélé, pour un essai et la moitié de la jauge. À toi de trouver le mot secret.',
   },
   tutMeterFound: {
     en: 'You found it! You are ready for the real game.',
@@ -731,15 +732,16 @@ export function srHoleCharge(lang: string, charge: number): string {
   return uiLang(lang) === 'fr' ? `jauge à ${pct} %` : `meter at ${pct}%`;
 }
 
-// The given word (#301): what a full meter offers — ONE masked word closer than the hole's
-// best, read in the hole's tries. With `n`, the live announcement the moment it lands;
-// without, the hole's standing description.
+// The given word (#301): what a full meter offers — ONE masked word at half the hole's best,
+// read in the hole's tries, and its price. With `n`, the live announcement the moment it
+// lands; without, the hole's standing description.
 export function srHoleGiven(lang: string, n?: number): string {
   if (uiLang(lang) === 'fr') {
-    const what = 'un mot masqué plus proche que son meilleur dans ses essais, un essai pour le révéler';
+    const what =
+      'un mot masqué plus proche que son meilleur dans ses essais, un essai et la moitié de la jauge pour le révéler';
     return n === undefined ? what : `mot ${n} : ${what}`;
   }
-  const what = 'a masked word closer than its best in its tries, one try to reveal';
+  const what = 'a masked word closer than its best in its tries, one try and half the meter to reveal';
   return n === undefined ? what : `word ${n}: ${what}`;
 }
 

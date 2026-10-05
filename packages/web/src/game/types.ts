@@ -25,6 +25,6 @@ export interface HitState {
   // the charge table pays nothing for.
   strike?: 'slash' | 'ultra';
   // #301: what this guess added to the hole's meter — the loot that flies into it. Absent
-  // (or 0) when the meter did not move: nothing to throw.
+  // (or 0) when the meter did not rise (a hint taken halves it): nothing to throw.
   charge?: number;
 }

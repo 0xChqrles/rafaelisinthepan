@@ -20,9 +20,10 @@
 //                 has already half played: one word found, the other's #301 meter nearly
 //                 full from its tries (`played`, the pre-played log — tap the word to see
 //                 them). The player's first close guess fills it and the hole ACTIVATES —
-//                 one masked word closer joins the tries (user-decided 2026-09-22,
-//                 replacing the first letter); they reveal it for a try, then find the
-//                 secret, a failed try earning the hint.
+//                 one masked word, at half the hole's best, joins the tries (user-decided
+//                 2026-09-22, replacing the first letter; the half 2026-10-06); they reveal
+//                 it for a try and half the meter, then find the secret, a failed try
+//                 earning the hint.
 //                 Then PLAY: they are ready for the real game.
 //
 // A stage is a Puzzle (the real per-puzzle schema, parsePuzzle-valid, so it feeds the REAL
@@ -86,7 +87,7 @@ export type MeterTrade = 0 | 1 | null;
 // THE METER STAGE'S READING of the open secret's map (`pair.alt` is its rank-1 word):
 //   - the LESSON VIEW: `alt` reads 2 and the rank-2 word reads 1 — so once the obvious word
 //     fills the meter, ONE word is left closer than it, and the reveal hands it over (the
-//     game offers one word closer than the best, never the secret);
+//     game offers the word at half the best — from 2, the word read 1 — never the secret);
 //   - TRADED (`traded`, a word read closer than `alt` typed before the hole is active): on
 //     top of that, that word and `alt` trade places — it reads 2 and fills the meter. The
 //     secret traded, `alt` becomes the secret the player then finds; the word read 1
