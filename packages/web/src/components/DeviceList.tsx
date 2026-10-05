@@ -5,15 +5,20 @@
 // its token, so deleting that item is the whole revocation — the device's next authenticated
 // call gets `unknown_device` and shows its own screen.
 //
-// It lives on the profile editor because that screen IS the identity screen: it is where a
-// player's name and mark are, it is reached from the leaderboard's EDIT chip, and an account
-// with no devices list would leave #216 with no reachable flow at all.
+// It lives on `/account`, under the record, once the account is SAVED (an unsaved account can
+// only ever hold the device reading the screen). It wears the boards' grammar: LINES on the
+// bare ground, no title — each line a pixel GLYPH of the device (a phone, a tablet, a
+// computer; in the accent for the one in your hand), its label, ONE quiet fact (THIS ONE, or
+// the day it was last seen), and SIGN OUT as a word in the corner brackets of a thing to tap.
+// The lines come in through the dither, one after the other, once the record has CALMED — its
+// count landed and today's foil link cooled — never under its climax, and never before the
+// record has its numbers at all.
 //
 // The list comes off a GSI and is eventually consistent, so the route corrects it from what
 // the request itself knows — a device that was just created is listed, and one that was just
 // revoked is not. Nothing here has to compensate for the lag.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import {
   devicesUrl,
   parseDeviceIdentity,
@@ -28,7 +33,11 @@ import {
 } from '../identity';
 import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { t } from '../i18n';
-import LoadingWave from './LoadingWave';
+import { clockNow } from './animationClock';
+import { useRecordCalm } from './record/Record';
+import PhoneIcon from '../assets/icons/phone.svg?react';
+import TabletIcon from '../assets/icons/tablet.svg?react';
+import LaptopIcon from '../assets/icons/laptop.svg?react';
 
 type Phase = 'loading' | 'ready' | 'failed';
 
@@ -39,6 +48,19 @@ function deviceLabel(row: DeviceRow, lang: string): string {
   const parts = [row.device || row.os, row.browser].filter(Boolean);
   return parts.length > 0 ? parts.join(' / ') : t(lang, 'deviceUnknown');
 }
+
+// The device's GLYPH, in the header's pixel icon family: a phone, a tablet or a computer —
+// off what the server recognised (`backend/src/userAgent.ts`); a device it recognised nothing
+// about is drawn as a computer, the commonest thing a browser runs on that names nothing.
+function DeviceGlyph({ row }: { row: DeviceRow }) {
+  const name = `${row.device} ${row.os}`;
+  if (/iPad/.test(name)) return <TabletIcon className="ui-icon" aria-hidden />;
+  if (/iPhone|iPod|Android/.test(name)) return <PhoneIcon className="ui-icon" aria-hidden />;
+  return <LaptopIcon className="ui-icon" aria-hidden />;
+}
+
+// The lines' stagger as they dissolve in, one after the other (the boards' own beat).
+const LINE_STAGGER_MS = 55;
 
 function lastUsed(row: DeviceRow, lang: string): string | null {
   const at = Date.parse(row.lastSeenAt);
@@ -140,50 +162,85 @@ export default function DeviceList({ lang }: { lang: string }) {
       .finally(() => setBusy(null));
   };
 
+  // The lines arrive AFTER the record has calmed (`useRecordCalm`): held while it has not
+  // begun, then in at the moment it says — at once when it already stands. The wait is
+  // worked out as the lines MOUNT (the moment their CSS delay counts from, the skeleton's
+  // too), never when the record's calm was announced — a slow read would otherwise make the
+  // lines wait the whole delay again. And once in, they STAY in: a RETRY on the record puts
+  // its calm back to "not yet", which says nothing about lines already standing.
+  const calm = useRecordCalm();
+  const [after, setAfter] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (after === null && phase === 'ready' && calm !== null) {
+      setAfter(Math.max(0, Math.round(calm - clockNow())));
+    }
+  }, [after, phase, calm]);
+  const shown = phase === 'ready' && after !== null;
+
   return (
-    <section className="device-list">
-      <h2 className="device-list-title">{t(lang, 'devicesTitle')}</h2>
-      {phase === 'loading' && (
-        <p className="status">
-          <LoadingWave text={t(lang, 'loading')} />
-        </p>
+    <section className="device-list" aria-label={t(lang, 'devicesTitle')}>
+      {/* While the read is out: one line's boxes as the stippled slate — the glyph's checker and
+          the label's rail — at the lines' own pitch, so nothing moves when the list lands. */}
+      {/* (Once the lines are in, the skeleton stands over them until their dissolve starts.) */}
+      {(phase === 'loading' || phase === 'ready') && (
+        <div
+          className={`device-row device-skeleton${shown ? ' leaving' : ''}`}
+          style={shown ? ({ '--at': `${after ?? 0}ms` } as React.CSSProperties) : undefined}
+          aria-hidden="true"
+        >
+          <span className="device-glyph" />
+          <span className="device-info">
+            <span className="device-skeleton-rail" />
+          </span>
+        </div>
       )}
+      {/* A failed read: what failed, said quietly, and the quiet word that asks again. */}
       {phase === 'failed' && (
-        <p className="status error">
-          {t(lang, 'failedDevices')}{' '}
-          <button type="button" className="device-retry" onClick={() => setAttempt((n) => n + 1)}>
+        <div className="device-error">
+          <p className="device-error-line" role="status">
+            {t(lang, 'failedDevices')}
+          </p>
+          <button type="button" className="quiet-btn" onClick={() => setAttempt((n) => n + 1)}>
             {t(lang, 'retry')}
           </button>
-        </p>
+        </div>
       )}
-      {phase === 'ready' &&
-        rows.map((row) => {
-          const used = lastUsed(row, lang);
-          return (
-            <div className={`device-row${row.current ? ' current' : ''}`} key={row.deviceId}>
-              {/* TWO LINES (#204's polish pass): the label, then ONE quiet fact under it —
-                  THIS ONE for the row the reader is on, the last-seen day for the rest.
-                  The single-line row truncated its own current marker on a phone, and a
-                  device label plus a date plus a chip is three things fighting one line. */}
-              <span className="device-info">
-                <span className="device-name">{deviceLabel(row, lang)}</span>
-                {row.current ? (
-                  <span className="device-sub current">{t(lang, 'deviceCurrent')}</span>
-                ) : (
-                  used !== null && <span className="device-sub">{used}</span>
-                )}
-              </span>
-              <button
-                type="button"
-                className="device-signout"
-                disabled={busy !== null}
-                onClick={() => signOut(row)}
+      {shown && (
+        <ul className="device-lines">
+          {rows.map((row, i) => {
+            const used = lastUsed(row, lang);
+            return (
+              <li
+                className={`device-row${row.current ? ' current' : ''}`}
+                key={row.deviceId}
+                style={{ '--delay': `${(after ?? 0) + i * LINE_STAGGER_MS}ms` } as React.CSSProperties}
               >
-                {t(lang, 'deviceSignOut')}
-              </button>
-            </div>
-          );
-        })}
+                <span className="device-glyph">
+                  <DeviceGlyph row={row} />
+                </span>
+                {/* TWO LINES (#204's polish pass): the label, then ONE quiet fact under it —
+                    THIS ONE for the row the reader is on, the last-seen day for the rest. */}
+                <span className="device-info">
+                  <span className="device-name">{deviceLabel(row, lang)}</span>
+                  {row.current ? (
+                    <span className="device-sub current">{t(lang, 'deviceCurrent')}</span>
+                  ) : (
+                    used !== null && <span className="device-sub">{used}</span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  className="quiet-btn device-signout"
+                  disabled={busy !== null}
+                  onClick={() => signOut(row)}
+                >
+                  {t(lang, 'deviceSignOut')}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }

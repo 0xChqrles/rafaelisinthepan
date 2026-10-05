@@ -28,7 +28,7 @@ export function streakTransition(days: number[], solvedDay: number): StreakTrans
 }
 
 // One cell of the weekly streak row (#74).
-interface WeekCell {
+export interface WeekCell {
   dayNumber: number;
   solved: boolean;
   isToday: boolean; // the active day (just solved on the solved screen)
@@ -57,3 +57,28 @@ export function weekView(days: number[], activeDay: number): WeekView {
   return { cells };
 }
 
+// THE ACCOUNT'S WEEK (`/account`'s record, its chain): the week of the run the account's
+// STREAK counts. That streak is the MAXIMUM of the per-language live streaks
+// (`useAccountStats`, #204's aggregation), so the chain under it is the week of the language
+// that holds the maximum — the links and the number tell ONE run, never a union of two
+// languages' days that no streak counted. A tie goes to the earlier collection in the order
+// given (the caller puts the screen's own language first).
+export function recordWeek(collections: readonly (readonly number[])[], activeDay: number): WeekCell[] {
+  let held: readonly number[] = [];
+  let best = -1;
+  for (const days of collections) {
+    const run = currentStreak([...days], activeDay);
+    if (run > best) {
+      best = run;
+      held = days;
+    }
+  }
+  return weekView([...held], activeDay).cells;
+}
+
+// Monday-first narrow weekday initials, localized — the chain's own line, under the streak
+// celebration's links and the account record's.
+export function mondayNarrowLabels(lang: string): string[] {
+  const fmt = new Intl.DateTimeFormat(lang, { weekday: 'narrow', timeZone: 'UTC' });
+  return Array.from({ length: 7 }, (_, index) => fmt.format(new Date(Date.UTC(2024, 0, 1 + index))));
+}

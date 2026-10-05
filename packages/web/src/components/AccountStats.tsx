@@ -1,49 +1,69 @@
 // WHAT AN ACCOUNT IS WORTH, in the three numbers every surface that states one uses: the
 // live STREAK, the BEST it has ever held, and its total DAYS (user-decided 2026-08-28).
 //
-// It is drawn in three places, for three different reasons, and they have to agree — a
+// They are drawn in three places, for three different reasons, and they have to agree — a
 // player who reads a streak of 12 on their account screen and is then offered a dialog
 // saying 9 has been told the app does not know its own numbers:
 //
-//   /account            what this account IS — read from the private history collections.
+//   /account            what this account IS — the RECORD (`record/Record.tsx`): the streak
+//                       as the screen's subject, BEST and DAYS beside it, read from the
+//                       private history collections.
 //   the CROSSROADS      what a deletion is about to COST, or what a switch leaves behind.
 //   the RECOVERY ending what signing back in just HANDED BACK — the evidence for the claim
 //                       "we found your account", and the first thing a returning player
 //                       checks.
 //
-// The last two are the SERVER's own reading (`accountStakes`), which is the same reading
-// `useAccountStats` performs on the client, over the same collections. That is why
-// `bestStreak` sits in `@whippin/shared` beside `currentStreak`.
+// This component is the last two: the ROW. The flow's numbers are the SERVER's own reading
+// (`accountStakes`), which is the same reading `useAccountStats` performs on the client, over
+// the same collections — that is why `bestStreak` sits in `@whippin/shared` beside
+// `currentStreak`.
+//
+// THE ROW IS QUIET: the three numbers in the game's pixel face, either side of the boards'
+// stippled rails, labels in the chrome's tracked mono — no foil, no flame, no burst, no
+// charge. On the crossroads the numbers are a PRICE, and destruction never glows. A caller
+// that hands numbers BACK (the recovery ending) may ask them to `land` on the count's reels,
+// from the moment its row arrives; nothing else moves.
 //
 // **THE VALUES ARE THE ONLY THING EVER WITHHELD.** Labels and layout are always drawn — a
 // screen that hides what it has nothing to show of reads as broken to the player who has
 // just arrived, where three zeros read as a thing to fill — and a value that has not
-// arrived holds its box rather than claiming zero (#211: an unknown answer is never
-// rendered as a claim). The box BREATHES only while a read is in flight; a failure rests
-// still, since breathing promises an answer that is no longer coming.
+// arrived holds its box as the stippled slate rather than claiming zero (#211: an unknown
+// answer is never rendered as a claim). The box BREATHES only while a read is in flight; a
+// failure rests still, since breathing promises an answer that is no longer coming.
 
-import { useEffect, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { t } from '../i18n';
-import useAnimatedNumber from '../hooks/useAnimatedNumber';
-import { prefersReducedMotion } from '../hooks/useScramble';
+import ReelNumber from './ReelNumber';
 
-// A value that LANDS COUNTS UP to itself from zero, the result's own tally gesture — so the
-// numbers read as tallied rather than printed. A zero has nothing to count and simply
-// stands; reduced motion prints the value at once.
-const COUNT_MS = 700;
-
-function CountUp({ value }: { value: number }) {
-  const [armed, setArmed] = useState(false);
-  useEffect(() => setArmed(true), []);
-  const reduced = prefersReducedMotion();
-  const shown = useAnimatedNumber(armed ? value : 0, reduced ? 0 : COUNT_MS);
-  return <>{Math.round(shown)}</>;
-}
+// The recovery ending's landing: the board lines' compressed run.
+const LAND_RUN_MS = 700;
+const LAND_STAGGER_MS = 90;
 
 export interface AccountStatsValues {
   streak: number;
   best: number;
   days: number;
+}
+
+// A VALUE NOT YET KNOWN: its box as the slate's 2px checker (the boards' own skeleton, never a
+// grey rounded block) — breathing in hard 160ms steps while a read is out, the still 50%
+// checker once one has failed. `/account`'s record holds its count and its two numbers in it.
+export function StatSlot({
+  phase,
+  className = '',
+  style,
+}: {
+  phase: 'loading' | 'failed' | 'ready';
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <span
+      className={`stat-slot${phase === 'loading' ? ' breathing' : ''}${className ? ` ${className}` : ''}`}
+      style={style}
+      aria-hidden="true"
+    />
+  );
 }
 
 export default function AccountStats({
@@ -52,10 +72,15 @@ export default function AccountStats({
   // `null` is "not yet known" — the boxes are held. A caller holding a settled answer (the
   // server's, on a dialog or an ending) passes the values and nothing breathes.
   loading = false,
+  // The numbers LAND on the count's reels, left to right, starting this many ms after the row
+  // mounts (the caller's own arrival beat) — for a surface that is handing them back (the
+  // recovery ending). Omitted, they stand still: the crossroads never moves.
+  land,
 }: {
   lang: string;
   stats: AccountStatsValues | null;
   loading?: boolean;
+  land?: number;
 }) {
   const cells = [
     { key: 'streak', label: t(lang, 'streak'), value: stats?.streak },
@@ -63,17 +88,18 @@ export default function AccountStats({
     { key: 'days', label: t(lang, 'statDays'), value: stats?.days },
   ];
   return (
-    <div className="account-stats card">
-      {cells.map((cell) => (
+    <div className="account-stats">
+      {cells.map((cell, i) => (
         <div className="account-stat" key={cell.key}>
           <span className="account-stat-value">
             {cell.value === undefined ? (
-              <span
-                className={`account-stat-slot skeleton${loading ? '' : ' still'}`}
-                aria-hidden="true"
-              />
+              <StatSlot phase={loading ? 'loading' : 'failed'} />
             ) : (
-              <CountUp value={cell.value} />
+              <ReelNumber
+                value={cell.value}
+                delayMs={land === undefined ? 0 : land + i * LAND_STAGGER_MS}
+                runMs={land === undefined ? 0 : LAND_RUN_MS}
+              />
             )}
           </span>
           <span className="account-stat-label">{cell.label}</span>

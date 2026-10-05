@@ -20,8 +20,8 @@ import { createPortal } from 'react-dom';
 // It answers `:focus-visible` alone, asked at focus time: a tap moves no brackets, and
 // neither does the focus a click leaves on a button. It frames the control's VISIBLE box
 // — a `[data-focus-box]` inside it when the control is stretched wider than what it shows
-// (a drum's row, framing its chip) — and it never frames the guess field (its caret is
-// its focus), a dialog focused as a whole, or a CONTAINER focused for a screen reader
+// (a drum's row, framing its chip) — and it never frames the guess field or the profile
+// editor's name field (their caret is their focus), a dialog focused as a whole, or a CONTAINER focused for a screen reader
 // (`tabindex="-1"` on something that is not a control — the code prompt's field carries
 // that too while it waits offstage, and is a field all the same). It mounts INSIDE an
 // open dialog when the focus is there: the top layer paints above everything in the
@@ -33,7 +33,7 @@ function boxOf(el: HTMLElement): Element {
 }
 function framable(el: EventTarget | null): el is HTMLElement {
   if (!(el instanceof HTMLElement) || el === document.body) return false;
-  if (el.matches('dialog, .wi-field')) return false;
+  if (el.matches('dialog, .wi-field, .profile-name')) return false;
   if (el.matches('[tabindex="-1"]') && !el.matches('input, button, a')) return false;
   return el.matches(':focus-visible');
 }

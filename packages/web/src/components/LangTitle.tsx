@@ -13,8 +13,9 @@
 // **THE TAG IS THE FIRST THING TO GIVE, and the name is the last** (`.lang-tag`, measured
 // 2026-09-03). A step's left slot holds FOUR things now — arrow, name, language, chevron —
 // beside a five-key group that may never shrink, and French runs ~20% longer than English:
-// SAUVEGARDE and VIE PRIVÉE ran 7px into the keys at 360 and 18px at 320. So below 375px the
-// LANGUAGE goes and the name stays whole. It is the honest order — a screen must say where
+// SAUVEGARDE and VIE PRIVÉE ran into the keys. So when the name would be CUT, the LANGUAGE
+// goes and the name stays whole — measured, never a fixed width: the keys' own sizes step at
+// several widths, and a breakpoint chosen at one of them was wrong at the next. It is the honest order — a screen must say where
 // you are (the name), then that the axis can be changed (the chevron), and only then WHICH
 // value it holds (the tag) — and it is the tag's own rule: it is which of a thing, not what
 // the thing is. Nothing is lost that the page is not already saying in that language.
@@ -28,7 +29,7 @@
 // the puzzle one's alone: the row's three phone step-downs are tuned on that class, and a
 // second class beside it would be three more overrides that nothing forces to agree.
 
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import ChevronDownIcon from '../assets/icons/chevron-down.svg?react';
 import PuzzleSelect from './PuzzleSelect';
 import { t } from '../i18n';
@@ -51,6 +52,39 @@ export default function LangTitle({
 }) {
   const [open, setOpen] = useState(false);
   const tag = lang.toUpperCase();
+  // Whether this name is CUT with its tag beside it — asked of the layout WITH the tag every
+  // time, whatever is on screen now: the check lifts `.squeezed` for the length of one
+  // measurement (a synchronous reflow, never painted) and puts it back. The answer depends on
+  // nothing but the layout, so it can never feed itself: no remembered width, no flip-flop
+  // while the window is dragged.
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const nameRef = useRef<HTMLSpanElement>(null);
+  const [squeezed, setSqueezed] = useState(false);
+  const key = `${title}:${tag}`;
+  useLayoutEffect(() => {
+    const button = buttonRef.current;
+    const name = nameRef.current;
+    if (!button || !name) return undefined;
+    const check = () => {
+      const held = button.classList.contains('squeezed');
+      if (held) button.classList.remove('squeezed');
+      const cut = name.scrollWidth > name.clientWidth;
+      if (held) button.classList.add('squeezed');
+      setSqueezed(cut);
+    };
+    check();
+    // (Asked again once the chrome's font has landed: measured in the fallback face, every
+    // name fits.)
+    let live = true;
+    void document.fonts?.ready.then(() => {
+      if (live) check();
+    });
+    window.addEventListener('resize', check);
+    return () => {
+      live = false;
+      window.removeEventListener('resize', check);
+    };
+  }, [key]);
   // A DELIBERATE PICK OUTRANKS THE LINK THAT SUGGESTED ONE: `?lang=` is read ahead of the
   // stored preference, so it has to go before the preference is written — or the URL would
   // answer the player instead of the wheel, and a reload would put the link's language back.
@@ -62,8 +96,9 @@ export default function LangTitle({
   return (
     <>
       <button
+        ref={buttonRef}
         type="button"
-        className="puzzle-title"
+        className={`puzzle-title${squeezed ? ' squeezed' : ''}`}
         // The NAME first, then what the control does — `aria-label` REPLACES the content,
         // so labelling it "Change language" alone would take the screen's own name away
         // from a reader entirely (`PuzzleTitle`'s rule).
@@ -72,7 +107,9 @@ export default function LangTitle({
         aria-expanded={open}
         onClick={() => setOpen(true)}
       >
-        <span className="topbar-title">{title}</span>
+        <span ref={nameRef} className="topbar-title">
+          {title}
+        </span>
         <span className="title-tag lang-tag">{tag}</span>
         <ChevronDownIcon className="ui-icon" aria-hidden />
       </button>

@@ -7,12 +7,14 @@
 // bad connection.
 //
 // **The screen shows WHO was signed out** (user feedback 2026-08-26: the sentence-only
-// first cut read as an abstract error — "even me I was a bit lost"). It wears the invite
-// landing's own shape — the ACCOUNT's mark and name over what happened — so the player
-// recognizes the account they are being asked to leave before choosing. The face is the
-// public profile read (the invite landing's exact pattern: held behind a LoadingWave
-// until it settles, assigned identity as the fallback — a name must never flash and then
-// correct itself, the leaderboard strip's rule).
+// first cut read as an abstract error — "even me I was a bit lost"). The ACCOUNT's mark
+// and name over what happened, so the player recognizes the account they are being asked
+// to leave before choosing — drawn as a GHOST: the square mark thinned through the house's
+// Bayer dither to half its cells (never an opacity), bobbing like the empty board's ghost,
+// its name in a DIMMED white chip. The face is the public profile read (the invite
+// landing's exact pattern: assigned identity as the fallback — a name must never flash and
+// then correct itself, the leaderboard strip's rule); while it is out the screen stands
+// whole with the face's box stippled in the slate checker the house waits in.
 //
 // **UNLESS THE ACCOUNT IS GONE** (#204). An email link can DELETE the account a device
 // leaves, and every other device on it lands HERE on its next private call — so this is
@@ -46,11 +48,12 @@
 // address the moment one is bound to it.
 
 import { useEffect, useState } from 'react';
-import { anonName, defaultAvatar } from '@whippin/shared';
+import { MARK_GLYPH, anonName, defaultAvatar } from '@whippin/shared';
 import { readProfile, type ProfileRead } from '../api';
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
-import LoadingWave from '../components/LoadingWave';
+// The Bayer tiles on the root (`--dz-*`) that thin the ghost and stipple its hold.
+import '../components/bayerTiles';
 import { startFreshDevice, useSignedOutAccount } from '../identity';
 import { t } from '../i18n';
 import { ACCOUNT_SIGNIN_PATH } from '../langs';
@@ -104,6 +107,9 @@ export function faceFrom(read: ProfileRead, publicId: string): Face {
   return { publicId, shown: { name: anonName(publicId), avatar: null } };
 }
 
+// The ghost's size: a whole 8px a cell, the flow's ending face.
+const FACE_PX = 80;
+
 export default function SignedOut({ lang }: { lang: string }) {
   const account = useSignedOutAccount();
   const [face, setFace] = useState<Face | null>(null);
@@ -125,35 +131,60 @@ export default function SignedOut({ lang }: { lang: string }) {
   }, [account]);
 
   // The face read is in flight — or the one in hand belongs to a PREVIOUS account: hold the
-  // frame rather than flashing a name that may be about to change, or one that was never
-  // this account's. A verdict that carried no identity (theoretical) skips straight to the
-  // faceless copy below.
-  if (account !== null && face?.publicId !== account.accountId) {
-    return (
-      <p className="status">
-        <LoadingWave text={t(lang, 'loading')} />
-      </p>
-    );
-  }
+  // face's box rather than flashing a name that may be about to change, or one that was
+  // never this account's. A verdict that carried no identity (theoretical) skips straight to
+  // the faceless screen.
+  const waiting = account !== null && face?.publicId !== account.accountId;
+  const shown = !waiting && account !== null ? (face?.shown ?? null) : null;
 
   return (
-    <div className="signed-out arrive">
-      {account !== null && face?.shown != null && (
-        <>
-          <Avatar avatar={face.shown.avatar ?? defaultAvatar(account.accountId)} size={64} />
-          <span className="signed-out-name">{face.shown.name}</span>
-        </>
-      )}
-      <p className="signed-out-line" role="status">
-        {t(lang, 'signedOut')}
-      </p>
-      <p className="no-puzzle-note">{t(lang, 'signedOutNote')}</p>
-      <Button variant="primary" onClick={reconnect}>
-        {t(lang, 'signedOutReconnect')}
-      </Button>
-      <Button variant="secondary" onClick={playFresh}>
-        {t(lang, 'gatePlay')}
-      </Button>
+    <div className="signed-out">
+      {/* A FULL-SCREEN MOMENT WITH NO HEADER wears the streak celebration's frame — its
+          corner brackets and the WHIPPIN AI lockup top left — so it reads as the app's own
+          screen, never an error page. (On desktop the device frame's own corners stand.) */}
+      <div className="signed-out-frame" aria-hidden="true">
+        <div className="streak-lockup">
+          <svg viewBox={`0 0 ${MARK_GLYPH.width} ${MARK_GLYPH.height}`} shapeRendering="crispEdges">
+            <path d={MARK_GLYPH.path} fill="currentColor" />
+          </svg>
+          <span>WHIPPIN AI</span>
+        </div>
+        {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
+          <span key={corner} className={`streak-corner ${corner}`} />
+        ))}
+      </div>
+      <div className="signed-out-body arrive">
+        {/* While the read is out the face's boxes are held; a DELETED account settles
+            faceless but keeps them, empty, so nothing on the screen moves when it does. */}
+        {waiting || (account !== null && shown === null) ? (
+          <div className={`signed-out-face${waiting ? '' : ' gone'}`} aria-hidden="true">
+            <span className="signed-out-hold" />
+            <span className="signed-out-name signed-out-hold">&nbsp;</span>
+          </div>
+        ) : (
+          account !== null &&
+          shown !== null && (
+            <div className="signed-out-face">
+              <span className="signed-out-ghost ghost-mark">
+                <Avatar avatar={shown.avatar ?? defaultAvatar(account.accountId)} size={FACE_PX} sharp />
+              </span>
+              <span className="signed-out-name">{shown.name}</span>
+            </div>
+          )
+        )}
+        <p className="signed-out-line" role="status">
+          {t(lang, 'signedOut')}
+        </p>
+        <p className="signed-out-note">{t(lang, 'signedOutNote')}</p>
+      </div>
+      <div className="signed-out-calls">
+        <button type="button" className="mix-btn" onClick={reconnect}>
+          {t(lang, 'signedOutReconnect')}
+        </button>
+        <Button variant="secondary" onClick={playFresh}>
+          {t(lang, 'gatePlay')}
+        </Button>
+      </div>
     </div>
   );
 }

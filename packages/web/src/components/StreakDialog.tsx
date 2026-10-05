@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react';
 import { DIGIT_MASKS, MARK_GLYPH, dateForDayNumber } from '@whippin/shared';
 import { coarsePointer, prefersReducedMotion } from '../hooks/useScramble';
 import { useSolvedDays } from '../state/history';
-import { streakTransition, weekView } from '../game/streak';
+import { mondayNarrowLabels, streakTransition, weekView } from '../game/streak';
 import { t } from '../i18n';
 import { SHOW_STEP_MS, STAR_FRAMES, timeline, wordsAt, type WordsFrame } from './streak/beats';
 import { LINK_H, LINK_W, FOIL, FOIL_DEEP, foilInk } from './streak/sprites';
@@ -537,10 +537,4 @@ function walkStar(el: HTMLElement | null, f: number) {
   const on = f >= 0 && f < STAR_FRAMES;
   el.style.visibility = on ? 'visible' : 'hidden';
   if (on) el.style.backgroundPositionX = `${(f * 100) / (STAR_FRAMES - 1)}%`;
-}
-
-// Monday-first narrow weekday initials, localized for the puzzle language.
-function mondayNarrowLabels(lang: string): string[] {
-  const fmt = new Intl.DateTimeFormat(lang, { weekday: 'narrow', timeZone: 'UTC' });
-  return Array.from({ length: 7 }, (_, index) => fmt.format(new Date(Date.UTC(2024, 0, 1 + index))));
 }
