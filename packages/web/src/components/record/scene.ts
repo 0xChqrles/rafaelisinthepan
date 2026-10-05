@@ -35,9 +35,7 @@ import {
 //     LANDING ON THE RESULT'S SLOT MACHINE (`countRun.ts`, the solved count's own run: every
 //     reel spinning from almost the same instant, stopping left to right, each stop with its
 //     whole-pixel shake and its own burst in front of the digit — `Record`'s `recordStops`).
-//     Its digits are METAL lit from above (the top row of every stroke catching the light,
-//     the foot falling off through the Bayer order): LIT when it burns (white edges, a light
-//     body, a slate foot); a zero never spins — it is cold IRON from its first frame (the
+//     White-hot when it burns; a zero never spins — it is IRON from its first frame (the
 //     unlit link's own ink), dropping into place in two whole steps and shaking as it lands.
 //     As the last reel stops the count throws its LIGHT (the celebration's halo: a DEEP
 //     dither round its strokes, cooling away, kept off the unit's line) and the flame
@@ -244,12 +242,6 @@ export function recordCalm(b: RecordBeats, days: readonly RecordDay[]): number {
 export const SIDE_RUN_MS = 560;
 export const sideReelsAt = (b: RecordBeats, i: number) => Math.max(0, b.reel + 60 + i * 90);
 
-// THE COUNT'S METAL, lit from above: a stroke's top row catching the light (LIP), its body, and
-// its foot falling off through the Bayer order (FOOT). A zero is cold IRON; a burning count is
-// the same metal LIT, one step up the ramp (user-asked 2026-10-05: "the same thing on a non-zero
-// streak" — the zero's texture on top and at the bottom).
-const IRON = [MUTED, RAIL, DUSK] as const;
-const LIT = [WHITE, MUTED, RAIL] as const;
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 // Whether a short star at (x, y) — its cross and the ring of cells round it — stands on bare
 // ground inside the raster.
@@ -438,8 +430,8 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
         put(flick ? bx + 1 : bx, by - 3, flick ? DEEP : COBALT);
       }
 
-      // ── 3. THE COUNT on its reels: the metal lit when it burns; a zero, cold iron, dropping
-      // in. Until its reels start, its box as it stood while the numbers were out.
+      // ── 3. THE COUNT on its reels: white-hot when it burns; a zero, iron, dropping in. Until
+      // its reels start, its box as it stood while the numbers were out.
       if (t < b.reel) {
         const { x: bx, y: by, w: bw, h: bh } = L.count;
         for (let Y = by; Y < by + bh; Y += 1) for (let X = bx; X < bx + bw; X += 1) if (th(X, Y) < 0.5) put(X, Y, RAIL);
@@ -447,11 +439,12 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
       if (t >= b.reel) {
         const ms = t - b.reel;
         const running = lit && ms < COUNT_END_MS;
-        // Every count is METAL cut the iron keys' way, lit from above — the top row of every
-        // stroke catching the light, the body falling off into its foot through the Bayer
-        // order (LIT or IRON). A count of nothing is cold IRON, the unlit link's metal, and
-        // never spins (a reel of grey digits turning into iron would read as a number being
-        // lost): it DROPS into place in two whole steps and shakes as it lands.
+        const v = WHITE;
+        // A count of nothing is IRON, the unlit link's metal, cut the iron keys' way: lit from
+        // above — the top row of every stroke catching the light, the body falling off into
+        // its dusk through the Bayer order toward the foot. It never spins (a reel of grey
+        // digits turning into iron would read as a number being lost): it DROPS into place
+        // in two whole steps and shakes as it lands.
         const iron = !lit;
         const shake = ms - ZERO_LAND_MS;
         const zeroAt = iron
@@ -472,7 +465,10 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
               if (!glyph(gx, gy)) continue;
               const x0 = L.count.x + (i * COUNT_EM + gx + r.dx) * K;
               const y0 = L.count.y + (gy + r.dy) * K;
-              const [LIP, BODY, FOOT] = iron ? IRON : LIT;
+              if (!iron) {
+                for (let cy = 0; cy < K; cy += 1) for (let cx = 0; cx < K; cx += 1) put(x0 + cx, y0 + cy, v);
+                continue;
+              }
               const lip = gy === 0 || !glyph(gx, gy - 1);
               for (let cy = 0; cy < K; cy += 1) {
                 for (let cx = 0; cx < K; cx += 1) {
@@ -480,7 +476,7 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
                   const Y = y0 + cy;
                   const fall = (gy * K + cy) / (COUNT_ROWS * K);
                   const dusk = fall > 0.5 && th(X, Y) < ((fall - 0.5) / 0.5) * 0.8;
-                  put(X, Y, lip && cy === 0 ? LIP : dusk ? FOOT : BODY);
+                  put(X, Y, lip && cy === 0 ? MUTED : dusk ? DUSK : RAIL);
                 }
               }
             }

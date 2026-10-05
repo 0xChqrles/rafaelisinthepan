@@ -1435,15 +1435,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
       count's own SLOT MACHINE (`countRun.ts` at its full `COUNT_RUN_MS`: reels starting almost
       together, stopping left to right, each stop's shake and its own burst in front of the
       digit, the solved card's sheet and scale, kept off the unit's line — `RecordBursts`),
-      its digits METAL lit from above (the top row of every stroke catching the light, the foot
-      falling off through the Bayer order — user-asked 2026-10-05, the zero's texture on every
-      count): LIT when it burns (white edges, a light-grey body, a slate foot), cold IRON on a
-      zero; `dayStreak` under it, the week as the CHAIN (`recordWeek`: the week of the language
+      `dayStreak` under it, the week as the CHAIN (`recordWeek`: the week of the language
       holding the account's streak, never a union of two — a played day's link cobalt and
       joined, a day to come its dashed ghost, a missed one an open iron link, TODAY solved
       struck into FOIL with glitter — the screen's only foil; today still open, its ghost
       breathing), BEST and DAYS as two small reels either side of the stippled rail. A
-      streak of NOTHING reads as waiting, not broken: the count in cold iron, the
+      streak of NOTHING reads as waiting, not broken: the count in iron lit from above, the
       unlit flame's GHOST in the floor's stipple (a dot every other cell of its silhouette,
       never an outline; still), the pilot spark breathing at its foot and a faint cobalt
       ember drifting off it. It BUILDS once a page load
