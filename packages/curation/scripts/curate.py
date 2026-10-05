@@ -725,8 +725,9 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
               text: str, source_base: dict, frequency_rank, neighbour_rank, lang: str, replay: str | None):
     """One chosen day, built: code measures each hidden word — what a reader puts in its
     blank, how much the sentence hands it over (`line["given"]`, judged for every word
-    that can be hidden) — the page is cut (a book), and `generate` writes the puzzle, the
-    start words chosen by the taste, a hard hole's from nearer. A word the start step
+    that can be hidden), whether a player who has the meaning would say it — the page is
+    cut (a book), and `generate` writes the puzzle, the start words chosen by the taste, a
+    hard hole's from nearer. A word the start step
     swaps (Replace) is replaced by another word of the line that can be hidden,
     REPLACE_ROUNDS times."""
     sentence, tokens, given = line["sentence"], line["tokens"], line["given"]
@@ -736,6 +737,7 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
         + (f" — {known['why']}" if known["why"] else ""))
     occurrences = _occurrences(line["allowed"])
     readings: dict[str, tuple[list[str], str | None]] = {}
+    says: dict[str, tuple[float | None, str | None]] = {}
     source = dict(source_base)
     if book["kind"] == "book":
         window = excerpt_around(text, sentence, EXCERPT_WINDOW, lang=lang)
@@ -747,13 +749,20 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
             if t.slug not in readings:
                 readings[t.slug] = llm.context_guesses(claude, tokens, occurrences[t.slug] - {t.i}, t.i,
                                                        rules.CONTEXT_GUESSES, lang=lang)
+            if t.slug not in says:
+                says[t.slug] = llm.would_say(claude, tokens, occurrences[t.slug] - {t.i}, t.i, t.text.lower(),
+                                             lang=lang)
         hard = {t.slug for t in trio if given[t.slug] < contextual_rank.GIVEAWAY_HARD}
+        unsaid = rules.unsaid({t.text: says[t.slug][0] for t in trio})
         context = {}
         for t in trio:
             guesses, expected = readings[t.slug]
             note = rules.reading(t, guesses, expected, neighbour_rank=neighbour_rank, frequency_rank=frequency_rank)
             note += (f"; the sentence hands it over at {given[t.slug]:.2f} (on real play, "
                      f"{contextual_rank.GIVEAWAY_MAX} and above was typed within three guesses by a third of the players)")
+            note += "; " + rules.said(*says[t.slug])
+            if unsaid and says[t.slug][0] is not None and says[t.slug][0] < rules.WOULD_SAY_HARD:
+                note += "; " + unsaid
             if t.slug in hard:
                 lo, hi = st.HARD_START_BAND
                 note += (f"; under {contextual_rank.GIVEAWAY_HARD} a hole played hard on real play, so its start "

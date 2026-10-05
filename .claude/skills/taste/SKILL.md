@@ -264,6 +264,19 @@ hardest hole. Tune difficulty with the start word — nearer or farther, plainer
 oblique — never by trading a living word for a dead one: a great word that plays too
 hard needs a better start, not a duller word.
 
+**The word players don't say.** Players find the meaning first, then type the words
+they would use for it. A word they would never say for that meaning — the learned or
+rare one beside a common word that means the same — keeps them circling its neighbours,
+and no start word changes that: on 2026-10-05, players reached « faussaire » and
+« contrefacteur », a third of them never got to « faux-monnayeur », and 1 player in 20
+finished the day within 30 tries. ONE such word makes a hard day, and a loved day may
+hide one — « moucheron », « mammifères », « stagnation », « cafard » are that word, and
+they are the punch or the exact word. TWO in one trio made the worst days (2026-09-16,
+09-22, 09-23, 10-05: a median 8% of the players finished within 30 tries, against 40%
+with one and 61% with none). Keep at most one, and only when it is worth the search.
+
+Ask: when a player has the meaning, would they say this word — or the common one beside it?
+
 ## How to judge
 
 - **Compare, don't approve.** Side by side, the best candidate wins — not the first

@@ -313,6 +313,36 @@ Return {{"guesses": ["...", ...], "expected": "..." or null}}.""")
     return guesses, expected.strip() if isinstance(expected, str) and expected.strip() else None
 
 
+def would_say(claude: Claude, tokens, blanks: set[int], mark: int, word: str,
+              *, lang: str) -> tuple[float | None, str | None]:
+    """The user's test for a hidden word (2026-10-06, after « faux-monnayeur »): a player
+    who has roughly the meaning types the words they would use for it — would they ever say
+    THIS one, or keep to commoner words meaning nearly the same? The chance they come up
+    with it (None when the answer is unusable) and the word they would keep saying
+    instead; a note for the model (`rules.said`), never a verdict. Worded exactly as it
+    was calibrated on real play (`rules.WOULD_SAY_HARD`)."""
+    shown = holed(tokens, blanks, mark, lang=lang)
+    answer = claude.json(f"""You judge one hidden word of a daily {LANGUAGE[lang]} word game. The player sees this line with the
+word hidden and rebuilds it by guessing: each guess tells them how close it is in meaning.
+Players think by association; most get roughly what goes there, and type words around its
+meaning. The question here is the LAST step.
+
+« {shown} »
+
+The hidden word is « {word} ».
+
+A player who has understood roughly what goes there and is typing words around its meaning:
+would they ever say THIS word? Or would they keep saying commoner words that mean nearly
+the same, and never think of this one?
+
+Return {{"instead": "<the commoner word they would keep saying, or null when this is the word they'd say>", "would_say": <the chance, 0 to 1, that such a player comes up with this exact word>}}""")
+    chance = answer.get("would_say") if isinstance(answer, dict) else None
+    instead = answer.get("instead") if isinstance(answer, dict) else None
+    if isinstance(chance, bool) or not isinstance(chance, (int, float)) or not 0 <= chance <= 1:
+        chance = None
+    return chance, instead.strip() if isinstance(instead, str) and instead.strip() else None
+
+
 def pick_form(claude: Claude, sentence: str, secret: str, choices: list[str], *, lang: str) -> int:
     listing = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(choices))
     answer = claude.json(f"""In the {LANGUAGE[lang]} sentence below, which analysis is the word « {secret} »? The analyses
