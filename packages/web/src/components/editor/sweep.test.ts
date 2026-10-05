@@ -1,13 +1,14 @@
 // The editor's canvas overlays, where they encode a rule: the canvas's picture — and the
 // palette sweep's snapshot, which IS that picture — is the drawing on its 1px grid, the cells
 // on an even pitch so the house's 2px dither lands on every cell's own edge (`picture.ts`);
-// a pop never decides what the canvas shows (`popFrame`); the foil stamp never lays a foil
-// cell across two of the mark's pixels (`stampGrain`).
+// a pop never decides what the canvas shows, and its clock starts on the frame that first
+// shows its cell (`popFrame`); the overlay never reaches past what it draws (`fxMargin`); the
+// foil stamp never lays a foil cell across two of the mark's pixels (`stampGrain`).
 
 import { describe, expect, it } from 'vitest';
 import { AVATAR_CELLS, AVATAR_PALETTES } from '@whippin/shared';
 import { canvasPicture, canvasSide, cellAtPoint, cellStart, ditherCell, lineRgb } from './picture';
-import { POP_MS, SPARK_MS, popFrame } from './EditorCanvas';
+import { POP_MS, SPARK_MS, fxMargin, popFrame, type Pop } from './EditorCanvas';
 import { stampGrain } from '../FoilStamp';
 import { abgr, hexToAbgr } from '../raster';
 
@@ -68,11 +69,13 @@ describe("the canvas's picture (and the sweep's snapshot)", () => {
 describe("a paint's pop", () => {
   const inked = new Array<number>(AVATAR_CELLS).fill(0);
   inked[44] = 1;
-  const pop = { cell: 44, kind: 'in' as const, at: 1000 };
+  const blank = new Array<number>(AVATAR_CELLS).fill(0);
+  // A pop whose clock started at 1000.
+  const pop: Pop = { cell: 44, kind: 'in', born: 1000, at: 1000 };
 
   it('pops proud and throws its eight sparks while its cell holds the ink it painted', () => {
-    const { rects, alive } = popFrame([pop], inked, 31, 1010);
-    expect(alive).toBe(true);
+    const { rects, live } = popFrame([pop], inked, 31, 1010);
+    expect(live).toHaveLength(1);
     expect(rects).toHaveLength(9);
     // Proud of its cell, on whole pixels.
     expect(rects[0].w).toBeGreaterThan(31);
@@ -80,17 +83,69 @@ describe("a paint's pop", () => {
   });
 
   it('draws nothing over a cell no longer holding what it painted', () => {
-    const erased = new Array<number>(AVATAR_CELLS).fill(0);
-    expect(popFrame([pop], erased, 31, 1010).rects).toEqual([]);
+    expect(popFrame([pop], blank, 31, 1010).rects).toEqual([]);
     expect(popFrame([{ ...pop, kind: 'out' }], inked, 31, 1010).rects).toEqual([]);
   });
 
   it('is over, leaving the picture alone, once its time is up', () => {
-    expect(popFrame([pop], inked, 31, 1000 + SPARK_MS)).toEqual({ rects: [], alive: false });
-    expect(popFrame([{ ...pop, kind: 'out' }], new Array<number>(AVATAR_CELLS).fill(0), 31, 1000 + POP_MS)).toEqual({
-      rects: [],
-      alive: false,
-    });
+    expect(popFrame([pop], inked, 31, 1000 + SPARK_MS)).toEqual({ rects: [], live: [] });
+    expect(popFrame([{ ...pop, kind: 'out' }], blank, 31, 1000 + POP_MS)).toEqual({ rects: [], live: [] });
+  });
+
+  it('is never over before it has begun: a frame timed a hair before the input still pops', () => {
+    const early = popFrame([pop], inked, 31, 999);
+    expect(early.live).toHaveLength(1);
+    expect(early.rects).toHaveLength(9);
+    expect(early.rects[0].w).toBe(31 + 12);
+    // And the list survives to the next frame.
+    expect(popFrame(early.live, inked, 31, 1016).live).toHaveLength(1);
+  });
+
+  it('waits, alive, until its cell is on the canvas, then starts its clock on that frame', () => {
+    const asked: Pop = { cell: 44, kind: 'in', born: 1000, at: null };
+    // The commit holding the ink has not landed: nothing drawn, still alive.
+    const waiting = popFrame([asked], blank, 31, 1040);
+    expect(waiting).toEqual({ rects: [], live: [asked] });
+    // It lands 80ms late: the clock starts there, and the biggest step shows its whole 50ms.
+    const first = popFrame(waiting.live, inked, 31, 1080);
+    expect(first.live[0].at).toBe(1080);
+    expect(first.rects[0].w).toBe(31 + 12);
+    expect(popFrame(first.live, inked, 31, 1129).rects[0].w).toBe(31 + 12);
+    expect(popFrame(first.live, inked, 31, 1130).rects[0].w).toBe(31 + 8);
+    // A spark's whole life from there, not from the input.
+    expect(popFrame(first.live, inked, 31, 1080 + SPARK_MS - 1).live).toHaveLength(1);
+    expect(popFrame(first.live, inked, 31, 1080 + SPARK_MS).live).toEqual([]);
+  });
+
+  it('lets go a pop its cell never takes, a spark\'s life after it was asked for', () => {
+    const asked: Pop = { cell: 44, kind: 'in', born: 1000, at: null };
+    expect(popFrame([asked], blank, 31, 1000 + SPARK_MS - 1).live).toHaveLength(1);
+    expect(popFrame([asked], blank, 31, 1000 + SPARK_MS).live).toEqual([]);
+  });
+});
+
+describe("the pop overlay's box", () => {
+  it('holds everything a pop draws round any edge cell, at every cell size, and no more', () => {
+    for (let cell = 15; cell <= 39; cell += 2) {
+      const side = canvasSide(cell);
+      const margin = fxMargin(cell);
+      const cells = new Array<number>(AVATAR_CELLS).fill(1);
+      let reach = 0;
+      for (const at of [0, 9, 90, 99]) {
+        for (let t = 0; t < SPARK_MS; t += 10) {
+          const { rects } = popFrame([{ cell: at, kind: 'in', born: 0, at: 0 }], cells, cell, t);
+          for (const r of rects) {
+            expect(r.x).toBeGreaterThanOrEqual(-margin);
+            expect(r.y).toBeGreaterThanOrEqual(-margin);
+            expect(r.x + r.w).toBeLessThanOrEqual(side + margin);
+            expect(r.y + r.h).toBeLessThanOrEqual(side + margin);
+            reach = Math.max(reach, -r.x, -r.y, r.x + r.w - side, r.y + r.h - side);
+          }
+        }
+      }
+      // Tight: something is drawn on its outermost pixel.
+      expect(reach).toBe(margin);
+    }
   });
 });
 

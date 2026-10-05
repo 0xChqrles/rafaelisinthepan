@@ -1414,7 +1414,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
       corner brackets (SIGN OUT's: 2px, 6px arms, white at 38%; no word, no chevron; the
       edit word its accessible name). NOTHING ELSE in the row is framed, so nothing else
       reads as editable. The words land ONCE, when the face AND what the account is saved as
-      are both known (a failed summary read lands the name alone) — so nothing moves after,
+      are both known (a failed summary read lands the name alone, and it stays printed while
+      a RETRY is out) — so nothing moves after,
       and a tokenless device and a deployed unsaved one settle to the same row; until then
       the name's box is the skeleton rail. The address shows only once SAVED, cut by whole
       characters (`components/AddressLine.tsx` over `cutAddress`, so its domain always
@@ -1483,10 +1484,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
       a short phone takes a tighter dress), every offset on a whole pixel, the desktop column
       held at its full height (a pixel more where that centres it on a whole one). It GROWS
       out of the masthead's mark (`markHandoff`: frozen where it stood while the stored
-      profile is read, a direct load growing from the centre). Then the SWATCHES across the
-      frame, each the drawing itself in that palette (40px, four pixels a cell, in 48px
-      targets; ONE choice — a radio group, the arrows choose — only the chosen one in white
-      corners, closing in), a switch SWEEPING the old picture off on the diagonal through the
+      profile is read, a direct load growing from the centre), DRAWN at a cell 4px bigger
+      each step — repainted crisp at every step, never a bitmap scaled between two sizes.
+      Then the SWATCHES across the frame, each the drawing itself in that palette (40px,
+      four pixels a cell, in 48px targets; ONE choice — a radio group, the arrows choose —
+      each in a tappable thing's slate corners, the chosen one's white, closing in), a
+      switch SWEEPING the old picture off on the diagonal through the
       2px Bayer order (`DitherWipe`: the canvas's own picture, lines included; a second tap
       sweeps the half-swept picture off in its turn; no box between sweeps), the board line
       taking the new palette only once the sweep has passed. Then the LINE every board will
@@ -1508,7 +1511,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
       pseudo-elements per painted cell, and a fast stroke stuttered; the swatches and the
       line's mark follow the drawing a beat behind (`useDeferredValue`) for the same reason.
       A pop never decides what the canvas shows: it draws only while its cell still holds
-      what it painted (`popFrame`), and reduced motion draws none. Every tool is an ordinary
+      what it painted (`popFrame`), and reduced motion draws none. Its clock starts on the
+      first overlay frame that shows its cell, never at the input — so its biggest step shows
+      whole however late the commit lands, and a pop asked for in a frame timed a hair before
+      the input is never lost. The overlay reaches past the canvas exactly as far as the
+      sparks fly at that cell (`fxMargin`), never further: a box past what it draws widens
+      the page under a phone. Every tool is an ordinary
       edit; SAVE stays the deploy. A control unavailable for a moment (a tool playing, a save
       running, nothing to save) is `aria-disabled`, so the keyboard's focus stays on it. A
       save that LANDS is the screen's one shiny thing — the FOIL STAMP over the canvas, laid

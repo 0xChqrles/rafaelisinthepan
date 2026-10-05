@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, type MutableRefObject } from 'react';
 import { AVATAR_PALETTES, AVATAR_SIZE } from '@whippin/shared';
 import { prefersReducedMotion } from '../../hooks/useScramble';
-import { canvasSide, cellStart, paintPicture } from './picture';
+import { canvasSide, cellStart, LINE_PX, paintPicture } from './picture';
 
 // THE EDITOR'S CANVAS: the drawing as ONE raster (`picture.ts`: square cells on the 1px
 // grid), and over it ONE overlay where every change is told — a painted cell POPS whole pixels
@@ -19,6 +19,13 @@ import { canvasSide, cellStart, paintPicture } from './picture';
 // save stores what is on screen), and a pop is drawn only while its cell still holds the value
 // it painted — a cell repainted under its own pop simply stops popping. Reduced motion draws no
 // pop and no spark at all.
+//
+// A POP'S CLOCK STARTS ON THE CANVAS, not at the input: on the first overlay frame whose cells
+// hold what it painted — the frame the picture first shows the cell in — so its biggest step
+// shows whole however late the commit lands, as a CSS animation started on the frame that
+// first styled the cell. Until then it WAITS, alive (a frame's time can read a hair before the
+// input that asked for it: a pop not yet begun is never over), and one its cell never takes is
+// let go a spark's life after it was asked for.
 
 export type PopKind = 'in' | 'out';
 export interface PaintFx {
@@ -28,11 +35,7 @@ export interface PaintFx {
   clear: () => void;
 }
 
-// The overlay's margin round the picture: the sparks fly past the canvas's edge, as far as a
-// pop's 6px and a spark's last 26px from a cell's middle carry them.
-export const FX_MARGIN = 32;
-
-// 5fd2e42's pop, frame for frame: three whole-pixel steps of 50ms — 6, 4, 2px proud, then the
+// THE POP: three whole-pixel steps of 50ms — 6, 4, 2px proud, then the
 // cell itself; erased: 4, 8, 12px in, then gone. The sparks: eight 4px squares of the ink, 14px
 // out (10 on the diagonals), then 20 (14), then 26 (18) at 2px, a step every 100ms.
 export const POP_MS = 150;
@@ -44,6 +47,13 @@ const POP_OUT = [4, 8, 12] as const;
 const SPARK_AXIS = [14, 20, 26] as const;
 const SPARK_DIAG = [10, 14, 18] as const;
 const SPARK_SIZE = [4, 4, 2] as const;
+// How far past the picture's edge anything is drawn, at this cell: an edge cell's pop, 6px
+// proud, or a spark's furthest square from an edge cell's middle. The overlay's box is exactly
+// that and no more — a canvas reaching past what it draws widens the page under a phone.
+export function fxMargin(cell: number): number {
+  const spark = Math.max(...SPARK_AXIS.map((reach, k) => reach + SPARK_SIZE[k] / 2));
+  return Math.max(POP_IN[0], spark - (cell >> 1)) - LINE_PX;
+}
 const DIRECTIONS = [
   [0, -1, false],
   [1, -1, true],
@@ -58,7 +68,10 @@ const DIRECTIONS = [
 export interface Pop {
   cell: number;
   kind: PopKind;
-  at: number;
+  // When the edit asked for it (the input's clock).
+  born: number;
+  // When its own clock started: the first frame whose cells held what it painted (null: not yet).
+  at: number | null;
 }
 export interface Rect {
   x: number;
@@ -68,22 +81,28 @@ export interface Rect {
 }
 
 // What the overlay draws at `now` (pure): the rects of every live pop and spark, in the
-// picture's coordinates, in the ink — none for a pop whose cell no longer holds what it painted.
-// Answers whether anything is still alive (the clock stops when nothing is).
+// picture's coordinates, in the ink — none for a pop whose cell no longer holds what it painted
+// — and the pops still LIVE, each clock started on the first frame whose cells hold it. The
+// clock stops when none is.
 export function popFrame(
   pops: readonly Pop[],
   cells: readonly number[],
   cell: number,
   now: number,
-): { rects: Rect[]; alive: boolean } {
+): { rects: Rect[]; live: Pop[] } {
   const rects: Rect[] = [];
-  let alive = false;
+  const live: Pop[] = [];
   for (const p of pops) {
-    const t = now - p.at;
-    const life = p.kind === 'in' ? SPARK_MS : POP_MS;
-    if (t < 0 || t >= life) continue;
-    alive = true;
-    if (cells[p.cell] !== (p.kind === 'in' ? 1 : 0)) continue;
+    const held = cells[p.cell] === (p.kind === 'in' ? 1 : 0);
+    if (p.at === null && !held) {
+      if (now - p.born < SPARK_MS) live.push(p);
+      continue;
+    }
+    const at = p.at ?? now;
+    const t = Math.max(0, now - at);
+    if (t >= (p.kind === 'in' ? SPARK_MS : POP_MS)) continue;
+    live.push(p.at === at ? p : { ...p, at });
+    if (!held) continue;
     const x0 = cellStart(p.cell % AVATAR_SIZE, cell);
     const y0 = cellStart(Math.floor(p.cell / AVATAR_SIZE), cell);
     if (t < POP_MS) {
@@ -102,7 +121,7 @@ export function popFrame(
       }
     }
   }
-  return { rects, alive };
+  return { rects, live };
 }
 
 export default function EditorCanvas({
@@ -124,10 +143,14 @@ export default function EditorCanvas({
   const pictureRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const side = canvasSide(cell);
-  const room = side + 2 * FX_MARGIN;
-  // The overlay reads the latest props at every frame, never at the pop.
+  const margin = fxMargin(cell);
+  const room = side + 2 * margin;
+  // The overlay reads, at every frame, what the last COMMIT holds — the cells the picture shows
+  // — never what a render still in flight might.
   const live = useRef({ palette, cells, cell, hover });
-  live.current = { palette, cells, cell, hover };
+  useLayoutEffect(() => {
+    live.current = { palette, cells, cell, hover };
+  });
   const pops = useRef<Pop[]>([]);
   const raf = useRef(0);
 
@@ -137,22 +160,24 @@ export default function EditorCanvas({
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return false;
     const { palette: p, cells: c, cell: size, hover: h } = live.current;
-    const { rects, alive } = popFrame(pops.current, c, size, now);
-    if (!alive) pops.current = [];
+    const m = fxMargin(size);
+    const { rects, live: still } = popFrame(pops.current, c, size, now);
+    pops.current = still;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = AVATAR_PALETTES[p].fg;
-    for (const r of rects) ctx.fillRect(FX_MARGIN + r.x, FX_MARGIN + r.y, r.w, r.h);
-    // A fine pointer's cell, ringed in the white at 75% (2px, inside the cell).
+    // A fine pointer's cell, ringed in the white at 75% (2px, inside the cell) — UNDER the pops,
+    // so a cell painted under the pointer pops clean over its ring.
     if (h !== null) {
-      const x = FX_MARGIN + cellStart(h % AVATAR_SIZE, size);
-      const y = FX_MARGIN + cellStart(Math.floor(h / AVATAR_SIZE), size);
+      const x = m + cellStart(h % AVATAR_SIZE, size);
+      const y = m + cellStart(Math.floor(h / AVATAR_SIZE), size);
       ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
       ctx.fillRect(x, y, size, 2);
       ctx.fillRect(x, y + size - 2, size, 2);
       ctx.fillRect(x, y + 2, 2, size - 4);
       ctx.fillRect(x + size - 2, y + 2, 2, size - 4);
     }
-    return alive;
+    ctx.fillStyle = AVATAR_PALETTES[p].fg;
+    for (const r of rects) ctx.fillRect(m + r.x, m + r.y, r.w, r.h);
+    return still.length > 0;
   };
   const tick = useRef<(now: number) => void>(() => {});
   tick.current = (now: number) => {
@@ -166,10 +191,10 @@ export default function EditorCanvas({
     fx.current = {
       pop: (changed, kind) => {
         if (changed.length === 0 || prefersReducedMotion()) return;
-        const at = performance.now();
+        const born = performance.now();
         const fresh = new Set(changed);
         pops.current = pops.current.filter((p) => !fresh.has(p.cell));
-        for (const i of changed) pops.current.push({ cell: i, kind, at });
+        for (const i of changed) pops.current.push({ cell: i, kind, born, at: null });
         wake();
       },
       clear: () => {
@@ -217,7 +242,7 @@ export default function EditorCanvas({
         className="editor-fx"
         width={room}
         height={room}
-        style={{ width: room, height: room, left: -FX_MARGIN, top: -FX_MARGIN }}
+        style={{ width: room, height: room, left: -margin, top: -margin }}
         aria-hidden="true"
       />
     </>

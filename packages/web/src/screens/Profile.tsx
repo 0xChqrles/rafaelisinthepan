@@ -168,11 +168,16 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 // arrive. The height is the one the screen had BEFORE a soft keyboard took part of it: the
 // editor never jumps while its name is typed. One layout at every width.
 const CELL_MIN = 15;
-const CELL_MAX = 37;
+// The largest: a 417px frame in the desktop's 430px column, as near its edges as a whole odd
+// cell comes (one more would not fit).
+const CELL_MAX = 39;
 const FRAME_AIR_PX = 8;
 const SWATCH_PX = 48;
 // A swatch's mark: four whole pixels a cell, in its 48px target.
 const SWATCH_MARK_PX = 40;
+// The swatches spread across the frame; on a canvas too small for that they keep this much
+// between them, centred on it.
+const SWATCH_GAP_MIN_PX = 4;
 const PHONE_MAX_PX = 640;
 const SHORT_PX = 600;
 const EDITOR_CHROME_PX = { tall: 346, short: 318, desktop: 370 } as const;
@@ -182,9 +187,11 @@ const DESKTOP_COLUMN_PX = 322;
 // each step, a step this long.
 const GROW_CELL_STEP = 4;
 const GROW_STEP_MS = 50;
-// The masthead's mark when nothing hands it over (a direct load): the growth starts here,
-// from the canvas's centre.
-const GROW_FROM_CELL = 5;
+// The masthead's mark's own size, when nothing hands it over (a direct load): the growth
+// starts there, from the canvas's centre.
+const GROW_FROM_PX = 50;
+// The cell whose canvas comes nearest a mark of this side.
+const cellForSide = (side: number) => Math.max(1, Math.round((side - canvasSide(0)) / AVATAR_SIZE));
 // The dice: a short churn — four shapes, one quick shake of the die, on the canvas alone — then
 // the new shape landing over the frozen churn in the Bayer order, in hard steps; CLEAR: the
 // Bayer drain, the same rhythm.
@@ -343,8 +350,12 @@ export default function Profile() {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [cellPx, setCellPx] = useState(0);
-  const cellRef = useRef(cellPx);
-  cellRef.current = cellPx;
+  // The canvas while it GROWS in (below): the cell it is drawn at, and where it stands in its box.
+  const [grow, setGrow] = useState<{ cell: number; x: number; y: number } | null>(null);
+  // The cell the canvas is DRAWN at: its own, or the growth's step — what a finger reads.
+  const drawnCell = grow?.cell ?? cellPx;
+  const cellRef = useRef(drawnCell);
+  cellRef.current = drawnCell;
   // What the canvas WAS, swept off it through the dither on a palette switch. The switch is told
   // by the CANVAS first: the board line keeps the palette it wore until the sweep has passed (a
   // second tap mid-sweep holds it on, to the last sweep's end).
@@ -475,9 +486,9 @@ export default function Profile() {
   // tap toggles), and dragging paints that same value throughout — along the LINE from the
   // last cell the finger crossed (`cellLine`), so a fast drag leaves no gap. The cell is read
   // off the pointer's place on the canvas (`cellAtPoint`, the grid's own geometry), never off
-  // the element under it: the canvas wears overlays (the sweep, the foil) and grows in under a
-  // transform. A stroke is ONE pointer's: a second finger landing on the canvas mid-stroke is
-  // ignored, never joined to the first by a line.
+  // the element under it: the canvas wears overlays (the sweep, the foil) and grows in, drawn
+  // at the growth's cell, from where the mark stood. A stroke is ONE pointer's: a second
+  // finger landing on the canvas mid-stroke is ignored, never joined to the first by a line.
   const strokeRef = useRef<0 | 1 | null>(null);
   const pointerRef = useRef<number | null>(null);
   const lastRef = useRef<number | null>(null);
@@ -487,7 +498,7 @@ export default function Profile() {
     if (!el || cell <= 0) return null;
     const box = el.getBoundingClientRect();
     if (box.width <= 0) return null;
-    // The box's own scale, so a canvas still growing in reads right too.
+    // The cell the canvas is drawn at (the growth's step while it grows in), at the box's scale.
     const scale = box.width / canvasSide(cell);
     return cellAtPoint((x - box.left) / scale, (y - box.top) / scale, cell);
   }, []);
@@ -678,9 +689,12 @@ export default function Profile() {
       const cell = oddCell(Math.min(byWidth, byHeight));
       const frame = canvasSide(cell) + 2 * FRAME_AIR_PX;
       const frameAt = Math.max(0, Math.floor((width - frame) / 2));
-      const swatchGap = Math.max(0, Math.floor((frame - AVATAR_PALETTES.length * SWATCH_PX) / (AVATAR_PALETTES.length - 1)));
+      const swatchGap = Math.max(
+        SWATCH_GAP_MIN_PX,
+        Math.floor((frame - AVATAR_PALETTES.length * SWATCH_PX) / (AVATAR_PALETTES.length - 1)),
+      );
       const swatches = AVATAR_PALETTES.length * SWATCH_PX + (AVATAR_PALETTES.length - 1) * swatchGap;
-      const swatchesAt = frameAt + Math.floor((frame - swatches) / 2);
+      const swatchesAt = Math.max(0, frameAt + Math.floor((frame - swatches) / 2));
       // On desktop `.app` centres the column: a column whose height leaves an odd remainder
       // would stand on a half pixel and blur the canvas, so it takes the one pixel more.
       let column = 0;
@@ -743,40 +757,38 @@ export default function Profile() {
     setHanded(null);
   }, [load]);
 
-  // THE CANVAS GROWS OUT OF THE MASTHEAD'S MARK as the editor opens: from the mark's own side
-  // up to the canvas's, GROW_CELL_STEP px a cell a step — whole pixels at every step, nothing
-  // in between — and, opened from the masthead, out of the very box the mark stood in,
-  // travelling to its place on whole pixels as it grows. A direct load grows from the canvas's
-  // own centre.
+  // THE CANVAS GROWS OUT OF THE MASTHEAD'S MARK as the editor opens: DRAWN at a cell
+  // GROW_CELL_STEP px bigger each step, from the mark's own size up to the canvas's — the picture
+  // repainted at every step, its cells and its grid's lines whole, never a bitmap scaled between
+  // two sizes — and, opened from the masthead, out of the very box the mark stood in, travelling
+  // to its place on whole pixels as it grows. A direct load grows from the canvas's own centre.
+  const growTimers = useRef<number[]>([]);
+  useEffect(() => () => growTimers.current.forEach((id) => window.clearTimeout(id)), []);
   const grown = useRef(false);
   useLayoutEffect(() => {
     const el = boxRef.current;
     if (!el || load !== 'ready' || cellPx <= 0 || grown.current) return;
     grown.current = true;
-    if (prefersReducedMotion() || typeof el.animate !== 'function') return;
+    if (prefersReducedMotion()) return;
     const from = handedRef.current?.rect ?? null;
     const side = canvasSide(cellPx);
     const at = el.getBoundingClientRect();
-    const fromSide = from ? Math.max(AVATAR_SIZE, Math.round(from.width)) : GROW_FROM_CELL * AVATAR_SIZE;
-    const fromX = Math.round(from ? from.left - at.left : (side - fromSide) / 2);
-    const fromY = Math.round(from ? from.top - at.top : (side - fromSide) / 2);
-    const sides: number[] = [];
-    for (let size = fromSide; size < side; size += GROW_CELL_STEP * AVATAR_SIZE) sides.push(size);
-    sides.push(side);
-    if (sides.length < 2) return;
-    const last = sides.length - 1;
-    el.animate(
-      sides.map((size, k) => {
-        const left = 1 - k / last;
-        return {
-          transformOrigin: '0 0',
-          transform: `translate(${Math.round(fromX * left)}px, ${Math.round(fromY * left)}px) scale(${size / side})`,
-          offset: k / last,
-          easing: 'steps(1, end)',
-        };
-      }),
-      { duration: GROW_STEP_MS * last },
-    );
+    const steps: number[] = [];
+    for (let c = cellForSide(from ? from.width : GROW_FROM_PX); c < cellPx; c += GROW_CELL_STEP) steps.push(c);
+    if (steps.length === 0) return;
+    steps.push(cellPx);
+    const last = steps.length - 1;
+    const step = (k: number) => {
+      const drawn = canvasSide(steps[k]);
+      if (!from) return { cell: steps[k], x: Math.floor((side - drawn) / 2), y: Math.floor((side - drawn) / 2) };
+      const left = 1 - k / last;
+      return { cell: steps[k], x: Math.round((from.left - at.left) * left), y: Math.round((from.top - at.top) * left) };
+    };
+    // The first step in this very commit: the mark handed over is gone from the frame it opens.
+    setGrow(step(0));
+    for (let k = 1; k <= last; k += 1) {
+      growTimers.current.push(window.setTimeout(() => setGrow(k === last ? null : step(k)), k * GROW_STEP_MS));
+    }
   }, [cellPx, load]);
 
   // A REFUSED save shakes the frame, in whole pixels (the ErrorScreen then says why).
@@ -1048,6 +1060,15 @@ export default function Profile() {
               <div
                 ref={canvasRef}
                 className="avatar-editor"
+                style={
+                  grow
+                    ? {
+                        width: canvasSide(grow.cell),
+                        height: canvasSide(grow.cell),
+                        transform: `translate(${grow.x}px, ${grow.y}px)`,
+                      }
+                    : undefined
+                }
                 role="img"
                 aria-label={t(lang, 'ariaAvatarEditor')}
                 onPointerDown={saving ? undefined : onPointerDown}
@@ -1056,8 +1077,8 @@ export default function Profile() {
                 onPointerCancel={endStroke}
                 onPointerLeave={() => setHover(null)}
               >
-                <EditorCanvas palette={palette} cells={shownCells} cell={cellPx} fx={fx} hover={saving ? null : hover} />
-                <DitherWipe shot={wipe} cellPx={cellPx} />
+                <EditorCanvas palette={palette} cells={shownCells} cell={drawnCell} fx={fx} hover={saving ? null : hover} />
+                <DitherWipe shot={wipe} cellPx={drawnCell} />
                 {/* The foil lies on the cells' own pitch (from the first inner pixel), so its
                     2px grain lands on every cell's edge. */}
                 <span className="profile-foil">

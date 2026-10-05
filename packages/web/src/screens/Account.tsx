@@ -132,8 +132,11 @@ export default function Account() {
   // address goes under it (the summary — or its failed read, which leaves the name alone). The
   // row is centred on the mark either way — the name alone, or name and address as one block
   // — so a row that printed the name before it knew would have to move it when an address
-  // landed.
-  const words = face !== null && (known || phase === 'failed');
+  // landed. Once landed they STAY for that face: a RETRY of a failed read leaves the name
+  // printed while it is out, and only the address can arrive under it.
+  const landedFor = useRef<string | null>(null);
+  const words = face !== null && (known || phase === 'failed' || landedFor.current === face.publicId);
+  if (words) landedFor.current = face.publicId;
 
   // THE DOOR TO THE EDITOR (the pencil key) hands the MARK's on-screen box over, so the
   // editor's canvas grows out of exactly where the mark stood (`markHandoff`).

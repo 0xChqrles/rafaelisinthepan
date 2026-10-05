@@ -5706,7 +5706,7 @@ figure.l1-fig {
    do others see me?), `/account/email` (save it / get it back). They share one column and
    one dress: mono all-caps chrome, sentence-case explanation, glass over a hairline,
    nothing rounder than the 4px ceiling. */
-/* `.profile-screen`'s geometry, verbatim and for its stated reasons: `.app` centres this
+/* The area's column geometry, for its stated reasons: `.app` centres this
    column and the header floats over it, so the clearance comes from `.app`'s own padding —
    NEVER `100dvh` here, because a taller child of a centring flex parent overflows
    symmetrically and its top gets clipped under the bar. (`--hud-height` is scoped to
@@ -5727,7 +5727,7 @@ figure.l1-fig {
      When the device list outgrows the viewport the auto margins collapse and the column
      scrolls, exactly as before. */
   margin: auto 0;
-  /* 48px is the bar's own height — `.profile-screen`'s exact clearance, and the reason it
+  /* 48px is the bar's own height — the column's exact clearance, and the reason it
      is a literal: `--hud-height` lives on `.topbar` and naming it in a `calc()` out here
      voids the whole declaration. No side padding: the column IS the button's width. */
   padding: 48px 0 24px;
@@ -6778,7 +6778,7 @@ figure.l1-fig {
   width: min(640px, 100%);
   align-self: stretch;
   /* 100% (the `.app` padding box), never 100dvh: a taller child of a centring flex parent
-     overflows symmetrically and its top gets clipped under the bar (`.profile-screen`'s
+     overflows symmetrically and its top gets clipped under the bar (the account area's
      recorded trap). */
   max-height: 100%;
   overflow-y: auto;
@@ -9808,12 +9808,12 @@ figure.l1-fig {
 
 /* THE MASTHEAD — the identity as a plain row, STILL, on ONE axis: the mark at 50px (five whole
    pixels a cell) on the column's left edge, the name in the boards' face at the action weight
-   over the saved address's caption line (held whether or not it prints, so the pair is one
-   block centred on the mark and nothing moves when the summary lands), and on the column's
-   right edge the row's ONE key — the pixel pencil in a tappable thing's corner brackets (SIGN
-   OUT's own: 2px, 6px arms, white at 38%), the editor's door. Nothing else is framed, so
-   nothing else reads as editable. A hover steps the corners to white in two steps; a press
-   sinks the pencil two pixels. */
+   — centred on the mark alone, or as one block with the saved address's caption line under it
+   once saved; the words land once (`Account`'s `words`), so nothing moves after — and on the
+   column's right edge the row's ONE key — the pixel pencil in a tappable thing's corner
+   brackets (SIGN OUT's own: 2px, 6px arms, white at 38%), the editor's door. Nothing else is
+   framed, so nothing else reads as editable. A hover steps the corners to white in two steps;
+   a press sinks the pencil two pixels. */
 .account-id {
   flex: none;
   display: flex;
@@ -10601,8 +10601,10 @@ figure.l1-fig {
   display: block;
 }
 /* THE CANVAS (`EditorCanvas`): the picture, and over it the one overlay the pops, the sparks
-   and a fine pointer's ring are drawn on — its own layer, reaching past the canvas's edge as
-   far as the sparks fly (`FX_MARGIN`). Both rasters at a CSS pixel, scaled up whole. */
+   and a fine pointer's ring are drawn on — its own layer, reaching past the canvas's edge
+   exactly as far as the sparks fly at this cell and no further (`fxMargin`: a box past what it
+   draws would widen the page). Both rasters at a CSS pixel, scaled up whole. While the canvas
+   grows in, its box is the growth's step (`Profile`). */
 .avatar-editor {
   position: relative;
   width: var(--pside);
@@ -10641,8 +10643,8 @@ figure.l1-fig {
   z-index: 4;
   left: 1px;
   top: 1px;
-  width: calc(var(--pside) - 1px);
-  height: calc(var(--pside) - 1px);
+  width: calc(100% - 1px);
+  height: calc(100% - 1px);
   pointer-events: none;
 }
 /* THE FOIL STAMP (`FoilStamp`): over its box, clipped to it, its raster scaled up whole. */
@@ -10659,10 +10661,11 @@ figure.l1-fig {
 }
 
 /* THE PALETTES: five SQUARE swatches across the frame, each the drawing itself in that palette
-   at four whole pixels a cell in its 48px target. Bare — only the one in hand wears the white
-   corners, which CLOSE IN on it from further out in three hard steps as it is chosen, its mark
-   hopping a cell; a fine pointer's hover shows a slate set. (Under the keyboard's own
-   brackets, which frame the same tile — the arrows choose — its corners give way to them.) */
+   at four whole pixels a cell in its 48px target, in a tappable thing's slate corners — the
+   tool keys' own — and the one in hand in WHITE corners, which CLOSE IN on it from further out
+   in three hard steps as it is chosen, its mark hopping a cell; a fine pointer's hover steps a
+   swatch's corners to white. (Under the keyboard's own brackets, which frame the same tile —
+   the arrows choose — its corners give way to them.) */
 .profile-palettes {
   flex: none;
   align-self: flex-start;
@@ -10691,7 +10694,7 @@ figure.l1-fig {
   content: '';
   position: absolute;
   inset: 0;
-  border: 2px solid transparent;
+  border: 2px solid var(--rail);
   pointer-events: none;
   -webkit-mask:
     linear-gradient(#000 0 0) 0 0 / 6px 6px no-repeat,
@@ -10735,7 +10738,7 @@ figure.l1-fig {
 }
 @media (hover: hover) and (pointer: fine) {
   .profile-swatch:not(.sel, [aria-disabled='true']):hover::before {
-    border-color: var(--rail);
+    border-color: var(--fg);
   }
 }
 .profile-swatch[aria-disabled='true'] {

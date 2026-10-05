@@ -72,9 +72,17 @@ export default function DitherWipe({ shot, cellPx }: { shot: WipeShot | null; ce
     canvas.style.height = `${n}px`;
     const image = ctx.createImageData(n, n);
     const px = new Uint32Array(image.data.buffer);
-    // Each pixel's dither cell, along one axis, and the front's whole run across them.
-    const cellOf = Array.from({ length: n }, (_, i) => ditherCell(i));
-    const span = 2 * (cellOf[n - 1] + 1);
+    px.set(picture);
+    // The sweep runs over the DITHER CELLS, not the pixels: each cell's threshold read once, and
+    // a cell's pixels written once, the frame the front takes it (the front only moves on, so a
+    // cell gone stays gone). Cell k spans pixels [2k − 1, 2k + 1), the first one pixel wide.
+    const cells = ditherCell(n - 1) + 1;
+    const threshold = new Float32Array(cells * cells);
+    for (let by = 0; by < cells; by += 1) {
+      for (let bx = 0; bx < cells; bx += 1) threshold[by * cells + bx] = bayerThreshold(bx, by);
+    }
+    const gone = new Uint8Array(cells * cells);
+    const span = 2 * cells;
     const t0 = performance.now();
     let raf = 0;
     let last = Number.NaN;
@@ -103,16 +111,22 @@ export default function DitherWipe({ shot, cellPx }: { shot: WipeShot | null; ce
         last = step;
         const k = (step * FRAME_MS) / WIPE_MS;
         const front = -RAMP + k * (span + 2 * RAMP);
-        for (let y = 0; y < n; y += 1) {
-          const by = cellOf[y];
-          for (let x = 0; x < n; x += 1) {
-            const bx = cellOf[x];
-            const swept = Math.min(1, Math.max(0, (front - (bx + by)) / RAMP));
-            const i = y * n + x;
-            px[i] = swept > bayerThreshold(bx, by) ? 0 : picture[i];
+        let changed = false;
+        // Only cells behind the front can be taken (ahead of it nothing is swept).
+        for (let by = 0; by < cells && by < front; by += 1) {
+          const y0 = Math.max(0, 2 * by - 1);
+          const y1 = Math.min(n, 2 * by + 1);
+          for (let bx = 0; bx < cells && bx + by < front; bx += 1) {
+            const c = by * cells + bx;
+            if (gone[c] === 1 || Math.min(1, (front - (bx + by)) / RAMP) <= threshold[c]) continue;
+            gone[c] = 1;
+            changed = true;
+            const x0 = Math.max(0, 2 * bx - 1);
+            const x1 = Math.min(n, 2 * bx + 1);
+            for (let y = y0; y < y1; y += 1) px.fill(0, y * n + x0, y * n + x1);
           }
         }
-        ctx.putImageData(image, 0, 0);
+        if (changed || ms === 0) ctx.putImageData(image, 0, 0);
       }
       raf = requestAnimationFrame(frame);
     };
