@@ -13,7 +13,7 @@ import { anonName } from '@whippin/shared';
 vi.mock('../api', () => ({ readProfile: vi.fn() }));
 vi.mock('../components/Avatar', () => ({ default: () => null }));
 vi.mock('../components/Button', () => ({ default: () => null }));
-vi.mock('../components/LoadingWave', () => ({ default: () => null }));
+vi.mock('../components/bayerTiles', () => ({}));
 vi.mock('../identity', () => ({
   startFreshDevice: vi.fn(),
   useSignedOutAccount: () => null,

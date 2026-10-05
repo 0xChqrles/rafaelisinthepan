@@ -19,15 +19,18 @@
 // line beneath. A modal for a typo is punishment; the player's next act is to type again,
 // so the cursor stays where that happens.
 //
-// **EACH CELL LIGHTS IN ITS OWN INK** (user-decided 2026-08-28, superseding "the cells rest
-// quiet and brighten to `--line-strong` as they fill"): a filled cell takes one of the SIX
-// AVATAR PALETTE colours — its digit and its border together — so the row fills into a
-// small spectrum as the code goes in. It is the same palette the tile above is churning
-// through while it looks for the face, which is the point: the code is typed in the colours
-// the account is being found in. The inks are `AccountMark`'s, addressed rather than copied,
-// so the two surfaces cannot drift. An EMPTY cell stays quiet, and a refused code still
-// paints the whole row red — the danger rule wins over the spectrum, because a row that
-// half-kept its colours would read as a partial refusal.
+// **SIX IRON KEYS, EACH STRUCK IN ITS OWN INK** (the archive's and the podium's material):
+// an empty cell is a slate key under its stippled cap; the cell the next digit lands in
+// lights its cap in the ink it is about to take, with the game's own underscore caret
+// blinking where the digit will stand; a typed digit STRIKES its key — one white frame,
+// then the key solid in its ink with the digit cut out of it in the page's ground, the
+// way today's archive key wears its number. The six inks are the SIX AVATAR PALETTE
+// colours (`AccountMark`'s `CODE_INKS`, addressed rather than copied), so the row fills
+// into the spectrum the churning tile above is drawn from: the code is typed in the
+// colours the account is being found in. A refused code still takes the WHOLE row into
+// the danger ink — the danger rule wins over the spectrum, because a row that half-kept
+// its colours would read as a partial refusal — and while the six digits are being
+// CHECKED the caps light in turn across the row, a scan rather than a dimmed input.
 
 import { useEffect, useId, useRef, type CSSProperties, type MutableRefObject } from 'react';
 import { LINK_CODE_LENGTH } from '@whippin/shared';
@@ -123,7 +126,8 @@ export default function CodeInput({
           className={`code-cell${digit ? ' filled' : ''}${
             !disabled && i === value.length ? ' next' : ''
           }`}
-          style={{ '--cell-ink': CODE_INKS[i % CODE_INKS.length] } as CSSProperties}
+          // `--i` paces the CHECKING scan across the row (the CSS's).
+          style={{ '--cell-ink': CODE_INKS[i % CODE_INKS.length], '--i': i } as CSSProperties}
           aria-hidden="true"
         >
           {digit}

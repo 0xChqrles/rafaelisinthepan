@@ -28,16 +28,20 @@
       state/gamePersistence.ts  the atomic IndexedDB boundary for cross-tab game-state writes
       state/signedOutVerdict.ts  the ONE spelling of the sign-out resolution every private
                               route client shares (401 + `unknown_device` code)
-      screens/SignedOut.tsx   the `unknown_device` screen: what is left behind, RECONNECT (#204)
-                              onto the email step, and PLAY (start over on a new account)
+      screens/SignedOut.tsx   the `unknown_device` screen: the account left behind as a GHOST
+                              (its mark thinned to half through the Bayer dither), RECONNECT
+                              (#204) onto the email step, and PLAY (start over on a new account)
       screens/Account.tsx     `/account` (#204): the identity masthead row, the save state
                               (button, or the address), and — once SAVED — #216's devices.
                               The area's one door
       screens/AccountEmail.tsx  `/account/email` (SAVE) and `/account/signin` (RETURN) — one
                               engine, two declared intentions: address -> code -> bind/adopt,
-                              the two-face crossroads, six face-led endings
-      components/AccountMark.tsx  the ghost grid the returning door waits on, and the
-                              cell-by-cell arrival that hands off to Avatar
+                              the two-face crossroads, five face-led endings
+      components/AddressField.tsx  the flow's address line in the game prompt's dress (the
+                              cobalt `>`, the pixel face, the stippled floor) over a REAL
+                              visible `type="email"` input
+      components/AccountMark.tsx  the churning field the returning door waits on, and the
+                              cell-by-cell arrival that hands off to a sharp Avatar
       components/TopBar.tsx   the header row itself, mounted ONCE by App: it holds the
                               places on the right and hosts the left slot screens publish
                               into (`HeaderLeft`, `HeaderBack`)
@@ -54,8 +58,8 @@
                               game surface (home · archive · board · rules · face),
                               the current place lit
       components/AccountKey.tsx  the fifth of them — the account's door in the daily loop
-      components/CodeInput.tsx  the six-digit prompt: six drawn cells over ONE real input,
-                              auto-verifying on the sixth digit
+      components/CodeInput.tsx  the six-digit prompt: six drawn iron keys over ONE real input,
+                              each struck in its `CODE_INKS` ink; auto-verifying on the sixth
       components/AccountFace.tsx  the ONE read of "who an account is" (mark + name), shared
                               by the account screen, the flow's ending and the sign-out screen
       state/ownFace.ts        when the player's OWN face is read again: the signals its
@@ -1189,15 +1193,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
       reduced motion holds one frame. The ending's copy follows the face in on a short
       cascade. The vol. 2 research's second flow ink was NOT taken.
     - **THE CODE PROMPT:** six drawn cells over ONE real input (paste, `one-time-code`
-      autofill, screen readers); the SIXTH DIGIT SUBMITS — no CONFIRM anywhere in the flow. A
-      filled cell lights in one of six avatar-palette inks (`CODE_INKS`, addressed into
-      `AVATAR_PALETTES`), the next cell previewed at half strength; a refusal takes the WHOLE
-      row red. A wrong code stays at the input (shake, clear, one attempts-left line). RESEND
-      is quiet and countdown-gated (~30s), alone under the cells — CHANGE ADDRESS is gone,
+      autofill, screen readers); the SIXTH DIGIT SUBMITS — no CONFIRM anywhere in the flow.
+      The cells are the archive's IRON KEYS (slate under a stippled cap, square, notched); a
+      typed digit STRIKES its key solid in one of six avatar-palette inks (`CODE_INKS`,
+      addressed into `AVATAR_PALETTES`) with the digit cut out in the ground — so the inks'
+      AA floor is against `--bg` (`AccountMark.test.ts`) — the next key's cap lit in its ink
+      under the prompt's blinking underscore; while the code is checked the keys lift in
+      turn (a scan, never a dimmed row); a refusal takes the WHOLE row into the danger ink.
+      A wrong code stays at the input (shake, clear, one attempts-left line). RESEND is quiet
+      and countdown-gated (~30s, the seconds in the cobalt pixel figures), alone under the cells — CHANGE ADDRESS is gone,
       the header's back goes code → address.
-    - **THE CROSSROADS, NOT A WARNING:** both accounts drawn — the one being left dimmed,
-      under DELETED (the area's one red) or under its own NAME when merely left — the one
-      being joined lit and NAMED; one sentence carries what survives and what does not
+    - **THE CROSSROADS, NOT A WARNING:** both accounts drawn — the one being left THINNED
+      THROUGH THE BAYER DITHER, never an opacity (to half its cells under DELETED, the area's
+      one red; to three quarters under its own NAME when merely left) — the one being joined
+      lit and NAMED in the white chip, the icon family's pixel arrow (`arrow-right.svg`)
+      between them; one sentence carries what survives and what does not
       (*Today's game comes with you. Your groups and the rest are lost.* — #271); from the SAVE door it gains the lead *That
       address already has an account.* Skipped when nothing is at stake. `would_switch` is
       the same crossroads with the red taken out: no stakes, *Nothing is deleted — this
@@ -1289,12 +1299,31 @@ it to the local store — see `packages/backend/AGENTS.md`).
     keystroke clears it. The ending's copy follows the face in
     on a `--arrive-delay` cascade (the `--slash-ms` rule: the JS that ends the composition and
     the CSS that waits for it hold ONE number), every element keeping its layout box so
-    nothing moves while it arrives. The address step's cost line reads the CACHED
+    nothing moves while it arrives — the lines through the board's dither dissolve, the name's
+    chip DRAWN across in steps. The address step's cost line reads the CACHED
     `useAccountSummary` — no new request, and a tokenless device says nothing at all. And the
-    crossroads' two labels are different KINDS of word: `.link-cross-tag` is tracked all-caps
-    chrome for the verdict, `.link-cross-name` an identity with its case kept; the row is
-    equal-width sides around the arrow, because the two labels differ in length and a row that
-    merely centres its content puts the pivot off by half that difference.
+    crossroads' labels are different KINDS of word: `.link-cross-tag` is tracked all-caps
+    chrome for the verdict, `.link-cross-was` the left account's name with its case kept, and
+    the joined one the white chip; the row is equal-width sides around the arrow, because the
+    labels differ in length and a row that merely centres its content puts the pivot off by
+    half that difference.
+  - **THE FLOW'S FACES ARE SQUARE PIXEL MARKS AT WHOLE-PIXEL SIZES** (`Avatar sharp`,
+    `AccountEmail`'s `FLOW_FACE_PX`: the lead 60, the crossroads 50, the ending 80 — 6, 5 and
+    8 pixels a cell, contract-tested), bare on the ground, the NAME under a hero face in the
+    WHITE CHIP (`.link-name`); a face still being read holds its box as the house's stippled
+    slate checker breathing in 160ms steps (`.link-hold`, the Bayer `--dz-*` masks), never a
+    grey rounded block. The ending's face is the lead's own mark STEPPED FORWARD (60 → 70 → 80
+    in whole steps, from the lead's top edge), and the SAVED ending's `.link-face` carries
+    `data-stamp="save"` — where the editor's foil stamp lands, one implementation for both.
+  - **THE ADDRESS LINE IS THE GAME'S PROMPT over a REAL, VISIBLE input**
+    (`components/AddressField.tsx`): the cobalt `>`, the address in the pixel face at 16px (a
+    whole size, and iOS's no-zoom floor), the podium's stippled floor under it lighting in the
+    accent while held; an Enter on what cannot be an address shakes the line. Unlike the guess
+    prompt and the group name it draws no caret of its own: an address is EDITED in place,
+    autofilled and selected, and a `type="email"` field exposes no selection to script, so a
+    drawn caret could only sit at the end while the real one stood elsewhere — the caret is
+    the browser's, in the accent, shaped as the underscore by `caret-shape` where supported.
+    The focus brackets frame the whole line and do not dim it.
   - **THE AREA'S TYPE ROLES AND ITS BACK CONTROL (2026-08-29)** — the product contract is
     in the decisions list above. What is this package's: `.account-note` is INFO, `.account-note
     .danger` is an ERROR and carries an `::before` LED in the danger ink, `.link-quiet-btn`
@@ -1492,9 +1521,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     SAVING an account the reader no longer holds): a player who has just been signed out has
     exactly one intention, and every screen between them and the address field is one they have to read
     past. Abandoning the flow costs exactly what SKIP already cost.
-  - **The centered 64px-mark + 20/650-name HERO survives only where the screen is ABOUT an
-    account** — the flow's address-step lead, its endings, the erase confirmation, and the
-    signed-out screen the dress came from. `/account` itself went back to the ROW
+  - **The centered face HERO — a square mark at a whole-pixel size over its name in the white
+    chip — survives only where the screen is ABOUT an account** — the flow's address-step
+    lead, its endings, the erase confirmation, and the signed-out screen (there a GHOST: the
+    mark thinned to half its cells through the Bayer dither and bobbing like the empty
+    board's ghost, the chip dimmed; while its read is out the screen stands whole with the
+    face's box stippled). `/account` itself went back to the ROW
     (user-decided 2026-08-26, after one day as a hero): its identity is a page's masthead,
     and the hairline under the row is the screen's one explicit separation — everything
     below it is about the account it names.
@@ -1520,9 +1552,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     one TALL screen, and the line's 76–128px pushed its stack past a phone's viewport. It
     keeps its 48px header clearance — measured, an iPhone 13 (390×664) no longer scrolls;
     an iPhone SE (375×553) still scrolls 87px, which is the editor's own height. The ADDRESS step leads with WHO is
-    being saved — the account's face, or the chooser's glowing app mark on a device with
-    none (the reconnect case) — because a bare input floating on a screen was the "does
-    not use its space" finding. And the two flagged corner-affordances became DRAWN
+    being saved — the account's face (the returning door's churning field) — because a bare
+    input floating on a screen was the "does not use its space" finding. And the two flagged corner-affordances became DRAWN
     chevrons in the chrome icon dress (`assets/icons/chevron-right.svg` on the board's
     identity strip, `chevron-down.svg` in the date chip's tick, replacing an 8px `▾`);
     the 320px header budget was re-measured with the wider tick — the right group's last
@@ -1532,9 +1563,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the UPPER THIRD (`.account-screen.link-step` gets `max(48px, 14vh)` top padding in the
     mobile block — mobile `.app` is start-aligned, so a lone input otherwise hugged the
     bar; full centring loses to the soft keyboard, and `vh` is the LAYOUT viewport so the
-    step holds still when the keyboard resizes the visual one). The code cells rest QUIET
-    (`--line`) and brighten as they fill (`.filled` → `--line-strong`, the next cell in the
-    accent); a refusal is red only while the wrong code is on screen — once the cells clear
+    step holds still when the keyboard resizes the visual one). The code keys rest as
+    slate iron and are struck in their inks as they fill (THE CODE PROMPT, above); a refusal
+    is red only while the wrong code is on screen — once the cells clear
     for the retype the row returns to rest and the tries-left LINE carries the message.
     Device rows are TWO LINES (label over THIS ONE in the accent, or the last-seen
     day-month — the single line truncated its own current marker on a phone). The erase
@@ -1592,9 +1623,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     phone").** A 640px measure (~76 characters of the mono, a real reading line), a TITLE in
     sentence case that is the document's own first sentence (the header chip names the
     SCREEN; the title names the CLAIM the page substantiates — `privacyDoc.title`, split out
-    of the lead), a DATELINE under it in the archive day's tag dress, a STANDFIRST, then
-    sections each opened by a hairline; every named thing is a `<dl>` term on its own line
-    over what is true of it, so a section skims like a run of small subheads. It does NOT
+    of the lead), set in the PIXEL face at a whole size (24px, 16px on a phone); a DATELINE
+    under it whose day is written as the cards and the streak write one (`PRIVACY_UPDATED`
+    as-is, ISO, the cobalt pixel figures); a STANDFIRST; then sections each opened by the
+    podium's stippled floor (no hairlines, no panels); every named thing is a `<dl>` term on
+    its own line behind a 4px accent pixel square, over what is true of it, so a section
+    skims like a run of small subheads. The mail link wears a stippled pixel underline. The
+    blocks arrive through the board's dither dissolve. It does NOT
     wear `.account-screen`: that class centres its column and, on a phone, opens on the
     area's high start line — and this is by far the area's tallest screen, which is exactly
     what took `/profile` off that line on 2026-09-02. `.privacy-screen` states its own

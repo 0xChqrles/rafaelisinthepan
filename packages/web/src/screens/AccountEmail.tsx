@@ -65,15 +65,19 @@ import {
 } from '../api';
 import {
   faceSettled,
-  faceSkeletonClass,
   shownFace,
   useAccountFace,
   useOwnFace,
   type Face,
 } from '../components/AccountFace';
+import ArrowIcon from '../assets/icons/arrow-right.svg?react';
 import AccountStats from '../components/AccountStats';
 import AccountMark from '../components/AccountMark';
+import AddressField from '../components/AddressField';
 import Avatar from '../components/Avatar';
+// The house's Bayer tiles on the root (`--dz-*`): the face holds stipple through them, the
+// leaving face thins through them, and the ending's lines come in through them.
+import '../components/bayerTiles';
 import Button from '../components/Button';
 import CodeInput from '../components/CodeInput';
 import ErrorScreen from '../components/ErrorScreen';
@@ -105,6 +109,28 @@ import { prefetchTurnstileTokens, turnstileToken } from '../turnstile';
 
 type Step = 'address' | 'code' | 'confirm' | 'done';
 type LinkOutcome = 'bound' | 'adopted' | 'already_bound';
+
+// THE FACES, at WHOLE-PIXEL sizes (a cell is 6, 5 and 8 CSS pixels): the lead over the two
+// input steps, the two sides of the crossroads, and the ending, which is the screen's one
+// subject — the lead's own mark, stepped forward.
+export const FLOW_FACE_PX = { lead: 60, cross: 50, ending: 80 } as const;
+const LEAD_PX = FLOW_FACE_PX.lead;
+const CROSS_PX = FLOW_FACE_PX.cross;
+const ENDING_PX = FLOW_FACE_PX.ending;
+
+// A face's box while its read is out: the slate checker the house waits in (the archive's
+// and the podium's ghosts), stippled through the Bayer tiles and breathing in whole steps —
+// never a grey rounded block. A settled face with nothing to draw (a DELETED account) keeps
+// the box and draws nothing in it.
+function FaceHold({ size, waiting }: { size: number; waiting: boolean }) {
+  return (
+    <span
+      className={`link-hold${waiting ? ' waiting' : ''}`}
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    />
+  );
+}
 
 // How long before RESEND is offered. Long enough that a mail has had a chance to arrive —
 // tapping it earlier only spends one of the five sends the server allows per hour.
@@ -220,6 +246,8 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // the player has to read before typing again, rather than a failure with a retry.
   const [note, setNote] = useState<string | null>(null);
   const [waitLeft, setWaitLeft] = useState(0);
+  // The address line's invalid gesture, running.
+  const [shaking, setShaking] = useState(false);
   const shakeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Consumed once, so a later visit opens on the offer rather than on a confirmation of
@@ -592,13 +620,14 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
     outcome === 'adopted' &&
     receipt !== null &&
     (receipt.streak > 0 || receipt.best > 0 || receipt.days > 0);
-  // The ending's copy FOLLOWS the face in when the face is arriving: the composition is the
-  // beat, and a name at full strength beside a half-drawn mark steals it. Each line a breath
-  // behind the last, in reading order, ending on the action. Nothing when the face was
-  // already there (a save), where there is no arrival to wait for.
-  const arriveClass = composeEnding ? ' link-arrive' : '';
-  const arrive = (ms: number): { style?: CSSProperties } =>
-    composeEnding ? { style: { '--arrive-delay': `${ms}ms` } as CSSProperties } : {};
+  // The ending's copy FOLLOWS the face in: the face is the beat, and a name at full strength
+  // beside a half-drawn mark steals it. Each line comes in through the dither a breath behind
+  // the last, in reading order, ending on the action — after the COMPOSITION when a face is
+  // arriving (`AccountMark`'s resolve), and right behind the face's step forward when it was
+  // already on screen (a save: the lead's mark, grown to the ending's size).
+  const arrive = (ms: number): { style: CSSProperties } => ({
+    style: { '--arrive-delay': `${composeEnding ? ms : Math.round(ms / 4)}ms` } as CSSProperties,
+  });
 
   // WHAT A SCREEN READER IS TOLD, in ONE region mounted for the flow's whole life. Every
   // step transition here was silent — the account-deletion confirmation included — because
@@ -671,32 +700,34 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             keeps churning across the step where the player is actually waiting to be found,
             which is where the picture means the most, and the SAVING face keeps the promise
             its own rule makes — the thing being kept is on screen from the first step to
-            the last. */}
+            the last. A square pixel mark at a whole size, its name in the white chip (the
+            share card's and the group landing's name). */}
         {(step === 'address' || step === 'code') && (
           <div className="link-stack link-lead" aria-hidden="true">
             {returning ? (
               // THE FIELD. Not a skeleton — nothing is loading. It is the question the
               // screen is asking, drawn: somebody is out there, and this is where they
               // will appear.
-              <AccountMark avatar={null} size={64} />
+              <AccountMark avatar={null} size={LEAD_PX} />
             ) : savingFace ? (
               <>
                 <Avatar
                   avatar={savingFace.avatar ?? defaultAvatar(savingFace.publicId)}
-                  size={64}
+                  size={LEAD_PX}
+                  sharp
                 />
-                <span className="account-hero-name">{savingFace.name}</span>
+                <span className="link-name">{savingFace.name}</span>
               </>
             ) : (
-              // AND THE NAME'S BOX IS HELD TOO (2026-09-03). The 64px mark was reserved and
-              // the name was not, so the account's own name landed into no space and pushed
-              // the field and CONTINUE down as it arrived — the shift the skeleton rule
-              // exists to prevent ("it holds the exact boxes the resolved values take"). Only
-              // while the read is OUT: a settled account with no face has no name coming, and
-              // a placeholder held for one would promise what is not on its way.
+              // AND THE NAME'S BOX IS HELD TOO (2026-09-03). The mark was reserved and the
+              // name was not, so the account's own name landed into no space and pushed the
+              // field and CONTINUE down as it arrived — the shift the skeleton rule exists to
+              // prevent. Only while the read is OUT: a settled account with no face has no
+              // name coming, and a placeholder held for one would promise what is not on its
+              // way.
               <>
-                <span className={`account-hero-mark${savingPending ? ' skeleton' : ''}`} />
-                {savingPending && <span className="account-hero-name skeleton">&nbsp;</span>}
+                <FaceHold size={LEAD_PX} waiting={savingPending} />
+                {savingPending && <span className="link-name link-hold waiting">&nbsp;</span>}
               </>
             )}
           </div>
@@ -704,50 +735,44 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
 
         {step === 'address' && (
           <>
-            <input
-              className="account-input"
-              type="email"
-              inputMode="email"
-              autoComplete="email"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              // The screen holds ONE input, and typing into it is the whole purpose —
-              // the caret is already there, like the code step's.
-              autoFocus
-              placeholder={t(lang, 'linkAddressPlaceholder')}
-              aria-label={t(lang, 'linkAddressPlaceholder')}
-              ref={addressField}
+            <AddressField
               value={address}
-              onChange={(event) => {
-                setAddress(event.target.value);
+              onChange={(next) => {
+                setAddress(next);
                 if (note !== null) setNote(null);
               }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && isValidEmail(address)) void send({ handOff: true });
+              // An Enter on something that cannot be an address gets the game's own answer
+              // to a guess that is not a word: the line shakes, and nothing is sent.
+              onEnter={() => {
+                if (isValidEmail(address)) void send({ handOff: true });
+                else setShaking(true);
               }}
+              shake={shaking}
+              onShaken={() => setShaking(false)}
+              placeholder={t(lang, 'linkAddressPlaceholder')}
+              label={t(lang, 'linkAddressPlaceholder')}
+              fieldRef={addressField}
             />
-            <Button
-              variant="primary"
+            <button
+              type="button"
+              className="mix-btn link-call"
               disabled={busy || !isValidEmail(address)}
               onClick={() => void send({ handOff: true })}
             >
               {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkContinue')}
-            </Button>
-            {note && (
-              <p className="account-note caption danger">{note}</p>
-            )}
+            </button>
+            {note && <p className="account-note caption danger">{note}</p>}
           </>
         )}
 
         {step === 'code' && (
-          <>
-            {/* Where it went — the one thing the player cannot see for themselves, and the
-                answer to "did I typo my own address?" */}
-            <p className="account-note account-note-center">
-              {`${t(lang, 'linkSentTo')} ${normalizeEmail(address) ?? ''}`}
-            </p>
-          </>
+          // Where it went — the one thing the player cannot see for themselves, and the
+          // answer to "did I typo my own address?" The address in the reading ink, the
+          // words before it quiet.
+          <p className="link-sent">
+            <span>{t(lang, 'linkSentTo')}</span>{' '}
+            <span className="link-sent-to">{normalizeEmail(address) ?? ''}</span>
+          </p>
         )}
         {/* THE CODE PROMPT IS MOUNTED FROM THE ADDRESS STEP ON, offstage until it is the
             step. It is the only way iOS ever raises a keyboard for it: `focus()` has to
@@ -796,14 +821,15 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 disabled={busy || waitLeft > 0}
                 onClick={() => void send()}
               >
-                {waitLeft > 0 ? `${t(lang, 'linkResend')} (${waitLeft})` : t(lang, 'linkResend')}
+                {t(lang, 'linkResend')}
+                {waitLeft > 0 && <span className="link-wait">{waitLeft}</span>}
               </button>
             </div>
           </>
         )}
 
         {step === 'confirm' && prompt !== null && (
-          <div className="link-stack" ref={stack} tabIndex={-1}>
+          <div className="link-stack link-confirm" ref={stack} tabIndex={-1}>
             {/* From the SAVE door this is a genuine surprise — the player asked to KEEP
                 something and is being shown a deletion — so one line explains the turn
                 before the screen asks anything. From the RETURN door the address step
@@ -812,20 +838,25 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
               <p className="account-note account-note-center">{t(lang, 'linkEraseFound')}</p>
             )}
             {/* THE CROSSROADS. A trade drawn from one side reads as pure loss, so both
-                accounts are here: the one being left, struck under DELETED, and the one
-                being joined, lit and named. The server names the second only since vol. 2,
-                so a prompt without it falls back to the single face — a confirmation the
-                player has to be able to answer must never depend on a decoration. */}
+                accounts are here: the one being left, THINNED THROUGH THE DITHER (never an
+                opacity — the house's dissolve) under DELETED or under its own name, and the
+                one being joined, lit and named in the white chip, a pixel arrow between
+                them. The server names the second only since vol. 2, so a prompt without it
+                falls back to the single face — a confirmation the player has to be able to
+                answer must never depend on a decoration. */}
             {prompt.target !== null ? (
-              <div className="link-cross">
+              <div className={`link-cross${erasing ? ' erase' : ' switch'}`}>
                 <div className="link-cross-side leaving">
                   {eraseFace ? (
-                    <Avatar avatar={eraseFace.avatar ?? defaultAvatar(prompt.accountId)} size={44} />
+                    <span className="link-cross-face">
+                      <Avatar
+                        avatar={eraseFace.avatar ?? defaultAvatar(prompt.accountId)}
+                        size={CROSS_PX}
+                        sharp
+                      />
+                    </span>
                   ) : (
-                    <span
-                      className={`link-cross-mark${faceSkeletonClass(eraseState)}`}
-                      aria-hidden="true"
-                    />
+                    <FaceHold size={CROSS_PX} waiting={!faceSettled(eraseState)} />
                   )}
                   {/* The LEAVING side says what is happening to it: DELETED when it is
                       about to become unreachable, and its own NAME when it survives — a
@@ -834,32 +865,42 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                   {erasing ? (
                     <span className="link-cross-tag danger">{t(lang, 'linkEraseDeleted')}</span>
                   ) : (
-                    <span className="link-cross-name">{eraseFace?.name ?? ''}</span>
+                    <span className="link-cross-was">{eraseFace?.name ?? '\u00a0'}</span>
                   )}
                 </div>
-                <span className="link-cross-arrow" aria-hidden="true" />
-                <div className="link-cross-side">
+                <ArrowIcon className="link-cross-arrow" aria-hidden="true" />
+                <div className="link-cross-side joining">
                   {targetFace ? (
-                    <Avatar avatar={targetFace.avatar ?? defaultAvatar(prompt.target)} size={44} />
+                    <span className="link-cross-face">
+                      <Avatar
+                        avatar={targetFace.avatar ?? defaultAvatar(prompt.target)}
+                        size={CROSS_PX}
+                        sharp
+                      />
+                    </span>
                   ) : (
-                    <span
-                      className={`link-cross-mark${faceSkeletonClass(targetState)}`}
-                      aria-hidden="true"
-                    />
+                    <FaceHold size={CROSS_PX} waiting={!faceSettled(targetState)} />
                   )}
-                  <span className="link-cross-name">{targetFace?.name ?? ''}</span>
+                  {targetFace ? (
+                    <span className="link-name small">{targetFace.name}</span>
+                  ) : (
+                    <span className="link-cross-tag">&nbsp;</span>
+                  )}
                 </div>
               </div>
             ) : eraseFace ? (
               <>
-                <Avatar avatar={eraseFace.avatar ?? defaultAvatar(prompt.accountId)} size={64} />
-                <span className="account-hero-name">{eraseFace.name}</span>
+                <span className={`link-cross-face single${erasing ? ' erase' : ''}`}>
+                  <Avatar
+                    avatar={eraseFace.avatar ?? defaultAvatar(prompt.accountId)}
+                    size={LEAD_PX}
+                    sharp
+                  />
+                </span>
+                <span className="link-name">{eraseFace.name}</span>
               </>
             ) : (
-              <span
-                className={`account-hero-mark${faceSkeletonClass(eraseState)}`}
-                aria-hidden="true"
-              />
+              <FaceHold size={LEAD_PX} waiting={!faceSettled(eraseState)} />
             )}
             {/* WHAT IS AT STAKE, DIRECTLY UNDER THE FORK — ahead of the sentence, not
                 after it (review finding). Centred below "…come with you. The rest is
@@ -867,7 +908,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 equidistant from both faces and the line immediately above them is about
                 what SURVIVES. Read in this order they are the deletion's own price, and
                 the sentence that follows is what qualifies them — "the rest" now has an
-                antecedent on screen. */}
+                antecedent on screen. QUIET: destruction never glows. */}
             {showStakes && <AccountStats lang={lang} stats={stakes} />}
             {/* The one thing the picture cannot say: what happens to the account being
                 left. An ERASE names what survives the deletion — both halves are true and
@@ -907,75 +948,57 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         )}
 
         {step === 'done' && (
-          <div className="link-stack" ref={stack} tabIndex={-1}>
-            {face && endingId ? (
-              <>
+          <div className="link-stack link-ending" ref={stack} tabIndex={-1}>
+            {/* THE FACE STEPS FORWARD to the ending's size in whole-pixel steps (the lead's 6px
+                a cell, then 7, then 8), and on a SAVE it is where the foil stamp lands — the
+                editor's own save moment, one implementation for both (`data-stamp`). */}
+            <div className="link-face" data-stamp={outcome === 'bound' ? 'save' : undefined}>
+              {face && endingId ? (
                 <AccountMark
                   avatar={face.avatar ?? defaultAvatar(endingId)}
-                  size={64}
+                  size={ENDING_PX}
                   compose={composeEnding}
                 />
-                <span
-                  {...arrive(540)}
-                  className={`account-hero-name${arriveClass}`}
-                >
-                  {face.name}
-                </span>
-              </>
-            ) : (
-              <span
-                className={`account-hero-mark${faceSkeletonClass(endingState)}`}
-                aria-hidden="true"
-              />
+              ) : (
+                <FaceHold size={ENDING_PX} waiting={!faceSettled(endingState)} />
+              )}
+            </div>
+            {face && endingId && (
+              <span {...arrive(540)} className="link-name link-arrive">
+                {face.name}
+              </span>
             )}
             {/* THE ONE NEW FACT about this account, shown rather than described. A recovery
                 shows the history that PROVES it is theirs — "we found your account" is a
-                claim and these two numbers are its evidence, and the first thing a
-                returning player wants to check. Every other ending shows the address, which
-                is the thing that just changed. */}
+                claim and these numbers are its evidence, and the first thing a returning
+                player wants to check. Every other ending shows the address, which is the
+                thing that just changed. */}
             {showReceipt && receipt ? (
-              <div {...arrive(620)} className={`link-receipt-stats${arriveClass}`}>
+              <div {...arrive(620)} className="link-receipt-stats link-arrive">
                 <AccountStats lang={lang} stats={receipt} />
               </div>
             ) : (
               linked && (
-                <p
-                  {...arrive(620)}
-                  className={`link-receipt${arriveClass}`}
-                >
+                <p {...arrive(620)} className="link-receipt link-arrive">
                   {linked}
                 </p>
               )
             )}
-            <p
-              {...arrive(700)}
-              className={`account-note account-note-center${arriveClass}`}
-            >
+            <p {...arrive(700)} className="link-ending-line link-arrive">
               {endingLine}
             </p>
-            {endingPlays ? (
-              <Button
-                variant="primary"
-                {...arrive(780)}
-                onClick={() => {
-                  loadAccountSummary(true);
-                  navigate('/', { replace: true });
-                }}
-              >
-                {t(lang, 'gatePlay')}
-              </Button>
-            ) : (
-              <Button
-                variant="primary"
-                {...arrive(780)}
-                onClick={() => {
-                  loadAccountSummary(true);
-                  leave();
-                }}
-              >
-                {t(lang, 'linkDone')}
-              </Button>
-            )}
+            <button
+              type="button"
+              {...arrive(780)}
+              className="mix-btn link-call link-arrive"
+              onClick={() => {
+                loadAccountSummary(true);
+                if (endingPlays) navigate('/', { replace: true });
+                else leave();
+              }}
+            >
+              {t(lang, endingPlays ? 'gatePlay' : 'linkDone')}
+            </button>
           </div>
         )}
       </div>
