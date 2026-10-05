@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { AVATAR_PALETTES, AVATAR_SIZE, bayerThreshold } from '@whippin/shared';
 import { abgr, hexToAbgr } from '../raster';
 import { prefersReducedMotion } from '../../hooks/useScramble';
-import { speckAt } from './tools';
+import { speckOffset } from './tools';
 
 // THE EDITOR'S PALETTE SWEEP: what the canvas WAS, laid over what it now is and swept off it on
 // the diagonal through the house's ordered dither (`bayer.ts`, on the 2px cell) — the old
@@ -11,10 +11,11 @@ import { speckAt } from './tools';
 // EVEN number of px, so the dither lands on the cells' own edges).
 //
 // The old picture is the canvas EXACTLY as it stood: its ground, its ink, and the grid's specks
-// (`speckAt`, the canvas's own rule). And a second tap while a sweep is still running CONTINUES
-// from what is on screen: the half-swept picture — the older palette where the front has not
-// passed, the newer one where it has — becomes the picture swept, the front starting over from
-// the corner, so the newer palette is swept away in its turn rather than swapped in one frame.
+// (`speckOffset`, the canvas's own rule: one in the middle of every empty cell). And a second
+// tap while a sweep is still running CONTINUES from what is on screen: the half-swept picture —
+// the older palette where the front has not passed, the newer one where it has — becomes the
+// picture swept, the front starting over from the corner, so the newer palette is swept away in
+// its turn rather than swapped in one frame.
 //
 // The overlay has NO box between sweeps (0 × 0: an unsized canvas would lay out at the
 // browser's 300 × 150 and push the page sideways), and one is played only for a NEW shot — a
@@ -22,7 +23,7 @@ import { speckAt } from './tools';
 // straight to the new picture.
 const CELL = 2;
 const FRAME_MS = 40;
-const WIPE_MS = 420;
+export const WIPE_MS = 420;
 // The front's soft edge, in raster cells: how far behind it the old picture is gone.
 const RAMP = 22;
 // The grid's speck: the ink mixed 60% into the ground (the CSS's own `color-mix`).
@@ -52,6 +53,7 @@ export function canvasPicture(palette: number, cells: readonly number[], cellPx:
   const lo = hexToAbgr(bg);
   const hi = hexToAbgr(fg);
   const dot = mix(fg, bg, SPECK);
+  const at0 = speckOffset(cellPx);
   const picture = new Uint32Array(n * n);
   for (let cy = 0; cy < n; cy += 1) {
     const py = cy * CELL;
@@ -61,8 +63,8 @@ export function canvasPicture(palette: number, cells: readonly number[], cellPx:
       const ax = Math.min(AVATAR_SIZE - 1, Math.floor(pxl / cellPx));
       const at = ay * AVATAR_SIZE + ax;
       const inked = cells[at] === 1;
-      // The speck: the top-left 2px of a cell whose crossing the canvas specks.
-      const speck = !inked && pxl === ax * cellPx && py === ay * cellPx && speckAt(cells, at);
+      // The speck: the 2px at the middle of an empty cell.
+      const speck = !inked && pxl === ax * cellPx + at0 && py === ay * cellPx + at0;
       picture[cy * n + cx] = inked ? hi : speck ? dot : lo;
     }
   }

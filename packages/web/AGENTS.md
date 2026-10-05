@@ -45,6 +45,8 @@
       components/AddressField.tsx  the flow's address line in the game prompt's dress (the
                               cobalt `>`, the address in `--ui` at one size, the stippled
                               floor) over a REAL visible `type="email"` input
+      components/AddressLine.tsx  a saved address on one line, cut by whole characters with
+                              its domain standing (`addressCut.ts`): the masthead, the ending
       components/AccountMark.tsx  the churning field the returning door waits on, and the
                               cell-by-cell arrival that hands off to a sharp Avatar
       components/TopBar.tsx   the header row itself, mounted ONCE by App: it holds the
@@ -160,8 +162,9 @@
       screens/Profile.tsx     the #188 profile editor (/profile): the canvas grown out of the
                               masthead's mark, the name's white chip, the palettes + MIRROR /
                               DICE / CLEAR, the board line it previews, SAVE
-      components/editor/      the editor's pure tools (`tools.ts`: the mirror, a stroke's line,
-                              the dice, the drain) and its palette sweep (`DitherWipe.tsx`)
+      components/editor/      the editor's pure tools (`tools.ts`: the mirror, the grid's speck,
+                              a stroke's line, the dice, the drain) and its palette sweep
+                              (`DitherWipe.tsx`)
       components/FoilStamp.tsx  the SAVE landing: a foil band over any square mark, played in the
                               mark's own box
       components/markHandoff.ts  the masthead's mark (its rect and the mark itself), handed to
@@ -1346,7 +1349,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     fresh (the face composes). The NAME has two sizes app-wide (`--name-hero-size` for a
     face's own name — the masthead, the editor's chip, the flow's and the signed-out chips —
     and `--name-line-size` for a board line, the editor's preview included); the
-    crossroads' side chips are labels, at its labels' size.
+    crossroads' side chips are labels, at its labels' size. The hero size steps down a pixel
+    at ≤360px wide (the token itself, so every hero chip with it), where the cap's 16
+    characters would otherwise be cut in `/account`'s masthead.
   - **THE ADDRESS LINE IS THE GAME'S PROMPT over a REAL, VISIBLE input**
     (`components/AddressField.tsx`): the cobalt `>` in the pixel face, the address in the
     area's address face (`--ui` bold, as the masthead and the code step print it) at 16px —
@@ -1394,20 +1399,28 @@ it to the local store — see `packages/backend/AGENTS.md`).
     pixels, corner brackets only on what is tapped, ONE shiny thing a screen. A read that
     FAILED is quiet: the stippled checker still at 50% where its values would be, and RETRY
     as the bracketed quiet word (`.quiet-btn`, SIGN OUT's dress) — `/account`'s failed
-    history makes the count's held box itself that tap.
+    history makes the count's held box itself that tap. `/account`'s chrome speaks in TWO
+    roles beside the hero name and its quiet address caption: the LABEL (11px bold tracked
+    caps, muted — BEST and DAYS, `AccountStats`' labels with them, a device's one fact, SIGN
+    OUT, the footnote) and the ROW TITLE (13px bold — a device's label; DAY STREAK at that
+    size in the celebration's own tracking).
     - **`/account`'s MASTHEAD is ONE tap target, the editor's door**: corner brackets (one
       bordered box masked to its four corners, so they step to white on a hover with the
       pixel pencil in its top corner — no word, no chevron), the mark at 50px (five whole
       pixels a cell, never a size between two), the name at the hero name size, centred on
       the mark, the saved address HUNG under it in the row's own padding
       (nothing moves when the summary lands; it shows only once SAVED; cut by whole
-      characters, `cutAddress`, so its domain always stands and one ellipsis says where).
+      characters, `components/AddressLine.tsx` over `cutAddress`, so its domain always
+      stands and one ellipsis says where — the SAVED ending prints the address the same way).
       The button is named by what it shows plus the edit word
-      for screen readers alone. A press sinks the mark 2px. The tap hands the mark — its box
-      and the mark itself — to the editor (`markHandoff`): the mark stays FROZEN in that box
-      while the editor reads the stored profile, then the canvas GROWS out of it in
-      whole-pixel steps (a direct load holds the canvas's box as the stippled slate, then
-      grows from its centre).
+      for screen readers alone. A press sinks the mark 2px; under the keyboard's focus the
+      row's own corners give way to `FocusBrackets`, never a frame nested in a frame. The tap
+      hands the mark — its box and the mark itself — to the editor (`markHandoff`): the mark
+      stays FROZEN in that box while the editor reads the stored profile (once the read has
+      taken a beat, 250ms, the canvas's box breathes as the stippled slate behind it), then
+      the canvas GROWS out of it in whole-pixel steps — on a phone in place, down and right
+      from the mark's own corner (a direct load holds the canvas's box as the stippled
+      slate, then grows from its centre).
     - **THE RECORD is the screen's subject** (`components/record/`), in the streak
       celebration's own sprites: the blue FLAME over the live STREAK on the count's reels,
       `dayStreak` under it, the week as the CHAIN (`recordWeek`: the week of the language
@@ -1426,8 +1439,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
       a failure — an unknown week claims nothing, not even an empty one) and the two
       numbers' boxes are `StatSlot`s; the build STARTS from that picture, each box standing
       until its own reels start, each link's slot until the link dithers in over it. The
-      count's landing drop is kept clear over the unit's line, and its light falls round the
-      count, never over the words. The count's size follows the screen's height: one size up
+      count's landing drop is kept clear over the unit's line, and the line has MORE air
+      under it than over it (a glyph pixel and two cells), so DAY STREAK reads with the
+      count it names, apart from the week — the celebration's grouping; the count's light
+      falls round the count, never over the words. The count's size follows the screen's height: one size up
       on a phone ≥800px tall, one down ≤740, two ≤600 — so the unsaved page's call stands
       above the edge down to an iPhone SE's browser.
     - **THE DEVICES are board lines**, no title: a pixel device glyph (phone / tablet /
@@ -1444,31 +1459,39 @@ it to the local store — see `packages/backend/AGENTS.md`).
       stands still) lands the numbers on the reels — the recovery ending passes it, timed
       to its row's arrival; the crossroads never does.
     - **THE EDITOR is the masthead's mark opened.** The canvas is ONE mark — continuous
-      square cells, the grid only a 2px speck of the ink at a crossing where all four cells
-      meeting are empty (`speckAt`: a speck never touches the drawing; 60% of the ink into the
-      ground, so it reads on the darkest palette) — its cell a whole,
-      EVEN number of px on a whole-pixel offset, sized by the screen (the height it had
-      before any soft keyboard) so the whole editor fits a phone unscrolled down to ~550px
-      tall, and a desktop window by its own chrome (never the phone's short dress); on a
-      phone the card, its tools and the board line are ONE group CENTRED between the area's
-      start line and SAVE on the bottom edge (`--plift`, worked out with the cell, so the
-      box stands where it will from the first frame). The canvas sits in the corner brackets over the NAME's white chip (as wide
+      square cells, the grid only a 2px speck of the ink at the middle of every empty cell
+      (`speckOffset`: whole and even, on the 2px dither; a regular lattice that never touches
+      the drawing; 60% of the ink into the ground, so it reads on the darkest palette) — its
+      cell a whole, EVEN number of px on a whole-pixel offset, sized by the screen (the height
+      it had before any soft keyboard) so the whole editor fits a phone unscrolled down to
+      ~550px tall, and a desktop window by its own chrome (never the phone's short dress). On
+      a phone the card stands on the area's START LINE (60px under the bar's top, where
+      `/account`'s masthead stands), its tools and the board line right under it, and the
+      height left over sits once, over SAVE on the bottom edge — the editor keeps only its
+      header clearance (the user's call, below); on desktop the column is held at its full
+      height from the first frame, so `.app`'s centring never moves the card when the tools
+      arrive. The canvas sits in the corner brackets — 4px inside the column, on the tools'
+      own corner column right under them — over the NAME's white chip (as wide
       as what it holds, the house's accent caret at its selection, a pencil beside it until
-      it is typed into). A changed cell pops whole pixels proud with 4px sparks of the ink
-      ringed in the ground (they read over ink and ground alike); an erased one shrinks into
-      its middle; a stroke is ONE pointer's. The pops only animate a change — a cell's
+      it is typed into). A changed cell pops whole pixels proud; a gesture BURSTS rather than
+      tiling — its first cell (and the twin, under the MIRROR), then the cell under the finger
+      at most every 120ms, the dice's landing likewise — throwing eight 4px sparks of the
+      house's white glitter (the mark's ink on a light ground) from just outside the popped
+      cell; an erased one shrinks into its middle; a stroke is ONE pointer's. The pops only animate a change — a cell's
       colour at rest is its own (reduced motion draws no pop at all). Under it the palettes
       as the drawing itself in each (30px marks in 44px targets, ONE choice — a radio group,
       the arrows choose — only the chosen one in white corners, closing in), a switch
       SWEEPING the old picture off on the diagonal through the 2px Bayer order
       (`DitherWipe`: its specks included; a second tap sweeps the half-swept picture off in
-      its turn; no box between sweeps); and the TOOLS (44px targets too; one row with the
+      its turn; no box between sweeps), the board line taking the new palette only once the
+      sweep has passed; and the TOOLS (44px targets too; one row with the
       palettes where the column holds all eight, else a row of their own under them, both
       centred) — MIRROR (each cell's twin painted too; opens ON only for a
       left-right symmetric drawing, which every assigned mark is; ▼ ▲ on the canvas's
       edges, never an axis over the cells), DICE (a NEW SHAPE from `defaultAvatar`'s own
-      derivation, the palette KEPT, landing over a short churn in the Bayer order, each
-      changed cell its own pop — CLEAR run backwards), CLEAR (a Bayer-ordered drain). Every tool is an ordinary edit; SAVE stays the deploy. A control unavailable
+      derivation, the palette KEPT, landing over a short churn — four shapes, on the canvas
+      alone: the swatches and the board line hold the drawing it started from until it has
+      landed — in the Bayer order, each changed cell its own pop — CLEAR run backwards), CLEAR (a Bayer-ordered drain). Every tool is an ordinary edit; SAVE stays the deploy. A control unavailable
       for a moment (a tool playing, a save running, nothing to save) is `aria-disabled`, so
       the keyboard's focus stays on it. Then the LINE every board will draw for the player
       (right under the tools, its mark under the first swatch's: the mark at `MARK`, the
@@ -1655,7 +1678,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     since a saturated ground cut into a 2px checker reads as a corrupt image — bobbing like
     the empty board's ghost, the chip dimmed; while its read is out the screen stands whole
     with the face's box stippled; the screen wears the streak celebration's frame, its
-    corners and the WHIPPIN AI lockup, having no header). `/account` itself went back to the ROW
+    corners and the WHIPPIN AI lockup, having no header — on a phone its calls stand INSIDE
+    that frame, RECONNECT's edges on the corners' 16px column and the quiet PLAY clear of the
+    bottom corners, where the celebration keeps its own call). `/account` itself went back to the ROW
     (user-decided 2026-08-26, after one day as a hero): its identity is a page's masthead,
     and everything below it is about the account it names.
   - **`publish`'s ACQUISITION rule is `minted || revision === 0`, not `revision === 0`

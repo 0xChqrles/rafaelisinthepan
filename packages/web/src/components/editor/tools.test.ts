@@ -15,7 +15,7 @@ import {
   mirroredCell,
   paintStroke,
   rollShape,
-  speckAt,
+  speckOffset,
 } from './tools';
 
 const blank = () => new Array<number>(AVATAR_CELLS).fill(0);
@@ -58,19 +58,18 @@ describe('the mirror', () => {
 });
 
 describe('the grid', () => {
-  it('specks a crossing only where all four cells meeting there are empty, never on the edge', () => {
-    const cells = blank();
-    expect(speckAt(cells, at(0, 0))).toBe(false);
-    expect(speckAt(cells, at(5, 0))).toBe(false);
-    expect(speckAt(cells, at(0, 5))).toBe(false);
-    expect(speckAt(cells, at(5, 5))).toBe(true);
-    cells[at(4, 4)] = 1;
-    // The four crossings at the inked cell's corners carry no speck: none touches the ink.
-    expect(speckAt(cells, at(4, 4))).toBe(false);
-    expect(speckAt(cells, at(5, 4))).toBe(false);
-    expect(speckAt(cells, at(4, 5))).toBe(false);
-    expect(speckAt(cells, at(5, 5))).toBe(false);
-    expect(speckAt(cells, at(6, 6))).toBe(true);
+  it("specks every empty cell at its middle, on the house's 2px grid", () => {
+    for (let cell = 16; cell <= 36; cell += 2) {
+      const at0 = speckOffset(cell);
+      // Whole and even, so the sweep's 2px raster draws it where the canvas does.
+      expect(Number.isInteger(at0)).toBe(true);
+      expect(at0 % 2).toBe(0);
+      // At the middle: the speck's 2px cover the cell's centre or stop a pixel short of it.
+      expect(Math.abs(at0 + 1 - cell / 2)).toBeLessThanOrEqual(1);
+      // Inside its own cell, clear of every edge: it never touches a neighbour's ink.
+      expect(at0).toBeGreaterThan(0);
+      expect(at0 + 2).toBeLessThan(cell);
+    }
   });
 });
 

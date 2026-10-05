@@ -48,7 +48,7 @@ import { defaultAvatar } from '@whippin/shared';
 import { faceSettled, shownFace, useOwnFace } from '../components/AccountFace';
 import { StatSlot } from '../components/AccountStats';
 import Avatar from '../components/Avatar';
-import { cutAddress } from '../components/addressCut';
+import AddressLine from '../components/AddressLine';
 import DeviceList from '../components/DeviceList';
 import LangTitle from '../components/LangTitle';
 import Record from '../components/record/Record';
@@ -95,45 +95,6 @@ const subscribeSize = (change: () => void) => {
 const recordSizeNow = (): RecordSize => sizeQueries.find(([, query]) => query.matches)?.[0] ?? 'normal';
 function useRecordSize(): RecordSize {
   return useSyncExternalStore(subscribeSize, recordSizeNow);
-}
-
-// The saved address, cut by WHOLE CHARACTERS when it does not fit its line (`cutAddress`: the
-// local part gives way, the domain stands — `prenom.no…@gmail.com`), so it still reads as the
-// player's. The line's room is counted in the mono's own advance, measured off the address
-// itself; a screen reader is given the whole address.
-function SavedAddress({ address }: { address: string }) {
-  const lineRef = useRef<HTMLSpanElement>(null);
-  const probeRef = useRef<HTMLSpanElement>(null);
-  const [fit, setFit] = useState<number | null>(null);
-  useLayoutEffect(() => {
-    const line = lineRef.current;
-    const probe = probeRef.current;
-    if (!line || !probe || address.length === 0) return undefined;
-    const measure = () => {
-      const advance = probe.getBoundingClientRect().width / address.length;
-      setFit(advance > 0 ? Math.floor(line.clientWidth / advance) : null);
-    };
-    measure();
-    let live = true;
-    void document.fonts?.ready.then(() => {
-      if (live) measure();
-    });
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
-    ro?.observe(line);
-    return () => {
-      live = false;
-      ro?.disconnect();
-    };
-  }, [address]);
-  return (
-    <span ref={lineRef} className="account-id-mail-line">
-      <span ref={probeRef} className="account-id-mail-probe" aria-hidden="true">
-        {address}
-      </span>
-      <span aria-hidden="true">{fit === null ? address : cutAddress(address, fit)}</span>
-      <span className="sr-only">{address}</span>
-    </span>
-  );
 }
 
 export default function Account() {
@@ -216,7 +177,9 @@ export default function Account() {
                 second. It hangs under the name in the row's own padding, so the name stands
                 centred on the mark whether or not it is there, and nothing moves when it
                 lands; it shows only once SAVED. */}
-            <span className="account-id-mail">{saved !== null && <SavedAddress address={saved} />}</span>
+            <span className="account-id-mail">
+              {saved !== null && <AddressLine address={saved} className="account-id-mail-line" />}
+            </span>
           </span>
           <span className="account-id-pen" aria-hidden="true">
             <PencilIcon className="ui-icon" />

@@ -27,16 +27,12 @@ export const isSymmetric = (cells: readonly number[]): boolean =>
   cells.every((value, i) => value === cells[mirroredCell(i)]);
 
 // ── The grid ──────────────────────────────────────────────────────────────────────────────
-// Where the canvas shows its GRID: a speck of the ink at a grid crossing, drawn in the corner of
-// the cell below-right of it — and only where all FOUR cells meeting there are empty, so a
-// speck never touches a drawn cell (a speck glued to the ink's edge reads as a stray pixel of
-// the drawing). The canvas's own edge carries none: the grid's lines are inside the mark.
-export function speckAt(cells: readonly number[], i: number): boolean {
-  const x = i % AVATAR_SIZE;
-  const y = Math.floor(i / AVATAR_SIZE);
-  if (x === 0 || y === 0) return false;
-  return cells[i] !== 1 && cells[i - 1] !== 1 && cells[i - AVATAR_SIZE] !== 1 && cells[i - AVATAR_SIZE - 1] !== 1;
-}
+// Where the canvas shows its GRID: a 2px speck of the ink at the MIDDLE of every empty cell — a
+// regular lattice of places to paint, the outer ring included, and never touching a drawn cell
+// (the speck stays inside its own). Its offset in the cell is a whole, EVEN number of px, so it
+// lands on the house's 2px dither too (the palette sweep's snapshot draws it on that grid):
+// the middle exactly where the cell's half is odd, a pixel short of it where it is even.
+export const speckOffset = (cellPx: number): number => Math.max(0, 2 * Math.floor((cellPx / 2 - 1) / 2));
 
 // ── A stroke ──────────────────────────────────────────────────────────────────────────────
 // The cells on the line from cell `a` to cell `b` (Bresenham), both ends included: a stroke's

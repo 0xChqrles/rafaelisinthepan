@@ -68,9 +68,12 @@ const K_MIN = 3;
 const CROWN_GAP = 6;
 const FOOT_ROWS = 4;
 // The unit's line between the count and the chain: the count's landing DROP (one glyph pixel,
-// `K` cells) is kept clear over it, then the line's own rows, then air down to the chain.
+// `K` cells — the reels' stop shake lands a glyph pixel low) and a cell are kept clear over
+// it, then the line's own rows, then MORE air down to the chain than over it — a glyph pixel
+// and two cells — so the words sit with the count they name, apart from the week (the
+// celebration's own grouping).
 const UNIT_TEXT_ROWS = 5;
-const UNIT_ROWS_AFTER_DROP = 8;
+const UNIT_AIR_BELOW = (k: number) => k + 2;
 
 export interface RecordLayout {
   k: number; // cells a glyph pixel of the count
@@ -121,7 +124,7 @@ export function recordLayout(widthPx: number, value: number, size: RecordSize = 
   const unitTop = countBottom + k + 1;
   const unitBottom = unitTop + UNIT_TEXT_ROWS;
   // The links' centre on a cell's edge, so each sprite lands on whole cells.
-  const linkY = countBottom + k + UNIT_ROWS_AFTER_DROP + LINK_H / 2;
+  const linkY = unitBottom + UNIT_AIR_BELOW(k) + LINK_H / 2;
   const links = Array.from({ length: 7 }, (_, i): LinkPlace => ({ x: cx + (i - 3) * LINK_PITCH + 0.5, y: linkY }));
   const rows = linkY + LINK_H / 2 + FOOT_ROWS;
   const labelY = (linkY + LINK_H / 2) * RECORD_CELL_PX + 8 + 9;

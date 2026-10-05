@@ -1,10 +1,11 @@
 // The editor's two canvas overlays, where they encode a rule: the palette sweep's snapshot is
-// the canvas EXACTLY as it stood — ground, ink and the grid's corner specks (`canvasPicture`)
+// the canvas EXACTLY as it stood — ground, ink and the grid's specks (`canvasPicture`)
 // — and the foil stamp never lays a foil cell across two of the mark's pixels (`stampGrain`).
 
 import { describe, expect, it } from 'vitest';
 import { AVATAR_CELLS, AVATAR_PALETTES } from '@whippin/shared';
 import { canvasPicture } from './DitherWipe';
+import { speckOffset } from './tools';
 import { stampGrain } from '../FoilStamp';
 import { hexToAbgr } from '../raster';
 
@@ -22,19 +23,19 @@ describe("the palette sweep's snapshot", () => {
     expect(at(2 * CELL + 10, 2 * CELL + 10)).toBe(hexToAbgr(bg));
   });
 
-  it("carries the grid's specks exactly where the canvas draws them, never on the canvas's edge", () => {
-    const speck = at(3 * CELL, 3 * CELL);
+  it("carries the grid's specks exactly where the canvas draws them: the middle of every empty cell", () => {
+    const at0 = speckOffset(CELL);
+    const speck = at(3 * CELL + at0, 3 * CELL + at0);
     expect(speck).not.toBe(hexToAbgr(bg));
     expect(speck).not.toBe(hexToAbgr(fg));
-    // Only the corner's own 2px: the next raster cell over is ground.
-    expect(at(3 * CELL + 2, 3 * CELL)).toBe(hexToAbgr(bg));
-    // No speck touches the ink: the crossings at the inked cell's corners carry none.
-    expect(at(2 * CELL, 2 * CELL)).toBe(hexToAbgr(bg));
-    expect(at(2 * CELL, CELL)).toBe(hexToAbgr(bg));
-    // An inked cell has no speck; the first row and column have none.
-    expect(at(CELL, CELL)).toBe(hexToAbgr(fg));
-    expect(at(0, 3 * CELL)).toBe(hexToAbgr(bg));
-    expect(at(3 * CELL, 0)).toBe(hexToAbgr(bg));
+    // Only the speck's own 2px: the raster cells round it are ground.
+    expect(at(3 * CELL + at0 + 2, 3 * CELL + at0)).toBe(hexToAbgr(bg));
+    expect(at(3 * CELL + at0, 3 * CELL + at0 - 2)).toBe(hexToAbgr(bg));
+    // The outer ring is specked too — the lattice covers the whole board.
+    expect(at(at0, at0)).toBe(speck);
+    expect(at(9 * CELL + at0, 0 * CELL + at0)).toBe(speck);
+    // An inked cell has no speck.
+    expect(at(CELL + at0, CELL + at0)).toBe(hexToAbgr(fg));
   });
 });
 

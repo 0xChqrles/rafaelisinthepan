@@ -85,6 +85,7 @@ import ArrowIcon from '../assets/icons/arrow-right.svg?react';
 import AccountStats from '../components/AccountStats';
 import AccountMark from '../components/AccountMark';
 import AddressField from '../components/AddressField';
+import AddressLine from '../components/AddressLine';
 import Avatar from '../components/Avatar';
 // The house's Bayer tiles on the root (`--dz-*`): the face holds stipple through them, the
 // leaving face thins through them, and the ending's lines come in through them.
@@ -1141,7 +1142,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             ) : (
               linked && (
                 <p {...arrive(620)} className="link-receipt link-arrive">
-                  {linked}
+                  <AddressLine address={linked} />
                 </p>
               )
             )}
