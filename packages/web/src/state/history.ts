@@ -25,7 +25,7 @@
 // unplayed month and a zero streak, exactly as they would for a player who has played
 // nothing.
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { create } from 'zustand';
 import { bestStreak, boundSolvedDays, currentStreak, SUPPORTED_LANGS } from '@whippin/shared';
 import { historyUrl, parsePlayerHistory, postHistoryBody } from '../api';
@@ -36,6 +36,7 @@ import {
 } from '../identity';
 import { adoptSignedOutVerdict } from './signedOutVerdict';
 import { statusOf, type RoundSummary, type Status } from './status';
+import { recordWeek } from '../game/streak';
 
 // Where one summary read is. `idle` = nothing has asked for it; the rest are the read's own
 // three outcomes.
@@ -332,6 +333,39 @@ export function useAccountStats(activeDay: number): AccountStats {
     days += held.length;
   }
   return { streak, best, days, phase };
+}
+
+// THE WEEK UNDER THE ACCOUNT'S STREAK (`/account`'s record, its chain — `recordWeek`): the
+// seven days, Monday first, of the language whose live streak the account's number shows —
+// read off the same collections `useAccountStats` aggregates, with no fetch of its own (that
+// hook loads them). Null until every collection has landed: a chain drawn from half of them
+// is a claim. One stable array per distinct week, so a raster keyed on it redraws only when
+// a link changes.
+export interface AccountWeekDay {
+  solved: boolean;
+  today: boolean;
+  future: boolean;
+}
+
+export function useAccountWeek(activeDay: number, firstLang: string): AccountWeekDay[] | null {
+  const solved = useHistoryStore((state) => state.solved);
+  const langs = [firstLang, ...SUPPORTED_LANGS.filter((lang) => lang !== firstLang)];
+  const entries = langs.map((lang) => solved[lang] ?? IDLE_SOLVED);
+  const key = entries.some((entry) => entry.phase !== 'ready')
+    ? null
+    : recordWeek(
+        entries.map((entry) => entry.days ?? []),
+        activeDay,
+      )
+        .map((cell) => (cell.isToday ? (cell.solved ? 'T' : 't') : cell.solved ? 'S' : cell.isFuture ? 'F' : 'M'))
+        .join('');
+  return useMemo(
+    () =>
+      key === null
+        ? null
+        : Array.from(key, (c) => ({ solved: c === 'S' || c === 'T', today: c === 'T' || c === 't', future: c === 'F' })),
+    [key],
+  );
 }
 
 // One day's status, straight off a month read — the one place the difference

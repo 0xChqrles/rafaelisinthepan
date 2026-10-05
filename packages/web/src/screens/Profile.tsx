@@ -3,6 +3,7 @@ import {
   anonName,
   AVATAR_CELLS,
   AVATAR_PALETTES,
+  AVATAR_SIZE,
   blankAvatar,
   decodeAvatar,
   defaultAvatar,
@@ -28,17 +29,42 @@ import { ACCOUNT_PATH } from '../langs';
 import useUiLang from '../hooks/useUiLang';
 import { t } from '../i18n';
 import Avatar from '../components/Avatar';
+import { MARK } from '../components/boardMetrics';
+import DitherWipe, { type WipeShot } from '../components/editor/DitherWipe';
+import {
+  cellLine,
+  churnCells,
+  drainStep,
+  isSymmetric,
+  landingOrder,
+  paintStroke,
+  rollShape,
+} from '../components/editor/tools';
+import { foilSeed } from '../components/foil';
+import FoilStamp from '../components/FoilStamp';
+import { takeMark } from '../components/markHandoff';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
 import LangTitle from '../components/LangTitle';
 import { HeaderBack, HeaderLeft } from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
+import { prefersReducedMotion } from '../hooks/useScramble';
+import PencilIcon from '../assets/icons/pencil.svg?react';
+import MirrorIcon from '../assets/icons/mirror.svg?react';
+import DiceIcon from '../assets/icons/dice.svg?react';
+import ClearIcon from '../assets/icons/clear.svg?react';
 
-// The #188 profile editor: name, tap-to-paint 10×10 grid, and the palette picker —
-// each swatch IS a palette ({bg, fg} pair, user-decided 2026-08-19: two colours,
-// nothing else), worn as its GROUND, so picking a ground picks the ink with it.
-// Reached from the leaderboard screen once #190 lands; until then it lives at its own
-// /profile route.
+// The #188 profile editor — `/account`'s masthead OPENED: the mark the player tapped GROWS
+// out of its own box into the CANVAS (`markHandoff`), in the corner brackets of a thing that
+// takes the finger, over the name typed in place in its WHITE CHIP. Under it the palettes —
+// each swatch the drawing itself in that palette ({bg, fg} pairs, user-decided 2026-08-19:
+// two colours, nothing else, so picking a ground picks the ink with it) — and the three
+// tools: MIRROR (paint a cell and its twin; the assigned marks are mirrored, so it opens ON
+// for a symmetric drawing), DICE (a new SHAPE the assigned way, the palette kept), CLEAR (the
+// drawing drained in the Bayer order). Then the line every board will draw for the player —
+// how others see them, shown rather than said — and SAVE on the bottom edge, whose landing
+// is the screen's one shiny thing: the FOIL STAMP. Every tool is an ordinary edit; SAVE is
+// the deploy.
 //
 // Show-don't-tell throughout: the grid demonstrates itself under the finger and the
 // swatches show their colours — no explanatory copy anywhere.
@@ -139,6 +165,52 @@ const SAVE_RESTORE_MS = 240;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+// ---- THE CANVAS'S GEOMETRY (visual only: nothing here decides what is saved). Its cell is a
+// WHOLE, EVEN number of px — the house's 2px dither lands on the cells' own edges — the
+// largest the column holds inside the card, and the largest that leaves the whole editor on
+// a phone's screen with nothing scrolled (an iPhone SE's 667px included): the chrome around
+// the canvas (the bar's clearance, the card's frame and chip, the tools, the board line,
+// SAVE on the edge) is EDITOR_CHROME_PX of the height, the CSS's own sum.
+const CELL_MIN = 20;
+const CELL_MAX = 36;
+const CARD_PAD_PX = 14;
+const EDITOR_CHROME_PX = 334;
+// The canvas grows out of the masthead's mark in whole-pixel steps, a cell this much bigger
+// each step, a step this long.
+const GROW_CELL_STEP = 4;
+const GROW_STEP_MS = 50;
+// The masthead's mark when nothing hands it over (a direct load): the growth starts here,
+// from the canvas's centre.
+const GROW_FROM_CELL = 5;
+// The dice: a churn, then the new shape landing out of it cell by cell, at the churning
+// tile's 16-ish fps; CLEAR: the Bayer drain, in hard steps.
+const DICE_FRAME_MS = 60;
+const DICE_CHURN_MS = 360;
+const DICE_LAND_MS = 360;
+const CLEAR_STEPS = 6;
+const CLEAR_STEP_MS = 50;
+// A refused save SHAKES the card, in whole pixels, a step a frame.
+const REFUSE_SHAKE: readonly (readonly [number, number])[] = [
+  [-4, 0],
+  [4, 0],
+  [-2, 0],
+  [2, 0],
+];
+const REFUSE_SHAKE_FRAME_MS = 50;
+
+// A cell's pop: how many times it has changed under a tool, and which way the last change
+// went — ink IN (it pops proud and throws its sparks) or OUT (it shrinks into its middle).
+interface Bump {
+  n: number;
+  kind: 'in' | 'out';
+}
+const bumped = (b: Record<number, Bump>, changed: readonly number[], kind: Bump['kind']) => {
+  if (changed.length === 0) return b;
+  const next = { ...b };
+  for (const i of changed) next[i] = { n: (next[i]?.n ?? 0) + 1, kind };
+  return next;
+};
+
 // What an account STORES: its profile, or null for the 404 "never customized". Anything
 // else — transport, a 5xx, a malformed body — THROWS: the stored profile is unknown, and
 // neither reader (the editor's load, the guarded save) may guess it.
@@ -173,15 +245,45 @@ export default function Profile() {
   const [cells, setCells] = useState<number[]>(() => new Array<number>(AVATAR_CELLS).fill(0));
   const [phase, setPhase] = useState<SavePhase>('idle');
   const [refused, setRefused] = useState<SaveRefusal>(null);
-  // Per-cell paint counters: a painted cell remounts keyed on its count, replaying the
-  // bump animation — and ONLY a painted one, so loading a stored drawing bumps nothing.
-  const [bumps, setBumps] = useState<Record<number, number>>({});
+  // Per-cell paint counters: a painted cell remounts keyed on its count, replaying its pop —
+  // and ONLY a painted one, so loading a stored drawing pops nothing. The pop's KIND (ink in,
+  // ink out) rides with the count.
+  const [bumps, setBumps] = useState<Record<number, Bump>>({});
   // What the server holds (or the blank start before any save): SAVE only lights up
   // when the editor differs from it, and a successful save re-baselines.
   const [baseline, setBaseline] = useState(() => ({ name: '', avatar: blankAvatar() }));
   const [load, setLoad] = useState<LoadState>('loading');
   // Bumped by RETRY — re-runs the read the way usePuzzle's retry re-runs its fetch.
   const [attempt, setAttempt] = useState(0);
+
+  // ---- the TOOLS (each an ordinary edit; SAVE stays the deploy). MIRROR opens ON for a
+  // left-right symmetric drawing — every assigned mark is one — and OFF for a drawing made
+  // lopsided on purpose. DICE and CLEAR PLAY (a churn, a drain), and while one plays the canvas
+  // takes no paint and the other tools wait.
+  const [mirror, setMirror] = useState(true);
+  const mirrorRef = useRef(mirror);
+  mirrorRef.current = mirror;
+  const [tool, setTool] = useState<'dice' | 'clear' | null>(null);
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
+  // The dice's churn, shown over the drawing while it rolls (the palette never changes).
+  const [churn, setChurn] = useState<number[] | null>(null);
+  const toolTimers = useRef<number[]>([]);
+  useEffect(() => () => toolTimers.current.forEach((id) => window.clearTimeout(id)), []);
+
+  // ---- the canvas's drawing (visual only).
+  const screenRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [cellPx, setCellPx] = useState(0);
+  // What the canvas WAS, swept off it through the dither on a palette switch.
+  const [wipe, setWipe] = useState<WipeShot | null>(null);
+  const wipeKey = useRef(0);
+  // Bumped by a save that LANDED (the stamp), and by one REFUSED (the shake).
+  const [stamp, setStamp] = useState(0);
+  const [refusedShake, setRefusedShake] = useState(0);
+  // Where the name's caret stands while the field holds the focus (null: it does not).
+  const [caret, setCaret] = useState<{ at: number; range: boolean } | null>(null);
 
   // Open the editor on what `id` stores. Both READ halves: the assigned pseudonym stands in
   // for an empty stored name, the assigned mark for a null stored avatar. The name is also
@@ -195,6 +297,7 @@ export default function Profile() {
     setName(shownName);
     setPalette(decoded.palette);
     setCells(decoded.cells);
+    setMirror(isSymmetric(decoded.cells));
     setBaseline({ name: shownName, avatar: shownAvatar });
   };
 
@@ -291,17 +394,40 @@ export default function Profile() {
   };
 
   // ---- painting. One STROKE value per gesture: starting on a painted cell erases (so
-  // tap toggles), and dragging paints that same value throughout.
-  const strokeRef = useRef<number | null>(null);
-  const paintAt = useCallback((element: Element | null) => {
-    const raw = element instanceof HTMLElement ? element.dataset.cell : undefined;
+  // tap toggles), and dragging paints that same value throughout — along the LINE from the
+  // last cell the finger crossed (`cellLine`), so a fast drag leaves no gap; with MIRROR on,
+  // every cell's twin takes the stroke too. The cell is read off the pointer's place on the
+  // canvas, never off the element under it: the canvas wears overlays (the sweep, the foil)
+  // and grows in under a transform.
+  const strokeRef = useRef<0 | 1 | null>(null);
+  const lastRef = useRef<number | null>(null);
+  const cellAt = useCallback((x: number, y: number): number | null => {
+    const el = canvasRef.current;
+    if (!el) return null;
+    const box = el.getBoundingClientRect();
+    if (box.width <= 0) return null;
+    const cx = Math.floor(((x - box.left) / box.width) * AVATAR_SIZE);
+    const cy = Math.floor(((y - box.top) / box.height) * AVATAR_SIZE);
+    if (cx < 0 || cy < 0 || cx >= AVATAR_SIZE || cy >= AVATAR_SIZE) return null;
+    return cy * AVATAR_SIZE + cx;
+  }, []);
+  const paintTo = useCallback((index: number | null) => {
     const stroke = strokeRef.current;
-    if (raw === undefined || stroke === null) return;
-    const index = Number(raw);
+    if (stroke === null) return;
+    // Off the canvas, the line breaks: coming back in elsewhere starts a new run.
+    if (index === null) {
+      lastRef.current = null;
+      return;
+    }
+    const from = lastRef.current;
+    if (from === index) return;
+    lastRef.current = index;
+    const path = from === null ? [index] : cellLine(from, index);
     setCells((prev) => {
-      if (prev[index] === stroke) return prev;
-      setBumps((b) => ({ ...b, [index]: (b[index] ?? 0) + 1 }));
-      return prev.map((v, i) => (i === index ? stroke : v));
+      const { cells: next, changed } = paintStroke(prev, path, stroke, mirrorRef.current);
+      if (changed.length === 0) return prev;
+      setBumps((b) => bumped(b, changed, stroke === 1 ? 'in' : 'out'));
+      return next;
     });
     setRefused(null);
   }, []);
@@ -309,28 +435,108 @@ export default function Profile() {
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       e.preventDefault();
-      const target = e.target instanceof HTMLElement ? e.target : null;
-      const raw = target?.dataset.cell;
-      if (raw === undefined) return;
-      strokeRef.current = cells[Number(raw)] === 1 ? 0 : 1;
+      if (toolRef.current !== null) return;
+      const index = cellAt(e.clientX, e.clientY);
+      if (index === null) return;
+      strokeRef.current = cells[index] === 1 ? 0 : 1;
+      lastRef.current = null;
       e.currentTarget.setPointerCapture(e.pointerId);
-      paintAt(target);
+      paintTo(index);
     },
-    [cells, paintAt],
+    [cells, cellAt, paintTo],
   );
   const onPointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (strokeRef.current === null) return;
-      // Pointer capture pins e.target to the grid, so hit-test the point instead.
-      paintAt(document.elementFromPoint(e.clientX, e.clientY));
+      // A fast drag's skipped samples (coalesced events) are walked too.
+      const events = typeof e.nativeEvent.getCoalescedEvents === 'function' ? e.nativeEvent.getCoalescedEvents() : [];
+      for (const sample of events.length > 0 ? events : [e.nativeEvent]) paintTo(cellAt(sample.clientX, sample.clientY));
     },
-    [paintAt],
+    [cellAt, paintTo],
   );
   const endStroke = useCallback(() => {
     strokeRef.current = null;
+    lastRef.current = null;
   }, []);
 
-  const colors = AVATAR_PALETTES[palette];
+  // DICE: the tile CHURNS on the waiting tile's noise (every frame a plausible creature, in
+  // the palette already chosen), then the new shape LANDS out of it cell by cell, and the
+  // landed shape is the edit.
+  const roll = useCallback(() => {
+    const target = rollShape(cells);
+    const commit = () => {
+      setChurn(null);
+      setTool(null);
+      setCells((prev) => {
+        const on = target.flatMap((v, i) => (v === 1 && prev[i] !== 1 ? [i] : []));
+        const off = target.flatMap((v, i) => (v === 0 && prev[i] === 1 ? [i] : []));
+        setBumps((b) => bumped(bumped(b, on, 'in'), off, 'out'));
+        return target;
+      });
+      setRefused(null);
+    };
+    if (prefersReducedMotion()) {
+      commit();
+      return;
+    }
+    setTool('dice');
+    const order = landingOrder(target);
+    const landAt = new Array<number>(AVATAR_CELLS);
+    order.forEach((index, n) => {
+      landAt[index] = DICE_CHURN_MS + (n / (order.length - 1)) * DICE_LAND_MS;
+    });
+    const frames = Math.ceil((DICE_CHURN_MS + DICE_LAND_MS) / DICE_FRAME_MS);
+    const offset = Math.floor(Math.random() * 1000);
+    for (let f = 0; f <= frames; f += 1) {
+      const at = f * DICE_FRAME_MS;
+      toolTimers.current.push(
+        window.setTimeout(() => {
+          if (f === frames) {
+            commit();
+            return;
+          }
+          const noise = churnCells(offset + f);
+          setChurn(noise.map((v, i) => (at >= landAt[i] ? target[i] : v)));
+        }, at),
+      );
+    }
+  }, [cells]);
+
+  // CLEAR: the drawing DRAINS — its cells go out in the Bayer order, in hard steps, each with
+  // its own small shrink.
+  const clear = useCallback(() => {
+    if (prefersReducedMotion()) {
+      setCells(new Array<number>(AVATAR_CELLS).fill(0));
+      setRefused(null);
+      return;
+    }
+    setTool('clear');
+    for (let step = 1; step <= CLEAR_STEPS; step += 1) {
+      toolTimers.current.push(
+        window.setTimeout(() => {
+          setCells((prev) => {
+            const { cells: next, gone } = drainStep(prev, step, CLEAR_STEPS);
+            if (gone.length === 0) return prev;
+            setBumps((b) => bumped(b, gone, 'out'));
+            return next;
+          });
+          if (step === CLEAR_STEPS) {
+            setTool(null);
+            setRefused(null);
+          }
+        }, step * CLEAR_STEP_MS),
+      );
+    }
+  }, []);
+
+  const pickPalette = (index: number) => {
+    if (index === palette) return;
+    wipeKey.current += 1;
+    setWipe({ palette, cells: churn ?? cells, key: wipeKey.current });
+    setPalette(index);
+    setRefused(null);
+  };
+
   // The editor is FROZEN while a save runs (its two round trips can take real time on a
   // phone, and the GUARDED success path re-binds every field to the merged server truth):
   // an edit made mid-save would be silently replayed over when the answer lands — the grid
@@ -343,6 +549,112 @@ export default function Profile() {
   // sent verbatim — so the two strings compared here are the same two strings the
   // route holds, and the re-baseline below is exact.
   const dirty = name !== baseline.name || encoded !== baseline.avatar;
+  // What the canvas SHOWS: the drawing, or the dice's churn over it while it rolls — the
+  // canvas, the swatches and the board line follow it.
+  const shownCells = churn ?? cells;
+  const shownEncoded = churn ? encodeAvatar(palette, churn) : encoded;
+
+  // THE CANVAS'S CELL, off the column's width and the window's height (see EDITOR_CHROME_PX).
+  useLayoutEffect(() => {
+    const screen = screenRef.current;
+    if (!screen) return undefined;
+    const measure = () => {
+      const room = screen.clientWidth - 2 * CARD_PAD_PX;
+      const byWidth = room / AVATAR_SIZE;
+      const byHeight = (window.innerHeight - EDITOR_CHROME_PX) / AVATAR_SIZE;
+      const cell = Math.max(CELL_MIN, Math.min(CELL_MAX, 2 * Math.floor(Math.min(byWidth, byHeight) / 2)));
+      setCellPx((prev) => (prev === cell ? prev : cell));
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    ro?.observe(screen);
+    return () => {
+      window.removeEventListener('resize', measure);
+      ro?.disconnect();
+    };
+  }, [load]);
+
+  // THE CANVAS GROWS OUT OF THE MASTHEAD'S MARK as the editor opens: from the mark's own cell
+  // up to the canvas's, GROW_CELL_STEP px a cell a step — whole pixels at every step, nothing
+  // in between — and, opened from the masthead, out of the very box the mark stood in
+  // (`markHandoff`), travelling to its place on whole pixels as it grows. A direct load, or a
+  // note that is stale (off the screen, the wrong size), grows from the canvas's own centre.
+  const grown = useRef(false);
+  useLayoutEffect(() => {
+    const el = canvasRef.current;
+    if (!el || cellPx <= 0 || grown.current) return;
+    grown.current = true;
+    const handed = takeMark();
+    if (prefersReducedMotion() || typeof el.animate !== 'function') return;
+    const side = cellPx * AVATAR_SIZE;
+    const at = el.getBoundingClientRect();
+    const usable =
+      handed !== null &&
+      handed.width >= 20 &&
+      handed.width <= 120 &&
+      Math.abs(handed.width - handed.height) < 1 &&
+      handed.bottom > 0 &&
+      handed.top < window.innerHeight &&
+      handed.right > 0 &&
+      handed.left < window.innerWidth;
+    const fromCell = usable ? Math.max(1, Math.round(handed.width / AVATAR_SIZE)) : GROW_FROM_CELL;
+    const fromSide = fromCell * AVATAR_SIZE;
+    const fromX = usable ? handed.left - at.left : (side - fromSide) / 2;
+    const fromY = usable ? handed.top - at.top : (side - fromSide) / 2;
+    const sizes: number[] = [];
+    for (let size = fromCell; size < cellPx; size += GROW_CELL_STEP) sizes.push(size);
+    sizes.push(cellPx);
+    if (sizes.length < 2) return;
+    const last = sizes.length - 1;
+    el.animate(
+      sizes.map((size, k) => {
+        const left = 1 - k / last;
+        return {
+          transformOrigin: '0 0',
+          transform: `translate(${Math.round(fromX * left)}px, ${Math.round(fromY * left)}px) scale(${size / cellPx})`,
+          offset: k / last,
+          easing: 'steps(1, end)',
+        };
+      }),
+      { duration: GROW_STEP_MS * last },
+    );
+  }, [cellPx]);
+
+  // A REFUSED save shakes the card, in whole pixels (the ErrorScreen then says why).
+  useEffect(() => {
+    const card = cardRef.current;
+    if (refusedShake === 0 || !card || prefersReducedMotion() || typeof card.animate !== 'function') return;
+    const frames: Keyframe[] = REFUSE_SHAKE.map(([dx, dy], k) => ({
+      translate: `${dx}px ${dy}px`,
+      offset: k / REFUSE_SHAKE.length,
+      easing: 'steps(1, end)',
+    }));
+    frames.push({ translate: '0 0', offset: 1 });
+    card.animate(frames, { duration: REFUSE_SHAKE.length * REFUSE_SHAKE_FRAME_MS });
+  }, [refusedShake]);
+
+  // The caret follows the field's own selection.
+  const syncCaret = useCallback(() => {
+    const input = nameRef.current;
+    if (!input || document.activeElement !== input) {
+      setCaret(null);
+      return;
+    }
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? start;
+    setCaret((prev) =>
+      prev && prev.at === start && prev.range === (start !== end) ? prev : { at: start, range: start !== end },
+    );
+  }, []);
+  useEffect(() => {
+    document.addEventListener('selectionchange', syncCaret);
+    return () => document.removeEventListener('selectionchange', syncCaret);
+  }, [syncCaret]);
+  useLayoutEffect(() => {
+    if (caret !== null) syncCaret();
+    // (Re-read on every new name: the sanitizer may have moved the caret.)
+  }, [name]);
 
   const onSave = useCallback(async () => {
     // The last door the rule stands in: a composition still OPEN when SAVE is tapped
@@ -461,6 +773,10 @@ export default function Profile() {
     await sleep(Math.max(0, SAVE_DOTS_MIN_MS - (Date.now() - started)));
     if (epoch !== null && identityEpoch() !== epoch) return;
     setRefused(outcome);
+    // The landing, told on the canvas (visual only): a save that LANDED is stamped in foil, a
+    // refused one shakes the card.
+    if (written && outcome === null) setStamp((n) => n + 1);
+    else if (outcome !== null) setRefusedShake((n) => n + 1);
     setPhase('restoring');
     await sleep(SAVE_RESTORE_MS);
     if (epoch !== null && identityEpoch() !== epoch) return;
@@ -482,13 +798,17 @@ export default function Profile() {
             ? { title: t(lang, 'profileSaveFailed'), note: t(lang, 'failedSaveNote') }
             : null;
 
+  // How others will see the player: the line every board draws — and a name still the
+  // assigned pseudonym (or none) is dressed in the placeholder ink there, so it is here too.
+  const anon = name === '' || (assignedFrom !== '' && name === anonName(assignedFrom));
+  const lineName = name || (assignedFrom ? anonName(assignedFrom) : '');
+  const empty = cells.every((value) => value === 0);
+  const busy = saving || tool !== null;
+
   return (
     <>
       {/* The way OUT: UP, to `/account` (#204's UX rework, 2026-08-26). This screen
-          answers ONE question now — how others see me — and `/account` is its only door,
-          so there is nothing left to guess: the old `profileReturn` dance existed because
-          the editor could be entered from either board, and the account screen is where
-          that choice now lives. */}
+          answers ONE question — how others see me — and `/account` is its only door. */}
       <HeaderLeft>
         <HeaderBack label={t(lang, 'ariaBack')} onBack={() => navigate(ACCOUNT_PATH)} />
         <LangTitle lang={lang} title={t(lang, 'profileTitle')} />
@@ -506,12 +826,72 @@ export default function Profile() {
         />
       )}
       {load === 'ready' && (
-        <div className="profile-screen">
-          <div className="profile-editor arrive">
-            <div className="profile-head">
-              {/* The live preview: the drawing at the size a board row will wear it —
-                  what the grid below is editing, seen as others will see it. */}
-              <Avatar avatar={encoded} size={48} />
+        <div
+          ref={screenRef}
+          className={`profile-screen${cellPx > 0 ? ' measured' : ''}`}
+          style={{ '--pcell': `${cellPx}px` } as React.CSSProperties}
+        >
+          {/* THE CARD, OPENED: the masthead's mark become the canvas, over the name in its
+              white chip — inside the corner brackets of a thing that takes the finger. A save
+              that lands re-keys the brackets, so they lock on again. */}
+          <div ref={cardRef} className="profile-card">
+            {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
+              <i key={`${corner}${stamp}`} className={`profile-corner ${corner}${stamp ? ' lock' : ''}`} aria-hidden="true" />
+            ))}
+            <div className="profile-canvas-box">
+              {/* The MIRROR's axis, said at the canvas's edges only — never a line over the
+                  drawing. */}
+              {mirror && (
+                <>
+                  <i className="profile-axis top" aria-hidden="true" />
+                  <i className="profile-axis bottom" aria-hidden="true" />
+                </>
+              )}
+              {/* The palette's two inks are the canvas's only variables: an EMPTY cell wears
+                  the ground with a speck of the ink in its corner — where the grid is — and a
+                  painted one the ink. One mark, continuous: no gutters, no lines. */}
+              <div
+                ref={canvasRef}
+                className={`avatar-editor${tool === 'dice' ? ' rolling' : ''}`}
+                style={
+                  {
+                    '--cell-bg': AVATAR_PALETTES[palette].bg,
+                    '--cell-fg': AVATAR_PALETTES[palette].fg,
+                  } as React.CSSProperties
+                }
+                role="img"
+                aria-label={t(lang, 'ariaAvatarEditor')}
+                onPointerDown={saving ? undefined : onPointerDown}
+                onPointerMove={saving ? undefined : onPointerMove}
+                onPointerUp={endStroke}
+                onPointerCancel={endStroke}
+              >
+                {shownCells.map((value, i) => {
+                  const bump = churn ? undefined : bumps[i];
+                  return (
+                    <div
+                      // The paint counter in the key remounts a changed cell, replaying its
+                      // pop (and its sparks, when it took the ink); the position keeps the
+                      // identity.
+                      key={`${i}:${bump?.n ?? 0}`}
+                      className={`avatar-editor-cell${value === 1 ? ' on' : ''}${
+                        bump ? (bump.kind === 'in' ? ' painted' : ' erased') : ''
+                      }`}
+                    />
+                  );
+                })}
+                <DitherWipe shot={wipe} cellPx={cellPx} />
+                <FoilStamp play={stamp} avatar={encoded} seed={foilSeed(`profile:${assignedFrom}`)} />
+              </div>
+            </div>
+            {/* THE NAME, edited in place in the white chip: the field IS the chip, exactly as
+                wide as what it holds (the mono's fixed advance); the house's caret — the
+                prompt's, in the accent — stands where the text cursor is; the pencil beside the
+                chip says it can be typed into, until it is. */}
+            <span
+              className="profile-name-chip"
+              style={{ '--n': Math.max(1, name.length || t(lang, 'profileNamePlaceholder').length) } as React.CSSProperties}
+            >
               <input
                 ref={nameRef}
                 className="profile-name"
@@ -525,6 +905,10 @@ export default function Profile() {
                 autoCorrect="off"
                 autoCapitalize="off"
                 spellCheck={false}
+                onFocus={syncCaret}
+                onBlur={() => setCaret(null)}
+                onSelect={syncCaret}
+                onKeyUp={syncCaret}
                 onCompositionStart={() => {
                   composingRef.current = true;
                 }}
@@ -538,104 +922,122 @@ export default function Profile() {
                   setRefused(null);
                 }}
               />
-            </div>
-
-            {/* The palette's ONE inline variable: empty cells wear the bg itself and the
-                CSS derives the canvas's darker frame from it (color-mix — computed,
-                never a second hardcoded shade per palette). */}
-            <div
-              className="avatar-editor"
-              style={{ '--cell-bg': colors.bg } as React.CSSProperties}
-              role="img"
-              aria-label={t(lang, 'ariaAvatarEditor')}
-              onPointerDown={saving ? undefined : onPointerDown}
-              onPointerMove={saving ? undefined : onPointerMove}
-              onPointerUp={endStroke}
-              onPointerCancel={endStroke}
-            >
-              {cells.map((value, i) => (
-                <div
-                  // The paint counter in the key remounts a painted cell, replaying the
-                  // bump; the position keeps the identity.
-                  key={`${i}:${bumps[i] ?? 0}`}
-                  className={`avatar-editor-cell${bumps[i] ? ' bumped' : ''}`}
-                  data-cell={i}
-                  style={{ background: value === 0 ? undefined : colors.fg }}
+              {caret !== null && !caret.range && !saving && (
+                <span
+                  key={`${caret.at}:${name}`}
+                  className="profile-caret"
+                  style={{ '--at': caret.at } as React.CSSProperties}
+                  aria-hidden="true"
                 />
+              )}
+              <span className={`profile-name-pen${caret !== null ? ' off' : ''}`} aria-hidden="true">
+                <PencilIcon className="ui-icon" />
+              </span>
+            </span>
+          </div>
+
+          {/* THE PALETTES and THE TOOLS, one row. A swatch is the drawing itself, worn in that
+              palette — a preview of the choice, not a chip of colour — and only the one in
+              hand wears the white corners. The tools are pixel marks in a tappable thing's
+              corners; MIRROR on is the white chip. */}
+          <div className="profile-tools">
+            <div className="profile-palettes">
+              {AVATAR_PALETTES.map((option, index) => (
+                <button
+                  key={option.name}
+                  type="button"
+                  className={`profile-swatch${palette === index ? ' sel' : ''}`}
+                  style={{ '--i': index } as React.CSSProperties}
+                  aria-label={`${t(lang, 'ariaPalette')} ${option.name}`}
+                  aria-pressed={palette === index}
+                  disabled={busy}
+                  onClick={() => pickPalette(index)}
+                >
+                  <Avatar avatar={encodeAvatar(index, shownCells)} size={30} sharp />
+                </button>
               ))}
             </div>
-
-            {/* The palettes, shown as their BACKGROUND colour (user-decided 2026-08-19,
-                superseding the foreground swatches): pick a ground, its ink comes with
-                it. The drawing (the cell states) survives a switch. CLEAR shares the
-                row — it acts on the same thing the swatches dress. */}
-            <div className="profile-tools">
-              <div className="profile-palettes">
-                {AVATAR_PALETTES.map((option, index) => (
-                  <button
-                    key={option.name}
-                    type="button"
-                    className={`profile-palette${palette === index ? ' sel' : ''}`}
-                    style={{ background: option.bg }}
-                    aria-label={`${t(lang, 'ariaPalette')} ${option.name}`}
-                    aria-pressed={palette === index}
-                    disabled={saving}
-                    onClick={() => {
-                      setPalette(index);
-                      setRefused(null);
-                    }}
-                  />
-                ))}
-              </div>
+            <div className="profile-keys">
               <button
                 type="button"
-                className="profile-clear"
-                disabled={saving || cells.every((value) => value === 0)}
-                onClick={() => {
-                  setCells(new Array<number>(AVATAR_CELLS).fill(0));
-                  setRefused(null);
-                }}
+                className={`profile-key${mirror ? ' on' : ''}`}
+                aria-pressed={mirror}
+                aria-label={t(lang, 'profileMirror')}
+                title={t(lang, 'profileMirror')}
+                disabled={saving}
+                onClick={() => setMirror((on) => !on)}
               >
-                {t(lang, 'profileClear')}
+                <MirrorIcon className="ui-icon" aria-hidden />
+              </button>
+              <button
+                type="button"
+                className={`profile-key${tool === 'dice' ? ' on' : ''}`}
+                aria-label={t(lang, 'profileDice')}
+                title={t(lang, 'profileDice')}
+                disabled={busy}
+                onClick={roll}
+              >
+                <DiceIcon className="ui-icon" aria-hidden />
+              </button>
+              <button
+                type="button"
+                className={`profile-key${tool === 'clear' ? ' on' : ''}`}
+                aria-label={t(lang, 'profileClear')}
+                title={t(lang, 'profileClear')}
+                disabled={busy || empty}
+                onClick={clear}
+              >
+                <ClearIcon className="ui-icon" aria-hidden />
               </button>
             </div>
-
-            {/* Nothing to save = disabled — the board itself says whether there is a
-                change. While saving, the label rolls out the bottom and the dot loader
-                drops in from the top; the restore beat rolls the label back up. */}
-            <button
-              type="button"
-              className={`mix-btn profile-save${phase !== 'idle' ? ` ${phase}` : ''}`}
-              disabled={phase !== 'idle' || !dirty}
-              aria-busy={phase === 'saving'}
-              onClick={onSave}
-            >
-              <span
-                className={`save-label${phase === 'saving' ? ' out' : phase === 'restoring' ? ' back' : ''}`}
-              >
-                {t(lang, 'profileSave')}
-              </span>
-              {phase !== 'idle' && (
-                <span
-                  className={`save-dots${phase === 'restoring' ? ' out' : ''}`}
-                  aria-hidden="true"
-                >
-                  <i />
-                  <i />
-                  <i />
-                </span>
-              )}
-            </button>
-            {/* The save's failure, on the app's error surface (#216 rework). */}
-            {saveError && (
-              <ErrorScreen
-                lang={lang}
-                title={saveError.title}
-                note={saveError.note}
-                onClose={() => setRefused(null)}
-              />
-            )}
           </div>
+
+          {/* HOW OTHERS SEE ME, shown: the line every board draws for this player — the mark
+              at the boards' size, the name in their dress — and nothing a board would only
+              say once they have played (no rank, no crown, no count). */}
+          <div className="profile-line" aria-hidden="true">
+            <span key={`hop${stamp}`} className={`profile-line-mark${stamp ? ' hop' : ''}`}>
+              <Avatar avatar={shownEncoded} size={MARK} sharp />
+            </span>
+            <span className={`board-name${anon ? ' anon' : ''}`}>{lineName}</span>
+          </div>
+
+          {/* Nothing to save = disabled — the board itself says whether there is a change.
+              While saving, the label rolls out the bottom and the dot loader drops in from the
+              top; the restore beat rolls the label back up — and a save that landed STAMPS the
+              canvas in foil. */}
+          <button
+            type="button"
+            className={`mix-btn profile-save${phase !== 'idle' ? ` ${phase}` : ''}`}
+            disabled={phase !== 'idle' || !dirty || tool !== null}
+            aria-busy={phase === 'saving'}
+            onClick={onSave}
+          >
+            <span
+              className={`save-label${phase === 'saving' ? ' out' : phase === 'restoring' ? ' back' : ''}`}
+            >
+              {t(lang, 'profileSave')}
+            </span>
+            {phase !== 'idle' && (
+              <span
+                className={`save-dots${phase === 'restoring' ? ' out' : ''}`}
+                aria-hidden="true"
+              >
+                <i />
+                <i />
+                <i />
+              </span>
+            )}
+          </button>
+          {/* The save's failure, on the app's error surface (#216 rework). */}
+          {saveError && (
+            <ErrorScreen
+              lang={lang}
+              title={saveError.title}
+              note={saveError.note}
+              onClose={() => setRefused(null)}
+            />
+          )}
         </div>
       )}
     </>

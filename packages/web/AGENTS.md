@@ -30,9 +30,12 @@
                               route client shares (401 + `unknown_device` code)
       screens/SignedOut.tsx   the `unknown_device` screen: what is left behind, RECONNECT (#204)
                               onto the email step, and PLAY (start over on a new account)
-      screens/Account.tsx     `/account` (#204): the identity masthead row, the save state
-                              (button, or the address), and — once SAVED — #216's devices.
-                              The area's one door
+      screens/Account.tsx     `/account` (#204): the MASTHEAD (the identity, and the editor's
+                              door), the RECORD, the save call (or the address), and — once
+                              SAVED — #216's devices. The area's one door
+      components/record/      `/account`'s RECORD: `Record.tsx` (the words, BEST and DAYS, the
+                              clock) over `scene.ts` (the raster: the flame over the streak's
+                              count, the week's chain, today's foil link)
       screens/AccountEmail.tsx  `/account/email` (SAVE) and `/account/signin` (RETURN) — one
                               engine, two declared intentions: address -> code -> bind/adopt,
                               the two-face crossroads, six face-led endings
@@ -132,7 +135,7 @@
       components/rasterWatch.ts  whether anybody is WATCHING a raster's clock (`watchRaster`: in
                               view, the tab shown, a touch within `IDLE_MS`), and the resting
                               loop's pace (`LOOP_FRAME_MS`): the podium's and the archive's
-      components/DeviceList.tsx  the account's devices + SIGN OUT rows (#216), on the profile editor
+      components/DeviceList.tsx  the account's devices + SIGN OUT, as board lines on `/account` (#216)
       components/ErrorScreen.tsx  the app's error surface: a FULL-SCREEN modal led by the
                               user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet);
                               ONE quiet way out since 2026-09-03 — no TRY AGAIN
@@ -147,8 +150,14 @@
                               the streak credit a fresh solve rides
       hooks/useRoundSync.ts   its React binding: registers the round's context on mount and
                               reports WHERE its authoritative state is (the load gate)
-      screens/Profile.tsx     the #188 profile editor (/profile): name, tap-to-paint 10×10 grid,
-                              ground-swatch palette picker (#190 wires the entry point)
+      screens/Profile.tsx     the #188 profile editor (/profile): the canvas grown out of the
+                              masthead's mark, the name's white chip, the palettes + MIRROR /
+                              DICE / CLEAR, the board line it previews, SAVE
+      components/editor/      the editor's pure tools (`tools.ts`: the mirror, a stroke's line,
+                              the dice, the drain) and its palette sweep (`DitherWipe.tsx`)
+      components/FoilStamp.tsx  the SAVE landing: a foil band over any square mark (a component
+                              in the mark's box, or `stampFoil(element)` over one on screen)
+      components/markHandoff.ts  the masthead's mark rect, handed to the editor's canvas
       screens/Privacy.tsx     `/privacy` (#229): what the game keeps, why, and how to be rid
                               of it — the app's one DOCUMENT, its words in privacyDoc.ts
       components/LangTitle.tsx  the header's OTHER clickable title: a screen's own name, the
@@ -743,8 +752,7 @@ These are decided and verified against the code. Treat them as load-bearing.
     secondary directly under a primary (`.btn-primary + .btn-secondary`, `.mix-btn +
     .btn-secondary`) and every quiet act (`.link-quiet-btn`, `.link-danger`) is the label
     alone at 0.7 strength, lifted to 1 on hover — nothing drawn that is not the word. The
-    COMPACT secondary (`.board-chip` EDIT, `.profile-clear`, `.device-signout`,
-    `.device-retry`, 40px tall) is the shape. SHARE is the primary on the result screen.
+    COMPACT secondary (`.device-retry`, 40px tall) is the shape. SHARE is the primary on the result screen.
     No other button dress remains.
     *(The two paragraphs below are the designs it replaced, kept for their reasoning.)*
   - **THE BUTTONS ARE KEYCAPS WITH A HARD PRINT (user-decided 2026-09-14: "we should
@@ -1144,7 +1152,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     and wired it as the screen's PRIMARY action onto `/account/signin` (the account bullet
     below holds the reasoning). It is the screen's own handler now, not a prop.
   - **`components/DeviceList.tsx` is the REACHABLE surface for signing any device out**,
-    mounted on the PROFILE editor — the screen that already is the identity screen. Every
+    mounted on `/account` once the account is SAVED (the account bullet below). Every
     call answers the list as it now stands (the live routes' house rule), so a revocation needs no
     optimistic update, and the route's own correction for the index's lag means the screen
     compensates for nothing. Each row returns an opaque `revokeKey` and sends it back with its
@@ -1164,8 +1172,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   implementation:
   - **ACCOUNT-AREA PRODUCT DECISIONS (each user-decided on the date given):**
     - **ONE PURPOSE PER SCREEN (2026-08-26):** `/account` — *is this account mine, and
-      safe?* (mark, name, when it began, EDIT out to the editor; SAVED or not; where it is
-      signed in) · `/profile` — *how do others see me?* (the editor, nothing else) ·
+      safe?* (mark, name, the address once saved — the masthead itself the door to the
+      editor; what it has done; SAVED or not; where it is signed in) · `/profile` — *how do others see me?* (the editor, nothing else) ·
       `/account/email` — *save it* / `/account/signin` — *get another one back*, one input
       per step. All GLOBAL routes. A flat `/account` over a 3-card hub. The
       leaderboard's EDIT chip is gone. RECONNECT lands on `/account/signin` directly.
@@ -1239,6 +1247,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
       exit (code → address).
     - **A SECTION IS SPACE AND A TITLE (2026-08-29):** generous room between blocks, a real
       title at the chrome's own ink and size on a block that needs naming, no invented titles.
+      The DEVICES need none: their lines — a device glyph, its label, one fact — say what
+      they are.
     - **THE COPY SAYS ONLY WHAT THE SCREEN DOES NOT SHOW:** `YOUR ACCOUNT`, `SAVED AS`,
       `6-DIGIT CODE` are cut; the ONE line kept is why a word game wants an address, said once
       where the decision is made (*Pour qu'un téléphone perdu ne perde pas tout.*). The privacy
@@ -1310,11 +1320,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **THREE routes, three screens** (a fourth, `/account/manage`, lived for one commit on
     2026-08-26 and was ROLLED BACK the same day, user-decided: the devices belong on the
     account screen — gated, below). `screens/Account.tsx` (`/account`) is the area's one
-    door and reads top-down as a PAGE: the ACCOUNT'S THREE NUMBERS under the identity as a
-    MASTHEAD ROW — mark, name, the
-    account's age, EDIT at the trailing edge, the UX research's own strip, chosen over the
-    centered hero the second polish pass tried (user-decided the same day: a page's
-    identity is a masthead, not a monument) — over a hairline, then the save state, then
+    door and reads top-down as a PAGE: the identity as its MASTHEAD (a page's identity is a
+    masthead, not a monument — user-decided the same day, over the centered hero the second
+    polish pass tried), the RECORD under it as the screen's subject, then the save call or
     the devices. `screens/AccountEmail.tsx` (`/account/email`) is the flow, one purpose
     per step. `screens/Profile.tsx` is the editor ALONE.
   - **THE STATS ROW (2026-08-28)** is `state/history.ts`'s `useAccountStats(activeDay)` — a
@@ -1324,12 +1332,67 @@ it to the local store — see `packages/backend/AGENTS.md`).
     landed: a total summed over one of two is a smaller number stated as a fact. Values
     withheld until then (the slot BREATHES only while a read is in flight — a failure rests
     still, the archive's ghosts' rule), labels and layout always drawn, and ONE fixed value
-    height so nothing moves when the collections land. The STREAK cell wears no
-    icon. The ROW ITSELF is
-    `components/AccountStats.tsx`, drawn by three surfaces for three reasons — what this
-    account IS, what a deletion is about to COST, and what a recovery just HANDED BACK —
-    because a player who reads a streak of 12 on the account screen and is then offered a
-    dialog saying 9 has been told the app does not know its own numbers.
+    height so nothing moves when the collections land. The numbers are drawn by three
+    surfaces for three reasons — what this account IS (`/account`'s record), what a deletion
+    is about to COST and what a recovery just HANDED BACK (`components/AccountStats.tsx`,
+    the row) — because a player who reads a streak of 12 on the account screen and is then
+    offered a dialog saying 9 has been told the app does not know its own numbers.
+  - **THE PROFILE AREA'S DRESS (2026-10-05)** — the rest of the app's language: bare
+    ground, whole pixels, corner brackets only on what is tapped, ONE shiny thing a screen.
+    - **`/account`'s MASTHEAD is ONE tap target, the editor's door**: corner brackets (one
+      bordered box masked to its four corners, so they step to white on a hover with the
+      pixel pencil in its top corner — no word, no chevron), the mark at 50px (five whole
+      pixels a cell, never a size between two), the name in the boards' face at the action
+      weight, the saved address on a caption line HELD whether or not it is there (nothing
+      moves when the summary lands; it shows only once SAVED). A press sinks the mark 2px.
+      The tap hands the mark's box to the editor (`markHandoff`), whose canvas GROWS out of
+      it in whole-pixel steps (a direct load or a stale note grows from the canvas's centre).
+    - **THE RECORD is the screen's subject** (`components/record/`), in the streak
+      celebration's own sprites: the blue FLAME over the live STREAK on the count's reels,
+      `dayStreak` under it, the week as the CHAIN (`recordWeek`: the week of the language
+      holding the account's streak, never a union of two — a played day's link cobalt and
+      joined, a day to come its dashed ghost, a missed one an open iron link, TODAY solved
+      struck into FOIL with glitter — the screen's only foil; today still open, its ghost
+      breathing), BEST and DAYS as two small reels either side of the stippled rail. A
+      streak of NOTHING reads as waiting, not broken: the count in iron lit from above, the
+      flame's own outline empty and dashed (the ghost link's grammar for a thing to come)
+      breathing with today's link, the pilot spark at its foot. It BUILDS once a page load
+      and settles; its rest loop stops off-screen or idle (`rasterWatch`); reduced motion
+      is one settled frame. While the collections are out the count's and the numbers'
+      boxes are the slate's 2px checker (`StatSlot`: breathing in 160ms steps, still at 50%
+      after a failure) and the chain stands as its ghosts. A screen ≤740px tall draws the
+      count one size down, so the unsaved page's call still stands above the edge.
+    - **THE DEVICES are board lines**, no title: a pixel device glyph (phone / tablet /
+      computer; the accent on THIS device), the label, one quiet fact (THIS ONE, or the
+      last-seen day), SIGN OUT as a bracketed word; they dissolve in once the record has
+      landed (`recordLandsIn`).
+    - **`AccountStats` (the crossroads, the recovery ending) is QUIET**: the record's side
+      numbers' dress, three across between stippled rails — no foil, no flame, no burst
+      (destruction never glows). Its `land` prop (off by default) lets a surface handing
+      the numbers back land them on the reels.
+    - **THE EDITOR is the masthead's mark opened.** The canvas is ONE mark — continuous
+      square cells, the grid only a 2px speck of the ink in each empty cell's corner — its
+      cell a whole, EVEN number of px sized by the screen so the whole editor fits a
+      375×667 phone unscrolled, in the corner brackets over the NAME's white chip (as wide
+      as what it holds, the house's accent caret at its selection, a pencil beside it until
+      it is typed into). A changed cell pops whole pixels proud with 4px sparks; an erased
+      one shrinks into its middle. Under it ONE row: the palettes as the drawing itself in
+      each (30px marks in 44px targets, only the chosen one in white corners, closing in),
+      a switch SWEEPING the old picture off on the diagonal through the 2px Bayer order
+      (`DitherWipe`: its specks included; a second tap continues from the half-swept
+      picture); and the TOOLS — MIRROR (each cell's twin painted too; opens ON only for a
+      left-right symmetric drawing, which every assigned mark is; ▼ ▲ on the canvas's
+      edges, never an axis over the cells), DICE (a NEW SHAPE from `defaultAvatar`'s own
+      derivation, the palette KEPT, landing out of a short churn), CLEAR (a Bayer-ordered
+      drain). Every tool is an ordinary edit; SAVE stays the deploy. Then the LINE every
+      board will draw for the player (the mark at `MARK`, the name in the boards' dress; no
+      rank, crown or count — it claims none) and SAVE on the bottom edge, one 430px column
+      at every width. A save that LANDS is the screen's one shiny thing — the FOIL STAMP
+      (a band sweeps the canvas, the ink holds in foil, then dissolves back in 8 Bayer
+      steps), the brackets lock on, the line hops; a REFUSED one shakes the card, then the
+      `ErrorScreen`. `FoilStamp` is ONE implementation for any square mark of any
+      whole-pixel size (in its box, or `stampFoil(element)` over one on screen), its grain
+      always dividing the mark's own pixel.
   - **THE 2026-08-30 PASS, from the mobile navigation review.** Four corrections, each
     to something that had been shown to read as the wrong KIND of thing:
     - **`/account` FLOWS FROM THE TOP again.** Its action group had been given
@@ -1496,8 +1559,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     account** — the flow's address-step lead, its endings, the erase confirmation, and the
     signed-out screen the dress came from. `/account` itself went back to the ROW
     (user-decided 2026-08-26, after one day as a hero): its identity is a page's masthead,
-    and the hairline under the row is the screen's one explicit separation — everything
-    below it is about the account it names.
+    and everything below it is about the account it names.
   - **`publish`'s ACQUISITION rule is `minted || revision === 0`, not `revision === 0`
     alone** (`identity.ts`, fixed 2026-08-26 from a browser repro). A mint is triggered BY
     a deploy button, so the state on screen is the state that ASKED for it, and the minted
@@ -1509,17 +1571,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     it). An ADOPTED acquisition still bumps — that account may already hold rounds and
     history.
   - **The area STARTS HIGH, on ONE line (third polish pass, user feedback 2026-08-26:
-    the centred column "feels like the screen starts at the middle").** On a phone every
-    screen of the area — the account page, the flow's steps, the endings — opens at the
-    same `clamp(76px, 13vh, 128px)` start line, free space accumulating at the BOTTOM the
-    way a page reads; desktop keeps `.app`'s centring. **`/profile` joined that line on
-    2026-08-30** — the editor is one tap inside `/account` and opened 53px higher than
-    it, two screens of one place disagreeing about where a page begins — **and LEFT it on
-    2026-09-02** (user-decided: "a huge useless padding at the top of the screen, making
-    the view scrollable on most mobile devices for no reason"): the editor is the area's
-    one TALL screen, and the line's 76–128px pushed its stack past a phone's viewport. It
-    keeps its 48px header clearance — measured, an iPhone 13 (390×664) no longer scrolls;
-    an iPhone SE (375×553) still scrolls 87px, which is the editor's own height. The ADDRESS step leads with WHO is
+    the centred column "feels like the screen starts at the middle").** On a phone the
+    flow's steps and the endings open at the same `clamp(76px, 13vh, 128px)` start line,
+    free space accumulating at the BOTTOM the way a page reads; desktop keeps `.app`'s
+    centring. `/account` starts higher still — its masthead just under the bar (60px), so
+    the record owns the middle of the phone — and the editor (`/profile`, the area's one
+    TALL screen, user-decided 2026-09-02: "a huge useless padding at the top of the screen,
+    making the view scrollable on most mobile devices for no reason") keeps only its header
+    clearance and sizes its canvas so it never scrolls. The ADDRESS step leads with WHO is
     being saved — the account's face, or the chooser's glowing app mark on a device with
     none (the reconnect case) — because a bare input floating on a screen was the "does
     not use its space" finding. And the two flagged corner-affordances became DRAWN
@@ -1744,8 +1803,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   not a wrapper component.
   **WHERE IT LIVES (user-decided 2026-09-11: "everywhere in the app where it makes sense —
   view separation, these informations are together, those are separate — but not
-  everything needs a card").** ONE consumer: the ACCOUNT's three numbers (`AccountStats`).
-  Deliberately NOT: **the ARCHIVE CALENDAR** (user-decided 2026-10-04, with its iron keys:
+  everything needs a card").** It has NO consumer, and the class is gone: its last one, the
+  account's numbers, stands on the bare ground as `/account`'s record (the profile area's
+  dress, below). Deliberately NOT: **the ARCHIVE CALENDAR** (user-decided 2026-10-04, with its iron keys:
   the month is the screen's one subject, on the bare ground of the board's column — see the
   archive calendar bullet), **the RESULT** (user-decided 2026-10-02, "the card" direction:
   the result is the SHARE CARD it sends stood up on the bare ground — `SolvedCard`, the
@@ -2021,21 +2081,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   since folding `é` and expanding `œ` both change the length before it — in a layout
   effect, plus a microtask for the one case that renders nothing (a keystroke that
   sanitizes back onto the name already held; React restores a controlled value after
-  the event even with no re-render). A COMPOSITION is left alone while open — an
+  the event even with no re-render) — and since the field is the white chip, whose caret is
+  the house's own (drawn at the field's selection, the native one hidden), the FOCUS
+  BRACKETS leave it be, the guess field's rule. A COMPOSITION is left alone while open — an
   AZERTY dead key rewritten mid-composition commits as `_` and never builds its
   `î` — with the raw value mirrored into state so the input stays controlled, and
   the rule landing on `compositionend`. And the field suppresses
   autocomplete/autocorrect/autocapitalize/spellcheck, so nothing is suggested into it.
-  Then the 10×10 tap/drag-to-paint grid (one STROKE value per gesture —
-  starting on a painted cell erases, so tap toggles; a painted cell plays a small
-  one-shot BUMP, replayed by remounting the cell keyed on its paint count, so loading a
-  stored drawing bumps nothing; an EMPTY cell wears the palette's background itself
-  while the canvas behind the tiles wears a DARKER version of it, derived in CSS with
-  `color-mix` from the one `--cell-bg` variable — never a second hardcoded shade per
-  palette), the tool row — the palette swatches (each the palette's BACKGROUND colour
-  since the same day's later pass; picking a ground picks the palette and its ink,
-  and the drawing survives a switch) with the CLEAR chip on its right edge (empties
-  the grid; disabled when already empty) — and SAVE (`.mix-btn`). No brush row (two colours need none) and NO key
+  Then the 10×10 tap/drag-to-paint CANVAS (one STROKE value per gesture — starting on a
+  painted cell erases, so tap toggles — painted along the line between pointer samples so a
+  fast drag leaves no gap; a changed cell POPS, replayed by remounting the cell keyed on its
+  paint count, so loading a stored drawing pops nothing), the palettes and the TOOLS in one
+  row (each swatch the drawing in that palette; picking one picks the palette and its ink,
+  and the drawing survives a switch; MIRROR, DICE, CLEAR — the profile area's dress, below)
+  — and SAVE (`.mix-btn`). No brush row (two colours need none) and NO key
   block: the copyable-key/paste-to-link UI was removed with `adoptPlayerSecret` (the
   backup affordance's future surface is an open decision — root `AGENTS.md`). Saving
   POSTs `{token, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);
@@ -2061,9 +2120,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   editor to the account's merged truth. The load effect is
   deliberately keyed on [attempt] alone: an identity arriving under an OPEN editor (a
   deploy elsewhere, another tab) must not reload the fields out from under an edit in
-  progress — the save path resolves the identity live. The devices list renders only
-  when an account EXISTS (a tokenless device has no rows to list) and appears the
-  moment SAVE's deploy lands, since the identity is read reactively.
+  progress — the save path resolves the identity live.
   **The editor is GATED on the initial read** (the game
   route's own loading / error / content shape): an editable blank shown while the GET
   is in flight would be edited into and then overwritten by the response, and a FAILED
@@ -2092,16 +2149,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   verbatim stores empty and renders the same text in the placeholder ink — the one
   accepted cost of the rule (for the deployment half, that cost is the point: the
   promoted handle is the one the player has been wearing). The wired entry point is
-  the ACCOUNT screen's EDIT chip (#204's split; it was the leaderboard's until then), and
-  the header carries a BACK control — its title, per 2026-08-29 — to what opened it (user
-  feedback 2026-08-20: the screen was unleavable) — **to the surface that
-  actually opened it** (corrected 2026-08-20 on review): `/profile` is a GLOBAL route,
-  so that board's language is not in the URL, and rebuilding it from
-  `lastLang` describes the last loaded GAME instead — a board opened before ever playing
-  could return in another language. The opener states its own route in the transient
-  store (`profileReturn`, a transient store flag — set by the EDIT chip, cleared on
-  use, never persisted); only an editor reached with nothing set (a deep link, a
-  reload) falls back to the old guess, which still lands on a board.
+  `/account`'s masthead (#204's split), its one door, and the header's BACK control
+  returns there.
   **The avatar RENDERER is `components/Avatar.tsx` over `components/avatarOutline.ts`,
   and the tracer STAYS** (user-decided 2026-08-19 — the alternatives do not render the
   same on every browser; see the root `AGENTS.md`). Decoding and tracing are ONE
@@ -3948,8 +3997,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     arc is only 0.72px at 20px but ~1.4 antialiased device pixels at 2×, exactly the
     softening this row's grammar refuses; `sharp` skips the clip entirely, since with nothing
     to round it only ever clipped the tile to itself. Rounding is a property of the SURFACE,
-    not of the drawing — the account masthead keeps its, sitting among glass rows that all
-    carry a radius, while the boards' lines, type on the bare ground, are square too —
+    not of the drawing — every mark of the account area is square too (the masthead's, the
+    editor's canvas and swatches), like the boards' lines on the bare ground —
     and the skeleton squared with the tile, or the
     placeholder would change shape on arrival. `overflow: visible` went with the ring (it
     existed so a box-shadow could paint outside the key), and the `size={26}` the key asked

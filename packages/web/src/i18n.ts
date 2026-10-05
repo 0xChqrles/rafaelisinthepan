@@ -584,6 +584,10 @@ const STRINGS = {
   // Untranslated in every language (the user's call, 2026-08-19) — one word everywhere,
   // like MISS and STREAK.
   profileClear: { en: 'CLEAR', fr: 'CLEAR' },
+  // The editor's two other tools, named only to a screen reader and a pointer's tooltip (the
+  // pixel marks say it): painting a cell paints its twin; a new shape, the assigned way.
+  profileMirror: { en: 'MIRROR', fr: 'MIROIR' },
+  profileDice: { en: 'NEW SHAPE', fr: 'NOUVELLE FORME' },
   ariaAvatarEditor: { en: 'Avatar editor: tap to paint', fr: "Éditeur d'avatar : touchez pour peindre" },
   ariaPalette: { en: 'Palette', fr: 'Palette' },
   // ---- the leaderboard screen (#190/#271): the player's GROUPS first, global top 50 as the
