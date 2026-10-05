@@ -3338,7 +3338,10 @@ input {
 
 /* A NUMBER ON THE COUNT'S REELS (`ReelNumber`): one glyph window a digit — the face's fixed
    1em advance, so the box is the number's own — each holding the face's ten digits on a strip
-   that stands at whole font pixels. */
+   that stands at whole font pixels. The window SHOWS the glyph's 7 ink rows only (shared
+   `countCells.ts`: a slot shows the strip's 7 rows), clipping the blank 8th: a reel standing at
+   a fractional y otherwise rasterises the next digit's top row into a hairline under the
+   number. The box keeps its full em. */
 .reel-num,
 .reel-set {
   display: inline-flex;
@@ -3348,6 +3351,7 @@ input {
   width: 1em;
   height: 1em;
   overflow: hidden;
+  clip-path: inset(0 0 calc(1em / 8) 0);
 }
 .reel-strip,
 .reel-strip > span {
@@ -5799,26 +5803,31 @@ figure.l1-fig {
    A face here is a SQUARE pixel mark at a WHOLE-PIXEL size (`Avatar sharp`, 6/5/8px a cell
    — `AccountEmail`'s LEAD_PX / CROSS_PX / ENDING_PX), bare on the ground: no tile, no ring,
    no radius — the podium's and the board lines' marks. Its NAME is the WHITE CHIP the share
-   card and the group landing write an identity in: the boards' name face, inverted. */
-.link-name {
+   card and the group landing write an identity in: the boards' name face, inverted — the
+   editor's own name chip (`.profile-name`: 17px in a whole 32px box), so a name reads the
+   same on every screen of the area, and a box of whole pixels keeps what stands under it
+   on whole pixels too. The signed-out ghost's chip is the same box, dimmed. */
+.link-name,
+.signed-out-name {
   display: block;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 6px 9px 5px;
+  padding: 0 10px;
   font-family: var(--ui);
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 0.04em;
+  line-height: 32px;
+  letter-spacing: 0.03em;
   background: var(--fg);
   color: var(--bg);
 }
-/* The crossroads' sides: the same chip at the chrome's small size. */
+/* The crossroads' sides: the same chip at the chrome's small size, on a whole 22px line. */
 .link-name.small {
-  padding: 4px 6px 3px;
+  padding: 0 6px;
   font-size: 12px;
+  line-height: 22px;
 }
 /* A FACE STILL BEING READ holds its exact box as the house's ghost: the slate checker the
    archive's and the podium's ghosts wait in, stippled through the Bayer tiles (`--dz-*`) and
@@ -6389,10 +6398,9 @@ figure.l1-fig {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 4px 0 3px;
   font-family: var(--ui);
   font-size: 12px;
-  line-height: 1.2;
+  line-height: 22px;
   color: var(--muted);
 }
 .link-cross-tag {
@@ -6466,7 +6474,7 @@ figure.l1-fig {
 /* ── THE ENDINGS ────────────────────────────────────────────────────────────────────────
    The face is the screen's ONE subject: the lead's own mark STEPPED FORWARD to the ending's
    size in whole-pixel steps (6, then 7, then 8 pixels a cell), growing down from the lead's
-   own top edge — and, on a save, where the foil stamp lands (`data-stamp`). */
+   own top edge — and, on a save, where the editor's foil stamp lands (`FoilStamp`). */
 .link-face {
   position: relative;
   display: block;
@@ -6508,14 +6516,15 @@ figure.l1-fig {
    whole, and the face stands at its size. */
 @media (prefers-reduced-motion: reduce) {
   .link-arrive,
+  .link-name.link-arrive,
   .link-face,
   .link-cross-face {
     animation-delay: 0ms;
   }
 }
 /* THE ONE NEW FACT the ending shows about the account, under its name: the address it is
-   now saved to. (A RECOVERY shows the three numbers instead — the ones that PROVE the
-   account is theirs, and the same ones `/account` prints.) */
+   now saved to, in the dress `/account`'s masthead prints it in (`.account-id-mail`). (A
+   RECOVERY shows the three numbers instead — the ones that PROVE the account is theirs.) */
 .link-receipt {
   margin: 0;
   max-width: 100%;
@@ -6523,9 +6532,10 @@ figure.l1-fig {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--ui);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
+  line-height: 14px;
   color: var(--muted);
 }
 /* The ending's sentence — the one thing it SAYS, in the reading ink. */
@@ -6550,8 +6560,12 @@ figure.l1-fig {
   align-items: center;
   gap: 14px;
 }
+/* The crossroads' two answers stand in the area's call geometry (`.mix-btn`'s 52px, the
+   column's width), so the step taken here is the same button as every other one in the flow;
+   the erase keeps its quiet danger dress — destruction never glows. */
 .link-stack .btn {
   width: 100%;
+  min-height: 52px;
 }
 /* The confirmation and the ending take focus when they arrive, so a screen reader lands on
    what just happened rather than back at the top of the document. It is a container, not a
@@ -8083,21 +8097,10 @@ figure.l1-fig {
   50% { -webkit-mask-image: var(--dz-2); mask-image: var(--dz-2); }
   75% { -webkit-mask-image: var(--dz-3); mask-image: var(--dz-3); }
 }
-/* The name in the white chip, dimmed a half step: still legible, no longer held. */
+/* The name in the flow's white chip (`.link-name`'s box), dimmed a half step: still legible,
+   no longer held. */
 .signed-out-name {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 6px 9px 5px;
-  font-family: var(--ui);
-  font-size: 16px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 0.04em;
   background: color-mix(in srgb, var(--fg) 50%, var(--bg));
-  color: var(--bg);
 }
 /* The face's box while its read is out: the house's breathing slate checker, the ghost's
    own size and the chip's own box. */

@@ -81,6 +81,8 @@ import '../components/bayerTiles';
 import Button from '../components/Button';
 import CodeInput from '../components/CodeInput';
 import ErrorScreen from '../components/ErrorScreen';
+import FoilStamp from '../components/FoilStamp';
+import { foilSeed } from '../components/foil';
 import LoadingWave from '../components/LoadingWave';
 import LangTitle from '../components/LangTitle';
 import { HeaderBack, HeaderLeft } from '../components/TopBar';
@@ -117,6 +119,9 @@ export const FLOW_FACE_PX = { lead: 60, cross: 50, ending: 80 } as const;
 const LEAD_PX = FLOW_FACE_PX.lead;
 const CROSS_PX = FLOW_FACE_PX.cross;
 const ENDING_PX = FLOW_FACE_PX.ending;
+// How long the face takes to step up to the ending's size (`.link-face`'s `link-step-up`):
+// the save's stamp lands on the mark at its full size.
+const ENDING_STEP_MS = 240;
 
 // A face's box while its read is out: the slate checker the house waits in (the archive's
 // and the podium's ghosts), stippled through the Bayer tiles and breathing in whole steps —
@@ -555,6 +560,17 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // rather than an identity that no longer exists.
   const endingState = useAccountFace(step === 'done' ? endingId : null);
   const face = shownFace(endingState);
+  // THE SAVE LANDS LIKE THE EDITOR'S: the same foil stamp (`FoilStamp`, /profile's SAVE) sweeps
+  // the mark once, after it has stepped forward to the ending's size — on the SAVED ending
+  // only, the one where this account just got kept. Once per ending: a later re-read of the
+  // face must not stamp it again.
+  const stampable = step === 'done' && outcome === 'bound' && face !== null && endingId !== null;
+  const [stamp, setStamp] = useState(0);
+  useEffect(() => {
+    if (!stampable || stamp > 0) return undefined;
+    const timer = setTimeout(() => setStamp(1), ENDING_STEP_MS);
+    return () => clearTimeout(timer);
+  }, [stampable, stamp]);
   // The crossroads draws BOTH sides of the fork: the account about to be deleted, and the
   // one about to be joined. The server names the second only since vol. 2, so a missing
   // `target` degrades to the one-sided prompt rather than failing a refusal the player has
@@ -625,8 +641,9 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // the last, in reading order, ending on the action — after the COMPOSITION when a face is
   // arriving (`AccountMark`'s resolve), and right behind the face's step forward when it was
   // already on screen (a save: the lead's mark, grown to the ending's size).
+  const arriveAt = (ms: number): number => (composeEnding ? ms : Math.round(ms / 4));
   const arrive = (ms: number): { style: CSSProperties } => ({
-    style: { '--arrive-delay': `${composeEnding ? ms : Math.round(ms / 4)}ms` } as CSSProperties,
+    style: { '--arrive-delay': `${arriveAt(ms)}ms` } as CSSProperties,
   });
 
   // WHAT A SCREEN READER IS TOLD, in ONE region mounted for the flow's whole life. Every
@@ -950,15 +967,24 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         {step === 'done' && (
           <div className="link-stack link-ending" ref={stack} tabIndex={-1}>
             {/* THE FACE STEPS FORWARD to the ending's size in whole-pixel steps (the lead's 6px
-                a cell, then 7, then 8), and on a SAVE it is where the foil stamp lands — the
-                editor's own save moment, one implementation for both (`data-stamp`). */}
-            <div className="link-face" data-stamp={outcome === 'bound' ? 'save' : undefined}>
+                a cell, then 7, then 8), and on a SAVE the foil stamp lands on it — the editor's
+                own save moment, one implementation for both. */}
+            <div className="link-face">
               {face && endingId ? (
-                <AccountMark
-                  avatar={face.avatar ?? defaultAvatar(endingId)}
-                  size={ENDING_PX}
-                  compose={composeEnding}
-                />
+                <>
+                  <AccountMark
+                    avatar={face.avatar ?? defaultAvatar(endingId)}
+                    size={ENDING_PX}
+                    compose={composeEnding}
+                  />
+                  {outcome === 'bound' && (
+                    <FoilStamp
+                      play={stamp}
+                      avatar={face.avatar ?? defaultAvatar(endingId)}
+                      seed={foilSeed(`profile:${endingId}`)}
+                    />
+                  )}
+                </>
               ) : (
                 <FaceHold size={ENDING_PX} waiting={!faceSettled(endingState)} />
               )}
@@ -972,10 +998,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 shows the history that PROVES it is theirs — "we found your account" is a
                 claim and these numbers are its evidence, and the first thing a returning
                 player wants to check. Every other ending shows the address, which is the
-                thing that just changed. */}
+                thing that just changed. The numbers LAND on the reels as their row arrives:
+                they are being handed back. */}
             {showReceipt && receipt ? (
               <div {...arrive(620)} className="link-receipt-stats link-arrive">
-                <AccountStats lang={lang} stats={receipt} />
+                <AccountStats lang={lang} stats={receipt} land={arriveAt(620)} />
               </div>
             ) : (
               linked && (

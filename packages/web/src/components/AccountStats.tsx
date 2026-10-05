@@ -21,8 +21,8 @@
 // THE ROW IS QUIET: the three numbers in the game's pixel face, either side of the boards'
 // stippled rails, labels in the chrome's tracked mono — no foil, no flame, no burst, no
 // charge. On the crossroads the numbers are a PRICE, and destruction never glows. A caller
-// that hands numbers BACK (the recovery ending) may ask them to `land` on the count's reels;
-// nothing else moves.
+// that hands numbers BACK (the recovery ending) may ask them to `land` on the count's reels,
+// from the moment its row arrives; nothing else moves.
 //
 // **THE VALUES ARE THE ONLY THING EVER WITHHELD.** Labels and layout are always drawn — a
 // screen that hides what it has nothing to show of reads as broken to the player who has
@@ -72,14 +72,15 @@ export default function AccountStats({
   // `null` is "not yet known" — the boxes are held. A caller holding a settled answer (the
   // server's, on a dialog or an ending) passes the values and nothing breathes.
   loading = false,
-  // The numbers LAND on the count's reels as they mount, left to right — for a surface that is
-  // handing them back (the recovery ending). Off by default: the crossroads stays still.
-  land = false,
+  // The numbers LAND on the count's reels, left to right, starting this many ms after the row
+  // mounts (the caller's own arrival beat) — for a surface that is handing them back (the
+  // recovery ending). Omitted, they stand still: the crossroads never moves.
+  land,
 }: {
   lang: string;
   stats: AccountStatsValues | null;
   loading?: boolean;
-  land?: boolean;
+  land?: number;
 }) {
   const cells = [
     { key: 'streak', label: t(lang, 'streak'), value: stats?.streak },
@@ -96,8 +97,8 @@ export default function AccountStats({
             ) : (
               <ReelNumber
                 value={cell.value}
-                delayMs={land ? i * LAND_STAGGER_MS : 0}
-                runMs={land ? LAND_RUN_MS : 0}
+                delayMs={land === undefined ? 0 : land + i * LAND_STAGGER_MS}
+                runMs={land === undefined ? 0 : LAND_RUN_MS}
               />
             )}
           </span>

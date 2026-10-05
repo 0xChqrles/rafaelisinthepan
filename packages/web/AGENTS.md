@@ -122,7 +122,8 @@
       hooks/useSwipe.ts       a sideways swipe on a board's lines turns its tab (both surfaces),
                               on the archive's grid its month: a finger's or a pen's, never the
                               mouse; its trailing click opens nothing (a tap right after does)
-      components/ReelNumber.tsx  a board line's number on the count's reels (the compressed run)
+      components/ReelNumber.tsx  a board line's number on the count's reels (the compressed run);
+                              a window shows the glyph's 7 ink rows, never the next digit's top
       components/bayerTiles.ts  the ordered dither as CSS masks on 2px cells, set ONCE on the
                               document's root as it loads: a line coming in and giving way
                               (`--dz-*` / `--dzo-*`), your held line's edge (`--edge-d/-u`);
@@ -1320,11 +1321,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **THE FLOW'S FACES ARE SQUARE PIXEL MARKS AT WHOLE-PIXEL SIZES** (`Avatar sharp`,
     `AccountEmail`'s `FLOW_FACE_PX`: the lead 60, the crossroads 50, the ending 80 — 6, 5 and
     8 pixels a cell, contract-tested), bare on the ground, the NAME under a hero face in the
-    WHITE CHIP (`.link-name`); a face still being read holds its box as the house's stippled
-    slate checker breathing in 160ms steps (`.link-hold`, the Bayer `--dz-*` masks), never a
-    grey rounded block. The ending's face is the lead's own mark STEPPED FORWARD (60 → 70 → 80
-    in whole steps, from the lead's top edge), and the SAVED ending's `.link-face` carries
-    `data-stamp="save"` — where the editor's foil stamp lands, one implementation for both.
+    WHITE CHIP (`.link-name`, the editor's own name chip — 17px in a whole 32px box — and
+    the signed-out ghost's, dimmed); a face still being read holds its box as the house's
+    stippled slate checker breathing in 160ms steps (`.link-hold`, the Bayer `--dz-*`
+    masks), never a grey rounded block. The ending's face is the lead's own mark STEPPED FORWARD (60 → 70 → 80
+    in whole steps, from the lead's top edge), and on the SAVED ending the editor's own
+    `FoilStamp` sweeps it once the step-up has landed — one implementation for both saves.
   - **THE ADDRESS LINE IS THE GAME'S PROMPT over a REAL, VISIBLE input**
     (`components/AddressField.tsx`): the cobalt `>`, the address in the pixel face at 16px (a
     whole size, and iOS's no-zoom floor), the podium's stippled floor under it lighting in the
@@ -1397,8 +1399,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
       landed (`recordLandsIn`).
     - **`AccountStats` (the crossroads, the recovery ending) is QUIET**: the record's side
       numbers' dress, three across between stippled rails — no foil, no flame, no burst
-      (destruction never glows). Its `land` prop (off by default) lets a surface handing
-      the numbers back land them on the reels.
+      (destruction never glows). Its `land` prop (a start delay in ms; omitted, the row
+      stands still) lands the numbers on the reels — the recovery ending passes it, timed
+      to its row's arrival; the crossroads never does.
     - **THE EDITOR is the masthead's mark opened.** The canvas is ONE mark — continuous
       square cells, the grid only a 2px speck of the ink in each empty cell's corner — its
       cell a whole, EVEN number of px sized by the screen so the whole editor fits a
