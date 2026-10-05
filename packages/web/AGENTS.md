@@ -33,8 +33,8 @@
                               (`.ghost-mark`: its ink thinned to half through the Bayer dither,
                               its ground the slate stipple), RECONNECT
                               (#204) onto the email step, and PLAY (start over on a new account)
-      screens/Account.tsx     `/account` (#204): the MASTHEAD (the identity, and the editor's
-                              door), the RECORD, the save call (or the address), and — once
+      screens/Account.tsx     `/account` (#204): the MASTHEAD (the identity, its pencil key the
+                              editor's door), the RECORD, the save call (or the address), and — once
                               SAVED — #216's devices. The area's one door
       components/record/      `/account`'s RECORD: `Record.tsx` (the words, BEST and DAYS, the
                               clock) over `scene.ts` (the raster: the flame over the streak's
@@ -1188,8 +1188,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   implementation:
   - **ACCOUNT-AREA PRODUCT DECISIONS (each user-decided on the date given):**
     - **ONE PURPOSE PER SCREEN (2026-08-26):** `/account` — *is this account mine, and
-      safe?* (mark, name, the address once saved — the masthead itself the door to the
-      editor; what it has done; SAVED or not; where it is signed in) · `/profile` — *how do others see me?* (the editor, nothing else) ·
+      safe?* (mark, name, the address once saved — the masthead's pencil key the door to
+      the editor; what it has done; SAVED or not; where it is signed in) · `/profile` — *how do others see me?* (the editor, nothing else) ·
       `/account/email` — *save it* / `/account/signin` — *get another one back*, one input
       per step. All GLOBAL routes. A flat `/account` over a 3-card hub. The
       leaderboard's EDIT chip is gone. RECONNECT lands on `/account/signin` directly.
@@ -1406,23 +1406,27 @@ it to the local store — see `packages/backend/AGENTS.md`).
     caps, muted — BEST and DAYS, `AccountStats`' labels with them, a device's one fact, SIGN
     OUT, the footnote) and the ROW TITLE (13px bold — a device's label; DAY STREAK at that
     size in the celebration's own tracking).
-    - **`/account`'s MASTHEAD is ONE tap target, the editor's door**: corner brackets (one
-      bordered box masked to its four corners, so they step to white on a hover with the
-      pixel pencil in its top corner — no word, no chevron), the mark at 50px (five whole
-      pixels a cell, never a size between two), the name at the hero name size, centred on
-      the mark, the saved address HUNG under it in the row's own padding
-      (nothing moves when the summary lands; it shows only once SAVED; cut by whole
-      characters, `components/AddressLine.tsx` over `cutAddress`, so its domain always
+    - **`/account`'s MASTHEAD is a plain, STILL row on one axis**: the mark at 50px (five
+      whole pixels a cell, never a size between two) on the column's left edge, the name at
+      the hero name size with the saved address under it — the pair one block centred on
+      the mark, the name alone centred when there is no address — and on the column's right
+      edge the row's ONE key, the editor's door: the pixel pencil in a tappable thing's
+      corner brackets (SIGN OUT's: 2px, 6px arms, white at 38%; no word, no chevron; the
+      edit word its accessible name). NOTHING ELSE in the row is framed, so nothing else
+      reads as editable. The words land ONCE, when the face AND what the account is saved as
+      are both known (a failed summary read lands the name alone) — so nothing moves after,
+      and a tokenless device and a deployed unsaved one settle to the same row; until then
+      the name's box is the skeleton rail. The address shows only once SAVED, cut by whole
+      characters (`components/AddressLine.tsx` over `cutAddress`, so its domain always
       stands and one ellipsis says where — the SAVED ending prints the address the same way).
-      The button is named by what it shows plus the edit word
-      for screen readers alone. A press sinks the mark 2px; under the keyboard's focus the
-      row's own corners give way to `FocusBrackets`, never a frame nested in a frame. The tap
-      hands the mark — its box and the mark itself — to the editor (`markHandoff`): the mark
-      stays FROZEN in that box while the editor reads the stored profile (once the read has
-      taken a beat, 250ms, the canvas's box breathes as the stippled slate behind it), then
-      the canvas GROWS out of it in whole-pixel steps — on a phone in place, down and right
-      from the mark's own corner (a direct load holds the canvas's box as the stippled
-      slate, then grows from its centre).
+      A hover steps the key's corners to white in two steps; a press sinks the pencil 2px;
+      under the keyboard's focus its own corners give way to `FocusBrackets`, never a frame
+      nested in a frame. The tap hands the MARK — its box and the mark itself — to the
+      editor (`markHandoff`): the mark stays FROZEN in that box while the editor reads the
+      stored profile (once the read has taken a beat, 250ms, the canvas's box breathes as
+      the stippled slate behind it), then the canvas GROWS out of it in whole-pixel steps —
+      on a phone in place, down and right from the mark's own corner (a direct load holds
+      the canvas's box as the stippled slate, then grows from its centre).
     - **THE RECORD is the screen's subject** (`components/record/`), in the streak
       celebration's own sprites: the blue FLAME over the live STREAK on the count's reels,
       `dayStreak` under it, the week as the CHAIN (`recordWeek`: the week of the language
@@ -1431,11 +1435,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
       struck into FOIL with glitter — the screen's only foil; today still open, its ghost
       breathing), BEST and DAYS as two small reels either side of the stippled rail. A
       streak of NOTHING reads as waiting, not broken: the count in iron lit from above, the
-      flame's own outline empty and dashed (the ghost link's grammar for a thing to come)
-      breathing with today's link, the pilot spark at its foot. It BUILDS once a page load
+      unlit flame's GHOST in the floor's stipple (a dot every other cell of its silhouette,
+      never an outline; still), the pilot spark breathing at its foot and a faint cobalt
+      ember drifting off it. It BUILDS once a page load
       and settles; its rest loop stops off-screen or idle (`rasterWatch`); reduced motion
       is one settled frame. A zero never spins: its iron 0 drops into place in two whole
-      steps and shakes, then the pilot lights and today's link starts breathing (a side
+      steps and shakes, then the pilot lights, the ghost rises off it foot to tip in four
+      hard steps, and today's link starts breathing (a side
       number of 0 does not spin either). While the collections are out the count's box and
       the chain's links are the slate's checker (breathing in 160ms steps, still at 50% after
       a failure — an unknown week claims nothing, not even an empty one) and the two
@@ -2279,7 +2285,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   verbatim stores empty and renders the same text in the placeholder ink — the one
   accepted cost of the rule (for the deployment half, that cost is the point: the
   promoted handle is the one the player has been wearing). The wired entry point is
-  `/account`'s masthead (#204's split), its one door, and the header's BACK control
+  `/account`'s masthead pencil key (#204's split), its one door, and the header's BACK control
   returns there.
   **The avatar RENDERER is `components/Avatar.tsx` over `components/avatarOutline.ts`,
   and the tracer STAYS** (user-decided 2026-08-19 — the alternatives do not render the
