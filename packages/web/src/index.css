@@ -61,9 +61,10 @@
      line on the drawing — the words and the nodes carry every colour it says anything with. */
   --rail: #4a5578;
   /* A PLAYER'S NAME HAS TWO SIZES: the HERO name (a face's own name — `/account`'s masthead,
-     the editor's chip, the flow's and the signed-out screen's chips) and the BOARD LINE's
-     (every board, and the editor's preview of one). One identity, two type sizes across every
-     screen it walks through. (The crossroads' side chips are labels, at its labels' size.) */
+     the flow's and the signed-out screen's chips) and the BOARD LINE's (every board, and the
+     editor's line the name is typed on, at a field's 16px floor). One identity, two type sizes
+     across every screen it walks through. (The crossroads' side chips are labels, at its
+     labels' size.) */
   --name-hero-size: 17px;
   --name-hero-weight: 700;
   --name-line-size: 15px;
@@ -5815,10 +5816,10 @@ figure.l1-fig {
    A face here is a SQUARE pixel mark at a WHOLE-PIXEL size (`Avatar sharp`, 6/5/8px a cell
    — `AccountEmail`'s LEAD_PX / CROSS_PX / ENDING_PX), bare on the ground: no tile, no ring,
    no radius — the podium's and the board lines' marks. Its NAME is the WHITE CHIP the share
-   card and the group landing write an identity in: the boards' name face, inverted — the
-   editor's own name chip (`.profile-name`: 17px in a whole 32px box), so a name reads the
-   same on every screen of the area, and a box of whole pixels keeps what stands under it
-   on whole pixels too. The signed-out ghost's chip is the same box, dimmed. */
+   card and the group landing write an identity in: the boards' name face, inverted, at the
+   hero size in a whole 32px box, so a name reads the same on every screen of the area, and a
+   box of whole pixels keeps what stands under it on whole pixels too. The signed-out ghost's
+   chip is the same box, dimmed. */
 .link-name,
 .signed-out-name {
   display: block;
@@ -10411,15 +10412,16 @@ figure.l1-fig {
   }
 }
 
-/* ===================== THE PROFILE EDITOR (`/profile`, #188) =====================
-   The masthead's mark OPENED: the canvas (one mark, continuous square cells, the grid only a
-   speck of ink in the middle of each empty cell) over the name in its white chip, inside the
-   corner brackets of a thing that takes the finger; under it the palettes and the three
-   tools, the board line every board will draw for the player, and SAVE on the bottom
-   edge. Bare ground, nothing rounder than a pixel. Its cell (`--pcell`) is a whole, even
-   number of px and its offset in the card (`--pinset`) a whole one too, both sized by the
-   screen (`Profile`'s EDITOR_CHROME_PX is this block's own sum) so the whole editor fits a
-   phone with nothing scrolled. */
+/* ===================== THE PROFILE EDITOR (`/profile`, #188): THE SPRITE STUDIO =====================
+   A small pixel-art tool on the bare ground: the tool keys over the sprite canvas (square
+   cells on a 1px grid in a darker shade of the palette's own ground — `editor/picture.ts`
+   draws it), in the corner brackets of a thing that takes the finger; under it the swatches,
+   each the drawing itself in its palette; the board line every board will draw for the
+   player, the name typed ON it; SAVE on the bottom edge. Nothing rounder than a pixel. The
+   canvas's cell (`--pcell`, whole and odd) and every offset (`--pframe-at`, `--pswatches-at`,
+   `--pswatch-gap`) are whole px, measured by `Profile` off the screen — whose EDITOR_CHROME_PX
+   is this block's own sum — so the whole editor fits a phone with nothing scrolled. One layout
+   at every width. */
 .profile-screen {
   width: min(430px, 100%);
   max-height: 100%;
@@ -10433,95 +10435,162 @@ figure.l1-fig {
   visibility: hidden;
 }
 /* DESKTOP: `.app` centres the column, so it is HELD at its full height from the first frame —
-   the card, the tools, the board line and SAVE: `Profile`'s EDITOR_CHROME_PX.desktop less
-   `.app`'s 48px of padding — and the card stands where it will stand while the stored profile
-   is read (nothing under it yet) and under a read that failed. (A window too short for the
-   column keeps the column's own scroll: never taller than `.app`.) */
+   the keys, the frame, the swatches, the line and SAVE (`Profile`'s DESKTOP_COLUMN_PX round the
+   canvas, a pixel more where that centres it on a whole one) — and the canvas stands where it
+   will stand while the stored profile is read (nothing under it yet) and under a read that
+   failed. (A window too short for the column keeps the column's own scroll: never taller than
+   `.app`.) */
 @media (min-width: 641px) {
   .profile-screen {
-    min-height: min(100%, calc(var(--pcell) * 10 + 316px));
+    min-height: min(100%, var(--pcolumn, calc(var(--pside) + 322px)));
   }
 }
-.profile-card {
-  --corner: rgba(255, 255, 255, 0.38);
-  position: relative;
+
+/* THE TOOL KEYS, over the canvas, the first on its left edge: a pixel mark in a tappable
+   thing's corners (slate; white under a hover), the key PLAYING lit and its mark rattling.
+   The row holds its 44px while the stored profile is read. */
+.profile-tools {
   flex: none;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  /* 16: the MIRROR's ▲ hangs 6px under the canvas, and the chip keeps 10px clear of it. */
-  gap: 16px;
-  align-self: stretch;
-  padding: 14px;
+  gap: 8px;
+  height: 44px;
+  margin-left: calc(var(--pframe-at, 0px) + 8px);
 }
-/* THE BRACKETS: the result card's own — they fly in from outside as the card opens, and LOCK
-   ON (their arms reach out along the frame at full white and draw back in whole steps), again
-   whenever a save lands. Over the canvas's pops and sparks. They stand 4px inside the column,
-   on the very column the tools' own corners stand on right under them (a swatch's and a key's
-   36px of brackets in their 44px targets), so the two frames read as one drawing. */
-.profile-corner {
-  --sx: 1;
-  --sy: 1;
-  --lock: 30px;
-  position: absolute;
-  z-index: 2;
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--corner);
-  pointer-events: none;
-  animation:
-    solved-card-bracket-in 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards,
-    pcard-lock 320ms steps(4, jump-end) 300ms;
+.profile-key {
+  --corner: var(--rail);
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--fg);
+  cursor: pointer;
+  background:
+    linear-gradient(var(--corner), var(--corner)) left 0 top 0 / 6px 2px,
+    linear-gradient(var(--corner), var(--corner)) left 0 top 0 / 2px 6px,
+    linear-gradient(var(--corner), var(--corner)) right 0 top 0 / 6px 2px,
+    linear-gradient(var(--corner), var(--corner)) right 0 top 0 / 2px 6px,
+    linear-gradient(var(--corner), var(--corner)) left 0 bottom 0 / 6px 2px,
+    linear-gradient(var(--corner), var(--corner)) left 0 bottom 0 / 2px 6px,
+    linear-gradient(var(--corner), var(--corner)) right 0 bottom 0 / 6px 2px,
+    linear-gradient(var(--corner), var(--corner)) right 0 bottom 0 / 2px 6px;
+  background-repeat: no-repeat;
+  animation: solved-card-blink 120ms steps(2, jump-end) calc(500ms + var(--k, 0) * 45ms) backwards;
 }
-.profile-corner.lock {
-  animation: pcard-lock 320ms steps(4, jump-end) 240ms;
+.profile-key + .profile-key {
+  --k: 1;
 }
-.profile-corner.tl {
-  top: 4px;
-  left: 4px;
-  border-right: 0;
-  border-bottom: 0;
+.profile-key .ui-icon {
+  display: block;
 }
-.profile-corner.tr {
-  --sx: -1;
-  top: 4px;
-  right: 4px;
-  border-left: 0;
-  border-bottom: 0;
-}
-.profile-corner.bl {
-  --sy: -1;
-  bottom: 4px;
-  left: 4px;
-  border-right: 0;
-  border-top: 0;
-}
-.profile-corner.br {
-  --sx: -1;
-  --sy: -1;
-  bottom: 4px;
-  right: 4px;
-  border-left: 0;
-  border-top: 0;
-}
-@keyframes pcard-lock {
-  from {
-    width: var(--lock);
-    height: var(--lock);
-    border-color: var(--fg);
+@media (hover: hover) and (pointer: fine) {
+  .profile-key:hover:not([aria-disabled='true']) {
+    --corner: var(--fg);
   }
 }
-/* The canvas's box: ten cells square, on a whole-pixel offset (`--pinset`) rather than centred
-   by the flex box (a half pixel would blur every cell's edge). Held from the first frame —
-   while the stored profile is read it is the stippled slate, under the mark handed over by
-   the masthead (`.profile-handed`) once the read has taken a beat. */
-.profile-canvas-box {
+/* The press: the mark sinks a whole cell. */
+.profile-key:active:not([aria-disabled='true']) .ui-icon {
+  translate: 0 2px;
+}
+.profile-key[aria-disabled='true'] {
+  color: var(--rail);
+  cursor: default;
+}
+/* A tool PLAYING (the dice rolling, the drawing draining): corners lit, the mark rattling. */
+.profile-key.busy {
+  --corner: var(--fg);
+  color: var(--fg);
+}
+.profile-key.busy .ui-icon {
+  animation: tool-busy 240ms steps(1, end) infinite;
+}
+@keyframes tool-busy {
+  50% {
+    translate: 0 -2px;
+  }
+}
+
+/* THE FRAME: the canvas in 8px of air, its corner brackets in the air's corners — slate at
+   rest, white while a stroke is down. They fly in as the editor opens, and LOCK ON (closing in
+   from outside, white, in hard steps) whenever a save lands. */
+.profile-frame {
+  --corner: var(--rail);
   position: relative;
   flex: none;
   align-self: flex-start;
-  width: calc(var(--pcell) * 10);
-  height: calc(var(--pcell) * 10);
-  margin-left: var(--pinset, 0px);
+  margin: 6px 0 0 var(--pframe-at, 0px);
+  padding: 8px;
+}
+.profile-frame.painting {
+  --corner: var(--fg);
+}
+.profile-corner {
+  --sx: 1;
+  --sy: 1;
+  position: absolute;
+  z-index: 5;
+  width: 12px;
+  height: 12px;
+  border: 0 solid var(--corner);
+  pointer-events: none;
+  animation: solved-card-bracket-in 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
+}
+.profile-corner.tl {
+  --sx: -1;
+  --sy: -1;
+  top: 0;
+  left: 0;
+  border-width: 2px 0 0 2px;
+}
+.profile-corner.tr {
+  --sy: -1;
+  top: 0;
+  right: 0;
+  border-width: 2px 2px 0 0;
+}
+.profile-corner.bl {
+  --sx: -1;
+  bottom: 0;
+  left: 0;
+  border-width: 0 0 2px 2px;
+}
+.profile-corner.br {
+  bottom: 0;
+  right: 0;
+  border-width: 0 2px 2px 0;
+}
+.profile-corner.lock {
+  animation: profile-lock 320ms steps(1, end) 240ms backwards;
+}
+@keyframes profile-lock {
+  0% {
+    translate: calc(var(--sx) * 8px) calc(var(--sy) * 8px);
+    border-color: var(--fg);
+  }
+  25% {
+    translate: calc(var(--sx) * 4px) calc(var(--sy) * 4px);
+    border-color: var(--fg);
+  }
+  50% {
+    translate: 0 0;
+    border-color: var(--fg);
+  }
+  100% {
+    translate: 0 0;
+  }
+}
+/* The canvas's box: ten cells and eleven lines square. Held from the first frame — while the
+   stored profile is read it is the stippled slate, under the mark handed over by the masthead
+   (`.profile-handed`) once the read has taken a beat. */
+.profile-canvas-box {
+  position: relative;
+  width: var(--pside);
+  height: var(--pside);
 }
 .profile-canvas-hold {
   position: absolute;
@@ -10540,11 +10609,6 @@ figure.l1-fig {
     visibility: hidden;
   }
 }
-/* The name chip's box while the editor waits. */
-.profile-name-hold {
-  display: block;
-  height: 32px;
-}
 /* The handed-over mark, frozen in the box it stood in on `/account`. */
 .profile-handed {
   position: fixed;
@@ -10555,142 +10619,28 @@ figure.l1-fig {
 .profile-handed .avatar {
   display: block;
 }
-/* THE CANVAS: ten cells of `--pcell` square, no gutter. An EMPTY cell wears the ground with a
-   2px speck of the ink, 60% into the ground — enough to read on the darkest palette — at its
-   middle (`--speck-at`, `speckOffset`: whole and even, on the 2px dither): the grid, said as
-   little as it can be, a regular lattice of places to paint that never touches the ink. */
+/* THE CANVAS (`EditorCanvas`): the picture, and over it the one overlay the pops, the sparks
+   and a fine pointer's ring are drawn on — its own layer, reaching past the canvas's edge as
+   far as the sparks fly (`FX_MARGIN`). Both rasters at a CSS pixel, scaled up whole. */
 .avatar-editor {
-  --dot: color-mix(in srgb, var(--cell-fg) 60%, var(--cell-bg));
   position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: repeat(10, var(--pcell));
-  grid-auto-rows: var(--pcell);
+  width: var(--pside);
+  height: var(--pside);
   touch-action: none;
   cursor: crosshair;
   user-select: none;
   -webkit-user-select: none;
 }
-.avatar-editor-cell {
-  position: relative;
-  background:
-    linear-gradient(var(--dot), var(--dot)) var(--speck-at, 0px) var(--speck-at, 0px) / 2px 2px no-repeat,
-    var(--cell-bg);
-}
-.avatar-editor-cell.on {
-  background: var(--cell-fg);
-}
-.avatar-editor-cell::before,
-.avatar-editor-cell::after {
+.editor-picture,
+.editor-fx {
+  display: block;
+  image-rendering: pixelated;
   pointer-events: none;
 }
-/* A PAINTED CELL POPS on whole pixels — it lands 6px proud of its place each side and settles
-   back in hard steps. A pop that BURSTS (`.spark`: a stroke's first cell, then the cell under
-   the finger at most every 120ms — `Profile` decides) also throws eight 4px sparks of the
-   house's white glitter (`--spark`: the mark's ink on a light ground), from just OUTSIDE the
-   popped cell — the edges' middles and the corners — flying out in whole-pixel steps and
-   shrinking to 2px before they go, so frame one already reads as light round the fresh ink,
-   never over it. Replayed by remounting the cell on its paint count. The pseudo-elements only ever
-   ANIMATE a change: at rest the popped layer is the ink the cell already wears, the erased
-   one nothing at all. */
-.avatar-editor-cell.painted {
+.editor-fx {
+  position: absolute;
   z-index: 2;
-}
-.avatar-editor-cell.painted::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--cell-fg);
-  animation: cell-pop 150ms;
-}
-@keyframes cell-pop {
-  0% {
-    inset: -6px;
-    animation-timing-function: steps(1, end);
-  }
-  33% {
-    inset: -4px;
-    animation-timing-function: steps(1, end);
-  }
-  66% {
-    inset: -2px;
-    animation-timing-function: steps(1, end);
-  }
-  100% {
-    inset: 0;
-  }
-}
-.avatar-editor-cell.painted.spark::after {
-  /* Where a spark's centre stands off the cell's: the cell's half, the pop's 6px proud and
-     the spark's own half — so frame one already stands clear of the swelling ink. The
-     diagonals step out of the pop's corners 2px nearer, so the burst reads round. */
-  --e: calc(var(--pcell) / 2 + 8px);
-  --d: calc(var(--e) - 2px);
-  content: '';
-  position: absolute;
-  left: calc(50% - 2px);
-  top: calc(50% - 2px);
-  width: 4px;
-  height: 4px;
-  animation: cell-spark 300ms forwards;
-}
-@keyframes cell-spark {
-  0% {
-    animation-timing-function: steps(1, end);
-    box-shadow:
-      0 calc(-1 * var(--e)) var(--spark), var(--d) calc(-1 * var(--d)) var(--spark), var(--e) 0 var(--spark),
-      var(--d) var(--d) var(--spark), 0 var(--e) var(--spark), calc(-1 * var(--d)) var(--d) var(--spark),
-      calc(-1 * var(--e)) 0 var(--spark), calc(-1 * var(--d)) calc(-1 * var(--d)) var(--spark);
-  }
-  33% {
-    animation-timing-function: steps(1, end);
-    box-shadow:
-      0 calc(-1 * var(--e) - 6px) var(--spark), calc(var(--d) + 4px) calc(-1 * var(--d) - 4px) var(--spark),
-      calc(var(--e) + 6px) 0 var(--spark), calc(var(--d) + 4px) calc(var(--d) + 4px) var(--spark),
-      0 calc(var(--e) + 6px) var(--spark), calc(-1 * var(--d) - 4px) calc(var(--d) + 4px) var(--spark),
-      calc(-1 * var(--e) - 6px) 0 var(--spark), calc(-1 * var(--d) - 4px) calc(-1 * var(--d) - 4px) var(--spark);
-  }
-  66% {
-    animation-timing-function: steps(1, end);
-    box-shadow:
-      0 calc(-1 * var(--e) - 12px) 0 -1px var(--spark),
-      calc(var(--d) + 8px) calc(-1 * var(--d) - 8px) 0 -1px var(--spark),
-      calc(var(--e) + 12px) 0 0 -1px var(--spark),
-      calc(var(--d) + 8px) calc(var(--d) + 8px) 0 -1px var(--spark),
-      0 calc(var(--e) + 12px) 0 -1px var(--spark),
-      calc(-1 * var(--d) - 8px) calc(var(--d) + 8px) 0 -1px var(--spark),
-      calc(-1 * var(--e) - 12px) 0 0 -1px var(--spark),
-      calc(-1 * var(--d) - 8px) calc(-1 * var(--d) - 8px) 0 -1px var(--spark);
-  }
-  100% {
-    box-shadow: none;
-  }
-}
-/* An ERASED cell gives its ink back the other way: the ink shrinks into the cell's middle in
-   whole-pixel steps and is gone — and gone it stays (its resting box is the empty middle). */
-.avatar-editor-cell.erased::before {
-  content: '';
-  position: absolute;
-  inset: calc(var(--pcell) / 2);
-  background: var(--cell-fg);
-  animation: cell-erase 150ms;
-}
-@keyframes cell-erase {
-  0% {
-    inset: 4px;
-    animation-timing-function: steps(1, end);
-  }
-  33% {
-    inset: 8px;
-    animation-timing-function: steps(1, end);
-  }
-  66% {
-    inset: 12px;
-    animation-timing-function: steps(1, end);
-  }
-  100% {
-    inset: calc(var(--pcell) / 2);
-  }
+  will-change: transform;
 }
 /* The palette sweep's overlay: no box until a sweep sizes it (`DitherWipe`). */
 .dither-wipe {
@@ -10701,6 +10651,17 @@ figure.l1-fig {
   width: 0;
   height: 0;
   image-rendering: pixelated;
+  pointer-events: none;
+}
+/* THE FOIL STAMP's box on the canvas: from the first inner pixel, ten pitches square — the
+   cells' own grid, so the foil's 2px grain lands on every cell's edge. */
+.profile-foil {
+  position: absolute;
+  z-index: 4;
+  left: 1px;
+  top: 1px;
+  width: calc(var(--pside) - 1px);
+  height: calc(var(--pside) - 1px);
   pointer-events: none;
 }
 /* THE FOIL STAMP (`FoilStamp`): over its box, clipped to it, its raster scaled up whole. */
@@ -10715,142 +10676,26 @@ figure.l1-fig {
   display: block;
   image-rendering: pixelated;
 }
-/* The MIRROR's axis: two small pixel arrows flush on the canvas's edges, in the accent,
-   pointing at the line the drawing folds on — over the cells' pops and sparks. */
-.profile-axis {
-  position: absolute;
-  z-index: 2;
-  left: calc(50% - 5px);
-  width: 10px;
-  height: 6px;
-  background: var(--accent);
-  clip-path: polygon(0 0, 100% 0, 100% 2px, 80% 2px, 80% 4px, 60% 4px, 60% 6px, 40% 6px, 40% 4px, 20% 4px, 20% 2px, 0 2px);
-  pointer-events: none;
-  animation: solved-card-blink 120ms steps(2, jump-end) backwards;
-}
-.profile-axis.top {
-  top: -6px;
-}
-.profile-axis.bottom {
-  bottom: -6px;
-  rotate: 180deg;
-}
 
-/* THE NAME, edited in place: the field IS the white chip, exactly as wide as what it holds
-   (the mono's fixed advance); the native caret is hidden and the house's — the prompt's, in
-   the accent — stands where the text cursor is. The pencil hangs off the chip's end until the
-   chip is being typed into. */
-.profile-name-chip {
-  --adv: calc(1ch + 0.03em);
-  position: relative;
-  z-index: 1;
-  display: block;
-  font-family: var(--ui);
-  font-size: var(--name-hero-size);
-  font-weight: var(--name-hero-weight);
-  letter-spacing: 0.03em;
-}
-.profile-name {
-  display: block;
-  box-sizing: content-box;
-  width: calc(var(--n) * var(--adv));
-  max-width: calc(100vw - 104px);
-  height: 32px;
-  margin: 0;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 0;
-  outline: none;
-  background: var(--fg);
-  color: var(--bg);
-  font: inherit;
-  letter-spacing: inherit;
-  line-height: 32px;
-  caret-color: transparent;
-  animation: pcard-wipe 200ms steps(8, jump-end) 220ms backwards;
-}
-.profile-name::placeholder {
-  color: color-mix(in srgb, var(--bg) 40%, var(--fg));
-  opacity: 1;
-}
-.profile-name::selection {
-  background: var(--accent);
-  color: var(--fg);
-}
-@keyframes pcard-wipe {
-  from {
-    clip-path: inset(0 100% 0 0);
-  }
-  to {
-    clip-path: inset(0 0 0 0);
-  }
-}
-.profile-caret {
-  position: absolute;
-  top: 6px;
-  left: calc(10px + var(--at) * var(--adv) - 1px);
-  width: 2px;
-  height: 20px;
-  background: var(--accent);
-  pointer-events: none;
-  animation: blink 1s steps(1) infinite;
-}
-.profile-name-pen {
-  position: absolute;
-  top: 6px;
-  left: calc(100% + 10px);
-  display: block;
-  color: var(--muted);
-  pointer-events: none;
-  animation: solved-card-blink 120ms steps(2, jump-end) 420ms backwards;
-}
-.profile-name-pen .ui-icon {
-  display: block;
-  width: 20px;
-  height: 20px;
-}
-.profile-name-pen.off {
-  visibility: hidden;
-}
-
-/* THE TOOLS: the palettes, then the three tools — every one a 44px target at a 44px pitch.
-   One row where the column holds all eight with a step between the two groups; else
-   (`.wrap`, decided by `Profile` from the column's width) the tools on a row of their own
-   right under the palettes, both rows centred under the canvas on whole pixels. */
-.profile-tools {
+/* THE PALETTES: five SQUARE swatches across the frame, each the drawing itself in that palette
+   at four whole pixels a cell in its 48px target. Bare — only the one in hand wears the white
+   corners, which CLOSE IN on it from further out in three hard steps as it is chosen, its mark
+   hopping a cell; a fine pointer's hover shows a slate set. (Under the keyboard's own
+   brackets, which frame the same tile — the arrows choose — its corners give way to them.) */
+.profile-palettes {
   flex: none;
+  align-self: flex-start;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 14px 0 10px;
+  gap: var(--pswatch-gap, 8px);
+  margin: 18px 0 0 var(--pswatches-at, 0px);
 }
-.profile-palettes,
-.profile-keys {
-  display: flex;
-  min-width: 0;
-}
-.profile-screen.wrap .profile-tools {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-.profile-screen.wrap .profile-palettes {
-  margin-left: var(--palettes-at, 0px);
-}
-.profile-screen.wrap .profile-keys {
-  margin-left: var(--keys-at, 0px);
-}
-/* A SWATCH: the drawing itself in that palette, 30px (three whole pixels a cell) in a 44px
-   target. Bare — only the one in hand wears the white corners (36px of them, a key's own),
-   which CLOSE IN on it from 6px further out in three hard steps as it is chosen. (Under the keyboard's own brackets, which
-   frame the same tile — the arrows choose — its corners give way to them.) */
 .profile-swatch {
   position: relative;
   flex: none;
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -10864,7 +10709,7 @@ figure.l1-fig {
 .profile-swatch::before {
   content: '';
   position: absolute;
-  inset: 4px;
+  inset: 0;
   border: 2px solid transparent;
   pointer-events: none;
   -webkit-mask:
@@ -10888,117 +10733,50 @@ figure.l1-fig {
   border-color: var(--fg);
   animation: swatch-lock 150ms steps(3, jump-end);
 }
+.profile-swatch.sel .avatar {
+  animation: swatch-pick 120ms steps(1, end);
+}
 .profile-swatch.sel[data-bracketed]::before {
   border-color: transparent;
 }
 @keyframes swatch-lock {
   from {
-    inset: -2px;
+    inset: -6px;
+  }
+}
+@keyframes swatch-pick {
+  0% {
+    translate: 0 -4px;
+  }
+  50% {
+    translate: 0 -2px;
   }
 }
 @media (hover: hover) and (pointer: fine) {
   .profile-swatch:not(.sel, [aria-disabled='true']):hover::before {
-    border-color: var(--muted);
+    border-color: var(--rail);
   }
 }
 .profile-swatch[aria-disabled='true'] {
   cursor: default;
 }
-/* A TOOL: its pixel mark in a tappable thing's corners (36px of brackets in its 44px target,
-   so two tools' corners stand a clear 8px apart); one switched ON is the white chip. */
-.profile-key {
-  --bc: color-mix(in srgb, var(--fg) 38%, transparent);
-  position: relative;
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-  transition: color 120ms steps(2, jump-end);
-  animation: solved-card-blink 120ms steps(2, jump-end) calc(500ms + var(--k, 0) * 45ms) backwards;
-}
-.profile-key:nth-child(2) {
-  --k: 1;
-}
-.profile-key:nth-child(3) {
-  --k: 2;
-}
-.profile-key::before {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  border: 2px solid var(--bc);
-  pointer-events: none;
-  -webkit-mask:
-    linear-gradient(#000 0 0) 0 0 / 6px 6px no-repeat,
-    linear-gradient(#000 0 0) 100% 0 / 6px 6px no-repeat,
-    linear-gradient(#000 0 0) 0 100% / 6px 6px no-repeat,
-    linear-gradient(#000 0 0) 100% 100% / 6px 6px no-repeat;
-  mask:
-    linear-gradient(#000 0 0) 0 0 / 6px 6px no-repeat,
-    linear-gradient(#000 0 0) 100% 0 / 6px 6px no-repeat,
-    linear-gradient(#000 0 0) 0 100% / 6px 6px no-repeat,
-    linear-gradient(#000 0 0) 100% 100% / 6px 6px no-repeat;
-  transition: border-color 120ms steps(2, jump-end);
-}
-.profile-key .ui-icon {
-  position: relative;
-  display: block;
-  width: 20px;
-  height: 20px;
-}
-@media (hover: hover) and (pointer: fine) {
-  .profile-key:hover:not([aria-disabled='true']) {
-    color: var(--fg);
-  }
-  .profile-key:hover:not([aria-disabled='true'])::before {
-    border-color: var(--fg);
-  }
-}
-.profile-key:active:not([aria-disabled='true']) {
-  translate: 0 2px;
-}
-.profile-key.on {
-  color: var(--bg);
-}
-.profile-key.on::before {
-  border-color: var(--fg);
-  background: var(--fg);
-  -webkit-mask: none;
-  mask: none;
-}
-.profile-key[aria-disabled='true'] {
-  opacity: 0.35;
-  cursor: default;
-}
-.profile-key.on[aria-disabled='true'] {
-  opacity: 1;
-}
 
-/* HOW OTHERS SEE ME: the board's line — the mark at its 30px, the name in its dress — with
-   nothing a board says only once a day is played. Right under the tools (it previews the
-   swatch in hand), its mark stands exactly under the first swatch's (both 7px in, on the
-   palettes' own offset when the tools wrap). */
+/* HOW OTHERS SEE ME: the board's own line — the mark at its 30px, the NAME TYPED ON IT in the
+   boards' face at the field's 16px floor (iOS zooms a smaller one) — on the canvas's left edge
+   and as wide. The field says it can be typed into with one mark only: the floor's stippled
+   rail under it, which turns white while it holds the accent caret. Nothing a board says only
+   once a day is played: no rank, no crown, no count. */
 .profile-line {
   flex: none;
+  align-self: flex-start;
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
+  width: var(--pside);
   height: 44px;
-  padding: 0 7px;
-  line-height: 1;
+  margin: 18px 0 0 calc(var(--pframe-at, 0px) + 8px);
   animation: board-dissolve 240ms linear 420ms backwards;
-}
-.profile-screen.wrap .profile-line {
-  padding-left: calc(var(--palettes-at, 0px) + 7px);
 }
 .profile-line .avatar {
   display: block;
@@ -11006,7 +10784,7 @@ figure.l1-fig {
 .profile-line-mark {
   display: block;
 }
-/* A save that landed: the line HOPS once, on whole pixels. */
+/* A save that landed: the line's mark HOPS once, on whole pixels. */
 .profile-line-mark.hop {
   animation: line-hop 200ms steps(1, end) 640ms;
 }
@@ -11024,35 +10802,62 @@ figure.l1-fig {
     translate: 0 -2px;
   }
 }
+.profile-name {
+  min-width: 0;
+  width: 100%;
+  height: 40px;
+  margin: 0;
+  padding: 0;
+  font-family: var(--ui);
+  font-size: 16px;
+  font-weight: var(--name-line-weight);
+  letter-spacing: 0.02em;
+  color: var(--fg);
+  caret-color: var(--accent);
+  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 calc(100% - 4px) / 6px 2px repeat-x;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+}
+.profile-name:focus {
+  background-image: linear-gradient(90deg, var(--fg) 2px, transparent 2px);
+}
+.profile-name.anon,
+.profile-name::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.profile-name::selection {
+  background: var(--accent);
+  color: var(--fg);
+}
+
 .profile-screen .profile-save {
   flex: none;
   margin-top: 28px;
   animation: board-dissolve 240ms linear 420ms backwards;
 }
-/* A failed read's way back: the quiet word, under the held card. */
+/* A failed read's way back: the quiet word, under the held canvas. */
 .profile-retry {
   display: flex;
   justify-content: center;
   margin-top: 14px;
 }
 @media (max-width: 640px) {
-  /* The phone: the column takes the viewport (less `.app`'s 16 + 28px pads). The card starts
-     on the area's start line — 60px under the bar's top, where `/account`'s masthead stands,
-     so the mark handed over grows in place out of its own corner — its tools and the board
-     line right under it, and SAVE parks on the bottom edge, 14px off it, where MIX and INVITE
-     sit: the height the canvas leaves over sits ONCE, over SAVE, the way the area's other
-     screens let theirs gather at the foot (user-decided: the editor keeps only its header
-     clearance). Nothing here waits on the stored profile, so the box stands where it will
-     from the first frame. */
+  /* The phone: the column takes the viewport (less `.app`'s 16 + 28px pads); the keys start on
+     the board screen's line under the band, and SAVE parks on the bottom edge, 14px off it,
+     where MIX and INVITE sit — the height the canvas leaves over sits once, over SAVE. Nothing
+     here waits on the stored profile, so the canvas's box stands where it will from the first
+     frame. */
   .profile-screen {
     align-self: stretch;
     min-height: calc(100dvh - 44px);
     max-height: none;
     overflow: visible;
-    padding: 60px 0 0;
+    padding: 52px 0 0;
   }
   .profile-line {
-    margin-bottom: 16px;
+    margin-bottom: 18px;
   }
   .profile-screen .profile-save {
     margin-top: auto;
@@ -11063,32 +10868,27 @@ figure.l1-fig {
   .profile-screen.short {
     padding-top: 48px;
   }
-  .profile-screen.short .profile-card {
-    gap: 14px;
+  .profile-screen.short .profile-frame {
+    margin-top: 4px;
   }
-  .profile-screen.short .profile-tools {
-    margin: 10px 0 6px;
+  .profile-screen.short .profile-palettes,
+  .profile-screen.short .profile-line {
+    margin-top: 10px;
   }
   .profile-screen.short .profile-line {
-    margin-bottom: 10px;
+    margin-bottom: 12px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .profile-corner,
-  .profile-name,
-  .profile-name-pen,
+  .profile-key,
+  .profile-key .ui-icon,
   .profile-swatch,
   .profile-swatch::before,
-  .profile-key,
-  .profile-axis,
+  .profile-swatch .avatar,
   .profile-line,
   .profile-line-mark,
   .profile-screen .profile-save {
     animation: none !important;
-  }
-  /* No pop, no shrink, no sparks: a cell simply IS what it holds. */
-  .avatar-editor-cell::before,
-  .avatar-editor-cell::after {
-    display: none;
   }
 }

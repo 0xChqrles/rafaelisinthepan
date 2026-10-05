@@ -1,33 +1,29 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { AVATAR_PALETTES, AVATAR_SIZE, bayerThreshold } from '@whippin/shared';
-import { abgr, hexToAbgr } from '../raster';
+import { bayerThreshold } from '@whippin/shared';
 import { prefersReducedMotion } from '../../hooks/useScramble';
-import { speckOffset } from './tools';
+import { canvasPicture, canvasSide, ditherCell } from './picture';
 
 // THE EDITOR'S PALETTE SWEEP: what the canvas WAS, laid over what it now is and swept off it on
 // the diagonal through the house's ordered dither (`bayer.ts`, on the 2px cell) — the old
-// picture's cells dropping out in threshold order behind a moving front, never a fade. A raster
-// pixel a 2px cell, scaled up `pixelated`, laid exactly over the canvas (whose cell is a WHOLE,
-// EVEN number of px, so the dither lands on the cells' own edges).
+// picture dropping out in threshold order behind a moving front, never a fade. One raster pixel
+// a CSS pixel, scaled up `pixelated`, laid exactly over the canvas.
 //
-// The old picture is the canvas EXACTLY as it stood: its ground, its ink, and the grid's specks
-// (`speckOffset`, the canvas's own rule: one in the middle of every empty cell). And a second
-// tap while a sweep is still running CONTINUES from what is on screen: the half-swept picture —
-// the older palette where the front has not passed, the newer one where it has — becomes the
-// picture swept, the front starting over from the corner, so the newer palette is swept away in
-// its turn rather than swapped in one frame.
+// The old picture is the canvas EXACTLY as it stood (`canvasPicture`, the canvas's own: its
+// ground, its ink, its grid's lines), and the dither's 2px cells are the canvas's own
+// (`ditherCell`), so the sweep never cuts a cell off-grid. A second tap while a sweep is still
+// running CONTINUES from what is on screen: the half-swept picture — the older palette where the
+// front has not passed, the newer one where it has — becomes the picture swept, the front
+// starting over from the corner, so the newer palette is swept away in its turn rather than
+// swapped in one frame.
 //
 // The overlay has NO box between sweeps (0 × 0: an unsized canvas would lay out at the
 // browser's 300 × 150 and push the page sideways), and one is played only for a NEW shot — a
 // resize mid-sweep ends it rather than replaying it at the new size. Reduced motion cuts
 // straight to the new picture.
-const CELL = 2;
 const FRAME_MS = 40;
 export const WIPE_MS = 420;
-// The front's soft edge, in raster cells: how far behind it the old picture is gone.
+// The front's soft edge, in dither cells: how far behind it the old picture is gone.
 const RAMP = 22;
-// The grid's speck: the ink mixed 60% into the ground (the CSS's own `color-mix`).
-const SPECK = 0.6;
 
 export interface WipeShot {
   // What the canvas showed: its palette and its cells.
@@ -35,40 +31,6 @@ export interface WipeShot {
   cells: readonly number[];
   // A new key plays a new sweep.
   key: number;
-}
-
-const channels = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-function mix(fg: string, bg: string, k: number): number {
-  const a = channels(fg);
-  const b = channels(bg);
-  const [r, g, bl] = a.map((v, i) => Math.round(v * k + b[i] * (1 - k)));
-  return abgr(r, g, bl);
-}
-
-// The canvas's picture, one entry per 2px raster cell: ground, ink, or the grid's speck.
-export function canvasPicture(palette: number, cells: readonly number[], cellPx: number): Uint32Array {
-  const side = cellPx * AVATAR_SIZE;
-  const n = Math.ceil(side / CELL);
-  const { bg, fg } = AVATAR_PALETTES[palette];
-  const lo = hexToAbgr(bg);
-  const hi = hexToAbgr(fg);
-  const dot = mix(fg, bg, SPECK);
-  const at0 = speckOffset(cellPx);
-  const picture = new Uint32Array(n * n);
-  for (let cy = 0; cy < n; cy += 1) {
-    const py = cy * CELL;
-    const ay = Math.min(AVATAR_SIZE - 1, Math.floor(py / cellPx));
-    for (let cx = 0; cx < n; cx += 1) {
-      const pxl = cx * CELL;
-      const ax = Math.min(AVATAR_SIZE - 1, Math.floor(pxl / cellPx));
-      const at = ay * AVATAR_SIZE + ax;
-      const inked = cells[at] === 1;
-      // The speck: the 2px at the middle of an empty cell.
-      const speck = !inked && pxl === ax * cellPx + at0 && py === ay * cellPx + at0;
-      picture[cy * n + cx] = inked ? hi : speck ? dot : lo;
-    }
-  }
-  return picture;
 }
 
 interface Sweep {
@@ -94,7 +56,7 @@ export default function DitherWipe({ shot, cellPx }: { shot: WipeShot | null; ce
     played.current = shot.key;
     const px0 = cell.current;
     if (prefersReducedMotion() || px0 <= 0) return;
-    const n = Math.ceil((px0 * AVATAR_SIZE) / CELL);
+    const n = canvasSide(px0);
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     // The picture swept: the canvas as it stood — or, mid-sweep, what is on screen of it.
@@ -106,11 +68,13 @@ export default function DitherWipe({ shot, cellPx }: { shot: WipeShot | null; ce
     was?.stop(false);
     canvas.width = n;
     canvas.height = n;
-    canvas.style.width = `${n * CELL}px`;
-    canvas.style.height = `${n * CELL}px`;
+    canvas.style.width = `${n}px`;
+    canvas.style.height = `${n}px`;
     const image = ctx.createImageData(n, n);
     const px = new Uint32Array(image.data.buffer);
-    const span = 2 * n;
+    // Each pixel's dither cell, along one axis, and the front's whole run across them.
+    const cellOf = Array.from({ length: n }, (_, i) => ditherCell(i));
+    const span = 2 * (cellOf[n - 1] + 1);
     const t0 = performance.now();
     let raf = 0;
     let last = Number.NaN;
@@ -139,11 +103,13 @@ export default function DitherWipe({ shot, cellPx }: { shot: WipeShot | null; ce
         last = step;
         const k = (step * FRAME_MS) / WIPE_MS;
         const front = -RAMP + k * (span + 2 * RAMP);
-        for (let cy = 0; cy < n; cy += 1) {
-          for (let cx = 0; cx < n; cx += 1) {
-            const swept = Math.min(1, Math.max(0, (front - (cx + cy)) / RAMP));
-            const i = cy * n + cx;
-            px[i] = swept > bayerThreshold(cx, cy) ? 0 : picture[i];
+        for (let y = 0; y < n; y += 1) {
+          const by = cellOf[y];
+          for (let x = 0; x < n; x += 1) {
+            const bx = cellOf[x];
+            const swept = Math.min(1, Math.max(0, (front - (bx + by)) / RAMP));
+            const i = y * n + x;
+            px[i] = swept > bayerThreshold(bx, by) ? 0 : picture[i];
           }
         }
         ctx.putImageData(image, 0, 0);

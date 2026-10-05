@@ -21,7 +21,7 @@ import { createPortal } from 'react-dom';
 // neither does the focus a click leaves on a button. It frames the control's VISIBLE box
 // — a `[data-focus-box]` inside it when the control is stretched wider than what it shows
 // (a drum's row, framing its chip) — and it never frames the guess field or the profile
-// editor's name chip (their caret is their focus), a dialog focused as a whole, or a CONTAINER focused for a screen reader
+// editor's name field (their caret is their focus), a dialog focused as a whole, or a CONTAINER focused for a screen reader
 // (`tabindex="-1"` on something that is not a control — the code prompt's field carries
 // that too while it waits offstage, and is a field all the same). It mounts INSIDE an
 // open dialog when the focus is there: the top layer paints above everything in the

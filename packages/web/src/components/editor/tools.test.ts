@@ -1,25 +1,16 @@
-// The profile editor's tools (components/editor/tools.ts): the mirror's twin and its symmetry
-// test, a stroke's line between two pointer samples, the dice's roll (a NEW SHAPE, the
-// assigned way, the palette KEPT) and CLEAR's drain — each a rule the editor's behaviour rests
-// on, asserted against what the editor promises rather than how it draws.
+// The profile editor's tools (components/editor/tools.ts): a stroke's line between two pointer
+// samples, the dice's roll (a NEW SHAPE, the assigned way, the palette KEPT) and CLEAR's drain
+// — each a rule the editor's behaviour rests on, asserted against what the editor promises
+// rather than how it draws.
 
 import { describe, expect, it } from 'vitest';
 import { AVATAR_CELLS, PUBLIC_ID_PATTERN, decodeAvatar, defaultAvatar } from '@whippin/shared';
-import {
-  DICE_MIN_INK,
-  cellLine,
-  churnCells,
-  drainStep,
-  isSymmetric,
-  landStep,
-  mirroredCell,
-  paintStroke,
-  rollShape,
-  speckOffset,
-} from './tools';
+import { DICE_MIN_INK, cellLine, churnCells, drainStep, landStep, paintStroke, rollShape } from './tools';
 
 const blank = () => new Array<number>(AVATAR_CELLS).fill(0);
 const at = (x: number, y: number) => y * 10 + x;
+// A drawing that is its own left-right mirror image — what every assigned mark is.
+const isSymmetric = (cells: readonly number[]) => cells.every((v, i) => v === cells[Math.floor(i / 10) * 10 + (9 - (i % 10))]);
 // A seeded source of public-id-shaped seeds, so a roll is reproducible in a test.
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
 function seeded(seed: number) {
@@ -30,48 +21,6 @@ function seeded(seed: number) {
   };
   return () => Array.from({ length: 16 }, () => ALPHABET[Math.floor(next() * ALPHABET.length)]).join('');
 }
-
-describe('the mirror', () => {
-  it("pairs each cell with its twin across the vertical midline, never itself", () => {
-    expect(mirroredCell(at(0, 0))).toBe(at(9, 0));
-    expect(mirroredCell(at(4, 7))).toBe(at(5, 7));
-    for (let i = 0; i < AVATAR_CELLS; i += 1) {
-      expect(mirroredCell(mirroredCell(i))).toBe(i);
-      expect(mirroredCell(i)).not.toBe(i);
-    }
-  });
-
-  it('calls every assigned mark symmetric (so the editor opens with MIRROR on)', () => {
-    for (const id of ['aaaaaaaaaaaaaaaa', 'zz23zz45zz67zzab', 'qwertyuiopasdfgh']) {
-      expect(isSymmetric(decodeAvatar(defaultAvatar(id)).cells)).toBe(true);
-    }
-  });
-
-  it('calls a lopsided drawing asymmetric, and the blank one symmetric', () => {
-    const cells = blank();
-    expect(isSymmetric(cells)).toBe(true);
-    cells[at(1, 1)] = 1;
-    expect(isSymmetric(cells)).toBe(false);
-    cells[at(8, 1)] = 1;
-    expect(isSymmetric(cells)).toBe(true);
-  });
-});
-
-describe('the grid', () => {
-  it("specks every empty cell at its middle, on the house's 2px grid", () => {
-    for (let cell = 16; cell <= 36; cell += 2) {
-      const at0 = speckOffset(cell);
-      // Whole and even, so the sweep's 2px raster draws it where the canvas does.
-      expect(Number.isInteger(at0)).toBe(true);
-      expect(at0 % 2).toBe(0);
-      // At the middle: the speck's 2px cover the cell's centre or stop a pixel short of it.
-      expect(Math.abs(at0 + 1 - cell / 2)).toBeLessThanOrEqual(1);
-      // Inside its own cell, clear of every edge: it never touches a neighbour's ink.
-      expect(at0).toBeGreaterThan(0);
-      expect(at0 + 2).toBeLessThan(cell);
-    }
-  });
-});
 
 describe('a stroke', () => {
   it('fills every cell between two samples, both ends included, with no gap', () => {
@@ -91,28 +40,10 @@ describe('a stroke', () => {
   it('paints its one value and reports only the cells it changed', () => {
     const cells = blank();
     cells[at(3, 2)] = 1;
-    const { cells: next, changed } = paintStroke(cells, cellLine(at(1, 2), at(4, 2)), 1, false);
+    const { cells: next, changed } = paintStroke(cells, cellLine(at(1, 2), at(4, 2)), 1);
     expect(changed).toEqual([at(1, 2), at(2, 2), at(4, 2)]);
     expect([1, 2, 3, 4].every((x) => next[at(x, 2)] === 1)).toBe(true);
     expect(cells[at(1, 2)]).toBe(0); // the input is never mutated
-  });
-
-  it('paints every twin with the mirror on, so a symmetric drawing stays symmetric', () => {
-    const { cells, changed } = paintStroke(blank(), [at(1, 4), at(2, 4)], 1, true);
-    expect(cells[at(8, 4)]).toBe(1);
-    expect(cells[at(7, 4)]).toBe(1);
-    expect(changed).toHaveLength(4);
-    expect(isSymmetric(cells)).toBe(true);
-    // Erasing with the mirror takes the twin away too.
-    const erased = paintStroke(cells, [at(1, 4)], 0, true).cells;
-    expect(erased[at(8, 4)]).toBe(0);
-    expect(isSymmetric(erased)).toBe(true);
-  });
-
-  it('counts a cell and its twin once when the stroke crosses the axis', () => {
-    const { changed } = paintStroke(blank(), cellLine(at(3, 0), at(6, 0)), 1, true);
-    expect(new Set(changed).size).toBe(changed.length);
-    expect(changed).toHaveLength(4);
   });
 });
 

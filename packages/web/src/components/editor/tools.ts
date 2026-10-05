@@ -10,29 +10,9 @@ import {
 } from '@whippin/shared';
 
 // THE EDITOR'S TOOLS, PURE (`screens/Profile.tsx` draws them): what a stroke paints, what the
-// MIRROR adds to it, what the DICE rolls and what CLEAR takes away at each of its steps — over
-// the mark's 100 cells (row-major, 0 = ground, 1 = ink), never over its palette. Nothing here
-// decides what is SAVED: every tool is an ordinary edit, and SAVE stays the deploy.
-
-// ── The mirror ────────────────────────────────────────────────────────────────────────────
-// A cell's twin across the mark's vertical midline (a cell on a 10-wide grid has no cell of
-// its own on the axis: every twin is another cell).
-export const mirroredCell = (i: number): number =>
-  Math.floor(i / AVATAR_SIZE) * AVATAR_SIZE + (AVATAR_SIZE - 1 - (i % AVATAR_SIZE));
-
-// Is a drawing its own left-right mirror image? Every ASSIGNED mark is (`defaultAvatar` walks
-// the left half and mirrors it) — which is why the editor opens with MIRROR ON for a symmetric
-// drawing, and OFF for one a player has made lopsided on purpose.
-export const isSymmetric = (cells: readonly number[]): boolean =>
-  cells.every((value, i) => value === cells[mirroredCell(i)]);
-
-// ── The grid ──────────────────────────────────────────────────────────────────────────────
-// Where the canvas shows its GRID: a 2px speck of the ink at the MIDDLE of every empty cell — a
-// regular lattice of places to paint, the outer ring included, and never touching a drawn cell
-// (the speck stays inside its own). Its offset in the cell is a whole, EVEN number of px, so it
-// lands on the house's 2px dither too (the palette sweep's snapshot draws it on that grid):
-// the middle exactly where the cell's half is odd, a pixel short of it where it is even.
-export const speckOffset = (cellPx: number): number => Math.max(0, 2 * Math.floor((cellPx / 2 - 1) / 2));
+// DICE rolls and what CLEAR takes away at each of its steps — over the mark's 100 cells
+// (row-major, 0 = ground, 1 = ink), never over its palette. Nothing here decides what is SAVED:
+// every tool is an ordinary edit, and SAVE stays the deploy.
 
 // ── A stroke ──────────────────────────────────────────────────────────────────────────────
 // The cells on the line from cell `a` to cell `b` (Bresenham), both ends included: a stroke's
@@ -63,23 +43,20 @@ export function cellLine(a: number, b: number): number[] {
   }
 }
 
-// Paint `value` (the stroke's ONE value: a gesture that starts on ink erases) into `path`, and
-// — with the mirror on — into every cell's twin too. Answers the drawing after the stroke and
-// the cells that actually CHANGED (in the order painted, each once): the cells that pop.
+// Paint `value` (the stroke's ONE value: a gesture that starts on ink erases) into `path`.
+// Answers the drawing after the stroke and the cells that actually CHANGED (in the order
+// painted, each once): the cells that pop.
 export function paintStroke(
   cells: readonly number[],
   path: readonly number[],
   value: 0 | 1,
-  mirror: boolean,
 ): { cells: number[]; changed: number[] } {
   const changed: number[] = [];
   const seen = new Set<number>();
-  for (const at of path) {
-    for (const i of mirror ? [at, mirroredCell(at)] : [at]) {
-      if (seen.has(i)) continue;
-      seen.add(i);
-      if (cells[i] !== value) changed.push(i);
-    }
+  for (const i of path) {
+    if (seen.has(i)) continue;
+    seen.add(i);
+    if (cells[i] !== value) changed.push(i);
   }
   if (changed.length === 0) return { cells: [...cells], changed };
   const next = [...cells];

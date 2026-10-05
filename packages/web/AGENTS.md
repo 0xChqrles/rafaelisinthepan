@@ -159,11 +159,12 @@
                               the streak credit a fresh solve rides
       hooks/useRoundSync.ts   its React binding: registers the round's context on mount and
                               reports WHERE its authoritative state is (the load gate)
-      screens/Profile.tsx     the #188 profile editor (/profile): the canvas grown out of the
-                              masthead's mark, the name's white chip, the palettes + MIRROR /
-                              DICE / CLEAR, the board line it previews, SAVE
-      components/editor/      the editor's pure tools (`tools.ts`: the mirror, the grid's speck,
-                              a stroke's line, the dice, the drain) and its palette sweep
+      screens/Profile.tsx     the #188 profile editor (/profile): DICE / CLEAR over the canvas
+                              grown out of the masthead's mark, the swatches, the board line
+                              the name is typed on, SAVE
+      components/editor/      the editor's pure tools (`tools.ts`: a stroke's line, the dice,
+                              the drain), its canvas's picture and geometry (`picture.ts`), the
+                              canvas with its pops (`EditorCanvas.tsx`) and its palette sweep
                               (`DitherWipe.tsx`)
       components/FoilStamp.tsx  the SAVE landing: a foil band over any square mark, played in the
                               mark's own box
@@ -790,7 +791,7 @@ These are decided and verified against the code. Treat them as load-bearing.
     the same underline design" — `.btn-primary + .btn-secondary`, `.mix-btn +
     .btn-secondary`, restating `.link-quiet-btn`'s dress so the sibling rule wins over the
     cap's). SHARE is the PRIMARY cap on the result screen. The COMPACT CAP
-    (`.board-chip` EDIT, `.profile-clear`, `.device-signout`, `.device-retry`) is the
+    (`.board-chip` EDIT, `.device-signout`, `.device-retry`) is the
     secondary tile at a row's size with a 3px print. No other button dress remains: the
     header keys, the archive's days and the game's own controls are not buttons of this
     system. `--accent-deep` and `polished` are no longer read by any button (the
@@ -1335,8 +1336,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **THE FLOW'S FACES ARE SQUARE PIXEL MARKS AT WHOLE-PIXEL SIZES** (`Avatar sharp`,
     `AccountEmail`'s `FLOW_FACE_PX`: the lead 60, the crossroads 50, the ending 80 — 6, 5 and
     8 pixels a cell, contract-tested), bare on the ground, the NAME under a hero face in the
-    WHITE CHIP (`.link-name`, the editor's own name chip — 17px in a whole 32px box — and
-    the signed-out ghost's, dimmed); a face still being read holds its box as the house's
+    WHITE CHIP (`.link-name`, the hero name in a whole 32px box, and the signed-out ghost's,
+    dimmed); a face still being read holds its box as the house's
     stippled slate checker breathing in 160ms steps (`.link-hold`, the Bayer `--dz-*`
     masks), never a grey rounded block. A step LEAVES through the dither before the next
     arrives (`advance`: the code step's lines go out, the lead standing; the crossroads then
@@ -1347,8 +1348,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `FoilStamp` sweeps it once the step-up has landed — one implementation for both saves —
     in the DEEP foil on a light ground. An ADOPT remounts the screen, so its ending arrives
     fresh (the face composes). The NAME has two sizes app-wide (`--name-hero-size` for a
-    face's own name — the masthead, the editor's chip, the flow's and the signed-out chips —
-    and `--name-line-size` for a board line, the editor's preview included); the
+    face's own name — the masthead, the flow's and the signed-out chips — and
+    `--name-line-size` for a board line; the editor's line, where the name is typed, takes a
+    field's 16px floor so iOS never zooms it); the
     crossroads' side chips are labels, at its labels' size. The hero size steps down a pixel
     at ≤360px wide (the token itself, so every hero chip with it), where the cap's 16
     characters would otherwise be cut in `/account`'s masthead.
@@ -1458,56 +1460,57 @@ it to the local store — see `packages/backend/AGENTS.md`).
       (destruction never glows). Its `land` prop (a start delay in ms; omitted, the row
       stands still) lands the numbers on the reels — the recovery ending passes it, timed
       to its row's arrival; the crossroads never does.
-    - **THE EDITOR is the masthead's mark opened.** The canvas is ONE mark — continuous
-      square cells, the grid only a 2px speck of the ink at the middle of every empty cell
-      (`speckOffset`: whole and even, on the 2px dither; a regular lattice that never touches
-      the drawing; 60% of the ink into the ground, so it reads on the darkest palette) — its
-      cell a whole, EVEN number of px on a whole-pixel offset, sized by the screen (the height
-      it had before any soft keyboard) so the whole editor fits a phone unscrolled down to
-      ~550px tall, and a desktop window by its own chrome (never the phone's short dress). On
-      a phone the card stands on the area's START LINE (60px under the bar's top, where
-      `/account`'s masthead stands), its tools and the board line right under it, and the
-      height left over sits once, over SAVE on the bottom edge — the editor keeps only its
-      header clearance (the user's call, below); on desktop the column is held at its full
-      height from the first frame, so `.app`'s centring never moves the card when the tools
-      arrive. The canvas sits in the corner brackets — 4px inside the column, on the tools'
-      own corner column right under them — over the NAME's white chip (as wide
-      as what it holds, the house's accent caret at its selection, a pencil beside it until
-      it is typed into). A changed cell pops whole pixels proud; a gesture BURSTS rather than
-      tiling — its first cell (and the twin, under the MIRROR), then the cell under the finger
-      at most every 120ms, the dice's landing likewise — throwing eight 4px sparks of the
-      house's white glitter (the mark's ink on a light ground) from just outside the popped
-      cell; an erased one shrinks into its middle; a stroke is ONE pointer's. The pops only animate a change — a cell's
-      colour at rest is its own (reduced motion draws no pop at all). Under it the palettes
-      as the drawing itself in each (30px marks in 44px targets, ONE choice — a radio group,
-      the arrows choose — only the chosen one in white corners, closing in), a switch
-      SWEEPING the old picture off on the diagonal through the 2px Bayer order
-      (`DitherWipe`: its specks included; a second tap sweeps the half-swept picture off in
-      its turn; no box between sweeps), the board line taking the new palette only once the
-      sweep has passed; and the TOOLS (44px targets too; one row with the
-      palettes where the column holds all eight, else a row of their own under them, both
-      centred) — MIRROR (each cell's twin painted too; opens ON only for a
-      left-right symmetric drawing, which every assigned mark is; ▼ ▲ on the canvas's
-      edges, never an axis over the cells), DICE (a NEW SHAPE from `defaultAvatar`'s own
-      derivation, the palette KEPT, landing over a short churn — four shapes, on the canvas
-      alone: the swatches and the board line hold the drawing it started from until it has
-      landed — in the Bayer order, each changed cell its own pop — CLEAR run backwards), CLEAR (a Bayer-ordered drain). Every tool is an ordinary edit; SAVE stays the deploy. A control unavailable
-      for a moment (a tool playing, a save running, nothing to save) is `aria-disabled`, so
-      the keyboard's focus stays on it. Then the LINE every board will draw for the player
-      (right under the tools, its mark under the first swatch's: the mark at `MARK`, the
-      name in the boards' dress — the placeholder ink only for an empty name or the loaded
-      account's own pseudonym, so a TOKENLESS device's placeholder is dressed as a stored
-      name, the same screen a deployed-unsaved account shows; but this screen's SAVE is the
-      one deploy that bypasses `localIdentityDeploy`, so a tokenless player's first SAVE
-      with the name untouched stores it EMPTY and leaves them wearing the new account's own
-      pseudonym, muted; no rank, crown or count — it claims none) and SAVE on the bottom
-      edge, one 430px column at every width. A save that LANDS is the screen's one
-      shiny thing — the FOIL STAMP (a band sweeps the canvas, the ink holds in foil — the
-      DEEP foil on a light ground, so the ink stays darker than it — then dissolves back in
-      8 Bayer steps), the brackets lock on, the line hops; a REFUSED one
-      shakes the card, then the `ErrorScreen`. `FoilStamp` is ONE implementation for any
-      square mark of any whole-pixel size, played in its box, its grain always dividing the
-      mark's own pixel.
+    - **THE EDITOR is a small pixel-art studio, the masthead's mark opened** (the user's
+      layout). Top to bottom, ONE layout at every width: the tool KEYS on the canvas's left edge — DICE (a NEW SHAPE
+      from `defaultAvatar`'s own derivation, the palette KEPT, landing over a short churn —
+      four shapes, on the canvas alone: the swatches and the board line hold the drawing it
+      started from until it has landed — in the Bayer order, each changed cell its own pop)
+      and CLEAR (a Bayer-ordered drain; its icon the canvas's frame struck through), pixel
+      marks in slate corner brackets, the one playing lit and rattling (no MIRROR tool: the
+      user found it useless).
+      Then the CANVAS in its frame's corner brackets (slate at rest, white while a stroke is
+      down, locking on when a save lands): square cells on a 1px GRID in the palette's own
+      ground pressed toward black (`picture.ts`), the cell a whole ODD number of px so the
+      pitch is even and the house's 2px dither (`ditherCell`) lands on every cell's edge —
+      sized by the screen (the height it had before any soft keyboard) so the whole editor
+      fits a phone unscrolled down to ~550px tall (`EDITOR_CHROME_PX` is the CSS's own sum;
+      a short phone takes a tighter dress), every offset on a whole pixel, the desktop column
+      held at its full height (a pixel more where that centres it on a whole one). It GROWS
+      out of the masthead's mark (`markHandoff`: frozen where it stood while the stored
+      profile is read, a direct load growing from the centre). Then the SWATCHES across the
+      frame, each the drawing itself in that palette (40px, four pixels a cell, in 48px
+      targets; ONE choice — a radio group, the arrows choose — only the chosen one in white
+      corners, closing in), a switch SWEEPING the old picture off on the diagonal through the
+      2px Bayer order (`DitherWipe`: the canvas's own picture, lines included; a second tap
+      sweeps the half-swept picture off in its turn; no box between sweeps), the board line
+      taking the new palette only once the sweep has passed. Then the LINE every board will
+      draw for the player with the NAME TYPED ON IT (the mark at `MARK`, the field in the
+      boards' face on the floor's stippled rail, white while it holds the accent caret; an
+      emptied field shows the assigned pseudonym, muted — what a board prints; the
+      placeholder ink only for an empty name or the loaded account's own pseudonym, so a
+      TOKENLESS device's placeholder is dressed as a stored name, the same screen a
+      deployed-unsaved account shows; but this screen's SAVE is the one deploy that bypasses
+      `localIdentityDeploy`, so a tokenless player's first SAVE with the name untouched
+      stores it EMPTY and leaves them wearing the new account's own pseudonym, muted; no
+      rank, crown or count — it claims none), and SAVE on the bottom edge. EVERY painted cell
+      POPS whole pixels proud (6, 4, 2px, 50ms a step) and throws eight 4px sparks of its own
+      ink (stepping out 14 → 20 → 26px, the last at 2px); an erased one shrinks into its
+      middle; a stroke is ONE pointer's, painted along the line between samples. The canvas
+      is two RASTERS (`EditorCanvas`): the picture, repainted only when the drawing changes,
+      and one overlay the pops and sparks are drawn on, on the animation clock only while one
+      is alive — a cell per element meant a remount, a style recalc and two animated
+      pseudo-elements per painted cell, and a fast stroke stuttered; the swatches and the
+      line's mark follow the drawing a beat behind (`useDeferredValue`) for the same reason.
+      A pop never decides what the canvas shows: it draws only while its cell still holds
+      what it painted (`popFrame`), and reduced motion draws none. Every tool is an ordinary
+      edit; SAVE stays the deploy. A control unavailable for a moment (a tool playing, a save
+      running, nothing to save) is `aria-disabled`, so the keyboard's focus stays on it. A
+      save that LANDS is the screen's one shiny thing — the FOIL STAMP over the canvas, laid
+      on the cells' own pitch (a band sweeps, the ink holds in foil — the DEEP foil on a light
+      ground — then dissolves back in 8 Bayer steps), the brackets lock on, the line's mark
+      hops; a REFUSED one shakes the frame, then the `ErrorScreen`. `FoilStamp` is ONE
+      implementation for any square mark of any whole-pixel size, played in its box, its
+      grain always dividing the mark's own pixel.
   - **THE 2026-08-30 PASS, from the mobile navigation review.** Four corrections, each
     to something that had been shown to read as the wrong KIND of thing:
     - **`/account` FLOWS FROM THE TOP again.** Its action group had been given
@@ -2210,20 +2213,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   since folding `é` and expanding `œ` both change the length before it — in a layout
   effect, plus a microtask for the one case that renders nothing (a keystroke that
   sanitizes back onto the name already held; React restores a controlled value after
-  the event even with no re-render) — and since the field is the white chip, whose caret is
-  the house's own (drawn at the field's selection, the native one hidden), the FOCUS
-  BRACKETS leave it be, the guess field's rule. A COMPOSITION is left alone while open — an
+  the event even with no re-render) — and the field's accent caret is its focus, so the
+  FOCUS BRACKETS leave it be, the guess field's rule. A COMPOSITION is left alone while open — an
   AZERTY dead key rewritten mid-composition commits as `_` and never builds its
   `î` — with the raw value mirrored into state so the input stays controlled, and
   the rule landing on `compositionend`. And the field suppresses
   autocomplete/autocorrect/autocapitalize/spellcheck, so nothing is suggested into it.
   Then the 10×10 tap/drag-to-paint CANVAS (one STROKE value per gesture — starting on a
   painted cell erases, so tap toggles — painted along the line between pointer samples so a
-  fast drag leaves no gap; a changed cell POPS, replayed by remounting the cell keyed on its
-  paint count, so loading a stored drawing pops nothing), the palettes and the TOOLS in one
-  row (each swatch the drawing in that palette; picking one picks the palette and its ink,
-  and the drawing survives a switch; MIRROR, DICE, CLEAR — the profile area's dress, below)
-  — and SAVE (`.mix-btn`). No brush row (two colours need none) and NO key
+  fast drag leaves no gap; a changed cell POPS, told to the canvas by the edit that made it,
+  so loading a stored drawing pops nothing), DICE and CLEAR over it, the swatches under it
+  (each the drawing in that palette; picking one picks the palette and its ink, and the
+  drawing survives a switch — the profile area's dress, below) — and SAVE (`.mix-btn`). No brush row (two colours need none) and NO key
   block: the copyable-key/paste-to-link UI was removed with `adoptPlayerSecret` (the
   backup affordance's future surface is an open decision — root `AGENTS.md`). Saving
   POSTs `{token, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);

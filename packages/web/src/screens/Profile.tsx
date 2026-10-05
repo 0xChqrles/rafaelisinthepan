@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   anonName,
   AVATAR_CELLS,
@@ -25,24 +25,16 @@ import { withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
 import { holdOwnFace, ownProfileWritten } from '../state/ownFace';
 import ErrorScreen from '../components/ErrorScreen';
 import { navigate } from '../routing';
-import { ACCOUNT_PATH } from '../langs';
+import { ACCOUNT_PATH, type LangCode } from '../langs';
 import useUiLang from '../hooks/useUiLang';
 import { t } from '../i18n';
 import Avatar from '../components/Avatar';
 import { StatSlot } from '../components/AccountStats';
 import { MARK } from '../components/boardMetrics';
 import DitherWipe, { WIPE_MS, type WipeShot } from '../components/editor/DitherWipe';
-import {
-  cellLine,
-  churnCells,
-  drainStep,
-  isSymmetric,
-  landStep,
-  mirroredCell,
-  paintStroke,
-  rollShape,
-  speckOffset,
-} from '../components/editor/tools';
+import EditorCanvas, { type PaintFx } from '../components/editor/EditorCanvas';
+import { canvasSide, cellAtPoint } from '../components/editor/picture';
+import { cellLine, churnCells, drainStep, landStep, paintStroke, rollShape } from '../components/editor/tools';
 import { foilSeed } from '../components/foil';
 import FoilStamp from '../components/FoilStamp';
 import { takeMark, type HandedMark } from '../components/markHandoff';
@@ -50,22 +42,19 @@ import LangTitle from '../components/LangTitle';
 import { HeaderBack, HeaderLeft } from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
 import { prefersReducedMotion } from '../hooks/useScramble';
-import PencilIcon from '../assets/icons/pencil.svg?react';
-import MirrorIcon from '../assets/icons/mirror.svg?react';
 import DiceIcon from '../assets/icons/dice.svg?react';
 import ClearIcon from '../assets/icons/clear.svg?react';
 
-// The #188 profile editor — `/account`'s masthead OPENED: the mark the player tapped GROWS
-// out of its own box into the CANVAS (`markHandoff`), in the corner brackets of a thing that
-// takes the finger, over the name typed in place in its WHITE CHIP. Under it the palettes —
-// each swatch the drawing itself in that palette ({bg, fg} pairs, user-decided 2026-08-19:
-// two colours, nothing else, so picking a ground picks the ink with it) — and the three
-// tools: MIRROR (paint a cell and its twin; the assigned marks are mirrored, so it opens ON
-// for a symmetric drawing), DICE (a new SHAPE the assigned way, the palette kept), CLEAR (the
-// drawing drained in the Bayer order). Then the line every board will draw for the player —
-// how others see them, shown rather than said — and SAVE on the bottom edge, whose landing
-// is the screen's one shiny thing: the FOIL STAMP. Every tool is an ordinary edit; SAVE is
-// the deploy.
+// The #188 profile editor, a small PIXEL-ART STUDIO: the tool keys — DICE (a new SHAPE the
+// assigned way, the palette kept), CLEAR (the drawing drained in the Bayer order) — over the
+// sprite CANVAS (square cells on a 1px grid, in the corner brackets of a thing that takes the
+// finger), which GROWS out of the very mark the player tapped on `/account` (`markHandoff`).
+// Under it the palettes — each swatch the drawing itself in that palette ({bg, fg} pairs,
+// user-decided 2026-08-19: two colours, nothing else, so picking a ground picks the ink with
+// it) — then the LINE every board will draw for the player, the name typed ON it (how others
+// see them, shown rather than said), and SAVE on the bottom edge, whose landing is the
+// screen's one shiny thing: the FOIL STAMP. Every tool is an ordinary edit; SAVE is the
+// deploy.
 //
 // Show-don't-tell throughout: the grid demonstrates itself under the finger and the
 // swatches show their colours — no explanatory copy anywhere.
@@ -166,29 +155,29 @@ const SAVE_RESTORE_MS = 240;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-// ---- THE CANVAS'S GEOMETRY (visual only: nothing here decides what is saved). Its cell is a
-// WHOLE, EVEN number of px — the house's 2px dither lands on the cells' own edges — the
-// largest the column holds inside the card, and the largest that leaves the whole editor on
-// the screen with nothing scrolled — down to the ~550px an iPhone SE's browser leaves under
-// its own bars. The chrome around the canvas — the bar's clearance, the card's frame and chip,
-// the tools, the board line, SAVE — is the CSS's own sum. On a PHONE (the `max-width: 640px`
-// block of `.profile-screen`): one row of tools where the column holds all of them at the
-// 44px pitch, two where it does not (`.wrap`), and the SHORT dress's tighter spacing on a
-// screen this short (`.short`); the card stands on the area's start line, where `/account`'s
-// masthead stands, and the height the canvas leaves over sits once, over SAVE parked on the
-// edge (the user's call: the editor keeps only its header clearance). On DESKTOP: `.app`'s
-// padding and the column's own, one row of tools, never the short dress — the column held at
-// its full height from the first frame, so `.app`'s centring never moves the card when the
-// tools arrive. The height is the one the screen had BEFORE a soft keyboard took part of it:
-// the editor never jumps while its name is typed.
-const CELL_MIN = 16;
-const CELL_MAX = 36;
-const CARD_PAD_PX = 14;
-const TARGET_PX = 44;
-const TOOLS_GAP_PX = 8;
+// ---- THE STUDIO'S GEOMETRY (visual only: nothing here decides what is saved). The canvas's
+// cell is a WHOLE, ODD number of px — the grid's pitch (cell + its 1px line) even, so the
+// house's 2px dither lands on every cell's own edge (`editor/picture.ts`) — the largest the
+// column holds (the frame: the canvas and its brackets' 8px of air each side) and the largest
+// that leaves the whole editor on the screen with nothing scrolled, down to the ~550px an
+// iPhone SE's browser leaves under its own bars. The chrome round the canvas — the bar's
+// clearance, the tool keys, the frame's air, the swatches, the board line, SAVE, `.app`'s pads
+// — is the CSS's own sum (EDITOR_CHROME_PX): a PHONE's (`max-width: 640px`), its SHORT dress
+// on a screen this short (`.short`), and a DESKTOP's, where `.app` centres the column and the
+// column is held at its full height from the first frame, so nothing moves when the tools
+// arrive. The height is the one the screen had BEFORE a soft keyboard took part of it: the
+// editor never jumps while its name is typed. One layout at every width.
+const CELL_MIN = 15;
+const CELL_MAX = 37;
+const FRAME_AIR_PX = 8;
+const SWATCH_PX = 48;
+// A swatch's mark: four whole pixels a cell, in its 48px target.
+const SWATCH_MARK_PX = 40;
 const PHONE_MAX_PX = 640;
 const SHORT_PX = 600;
-const EDITOR_CHROME_PX = { tall: [346, 394], short: [318, 366], desktop: 364 } as const;
+const EDITOR_CHROME_PX = { tall: 346, short: 318, desktop: 370 } as const;
+// The desktop column's own height round the canvas (EDITOR_CHROME_PX.desktop less `.app`'s 48).
+const DESKTOP_COLUMN_PX = 322;
 // The canvas grows out of the masthead's mark in whole-pixel steps, a cell this much bigger
 // each step, a step this long.
 const GROW_CELL_STEP = 4;
@@ -205,7 +194,7 @@ const DICE_LAND_STEPS = 6;
 const DICE_LAND_STEP_MS = 40;
 const CLEAR_STEPS = 6;
 const CLEAR_STEP_MS = 50;
-// A refused save SHAKES the card, in whole pixels, a step a frame.
+// A refused save SHAKES the frame, in whole pixels, a step a frame.
 const REFUSE_SHAKE: readonly (readonly [number, number])[] = [
   [-4, 0],
   [4, 0],
@@ -214,41 +203,11 @@ const REFUSE_SHAKE: readonly (readonly [number, number])[] = [
 ];
 const REFUSE_SHAKE_FRAME_MS = 50;
 
-// A cell's pop: how many times it has changed under a tool, and which way the last change
-// went — ink IN (it pops proud) or OUT (it shrinks into its middle) — and whether this pop
-// throws the SPARKS too. A gesture BURSTS rather than tiling: a stroke's first cell sparks
-// (with its twin under the MIRROR), then the cell under the finger at most once every
-// SPARK_GAP_MS, the cells between popping quietly; the dice's landing likewise.
-interface Bump {
-  n: number;
-  kind: 'in' | 'out';
-  spark: boolean;
-}
-const SPARK_GAP_MS = 120;
-const bumped = (
-  b: Record<number, Bump>,
-  changed: readonly number[],
-  kind: Bump['kind'],
-  sparks: readonly number[] = [],
-) => {
-  if (changed.length === 0) return b;
-  const next = { ...b };
-  for (const i of changed) next[i] = { n: (next[i]?.n ?? 0) + 1, kind, spark: kind === 'in' && sparks.includes(i) };
-  return next;
+// The largest whole ODD number of px at most `room` (the grid's pitch even), held in bounds.
+const oddCell = (room: number) => {
+  const whole = Math.max(CELL_MIN, Math.min(CELL_MAX, Math.floor(room)));
+  return whole % 2 === 1 ? whole : whole - 1;
 };
-// The cells a burst throws from: the one the gesture is at, and its twin under the MIRROR.
-const burstFrom = (at: number, mirror: boolean) => (mirror ? [at, mirroredCell(at)] : [at]);
-
-// The sparks' ink: the house's white glitter — save on a LIGHT ground (ORCHID's cyan), where
-// white would vanish and the sparks wear the mark's own ink. (WCAG relative luminance.)
-function sparkInk(palette: number): string {
-  const { bg, fg } = AVATAR_PALETTES[palette];
-  const [r, g, b] = [1, 3, 5].map((i) => {
-    const c = parseInt(bg.slice(i, i + 2), 16) / 255;
-    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5 ? fg : 'var(--fg)';
-}
 
 // What an account STORES: its profile, or null for the 404 "never customized". Anything
 // else — transport, a 5xx, a malformed body — THROWS: the stored profile is unknown, and
@@ -259,6 +218,64 @@ async function readStoredProfile(publicId: string): Promise<ReturnType<typeof pa
   if (response.status === 404) return null;
   throw new Error(`profile answered ${response.status}`);
 }
+
+// THE PALETTES, across the frame: each swatch the drawing itself, worn in that palette — a
+// preview of the choice, not a chip of colour — and only the one in hand framed in white
+// corners. ONE choice (a radio group): Tab lands on the one in hand, the arrows choose. Memoized
+// on the drawing the previews follow (`shownPreview`, a beat behind a stroke), so a stroke's
+// own render passes them by.
+const Swatches = memo(function Swatches({
+  lang,
+  palette,
+  cells,
+  busy,
+  onPick,
+  onKey,
+  refs,
+}: {
+  lang: LangCode;
+  palette: number;
+  cells: readonly number[];
+  busy: boolean;
+  onPick: (index: number) => void;
+  onKey: (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => void;
+  refs: React.MutableRefObject<(HTMLButtonElement | null)[]>;
+}) {
+  return (
+    <div className="profile-palettes" role="radiogroup" aria-label={t(lang, 'ariaPalette')}>
+      {AVATAR_PALETTES.map((option, index) => (
+        <button
+          key={option.name}
+          ref={(node) => {
+            refs.current[index] = node;
+          }}
+          type="button"
+          role="radio"
+          className={`profile-swatch${palette === index ? ' sel' : ''}`}
+          style={{ '--i': index } as React.CSSProperties}
+          aria-label={`${t(lang, 'ariaPalette')} ${option.name}`}
+          aria-checked={palette === index}
+          aria-disabled={busy || undefined}
+          tabIndex={palette === index ? 0 : -1}
+          onClick={() => onPick(index)}
+          onKeyDown={(e) => onKey(e, index)}
+        >
+          <Avatar avatar={encodeAvatar(index, cells)} size={SWATCH_MARK_PX} sharp />
+        </button>
+      ))}
+    </div>
+  );
+});
+
+// The board line's mark, memoized the same way. A save that landed HOPS it once (keyed on the
+// stamp by its parent, so each landing replays the hop).
+const LineMark = memo(function LineMark({ avatar, stamp }: { avatar: string; stamp: number }) {
+  return (
+    <span className={`profile-line-mark${stamp ? ' hop' : ''}`} aria-hidden="true">
+      <Avatar avatar={avatar} size={MARK} sharp />
+    </span>
+  );
+});
 
 export default function Profile() {
   // No puzzle to take a language from: same resolution as the `/` redirect.
@@ -282,12 +299,24 @@ export default function Profile() {
   const [name, setName] = useState('');
   const [palette, setPalette] = useState(0);
   const [cells, setCells] = useState<number[]>(() => new Array<number>(AVATAR_CELLS).fill(0));
+  // The drawing as the last edit left it, read by the next one in the same tick (a fast drag
+  // delivers several samples before React renders) and re-synced on every commit.
+  const cellsRef = useRef(cells);
+  useLayoutEffect(() => {
+    cellsRef.current = cells;
+  }, [cells]);
   const [phase, setPhase] = useState<SavePhase>('idle');
   const [refused, setRefused] = useState<SaveRefusal>(null);
-  // Per-cell paint counters: a painted cell remounts keyed on its count, replaying its pop —
-  // and ONLY a painted one, so loading a stored drawing pops nothing. The pop's KIND (ink in,
-  // ink out) rides with the count.
-  const [bumps, setBumps] = useState<Record<number, Bump>>({});
+  // Where the canvas is told what an edit just changed: a changed cell POPS (`EditorCanvas`) —
+  // and ONLY a changed one, so loading a stored drawing pops nothing.
+  const fx = useRef<PaintFx | null>(null);
+  // Every edit goes through here: the drawing held, and the pops it throws.
+  const commitCells = useCallback((next: number[], on: readonly number[] = [], off: readonly number[] = []) => {
+    cellsRef.current = next;
+    setCells(next);
+    fx.current?.pop(on, 'in');
+    fx.current?.pop(off, 'out');
+  }, []);
   // What the server holds (or the blank start before any save): SAVE only lights up
   // when the editor differs from it, and a successful save re-baselines.
   const [baseline, setBaseline] = useState(() => ({ name: '', avatar: blankAvatar() }));
@@ -295,13 +324,8 @@ export default function Profile() {
   // Bumped by RETRY — re-runs the read the way usePuzzle's retry re-runs its fetch.
   const [attempt, setAttempt] = useState(0);
 
-  // ---- the TOOLS (each an ordinary edit; SAVE stays the deploy). MIRROR opens ON for a
-  // left-right symmetric drawing — every assigned mark is one — and OFF for a drawing made
-  // lopsided on purpose. DICE and CLEAR PLAY (a churn, a drain), and while one plays the canvas
-  // takes no paint and the other tools wait.
-  const [mirror, setMirror] = useState(true);
-  const mirrorRef = useRef(mirror);
-  mirrorRef.current = mirror;
+  // ---- the TOOLS (each an ordinary edit; SAVE stays the deploy). DICE and CLEAR PLAY (a
+  // churn, a drain), and while one plays the canvas takes no paint and the other tool waits.
   const [tool, setTool] = useState<'dice' | 'clear' | null>(null);
   const toolRef = useRef(tool);
   toolRef.current = tool;
@@ -315,10 +339,12 @@ export default function Profile() {
 
   // ---- the canvas's drawing (visual only).
   const screenRef = useRef<HTMLDivElement>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [cellPx, setCellPx] = useState(0);
+  const cellRef = useRef(cellPx);
+  cellRef.current = cellPx;
   // What the canvas WAS, swept off it through the dither on a palette switch. The switch is told
   // by the CANVAS first: the board line keeps the palette it wore until the sweep has passed (a
   // second tap mid-sweep holds it on, to the last sweep's end).
@@ -330,8 +356,9 @@ export default function Profile() {
   // Bumped by a save that LANDED (the stamp), and by one REFUSED (the shake).
   const [stamp, setStamp] = useState(0);
   const [refusedShake, setRefusedShake] = useState(0);
-  // Where the name's caret stands while the field holds the focus (null: it does not).
-  const [caret, setCaret] = useState<{ at: number; range: boolean } | null>(null);
+  // A stroke is down (the frame's corners light), and the cell under a fine pointer (ringed).
+  const [painting, setPainting] = useState(false);
+  const [hover, setHover] = useState<number | null>(null);
 
   // Open the editor on what `id` stores. Both READ halves: the assigned pseudonym stands in
   // for an empty stored name, the assigned mark for a null stored avatar. The name is also
@@ -344,11 +371,11 @@ export default function Profile() {
     const decoded = decodeAvatar(shownAvatar);
     setName(shownName);
     setPalette(decoded.palette);
+    cellsRef.current = decoded.cells;
     setCells(decoded.cells);
     // A cell's pop belongs to the edit that made it: re-bound fields start with none.
-    setBumps({});
+    fx.current?.clear();
     setLinePalette(null);
-    setMirror(isSymmetric(decoded.cells));
     setBaseline({ name: shownName, avatar: shownAvatar });
   };
 
@@ -446,52 +473,45 @@ export default function Profile() {
 
   // ---- painting. One STROKE value per gesture: starting on a painted cell erases (so
   // tap toggles), and dragging paints that same value throughout — along the LINE from the
-  // last cell the finger crossed (`cellLine`), so a fast drag leaves no gap; with MIRROR on,
-  // every cell's twin takes the stroke too. The cell is read off the pointer's place on the
-  // canvas, never off the element under it: the canvas wears overlays (the sweep, the foil)
-  // and grows in under a transform. A stroke is ONE pointer's: a second finger landing on the
-  // canvas mid-stroke is ignored, never joined to the first by a line.
+  // last cell the finger crossed (`cellLine`), so a fast drag leaves no gap. The cell is read
+  // off the pointer's place on the canvas (`cellAtPoint`, the grid's own geometry), never off
+  // the element under it: the canvas wears overlays (the sweep, the foil) and grows in under a
+  // transform. A stroke is ONE pointer's: a second finger landing on the canvas mid-stroke is
+  // ignored, never joined to the first by a line.
   const strokeRef = useRef<0 | 1 | null>(null);
   const pointerRef = useRef<number | null>(null);
   const lastRef = useRef<number | null>(null);
-  // When this stroke last threw its sparks (decided here, outside any state updater, so a
-  // replayed updater cannot change the answer).
-  const sparkAtRef = useRef(Number.NEGATIVE_INFINITY);
   const cellAt = useCallback((x: number, y: number): number | null => {
     const el = canvasRef.current;
-    if (!el) return null;
+    const cell = cellRef.current;
+    if (!el || cell <= 0) return null;
     const box = el.getBoundingClientRect();
     if (box.width <= 0) return null;
-    const cx = Math.floor(((x - box.left) / box.width) * AVATAR_SIZE);
-    const cy = Math.floor(((y - box.top) / box.height) * AVATAR_SIZE);
-    if (cx < 0 || cy < 0 || cx >= AVATAR_SIZE || cy >= AVATAR_SIZE) return null;
-    return cy * AVATAR_SIZE + cx;
+    // The box's own scale, so a canvas still growing in reads right too.
+    const scale = box.width / canvasSide(cell);
+    return cellAtPoint((x - box.left) / scale, (y - box.top) / scale, cell);
   }, []);
-  const paintTo = useCallback((index: number | null) => {
-    const stroke = strokeRef.current;
-    if (stroke === null) return;
-    // Off the canvas, the line breaks: coming back in elsewhere starts a new run.
-    if (index === null) {
-      lastRef.current = null;
-      return;
-    }
-    const from = lastRef.current;
-    if (from === index) return;
-    lastRef.current = index;
-    const path = from === null ? [index] : cellLine(from, index);
-    const mirror = mirrorRef.current;
-    const now = performance.now();
-    const burst = now - sparkAtRef.current >= SPARK_GAP_MS;
-    if (burst) sparkAtRef.current = now;
-    const sparks = burst ? burstFrom(index, mirror) : [];
-    setCells((prev) => {
-      const { cells: next, changed } = paintStroke(prev, path, stroke, mirror);
-      if (changed.length === 0) return prev;
-      setBumps((b) => bumped(b, changed, stroke === 1 ? 'in' : 'out', sparks));
-      return next;
-    });
-    setRefused(null);
-  }, []);
+  const paintTo = useCallback(
+    (index: number | null) => {
+      const stroke = strokeRef.current;
+      if (stroke === null) return;
+      // Off the canvas, the line breaks: coming back in elsewhere starts a new run.
+      if (index === null) {
+        lastRef.current = null;
+        return;
+      }
+      const from = lastRef.current;
+      if (from === index) return;
+      lastRef.current = index;
+      const { cells: next, changed } = paintStroke(cellsRef.current, from === null ? [index] : cellLine(from, index), stroke);
+      if (changed.length === 0) return;
+      // Every changed cell pops, and every inked one throws its sparks.
+      if (stroke === 1) commitCells(next, changed);
+      else commitCells(next, [], changed);
+      setRefused(null);
+    },
+    [commitCells],
+  );
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -499,17 +519,19 @@ export default function Profile() {
       if (toolRef.current !== null || pointerRef.current !== null) return;
       const index = cellAt(e.clientX, e.clientY);
       if (index === null) return;
-      strokeRef.current = cells[index] === 1 ? 0 : 1;
+      strokeRef.current = cellsRef.current[index] === 1 ? 0 : 1;
       pointerRef.current = e.pointerId;
       lastRef.current = null;
-      sparkAtRef.current = Number.NEGATIVE_INFINITY;
       e.currentTarget.setPointerCapture(e.pointerId);
+      setPainting(true);
       paintTo(index);
     },
-    [cells, cellAt, paintTo],
+    [cellAt, paintTo],
   );
   const onPointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      // A fine pointer's cell wears the ring.
+      if (e.pointerType === 'mouse') setHover(cellAt(e.clientX, e.clientY));
       if (strokeRef.current === null || e.pointerId !== pointerRef.current) return;
       // A fast drag's skipped samples (coalesced events) are walked too.
       const events = typeof e.nativeEvent.getCoalescedEvents === 'function' ? e.nativeEvent.getCoalescedEvents() : [];
@@ -522,6 +544,7 @@ export default function Profile() {
     strokeRef.current = null;
     pointerRef.current = null;
     lastRef.current = null;
+    setPainting(false);
   }, []);
 
   // DICE: the tile CHURNS on the waiting tile's noise (every frame a plausible creature, in
@@ -530,21 +553,17 @@ export default function Profile() {
   // the landed shape is the edit.
   const roll = useCallback(() => {
     if (toolRef.current !== null) return;
-    const target = rollShape(cells);
+    const from = cellsRef.current;
+    const target = rollShape(from);
     if (prefersReducedMotion()) {
-      setCells((prev) => {
-        const on = target.flatMap((v, i) => (v === 1 && prev[i] !== 1 ? [i] : []));
-        const off = target.flatMap((v, i) => (v === 0 && prev[i] === 1 ? [i] : []));
-        setBumps((b) => bumped(bumped(b, on, 'in'), off, 'out'));
-        return target;
-      });
+      commitCells(target);
       setRefused(null);
       return;
     }
     setTool('dice');
-    setRollFrom(cells);
+    setRollFrom(from);
     // The churn hides every cell's pop; the drawing it replaces pops nothing more.
-    setBumps({});
+    fx.current?.clear();
     const frames = Math.ceil(DICE_CHURN_MS / DICE_FRAME_MS);
     const offset = Math.floor(Math.random() * 1000);
     for (let f = 0; f < frames; f += 1) {
@@ -554,22 +573,14 @@ export default function Profile() {
     toolTimers.current.push(
       window.setTimeout(() => {
         setChurn(null);
-        setCells(churnCells(offset + frames - 1));
+        commitCells(churnCells(offset + frames - 1));
       }, DICE_CHURN_MS),
     );
     for (let step = 1; step <= DICE_LAND_STEPS; step += 1) {
-      // The landing bursts like a stroke: one cell of the step (and its twin — every rolled
-      // shape is mirrored) every SPARK_GAP_MS, the rest popping quietly.
-      const bursts = (step - 1) % Math.max(1, Math.round(SPARK_GAP_MS / DICE_LAND_STEP_MS)) === 0;
       toolTimers.current.push(
         window.setTimeout(() => {
-          setCells((prev) => {
-            const { cells: next, on, off } = landStep(prev, target, step, DICE_LAND_STEPS);
-            if (on.length === 0 && off.length === 0) return prev;
-            const sparks = bursts && on.length > 0 ? burstFrom(on[Math.floor(on.length / 2)], true) : [];
-            setBumps((b) => bumped(bumped(b, on, 'in', sparks), off, 'out'));
-            return next;
-          });
+          const { cells: next, on, off } = landStep(cellsRef.current, target, step, DICE_LAND_STEPS);
+          if (on.length > 0 || off.length > 0) commitCells(next, on, off);
           if (step === DICE_LAND_STEPS) {
             setTool(null);
             setRollFrom(null);
@@ -578,15 +589,14 @@ export default function Profile() {
         }, DICE_CHURN_MS + step * DICE_LAND_STEP_MS),
       );
     }
-  }, [cells]);
+  }, [commitCells]);
 
   // CLEAR: the drawing DRAINS — its cells go out in the Bayer order, in hard steps, each with
   // its own small shrink.
   const clear = useCallback(() => {
     if (toolRef.current !== null) return;
     if (prefersReducedMotion()) {
-      setCells(new Array<number>(AVATAR_CELLS).fill(0));
-      setBumps({});
+      commitCells(new Array<number>(AVATAR_CELLS).fill(0));
       setRefused(null);
       return;
     }
@@ -594,12 +604,8 @@ export default function Profile() {
     for (let step = 1; step <= CLEAR_STEPS; step += 1) {
       toolTimers.current.push(
         window.setTimeout(() => {
-          setCells((prev) => {
-            const { cells: next, gone } = drainStep(prev, step, CLEAR_STEPS);
-            if (gone.length === 0) return prev;
-            setBumps((b) => bumped(b, gone, 'out'));
-            return next;
-          });
+          const { cells: next, gone } = drainStep(cellsRef.current, step, CLEAR_STEPS);
+          if (gone.length > 0) commitCells(next, [], gone);
           if (step === CLEAR_STEPS) {
             setTool(null);
             setRefused(null);
@@ -607,7 +613,7 @@ export default function Profile() {
         }, step * CLEAR_STEP_MS),
       );
     }
-  }, []);
+  }, [commitCells]);
 
   // The editor is FROZEN while a save runs (its two round trips can take real time on a
   // phone, and the GUARDED success path re-binds every field to the merged server truth):
@@ -643,12 +649,16 @@ export default function Profile() {
   // while the die is rolling.
   const shownCells = churn ?? cells;
   const previewCells = rollFrom ?? cells;
+  // The previews follow the drawing a beat behind (`useDeferredValue`): six outlines traced per
+  // painted cell would hold up a fast stroke, so they redraw once the stroke lets React breathe.
+  const shownPreview = useDeferredValue(previewCells);
 
   // THE CANVAS'S CELL, off the column's width and the screen's height (see EDITOR_CHROME_PX),
-  // with the tools' rows and the dress that follow from them. Measured from the first frame,
-  // while the stored profile is still being read, so the canvas's box is already where the
-  // canvas will stand.
-  const [layout, setLayout] = useState({ wrap: false, short: false, inset: 0, palettesAt: 0, keysAt: 0 });
+  // and the whole-pixel offsets that follow from it: the frame centred in the column, the tool
+  // keys and the board line on the canvas's left edge, the swatches spread across the frame on
+  // whole-pixel gaps. Measured from the first frame, while the stored profile is still being
+  // read, so the canvas's box is already where the canvas will stand.
+  const [layout, setLayout] = useState({ short: false, frameAt: 0, swatchGap: 0, swatchesAt: 0, column: 0 });
   const heldHeight = useRef({ width: 0, height: 0 });
   useLayoutEffect(() => {
     const screen = screenRef.current;
@@ -661,27 +671,35 @@ export default function Profile() {
       const height = typing ? Math.max(heldHeight.current.height, window.innerHeight) : window.innerHeight;
       heldHeight.current = { width, height };
       const phone = window.innerWidth <= PHONE_MAX_PX;
-      const wrap = width < (AVATAR_PALETTES.length + 3) * TARGET_PX + TOOLS_GAP_PX;
       const short = phone && height <= SHORT_PX;
-      const chrome = phone ? EDITOR_CHROME_PX[short ? 'short' : 'tall'][wrap ? 1 : 0] : EDITOR_CHROME_PX.desktop;
-      const room = width - 2 * CARD_PAD_PX;
-      const byWidth = room / AVATAR_SIZE;
-      const byHeight = (height - chrome) / AVATAR_SIZE;
-      const cell = Math.max(CELL_MIN, Math.min(CELL_MAX, 2 * Math.floor(Math.min(byWidth, byHeight) / 2)));
-      // The canvas centred on a WHOLE pixel, so its cells land on the screen's own — and so
-      // are the tools' two rows when they wrap.
-      const inset = Math.max(0, Math.floor((room - cell * AVATAR_SIZE) / 2));
-      const palettesAt = Math.max(0, Math.floor((width - AVATAR_PALETTES.length * TARGET_PX) / 2));
-      const keysAt = Math.max(0, Math.floor((width - 3 * TARGET_PX) / 2));
+      const chrome = phone ? EDITOR_CHROME_PX[short ? 'short' : 'tall'] : EDITOR_CHROME_PX.desktop;
+      const byWidth = (width - 2 * FRAME_AIR_PX - canvasSide(0)) / AVATAR_SIZE;
+      const byHeight = (height - chrome - canvasSide(0)) / AVATAR_SIZE;
+      const cell = oddCell(Math.min(byWidth, byHeight));
+      const frame = canvasSide(cell) + 2 * FRAME_AIR_PX;
+      const frameAt = Math.max(0, Math.floor((width - frame) / 2));
+      const swatchGap = Math.max(0, Math.floor((frame - AVATAR_PALETTES.length * SWATCH_PX) / (AVATAR_PALETTES.length - 1)));
+      const swatches = AVATAR_PALETTES.length * SWATCH_PX + (AVATAR_PALETTES.length - 1) * swatchGap;
+      const swatchesAt = frameAt + Math.floor((frame - swatches) / 2);
+      // On desktop `.app` centres the column: a column whose height leaves an odd remainder
+      // would stand on a half pixel and blur the canvas, so it takes the one pixel more.
+      let column = 0;
+      const app = screen.parentElement;
+      if (!phone && app) {
+        const pad = getComputedStyle(app);
+        const room = app.clientHeight - parseFloat(pad.paddingTop) - parseFloat(pad.paddingBottom);
+        const held = canvasSide(cell) + DESKTOP_COLUMN_PX;
+        column = held < room ? held + ((room - held) % 2) : 0;
+      }
       setCellPx((prev) => (prev === cell ? prev : cell));
       setLayout((prev) =>
-        prev.wrap === wrap &&
         prev.short === short &&
-        prev.inset === inset &&
-        prev.palettesAt === palettesAt &&
-        prev.keysAt === keysAt
+        prev.frameAt === frameAt &&
+        prev.swatchGap === swatchGap &&
+        prev.swatchesAt === swatchesAt &&
+        prev.column === column
           ? prev
-          : { wrap, short, inset, palettesAt, keysAt },
+          : { short, frameAt, swatchGap, swatchesAt, column },
       );
     };
     measure();
@@ -725,11 +743,11 @@ export default function Profile() {
     setHanded(null);
   }, [load]);
 
-  // THE CANVAS GROWS OUT OF THE MASTHEAD'S MARK as the editor opens: from the mark's own cell
+  // THE CANVAS GROWS OUT OF THE MASTHEAD'S MARK as the editor opens: from the mark's own side
   // up to the canvas's, GROW_CELL_STEP px a cell a step — whole pixels at every step, nothing
   // in between — and, opened from the masthead, out of the very box the mark stood in,
-  // travelling to its place on whole pixels as it grows. The whole BOX grows — the canvas and
-  // the MIRROR's edge marks with it. A direct load grows from the canvas's own centre.
+  // travelling to its place on whole pixels as it grows. A direct load grows from the canvas's
+  // own centre.
   const grown = useRef(false);
   useLayoutEffect(() => {
     const el = boxRef.current;
@@ -737,23 +755,22 @@ export default function Profile() {
     grown.current = true;
     if (prefersReducedMotion() || typeof el.animate !== 'function') return;
     const from = handedRef.current?.rect ?? null;
-    const side = cellPx * AVATAR_SIZE;
+    const side = canvasSide(cellPx);
     const at = el.getBoundingClientRect();
-    const fromCell = from ? Math.max(1, Math.round(from.width / AVATAR_SIZE)) : GROW_FROM_CELL;
-    const fromSide = fromCell * AVATAR_SIZE;
+    const fromSide = from ? Math.max(AVATAR_SIZE, Math.round(from.width)) : GROW_FROM_CELL * AVATAR_SIZE;
     const fromX = Math.round(from ? from.left - at.left : (side - fromSide) / 2);
     const fromY = Math.round(from ? from.top - at.top : (side - fromSide) / 2);
-    const sizes: number[] = [];
-    for (let size = fromCell; size < cellPx; size += GROW_CELL_STEP) sizes.push(size);
-    sizes.push(cellPx);
-    if (sizes.length < 2) return;
-    const last = sizes.length - 1;
+    const sides: number[] = [];
+    for (let size = fromSide; size < side; size += GROW_CELL_STEP * AVATAR_SIZE) sides.push(size);
+    sides.push(side);
+    if (sides.length < 2) return;
+    const last = sides.length - 1;
     el.animate(
-      sizes.map((size, k) => {
+      sides.map((size, k) => {
         const left = 1 - k / last;
         return {
           transformOrigin: '0 0',
-          transform: `translate(${Math.round(fromX * left)}px, ${Math.round(fromY * left)}px) scale(${size / cellPx})`,
+          transform: `translate(${Math.round(fromX * left)}px, ${Math.round(fromY * left)}px) scale(${size / side})`,
           offset: k / last,
           easing: 'steps(1, end)',
         };
@@ -762,40 +779,18 @@ export default function Profile() {
     );
   }, [cellPx, load]);
 
-  // A REFUSED save shakes the card, in whole pixels (the ErrorScreen then says why).
+  // A REFUSED save shakes the frame, in whole pixels (the ErrorScreen then says why).
   useEffect(() => {
-    const card = cardRef.current;
-    if (refusedShake === 0 || !card || prefersReducedMotion() || typeof card.animate !== 'function') return;
+    const frame = frameRef.current;
+    if (refusedShake === 0 || !frame || prefersReducedMotion() || typeof frame.animate !== 'function') return;
     const frames: Keyframe[] = REFUSE_SHAKE.map(([dx, dy], k) => ({
       translate: `${dx}px ${dy}px`,
       offset: k / REFUSE_SHAKE.length,
       easing: 'steps(1, end)',
     }));
     frames.push({ translate: '0 0', offset: 1 });
-    card.animate(frames, { duration: REFUSE_SHAKE.length * REFUSE_SHAKE_FRAME_MS });
+    frame.animate(frames, { duration: REFUSE_SHAKE.length * REFUSE_SHAKE_FRAME_MS });
   }, [refusedShake]);
-
-  // The caret follows the field's own selection.
-  const syncCaret = useCallback(() => {
-    const input = nameRef.current;
-    if (!input || document.activeElement !== input) {
-      setCaret(null);
-      return;
-    }
-    const start = input.selectionStart ?? input.value.length;
-    const end = input.selectionEnd ?? start;
-    setCaret((prev) =>
-      prev && prev.at === start && prev.range === (start !== end) ? prev : { at: start, range: start !== end },
-    );
-  }, []);
-  useEffect(() => {
-    document.addEventListener('selectionchange', syncCaret);
-    return () => document.removeEventListener('selectionchange', syncCaret);
-  }, [syncCaret]);
-  useLayoutEffect(() => {
-    if (caret !== null) syncCaret();
-    // (Re-read on every new name: the sanitizer may have moved the caret.)
-  }, [name]);
 
   const onSave = useCallback(async () => {
     // The last door the rule stands in: a composition still OPEN when SAVE is tapped
@@ -949,12 +944,14 @@ export default function Profile() {
   // placeholder name stores as the empty name, so a tokenless player's first SAVE leaves them
   // wearing their new account's own pseudonym, in the placeholder ink.
   const anon = name === '' || (loadedFor !== null && name === anonName(loadedFor));
-  const lineName = name || (assignedFrom ? anonName(assignedFrom) : '');
+  // An emptied field shows what a board would print in its place: the assigned pseudonym, muted.
+  const shownWhenEmpty = assignedFrom ? anonName(assignedFrom) : t(lang, 'profileNamePlaceholder');
   const empty = cells.every((value) => value === 0);
   const canSave = phase === 'idle' && dirty && tool === null;
 
   // THE PALETTES are ONE choice (a radio group): Tab lands on the one in hand, the arrows
   // choose — so the keyboard's brackets and the chosen swatch's corners frame the same tile.
+  // (Their handlers are stable, reading the screen as it now stands, so the row stays memoized.)
   const swatchRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const onSwatchKey = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
     const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
@@ -965,6 +962,15 @@ export default function Profile() {
     pickPalette(next);
     swatchRefs.current[next]?.focus();
   };
+  const latestPick = useRef(pickPalette);
+  latestPick.current = pickPalette;
+  const latestKey = useRef(onSwatchKey);
+  latestKey.current = onSwatchKey;
+  const onPick = useCallback((index: number) => latestPick.current(index), []);
+  const onKey = useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => latestKey.current(e, index),
+    [],
+  );
 
   return (
     <>
@@ -976,26 +982,59 @@ export default function Profile() {
       </HeaderLeft>
       <div
         ref={screenRef}
-        className={`profile-screen${cellPx > 0 ? ' measured' : ''}${layout.wrap ? ' wrap' : ''}${
-          layout.short ? ' short' : ''
-        }`}
+        className={`profile-screen${cellPx > 0 ? ' measured' : ''}${layout.short ? ' short' : ''}`}
         style={
           {
             '--pcell': `${cellPx}px`,
-            '--pinset': `${layout.inset}px`,
-            '--palettes-at': `${layout.palettesAt}px`,
-            '--keys-at': `${layout.keysAt}px`,
+            '--pside': `${canvasSide(cellPx)}px`,
+            '--pframe-at': `${layout.frameAt}px`,
+            '--pswatch-gap': `${layout.swatchGap}px`,
+            '--pswatches-at': `${layout.swatchesAt}px`,
+            ...(layout.column > 0 ? { '--pcolumn': `${layout.column}px` } : {}),
           } as React.CSSProperties
         }
       >
-        {/* THE CARD, OPENED: the masthead's mark become the canvas, over the name in its
-            white chip — inside the corner brackets of a thing that takes the finger. A save
-            that lands re-keys the brackets, so they lock on again. Until the stored profile
-            has answered, the card holds the canvas's box as the house's stippled slate,
-            breathing while the read is out and still after one failed — under the mark handed
-            over, frozen where it stood (below), it only comes in once the read has taken a
-            beat (`.late`), so a quick answer grows straight out of the mark. */}
-        <div ref={cardRef} className="profile-card">
+        {/* THE TOOL KEYS, over the canvas on its left edge: pixel marks in a tappable thing's
+            corners, the one playing lit. Their row holds its place while the stored profile is
+            read, so the canvas under it stands where it will from the first frame. */}
+        <div className="profile-tools">
+          {load === 'ready' && (
+            <>
+              <button
+                type="button"
+                className={`profile-key${tool === 'dice' ? ' busy' : ''}`}
+                aria-label={t(lang, 'profileDice')}
+                title={t(lang, 'profileDice')}
+                aria-disabled={busy || undefined}
+                onClick={() => {
+                  if (!busy) roll();
+                }}
+              >
+                <DiceIcon className="ui-icon" aria-hidden />
+              </button>
+              <button
+                type="button"
+                className={`profile-key${tool === 'clear' ? ' busy' : ''}`}
+                aria-label={t(lang, 'profileClear')}
+                title={t(lang, 'profileClear')}
+                aria-disabled={busy || empty || undefined}
+                onClick={() => {
+                  if (!busy && !empty) clear();
+                }}
+              >
+                <ClearIcon className="ui-icon" aria-hidden />
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* THE CANVAS, in the corner brackets of a thing that takes the finger — slate at
+            rest, white while a stroke is down, LOCKING ON again when a save lands. Until the
+            stored profile has answered, its box is the house's stippled slate, breathing while
+            the read is out and still after one failed — under the mark handed over, frozen
+            where it stood (below), it only comes in once the read has taken a beat (`.late`),
+            so a quick answer grows straight out of the mark. */}
+        <div ref={frameRef} className={`profile-frame${painting ? ' painting' : ''}`}>
           {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
             <i key={`${corner}${stamp}`} className={`profile-corner ${corner}${stamp ? ' lock' : ''}`} aria-hidden="true" />
           ))}
@@ -1006,115 +1045,27 @@ export default function Profile() {
                 className={`profile-canvas-hold${load === 'loading' && handed ? ' late' : ''}`}
               />
             ) : (
-              <>
-                {/* The MIRROR's axis, said at the canvas's edges only — never a line over the
-                    drawing. */}
-                {mirror && (
-                  <>
-                    <i className="profile-axis top" aria-hidden="true" />
-                    <i className="profile-axis bottom" aria-hidden="true" />
-                  </>
-                )}
-                {/* The palette's two inks are the canvas's only variables: an EMPTY cell wears
-                    the ground — with a speck of the ink at its middle (`speckOffset`), so the
-                    empty board reads as a lattice of places to paint — and a painted one the
-                    ink. One mark, continuous: no gutters, no lines. */}
-                <div
-                  ref={canvasRef}
-                  className={`avatar-editor${tool === 'dice' ? ' rolling' : ''}`}
-                  style={
-                    {
-                      '--cell-bg': AVATAR_PALETTES[palette].bg,
-                      '--cell-fg': AVATAR_PALETTES[palette].fg,
-                      '--spark': sparkInk(palette),
-                      '--speck-at': `${speckOffset(cellPx)}px`,
-                    } as React.CSSProperties
-                  }
-                  role="img"
-                  aria-label={t(lang, 'ariaAvatarEditor')}
-                  onPointerDown={saving ? undefined : onPointerDown}
-                  onPointerMove={saving ? undefined : onPointerMove}
-                  onPointerUp={endStroke}
-                  onPointerCancel={endStroke}
-                >
-                  {shownCells.map((value, i) => {
-                    const bump = churn ? undefined : bumps[i];
-                    // A pop is drawn only while the cell still holds what the pop put there:
-                    // the pseudo-element animates the change and never decides the cell's
-                    // resting colour (the cell's own `.on` does).
-                    const pop = bump && (bump.kind === 'in' ? value === 1 : value === 0) ? bump.kind : null;
-                    return (
-                      <div
-                        // The paint counter in the key remounts a changed cell, replaying its
-                        // pop (and its sparks, when it took the ink); the position keeps the
-                        // identity.
-                        key={`${i}:${bump?.n ?? 0}`}
-                        className={`avatar-editor-cell${value === 1 ? ' on' : ''}${
-                          pop === 'in' ? ` painted${bump?.spark ? ' spark' : ''}` : pop === 'out' ? ' erased' : ''
-                        }`}
-                      />
-                    );
-                  })}
-                  <DitherWipe shot={wipe} cellPx={cellPx} />
+              <div
+                ref={canvasRef}
+                className="avatar-editor"
+                role="img"
+                aria-label={t(lang, 'ariaAvatarEditor')}
+                onPointerDown={saving ? undefined : onPointerDown}
+                onPointerMove={saving ? undefined : onPointerMove}
+                onPointerUp={endStroke}
+                onPointerCancel={endStroke}
+                onPointerLeave={() => setHover(null)}
+              >
+                <EditorCanvas palette={palette} cells={shownCells} cell={cellPx} fx={fx} hover={saving ? null : hover} />
+                <DitherWipe shot={wipe} cellPx={cellPx} />
+                {/* The foil lies on the cells' own pitch (from the first inner pixel), so its
+                    2px grain lands on every cell's edge. */}
+                <span className="profile-foil">
                   <FoilStamp play={stamp} avatar={encoded} seed={foilSeed(`profile:${assignedFrom}`)} />
-                </div>
-              </>
+                </span>
+              </div>
             )}
           </div>
-          {load === 'ready' ? (
-            /* THE NAME, edited in place in the white chip: the field IS the chip, exactly as
-               wide as what it holds (the mono's fixed advance); the house's caret — the
-               prompt's, in the accent — stands where the text cursor is; the pencil beside the
-               chip says it can be typed into, until it is. */
-            <span
-              className="profile-name-chip"
-              style={{ '--n': Math.max(1, name.length || t(lang, 'profileNamePlaceholder').length) } as React.CSSProperties}
-            >
-              <input
-                ref={nameRef}
-                className="profile-name"
-                type="text"
-                value={name}
-                readOnly={saving}
-                maxLength={NAME_MAX_LENGTH}
-                placeholder={t(lang, 'profileNamePlaceholder')}
-                aria-label={t(lang, 'profileNamePlaceholder')}
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                onFocus={syncCaret}
-                onBlur={() => setCaret(null)}
-                onSelect={syncCaret}
-                onKeyUp={syncCaret}
-                onCompositionStart={() => {
-                  composingRef.current = true;
-                }}
-                onCompositionEnd={(e) => {
-                  composingRef.current = false;
-                  applyName(e.currentTarget.value, e.currentTarget.selectionStart);
-                }}
-                onChange={(e) => {
-                  if (composingRef.current) setName(e.target.value);
-                  else applyName(e.target.value, e.target.selectionStart);
-                  setRefused(null);
-                }}
-              />
-              {caret !== null && !caret.range && !saving && (
-                <span
-                  key={`${caret.at}:${name}`}
-                  className="profile-caret"
-                  style={{ '--at': caret.at } as React.CSSProperties}
-                  aria-hidden="true"
-                />
-              )}
-              <span className={`profile-name-pen${caret !== null ? ' off' : ''}`} aria-hidden="true">
-                <PencilIcon className="ui-icon" />
-              </span>
-            </span>
-          ) : (
-            <span className="profile-name-hold" aria-hidden="true" />
-          )}
         </div>
 
         {load === 'failed' && (
@@ -1132,86 +1083,49 @@ export default function Profile() {
 
         {load === 'ready' && (
           <>
-            {/* THE PALETTES and THE TOOLS — one row where the column holds all eight at a
-                finger's pitch, else the tools on a row of their own under the palettes. A
-                swatch is the drawing itself, worn in that palette — a preview of the choice,
-                not a chip of colour — and only the one in hand wears the white corners. The
-                tools are pixel marks in a tappable thing's corners; MIRROR on is the white
-                chip. */}
-            <div className="profile-tools">
-              <div className="profile-palettes" role="radiogroup" aria-label={t(lang, 'ariaPalette')}>
-                {AVATAR_PALETTES.map((option, index) => (
-                  <button
-                    key={option.name}
-                    ref={(node) => {
-                      swatchRefs.current[index] = node;
-                    }}
-                    type="button"
-                    role="radio"
-                    className={`profile-swatch${palette === index ? ' sel' : ''}`}
-                    style={{ '--i': index } as React.CSSProperties}
-                    aria-label={`${t(lang, 'ariaPalette')} ${option.name}`}
-                    aria-checked={palette === index}
-                    aria-disabled={busy || undefined}
-                    tabIndex={palette === index ? 0 : -1}
-                    onClick={() => pickPalette(index)}
-                    onKeyDown={(e) => onSwatchKey(e, index)}
-                  >
-                    <Avatar avatar={encodeAvatar(index, previewCells)} size={30} sharp />
-                  </button>
-                ))}
-              </div>
-              <div className="profile-keys">
-                <button
-                  type="button"
-                  className={`profile-key${mirror ? ' on' : ''}`}
-                  aria-pressed={mirror}
-                  aria-label={t(lang, 'profileMirror')}
-                  title={t(lang, 'profileMirror')}
-                  aria-disabled={saving || undefined}
-                  onClick={() => {
-                    if (!saving) setMirror((on) => !on);
-                  }}
-                >
-                  <MirrorIcon className="ui-icon" aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  className={`profile-key${tool === 'dice' ? ' on' : ''}`}
-                  aria-label={t(lang, 'profileDice')}
-                  title={t(lang, 'profileDice')}
-                  aria-disabled={busy || undefined}
-                  onClick={() => {
-                    if (!busy) roll();
-                  }}
-                >
-                  <DiceIcon className="ui-icon" aria-hidden />
-                </button>
-                <button
-                  type="button"
-                  className={`profile-key${tool === 'clear' ? ' on' : ''}`}
-                  aria-label={t(lang, 'profileClear')}
-                  title={t(lang, 'profileClear')}
-                  aria-disabled={busy || empty || undefined}
-                  onClick={() => {
-                    if (!busy && !empty) clear();
-                  }}
-                >
-                  <ClearIcon className="ui-icon" aria-hidden />
-                </button>
-              </div>
-            </div>
+            <Swatches
+              lang={lang}
+              palette={palette}
+              cells={shownPreview}
+              busy={busy}
+              onPick={onPick}
+              onKey={onKey}
+              refs={swatchRefs}
+            />
 
-            {/* HOW OTHERS SEE ME, shown: the line every board draws for this player — the
-                mark at the boards' size, the name in their dress — and nothing a board would
-                only say once they have played (no rank, no crown, no count). Right under the
-                tools, so it previews the swatch in hand; it takes a new palette once the
-                canvas's sweep has passed, and a rolled shape once it has landed. */}
-            <div className="profile-line" aria-hidden="true">
-              <span key={`hop${stamp}`} className={`profile-line-mark${stamp ? ' hop' : ''}`}>
-                <Avatar avatar={encodeAvatar(linePalette ?? palette, previewCells)} size={MARK} sharp />
-              </span>
-              <span className={`board-name${anon ? ' anon' : ''}`}>{lineName}</span>
+            {/* HOW OTHERS SEE ME, shown: the line every board draws for this player — the mark
+                at the boards' size, the NAME TYPED ON IT in the boards' dress — and nothing a
+                board would only say once they have played (no rank, no crown, no count). Its
+                mark takes a new palette once the canvas's sweep has passed, and a rolled shape
+                once it has landed. */}
+            <div className="profile-line">
+              <LineMark key={`hop${stamp}`} avatar={encodeAvatar(linePalette ?? palette, shownPreview)} stamp={stamp} />
+              <input
+                ref={nameRef}
+                className={`profile-name${anon ? ' anon' : ''}`}
+                type="text"
+                value={name}
+                readOnly={saving}
+                maxLength={NAME_MAX_LENGTH}
+                placeholder={shownWhenEmpty}
+                aria-label={t(lang, 'profileNamePlaceholder')}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                onCompositionStart={() => {
+                  composingRef.current = true;
+                }}
+                onCompositionEnd={(e) => {
+                  composingRef.current = false;
+                  applyName(e.currentTarget.value, e.currentTarget.selectionStart);
+                }}
+                onChange={(e) => {
+                  if (composingRef.current) setName(e.target.value);
+                  else applyName(e.target.value, e.target.selectionStart);
+                  setRefused(null);
+                }}
+              />
             </div>
 
             {/* Nothing to save = unavailable — the board itself says whether there is a
