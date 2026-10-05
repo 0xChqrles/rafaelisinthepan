@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties } from 'react';
 import { mondayNarrowLabels, weekView } from '../../game/streak';
 import { t } from '../../i18n';
@@ -15,11 +15,15 @@ import { StatSlot } from '../AccountStats';
 import {
   RECORD_CELL_PX,
   SIDE_RUN_MS,
-  ghostChainCells,
+  SLOT_STEP_MS,
   recordBeats,
+  recordCalm,
   recordLayout,
   recordScene,
   sideReelsAt,
+  slotCells,
+  slotLevel,
+  type RecordSize,
 } from './scene';
 
 // THE RECORD — `/account`'s subject (the picture itself is `scene.ts`): the streak in the
@@ -37,8 +41,12 @@ import {
 // (`rasterWatch`). Reduced motion draws the settled frame and runs no clock at all.
 //
 // The values are WITHHELD until every collection has landed (`useAccountStats`): the layout
-// and its words stand from the first frame, the count's box and the two numbers' boxes held as
-// the stippled slate — breathing while a read is out, still once one has failed.
+// and its words stand from the first frame, the count's box, the two numbers' boxes and the
+// chain's links held as the stippled slate — breathing while a read is out, still once one has
+// failed, when the count's box is the tap that asks again. The count's box and the chain's
+// slots are the raster's own; the two numbers' are DOM slots. A build STARTS from that picture:
+// each box stands until its own number's reels start, each link's slot until the link dithers
+// in over it.
 
 const FRAME_MS = 50;
 // Held frame under reduced motion: the settled picture, its foil and flame at this instant.
@@ -46,16 +54,27 @@ const STILL_T = 2600;
 
 // Built once a page load: a later visit to the screen finds the record standing.
 let built = false;
-// When the building count LANDS (its last reel's stop), on the animation clock: what the
-// page's later arrivals (the devices' lines) wait for.
-let landsAt: number | null = null;
 
-// How long until the record's count lands — 0 once it stands, or under reduced motion. Asked
-// before the numbers are even here (the devices can answer first), it waits the whole build.
-export function recordLandsIn(): number {
-  if (prefersReducedMotion()) return 0;
-  if (landsAt !== null) return Math.max(0, landsAt - clockNow());
-  return built ? 0 : recordBeats(true).impact + 120;
+// WHEN THE RECORD HAS CALMED (`recordCalm`), on the animation clock — what the page's later
+// arrivals (the devices' lines) wait for. Null until the record has started: a record still
+// waiting for its numbers holds them back too, and one that cannot have them (a failed read)
+// lets them in at once.
+let calmAt: number | null = null;
+const calmListeners = new Set<() => void>();
+function setCalm(at: number | null): void {
+  if (calmAt === at) return;
+  calmAt = at;
+  for (const listener of calmListeners) listener();
+}
+const subscribeCalm = (listener: () => void) => {
+  calmListeners.add(listener);
+  return () => {
+    calmListeners.delete(listener);
+  };
+};
+// The clock time the record calms at (now or earlier: at once), or null while it has not begun.
+export function useRecordCalm(): number | null {
+  return useSyncExternalStore(subscribeCalm, () => calmAt);
 }
 
 export type RecordPhase = 'loading' | 'failed' | 'ready';
@@ -65,14 +84,17 @@ export default function Record({
   stats,
   week,
   phase,
-  compact = false,
+  size = 'normal',
+  onRetry,
 }: {
   lang: string;
   stats: { streak: number; best: number; days: number } | null;
   week: readonly AccountWeekDay[] | null;
   phase: RecordPhase;
-  // A short screen: the count one size down, so the page's call still fits above the edge.
-  compact?: boolean;
+  // The screen's height: the count one whole size up or down (`RecordSize`).
+  size?: RecordSize;
+  // Ask for the numbers again after a failed read.
+  onRetry?: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -82,7 +104,7 @@ export default function Record({
   const initials = useMemo(() => mondayNarrowLabels(lang), [lang]);
   const ready = stats !== null && week !== null;
   const streak = stats?.streak ?? 0;
-  const L = useMemo(() => recordLayout(width, streak, compact), [width, streak, compact]);
+  const L = useMemo(() => recordLayout(width, streak, size), [width, streak, size]);
   const todayIndex = useMemo(() => weekView([], today).cells.findIndex((c) => c.isToday), [today]);
 
   // Whether THIS mount plays the build: decided once, the first time the numbers are here —
@@ -93,7 +115,14 @@ export default function Record({
   useEffect(() => {
     if (ready) built = true;
   }, [ready]);
-  const beats = useMemo(() => recordBeats(build === true), [build]);
+  const beats = useMemo(() => recordBeats(build === true, streak > 0), [build, streak]);
+
+  // The page's later arrivals: held while the numbers are out, let in once the record calms
+  // (at once when it stands already), and at once when the numbers cannot be had.
+  useEffect(() => {
+    if (phase === 'failed' && !ready) setCalm(clockNow());
+    else if (!ready) setCalm(null);
+  }, [phase, ready]);
 
   useLayoutEffect(() => {
     const el = box.current;
@@ -117,11 +146,19 @@ export default function Record({
     const image = ctx.createImageData(L.cols, L.rows);
     const px = new Uint32Array(image.data.buffer);
     if (!ready || build === null || !week) {
-      // The chain's place, held as its ghosts while the numbers are out.
+      // The count's box and the chain's place, held as the slate's checker — breathing while
+      // the read is out.
       const rail = hexToAbgr(INKS[RAIL - 1]);
-      for (const at of ghostChainCells(L)) px[at] = rail;
-      ctx.putImageData(image, 0, 0);
-      return undefined;
+      const breathing = phase === 'loading' && !reduced;
+      let timer = 0;
+      const hold = () => {
+        px.fill(0);
+        for (const at of slotCells(L, slotLevel(clockNow(), breathing))) px[at] = rail;
+        ctx.putImageData(image, 0, 0);
+        if (breathing) timer = window.setTimeout(hold, SLOT_STEP_MS);
+      };
+      hold();
+      return () => window.clearTimeout(timer);
     }
     const scene = recordScene(L, streak, week, beats);
     const ink = new Uint8Array(L.cols * L.rows);
@@ -130,7 +167,7 @@ export default function Record({
     const seed = foilSeed(`record:${today}`);
     startRef.current ??= clockNow();
     const start = startRef.current;
-    if (build) landsAt = start + beats.impact;
+    setCalm(build ? start + recordCalm(beats, week) : clockNow());
     const paint = (at: number) => {
       scene.draw(ink, at, foil);
       const seconds = at / 1000;
@@ -167,47 +204,74 @@ export default function Record({
       window.clearTimeout(timer);
       watch.stop();
     };
-  }, [L, ready, build, beats, week, streak, reduced, today, width]);
+  }, [L, ready, build, beats, week, streak, reduced, today, width, phase]);
+
+  // A box held as the slate until its number's reels start: before the numbers (breathing, or
+  // still after a failure), and through a build's first beats.
+  const held = (at: number, className = '') => (
+    <StatSlot
+      phase={phase === 'failed' ? 'failed' : 'loading'}
+      className={`${className}${ready ? ' record-hold' : ''}`}
+      style={{ '--at': `${at}ms` } as CSSProperties}
+    />
+  );
 
   const side = (value: number | undefined, label: string, i: number) => (
     <div className="record-side">
-      {/* A reel at rest stands on 0, and a 0 is a claim: a building number is not there at all
-          until its reels start (`--at`), then spins in. */}
-      <span
-        className={`record-side-value${build ? ' spins' : ''}${value === 0 ? ' zero' : ''}`}
-        style={{ '--at': `${sideReelsAt(beats, i)}ms` } as CSSProperties}
-      >
-        {value === undefined ? (
-          <StatSlot phase={phase} />
-        ) : (
-          <ReelNumber value={value} delayMs={build ? sideReelsAt(beats, i) : 0} runMs={build ? SIDE_RUN_MS : 0} />
+      <span className={`record-side-value${value === 0 ? ' zero' : ''}`}>
+        {(value === undefined || build) && held(build ? sideReelsAt(beats, i) : 0)}
+        {value !== undefined && (
+          // A reel at rest stands on 0, and a 0 is a claim: a building number is not there at
+          // all until its reels start (`--at`), then spins in out of its slot.
+          <span
+            className={`record-side-reel${build ? ' spins' : ''}`}
+            style={{ '--at': `${sideReelsAt(beats, i)}ms` } as CSSProperties}
+          >
+            {/* (A zero never spins: a reel of digits landing on nothing reads as a number lost.) */}
+            <ReelNumber
+              value={value}
+              delayMs={build ? sideReelsAt(beats, i) : 0}
+              runMs={build && value > 0 ? SIDE_RUN_MS : 0}
+            />
+          </span>
         )}
       </span>
       <span className="record-side-label">{label}</span>
     </div>
   );
 
+  const countBox: CSSProperties = {
+    left: L.ox + L.count.x * RECORD_CELL_PX,
+    top: L.count.y * RECORD_CELL_PX,
+    width: L.count.w * RECORD_CELL_PX,
+    height: L.count.h * RECORD_CELL_PX,
+  };
+
   return (
     <div className={`record${ready ? ' ready' : ''}`}>
-      <div ref={box} className="record-art" style={{ height: L.rows * RECORD_CELL_PX }} aria-hidden="true">
+      <div ref={box} className="record-art" style={{ height: L.rows * RECORD_CELL_PX }}>
         <canvas
           ref={canvasRef}
           className="record-canvas"
-          style={{ width: L.cols * RECORD_CELL_PX, height: L.rows * RECORD_CELL_PX }}
+          style={{ left: L.ox, width: L.cols * RECORD_CELL_PX, height: L.rows * RECORD_CELL_PX }}
+          aria-hidden="true"
         />
-        {!ready && width > 0 && (
-          <StatSlot
-            phase={phase}
-            className="record-slot"
-            style={{
-              left: L.count.x * RECORD_CELL_PX,
-              top: L.count.y * RECORD_CELL_PX,
-              width: L.count.w * RECORD_CELL_PX,
-              height: L.count.h * RECORD_CELL_PX,
-            }}
+        {/* A failed read: the count's held box (the raster's still checker) is the tap that
+            asks again. */}
+        {width > 0 && phase === 'failed' && !ready && (
+          <button
+            type="button"
+            className="record-slot record-retry"
+            style={countBox}
+            aria-label={`${t(lang, 'failedHistory')} — ${t(lang, 'retry')}`}
+            onClick={onRetry}
           />
         )}
-        <span className="record-unit" style={{ top: L.unitY }}>
+        <span
+          className="record-unit"
+          style={{ top: L.unitY, width: 2 * L.unitX }}
+          aria-hidden="true"
+        >
           {t(lang, 'dayStreak')}
         </span>
         {width > 0 &&
@@ -216,6 +280,7 @@ export default function Record({
               key={i}
               className={`record-day${i === todayIndex ? ' today' : ''}`}
               style={{ left: at.x, top: at.y }}
+              aria-hidden="true"
             >
               {initials[i]}
             </span>

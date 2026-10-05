@@ -4,7 +4,7 @@
 // on, asserted against what the editor promises rather than how it draws.
 
 import { describe, expect, it } from 'vitest';
-import { AVATAR_CELLS, AVATAR_PALETTES, decodeAvatar, defaultAvatar } from '@whippin/shared';
+import { AVATAR_CELLS, PUBLIC_ID_PATTERN, decodeAvatar, defaultAvatar } from '@whippin/shared';
 import {
   DICE_MIN_INK,
   cellLine,
@@ -14,20 +14,21 @@ import {
   landingOrder,
   mirroredCell,
   paintStroke,
-  randomPublicId,
-  rollMark,
   rollShape,
+  speckAt,
 } from './tools';
 
 const blank = () => new Array<number>(AVATAR_CELLS).fill(0);
 const at = (x: number, y: number) => y * 10 + x;
-// A seeded random source, so a roll is reproducible in a test.
+// A seeded source of public-id-shaped seeds, so a roll is reproducible in a test.
+const ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
 function seeded(seed: number) {
   let s = seed >>> 0;
-  return () => {
+  const next = () => {
     s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
     return s / 0x1_0000_0000;
   };
+  return () => Array.from({ length: 16 }, () => ALPHABET[Math.floor(next() * ALPHABET.length)]).join('');
 }
 
 describe('the mirror', () => {
@@ -53,6 +54,23 @@ describe('the mirror', () => {
     expect(isSymmetric(cells)).toBe(false);
     cells[at(8, 1)] = 1;
     expect(isSymmetric(cells)).toBe(true);
+  });
+});
+
+describe('the grid', () => {
+  it('specks a crossing only where all four cells meeting there are empty, never on the edge', () => {
+    const cells = blank();
+    expect(speckAt(cells, at(0, 0))).toBe(false);
+    expect(speckAt(cells, at(5, 0))).toBe(false);
+    expect(speckAt(cells, at(0, 5))).toBe(false);
+    expect(speckAt(cells, at(5, 5))).toBe(true);
+    cells[at(4, 4)] = 1;
+    // The four crossings at the inked cell's corners carry no speck: none touches the ink.
+    expect(speckAt(cells, at(4, 4))).toBe(false);
+    expect(speckAt(cells, at(5, 4))).toBe(false);
+    expect(speckAt(cells, at(4, 5))).toBe(false);
+    expect(speckAt(cells, at(5, 5))).toBe(false);
+    expect(speckAt(cells, at(6, 6))).toBe(true);
   });
 });
 
@@ -100,15 +118,24 @@ describe('a stroke', () => {
 });
 
 describe('the dice', () => {
-  it('rolls a public-id-shaped seed', () => {
-    expect(randomPublicId(seeded(1))).toMatch(/^[a-z2-7]{16}$/);
+  it("rolls the ASSIGNED derivation of a public-id-shaped seed — the shape only", () => {
+    const ids: string[] = [];
+    const source = seeded(1);
+    const cells = rollShape(blank(), () => {
+      const id = source();
+      ids.push(id);
+      return id;
+    });
+    for (const id of ids) expect(id).toMatch(PUBLIC_ID_PATTERN);
+    // The cells of the last seed asked for, and nothing else (no palette rides with them).
+    expect(cells).toEqual(decodeAvatar(defaultAvatar(ids[ids.length - 1])).cells);
+    expect(cells).toHaveLength(AVATAR_CELLS);
   });
 
-  it("KEEPS THE PALETTE: only the shape is rolled", () => {
-    for (let palette = 0; palette < AVATAR_PALETTES.length; palette += 1) {
-      const rolled = decodeAvatar(rollMark(palette, blank(), seeded(palette + 7)));
-      expect(rolled.palette).toBe(palette);
-    }
+  it('rolls from the shared id generator by default', () => {
+    const cells = rollShape(blank());
+    expect(isSymmetric(cells)).toBe(true);
+    expect(cells.reduce((s, v) => s + v, 0)).toBeGreaterThanOrEqual(DICE_MIN_INK);
   });
 
   it("rolls a shape the assigned way: symmetric, its outer columns empty, never near-empty", () => {

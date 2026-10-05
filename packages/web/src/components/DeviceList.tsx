@@ -10,13 +10,15 @@
 // bare ground, no title — each line a pixel GLYPH of the device (a phone, a tablet, a
 // computer; in the accent for the one in your hand), its label, ONE quiet fact (THIS ONE, or
 // the day it was last seen), and SIGN OUT as a word in the corner brackets of a thing to tap.
-// The lines come in through the dither, one after the other, once the record has landed.
+// The lines come in through the dither, one after the other, once the record has CALMED — its
+// count landed and today's foil link cooled — never under its climax, and never before the
+// record has its numbers at all.
 //
 // The list comes off a GSI and is eventually consistent, so the route corrects it from what
 // the request itself knows — a device that was just created is listed, and one that was just
 // revoked is not. Nothing here has to compensate for the lag.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   devicesUrl,
   parseDeviceIdentity,
@@ -31,7 +33,8 @@ import {
 } from '../identity';
 import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { t } from '../i18n';
-import { recordLandsIn } from './record/Record';
+import { clockNow } from './animationClock';
+import { useRecordCalm } from './record/Record';
 import PhoneIcon from '../assets/icons/phone.svg?react';
 import TabletIcon from '../assets/icons/tablet.svg?react';
 import LaptopIcon from '../assets/icons/laptop.svg?react';
@@ -159,31 +162,41 @@ export default function DeviceList({ lang }: { lang: string }) {
       .finally(() => setBusy(null));
   };
 
-  // The lines arrive AFTER the record has landed (its count's last reel), read once as they
-  // mount: a record already standing lets them in at once.
-  const [after] = useState(() => recordLandsIn());
+  // The lines arrive AFTER the record has calmed (`useRecordCalm`): held while it has not
+  // begun, then in at the moment it says — at once when it already stands.
+  const calm = useRecordCalm();
+  const after = useMemo(() => (calm === null ? null : Math.max(0, Math.round(calm - clockNow()))), [calm]);
+  const shown = phase === 'ready' && after !== null;
 
   return (
     <section className="device-list" aria-label={t(lang, 'devicesTitle')}>
       {/* While the read is out: one line's boxes as the stippled slate — the glyph's checker and
           the label's rail — at the lines' own pitch, so nothing moves when the list lands. */}
-      {phase === 'loading' && (
-        <div className="device-row device-skeleton" aria-hidden="true">
+      {/* (Once the lines are in, the skeleton stands over them until their dissolve starts.) */}
+      {(phase === 'loading' || phase === 'ready') && (
+        <div
+          className={`device-row device-skeleton${shown ? ' leaving' : ''}`}
+          style={shown ? ({ '--at': `${after ?? 0}ms` } as React.CSSProperties) : undefined}
+          aria-hidden="true"
+        >
           <span className="device-glyph" />
           <span className="device-info">
             <span className="device-skeleton-rail" />
           </span>
         </div>
       )}
+      {/* A failed read: what failed, said quietly, and the quiet word that asks again. */}
       {phase === 'failed' && (
-        <p className="status error device-error">
-          {t(lang, 'failedDevices')}{' '}
-          <button type="button" className="device-retry" onClick={() => setAttempt((n) => n + 1)}>
+        <div className="device-error">
+          <p className="device-error-line" role="status">
+            {t(lang, 'failedDevices')}
+          </p>
+          <button type="button" className="quiet-btn" onClick={() => setAttempt((n) => n + 1)}>
             {t(lang, 'retry')}
           </button>
-        </p>
+        </div>
       )}
-      {phase === 'ready' && (
+      {shown && (
         <ul className="device-lines">
           {rows.map((row, i) => {
             const used = lastUsed(row, lang);
@@ -191,7 +204,7 @@ export default function DeviceList({ lang }: { lang: string }) {
               <li
                 className={`device-row${row.current ? ' current' : ''}`}
                 key={row.deviceId}
-                style={{ '--delay': `${after + i * LINE_STAGGER_MS}ms` } as React.CSSProperties}
+                style={{ '--delay': `${(after ?? 0) + i * LINE_STAGGER_MS}ms` } as React.CSSProperties}
               >
                 <span className="device-glyph">
                   <DeviceGlyph row={row} />
@@ -208,7 +221,7 @@ export default function DeviceList({ lang }: { lang: string }) {
                 </span>
                 <button
                   type="button"
-                  className="device-signout"
+                  className="quiet-btn device-signout"
                   disabled={busy !== null}
                   onClick={() => signOut(row)}
                 >

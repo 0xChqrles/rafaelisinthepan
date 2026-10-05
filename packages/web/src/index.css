@@ -4527,20 +4527,26 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      into `:active` is instant, the way back decays, so a quick tap still shows its press. */
   transition: background-color 0.2s ease-out, border-color 0.2s ease-out, color 0.1s linear;
 }
-.btn-primary:hover:not(:disabled),
-.btn-secondary:hover:not(:disabled),
-.mix-btn:hover:not(:disabled) {
-  --wash: 24%;
+/* A hover lift only where a pointer HOVERS: on a touch screen the emulated hover sticks to
+   the spot last tapped, and the next screen's call standing on that spot (CONTINUE, then the
+   crossroads' answer) would open pre-pressed. */
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover:not(:disabled, [aria-disabled='true']),
+  .btn-secondary:hover:not(:disabled, [aria-disabled='true']),
+  .mix-btn:hover:not(:disabled, [aria-disabled='true']) {
+    --wash: 24%;
+  }
 }
-.btn-primary:active:not(:disabled),
-.btn-secondary:active:not(:disabled),
-.mix-btn:active:not(:disabled) {
+.btn-primary:active:not(:disabled, [aria-disabled='true']),
+.btn-secondary:active:not(:disabled, [aria-disabled='true']),
+.mix-btn:active:not(:disabled, [aria-disabled='true']) {
   --wash: 34%;
   transition-duration: 0s;
 }
-.btn-primary:disabled,
-.btn-secondary:disabled,
-.mix-btn:disabled {
+/* (`aria-disabled`: a control unavailable for a moment that keeps the keyboard's focus.) */
+.btn-primary:is(:disabled, [aria-disabled='true']),
+.btn-secondary:is(:disabled, [aria-disabled='true']),
+.mix-btn:is(:disabled, [aria-disabled='true']) {
   opacity: 0.45;
   cursor: default;
 }
@@ -4556,9 +4562,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   --wash: 6%;
   border-color: color-mix(in srgb, var(--fg) 45%, transparent);
 }
-.btn-secondary:hover:not(:disabled) {
-  --wash: 12%;
-  border-color: var(--fg);
+@media (hover: hover) and (pointer: fine) {
+  .btn-secondary:hover:not(:disabled) {
+    --wash: 12%;
+    border-color: var(--fg);
+  }
 }
 .btn-secondary:active:not(:disabled) {
   --wash: 18%;
@@ -4568,9 +4576,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   --wash: 8%;
   border-color: color-mix(in srgb, var(--danger) 55%, transparent);
 }
-.btn-danger:hover:not(:disabled) {
-  --wash: 16%;
-  border-color: var(--danger);
+@media (hover: hover) and (pointer: fine) {
+  .btn-danger:hover:not(:disabled) {
+    --wash: 16%;
+    border-color: var(--danger);
+  }
 }
 .btn-danger:active:not(:disabled) {
   --wash: 24%;
@@ -4596,11 +4606,13 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   letter-spacing: 0.14em;
   transition: opacity 120ms;
 }
-.btn-primary + .btn-secondary:hover:not(:disabled),
-.mix-btn + .btn-secondary:hover:not(:disabled) {
-  border: 0;
-  background: none;
-  opacity: 1;
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary + .btn-secondary:hover:not(:disabled),
+  .mix-btn + .btn-secondary:hover:not(:disabled) {
+    border: 0;
+    background: none;
+    opacity: 1;
+  }
 }
 .btn-primary + .btn-secondary:active:not(:disabled),
 .mix-btn + .btn-secondary:active:not(:disabled) {
@@ -4865,14 +4877,17 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     gap: 3px;
   }
 }
-/* THE LANGUAGE TAG IS THE FIRST THING TO GIVE (2026-09-03; `LangTitle` holds the reasoning).
-   374px is measured, not chosen: at 375 — the iPhone SE/6/7/8 width — the longest French
-   title still fits beside the tag, and below it VIE PRIVÉE and SAUVEGARDE start eating into
-   the keys. The archive DAY keeps its own tag at every width: that title has no back arrow
-   beside it, and the day is the abnormal state a route must always label. */
+/* THE LANGUAGE TAG IS THE FIRST THING TO GIVE (2026-09-03; `LangTitle` holds the reasoning):
+   whenever the name beside it would be cut, measured by `LangTitle` (`.squeezed`). The
+   archive DAY keeps its own tag at every width: that title has no back arrow beside it, and
+   the day is the abnormal state a route must always label. And under 375px the chip's own
+   side padding gives a pixel a side too. */
+.puzzle-title.squeezed .lang-tag {
+  display: none;
+}
 @media (max-width: 374px) {
-  .lang-tag {
-    display: none;
+  .topbar .topbar-title {
+    padding: 5px 4px 4px;
   }
 }
 
@@ -5669,37 +5684,6 @@ figure.l1-fig {
   }
 }
 
-/* THE COMPACT SECONDARY (2026-09-14): the secondary shape at a row's size — RETRY under the
-   device lines. */
-.device-retry {
-  --wash: 6%;
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 40px;
-  padding: 0 16px;
-  font-family: var(--ui);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--fg);
-  background: color-mix(in srgb, var(--fg) var(--wash), transparent);
-  border: 1px solid color-mix(in srgb, var(--fg) 45%, transparent);
-  border-radius: var(--r-sm);
-  cursor: pointer;
-  text-shadow: none;
-  transition: border-color 0.1s linear, background-color 0.1s linear;
-}
-.device-retry:hover {
-  --wash: 12%;
-  border-color: var(--fg);
-}
-.device-retry:active {
-  --wash: 18%;
-}
-
 /* ── THE ACCOUNT AREA (#204, reworked 2026-08-26) ──────────────────────────────────────
    Three screens, three questions — `/account` (is this mine, and safe?), `/profile` (how
    do others see me?), `/account/email` (save it / get it back). They share one column and
@@ -5780,14 +5764,26 @@ figure.l1-fig {
   margin: 0;
 }
 
-.account-load-error {
+.account-load-error,
+.device-error {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
-.account-load-error .status {
+/* A read that failed, said in the chrome's quiet ink — the boards' "unknown" is quiet, never
+   an alarm — over the quiet word that asks again. */
+.account-load-error-line,
+.device-error-line {
   margin: 0;
+  font-family: var(--ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  line-height: 14px;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 /* The email flow's steps hold ONE thing each — `.app` already centres the column, so a
@@ -5987,9 +5983,9 @@ figure.l1-fig {
 }
 .link-field-input {
   display: block;
-  width: 100%;
+  width: calc(100% - 6px);
   height: var(--field-h);
-  margin: 0;
+  margin: 0 3px;
   /* The prompt's own cell plus the guess prompt's half-em of air. */
   padding: 0 0 0 1.5em;
   border: 0;
@@ -6023,10 +6019,24 @@ figure.l1-fig {
 .link-field-prompt {
   position: absolute;
   top: 0;
-  left: 0;
+  left: 3px;
   height: var(--field-h);
   color: var(--accent);
   pointer-events: none;
+}
+/* A long address, a whole size down: the line DRAWN at half its 16px (so the field never
+   drops under iOS's zoom floor), the input twice as wide and tall and scaled by exactly one
+   half from its corner — every pixel of the face on a whole one — the prompt at 8px with it. */
+.link-field.small .link-field-prompt {
+  font-size: 8px;
+}
+.link-field.small .link-field-input {
+  width: calc((100% - 6px) * 2);
+  height: calc(var(--field-h) * 2);
+  margin-bottom: calc(var(--field-h) * -1);
+  line-height: calc(var(--field-h) * 2);
+  transform: scale(0.5);
+  transform-origin: 0 0;
 }
 /* An Enter on what cannot be an address: the guess prompt's own refusal. */
 .link-field.invalid {
@@ -6248,8 +6258,10 @@ figure.l1-fig {
   cursor: pointer;
   transition: opacity 120ms, color 120ms;
 }
-.link-quiet-btn:hover:not(:disabled) {
-  opacity: 1;
+@media (hover: hover) and (pointer: fine) {
+  .link-quiet-btn:hover:not(:disabled) {
+    opacity: 1;
+  }
 }
 .link-quiet-btn:active:not(:disabled) {
   opacity: 1;
@@ -6266,8 +6278,15 @@ figure.l1-fig {
   cursor: default;
 }
 
-/* RESEND's countdown: the seconds in the cobalt pixel figures the cards write a number in,
-   a small ticker beside the word — dimmed with it while it counts. */
+/* RESEND while it counts: only the WORD dims; the seconds — the number being waited on — stay
+   at full strength in the cobalt pixel figures the cards write a number in, a small ticker
+   beside the word. */
+.link-resend:disabled {
+  opacity: 1;
+}
+.link-resend:disabled .link-resend-word {
+  opacity: 0.4;
+}
 .link-wait {
   display: inline-block;
   min-width: 2.5em;
@@ -6295,13 +6314,12 @@ figure.l1-fig {
   margin-bottom: 8px;
 }
 /* The "sent to" line over the keys: the words quiet, the ADDRESS in the reading ink — the
-   one thing on the step the player cannot check for themselves. */
+   one thing on the step the player cannot check for themselves, so it is never cut: a long
+   one wraps, at its '@' or a dot. */
 .link-sent {
   margin: 0;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   text-align: center;
   font-family: var(--ui);
   font-size: 13px;
@@ -6465,9 +6483,23 @@ figure.l1-fig {
     font-size: 11px;
     letter-spacing: 0.02em;
   }
+  .link-cross-was {
+    font-size: 11px;
+    letter-spacing: 0.02em;
+  }
   .link-stack .btn {
     padding-left: 16px;
     padding-right: 16px;
+  }
+}
+/* …and at 320 a full 16-character name still stands whole on either side: the sides take
+   the air round the arrow, and the chip a pixel of its own padding. */
+@media (max-width: 340px) {
+  .link-cross {
+    gap: 2px;
+  }
+  .link-name.small {
+    padding: 0 5px;
   }
 }
 
@@ -6540,15 +6572,36 @@ figure.l1-fig {
 }
 /* The ending's sentence — the one thing it SAYS, in the reading ink. */
 .link-ending-line {
-  margin: 4px 0 0;
+  margin: 0;
   text-align: center;
   font-family: var(--ui);
   font-size: 14px;
   line-height: 1.55;
   color: var(--fg);
 }
+/* EVERY ENDING ON ONE RHYTHM, in whole pixels: face → name 16, name → the one fact (the
+   address, or the three numbers) 20 to its ink, → the sentence 20, → the call 28 — so a
+   recovery's numbers stand where a save's address does. */
+.link-stack.link-ending {
+  gap: 0;
+}
+.link-ending > .link-name {
+  margin-top: 16px;
+}
+.link-ending > .link-receipt {
+  margin-top: 17px;
+}
+.link-ending > .link-receipt-stats {
+  margin-top: 20px;
+}
+.link-ending > .link-receipt-stats .account-stats {
+  padding: 0;
+}
+.link-ending > .link-ending-line {
+  margin-top: 20px;
+}
 .link-ending .link-call {
-  margin-top: 24px;
+  margin-top: 28px;
 }
 
 /* The centered FACE STACK: the lead, the crossroads and the endings — an account's mark and
@@ -8118,6 +8171,10 @@ figure.l1-fig {
   height: auto;
   color: transparent;
 }
+/* A deleted account: the boxes held, empty. */
+.signed-out-face.gone {
+  visibility: hidden;
+}
 /* SIGNED OUT, in the game's own pixel words, quiet. */
 .signed-out-line {
   margin: 0;
@@ -9664,12 +9721,14 @@ figure.l1-fig {
 .account-id:active .account-id-mark {
   translate: 0 2px;
 }
+/* The name stands centred on the mark; the address HANGS under it in the row's bottom padding
+   (absolute), so the row reads centred whether or not there is an address, and nothing moves
+   when it lands. */
 .account-id-text {
+  position: relative;
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
+  display: block;
 }
 .account-id-name {
   display: block;
@@ -9694,16 +9753,31 @@ figure.l1-fig {
   visibility: hidden;
 }
 .account-id-mail {
-  display: block;
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  right: 0;
+  display: flex;
   font-family: var(--ui);
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.06em;
   line-height: 14px;
   color: var(--muted);
+  white-space: nowrap;
+}
+/* Cut in the middle: the local part gives way, the domain stands. */
+.account-id-mail-local {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.account-id-mail-domain {
+  flex: 0 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* The pencil, clinging to the frame's top corner — where the result's card prints its date:
    what the tap does, in the chrome's quiet ink. */
@@ -9739,23 +9813,75 @@ figure.l1-fig {
   position: relative;
   width: 100%;
   /* The initials hang under the raster's foot. */
-  margin-bottom: 44px;
+  margin-bottom: 41px;
 }
+/* (Offset in its box to a whole pixel by the layout's `ox`: the raster centred, not pinned.) */
 .record-canvas {
   position: absolute;
-  left: 0;
   top: 0;
   image-rendering: pixelated;
 }
 .record-slot {
   position: absolute;
-  width: auto;
-  height: auto;
+  display: block;
 }
+/* A held box through a build's first beats: gone the moment its number's reels start. */
+.stat-slot.record-hold {
+  animation: record-hold-out 1ms linear var(--at, 0ms) forwards;
+}
+.record-side-value .stat-slot.record-hold {
+  position: absolute;
+}
+@keyframes record-hold-out {
+  from,
+  to {
+    visibility: hidden;
+  }
+}
+/* A failed read: the count's held box is the tap that asks again — the still checker in a
+   tappable thing's corners. */
+.record-retry {
+  --bc: color-mix(in srgb, var(--fg) 38%, transparent);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.record-retry::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border: 2px solid var(--bc);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) 0 0 / 8px 8px no-repeat,
+    linear-gradient(#000 0 0) 100% 0 / 8px 8px no-repeat,
+    linear-gradient(#000 0 0) 0 100% / 8px 8px no-repeat,
+    linear-gradient(#000 0 0) 100% 100% / 8px 8px no-repeat;
+  mask:
+    linear-gradient(#000 0 0) 0 0 / 8px 8px no-repeat,
+    linear-gradient(#000 0 0) 100% 0 / 8px 8px no-repeat,
+    linear-gradient(#000 0 0) 0 100% / 8px 8px no-repeat,
+    linear-gradient(#000 0 0) 100% 100% / 8px 8px no-repeat;
+  transition: border-color 120ms steps(2, jump-end);
+}
+.record-retry:focus-visible {
+  outline: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .record-retry:hover::before {
+    border-color: var(--fg);
+  }
+}
+.record-retry:active {
+  translate: 0 2px;
+}
+/* (Centred on the count, not on the box: the layout gives its width.) */
 .record-unit {
   position: absolute;
   left: 0;
-  right: 0;
   text-align: center;
   translate: 0 -50%;
   font-family: var(--ui);
@@ -9767,10 +9893,16 @@ figure.l1-fig {
   color: var(--fg);
   white-space: nowrap;
 }
+/* An initial: a WHOLE box (17 × 16) round its link's centre, so today's white chip lands on
+   whole pixels like the art round it. */
 .record-day {
   position: absolute;
-  translate: -50% -50%;
-  padding: 3px 4px 2px;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 16px;
+  margin: -8px 0 0 -8.5px;
+  padding-top: 1px;
   font-family: var(--ui);
   font-size: 12px;
   font-weight: 600;
@@ -9802,6 +9934,7 @@ figure.l1-fig {
 }
 .record-side-value,
 .account-stat-value {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -9834,8 +9967,13 @@ figure.l1-fig {
 .record-side-value.zero {
   color: var(--muted);
 }
-/* (A building record's two numbers wait, hidden, for their reels to start.) */
-.record-side-value.spins {
+/* (A building record's two numbers wait, hidden, for their reels to start — their slots held
+   until then.) */
+.record-side-reel {
+  display: contents;
+}
+.record-side-reel.spins {
+  display: block;
   animation: record-side-in 1ms linear var(--at, 0ms) backwards;
 }
 @keyframes record-side-in {
@@ -9929,9 +10067,10 @@ figure.l1-fig {
 .device-sub.current {
   color: var(--accent);
 }
-/* SIGN OUT: the quiet word in the corner brackets (6px arms), stepping to white on a hover.
-   Never red: signing a device out loses nothing. */
-.device-signout {
+/* THE QUIET WORD in a tappable thing's corner brackets (6px arms), stepping to white on a
+   hover — the area's small act: SIGN OUT on a device line (never red: signing a device out
+   loses nothing), RETRY under a read that failed. */
+.quiet-btn {
   --bc: color-mix(in srgb, var(--fg) 38%, transparent);
   position: relative;
   flex: none;
@@ -9951,7 +10090,7 @@ figure.l1-fig {
   cursor: pointer;
   transition: color 120ms steps(2, jump-end);
 }
-.device-signout::before {
+.quiet-btn::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -9969,25 +10108,42 @@ figure.l1-fig {
     linear-gradient(#000 0 0) 100% 100% / 6px 6px no-repeat;
   transition: border-color 120ms steps(2, jump-end);
 }
-.device-signout:hover:not(:disabled),
-.device-signout:focus-visible {
+.quiet-btn:focus-visible {
   outline: none;
   color: var(--fg);
 }
-.device-signout:hover:not(:disabled)::before,
-.device-signout:focus-visible::before {
+.quiet-btn:focus-visible::before {
   border-color: var(--fg);
 }
-.device-signout:active:not(:disabled) {
+@media (hover: hover) and (pointer: fine) {
+  .quiet-btn:hover:not(:disabled) {
+    color: var(--fg);
+  }
+  .quiet-btn:hover:not(:disabled)::before {
+    border-color: var(--fg);
+  }
+}
+.quiet-btn:active:not(:disabled) {
   translate: 0 2px;
 }
-.device-signout:disabled {
+.quiet-btn:disabled {
   opacity: 0.45;
   cursor: default;
 }
-/* The list's read still out: one line's boxes in the stippled slate. */
+/* The list's read still out: one line's boxes in the stippled slate — standing, once the lines
+   are in, over the first of them until their dissolve begins. */
+.device-list {
+  position: relative;
+}
 .device-skeleton {
   animation: none;
+}
+.device-skeleton.leaving {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  animation: record-hold-out 1ms linear var(--at, 0ms) forwards;
 }
 .device-skeleton .device-glyph {
   background: conic-gradient(var(--rail) 25%, transparent 0 50%, var(--rail) 0 75%, transparent 0) 0 0 / 4px 4px;
@@ -9999,8 +10155,7 @@ figure.l1-fig {
   background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 0 / 6px 2px repeat-x;
 }
 .device-error {
-  margin: 0;
-  padding: 0 16px;
+  padding-top: 6px;
 }
 
 /* WHERE IT STARTS: the masthead just under the bar (the area's own start line would leave a
@@ -10015,10 +10170,41 @@ figure.l1-fig {
     padding-top: clamp(72px, 12vh, 140px);
   }
 }
+/* A SHORT phone: the record's count is a size down (`Record`'s size), and the stack a few whole
+   pixels tighter under it, so the unsaved page's call stands above the edge. */
+@media (max-width: 640px) and (max-height: 740px) {
+  .account-page > .record {
+    margin-bottom: 8px;
+  }
+  .account-page .record-art {
+    margin-bottom: 33px;
+  }
+}
+@media (max-width: 640px) and (max-height: 600px) {
+  .account-screen.account-page {
+    padding-top: 48px;
+  }
+  .account-page > .record {
+    margin-bottom: 4px;
+  }
+  .account-page .record-art {
+    margin-bottom: 30px;
+  }
+  .account-page .device-list {
+    margin-top: 16px;
+  }
+  /* (Where the call cannot park on the edge, it still keeps a step off the numbers.) */
+  .account-page > .account-cta {
+    padding-top: 12px;
+  }
+}
 @media (max-width: 360px) {
   .account-id {
     gap: 12px;
     padding-left: 12px;
+  }
+  .account-id {
+    padding-right: 40px;
   }
   .account-id-name {
     font-size: 16px;
@@ -10033,7 +10219,7 @@ figure.l1-fig {
     gap: 12px;
     padding-left: 8px;
   }
-  .device-signout {
+  .device-row .quiet-btn {
     padding: 0 10px;
   }
 }
@@ -10044,13 +10230,15 @@ figure.l1-fig {
   }
 }
 
-/* ===================== THE PROFILE EDITOR (`/profile`, #188; 2026-10-05) =====================
+/* ===================== THE PROFILE EDITOR (`/profile`, #188) =====================
    The masthead's mark OPENED: the canvas (one mark, continuous square cells, the grid only a
-   speck of ink in each empty cell's corner) over the name in its white chip, inside the corner
-   brackets of a thing that takes the finger; under it the palettes and the three tools in one
-   row, the board line every board will draw for the player, and SAVE on the bottom edge. Bare
-   ground, nothing rounder than a pixel. Its cell (`--pcell`) is a whole, even number of px,
-   sized by the screen so the whole editor fits a phone with nothing scrolled. */
+   speck of ink where it crosses clear of the drawing) over the name in its white chip, inside
+   the corner brackets of a thing that takes the finger; under it the palettes and the three
+   tools, the board line every board will draw for the player hanging over SAVE on the bottom
+   edge. Bare ground, nothing rounder than a pixel. Its cell (`--pcell`) is a whole, even
+   number of px and its offset in the card (`--pinset`) a whole one too, both sized by the
+   screen (`Profile`'s EDITOR_CHROME_PX is this block's own sum) so the whole editor fits a
+   phone with nothing scrolled. */
 .profile-screen {
   width: min(430px, 100%);
   max-height: 100%;
@@ -10076,12 +10264,13 @@ figure.l1-fig {
 }
 /* THE BRACKETS: the result card's own — they fly in from outside as the card opens, and LOCK
    ON (their arms reach out along the frame at full white and draw back in whole steps), again
-   whenever a save lands. */
+   whenever a save lands. Over the canvas's pops and sparks. */
 .profile-corner {
   --sx: 1;
   --sy: 1;
   --lock: 30px;
   position: absolute;
+  z-index: 2;
   width: 14px;
   height: 14px;
   border: 2px solid var(--corner);
@@ -10128,13 +10317,41 @@ figure.l1-fig {
     border-color: var(--fg);
   }
 }
+/* The canvas's box: ten cells square, on a whole-pixel offset (`--pinset`) rather than centred
+   by the flex box (a half pixel would blur every cell's edge). Held from the first frame —
+   while the stored profile is read it is the stippled slate, or empty under the mark handed
+   over by the masthead (`.profile-handed`). */
 .profile-canvas-box {
   position: relative;
   flex: none;
+  align-self: flex-start;
+  width: calc(var(--pcell) * 10);
+  height: calc(var(--pcell) * 10);
+  margin-left: var(--pinset, 0px);
 }
-/* THE CANVAS: ten cells of `--pcell` square, no gutter. An EMPTY cell wears the ground with a
-   2px speck of the ink (mixed into the ground) in its corner — the grid, said as little as it
-   can be — and the first row and column carry none: the grid's lines are inside the mark. */
+.profile-canvas-hold {
+  position: absolute;
+  inset: 0;
+}
+/* The name chip's box while the editor waits. */
+.profile-name-hold {
+  display: block;
+  height: 32px;
+}
+/* The handed-over mark, frozen in the box it stood in on `/account`. */
+.profile-handed {
+  position: fixed;
+  z-index: 5;
+  display: block;
+  pointer-events: none;
+}
+.profile-handed .avatar {
+  display: block;
+}
+/* THE CANVAS: ten cells of `--pcell` square, no gutter. An EMPTY cell wears the ground, and
+   where the grid crosses clear of the drawing (`speckAt`: the four cells meeting there all
+   empty) a 2px speck of the ink, mixed into the ground, sits in the corner — the grid, said as
+   little as it can be, and never touching the ink. */
 .avatar-editor {
   --dot: color-mix(in srgb, var(--cell-fg) 42%, var(--cell-bg));
   position: relative;
@@ -10149,17 +10366,14 @@ figure.l1-fig {
 }
 .avatar-editor-cell {
   position: relative;
+  background: var(--cell-bg);
+}
+.avatar-editor-cell.speck {
   background:
     linear-gradient(var(--dot), var(--dot)) 0 0 / 2px 2px no-repeat,
     var(--cell-bg);
 }
-.avatar-editor-cell:nth-child(-n + 10),
-.avatar-editor-cell:nth-child(10n + 1) {
-  background: var(--cell-bg);
-}
-.avatar-editor-cell.on,
-.avatar-editor-cell.on:nth-child(-n + 10),
-.avatar-editor-cell.on:nth-child(10n + 1) {
+.avatar-editor-cell.on {
   background: var(--cell-fg);
 }
 .avatar-editor-cell::before,
@@ -10167,8 +10381,10 @@ figure.l1-fig {
   pointer-events: none;
 }
 /* A PAINTED CELL POPS on whole pixels — it lands 6px proud of its place each side and settles
-   back in hard steps — and throws a burst of the ink's own sparks: eight 4px squares stepping
-   out and gone. Replayed by remounting the cell on its paint count. */
+   back in hard steps — and throws a burst of sparks: eight 4px squares of the ink, each in a
+   2px ring of the ground, so they read over the ground and the ink alike. Replayed by
+   remounting the cell on its paint count. The pseudo-elements only ever ANIMATE a change: at
+   rest the popped layer is the ink the cell already wears, the erased one nothing at all. */
 .avatar-editor-cell.painted {
   z-index: 2;
 }
@@ -10177,7 +10393,7 @@ figure.l1-fig {
   position: absolute;
   inset: 0;
   background: var(--cell-fg);
-  animation: cell-pop 150ms forwards;
+  animation: cell-pop 150ms;
 }
 @keyframes cell-pop {
   0% {
@@ -10203,41 +10419,49 @@ figure.l1-fig {
   top: calc(50% - 2px);
   width: 4px;
   height: 4px;
-  color: var(--cell-fg);
   animation: cell-spark 300ms forwards;
 }
 @keyframes cell-spark {
   0% {
     animation-timing-function: steps(1, end);
     box-shadow:
-      0 -14px currentColor, 10px -10px currentColor, 14px 0 currentColor, 10px 10px currentColor,
-      0 14px currentColor, -10px 10px currentColor, -14px 0 currentColor, -10px -10px currentColor;
+      0 -14px var(--cell-fg), 10px -10px var(--cell-fg), 14px 0 var(--cell-fg), 10px 10px var(--cell-fg),
+      0 14px var(--cell-fg), -10px 10px var(--cell-fg), -14px 0 var(--cell-fg), -10px -10px var(--cell-fg),
+      0 -14px 0 2px var(--cell-bg), 10px -10px 0 2px var(--cell-bg), 14px 0 0 2px var(--cell-bg),
+      10px 10px 0 2px var(--cell-bg), 0 14px 0 2px var(--cell-bg), -10px 10px 0 2px var(--cell-bg),
+      -14px 0 0 2px var(--cell-bg), -10px -10px 0 2px var(--cell-bg);
   }
   33% {
     animation-timing-function: steps(1, end);
     box-shadow:
-      0 -20px currentColor, 14px -14px currentColor, 20px 0 currentColor, 14px 14px currentColor,
-      0 20px currentColor, -14px 14px currentColor, -20px 0 currentColor, -14px -14px currentColor;
+      0 -20px var(--cell-fg), 14px -14px var(--cell-fg), 20px 0 var(--cell-fg), 14px 14px var(--cell-fg),
+      0 20px var(--cell-fg), -14px 14px var(--cell-fg), -20px 0 var(--cell-fg), -14px -14px var(--cell-fg),
+      0 -20px 0 2px var(--cell-bg), 14px -14px 0 2px var(--cell-bg), 20px 0 0 2px var(--cell-bg),
+      14px 14px 0 2px var(--cell-bg), 0 20px 0 2px var(--cell-bg), -14px 14px 0 2px var(--cell-bg),
+      -20px 0 0 2px var(--cell-bg), -14px -14px 0 2px var(--cell-bg);
   }
   66% {
     animation-timing-function: steps(1, end);
     box-shadow:
-      0 -26px 0 -1px currentColor, 18px -18px 0 -1px currentColor, 26px 0 0 -1px currentColor,
-      18px 18px 0 -1px currentColor, 0 26px 0 -1px currentColor, -18px 18px 0 -1px currentColor,
-      -26px 0 0 -1px currentColor, -18px -18px 0 -1px currentColor;
+      0 -26px 0 -1px var(--cell-fg), 18px -18px 0 -1px var(--cell-fg), 26px 0 0 -1px var(--cell-fg),
+      18px 18px 0 -1px var(--cell-fg), 0 26px 0 -1px var(--cell-fg), -18px 18px 0 -1px var(--cell-fg),
+      -26px 0 0 -1px var(--cell-fg), -18px -18px 0 -1px var(--cell-fg),
+      0 -26px 0 1px var(--cell-bg), 18px -18px 0 1px var(--cell-bg), 26px 0 0 1px var(--cell-bg),
+      18px 18px 0 1px var(--cell-bg), 0 26px 0 1px var(--cell-bg), -18px 18px 0 1px var(--cell-bg),
+      -26px 0 0 1px var(--cell-bg), -18px -18px 0 1px var(--cell-bg);
   }
   100% {
     box-shadow: none;
   }
 }
 /* An ERASED cell gives its ink back the other way: the ink shrinks into the cell's middle in
-   whole-pixel steps and is gone. */
+   whole-pixel steps and is gone — and gone it stays (its resting box is the empty middle). */
 .avatar-editor-cell.erased::before {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: calc(var(--pcell) / 2);
   background: var(--cell-fg);
-  animation: cell-erase 150ms forwards;
+  animation: cell-erase 150ms;
 }
 @keyframes cell-erase {
   0% {
@@ -10256,11 +10480,14 @@ figure.l1-fig {
     inset: calc(var(--pcell) / 2);
   }
 }
+/* The palette sweep's overlay: no box until a sweep sizes it (`DitherWipe`). */
 .dither-wipe {
   position: absolute;
   z-index: 3;
   left: 0;
   top: 0;
+  width: 0;
+  height: 0;
   image-rendering: pixelated;
   pointer-events: none;
 }
@@ -10272,19 +10499,15 @@ figure.l1-fig {
   overflow: hidden;
   pointer-events: none;
 }
-.foil-stamp.fixed {
-  position: fixed;
-  inset: auto;
-  z-index: 1000;
-}
 .foil-stamp canvas {
   display: block;
   image-rendering: pixelated;
 }
 /* The MIRROR's axis: two small pixel arrows on the canvas's edges, in the accent, pointing at
-   the line the drawing folds on. */
+   the line the drawing folds on — over the cells' pops and sparks. */
 .profile-axis {
   position: absolute;
+  z-index: 2;
   left: calc(50% - 5px);
   width: 10px;
   height: 6px;
@@ -10294,10 +10517,10 @@ figure.l1-fig {
   animation: solved-card-blink 120ms steps(2, jump-end) backwards;
 }
 .profile-axis.top {
-  top: -10px;
+  top: -8px;
 }
 .profile-axis.bottom {
-  bottom: -10px;
+  bottom: -8px;
   rotate: 180deg;
 }
 
@@ -10378,26 +10601,37 @@ figure.l1-fig {
   visibility: hidden;
 }
 
-/* THE TOOLS ROW: the palettes on the left, the three tools on the right. */
+/* THE TOOLS: the palettes, then the three tools — every one a 44px target at a 44px pitch.
+   One row where the column holds all eight with a step between the two groups; else
+   (`.wrap`, decided by `Profile` from the column's width) the tools on a row of their own
+   right under the palettes, both rows centred under the canvas on whole pixels. */
 .profile-tools {
   flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
-  margin-top: 14px;
+  margin: 14px 0 10px;
 }
 .profile-palettes,
 .profile-keys {
   display: flex;
   min-width: 0;
 }
-.profile-keys {
+.profile-screen.wrap .profile-tools {
+  flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
+}
+.profile-screen.wrap .profile-palettes {
+  margin-left: var(--palettes-at, 0px);
+}
+.profile-screen.wrap .profile-keys {
+  margin-left: var(--keys-at, 0px);
 }
 /* A SWATCH: the drawing itself in that palette, 30px (three whole pixels a cell) in a 44px
    target. Bare — only the one in hand wears the white corners, which CLOSE IN on it from 6px
-   further out in three hard steps as it is chosen. */
+   further out in three hard steps as it is chosen. (Under the keyboard's own brackets, which
+   frame the same tile — the arrows choose — its corners give way to them.) */
 .profile-swatch {
   position: relative;
   flex: none;
@@ -10432,6 +10666,9 @@ figure.l1-fig {
     linear-gradient(#000 0 0) 0 100% / 6px 6px no-repeat,
     linear-gradient(#000 0 0) 100% 100% / 6px 6px no-repeat;
 }
+.profile-swatch:focus-visible {
+  outline: none;
+}
 .profile-swatch.sel {
   cursor: default;
 }
@@ -10439,28 +10676,32 @@ figure.l1-fig {
   border-color: var(--fg);
   animation: swatch-lock 150ms steps(3, jump-end);
 }
+.profile-swatch.sel[data-bracketed]::before {
+  border-color: transparent;
+}
 @keyframes swatch-lock {
   from {
     inset: -3px;
   }
 }
 @media (hover: hover) and (pointer: fine) {
-  .profile-swatch:not(.sel):not(:disabled):hover::before {
+  .profile-swatch:not(.sel, [aria-disabled='true']):hover::before {
     border-color: var(--muted);
   }
 }
-.profile-swatch:disabled {
+.profile-swatch[aria-disabled='true'] {
   cursor: default;
 }
-/* A TOOL: its pixel mark in a tappable thing's corners; one switched ON is the white chip. */
+/* A TOOL: its pixel mark in a tappable thing's corners (36px of brackets in its 44px target,
+   so two tools' corners stand a clear 8px apart); one switched ON is the white chip. */
 .profile-key {
   --bc: color-mix(in srgb, var(--fg) 38%, transparent);
   position: relative;
   flex: none;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -10480,7 +10721,7 @@ figure.l1-fig {
 .profile-key::before {
   content: '';
   position: absolute;
-  inset: 0;
+  inset: 4px;
   border: 2px solid var(--bc);
   pointer-events: none;
   -webkit-mask:
@@ -10496,38 +10737,42 @@ figure.l1-fig {
   transition: border-color 120ms steps(2, jump-end);
 }
 .profile-key .ui-icon {
+  position: relative;
   display: block;
   width: 20px;
   height: 20px;
 }
 @media (hover: hover) and (pointer: fine) {
-  .profile-key:hover:not(:disabled) {
+  .profile-key:hover:not([aria-disabled='true']) {
     color: var(--fg);
   }
-  .profile-key:hover:not(:disabled)::before {
+  .profile-key:hover:not([aria-disabled='true'])::before {
     border-color: var(--fg);
   }
 }
-.profile-key:active:not(:disabled) {
+.profile-key:active:not([aria-disabled='true']) {
   translate: 0 2px;
 }
 .profile-key.on {
-  background: var(--fg);
   color: var(--bg);
 }
 .profile-key.on::before {
-  border-color: transparent;
+  border-color: var(--fg);
+  background: var(--fg);
+  -webkit-mask: none;
+  mask: none;
 }
-.profile-key:disabled {
+.profile-key[aria-disabled='true'] {
   opacity: 0.35;
   cursor: default;
 }
-.profile-key.on:disabled {
+.profile-key.on[aria-disabled='true'] {
   opacity: 1;
 }
 
 /* HOW OTHERS SEE ME: the board's line — the mark at its 30px, the name in its dress — with
-   nothing a board says only once a day is played. */
+   nothing a board says only once a day is played. Its mark stands exactly under the first
+   swatch's (both 7px in). */
 .profile-line {
   flex: none;
   display: grid;
@@ -10535,8 +10780,7 @@ figure.l1-fig {
   align-items: center;
   gap: 12px;
   height: 44px;
-  margin-top: 10px;
-  padding: 0 6px;
+  padding: 0 7px;
   line-height: 1;
   animation: board-dissolve 240ms linear 420ms backwards;
 }
@@ -10569,48 +10813,46 @@ figure.l1-fig {
   margin-top: 28px;
   animation: board-dissolve 240ms linear 420ms backwards;
 }
+/* A failed read's way back: the quiet word, under the held card. */
+.profile-retry {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
 @media (max-width: 640px) {
-  /* The phone: the column takes the viewport (less `.app`'s 16 + 28px pads) and SAVE parks on
-     the bottom edge, 14px off it, where MIX and INVITE sit. */
+  /* The phone: the column takes the viewport (less `.app`'s 16 + 28px pads); the card starts
+     on the area's start line — 60px under the bar's top, where `/account`'s masthead stands,
+     so the mark handed over travels straight into the canvas — and SAVE parks on the bottom
+     edge, 14px off it, where MIX and INVITE sit. The height left over has ONE use: it hangs
+     the board line over SAVE, the preview beside the button that publishes it. */
   .profile-screen {
     align-self: stretch;
     min-height: calc(100dvh - 44px);
     max-height: none;
     overflow: visible;
-    padding: 52px 0 0;
+    padding: 60px 0 0;
   }
-  /* The free height of a tall phone is split over and under the editor, so it stands in the
-     middle of what SAVE leaves rather than hanging off the bar. */
-  .profile-card {
+  .profile-line {
     margin-top: auto;
   }
   .profile-screen .profile-save {
-    margin-top: auto;
+    margin-top: 16px;
     margin-bottom: -14px;
   }
-  /* (…one part over it, two under: three auto margins share the height evenly.) */
-  .profile-line {
-    margin-bottom: auto;
-  }
 }
-@media (max-width: 389px) {
-  .profile-keys {
-    gap: 3px;
-  }
-  .profile-key {
-    width: 38px;
-  }
+/* A SHORT screen (`Profile` decides, off the height before any soft keyboard): the same
+   editor a few whole pixels tighter, so the canvas keeps its size and nothing scrolls. */
+.profile-screen.short {
+  padding-top: 48px;
 }
-@media (max-width: 374px) {
-  .profile-swatch {
-    width: 36px;
-  }
-  .profile-keys {
-    gap: 2px;
-  }
-  .profile-key {
-    width: 34px;
-  }
+.profile-screen.short .profile-card {
+  gap: 12px;
+}
+.profile-screen.short .profile-tools {
+  margin: 10px 0 6px;
+}
+.profile-screen.short .profile-save {
+  margin-top: 10px;
 }
 @media (prefers-reduced-motion: reduce) {
   .profile-corner,
@@ -10622,11 +10864,11 @@ figure.l1-fig {
   .profile-axis,
   .profile-line,
   .profile-line-mark,
-  .avatar-editor-cell::before,
-  .avatar-editor-cell::after,
   .profile-screen .profile-save {
     animation: none !important;
   }
+  /* No pop, no shrink, no sparks: a cell simply IS what it holds. */
+  .avatar-editor-cell::before,
   .avatar-editor-cell::after {
     display: none;
   }

@@ -29,6 +29,7 @@ import { ACCOUNT_PATH } from '../langs';
 import useUiLang from '../hooks/useUiLang';
 import { t } from '../i18n';
 import Avatar from '../components/Avatar';
+import { StatSlot } from '../components/AccountStats';
 import { MARK } from '../components/boardMetrics';
 import DitherWipe, { type WipeShot } from '../components/editor/DitherWipe';
 import {
@@ -39,12 +40,11 @@ import {
   landingOrder,
   paintStroke,
   rollShape,
+  speckAt,
 } from '../components/editor/tools';
 import { foilSeed } from '../components/foil';
 import FoilStamp from '../components/FoilStamp';
-import { takeMark } from '../components/markHandoff';
-import LoadError from '../components/LoadError';
-import LoadingWave from '../components/LoadingWave';
+import { takeMark, type HandedMark } from '../components/markHandoff';
 import LangTitle from '../components/LangTitle';
 import { HeaderBack, HeaderLeft } from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
@@ -168,13 +168,20 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 // ---- THE CANVAS'S GEOMETRY (visual only: nothing here decides what is saved). Its cell is a
 // WHOLE, EVEN number of px — the house's 2px dither lands on the cells' own edges — the
 // largest the column holds inside the card, and the largest that leaves the whole editor on
-// a phone's screen with nothing scrolled (an iPhone SE's 667px included): the chrome around
-// the canvas (the bar's clearance, the card's frame and chip, the tools, the board line,
-// SAVE on the edge) is EDITOR_CHROME_PX of the height, the CSS's own sum.
-const CELL_MIN = 20;
+// a phone's screen with nothing scrolled — down to the ~550px an iPhone SE's browser leaves
+// under its own bars. The chrome around the canvas — the bar's clearance, the card's frame and chip,
+// the tools, the board line, SAVE on the edge — is the CSS's own sum (the phone block of
+// `.profile-screen`): one row of tools where the column holds all of them at the 44px pitch,
+// two where it does not (`.wrap`), and the SHORT dress's tighter spacing on a screen this
+// short (`.short`). The height is the one the screen had BEFORE a soft keyboard took part of
+// it: the editor never jumps while its name is typed.
+const CELL_MIN = 18;
 const CELL_MAX = 36;
 const CARD_PAD_PX = 14;
-const EDITOR_CHROME_PX = 334;
+const TARGET_PX = 44;
+const TOOLS_GAP_PX = 8;
+const SHORT_PX = 600;
+const EDITOR_CHROME_PX = { tall: [344, 392], short: [316, 364] } as const;
 // The canvas grows out of the masthead's mark in whole-pixel steps, a cell this much bigger
 // each step, a step this long.
 const GROW_CELL_STEP = 4;
@@ -274,6 +281,7 @@ export default function Profile() {
   // ---- the canvas's drawing (visual only).
   const screenRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [cellPx, setCellPx] = useState(0);
   // What the canvas WAS, swept off it through the dither on a palette switch.
@@ -297,6 +305,8 @@ export default function Profile() {
     setName(shownName);
     setPalette(decoded.palette);
     setCells(decoded.cells);
+    // A cell's pop belongs to the edit that made it: re-bound fields start with none.
+    setBumps({});
     setMirror(isSymmetric(decoded.cells));
     setBaseline({ name: shownName, avatar: shownAvatar });
   };
@@ -398,8 +408,10 @@ export default function Profile() {
   // last cell the finger crossed (`cellLine`), so a fast drag leaves no gap; with MIRROR on,
   // every cell's twin takes the stroke too. The cell is read off the pointer's place on the
   // canvas, never off the element under it: the canvas wears overlays (the sweep, the foil)
-  // and grows in under a transform.
+  // and grows in under a transform. A stroke is ONE pointer's: a second finger landing on the
+  // canvas mid-stroke is ignored, never joined to the first by a line.
   const strokeRef = useRef<0 | 1 | null>(null);
+  const pointerRef = useRef<number | null>(null);
   const lastRef = useRef<number | null>(null);
   const cellAt = useCallback((x: number, y: number): number | null => {
     const el = canvasRef.current;
@@ -435,10 +447,11 @@ export default function Profile() {
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       e.preventDefault();
-      if (toolRef.current !== null) return;
+      if (toolRef.current !== null || pointerRef.current !== null) return;
       const index = cellAt(e.clientX, e.clientY);
       if (index === null) return;
       strokeRef.current = cells[index] === 1 ? 0 : 1;
+      pointerRef.current = e.pointerId;
       lastRef.current = null;
       e.currentTarget.setPointerCapture(e.pointerId);
       paintTo(index);
@@ -447,15 +460,17 @@ export default function Profile() {
   );
   const onPointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      if (strokeRef.current === null) return;
+      if (strokeRef.current === null || e.pointerId !== pointerRef.current) return;
       // A fast drag's skipped samples (coalesced events) are walked too.
       const events = typeof e.nativeEvent.getCoalescedEvents === 'function' ? e.nativeEvent.getCoalescedEvents() : [];
       for (const sample of events.length > 0 ? events : [e.nativeEvent]) paintTo(cellAt(sample.clientX, sample.clientY));
     },
     [cellAt, paintTo],
   );
-  const endStroke = useCallback(() => {
+  const endStroke = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerId !== pointerRef.current) return;
     strokeRef.current = null;
+    pointerRef.current = null;
     lastRef.current = null;
   }, []);
 
@@ -463,6 +478,7 @@ export default function Profile() {
   // the palette already chosen), then the new shape LANDS out of it cell by cell, and the
   // landed shape is the edit.
   const roll = useCallback(() => {
+    if (toolRef.current !== null) return;
     const target = rollShape(cells);
     const commit = () => {
       setChurn(null);
@@ -505,8 +521,10 @@ export default function Profile() {
   // CLEAR: the drawing DRAINS — its cells go out in the Bayer order, in hard steps, each with
   // its own small shrink.
   const clear = useCallback(() => {
+    if (toolRef.current !== null) return;
     if (prefersReducedMotion()) {
       setCells(new Array<number>(AVATAR_CELLS).fill(0));
+      setBumps({});
       setRefused(null);
       return;
     }
@@ -529,19 +547,24 @@ export default function Profile() {
     }
   }, []);
 
+  // The editor is FROZEN while a save runs (its two round trips can take real time on a
+  // phone, and the GUARDED success path re-binds every field to the merged server truth):
+  // an edit made mid-save would be silently replayed over when the answer lands — the grid
+  // visibly snapping back, SAVE greying out as though the change had been stored.
+  const saving = phase !== 'idle';
+  // A tool playing or a save running: the canvas takes no paint and the controls wait. They
+  // say so (`aria-disabled`) without leaving the keyboard's reach — a `disabled` control
+  // drops the focus it holds to the page.
+  const busy = saving || tool !== null;
+
   const pickPalette = (index: number) => {
-    if (index === palette) return;
+    if (index === palette || busy) return;
     wipeKey.current += 1;
     setWipe({ palette, cells: churn ?? cells, key: wipeKey.current });
     setPalette(index);
     setRefused(null);
   };
 
-  // The editor is FROZEN while a save runs (its two round trips can take real time on a
-  // phone, and the GUARDED success path re-binds every field to the merged server truth):
-  // an edit made mid-save would be silently replayed over when the answer lands — the grid
-  // visibly snapping back, SAVE greying out as though the change had been stored.
-  const saving = phase !== 'idle';
   // One encode per render, shared by the preview, the dirty check and the save body.
   const encoded = encodeAvatar(palette, cells);
   // No trim on either side: the rule has no room for whitespace at all (it sanitizes
@@ -554,16 +577,44 @@ export default function Profile() {
   const shownCells = churn ?? cells;
   const shownEncoded = churn ? encodeAvatar(palette, churn) : encoded;
 
-  // THE CANVAS'S CELL, off the column's width and the window's height (see EDITOR_CHROME_PX).
+  // THE CANVAS'S CELL, off the column's width and the screen's height (see EDITOR_CHROME_PX),
+  // with the tools' rows and the dress that follow from them. Measured from the first frame,
+  // while the stored profile is still being read, so the canvas's box is already where the
+  // canvas will stand.
+  const [layout, setLayout] = useState({ wrap: false, short: false, inset: 0, palettesAt: 0, keysAt: 0 });
+  const heldHeight = useRef({ width: 0, height: 0 });
   useLayoutEffect(() => {
     const screen = screenRef.current;
     if (!screen) return undefined;
     const measure = () => {
-      const room = screen.clientWidth - 2 * CARD_PAD_PX;
+      const width = screen.clientWidth;
+      // A soft keyboard shrinks the window while the name is typed (`resizes-content`): the
+      // height it leaves is not the screen's, and the editor holds the one it had.
+      const typing = document.activeElement === nameRef.current && heldHeight.current.width === width;
+      const height = typing ? Math.max(heldHeight.current.height, window.innerHeight) : window.innerHeight;
+      heldHeight.current = { width, height };
+      const wrap = width < (AVATAR_PALETTES.length + 3) * TARGET_PX + TOOLS_GAP_PX;
+      const short = height <= SHORT_PX;
+      const chrome = EDITOR_CHROME_PX[short ? 'short' : 'tall'][wrap ? 1 : 0];
+      const room = width - 2 * CARD_PAD_PX;
       const byWidth = room / AVATAR_SIZE;
-      const byHeight = (window.innerHeight - EDITOR_CHROME_PX) / AVATAR_SIZE;
+      const byHeight = (height - chrome) / AVATAR_SIZE;
       const cell = Math.max(CELL_MIN, Math.min(CELL_MAX, 2 * Math.floor(Math.min(byWidth, byHeight) / 2)));
+      // The canvas centred on a WHOLE pixel, so its cells land on the screen's own — and so
+      // are the tools' two rows when they wrap.
+      const inset = Math.max(0, Math.floor((room - cell * AVATAR_SIZE) / 2));
+      const palettesAt = Math.max(0, Math.floor((width - AVATAR_PALETTES.length * TARGET_PX) / 2));
+      const keysAt = Math.max(0, Math.floor((width - 3 * TARGET_PX) / 2));
       setCellPx((prev) => (prev === cell ? prev : cell));
+      setLayout((prev) =>
+        prev.wrap === wrap &&
+        prev.short === short &&
+        prev.inset === inset &&
+        prev.palettesAt === palettesAt &&
+        prev.keysAt === keysAt
+          ? prev
+          : { wrap, short, inset, palettesAt, keysAt },
+      );
     };
     measure();
     window.addEventListener('resize', measure);
@@ -573,35 +624,49 @@ export default function Profile() {
       window.removeEventListener('resize', measure);
       ro?.disconnect();
     };
-  }, [load]);
+  }, []);
+
+  // THE MARK HANDED OVER by the masthead's tap (`markHandoff`), taken once as the editor opens:
+  // while the stored profile is read the mark stays FROZEN in the very box it stood in, and the
+  // canvas then grows out of it. A note that cannot be that mark (off the screen, the wrong
+  // size) is dropped: the canvas then grows from its own centre.
+  const [handed, setHanded] = useState<HandedMark | null>(null);
+  const handedRef = useRef<HandedMark | null | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (handedRef.current !== undefined) return;
+    const note = takeMark();
+    const box = note?.rect;
+    const usable =
+      box !== undefined &&
+      box.width >= 20 &&
+      box.width <= 120 &&
+      Math.abs(box.width - box.height) < 1 &&
+      box.bottom > 0 &&
+      box.top < window.innerHeight &&
+      box.right > 0 &&
+      box.left < window.innerWidth;
+    handedRef.current = usable ? note : null;
+    setHanded(handedRef.current);
+  }, []);
 
   // THE CANVAS GROWS OUT OF THE MASTHEAD'S MARK as the editor opens: from the mark's own cell
   // up to the canvas's, GROW_CELL_STEP px a cell a step — whole pixels at every step, nothing
-  // in between — and, opened from the masthead, out of the very box the mark stood in
-  // (`markHandoff`), travelling to its place on whole pixels as it grows. A direct load, or a
-  // note that is stale (off the screen, the wrong size), grows from the canvas's own centre.
+  // in between — and, opened from the masthead, out of the very box the mark stood in,
+  // travelling to its place on whole pixels as it grows. The whole BOX grows — the canvas and
+  // the MIRROR's edge marks with it. A direct load grows from the canvas's own centre.
   const grown = useRef(false);
   useLayoutEffect(() => {
-    const el = canvasRef.current;
-    if (!el || cellPx <= 0 || grown.current) return;
+    const el = boxRef.current;
+    if (!el || load !== 'ready' || cellPx <= 0 || grown.current) return;
     grown.current = true;
-    const handed = takeMark();
     if (prefersReducedMotion() || typeof el.animate !== 'function') return;
+    const from = handedRef.current?.rect ?? null;
     const side = cellPx * AVATAR_SIZE;
     const at = el.getBoundingClientRect();
-    const usable =
-      handed !== null &&
-      handed.width >= 20 &&
-      handed.width <= 120 &&
-      Math.abs(handed.width - handed.height) < 1 &&
-      handed.bottom > 0 &&
-      handed.top < window.innerHeight &&
-      handed.right > 0 &&
-      handed.left < window.innerWidth;
-    const fromCell = usable ? Math.max(1, Math.round(handed.width / AVATAR_SIZE)) : GROW_FROM_CELL;
+    const fromCell = from ? Math.max(1, Math.round(from.width / AVATAR_SIZE)) : GROW_FROM_CELL;
     const fromSide = fromCell * AVATAR_SIZE;
-    const fromX = usable ? handed.left - at.left : (side - fromSide) / 2;
-    const fromY = usable ? handed.top - at.top : (side - fromSide) / 2;
+    const fromX = Math.round(from ? from.left - at.left : (side - fromSide) / 2);
+    const fromY = Math.round(from ? from.top - at.top : (side - fromSide) / 2);
     const sizes: number[] = [];
     for (let size = fromCell; size < cellPx; size += GROW_CELL_STEP) sizes.push(size);
     sizes.push(cellPx);
@@ -619,7 +684,7 @@ export default function Profile() {
       }),
       { duration: GROW_STEP_MS * last },
     );
-  }, [cellPx]);
+  }, [cellPx, load]);
 
   // A REFUSED save shakes the card, in whole pixels (the ErrorScreen then says why).
   useEffect(() => {
@@ -798,12 +863,29 @@ export default function Profile() {
             ? { title: t(lang, 'profileSaveFailed'), note: t(lang, 'failedSaveNote') }
             : null;
 
-  // How others will see the player: the line every board draws — and a name still the
-  // assigned pseudonym (or none) is dressed in the placeholder ink there, so it is here too.
-  const anon = name === '' || (assignedFrom !== '' && name === anonName(assignedFrom));
+  // How others will see the player: the line every board draws — dressed as it WILL be. A
+  // board wears the placeholder ink only for a STORED empty name, and an account's first
+  // profile is the placeholder the device was showing (`localIdentityDeploy`), so the name on
+  // screen is a stored name everywhere but on an account whose row is empty: the field still
+  // reads that account's own pseudonym (the READ half), which a save stores as empty again.
+  // A tokenless device and a deployed one showing the same name therefore dress it the same.
+  const anon = name === '' || (loadedFor !== null && name === anonName(loadedFor));
   const lineName = name || (assignedFrom ? anonName(assignedFrom) : '');
   const empty = cells.every((value) => value === 0);
-  const busy = saving || tool !== null;
+  const canSave = phase === 'idle' && dirty && tool === null;
+
+  // THE PALETTES are ONE choice (a radio group): Tab lands on the one in hand, the arrows
+  // choose — so the keyboard's brackets and the chosen swatch's corners frame the same tile.
+  const swatchRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const onSwatchKey = (e: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (step === 0) return;
+    e.preventDefault();
+    if (busy) return;
+    const next = (index + step + AVATAR_PALETTES.length) % AVATAR_PALETTES.length;
+    pickPalette(next);
+    swatchRefs.current[next]?.focus();
+  };
 
   return (
     <>
@@ -813,81 +895,94 @@ export default function Profile() {
         <HeaderBack label={t(lang, 'ariaBack')} onBack={() => navigate(ACCOUNT_PATH)} />
         <LangTitle lang={lang} title={t(lang, 'profileTitle')} />
       </HeaderLeft>
-      {load === 'loading' && (
-        <p className="status">
-          <LoadingWave text={t(lang, 'loading')} />
-        </p>
-      )}
-      {load === 'failed' && (
-        <LoadError
-          message={t(lang, 'failedProfile')}
-          lang={lang}
-          onRetry={() => setAttempt((n) => n + 1)}
-        />
-      )}
-      {load === 'ready' && (
-        <div
-          ref={screenRef}
-          className={`profile-screen${cellPx > 0 ? ' measured' : ''}`}
-          style={{ '--pcell': `${cellPx}px` } as React.CSSProperties}
-        >
-          {/* THE CARD, OPENED: the masthead's mark become the canvas, over the name in its
-              white chip — inside the corner brackets of a thing that takes the finger. A save
-              that lands re-keys the brackets, so they lock on again. */}
-          <div ref={cardRef} className="profile-card">
-            {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
-              <i key={`${corner}${stamp}`} className={`profile-corner ${corner}${stamp ? ' lock' : ''}`} aria-hidden="true" />
-            ))}
-            <div className="profile-canvas-box">
-              {/* The MIRROR's axis, said at the canvas's edges only — never a line over the
-                  drawing. */}
-              {mirror && (
-                <>
-                  <i className="profile-axis top" aria-hidden="true" />
-                  <i className="profile-axis bottom" aria-hidden="true" />
-                </>
-              )}
-              {/* The palette's two inks are the canvas's only variables: an EMPTY cell wears
-                  the ground with a speck of the ink in its corner — where the grid is — and a
-                  painted one the ink. One mark, continuous: no gutters, no lines. */}
-              <div
-                ref={canvasRef}
-                className={`avatar-editor${tool === 'dice' ? ' rolling' : ''}`}
-                style={
-                  {
-                    '--cell-bg': AVATAR_PALETTES[palette].bg,
-                    '--cell-fg': AVATAR_PALETTES[palette].fg,
-                  } as React.CSSProperties
-                }
-                role="img"
-                aria-label={t(lang, 'ariaAvatarEditor')}
-                onPointerDown={saving ? undefined : onPointerDown}
-                onPointerMove={saving ? undefined : onPointerMove}
-                onPointerUp={endStroke}
-                onPointerCancel={endStroke}
-              >
-                {shownCells.map((value, i) => {
-                  const bump = churn ? undefined : bumps[i];
-                  return (
-                    <div
-                      // The paint counter in the key remounts a changed cell, replaying its
-                      // pop (and its sparks, when it took the ink); the position keeps the
-                      // identity.
-                      key={`${i}:${bump?.n ?? 0}`}
-                      className={`avatar-editor-cell${value === 1 ? ' on' : ''}${
-                        bump ? (bump.kind === 'in' ? ' painted' : ' erased') : ''
-                      }`}
-                    />
-                  );
-                })}
-                <DitherWipe shot={wipe} cellPx={cellPx} />
-                <FoilStamp play={stamp} avatar={encoded} seed={foilSeed(`profile:${assignedFrom}`)} />
-              </div>
-            </div>
-            {/* THE NAME, edited in place in the white chip: the field IS the chip, exactly as
-                wide as what it holds (the mono's fixed advance); the house's caret — the
-                prompt's, in the accent — stands where the text cursor is; the pencil beside the
-                chip says it can be typed into, until it is. */}
+      <div
+        ref={screenRef}
+        className={`profile-screen${cellPx > 0 ? ' measured' : ''}${layout.wrap ? ' wrap' : ''}${
+          layout.short ? ' short' : ''
+        }`}
+        style={
+          {
+            '--pcell': `${cellPx}px`,
+            '--pinset': `${layout.inset}px`,
+            '--palettes-at': `${layout.palettesAt}px`,
+            '--keys-at': `${layout.keysAt}px`,
+          } as React.CSSProperties
+        }
+      >
+        {/* THE CARD, OPENED: the masthead's mark become the canvas, over the name in its
+            white chip — inside the corner brackets of a thing that takes the finger. A save
+            that lands re-keys the brackets, so they lock on again. Until the stored profile
+            has answered, the card holds the canvas's box: the mark handed over stays frozen
+            where it stood (below), or — on a direct load, and after a failed read — the box
+            is the house's stippled slate, breathing while the read is out. */}
+        <div ref={cardRef} className="profile-card">
+          {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
+            <i key={`${corner}${stamp}`} className={`profile-corner ${corner}${stamp ? ' lock' : ''}`} aria-hidden="true" />
+          ))}
+          <div ref={boxRef} className="profile-canvas-box">
+            {load !== 'ready' ? (
+              !(load === 'loading' && handed) && (
+                <StatSlot phase={load === 'failed' ? 'failed' : 'loading'} className="profile-canvas-hold" />
+              )
+            ) : (
+              <>
+                {/* The MIRROR's axis, said at the canvas's edges only — never a line over the
+                    drawing. */}
+                {mirror && (
+                  <>
+                    <i className="profile-axis top" aria-hidden="true" />
+                    <i className="profile-axis bottom" aria-hidden="true" />
+                  </>
+                )}
+                {/* The palette's two inks are the canvas's only variables: an EMPTY cell wears
+                    the ground — with a speck of the ink in its corner where the grid crosses
+                    clear of the drawing (`speckAt`) — and a painted one the ink. One mark,
+                    continuous: no gutters, no lines. */}
+                <div
+                  ref={canvasRef}
+                  className={`avatar-editor${tool === 'dice' ? ' rolling' : ''}`}
+                  style={
+                    {
+                      '--cell-bg': AVATAR_PALETTES[palette].bg,
+                      '--cell-fg': AVATAR_PALETTES[palette].fg,
+                    } as React.CSSProperties
+                  }
+                  role="img"
+                  aria-label={t(lang, 'ariaAvatarEditor')}
+                  onPointerDown={saving ? undefined : onPointerDown}
+                  onPointerMove={saving ? undefined : onPointerMove}
+                  onPointerUp={endStroke}
+                  onPointerCancel={endStroke}
+                >
+                  {shownCells.map((value, i) => {
+                    const bump = churn ? undefined : bumps[i];
+                    // A pop is drawn only while the cell still holds what the pop put there:
+                    // the pseudo-element animates the change and never decides the cell's
+                    // resting colour (the cell's own `.on` does).
+                    const pop = bump && (bump.kind === 'in' ? value === 1 : value === 0) ? bump.kind : null;
+                    return (
+                      <div
+                        // The paint counter in the key remounts a changed cell, replaying its
+                        // pop (and its sparks, when it took the ink); the position keeps the
+                        // identity.
+                        key={`${i}:${bump?.n ?? 0}`}
+                        className={`avatar-editor-cell${value === 1 ? ' on' : speckAt(shownCells, i) ? ' speck' : ''}${
+                          pop === 'in' ? ' painted' : pop === 'out' ? ' erased' : ''
+                        }`}
+                      />
+                    );
+                  })}
+                  <DitherWipe shot={wipe} cellPx={cellPx} />
+                  <FoilStamp play={stamp} avatar={encoded} seed={foilSeed(`profile:${assignedFrom}`)} />
+                </div>
+              </>
+            )}
+          </div>
+          {load === 'ready' ? (
+            /* THE NAME, edited in place in the white chip: the field IS the chip, exactly as
+               wide as what it holds (the mono's fixed advance); the house's caret — the
+               prompt's, in the accent — stands where the text cursor is; the pencil beside the
+               chip says it can be typed into, until it is. */
             <span
               className="profile-name-chip"
               style={{ '--n': Math.max(1, name.length || t(lang, 'profileNamePlaceholder').length) } as React.CSSProperties}
@@ -934,111 +1029,167 @@ export default function Profile() {
                 <PencilIcon className="ui-icon" />
               </span>
             </span>
-          </div>
-
-          {/* THE PALETTES and THE TOOLS, one row. A swatch is the drawing itself, worn in that
-              palette — a preview of the choice, not a chip of colour — and only the one in
-              hand wears the white corners. The tools are pixel marks in a tappable thing's
-              corners; MIRROR on is the white chip. */}
-          <div className="profile-tools">
-            <div className="profile-palettes">
-              {AVATAR_PALETTES.map((option, index) => (
-                <button
-                  key={option.name}
-                  type="button"
-                  className={`profile-swatch${palette === index ? ' sel' : ''}`}
-                  style={{ '--i': index } as React.CSSProperties}
-                  aria-label={`${t(lang, 'ariaPalette')} ${option.name}`}
-                  aria-pressed={palette === index}
-                  disabled={busy}
-                  onClick={() => pickPalette(index)}
-                >
-                  <Avatar avatar={encodeAvatar(index, shownCells)} size={30} sharp />
-                </button>
-              ))}
-            </div>
-            <div className="profile-keys">
-              <button
-                type="button"
-                className={`profile-key${mirror ? ' on' : ''}`}
-                aria-pressed={mirror}
-                aria-label={t(lang, 'profileMirror')}
-                title={t(lang, 'profileMirror')}
-                disabled={saving}
-                onClick={() => setMirror((on) => !on)}
-              >
-                <MirrorIcon className="ui-icon" aria-hidden />
-              </button>
-              <button
-                type="button"
-                className={`profile-key${tool === 'dice' ? ' on' : ''}`}
-                aria-label={t(lang, 'profileDice')}
-                title={t(lang, 'profileDice')}
-                disabled={busy}
-                onClick={roll}
-              >
-                <DiceIcon className="ui-icon" aria-hidden />
-              </button>
-              <button
-                type="button"
-                className={`profile-key${tool === 'clear' ? ' on' : ''}`}
-                aria-label={t(lang, 'profileClear')}
-                title={t(lang, 'profileClear')}
-                disabled={busy || empty}
-                onClick={clear}
-              >
-                <ClearIcon className="ui-icon" aria-hidden />
-              </button>
-            </div>
-          </div>
-
-          {/* HOW OTHERS SEE ME, shown: the line every board draws for this player — the mark
-              at the boards' size, the name in their dress — and nothing a board would only
-              say once they have played (no rank, no crown, no count). */}
-          <div className="profile-line" aria-hidden="true">
-            <span key={`hop${stamp}`} className={`profile-line-mark${stamp ? ' hop' : ''}`}>
-              <Avatar avatar={shownEncoded} size={MARK} sharp />
-            </span>
-            <span className={`board-name${anon ? ' anon' : ''}`}>{lineName}</span>
-          </div>
-
-          {/* Nothing to save = disabled — the board itself says whether there is a change.
-              While saving, the label rolls out the bottom and the dot loader drops in from the
-              top; the restore beat rolls the label back up — and a save that landed STAMPS the
-              canvas in foil. */}
-          <button
-            type="button"
-            className={`mix-btn profile-save${phase !== 'idle' ? ` ${phase}` : ''}`}
-            disabled={phase !== 'idle' || !dirty || tool !== null}
-            aria-busy={phase === 'saving'}
-            onClick={onSave}
-          >
-            <span
-              className={`save-label${phase === 'saving' ? ' out' : phase === 'restoring' ? ' back' : ''}`}
-            >
-              {t(lang, 'profileSave')}
-            </span>
-            {phase !== 'idle' && (
-              <span
-                className={`save-dots${phase === 'restoring' ? ' out' : ''}`}
-                aria-hidden="true"
-              >
-                <i />
-                <i />
-                <i />
-              </span>
-            )}
-          </button>
-          {/* The save's failure, on the app's error surface (#216 rework). */}
-          {saveError && (
-            <ErrorScreen
-              lang={lang}
-              title={saveError.title}
-              note={saveError.note}
-              onClose={() => setRefused(null)}
-            />
+          ) : (
+            <span className="profile-name-hold" aria-hidden="true" />
           )}
         </div>
+
+        {load === 'failed' && (
+          <div className="profile-retry">
+            <p className="sr-only" role="status">
+              {t(lang, 'failedProfile')}
+            </p>
+            {/* The read that failed, asked again: the quiet word in a tappable thing's
+                brackets — the still checker over the canvas already says "unknown". */}
+            <button type="button" className="quiet-btn" onClick={() => setAttempt((n) => n + 1)}>
+              {t(lang, 'retry')}
+            </button>
+          </div>
+        )}
+
+        {load === 'ready' && (
+          <>
+            {/* THE PALETTES and THE TOOLS — one row where the column holds all eight at a
+                finger's pitch, else the tools on a row of their own under the palettes. A
+                swatch is the drawing itself, worn in that palette — a preview of the choice,
+                not a chip of colour — and only the one in hand wears the white corners. The
+                tools are pixel marks in a tappable thing's corners; MIRROR on is the white
+                chip. */}
+            <div className="profile-tools">
+              <div className="profile-palettes" role="radiogroup" aria-label={t(lang, 'ariaPalette')}>
+                {AVATAR_PALETTES.map((option, index) => (
+                  <button
+                    key={option.name}
+                    ref={(node) => {
+                      swatchRefs.current[index] = node;
+                    }}
+                    type="button"
+                    role="radio"
+                    className={`profile-swatch${palette === index ? ' sel' : ''}`}
+                    style={{ '--i': index } as React.CSSProperties}
+                    aria-label={`${t(lang, 'ariaPalette')} ${option.name}`}
+                    aria-checked={palette === index}
+                    aria-disabled={busy || undefined}
+                    tabIndex={palette === index ? 0 : -1}
+                    onClick={() => pickPalette(index)}
+                    onKeyDown={(e) => onSwatchKey(e, index)}
+                  >
+                    <Avatar avatar={encodeAvatar(index, shownCells)} size={30} sharp />
+                  </button>
+                ))}
+              </div>
+              <div className="profile-keys">
+                <button
+                  type="button"
+                  className={`profile-key${mirror ? ' on' : ''}`}
+                  aria-pressed={mirror}
+                  aria-label={t(lang, 'profileMirror')}
+                  title={t(lang, 'profileMirror')}
+                  aria-disabled={saving || undefined}
+                  onClick={() => {
+                    if (!saving) setMirror((on) => !on);
+                  }}
+                >
+                  <MirrorIcon className="ui-icon" aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  className={`profile-key${tool === 'dice' ? ' on' : ''}`}
+                  aria-label={t(lang, 'profileDice')}
+                  title={t(lang, 'profileDice')}
+                  aria-disabled={busy || undefined}
+                  onClick={() => {
+                    if (!busy) roll();
+                  }}
+                >
+                  <DiceIcon className="ui-icon" aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  className={`profile-key${tool === 'clear' ? ' on' : ''}`}
+                  aria-label={t(lang, 'profileClear')}
+                  title={t(lang, 'profileClear')}
+                  aria-disabled={busy || empty || undefined}
+                  onClick={() => {
+                    if (!busy && !empty) clear();
+                  }}
+                >
+                  <ClearIcon className="ui-icon" aria-hidden />
+                </button>
+              </div>
+            </div>
+
+            {/* HOW OTHERS SEE ME, shown: the line every board draws for this player — the
+                mark at the boards' size, the name in their dress — and nothing a board would
+                only say once they have played (no rank, no crown, no count). It hangs over
+                SAVE, the button that publishes it. */}
+            <div className="profile-line" aria-hidden="true">
+              <span key={`hop${stamp}`} className={`profile-line-mark${stamp ? ' hop' : ''}`}>
+                <Avatar avatar={shownEncoded} size={MARK} sharp />
+              </span>
+              <span className={`board-name${anon ? ' anon' : ''}`}>{lineName}</span>
+            </div>
+
+            {/* Nothing to save = unavailable — the board itself says whether there is a
+                change. While saving, the label rolls out the bottom and the dot loader drops
+                in from the top; the restore beat rolls the label back up — and a save that
+                landed STAMPS the canvas in foil. */}
+            <button
+              type="button"
+              className={`mix-btn profile-save${phase !== 'idle' ? ` ${phase}` : ''}`}
+              aria-disabled={!canSave || undefined}
+              aria-busy={phase === 'saving'}
+              onClick={() => {
+                if (canSave) void onSave();
+              }}
+            >
+              <span
+                className={`save-label${phase === 'saving' ? ' out' : phase === 'restoring' ? ' back' : ''}`}
+              >
+                {t(lang, 'profileSave')}
+              </span>
+              {phase !== 'idle' && (
+                <span
+                  className={`save-dots${phase === 'restoring' ? ' out' : ''}`}
+                  aria-hidden="true"
+                >
+                  <i />
+                  <i />
+                  <i />
+                </span>
+              )}
+            </button>
+            {/* The save's failure, on the app's error surface (#216 rework). */}
+            {saveError && (
+              <ErrorScreen
+                lang={lang}
+                title={saveError.title}
+                note={saveError.note}
+                onClose={() => setRefused(null)}
+              />
+            )}
+          </>
+        )}
+      </div>
+      {/* The mark handed over by the masthead, FROZEN where it stood while the stored profile
+          is read — the canvas grows out of this very box once it has answered. */}
+      {load === 'loading' && handed && (
+        <span
+          className="profile-handed"
+          style={{
+            left: Math.round(handed.rect.left),
+            top: Math.round(handed.rect.top),
+            width: Math.round(handed.rect.width),
+            height: Math.round(handed.rect.height),
+          }}
+          aria-hidden="true"
+        >
+          {handed.avatar ? (
+            <Avatar avatar={handed.avatar} size={Math.round(handed.rect.width)} sharp />
+          ) : (
+            <StatSlot phase="loading" />
+          )}
+        </span>
       )}
     </>
   );

@@ -43,7 +43,7 @@
 // screen exists for. It wears the shape that rule defines — one tap chaining the bootstrap,
 // a loading state on the button, failures on the app's error surface.
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   defaultAvatar,
   isValidEmail,
@@ -221,6 +221,31 @@ export function verifyBody(
   confirm?: { erase?: string; leave?: string },
 ): { token: string; email: string; code: string; bind: boolean; erase?: string; leave?: string } {
   return { token, email, code, bind: !returning, ...(confirm ?? {}) };
+}
+
+// The address the code went to, as the line may WRAP it: a break offered before the '@' and
+// after each dot, so a long address reads whole over two lines rather than cut short.
+function breakableAddress(address: string): ReactNode {
+  const parts: string[] = [];
+  let part = '';
+  for (const ch of address) {
+    if (ch === '@' && part) {
+      parts.push(part);
+      part = '';
+    }
+    part += ch;
+    if (ch === '.') {
+      parts.push(part);
+      part = '';
+    }
+  }
+  if (part) parts.push(part);
+  return parts.map((piece, i) => (
+    <Fragment key={i}>
+      {i > 0 && <wbr />}
+      {piece}
+    </Fragment>
+  ));
 }
 
 export default function AccountEmail({ intent }: { intent: LinkIntent }) {
@@ -788,7 +813,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           // words before it quiet.
           <p className="link-sent">
             <span>{t(lang, 'linkSentTo')}</span>{' '}
-            <span className="link-sent-to">{normalizeEmail(address) ?? ''}</span>
+            <span className="link-sent-to">{breakableAddress(normalizeEmail(address) ?? '')}</span>
           </p>
         )}
         {/* THE CODE PROMPT IS MOUNTED FROM THE ADDRESS STEP ON, offstage until it is the
@@ -834,11 +859,13 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             <div className="link-quiet">
               <button
                 type="button"
-                className="link-quiet-btn"
+                className="link-quiet-btn link-resend"
                 disabled={busy || waitLeft > 0}
+                // (Read as one phrase — the word and its seconds — never "RESEND12".)
+                aria-label={waitLeft > 0 ? `${t(lang, 'linkResend')} ${waitLeft}` : undefined}
                 onClick={() => void send()}
               >
-                {t(lang, 'linkResend')}
+                <span className="link-resend-word">{t(lang, 'linkResend')}</span>
                 {waitLeft > 0 && <span className="link-wait">{waitLeft}</span>}
               </button>
             </div>

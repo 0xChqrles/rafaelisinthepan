@@ -583,7 +583,7 @@ const STRINGS = {
   profileAvatarRejected: { en: 'AVATAR NOT ALLOWED', fr: 'AVATAR REFUSÉ' },
   // Untranslated in every language (the user's call, 2026-08-19) — one word everywhere,
   // like MISS and STREAK.
-  profileClear: { en: 'CLEAR', fr: 'CLEAR' },
+  profileClear: { en: 'CLEAR', fr: 'EFFACER' },
   // The editor's two other tools, named only to a screen reader and a pointer's tooltip (the
   // pixel marks say it): painting a cell paints its twin; a new shape, the assigned way.
   profileMirror: { en: 'MIRROR', fr: 'MIROIR' },

@@ -5,7 +5,7 @@ import {
   bayerThreshold,
   decodeAvatar,
   defaultAvatar,
-  encodeAvatar,
+  generatePublicId,
   noise3,
 } from '@whippin/shared';
 
@@ -25,6 +25,18 @@ export const mirroredCell = (i: number): number =>
 // drawing, and OFF for one a player has made lopsided on purpose.
 export const isSymmetric = (cells: readonly number[]): boolean =>
   cells.every((value, i) => value === cells[mirroredCell(i)]);
+
+// ── The grid ──────────────────────────────────────────────────────────────────────────────
+// Where the canvas shows its GRID: a speck of the ink at a grid crossing, drawn in the corner of
+// the cell below-right of it — and only where all FOUR cells meeting there are empty, so a
+// speck never touches a drawn cell (a speck glued to the ink's edge reads as a stray pixel of
+// the drawing). The canvas's own edge carries none: the grid's lines are inside the mark.
+export function speckAt(cells: readonly number[], i: number): boolean {
+  const x = i % AVATAR_SIZE;
+  const y = Math.floor(i / AVATAR_SIZE);
+  if (x === 0 || y === 0) return false;
+  return cells[i] !== 1 && cells[i - 1] !== 1 && cells[i - AVATAR_SIZE] !== 1 && cells[i - AVATAR_SIZE - 1] !== 1;
+}
 
 // ── A stroke ──────────────────────────────────────────────────────────────────────────────
 // The cells on the line from cell `a` to cell `b` (Bresenham), both ends included: a stroke's
@@ -81,34 +93,22 @@ export function paintStroke(
 
 // ── The dice ──────────────────────────────────────────────────────────────────────────────
 // A fresh SHAPE, the assigned way: `defaultAvatar`'s own derivation (a creature walked over the
-// left half and mirrored, its outer ring empty) for a random seed of the public id's shape —
-// its CELLS only. The palette is the player's choice and the dice never touches it.
-const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
-const ID_LENGTH = 16;
+// left half and mirrored, its outer ring empty) for a fresh id of the public id's shape (the
+// shared generator, so the seed is exactly what an account's would be) — its CELLS only. The
+// palette is the player's choice and the dice never touches it.
 // A roll that came up nearly empty is rolled again: a mark of a handful of cells reads as a
 // broken one, never as a creature.
 export const DICE_MIN_INK = 12;
 
-export function randomPublicId(random: () => number = Math.random): string {
-  let id = '';
-  for (let i = 0; i < ID_LENGTH; i += 1) id += ID_ALPHABET[Math.floor(random() * ID_ALPHABET.length)];
-  return id;
-}
-
-export function rollShape(current: readonly number[], random: () => number = Math.random): number[] {
+export function rollShape(current: readonly number[], nextId: () => string = generatePublicId): number[] {
   for (let tries = 0; ; tries += 1) {
-    const { cells } = decodeAvatar(defaultAvatar(randomPublicId(random)));
+    const { cells } = decodeAvatar(defaultAvatar(nextId()));
     const ink = cells.reduce((sum, v) => sum + v, 0);
     const same = cells.every((v, i) => v === current[i]);
-    // (A random source that keeps answering the same seed would spin forever: after enough
-    // tries, any shape that is not the one on screen will do.)
+    // (A source that keeps answering the same seed would spin forever: after enough tries,
+    // any shape that is not the one on screen will do.)
     if (!same && (ink >= DICE_MIN_INK || tries > 64)) return cells;
   }
-}
-
-// The rolled MARK: a new shape in the palette already chosen.
-export function rollMark(palette: number, current: readonly number[], random: () => number = Math.random): string {
-  return encodeAvatar(palette, rollShape(current, random));
 }
 
 // One frame of the dice's CHURN: the waiting tile's noise (`AccountMark`'s recipe — one octave

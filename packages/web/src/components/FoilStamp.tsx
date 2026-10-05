@@ -13,14 +13,11 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 //   HOLD   STAMP_HOLD_MS   the ink stands in foil, glittering
 //   RECEDE STAMP_RECEDE_MS the foil goes back into the ink in STAMP_STEPS hard steps
 //
-// TWO WAYS IN, one painter:
-//
 //   <FoilStamp play={n} avatar={encoded} />
-//       inside the mark's own box (any `position: relative` square of any whole-pixel size —
-//       the editor's canvas, a 60px hero mark); each new positive `play` plays one stamp.
-//   stampFoil(element, { avatar })
-//       over ANY element already on screen (an `Avatar`'s <svg>, which can hold no canvas):
-//       a fixed overlay that follows the element's box every frame; returns a cancel.
+//
+// sits inside the mark's own box (any `position: relative` square of any whole-pixel size —
+// the editor's canvas, the email flow's 80px ending face); each new positive `play` plays one
+// stamp.
 //
 // `avatar` (the encoded mark) says where the INK is — its cells keep the foil behind the band;
 // without one the whole box is foil. The grain is the house's 2px cell where the mark's own
@@ -77,8 +74,7 @@ export function stampGrain(side: number, marked: boolean): number {
   return cell % 2 === 0 ? 2 : cell % 3 === 0 ? 3 : cell;
 }
 
-// THE PAINTER: one stamp on `canvas`, over a (w × h) box, from now. `place` (if given) is asked
-// every frame where the box stands (the overlay's way of following its element).
+// THE PAINTER: one stamp on `canvas`, over a (w × h) box, from now; returns a cancel.
 function paintStamp(
   canvas: HTMLCanvasElement,
   w: number,
@@ -86,7 +82,6 @@ function paintStamp(
   cells: readonly number[] | null,
   seed: number,
   onDone: () => void,
-  place?: () => void,
 ): () => void {
   const grain = stampGrain(Math.min(w, h), cells !== null);
   const cols = Math.ceil(w / grain);
@@ -122,7 +117,6 @@ function paintStamp(
     onDone();
   };
   const frame = (now: number) => {
-    place?.();
     const ms = now - t0;
     if (ms >= STAMP_MS) {
       finish();
@@ -166,41 +160,6 @@ function paintStamp(
   return finish;
 }
 
-// Stamp ANY element on screen: a fixed overlay over its box, following it every frame.
-export function stampFoil(element: Element, { avatar, seed = 0.37, onDone }: StampOptions = {}): () => void {
-  const box = element.getBoundingClientRect();
-  if (prefersReducedMotion() || box.width <= 0 || box.height <= 0) {
-    onDone?.();
-    return () => {};
-  }
-  const frame = document.createElement('span');
-  frame.className = 'foil-stamp fixed';
-  frame.setAttribute('aria-hidden', 'true');
-  const canvas = document.createElement('canvas');
-  frame.appendChild(canvas);
-  const place = () => {
-    const r = element.getBoundingClientRect();
-    frame.style.left = `${Math.round(r.left)}px`;
-    frame.style.top = `${Math.round(r.top)}px`;
-  };
-  frame.style.width = `${Math.round(box.width)}px`;
-  frame.style.height = `${Math.round(box.height)}px`;
-  place();
-  document.body.appendChild(frame);
-  return paintStamp(
-    canvas,
-    Math.round(box.width),
-    Math.round(box.height),
-    inkCells(avatar),
-    seed,
-    () => {
-      frame.remove();
-      onDone?.();
-    },
-    place,
-  );
-}
-
 export default function FoilStamp({
   play,
   avatar = null,
@@ -232,7 +191,7 @@ export default function FoilStamp({
 
   return (
     <span ref={frameRef} className="foil-stamp" aria-hidden="true">
-      <canvas ref={canvasRef} />
+      <canvas ref={canvasRef} width={0} height={0} />
     </span>
   );
 }

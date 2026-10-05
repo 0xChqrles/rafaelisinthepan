@@ -160,9 +160,10 @@
                               DICE / CLEAR, the board line it previews, SAVE
       components/editor/      the editor's pure tools (`tools.ts`: the mirror, a stroke's line,
                               the dice, the drain) and its palette sweep (`DitherWipe.tsx`)
-      components/FoilStamp.tsx  the SAVE landing: a foil band over any square mark (a component
-                              in the mark's box, or `stampFoil(element)` over one on screen)
-      components/markHandoff.ts  the masthead's mark rect, handed to the editor's canvas
+      components/FoilStamp.tsx  the SAVE landing: a foil band over any square mark, played in the
+                              mark's own box
+      components/markHandoff.ts  the masthead's mark (its rect and the mark itself), handed to
+                              the editor's canvas
       screens/Privacy.tsx     `/privacy` (#229): what the game keeps, why, and how to be rid
                               of it — the app's one DOCUMENT, its words in privacyDoc.ts
       components/LangTitle.tsx  the header's OTHER clickable title: a screen's own name, the
@@ -757,7 +758,11 @@ These are decided and verified against the code. Treat them as load-bearing.
     secondary directly under a primary (`.btn-primary + .btn-secondary`, `.mix-btn +
     .btn-secondary`) and every quiet act (`.link-quiet-btn`, `.link-danger`) is the label
     alone at 0.7 strength, lifted to 1 on hover — nothing drawn that is not the word. The
-    COMPACT secondary (`.device-retry`, 40px tall) is the shape. SHARE is the primary on the result screen.
+    account area's small act (`.quiet-btn`: SIGN OUT on a device line, RETRY under a read
+    that failed) is that word in a tappable thing's corner brackets, 40px tall. A hover
+    answers only where a pointer HOVERS (`(hover: hover) and (pointer: fine)`): on a touch
+    screen the emulated hover sticks where the finger lifted, and the next screen's call on
+    that spot would open pre-pressed. SHARE is the primary on the result screen.
     No other button dress remains.
     *(The two paragraphs below are the designs it replaced, kept for their reasoning.)*
   - **THE BUTTONS ARE KEYCAPS WITH A HARD PRINT (user-decided 2026-09-14: "we should
@@ -1368,16 +1373,23 @@ it to the local store — see `packages/backend/AGENTS.md`).
     is about to COST and what a recovery just HANDED BACK (`components/AccountStats.tsx`,
     the row) — because a player who reads a streak of 12 on the account screen and is then
     offered a dialog saying 9 has been told the app does not know its own numbers.
-  - **THE PROFILE AREA'S DRESS (2026-10-05)** — the rest of the app's language: bare
-    ground, whole pixels, corner brackets only on what is tapped, ONE shiny thing a screen.
+  - **THE PROFILE AREA'S DRESS** — the rest of the app's language: bare ground, whole
+    pixels, corner brackets only on what is tapped, ONE shiny thing a screen. A read that
+    FAILED is quiet: the stippled checker still at 50% where its values would be, and RETRY
+    as the bracketed quiet word (`.quiet-btn`, SIGN OUT's dress) — `/account`'s failed
+    history makes the count's held box itself that tap.
     - **`/account`'s MASTHEAD is ONE tap target, the editor's door**: corner brackets (one
       bordered box masked to its four corners, so they step to white on a hover with the
       pixel pencil in its top corner — no word, no chevron), the mark at 50px (five whole
       pixels a cell, never a size between two), the name in the boards' face at the action
-      weight, the saved address on a caption line HELD whether or not it is there (nothing
-      moves when the summary lands; it shows only once SAVED). A press sinks the mark 2px.
-      The tap hands the mark's box to the editor (`markHandoff`), whose canvas GROWS out of
-      it in whole-pixel steps (a direct load or a stale note grows from the canvas's centre).
+      weight, centred on the mark, the saved address HUNG under it in the row's own padding
+      (nothing moves when the summary lands; it shows only once SAVED; cut in the middle, so
+      its domain always stands). The button is named by what it shows plus the edit word
+      for screen readers alone. A press sinks the mark 2px. The tap hands the mark — its box
+      and the mark itself — to the editor (`markHandoff`): the mark stays FROZEN in that box
+      while the editor reads the stored profile, then the canvas GROWS out of it in
+      whole-pixel steps (a direct load holds the canvas's box as the stippled slate, then
+      grows from its centre).
     - **THE RECORD is the screen's subject** (`components/record/`), in the streak
       celebration's own sprites: the blue FLAME over the live STREAK on the count's reels,
       `dayStreak` under it, the week as the CHAIN (`recordWeek`: the week of the language
@@ -1389,42 +1401,62 @@ it to the local store — see `packages/backend/AGENTS.md`).
       flame's own outline empty and dashed (the ghost link's grammar for a thing to come)
       breathing with today's link, the pilot spark at its foot. It BUILDS once a page load
       and settles; its rest loop stops off-screen or idle (`rasterWatch`); reduced motion
-      is one settled frame. While the collections are out the count's and the numbers'
-      boxes are the slate's 2px checker (`StatSlot`: breathing in 160ms steps, still at 50%
-      after a failure) and the chain stands as its ghosts. A screen ≤740px tall draws the
-      count one size down, so the unsaved page's call still stands above the edge.
+      is one settled frame. A zero never spins: its iron 0 drops into place in two whole
+      steps and shakes, then the pilot lights and today's link starts breathing (a side
+      number of 0 does not spin either). While the collections are out the count's box and
+      the chain's links are the slate's checker (breathing in 160ms steps, still at 50% after
+      a failure — an unknown week claims nothing, not even an empty one) and the two
+      numbers' boxes are `StatSlot`s; the build STARTS from that picture, each box standing
+      until its own reels start, each link's slot until the link dithers in over it. The
+      count's landing drop is kept clear over the unit's line, and its light falls round the
+      count, never over the words. The count's size follows the screen's height: one size up
+      on a phone ≥800px tall, one down ≤740, two ≤600 — so the unsaved page's call stands
+      above the edge down to an iPhone SE's browser.
     - **THE DEVICES are board lines**, no title: a pixel device glyph (phone / tablet /
       computer; the accent on THIS device), the label, one quiet fact (THIS ONE, or the
       last-seen day), SIGN OUT as a bracketed word; they dissolve in once the record has
-      landed (`recordLandsIn`).
+      CALMED — its count landed and today's foil cooled (`useRecordCalm`) — held as the
+      skeleton line while the record has no numbers yet, and let in at once when it never
+      will (a failed read).
     - **`AccountStats` (the crossroads, the recovery ending) is QUIET**: the record's side
       numbers' dress, three across between stippled rails — no foil, no flame, no burst
       (destruction never glows). Its `land` prop (a start delay in ms; omitted, the row
       stands still) lands the numbers on the reels — the recovery ending passes it, timed
       to its row's arrival; the crossroads never does.
     - **THE EDITOR is the masthead's mark opened.** The canvas is ONE mark — continuous
-      square cells, the grid only a 2px speck of the ink in each empty cell's corner — its
-      cell a whole, EVEN number of px sized by the screen so the whole editor fits a
-      375×667 phone unscrolled, in the corner brackets over the NAME's white chip (as wide
+      square cells, the grid only a 2px speck of the ink at a crossing where all four cells
+      meeting are empty (`speckAt`: a speck never touches the drawing) — its cell a whole,
+      EVEN number of px on a whole-pixel offset, sized by the screen (the height it had
+      before any soft keyboard) so the whole editor fits a phone unscrolled down to ~550px
+      tall; it starts on the area's start line, and the free height hangs the board line
+      over SAVE. The canvas sits in the corner brackets over the NAME's white chip (as wide
       as what it holds, the house's accent caret at its selection, a pencil beside it until
-      it is typed into). A changed cell pops whole pixels proud with 4px sparks; an erased
-      one shrinks into its middle. Under it ONE row: the palettes as the drawing itself in
-      each (30px marks in 44px targets, only the chosen one in white corners, closing in),
-      a switch SWEEPING the old picture off on the diagonal through the 2px Bayer order
-      (`DitherWipe`: its specks included; a second tap continues from the half-swept
-      picture); and the TOOLS — MIRROR (each cell's twin painted too; opens ON only for a
+      it is typed into). A changed cell pops whole pixels proud with 4px sparks of the ink
+      ringed in the ground (they read over ink and ground alike); an erased one shrinks into
+      its middle; a stroke is ONE pointer's. The pops only animate a change — a cell's
+      colour at rest is its own (reduced motion draws no pop at all). Under it the palettes
+      as the drawing itself in each (30px marks in 44px targets, ONE choice — a radio group,
+      the arrows choose — only the chosen one in white corners, closing in), a switch
+      SWEEPING the old picture off on the diagonal through the 2px Bayer order
+      (`DitherWipe`: its specks included; a second tap sweeps the half-swept picture off in
+      its turn; no box between sweeps); and the TOOLS (44px targets too; one row with the
+      palettes where the column holds all eight, else a row of their own under them, both
+      centred) — MIRROR (each cell's twin painted too; opens ON only for a
       left-right symmetric drawing, which every assigned mark is; ▼ ▲ on the canvas's
       edges, never an axis over the cells), DICE (a NEW SHAPE from `defaultAvatar`'s own
       derivation, the palette KEPT, landing out of a short churn), CLEAR (a Bayer-ordered
-      drain). Every tool is an ordinary edit; SAVE stays the deploy. Then the LINE every
-      board will draw for the player (the mark at `MARK`, the name in the boards' dress; no
-      rank, crown or count — it claims none) and SAVE on the bottom edge, one 430px column
-      at every width. A save that LANDS is the screen's one shiny thing — the FOIL STAMP
-      (a band sweeps the canvas, the ink holds in foil, then dissolves back in 8 Bayer
-      steps), the brackets lock on, the line hops; a REFUSED one shakes the card, then the
-      `ErrorScreen`. `FoilStamp` is ONE implementation for any square mark of any
-      whole-pixel size (in its box, or `stampFoil(element)` over one on screen), its grain
-      always dividing the mark's own pixel.
+      drain). Every tool is an ordinary edit; SAVE stays the deploy. A control unavailable
+      for a moment (a tool playing, a save running, nothing to save) is `aria-disabled`, so
+      the keyboard's focus stays on it. Then the LINE every board will draw for the player
+      (the mark at `MARK`, the name in the boards' dress, dressed as it WILL be — the
+      placeholder ink only for a name the boards will show as one: empty, or the loaded
+      account's own pseudonym; no rank, crown or count — it claims none) and SAVE on the
+      bottom edge, one 430px column at every width. A save that LANDS is the screen's one
+      shiny thing — the FOIL STAMP (a band sweeps the canvas, the ink holds in foil, then
+      dissolves back in 8 Bayer steps), the brackets lock on, the line hops; a REFUSED one
+      shakes the card, then the `ErrorScreen`. `FoilStamp` is ONE implementation for any
+      square mark of any whole-pixel size, played in its box, its grain always dividing the
+      mark's own pixel.
   - **THE 2026-08-30 PASS, from the mobile navigation review.** Four corrections, each
     to something that had been shown to read as the wrong KIND of thing:
     - **`/account` FLOWS FROM THE TOP again.** Its action group had been given
@@ -1775,13 +1807,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     things bought it back — the ≤340 title compressions moved up to ≤400 (that block was
     tuned for a game route, whose slot holds ONE control), `SAVE ACCOUNT` shortened to `SAVE`
     / `SAUVEGARDE` (`linkTitleReturn`'s own 2026-08-31 finding, one door over), and
-    **`.lang-tag` hidden below 375px**: the honest order is the name, then the affordance,
-    then which value it holds, and nothing is lost that the page is not already saying in
-    that language. 374 is measured, not chosen — 375 is the iPhone SE/6/7/8 width and the
-    longest French title still fits there. The archive DAY keeps its tag at every width (no
-    back arrow beside it, and the day is the abnormal state a route must always label).
-    Residue, accepted: at 341–359 — a band no shipping device sits in — the two longest
-    French titles ellipsise by 6px.
+    **`.lang-tag` hidden whenever the name beside it would be cut** — MEASURED by
+    `LangTitle` (`.squeezed`, once the chrome's font has landed, and back once the window
+    is wider than where it gave), never a fixed width: the keys' sizes step at several
+    widths, so a breakpoint right at one is wrong at the next. The honest order is the name,
+    then the affordance, then which value it holds, and nothing is lost that the page is not
+    already saying in that language. Under 375px the chip's own side padding gives a pixel a
+    side too. The archive DAY keeps its tag at every width (no back arrow beside it, and the
+    day is the abnormal state a route must always label).
   - **A LINK CAN CARRY ITS OWN LANGUAGE — `?lang=`, APP-WIDE** (user-decided the same day:
     "so you can send the privacy policy in a specific language… not only to the privacy
     page"). Three sources in order, and the whole precedence is one pure function
@@ -1833,18 +1866,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
     opens the SAME drums from its CHANGE LANGUAGE button — `NoPuzzle`, since 2026-09-05.)
 
 - **THE CARD (user-decided 2026-09-11, from the three references in `inspiration/card/`:
-  on a phone "it's hard to understand what's on screen quickly").** `.card` is ONE panel for
-  a VIEW in those references' language: a LARGE, SOFTLY ROUNDED panel lifted a shade off the
-  ground (`--fg` at 4.5%, a 9% stroke, 24px radius — 22 on a phone). Depth by value, never a
-  shadow or a glow (the flat rule stands). **It is THE ONE EXCEPTION to the 4px radius
-  ceiling**, by the user's own references; nothing else in the chrome rounds past 4px, and
-  the references' PILL buttons were not taken (the app's buttons stay its own). A CLASS,
-  not a wrapper component.
-  **WHERE IT LIVES (user-decided 2026-09-11: "everywhere in the app where it makes sense —
-  view separation, these informations are together, those are separate — but not
-  everything needs a card").** It has NO consumer, and the class is gone: its last one, the
-  account's numbers, stands on the bare ground as `/account`'s record (the profile area's
-  dress, below). Deliberately NOT: **the ARCHIVE CALENDAR** (user-decided 2026-10-04, with its iron keys:
+  on a phone "it's hard to understand what's on screen quickly"; "everywhere in the app where
+  it makes sense — view separation, these informations are together, those are separate —
+  but not everything needs a card").** No surface wears a card panel: there is no `.card`
+  class, and every view stands on the bare ground, `/account`'s numbers included (its record,
+  the profile area's dress). A view that comes to need one takes the references' panel — a
+  LARGE, SOFTLY ROUNDED panel lifted a shade off the ground (`--fg` at 4.5%, a 9% stroke,
+  24px radius, 22 on a phone), depth by value, never a shadow or a glow — the ONE exception
+  the user's references make to the 4px radius ceiling (their PILL buttons were not taken).
+  Deliberately NOT: **the ARCHIVE CALENDAR** (user-decided 2026-10-04, with its iron keys:
   the month is the screen's one subject, on the bare ground of the board's column — see the
   archive calendar bullet), **the RESULT** (user-decided 2026-10-02, "the card" direction:
   the result is the SHARE CARD it sends stood up on the bare ground — `SolvedCard`, the

@@ -300,6 +300,8 @@ export interface AccountStats {
   streak: number;
   best: number;
   days: number;
+  // Ask every language's collection again (after a failed read).
+  retry: () => void;
   // READY is the only state the numbers may be drawn in. A collection that has not arrived
   // is UNKNOWN, never a guessed zero (#211's rule) — and a device with no token knows its
   // server state is empty without asking, so it settles ready-and-zero with no request at
@@ -310,9 +312,10 @@ export interface AccountStats {
 export function useAccountStats(activeDay: number): AccountStats {
   const solved = useHistoryStore((state) => state.solved);
 
-  useEffect(() => {
+  const retry = useCallback(() => {
     for (const lang of SUPPORTED_LANGS) void loadPlayerHistory(lang, undefined, true);
   }, []);
+  useEffect(retry, [retry]);
 
   const entries = SUPPORTED_LANGS.map((lang) => solved[lang] ?? IDLE_SOLVED);
   // The WHOLE set has to have landed before any of it is a claim: a total summed over one
@@ -332,7 +335,7 @@ export function useAccountStats(activeDay: number): AccountStats {
     best = Math.max(best, bestStreak(held));
     days += held.length;
   }
-  return { streak, best, days, phase };
+  return { streak, best, days, phase, retry };
 }
 
 // THE WEEK UNDER THE ACCOUNT'S STREAK (`/account`'s record, its chain — `recordWeek`): the

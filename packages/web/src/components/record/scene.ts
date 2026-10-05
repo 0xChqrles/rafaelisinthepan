@@ -1,5 +1,5 @@
 import { COUNT_EM, COUNT_ROWS, DIGIT_MASKS, bayerThreshold as th, hash3, reelInk, reelRow, sparkleAt } from '@whippin/shared';
-import { runEnd, runReel } from '../countRun';
+import { COUNT_SHAKE, runEnd, runReel } from '../countRun';
 import { CROWN_MS, timeline, type Timeline } from '../streak/beats';
 import {
   COBALT,
@@ -33,9 +33,11 @@ import {
 //   THE COUNT: the streak in the pixel face's own digits, a glyph pixel a square of `K` cells,
 //     LANDING ON THE COUNT'S REELS (`countRun.ts`, the board's compressed run: every reel
 //     spinning from almost the same instant, stopping left to right with a whole-pixel shake).
-//     White-hot when it burns; a zero lands in IRON (the unlit link's own ink). As the last
-//     reel stops the count throws its LIGHT (the celebration's halo: a DEEP dither round its
-//     strokes, cooling away) and the flame catches.
+//     White-hot when it burns; a zero never spins — it is IRON from its first frame (the
+//     unlit link's own ink), dropping into place in two whole steps and shaking as it lands.
+//     As the last reel stops the count throws its LIGHT (the celebration's halo: a DEEP
+//     dither round its strokes, cooling away, kept off the unit's line) and the flame
+//     catches — or, on a zero, the pilot lights and today's open link starts breathing.
 //   THE WEEK under it as the celebration's CHAIN, Monday first: a played day's link solid
 //     cobalt, an edge-on link threaded through two played neighbours; a day to come the
 //     link's empty ghost; a day missed an iron link left open; TODAY, solved, the holographic
@@ -45,18 +47,30 @@ import {
 //     and cools into its foil cell by cell, throwing a burst of the glitter's stars.
 //
 // The DOM words (the unit, the initials) stand where `recordLayout` says.
+//
+// WHILE THE NUMBERS ARE OUT the chain's place is held as the house's stippled slate (the
+// links' own silhouettes in the slate's ordered checker — breathing while a read is out,
+// still once one has failed), never as a week of ghost links that would claim nothing was
+// played; and the build's first frames are that very picture, each link dithering in over
+// its own slot.
 
 // The house's streak cell (the celebration's phone cell), in CSS px.
 export const RECORD_CELL_PX = 3;
-// Cells a glyph pixel of the count: 15px — the celebration's own face on a phone — where the
-// column holds it, else 12px.
-const K_ROOMY = 5;
-const K_TIGHT = 4;
-// Between the flame's foot and the count's top; the count to the chain (the unit's line); the
-// chain's foot to the raster's.
+// Cells a glyph pixel of the count, by the screen's height: 15px — the celebration's own face
+// on a phone — one whole size up where a tall screen has the height to spend on it, down where
+// a short one has not (the unsaved page's call stands above the edge), and always what the
+// column holds.
+export type RecordSize = 'tall' | 'normal' | 'short' | 'tiny';
+const K_FOR: Record<RecordSize, number> = { tall: 6, normal: 5, short: 4, tiny: 3 };
+const K_MIN = 3;
+// Between the flame's foot and the count's top; the chain's foot to the raster's (room for
+// today's glitter under its corners, over the initials).
 const CROWN_GAP = 6;
-const UNIT_ROWS = 11;
-const FOOT_ROWS = 3;
+const FOOT_ROWS = 4;
+// The unit's line between the count and the chain: the count's landing DROP (one glyph pixel,
+// `K` cells) is kept clear over it, then the line's own rows, then air down to the chain.
+const UNIT_TEXT_ROWS = 5;
+const UNIT_ROWS_AFTER_DROP = 8;
 
 export interface RecordLayout {
   k: number; // cells a glyph pixel of the count
@@ -66,8 +80,14 @@ export interface RecordLayout {
   crown: Crown;
   count: { x: number; y: number; w: number; h: number };
   links: LinkPlace[];
-  // DOM placements, CSS px: the unit's centre line, each initial's centre.
+  // The raster's offset in its box, CSS px: the canvas is centred on a whole pixel.
+  ox: number;
+  // DOM placements, CSS px: the unit's centre line and its centre across, each initial's
+  // centre.
   unitY: number;
+  unitX: number;
+  // The rows the unit's words stand on, which the count's light keeps off.
+  unitRows: [number, number];
   labels: { x: number; y: number }[];
 }
 
@@ -79,13 +99,16 @@ const inkPx = (value: number) => {
   return (text.length - 1) * COUNT_EM + DIGIT_MASKS[Number(text[text.length - 1])].w;
 };
 
-export function recordLayout(widthPx: number, value: number, compact = false): RecordLayout {
+export function recordLayout(widthPx: number, value: number, size: RecordSize = 'normal'): RecordLayout {
   const cols = Math.max(1, Math.floor(widthPx / RECORD_CELL_PX));
+  const ox = Math.max(0, Math.floor((widthPx - cols * RECORD_CELL_PX) / 2));
   const cx = Math.round(cols / 2);
-  // The face as large as the column holds the count at — sized for two digits at least, so
-  // 9 → 10 never shrinks it (a hundredth day may: a milestone, not every week) — with a few
-  // cells of ground either side.
-  const k = !compact && Math.max(inkPx(10), inkPx(value)) * K_ROOMY + 8 <= cols ? K_ROOMY : K_TIGHT;
+  // The face the screen's height asks for, as large as the column holds it — sized for two
+  // digits at least, so 9 → 10 never shrinks it (a hundredth day may: a milestone, not every
+  // week) — with a few cells of ground either side.
+  const ink = Math.max(inkPx(10), inkPx(value));
+  let k = K_FOR[size];
+  while (k > K_MIN && ink * k + 8 > cols) k -= 1;
   // The flame in proportion to the face: its height, its half-width, and the room over its
   // foot that its tip, its flare and its embers take.
   const flameH = Math.round(k * 4.2);
@@ -95,8 +118,10 @@ export function recordLayout(widthPx: number, value: number, compact = false): R
   const w = inkPx(value) * k;
   const h = COUNT_ROWS * k;
   const countBottom = countTop + h;
+  const unitTop = countBottom + k + 1;
+  const unitBottom = unitTop + UNIT_TEXT_ROWS;
   // The links' centre on a cell's edge, so each sprite lands on whole cells.
-  const linkY = countBottom + UNIT_ROWS + LINK_H / 2;
+  const linkY = countBottom + k + UNIT_ROWS_AFTER_DROP + LINK_H / 2;
   const links = Array.from({ length: 7 }, (_, i): LinkPlace => ({ x: cx + (i - 3) * LINK_PITCH + 0.5, y: linkY }));
   const rows = linkY + LINK_H / 2 + FOOT_ROWS;
   const labelY = (linkY + LINK_H / 2) * RECORD_CELL_PX + 8 + 9;
@@ -108,19 +133,33 @@ export function recordLayout(widthPx: number, value: number, compact = false): R
     crown: { x: cx, y: crownFoot, h: flameH, w: k + 1 },
     count: { x: Math.round(cx - w / 2), y: countTop, w, h },
     links,
-    unitY: (countBottom + UNIT_ROWS / 2) * RECORD_CELL_PX,
-    labels: links.map((link) => ({ x: link.x * RECORD_CELL_PX, y: labelY })),
+    ox,
+    unitY: ((unitTop + unitBottom) / 2) * RECORD_CELL_PX,
+    unitX: ox + cx * RECORD_CELL_PX,
+    unitRows: [unitTop, unitBottom],
+    labels: links.map((link) => ({ x: ox + link.x * RECORD_CELL_PX, y: labelY })),
   };
 }
 
 // ── While the numbers are out ─────────────────────────────────────────────────────────────
-// The week's seven links as their empty, dashed GHOSTS — the chain's place held in iron, so
-// nothing moves when the collections land and the chain dithers in over it. Raster indices.
-export function ghostChainCells(L: RecordLayout): number[] {
+// The count's box and the chain's place HELD: the box and each link's silhouette in the
+// slate's ordered checker, `level` of their cells lit (the StatSlot's own breath: 0.5 is the
+// still checker, a read in flight steps it thinner and fuller every SLOT_STEP_MS). An unknown
+// week claims nothing — not even that nothing was played. Raster indices of the lit cells.
+export const SLOT_STEP_MS = 160;
+const SLOT_BREATH = [0.25, 0.5, 0.75, 0.5];
+export const slotLevel = (ms: number, breathing: boolean): number =>
+  breathing ? SLOT_BREATH[Math.floor(ms / SLOT_STEP_MS) % SLOT_BREATH.length] : 0.5;
+export function slotCells(L: RecordLayout, level: number): number[] {
   const out: number[] = [];
+  const { x, y, w, h } = L.count;
+  for (let Y = y; Y < y + h; Y += 1) {
+    for (let X = x; X < x + w; X += 1) if (th(X, Y) < level && X >= 0 && X < L.cols) out.push(Y * L.cols + X);
+  }
   for (const link of L.links) {
     for (const c of linkCellsAt(link)) {
-      if (c.ghost && c.x >= 0 && c.y >= 0 && c.x < L.cols && c.y < L.rows) out.push(c.y * L.cols + c.x);
+      if (c.part === 'hole' || th(c.x, c.y) >= level) continue;
+      if (c.x >= 0 && c.y >= 0 && c.x < L.cols && c.y < L.rows) out.push(c.y * L.cols + c.x);
     }
   }
   return out;
@@ -142,6 +181,12 @@ export interface RecordDay {
 const LINKS_IN_MS = 300;
 const REEL_AT = 80;
 export const RECORD_RUN_MS = 900;
+// A ZERO's landing: no spin — two whole steps of drop (a glyph pixel each), then the reels'
+// own stop shake.
+const ZERO_DROP: readonly number[] = [-2, -1];
+const ZERO_STEP_MS = 50;
+const ZERO_SHAKE_STEP_MS = 40;
+const ZERO_LAND_MS = ZERO_DROP.length * ZERO_STEP_MS;
 const HALO_MS = 620;
 const RUN_AFTER_MS = 120;
 const RUN_STEP_MS = 60;
@@ -159,13 +204,24 @@ export interface RecordBeats {
   settled: number;
 }
 
-export function recordBeats(build: boolean): RecordBeats {
+// `lit`: a streak that burns spins its reels; a zero drops into place instead.
+export function recordBeats(build: boolean, lit = true): RecordBeats {
   if (!build) return { linksIn: PAST, reel: PAST, impact: PAST + RECORD_RUN_MS, run: PAST, settled: 0 };
   const reel = REEL_AT;
-  const impact = reel + RECORD_RUN_MS;
+  const impact = reel + (lit ? RECORD_RUN_MS : ZERO_LAND_MS);
   const run = impact + RUN_AFTER_MS;
-  const settled = Math.max(reel + runEnd(RECORD_RUN_MS), impact + HALO_MS, run + 7 * RUN_STEP_MS + STRIKE_MS + COOL_MS + BURST_MS);
+  const landed = lit ? reel + runEnd(RECORD_RUN_MS) : impact + COUNT_SHAKE.length * ZERO_SHAKE_STEP_MS;
+  const settled = Math.max(landed, impact + HALO_MS, run + 7 * RUN_STEP_MS + STRIKE_MS + COOL_MS + BURST_MS);
   return { linksIn: 0, reel, impact, run, settled };
+}
+
+// When the record has CALMED, in ms of its clock: today's foil link cooled from its strike —
+// or, with no foil to strike, the light's run along the chain over — so what the page brings
+// in after it (the devices' lines) never competes with the record's climax.
+export function recordCalm(b: RecordBeats, days: readonly RecordDay[]): number {
+  const today = days.findIndex((d) => d.today);
+  if (today >= 0 && days[today].solved) return b.run + today * RUN_STEP_MS + STRIKE_MS + COOL_MS;
+  return b.run + 7 * RUN_STEP_MS;
 }
 // THE TWO OTHER NUMBERS spin up with the count and land FIRST, left to right — so the big
 // one, landing last, is the beat the flame catches on. When each starts, and its run.
@@ -173,6 +229,19 @@ export const SIDE_RUN_MS = 560;
 export const sideReelsAt = (b: RecordBeats, i: number) => Math.max(0, b.reel + 60 + i * 90);
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+// Whether a short star at (x, y) — its cross and the ring of cells round it — stands on bare
+// ground inside the raster.
+function clearAround(ink: Uint8Array, cols: number, rows: number, x: number, y: number): boolean {
+  for (let dy = -2; dy <= 2; dy += 1) {
+    for (let dx = -2; dx <= 2; dx += 1) {
+      if (Math.abs(dx) + Math.abs(dy) > 3) continue;
+      const X = x + dx;
+      const Y = y + dy;
+      if (X < 0 || Y < 0 || X >= cols || Y >= rows || ink[Y * cols + X] !== 0) return false;
+    }
+  }
+  return true;
+}
 // THE ZERO'S BREATH: the unlit flame's ghost and today's open link breathe on ONE clock, in
 // hard steps — fuller, then back.
 const BREATH_S = 2.4;
@@ -296,6 +365,8 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
         if (t >= b.impact && glow < 1) {
           const peak = 0.62 * (1 - glow) ** 1.5;
           for (let y = 0; y < hh; y += 1) {
+            // (Never on the unit's line: the light falls round the count, not over its words.)
+            if (hy0 + y >= L.unitRows[0] && hy0 + y <= L.unitRows[1]) continue;
             for (let x = 0; x < hw; x += 1) {
               const d = halo[y * hw + x];
               if (d <= 0 || d >= haloR) continue;
@@ -309,15 +380,17 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
       // iron, the chain's grammar for a thing still to come (a day to come is its link's
       // dashed ghost; a fire to come is its flame's), lifting from iron to the muted ink on
       // the beat today's open link breathes on — and the pilot waiting at its foot.
-      if (!lit) {
+      // (A zero's fire waits for its count to land: then the outline, the pilot and the breath.)
+      const waiting = !lit && t >= b.impact;
+      if (waiting) {
         const beat = Math.floor(((seconds / BREATH_S) % 1) * 8);
         const v = beat === 3 || beat === 4 ? MUTED : RAIL;
         for (const at of ghostEdge) put(at % cols, Math.floor(at / cols), v);
       }
-      flame(put, L.crown, Math.max(0, t), tl, seconds, false);
+      if (lit) flame(put, L.crown, Math.max(0, t), tl, seconds, false);
       // The pilot, held a touch larger than the celebration's spark: on a zero it is the one
       // live thing over the number, and it has to read at a glance.
-      if (!lit) {
+      if (waiting) {
         const s = Math.floor(seconds / 0.09);
         const flick = hash3(s, 5, 61) > 0.5;
         const bx = L.crown.x - 1;
@@ -332,17 +405,34 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
         put(flick ? bx + 1 : bx, by - 3, flick ? DEEP : COBALT);
       }
 
-      // ── 3. THE COUNT on its reels: white-hot when it burns, iron when it does not.
+      // ── 3. THE COUNT on its reels: white-hot when it burns; a zero, iron, dropping in. Until
+      // its reels start, its box as it stood while the numbers were out.
+      if (t < b.reel) {
+        const { x: bx, y: by, w: bw, h: bh } = L.count;
+        for (let Y = by; Y < by + bh; Y += 1) for (let X = bx; X < bx + bw; X += 1) if (th(X, Y) < 0.5) put(X, Y, RAIL);
+      }
       if (t >= b.reel) {
         const ms = t - b.reel;
-        const running = ms < runEnd(RECORD_RUN_MS);
-        const v = lit ? WHITE : running ? MUTED : RAIL;
+        const running = lit && ms < runEnd(RECORD_RUN_MS);
+        const v = WHITE;
         // A count of nothing is IRON, the unlit link's metal, cut the iron keys' way: lit from
         // above — the top row of every stroke catching the light, the body falling off into
-        // its dusk through the Bayer order toward the foot.
-        const iron = !lit && !running;
+        // its dusk through the Bayer order toward the foot. It never spins (a reel of grey
+        // digits turning into iron would read as a number being lost): it DROPS into place
+        // in two whole steps and shakes as it lands.
+        const iron = !lit;
+        const shake = ms - ZERO_LAND_MS;
+        const zeroAt = iron
+          ? ms < ZERO_LAND_MS
+            ? { dx: 0, dy: ZERO_DROP[Math.floor(ms / ZERO_STEP_MS)] }
+            : shake < COUNT_SHAKE.length * ZERO_SHAKE_STEP_MS
+              ? { dx: COUNT_SHAKE[Math.floor(shake / ZERO_SHAKE_STEP_MS)][0], dy: COUNT_SHAKE[Math.floor(shake / ZERO_SHAKE_STEP_MS)][1] }
+              : { dx: 0, dy: 0 }
+          : null;
         for (let i = 0; i < n; i += 1) {
-          const r = running ? runReel(digits[i], i, n, ms, RECORD_RUN_MS) : { travelled: digits[i], dx: 0, dy: 0 };
+          const r = running
+            ? runReel(digits[i], i, n, ms, RECORD_RUN_MS)
+            : { travelled: digits[i], dx: zeroAt?.dx ?? 0, dy: zeroAt?.dy ?? 0 };
           const glyph = reelInk(DIGIT_MASKS, [reelRow(r.travelled % 10)]);
           for (let gy = 0; gy < COUNT_ROWS; gy += 1) {
             for (let gx = 0; gx < COUNT_EM; gx += 1) {
@@ -393,11 +483,14 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
       for (let i = 0; i < 7; i += 1) {
         const day = days[i];
         const shown = appear(i);
-        if (shown <= 0) continue;
         const phase = (i - todayIndex) * 0.17;
         for (const c of linkCells[i]) {
           if (c.part === 'hole') continue;
-          if (shown < 1 && th(c.x, c.y) >= shown) continue;
+          // Not reached yet: the link's slot as it stood while the numbers were out.
+          if (shown < 1 && th(c.x, c.y) >= shown) {
+            if (th(c.x, c.y) < 0.5) put(c.x, c.y, RAIL);
+            continue;
+          }
           let v = 0;
           if (day.today && day.solved) {
             // STRUCK as the light reaches it, then cooled into the foil in the dither's order.
@@ -409,9 +502,10 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
             v = playedInk(i);
           } else if (day.today) {
             // TODAY, still open: the one link asking for something — its ghost in the muted
-            // ink, BREATHING to white and back in hard steps every couple of seconds.
+            // ink, BREATHING to white and back in hard steps every couple of seconds, once
+            // the count has landed.
             if (!c.ghost) continue;
-            const breath = Math.floor(((seconds / BREATH_S) % 1) * 8);
+            const breath = t >= b.impact ? Math.floor(((seconds / BREATH_S) % 1) * 8) : 0;
             v = breath === 3 || breath === 4 ? WHITE : MUTED;
           } else if (day.future) {
             v = c.ghost ? RAIL : 0;
@@ -445,14 +539,27 @@ export function recordScene(L: RecordLayout, streak: number, days: readonly Reco
             star(put, Math.round(link.x + Math.cos(a) * out), Math.round(link.y + Math.sin(a) * out * 0.75), life, s % 2 === 0);
           }
         } else if (since >= BURST_MS) {
+          // At rest, one star now and then OFF the link — the celebration's rule: in the
+          // ground beside it, never on its ring, never touching any link's metal: under one
+          // of the link's two lower corners, out in the gap between it and its neighbour (over
+          // it stand the unit's words).
           const period = 2.8;
           const local = seconds + 0.9;
           const cycle = Math.floor(local / period);
           const age = local - cycle * period;
-          const a = Math.PI * (1.05 + hash3(cycle, 7, 43) * 0.9);
-          const x = Math.round(link.x + Math.cos(a) * (LINK_W / 2 + 1));
-          const y = Math.round(link.y + Math.sin(a) * (LINK_H / 2 + 1));
-          star(put, x, y, sparkleAt(age), hash3(cycle, 8, 43) > 0.5);
+          const x0 = Math.round(link.x - LINK_W / 2);
+          const y0 = Math.round(link.y - LINK_H / 2);
+          const corners = [
+            [x0 + LINK_W + 1, y0 + LINK_H + 1],
+            [x0 - 2, y0 + LINK_H + 1],
+          ];
+          const first = hash3(cycle, 7, 43) < 0.5 ? 0 : 1;
+          for (let k = 0; k < 2; k += 1) {
+            const [x, y] = corners[(first + k) % 2];
+            if (!clearAround(ink, cols, rows, x, y)) continue;
+            star(put, x, y, sparkleAt(age), false);
+            break;
+          }
         }
       }
 

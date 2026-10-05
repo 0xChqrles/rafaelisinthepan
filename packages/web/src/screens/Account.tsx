@@ -43,11 +43,11 @@
 // either way — its tap leads to the flow whose CONTINUE is the account-deploying trigger.
 
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import type { RecordSize } from '../components/record/scene';
 import { defaultAvatar } from '@whippin/shared';
 import { faceSettled, shownFace, useOwnFace } from '../components/AccountFace';
 import { StatSlot } from '../components/AccountStats';
 import Avatar from '../components/Avatar';
-import Button from '../components/Button';
 import DeviceList from '../components/DeviceList';
 import LangTitle from '../components/LangTitle';
 import Record from '../components/record/Record';
@@ -70,18 +70,40 @@ import useUiLang from '../hooks/useUiLang';
 // THE MASTHEAD'S MARK: 50px, five whole pixels a cell — never a size between two of them.
 const MARK_PX = 50;
 
-// A SHORT SCREEN (an iPhone SE's 667px and under): the record's count one size down, so the
-// unsaved page's call still stands above the edge with nothing scrolled.
-const SHORT = '(max-height: 740px)';
-function useShortScreen(): boolean {
-  return useSyncExternalStore(
-    (change) => {
-      if (typeof window.matchMedia !== 'function') return () => {};
-      const query = window.matchMedia(SHORT);
-      query.addEventListener('change', change);
-      return () => query.removeEventListener('change', change);
-    },
-    () => typeof window.matchMedia === 'function' && window.matchMedia(SHORT).matches,
+// THE RECORD'S SIZE, off the screen's height: on a TALL phone the count one whole size up — the
+// free height spent on the subject rather than left as a band of nothing — and on a SHORT one
+// (an iPhone SE's 667px and under) one size down, two on a TINY one, so the unsaved page's call
+// still stands above the edge. The queries are made once; the hook only reads them.
+const SIZE_QUERIES: readonly (readonly [RecordSize, string])[] = [
+  ['tiny', '(max-height: 600px)'],
+  ['short', '(max-height: 740px)'],
+  ['tall', '(min-height: 800px)'],
+];
+const sizeQueries =
+  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? SIZE_QUERIES.map(([size, query]) => [size, window.matchMedia(query)] as const)
+    : [];
+const subscribeSize = (change: () => void) => {
+  for (const [, query] of sizeQueries) query.addEventListener('change', change);
+  return () => {
+    for (const [, query] of sizeQueries) query.removeEventListener('change', change);
+  };
+};
+const recordSizeNow = (): RecordSize => sizeQueries.find(([, query]) => query.matches)?.[0] ?? 'normal';
+function useRecordSize(): RecordSize {
+  return useSyncExternalStore(subscribeSize, recordSizeNow);
+}
+
+// The saved address, cut in the MIDDLE when it does not fit: the local part gives way, the
+// domain always stands (`prenom.nom…@gmail.com`), so the address still reads as the player's.
+function SavedAddress({ address }: { address: string }) {
+  const at = address.lastIndexOf('@');
+  if (at <= 0) return <span className="account-id-mail-local">{address}</span>;
+  return (
+    <>
+      <span className="account-id-mail-local">{address.slice(0, at)}</span>
+      <span className="account-id-mail-domain">{address.slice(at)}</span>
+    </>
   );
 }
 
@@ -102,7 +124,7 @@ export default function Account() {
   // The week the streak runs in — the record's chain — off the same collections, this
   // screen's own language first (a tie between two languages' runs goes to it).
   const week = useAccountWeek(today, lang);
-  const short = useShortScreen();
+  const size = useRecordSize();
 
   // What this account IS — read once per account, and re-read when one arrives. A tokenless
   // device gets the answer without a request (#216): no token, no account, nothing to ask.
@@ -120,11 +142,12 @@ export default function Account() {
   // THE DOOR TO THE EDITOR hands the mark's on-screen box over, so the editor's canvas grows
   // out of exactly where the mark stood (`markHandoff`).
   const markRef = useRef<HTMLSpanElement>(null);
+  const handedAvatar = face ? (face.avatar ?? defaultAvatar(face.publicId)) : null;
   const openEditor = useCallback(() => {
     const rect = markRef.current?.getBoundingClientRect();
-    if (rect && rect.width > 0) handOffMark(rect);
+    if (rect && rect.width > 0) handOffMark(rect, handedAvatar);
     navigate(PROFILE_PATH);
-  }, []);
+  }, [handedAvatar]);
 
   return (
     <>
@@ -143,12 +166,9 @@ export default function Account() {
             it is there, so nothing moves when the summary lands. The face holds its boxes
             until the read settles rather than flashing a pseudonym it may be about to
             correct (the leaderboard strip's finding). */}
-        <button
-          type="button"
-          className="account-id"
-          aria-label={`${face?.name ?? ''} — ${t(lang, 'boardEdit')}`}
-          onClick={openEditor}
-        >
+        {/* (Named by what it shows — the name, the address once saved — and the word for
+            what the tap does, said to a screen reader only: the pencil says it on screen.) */}
+        <button type="button" className="account-id" onClick={openEditor}>
           <span ref={markRef} className="account-id-mark">
             {face ? (
               <Avatar avatar={face.avatar ?? defaultAvatar(face.publicId)} size={MARK_PX} sharp />
@@ -164,12 +184,15 @@ export default function Account() {
             )}
             {/* The saved ADDRESS (2026-09-05, in the place the account's age held): a fact,
                 no control — an account carries at most one address and the server refuses a
-                second. Its line is always held; the address shows only once SAVED. */}
-            <span className="account-id-mail">{saved ?? ' '}</span>
+                second. It hangs under the name in the row's own padding, so the name stands
+                centred on the mark whether or not it is there, and nothing moves when it
+                lands; it shows only once SAVED. */}
+            <span className="account-id-mail">{saved !== null && <SavedAddress address={saved} />}</span>
           </span>
           <span className="account-id-pen" aria-hidden="true">
             <PencilIcon className="ui-icon" />
           </span>
+          <span className="sr-only">{t(lang, 'boardEdit')}</span>
         </button>
 
         {/* THE RECORD — what this account has DONE, as the screen's subject (`record/`): the
@@ -180,15 +203,20 @@ export default function Account() {
           stats={stats.phase === 'ready' ? stats : null}
           week={stats.phase === 'ready' ? week : null}
           phase={stats.phase === 'ready' ? 'ready' : stats.phase === 'failed' ? 'failed' : 'loading'}
-          compact={short}
+          size={size}
+          onRetry={stats.retry}
         />
 
+        {/* What the account is SAVED as could not be read: said quietly, and the quiet word in
+            a tappable thing's brackets asks again (the call itself waits — it may not apply). */}
         {phase === 'failed' && (
           <div className="account-load-error">
-            <p className="status error">{t(lang, 'failedAccountLoad')}</p>
-            <Button variant="secondary" onClick={() => loadAccountSummary(true)}>
+            <p className="account-load-error-line" role="status">
+              {t(lang, 'failedAccountLoad')}
+            </p>
+            <button type="button" className="quiet-btn" onClick={() => loadAccountSummary(true)}>
               {t(lang, 'retry')}
-            </Button>
+            </button>
           </div>
         )}
 

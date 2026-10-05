@@ -22,16 +22,19 @@ describe("the palette sweep's snapshot", () => {
     expect(at(2 * CELL + 10, 2 * CELL + 10)).toBe(hexToAbgr(bg));
   });
 
-  it("carries the grid's speck in each empty cell's corner, never on the canvas's edge", () => {
-    const speck = at(2 * CELL, 2 * CELL);
+  it("carries the grid's specks exactly where the canvas draws them, never on the canvas's edge", () => {
+    const speck = at(3 * CELL, 3 * CELL);
     expect(speck).not.toBe(hexToAbgr(bg));
     expect(speck).not.toBe(hexToAbgr(fg));
     // Only the corner's own 2px: the next raster cell over is ground.
-    expect(at(2 * CELL + 2, 2 * CELL)).toBe(hexToAbgr(bg));
+    expect(at(3 * CELL + 2, 3 * CELL)).toBe(hexToAbgr(bg));
+    // No speck touches the ink: the crossings at the inked cell's corners carry none.
+    expect(at(2 * CELL, 2 * CELL)).toBe(hexToAbgr(bg));
+    expect(at(2 * CELL, CELL)).toBe(hexToAbgr(bg));
     // An inked cell has no speck; the first row and column have none.
     expect(at(CELL, CELL)).toBe(hexToAbgr(fg));
-    expect(at(0, 2 * CELL)).toBe(hexToAbgr(bg));
-    expect(at(2 * CELL, 0)).toBe(hexToAbgr(bg));
+    expect(at(0, 3 * CELL)).toBe(hexToAbgr(bg));
+    expect(at(3 * CELL, 0)).toBe(hexToAbgr(bg));
   });
 });
 

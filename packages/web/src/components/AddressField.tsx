@@ -13,11 +13,21 @@
 // browser's own caret as the prompt's UNDERSCORE (`caret-shape`) in the accent; where that
 // is not supported it is the accent bar, standing where the edit really happens.
 //
-// The input spans the whole line, prompt included, so the focus brackets frame the line
-// the player is typing into rather than the text inside it. 16px is the floor of its type
-// (iOS zooms the page for a focused field under it), which is also a whole size of the face.
+// The input spans the whole line, prompt included (3px inside the column, so the focus
+// brackets, standing 3px out, frame it on the column's own edges), so they frame the line the
+// player is typing into rather than the text inside it. 16px is the floor of its type (iOS
+// zooms the page for a focused field under it), which is also a whole size of the face.
+//
+// **A LONG ADDRESS STEPS THE FACE DOWN A WHOLE SIZE**, to 8px — the face's own grid — once it
+// no longer fits the line at 16px, so a forty-character address still reads whole, from its
+// first letter, on a phone. The field's type stays 16px (no zoom): the line is DRAWN at half
+// size (`.small`, a scale of exactly one half, so every pixel of the face lands whole).
 
-import { useState, type MutableRefObject } from 'react';
+import { useLayoutEffect, useRef, useState, type MutableRefObject } from 'react';
+
+// The face's advance is one em a glyph; the prompt's cell and its air are 1.5em, the caret one.
+const PROMPT_EMS = 2.5;
+const FIELD_PX = 16;
 
 export default function AddressField({
   value,
@@ -40,9 +50,24 @@ export default function AddressField({
   onShaken?: () => void;
 }) {
   const [focused, setFocused] = useState(false);
+  // Whether the address still fits the line at the full size.
+  const line = useRef<HTMLDivElement>(null);
+  const [room, setRoom] = useState(0);
+  useLayoutEffect(() => {
+    const el = line.current;
+    if (!el) return undefined;
+    const measure = () => setRoom(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const small = room > 0 && (value.length + PROMPT_EMS) * FIELD_PX > room - 6;
   return (
     <div
-      className={`link-field${shake ? ' invalid' : ''}${focused ? ' focused' : ''}`}
+      ref={line}
+      className={`link-field${small ? ' small' : ''}${shake ? ' invalid' : ''}${focused ? ' focused' : ''}`}
       onAnimationEnd={(event) => {
         if (event.target === event.currentTarget) onShaken?.();
       }}

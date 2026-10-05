@@ -140,8 +140,10 @@ export default function SignedOut({ lang }: { lang: string }) {
   return (
     <div className="signed-out">
       <div className="signed-out-body arrive">
-        {waiting ? (
-          <div className="signed-out-face" aria-hidden="true">
+        {/* While the read is out the face's boxes are held; a DELETED account settles
+            faceless but keeps them, empty, so nothing on the screen moves when it does. */}
+        {waiting || (account !== null && shown === null) ? (
+          <div className={`signed-out-face${waiting ? '' : ' gone'}`} aria-hidden="true">
             <span className="signed-out-hold" />
             <span className="signed-out-name signed-out-hold">&nbsp;</span>
           </div>
