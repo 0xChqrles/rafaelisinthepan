@@ -13,7 +13,7 @@ import { HIT_FADE_MS } from '../components/FloatingHit';
 import { RANK_MAX_MS, rankTransitionDuration } from '../components/Hole';
 import { FLOATING_HIT_INTRO_MS, KB_EXIT_FALLBACK_MS, REVEAL_HOLD_MS, STAGGER_MS } from '../game/timing';
 import CoachText, { richToPlain } from './CoachText';
-import { coachCopy, coachLine, type GuessEvent } from './coach';
+import { activatedHole, coachCopy, coachLine, type GuessEvent } from './coach';
 import { meterView, tradeFor, type LessonStage, type MeterTrade } from './script';
 import { canExtend } from '../game/keyboard';
 import { latestMaskedPick, selectWord, shownHolesFor, withoutMaskedPicks, type WordPick } from '../game/wordWheel';
@@ -129,8 +129,8 @@ export default function LessonBoard({
   const { puzzle, kind: stage } = script;
   const puzzleHoles = puzzle.holes;
   // THE METER STAGE'S VIEW of the open secret's map (`meterView`): the obvious word
-  // `pair.alt` reads 2 and the rank-2 word reads 1, so the one word the full meter offers
-  // closer than it is there to reveal. THE PAIR TRADE (the secret's, user-decided
+  // `pair.alt` reads 2 and the rank-2 word reads 1, so the word the full meter offers at
+  // half its best — 1 — is there to reveal. THE PAIR TRADE (the secret's, user-decided
   // 2026-09-16): before the hole is active, a word typed that reads closer than `alt` — the
   // secret, or the word read 1 — reads 2 and `alt` takes its place, so the activation is
   // always seen before the solve, with a word left to reveal. ONE map serves every
@@ -352,8 +352,8 @@ export default function LessonBoard({
       let ranks = ranksRef.current;
       // Judge against the log immediately, independently of the delayed visual swaps.
       const holes = replayHoles(fresh, ranks, tried);
-      // The hole was already active before this guess: this is the player's "one more try",
-      // and the bot closes after it (unless the try itself lands).
+      // The hole has activated before this guess — whether or not a hint taken has since
+      // halved its meter: the trade below is over.
       const activeOut = eventsRef.current.some((e) => e.filled != null);
       // THE TRADE: a word typed before the hole is active that reads closer than the obvious
       // word takes its place (it reads 2) and the obvious word takes this one's. Read the map
@@ -425,13 +425,14 @@ export default function LessonBoard({
         );
       }
       const next = isNew ? [...tried, typed] : tried;
-      const filled = before && after ? after.findIndex((c, i) => c.active && !before[i].active) : -1;
+      // The hole this guess activated, if any: a full meter offering a word it did not —
+      // the first fill, or one after a hint halved it (`activatedHole`).
       const event: GuessEvent = {
         typed,
         entries: holes.map((h) => (h.rank === 0 ? undefined : ranks[h.secret][typed])),
         improved,
         holeRanks: holes.map((h) => h.rank),
-        filled: filled >= 0 ? filled : null,
+        filled: before && after ? activatedHole(before, after) : null,
         revealed,
       };
       if (isNew) {

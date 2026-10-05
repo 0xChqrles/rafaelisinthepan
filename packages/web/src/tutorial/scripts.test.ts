@@ -15,10 +15,12 @@
 //     (the fill must be SEEN) and its best try no giveaway; the OBVIOUS guess (`pair.alt`) is
 //     the secret's rank-1 word, not the secret — the lesson reads it 2 and the rank-2 word 1
 //     (`meterView`) — and fills the meter by itself, which then offers that rank-1 word to
-//     REVEAL (the game offers one word closer than the best, never the secret); a word read
-//     closer than it typed first — the secret, or the word read 1 — trades places with it,
-//     so the activation is never skipped and always leaves a word to reveal (user-decided
-//     2026-09-16);
+//     REVEAL (the game offers the word at half the best — from 2, the word read 1 — never
+//     the secret), the reveal halving the meter; a word read closer than it typed first —
+//     the secret, or the word read 1 — trades places with it, so the activation is never
+//     skipped and always leaves a word to reveal (user-decided 2026-09-16); off the script,
+//     every activation — the first, and each refill of a halved meter — offers a word, until
+//     a best of 1 leaves nothing to offer;
 //   - every board stays byte-compatible with the real per-puzzle schema (parsePuzzle-valid —
 //     they feed the REAL game components), rank 0 is the secret, every key folds to itself
 //     (the free typing lands on them), and the start words are READ OFF the maps.
@@ -30,6 +32,7 @@ import { replayHoles } from '../game/scoring';
 import { CHARGE_TARGET, chargeForRank, replayCharge } from '../game/charge';
 import { scriptFor } from './scripts';
 import { meterView, tradeFor, type LessonStage } from './script';
+import { activatedHole } from './coach';
 import { t } from '../i18n';
 
 function checkBoard(stage: LessonStage) {
@@ -180,8 +183,52 @@ for (const lang of ['en', 'fr'] as const) {
         const rank2 = Object.keys(puzzle.ranks[secret]).find((k) => puzzle.ranks[secret][k].rank === 2)!;
         expect(played).not.toContain(rank2);
         expect(ranks[secret][rank2].rank).toBe(1);
-        // Revealed, it is a hint taken, and nothing is left to offer but the secret.
-        expect(replayCharge(fresh, ranks, [...filled, rank2])[1].given).toEqual([{ rank: 1, consumed: true }]);
+        // Revealed, it is a hint taken that halves the meter, and nothing is left to offer
+        // but the secret — a meter filled again activates nothing.
+        const [, taken] = replayCharge(fresh, ranks, [...filled, rank2]);
+        expect(taken.given).toEqual([{ rank: 1, consumed: true }]);
+        expect(taken.charge).toBeCloseTo(CHARGE_TARGET / 2, 9);
+        expect(taken.active).toBe(false);
+        const near = [3, 4, 5, 6].map((r) => Object.keys(ranks[secret]).find((k) => ranks[secret][k].rank === r)!);
+        const refilled = replayCharge(fresh, ranks, [...filled, rank2, ...near]);
+        expect(refilled[1].charge).toBe(CHARGE_TARGET);
+        expect(refilled[1].active).toBe(false); // full, with nothing to offer: no activation
+        expect(activatedHole(replayCharge(fresh, ranks, [...filled, rank2]), refilled)).toBeNull();
+      });
+      it('off the script, the meter filled without the obvious word offers the word at half the best; revealed, the halved meter filled again offers the next half', () => {
+        const { puzzle } = meter;
+        const played = meter.played ?? [];
+        const secret = puzzle.holes[1].secret.slug;
+        const ranks = { ...puzzle.ranks, [secret]: meterView(puzzle.ranks[secret], null) };
+        const at = (rank: number) => Object.keys(ranks[secret]).find((k) => ranks[secret][k].rank === rank)!;
+        const fresh = freshHoles(meter);
+        const charge = (log: string[]) => replayCharge(fresh, ranks, log);
+        // The play log counts a word once: words are added until the meter is full.
+        const fill = (log: string[], rungs: number[]) => {
+          for (const r of rungs) {
+            if (charge(log)[1].active) break;
+            if (!log.includes(at(r))) log = [...log, at(r)];
+          }
+          return log;
+        };
+        // Words behind the bot's best fill the meter: the offer is half that best, rounded down.
+        const best = replayHoles(fresh, ranks, played)[1].rank;
+        let log = fill([...played], [30, 40, 60, 80, 120, 150]);
+        expect(replayHoles(fresh, ranks, log)[1].rank).toBe(best);
+        expect(activatedHole(charge(played), charge(log))).toBe(1);
+        const half = Math.floor(best / 2);
+        expect(charge(log)[1].given).toEqual([{ rank: half, consumed: false }]);
+        // Revealed: the new best, the meter halved, nothing offered.
+        const before = charge(log);
+        log = [...log, at(half)];
+        expect(replayHoles(fresh, ranks, log)[1].rank).toBe(half);
+        expect(charge(log)[1]).toEqual({ charge: before[1].charge / 2, active: false, given: [{ rank: half, consumed: true }] });
+        // Near words fill it again, the hole activates again, and offers half the new best.
+        const refill = fill(log, [3, 6, 7, 9, 12, 15, 20]);
+        expect(charge(refill)[1].active).toBe(true);
+        expect(activatedHole(charge(refill.slice(0, -1)), charge(refill))).toBe(1);
+        const next = Math.floor(replayHoles(fresh, ranks, refill)[1].rank / 2);
+        expect(charge(refill)[1].given.filter((g) => !g.consumed)).toEqual([{ rank: next, consumed: false }]);
       });
       it('the lesson view trades ranks 1 and 2; the secret traded, it reads 2 and fills the meter, the word read 1 is offered, and the obvious word then solves', () => {
         const { puzzle } = meter;

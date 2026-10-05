@@ -24,9 +24,9 @@
 // dreams of peace.": CAT behind STRAY (80), already found by the bot; the secret is LIBERTY
 // behind PEACE (107), and the OBVIOUS guess, FREEDOM, is its closest word — which the
 // lesson reads 2, UNALIENABLE (the map's 2) reading 1 (`meterView`): typing FREEDOM earns a
-// 2, never the solve, and the full meter then offers the one word closer, UNALIENABLE¹, to
-// reveal — and typing LIBERTY first swaps the two (liberty reads 2, freedom becomes the
-// secret), typing UNALIENABLE first too (it reads 2, freedom¹ is the word to reveal), so
+// 2, never the solve, and the full meter then offers the word at half that best,
+// UNALIENABLE¹, to reveal, for a try and half the meter — and typing LIBERTY first swaps
+// the two (liberty reads 2, freedom becomes the secret), typing UNALIENABLE first too (it reads 2, freedom¹ is the word to reveal), so
 // the activation, with a word to reveal, is always seen before the solve. The bot's FIVE tries (few,
 // and the best one an EASY SYNONYM, user-decided 2026-09-16) — picked on the fastText map
 // (#317), where the synonyms sit far (independence 56, autonomy 44) and the ideology words
@@ -34,7 +34,9 @@
 // ~75 FREEDOM² needs to fill the meter alone, so the best try is the EASY word a player
 // types next to liberty, EQUALITY (11): independence, equality, autonomy, justice, dignity
 // leave the meter at three quarters (75.3), FREEDOM fills it — visibly — and the masked
-// word lands; a failed try then earns the hint, never the word.
+// word lands; a failed try then earns the hint, never the word. Off the script — the meter
+// filled with EQUALITY¹¹ still the best — the mask is the 5th word, and the halved meter,
+// filled again, offers the next half.
 //
 // scripts.test.ts replays this file and fails if an edit breaks the lesson's shape.
 import type { LessonScript } from '../script';

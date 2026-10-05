@@ -65,8 +65,8 @@ import MeterCanvas from './MeterCanvas';
 // slot and IS PICKED like any row, and the sentence then shows `?????²` on the hole's foil. The
 // reveal happens THERE: the picked mask stands pre-typed in the prompt and REVEAL takes
 // the keyboard's place to submit it as a guess (`Game`'s ghost, `RevealTray`). The wheel
-// has no reveal control at all. The one mask an active hole offers is the word just
-// closer than its best, so it turns up just under the slot.
+// has no reveal control at all. The one mask an active hole offers is the word at half
+// its best — closer than anything tried — so it turns up just under the slot.
 // The slot row's own tap, a tap outside and Escape close, as ever. It stays a native <dialog>
 // because the sentence and the keyboard under it must be inert; it is the PuzzleSelect's
 // kind (a thing hanging off a control that stays on screen), so a tap outside closes it.

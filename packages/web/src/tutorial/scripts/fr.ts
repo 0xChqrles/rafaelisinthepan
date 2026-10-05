@@ -22,15 +22,17 @@
 // de départ 50–150 de la génération. LA JAUGE : « le chat suit le sentier. » — CHAT déjà trouvé
 // par le bot ; le secret est SENTIER et l'essai ÉVIDENT, CHEMIN, est son mot le plus proche —
 // que la leçon lit 2, VALLON (le 2 de la carte) lisant 1 (`meterView`) : taper CHEMIN vaut un
-// 2, jamais la solution, et la jauge pleine offre alors le seul mot plus proche, VALLON¹, à
-// révéler — et taper SENTIER en premier échange les deux (sentier lit 2, chemin devient le
-// secret), taper VALLON en premier aussi (il lit 2, chemin¹ est le mot à révéler), pour que
+// 2, jamais la solution, et la jauge pleine offre alors le mot à la moitié de ce meilleur,
+// VALLON¹, à révéler pour un essai et la moitié de la jauge — et taper SENTIER en premier
+// échange les deux (sentier lit 2, chemin devient le secret), taper VALLON en premier aussi (il lit 2, chemin¹ est le mot à révéler), pour que
 // l'activation, avec un mot à révéler, soit toujours vue avant la solution. Les CINQ essais du bot
 // (parcours, randonneur, détour, hameau, ravin — peu, masculins pour que « le » tienne, et le
 // meilleur un synonyme FACILE de chemin : « belvédère » était bien trop dur, retour
 // utilisateur 2026-09-16) laissent la jauge à ~76 avec PARCOURS (8) pour meilleur mot — assez
 // long pour que le remplissage se lise sur la puce : CHEMIN² la remplit, visiblement, et le
-// mot masqué apparaît ; un essai raté vaut ensuite l'indice, jamais le mot.
+// mot masqué apparaît ; un essai raté vaut ensuite l'indice, jamais le mot. Hors du script —
+// la jauge remplie avec PARCOURS⁸ toujours meilleur — le masque est le 4e mot, et la jauge
+// réduite de moitié, remplie de nouveau, offre la moitié suivante.
 import type { LessonScript } from '../script';
 import { hole, single } from './board';
 import ocean from './fr.ocean.json';

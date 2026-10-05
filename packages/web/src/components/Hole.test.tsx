@@ -141,6 +141,43 @@ describe('the burst waits for the fill', () => {
   });
 });
 
+// A HINT TAKEN halves the meter (`game/charge.ts`): the hole leaves the foil at once, and
+// filling the meter again plays the whole activation again — fill, burst, then the foil.
+describe('a meter halved by a hint taken', () => {
+  const revealHit: HitState = { id: 3, holeIndex: 0, value: 2, startDelayMs: 0, fadeDelayMs: 320, strike: 'slash' };
+  const refillHit: HitState = { ...nearHit, id: 4, value: 1 };
+
+  it('leaves the foil, then activates again from the start on the refill', () => {
+    render(90);
+    render(100, nearHit);
+    advance(1200);
+    expect(sea()).not.toBeNull();
+
+    render(50, revealHit, 2);
+    expect(sea()).toBeNull();
+    expect(container.querySelector('.hole-meter')).not.toBeNull();
+    advance(1000);
+    expect(sea()).toBeNull();
+    expect(container.querySelector('.strike.burst')).toBeNull();
+
+    render(100, refillHit, 2);
+    advance(945);
+    expect(container.querySelector('.strike.burst')).toBeNull();
+    advance(15);
+    expect(container.querySelector('.strike.burst')).not.toBeNull();
+    expect(sea()).toBeNull();
+    advance(150);
+    expect(sea()).not.toBeNull();
+  });
+
+  it('mounts on the half meter, never on the foil', () => {
+    render(50, null, 2);
+    advance(1000);
+    expect(sea()).toBeNull();
+    expect(container.querySelector('.strike.burst')).toBeNull();
+  });
+});
+
 // A GIVE-UP's reveal: the hole turns into its secret through its own word change and
 // REPORTS resolved (the round's exit beats wait on it), but keeps the held chip — the
 // cobalt `.resolved` is for a word found — and shows no exponent rolling down to it.

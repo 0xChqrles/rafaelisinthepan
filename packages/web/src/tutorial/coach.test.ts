@@ -10,15 +10,17 @@
 //   - the sentence: silent on every guess (the tap is taught on the meter stage); the away /
 //     miss lines belong to the single-word stages; solved, the bot counts the tries;
 //   - the meter stage, scripted: the bot has played — tap to see its tries, then what they
-//     did; near until the chip fills; the activation (the one word closer, tap to reveal it)
-//     and the revealed word named with its price; a failed try after it earns the hint,
-//     never the word; the end, found.
+//     did; near until the chip fills; the activation (the word at half the best, tap to
+//     reveal it) and the revealed word named with its price; a failed try after it earns the
+//     hint, never the word; the halved meter filled again with a word to offer is a new
+//     activation, named again, and one filled with nothing left to offer is none; the end,
+//     found.
 //   Every line is written for someone who has never heard of the game: it names the HIDDEN
 //   WORD the numbers are about (coachCopy below).
 import { describe, it, expect } from 'vitest';
 import type { RankEntry } from '@whippin/shared';
 import type { RuntimeHole } from '../game/types';
-import { coachLine, coachCopy, ordinal, STUCK, type CoachState, type GuessEvent, type Stage } from './coach';
+import { activatedHole, coachLine, coachCopy, ordinal, STUCK, type CoachState, type GuessEvent, type Stage } from './coach';
 import type { LessonStage } from './script';
 
 const entry = (word: string, rank: number): RankEntry => ({ word, rank, dq: rank === 0 ? undefined : 100 } as RankEntry);
@@ -185,7 +187,7 @@ describe('the meter stage — the bot has half played it', () => {
     expect(coachLine(b.state(true))).toEqual({ kind: 'near', hole: expect.objectContaining({ rank: 24 }) });
     b.guess('freedom', [null, 2], { filled: 1 });
     expect(coachLine(b.state(true))).toEqual({ kind: 'activated', word: 'freedom', rank: 2 });
-    // The one word closer, revealed: named with its price, the turn handed back.
+    // The word at half the best, revealed: named with its price, the turn handed back.
     b.guess('unalienable', [null, 1], { filled: null, revealed: true });
     expect(coachLine(b.state(true))).toEqual({ kind: 'revealedHint', word: 'unalienable', rank: 1 });
     b.guess('y', [null, null], { filled: null });
@@ -193,6 +195,35 @@ describe('the meter stage — the bot has half played it', () => {
     b.guess('z', [null, 300], { filled: null });
     expect(coachLine(b.state(true))).toEqual({ kind: 'hint', holeIndex: 1 });
     expect(coachLine(b.state(true, false, true))).toEqual({ kind: 'found' });
+  });
+
+  it('names every activation: a hint halved the meter, the guesses after it fill it again, and the next word is there to reveal', () => {
+    const b = board('meter', [0, 11]);
+    b.guess('a', [null, 40], { filled: 1 }); // filled without moving the hole: it names the word it holds
+    expect(coachLine(b.state(true))).toEqual({ kind: 'activated', word: 'start1', rank: 11 });
+    b.guess('masked', [null, 5], { filled: null, revealed: true });
+    expect(coachLine(b.state(true))).toEqual({ kind: 'revealedHint', word: 'masked', rank: 5 });
+    b.guess('b', [null, 3], { filled: null }); // the halved meter fills up: a try, the hint
+    expect(coachLine(b.state(true))).toEqual({ kind: 'hint', holeIndex: 1 });
+    b.guess('c', [null, 9], { filled: 1 }); // full again, a word offered: named again
+    expect(coachLine(b.state(true))).toEqual({ kind: 'activated', word: 'b', rank: 3 });
+    b.guess('masked1', [null, 1], { filled: null, revealed: true });
+    expect(coachLine(b.state(true))).toEqual({ kind: 'revealedHint', word: 'masked1', rank: 1 });
+  });
+});
+
+describe('activatedHole — a full meter offering a word it did not', () => {
+  const meter = (charge: number, given: [number, boolean][] = []) => ({
+    charge,
+    active: charge >= 100,
+    given: given.map(([rank, consumed]) => ({ rank, consumed })),
+  });
+  it('the first fill and a refill after a hint taken activate; a moved offer and a refill with nothing to offer do not', () => {
+    expect(activatedHole([meter(0), meter(90)], [meter(0), meter(100, [[5, false]])])).toBe(1);
+    expect(activatedHole([meter(0), meter(90, [[5, true]])], [meter(0), meter(100, [[1, false], [5, true]])])).toBe(1);
+    expect(activatedHole([meter(0), meter(100, [[5, false]])], [meter(0), meter(100, [[1, false]])])).toBeNull();
+    expect(activatedHole([meter(0), meter(90, [[1, true]])], [meter(0), meter(100, [[1, true]])])).toBeNull();
+    expect(activatedHole([meter(0), meter(100, [[1, false]])], [meter(0), meter(50, [[1, true]])])).toBeNull();
   });
 });
 
@@ -240,10 +271,10 @@ describe('coachCopy', () => {
       'Jauge pleine ! Clique sur [[w:chemin^2]], et révèle un mot.',
     );
     expect(coachCopy('en', { kind: 'revealedHint', word: 'unalienable', rank: 1 }, stage, true)).toBe(
-      '[[w:unalienable^1]] is revealed, for one try. Now find the secret word.',
+      '[[w:unalienable^1]] is revealed, for one try and half the meter. Now find the secret word.',
     );
     expect(coachCopy('fr', { kind: 'revealedHint', word: 'vallon', rank: 1 }, stage, true)).toBe(
-      '[[w:vallon^1]] est révélé, pour un essai. À toi de trouver le mot secret.',
+      '[[w:vallon^1]] est révélé, pour un essai et la moitié de la jauge. À toi de trouver le mot secret.',
     );
     expect(coachCopy('en', { kind: 'introMeter', hole }, stage, true)).toMatch(/sentence\. Tap \[\[w:islands\^10\]\] to see my tries\.$/);
     expect(coachCopy('en', { kind: 'introMeter', hole }, stage, false)).toMatch(/sentence\. Click \[\[w:islands\^10\]\] to see my tries\.$/);

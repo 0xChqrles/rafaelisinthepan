@@ -270,7 +270,7 @@ function Round({
   );
   // THE CHARGE METERS (#301): the same projection, twice. `chargeState` reads the FULL log
   // — what a submit measures its gain against; `shownCharge` reads the board's deferred
-  // view, so a meter advances on the release beat the swap does, as the loot lands.
+  // view, so a meter moves on the release beat the swap does, as the loot lands.
   const chargeState = useMemo(() => replayCharge(freshHoles, ranks, playLog), [freshHoles, ranks, playLog]);
   const shownCharge = useMemo(
     () => replayCharge(freshHoles, ranks, withoutDeferred(ranks, playLog, deferred)),
@@ -853,7 +853,7 @@ function Round({
     () =>
       shownCharge.map((c, i) => {
         // A full meter with nothing left to offer (its best is the word just before the
-        // secret) is described as the meter it is.
+        // secret), like one a hint taken halved, is described as the meter it is.
         const hint =
           holes[i].rank === 0
             ? ''
@@ -1082,8 +1082,10 @@ function Round({
       const parts = impacted.map(({ index, entry }) =>
         srHoleResult(lang, index + 1, entry ? entry.rank : null),
       );
-      // The word this guess has a hole offer — the activation's first, or the next one
-      // closer once it moves the best — is said in the same breath: it is news.
+      // The word this guess has a hole offer — on each fill of its meter (the first, or a
+      // refill after a hint taken halved it), or a new one once a closer word typed on a
+      // full meter moves the best — is said in the same breath: it is news. A hint taken
+      // offers nothing new: its meter is half.
       const offer = (c: HoleCharge) => c.given.find((g) => !g.consumed)?.rank;
       for (const { index } of impacted) {
         const next = offer(charged[index]);
@@ -1108,6 +1110,8 @@ function Round({
       impacted.forEach(({ index, entry }, step) => {
         const startDelayMs = reveal + step * STAGGER_MS;
         const hit = (hitId.current += 1);
+        // NEGATIVE on the hint taken, which halves its meter: it is cut (it is closer), and
+        // no loot flies.
         const gained = charged[index].charge - chargeState[index].charge;
         // CUT only when the guess gives the hole something (`strikeFor`).
         const strike = strikeFor(entry?.rank, isNew, gained, bestBefore[index].rank);

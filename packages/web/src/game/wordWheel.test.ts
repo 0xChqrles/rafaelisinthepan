@@ -44,7 +44,7 @@ describe('wheelOrder', () => {
 });
 
 describe('the selected hint — the ghost a REVEAL submits', () => {
-  // Every hole stands at 10 and offers 9, the word just closer.
+  // Every hole stands at 10 and offers 9 — any offer under the best will do here.
   const holes: RuntimeHole[] = [0, 1, 2].map((pos) => ({
     pos, secret: `secret${pos}`, word: 'best', rank: 10, startRank: 50,
   }));
@@ -72,22 +72,22 @@ describe('the selected hint — the ghost a REVEAL submits', () => {
     expect(latestMaskedPick(replaced, holes, charges)).toBeNull();
   });
 
-  it('a closer word typed by hand moves the offer under it: the old pick is spent', () => {
+  it('a closer word typed by hand moves the offer to half of it: the old pick is spent', () => {
     const inner = Object.fromEntries(Array.from({ length: 70 }, (_, i) => {
       const rank = i + 1;
       return [`w${rank}`, { word: `w${rank}`, rank }];
     }));
     const ranks: RankMap = { secret: { ...inner, secret: { word: 'secret', rank: 0 } } };
     const fresh: RuntimeHole[] = [{ pos: 0, secret: 'secret', word: 'w50', rank: 50, startRank: 50 }];
-    // 4, 6, 30 … 33 fill the meter: the best is 4, the offer 3.
+    // 4, 6, 30 … 33 fill the meter: the best is 4, the offer its half, 2.
     const base = [4, 6, 30, 31, 32, 33].map((rank) => `w${rank}`);
     const active = replayCharge(fresh, ranks, base)[0];
-    const picks = selectWord({}, 0, mask(3), 4);
+    const picks = selectWord({}, 0, mask(2), 4);
     const at4 = [{ ...fresh[0], rank: 4 }];
-    expect(latestMaskedPick(picks, at4, [active])).toEqual({ index: 0, slug: 'w3' });
-    // The full log already holds w2 (the board still shows 4, its swap in the air): the
-    // offer is 1 now, so the pick of 3 is no ghost.
-    const moved = replayCharge(fresh, ranks, [...base, 'w2'])[0];
+    expect(latestMaskedPick(picks, at4, [active])).toEqual({ index: 0, slug: 'w2' });
+    // The full log already holds w3 (the board still shows 4, its swap in the air): the
+    // offer is 1 now, half of 3, so the pick of 2 is no ghost.
+    const moved = replayCharge(fresh, ranks, [...base, 'w3'])[0];
     expect(moved.given).toEqual([{ rank: 1, consumed: false }]);
     expect(latestMaskedPick(picks, at4, [moved])).toBeNull();
   });
