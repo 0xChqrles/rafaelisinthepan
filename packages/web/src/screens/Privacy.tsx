@@ -10,12 +10,14 @@
 //
 // **SET LIKE AN ARTICLE** (user-decided 2026-09-03: "a bit more beautiful, like a blog
 // post", and wider than the account column, which "on desktop feels like you're on a
-// phone"): a TITLE in sentence case — the document's own first line, the claim the page
-// substantiates — a DATELINE under it, a STANDFIRST, then sections each opened by a
-// hairline. The area's three roles still tell the parts apart (2026-08-29): a section
-// HEADING is chrome (uppercase, tracked, `--fg`), a TERM is the thing being named — on its
-// own line, in a definition list, so a section skims like a run of small subheads — and the
-// BODY is explanation (`--muted`, sentence case, regular).
+// phone"), in the house's dress: a TITLE in the game's pixel face at a whole size — the
+// document's own first line, the claim the page substantiates — a DATELINE whose day is
+// written the way the cards and the streak write one (ISO, the cobalt pixel figures), a
+// STANDFIRST, then sections each opened by the podium's stippled floor. The area's three
+// roles still tell the parts apart (2026-08-29): a section HEADING is chrome (uppercase,
+// tracked, `--fg`), a TERM is the thing being named — on its own line behind a pixel
+// square, in a definition list, so a section skims like a run of small subheads — and the
+// BODY is explanation (`--muted`, sentence case, regular). No panels, no rules.
 //
 // It is a STEP, not a place: the header's row lights the FACE (the whole account area is one
 // place, its steps included) and the left slot carries the back control. Back is `goBack` and
@@ -59,17 +61,12 @@ function fill(text: string): ReactNode {
   });
 }
 
-// The date the notice last became true, in the reader's own locale. Read as UTC: the value is
-// a plain day, and a browser west of Greenwich would otherwise print the one before it.
-function updatedOn(lang: string): string | null {
-  const at = Date.parse(PRIVACY_UPDATED);
-  if (!Number.isFinite(at)) return null;
-  return new Intl.DateTimeFormat(lang, {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(new Date(at));
+// The day the notice last became true, as the app writes a day (`2026-09-28`): the value
+// itself, checked to be one, so a malformed constant prints no dateline rather than a lie.
+function updatedOn(): string | null {
+  return /^\d{4}-\d{2}-\d{2}$/.test(PRIVACY_UPDATED) && Number.isFinite(Date.parse(PRIVACY_UPDATED))
+    ? PRIVACY_UPDATED
+    : null;
 }
 
 export default function Privacy() {
@@ -78,7 +75,7 @@ export default function Privacy() {
   const lang = useUiLang();
   const doc = privacyDoc(lang);
   const title = t(lang, 'privacyTitle');
-  const updated = updatedOn(lang);
+  const updated = updatedOn();
 
   return (
     <>
@@ -86,14 +83,19 @@ export default function Privacy() {
         <HeaderBack label={t(lang, 'ariaBack')} onBack={() => goBack(ACCOUNT_PATH)} />
         <LangTitle lang={lang} title={title} />
       </HeaderLeft>
-      <article className="privacy-screen arrive">
+      <article className="privacy-screen">
         {/* THE HEAD: the document's title is its own first sentence — the header's chip
             names the SCREEN, this names the CLAIM — with the dateline where an article
             keeps one, and the standfirst under both. */}
         <header className="privacy-head">
           <h1 className="privacy-title">{doc.title}</h1>
           {updated && (
-            <p className="privacy-dateline">{`${doc.updatedLabel} ${updated}`}</p>
+            <p className="privacy-dateline">
+              <span>{doc.updatedLabel}</span>
+              <time className="privacy-date" dateTime={updated}>
+                {updated}
+              </time>
+            </p>
           )}
           <p className="privacy-lead">{doc.lead}</p>
         </header>

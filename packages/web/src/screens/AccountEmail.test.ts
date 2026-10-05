@@ -5,7 +5,8 @@
 // never does, and the two confirmations (`erase`, `leave`) travel beside it unchanged.
 
 import { describe, expect, it } from 'vitest';
-import { verifyBody } from './AccountEmail';
+import { AVATAR_SIZE } from '@whippin/shared';
+import { FLOW_FACE_PX, verifyBody } from './AccountEmail';
 
 const TOKEN = 'f'.repeat(64);
 const EMAIL = 'player@example.com';
@@ -35,5 +36,20 @@ describe('verifyBody — what each door authorizes', () => {
       bind: true,
       leave: 'bbbbbbbbbbbbbbbb',
     });
+  });
+});
+
+// The flow's faces are pixel marks at WHOLE-PIXEL scales (the profile-area direction): a
+// cell is a whole number of CSS pixels, so the traced mark, the churning canvas and the
+// step-up between them land on the pixel grid — and the ending, the screen's one subject,
+// is the largest of them, the lead's own mark stepped forward.
+describe('the flow faces', () => {
+  it('are drawn at a whole number of pixels a cell', () => {
+    for (const size of Object.values(FLOW_FACE_PX)) expect(size % AVATAR_SIZE).toBe(0);
+  });
+
+  it('step FORWARD from the lead to the ending', () => {
+    expect(FLOW_FACE_PX.ending).toBeGreaterThan(FLOW_FACE_PX.lead);
+    expect(FLOW_FACE_PX.lead).toBeGreaterThan(FLOW_FACE_PX.cross);
   });
 });

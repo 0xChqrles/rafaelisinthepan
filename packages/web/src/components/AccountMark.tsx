@@ -30,7 +30,11 @@
 // path, because cells drawn as adjacent rects can antialias a hairline seam where two of
 // them meet. That decision is about the RESTING render and is untouched: this is a canvas
 // at exactly 10×10 backing pixels — there are no sub-pixel edges to seam in the first place
-// — for under a second, and the final frame is the canonical `Avatar`.
+// — for under a second, and the final frame is the canonical `Avatar`, SHARP: the flow's
+// faces are square pixel marks among pixel things, never a rounded tile. The caller passes
+// a WHOLE-PIXEL size (a multiple of the mark's ten cells — 60, 80), so a cell is a whole
+// number of CSS pixels on the canvas and on the traced path alike, and the swap moves
+// nothing.
 //
 // **EVERY FRAME STAYS INSIDE THE PALETTE.** The colours are `AVATAR_PALETTES`' own — the
 // user's drawings, whose hexes are canonical — so nothing is ever blended into a colour no
@@ -136,6 +140,7 @@ function read(avatar: string): Target | null {
 export interface AccountMarkProps {
   // The encoded drawing, or null while nobody is known yet — which is the churning field.
   avatar: string | null;
+  // CSS pixels, a multiple of the mark's ten cells.
   size: number;
   // Whether the drawing should RESOLVE out of the field rather than simply appearing. Only
   // the returning flow and an adopted ending ask for it: a saved account's face never left.
@@ -217,7 +222,7 @@ export default function AccountMark({ avatar, size, compose = false }: AccountMa
     return () => cancelAnimationFrame(frame);
   }, [field, target, reduced]);
 
-  if (!field) return avatar === null ? null : <Avatar avatar={avatar} size={size} />;
+  if (!field) return avatar === null ? null : <Avatar avatar={avatar} size={size} sharp />;
   return (
     <canvas
       ref={canvas}
@@ -230,15 +235,16 @@ export default function AccountMark({ avatar, size, compose = false }: AccountMa
   );
 }
 
-// The six INKS the code prompt's cells wear, in the order they fill (`CodeInput`). They are
-// AVATAR_PALETTE colours ADDRESSED rather than copied, so the prompt cannot drift from the
-// drawings the tile above it is churning through: the code is typed in the same colours the
-// face is being found in. The walk is cobalt → azure → cyan → lime → rose → magenta — a hue
-// walk with one honest jump at the end, since this palette holds no green.
+// The six INKS the code prompt's keys are struck in, in the order they fill (`CodeInput`):
+// a filled key is solid in its ink with the digit CUT OUT of it in the page's ground. They
+// are AVATAR_PALETTE colours ADDRESSED rather than copied, so the prompt cannot drift from
+// the drawings the tile above it is churning through: the code is typed in the same colours
+// the face is being found in. The walk is cobalt → azure → cyan → lime → rose → magenta — a
+// hue walk with one honest jump at the end, since this palette holds no green.
 //
 // IT USED TO OPEN ON VIOLET (`AVATAR_PALETTES[1].bg`, #8f06ff) and that one failed: 3.50:1
-// against the cell's ground, which passes only as LARGE text and this is an 18px digit —
-// the FIRST digit typed, next to a cyan at 16:1. Every colour here now clears AA (4.62 at
+// against the page's ground, which passes only as LARGE text and the digit is not — the
+// FIRST digit typed, next to a cyan at 16:1. Every colour here now clears AA (4.62 at
 // the floor), which is also what pulled the row's brightness spread in from 4.9x to 3.7x.
 // There is no violet in the palettes that clears it; the walk starts one step along
 // instead, which costs nothing — it still crosses six hues and still ends on the jump.
