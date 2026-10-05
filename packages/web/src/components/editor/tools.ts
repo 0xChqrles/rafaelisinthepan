@@ -128,18 +128,27 @@ export function churnCells(frame: number): number[] {
   return out;
 }
 
-// The order a rolled shape LANDS in out of the churn: a deterministic shuffle seeded by the
-// shape, so a re-render mid-roll cannot re-scatter the cells that have already landed.
-export function landingOrder(cells: readonly number[]): number[] {
-  let state = 0x811c9dc5;
-  for (let i = 0; i < cells.length; i += 1) state = (Math.imul(state ^ (cells[i] + 1 + i), 0x01000193) >>> 0) || 1;
-  const order = Array.from({ length: cells.length }, (_, i) => i);
-  for (let i = order.length - 1; i > 0; i -= 1) {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    const j = state % (i + 1);
-    [order[i], order[j]] = [order[j], order[i]];
-  }
-  return order;
+// The rolled shape LANDS out of the churn in the Bayer order — CLEAR's drain run the other way:
+// at step `step` of `steps`, every cell whose threshold is under step/steps takes the shape's
+// value, so the new mark settles evenly over the frozen churn, never from one edge, and the
+// last step leaves exactly the shape. `on`/`off` are the cells that step changed, each with its
+// own pop.
+export function landStep(
+  shown: readonly number[],
+  target: readonly number[],
+  step: number,
+  steps: number,
+): { cells: number[]; on: number[]; off: number[] } {
+  const level = step / steps;
+  const on: number[] = [];
+  const off: number[] = [];
+  const cells = shown.map((v, i) => {
+    const lands = step >= steps || bayerThreshold(i % AVATAR_SIZE, Math.floor(i / AVATAR_SIZE)) < level;
+    if (!lands || v === target[i]) return v;
+    (target[i] === 1 ? on : off).push(i);
+    return target[i];
+  });
+  return { cells, on, off };
 }
 
 // ── Clear ─────────────────────────────────────────────────────────────────────────────────

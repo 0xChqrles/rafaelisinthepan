@@ -37,7 +37,7 @@ import {
   churnCells,
   drainStep,
   isSymmetric,
-  landingOrder,
+  landStep,
   paintStroke,
   rollShape,
   speckAt,
@@ -168,20 +168,25 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 // ---- THE CANVAS'S GEOMETRY (visual only: nothing here decides what is saved). Its cell is a
 // WHOLE, EVEN number of px — the house's 2px dither lands on the cells' own edges — the
 // largest the column holds inside the card, and the largest that leaves the whole editor on
-// a phone's screen with nothing scrolled — down to the ~550px an iPhone SE's browser leaves
-// under its own bars. The chrome around the canvas — the bar's clearance, the card's frame and chip,
-// the tools, the board line, SAVE on the edge — is the CSS's own sum (the phone block of
-// `.profile-screen`): one row of tools where the column holds all of them at the 44px pitch,
-// two where it does not (`.wrap`), and the SHORT dress's tighter spacing on a screen this
-// short (`.short`). The height is the one the screen had BEFORE a soft keyboard took part of
-// it: the editor never jumps while its name is typed.
-const CELL_MIN = 18;
+// the screen with nothing scrolled — down to the ~550px an iPhone SE's browser leaves under
+// its own bars. The chrome around the canvas — the bar's clearance, the card's frame and chip,
+// the tools, the board line, SAVE — is the CSS's own sum. On a PHONE (the `max-width: 640px`
+// block of `.profile-screen`): one row of tools where the column holds all of them at the
+// 44px pitch, two where it does not (`.wrap`), and the SHORT dress's tighter spacing on a
+// screen this short (`.short`); the height the canvas leaves over CENTRES the card, its tools
+// and its board line between the bar and SAVE parked on the edge (`--plift`, worked out here
+// so the box stands where it will stand from the first frame). On DESKTOP: `.app`'s padding
+// and the column's own, one row of tools, never the short dress. The height is the one the
+// screen had BEFORE a soft keyboard took part of it: the editor never jumps while its name is
+// typed.
+const CELL_MIN = 16;
 const CELL_MAX = 36;
 const CARD_PAD_PX = 14;
 const TARGET_PX = 44;
 const TOOLS_GAP_PX = 8;
+const PHONE_MAX_PX = 640;
 const SHORT_PX = 600;
-const EDITOR_CHROME_PX = { tall: [344, 392], short: [316, 364] } as const;
+const EDITOR_CHROME_PX = { tall: [346, 394], short: [318, 366], desktop: 364 } as const;
 // The canvas grows out of the masthead's mark in whole-pixel steps, a cell this much bigger
 // each step, a step this long.
 const GROW_CELL_STEP = 4;
@@ -189,11 +194,12 @@ const GROW_STEP_MS = 50;
 // The masthead's mark when nothing hands it over (a direct load): the growth starts here,
 // from the canvas's centre.
 const GROW_FROM_CELL = 5;
-// The dice: a churn, then the new shape landing out of it cell by cell, at the churning
-// tile's 16-ish fps; CLEAR: the Bayer drain, in hard steps.
+// The dice: a churn at the churning tile's 16-ish fps, then the new shape landing over the
+// frozen churn in the Bayer order, in hard steps; CLEAR: the Bayer drain, the same rhythm.
 const DICE_FRAME_MS = 60;
 const DICE_CHURN_MS = 360;
-const DICE_LAND_MS = 360;
+const DICE_LAND_STEPS = 6;
+const DICE_LAND_STEP_MS = 40;
 const CLEAR_STEPS = 6;
 const CLEAR_STEP_MS = 50;
 // A refused save SHAKES the card, in whole pixels, a step a frame.
@@ -475,14 +481,13 @@ export default function Profile() {
   }, []);
 
   // DICE: the tile CHURNS on the waiting tile's noise (every frame a plausible creature, in
-  // the palette already chosen), then the new shape LANDS out of it cell by cell, and the
-  // landed shape is the edit.
+  // the palette already chosen), then the new shape LANDS over the last frame of it in the
+  // Bayer order — CLEAR's drain run the other way, each changed cell with its own pop — and
+  // the landed shape is the edit.
   const roll = useCallback(() => {
     if (toolRef.current !== null) return;
     const target = rollShape(cells);
-    const commit = () => {
-      setChurn(null);
-      setTool(null);
+    if (prefersReducedMotion()) {
       setCells((prev) => {
         const on = target.flatMap((v, i) => (v === 1 && prev[i] !== 1 ? [i] : []));
         const off = target.flatMap((v, i) => (v === 0 && prev[i] === 1 ? [i] : []));
@@ -490,30 +495,37 @@ export default function Profile() {
         return target;
       });
       setRefused(null);
-    };
-    if (prefersReducedMotion()) {
-      commit();
       return;
     }
     setTool('dice');
-    const order = landingOrder(target);
-    const landAt = new Array<number>(AVATAR_CELLS);
-    order.forEach((index, n) => {
-      landAt[index] = DICE_CHURN_MS + (n / (order.length - 1)) * DICE_LAND_MS;
-    });
-    const frames = Math.ceil((DICE_CHURN_MS + DICE_LAND_MS) / DICE_FRAME_MS);
+    // The churn hides every cell's pop; the drawing it replaces pops nothing more.
+    setBumps({});
+    const frames = Math.ceil(DICE_CHURN_MS / DICE_FRAME_MS);
     const offset = Math.floor(Math.random() * 1000);
-    for (let f = 0; f <= frames; f += 1) {
-      const at = f * DICE_FRAME_MS;
+    for (let f = 0; f < frames; f += 1) {
+      toolTimers.current.push(window.setTimeout(() => setChurn(churnCells(offset + f)), f * DICE_FRAME_MS));
+    }
+    // The churn's last frame becomes the canvas, and the shape lands over it.
+    toolTimers.current.push(
+      window.setTimeout(() => {
+        setChurn(null);
+        setCells(churnCells(offset + frames - 1));
+      }, DICE_CHURN_MS),
+    );
+    for (let step = 1; step <= DICE_LAND_STEPS; step += 1) {
       toolTimers.current.push(
         window.setTimeout(() => {
-          if (f === frames) {
-            commit();
-            return;
+          setCells((prev) => {
+            const { cells: next, on, off } = landStep(prev, target, step, DICE_LAND_STEPS);
+            if (on.length === 0 && off.length === 0) return prev;
+            setBumps((b) => bumped(bumped(b, on, 'in'), off, 'out'));
+            return next;
+          });
+          if (step === DICE_LAND_STEPS) {
+            setTool(null);
+            setRefused(null);
           }
-          const noise = churnCells(offset + f);
-          setChurn(noise.map((v, i) => (at >= landAt[i] ? target[i] : v)));
-        }, at),
+        }, DICE_CHURN_MS + step * DICE_LAND_STEP_MS),
       );
     }
   }, [cells]);
@@ -581,7 +593,7 @@ export default function Profile() {
   // with the tools' rows and the dress that follow from them. Measured from the first frame,
   // while the stored profile is still being read, so the canvas's box is already where the
   // canvas will stand.
-  const [layout, setLayout] = useState({ wrap: false, short: false, inset: 0, palettesAt: 0, keysAt: 0 });
+  const [layout, setLayout] = useState({ wrap: false, short: false, inset: 0, lift: 0, palettesAt: 0, keysAt: 0 });
   const heldHeight = useRef({ width: 0, height: 0 });
   useLayoutEffect(() => {
     const screen = screenRef.current;
@@ -593,9 +605,10 @@ export default function Profile() {
       const typing = document.activeElement === nameRef.current && heldHeight.current.width === width;
       const height = typing ? Math.max(heldHeight.current.height, window.innerHeight) : window.innerHeight;
       heldHeight.current = { width, height };
+      const phone = window.innerWidth <= PHONE_MAX_PX;
       const wrap = width < (AVATAR_PALETTES.length + 3) * TARGET_PX + TOOLS_GAP_PX;
-      const short = height <= SHORT_PX;
-      const chrome = EDITOR_CHROME_PX[short ? 'short' : 'tall'][wrap ? 1 : 0];
+      const short = phone && height <= SHORT_PX;
+      const chrome = phone ? EDITOR_CHROME_PX[short ? 'short' : 'tall'][wrap ? 1 : 0] : EDITOR_CHROME_PX.desktop;
       const room = width - 2 * CARD_PAD_PX;
       const byWidth = room / AVATAR_SIZE;
       const byHeight = (height - chrome) / AVATAR_SIZE;
@@ -603,6 +616,8 @@ export default function Profile() {
       // The canvas centred on a WHOLE pixel, so its cells land on the screen's own — and so
       // are the tools' two rows when they wrap.
       const inset = Math.max(0, Math.floor((room - cell * AVATAR_SIZE) / 2));
+      // A phone's height left over, half of it over the card: on whole pixels.
+      const lift = phone ? Math.max(0, Math.floor((height - chrome - cell * AVATAR_SIZE) / 2)) : 0;
       const palettesAt = Math.max(0, Math.floor((width - AVATAR_PALETTES.length * TARGET_PX) / 2));
       const keysAt = Math.max(0, Math.floor((width - 3 * TARGET_PX) / 2));
       setCellPx((prev) => (prev === cell ? prev : cell));
@@ -610,10 +625,11 @@ export default function Profile() {
         prev.wrap === wrap &&
         prev.short === short &&
         prev.inset === inset &&
+        prev.lift === lift &&
         prev.palettesAt === palettesAt &&
         prev.keysAt === keysAt
           ? prev
-          : { wrap, short, inset, palettesAt, keysAt },
+          : { wrap, short, inset, lift, palettesAt, keysAt },
       );
     };
     measure();
@@ -648,6 +664,14 @@ export default function Profile() {
     handedRef.current = usable ? note : null;
     setHanded(handedRef.current);
   }, []);
+  // A read that FAILED lets the handed mark go: the box is the still slate now, and a RETRY
+  // breathes the slate in the canvas's box and grows from its centre, like a direct load —
+  // never the masthead's small mark back in the corner it stood in on a screen left behind.
+  useEffect(() => {
+    if (load !== 'failed' || handedRef.current === null) return;
+    handedRef.current = null;
+    setHanded(null);
+  }, [load]);
 
   // THE CANVAS GROWS OUT OF THE MASTHEAD'S MARK as the editor opens: from the mark's own cell
   // up to the canvas's, GROW_CELL_STEP px a cell a step — whole pixels at every step, nothing
@@ -863,12 +887,15 @@ export default function Profile() {
             ? { title: t(lang, 'profileSaveFailed'), note: t(lang, 'failedSaveNote') }
             : null;
 
-  // How others will see the player: the line every board draws — dressed as it WILL be. A
-  // board wears the placeholder ink only for a STORED empty name, and an account's first
-  // profile is the placeholder the device was showing (`localIdentityDeploy`), so the name on
-  // screen is a stored name everywhere but on an account whose row is empty: the field still
-  // reads that account's own pseudonym (the READ half), which a save stores as empty again.
-  // A tokenless device and a deployed one showing the same name therefore dress it the same.
+  // How others will see the player: the line every board draws. A board wears the placeholder
+  // ink only for a STORED empty name — on an account, the field reading that account's own
+  // pseudonym (the READ half), which a save stores as empty again. A TOKENLESS device's name
+  // is dressed as a stored one: a deployed-unsaved account that was deployed from any other
+  // button stores the placeholder the device was showing as its first profile
+  // (`localIdentityDeploy`), and the two must show the same screen. THIS screen's SAVE is the
+  // one deploy that bypasses that (`withoutLocalIdentityDeploy` in `onSave`): an UNTOUCHED
+  // placeholder name stores as the empty name, so a tokenless player's first SAVE leaves them
+  // wearing their new account's own pseudonym, in the placeholder ink.
   const anon = name === '' || (loadedFor !== null && name === anonName(loadedFor));
   const lineName = name || (assignedFrom ? anonName(assignedFrom) : '');
   const empty = cells.every((value) => value === 0);
@@ -904,6 +931,7 @@ export default function Profile() {
           {
             '--pcell': `${cellPx}px`,
             '--pinset': `${layout.inset}px`,
+            '--plift': `${layout.lift}px`,
             '--palettes-at': `${layout.palettesAt}px`,
             '--keys-at': `${layout.keysAt}px`,
           } as React.CSSProperties

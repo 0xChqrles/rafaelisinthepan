@@ -1,5 +1,15 @@
 import { useEffect, useRef } from 'react';
-import { AVATAR_SIZE, FOIL_WHITE, bayerThreshold, decodeAvatar, foilCells, foilGlitter, foilInkRgb } from '@whippin/shared';
+import { getLuminance } from 'polished';
+import {
+  AVATAR_PALETTES,
+  AVATAR_SIZE,
+  FOIL_WHITE,
+  bayerThreshold,
+  decodeAvatar,
+  foilCells,
+  foilGlitter,
+  foilInkRgb,
+} from '@whippin/shared';
 import { abgr } from './raster';
 import { prefersReducedMotion } from '../hooks/useScramble';
 
@@ -24,6 +34,11 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 // cell divides by it, else the mark's cell itself (a 50px mark's 5px pixels turn to foil one
 // whole pixel at a time) — never a foil cell straddling two of the mark's. Reduced motion
 // plays nothing: the save is told by the button.
+//
+// THE FOIL IS PASTEL, so on a LIGHT ground (the mark's palette's, over LIGHT_GROUND) it would
+// read as the drawing fading out: there the ink holds in the DEEP foil instead — the same
+// inks pressed toward the streak link's under-face navy (`FOIL_DEEP`) — and stays darker than
+// its ground; the glitter's stars stay white on it.
 export const STAMP_SWEEP_MS = 460;
 export const STAMP_HOLD_MS = 340;
 export const STAMP_RECEDE_MS = 360;
@@ -32,6 +47,9 @@ const STAMP_STEPS = 8;
 const BAND = 0.3;
 const FRAME_MS = 40;
 const GLITTER = 0.03;
+const LIGHT_GROUND = 0.5;
+const DEEP_RGB = [28, 37, 102] as const; // the streak sprites' FOIL_DEEP, #1c2566
+const DEEP_MIX = 0.55;
 
 export interface StampOptions {
   // The encoded mark the box shows: its ink keeps the foil. Omitted: the whole box.
@@ -45,24 +63,27 @@ export interface StampOptions {
 const smooth = (k: number) => k * k * (3 - 2 * k);
 const WHITE = abgr(255, 255, 255);
 const inks = new Map<number, number>();
-function inkOf(ink: number): number {
-  if (ink === FOIL_WHITE) return WHITE;
-  let hit = inks.get(ink);
+function inkOf(ink: number, deep: boolean): number {
+  if (ink === FOIL_WHITE && !deep) return WHITE;
+  const key = deep ? -2 - ink : ink;
+  let hit = inks.get(key);
   if (hit === undefined) {
-    const [r, g, b] = foilInkRgb(ink);
+    const rgb = foilInkRgb(ink);
+    const [r, g, b] = deep ? rgb.map((c, j) => Math.round(c * (1 - DEEP_MIX) + DEEP_RGB[j] * DEEP_MIX)) : rgb;
     hit = abgr(r, g, b);
-    inks.set(ink, hit);
+    inks.set(key, hit);
   }
   return hit;
 }
 
-// The ink cells of a mark, or null for "the whole box".
-function inkCells(avatar: string | null | undefined): readonly number[] | null {
-  if (!avatar) return null;
+// The ink cells of a mark, or null for "the whole box"; and whether its ground is light.
+function markOf(avatar: string | null | undefined): { cells: readonly number[] | null; deep: boolean } {
+  if (!avatar) return { cells: null, deep: false };
   try {
-    return decodeAvatar(avatar).cells;
+    const { palette, cells } = decodeAvatar(avatar);
+    return { cells, deep: getLuminance(AVATAR_PALETTES[palette].bg) > LIGHT_GROUND };
   } catch {
-    return null;
+    return { cells: null, deep: false };
   }
 }
 
@@ -80,6 +101,7 @@ function paintStamp(
   w: number,
   h: number,
   cells: readonly number[] | null,
+  deep: boolean,
   seed: number,
   onDone: () => void,
 ): () => void {
@@ -143,7 +165,7 @@ function paintStamp(
       px.fill(0);
       const seconds = now / 1000;
       foilCells(w, h, seconds, seed, since, inside, grain, (v, x, y) => {
-        px[(y / grain) * cols + x / grain] = inkOf(v);
+        px[(y / grain) * cols + x / grain] = inkOf(v, deep);
       });
       foilGlitter(w, h, seconds, seed, inside, GLITTER, grain, (x, y, rw, rh) => {
         for (let cy = Math.floor(y / grain); cy < Math.ceil((y + rh) / grain); cy += 1) {
@@ -186,7 +208,8 @@ export default function FoilStamp({
       done?.();
       return undefined;
     }
-    return paintStamp(canvas, w, h, inkCells(mark), s ?? 0.37, () => done?.());
+    const { cells, deep } = markOf(mark);
+    return paintStamp(canvas, w, h, cells, deep, s ?? 0.37, () => done?.());
   }, [play]);
 
   return (

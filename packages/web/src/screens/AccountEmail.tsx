@@ -43,8 +43,19 @@
 // screen exists for. It wears the shape that rule defines — one tap chaining the bootstrap,
 // a loading state on the button, failures on the app's error surface.
 
-import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
+import {
+  AVATAR_PALETTES,
+  decodeAvatar,
   defaultAvatar,
   isValidEmail,
   isValidLinkCode,
@@ -96,6 +107,7 @@ import {
   useDeviceIdentity,
 } from '../identity';
 import useKeyboardInset from '../hooks/useKeyboardInset';
+import { prefersReducedMotion } from '../hooks/useScramble';
 import useUiLang from '../hooks/useUiLang';
 import { t, tn } from '../i18n';
 import { ACCOUNT_PATH, type LinkIntent } from '../langs';
@@ -122,6 +134,11 @@ const ENDING_PX = FLOW_FACE_PX.ending;
 // How long the face takes to step up to the ending's size (`.link-face`'s `link-step-up`):
 // the save's stamp lands on the mark at its full size.
 const ENDING_STEP_MS = 240;
+// A step LEAVES through the dither before the next one arrives (`.link-step.leaving`); the
+// ending's face TRAVELS from where the lead stood to its own place in whole steps, while it
+// steps up.
+const STEP_LEAVE_MS = 120;
+const FACE_TRAVEL_STEPS = 4;
 
 // A face's box while its read is out: the slate checker the house waits in (the archive's
 // and the podium's ghosts), stippled through the Bayer tiles and breathing in whole steps —
@@ -259,6 +276,39 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // that was in flight before it.
   const [resumed] = useState(() => (carried ? null : readResumable(intent)));
   const [step, setStep] = useState<Step>(carried ? 'done' : resumed ? 'code' : 'address');
+  // THE STEP LEAVES BEFORE THE NEXT ONE COMES: the code step's lines dissolve out through the
+  // dither — the lead (the face, its chip) standing — and only then does the crossroads or the
+  // ending take its place. Where the lead stood is noted as it goes, so the ending's face
+  // can travel out of it rather than appear somewhere else.
+  const [leaving, setLeaving] = useState(false);
+  const leaveTimer = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (leaveTimer.current !== null) window.clearTimeout(leaveTimer.current);
+  }, []);
+  const leadRef = useRef<HTMLDivElement>(null);
+  const leadRects = useRef<{ mark: DOMRect; chip: DOMRect | null } | null>(null);
+  const advance = useCallback((next: Step) => {
+    const lead = leadRef.current;
+    const mark = lead?.firstElementChild;
+    const chip = mark?.nextElementSibling;
+    leadRects.current = mark
+      ? {
+          mark: mark.getBoundingClientRect(),
+          chip: chip?.classList.contains('link-name') && !chip.classList.contains('link-hold') ? chip.getBoundingClientRect() : null,
+        }
+      : null;
+    if (prefersReducedMotion()) {
+      setStep(next);
+      return;
+    }
+    if (leaveTimer.current !== null) window.clearTimeout(leaveTimer.current);
+    setLeaving(true);
+    leaveTimer.current = window.setTimeout(() => {
+      leaveTimer.current = null;
+      setLeaving(false);
+      setStep(next);
+    }, STEP_LEAVE_MS);
+  }, []);
   const [outcome, setOutcome] = useState<LinkOutcome | null>(carried?.outcome ?? null);
   const [linked, setLinked] = useState<string | null>(carried?.email ?? null);
   const [receipt, setReceipt] = useState<AccountStakes | null>(carried?.stakes ?? null);
@@ -337,6 +387,9 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // Back to the address field, from anywhere that reached it: the code that was sent is
   // moot the moment the player is choosing a different address to send to.
   const backToAddress = () => {
+    if (leaveTimer.current !== null) window.clearTimeout(leaveTimer.current);
+    leaveTimer.current = null;
+    setLeaving(false);
     writeResumable(null);
     setSentAt(null);
     setWaitLeft(0);
@@ -420,7 +473,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
     setOutcome(result.outcome);
     setLinked(result.email);
     setReceipt(result.stakes ?? null);
-    setStep('done');
+    advance('done');
     writeResumable(null);
     noteAccountEmail(result.accountId, result.email);
     if (result.accountId !== resolved.identity.accountId) {
@@ -441,7 +494,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
     // drained what it could before answering; this finishes the rest without waiting for the
     // player to visit `/account`.
     resumeDepartureDrain(result.departurePending);
-  }, []);
+  }, [advance]);
 
   const recoverAmbiguous = useCallback(
     async (resolved: RequestIdentity, email: string): Promise<boolean> => {
@@ -516,7 +569,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           const stakes = parseErasePrompt(body, error === 'would_erase' ? 'erase' : 'switch');
           if (stakes) {
             setPrompt(stakes);
-            setStep('confirm');
+            advance('confirm');
             return;
           }
           // The confirmation degrades a long way — a missing `target` falls back to one
@@ -574,7 +627,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         setBusy(false);
       }
     },
-    [address, busy, fail, finish, lang, recoverAmbiguous, returning],
+    [address, advance, busy, fail, finish, lang, recoverAmbiguous, returning],
   );
 
   // The ending draws the account the player now holds — for an ADOPT that is the recovered
@@ -584,24 +637,18 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // assigned one, which is still that player's own — so every one of these draws nothing
   // rather than an identity that no longer exists.
   const endingState = useAccountFace(step === 'done' ? endingId : null);
-  const face = shownFace(endingState);
-  // THE SAVE LANDS LIKE THE EDITOR'S: the same foil stamp (`FoilStamp`, /profile's SAVE) sweeps
-  // the mark once, after it has stepped forward to the ending's size — on the SAVED ending
-  // only, the one where this account just got kept. Once per ending: a later re-read of the
-  // face must not stamp it again.
-  const stampable = step === 'done' && outcome === 'bound' && face !== null && endingId !== null;
-  const [stamp, setStamp] = useState(0);
-  useEffect(() => {
-    if (!stampable || stamp > 0) return undefined;
-    const timer = setTimeout(() => setStamp(1), ENDING_STEP_MS);
-    return () => clearTimeout(timer);
-  }, [stampable, stamp]);
+  const endingRead = shownFace(endingState);
   // The crossroads draws BOTH sides of the fork: the account about to be deleted, and the
   // one about to be joined. The server names the second only since vol. 2, so a missing
   // `target` degrades to the one-sided prompt rather than failing a refusal the player has
   // to be able to answer.
   const eraseState = useAccountFace(step === 'confirm' ? (prompt?.accountId ?? null) : null);
   const eraseFace = shownFace(eraseState);
+  const eraseMark = eraseFace && prompt ? (eraseFace.avatar ?? defaultAvatar(prompt.accountId)) : null;
+  // A face about to be DELETED is a GHOST (`.ghost-mark`): it arrives whole on its own
+  // ground, then its ink thins through the dither and its ground gives way to the slate.
+  const ghostStyle = (mark: string) =>
+    ({ '--ground': AVATAR_PALETTES[decodeAvatar(mark).palette].bg }) as CSSProperties;
   // The account being ADOPTED is the one this device does NOT own — the server named it a
   // moment ago and nothing here vouches for it, which is exactly why it may not be dressed
   // with an assigned identity when the read says it is gone. A missing side degrades to the
@@ -646,6 +693,21 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // it opened on has to resolve into somebody), and an adopt from either door (the account
   // genuinely changed hands, and that had no moment at all before).
   const composeEnding = returning || outcome === 'adopted';
+  // A face that was ALREADY ON SCREEN (a save from this door: the lead is this account's own
+  // face) stands in until the ending's read lands — it steps forward rather than giving way to
+  // a slate for the length of a round trip.
+  const face = endingRead ?? (step === 'done' && !composeEnding ? savingFace : null);
+  // THE SAVE LANDS LIKE THE EDITOR'S: the same foil stamp (`FoilStamp`, /profile's SAVE) sweeps
+  // the mark once, after it has stepped forward to the ending's size — on the SAVED ending
+  // only, the one where this account just got kept. Once per ending: a later re-read of the
+  // face must not stamp it again.
+  const stampable = step === 'done' && outcome === 'bound' && face !== null && endingId !== null;
+  const [stamp, setStamp] = useState(0);
+  useEffect(() => {
+    if (!stampable || stamp > 0) return undefined;
+    const timer = setTimeout(() => setStamp(1), ENDING_STEP_MS);
+    return () => clearTimeout(timer);
+  }, [stampable, stamp]);
   const erasing = prompt?.kind === 'erase';
   // A SWITCH has no stakes to state — nothing is lost — and printing numbers under the face
   // being left would read as its price. An account with nothing on the board has none to
@@ -670,6 +732,38 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   const arrive = (ms: number): { style: CSSProperties } => ({
     style: { '--arrive-delay': `${arriveAt(ms)}ms` } as CSSProperties,
   });
+
+  // THE ENDING'S FACE TRAVELS OUT OF THE LEAD (noted by `advance` as the code step left):
+  // from where the lead's mark stood to its own place, in whole steps, while it steps up —
+  // and the name chip, when the lead wore this same name, comes with it rather than being
+  // drawn in again. Once: a later re-render does not travel again.
+  const endingFaceRef = useRef<HTMLDivElement>(null);
+  const endingChipRef = useRef<HTMLSpanElement>(null);
+  // (Latched on the ending's first render: the note it reads is spent by the travel.)
+  const chipHeldRef = useRef<boolean | null>(null);
+  if (step !== 'done') chipHeldRef.current = null;
+  else if (chipHeldRef.current === null) chipHeldRef.current = !composeEnding && leadRects.current?.chip != null;
+  const chipHeld = chipHeldRef.current === true;
+  useLayoutEffect(() => {
+    if (step !== 'done') return;
+    const from = leadRects.current;
+    leadRects.current = null;
+    const el = endingFaceRef.current;
+    if (!from || !el || prefersReducedMotion() || typeof el.animate !== 'function') return;
+    const travel = (node: HTMLElement | null, rect: DOMRect | null) => {
+      if (!node || !rect) return;
+      const at = node.getBoundingClientRect();
+      const dx = Math.round(rect.left + rect.width / 2 - (at.left + at.width / 2));
+      const dy = Math.round(rect.top - at.top);
+      if (dx === 0 && dy === 0) return;
+      node.animate([{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }], {
+        duration: ENDING_STEP_MS,
+        easing: `steps(${FACE_TRAVEL_STEPS}, end)`,
+      });
+    };
+    travel(el, from.mark);
+    if (!composeEnding) travel(endingChipRef.current, from.chip);
+  }, [step]);
 
   // WHAT A SCREEN READER IS TOLD, in ONE region mounted for the flow's whole life. Every
   // step transition here was silent — the account-deletion confirmation included — because
@@ -732,7 +826,13 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         />
         <LangTitle lang={lang} title={t(lang, returning ? 'linkTitleReturn' : 'linkTitleSave')} />
       </HeaderLeft>
-      <div className="account-screen link-step">
+      {/* The crossroads and the endings are FINAL steps: no keyboard is up (the stack takes
+          the focus), so on a phone their call parks on the bottom edge (`.link-final`). */}
+      <div
+        className={`account-screen link-step${step === 'confirm' || step === 'done' ? ' link-final' : ''}${
+          leaving ? ' leaving' : ''
+        }`}
+      >
         <p className="sr-only" role="status">
           {spoken}
         </p>
@@ -745,7 +845,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             the last. A square pixel mark at a whole size, its name in the white chip (the
             share card's and the group landing's name). */}
         {(step === 'address' || step === 'code') && (
-          <div className="link-stack link-lead" aria-hidden="true">
+          <div ref={leadRef} className="link-stack link-lead" aria-hidden="true">
             {returning ? (
               // THE FIELD. Not a skeleton — nothing is loading. It is the question the
               // screen is asking, drawn: somebody is out there, and this is where they
@@ -837,7 +937,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             // Never disabled while OFFSTAGE: a disabled input cannot hold focus, so the
             // caret CONTINUE just placed there would be thrown straight back out and the
             // keyboard would close — which is the whole thing this is here to prevent.
-            disabled={step === 'code' ? busy : false}
+            disabled={step === 'code' ? busy || leaving : false}
             offstage={step !== 'code'}
             fieldRef={codeField}
             label={t(lang, 'linkCodeLabel')}
@@ -847,12 +947,15 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         {step === 'code' && (
           <>
             {/* Only once an attempt has been SPENT: stating the budget up front reads as a
-                warning to somebody who has typed nothing wrong. */}
-            {wrong !== null && wrong > 0 && (
-              <p className="account-note account-note-center danger">
-                {wrong === 1 ? t(lang, 'linkWrongCodeOne') : tn(lang, 'linkWrongCode', wrong)}
-              </p>
-            )}
+                warning to somebody who has typed nothing wrong. Its line is HELD under the
+                keys from the start, so the refusal lands in place and RESEND never moves. */}
+            <div className="link-wrong">
+              {wrong !== null && wrong > 0 && (
+                <p className="account-note account-note-center danger">
+                  {wrong === 1 ? t(lang, 'linkWrongCodeOne') : tn(lang, 'linkWrongCode', wrong)}
+                </p>
+              )}
+            </div>
             {/* ONE quiet control under the cells now: the header's BACK is what changes
                 the address (user-decided 2026-08-29), so the row that used to hold two
                 similar-looking words holds the one that has nowhere else to live. */}
@@ -873,7 +976,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         )}
 
         {step === 'confirm' && prompt !== null && (
-          <div className="link-stack link-confirm" ref={stack} tabIndex={-1}>
+          <div className={`link-stack link-confirm${erasing ? ' erase' : ''}`} ref={stack} tabIndex={-1}>
             {/* From the SAVE door this is a genuine surprise — the player asked to KEEP
                 something and is being shown a deletion — so one line explains the turn
                 before the screen asks anything. From the RETURN door the address step
@@ -891,13 +994,12 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             {prompt.target !== null ? (
               <div className={`link-cross${erasing ? ' erase' : ' switch'}`}>
                 <div className="link-cross-side leaving">
-                  {eraseFace ? (
-                    <span className="link-cross-face">
-                      <Avatar
-                        avatar={eraseFace.avatar ?? defaultAvatar(prompt.accountId)}
-                        size={CROSS_PX}
-                        sharp
-                      />
+                  {eraseMark ? (
+                    <span
+                      className={`link-cross-face${erasing ? ' ghost-mark' : ''}`}
+                      style={erasing ? ghostStyle(eraseMark) : undefined}
+                    >
+                      <Avatar avatar={eraseMark} size={CROSS_PX} sharp />
                     </span>
                   ) : (
                     <FaceHold size={CROSS_PX} waiting={!faceSettled(eraseState)} />
@@ -932,14 +1034,13 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                   )}
                 </div>
               </div>
-            ) : eraseFace ? (
+            ) : eraseFace && eraseMark ? (
               <>
-                <span className={`link-cross-face single${erasing ? ' erase' : ''}`}>
-                  <Avatar
-                    avatar={eraseFace.avatar ?? defaultAvatar(prompt.accountId)}
-                    size={LEAD_PX}
-                    sharp
-                  />
+                <span
+                  className={`link-cross-face single${erasing ? ' ghost-mark' : ''}`}
+                  style={erasing ? ghostStyle(eraseMark) : undefined}
+                >
+                  <Avatar avatar={eraseMark} size={LEAD_PX} sharp />
                 </span>
                 <span className="link-name">{eraseFace.name}</span>
               </>
@@ -967,27 +1068,29 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 in the danger ink) and the lit primary is never the one that deletes an account. A switch
                 destroys nothing, so it is an ordinary primary — dressing it as a danger
                 would teach the red to mean "a decision" rather than "a loss". */}
-            {erasing ? (
-              <Button
-                variant="secondary"
-                className="btn-danger"
-                disabled={busy}
-                onClick={() => void verify(code, { erase: prompt.accountId })}
-              >
-                {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkEraseConfirm')}
-              </Button>
-            ) : (
-              <Button
-                variant="primary"
-                disabled={busy}
-                onClick={() => void verify(code, { leave: prompt.accountId })}
-              >
-                {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkSwitchConfirm')}
-              </Button>
-            )}
-            <button type="button" className="link-quiet-btn" disabled={busy} onClick={leave}>
-              {t(lang, 'linkCancel')}
-            </button>
+            <div className="link-calls">
+              {erasing ? (
+                <Button
+                  variant="secondary"
+                  className="btn-danger"
+                  disabled={busy}
+                  onClick={() => void verify(code, { erase: prompt.accountId })}
+                >
+                  {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkEraseConfirm')}
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  disabled={busy}
+                  onClick={() => void verify(code, { leave: prompt.accountId })}
+                >
+                  {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkSwitchConfirm')}
+                </Button>
+              )}
+              <button type="button" className="link-quiet-btn" disabled={busy} onClick={leave}>
+                {t(lang, 'linkCancel')}
+              </button>
+            </div>
           </div>
         )}
 
@@ -996,18 +1099,18 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             {/* THE FACE STEPS FORWARD to the ending's size in whole-pixel steps (the lead's 6px
                 a cell, then 7, then 8), and on a SAVE the foil stamp lands on it — the editor's
                 own save moment, one implementation for both. */}
-            <div className="link-face">
+            <div ref={endingFaceRef} className="link-face">
               {face && endingId ? (
                 <>
                   <AccountMark
-                    avatar={face.avatar ?? defaultAvatar(endingId)}
+                    avatar={face.avatar ?? defaultAvatar(face.publicId)}
                     size={ENDING_PX}
                     compose={composeEnding}
                   />
                   {outcome === 'bound' && (
                     <FoilStamp
                       play={stamp}
-                      avatar={face.avatar ?? defaultAvatar(endingId)}
+                      avatar={face.avatar ?? defaultAvatar(face.publicId)}
                       seed={foilSeed(`profile:${endingId}`)}
                     />
                   )}
@@ -1017,7 +1120,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
               )}
             </div>
             {face && endingId && (
-              <span {...arrive(540)} className="link-name link-arrive">
+              <span
+                ref={endingChipRef}
+                {...arrive(540)}
+                className={`link-name${chipHeld ? '' : ' link-arrive'}`}
+              >
                 {face.name}
               </span>
             )}

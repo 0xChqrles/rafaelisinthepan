@@ -42,12 +42,13 @@
 // rather than claiming UNSAVED before it knows (#211's explicit-loading rule). SAVE is live
 // either way — its tap leads to the flow whose CONTINUE is the account-deploying trigger.
 
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { RecordSize } from '../components/record/scene';
 import { defaultAvatar } from '@whippin/shared';
 import { faceSettled, shownFace, useOwnFace } from '../components/AccountFace';
 import { StatSlot } from '../components/AccountStats';
 import Avatar from '../components/Avatar';
+import { cutAddress } from '../components/addressCut';
 import DeviceList from '../components/DeviceList';
 import LangTitle from '../components/LangTitle';
 import Record from '../components/record/Record';
@@ -71,13 +72,15 @@ import useUiLang from '../hooks/useUiLang';
 const MARK_PX = 50;
 
 // THE RECORD'S SIZE, off the screen's height: on a TALL phone the count one whole size up — the
-// free height spent on the subject rather than left as a band of nothing — and on a SHORT one
-// (an iPhone SE's 667px and under) one size down, two on a TINY one, so the unsaved page's call
-// still stands above the edge. The queries are made once; the hook only reads them.
+// free height spent on the subject rather than left as a band of nothing; a phone only, since a
+// desktop column has no bottom edge to fill and the size would push its footnote out — and on
+// a SHORT screen (an iPhone SE's 667px and under) one size down, two on a TINY one, so the
+// unsaved page's call still stands above the edge. The queries are made once; the hook only
+// reads them.
 const SIZE_QUERIES: readonly (readonly [RecordSize, string])[] = [
   ['tiny', '(max-height: 600px)'],
   ['short', '(max-height: 740px)'],
-  ['tall', '(min-height: 800px)'],
+  ['tall', '(max-width: 640px) and (min-height: 800px)'],
 ];
 const sizeQueries =
   typeof window !== 'undefined' && typeof window.matchMedia === 'function'
@@ -94,16 +97,42 @@ function useRecordSize(): RecordSize {
   return useSyncExternalStore(subscribeSize, recordSizeNow);
 }
 
-// The saved address, cut in the MIDDLE when it does not fit: the local part gives way, the
-// domain always stands (`prenom.nom…@gmail.com`), so the address still reads as the player's.
+// The saved address, cut by WHOLE CHARACTERS when it does not fit its line (`cutAddress`: the
+// local part gives way, the domain stands — `prenom.no…@gmail.com`), so it still reads as the
+// player's. The line's room is counted in the mono's own advance, measured off the address
+// itself; a screen reader is given the whole address.
 function SavedAddress({ address }: { address: string }) {
-  const at = address.lastIndexOf('@');
-  if (at <= 0) return <span className="account-id-mail-local">{address}</span>;
+  const lineRef = useRef<HTMLSpanElement>(null);
+  const probeRef = useRef<HTMLSpanElement>(null);
+  const [fit, setFit] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const line = lineRef.current;
+    const probe = probeRef.current;
+    if (!line || !probe || address.length === 0) return undefined;
+    const measure = () => {
+      const advance = probe.getBoundingClientRect().width / address.length;
+      setFit(advance > 0 ? Math.floor(line.clientWidth / advance) : null);
+    };
+    measure();
+    let live = true;
+    void document.fonts?.ready.then(() => {
+      if (live) measure();
+    });
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    ro?.observe(line);
+    return () => {
+      live = false;
+      ro?.disconnect();
+    };
+  }, [address]);
   return (
-    <>
-      <span className="account-id-mail-local">{address.slice(0, at)}</span>
-      <span className="account-id-mail-domain">{address.slice(at)}</span>
-    </>
+    <span ref={lineRef} className="account-id-mail-line">
+      <span ref={probeRef} className="account-id-mail-probe" aria-hidden="true">
+        {address}
+      </span>
+      <span aria-hidden="true">{fit === null ? address : cutAddress(address, fit)}</span>
+      <span className="sr-only">{address}</span>
+    </span>
   );
 }
 

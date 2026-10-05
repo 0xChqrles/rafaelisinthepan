@@ -11,7 +11,7 @@ import {
   churnCells,
   drainStep,
   isSymmetric,
-  landingOrder,
+  landStep,
   mirroredCell,
   paintStroke,
   rollShape,
@@ -163,10 +163,32 @@ describe('the dice', () => {
     expect(rollShape(first, stuck)).not.toEqual(first);
   });
 
-  it('churns plausible creatures (mirrored) and lands every cell exactly once', () => {
+  it('churns plausible creatures (mirrored) and lands the shape over the churn in the Bayer order', () => {
     for (let f = 0; f < 6; f += 1) expect(isSymmetric(churnCells(f))).toBe(true);
-    const order = landingOrder(rollShape(blank(), seeded(9)));
-    expect([...order].sort((a, b) => a - b)).toEqual(Array.from({ length: AVATAR_CELLS }, (_, i) => i));
+    const target = rollShape(blank(), seeded(9));
+    let shown = churnCells(4);
+    const changed = new Set<number>();
+    let left = shown.filter((v, i) => v !== target[i]).length;
+    for (let step = 1; step <= 6; step += 1) {
+      const out = landStep(shown, target, step, 6);
+      // Each step changes only cells that differ from the shape, each once, into the shape.
+      for (const i of out.on) expect(target[i]).toBe(1);
+      for (const i of out.off) expect(target[i]).toBe(0);
+      for (const i of [...out.on, ...out.off]) {
+        expect(changed.has(i)).toBe(false);
+        changed.add(i);
+      }
+      const now = out.cells.filter((v, i) => v !== target[i]).length;
+      expect(now).toBeLessThanOrEqual(left);
+      left = now;
+      shown = out.cells;
+    }
+    expect(shown).toEqual(target);
+    // The first step lands a scattered few, never a block from one edge.
+    const first = landStep(new Array<number>(AVATAR_CELLS).fill(0), new Array<number>(AVATAR_CELLS).fill(1), 1, 6).on;
+    expect(first.length).toBeGreaterThan(8);
+    expect(first.length).toBeLessThan(30);
+    expect(new Set(first.map((i) => Math.floor(i / 10))).size).toBeGreaterThanOrEqual(5);
   });
 });
 

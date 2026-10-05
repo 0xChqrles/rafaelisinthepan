@@ -18,7 +18,7 @@
 // the request itself knows — a device that was just created is listed, and one that was just
 // revoked is not. Nothing here has to compensate for the lag.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import {
   devicesUrl,
   parseDeviceIdentity,
@@ -163,9 +163,18 @@ export default function DeviceList({ lang }: { lang: string }) {
   };
 
   // The lines arrive AFTER the record has calmed (`useRecordCalm`): held while it has not
-  // begun, then in at the moment it says — at once when it already stands.
+  // begun, then in at the moment it says — at once when it already stands. The wait is
+  // worked out as the lines MOUNT (the moment their CSS delay counts from, the skeleton's
+  // too), never when the record's calm was announced — a slow read would otherwise make the
+  // lines wait the whole delay again. And once in, they STAY in: a RETRY on the record puts
+  // its calm back to "not yet", which says nothing about lines already standing.
   const calm = useRecordCalm();
-  const after = useMemo(() => (calm === null ? null : Math.max(0, Math.round(calm - clockNow()))), [calm]);
+  const [after, setAfter] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (after === null && phase === 'ready' && calm !== null) {
+      setAfter(Math.max(0, Math.round(calm - clockNow())));
+    }
+  }, [after, phase, calm]);
   const shown = phase === 'ready' && after !== null;
 
   return (

@@ -60,6 +60,14 @@
      here rather than on `.route-frame` where it started. Deliberately the ONE unsaturated
      line on the drawing — the words and the nodes carry every colour it says anything with. */
   --rail: #4a5578;
+  /* A PLAYER'S NAME HAS TWO SIZES: the HERO name (a face's own name — `/account`'s masthead,
+     the editor's chip, the flow's and the signed-out screen's chips) and the BOARD LINE's
+     (every board, and the editor's preview of one). One identity, two type sizes across every
+     screen it walks through. (The crossroads' side chips are labels, at its labels' size.) */
+  --name-hero-size: 17px;
+  --name-hero-weight: 700;
+  --name-line-size: 15px;
+  --name-line-weight: 500;
   --surface: #14151c;
   --surface-hover: #1f212a;
   --fg: #ffffff; /* plain white — the clear contrast the rebrand asks for */
@@ -3253,8 +3261,8 @@ input {
 }
 .board-name {
   font-family: var(--ui);
-  font-size: 15px;
-  font-weight: 500;
+  font-size: var(--name-line-size);
+  font-weight: var(--name-line-weight);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5812,8 +5820,8 @@ figure.l1-fig {
   white-space: nowrap;
   padding: 0 10px;
   font-family: var(--ui);
-  font-size: 17px;
-  font-weight: 700;
+  font-size: var(--name-hero-size);
+  font-weight: var(--name-hero-weight);
   line-height: 32px;
   letter-spacing: 0.03em;
   background: var(--fg);
@@ -5862,6 +5870,15 @@ figure.l1-fig {
 .link-receipt-stats {
   width: 100%;
   margin: 0;
+}
+/* On the crossroads the row is the fork's own width, and when the account is about to be
+   DELETED its figures stand in the ghost's quiet ink: they are what is being lost, never a
+   prize waiting on the other side of the arrow. */
+.link-confirm .account-stats {
+  max-width: 340px;
+}
+.link-confirm.erase .account-stat-value {
+  color: var(--muted);
 }
 .link-receipt-stats .account-stats {
   margin: 0;
@@ -5926,10 +5943,20 @@ figure.l1-fig {
   margin: 0;
   text-align: center;
 }
-/* The caption UNDER a full-width button: pulled toward what it explains, centered on it. */
+/* The code step's refusal line, held one line tall under the keys whether or not it speaks. */
+.link-wrong {
+  min-height: 20px;
+}
+/* The caption UNDER a full-width button: pulled toward what it explains, centered on it.
+   A centred note that wraps is BALANCED, never a line and a one-word orphan. */
 .account-note.caption {
   margin-top: -4px;
   text-align: center;
+}
+.account-note.caption,
+.account-note-center,
+.signed-out-note {
+  text-wrap: balance;
 }
 /* An ERROR CARRIES A MARK — the app's own LED square, in the danger ink, the same shape the
    primary button lights with. It is what separates a refusal from the help text above it at
@@ -5952,18 +5979,20 @@ figure.l1-fig {
   vertical-align: 1px;
 }
 
-/* THE ADDRESS LINE (`components/AddressField.tsx`): the game's own prompt — the cobalt `>`,
-   the line in the pixel face, the caret in the accent — over the podium's stippled floor,
-   the one mark under it saying it can be typed into. The input is REAL and visible and spans
-   the whole line, prompt included (the focus brackets then frame the line); the caret is
-   the browser's own, shaped as the prompt's underscore where `caret-shape` is supported.
-   16px: the face's whole size, and the floor under which iOS zooms a focused field. */
+/* THE ADDRESS LINE (`components/AddressField.tsx`): the game's own prompt — the cobalt `>`
+   in the pixel face, the caret in the accent — over the podium's stippled floor, the one
+   mark under it saying it can be typed into; the address in the area's address face (`--ui`
+   bold, as the masthead and the code step print it), at one size whatever its length. The
+   input is REAL and visible and spans the whole line, prompt included (the focus brackets
+   then frame the line); the caret is the browser's own, shaped as the prompt's underscore
+   where `caret-shape` is supported. 16px: the floor under which iOS zooms a focused field. */
 .link-field {
   --field-h: 48px;
   position: relative;
   width: 100%;
-  font-family: var(--pixel-font);
+  font-family: var(--ui);
   font-size: 16px;
+  font-weight: 600;
   line-height: var(--field-h);
   cursor: text;
 }
@@ -6002,6 +6031,7 @@ figure.l1-fig {
   color: color-mix(in srgb, var(--muted) 55%, transparent);
   opacity: 1;
   text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 /* The focus brackets frame the line; the line itself does not dim under them (the house's
    held-control dim) — its caret is what says it is held, and the address must stay white. */
@@ -6021,22 +6051,10 @@ figure.l1-fig {
   top: 0;
   left: 3px;
   height: var(--field-h);
+  font-family: var(--pixel-font);
+  font-weight: 400;
   color: var(--accent);
   pointer-events: none;
-}
-/* A long address, a whole size down: the line DRAWN at half its 16px (so the field never
-   drops under iOS's zoom floor), the input twice as wide and tall and scaled by exactly one
-   half from its corner — every pixel of the face on a whole one — the prompt at 8px with it. */
-.link-field.small .link-field-prompt {
-  font-size: 8px;
-}
-.link-field.small .link-field-input {
-  width: calc((100% - 6px) * 2);
-  height: calc(var(--field-h) * 2);
-  margin-bottom: calc(var(--field-h) * -1);
-  line-height: calc(var(--field-h) * 2);
-  transform: scale(0.5);
-  transform-origin: 0 0;
 }
 /* An Enter on what cannot be an address: the guess prompt's own refusal. */
 .link-field.invalid {
@@ -6157,6 +6175,9 @@ figure.l1-fig {
   background: var(--cell-ink, var(--fg));
   animation: code-strike 180ms steps(1, end);
 }
+/* The white is the FIRST step alone (~60ms): from the second the key is its ink with the
+   digit cut out — so a fast typist, a paste or an autofill sees every digit land, the sixth
+   included, before the step leaves. */
 @keyframes code-strike {
   0% {
     background: var(--fg);
@@ -6164,6 +6185,8 @@ figure.l1-fig {
     translate: 0 2px;
   }
   34% {
+    background: var(--cell-ink, var(--fg));
+    color: var(--bg);
     translate: 0 2px;
   }
   67% {
@@ -6303,8 +6326,10 @@ figure.l1-fig {
   color: var(--danger);
   opacity: 0.85;
 }
-.link-danger:hover:not(:disabled) {
-  opacity: 1;
+@media (hover: hover) and (pointer: fine) {
+  .link-danger:hover:not(:disabled) {
+    opacity: 1;
+  }
 }
 
 /* The address and code steps' LEAD: WHO is being saved (or, on the returning door, the field
@@ -6382,13 +6407,20 @@ figure.l1-fig {
 }
 /* THE LEAVING FACE, DIMMED BY DITHER — never by opacity (the house's thinning: whole 2px
    cells shown or not, the board's dissolve). It arrives whole, so the player recognises the
-   face they have been wearing, then thins in hard steps: to HALF its cells — the house's
-   checker, the signed-out ghost's — when it is about to be DELETED, to three quarters when
-   it is merely left. Recognisable either way, right up to the tap. */
-.link-cross.erase .leaving .link-cross-face {
-  -webkit-mask-image: var(--dz-4);
-  mask-image: var(--dz-4);
+   face they have been wearing, then thins in hard steps: when it is about to be DELETED it
+   becomes a GHOST (`.ghost-mark`, below) — its ground given up for the slate, its ink to
+   HALF its cells; when it is merely left, the whole tile to three quarters. Recognisable
+   either way, right up to the tap. */
+.link-cross .ghost-mark .avatar {
   animation: link-thin-erase 240ms steps(1, end) 360ms backwards;
+}
+.link-cross .ghost-mark .avatar rect {
+  animation: ghost-ground-hold 360ms steps(1, end);
+}
+@keyframes ghost-ground-hold {
+  0% {
+    fill: var(--ground);
+  }
 }
 .link-cross.switch .leaving .link-cross-face {
   -webkit-mask-image: var(--dz-6);
@@ -6464,11 +6496,30 @@ figure.l1-fig {
     opacity: 0.25;
   }
 }
-/* The one-sided fallback (a prompt that names no account to join): the leaving face alone,
-   thinned the same way when it is about to go. */
-.link-cross-face.single.erase {
+/* THE GHOST OF A MARK — an account about to be deleted, an account signed out of: the MARK
+   is thinned, never its tile. Its INK goes through the Bayer dither to half its cells; its
+   GROUND is given up for the house's slate stipple (`--rail` under `--dz-2`, what the boards'
+   ghosts wait in). A saturated ground cut into a 2px checker against black is the loudest
+   texture a screen can hold and reads as a corrupt image; ink thinning over a quiet slate
+   reads as absence, and the face stays its own. (The one-sided crossroads wears it too.) */
+.ghost-mark {
+  position: relative;
+}
+.ghost-mark::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--rail);
+  -webkit-mask-image: var(--dz-2);
+  mask-image: var(--dz-2);
+}
+.ghost-mark .avatar {
+  position: relative;
   -webkit-mask-image: var(--dz-4);
   mask-image: var(--dz-4);
+}
+.ghost-mark .avatar rect {
+  fill: transparent;
 }
 
 /* THE NARROWEST PHONES, where French bites: the fork's sides give the chip a size down and
@@ -6630,6 +6681,55 @@ figure.l1-fig {
    quiet dress is what makes it secondary, never a smaller thing to hit. */
 .link-stack .link-quiet-btn {
   width: 100%;
+}
+/* A STEP LEAVES THROUGH THE DITHER before the next one arrives (`AccountEmail`'s `advance`):
+   everything but the lead — the face and its chip stand, and the ending's face travels out of
+   them — goes out the way a board line does (`board-dissolve-out`); the crossroads then
+   dissolves in, the board lines' own arrival. */
+.link-step.leaving > :not(.link-lead) {
+  animation: board-dissolve-out 120ms linear forwards;
+}
+.link-stack.link-confirm {
+  animation: board-dissolve 240ms linear backwards;
+}
+/* The crossroads' two answers, one group: the call and CANCEL under it. */
+.link-calls {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+/* THE FINAL STEPS' CALL TAKES THE BOTTOM EDGE ON A PHONE — the crossroads' answers and the
+   endings' OK / PLAY, where `/account`'s SAVE, the signed-out screen's RECONNECT, MIX and
+   INVITE sit: no soft keyboard is up there (the stack takes the focus), so nothing needs the
+   call inline. The stack fills the column, the face and what is said about it CENTRED in
+   the height over the call (an auto margin above the first and one above the call), and the
+   page scrolls instead of the column when a short phone cannot hold it all. The address and
+   code steps keep the call inline: the keyboard owns their bottom edge. */
+@media (max-width: 640px) {
+  .account-screen.link-final {
+    max-height: none;
+    overflow: visible;
+  }
+  .link-final .link-stack {
+    flex: 1 0 auto;
+  }
+  .link-final .link-stack > :first-child {
+    margin-top: auto;
+  }
+  /* The column's own 24px and `.app`'s 28px given back down to the 14px inset. */
+  .link-final .link-calls,
+  .link-final .link-ending .link-call {
+    margin-top: auto;
+    margin-bottom: -38px;
+  }
+  /* (Each keeps its inline air as a floor under the auto margin.) */
+  .link-final .link-calls {
+    padding-top: 14px;
+  }
+  .link-final .link-ending > .link-ending-line {
+    margin-bottom: 28px;
+  }
 }
 
 /* ===================== the privacy notice (#229) ===================== */
@@ -6809,9 +6909,11 @@ figure.l1-fig {
   background: repeating-linear-gradient(to right, var(--line-strong) 0 2px, transparent 2px 4px) 0
     100% / 100% 2px no-repeat;
 }
-.privacy-mail:hover {
-  color: var(--accent);
-  background-image: repeating-linear-gradient(to right, var(--accent) 0 2px, transparent 2px 4px);
+@media (hover: hover) and (pointer: fine) {
+  .privacy-mail:hover {
+    color: var(--accent);
+    background-image: repeating-linear-gradient(to right, var(--accent) 0 2px, transparent 2px 4px);
+  }
 }
 @media (max-width: 640px) {
   .privacy-screen {
@@ -6863,8 +6965,10 @@ figure.l1-fig {
   cursor: pointer;
   transition: color 120ms;
 }
-.account-foot-link:hover {
-  color: var(--fg);
+@media (hover: hover) and (pointer: fine) {
+  .account-foot-link:hover {
+    color: var(--fg);
+  }
 }
 
 /* On a phone the mobile .app is top-anchored (16px), so the column's top padding sets
@@ -8138,17 +8242,24 @@ figure.l1-fig {
 .signed-out-ghost {
   display: block;
   line-height: 0;
-  -webkit-mask-image: var(--dz-4);
-  mask-image: var(--dz-4);
-  animation:
-    signed-out-ghost-in 240ms linear backwards,
-    podium-ghost-bob 1.6s steps(1) 400ms 5;
+  animation: podium-ghost-bob 1.6s steps(1) 400ms 5;
 }
-@keyframes signed-out-ghost-in {
+/* It comes in through the dither: the ink to its half, the slate to its quarter. */
+.signed-out-ghost .avatar {
+  animation: signed-out-ink-in 240ms linear backwards;
+}
+.signed-out-ghost::before {
+  animation: signed-out-ground-in 240ms linear backwards;
+}
+@keyframes signed-out-ink-in {
   0% { -webkit-mask-image: var(--dz-0); mask-image: var(--dz-0); }
   25% { -webkit-mask-image: var(--dz-1); mask-image: var(--dz-1); }
   50% { -webkit-mask-image: var(--dz-2); mask-image: var(--dz-2); }
   75% { -webkit-mask-image: var(--dz-3); mask-image: var(--dz-3); }
+}
+@keyframes signed-out-ground-in {
+  0% { -webkit-mask-image: var(--dz-0); mask-image: var(--dz-0); }
+  50% { -webkit-mask-image: var(--dz-1); mask-image: var(--dz-1); }
 }
 /* The name in the flow's white chip (`.link-name`'s box), dimmed a half step: still legible,
    no longer held. */
@@ -8199,6 +8310,24 @@ figure.l1-fig {
   gap: 6px;
   width: 100%;
 }
+/* The frame: the streak celebration's own furniture (`.streak-lockup`, `.streak-corner`),
+   standing still — it arrives through the dither with the face. */
+.signed-out-frame {
+  position: fixed;
+  inset: 0;
+  z-index: 41;
+  pointer-events: none;
+}
+.signed-out-frame .streak-lockup,
+.signed-out-frame .streak-corner {
+  opacity: 1;
+  animation: board-dissolve 240ms linear backwards;
+}
+@media (min-width: 641px) {
+  .signed-out-frame .streak-corner {
+    display: none;
+  }
+}
 .signed-out-calls .mix-btn {
   margin: 0;
 }
@@ -8220,7 +8349,9 @@ figure.l1-fig {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .signed-out-ghost {
+  .signed-out-ghost,
+  .signed-out-ghost .avatar,
+  .signed-out-ghost::before {
     animation: none;
   }
 }
@@ -9733,8 +9864,8 @@ figure.l1-fig {
 .account-id-name {
   display: block;
   font-family: var(--ui);
-  font-size: 18px;
-  font-weight: 700;
+  font-size: var(--name-hero-size);
+  font-weight: var(--name-hero-weight);
   letter-spacing: 0.02em;
   line-height: 20px;
   overflow: hidden;
@@ -9766,18 +9897,18 @@ figure.l1-fig {
   color: var(--muted);
   white-space: nowrap;
 }
-/* Cut in the middle: the local part gives way, the domain stands. */
-.account-id-mail-local {
-  flex: 0 1 auto;
+/* Cut by whole characters (`SavedAddress`): the local part gives way, the domain stands. The
+   probe is the whole address, unseen, the ruler its advance is read off. */
+.account-id-mail-line {
+  position: relative;
+  flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
-.account-id-mail-domain {
-  flex: 0 0 auto;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.account-id-mail-probe {
+  position: absolute;
+  visibility: hidden;
+  white-space: nowrap;
 }
 /* The pencil, clinging to the frame's top corner — where the result's card prints its date:
    what the tap does, in the chrome's quiet ink. */
@@ -10130,6 +10261,18 @@ figure.l1-fig {
   opacity: 0.45;
   cursor: default;
 }
+/* SIGN OUT's brackets fit the WORD (28px), so a list of devices reads as lines each with its
+   own small control — 24px of air between two bracket sets — never a ladder of boxes; the
+   finger's target stays 44px tall around it. */
+.device-signout {
+  height: 28px;
+  padding: 0 8px;
+}
+.device-signout::after {
+  content: '';
+  position: absolute;
+  inset: -8px -4px;
+}
 /* The list's read still out: one line's boxes in the stippled slate — standing, once the lines
    are in, over the first of them until their dissolve begins. */
 .device-list {
@@ -10167,7 +10310,7 @@ figure.l1-fig {
 }
 @media (min-width: 641px) {
   .account-screen.account-page {
-    padding-top: clamp(72px, 12vh, 140px);
+    padding-top: clamp(56px, 10vh, 140px);
   }
 }
 /* A SHORT phone: the record's count is a size down (`Record`'s size), and the stack a few whole
@@ -10182,20 +10325,41 @@ figure.l1-fig {
 }
 @media (max-width: 640px) and (max-height: 600px) {
   .account-screen.account-page {
-    padding-top: 48px;
+    padding-top: 40px;
   }
   .account-page > .record {
     margin-bottom: 4px;
   }
   .account-page .record-art {
-    margin-bottom: 30px;
+    margin-bottom: 24px;
   }
   .account-page .device-list {
     margin-top: 16px;
   }
-  /* (Where the call cannot park on the edge, it still keeps a step off the numbers.) */
+  /* (Where the call cannot park on the edge, it still keeps a step off the numbers.) The
+     caption is a size down — one line from 360px wide — so the call and the footnote stand
+     on the screen down to an iPhone SE's browser. */
   .account-page > .account-cta {
+    gap: 10px;
+    padding-top: 4px;
+  }
+  .account-page .account-cta .account-note.caption {
+    font-size: 11px;
+    line-height: 16px;
+  }
+  .account-page .account-cta + .account-foot {
+    margin-top: 2px;
+  }
+  /* The masthead hugs its 50px mark a little closer (the address still hangs in its foot). */
+  .account-id {
+    min-height: 74px;
     padding-top: 12px;
+    padding-bottom: 12px;
+  }
+}
+@media (max-width: 380px) and (max-height: 600px) {
+  .account-page .account-cta .account-note.caption {
+    letter-spacing: -0.03em;
   }
 }
 @media (max-width: 360px) {
@@ -10206,9 +10370,6 @@ figure.l1-fig {
   .account-id {
     padding-right: 40px;
   }
-  .account-id-name {
-    font-size: 16px;
-  }
   /* French is what bites here: the call's label keeps its one line by giving up padding,
      never type; the device line hands its label the gutter. */
   .account-cta .mix-btn {
@@ -10218,9 +10379,6 @@ figure.l1-fig {
   .device-row {
     gap: 12px;
     padding-left: 8px;
-  }
-  .device-row .quiet-btn {
-    padding: 0 10px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -10258,7 +10416,8 @@ figure.l1-fig {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  /* 16: the MIRROR's ▲ hangs 6px under the canvas, and the chip keeps 10px clear of it. */
+  gap: 16px;
   align-self: stretch;
   padding: 14px;
 }
@@ -10349,11 +10508,11 @@ figure.l1-fig {
   display: block;
 }
 /* THE CANVAS: ten cells of `--pcell` square, no gutter. An EMPTY cell wears the ground, and
-   where the grid crosses clear of the drawing (`speckAt`: the four cells meeting there all
-   empty) a 2px speck of the ink, mixed into the ground, sits in the corner — the grid, said as
-   little as it can be, and never touching the ink. */
+   at every crossing of the grid that touches no ink (`speckAt`: the four cells meeting there
+   all empty) a 2px speck of the ink, 60% into the ground — enough to read on the darkest
+   palette — sits in the corner: the grid, said as little as it can be, never touching the ink. */
 .avatar-editor {
-  --dot: color-mix(in srgb, var(--cell-fg) 42%, var(--cell-bg));
+  --dot: color-mix(in srgb, var(--cell-fg) 60%, var(--cell-bg));
   position: relative;
   z-index: 1;
   display: grid;
@@ -10503,8 +10662,8 @@ figure.l1-fig {
   display: block;
   image-rendering: pixelated;
 }
-/* The MIRROR's axis: two small pixel arrows on the canvas's edges, in the accent, pointing at
-   the line the drawing folds on — over the cells' pops and sparks. */
+/* The MIRROR's axis: two small pixel arrows flush on the canvas's edges, in the accent,
+   pointing at the line the drawing folds on — over the cells' pops and sparks. */
 .profile-axis {
   position: absolute;
   z-index: 2;
@@ -10517,10 +10676,10 @@ figure.l1-fig {
   animation: solved-card-blink 120ms steps(2, jump-end) backwards;
 }
 .profile-axis.top {
-  top: -8px;
+  top: -6px;
 }
 .profile-axis.bottom {
-  bottom: -8px;
+  bottom: -6px;
   rotate: 180deg;
 }
 
@@ -10534,8 +10693,8 @@ figure.l1-fig {
   z-index: 1;
   display: block;
   font-family: var(--ui);
-  font-size: 17px;
-  font-weight: 700;
+  font-size: var(--name-hero-size);
+  font-weight: var(--name-hero-weight);
   letter-spacing: 0.03em;
 }
 .profile-name {
@@ -10771,8 +10930,9 @@ figure.l1-fig {
 }
 
 /* HOW OTHERS SEE ME: the board's line — the mark at its 30px, the name in its dress — with
-   nothing a board says only once a day is played. Its mark stands exactly under the first
-   swatch's (both 7px in). */
+   nothing a board says only once a day is played. Right under the tools (it previews the
+   swatch in hand), its mark stands exactly under the first swatch's (both 7px in, on the
+   palettes' own offset when the tools wrap). */
 .profile-line {
   flex: none;
   display: grid;
@@ -10783,6 +10943,9 @@ figure.l1-fig {
   padding: 0 7px;
   line-height: 1;
   animation: board-dissolve 240ms linear 420ms backwards;
+}
+.profile-screen.wrap .profile-line {
+  padding-left: calc(var(--palettes-at, 0px) + 7px);
 }
 .profile-line .avatar {
   display: block;
@@ -10820,11 +10983,12 @@ figure.l1-fig {
   margin-top: 14px;
 }
 @media (max-width: 640px) {
-  /* The phone: the column takes the viewport (less `.app`'s 16 + 28px pads); the card starts
-     on the area's start line — 60px under the bar's top, where `/account`'s masthead stands,
-     so the mark handed over travels straight into the canvas — and SAVE parks on the bottom
-     edge, 14px off it, where MIX and INVITE sit. The height left over has ONE use: it hangs
-     the board line over SAVE, the preview beside the button that publishes it. */
+  /* The phone: the column takes the viewport (less `.app`'s 16 + 28px pads), and SAVE parks
+     on the bottom edge, 14px off it, where MIX and INVITE sit. The card, its tools and the
+     board line are ONE group, and the height the canvas leaves over CENTRES it between the
+     area's start line (60px under the bar's top, where `/account`'s masthead stands) and
+     SAVE: half of it over the card (`--plift`, worked out by `Profile` from the first frame,
+     so the box never moves when the profile lands), the rest under the line. */
   .profile-screen {
     align-self: stretch;
     min-height: calc(100dvh - 44px);
@@ -10832,27 +10996,30 @@ figure.l1-fig {
     overflow: visible;
     padding: 60px 0 0;
   }
+  .profile-card {
+    margin-top: var(--plift, 0px);
+  }
   .profile-line {
-    margin-top: auto;
+    margin-bottom: 16px;
   }
   .profile-screen .profile-save {
-    margin-top: 16px;
+    margin-top: auto;
     margin-bottom: -14px;
   }
-}
-/* A SHORT screen (`Profile` decides, off the height before any soft keyboard): the same
-   editor a few whole pixels tighter, so the canvas keeps its size and nothing scrolls. */
-.profile-screen.short {
-  padding-top: 48px;
-}
-.profile-screen.short .profile-card {
-  gap: 12px;
-}
-.profile-screen.short .profile-tools {
-  margin: 10px 0 6px;
-}
-.profile-screen.short .profile-save {
-  margin-top: 10px;
+  /* A SHORT phone (`Profile` decides, off the height before any soft keyboard): the same
+     editor a few whole pixels tighter, so the canvas keeps its size and nothing scrolls. */
+  .profile-screen.short {
+    padding-top: 48px;
+  }
+  .profile-screen.short .profile-card {
+    gap: 14px;
+  }
+  .profile-screen.short .profile-tools {
+    margin: 10px 0 6px;
+  }
+  .profile-screen.short .profile-line {
+    margin-bottom: 10px;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .profile-corner,

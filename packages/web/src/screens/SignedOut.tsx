@@ -48,7 +48,7 @@
 // address the moment one is bound to it.
 
 import { useEffect, useState } from 'react';
-import { anonName, defaultAvatar } from '@whippin/shared';
+import { MARK_GLYPH, anonName, defaultAvatar } from '@whippin/shared';
 import { readProfile, type ProfileRead } from '../api';
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
@@ -139,6 +139,20 @@ export default function SignedOut({ lang }: { lang: string }) {
 
   return (
     <div className="signed-out">
+      {/* A FULL-SCREEN MOMENT WITH NO HEADER wears the streak celebration's frame — its
+          corner brackets and the WHIPPIN AI lockup top left — so it reads as the app's own
+          screen, never an error page. (On desktop the device frame's own corners stand.) */}
+      <div className="signed-out-frame" aria-hidden="true">
+        <div className="streak-lockup">
+          <svg viewBox={`0 0 ${MARK_GLYPH.width} ${MARK_GLYPH.height}`} shapeRendering="crispEdges">
+            <path d={MARK_GLYPH.path} fill="currentColor" />
+          </svg>
+          <span>WHIPPIN AI</span>
+        </div>
+        {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
+          <span key={corner} className={`streak-corner ${corner}`} />
+        ))}
+      </div>
       <div className="signed-out-body arrive">
         {/* While the read is out the face's boxes are held; a DELETED account settles
             faceless but keeps them, empty, so nothing on the screen moves when it does. */}
@@ -151,7 +165,7 @@ export default function SignedOut({ lang }: { lang: string }) {
           account !== null &&
           shown !== null && (
             <div className="signed-out-face">
-              <span className="signed-out-ghost">
+              <span className="signed-out-ghost ghost-mark">
                 <Avatar avatar={shown.avatar ?? defaultAvatar(account.accountId)} size={FACE_PX} sharp />
               </span>
               <span className="signed-out-name">{shown.name}</span>

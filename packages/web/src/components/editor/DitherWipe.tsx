@@ -25,8 +25,8 @@ const FRAME_MS = 40;
 const WIPE_MS = 420;
 // The front's soft edge, in raster cells: how far behind it the old picture is gone.
 const RAMP = 22;
-// The grid's speck: the ink mixed 42% into the ground (the CSS's own `color-mix`).
-const SPECK = 0.42;
+// The grid's speck: the ink mixed 60% into the ground (the CSS's own `color-mix`).
+const SPECK = 0.6;
 
 export interface WipeShot {
   // What the canvas showed: its palette and its cells.
