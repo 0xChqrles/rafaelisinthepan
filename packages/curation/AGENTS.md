@@ -148,8 +148,8 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   would a player who has roughly the meaning ever say it, or keep to commoner words
   meaning nearly the same?) as a note (`rules.said`): under `WOULD_SAY_HARD` 0.4 it is a
   word players don't say; ONE makes a hard day a loved day may hold (« moucheron »,
-  « mammifères »), TWO or more made the worst days (a median 8 % of the players finished
-  within 30 tries, against 40 % with one and 61 % with none), so a trio holding two
+  « mammifères »), TWO or more made the worst days (finished by a median 40 % of the
+  players, against 57 % with one and 71 % with none), so a trio holding two
   carries that fact on each of them (`rules.unsaid`) and the taste keeps at most one;
   and, once the map is built, where the reader's nearest word
   lands in the hole's own map (`rules.map_nearest_filler`). With those notes and each

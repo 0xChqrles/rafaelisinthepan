@@ -427,7 +427,7 @@ The sentence, holes marked with the hidden word in brackets:
 {chr(10).join(blocks)}
 
 Choose the three starts together, by the taste's start words and its difficulty, so the
-day lands where the taste says (about 80% of players within 30 tries), difficulty tuned
+day lands where the taste's aim says, difficulty tuned
 by the start, never by a duller word. If one hidden word is dead or out of reach whatever
 its start, say so and name ONE replacement from the line instead of starts.
 

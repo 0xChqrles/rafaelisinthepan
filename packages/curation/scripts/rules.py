@@ -61,9 +61,9 @@ PLAIN_WORD_RANK = 40000
 # score: 0.70). Under WOULD_SAY_HARD sat 25 holes, found within 30 tries by a median 41 %
 # of the players against 76 % above. ONE such word is a hard day the user may love
 # (« moucheron », « mammifères », « stagnation », « cafard » sit under it); TWO or more
-# made the worst days: all three found within 30 tries by a median 8 % of the players
-# (6 days), against 40 % with one (12) and 61 % with none (23) — « faux-monnayeur »
-# (0.30) shared 2026-10-05 with a second one, and 1 player in 20 finished it.
+# made the worst days: finished by a median 40 % of the players (6 days, none reaching
+# the taste's 70 %), against 57 % with one (12) and 71 % with none (23) —
+# « faux-monnayeur » (0.30) shared 2026-10-05 with a second one, and 30 % finished it.
 WOULD_SAY_HARD = 0.4
 # Secrets per puzzle (the sentence schema: exactly three distinct slugs).
 TRIO = 3
@@ -177,8 +177,8 @@ def unsaid(chances: dict[str, float | None]) -> str | None:
     if len(under) < 2:
         return None
     return (f"this trio hides {len(under)} words players don't say ({', '.join(under)}): on real play the "
-            f"days with two or more were finished within 30 tries by a median 8% of the players, against 40% "
-            f"with one and 61% with none — keep at most one, replace another by a word of the line")
+            f"days with two or more were finished by a median 40% of the players (none reached 70%), against "
+            f"57% with one and 71% with none — keep at most one, replace another by a word of the line")
 
 
 def map_nearest_filler(rank_map: dict, secret_slug: str, fillers: list[str]) -> tuple[str, int | None] | None:
