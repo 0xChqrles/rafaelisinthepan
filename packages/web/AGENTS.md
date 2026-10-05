@@ -141,9 +141,10 @@
       components/raster.ts    a canvas raster's ABGR pixel (`abgr`, `hexToAbgr`, and `rgbToAbgr`
                               for `heat.ts`'s `rgb()` inks): the streak's orbit, the podium, the
                               archive's keys, the tutorial's art
-      components/rasterWatch.ts  whether anybody is WATCHING a raster's clock (`watchRaster`: in
-                              view, the tab shown, a touch within `IDLE_MS`), and the resting
-                              loop's pace (`LOOP_FRAME_MS`): the podium's and the archive's
+      components/rasterWatch.ts  whether anybody can SEE a raster's clock (`watchRaster`: in
+                              view, the tab shown — never "touched lately"), and the archive's
+                              read wave's stepped pace (`LOOP_FRAME_MS`): the podium's, the
+                              archive's and the record's
       components/DeviceList.tsx  the account's devices + SIGN OUT, as board lines on `/account` (#216)
       components/ErrorScreen.tsx  the app's error surface: a FULL-SCREEN modal led by the
                               user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet);
@@ -207,7 +208,8 @@
       game/boardSlots.ts      the list's ORDER, one item a slot (pure, tested): `boardSlots`
                               (ranked, the left-out rail + your window, playing, waiting; a
                               week's or a month's points alone), `rankDigits`
-      hooks/useStuckOwnLine.ts  whether your line is HELD at the column's edge (`data-stuck`,
+      hooks/useStuckOwnLine.ts  whether your line is HELD under the board's head or on the
+                              window's foot (`data-stuck`,
                               `top` / `bottom`), so the lines passing under it thin out there
       components/podium/      the board's PODIUM, its subject: Podium.tsx (the scene's raster on
                               one clock, the marks, the landings' bursts, the captions;
@@ -1444,7 +1446,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
       on a phone in place, down and right from the mark's own corner (a direct load holds
       the canvas's box as the stippled slate, then grows from its centre).
     - **THE RECORD is the screen's subject** (`components/record/`), in the streak
-      celebration's own sprites: the blue FLAME over the live STREAK on the count's reels,
+      celebration's own sprites: the blue FLAME over the live STREAK landing on the solved
+      count's own SLOT MACHINE (`countRun.ts` at its full `COUNT_RUN_MS`: reels starting almost
+      together, stopping left to right, each stop's shake and its own burst in front of the
+      digit, the solved card's sheet and scale, kept off the unit's line — `RecordBursts`),
       `dayStreak` under it, the week as the CHAIN (`recordWeek`: the week of the language
       holding the account's streak, never a union of two — a played day's link cobalt and
       joined, a day to come its dashed ghost, a missed one an open iron link, TODAY solved
@@ -1454,7 +1459,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
       unlit flame's GHOST in the floor's stipple (a dot every other cell of its silhouette,
       never an outline; still), the pilot spark breathing at its foot and a faint cobalt
       ember drifting off it. It BUILDS once a page load
-      and settles; its rest loop stops off-screen or idle (`rasterWatch`); reduced motion
+      and settles; it is drawn on every frame the display draws (`requestAnimationFrame`:
+      a timer's steps beat against the flame's own stepped flicker), resting only off-screen
+      or in a hidden tab (`rasterWatch`); reduced motion
       is one settled frame. A zero never spins: its iron 0 drops into place in two whole
       steps and shakes, then the pilot lights, the ghost rises off it foot to tip in four
       hard steps, and today's link starts breathing (a side
@@ -2360,8 +2367,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `state/boardOpening.ts`; what stands under the podium is `components/BoardUnder.tsx`, the board's readings `game/boardView.ts`, its
   list's order `game/boardSlots.ts`), entered from the header's CROWN KEY (lit while the
   board is up; the way out is any other key, HOME above all). Top to bottom: the TAB ROW,
-  the HEAD LINE, then ONE COLUMN that scrolls as one — the podium, a group's header slot,
-  the lines.
+  the HEAD LINE — held (`.board-top`: sticky on the window's top over the shell's padding,
+  on the ground, the lines thinning out through the dither at its foot) — then the PAGE: the
+  podium, a group's header slot, the lines, scrolled BY THE WINDOW (user-asked 2026-10-05:
+  "the scrollbar should be on the side of the screen, as always"), so its bar is the
+  window's, a wheel anywhere scrolls it and a phone's toolbars fold away; `body` scrolls on
+  this screen alone (`body:has(.app > .board-screen)`). The first screen's room in whole
+  lines (the window under the head) sizes the podium and says where the fold is; a board
+  turned to opens at the page's top.
   - **WHICH BOARD is the boards' ONE control, `BoardTabs`** — the solved screen's own (its
     dress in *Solved-screen BOARDS*): every group's name, then GLOBAL (the untrusted top 50)
     PINNED at the row's end; with no group at all, ONE bare tab that says so
@@ -2476,7 +2489,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (`.board-sub.still`). Under 360px wide a list with no playing member's % to hang in the
     numbers' gutter gives that gutter to the names (`.plays`, set by `BoardUnder`).
   - **Rows CONNECTED to the reader**: YOUR line is FRAMED (the brackets, the rank in the
-    accent, the name bold) and STAYS IN SIGHT — sticky at both edges of the column, and
+    accent, the name bold) and STAYS IN SIGHT — sticky under the held head and on the
+    window's foot, and
     held there (`data-stuck`, `hooks/useStuckOwnLine.ts`) the lines passing under it thin
     out through a 3-cell Bayer edge (`bayerTiles.ts`' `--edge-*` tiles) instead of being
     cut; on GLOBAL a member of any of your groups (the union of the cached groups' member
@@ -2538,10 +2552,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     loading picture. `aria-busy` while what is shown is not what was asked for, and the
     door names the board on screen.
   - **THE CLOCK RESTS**: the podium steps every `FRAME_MS` (32) until it has settled, then
-    only the foil moves (80ms, `LOOP_FRAME_MS`), stopping while the podium is out of view,
-    the tab is hidden, or `IDLE_MS` (9s) after the last pointer, key, wheel or scroll — ONE
-    watch for every raster at rest (`components/rasterWatch.ts`, the archive's month's too),
-    each clock deciding what a wake starts; the ghost bobs five
+    only the foil moves, on every frame the display draws (`requestAnimationFrame`), stopping
+    only while the podium is out of view or the tab is hidden — never because nobody touched
+    the page lately (a foil that froze until a click read as a frozen app) — ONE watch for
+    every raster at rest (`components/rasterWatch.ts`, the archive's month's and the record's
+    too), each clock deciding what a wake starts; the ghost bobs five
     beats and rests. **Reduced motion draws the board landed**, no clock running: no reels,
     nothing giving way.
   - **A screen reader** hears the podium's places as the board list's first items
@@ -3087,10 +3102,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     in yet (nothing in it that had not begun ever starts); a fresh answer landing during an
     arrival JOINS it. **The 22:00 flip** redraws in place: the new today drops at once, the
     old today's cap goes back to slate, the month standing.
-  - **THE CLOCK RESTS** once settled: nothing moves but today's foil, and only while somebody
-    sees it and is there (`components/rasterWatch.ts`, the podium's watch); a month still
-    being read keeps its wave while seen, idle or not — loading must keep reading as
-    loading. No loop marks a finished day: finished is a shape, not a motion.
+  - **THE CLOCK RESTS** once settled: nothing moves but today's foil, on every frame the
+    display draws while somebody can see it (`components/rasterWatch.ts`, the podium's
+    watch); a month still being read keeps its stepped wave while seen — loading must keep
+    reading as loading. No loop marks a finished day: finished is a shape, not a motion.
   - **THE BURSTS** lie UNDER the raster (`.cal-bursts`), whose ground is transparent, so a
     landing flares through the ground round its key, never over a neighbour's face; their
     box reaches past the grid into open ground no further than the screen's edge and clips
@@ -3553,9 +3568,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (`foil.ts`'s inks as raster cells) — the one shiny thing. **ONE CLOCK** (`streak/beats.ts`):
   the raster (`streak/scene.ts`, ink indices deterministic in `t`), the foil, every DOM word
   (`wordsAt`), the ULTRA star sheet and dismissal all read the milliseconds since the show
-  began, stepped every 50ms while it runs and 80ms (foil) / 160ms (raster) at rest — so the
-  fast-forward is a later `t`, a resize re-plans the same moment, and a backgrounded tab
-  steps nothing while a timer still arms dismissal on time. The sequence, about 3s to the
+  began, drawn on every frame the display draws (`requestAnimationFrame`), through the show
+  and at rest — what is stepped by design (the sparkle, the shakes, the flame's flicker) keeps
+  its steps inside the scene, and the orbits' trails glide a cell at a time (a raster stepped on
+  a timer, 50ms in the show and 160ms at rest, read as a stutter) — so the fast-forward is a
+  later `t`, a resize re-plans the same moment, and a backgrounded tab draws nothing while a
+  timer still arms dismissal on time. The sequence, about 3s to the
   hint: the week's orbit and chain draw themselves → the previous count (derived without
   the solved day; 0 when broken) dithers in → today's link pours in white-hot while the old
   count heats → THE LANDING: the new count stamps as one frame of a white chip with the

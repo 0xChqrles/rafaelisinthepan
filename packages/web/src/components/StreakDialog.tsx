@@ -5,7 +5,7 @@ import { coarsePointer, prefersReducedMotion } from '../hooks/useScramble';
 import { useSolvedDays } from '../state/history';
 import { mondayNarrowLabels, streakTransition, weekView } from '../game/streak';
 import { t } from '../i18n';
-import { SHOW_STEP_MS, STAR_FRAMES, timeline, wordsAt, type WordsFrame } from './streak/beats';
+import { STAR_FRAMES, timeline, wordsAt, type WordsFrame } from './streak/beats';
 import { LINK_H, LINK_W, FOIL, FOIL_DEEP, foilInk } from './streak/sprites';
 import { RESERVE_BITS, layout, numberCells, numberPlace, pastWeeks } from './streak/geometry';
 import type { ClearRect } from './streak/field';
@@ -17,11 +17,11 @@ const NO_SOLVED_DAYS: number[] = [];
 const DISMISS_FADE_MS = 200;
 // The hint's own entrance; dismissal arms once it has landed.
 const HINT_IN_MS = 240;
-// The raster steps like the strike sheets while the show runs (`SHOW_STEP_MS`), like the foil
-// once it rests — and the orbits' slow drift redraws at half that once all has landed: pixel
-// art has nothing to gain from 60fps.
-const IDLE_FRAME_MS = 80;
-const IDLE_RASTER_MS = 160;
+// The raster is drawn on EVERY FRAME THE DISPLAY DRAWS, through the show and at rest: the
+// orbits' trails glide a cell at a time, and what is stepped by design (the sparkle, the
+// shakes, the flame's flicker) keeps its own steps inside the scene. (A raster stepped on a
+// timer — 50ms in the show, 160ms for the drift at rest — read as a stutter, user-reported
+// 2026-10-05.)
 // Reduced motion holds ONE frame: the settled picture, between two heartbeats.
 const STILL_AFTER_SETTLED_MS = 400;
 // The device frame's corner brackets (CSS px): the cards' arm, inset by the screen.
@@ -261,11 +261,10 @@ export default function StreakDialog({
     const ink = new Uint8Array(L.cols * L.rows);
     const palette = new Uint32Array([0, ...scene.inks.map(hexToAbgr)]);
     // THE FOIL is painted per cell (`foilInk`): the raster says where it is and where on its
-    // link each cell sits; at rest only those cells are repainted between the raster's steps.
+    // link each cell sits.
     const foil: FoilField = { u: new Float32Array(ink.length), phase: new Float32Array(ink.length) };
     const foilCells = new Int32Array(ink.length);
     let foilCount = 0;
-    const foilBox = { x0: 0, y0: 0, x1: 0, y1: 0 };
     const seed = (solvedDay % 997) + 0.5;
     const paintFoilCells = (t: number) => {
       const seconds = t / 1000;
@@ -310,53 +309,24 @@ export default function StreakDialog({
       walkStar(crownStarRef.current, w.crownStar);
       if (stageRef.current) stageRef.current.style.translate = `${w.shake[0] * L.cell}px ${w.shake[1] * L.cell}px`;
     };
-    let rasterStep = -1;
-    let timer = 0;
+    let raf = 0;
     let stopped = false;
 
     const draw = () => {
       const t = elapsed();
-      // The raster: every frame while the show runs; at rest only when the drift's slower
-      // step has moved.
-      const step = t < tl.settled ? -2 - Math.floor(t / SHOW_STEP_MS) : Math.floor(t / IDLE_RASTER_MS);
-      if (step !== rasterStep) {
-        rasterStep = step;
-        ink.fill(0);
-        scene.draw(ink, t, foil);
-        foilCount = 0;
-        foilBox.x0 = L.cols;
-        foilBox.y0 = L.rows;
-        foilBox.x1 = 0;
-        foilBox.y1 = 0;
-        for (let i = 0; i < ink.length; i += 1) {
-          const v = ink[i];
-          px[i] = palette[v];
-          if (v === FOIL || v === FOIL_DEEP) {
-            foilCells[foilCount] = i;
-            foilCount += 1;
-            const x = i % L.cols;
-            const y = (i - x) / L.cols;
-            if (x < foilBox.x0) foilBox.x0 = x;
-            if (y < foilBox.y0) foilBox.y0 = y;
-            if (x >= foilBox.x1) foilBox.x1 = x + 1;
-            if (y >= foilBox.y1) foilBox.y1 = y + 1;
-          }
+      ink.fill(0);
+      scene.draw(ink, t, foil);
+      foilCount = 0;
+      for (let i = 0; i < ink.length; i += 1) {
+        const v = ink[i];
+        px[i] = palette[v];
+        if (v === FOIL || v === FOIL_DEEP) {
+          foilCells[foilCount] = i;
+          foilCount += 1;
         }
-        paintFoilCells(t);
-        ctx.putImageData(image, 0, 0);
-      } else if (foilCount > 0) {
-        // Between the raster's resting steps only the foil moves.
-        paintFoilCells(t);
-        ctx.putImageData(
-          image,
-          0,
-          0,
-          foilBox.x0,
-          foilBox.y0,
-          foilBox.x1 - foilBox.x0,
-          foilBox.y1 - foilBox.y0,
-        );
       }
+      paintFoilCells(t);
+      ctx.putImageData(image, 0, 0);
 
       paintWords(wordsAt(t, tl));
 
@@ -368,13 +338,13 @@ export default function StreakDialog({
     };
 
     const tick = () => {
-      timer = 0;
+      raf = 0;
       if (stopped || document.hidden) return;
-      const t = draw();
-      timer = window.setTimeout(tick, t < tl.settled ? SHOW_STEP_MS : IDLE_FRAME_MS);
+      draw();
+      raf = window.requestAnimationFrame(tick);
     };
     const wake = () => {
-      if (!stopped && !reducedMotion && !document.hidden && !timer) tick();
+      if (!stopped && !reducedMotion && !document.hidden && !raf) tick();
     };
 
     // FAST-FORWARD: the clock jumps to the settled frame, which IS the resting picture; the
@@ -409,7 +379,7 @@ export default function StreakDialog({
     return () => {
       stopped = true;
       skipRef.current = () => {};
-      window.clearTimeout(timer);
+      window.cancelAnimationFrame(raf);
       window.clearTimeout(armTimer);
       document.removeEventListener('visibilitychange', wake);
     };
