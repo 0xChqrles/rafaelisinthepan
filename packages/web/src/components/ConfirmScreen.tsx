@@ -13,7 +13,7 @@ import { t } from '../i18n';
 //
 // It is the ERROR SCREEN's shape — the whole screen, on flat `--bg`, one narrow column —
 // because the two are the app's two full-screen messages and should be one shape (the
-// SignedOut / NoPuzzle language). What differs is the voice: no bot, the title in the
+// SignedOut language). What differs is the voice: no bot, the title in the
 // plain ink (nothing has gone wrong yet), and TWO ways out where the error has one — the
 // act itself, in the QUIET DANGER dress (the account area's rule: destruction never glows,
 // so the lit primary is never the button that removes somebody), and CANCEL, a plain

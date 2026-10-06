@@ -8566,7 +8566,7 @@ figure.l1-fig {
 .error-screen {
   /* The page's own ground, edge to edge. No corner brackets: those are the dialog
      boxes' dress, and this is not a box on a screen any more — it IS the screen
-     (the SignedOut / NoPuzzle language). */
+     (the SignedOut language). */
   margin: 0;
   padding: 0;
   width: 100vw;
