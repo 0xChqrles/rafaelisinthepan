@@ -2536,8 +2536,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     podium. A header slot that says the same on the board turned to STANDS across the turn
     (`.board-sub.still`). Under 360px wide a list with no playing member's % to hang in the
     numbers' gutter gives that gutter to the names (`.plays`, set by `BoardUnder`).
-  - **Rows CONNECTED to the reader**: YOUR line is FRAMED (the brackets, the rank in the
-    accent, the name bold) and STAYS IN SIGHT — sticky under the held head and on the
+  - **Rows CONNECTED to the reader**: YOUR line is said in the ACCENT and the WEIGHT (its
+    rank in the accent, its name bold) — never the corner brackets (user-delegated
+    2026-10-06: brackets are what a tapped thing wears, and these lines are not tapped; the
+    result's boards, whose box IS the tap, keep them round your line) — and STAYS IN SIGHT — sticky under the held head and on the
     window's foot, and
     held there (`data-stuck`, `hooks/useStuckOwnLine.ts`) the lines passing under it thin
     out through a 3-cell Bayer edge (`bayerTiles.ts`' `--edge-*` tiles) instead of being
@@ -2650,8 +2652,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     outcome reads the list again first, so the screen behind the error shows what stands.
   - **THE GROUP'S OWN SCREEN (`GroupScreen`, user-decided 2026-09-14: "managing the group
     should have its own screen")** is a full-screen dialog in the selection's shell — the
-    way back and the name in the header, the MEMBERS as the board's LINES
-    (`.board-row.member`: no rank column, the mark at 3px a cell, your own framed) coming
+    way back and the group's NAME in the header's white chip (what the screen is about),
+    then, under no caption (the lines say what they are), the MEMBERS as the board's LINES
+    (`.board-row.member`: no rank column, the mark at 3px a cell, your own name bold, no
+    brackets — the owner's ✕ is the tapped thing on these lines) coming
     in through the board's Bayer dissolve, dressed by `readGroup`, the owner tagged under
     their name, the owner's pixel ✕ (the modal header's, `assets/icons/close.svg`) at every
     other line's end (`.board-remove`); the members SCROLL in whole lines (their room floored

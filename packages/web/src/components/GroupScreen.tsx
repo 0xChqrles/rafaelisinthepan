@@ -19,10 +19,12 @@ import type { LangCode } from '../langs';
 // with a group lives here, one tap in from the board (its door over the lines, or the shown
 // tab's chip), and the board keeps only its list.
 //
-// Top to bottom: the app's header row with the way back and the group's name; the MEMBERS as
-// the board's own LINES (the mark at 3px a cell, the name — your own framed by the corner
-// brackets, as on the board), coming in through the board's Bayer dissolve, the owner tagged
-// under their name, and — for the owner — the header's pixel ✕ at every other line's end that
+// Top to bottom: the app's header row with the way back and the group's name in the header's
+// white chip (what the screen is about); the MEMBERS as the board's own LINES, under no caption
+// (the lines say what they are: the mark at 3px a cell, the name — your own at the action
+// weight, never in corner brackets, which are what a tapped thing wears and here the ✕ is
+// that), coming in through the board's Bayer dissolve, the owner tagged under their name,
+// and — for the owner — the header's pixel ✕ at every other line's end that
 // opens the removal's confirmation; then the screen's one call, INVITE, and under it the quiet
 // way out, LEAVE — standing at the screen's foot whatever the group's size: the MEMBERS scroll,
 // in whole lines (the room left them floored to the lines' pitch, so a line is never cut at
@@ -96,9 +98,12 @@ export default function GroupScreen({
       <ModalHeader lang={lang} title={group.name} back onClose={beginClose} />
 
       <div className="group-body">
-        <div className="board-section">{t(lang, 'groupMembers')}</div>
         <div ref={roomRef} className="group-room">
-          <ol className="board-list pixel-scroll" style={lines === null ? undefined : { maxHeight: lines * LINE_PX }}>
+          <ol
+            className="board-list pixel-scroll"
+            aria-label={t(lang, 'groupMembers')}
+            style={lines === null ? undefined : { maxHeight: lines * LINE_PX }}
+          >
             {group.members.map((id, index) => {
               const player = face(id);
               const me = id === meId;

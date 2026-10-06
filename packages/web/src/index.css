@@ -1258,8 +1258,10 @@ body:has(.app > .board-screen) {
    heavy was about a chip INSIDE a glass band; the band is gone (the header sits on the bare
    ground at rest), and the chip is now the app's one emphasis gesture worn by the one
    thing the header is about. Laid out, not drawn: unlike the sentence's, this chip has
-   room to take — the row's centre is empty. */
-.topbar .topbar-title {
+   room to take — the row's centre is empty. A group's own screen wears it on the group's
+   name: the name is what the screen is about, and its row holds only the way back. */
+.topbar .topbar-title,
+.group-screen .modal-bar .topbar-title {
   display: inline-block;
   padding: 5px 7px 4px;
   line-height: 1;
@@ -3341,9 +3343,13 @@ body:has(.app > .board-screen) {
   margin-right: 2px;
   shape-rendering: crispEdges;
 }
-/* YOUR line is FRAMED: the card's corner brackets, small, round it — and its rank in the
-   accent, its name at the action weight. */
-.board-row.me,
+/* YOUR line is said in the accent and the weight: its rank in the accent, its name at the
+   action weight — never in corner brackets, which are what a thing that can be tapped wears
+   (user-delegated 2026-10-06: the board screen's lines and the group's own screen are not
+   tapped). Where the lines ARE the tap — the solved screen's boards, whose box opens the
+   board — your line keeps the card's corner brackets, small, round it; so does the successor
+   picker's picked line. */
+.result-board .board-row.me,
 .board-row.picked {
   --bc: rgba(255, 255, 255, 0.38);
   background:
@@ -7836,8 +7842,8 @@ figure.l1-fig {
 .board-screen .board-under-out .board-hold {
   animation: board-dissolve-out 240ms linear var(--delay, 0ms) forwards;
 }
-/* (Your line, never held at the edge here: four classes, so they outweigh its own dissolve-in
-   and lock-on.) */
+/* (Your line, never held at the edge here: four classes, so they outweigh its own sticky
+   hold.) */
 .board-screen .board-under-out .board-row.me {
   position: relative;
   z-index: auto;
@@ -7972,30 +7978,6 @@ figure.l1-fig {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A SECTION'S CAPTION over a list (the group's own screen: its MEMBERS): the words at the
-   marks' edge, then the stippled rail running on to the lines' end. */
-.board-section {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 36px;
-  padding: 0 30px 0 6px;
-  font-family: var(--ui);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: var(--muted);
-}
-.board-section::after {
-  content: '';
-  flex: 1;
-  height: 2px;
-  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 0 / 6px 2px repeat-x;
-}
-
 /* THE BOARD LANDS (Leaderboard's pace): each line comes in through the BAYER DISSOLVE — its
    mask stepped through the ordered dither's levels (`--dz-0` … `--dz-7`, `bayerTiles.ts`) to
    full, cells lighting in threshold order, nothing travelling — one after another
@@ -8020,21 +8002,6 @@ figure.l1-fig {
 }
 .board-screen .board-progress {
   animation: board-type 160ms steps(4, jump-end) var(--land, 0ms) backwards;
-}
-/* YOUR LINE'S BRACKETS LOCK ON as its number lands — the card's own landing gesture: they come
-   in reaching out along the line and draw back to their arms in whole steps, the frame finding
-   its subject. */
-.board-screen .board-row.me {
-  animation:
-    board-dissolve 240ms linear var(--delay, 0ms) backwards,
-    own-lock 240ms steps(4, jump-end) var(--land, 0ms) backwards;
-}
-@keyframes own-lock {
-  from {
-    background-size:
-      24px 2px, 2px 16px, 24px 2px, 2px 16px,
-      24px 2px, 2px 16px, 24px 2px, 2px 16px;
-  }
 }
 @keyframes board-dissolve {
   0% { -webkit-mask-image: var(--dz-0); mask-image: var(--dz-0); }
@@ -8127,8 +8094,8 @@ figure.l1-fig {
   overflow-y: auto;
   padding: 8px 0 24px;
 }
-/* The members' room: what the caption and the acts leave; the list in it scrolls, as tall as
-   the whole lines that fit (GroupScreen writes it). */
+/* The members' room: what the acts leave; the list in it scrolls, as tall as the whole lines
+   that fit (GroupScreen writes it). */
 .group-room {
   flex: 1 1 auto;
   /* (One line at the least: a screen too short for even that scrolls the body.) */
