@@ -30,11 +30,12 @@
 > language-neutral group page the app's name alone, `Whippin AI`) — `og:url`, the page's OWN
 > link (the signed one while it wears its player, the plain one once it falls back; the
 > invite link, never the landing it bounces to), the card as `og:image` with its size, and
-> the Twitter large-image tags. Every page of the shell (`ogCard.redirectPage`, the dead
-> ones too) says the dark `color-scheme` and paints the app's ground inline AHEAD of its
-> redirect, so a frame painted before it fires, or the page with JavaScript off, is never
-> white; the web distribution's card headers allow that one inline style (`style-src
-> 'unsafe-inline'`, `infra/lib/web-stack.ts`).
+> the Twitter large-image tags. Every page of the shell (`ogCard.redirectPage`,
+> the dead ones too) says the dark `color-scheme` and the app's `theme-color` and paints the
+> app's ground inline AHEAD of its redirect, so a frame painted before it fires (WebKit
+> shows the bare ground there, Chromium paints nothing until the target lands), or the page
+> with JavaScript off, is never white; the web distribution's card headers allow that one
+> inline style (`style-src 'unsafe-inline'`, `infra/lib/web-stack.ts`).
 
 ## File map
 

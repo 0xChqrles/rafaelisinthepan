@@ -495,8 +495,10 @@ describe('group invite link (#271) — the shared link, its preview page and its
     // the app's name alone: a group's page speaks no one language.
     expect(res.body).toContain(`<meta property="og:url" content="${ORIGIN}/${GROUP_SEGMENT}/${ID}">`);
     expect(res.body).toContain('<meta property="og:description" content="Whippin AI">');
-    // A paint before the redirect is the app's ground, never a white page.
+    // A paint before the redirect is the app's ground, never a white page, under the app's
+    // own browser chrome.
     expect(res.body).toContain('<meta name="color-scheme" content="dark">');
+    expect(res.body).toContain('<meta name="theme-color" content="#050507">');
     expect(res.body).toContain('background:#050507');
     expect(res.headers['Cache-Control']).toBe('public, max-age=300');
   });
