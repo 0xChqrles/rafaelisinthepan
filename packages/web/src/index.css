@@ -7920,10 +7920,10 @@ figure.l1-fig {
   image-rendering: pixelated;
   pointer-events: none;
 }
-/* What the box holds besides the scene: a failed read's message over RETRY, in its middle — or
-   the ghost's CAPTION under the floor, one height in every empty state: the empty board's terse
-   line on the names' band (set on its last line, as a name is), its one call on the values' row
-   (bare ground on the band when there is no line). */
+/* What the box holds besides the scene: a CAPTION under the floor, one height in every state
+   that has one — the empty board's terse line, or a failed read's note, on the names' band
+   (set on its last line, as a name is), and its one call — the empty board's, or RETRY — on
+   the values' row (bare ground on the band when there is no line). */
 .podium-hold {
   position: absolute;
   z-index: 3;
