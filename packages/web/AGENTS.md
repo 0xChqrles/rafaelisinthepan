@@ -229,8 +229,8 @@
                               one clock, the marks, the landings' bursts, the captions;
                               `nextStage` latches what it shows and how it comes — builds,
                               stays, gives way), and its picture, pure and tested: scene.ts (the
-                              two sizes and `podiumSize`, the layout, the names' setting
-                              `runsOf` / `setName`, the beats, the raster deterministic in t —
+                              two sizes and `podiumSize`, the layout, the names' room
+                              `nameRoomPx`, the beats, the raster deterministic in t —
                               steps, places, values on the reels, heat, foil)
       game/podium.ts          the podium's PICK (pure, tested): the first three ranked rows in
                               the server's order, the rest lines; each place's value and `near`;
@@ -2449,17 +2449,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (user-decided 2026-10-04, of the tiebreakers stacked under the points: "nobody
     understands it"), on the podium and on the lines alike: the period rule's solved days
     and tries ORDER the rows (the server's order) and are shown nowhere. **A value stands
-    with its name, never on a step: a number on a step reads as a place.** **A NAME IS
-    NEVER CUT**: it owns a third of the podium less a 4px gutter each side and wraps at its
-    JOINTS (`<wbr>` after an underscore, before a capital after a small letter, before
-    digits after a letter; balanced — `SwiftCactus45` reads `Swift` / `Cactus45`), in a band
-    that holds two lines whatever it holds. A name whose runs will not set in those two
-    lines at the face's 12px steps down to 11, then 10 (`setName` / `runsOf`,
-    `podium/scene.ts`: by glyph count off the mono's fixed advance, shared `cardSvg.ts`
-    `UI_ADVANCE_EM` — nothing measured), so it is set smaller before it is broken; at 10 a
-    run still too long splits evenly in its middle (never a letter alone), and a name that
-    would still take three lines is cut at its own middle — never a third line, never under
-    10px. YOUR place is the accent on your step and your name the bold — never the corner
+    with its name, never on a step: a number on a step reads as a place.** **A NAME STANDS
+    ON ONE LINE**: it owns a third of the podium less a 4px gutter each side, at the face's
+    12px, on the last line of a band that holds two lines' room whatever it holds (so it sits
+    on its value); a name longer than its slot ends in an ELLIPSIS on a WHOLE GLYPH — the tab
+    chip's own cut (`nameRoomPx`, `podium/scene.ts`: the slot floored to whole glyphs of the
+    mono's fixed advance, shared `cardSvg.ts` `UI_ADVANCE_EM` — nothing measured) — so three
+    names read on one baseline, never one broken over two lines. YOUR place is the accent on
+    your step and your name the bold — never the corner
     brackets (user-decided 2026-10-04: they are the language of what can be tapped, and the
     podium is a picture); on GLOBAL one of your people carries the lines' accent square.
   - **FIRST PLACE'S COUNT IS THE SCREEN'S ONE SHINY THING** (the #1 line carries no foil of

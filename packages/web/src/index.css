@@ -7620,8 +7620,8 @@ figure.l1-fig {
 }
 /* A CAPTION under its step, one box from the name's band to its last line (what dissolves,
    dissolves whole): the NAME in the chrome's voice — a third of the podium wide, less a gutter
-   each side, wrapping at its joints onto a second line rather than being cut, set on the band's
-   last line so it sits on its value — then (the raster's) VALUE, then its UNIT. A player who
+   each side, on ONE line set on the band's last so it sits on its value, a name past its room
+   ending in an ellipsis on a whole glyph (`nameRoomPx`) — then (the raster's) VALUE, then its UNIT. A player who
    drops brings it up as they land, in a stepped rise at full ink; one who comes onto a board
    already shown dissolves in with it; one who stays keeps it standing (only a unit that changed
    gives way). YOUR name wears your line's corner brackets; one of your people (GLOBAL) carries
@@ -7656,10 +7656,9 @@ figure.l1-fig {
   max-width: 100%;
   /* The slot for the letters (its gutters are the layout's), 3px of air over and under. */
   padding: 3px 0;
-  /* Breaks at the joints alone (`<wbr>`, balanced) — inside a run of letters only if that run
-     cannot fit the slot at all. */
-  overflow-wrap: break-word;
-  text-wrap: balance;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .podium-name.anon {
   color: var(--muted);

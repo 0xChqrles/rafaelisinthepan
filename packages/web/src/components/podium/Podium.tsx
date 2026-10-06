@@ -18,15 +18,13 @@ import { BURST_ART } from '../strikeArt';
 import {
   CELL_PX,
   FRAME_MS,
-  NAME_PX,
   NAME_ROWS,
   captionRows,
   layout,
   markAt,
   podiumHeightPx,
   podiumScene,
-  runsOf,
-  setName,
+  nameRoomPx,
   turnLevel,
   type BeatSpec,
   type Beats,
@@ -47,14 +45,10 @@ import { prefersReducedMotion } from '../../hooks/useScramble';
 // the value the raster draws, over its UNIT (the result's own lockup: the count, then what it
 // counts — so a period's 3 points never read as third).
 //
-// A NAME IS NEVER CUT: it owns a third of the podium (its slot, less a gutter each side) and
-// wraps onto a second line at its joints — after an underscore, between a word and the next
-// capital, before a run of digits; the browser balances the two lines, so `SwiftCactus45` reads
-// `Swift` / `Cactus45` — inside a band that holds two lines whatever it holds, so nothing under
-// it moves. A name whose runs between joints will not set in those two lines at the face's 12px
-// steps down a pixel at a time, to 10 (`setName`), so `mellowbiscuit` is set smaller before it
-// is broken; one that will not set even at 10 breaks evenly in its middle (never a letter alone,
-// never a third line: 10px is the floor the house sets a name at). YOUR place is in the accent
+// A NAME STANDS ON ONE LINE: it owns a third of the podium (its slot, less a gutter each side),
+// at the chrome's 12px, on the band's last line so it sits on its value; a name longer than its
+// slot ends in an ELLIPSIS on a whole glyph (`nameRoomPx`), the tab chip's own cut — so three
+// names on a podium are three lines on one baseline, never a name broken over two. YOUR place is in the accent
 // on your step and your name at the action weight — never the corner brackets, which are what a
 // thing that can be tapped wears; on GLOBAL one of your people carries the lines' accent square.
 //
@@ -210,11 +204,10 @@ function Caption({
 }) {
   const { entry } = at;
   const unitStyle = { top: at.caption.unitTop };
-  // The letters' room: the slot, less what a mate's square takes of it.
-  const name = setName(
-    runsOf(entry.player.name || anonName(entry.player.publicId)),
-    at.caption.width - (entry.mate ? 8 : 0),
-  );
+  // The letters' room: the slot, less what a mate's square takes of it, floored to whole glyphs
+  // (the square's room given back to the box it pads).
+  const mate = entry.mate ? 8 : 0;
+  const nameMax = nameRoomPx(at.caption.width - mate) + mate;
   return (
     <span
       className={`podium-caption${className}`}
@@ -224,8 +217,8 @@ function Caption({
         className={`podium-name${entry.me ? ' me' : entry.mate ? ' mate' : ''}${entry.player.name ? '' : ' anon'}`}
         style={{ height: NAME_ROWS * CELL_PX }}
       >
-        <span className="podium-name-text" style={name.px === NAME_PX[0] ? undefined : { fontSize: name.px }}>
-          {name.runs.flatMap((run, i) => (i === 0 ? [run] : [<wbr key={i} />, run]))}
+        <span className="podium-name-text" style={{ maxWidth: nameMax }}>
+          {entry.player.name || anonName(entry.player.publicId)}
         </span>
       </span>
       {unitsOut.map((out) => (
