@@ -5981,6 +5981,23 @@ figure.l1-fig {
 .account-cta .account-note.caption {
   margin: 0;
 }
+/* THE CALL'S ROOM while the summary is out (`Account`): the call at its final size as a hold —
+   the note's words laid out unseen, a stippled rail through the middle of each of its lines
+   (each line's own length), and the button's box as the house hold — so nothing under it moves
+   when the call takes the same boxes. */
+.account-cta.holding .account-note {
+  color: transparent;
+}
+.account-cta-rail {
+  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.account-cta.holding .mix-btn {
+  color: transparent;
+  border-color: transparent;
+  cursor: default;
+}
 
 .account-load-error,
 .device-error {

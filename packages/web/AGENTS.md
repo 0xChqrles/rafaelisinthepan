@@ -1634,10 +1634,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     tokenless device and now leads with that same face — HELD across the deploy
     (`AccountEmail`'s `lead`), because CONTINUE swaps the id from the seed to the account
     mid-flight and re-reading would race the background profile write for a face that is
-    the same by construction; and the account screen's action holds a SKELETON while the
-    summary is out rather than offering SAVE before it knows (#211's explicit-loading
-    rule — a guessed empty answer is a false claim, and it also stopped SAVE flashing
-    before the address landed on every linked player's first visit).
+    the same by construction; and the account screen's call is HELD while the summary is
+    out rather than offering SAVE before it knows (#211's explicit-loading rule — a guessed
+    empty answer is a false claim, and it also stopped SAVE flashing before the address
+    landed on every linked player's first visit): `.account-cta.holding`, the call at its
+    final size — the note's words laid out unseen with a stippled rail through each of its
+    lines, the button's box as the house hold (`.link-hold.waiting`) — so the footnote under
+    it never moves when the call takes the same boxes.
   - **The saved address carries NO chip.** An account carries at most ONE address and the
     server refuses a second (`account_linked`), so a CHANGE chip promised something the
     route would break — and with the devices inline there is nothing left for a MANAGE

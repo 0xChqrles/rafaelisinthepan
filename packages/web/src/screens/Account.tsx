@@ -38,9 +38,10 @@
 // face either way; the STATS are zero for a tokenless device by the same fact that makes
 // them zero for a deployed one that has not played (#216: no token, no rows, no request);
 // the DEVICES still appear only once SAVED, because an unlinked account can only ever hold
-// the one device reading the screen; and the action holds its box while the summary is out
-// rather than claiming UNSAVED before it knows (#211's explicit-loading rule). SAVE is live
-// either way — its tap leads to the flow whose CONTINUE is the account-deploying trigger.
+// the one device reading the screen; and the action's room is HELD as stippled slate while the
+// summary is out rather than claiming UNSAVED before it knows (#211's explicit-loading rule).
+// SAVE is live either way — its tap leads to the flow whose CONTINUE is the account-deploying
+// trigger.
 
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import type { RecordSize } from '../components/record/scene';
@@ -235,17 +236,27 @@ export default function Account() {
             sits (the tutorial's MIX, the board's INVITE, both gates' PLAY), in exactly
             their geometry. Only while UNSAVED: saved, there is nothing left to call for. The
             ONE line that earns its place stands over it: why a game wants an email is
-            genuinely not obvious, and it is said once, where the decision is made. */}
-        {known && !accountUnknown && saved === null && (
-          <div className="account-cta">
-            <p className="account-note caption">{t(lang, 'accountSaveNote')}</p>
-            <button
-              type="button"
-              className="mix-btn"
-              onClick={() => navigate(ACCOUNT_EMAIL_PATH)}
-            >
-              {t(lang, 'accountSave')}
-            </button>
+            genuinely not obvious, and it is said once, where the decision is made.
+            WHILE THE SUMMARY IS OUT its room is HELD at its final size — the note's lines as
+            stippled rails (its words laid out unseen, so each rail is its line's length), the
+            button's box as the house hold — so the footnote under it never moves when the call
+            lands; the call then takes the hold's own box in place. */}
+        {!accountUnknown && saved === null && (
+          <div className={`account-cta${known ? '' : ' holding'}`} aria-hidden={known ? undefined : true}>
+            <p className="account-note caption">
+              {known ? t(lang, 'accountSaveNote') : <span className="account-cta-rail">{t(lang, 'accountSaveNote')}</span>}
+            </p>
+            {known ? (
+              <button
+                type="button"
+                className="mix-btn"
+                onClick={() => navigate(ACCOUNT_EMAIL_PATH)}
+              >
+                {t(lang, 'accountSave')}
+              </button>
+            ) : (
+              <span className="mix-btn link-hold waiting">{t(lang, 'accountSave')}</span>
+            )}
           </div>
         )}
 
