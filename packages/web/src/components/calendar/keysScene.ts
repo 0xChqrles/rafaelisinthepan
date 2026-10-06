@@ -679,8 +679,10 @@ export function keysScene(
     if (k.front > 0 && u < k.front) {
       if (k.flat || bayerThreshold(lx, ly) < rampDensity(k.front, u, 3)) return k.fill;
     }
-    // Bare iron, lit from above — an over key's printed at half ink, the bare ground between.
-    if (k.half && bayerThreshold(lx, ly) >= HALFTONE) return 0;
+    // Bare iron, lit from above — an over key's printed at half ink, the ground between drawn
+    // OPAQUE (a cut-out digit's ink): a neighbour's landing burst flares round its key, never
+    // through this one's face.
+    if (k.half && bayerThreshold(lx, ly) >= HALFTONE) return GROUND;
     return topLit(lx, ly) ? RAIL : DUSK;
   };
 

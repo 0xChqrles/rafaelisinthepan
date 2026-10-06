@@ -3082,7 +3082,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     standing key, the same height and cut corners as any, its number where every key's
     stands — its iron at about half ink: its cap and face through the Bayer order
     (`HALFTONE`, 5/8 of the cells), each printed cell in the bare key's own ink (the slate
-    cap and light, the dusk face), the rest bare ground. Its NUMBER and their RING stay
+    cap and light, the dusk face), the rest the ground drawn opaque (a neighbour's burst
+    never shows through it). Its NUMBER and their RING stay
     SOLID — the date in white, as on any key, and a ring of the dusk keeping the digits clear
     of the dither: no charge, no %, no heat, no cobalt, no link, no foil — a door to the
     revealed sentence, not a day to resume, so a charged key always means one. **Over reads

@@ -411,13 +411,14 @@ describe('a day over (ended unsolved)', () => {
             else if (today === DAY && ly <= 1) expect(v, where).toBe(WHITE);
             else {
               // The rest is the bare key's own iron (its slate cap and light, its dusk face) where
-              // the Bayer order prints it, and the bare ground between.
+              // the Bayer order prints it, and the ground between — opaque, so nothing drawn under
+              // the raster (a neighbour's burst) shows through the face.
               face += 1;
               if (bayerThreshold(lx, ly) < HALFTONE) {
                 expect(v, where).toBe(bare(DAY, lx, ly));
                 expect([RAIL, DUSK], where).toContain(v);
                 printed += 1;
-              } else expect(v, where).toBe(0);
+              } else expect(v, where).toBe(GROUND);
             }
           }
         }
