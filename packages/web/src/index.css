@@ -3055,8 +3055,8 @@ body:has(.app > .board-screen) {
 }
 /* A settled result draws the last frame outright — and so does reduced motion: the global
    rule keeps the delays, which would hold each part of the card unseen for its beat. Only
-   the DRAWING is stopped (the frame's parts, SHARE's arrival): SHARE itself keeps its
-   COPIED flash, which answers the player's tap, not the reveal. */
+   the DRAWING is stopped (the frame's parts, SHARE's arrival): SHARE's word still swaps to
+   COPIED through the dither (`SwapLabel`), which answers the player's tap, not the reveal. */
 .solved-stage.settled .solved-card-frame *,
 .solved-stage.settled .solved-card .result-actions {
   animation: none !important;
@@ -4106,8 +4106,8 @@ body:has(.app > .board-screen) {
    the slot row — the hole's own markup at the hole's own place — holds at full strength
    until `close` lifts the veil, and the real word takes over under it with no frame
    between. The real word stays VEILED until the dialog has closed, so a fade of the whole
-   dialog would leave its last frames with no word at all. (The title's selection wears its
-   own whole-screen fade, `fade-out`.) */
+   dialog would leave its last frames with no word at all. (The title's selection leaves
+   whole, through the dither, `board-dissolve-out`.) */
 .wheel-dialog.closing .wheel-row:not(.wheel-row-slot) {
   animation: fade-out 100ms ease-in both;
 }
@@ -4954,7 +4954,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     margin-bottom: -24px;
   }
   /* The result's stage reaches the screen's bottom edge: its last line clears the
-     home-indicator inset as the keyboard's last row does, plus its own fade. */
+     home-indicator inset as the keyboard's last row does, plus its own dithered edge. */
   .solved-stage {
     padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   }

@@ -46,7 +46,7 @@ import { t } from '../i18n';
 // player). The count stands alone, the biggest thing on the screen, in the pixel face at a
 // WHOLE scale — the largest multiple of 8px that fits the hero for this round's final digits
 // AND leaves SHARE above the fold (`countSize.ts`: the card's room down to the
-// stage's fade, less everything in the card but the count), decided on the mount's SMALL
+// stage's bottom padding, less everything in the card but the count), decided on the mount's SMALL
 // viewport (`svh`: a phone's toolbar collapsing on scroll must not resize what has landed)
 // and re-measured only when the column's width changes; its box is its INK, so it centres
 // on what it prints. Nothing is scaled by a transform.
@@ -124,15 +124,15 @@ function smallViewportHeight(): number {
 
 // THE CARD'S ROOM: how tall the card (SHARE included) may stand on the mount's small viewport
 // and keep SHARE above the fold — from its top in the stage it opens (the scroller it is the
-// first block of) down to the stage's bottom fade (its padding), less what a toolbar out at
-// the mount lends the viewport and takes back.
+// first block of) down to the stage's bottom padding (where its dithered edge lies), less
+// what a toolbar out at the mount lends the viewport and takes back.
 function cardRoom(card: HTMLElement): number {
   const stage = card.parentElement;
   if (!stage) return Infinity;
   const top = card.getBoundingClientRect().top - stage.getBoundingClientRect().top - stage.clientTop + stage.scrollTop;
-  const fade = parseFloat(getComputedStyle(stage).paddingBottom) || 0;
+  const foot = parseFloat(getComputedStyle(stage).paddingBottom) || 0;
   const lent = Math.max(0, window.innerHeight - smallViewportHeight());
-  return stage.clientHeight - top - fade - lent;
+  return stage.clientHeight - top - foot - lent;
 }
 
 // `∞` on the count's own pixel grid: its 9×5 cells are each one pixel of the face at this
