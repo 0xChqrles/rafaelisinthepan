@@ -1235,9 +1235,11 @@ export default function Profile() {
           </>
         )}
       </div>
-      {/* The mark's box handed over by a masthead that had no face to hand (its own read still
-          out), FROZEN where it stood while the stored profile is read — the canvas grows out of
-          this very box once it has answered. */}
+      {/* The mark handed over when the editor could not open on it — the face the masthead drew
+          when it is not this account's own (the seed's, which a minted account wears until its
+          read lands), else the stippled box of a read still out — FROZEN where it stood while
+          the stored profile is read: the canvas grows out of this very box once it has
+          answered. */}
       {load === 'loading' && handed && (
         <span
           className="profile-handed"
@@ -1249,7 +1251,15 @@ export default function Profile() {
           }}
           aria-hidden="true"
         >
-          <StatSlot phase="loading" />
+          {handed.face ? (
+            <Avatar
+              avatar={handed.face.avatar ?? defaultAvatar(handed.face.publicId)}
+              size={Math.round(handed.rect.width)}
+              sharp
+            />
+          ) : (
+            <StatSlot phase="loading" />
+          )}
         </span>
       )}
     </>

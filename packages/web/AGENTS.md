@@ -1462,9 +1462,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
       nested in a frame. The tap hands the MARK — its box and the face it drew — to the
       editor (`markHandoff`), which OPENS AT ONCE on that face (the profile bullet) and GROWS
       its canvas out of the mark in whole-pixel steps — on a phone in place, down and right
-      from the mark's own corner. With no face to hand (the masthead's read still out) the
-      mark's box stays FROZEN while the editor reads the stored profile (once the read has
-      taken a beat, 250ms, the canvas's box breathes as the stippled slate behind it); a
+      from the mark's own corner. With no face of the account's to hand (the masthead's read
+      still out, or the seed's face a minted account wears until it lands) the mark stays
+      FROZEN where it stood — that face, or its stippled box — while the editor reads the
+      stored profile (once the read has taken a beat, 250ms, the canvas's box breathes as the
+      stippled slate behind it); a
       direct load holds the canvas's box as the stippled slate, then grows from its centre.
     - **THE RECORD is the screen's subject** (`components/record/`), in the streak
       celebration's own sprites: the blue FLAME over the live STREAK landing on the solved
@@ -1526,8 +1528,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
       fits a phone unscrolled down to ~550px tall (`EDITOR_CHROME_PX` is the CSS's own sum;
       a short phone takes a tighter dress), every offset on a whole pixel, the desktop column
       held at its full height (a pixel more where that centres it on a whole one). It GROWS
-      out of the masthead's mark (`markHandoff`: at once on the face handed over, frozen
-      where it stood only while a face is still to be read; a direct load growing from the
+      out of the masthead's mark (`markHandoff`: at once on the face handed over when it is
+      the account's; else that mark — the face it drew, or the stippled box of its read still
+      out — frozen where it stood while the editor reads; a direct load growing from the
       centre), DRAWN at a cell 4px bigger
       each step — repainted crisp at every step, never a bitmap scaled between two sizes.
       Then the SWATCHES across the frame, each the drawing itself in that palette (40px,

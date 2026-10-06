@@ -10839,7 +10839,8 @@ figure.l1-fig {
     stat-breathe 640ms step-end infinite,
     hold-wait 1ms linear 250ms backwards;
 }
-/* The handed-over mark, frozen in the box it stood in on `/account`. */
+/* The handed-over mark, frozen in the box it stood in on `/account`: the face the masthead
+   drew, or the stippled box (`StatSlot`) of its read still out. */
 .profile-handed {
   position: fixed;
   z-index: 5;
