@@ -36,6 +36,7 @@ import QuietFailure from './components/QuietFailure';
 import Invite from './tutorial/Invite';
 import Learn from './tutorial/Learn';
 import Lesson from './tutorial/Lesson';
+import { stashedLessonReturn } from './tutorial/lessonReturn';
 import { PLAY_LEVEL } from './tutorial/levels';
 import { roundKeyFor, useGameStore, type RoundServer } from './state/gameStore';
 import { track } from './analytics';
@@ -65,7 +66,9 @@ type Shown = RoundOnScreen<Puzzle, Vocab, RoundServer>;
 
 export default function App() {
   const pathname = useLocation();
-  const [lessonReturn, setLessonReturn] = useState<string | undefined>();
+  // Where a lesson begun from the invitation goes back to — kept across a lost lesson's RETRY,
+  // the one reload the app makes itself (`tutorial/lessonReturn.ts`).
+  const [lessonReturn, setLessonReturn] = useState<string | undefined>(stashedLessonReturn);
   const startOnboardingLesson = useCallback((lang: LangCode) => {
     setLessonReturn(pathname);
     track('tutorial', { action: 'start' });

@@ -5,6 +5,7 @@ import { pathForGame, type LangCode } from '../langs';
 import { navigate } from '../routing';
 import LazyArticle from './LazyArticle';
 import LazyLevelOne from './LazyLevelOne';
+import { stashLessonReturn } from './lessonReturn';
 import { PLAY_LEVEL } from './levels';
 
 // ONE LEVEL'S LESSON, on its route (#269). Level 1 is PLAYED: its end — the level's card
@@ -37,6 +38,8 @@ export default function Lesson({ lang, level, returnTo }: {
     navigate(destination);
   }, [destination, setOnboarded]);
   const cleared = useCallback(() => markLessonDone(PLAY_LEVEL), [markLessonDone]);
+  // A lost chunk's RETRY reloads the page: the way back must outlive it.
+  const keepReturn = useCallback(() => stashLessonReturn(returnTo), [returnTo]);
 
   // key={lang}: a language pick in the header restarts the lesson in that language — and an
   // article is keyed by its level too, so the next one starts unread, at its top.
@@ -50,6 +53,7 @@ export default function Lesson({ lang, level, returnTo }: {
       onDone={finish}
       onCleared={cleared}
       onSkip={onboarding ? skip : undefined}
+      beforeReload={keepReturn}
     />
   );
 }

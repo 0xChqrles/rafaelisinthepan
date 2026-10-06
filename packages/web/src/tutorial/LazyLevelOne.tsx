@@ -96,9 +96,12 @@ function LevelOneHold({
 
 export default function LazyLevelOne({
   onSkip,
+  beforeReload,
   ...props
 }: Omit<LevelOneProps, 'held'> & {
   onSkip?: () => void;
+  // What must outlive RETRY's reload (the lesson's way back, `lessonReturn`).
+  beforeReload?: () => void;
 }) {
   // A lost chunk must never strand the player on a blank screen: the hold stands still and
   // says so, RETRY asks again — a new document — and the first visit keeps its way on to the
@@ -127,7 +130,10 @@ export default function LazyLevelOne({
       <LevelOneHold
         lang={props.lang}
         failed={failed}
-        onRetry={retry}
+        onRetry={() => {
+          beforeReload?.();
+          retry();
+        }}
         onSkip={onSkip}
       />
     </>
