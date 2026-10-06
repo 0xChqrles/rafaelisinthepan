@@ -9,6 +9,8 @@
 // per-player minimum between accepted writes (~1s between guesses). The client STREAMS
 // into the log (`append`).
 
+import type { HistoryDay } from '@whippin/shared';
+
 export interface RoundKey {
   date: string;
   lang: string;
@@ -122,22 +124,21 @@ export interface RoundMonthKey {
   month: string;
 }
 
-// What a summary surface is told about one stored round: the two values the server already
-// DERIVED from its log (#203), never the log. A row written before those existed (or one
-// whose first append has not landed) reads as 0 / false — "nothing to show for this day",
-// which is what an empty round is.
-export interface RoundDaySummary {
-  date: string;
-  progress: number;
-  solved: boolean;
-}
+// What a summary surface is told about one stored round: the values the server already
+// DERIVED from its log (#203) and whether the round is OVER unsolved (the shared
+// `endedUnsolved`), never the log. A row written before those existed (or one whose first
+// append has not landed) reads as 0 / false — "nothing to show for this day", which is what
+// an empty round is. It IS the wire's day (the history route passes the rows through), so it
+// is spelled once, in shared.
+export type RoundDaySummary = HistoryDay;
 
 export interface RoundStore {
   // ONE Query over a player's month (#211): the calendar's whole source, projected down to
-  // the summary facts so the raw guess logs never leave the store. The rows are the days
-  // that HAVE a record; a day with none is simply absent, which is how "not started" is
-  // said. Never scoped to a puzzle REVISION: the calendar has no way to know which version
-  // a past day is on, and a corrected round replaces the row on its own first append.
+  // the summary facts, the give-up, and ONE probe of the log at the cap's last index — never
+  // the log. The rows are the days that HAVE a record; a day with none is simply absent,
+  // which is how "not started" is said. Never scoped to a puzzle REVISION: the calendar has
+  // no way to know which version a past day is on, and a corrected round replaces the row on
+  // its own first append.
   listMonth(key: RoundMonthKey, publicId: string): Promise<RoundDaySummary[]>;
   // The stored rounds of a KNOWN set of players for one daily — the friends board's
   // read (#206), the exact shape the per-player partition was designed for: the caller

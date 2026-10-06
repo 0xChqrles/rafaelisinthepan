@@ -12,10 +12,16 @@
 // rows — and the box FILLED, never left half empty: the room those leave goes to the next rows
 // down the ranking, then to more playing rows — and how many rows that left out (`more`).
 //
-// THE PLAYER'S OWN ROW comes from their own result, never from a guess: ranked when the server
-// recorded their score; otherwise an unranked playing row — `∞` when the round ended unsolved, a
-// finished 100% when it was solved with no recorded score (late, or refused by the IP floor) —
-// which never claims a rank. The GLOBAL tab invents nothing: no recorded score, no own row.
+// THE PLAYER'S OWN ROW comes from their own result, never from a guess (`ownRow`): ranked when
+// the server recorded their score; otherwise an unranked playing row — `∞` when the round ended
+// unsolved, a finished 100% when it was solved with no recorded score (late, or refused by the
+// IP floor) — which never claims a rank. The GLOBAL tab invents nothing: no recorded score, no
+// own row.
+//
+// THE SEAT: a player none of whose groups holds anybody else — no group, or only groups of one
+// (`holdsSomebody`, read off the groups list as held, never off an unknown one) — has no group
+// to compare with, and is shown the board they would have: ONE tab before GLOBAL, the board
+// screen's own `NO GROUP`, else their group of one by name (`seatOf`), holding their own line.
 
 import {
   orderPlaying,
@@ -23,10 +29,12 @@ import {
   type Board,
   type BoardPlayer,
   type BoardRow,
+  type GroupSummary,
   type LiveBoard,
   type LiveGroup,
   type PlayingRow,
 } from '@whippin/shared';
+import { holdsSomebody } from '../state/groups';
 
 export type ResultLine =
   | { kind: 'ranked'; row: BoardRow; me: boolean }
@@ -40,13 +48,12 @@ export interface ResultBoard {
   more: number;
 }
 
-export interface ResultTab {
-  // A group's id, or `GLOBAL_TAB`.
-  key: string;
-  // The group, or null for the GLOBAL board.
-  group: LiveGroup | null;
-  board: ResultBoard;
-}
+// A group's day, the GLOBAL board's, or the SEAT: the player's group of one (null with no group
+// at all) and their own line on it.
+export type ResultTab =
+  | { kind: 'group'; key: string; group: LiveGroup; board: ResultBoard }
+  | { kind: 'global'; key: typeof GLOBAL_TAB; board: ResultBoard }
+  | { kind: 'seat'; key: typeof SEAT_TAB; group: GroupSummary | null; own: PlayingRow };
 
 // The player, as their own result says: their face, their tries, how far they got (the
 // trajectory's last %), and whether the round ENDED UNSOLVED (given up, or capped).
@@ -57,6 +64,8 @@ export interface ResultMe extends BoardPlayer {
 }
 
 export const GLOBAL_TAB = 'global';
+// The seat's ONE key whatever it holds, so a turn to it survives its group being created.
+export const SEAT_TAB = 'seat';
 // The box's rows: a podium and a window of three, or a podium, the player and two playing.
 export const RESULT_LINES_MAX = 6;
 // The playing rows a group shows besides the player's own.
@@ -105,6 +114,19 @@ export function liveSawEnd(live: LiveBoard, publicId: string): boolean {
   return own !== undefined && (own.over || own.progress >= 100);
 }
 
+// The player's UNRANKED row, off their own result: `∞` among the ended when the round ended
+// unsolved, a finished 100% otherwise.
+export function ownRow(me: ResultMe): PlayingRow {
+  return {
+    publicId: me.publicId,
+    name: me.name,
+    avatar: me.avatar,
+    tries: me.tries,
+    progress: me.ended ? me.progress : 100,
+    over: me.ended,
+  };
+}
+
 // ONE group's day. Null when nobody but the player has a row in it today: there is nobody to
 // compare with.
 export function groupResult(live: LiveBoard, group: LiveGroup, me: ResultMe): ResultBoard | null {
@@ -121,16 +143,7 @@ export function groupResult(live: LiveBoard, group: LiveGroup, me: ResultMe): Re
   if (others === 0) return null;
 
   // The player's unranked row, off their own result.
-  const mine: PlayingRow | null = recorded
-    ? null
-    : {
-        publicId: me.publicId,
-        name: me.name,
-        avatar: me.avatar,
-        tries: me.tries,
-        progress: me.ended ? me.progress : 100,
-        over: me.ended,
-      };
+  const mine: PlayingRow | null = recorded ? null : ownRow(me);
   // A day that fits the box is shown whole; the caps are for one that does not. The ranked rows
   // come first, leaving the playing rows their few; what the ranking cannot fill goes to more
   // playing rows.
@@ -162,27 +175,47 @@ export function globalResult(board: Board, meId: string): ResultBoard | null {
   return { lines: rankedLines(known, pickRanked(known.length, at, RESULT_LINES_MAX), at), more: 0 };
 }
 
+// THE SEAT, off the groups list as held: none while the list is unknown (it never claims "no
+// group") or wherever one of the groups holds somebody else; else the group of one the player
+// last opened, or the one they joined last (the first listed of a tie) — null with no group.
+export function seatOf(
+  groups: readonly GroupSummary[] | null,
+  lastGroupId: string | null,
+): { group: GroupSummary | null } | null {
+  if (groups === null || holdsSomebody(groups)) return null;
+  if (groups.length === 0) return { group: null };
+  const last = groups.find((group) => group.id === lastGroupId);
+  return { group: last ?? groups.reduce((newest, group) => (group.joinedAt > newest.joinedAt ? group : newest)) };
+}
+
 // The block's tabs, in order: the group last opened first, then the player's other groups as the
-// live read lists them, each only when somebody else has a row in it — then the GLOBAL board.
+// live read lists them, each only when somebody else has a row in it — then the SEAT, for a
+// player none of whose groups holds anybody else — then the GLOBAL board. The box opens on the
+// first: a group's, else the seat, else GLOBAL.
 export function resultTabs(
   live: LiveBoard | null,
   globalBoard: Board | null,
   lastGroupId: string | null,
   me: ResultMe,
+  groups: readonly GroupSummary[] | null,
 ): ResultTab[] {
   const tabs: ResultTab[] = [];
   if (live !== null) {
-    const groups = [...live.groups].sort(
+    const ordered = [...live.groups].sort(
       (a, b) => Number(b.id === lastGroupId) - Number(a.id === lastGroupId),
     );
-    for (const group of groups) {
+    for (const group of ordered) {
       const board = groupResult(live, group, me);
-      if (board) tabs.push({ key: group.id, group, board });
+      if (board) tabs.push({ kind: 'group', key: group.id, group, board });
     }
   }
+  // (Never beside a group's board: a group with a row from somebody else holds somebody, so a
+  // seat there could only come from a list read before they joined.)
+  const seat = tabs.length === 0 ? seatOf(groups, lastGroupId) : null;
+  if (seat !== null) tabs.push({ kind: 'seat', key: SEAT_TAB, group: seat.group, own: ownRow(me) });
   if (globalBoard !== null) {
     const board = globalResult(globalBoard, me.publicId);
-    if (board) tabs.push({ key: GLOBAL_TAB, group: null, board });
+    if (board) tabs.push({ kind: 'global', key: GLOBAL_TAB, board });
   }
   return tabs;
 }

@@ -17,7 +17,7 @@ import { languageName } from '../domain/shareContext';
 // What each level answers, in the words a question would use. A level the shared table adds
 // needs a line here (`tutorial.test.ts`).
 export const LEVEL_ANSWERS: Record<number, string> = {
-  1: 'the game, played in a minute: how to play, what a rank is, one guess landing on every hole, the score, the meter that unlocks hints',
+  1: 'the game, played: how to play, what a rank is, one guess landing on every hole, the score, the meter that unlocks hints',
   2: 'the distance: how the game measures how close two words are — every word turned into coordinates, learned from the way words are used across an enormous amount of text',
   3: 'many meanings: why that is not enough — one word holds all its senses in a single set of coordinates, so the sentence has to be read',
   4: 'attention: how a machine reads a sentence, each word looking at the others',

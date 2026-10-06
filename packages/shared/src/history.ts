@@ -1,6 +1,6 @@
 // The PRIVATE player history (#211): what a summary surface may know about days it is not
 // opening. #214 made the game network-dependent and removed the persisted sentence round,
-// so the archive calendar, the language chooser and the streak have no local source left —
+// so the archive calendar and the streak have no local source left —
 // this is the server-backed one they read instead.
 //
 // It is cross-package for the usual reason: the BACKEND derives these values from the round
@@ -17,11 +17,14 @@ export const HISTORY_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 export interface HistoryDay {
   // The game day, "YYYY-MM-DD".
   date: string;
-  // Reconstruction progress (0–100). A #214 CAPPED round stays UNSOLVED and keeps the
-  // percentage it reached — the cap changes the result's headline, not the day's fill.
+  // Reconstruction progress (0–100): the % the round reached.
   progress: number;
   // The server has read this round's log as solved. Only ever written true (#203).
   solved: boolean;
+  // The round is OVER unsolved: the server's `endedUnsolved` over this row — given up, or its
+  // raw log at the cap; solved wins. Read at read time, never stored, so the web never needs
+  // the log to know it.
+  over: boolean;
 }
 
 // What the private history read answers. `days` is the asked-for month (EMPTY when no month

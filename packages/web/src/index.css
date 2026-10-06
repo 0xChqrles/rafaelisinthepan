@@ -2690,6 +2690,10 @@ body:has(.app > .board-screen) {
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+  /* The page's CUT opens ABOVE the line: its text must grow from the tap point down, on
+     every engine. Scroll anchoring would hold the line still and push the new text up,
+     out of view under the credit (WebKit anchors nothing; Chrome and Firefox would). */
+  overflow-anchor: none;
   /* The GAP between the stage's blocks (the card, the boards, the page) — the seam, stated
      once. Widened 2026-09-11 (user-asked): the blocks are different things, and the air
      between them is what says so. */
@@ -3461,6 +3465,64 @@ body:has(.app > .board-screen) {
   align-self: stretch;
   background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
 }
+/* THE SEAT (`SeatPanel`): the board a player with nobody else in their groups would have. Their
+   own line claims nothing — no frame (the brackets are the act's, under it), no %, the count in
+   the plain ink rather than a member still playing's grey. The line where a friend would stand
+   holds the ACT: the board's pixel plus where a mark would be (2px a cell), then CREATE GROUP or
+   INVITE as the bracketed quiet word (SIGN OUT's dress, with `.device-signout`) taking the rest
+   of the line — it has no number — so a rank column of three or four digits never pushes it past
+   the edge. The whole line is the finger's target; the word answers its hover and its press. */
+.result-board.seats .board-row.me {
+  background: none;
+}
+.result-board.seats .board-progress {
+  display: none;
+}
+.result-board.seats .board-row.me:not(.over) .board-score {
+  color: var(--fg);
+}
+.board-seat.call {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.board-seat-plus {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: var(--fg);
+}
+.board-seat-plus .ui-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+.board-seat.call .board-seat-say {
+  grid-column: 3 / -1;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg);
+}
+@media (hover: hover) and (pointer: fine) {
+  .board-seat.call:hover .board-seat-say::before {
+    border-color: var(--fg);
+  }
+}
+.board-seat.call:active .board-seat-say {
+  translate: 0 2px;
+}
+/* Under the keyboard's focus its own corners give way to `FocusBrackets`, never a frame nested
+   in a frame. */
+.board-seat.call .board-seat-say[data-bracketed]::before {
+  border-color: transparent;
+}
 /* The landing: the shown name's chip drawn across, then the lines in one after another; a
    turn of the tab sends the chip travelling and plays the lines again, quicker. */
 .solved-boards.in .board-tabs-ink {
@@ -3494,12 +3556,12 @@ body:has(.app > .board-screen) {
   }
 }
 
-/* The PAGE: the credit, then the text, read top-down the way a page is (user-decided
-   2026-09-08: "with the source above the text, we can start by a few sentences before
-   the puzzle"). It is the stage's last item, at the score block's width (the scrollbar is
-   on the screen's edge, past the page's inset, so the words need no clearance of their
-   own). It is the sticky credit's CONTAINING BLOCK: the credit sticks while the page is
-   in view and leaves with it. */
+/* The PAGE: the credit, then the text OPENING ON THE LINE, read top-down the way a page
+   is: the source above the text (user-decided 2026-09-08), the sentences before the line
+   behind THE CUT (`.solved-cut`). It is the stage's last item, at the score block's width
+   (the scrollbar is on the screen's edge, past the page's inset, so the words need no
+   clearance of their own). It is the sticky credit's CONTAINING BLOCK: the credit sticks
+   while the page is in view and leaves with it. */
 .solved-page {
   flex: none;
   width: 100%;
@@ -3553,8 +3615,8 @@ body:has(.app > .board-screen) {
   text-align: left;
 }
 /* The TEXT, in the READING face — this is the book's page, not the board. The puzzle's
-   line is in the ink; #270's sentences before and after it will be the muted text around
-   it, which is the whole highlight: contrast, never a marker band. */
+   line is in the ink; #270's sentences around it are the muted text (those before it once
+   their cut is opened), which is the whole highlight: contrast, never a marker band. */
 .solved-text {
   margin: 0;
   /* The sentence follows the CREDIT (user-decided 2026-09-11, "score view → source →
@@ -3586,6 +3648,55 @@ body:has(.app > .board-screen) {
 }
 .solved-line {
   color: var(--fg);
+}
+/* THE CUT: the page opens on the line, and the sentences before it wait behind the printed
+   quote's `[…]` — the ellipsis in `--muted` (the ink of the text it stands for) inside the
+   corner brackets of a tappable thing, `.quiet-btn`'s dress at the text's own size. Exactly
+   one row tall and set on the row's top, so no row grows; the glyph sits on the text's
+   baseline. Its finger's box (`::after`, no layout) grows UP into the credit's margin
+   (`clamp(14px, …)`, never less) and SIDEWAYS, never down over the line's next row, and
+   stops short of the line's first word past the no-break space. */
+.solved-text .solved-cut {
+  height: 1.6em;
+  padding: 0 7px;
+  vertical-align: top;
+  font: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.solved-text .solved-cut::before {
+  inset: 3px 0;
+}
+.solved-text .solved-cut::after {
+  content: '';
+  position: absolute;
+  inset: -14px -10px 0;
+}
+/* Under the keyboard's focus the app's ONE indicator speaks alone (`FocusBrackets`): the
+   cut's own corners give way to it, never a frame nested in a frame — hovered too (the
+   `.quiet-btn` hover rule weighs as much and comes later, hence the extra class). */
+.solved-text .solved-cut.quiet-btn[data-bracketed]::before {
+  border-color: transparent;
+}
+/* A tap only once the secrets have popped (`.armed`, at once on a settled frame): until
+   then a skip-tap where the cut sits — unseen, or still fading in — only skips. */
+.solved-text:not(.armed) .solved-cut {
+  pointer-events: none;
+}
+/* The sentences the cut held, printed in its place in four hard steps — the player's own
+   act, so a settled frame plays it too, and reduced motion makes it instant. Focusable for
+   the keyboard's sake alone, so a tap on it paints no browser flash. */
+.solved-unfolded {
+  animation: solved-unfold 160ms steps(4, jump-end) both;
+  -webkit-tap-highlight-color: transparent;
+}
+@keyframes solved-unfold {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 /* LISTEN (#270): a music day's one affordance — an ordinary link to the track's page, a
    new tab, no embed. The credit's own face, in the action ink, underlined the pixel way. */
@@ -5390,117 +5501,142 @@ figure.l1-fig {
   }
 }
 
-/* --- tutorial invitation (#51): a direct-on-background first-run prompt. The gold
-   primary action previews the interaction language the player meets on MIX; SKIP stays
-   a quiet text exit. --- */
-.invite {
-  width: min(480px, 100%);
+/* --- tutorial invitation (#51): the first visit's question, LAID OUT AS THE GAME SCREEN it
+   opens onto (`Invite`). It wears the game's own zones — `.game`, `.play`, `.tray` with the
+   gate's `.rules-gate` — so every breakpoint the game is tuned for holds it the same way: the
+   lockup in the header's row, the demo where the day's sentence and prompt stand, the question
+   and its two answers in the tray, TUTORIAL exactly where the gate's PLAY lands. --- */
+/* The demo stands in the HEADER's column — `.topbar-inner`'s 900px, centred, less the row's
+   own insets (its 8px and `.topbar-left`'s 4px a side) — so on a wide screen its first
+   letter stands on the mark's pixel column: the game's own 1200px column would set a
+   two-line sentence far left of the mark, the rest of the screen empty beside it. A phone's
+   column is narrower than both, and nothing changes there. */
+.invite .play {
+  pointer-events: none;
+  max-width: calc(900px - 2 * (8px + 4px));
+  align-self: center;
+}
+/* THE LOCKUP: the app's pixel mark (`MARK_GLYPH`, 22 cells at 1x — the header's own) in the
+   accent, the name beside it in the lockup type (`.streak-lockup`'s). In the header's row
+   and the title's box, so the mark stands on the pixel where the game's title draws it, and
+   the name starts where the language code will: the title's seam (the mark's 3px and
+   `.puzzle-title`'s gap, stepped down with it on narrower screens below). */
+.invite-lockup {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  text-align: center;
+  gap: 9px;
+  padding: 4px 4px 4px 0;
+  font-family: var(--ui);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  color: var(--fg);
+  white-space: nowrap;
 }
-.invite-logo {
+.invite-lockup svg {
+  flex: none;
   display: block;
-  width: 64px;
-  height: 60px;
-  margin-bottom: 34px;
-  color: var(--solve);
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
 }
-/* The first thing a new player ever reads: a bold statement with its LAST WORDS in the
-   board's inverted selection box (the Zaki-headline highlight, 2026-08-18). */
+/* The name sits on the mark's weight, the header title's own 2px (`.app-title-lang`). */
+.invite-lockup span {
+  translate: 0 2px;
+}
+/* THE DEMO: the site's sentence on the game's own `.phrase`, at the game's size and leading,
+   played once — SKIP swaps one sentence for another in the same dress. Held to 22 glyphs a
+   line (the pixel face is 1em a glyph), so it is two lines at every width and the hole
+   stands on the second in every state: a hole changing width moves only what follows it,
+   and line 1 never reflows. Two lines are reserved (the game's 1.5 leading, twice), so
+   nothing below moves while it decodes. */
+.invite-demo .phrase {
+  max-width: 22em;
+  min-height: 3em;
+}
+/* The question, in the tray over its answers: a bold statement with its LAST WORDS in the
+   board's inverted selection box (the Zaki-headline highlight, 2026-08-18). One line in
+   either language at every width. */
 .invite-title {
+  align-self: stretch;
   margin: 0;
   font-family: var(--ui);
-  font-size: clamp(22px, 3.6vh, 30px);
+  font-size: 28px;
   font-weight: 700;
   line-height: 1.35;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+  text-align: center;
+  white-space: nowrap;
   color: var(--fg);
   text-shadow: none;
   padding-top: var(--cap-shift);
 }
+/* The marked words wear the box STILL, from the first frame — never drawn in, never waiting
+   on the demo — and never part across a line. Its side padding is given back by equal
+   negative margins, so the box moves no letter. */
 .invite-mark {
+  white-space: nowrap;
+  padding: 0.04em 0.22em;
+  margin: 0 -0.22em;
   background: var(--fg);
   color: var(--bg);
-  padding: 0.04em 0.22em;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-  /* Once the title has landed, the selection box is DRAWN across its words, left to right,
-     in hard steps — a highlighter, not a fade. */
-  animation: mark-wipe 320ms steps(8, jump-end) 360ms backwards;
 }
-@keyframes mark-wipe {
-  from {
-    clip-path: inset(0 100% 0 0);
-  }
-  to {
-    clip-path: inset(0 0 0 0);
-  }
-}
-.invite-text {
-  margin: 12px auto 0;
-  max-width: 44ch;
-  font-family: var(--ui);
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  line-height: 1.7;
-  text-transform: uppercase;
-  color: var(--fg);
-  opacity: 0.8;
-  text-shadow: none;
-}
-
-.invite-actions {
-  width: 100%;
-  margin-top: 32px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
-}
-.invite-actions .btn-primary {
-  width: 100%;
+/* The question stands a step apart from the answers under it. */
+.invite .rules-gate .invite-title {
+  margin-bottom: 12px;
 }
 
 @media (max-width: 640px) {
-  /* Like the other no-HUD states, center while it fits and start at the top if a very
-     short viewport needs to scroll. */
-  .app > .invite {
-    margin: auto 0;
-    max-width: 100%;
+  /* Sized off the column, so the longest question (en's 19 glyphs, about 12.7em with the
+     tracking) keeps a breath of ground on each side of its box. */
+  .invite-title {
+    font-size: min(28px, calc((100vw - 28px) / 14));
   }
-  .invite-logo {
-    margin-bottom: 28px;
+  .invite-lockup {
+    gap: 8px;
   }
-
-  .invite-actions {
-    margin-top: 26px;
-    gap: 20px;
+}
+@media (max-width: 400px) {
+  .invite-lockup {
+    gap: 7px;
+  }
+}
+@media (max-width: 340px) {
+  .invite-lockup {
+    gap: 6px;
   }
 }
 
-/* Landscape phones and short browser windows keep the full choice visible without
-   changing the primary action's MIX-sized tap target. */
+/* Landscape phones and short browser windows: the game's own zones are too tall here (its
+   header clearance and keyboard footprint leave the sentence no room), so the invitation
+   tightens its own — the header's clearance, the play area's gaps, the tray to its stack —
+   and the demo steps down to 16px (never above the phone's own sentence size, nor past its
+   22-glyph line), keeping all of it on one screen. */
 @media (max-height: 520px) {
-  .invite-logo {
-    width: 46px;
-    height: 43px;
-    margin-bottom: 16px;
+  .invite.game {
+    padding-top: 52px;
+    gap: 12px;
+  }
+  .invite .play {
+    gap: 12px;
+  }
+  .invite .phrase,
+  .invite .word-input {
+    font-size: min(16px, clamp(13px, 4.2vw, 19px), calc((100vw - 28px) / 22));
+  }
+  .invite .tray {
+    height: auto;
+  }
+  .invite .rules-gate {
+    gap: 4px;
   }
   .invite-title {
-    font-size: 19px;
-    line-height: 1.3;
+    font-size: 22px;
   }
-  .invite-text {
-    margin-top: 6px;
-    line-height: 1.5;
-  }
-  .invite-actions {
-    margin-top: 20px;
-    gap: 18px;
+  .invite .rules-gate .invite-title {
+    margin-bottom: 10px;
   }
 }
 
@@ -8741,6 +8877,10 @@ figure.l1-fig {
 .learn-card-top {
   justify-content: space-between;
   align-items: center;
+  /* The meta chip's box (its 10.5px line and 4px of padding a side), held with or without
+     one: level 1 is untimed, so its corner stays empty until DONE stamps in — on the list
+     and on the finale's card — and the number beside it must not move then. */
+  min-height: 20px;
 }
 .learn-card-foot {
   flex-direction: column;
@@ -8797,6 +8937,14 @@ figure.l1-fig {
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
   animation: mark-wipe 320ms steps(8, jump-end) 420ms backwards;
+}
+@keyframes mark-wipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
 }
 .learn-sub {
   font-size: 10.5px;
@@ -10315,8 +10463,9 @@ figure.l1-fig {
 }
 /* SIGN OUT's brackets fit the WORD (28px), so a list of devices reads as lines each with its
    own small control — 24px of air between two bracket sets — never a ladder of boxes; the
-   finger's target stays 44px tall around it. */
-.device-signout {
+   finger's target stays 44px tall around it. The result's seat wears the same word. */
+.device-signout,
+.board-seat.call .board-seat-say {
   height: 28px;
   padding: 0 8px;
   letter-spacing: 0.12em;

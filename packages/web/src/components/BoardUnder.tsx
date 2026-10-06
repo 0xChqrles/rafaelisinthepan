@@ -116,7 +116,7 @@ export default function Under({
   const offset = view.sub ? 1 : 0;
   const came = (i: number) => gone === null || cameIn(lineRun(gone.inRun, i).delayMs, gone.shownFor);
   const { shown } = view;
-  const list = { meId, run, offset, out, came, podium: places !== null, places: out ? null : places };
+  const list = { lang, meId, run, offset, out, came, podium: places !== null, places: out ? null : places };
   // Whether its lines hang a playing member's % in the numbers' gutter (`.plays`: a narrow phone
   // gives that gutter to the names on a board with no % to hang there).
   const plays = shown !== null && !isPeriodBoard(shown.board) && shown.board.playing.length > 0;
@@ -240,6 +240,7 @@ function PodiumItems({ places }: { places: readonly (PodiumEntry | null)[] | nul
 }
 
 interface ListProps {
+  lang: LangCode;
   meId?: string;
   run: ListRun;
   // The slot the list's first line stands in (after the header's), whether it is giving way, and
@@ -274,7 +275,7 @@ function useListRun(props: ListProps, list: RefObject<HTMLElement | null>): List
 // wide as its widest rank, and, where the list marks one of your people, a mark's room more
 // before the ranks (`.marks`: the square never touches a two-digit rank).
 function BoardList(props: ListProps & { board: AnyBoard; mates: ReadonlySet<string> | null }) {
-  const { board, meId, mates, offset, came, podium, places } = props;
+  const { board, lang, meId, mates, offset, came, podium, places } = props;
   const ref = useRef<HTMLOListElement>(null);
   const run = useListRun(props, ref);
   const all = boardSlots(board, podium);
@@ -308,7 +309,16 @@ function BoardList(props: ListProps & { board: AnyBoard; mates: ReadonlySet<stri
           case 'gap':
             return <li key="gap" className="board-gap" aria-hidden="true" style={{ '--delay': `${at.delayMs}ms` } as CSSProperties} />;
           case 'playing':
-            return <PlayingRowItem key={`p:${slot.row.publicId}`} row={slot.row} me={slot.row.publicId === meId} index={i} run={at} />;
+            return (
+              <PlayingRowItem
+                key={`p:${slot.row.publicId}`}
+                row={slot.row}
+                me={slot.row.publicId === meId}
+                lang={lang}
+                index={i}
+                run={at}
+              />
+            );
           case 'waiting':
             return <WaitingRowItem key={`w:${slot.player.publicId}`} player={slot.player} index={i} run={at} />;
         }

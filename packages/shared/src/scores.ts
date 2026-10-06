@@ -12,15 +12,28 @@ export const ROUND_WRITE_MIN_MS = 1_000;
 // write-only-true `gaveUp`), or the stored RAW log holds the cap. Either way every further
 // append is refused, nothing is recorded, and the round ends at `∞`. `solved` WINS: a solve
 // accepted as the 500th raw entry, or one that landed beside a give-up (two devices racing),
-// is an ordinary solved round. ONE spelling, read by the web's round screen and the group
-// day board alike; a round whose state has not arrived has not ended.
+// is an ordinary solved round.
+//
+// ONE rule with two input shapes. `endedUnsolved` takes the three FACTS — for a reader that
+// holds the cap as a fact rather than the log (the #211 month read, whose store probes one
+// entry at the cap's last index and never reads the log); `roundEnded` is the same rule over
+// a round's state, log and all, and is defined through it. Read by the web's round screen,
+// the group day board (`over`) and the month read alike, so the three cannot disagree.
+export function endedUnsolved(facts: { solved: boolean; gaveUp: boolean; capped: boolean }): boolean {
+  return !facts.solved && (facts.gaveUp || facts.capped);
+}
+
+// A round whose state has not arrived has not ended.
 export function roundEnded(
   round: { solved?: boolean; gaveUp?: boolean; guesses: readonly unknown[] } | null | undefined,
 ): boolean {
   return (
     round != null &&
-    round.solved !== true &&
-    (round.gaveUp === true || round.guesses.length >= ROUND_GUESS_CAP)
+    endedUnsolved({
+      solved: round.solved === true,
+      gaveUp: round.gaveUp === true,
+      capped: round.guesses.length >= ROUND_GUESS_CAP,
+    })
   );
 }
 

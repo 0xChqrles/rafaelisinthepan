@@ -11,12 +11,15 @@
 // THE TABS are the groups' NAMES in a row, then GLOBAL — the boards' one control across the app
 // (`BoardTabs`, the board screen's own): the one shown wearing the white title chip, which
 // TRAVELS to the name turned to; GLOBAL pinned at the row's end, and where the names run past
-// the column only whole ones show, the cut ones under the boards' left-out rail.
+// the column only whole ones show, the cut ones under the boards' left-out rail. A player none
+// of whose groups holds anybody else has the SEAT before GLOBAL instead, and the box opens on it
+// (`SeatPanel`): the board screen's bare `NO GROUP`, or their group of one by name, holding
+// their own line over the call that creates or invites in place.
 //
 // The data is not this screen's to fetch twice: the groups come off the LIVE read the play
-// screen already keeps (`state/liveBoard.ts`), passed in; GLOBAL is one anonymous read of the
-// global board per mount (`useGlobalBoard`). The active day only — the caller mounts this for
-// nothing else.
+// screen already keeps (`state/liveBoard.ts`), passed in, and the seat off the groups list it
+// already holds; GLOBAL is one anonymous read of the global board per mount (`useGlobalBoard`).
+// The active day only — the caller mounts this for nothing else.
 //
 // ONE FIXED BOX, whatever it holds: empty while the first answers are out, the same height on
 // every tab, so nothing that has landed moves when a read arrives or a swipe turns the page.
@@ -30,17 +33,20 @@
 // the page up under the player's eyes.
 //
 // A tap on a tab's rows, or on the chip of the tab shown (the keyboard's way), opens that
-// board: a group's (it becomes the group last opened) or the global one; a tap on another name
-// turns to it. No analytics event. A sideways SWIPE on the rows turns the tab like a tap on a
-// name (the rows are most of the box, and where a thumb swipes); it opens nothing.
+// board: a group's (it becomes the group last opened), the global one, or — from the seat —
+// the board's group tab, on the group of one if there is one; a tap on another name turns to
+// it. Only the seat's call acts in place. No analytics event. A sideways SWIPE on the rows
+// turns the tab like a tap on a name (the rows are most of the box, and where a thumb swipes);
+// it opens nothing.
 import { useId, useState } from 'react';
-import type { CSSProperties } from 'react';
-import type { LiveGroup, LiveBoard } from '@whippin/shared';
+import type { CSSProperties, HTMLAttributes } from 'react';
+import type { GroupSummary, LiveBoard } from '@whippin/shared';
 import BoardTabs, { tabIds } from './BoardTabs';
 import { BoardRowItem, PlayingRowItem } from './BoardRows';
 import { rankColumnPx } from './boardMetrics';
 import { shownFace, useOwnFace } from './AccountFace';
-import { resultTabs, type ResultTab } from '../game/resultBoards';
+import SeatPanel from './SeatPanel';
+import { resultTabs, seatOf, type ResultTab } from '../game/resultBoards';
 import useGlobalBoard from '../hooks/useGlobalBoard';
 import useSwipe from '../hooks/useSwipe';
 import { useDeviceIdentity } from '../identity';
@@ -58,11 +64,14 @@ export interface ResultBoardsData {
   // A live answer is on its way: the box holds its room for it rather than draw GLOBAL first
   // and turn to a group a moment later.
   awaited: boolean;
+  // The groups list as held — null while unknown: the seat's one source.
+  groups: readonly GroupSummary[] | null;
 }
 
 // The widest rank a tab prints, in the ranks' digits (the `+N` under the rows is set at half
-// their size) — one rank column for every tab (`rankColumnPx`).
+// their size) — one rank column for every tab (`rankColumnPx`). The seat prints none.
 function rankDigits(tab: ResultTab): number {
+  if (tab.kind === 'seat') return 0;
   return Math.max(
     Math.ceil(String(`+${tab.board.more}`).length / 2),
     ...tab.board.lines.map((line) => (line.kind === 'ranked' ? String(line.row.rank).length : 1)),
@@ -75,6 +84,7 @@ export default function ResultBoards({
   date,
   live,
   awaited,
+  groups,
   tries,
   progress,
   ended,
@@ -102,23 +112,38 @@ export default function ResultBoards({
   const [chosen, setChosen] = useState<string | null>(null);
   const [moved, setMoved] = useState(false);
 
+  // THE SEAT IS DECIDED ONCE THE BOX HAS DRAWN: the list it was decided off is held where a
+  // later one would take the seat away or bring one in (a friend's join read back), so a tab
+  // that has landed never leaves the row; a list that keeps it (the group just created) is
+  // read as it comes.
+  const [seatFrom, setSeatFrom] = useState<readonly GroupSummary[] | null | undefined>(undefined);
+  const seated = (list: readonly GroupSummary[] | null) => seatOf(list, lastGroupId) !== null;
+  const seatGroups = seatFrom === undefined || seated(seatFrom) === seated(groups) ? groups : seatFrom;
+
   // The box waits for EVERY read it draws from — the live answer and the GLOBAL one — before
   // it draws a tab (see the header).
   const pending = identity !== null && (awaited || globalBoard === null);
   const tabs: ResultTab[] =
     identity === null || pending
       ? []
-      : resultTabs(live, globalBoard === 'failed' ? null : globalBoard, lastGroupId, {
-          publicId: identity.accountId,
-          name: own?.name ?? '',
-          avatar: own?.avatar ?? null,
-          tries,
-          progress,
-          ended,
-        });
+      : resultTabs(
+          live,
+          globalBoard === 'failed' ? null : globalBoard,
+          lastGroupId,
+          {
+            publicId: identity.accountId,
+            name: own?.name ?? '',
+            avatar: own?.avatar ?? null,
+            tries,
+            progress,
+            ended,
+          },
+          seatGroups,
+        );
   const empty = tabs.length === 0 && !pending;
   const index = Math.max(0, tabs.findIndex((tab) => tab.key === chosen));
   const shown = tabs[index] as ResultTab | undefined;
+  if (shown !== undefined && seatFrom !== seatGroups) setSeatFrom(seatGroups);
 
   const turn = (i: number) => {
     const tab = tabs[i];
@@ -135,12 +160,13 @@ export default function ResultBoards({
   if (decided !== fate) setFate(decided);
   if (decided === 'gone') return null;
 
-  const open = (group: LiveGroup | null) => {
-    if (group) {
-      setLastGroup(group.id);
-      setBoardTab('group');
-    } else {
+  const open = (tab: ResultTab) => {
+    if (tab.kind === 'global') {
       setBoardTab('global');
+    } else {
+      // The seat's is the board's group tab: its NO GROUP, or the group of one.
+      if (tab.group) setLastGroup(tab.group.id);
+      setBoardTab('group');
     }
     // The board's read starts here, before the screen it opens is mounted (a swipe's press
     // opens nothing, so it waits for the tap).
@@ -148,6 +174,17 @@ export default function ResultBoards({
     navigate(pathForBoard(lang));
   };
   const rankWidth = rankColumnPx(Math.max(0, ...tabs.map(rankDigits)));
+  // Every tab's panel: the row's tabpanel, labelled by the tab shown, the swipe, and the tap
+  // onto the board — the seat's included (its call alone acts in place).
+  const panel = (tab: ResultTab): HTMLAttributes<HTMLDivElement> => ({
+    role: 'tabpanel',
+    id: tabIds(tabsId).panel,
+    'aria-labelledby': tabIds(tabsId).tab(tab.key),
+    ...swipe,
+    onClick: (e) => {
+      if (!swiped(e)) open(tab);
+    },
+  });
 
   return (
     <section
@@ -158,48 +195,49 @@ export default function ResultBoards({
       {shown && (
         <>
           <BoardTabs
-            tabs={tabs.map((tab) => ({
-              key: tab.key,
-              label: tab.group ? tab.group.name : t(lang, 'boardGlobal'),
-              pinned: tab.group === null,
-            }))}
+            tabs={tabs.map((tab) =>
+              tab.kind === 'global'
+                ? { key: tab.key, label: t(lang, 'boardGlobal'), pinned: true }
+                : tab.group
+                  ? { key: tab.key, label: tab.group.name }
+                  : // The seat with no group: the board screen's own word, a state and not a
+                    // name (no chip).
+                    { key: tab.key, label: t(lang, 'boardEmptyGroups'), bare: true },
+            )}
             shown={index}
             onTurn={turn}
-            onOpen={(i) => open(tabs[i]?.group ?? null)}
+            onOpen={(i) => tabs[i] && open(tabs[i])}
             idBase={tabsId}
           />
           {/* The rows are a picture of the board, and the whole of it is the tap onto it; the
               keyboard's way there is the shown tab's name above. */}
-          <div
-            className="result-board"
-            role="tabpanel"
-            id={tabIds(tabsId).panel}
-            aria-labelledby={tabIds(tabsId).tab(shown.key)}
-            {...swipe}
-            onClick={(e) => !swiped(e) && open(shown.group)}
-          >
-            <ol key={shown.key} className="board-list">
-              {shown.board.lines.map((line, i) =>
-                line.kind === 'gap' ? (
-                  <li key={`gap-${i}`} className="board-gap" style={{ '--i': i } as CSSProperties} aria-hidden="true" />
-                ) : line.kind === 'ranked' ? (
-                  <BoardRowItem key={line.row.publicId} row={line.row} value={line.row.score} me={line.me} index={i} />
-                ) : (
-                  <PlayingRowItem key={line.row.publicId} row={line.row} me={line.me} index={i} />
-                ),
+          {shown.kind === 'seat' ? (
+            <SeatPanel lang={lang} group={shown.group} own={shown.own} panel={panel(shown)} swiped={swiped} />
+          ) : (
+            <div className="result-board" {...panel(shown)}>
+              <ol key={shown.key} className="board-list">
+                {shown.board.lines.map((line, i) =>
+                  line.kind === 'gap' ? (
+                    <li key={`gap-${i}`} className="board-gap" style={{ '--i': i } as CSSProperties} aria-hidden="true" />
+                  ) : line.kind === 'ranked' ? (
+                    <BoardRowItem key={line.row.publicId} row={line.row} value={line.row.score} me={line.me} index={i} />
+                  ) : (
+                    <PlayingRowItem key={line.row.publicId} row={line.row} me={line.me} lang={lang} index={i} />
+                  ),
+                )}
+              </ol>
+              {shown.board.more > 0 && (
+                <div
+                  key={`more-${shown.key}`}
+                  className="result-board-more"
+                  style={{ '--i': shown.board.lines.length } as CSSProperties}
+                >
+                  <span className="result-board-more-count">+{shown.board.more}</span>
+                  <span className="result-board-more-rail" aria-hidden="true" />
+                </div>
               )}
-            </ol>
-            {shown.board.more > 0 && (
-              <div
-                key={`more-${shown.key}`}
-                className="result-board-more"
-                style={{ '--i': shown.board.lines.length } as CSSProperties}
-              >
-                <span className="result-board-more-count">+{shown.board.more}</span>
-                <span className="result-board-more-rail" aria-hidden="true" />
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </>
       )}
     </section>

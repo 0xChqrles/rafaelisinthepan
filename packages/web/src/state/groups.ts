@@ -1,7 +1,7 @@
 // The player's GROUPS (#271), as every surface that draws them needs them: the leaderboard's
-// tabs, the global board's member marks, the invite landing's "already a member" and the
-// play screen's question "is there anybody to race?" (the live read's eligibility,
-// state/liveBoard.ts) all read ONE answer to "which groups am I in".
+// tabs, the global board's member marks, the invite landing's "already a member", the play
+// screen's question "is there anybody to race?" (the live read's eligibility,
+// state/liveBoard.ts) and the result's SEAT all read ONE answer to "which groups am I in".
 //
 // TRANSIENT, never persisted: it is the server's answer about the caller, and #211's rule
 // applies — a list that has not arrived is UNKNOWN, never a guessed empty one. The one
@@ -33,15 +33,17 @@ let flight: Promise<void> | null = null;
 let loadedFor: string | null = null;
 let generation = 0;
 
-// Refresh on each surface entry, keeping a previous answer visible while it loads.
-export function loadGroups(): void {
+// Refresh on each surface entry, keeping a previous answer visible while it loads. It settles
+// when the read does (the flight already out, if one is): a write whose outcome is unknown
+// waits on it before it says anything (`state/groupActs.ts`).
+export function loadGroups(): Promise<void> {
   const identity = deviceIdentity();
   if (identity === null) {
     loadedFor = null;
     useGroupsStore.setState({ phase: 'ready', groups: [] });
-    return;
+    return Promise.resolve();
   }
-  if (flight) return;
+  if (flight) return flight;
   const epoch = identityEpochOf(identity);
   const requestGeneration = generation;
   const current = () => generation === requestGeneration && currentRequestIdentity(epoch) !== null;
@@ -51,7 +53,7 @@ export function loadGroups(): void {
     // stale-but-good rule.
     groups: loadedFor === identity.accountId ? state.groups : null,
   }));
-  flight = (async () => {
+  const read = (async () => {
     try {
       const resolved = currentRequestIdentity(epoch);
       if (!resolved) return;
@@ -74,6 +76,8 @@ export function loadGroups(): void {
       if (generation === requestGeneration) flight = null;
     }
   })();
+  flight = read;
+  return read;
 }
 
 // A write answered with the list as it now stands: publish it for the account it is about.
@@ -87,6 +91,13 @@ export function adoptGroups(answer: GroupsAnswer, accountId: string): void {
 
 export function useGroups(): GroupsState {
   return useGroupsStore((state) => state);
+}
+
+// "Is there anybody in my groups but me?" — the ONE reading of it, off the list as held: the
+// play screen's race line runs only when there is (the live read's eligibility), and the
+// result's SEAT stands only when there is not. A list not known yet holds nobody it can name.
+export function holdsSomebody(groups: readonly { members: readonly string[] }[] | null): boolean {
+  return groups?.some((group) => group.members.length > 1) ?? false;
 }
 
 // Registered in `identityScope`: the list belongs to the ACCOUNT.

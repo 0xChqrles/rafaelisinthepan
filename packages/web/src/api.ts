@@ -361,8 +361,8 @@ export function parseRound(data: unknown): RoundState {
   };
 }
 
-// The PRIVATE player history (#211): the archive calendar's month, the chooser's status
-// strip and the streak's solved-day list, all off what the server already derives from the
+// The PRIVATE player history (#211): the archive calendar's month and the streak's
+// solved-day list, all off what the server already derives from the
 // guess log (#203). POST-only — the device token authenticates in the BODY, so
 // there is no way to ask for someone else's history. `month` is OPTIONAL: the streak needs
 // the solved-day collection alone, and making that read spend a month Query would cost a
@@ -375,7 +375,7 @@ export function historyUrl(lang: string, month?: string, base: string = apiBase(
 
 export async function postHistoryBody(
   url: string,
-  // `collection: false` opts out of the solved-day read (the chooser never renders the
+  // `collection: false` opts out of the solved-day read (the archive never renders the
   // streak); omitted means true, so the original body shape keeps its meaning.
   body: { token: string; collection?: boolean },
 ): Promise<Response> {
@@ -385,7 +385,8 @@ export async function postHistoryBody(
 // Runtime shape check for the history response — the parsePuzzle contract: a wrong-shaped
 // body surfaces as the calendar's failure state, never as a month of NaN fills or a streak
 // counted off garbage. Both numbers are checked as REAL values, since one feeds a heat-ramp
-// colour and the other the streak arithmetic.
+// colour and the other the streak arithmetic; `over` is REQUIRED, since a day the answer
+// leaves it off is a day the calendar would draw as resumable.
 export function parsePlayerHistory(data: unknown): PlayerHistory {
   if (!isRecord(data)) throw new Error('malformed history: not an object');
   const { days, solvedDays } = data;
@@ -397,7 +398,8 @@ export function parsePlayerHistory(data: unknown): PlayerHistory {
       typeof day.date !== 'string' ||
       typeof day.progress !== 'number' ||
       !Number.isFinite(day.progress) ||
-      typeof day.solved !== 'boolean'
+      typeof day.solved !== 'boolean' ||
+      typeof day.over !== 'boolean'
     ) {
       throw new Error('malformed history: bad "days" entry');
     }

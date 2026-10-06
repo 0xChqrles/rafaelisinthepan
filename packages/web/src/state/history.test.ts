@@ -98,14 +98,14 @@ describe('daySummaryStatus — a month that has not arrived is UNKNOWN, not "not
   });
 
   it('a day the ARRIVED month does not name is NONE — the server holds no round for it', () => {
-    const days = new Map([['2026-08-03', { progress: 40, solved: false }]]);
+    const days = new Map([['2026-08-03', { progress: 40, solved: false, over: false }]]);
     expect(daySummaryStatus(view(days, 'ready'), '2026-08-04')).toEqual({ kind: 'none' });
   });
 
   it('renders the summary the server derived: progress, and solved as solved', () => {
     const days = new Map([
-      ['2026-08-03', { progress: 41.7, solved: false }],
-      ['2026-08-04', { progress: 100, solved: true }],
+      ['2026-08-03', { progress: 41.7, solved: false, over: false }],
+      ['2026-08-04', { progress: 100, solved: true, over: false }],
     ]);
     expect(daySummaryStatus(view(days, 'ready'), '2026-08-03')).toEqual({
       kind: 'progress',
@@ -114,13 +114,31 @@ describe('daySummaryStatus — a month that has not arrived is UNKNOWN, not "not
     expect(daySummaryStatus(view(days, 'ready'), '2026-08-04')).toEqual({ kind: 'solved' });
   });
 
-  it('a CAPPED round stays unsolved and keeps its percentage (#214)', () => {
-    // The cap changes the RESULT's headline, never the day's fill.
-    const days = new Map([['2026-08-05', { progress: 63, solved: false }]]);
-    expect(daySummaryStatus(view(days, 'ready'), '2026-08-05')).toEqual({
-      kind: 'progress',
-      pct: 63,
-    });
+  it('an ENDED day (given up or capped) reads over, whatever its %', () => {
+    // The result prints `∞` for it, and so does the calendar: it is a door to that result,
+    // never a day to resume — at 63% or at 0%.
+    const days = new Map([
+      ['2026-08-05', { progress: 63, solved: false, over: true }],
+      ['2026-08-06', { progress: 0, solved: false, over: true }],
+    ]);
+    expect(daySummaryStatus(view(days, 'ready'), '2026-08-05')).toEqual({ kind: 'over' });
+    expect(daySummaryStatus(view(days, 'ready'), '2026-08-06')).toEqual({ kind: 'over' });
+  });
+
+  it('a loaded month CARRIES over through the commit path into the status', async () => {
+    // Through the real parser and the real cache: a field the cache did not copy would be
+    // silently dropped, and the day drawn as resumable.
+    harness.answer = {
+      days: [
+        { date: '2026-08-07', progress: 55, solved: false, over: true },
+        { date: '2026-08-08', progress: 55, solved: false, over: false },
+      ],
+      solvedDays: [],
+    };
+    await loadPlayerHistory('fr', '2026-08');
+    const days = useHistoryStore.getState().months['fr:2026-08']!.days;
+    expect(daySummaryStatus(view(days, 'ready'), '2026-08-07')).toEqual({ kind: 'over' });
+    expect(daySummaryStatus(view(days, 'ready'), '2026-08-08')).toEqual({ kind: 'progress', pct: 55 });
   });
 });
 
@@ -289,7 +307,7 @@ describe('no token, no fetch (#216)', () => {
     // streak are answers this client already has. Asking would be a private read on a visit
     // that has performed none of the deliberate acts that create an identity.
     harness.identity = false;
-    harness.answer = { days: [{ date: '2026-08-03', progress: 42, solved: false }], solvedDays: [7] };
+    harness.answer = { days: [{ date: '2026-08-03', progress: 42, solved: false, over: false }], solvedDays: [7] };
     await loadPlayerHistory('fr', '2026-08');
 
     const state = useHistoryStore.getState();
@@ -315,7 +333,7 @@ describe('no token, no fetch (#216)', () => {
 
     harness.identity = true;
     harness.answer = {
-      days: [{ date: '2026-08-03', progress: 42, solved: true }],
+      days: [{ date: '2026-08-03', progress: 42, solved: true, over: false }],
       solvedDays: [20_669],
     };
     rearmPlayerHistory();
@@ -336,7 +354,7 @@ describe('no token, no fetch (#216)', () => {
 
   it('reads normally once the device HAS an identity', async () => {
     harness.identity = true;
-    harness.answer = { days: [{ date: '2026-08-03', progress: 42, solved: false }], solvedDays: [7] };
+    harness.answer = { days: [{ date: '2026-08-03', progress: 42, solved: false, over: false }], solvedDays: [7] };
     await loadPlayerHistory('fr', '2026-08');
     expect(useHistoryStore.getState().months['fr:2026-08']?.days?.size).toBe(1);
   });

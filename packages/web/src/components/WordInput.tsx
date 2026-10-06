@@ -92,7 +92,9 @@ interface WordInputProps {
 }
 
 // The guess prompt: a visually hidden <input> (#267) under the terminal-style line the
-// player actually reads.
+// player actually reads. It also stands OUTSIDE a round: the invitation's demo
+// (`tutorial/InviteDemo`) mounts it inactive and types into it from a timeline, so a change
+// here must not assume a round around it.
 //
 // It carried NO field between #36 and #267. The field it had before #36 was kept focused
 // by a blur→refocus dance that opened the mobile soft keyboard and flickered the viewport,

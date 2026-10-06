@@ -2,7 +2,7 @@
 // #214 has removed the persisted sentence round.
 //
 // Opening a daily still loads its complete authoritative round (`state/roundSync.ts`), but
-// the archive calendar, the language chooser and the streak cannot open every daily merely
+// the archive calendar and the streak cannot open every daily merely
 // to discover what happened — so they read the server's own summary instead: one Query per
 // (month, language) for the calendar, and the language's solved-day collection for
 // the streak. Both come back from ONE call, because both are facts about the same player.
@@ -19,7 +19,7 @@
 // fallback.
 //
 // **No token, no fetch** (#216). An identity that has never been bootstrapped cannot own
-// server rows, so its calendar, chooser and streak are known-empty WITHOUT a request — and
+// server rows, so its calendar and streak are known-empty WITHOUT a request — and
 // asking would be a private read on a visit that has performed none of the deliberate acts
 // that create an identity. That is an ANSWER, not a loading state: the surfaces render an
 // unplayed month and a zero streak, exactly as they would for a player who has played
@@ -73,7 +73,7 @@ const IDLE_SOLVED: SolvedEntry = { phase: 'idle', days: null };
 const monthKey = (lang: string, month: string) => `${lang}:${month}`;
 
 // ONE conversation per request key, shared across component lifetimes (the
-// `activeScoreFlights` pattern): the chooser mounts two languages at once and React's
+// `activeScoreFlights` pattern): two surfaces can mount the same read at once and React's
 // development effect replay fires every effect twice, and neither may mint a second read.
 // A settled flight leaves the map, so the NEXT mount revalidates — which is the whole
 // caching policy.
@@ -115,8 +115,8 @@ function setSolved(lang: string, entry: (previous: SolvedEntry) => SolvedEntry):
 export async function loadPlayerHistory(
   lang: string,
   month: string | undefined,
-  // `false` opts OUT of the solved-day collection — the language chooser wants a month
-  // strip and never renders the streak, so its read must not spend the collection's
+  // `false` opts OUT of the solved-day collection — the archive wants a month and never
+  // renders the streak, so its read must not spend the collection's
   // consistent GetItem (the request says so in its body, and this flight leaves the
   // solved entry entirely alone).
   collection = true,
@@ -170,7 +170,10 @@ export async function loadPlayerHistory(
       setMonth(monthId, () => ({
         phase: 'ready',
         days: new Map(
-          history.days.map((day) => [day.date, { progress: day.progress, solved: day.solved }]),
+          history.days.map((day) => [
+            day.date,
+            { progress: day.progress, solved: day.solved, over: day.over },
+          ]),
         ),
       }));
       // **The collection is MERGED, never replaced** (corrected on review). A read started
@@ -252,7 +255,7 @@ export function usePlayerHistory({
   lang: string;
   month?: string;
   enabled?: boolean;
-  // `false` skips the solved-day collection (the chooser: a month strip, no streak) —
+  // `false` skips the solved-day collection (the archive: a month, no streak) —
   // see `loadPlayerHistory`.
   collection?: boolean;
 }): HistoryView {

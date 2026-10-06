@@ -672,18 +672,30 @@ describe('dynamoRoundStore — the corrective write is MONOTONIC (#203)', () => 
 });
 
 // CONTRACT (#211): the private CALENDAR read — ONE Query over the caller's own partition
-// behind a month prefix, projected down to the summary the server derived, paged so a
-// partial month can never be rendered as a whole one.
+// behind a month prefix, projected down to the summary the server derived, the give-up and ONE
+// probe of the log at the cap's last slot — never the log — each day answering whether the
+// round is OVER unsolved (the shared `endedUnsolved`); paged so a partial month can never be
+// rendered as a whole one.
 describe('listMonth — the private calendar Query (#211)', () => {
   const MONTH = { lang: 'fr', month: '2026-08' } as const;
 
-  function row(date: string, progress?: number, solved?: boolean): Record<string, AttributeValue> {
+  // A stored row as the Query answers it: the summary, the give-up, and the probe (`probe`:
+  // the `guesses` attribute DynamoDB returns for the one projected element).
+  function row(
+    date: string,
+    progress?: number,
+    solved?: boolean,
+    extra: { gaveUp?: boolean; probe?: AttributeValue } = {},
+  ): Record<string, AttributeValue> {
     return {
       sk: { S: `fr#sentence#${date}` },
       ...(progress === undefined ? {} : { progress: { N: String(progress) } }),
       ...(solved ? { solved: { BOOL: true } } : {}),
+      ...(extra.gaveUp ? { gaveUp: { BOOL: true } } : {}),
+      ...(extra.probe ? { guesses: extra.probe } : {}),
     };
   }
+  const PROBED: AttributeValue = { L: [{ S: 'x' }] };
 
   it('queries the month PREFIX of this player\'s partition, consistently', async () => {
     const send = vi.fn(async (_command: unknown) => ({ Items: [] }));
@@ -698,14 +710,23 @@ describe('listMonth — the private calendar Query (#211)', () => {
     expect(input.ConsistentRead).toBe(true);
   });
 
-  it('PROJECTS the summary only — a calendar never carries the raw guess logs', async () => {
+  it('PROJECTS the summary, the give-up and ONE probe at the cap — never the log', async () => {
     const send = vi.fn(async (_command: unknown) => ({ Items: [] }));
     const { store } = makeStore(send);
     await store.listMonth(MONTH, PUBLIC_ID);
 
     const input = (send.mock.calls[0][0] as QueryCommand).input;
-    expect(input.ProjectionExpression).toBe('#sk, #prog, #solved');
-    expect(input.ProjectionExpression).not.toContain('#g');
+    const terms = input.ProjectionExpression!.split(', ');
+    expect(terms).toEqual(['#sk', '#prog', '#solved', '#gave', `#g[${ROUND_GUESS_CAP - 1}]`]);
+    // The log itself is never a term: only the one element at the cap's last slot.
+    expect(terms).not.toContain('#g');
+    // Every alias the Query's expressions name is declared, and none is declared unused —
+    // DynamoDB refuses either before reading a row, and nothing else checks a Query's.
+    const declared = Object.keys(input.ExpressionAttributeNames ?? {}).sort();
+    const used = [
+      ...new Set(`${input.KeyConditionExpression} ${input.ProjectionExpression}`.match(/#[A-Za-z0-9_]+/g) ?? []),
+    ].sort();
+    expect(declared).toEqual(used);
   });
 
   it('reads the DATE off the sort key and the summary off the item', async () => {
@@ -714,8 +735,30 @@ describe('listMonth — the private calendar Query (#211)', () => {
     }));
     const { store } = makeStore(send);
     await expect(store.listMonth(MONTH, PUBLIC_ID)).resolves.toEqual([
-      { date: '2026-08-03', progress: 42, solved: false },
-      { date: '2026-08-04', progress: 100, solved: true },
+      { date: '2026-08-03', progress: 42, solved: false, over: false },
+      { date: '2026-08-04', progress: 100, solved: true, over: false },
+    ]);
+  });
+
+  it('reads a round OVER when it was given up, or when the probe finds the cap filled; solved wins', async () => {
+    const send = vi.fn(async (_command: unknown) => ({
+      Items: [
+        row('2026-08-01', 37, false, { gaveUp: true }),
+        row('2026-08-02', 64, false, { probe: PROBED }),
+        row('2026-08-03', 100, true, { gaveUp: true }),
+        row('2026-08-04', 100, true, { probe: PROBED }),
+        // A probe that found nothing: absent is what DynamoDB answers, an empty list reads the same.
+        row('2026-08-05', 20, false, { probe: { L: [] } }),
+      ],
+    }));
+    const { store } = makeStore(send);
+    await expect(store.listMonth(MONTH, PUBLIC_ID)).resolves.toEqual([
+      // The % it reached is KEPT: the day is over, not erased.
+      { date: '2026-08-01', progress: 37, solved: false, over: true },
+      { date: '2026-08-02', progress: 64, solved: false, over: true },
+      { date: '2026-08-03', progress: 100, solved: true, over: false },
+      { date: '2026-08-04', progress: 100, solved: true, over: false },
+      { date: '2026-08-05', progress: 20, solved: false, over: false },
     ]);
   });
 
@@ -725,7 +768,7 @@ describe('listMonth — the private calendar Query (#211)', () => {
     const send = vi.fn(async (_command: unknown) => ({ Items: [row('2026-08-03')] }));
     const { store } = makeStore(send);
     await expect(store.listMonth(MONTH, PUBLIC_ID)).resolves.toEqual([
-      { date: '2026-08-03', progress: 0, solved: false },
+      { date: '2026-08-03', progress: 0, solved: false, over: false },
     ]);
   });
 

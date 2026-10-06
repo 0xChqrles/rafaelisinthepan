@@ -434,7 +434,10 @@ The live routes then share:
   from a mount read or a `round_solved` refusal is adopted history (shown, never celebrated).
 - **A ROUND THAT ENDS UNSOLVED PRINTS `∞`** — given up, or capped; ONE reading,
   `roundEnded` (`shared/src/scores.ts`: `!solved && (gaveUp || raw log ≥ ROUND_GUESS_CAP)`,
-  read by the web round and the group board). **`solved` wins** over both. No leaderboard
+  read by the web round, the group board and the #211 month read — the last through its
+  facts form `endedUnsolved`, `capped` from a one-entry probe; one rule; the archive keeps an
+  over day's date and never draws the `∞` — its look is the web `AGENTS.md`'s). **`solved`
+  wins** over both. No leaderboard
   row, streak, celebration or `solve` event; answer + source shown; shareable, and that share
   is NOT counted in the `share` event (share ÷ solve stays the liked-day signal).
   - **THE CAP**: exactly `ROUND_GUESS_CAP` raw entries, derived, never stored. `round_full`
@@ -492,9 +495,12 @@ The live routes then share:
   the collection); body `collection: false` skips the solved-day read (the archive, since
   2026-08-28). No `date` in its allowList.
 - **The calendar has no storage of its own**: one Query over `<lang>#sentence#<month>-`,
-  projected to `progress`/`solved`, PAGED, never revision-scoped. Client keeps an IN-MEMORY
-  cache only and revalidates when a month comes on screen. **Loading is a THIRD status
-  (unknown), never "not started"**; a failed read says so and offers to ask again.
+  projected to `progress`/`solved`/`gaveUp` and ONE probe of the log at its last slot under
+  the cap (`guesses[ROUND_GUESS_CAP − 1]`, present only at the cap — the log never leaves the
+  store), PAGED, never revision-scoped; each day answers `{date, progress, solved, over}`,
+  `over` the shared `endedUnsolved` made on the server (the web never holds the log). Client
+  keeps an IN-MEMORY cache only and revalidates when a month comes on screen. **Loading is a
+  THIRD status (unknown), never "not started"**; a failed read says so and offers to ask again.
 - **The STREAK stores the per-language SOLVED-DAY COLLECTION** on `player#<publicId>` /
   `history#<lang>` (never a counter — the week row needs the days), credited idempotently by
   the solving append (bounded by `MAX_SOLVED_DAYS`), private read only. **Both ends only ever
@@ -741,8 +747,16 @@ The live routes then share:
   each of the player's groups — the group last opened (`gameStore.lastGroupId`) first, then
   the others; a group where nobody but the player has a row is skipped — then **GLOBAL**,
   the day's global board, under the board screen's own name for it (one name across the
-  app); a player in no group sees GLOBAL alone. No group is created from here: NEW GROUP is
-  the board screen's. The groups come off the LIVE read below (no read
+  app). **A player none of whose groups holds anybody else** (no group, or only groups of
+  one — read off the groups list the play screen already holds, never off an unknown one
+  nor one being read again)
+  **gets ONE SEAT tab before GLOBAL, and the box opens on it**: the board screen's bare `NO
+  GROUP`, else their group of one by name (the one last opened, else the one joined last).
+  Its panel is their own line over ONE call — CREATE GROUP (the board's own `GroupCreate`)
+  or that group's INVITE (`/g/<id>`, `tracked: false`) — done IN PLACE by that call alone; a
+  tap anywhere else on the seat opens the board's group tab. A group whose other members
+  have not played is still skipped, and a result SHARE still carries no group. The groups
+  come off the LIVE read below (no read
   of their own), and only off an answer read after the round ended (one asked during play
   lacks the score the solve recorded); GLOBAL is ONE anonymous `GET /board?…&id=<publicId>`
   per result display (score rows + profiles, no artifact), identity-fenced, a failure

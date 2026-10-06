@@ -153,6 +153,9 @@ export default function Archive({ lang }: { lang: LangCode }) {
       if (status === null) return { kind: 'out', day };
       if (status.kind === 'unknown') return { kind: 'unknown', day };
       if (status.kind === 'solved') return { kind: 'solved', day };
+      // Over (given up, or capped): its own key — never the `none` below, which would draw a
+      // day whose sentence is revealed as one never opened.
+      if (status.kind === 'over') return { kind: 'over', day };
       // A % is drawn at most 99: 100 is only ever a solve (`statusOf` rounds 99.6 up).
       if (status.kind === 'progress') return { kind: 'progress', day, pct: Math.min(99, status.pct) };
       return { kind: 'none', day };

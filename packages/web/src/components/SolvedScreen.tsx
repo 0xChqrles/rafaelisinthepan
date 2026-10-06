@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, MouseEvent } from 'react';
 import { isBonusRef, shareHeadline, type PuzzleRef, type Source } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { shareText, shareUrl } from '../game/share';
@@ -25,11 +25,12 @@ import { capitalize, sentenceStarts } from '../game/sentenceCase';
 //             liked-indicator, and it is never reached by scrolling.
 //   BOARDS  — on the ACTIVE day only: how the day compares, the player's groups then the
 //             GLOBAL (`ResultBoards`), in one fixed box that holds its room from frame one.
-//   CONTEXT — under it, with a gap: the source credit, then the sentence the player
-//             rebuilt in the READING face, its secrets in the solve blue and tappable.
-//             This is the round's variable-height content, so THIS is what scrolls: a
-//             long sentence (and, with #270, the sentences of the book around it, read
-//             top-down from the credit) goes under the fold, the score never does.
+//   CONTEXT — under it, with a gap: the source credit, then the text OPENING ON THE LINE
+//             the player rebuilt, in the READING face, its secrets in the solve blue and
+//             tappable. The book's sentences before it (#270) wait behind THE CUT at the
+//             text's head and print in its place on a tap; the sentences after it follow
+//             the line, muted. This is the round's variable-height content, so THIS is
+//             what scrolls: a long page goes under the fold, the score never does.
 //
 // The reveal runs stage → CARD drawn → tally → SHARE → BOARDS → credit → sentence
 // (user-decided 2026-09-11, reversing 2026-08-15's page-first order now that the score is a
@@ -205,6 +206,21 @@ export default function SolvedScreen({
   // one paragraph of muted text — the line's own highlight is the contrast.
   const before = source?.excerpt?.before ?? [];
   const after = source?.excerpt?.after ?? [];
+  // THE CUT: the sentences before the line wait behind it until a tap prints them in its
+  // place, once, for this mount (never persisted, no event). A cut the keyboard pressed
+  // unmounts under the focus, so the focus moves onto the text that took its place — only
+  // then (the cut held the focus, and a key's click carries no `detail`): a tap leaves the
+  // focus where it was.
+  const [beforeOpen, setBeforeOpen] = useState(false);
+  const beforeRef = useRef<HTMLSpanElement>(null);
+  const focusBefore = useRef(false);
+  const openBefore = useCallback((e: MouseEvent<HTMLButtonElement>) => {
+    focusBefore.current = document.activeElement === e.currentTarget && e.detail === 0;
+    setBeforeOpen(true);
+  }, []);
+  useEffect(() => {
+    if (beforeOpen && focusBefore.current) beforeRef.current?.focus({ preventScroll: true });
+  }, [beforeOpen]);
 
   // The secrets, by their place in the sentence — and the distinct numbers they carry, for
   // the exploration hints (two occurrences of one secret share a hint, as they share a
@@ -309,7 +325,7 @@ export default function SolvedScreen({
   }, [animate, textIn, reduceMotion, hasSource, captionDone, source, lang]);
 
   // The reveal's END: the secrets have popped into the sentence. The round disarms its
-  // fast-forward on it.
+  // fast-forward on it, and the page's CUT is a tap from then on (`.armed`).
   const textDone = useBeat(animate, sentenceIn, popSpanMs, reduceMotion, true);
 
   useEffect(() => {
@@ -424,14 +440,36 @@ export default function SolvedScreen({
             rebuilt, not just the three words it hid — the round is a sentence, and three
             words on their own are three adjacent word searches. In the READING face,
             because this is the book's page, not the board: the line is in the ink, and
-            #270's sentences around it will be the muted text before and after it. The
-            secrets are the only difference inside the line: the solve blue (the held chip
-            for one a round that ended unsolved only revealed), the pop, and the tap onto
-            their own history. Prefix and suffix are sentence context and
-            always show, in the nowrap group that keeps them on the secret's own line —
-            Phrase's rule, unchanged. */}
-        <p className={`solved-text${sentenceIn ? ' in' : ''}`}>
-          {before.length > 0 ? `${before.join(' ')} ` : null}
+            #270's sentences around it are the muted text. The text OPENS ON THE LINE:
+            the sentences before it wait behind THE CUT — the printed quote's `[…]`, the
+            ellipsis in a tappable thing's corner brackets — and a tap prints them in its
+            place, so the reader reads down into the line again; the sentences after it
+            follow it, where the line led. The secrets are the only difference inside the
+            line: the solve blue (the held chip for one a round that ended unsolved only
+            revealed), the pop, and the tap onto their own history. Prefix and suffix are
+            sentence context and always show, in the nowrap group that keeps them on the
+            secret's own line — Phrase's rule, unchanged. */}
+        <p className={`solved-text${sentenceIn ? ' in' : ''}${textDone ? ' armed' : ''}`}>
+          {before.length > 0 &&
+            (beforeOpen ? (
+              <span ref={beforeRef} tabIndex={-1} className="solved-unfolded">
+                {`${before.join(' ')} `}
+              </span>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="quiet-btn solved-cut"
+                  aria-label={t(lang, 'ariaPageBefore')}
+                  onClick={openBefore}
+                >
+                  …
+                </button>
+                {/* A NO-BREAK SPACE binds the cut to the line's first word, so the mark
+                    never stands alone at the end of a row. */}
+                {'\u00a0'}
+              </>
+            ))}
           <span className="solved-line">
             {words.map((w, i) => {
               const hole = holeByPos.get(i);

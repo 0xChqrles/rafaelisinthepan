@@ -5,7 +5,6 @@ import LoadingWave from './LoadingWave';
 import ModalHeader from './ModalHeader';
 import useModalDismiss from '../hooks/useModalDismiss';
 import { t } from '../i18n';
-import type { LangCode } from '../langs';
 
 // NAMING A NEW GROUP (#271; user-decided 2026-09-14: "it's an act of creation that should
 // be satisfying, we should reuse the game prompt input and make the screen beautiful and
@@ -15,8 +14,9 @@ import type { LangCode } from '../langs';
 // as it is typed, the blinking cursor — the line a player already reads every guess into —
 // over the one call, CREATE GROUP. And the creation is the SOLVE: on CREATE the prompt
 // line gives way to the name INKED IN, the cobalt word with the hit's own shake, held for
-// a beat before the screen folds onto the board already showing the new group. A group is
-// named the way a hole is solved, in the same two colours.
+// a beat before the screen folds onto the surface that opened it — the board, or the
+// result's seat — already showing the new group. A group is named the way a hole is
+// solved, in the same two colours.
 //
 // The line wears `WordInput`'s dress (`.word-input`, the prompt, the run, the cursor) over
 // its own field, because the guess prompt's field is not this one: a name takes digits and
@@ -33,10 +33,12 @@ export default function GroupCreate({
   onCreate,
   onClose,
 }: {
-  lang: LangCode;
+  lang: string;
   busy: boolean;
   // The sanitized, non-empty name. Resolves true once the group exists — the screen then
-  // plays the name inked in and folds itself.
+  // plays the name inked in and folds itself. Otherwise it stays up with the name kept, and
+  // the caller's error surface speaks over it (a banned name included: one answer for one
+  // code, the profile's own).
   onCreate: (name: string) => Promise<boolean>;
   onClose: () => void;
 }) {

@@ -6,12 +6,15 @@ import { LEVELS, PLAY_LEVEL, formatDuration, isReady, nextReady, undoneLevels } 
 const LANGS = LANG_ROWS.map((l) => l.code);
 
 // THE LEVELS (levels.ts) and the lessons behind them must agree: a level is READY in a
-// language exactly when its lesson exists there, and the duration the list prints is the
-// one the lesson takes.
+// language exactly when its lesson exists there, and the time the list prints is an
+// article's reading time — the played level 1 has none to print.
 describe('levels ⇔ lessons', () => {
-  it('level 1 is the played lesson, ready in every language, one minute long', () => {
+  it('level 1 is the played lesson, ready in every language, with no time to print', () => {
     const one = LEVELS.find((l) => l.level === PLAY_LEVEL)!;
-    for (const lang of LANGS) expect(one.duration[lang]).toBe(60);
+    for (const lang of LANGS) {
+      expect(isReady(one, lang), lang).toBe(true);
+      expect(one.duration[lang], lang).toBeNull();
+    }
   });
 
   it('an article level is ready in a language exactly when its article exists there', () => {

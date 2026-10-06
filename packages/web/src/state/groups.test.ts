@@ -18,7 +18,7 @@ vi.mock('../identity', () => ({
     : null,
 }));
 vi.mock('./signedOutVerdict', () => ({ adoptSignedOutVerdict: vi.fn() }));
-import { adoptGroups, loadGroups, resetGroups, useGroupsStore } from './groups';
+import { adoptGroups, holdsSomebody, loadGroups, resetGroups, useGroupsStore } from './groups';
 
 const group = (members: string[]): GroupSummary => ({
   id: 'G', name: 'Group', createdBy: 'A', joinedAt: '', members,
@@ -97,5 +97,20 @@ describe('group refreshes', () => {
     loadGroups();
     expect(mocks.post).not.toHaveBeenCalled();
     expect(useGroupsStore.getState()).toEqual({ phase: 'ready', groups: [] });
+  });
+});
+
+// CONTRACT (root AGENTS.md): "is there anybody in my groups but me" has ONE reading — the race
+// line runs only when there is, the result's SEAT stands only when there is not — and a list
+// not known yet names nobody.
+describe('holdsSomebody', () => {
+  it('holds nobody in a list not known yet, in no group, or in groups of one', () => {
+    expect(holdsSomebody(null)).toBe(false);
+    expect(holdsSomebody([])).toBe(false);
+    expect(holdsSomebody([group(['A']), { ...group(['A']), id: 'H' }])).toBe(false);
+  });
+
+  it('holds somebody as soon as one group has a member besides the player', () => {
+    expect(holdsSomebody([group(['A']), { ...group(['A', 'B']), id: 'H' }])).toBe(true);
   });
 });

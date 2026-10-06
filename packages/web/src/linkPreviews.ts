@@ -11,7 +11,8 @@ import { LEVELS, formatDuration, isReady } from './tutorial/levels';
 // The pages with their own preview are the TUTORIAL's: its list, and each level ready in a
 // language — a level is a thing worth sending somebody, and the game's general card says
 // nothing about it. Their words are the app's own strings (the levels' titles and what they
-// are about), nothing written for a preview alone; HOME keeps the site's own sentence.
+// are about, an article's reading time), nothing written for a preview alone; HOME keeps the
+// site's own sentence.
 //
 // The pictures are committed PNGs in `assets/previews/`, 1200×630, drawn from the app's own
 // scenes, inks and fonts. The build emits them as HASHED assets, so a redrawn picture is a new
@@ -62,11 +63,17 @@ export function pagePreviews(): LinkPreview[] {
     const levels = LEVELS.filter((level) => isReady(level, lang)).map((level): LinkPreview => {
       const of = t(lang, 'levelOf').replace('{n}', String(level.level)).replace('{total}', String(LEVELS.length));
       const sub = t(lang, level.subKey);
+      // An article's reading time, when it has one: the played level is untimed (null), and a
+      // `!` here would let that null through as NaN′NaN″ — it strips null too.
+      const seconds = level.duration[lang];
       return {
         path: pathForLesson(lang, level.level),
         lang,
         title: titled(sentence(t(lang, level.titleKey), lang)),
-        description: `${sub}. ${sentence(of, lang)} · ${formatDuration(level.duration[lang]!)}`,
+        description:
+          seconds == null
+            ? `${sub}. ${sentence(of, lang)}`
+            : `${sub}. ${sentence(of, lang)} · ${formatDuration(seconds)}`,
         image: `learn-${lang}-${level.level}.png`,
         alt: `${t(lang, level.titleKey)} — ${sub}`,
       };

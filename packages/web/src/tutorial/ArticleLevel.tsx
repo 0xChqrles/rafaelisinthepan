@@ -141,7 +141,7 @@ export default function ArticleLevel({ lang, level }: { lang: LangCode; level: n
             </h1>
           </div>
           <ul className="article-credits">
-            {seconds !== undefined && (
+            {seconds != null && (
               <li>
                 <Duration lang={lang} seconds={seconds} />
               </li>

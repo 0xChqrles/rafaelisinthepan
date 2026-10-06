@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { anonName, dateForDayNumber, defaultAvatar, type BoardPeriod, type BoardPlayer, type GroupSummary } from '@whippin/shared';
-import { groupsUrl, parseGroups, postGroupsBody, readGroup, type GroupsBody } from '../api';
+import { readGroup, type GroupsBody } from '../api';
 import { clockNow, onClock } from '../components/animationClock';
 import Avatar from '../components/Avatar';
 import { DISSOLVE_MS } from '../components/bayerTiles';
@@ -31,19 +31,14 @@ import useStuckOwnLine from '../hooks/useStuckOwnLine';
 import useSwipe from '../hooks/useSwipe';
 import useToday from '../hooks/useToday';
 import { prefersReducedMotion } from '../hooks/useScramble';
-import {
-  ensureRequestIdentity,
-  identityEpoch,
-  identityEpochOf,
-  useDeviceIdentity,
-} from '../identity';
+import { identityEpoch, identityEpochOf, useDeviceIdentity } from '../identity';
 import { boardTargetKey, openingGroup, readBoard, takeOpening, type BoardTarget } from '../state/boardOpening';
-import { adoptGroups, loadGroups, useGroups } from '../state/groups';
-import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
+import { createGroup, failureOf, groupFailureCopy, inviteText, writeGroups, type GroupFailure, type GroupWrite } from '../state/groupActs';
+import { loadGroups, useGroups } from '../state/groups';
 import { prefetchTurnstileTokens } from '../turnstile';
 import ErrorScreen from '../components/ErrorScreen';
 import { useGameStore, type BoardTab } from '../state/gameStore';
-import { pathForGroupInvite, type LangCode } from '../langs';
+import type { LangCode } from '../langs';
 import { isPeriodBoard, listCounts, ownLineKey, podiumShows, type AnyBoard } from '../game/boardView';
 import { t } from '../i18n';
 
@@ -322,11 +317,12 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   const board = entry === 'failed' ? undefined : entry;
 
   // ---- the deliberate acts: CREATE, INVITE, LEAVE, REMOVE — on the group's own screens,
-  // never on the board. Each write answers the list as it now stands, published through
-  // `adoptGroups`; a failure lands on the app's error surface, since saying nothing leaves
-  // the player tapping a button that appears to do nothing.
+  // never on the board. Each is `state/groupActs.ts`' (the result's seat shares them): the
+  // write answers the list as it now stands, published through `adoptGroups`, and a failure
+  // lands on the app's error surface, since saying nothing leaves the player tapping a
+  // button that appears to do nothing.
   const [busy, setBusy] = useState<'create' | 'invite' | 'leave' | 'remove' | null>(null);
-  const [failure, setFailure] = useState<'account' | 'share' | 'group' | 'limit' | null>(null);
+  const [failure, setFailure] = useState<GroupFailure | null>(null);
   // WHICH SCREEN is up over the board, and WHICH CONFIRMATION over that.
   const [screen, setScreen] = useState<'group' | 'create' | null>(null);
   const [confirming, setConfirming] = useState<{ kind: 'remove'; member: BoardPlayer } | { kind: 'leave' } | null>(null);
@@ -340,54 +336,28 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     if (identity === null) prefetchTurnstileTokens(1);
   }, [identity]);
 
-  // ONE gesture for every write: the deploy (a tokenless tap mints the account first, the
-  // button holding its loading state for both legs), then the signed POST, then the list.
-  const write = async (
-    kind: NonNullable<typeof busy>,
-    body: (token: string) => Parameters<typeof postGroupsBody>[1],
-  ): Promise<{ ok: true; created?: string } | { ok: false; error: string | null }> => {
+  // ONE gesture for every write (`writeGroups`): the deploy (a tokenless tap mints the account
+  // first, the button holding its loading state for both legs), then the signed POST, then
+  // the list — and what did not land, on the error surface (`failureOf`: a stale succession
+  // is no failure, the leave asks again below).
+  const perform = async (kind: NonNullable<typeof busy>, act: () => Promise<GroupWrite>): Promise<GroupWrite> => {
     setBusy(kind);
     setFailure(null);
-    try {
-      let request;
-      try {
-        request = await ensureRequestIdentity(epoch);
-      } catch {
-        setFailure('account');
-        return { ok: false, error: null };
-      }
-      if (!request) return { ok: false, error: null };
-      const response = await postGroupsBody(groupsUrl(), body(request.identity.token));
-      if (identityEpoch() !== request.epoch) return { ok: false, error: null };
-      if (!response.ok) {
-        await adoptSignedOutVerdict(response, request.epoch);
-        let error: string | null = null;
-        try {
-          error = String(((await response.clone().json()) as { error?: unknown }).error ?? '');
-        } catch {
-          error = null;
-        }
-        // (A stale succession is no failure: the leave asks again, below.)
-        if (error !== 'successor_required') setFailure(error === 'group_limit' ? 'limit' : 'group');
-        return { ok: false, error };
-      }
-      const answer = parseGroups(await response.json());
-      adoptGroups(answer, request.identity.accountId);
-      return { ok: true, created: answer.created };
-    } catch {
-      setFailure('group');
-      return { ok: false, error: null };
-    } finally {
-      setBusy(null);
-    }
+    const result = await act();
+    setFailure(failureOf(result));
+    setBusy(null);
+    return result;
   };
+  const write = (kind: NonNullable<typeof busy>, body: (token: string) => GroupsBody) =>
+    perform(kind, () => writeGroups(epoch, body));
 
   // The create screen closes ITSELF once the group exists (it plays the name inked in
-  // first); the board is already on the new group when it does.
+  // first); the board is already on the new group when it does. Refused or failed, it stays
+  // up under the error surface, the name kept.
   const create = async (name: string): Promise<boolean> => {
     if (busy) return false;
-    const result = await write('create', (token) => ({ token, create: true, name }));
-    if (result.ok && result.created) {
+    const result = await perform('create', () => createGroup(epoch, name));
+    if (result.kind === 'done' && result.created) {
       setLastGroup(result.created);
       setTab('group');
       setPeriod('day');
@@ -396,14 +366,11 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     return false;
   };
 
-  // The invite link is both "join us" and "come play": one line of copy, then the URL.
   // Delivery (native sheet -> clipboard + COPIED) is useShare's, like every result.
   const invite = async () => {
     if (busy || !active) return;
     setFailure(null);
-    const delivered = await share(
-      `${t(lang, 'boardInviteText')}\n${window.location.origin}${pathForGroupInvite(active.id)}`,
-    );
+    const delivered = await share(inviteText(lang, window.location.origin, active.id));
     if (!delivered) setFailure('share');
   };
 
@@ -433,19 +400,19 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     const id = active.id;
     const result = await write('leave', (token) => leaveBody(token, id, leaveKind, successor));
     setSuccessor(null);
-    if (!result.ok && result.error === 'successor_required') {
+    if (result.kind === 'refused' && result.error === 'successor_required') {
       loadGroups();
       return;
     }
     setConfirming(null);
-    if (result.ok) setScreen(null);
+    if (result.kind === 'done') setScreen(null);
   };
 
   const remove = async (member: string) => {
     if (busy || !active) return;
     const result = await write('remove', (token) => ({ token, remove: active.id, member }));
     setConfirming(null);
-    if (result.ok) setAttempt((n) => n + 1);
+    if (result.kind === 'done') setAttempt((n) => n + 1);
   };
 
   // INTO the group shown: its own screen (the list refreshed on the way in).
@@ -930,30 +897,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
       )}
 
       {failure !== null && (
-        <ErrorScreen
-          lang={lang}
-          title={t(
-            lang,
-            failure === 'account'
-              ? 'failedAccount'
-              : failure === 'share'
-                ? 'failedShare'
-                : failure === 'limit'
-                  ? 'groupLimit'
-                  : 'failedGroup',
-          )}
-          note={t(
-            lang,
-            failure === 'account'
-              ? 'failedAccountNote'
-              : failure === 'share'
-                ? 'failedShareNote'
-                : failure === 'limit'
-                  ? 'groupLimitNote'
-                  : 'failedGroupNote',
-          )}
-          onClose={() => setFailure(null)}
-        />
+        <ErrorScreen lang={lang} {...groupFailureCopy(lang, failure)} onClose={() => setFailure(null)} />
       )}
     </div>
   );
