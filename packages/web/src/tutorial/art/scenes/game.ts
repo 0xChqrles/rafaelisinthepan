@@ -161,11 +161,18 @@ const game: SceneMaker = (cols, rows, stage) => {
   const makePage = (seed: number): Page => {
     const base = (i: number) => LETTERS[Math.floor(rnd(seed, i, 11) * LETTERS.length)];
     const fxs = HOLE_FX[seed % HOLE_FX.length];
-    const targets = [0, 1, 2].map((k) => ({ line: HOLE_LINES[k], fx: fxs[k] }));
+    // Each hole's length is drawn once (5–7 letters), so whether it still fits after the next
+    // word is the same question as whether it fits once that word is set: a hole is never
+    // passed over on a narrow card. One its line cannot take goes on to the next.
+    const targets = [0, 1, 2].map((k) => ({
+      line: HOLE_LINES[k],
+      fx: fxs[k],
+      n: 5 + Math.floor(rnd(seed, 100 + k, 13) * 3),
+    }));
     targets.sort((a, b) => a.line - b.line || a.fx - b.fx);
     // Set the stream into lines, ragged as the game sets its sentence. A hole is the word
-    // standing at its place — or the last one it still fits after — lengthened to 5–7
-    // letters, with its chip's padding and its exponent.
+    // standing at its place — or the last one it still fits after — with its chip's padding
+    // and its exponent.
     const placed: { i: number; x: number; line: number; n: number; hole: boolean }[] = [];
     let i = 0;
     let next = 0;
@@ -176,8 +183,8 @@ const game: SceneMaker = (cols, rows, stage) => {
         let n = base(i);
         let hole = false;
         const target = targets[next];
-        if (target && target.line === l) {
-          const nh = Math.max(n, 5 + Math.floor(rnd(seed, i, 13) * 3));
+        if (target && target.line <= l) {
+          const nh = target.n;
           const need = (wn: number) => M.padX * 2 + wn * M.adv - 1 + expGap + EXP;
           const nowFits = x + gap + need(nh) <= measure;
           const laterFits = x + gap + n * M.adv - 1 + M.space + need(nh) <= measure;
