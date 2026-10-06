@@ -71,8 +71,9 @@ export function useHoldHomeDay(hold: boolean): void {
 // THE ROUND KEEPS THE DAY IT WAS OPENED AS. Whether `round` (one puzzle in one language) is
 // the active day, read when it comes on screen and kept for as long as it stays there: the
 // flip passing a round on screen does not turn it into an archive day under the player — its
-// race line, its result's boards and its race band stay. A NEW round (another puzzle, another
-// language) reads it afresh. `day` is the round's date, null for a bonus (never a day).
+// race line, its result's boards and its race band stay — and a tap on them still opens the
+// board, which is always the ACTIVE day's: past the flip, the new day's. A NEW round (another
+// puzzle, another language) reads it afresh. `day` is the round's date, null for a bonus.
 //
 // It is read off the SAME clock the undated route's day is (`useHomeDay`): the wall clock at
 // that moment, never a timer's last tick. An arrival past the flip opens the new day's round

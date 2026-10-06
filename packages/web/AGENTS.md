@@ -2422,7 +2422,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
 - **Leaderboard screen (#190; drawn over GROUPS since #271; its design user-decided
   2026-10-04 — "A with B's podium": the result's boards given the whole column, a PODIUM as
   its subject; approved the same day, "Let's go for the A+B version"):** `/<lang>/board`
-  (`pathForBoard`; a board is per (day, lang), always the ACTIVE day),
+  (`pathForBoard`; a board is per (day, lang), always the ACTIVE day — opened from a round
+  kept on screen past the 22:00 flip too, see the header bullet's day rules),
   `screens/Leaderboard.tsx` (the state, the reads and the acts — the board's read itself
   `state/boardOpening.ts`; what stands under the podium is `components/BoardUnder.tsx`, the board's readings `game/boardView.ts`, its
   list's order `game/boardSlots.ts`), entered from the header's CROWN KEY (lit while the
@@ -4533,11 +4534,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     afresh. It is read off the clock the undated route's day reads — the wall clock at that
     moment, never `useToday`'s timer, which can lag an arrival (a laptop waking, a page
     restored from the back/forward cache) — so the round an arrival opens on the new day is
-    the active day. The HEADER alone follows the live day (`isToday`, off `useToday`, which
-    a back/forward-cache restore refreshes too): past the flip it shows the day's date,
-    lights the calendar, and HOME leads to the new day — a
-    navigation onto the URL already shown, which REPLACES (`routing.ts`), so the old day
-    leaves no entry behind it.
+    the active day. **A tap on a kept race line or result board still opens the board, and
+    the board is always the ACTIVE day's** (`pathForBoard` names no day): past the flip it
+    shows the new day, not the round's. The HEADER alone follows the live day (`isToday`,
+    off `useToday`, which a back/forward-cache restore refreshes too): past the flip it
+    shows the day's date, lights the calendar, and HOME leads to the new day — a navigation
+    onto the URL already shown, which REPLACES (`routing.ts`), so the old day leaves no
+    entry behind it.
   The topbar is the extension point for future chrome (streaks, stats, …).
 - **The CHOOSER screens are RETIRED — both of them.** The MODE chooser (`/mode`) went
   2026-08-18 for the header's tabs; the LANGUAGE chooser (`/select`, `screens/LanguageSelect`
