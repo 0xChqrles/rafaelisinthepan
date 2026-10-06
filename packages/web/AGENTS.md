@@ -911,8 +911,9 @@ These are decided and verified against the code. Treat them as load-bearing.
     middle while decorative furniture clings to the edges.
     - **`components/DeviceFrame`** (mounted once in App, under every screen): four
       corner BRACKETS — `.streak-corner` itself, the streak celebration's and the
-      signed-out screen's frame (2px, 24px arms, white at 38%), standing still, 16px in
-      and 24px from 1200px wide — a vertical `WHIPPIN AI ©2026` brand rail on the left
+      signed-out screen's frame (2px, 24px arms, white at 38%), standing still and placed
+      by its own rule (16px in, 24px where the short side is 600 or more; the frame's words
+      take the same step) — a vertical `WHIPPIN AI ©2026` brand rail on the left
       edge, on the corners' column, the tagline (`MADE WITH <3`) bottom-left, and the
       day's EDITION SERIAL bottom-right (`N.<dayNumber>` — the interfaces.dev card's
       numbering, fed the ACTIVE day via useToday), both on the corners' bottom line past
@@ -4114,7 +4115,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   three-slot finalization recorded below).** The BAND is unchanged — `--glass` +
   hairline + backdrop blur (`components/TopBar.tsx`), full-bleed with one bottom
   hairline on a phone, floating capped-and-rounded just inside the device frame's
-  brackets on desktop (`min(var(--column), 100vw - 48px)`, 50px, 8px off the top). What changed
+  brackets on desktop (`min(var(--column), 100vw - 96px)`: its edges where the brackets'
+  arms end at their widest, 24px in + 24px; 50px, 8px off the top). What changed
   is what it holds, and why.
   **THE BAND WAITS FOR SCROLL (user-decided 2026-09-01, amending 2026-08-18's
   always-on glass) — AND WHAT ARRIVES IS THE GROUND, NOT A BOX (same day, later:

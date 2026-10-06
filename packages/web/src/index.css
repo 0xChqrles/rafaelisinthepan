@@ -1047,10 +1047,12 @@ body:has(.app > .board-screen) {
    Content floats in the middle; the furniture clings to the edges. Decorative
    (aria-hidden), never interactive, DESKTOP ONLY: a phone's viewport is all content. Sits
    under the header (z 40 < 60); opaque full-screen dialogs simply cover it.
-   ONE BRACKET on every full screen: the corners ARE `.streak-corner` (2px, 24px arms,
-   white at 38%), standing still, 16px in and 24px from 1200px wide; the words are the
-   secondary ink, never the foreground dimmed, and stand in the corners' register — the
-   rail on their column, the captions on their bottom line past the arms. */
+   ONE BRACKET on every full screen: the corners ARE `.streak-corner`, placed by its own
+   rule (2px, 24px arms, white at 38%; 16px in, 24px where the short side is 600 or more),
+   standing still. The words are the secondary ink, never the foreground dimmed, and stand
+   in the corners' register — the rail on their column, the captions on their bottom line
+   past the arms: `--inset` here is the corners' own, set with theirs (`.streak-corner`'s
+   600 step). */
 .device-frame {
   --inset: 16px;
   position: fixed;
@@ -1060,13 +1062,7 @@ body:has(.app > .board-screen) {
   font-family: var(--ui);
   color: var(--muted);
 }
-@media (min-width: 1200px) {
-  .device-frame {
-    --inset: 24px;
-  }
-}
 .device-frame .streak-corner {
-  --inset: inherit;
   opacity: 1;
 }
 /* The vertical brand rail, reading upward along the left edge. */
@@ -1142,7 +1138,9 @@ body:has(.app > .board-screen) {
 .topbar-inner {
   position: relative;
   margin: 8px auto 0;
-  width: min(var(--column), calc(100vw - 48px));
+  /* Clear of the device frame's corner brackets: its edges stand where their arms end at
+     their widest (24px in + a 24px arm), as the row's own 8px pads its content off them. */
+  width: min(var(--column), calc(100vw - 2 * (24px + 24px)));
   height: 50px;
   display: grid;
   /* The LEFT track takes what is left over and the RIGHT track is its own size: the
@@ -4487,9 +4485,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   opacity: 0;
 }
 /* The raster's 4px cells (`cellFor`: the short side at 600 or more): the frame at the
-   cards' inset, the furniture at the next whole size. */
+   cards' inset — the device frame's words with its corners — the furniture at the next
+   whole size. */
 @media (min-width: 600px) and (min-height: 600px) {
-  .streak-corner {
+  .streak-corner,
+  .device-frame {
     --inset: 24px;
   }
   .streak-day {
