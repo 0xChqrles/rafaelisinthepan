@@ -12,7 +12,10 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 //
 // GLOBAL IS PINNED (`pinned`): the one tab every player has stays at the row's end whatever
 // the groups' names add up to — sticky on the row's own axis, the groups passing UNDER it.
-// Where everything fits it is simply the last name.
+// Where everything fits it is simply the last name. Where names are left out before it, it
+// FOLLOWS THE LEFT-OUT RAIL DIRECTLY — drawn in from the row's end to stand just past the rail
+// (`--pin-shift`, its own ground carried on to the row's end), so the row reads as whole names,
+// the rail, GLOBAL, and the ground after it, never a band of nothing between the rail and GLOBAL.
 //
 // ONLY WHOLE NAMES SHOW. Where the groups run past the column the row scrolls on its own axis
 // (snapping to names), and a name the column cuts is not drawn cut, nor thinned to a few stray
@@ -67,6 +70,9 @@ const MARK_ROOM_PX = 24;
 // left-out mark (its 14px, 10px from the whole name it stands against).
 const TAB_PAD_PX = 4;
 const COVER_MARK_PX = 24;
+// Where the pinned name stands when names are left out before it: the mark's room, and the
+// mark's own 10px of air on its far side too.
+const PIN_AFTER_PX = COVER_MARK_PX + 10;
 // A name's label (`.board-tab-label`): its padding each side, and a glyph's advance — the
 // mono's at 14px, tracked 0.08em.
 const LABEL_PAD_PX = 7;
@@ -176,9 +182,11 @@ export default function BoardTabs({
 
   // THE COVERS: at each end, from the row's edge to the nearest WHOLE name (the label's box —
   // the chip's), drawn only when a name is left out there; at the far end the pinned name is
-  // the edge. A cover too narrow for the mark takes the next whole name too, and so on. The
-  // SHOWN name is never left out (it is scrolled to, and its room capped above): a cover stops
-  // short of it. Written straight onto the control's style (a scroll frame re-renders nothing).
+  // the edge, measured where it RESTS (held at the row's end), and then drawn in to stand
+  // `PIN_AFTER_PX` past the last whole name (`--pin-shift`). A cover too narrow for the mark
+  // takes the next whole name too, and so on. The SHOWN name is never left out (it is scrolled
+  // to, and its room capped above): a cover stops short of it. Written straight onto the
+  // control's style (a scroll frame re-renders nothing).
   const cover = useCallback(() => {
     const root = rootRef.current;
     const row = rowRef.current;
@@ -186,8 +194,8 @@ export default function BoardTabs({
     if (!root || !row || !line) return;
     const pinnedTab = pin >= 0 ? button(pin) : undefined;
     const box = row.getBoundingClientRect();
-    const pinned = pinnedTab?.firstElementChild ?? null;
-    const end = pinned ? pinned.getBoundingClientRect().left - box.left : box.width;
+    // (Off the tab's own width, never its drawn place: the shift below moves that.)
+    const end = pinnedTab ? box.width - pinnedTab.offsetWidth + TAB_PAD_PX : box.width;
     // The whole names in row order (the shown one always whole), and whether one is cut at
     // either end.
     const whole: { l: number; r: number; shown: boolean }[] = [];
@@ -209,8 +217,10 @@ export default function BoardTabs({
     if (cutLeft) while (a < b && !whole[a].shown && whole[a].l < COVER_MARK_PX) a += 1;
     if (cutRight) while (b > a && !whole[b].shown && end - whole[b].r < COVER_MARK_PX) b -= 1;
     const last = b >= 0 ? whole[b].r : 0;
+    const shift = cutRight && pinnedTab ? Math.max(0, Math.floor(end - last - PIN_AFTER_PX)) : 0;
     const coverL = cutLeft && a <= b ? Math.round(whole[a].l) : 0;
-    const coverR = cutRight ? Math.max(0, Math.round(end - last)) : 0;
+    const coverR = cutRight ? Math.max(0, Math.round(end - shift - last)) : 0;
+    root.style.setProperty('--pin-shift', `${shift}px`);
     root.style.setProperty('--cover-l', `${coverL}px`);
     root.style.setProperty('--cover-r-x', `${Math.round(last)}px`);
     root.style.setProperty('--cover-r', `${coverR}px`);

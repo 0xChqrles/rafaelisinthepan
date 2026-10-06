@@ -3177,14 +3177,25 @@ body:has(.app > .board-screen) {
   color: var(--fg);
 }
 /* GLOBAL, PINNED at the row's end: held there on the row's own axis, on the ground's ink, the
-   names passing under it — and where they all fit, simply the last name. (Its copy on the
-   chip's sheet is pinned the same way, on the sheet's own ink.) */
+   names passing under it — and where they all fit, simply the last name. Where names are left
+   out before it, it is drawn in to follow the left-out rail directly (`--pin-shift`, written by
+   BoardTabs), its ground carried on to the row's end over the names passing there. (Its copy on
+   the chip's sheet is pinned the same way, on the sheet's own ink.) */
 .board-tab.pinned {
   position: sticky;
-  right: 0;
+  right: var(--pin-shift, 0px);
   z-index: 1;
   background: var(--bg);
   scroll-snap-align: none;
+}
+.board-tabs-line > .board-tab.pinned::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 100%;
+  width: var(--pin-shift, 0px);
+  background: var(--bg);
 }
 
 /* THE CHIP: the row's names again in the ground's ink on a white sheet, clipped to the shown

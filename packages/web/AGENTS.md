@@ -131,7 +131,8 @@
                               column's width (`rankColumnPx`: 16px a digit, two at the least)
       components/BoardTabs.tsx  WHICH BOARD, the boards' ONE control (the result's, the board
                               screen's, and the archive's month row): the names in a row, one
-                              pinned last, the white chip travelling to the name shown, a cut
+                              pinned last (following the left-out rail directly when names
+                              are cut before it), the white chip travelling to the name shown, a cut
                               name covered, a name past its room ending in an ellipsis; a tab's
                               optional `ariaLabel`; `tabIds` ties each tab to the panel it
                               controls
@@ -3769,7 +3770,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the column cuts is COVERED by the ground, the cover carrying the boards' own left-out
     rail against the whole name next to it (on whole pixels); a cover too narrow for the
     rail (under 24px, `COVER_MARK_PX`) takes the next whole name too — never the shown one,
-    so a cover against the shown name can stand unmarked; turning to a tab scrolls its name
+    so a cover against the shown name can stand unmarked; where names are left out before
+    the pinned name, it FOLLOWS THE RAIL DIRECTLY — drawn in from the row's end
+    (`--pin-shift`) to stand 10px past the rail, its ground carried on to the row's end — so
+    the row never shows a band of nothing between the rail and GLOBAL; turning to a tab scrolls its name
     whole into view. A name too long for the room the row leaves it once scrolled to (clear
     of the left-out rails and of the pinned name) ENDS IN AN ELLIPSIS there (`--label-max`,
     floored to whole glyphs, written when the row's width or names change, never on a
