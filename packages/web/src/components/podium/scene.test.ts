@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LINE_PX } from '../boardMetrics';
 import { UI_ADVANCE_EM } from '@whippin/shared';
-import { CELL_PX, beats, layout, podiumHeightPx, podiumSize, runsOf, setName, type BeatSpec } from './scene';
+import { CELL_PX, NAME_PX, beats, layout, nameRoomPx, podiumHeightPx, podiumSize, type BeatSpec } from './scene';
 
 // The podium's box and beats carry the board screen's promises: the box is whole lines (so the
 // column under it rests on whole lines and your held line covers exactly one), the size never
@@ -157,41 +157,22 @@ describe('beats — a build, a turn, a board shown again', () => {
   });
 });
 
-describe('setName — a name is never cut and never takes a third line', () => {
-  // The lines the browser can set it in: it breaks only between the runs given.
-  const lines = (runs: readonly string[], px: number, room: number) => {
-    let count = 1;
-    let line = 0;
-    for (const run of runs) {
-      const w = (n: number) => n * UI_ADVANCE_EM * px;
-      if (w(run.length) > room) return Infinity;
-      if (w(line + run.length) <= room) line += run.length;
-      else {
-        count += 1;
-        line = run.length;
-      }
-    }
-    return count;
-  };
+describe('nameRoomPx — a name stands on one line, cut on a whole glyph', () => {
+  const glyph = UI_ADVANCE_EM * NAME_PX;
 
-  it('keeps the face size and breaks at the joints where it can', () => {
-    expect(runsOf('SwiftCactus45')).toEqual(['Swift', 'Cactus', '45']);
-    expect(setName(runsOf('SwiftCactus45'), 102)).toEqual({ px: 12, runs: ['Swift', 'Cactus', '45'] });
+  it('floors the slot to whole glyphs of the face', () => {
+    for (const slot of [72, 84, 95, 102, 117.3]) {
+      const room = nameRoomPx(slot);
+      const glyphs = Math.round(room / glyph);
+      expect(Math.abs(room - glyphs * glyph)).toBeLessThan(1);
+      expect(glyphs * glyph).toBeLessThanOrEqual(slot);
+      expect(slot - glyphs * glyph).toBeLessThan(glyph);
+    }
   });
 
-  it('sets a long run smaller before it breaks it, and then breaks it evenly', () => {
-    expect(setName(runsOf('mellowbiscuit'), 95)).toEqual({ px: 11, runs: ['mellowbiscuit'] });
-    expect(setName(runsOf('mellowbiscuit'), 84)).toEqual({ px: 10, runs: ['mellowb', 'iscuit'] });
-  });
-
-  it('holds every name of up to 16 glyphs in two lines of every slot', () => {
-    const names = ['joSuperfighte42', 'abCdefghijklmNo', 'anastasiaromanov', 'WWWWWWWWWWWWWWWW', 'a_b_c_d_e_f_g_hi', 'GoldenBiscuit82'];
-    for (const room of [72, 84, 102]) {
-      for (const name of names) {
-        const set = setName(runsOf(name), room);
-        expect(set.runs.join('')).toBe(name);
-        expect(lines(set.runs, set.px, room)).toBeLessThanOrEqual(2);
-      }
-    }
+  it('holds a name that fits whole, and leaves a longer one to its ellipsis', () => {
+    const room = nameRoomPx(102);
+    expect('SwiftCactus45'.length * glyph).toBeLessThanOrEqual(room);
+    expect('anastasiaromanov'.length * glyph).toBeGreaterThan(room);
   });
 });

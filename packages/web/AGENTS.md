@@ -140,7 +140,8 @@
                               column's width (`rankColumnPx`: 16px a digit, two at the least)
       components/BoardTabs.tsx  WHICH BOARD, the boards' ONE control (the result's, the board
                               screen's, and the archive's month row): the names in a row, one
-                              pinned last, the white chip travelling to the name shown, a cut
+                              pinned last (following the left-out rail directly when names
+                              are cut before it), the white chip travelling to the name shown, a cut
                               name covered, a name past its room ending in an ellipsis; a tab's
                               optional `ariaLabel`; `tabIds` ties each tab to the panel it
                               controls; with no tabs yet, ONE stippled chip holding the row
@@ -221,7 +222,10 @@
                               onto the surface that opened it (the board, or the result's seat)
       components/ConfirmScreen.tsx  the app's CONFIRMATION surface (#271): the error screen's
                               shape in the plain voice, the act as the quiet danger control
-                              over CANCEL; the leave's successor picker rides it
+                              over CANCEL; the leave's successor picker rides it (its `choice`)
+      components/SuccessorPick.tsx  that picker: the other members as lines in resting slate
+                              corners, the pick locking on in white, a dithered foot while
+                              more lie below
       screens/Leaderboard.tsx the #190/#271 leaderboard (/<lang>/board): the tab row (the groups,
                               then GLOBAL), a group's TODAY / WEEK / MONTH, the PODIUM over the
                               lines from the 4th, the door into a group's screen, NEW GROUP —
@@ -245,8 +249,8 @@
                               one clock, the marks, the landings' bursts, the captions;
                               `nextStage` latches what it shows and how it comes — builds,
                               stays, gives way), and its picture, pure and tested: scene.ts (the
-                              two sizes and `podiumSize`, the layout, the names' setting
-                              `runsOf` / `setName`, the beats, the raster deterministic in t —
+                              two sizes and `podiumSize`, the layout, the names' room
+                              `nameRoomPx`, the beats, the raster deterministic in t —
                               steps, places, values on the reels, heat, foil)
       game/podium.ts          the podium's PICK (pure, tested): the first three ranked rows in
                               the server's order, the rest lines; each place's value and `near`;
@@ -820,7 +824,10 @@ These are decided and verified against the code. Treat them as load-bearing.
     .btn-secondary`) and every quiet act (`.link-quiet-btn`, `.link-danger`) is the label
     alone at 0.7 strength, lifted to 1 on hover — nothing drawn that is not the word. The
     account area's small act (`.quiet-btn`: SIGN OUT on a device line, RETRY under a read
-    that failed) is that word in a tappable thing's corner brackets, 40px tall. A hover
+    that failed) is that word in a tappable thing's corner brackets, 40px tall. A quiet act
+    that cannot be pressed for now (`.quiet-btn:disabled`, `.link-quiet-btn:disabled`) steps
+    its ink — word and brackets — one COLOUR step down, to the slate `--rail`, never an
+    opacity. A hover
     answers only where a pointer HOVERS (`(hover: hover) and (pointer: fine)`): on a touch
     screen the emulated hover sticks where the finger lifted, and the next screen's call on
     that spot would open pre-pressed. SHARE is the primary on the result screen.
@@ -1289,7 +1296,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
       A wrong code stays at the input (shake, clear, one attempts-left line, its line HELD
       under the keys from the start so nothing moves when it speaks). A struck key is white
       for its first step only, then its ink with the digit cut out. RESEND is quiet
-      and countdown-gated (~30s, the seconds in the cobalt pixel figures), alone under the cells — CHANGE ADDRESS is gone,
+      and countdown-gated (~30s, the seconds in the cobalt pixel figures hanging beside the
+      word), alone under the cells: the bracketed quiet word (`.quiet-btn`) whose brackets
+      ARRIVE, locking on, when the countdown hits zero, and give way to `FocusBrackets` under
+      the keyboard's focus (never a frame nested in a frame) — CHANGE ADDRESS is gone,
       the header's back goes code → address.
     - **THE CROSSROADS, NOT A WARNING:** both accounts drawn — the one being left THINNED
       THROUGH THE BAYER DITHER, never an opacity (under DELETED, the area's one red, a GHOST:
@@ -1530,7 +1540,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
       above the edge down to an iPhone SE's browser.
     - **THE DEVICES are board lines**, no title: a pixel device glyph (phone / tablet /
       computer; the accent on THIS device), the label, one quiet fact (THIS ONE, or the
-      last-seen day), SIGN OUT as a bracketed word whose brackets fit the word (28px, the
+      last-seen day as `MM-DD` in the pixel face's 8px muted figures, said in words to a
+      screen reader), SIGN OUT as a bracketed word whose brackets fit the word (28px, the
       finger's target still 44); they dissolve in once the record has CALMED — its count
       landed and today's foil cooled (`useRecordCalm`), the wait counted from the moment the
       lines mount — held as the skeleton line while the record has no numbers yet, and let in
@@ -1647,11 +1658,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
       PRIMARY BUTTON's own mark (the device card's power light); the address is a fact
       that REPLACES that button when there is nothing left to do, and wearing its costume
       it read as a control that did not respond to being pressed.
-    - **RESEND drops its box while it counts down.** It spends its first ~30s disabled,
-      and a dimmed hairline box held that long reads as a broken button rather than as a
+    - **RESEND wears no brackets while it counts down.** It spends its first ~30s
+      disabled, and a dimmed box held that long reads as a broken button rather than as a
       wait — the same rule that holds the second door back until the summary settles: a
       control drawn before it can be pressed is a false offer. Counting it is a STATUS
-      line; when the clock runs out the box arrives with the offer.
+      line; when the clock runs out the tappable thing's brackets arrive with the offer.
   - **DEVICES appear only once an email is SAVED** (user-decided 2026-08-26): an unlinked
     account can only ever hold the one device reading the screen — multi-device arrives
     through the email link and no other way — so the list would be a list of yourself.
@@ -1818,8 +1829,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     slate iron and are struck in their inks as they fill (THE CODE PROMPT, above); a refusal
     is red only while the wrong code is on screen — once the cells clear
     for the retype the row returns to rest and the tries-left LINE carries the message.
-    Device rows are TWO LINES (label over THIS ONE in the accent, or the last-seen
-    day-month — the single line truncated its own current marker on a phone). The erase
+    Device rows are TWO LINES (label over THIS ONE in the accent, or the last-seen day,
+    `MM-DD` — the single line truncated its own current marker on a phone). The erase
     confirmation SHOWS the account being deleted (mark + name over the stakes, the
     signed-out screen's own move), and the two endings return differently: an ADOPT offers
     PLAY into the game, a BIND offers OK back to `/account` — a settings errand ends where
@@ -2514,17 +2525,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (user-decided 2026-10-04, of the tiebreakers stacked under the points: "nobody
     understands it"), on the podium and on the lines alike: the period rule's solved days
     and tries ORDER the rows (the server's order) and are shown nowhere. **A value stands
-    with its name, never on a step: a number on a step reads as a place.** **A NAME IS
-    NEVER CUT**: it owns a third of the podium less a 4px gutter each side and wraps at its
-    JOINTS (`<wbr>` after an underscore, before a capital after a small letter, before
-    digits after a letter; balanced — `SwiftCactus45` reads `Swift` / `Cactus45`), in a band
-    that holds two lines whatever it holds. A name whose runs will not set in those two
-    lines at the face's 12px steps down to 11, then 10 (`setName` / `runsOf`,
-    `podium/scene.ts`: by glyph count off the mono's fixed advance, shared `cardSvg.ts`
-    `UI_ADVANCE_EM` — nothing measured), so it is set smaller before it is broken; at 10 a
-    run still too long splits evenly in its middle (never a letter alone), and a name that
-    would still take three lines is cut at its own middle — never a third line, never under
-    10px. YOUR place is the accent on your step and your name the bold — never the corner
+    with its name, never on a step: a number on a step reads as a place.** **A NAME STANDS
+    ON ONE LINE**: it owns a third of the podium less a 4px gutter each side, at the face's
+    12px, on the last line of a band that holds two lines' room whatever it holds (so it sits
+    on its value); a name longer than its slot ends in an ELLIPSIS on a WHOLE GLYPH — the tab
+    chip's own cut (`nameRoomPx`, `podium/scene.ts`: the slot floored to whole glyphs of the
+    mono's fixed advance, shared `cardSvg.ts` `UI_ADVANCE_EM` — nothing measured) — so three
+    names read on one baseline, never one broken over two lines. YOUR place is the accent on
+    your step and your name the bold — never the corner
     brackets (user-decided 2026-10-04: they are the language of what can be tapped, and the
     podium is a picture); on GLOBAL one of your people carries the lines' accent square.
   - **FIRST PLACE'S COUNT IS THE SCREEN'S ONE SHINY THING** (the #1 line carries no foil of
@@ -2710,7 +2718,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the pixel face, the blinking cursor — alone in the middle of its own screen over CREATE
     GROUP, on an EDITABLE field of its own (a name takes digits and underscores the
     on-screen keyboard has no keys for, so the phone's keyboard opens; every keystroke
-    lands through `sanitizeGroupName`, cap 20). On CREATE the line gives way to the name
+    lands through `sanitizeGroupName`, cap 20). The line is set at the LARGEST whole size of
+    the face — 24, 16 or 8px — at which the `>`, its half em of air, the name and the cursor
+    fit the stage (`nameSize`, the result count's rule), so it lands on whole pixels and a
+    full name is never cut; the inked word keeps that size. On CREATE the line gives way to the name
     INKED IN — the solve's cobalt pixel word with the hit's shake, held `INKED_MS` (1100ms)
     — and the screen folds itself onto the surface that opened it, already on the new group
     (the board's tab, or the result's seat); an empty name shakes the line, the invalid
@@ -2723,9 +2734,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     sentence, the act as the DANGER cap, CANCEL as the quiet word. The leave's note follows
     the SUCCESSION RULE (root `AGENTS.md`, Groups) off the list on screen: last member →
     "the group will be deleted"; owner of two → "the other member takes it over"; owner of
-    three or more → a PICKER of the others (the board's lines as radios, the one picked
-    FRAMED, dressed by `readGroup`, in whole rows — `round(down, 40vh, 44px)`, snapping; every
-    row is a control, so none is thinned at rest: while more wait below its foot is the short
+    three or more → a PICKER of the others UNDER THE NOTE, read after the question it
+    answers (`components/SuccessorPick`, ConfirmScreen's `choice`: the board's lines as
+    radios, each resting in the slate corners of a thing to tap — the period switch's
+    cells', held 4px in from the line so two lines' corners never meet — the one picked
+    locking on in white (`pick-lock`, the own line's gesture on the picker's 6px arms),
+    dressed by `readGroup`, in whole rows — `round(down, 40vh, 44px)`, snapping; every row
+    is a control, so none is thinned at rest: while more wait below its foot is the short
     6px edge, on the last row's bare margin, the picked row's frame standing above it),
     LEAVE held back until one is picked, sent as `successor`; a stale list's 409
     `successor_required` is no failure: the confirmation stays up, its pick cleared, and
@@ -2855,13 +2870,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   gesture, so a chipped word reads as yours exactly as it does in the sentence), "like on
   a synonyms website". **ONE type size** (user-decided the
   same day: "avoid reducing the font size, even if it leads to less columns"): the column
-  is as wide as the LONGEST word needs at 15px (`repeat(auto-fill, minmax(<that>px, 1fr))`,
-  set inline), so a wide screen fills its width with as many such columns as fit and a
-  phone gets one or two; only a word wider than the whole frame shrinks, alone. The list THINS into the
-  ground as it scrolls up under the header (the house's DEEP dithered edge over
-  `.hw-scroll`'s top, `--edge-deep-u`, a line deep so a passing word thins instead of being
-  sliced, padded so nothing touches it at rest — the game header's own edge, which a
-  dialog's scroll never lights). The
+  is as wide as the LONGEST word needs at the face's 16px (`repeat(auto-fill, minmax(<that>px,
+  1fr))`, set inline), so a wide screen fills its width with as many such columns as fit and a
+  phone gets one or two; only a word wider than the whole frame steps down, alone, to 8px —
+  the face's whole sizes only, the exponents at 8 and the headline at 24 (16, 8 where it
+  would not fit). The list THINS into the ground as it scrolls up under the header (the
+  house's DEEP dithered edge over `.hw-scroll`'s top, `--edge-deep-u`, a line deep so a
+  passing word thins instead of being sliced, padded so nothing touches it at rest — the
+  game header's own edge, which a dialog's scroll never lights). The
   shared `ModalHeader` + Escape are the ways out (through the dither,
   `board-dissolve-out`). The solved stage's
   word buttons open it too. `Game` picks the surface off the hole's rank (`wheelOpen`),
@@ -3851,8 +3867,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the column cuts is COVERED by the ground, the cover carrying the boards' own left-out
     rail against the whole name next to it (on whole pixels); a cover too narrow for the
     rail (under 24px, `COVER_MARK_PX`) takes the next whole name too — never the shown one,
-    so a cover against the shown name can stand unmarked; turning to a tab scrolls its name
-    whole into view. A name too long for the room the row leaves it once scrolled to (clear
+    so a cover against the shown name can stand unmarked; where names are left out before
+    the pinned name, it FOLLOWS THE RAIL DIRECTLY — drawn in from the row's end
+    (`--pin-shift`) to stand 10px past the rail, the ground carried on after it to the row's
+    end (`.board-tabs-ground`, a cover's ground, no tap of its own) — so the row never shows
+    a band of nothing between the rail and GLOBAL. Where it stands is decided only for a row
+    AT REST — on layout, on a resize, once a scroll has settled (`REST_MS`, 150, with no
+    scroll frame and no finger on the row: iOS Safari has no `scrollend`), and on a TURN for
+    where the turn's scroll will rest, in the turn's own frame — and it HOLDS there while the
+    row moves: the names pass under it and it never slides with them. (Never on a focus
+    alone: a focus lands between a tap's press and its click, and GLOBAL moved under the
+    finger there takes the click.) A shown name a swipe has taken wholly out of view is
+    covered like any other. Turning to a tab scrolls its name whole into view. A name too long for the room the row leaves it once scrolled to (clear
     of the left-out rails and of the pinned name) ENDS IN AN ELLIPSIS there (`--label-max`,
     floored to whole glyphs, written when the row's width or names change, never on a
     scroll), so the SHOWN name is never under a cover. A roving tablist for the keyboard (the arrows, Home, End), each tab
@@ -4275,8 +4301,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `/account`'s plain name, `LangTitle`'s — wears the sentence chip (the game surfaces'
     title is the app's mark instead since 2026-09-16, the code beside it in plain title
     type: the mark is its one emphasis): `--fg` ground, `--bg` ink,
-    square, 12px at 600, laid out rather than drawn (`.topbar .topbar-title`;
-    ModalHeader's flat dialogs keep the plain type). The day and the chevron stand OUTSIDE
+    square, 12px at 600, laid out rather than drawn (`.topbar .topbar-title`, and
+    `.modal-bar .topbar-title`: a full-screen dialog's header row — the words modal's MOT n,
+    NEW GROUP, a group's name — wears it the same). The day and the chevron stand OUTSIDE
     the chip the way a hole's exponent does; hover and press DIM the chip by the hole's
     own mixes, since white cannot brighten. The day states its own 12px now that it sits
     outside the chip's rule (it inherited the body's 16px for one measurement), and the
@@ -4357,7 +4384,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (the rules' place; on a lesson the lit book still leads to the list, and any other key
   leaves LEVEL 1 as a SKIP — leaving an article level is only leaving; the fast-forward
   control that slot held, `skip.svg` and `ariaSkipTutorial`, are retired). The book wears a
-  BADGE while level 1 is ready in this language and not done on this device
+  BADGE — a square accent plate of whole pixels, the digit cut out of it in the ground's ink
+  from the pixel face's own cells (`DIGIT_MASKS`, `crispEdges`; `BadgePlate`) — while level
+  1 is ready in this language and not done on this device
   (`undoneLevels(done, lang)`; the articles have no done state). **`profileReturn` is GONE from the store**: every
   place is one tap away, so nothing has to remember where it was opened from, and
   `/account`'s left slot is its plain NAME rather than a back control. **This OVERTURNS #190's ACTIVE-DAY-ONLY crown** (2026-08-20): that rule hid
@@ -4620,6 +4649,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     wheel's slot `.hole-word-wrap`); the code row is `fit-content` so the
     field's box is its six cells. It never frames the guess field (its caret is its
     focus), a dialog focused as a whole, or a `tabindex="-1"` container.
+  - It **stands only on a target that is there**, asked every frame: never one marked
+    `data-no-frame` (the code field waiting OFFSTAGE, focused by the address step's tap so
+    iOS raises its keyboard), a box under one 2px cell, or a control that is itself
+    disabled or `aria-busy` — never one merely inside a busy region (a day of a month still
+    being read is framed). There the brackets hide where they last stood, the focus kept,
+    and come back — travelling — the moment the target is on stage (the code's keys).
   - It **follows a focus that moves** — a drum turning under it, a scroll, a resize — one
     measurement a frame while it shows, and only while it shows; it mounts INSIDE an open
     dialog when the focus is there (the top layer paints above the document).

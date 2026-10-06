@@ -142,9 +142,9 @@ const SIZES: Record<PodiumSize, Dims> = {
   compact: { wide: 50, narrow: 44, gap: 1, tiers: [24, 19, 15], mark1: 25, mark: 20, glyph: 1, value: 2, air: 8, block: 27, bottom: 1 },
 };
 // Under the floor, every place's CAPTION: a gap of bare ground, the NAME's band (the DOM's: two
-// 13px lines and 3px of air over and under them — a name wraps rather than being
-// cut, and the band holds two lines whatever it holds, so nothing under it moves), a gap, then
-// the block: the VALUE's row, a gap, the UNIT's line (the DOM's, 12px).
+// 13px lines' room and 3px of air over and under them, the name on ONE line set on its last, so
+// it sits on its value — the band one height whatever it holds, so nothing under it moves), a
+// gap, then the block: the VALUE's row, a gap, the UNIT's line (the DOM's, 12px).
 const NAME_GAP = 6;
 export const NAME_ROWS = 16;
 const VALUE_GAP = 2;
@@ -333,55 +333,14 @@ export function layout(
 // dissolves as one).
 export const captionRows = (L: PodiumLayout, p: number): number => L.places[p].unit + UNIT_ROWS - L.name;
 
-// A name's RUNS, split at its JOINTS: after an underscore, before a capital that follows a small
-// letter, and before digits that follow a letter.
-export function runsOf(name: string): string[] {
-  const runs: string[] = [];
-  let run = '';
-  for (let i = 0; i < name.length; i += 1) {
-    const prev = name[i - 1] ?? '';
-    const ch = name[i];
-    const joint =
-      prev === '_' || (/[a-z]/.test(prev) && /[A-Z]/.test(ch)) || (/[A-Za-z]/.test(prev) && /[0-9]/.test(ch));
-    if (joint && run) {
-      runs.push(run);
-      run = '';
-    }
-    run += ch;
-  }
-  runs.push(run);
-  return runs;
-}
-
-// How a name SETS in the band's TWO lines, each `roomPx` wide: the face's 12px, or the first size
-// a pixel smaller (to 10) at which its runs set in them, none broken — the chrome's mono advances
-// a fixed 0.65em a glyph, so a run's width is its length, nothing measured. At 10, a run still
-// too long for a line is split in its middle (two even halves rather than a letter left alone);
-// and a name whose runs take three lines even so is cut in two at its own middle — a name is at
-// most 16 glyphs, 8 a line, which every slot holds at 10. The browser breaks only at the runs'
-// joints, so it sets what this says: never a third line.
-export const NAME_PX = [12, 11, 10];
-export function setName(runs: readonly string[], roomPx: number): { px: number; runs: readonly string[] } {
-  const fits = (glyphs: number, px: number) => glyphs * UI_ADVANCE_EM * px <= roomPx;
-  const lines = (parts: readonly string[], px: number) => {
-    let count = 1;
-    let line = 0;
-    for (const part of parts) {
-      if (!fits(part.length, px)) return Infinity;
-      if (fits(line + part.length, px)) line += part.length;
-      else {
-        count += 1;
-        line = part.length;
-      }
-    }
-    return count;
-  };
-  const px = NAME_PX.find((size) => lines(runs, size) <= 2);
-  if (px !== undefined) return { px, runs };
-  const least = NAME_PX[NAME_PX.length - 1];
-  const halves = (text: string) => [text.slice(0, Math.ceil(text.length / 2)), text.slice(Math.ceil(text.length / 2))];
-  const halved = runs.flatMap((run) => (fits(run.length, least) ? [run] : halves(run)));
-  return { px: least, runs: lines(halved, least) <= 2 ? halved : halves(runs.join('')) };
+// A NAME IS SET ON ONE LINE, at the chrome's 12px (`NAME_PX`), and a name longer than its slot
+// ends in an ELLIPSIS on a WHOLE GLYPH — the tab chip's own cut (BoardTabs' `--label-max`): the
+// room is floored to whole glyphs of the mono's fixed advance (shared `cardSvg.ts`
+// `UI_ADVANCE_EM` — nothing measured), so the `…` takes a glyph's place, never a sliver of one.
+export const NAME_PX = 12;
+export function nameRoomPx(slotPx: number): number {
+  const glyph = UI_ADVANCE_EM * NAME_PX;
+  return Math.ceil(Math.max(0, Math.floor(slotPx / glyph)) * glyph);
 }
 
 // How a step's face is lit: its light dithers down from the lip over its first SHADE rows,

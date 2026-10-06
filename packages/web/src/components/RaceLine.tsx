@@ -86,7 +86,7 @@ export default function RaceLine({
                 {entry.score}
               </span>
             ) : entry.kind === 'over' ? (
-              <InfinityGlyph className="race-inf" />
+              <InfinityGlyph className="race-inf" cell={1} />
             ) : (
               <>
                 <span

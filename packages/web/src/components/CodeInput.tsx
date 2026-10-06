@@ -110,6 +110,8 @@ export default function CodeInput({
         // rather than being `aria-hidden`, because focus may genuinely land here for the
         // length of the send, and moving focus into hidden content is the worse trade.
         tabIndex={offstage ? -1 : undefined}
+        // …and never under the focus brackets: offstage it is a 1px field nobody can see.
+        data-no-frame={offstage || undefined}
         value={value}
         disabled={disabled}
         onChange={(event) => {

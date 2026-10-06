@@ -16,7 +16,8 @@ import Under, {
   type UnderView,
 } from '../components/BoardUnder';
 import ConfirmScreen from '../components/ConfirmScreen';
-import { LINE_PX, MARK } from '../components/boardMetrics';
+import SuccessorPick from '../components/SuccessorPick';
+import { LINE_PX } from '../components/boardMetrics';
 import GroupCreate from '../components/GroupCreate';
 import GroupScreen from '../components/GroupScreen';
 import LoadError from '../components/LoadError';
@@ -327,8 +328,6 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   const [screen, setScreen] = useState<'group' | 'create' | null>(null);
   const [confirming, setConfirming] = useState<{ kind: 'remove'; member: BoardPlayer } | { kind: 'leave' } | null>(null);
   const [successor, setSuccessor] = useState<string | null>(null);
-  // Whether the picker holds more members below what it shows (its foot's dithered edge).
-  const [pickRef, pickMore] = useMoreBelow<HTMLDivElement>();
   // The members DRESSED (name + mark) for the successor picker: the list carries ids
   // alone, and `GET /groups?id=` is the public face that names them. Decoration — until
   // it lands, and if it never does, the rows wear the assigned identities.
@@ -872,37 +871,14 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
           disabled={leaveKind === 'pick' && successor === null}
           onConfirm={() => void leave()}
           onClose={() => setConfirming(null)}
+          choice={
+            // WHO TAKES IT OVER, under the question it answers.
+            leaveKind === 'pick' && (
+              <SuccessorPick lang={lang} members={others} faces={faces} picked={successor} onPick={setSuccessor} />
+            )
+          }
         >
           <span className="confirm-group">{active.name}</span>
-          {leaveKind === 'pick' && (
-            // WHO TAKES IT OVER: the members as the board's lines, the one picked FRAMED —
-            // the brackets, the house's selection gesture.
-            <div
-              ref={pickRef}
-              className="board-list confirm-pick"
-              data-more={pickMore || undefined}
-              role="radiogroup"
-              aria-label={t(lang, 'groupMembers')}
-            >
-              {others.map((id) => {
-                const face = faces[id];
-                const picked = successor === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    role="radio"
-                    aria-checked={picked}
-                    className={`board-row member${picked ? ' picked' : ''}`}
-                    onClick={() => setSuccessor(id)}
-                  >
-                    <Avatar avatar={face?.avatar ?? defaultAvatar(id)} size={MARK} sharp />
-                    <span className={`board-name${face?.name ? '' : ' anon'}`}>{face?.name || anonName(id)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </ConfirmScreen>
       )}
 

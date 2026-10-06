@@ -962,8 +962,8 @@ body:has(.app > .board-screen) {
    it. It sits in the column's gap above the tray plus the play area's race band
    (`.play-race`), which together hold exactly its footprint. ONE line, never wrapping: at
    most three entries of a mark and two short numbers, which fit the narrowest phone's
-   column. The game surface's dress: the pixel face
-   for the numbers, the % in the heat ramp's ink (the board's playing rows), tries muted, a
+   column. The game surface's dress: the pixel face's 8px
+   for the numbers (the `∞` on its 1px cells, the check on its own), the % in the heat ramp's ink (the board's playing rows), tries muted, a
    finished member's count in the solve cobalt. */
 .race-line {
   position: absolute;
@@ -979,7 +979,7 @@ body:has(.app > .board-screen) {
   padding: 2px 4px;
   white-space: nowrap;
   font-family: var(--pixel-font);
-  font-size: 10px;
+  font-size: 8px;
   line-height: 1;
   color: var(--fg);
   background: none;
@@ -1272,8 +1272,8 @@ body:has(.app > .board-screen) {
 /* The screen title ("ARCHIVE", "TUTORIAL") — lives in the top-LEFT status chip, the
    same corner the game gives its percentage (decided 2026-07-21; formerly absolutely
    centered). */
-/* A screen's NAME. Plain type by itself (ModalHeader reuses this class on its flat
-   dialogs); IN THE HEADER it is a HELD WORD — see the chip rule below. */
+/* A screen's NAME. In the header, and in the header row a full-screen dialog wears
+   (ModalHeader's `.modal-bar`), it is a HELD WORD — see the chip rule below. */
 .topbar-title {
   /* ONE SIZE, ON EVERY SCREEN (user-decided 2026-08-31). It was a viewport clamp
      (12–14px) that two phone step-downs then overrode for the puzzle title and the back
@@ -1301,8 +1301,10 @@ body:has(.app > .board-screen) {
    heavy was about a chip INSIDE a glass band; the band is gone (the header sits on the bare
    ground at rest), and the chip is now the app's one emphasis gesture worn by the one
    thing the header is about. Laid out, not drawn: unlike the sentence's, this chip has
-   room to take — the row's centre is empty. */
-.topbar .topbar-title {
+   room to take — the row's centre is empty. A full-screen dialog's own header row
+   (ModalHeader's `.modal-bar`: MOT 3, NEW GROUP, a group's name) wears it the same. */
+.topbar .topbar-title,
+.modal-bar .topbar-title {
   display: inline-block;
   padding: 5px 7px 4px;
   line-height: 1;
@@ -3232,14 +3234,28 @@ body:has(.app > .board-screen) {
   color: var(--fg);
 }
 /* GLOBAL, PINNED at the row's end: held there on the row's own axis, on the ground's ink, the
-   names passing under it — and where they all fit, simply the last name. (Its copy on the
-   chip's sheet is pinned the same way, on the sheet's own ink.) */
+   names passing under it — and where they all fit, simply the last name. Where names are left
+   out before it, it is drawn in to follow the left-out rail directly (`--pin-shift`, written by
+   BoardTabs for a row at rest, held while the row moves). (Its copy on the chip's sheet is
+   pinned the same way, on the sheet's own ink.) */
 .board-tab.pinned {
   position: sticky;
-  right: 0;
+  right: var(--pin-shift, 0px);
   z-index: 1;
   background: var(--bg);
   scroll-snap-align: none;
+}
+/* ...and after it the GROUND carried on to the row's end (`--pin-ground-x`), over the names and
+   the chip passing there — a cover's ground, never a tap of its own. */
+.board-tabs-ground {
+  position: absolute;
+  top: 0;
+  z-index: 3;
+  left: var(--pin-ground-x, 0px);
+  width: var(--pin-shift, 0px);
+  height: 44px;
+  background: var(--bg);
+  pointer-events: none;
 }
 
 /* THE CHIP: the row's names again in the ground's ink on a white sheet, clipped to the shown
@@ -3406,9 +3422,9 @@ body:has(.app > .board-screen) {
   shape-rendering: crispEdges;
 }
 /* YOUR line is FRAMED: the card's corner brackets, small, round it — and its rank in the
-   accent, its name at the action weight. */
-.board-row.me,
-.board-row.picked {
+   accent, its name at the action weight (which a successor PICKED wears too; its corners are
+   the picker's own, `.confirm-pick`). */
+.board-row.me {
   --bc: rgba(255, 255, 255, 0.38);
   background:
     linear-gradient(var(--bc), var(--bc)) left top / 8px 2px,
@@ -4089,12 +4105,13 @@ body:has(.app > .board-screen) {
   width: min(1100px, 100%);
   margin: 0 auto;
 }
-/* The headline: the word itself, in the ink a solved word wears. */
+/* The headline: the word itself, in the ink a solved word wears — at 24px, or the face's next
+   whole size down where the word would not fit (`HistoryModal` sets it inline). */
 .hw-head {
   margin: 12px 0 28px;
   font-family: var(--pixel-font);
-  font-size: clamp(20px, 3vw, 28px);
-  line-height: 1.3;
+  font-size: 24px;
+  line-height: 1.25;
   color: var(--solve);
   text-shadow: 2px 2px 0 black;
   overflow-wrap: anywhere;
@@ -4108,33 +4125,33 @@ body:has(.app > .board-screen) {
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 16px 24px;
 }
-/* One word: the pixel face at ONE size (`HistoryModal` sets it inline — 15px, and only a
-   word wider than the whole frame shrinks), its exponent raised as the hole's, in the
-   shared heat. */
+/* One word: the pixel face at ONE size (`HistoryModal` sets it inline — 16px, and only a
+   word wider than the whole frame steps down to 8), its exponent raised as the hole's, at
+   the face's 8px, in the shared heat. */
 .hw-word {
   font-family: var(--pixel-font);
-  font-size: 15px;
-  line-height: 1.3;
+  font-size: 16px;
+  line-height: 1.25;
   color: var(--fg);
   white-space: nowrap;
   text-shadow: 2px 2px 0 black;
 }
 .hw-rank {
   display: inline-block;
-  font-size: 0.55em;
+  font-size: 8px;
   margin-left: 1px;
   color: var(--rank-color);
   vertical-align: super;
 }
 /* A word the player FOUND wears the held word's own inverted chip — `--fg` ground, `--bg`
-   ink, the sentence chip's em geometry (0.2em over, 4px-at-30px above and below) — laid
-   out here rather than drawn, the grid's gap holding the overhang; the words the solve
-   merely NAMED stay plain `--fg`. The chip drops the hard print for the phrase's reason
-   (near-black ink on white). */
+   ink, in ems that land on whole pixels at the face's sizes (0.25em a side, 0.125em above
+   and below) — laid out here rather than drawn, the grid's gap holding the overhang; the
+   words the solve merely NAMED stay plain `--fg`. The chip drops the hard print for the
+   phrase's reason (near-black ink on white). */
 .hw-found .hw-text,
 .hw-given .hw-text {
-  padding: 0.133em 0.2em;
-  margin: -0.133em 0;
+  padding: 0.125em 0.25em;
+  margin: -0.125em 0;
   background: var(--fg);
   color: var(--bg);
   text-shadow: none;
@@ -5104,7 +5121,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      comment already calls the last things that can give; they simply have to give sooner.
      Measured at 341, the worst width (the keys are still 32px there and none of the ≤340
      air has arrived): SAUVEGARDE ran 31px into the keys, 14px after this. */
-  .topbar .topbar-title {
+  .topbar .topbar-title,
+  .modal-bar .topbar-title {
     padding: 5px 5px 4px;
   }
   .title-tag {
@@ -5183,7 +5201,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   display: none;
 }
 @media (max-width: 374px) {
-  .topbar .topbar-title {
+  .topbar .topbar-title,
+  .modal-bar .topbar-title {
     padding: 5px 4px 4px;
   }
 }
@@ -5296,7 +5315,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .l1-no {
   flex: none;
   font-family: var(--pixel-font);
-  font-size: 13px;
+  font-size: 16px;
   color: var(--accent);
 }
 .l1-title {
@@ -5308,14 +5327,15 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--fg);
   text-wrap: balance;
 }
-/* The step counter (n/4) speaks the game's own pixel face (user-decided 2026-09-17), and
-   inks in the solve's cobalt once the stage's word is found. */
+/* The step counter (n/4) speaks the game's own pixel face (user-decided 2026-09-17), at the
+   number's own whole size (16px, a phone's 8), and inks in the solve's cobalt once the stage's
+   word is found. Its tracking is a quarter of the face (whole pixels), given back at its end. */
 .l1-step {
   flex: none;
-  margin-right: -0.2em;
+  margin-right: -0.25em;
   font-family: var(--pixel-font);
-  font-size: 12px;
-  letter-spacing: 0.2em;
+  font-size: 16px;
+  letter-spacing: 0.25em;
   color: var(--muted);
 }
 .l1-step.found {
@@ -5624,14 +5644,12 @@ figure.l1-fig {
   .l1-title-row {
     gap: 10px;
   }
-  .l1-no {
-    font-size: 10px;
+  .l1-no,
+  .l1-step {
+    font-size: 8px;
   }
   .l1-title {
     font-size: 15px;
-  }
-  .l1-step {
-    font-size: 11px;
   }
   .l1-voice {
     --voice-fs: 15px;
@@ -6666,8 +6684,8 @@ figure.l1-fig {
   pointer-events: none;
 }
 
-/* The quiet row under the cells: RESEND and CHANGE ADDRESS are alternatives, never calls
-   to action — the send allowance is 5 an hour, so the UI must not invite spending it. */
+/* The quiet row under the cells: RESEND, never a call to action — the send allowance is 5
+   an hour, so the UI must not invite spending it. */
 .link-quiet {
   display: flex;
   align-items: center;
@@ -6676,7 +6694,7 @@ figure.l1-fig {
 }
 /* THE WORD (2026-09-14, user-specified: no underline, no box shadow): a quiet act is the
    label alone — a bare tracked word at a finger's height, a step under full strength,
-   lifted to it on hover. RESEND, LEAVE THE GROUP, CANCEL under a danger shape. */
+   lifted to it on hover. LEAVE THE GROUP, and CANCEL under a danger act or a crossroads. */
 .link-quiet-btn {
   padding: 14px 8px;
   border: 0;
@@ -6701,32 +6719,48 @@ figure.l1-fig {
   opacity: 1;
   color: var(--muted);
 }
-/* A CONTROL THAT IS NOT A CONTROL YET LOSES ITS BOX (2026-08-30). RESEND spends its first
-   ~30 seconds counting down, and a dimmed hairline box held that long reads as a broken
-   button rather than as a wait — the same reason the second door is held back until the
-   summary settles: a control drawn before it can be pressed is a false offer. Counting, it
-   is a STATUS line (`RESEND (12)`); when the clock runs out the box arrives with the
-   offer. */
+/* Not answerable for now: the word a COLOUR STEP down to the slate `--rail` (under the
+   `--muted` its rest reads as), never an opacity. */
 .link-quiet-btn:disabled {
-  opacity: 0.4;
+  opacity: 1;
+  color: var(--rail);
   cursor: default;
 }
 
-/* RESEND while it counts: only the WORD dims; the seconds — the number being waited on — stay
-   at full strength in the cobalt pixel figures the cards write a number in, a small ticker
-   beside the word. */
-.link-resend:disabled {
-  opacity: 1;
+/* RESEND (`.quiet-btn.link-resend`) WEARS ITS BRACKETS ONLY ONCE IT CAN BE PRESSED (a control
+   drawn before it can be pressed is a false offer, and a dimmed box held for ~30s reads as a
+   broken button): COUNTING it is a status line — the word in its disabled colour step, no
+   brackets, the seconds at full strength in the cobalt pixel figures the cards write a number
+   in, a small ticker beside the word — and when the clock runs out the brackets ARRIVE with the
+   offer, locking on from outside at full white in hard steps (the switch's frame's own
+   gesture). */
+.link-resend.counting::before {
+  border-color: transparent;
 }
-.link-resend:disabled .link-resend-word {
-  opacity: 0.4;
+.link-resend:not(.counting)::before {
+  animation: resend-lock 150ms steps(3, jump-end) backwards;
 }
+@keyframes resend-lock {
+  from {
+    inset: -6px;
+    border-color: var(--fg);
+  }
+}
+/* Under the keyboard's focus the app's ONE indicator speaks alone (`FocusBrackets`, just
+   outside the word): RESEND's own corners give way to it, never a frame nested in a frame —
+   hovered too (the `.quiet-btn` focus and hover rules come later, hence the extra classes). */
+.link-quiet .link-resend.quiet-btn[data-bracketed]::before {
+  border-color: transparent;
+}
+/* The ticker hangs OUTSIDE the word's box, at its right, so the word holds its place when the
+   seconds go and the brackets arrive round the word alone. */
 .link-wait {
-  display: inline-block;
-  min-width: 2.5em;
-  margin-left: 10px;
+  position: absolute;
+  left: 100%;
+  top: calc(50% - 4px);
   font-family: var(--pixel-font);
   font-size: 8px;
+  line-height: 8px;
   letter-spacing: 0;
   text-align: left;
   color: var(--accent);
@@ -7859,8 +7893,8 @@ figure.l1-fig {
 }
 /* A CAPTION under its step, one box from the name's band to its last line (what dissolves,
    dissolves whole): the NAME in the chrome's voice — a third of the podium wide, less a gutter
-   each side, wrapping at its joints onto a second line rather than being cut, set on the band's
-   last line so it sits on its value — then (the raster's) VALUE, then its UNIT. A player who
+   each side, on ONE line set on the band's last so it sits on its value, a name past its room
+   ending in an ellipsis on a whole glyph (`nameRoomPx`) — then (the raster's) VALUE, then its UNIT. A player who
    drops brings it up as they land, in a stepped rise at full ink; one who comes onto a board
    already shown dissolves in with it; one who stays keeps it standing (only a unit that changed
    gives way). YOUR name wears your line's corner brackets; one of your people (GLOBAL) carries
@@ -7895,10 +7929,9 @@ figure.l1-fig {
   max-width: 100%;
   /* The slot for the letters (its gutters are the layout's), 3px of air over and under. */
   padding: 3px 0;
-  /* Breaks at the joints alone (`<wbr>`, balanced) — inside a run of letters only if that run
-     cannot fit the slot at all. */
-  overflow-wrap: break-word;
-  text-wrap: balance;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .podium-name.anon {
   color: var(--muted);
@@ -8481,7 +8514,9 @@ figure.l1-fig {
    `>`, the pixel face, the blinking cursor — alone in the middle of the screen, over the
    one call. On CREATE the line gives way to the name INKED IN: the solve's cobalt word,
    with the hit's shake, held for a beat before the screen folds — the group is named the
-   way a hole is solved. */
+   way a hole is solved. The line and the inked word are set at the LARGEST whole size of the
+   face (24, 16 or 8px) at which the prompt fits the stage (`GroupCreate`'s `nameSize`, on the
+   stage), so the face lands on whole pixels and a 20-character name is never cut. */
 .group-create {
   width: min(430px, 100% - 28px);
   margin: auto;
@@ -8499,14 +8534,16 @@ figure.l1-fig {
   min-height: 64px;
 }
 .group-create .word-input {
-  /* A 20-character name fits the line on a 375px phone (14px × 20 = 280 beside the `>`);
-     it grows with the screen up to the sentence's own size. */
-  font-size: clamp(14px, 3.7vw, 24px);
+  font-size: inherit;
   min-width: 0;
+  padding-inline: 0;
+}
+/* Half an em of air after the `>`: whole pixels at every size the line takes. */
+.group-create .wi-prompt {
+  margin-right: 0.5em;
 }
 .group-create-word {
   font-family: var(--pixel-font);
-  font-size: clamp(14px, 3.7vw, 24px);
   line-height: 1.5;
   color: var(--solve);
   white-space: nowrap;
@@ -9018,31 +9055,72 @@ figure.l1-fig {
   background: var(--fg);
   color: var(--bg);
 }
-/* WHO TAKES IT OVER: the members as the board's lines, radios — the picked one FRAMED by the
-   corner brackets (the house's selection gesture, the reader's own line's dress), one picked
-   at a time. A line is a <button> here, so the reset is restated. */
+/* WHO TAKES IT OVER, under the question it answers: the members as the board's lines, radios,
+   each RESTING in the slate corners of a thing to tap (the period switch's cells: bare names
+   would float with no affordance), the one picked LOCKING ON in white — its corners reaching
+   in from along the line in hard steps (the reader's own line's gesture) — one picked at a
+   time. A line is a <button> here, so the reset is restated. */
 .confirm-pick {
   width: 100%;
   /* Whole lines, so the last one the room holds is never cut — at rest too (it snaps). */
   max-height: 40vh;
   max-height: round(down, 40vh, 44px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   scroll-snap-type: y mandatory;
-  margin: 4px 0 8px;
+  margin: 10px 0 0;
   text-align: left;
 }
 .confirm-pick .board-row {
+  --bc: var(--rail);
   width: 100%;
   margin: 0;
   border: 0;
-  background-color: transparent;
+  /* The switch cells' corners (6px arms, 2px thick) held 4px in from the line's top and
+     bottom, so two lines' corners never meet into a ladder. */
+  background:
+    linear-gradient(var(--bc), var(--bc)) left 0 top 4px / 6px 2px,
+    linear-gradient(var(--bc), var(--bc)) left 0 top 4px / 2px 6px,
+    linear-gradient(var(--bc), var(--bc)) right 0 top 4px / 6px 2px,
+    linear-gradient(var(--bc), var(--bc)) right 0 top 4px / 2px 6px,
+    linear-gradient(var(--bc), var(--bc)) left 0 bottom 4px / 6px 2px,
+    linear-gradient(var(--bc), var(--bc)) left 0 bottom 4px / 2px 6px,
+    linear-gradient(var(--bc), var(--bc)) right 0 bottom 4px / 6px 2px,
+    linear-gradient(var(--bc), var(--bc)) right 0 bottom 4px / 2px 6px;
+  background-repeat: no-repeat;
+  /* The mark stands clear of the corners' arms. */
+  padding-left: 12px;
   cursor: pointer;
   font: inherit;
   text-align: left;
   color: var(--fg);
 }
-.confirm-pick .board-row:not(.picked):hover .board-name {
-  color: var(--fg);
+.confirm-pick .board-row.picked {
+  --bc: var(--fg);
+  animation: pick-lock 240ms steps(4, jump-end) backwards;
+}
+/* The own line's lock-on, measured for these 6px arms: each step a whole pixel (22 → 6 by 4,
+   14 → 6 by 2). */
+@keyframes pick-lock {
+  from {
+    background-size:
+      22px 2px, 2px 14px, 22px 2px, 2px 14px,
+      22px 2px, 2px 14px, 22px 2px, 2px 14px;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  /* (Never under the focus brackets, below: a hover is no reason to nest a frame.) */
+  .confirm-pick .board-row:not(.picked, [data-bracketed]):hover {
+    --bc: var(--muted);
+  }
+  .confirm-pick .board-row:not(.picked):hover .board-name {
+    color: var(--fg);
+  }
+}
+/* Under the keyboard's focus a line's own corners give way to the focus brackets: never a
+   frame nested in a frame. */
+.confirm-pick .board-row[data-bracketed] {
+  --bc: transparent;
 }
 .confirm-pick .board-row:not(.picked) .board-name {
   color: var(--muted);
@@ -9141,7 +9219,7 @@ figure.l1-fig {
 /* The level's number, in the game's own face, as the article's page numbers its tracks. */
 .learn-no {
   font-family: var(--pixel-font);
-  font-size: 12px;
+  font-size: 16px;
   color: var(--fg);
 }
 .learn-card.done .learn-no {
@@ -9342,7 +9420,7 @@ figure.l1-fig {
 }
 .article-no {
   font-family: var(--pixel-font);
-  font-size: 13px;
+  font-size: 16px;
   color: var(--accent);
 }
 .article-title {
@@ -9386,7 +9464,7 @@ figure.l1-fig {
 }
 .article-cue {
   font-family: var(--pixel-font);
-  font-size: 10px;
+  font-size: 8px;
   letter-spacing: 0;
   color: var(--accent);
 }
@@ -9467,15 +9545,16 @@ figure.l1-fig {
 .article-steps li::before {
   content: counter(step, decimal-leading-zero);
   font-family: var(--pixel-font);
-  font-size: 9px;
+  font-size: 8px;
   color: var(--accent);
 }
-/* AN EXAMPLE SENTENCE is set whole in the pixel face, as the game sets its own: plain words
-   white, the word it is about in the held chip, a hidden word an empty hole. */
+/* AN EXAMPLE SENTENCE is set whole in the pixel face, as the game sets its own (at the face's
+   16px, its lines on whole pixels): plain words white, the word it is about in the held chip,
+   a hidden word an empty hole. */
 .ar-sentence {
   font-family: var(--pixel-font);
-  font-size: 12px;
-  line-height: 2.2;
+  font-size: 16px;
+  line-height: 2;
   color: var(--fg);
 }
 .article-sentence {
@@ -9496,7 +9575,7 @@ figure.l1-fig {
   white-space: nowrap;
 }
 .ar-held-text {
-  padding: 0.13em 0.2em;
+  padding: 0.125em 0.25em;
   background: var(--fg);
   color: var(--bg);
 }
@@ -9534,7 +9613,7 @@ figure.l1-fig {
   display: inline-block;
   width: 4.5em;
   height: 1.25em;
-  vertical-align: -0.3em;
+  vertical-align: -0.25em;
   border: 2px solid var(--hole);
 }
 .ar-term {
@@ -9639,7 +9718,7 @@ figure.l1-fig {
 }
 .ar-bar-word {
   font-family: var(--pixel-font);
-  font-size: 10.5px;
+  font-size: 8px;
 }
 .ar-bar-track {
   height: 10px;
@@ -9689,7 +9768,7 @@ figure.l1-fig {
 }
 .ar-loop-no {
   font-family: var(--pixel-font);
-  font-size: 9px;
+  font-size: 8px;
 }
 .ar-loop-back {
   text-align: center;
@@ -9701,7 +9780,6 @@ figure.l1-fig {
    end its tone names. */
 .ar-fig-sentence {
   margin-bottom: 16px;
-  font-size: 11px;
 }
 .ar-lists.columns {
   display: grid;
@@ -9740,8 +9818,8 @@ figure.l1-fig {
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   font-family: var(--pixel-font);
-  font-size: 10.5px;
-  line-height: 1.3;
+  font-size: 8px;
+  line-height: 1.25;
 }
 .ar-list-words li.marked {
   border-width: 2px;
@@ -9886,7 +9964,7 @@ figure.l1-fig {
   align-self: center;
   justify-self: end;
   font-family: var(--pixel-font);
-  font-size: 11px;
+  font-size: 8px;
   line-height: 1;
   color: var(--rank-color);
 }
@@ -9934,7 +10012,7 @@ figure.l1-fig {
   flex: none;
   width: 2.2em;
   font-family: var(--pixel-font);
-  font-size: 11px;
+  font-size: 8px;
   line-height: 1;
   color: var(--rank-color);
 }
@@ -10011,7 +10089,7 @@ figure.l1-fig {
 }
 .article-next-no {
   font-family: var(--pixel-font);
-  font-size: 11px;
+  font-size: 16px;
   color: var(--muted);
 }
 .article-next-sub {
@@ -10096,10 +10174,6 @@ figure.l1-fig {
   .ar-climb-win {
     font-size: 11px;
   }
-  .ar-climb-to,
-  .ar-climb-from {
-    font-size: 10px;
-  }
 }
 /* On a wide screen the list and an article SCROLL THE WHOLE VIEWPORT: each is a fixed box
    over the screen, its column centred by its side padding, so the scrollbar stands on the
@@ -10142,8 +10216,9 @@ figure.l1-fig {
   }
 }
 
-/* THE BOOK'S BADGE (#269): the count of built levels this device has not done, a small
-   accent square on the key's top-right corner. A translation off the key's box, so the key
+/* THE BOOK'S BADGE (#269): the count of built levels this device has not done, a plate of
+   whole pixels in the accent on the key's top-right corner, the digit cut out of it in the
+   ground's ink (`HeaderKeys`' `BadgePlate`). A translation off the key's box, so the key
    itself keeps the row's geometry and the dot under it never moves. */
 .home-btn {
   position: relative;
@@ -10151,20 +10226,10 @@ figure.l1-fig {
 .hk-badge {
   position: absolute;
   top: var(--hk-badge-top, 4px);
+  top: round(down, var(--hk-badge-top, 4px), 1px);
   right: 2px;
-  min-width: 12px;
-  height: 12px;
-  padding: 0 3px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 2px;
-  background: var(--accent);
-  color: var(--bg);
-  font-family: var(--ui);
-  font-size: 8px;
-  font-weight: 700;
-  line-height: 1;
+  display: block;
+  color: var(--accent);
   pointer-events: none;
 }
 
@@ -10641,6 +10706,14 @@ figure.l1-fig {
 .device-sub.current {
   color: var(--accent);
 }
+/* The day it was last seen, `MM-DD`, in the pixel face's 8px muted figures (the cards' way of
+   writing a day). */
+.device-sub.seen {
+  font-family: var(--pixel-font);
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
 /* THE QUIET WORD in a tappable thing's corner brackets (6px arms), stepping to white on a
    hover — the area's small act: SIGN OUT on a device line (never red: signing a device out
    loses nothing), RETRY under a read that failed. */
@@ -10700,8 +10773,11 @@ figure.l1-fig {
 .quiet-btn:active:not(:disabled) {
   translate: 0 2px;
 }
+/* Not answerable for now: the word and its brackets one COLOUR STEP down — from `--muted` to
+   the slate `--rail` — never an opacity. */
 .quiet-btn:disabled {
-  opacity: 0.45;
+  --bc: var(--rail);
+  color: var(--rail);
   cursor: default;
 }
 /* SIGN OUT's brackets fit the WORD (28px), so a list of devices reads as lines each with its
