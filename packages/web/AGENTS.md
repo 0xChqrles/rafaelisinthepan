@@ -4522,6 +4522,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     wheel's slot `.hole-word-wrap`); the code row is `fit-content` so the
     field's box is its six cells. It never frames the guess field (its caret is its
     focus), a dialog focused as a whole, or a `tabindex="-1"` container.
+  - It **stands only on a target that is there**, asked every frame: never one marked
+    `data-no-frame` (the code field waiting OFFSTAGE, focused by the address step's tap so
+    iOS raises its keyboard), a box under one 2px cell, a disabled control, or one inside
+    something `aria-busy`. There the brackets hide where they last stood, the focus kept,
+    and come back — travelling — the moment the target is on stage (the code's keys).
   - It **follows a focus that moves** — a drum turning under it, a scroll, a resize — one
     measurement a frame while it shows, and only while it shows; it mounts INSIDE an open
     dialog when the focus is there (the top layer paints above the document).
