@@ -7406,24 +7406,29 @@ figure.l1-fig {
   text-transform: uppercase;
   color: var(--muted);
 }
-/* A GROUP'S THREE BOARDS (`PeriodSwitch`): three EQUAL CELLS said with the corner brackets —
-   every word stands in its own resting corners in the slate rail (the switch's affordance: bare
-   labels "float in the screen with no purpose"), the shown one in the plain ink under the
-   FRAME: one set of white corners, laid over its cell, that travels to the word turned to in
-   hard steps and LOCKS ON when the screen opens (its corners closing in from outside). */
+/* THE BRACKETED SWITCH (`BracketSwitch`: a group's three boards, `PeriodSwitch`, and an
+   article figure's states): EQUAL CELLS said with the corner brackets — every word stands in
+   its own resting corners in the slate rail (the switch's affordance: bare labels "float in
+   the screen with no purpose"), the shown one in the plain ink under the FRAME: one set of
+   white corners, laid over its cell, that travels to the word turned to in hard steps and
+   LOCKS ON when the screen opens (its corners closing in from outside). */
 .period-switch {
   flex: 1;
   min-width: 0;
 }
-/* The three cells share the line evenly, each a WHOLE pixel wide (the resting corners and the
-   frame, measured off the cell, land on the same pixels); the line's spare pixel or two stays at
-   its end. The plain `1fr` line is the fallback where `round()` is missing. */
+/* The cells (`--n`, the switch's count) share the line evenly, each a WHOLE pixel wide (the
+   resting corners and the frame, measured off the cell, land on the same pixels); the line's
+   spare pixel or two stays at its end. The plain `1fr` line is the fallback where `round()` is
+   missing. */
 .period-line {
   --gap: 8px;
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-columns: repeat(3, round(down, calc((100% - 2 * var(--gap)) / 3), 1px));
+  grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr));
+  grid-template-columns: repeat(
+    var(--n, 3),
+    round(down, calc((100% - (var(--n, 3) - 1) * var(--gap)) / var(--n, 3)), 1px)
+  );
   gap: var(--gap);
   margin: 0 6px;
 }
