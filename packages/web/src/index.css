@@ -8181,6 +8181,12 @@ figure.l1-fig {
   width: 100%;
   max-width: 430px;
 }
+/* Once the name is inked in, CREATE GROUP has LANDED: it stands at its rest dress until the
+   screen folds and answers no pointer — no hover lift, no press — so nothing on it offers the
+   act a second time beside the ink-in. */
+.group-create:has(.group-create-word) .btn-primary {
+  pointer-events: none;
+}
 
 /* The empty state: a sad pixel ghost beside a terse line (user feedback 2026-08-20 —
    the long sentence said less than the ghost does) and its one call under the line. One block

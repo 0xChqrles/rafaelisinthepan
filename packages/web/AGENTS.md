@@ -821,7 +821,7 @@ These are decided and verified against the code. Treat them as load-bearing.
     wash without changing it, so the act landing ends it in ONE frame on the button at rest.
     The outcome is the act's own (the keyboard rising, the name inked in, the foil stamp, the
     next step), never a word on the button; CREATE GROUP stands at full ink, neither busy nor
-    dimmed, while the new name inks in. CANCEL under a busy confirmation waits in the quiet
+    dimmed, while the new name inks in, answering no pointer (no hover, no press). CANCEL under a busy confirmation waits in the quiet
     word's colour step, like any quiet act that cannot be pressed for now.
     No other button dress remains.
     *(The two paragraphs below are the designs it replaced, kept for their reasoning.)*
