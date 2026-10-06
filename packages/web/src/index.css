@@ -11070,6 +11070,35 @@ figure.l1-fig {
   color: var(--muted);
   opacity: 1;
 }
+/* A REFUSED name (`name_rejected`) answers at its field: the address line's shake, then the
+   name standing in the danger ink until it is edited. */
+.profile-name.refused {
+  color: var(--danger);
+}
+.profile-name.invalid {
+  animation: input-shake 0.4s ease-in-out;
+}
+/* The refusal's ONE note (a name, or a drawing), under the name on the air the line keeps
+   above SAVE — out of the flow, so the editor's measured column never moves. */
+.profile-line {
+  position: relative;
+}
+.profile-refusal {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 42px;
+  right: 0;
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.profile-refusal:empty::before {
+  content: none;
+}
 .profile-name::selection {
   background: var(--accent);
   color: var(--fg);

@@ -1576,7 +1576,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
       save that LANDS is the screen's one shiny thing — the FOIL STAMP over the canvas, laid
       on the cells' own pitch (a band sweeps, the ink holds in foil — the DEEP foil on a light
       ground — then dissolves back in 8 Bayer steps), the brackets lock on, the line's mark
-      hops; a REFUSED one shakes the frame, then the `ErrorScreen`. `FoilStamp` is ONE
+      hops. A save the moderation REFUSES answers AT THE EDITOR, never on the
+      `ErrorScreen`: a refused name shakes the name's field (AddressField's shake) and stands
+      in the danger ink until it is edited; a refused drawing shakes the canvas's frame and
+      stands until the drawing changes; either way ONE danger note under the name's line
+      (`.profile-refusal`, out of the flow on the air above SAVE, so nothing moves). A save
+      that did not LAND (a failed deploy, a transport failure) shakes the frame, then the
+      `ErrorScreen`. `FoilStamp` is ONE
       implementation for any square mark of any whole-pixel size, played in its box, its
       grain always dividing the mark's own pixel.
   - **THE 2026-08-30 PASS, from the mobile navigation review.** Four corrections, each
@@ -2305,9 +2311,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   block: the copyable-key/paste-to-link UI was removed with `adoptPlayerSecret` (the
   backup affordance's future surface is an open decision — root `AGENTS.md`). Saving
   POSTs `{token, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);
-  server refusals surface on the app's `ErrorScreen` (#216 trigger rework — title +
-  explanatory note; the moderation refusals offer no retry, a transport failure and a
-  failed deploy carry TRY AGAIN, which re-runs the whole single-tap save).
+  the two moderation refusals answer AT THE EDITOR (the profile area's dress, below), and
+  a save that did not land — a transport failure, a failed deploy — raises the
+  `ErrorScreen`, SAVE pressed again re-running the whole single-tap save.
   **OPENING THE EDITOR DEPLOYS NOTHING and SAVING deploys (user-decided 2026-08-24):**
   a tokenless editor opens WITHOUT any request, prefilled from the LOCAL placeholder
   identity (the persisted `gameStore.localSeed`, the leaderboard strip's own face) with

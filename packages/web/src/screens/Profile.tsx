@@ -1,4 +1,4 @@
-import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import {
   anonName,
   AVATAR_CELLS,
@@ -145,7 +145,10 @@ export function guardedSaveBody(
 // The label itself always reads SAVE — the button animates, it never renames itself.
 type SavePhase = 'idle' | 'saving' | 'restoring';
 // `account` is the DEPLOY failing (#216 rework: a tokenless SAVE creates the account
-// first); nothing was created and nothing was saved, and TRY AGAIN re-runs the whole tap.
+// first); nothing was created and nothing was saved, and SAVE pressed again re-runs the whole
+// tap. The two moderation refusals are VERDICTS on what was typed or drawn, answered AT the
+// editor (the name, or the canvas); `account` and `error` are acts that did not land, on the
+// error screen.
 type SaveRefusal = 'name_rejected' | 'avatar_rejected' | 'account' | 'error' | null;
 
 // The loader holds at least this long even on an instant answer — a flash of dots
@@ -314,6 +317,10 @@ export default function Profile() {
   }, [cells]);
   const [phase, setPhase] = useState<SavePhase>('idle');
   const [refused, setRefused] = useState<SaveRefusal>(null);
+  // A refused NAME shakes its field (AddressField's gesture), and the refusal's one note
+  // under the line is what the field and the canvas point at.
+  const [nameShake, setNameShake] = useState(false);
+  const refusalId = useId();
   // Where the canvas is told what an edit just changed: a changed cell POPS (`EditorCanvas`) —
   // and ONLY a changed one, so loading a stored drawing pops nothing.
   const fx = useRef<PaintFx | null>(null);
@@ -791,7 +798,8 @@ export default function Profile() {
     }
   }, [cellPx, load]);
 
-  // A REFUSED save shakes the frame, in whole pixels (the ErrorScreen then says why).
+  // A REFUSED save shakes the frame, in whole pixels — the drawing's refusal at the canvas
+  // itself, a failed act before the ErrorScreen says why. (A refused NAME shakes the name.)
   useEffect(() => {
     const frame = frameRef.current;
     if (refusedShake === 0 || !frame || prefersReducedMotion() || typeof frame.animate !== 'function') return;
@@ -803,6 +811,11 @@ export default function Profile() {
     frames.push({ translate: '0 0', offset: 1 });
     frame.animate(frames, { duration: REFUSE_SHAKE.length * REFUSE_SHAKE_FRAME_MS });
   }, [refusedShake]);
+
+  // A refused DRAWING stands until the drawing changes (a refused name, until it is edited).
+  useEffect(() => {
+    setRefused((held) => (held === 'avatar_rejected' ? null : held));
+  }, [cells]);
 
   const onSave = useCallback(async () => {
     // The last door the rule stands in: a composition still OPEN when SAVE is tapped
@@ -921,30 +934,35 @@ export default function Profile() {
     await sleep(Math.max(0, SAVE_DOTS_MIN_MS - (Date.now() - started)));
     if (epoch !== null && identityEpoch() !== epoch) return;
     setRefused(outcome);
-    // The landing, told on the canvas (visual only): a save that LANDED is stamped in foil, a
-    // refused one shakes the card.
+    // The landing, told where it belongs (visual only): a save that LANDED is stamped in foil
+    // on the canvas; a refused NAME shakes the name; any other refusal shakes the card.
     if (written && outcome === null) setStamp((n) => n + 1);
-    else if (outcome !== null) setRefusedShake((n) => n + 1);
+    else if (outcome === 'name_rejected') {
+      setNameShake(false);
+      requestAnimationFrame(() => setNameShake(true));
+    } else if (outcome !== null) setRefusedShake((n) => n + 1);
     setPhase('restoring');
     await sleep(SAVE_RESTORE_MS);
     if (epoch !== null && identityEpoch() !== epoch) return;
     setPhase((held) => (held === 'restoring' ? 'idle' : held));
   }, [name, encoded, assignedFrom, baseline, loadedFor]);
 
-  // What the error surface says for each outcome (#216 rework, replacing the inline
-  // status line): the moderation refusals explain themselves and offer no retry — asking
-  // again with the same value cannot help — while a transport failure and a failed deploy
-  // both carry TRY AGAIN, which re-runs the whole single-tap save.
+  // What a save that did not land puts on the error surface (#216 rework): a failed deploy or
+  // a transport failure — the act is pressed again from here, SAVE still lit.
   const saveError =
+    refused === 'account'
+      ? { title: t(lang, 'failedAccount'), note: t(lang, 'failedAccountNote') }
+      : refused === 'error'
+        ? { title: t(lang, 'profileSaveFailed'), note: t(lang, 'failedSaveNote') }
+        : null;
+  // What the editor answers itself: the moderation VERDICTS, one note under the name's line
+  // until the refused value is edited.
+  const refusalNote =
     refused === 'name_rejected'
-      ? { title: t(lang, 'profileNameRejected'), note: t(lang, 'profileNameRejectedNote') }
+      ? t(lang, 'profileNameRejectedNote')
       : refused === 'avatar_rejected'
-        ? { title: t(lang, 'profileAvatarRejected'), note: t(lang, 'profileAvatarRejectedNote') }
-        : refused === 'account'
-          ? { title: t(lang, 'failedAccount'), note: t(lang, 'failedAccountNote') }
-          : refused === 'error'
-            ? { title: t(lang, 'profileSaveFailed'), note: t(lang, 'failedSaveNote') }
-            : null;
+        ? t(lang, 'profileAvatarRejectedNote')
+        : null;
 
   // How others will see the player: the line every board draws. A board wears the placeholder
   // ink only for a STORED empty name — on an account, the field reading that account's own
@@ -1123,13 +1141,18 @@ export default function Profile() {
               <LineMark key={`hop${stamp}`} avatar={encodeAvatar(linePalette ?? palette, shownPreview)} stamp={stamp} />
               <input
                 ref={nameRef}
-                className={`profile-name${anon ? ' anon' : ''}`}
+                className={`profile-name${anon ? ' anon' : ''}${refused === 'name_rejected' ? ' refused' : ''}${
+                  nameShake ? ' invalid' : ''
+                }`}
                 type="text"
                 value={name}
                 readOnly={saving}
                 maxLength={NAME_MAX_LENGTH}
                 placeholder={shownWhenEmpty}
                 aria-label={t(lang, 'profileNamePlaceholder')}
+                aria-invalid={refused === 'name_rejected' || undefined}
+                aria-describedby={refusalNote !== null ? refusalId : undefined}
+                onAnimationEnd={() => setNameShake(false)}
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
@@ -1144,9 +1167,17 @@ export default function Profile() {
                 onChange={(e) => {
                   if (composingRef.current) setName(e.target.value);
                   else applyName(e.target.value, e.target.selectionStart);
-                  setRefused(null);
+                  // A refused name stands until it is edited; a refused drawing, until the
+                  // drawing is.
+                  setRefused((held) => (held === 'avatar_rejected' ? held : null));
                 }}
               />
+              {/* A moderation refusal's ONE note, under the name's line on the air above SAVE
+                  (out of the flow: nothing moves when it speaks). A live region that exists
+                  before it does. */}
+              <p id={refusalId} className="account-note danger profile-refusal" role="status">
+                {refusalNote}
+              </p>
             </div>
 
             {/* Nothing to save = unavailable — the board itself says whether there is a

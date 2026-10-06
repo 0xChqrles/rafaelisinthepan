@@ -95,13 +95,16 @@ const STRINGS = {
     en: 'Your profile was not saved. Check your connection and try again.',
     fr: "Votre profil n'a pas été enregistré. Vérifiez votre connexion et réessayez.",
   },
+  // The profile's two moderation refusals, said AT the editor: the name in the danger ink
+  // with the field's shake, or the canvas shaking — one note under the name's line, until
+  // the refused value is edited. Short enough for that line at 320px.
   profileNameRejectedNote: {
-    en: 'This name is not allowed. Pick another one and save again.',
-    fr: "Ce nom n'est pas autorisé. Choisissez-en un autre et réenregistrez.",
+    en: 'Name not allowed.',
+    fr: 'Pseudo non autorisé.',
   },
   profileAvatarRejectedNote: {
-    en: 'This drawing is not allowed. Change it and save again.',
-    fr: "Ce dessin n'est pas autorisé. Modifiez-le et réenregistrez.",
+    en: 'Drawing not allowed.',
+    fr: 'Dessin non autorisé.',
   },
   // Signed out from another device (#216). It is a SCREEN, not an error line: the account
   // is intact and reachable, this device simply no longer holds it. The screen shows the
