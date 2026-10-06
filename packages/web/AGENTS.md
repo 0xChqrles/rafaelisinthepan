@@ -176,9 +176,10 @@
       game/roundOnScreen.ts   what the route's round is drawn from (puzzle, word list, server
                               state): a round on screen STAYS through a read asked again
       components/GameHold.tsx  the game's HOLD while the route's three reads are out (the puzzle,
-                              the word list, the round): the sentence's silhouette over the
-                              keyboard's unlit iron keys, in `.game`'s own zones, and `useHold`
-                              (when it shows, and its giving way under the arriving round)
+                              the word list, the round): the sentence's rails, then the day's
+                              silhouette, over what the tray will hold (the keyboard's unlit
+                              iron keys, or the gate's slots), in `.game`'s own zones, and
+                              `useHold` (when it shows, and its giving way under the round)
       screens/Profile.tsx     the #188 profile editor (/profile): DICE / CLEAR over the canvas
                               grown out of the masthead's mark, the swatches, the board line
                               the name is typed on, SAVE
@@ -2051,27 +2052,40 @@ it to the local store — see `packages/backend/AGENTS.md`).
     component is a bit lame compared to the rest")** — no word, TODAY'S GAME TAKING SHAPE:
     ONE hold through the three reads, never restarted, laid over the route's `.game` box in
     its own zones (its top padding, its gap, `.play` over the prompt's reserved row, `.tray`
-    at the keyboard's height). The SENTENCE is its silhouette, laid out by the board's own
-    `Phrase` (`silhouette`: no decode, no descriptions): each word a bar of the slate
-    stipple (`--rail` through `--dz-2`), each hole the skeleton's checker in the held chip's
-    exact box — a generic sentence's shape until the puzzle is in, then the day's (the start
-    words in the holes), the one giving way to the other through the dither; never the day's
-    shape before the puzzle answers. The TRAY is the keyboard's three rows as UNLIT IRON KEYS
-    (`.kb-slate`: the code prompt's and the archive's material — the dusk face, the stippled
-    slate cap, the notched corners — at the keys' exact boxes). What is still out moves:
-    the bars breathe while the puzzle is out, the blocks while the round is (640ms steps),
-    a light washes across the caps on the diagonal while the word list is (the archive's
-    read wave). It shows only after `SKELETON_WAIT_MS` (a quick load never flashes it),
-    through the dither; `aria-busy` on the column and the sr-only `loading` carry the words.
-    **The game takes over from it, painted over it** (`useHold`'s `leaving`, latched by
-    what mounts during it): the sentence decodes as ever, each bar and block giving way the
-    moment the decode's front reaches its word (`Phrase` stamps that front, `--at`, on a
-    silhouette's tokens too); the keys LIGHT IN over their slates through exactly the cells
-    the slates go out through (`Keyboard`'s `lit`, `.kb-lit`: in place, not risen row by
-    row); the prompt's row, the gate and a day already over (`SolvedScreen`'s `fromHold`:
-    its settled frame, the reveal not replayed) come in through the dither. Measured at
-    390/320/1366: every bar, block and slate on the pixel of the word, chip and key that
-    replaces it. Reduced motion: still, and gone at once.
+    at the keyboard's height). The SENTENCE, until the puzzle is in, is RAILS: a sentence of
+    the language's MEDIAN length (`MEDIAN_CHARS`: fr 144, en 112 characters) laid out by the
+    browser in the sentence's own type and width, one rail of the slate stipple per line it
+    fills — no fake words or holes, nothing the day has not said. Once the puzzle is in, the
+    rails give way through the dither to the day's SILHOUETTE, laid out by the board's own
+    `Phrase` (`silhouette`: no decode, no descriptions): each word a bar of the stipple
+    (`--rail` through `--dz-2`), each hole the skeleton's checker in the held chip's exact
+    box (the start words in the holes). Both are centred where the sentence is, so the
+    day's arrival moves the block by half a line per line it differs from the median (0 on
+    a median day). The TRAY promises only what will land there: the keyboard's three rows
+    as UNLIT IRON KEYS (`.kb-slate`: the code prompt's and the archive's material — the
+    dusk face, the stippled slate cap, the notched corners — at the keys' exact boxes) for a
+    player who lands on the prompt (an account, and level 1 done: `Round`'s `gateOpen` read
+    before the round is in); for everyone else the GATE's slots in its own stack — PLAY's
+    box as its slate hairline, each label a stipple bar where its word prints, LEARN's while
+    the lesson is not done. What is still out moves, on ONE 640ms stepped beat: the rails
+    breathe while the puzzle is out, the hole blocks while the round is, the tray (the
+    caps, or the gate's words) while the word list is — never a travelling glint (a wash
+    across the 4px caps read as a shimmer on a phone). It shows only after
+    `SKELETON_WAIT_MS` (a quick load never flashes it), through the dither; `aria-busy` on
+    the column and the sr-only `loading` carry the words. **The game takes over from it,
+    painted over it** (`useHold`'s `leaving`, latched by what mounts during it): the
+    sentence decodes as ever, each bar and block giving way the moment the decode's front
+    reaches its word (`Phrase` stamps that front, `--at`, on a silhouette's tokens too);
+    the keys LIGHT IN over their slates through exactly the cells the slates go out through
+    (`Keyboard`'s `lit`, `.kb-lit`: in place, in hard steps, never the keyboard's eased
+    rise); the prompt's row and the gate come in through the dither. A
+    day ALREADY OVER takes the hold away at once — its card (`SolvedScreen`'s `fromHold`:
+    its settled frame, the reveal not replayed) comes in through the dither on bare ground,
+    never with bars and slates showing through it. Measured at 390/320/1366: every bar,
+    block and slate on the pixel of the word, chip and key that replaces it. Reduced
+    motion: still, and gone at once. Forced colours: each bar, block, slate and slot drawn
+    as its `GrayText` outline (masks and stipple would leave a blank screen). No read the
+    game route waits on shows a `LoadingWave`.
   - **The animated hole swap survived the board becoming a REPLAY.** The play log is
     authoritative the instant a guess lands, so the visible board replays it MINUS the
     guesses still in the air (`deferred`), and ONE timer per guess releases it at its

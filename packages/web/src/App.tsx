@@ -4,9 +4,10 @@ import {
   dayNumber as dayNumberOf,
   isBonusRef,
   puzzleAddress,
+  roundEnded,
   type Puzzle,
 } from '@whippin/shared';
-import GameHold, { useHold } from './components/GameHold';
+import GameHold, { useHold, type HoldTray } from './components/GameHold';
 import usePuzzle from './hooks/usePuzzle';
 import useVocab, { type Vocab } from './hooks/useVocab';
 import useRoundSync from './hooks/useRoundSync';
@@ -20,7 +21,7 @@ import GroupInvite from './screens/GroupInvite';
 import Archive from './screens/Archive';
 import Leaderboard from './screens/Leaderboard';
 import SignedOut from './screens/SignedOut';
-import { useIdentityScopeRevision, useSignedOut } from './identity';
+import { useDeviceIdentity, useIdentityScopeRevision, useSignedOut } from './identity';
 import Game from './screens/Game';
 import TopBar, { HeaderLeft } from './components/TopBar';
 import PuzzleTitle from './components/PuzzleTitle';
@@ -365,6 +366,15 @@ function GameRoute({
             : null;
   // (The invitation stands in for the hold while the reads go on behind it.)
   const hold = useHold(surface === 'game' && failure === null && !noPuzzle && shown === null);
+  // What the hold's tray promises: the KEYBOARD only to a player who lands on the prompt —
+  // an account, and level 1 done (`Round`'s own `gateOpen`, read before the round is in) —
+  // else the GATE's slots, LEARN's with them while the lesson is not done.
+  const identity = useDeviceIdentity();
+  const learned = useGameStore((s) => s.lessonsDone.includes(PLAY_LEVEL));
+  const tray: HoldTray = identity !== null && learned ? 'keys' : learned ? 'gate' : 'gate-learn';
+  // A day already over hands over to its RESULT on bare ground: the hold goes at once rather
+  // than showing through the card as it comes in.
+  const over = shown !== null && (shown.server.solved || roundEnded(shown.server));
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
   useEffect(() => {
@@ -405,13 +415,14 @@ function GameRoute({
         // gives way UNDER the round once they are in (first in the column, so the round
         // paints over it).
         <div className="game" aria-busy={shown !== null ? undefined : true}>
-          {hold.mounted && (
+          {hold.mounted && !over && (
             <GameHold
               lang={lang}
               puzzle={puzzle}
               wordsIn={vocab !== null}
               roundIn={round?.status === 'ready'}
               race={isActiveDay}
+              tray={tray}
               shown={hold.shown}
               leaving={hold.leaving}
             />

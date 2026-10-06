@@ -1,11 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import type { Hole as PuzzleHole, Puzzle } from '@whippin/shared';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { Puzzle } from '@whippin/shared';
 import Phrase from './Phrase';
 import { SWEEP_MS } from './PhraseIntro';
 import { DISSOLVE_MS, SKELETON_WAIT_MS } from './bayerTiles';
 import { KEYBOARD_ROWS } from '../game/keyboard';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import type { RuntimeHole } from '../game/types';
+import type { LangCode } from '../langs';
 import { t } from '../i18n';
 
 // THE GAME'S HOLD (the user, 2026-10-06: "the 'loading' component is a bit lame compared to
@@ -15,26 +16,28 @@ import { t } from '../i18n';
 // `.game`'s own zones (`.play` over the reserved prompt row, `.tray` at the keyboard's
 // height), so what replaces it lands where it stood:
 //
-//   THE SENTENCE as its silhouette — each word a bar of slate stipple, each hole a block of
-//     the board skeleton's checker — laid out by the board's own `Phrase` (`silhouette`), so
-//     the bars wrap where the words will and the blocks stand where the holes will. Until
-//     the puzzle is in it is a GENERIC sentence's shape; once it is, the day's own words
-//     (the start words in the holes), the generic one giving way through the dither. Never
-//     the day's shape before the puzzle has answered.
-//   THE TRAY as the keyboard's three rows of UNLIT IRON KEYS — the archive's and the code
-//     prompt's material: dusk faces under slate caps — at the keys' exact boxes.
+//   THE SENTENCE. Until the puzzle is in, RAILS: a sentence of the language's median length
+//     laid out by the browser in the sentence's own type and width (`.phrase`), one rail of
+//     slate stipple for each line it fills — no words, no holes, nothing the day has not
+//     said yet. Once the puzzle is in, the day's own SILHOUETTE, the rails giving way to it
+//     through the dither: each word a bar, each hole a block of the board skeleton's
+//     checker, laid out by the board's own `Phrase` (`silhouette`), so the bars wrap where
+//     the words will and the blocks stand where the holes will.
+//   THE TRAY, what the game will put there: the keyboard's three rows of UNLIT IRON KEYS —
+//     the archive's and the code prompt's material — at the keys' exact boxes, for a player
+//     who lands on the prompt; the GATE's slots (PLAY's box, LEARN's word) for everyone else.
 //
-// What is still out MOVES, what has answered stands still: the bars breathe while the puzzle
-// is out and the blocks while the round is (the house's 640ms stepped breath), and while the
-// word list is, a light washes across the keys' caps (the archive's read wave). It comes in
-// only after `SKELETON_WAIT_MS` (a quick load never flashes it), through the dither;
-// `aria-busy` on the route's column and the sr-only word say "loading" for a screen reader.
-// Then the game TAKES OVER FROM IT, under which it stood (`useHold`'s `leaving`): the
-// sentence decodes over its bars, each bar and block giving way the moment the decode's
-// front reaches its word (`Phrase` stamps that front, `--at`, on a silhouette too); the keys
-// light in over their slates as the slates go, cell for cell (`.kb-lit`); the gate, or a day
-// already over, dissolves in over it. Reduced motion: no breath, no dissolve — the game at
-// once.
+// What is still out MOVES, what has answered stands still: the rails breathe while the
+// puzzle is out, the blocks while the round is, the tray while the word list is (the
+// house's 640ms stepped breath). It comes in only after `SKELETON_WAIT_MS` (a quick load
+// never flashes it), through the dither; `aria-busy` on the route's column and the sr-only
+// word say "loading" for a screen reader. Then the game TAKES OVER FROM IT, under which it
+// stood (`useHold`'s `leaving`): the sentence decodes over its bars, each bar and block
+// giving way the moment the decode's front reaches its word (`Phrase` stamps that front,
+// `--at`, on a silhouette too); the keys light in over their slates as the slates go, cell
+// for cell (`.kb-lit`); the gate dissolves in over its slots. A day already over takes the
+// hold away at once (the route): its card comes in through the dither on bare ground.
+// Reduced motion: no breath, no dissolve — the game at once.
 
 // The hold's whole exit: the decode's front crossing the sentence, then the last bar's going.
 export const HOLD_LEAVE_MS = SWEEP_MS + DISSOLVE_MS;
@@ -79,58 +82,69 @@ export function useHold(waiting: boolean): Hold {
   return { mounted: up && !reduced, shown: up && !reduced, leaving: up && !reduced };
 }
 
-// A sentence's SHAPE: what the silhouette lays out.
-interface Shape {
-  key: string;
-  words: string[];
-  puzzleHoles: PuzzleHole[];
-  holes: RuntimeHole[];
+// What the tray will hold once the game lands: the keyboard, or the gate — PLAY alone, or
+// PLAY with LEARN under it while the lesson is not done (`Round`'s own `gateOpen`).
+export type HoldTray = 'keys' | 'gate' | 'gate-learn';
+
+// The published sentences' MEDIAN length per language, in characters (the words and the
+// spaces between them): the length the rails stand for before the day's own is known, so the
+// day's arrival moves the sentence's lines as little as a day can.
+const MEDIAN_CHARS: Record<LangCode, number> = { fr: 144, en: 112 };
+// The word lengths the rails' sentence runs through (the text is never seen: only where the
+// browser wraps it matters, and words of the usual lengths wrap where a sentence does).
+const RHYTHM = [5, 3, 7, 2, 8, 4, 6, 2, 3, 6, 5, 9, 3, 4, 7, 2, 6];
+
+function railText(chars: number): string {
+  const words: string[] = [];
+  let length = -1;
+  for (let i = 0; ; i += 1) {
+    const n = RHYTHM[i % RHYTHM.length];
+    if (length + 1 + n > chars) break;
+    words.push('x'.repeat(n));
+    length += 1 + n;
+  }
+  if (chars - length - 1 > 0) words.push('x'.repeat(chars - length - 1));
+  return words.join(' ');
 }
-
-const word = (n: number) => 'x'.repeat(n);
-const hole = (pos: number, length: number): PuzzleHole => ({
-  pos,
-  secret: { word: 'x', slug: 'x' },
-  start: { word: word(length), slug: word(length) },
-  start_rank: 123,
-});
-
-// A sentence of the usual length and three holes, before the day's own is known.
-const GENERIC_WORDS = [5, 3, 7, 2, 8, 4, 6, 2, 3, 6, 5, 9, 3, 4, 7, 2, 6].map(word);
-const GENERIC_HOLES = [hole(4, 8), hole(9, 6), hole(14, 7)];
-
-function shapeOf(words: string[], puzzleHoles: PuzzleHole[], key: string): Shape {
-  return {
-    key,
-    words,
-    puzzleHoles,
-    holes: puzzleHoles.map((h) => ({
-      pos: h.pos,
-      secret: h.secret.slug,
-      word: h.start.word,
-      rank: h.start_rank,
-      startRank: h.start_rank,
-    })),
-  };
-}
-
-const GENERIC = shapeOf(GENERIC_WORDS, GENERIC_HOLES, 'generic');
 
 function noop() {}
 
 // The picture takes no focus and no tap (React 18 knows no `inert` prop).
 const makeInert = (el: HTMLElement | null) => el?.setAttribute('inert', '');
 
-// One silhouette of a sentence: the board's own layout, the hold's own dress.
-function Silhouette({ shape, leaving }: { shape: Shape; leaving?: boolean }) {
-  const labels = useMemo(() => shape.holes.map(() => '-'), [shape]);
+// The sentence before the puzzle: one rail per line a median sentence fills.
+function Rails({ lang, leaving }: { lang: LangCode; leaving?: boolean }) {
+  const text = useMemo(() => railText(MEDIAN_CHARS[lang]), [lang]);
+  return (
+    <div className={`hold-sentence${leaving ? ' out' : ''}`}>
+      <p className="phrase">
+        <span className="hold-rail">{text}</span>
+      </p>
+    </div>
+  );
+}
+
+// The day's sentence, once the puzzle is in: the board's own layout, the hold's own dress.
+function Silhouette({ puzzle, leaving }: { puzzle: Puzzle; leaving?: boolean }) {
+  const holes = useMemo<RuntimeHole[]>(
+    () =>
+      puzzle.holes.map((h) => ({
+        pos: h.pos,
+        secret: h.secret.slug,
+        word: h.start.word,
+        rank: h.start_rank,
+        startRank: h.start_rank,
+      })),
+    [puzzle],
+  );
+  const labels = useMemo(() => holes.map(() => '-'), [holes]);
   return (
     <div className={`hold-sentence${leaving ? ' out' : ''}`}>
       <Phrase
         silhouette
-        words={shape.words}
-        holes={shape.holes}
-        puzzleHoles={shape.puzzleHoles}
+        words={puzzle.words}
+        holes={holes}
+        puzzleHoles={puzzle.holes}
         hits={[]}
         onHitDone={noop}
         exploreLabels={labels}
@@ -141,16 +155,24 @@ function Silhouette({ shape, leaving }: { shape: Shape; leaving?: boolean }) {
   );
 }
 
+// One sentence the hold draws: the rails (no puzzle yet), or the day's silhouette.
+function Sentence({ lang, puzzle, leaving }: { lang: LangCode; puzzle: Puzzle | null; leaving?: boolean }) {
+  return puzzle ? <Silhouette puzzle={puzzle} leaving={leaving} /> : <Rails lang={lang} leaving={leaving} />;
+}
+
+const sentenceKey = (puzzle: Puzzle | null) => (puzzle ? `${puzzle.lang}:${puzzle.revision}` : 'rails');
+
 export default function GameHold({
   lang,
   puzzle,
   wordsIn,
   roundIn,
   race,
+  tray,
   shown,
   leaving,
 }: {
-  lang: string;
+  lang: LangCode;
   // The day's puzzle once it is in (its words shape the silhouette), else null.
   puzzle: Puzzle | null;
   // The language's word list is in (the keyboard's).
@@ -159,30 +181,27 @@ export default function GameHold({
   roundIn: boolean;
   // Today's sentence keeps the race line's band clear (`.play-race`): so does its hold.
   race: boolean;
+  tray: HoldTray;
   shown: boolean;
   leaving: boolean;
 }) {
-  const shape = useMemo(
-    () => (puzzle ? shapeOf(puzzle.words, puzzle.holes, `${puzzle.lang}:${puzzle.revision}`) : GENERIC),
-    [puzzle],
-  );
-
-  // A shape giving way to the next (the generic one to the day's) goes out through the
-  // cells the next comes in through — only while the hold is on screen.
-  const last = useRef(shape);
-  const [outgoing, setOutgoing] = useState<Shape | null>(null);
+  // A sentence giving way to the next (the rails to the day's silhouette) goes out through
+  // the cells the next comes in through — only while the hold is on screen.
+  const key = sentenceKey(puzzle);
+  const last = useRef<Puzzle | null>(puzzle);
+  const [outgoing, setOutgoing] = useState<{ key: string; puzzle: Puzzle | null } | null>(null);
   useLayoutEffect(() => {
     const was = last.current;
-    last.current = shape;
-    if (was.key === shape.key || !shown) return undefined;
-    setOutgoing(was);
+    last.current = puzzle;
+    if (sentenceKey(was) === key || !shown) return undefined;
+    setOutgoing({ key: sentenceKey(was), puzzle: was });
     const id = window.setTimeout(() => setOutgoing(null), DISSOLVE_MS);
     return () => window.clearTimeout(id);
-  }, [shape, shown]);
+  }, [puzzle, key, shown]);
 
   // What is still out, each its own motion (index.css).
   const reading = `${puzzle ? '' : ' reading-sentence'}${roundIn ? '' : ' reading-round'}${
-    wordsIn ? '' : ' reading-keys'
+    wordsIn ? '' : ' reading-tray'
   }`;
   const lastRow = KEYBOARD_ROWS.length - 1;
 
@@ -193,8 +212,8 @@ export default function GameHold({
         <>
           <div className={`play${race ? ' play-race' : ''}`} aria-hidden="true" ref={makeInert}>
             <div className="phrase-anchor hold-sentences">
-              {outgoing && <Silhouette key={outgoing.key} shape={outgoing} leaving />}
-              <Silhouette key={shape.key} shape={shape} />
+              {outgoing && <Sentence key={outgoing.key} lang={lang} puzzle={outgoing.puzzle} leaving />}
+              <Sentence key={key} lang={lang} puzzle={puzzle} />
             </div>
             {/* The prompt's row, held (its line and its hint's): never drawn. */}
             <div className="prompt-zone">
@@ -206,24 +225,41 @@ export default function GameHold({
               </div>
             </div>
           </div>
-          <div className="tray" aria-hidden="true" ref={makeInert}>
-            <div className="kb-exit">
-              <div className="keyboard hold-keys">
-                {KEYBOARD_ROWS.map((row, r) => {
-                  // The row as the keyboard lays it out: ENTER, the letters, the dash and
-                  // BACKSPACE on the last one. Each slate knows its diagonal (`--d`).
-                  const count = row.length + (r === lastRow ? 3 : 0);
-                  return (
-                    <div className="kb-row" key={r}>
-                      {Array.from({ length: count }, (_, c) => (
-                        <span key={c} className="kb-key kb-slate" style={{ '--d': r + c } as CSSProperties} />
-                      ))}
-                    </div>
-                  );
-                })}
+          {tray === 'keys' ? (
+            <div className="tray" aria-hidden="true" ref={makeInert}>
+              <div className="kb-exit">
+                <div className="keyboard hold-tray">
+                  {KEYBOARD_ROWS.map((row, r) => {
+                    // The row as the keyboard lays it out: ENTER, the letters, the dash and
+                    // BACKSPACE on the last one.
+                    const count = row.length + (r === lastRow ? 3 : 0);
+                    return (
+                      <div className="kb-row" key={r}>
+                        {Array.from({ length: count }, (_, c) => (
+                          <span key={c} className="kb-key kb-slate" />
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            // The gate's stack as `Round` lays it out (`.rules-gate` at the tray's bottom):
+            // PLAY's box with its word, and LEARN's word under it.
+            <div className="tray tray-gate" aria-hidden="true" ref={makeInert}>
+              <div className="rules-gate hold-tray">
+                <span className="mix-btn gate-slot">
+                  <span className="gate-word">{t(lang, 'gatePlay')}</span>
+                </span>
+                {tray === 'gate-learn' && (
+                  <span className="btn btn-secondary gate-slot">
+                    <span className="gate-word">{t(lang, 'gateLearn')}</span>
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

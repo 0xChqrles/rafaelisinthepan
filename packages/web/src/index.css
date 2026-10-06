@@ -1024,20 +1024,20 @@ body:has(.app > .board-screen) {
   padding-top: inherit;
   pointer-events: none;
 }
-/* Its pieces come in through the dither, the sentence and then the keys. */
-.hold-sentence,
-.hold-keys {
+/* Its pieces come in through the dither, the sentence and then the tray. */
+.game-hold .hold-sentence,
+.game-hold .hold-tray {
   -webkit-mask-size: 16px 16px;
   mask-size: 16px 16px;
   animation: board-dissolve 240ms linear backwards;
 }
-.hold-keys {
+.game-hold .hold-tray {
   animation-delay: 50ms; /* SKELETON_STAGGER_MS */
 }
-/* A silhouette giving way to the next (the generic sentence to the day's) goes out through
+/* A sentence giving way to the next (the rails to the day's silhouette) goes out through
    the cells the next comes in through, centred where it stood: the sentence's centre in
    `.play` is the same whatever its height, so neither moves while the column re-centres. */
-.hold-sentence.out {
+.game-hold .hold-sentence.out {
   position: absolute;
   top: 50%;
   left: 0;
@@ -1045,15 +1045,27 @@ body:has(.app > .board-screen) {
   translate: 0 -50%;
   animation: board-dissolve-out 240ms linear forwards;
 }
-/* THE SENTENCE'S SILHOUETTE (`Phrase`'s `silhouette`: the board's own boxes): each word a
-   bar of the slate stipple — the account's face hold, `.link-hold` — and each hole the
-   board skeleton's checker (`.board-skeleton-mark`) in the held chip's exact box. No ink:
-   the letters and the exponent hold their room unseen. */
+/* THE SENTENCE. No ink: the letters and the exponent hold their room unseen. */
 .game-hold .phrase,
 .game-hold .phrase .hole-btn,
 .game-hold .phrase .hole-btn * {
+  color: transparent;
   text-shadow: none;
 }
+/* Before the puzzle, the RAILS: one span of a median sentence's length laid out in the
+   sentence's own type, each line it fills painted as one bar of the slate stipple — the
+   account's face hold, `.link-hold` — so the lines stand where a sentence's would, and say
+   nothing about where its words or holes fall. */
+.game-hold .hold-rail {
+  background: var(--rail);
+  -webkit-mask-image: var(--dz-2);
+  mask-image: var(--dz-2);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+/* Then the day's SILHOUETTE (`Phrase`'s `silhouette`: the board's own boxes): each word a bar
+   of that stipple, each hole the board skeleton's checker (`.board-skeleton-mark`) in the
+   held chip's exact box. */
 .game-hold .phrase .word {
   color: transparent;
   background: var(--rail);
@@ -1073,8 +1085,9 @@ body:has(.app > .board-screen) {
 .game-hold .phrase .hole-rank {
   visibility: hidden;
 }
-/* THE TRAY'S UNLIT KEYS: the keyboard's boxes in the archive's and the code prompt's IRON —
-   the dusk face, the stippled slate cap, the corners notched a cell — and no glyph. */
+/* THE TRAY, what the game will put there. For a player who lands on the prompt, the
+   keyboard's UNLIT KEYS: its boxes in the archive's and the code prompt's IRON — the dusk
+   face, the stippled slate cap, the corners notched a cell — and no glyph. */
 .game-hold .kb-row {
   animation: none;
 }
@@ -1106,13 +1119,35 @@ body:has(.app > .board-screen) {
   left: 0;
   right: 0;
   height: 4px;
-  background: repeating-conic-gradient(var(--rail) 0 25%, transparent 0 50%) 0 0 / 4px 4px;
+  background: var(--rail);
+  -webkit-mask-image: var(--dz-4);
+  mask-image: var(--dz-4);
 }
-/* WHAT IS STILL OUT BREATHES, what has answered stands still: the bars while the puzzle is
-   out (the house's breath, `link-hold-breathe`), the holes' blocks while the round is, and
-   while the word list is, a light washes across the keys' caps on the diagonal — the
-   archive's read wave over its keys. */
-.game-hold.reading-sentence .phrase .word {
+/* For everyone else, the GATE's slots in its own stack (`.rules-gate` at the tray's bottom),
+   drawn as the gate is: PLAY's box as its hairline in the slate, no wash, and each label a
+   bar of the stipple where its word will print — so the gate lands line on line, word on
+   bar. (Stated against the buttons' own rules, which come later in this sheet.) */
+.game-hold .rules-gate > .gate-slot {
+  color: transparent;
+  background: none;
+  opacity: 1;
+  cursor: default;
+  transition: none;
+}
+.game-hold .rules-gate > .mix-btn.gate-slot {
+  border-color: var(--rail);
+}
+.game-hold .gate-word {
+  color: transparent;
+  background: var(--rail);
+  -webkit-mask-image: var(--dz-2);
+  mask-image: var(--dz-2);
+}
+/* WHAT IS STILL OUT BREATHES, what has answered stands still — the house's breath, on ONE
+   640ms stepped beat (`link-hold-breathe`; the checkers' own through `hold-block-breathe`):
+   the rails while the puzzle is out, the holes' blocks while the round is, the tray — the
+   keys' caps, or the gate's slots — while the word list is. */
+.game-hold.reading-sentence .hold-rail {
   animation: link-hold-breathe 640ms steps(1, end) infinite;
 }
 .game-hold.reading-round .phrase .hole .hole-word::before {
@@ -1124,25 +1159,18 @@ body:has(.app > .board-screen) {
   50% { -webkit-mask-image: var(--dz-5); mask-image: var(--dz-5); }
   75% { -webkit-mask-image: var(--dz-4); mask-image: var(--dz-4); }
 }
-.game-hold.reading-keys .kb-slate::before {
-  animation: hold-cap-wash 1280ms steps(1, end) infinite;
-  animation-delay: calc(var(--d, 0) * 40ms);
+.game-hold.reading-tray .gate-word {
+  animation: link-hold-breathe 640ms steps(1, end) infinite;
 }
-@keyframes hold-cap-wash {
-  0% {
-    background: repeating-conic-gradient(var(--muted) 0 25%, transparent 0 50%) 0 0 / 4px 4px;
-  }
-  6.25% {
-    background: repeating-conic-gradient(var(--rail) 0 25%, transparent 0 50%) 0 0 / 4px 4px;
-  }
+.game-hold.reading-tray .kb-slate::before {
+  animation: hold-block-breathe 640ms steps(1, end) infinite;
 }
-/* THE GAME TAKES OVER, over it: the keys light in over their slates, cell for cell (the
-   real keyboard's dissolve in, `.kb-lit`, through exactly the cells these go out through);
-   each bar and block gives way the moment the sentence's decode reaches its word (`--at`,
-   the decode's own front), its cells dropping out in the Bayer order in three hard steps as
-   the word's letters land on it — or the whole sentence at once under a day already over,
-   which decodes nothing. */
-.game-hold.leaving .hold-keys {
+/* THE GAME TAKES OVER, over it: the tray's slates or slots go out through exactly the cells
+   the keys or the gate come in through; each bar and block gives way the moment the
+   sentence's decode reaches its word (`--at`, the decode's own front), its cells dropping
+   out in the Bayer order in three hard steps as the word's letters land on it. (A day
+   already over takes the whole hold away at once: the route stops drawing it.) */
+.game-hold.leaving .hold-tray {
   animation: board-dissolve-out 240ms linear forwards;
 }
 .game-hold.leaving .phrase .word {
@@ -1163,13 +1191,9 @@ body:has(.app > .board-screen) {
   67%,
   100% { -webkit-mask-image: linear-gradient(transparent, transparent); mask-image: linear-gradient(transparent, transparent); }
 }
-.game:has(> .solved-stage) > .game-hold.leaving .hold-sentences {
-  -webkit-mask-size: 16px 16px;
-  mask-size: 16px 16px;
-  animation: board-dissolve-out 240ms linear forwards;
-}
 /* What lands over the hold comes in through the dither in place, never from elsewhere: the
-   keys (rather than rising row by row), the prompt's row, and a day already over. */
+   keys (LIT where their slates stood, in hard steps — never the keyboard's eased rise), the
+   prompt's row, and a day already over. */
 .keyboard.kb-lit {
   -webkit-mask-size: 16px 16px;
   mask-size: 16px 16px;
@@ -1186,10 +1210,42 @@ body:has(.app > .board-screen) {
 }
 /* Reduced motion: the hold stands still and goes at once (`useHold`). */
 @media (prefers-reduced-motion: reduce) {
+  .game-hold .hold-rail,
+  .game-hold .phrase .hole .hole-word::before,
+  .game-hold .kb-slate::before,
+  .game-hold .gate-word {
+    animation: none !important;
+  }
+}
+/* Forced colours paint no ground and keep the masks, so the stipple would leave a blank
+   screen — and they would ink the text the hold keeps unseen. The hold keeps its own colours
+   (its text stays unseen) and draws each bar, block, slate and slot as its OUTLINE in the
+   system's grey instead, still; it goes at once when the game takes over. */
+@media (forced-colors: active) {
+  .game-hold {
+    forced-color-adjust: none;
+  }
+  .game-hold .rules-gate > .mix-btn.gate-slot {
+    border-color: GrayText;
+  }
+  .game-hold .hold-rail,
   .game-hold .phrase .word,
   .game-hold .phrase .hole .hole-word::before,
-  .game-hold .kb-slate::before {
+  .game-hold .gate-word,
+  .game-hold .kb-slate {
+    -webkit-mask-image: none;
+    mask-image: none;
+    background: none;
+    outline: 1px solid GrayText;
+    outline-offset: -1px;
+    clip-path: none;
     animation: none !important;
+  }
+  .game-hold .kb-slate::before {
+    display: none;
+  }
+  .game-hold.leaving {
+    visibility: hidden;
   }
 }
 
