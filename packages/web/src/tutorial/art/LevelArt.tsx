@@ -32,7 +32,8 @@ import { MUTED, RAIL } from './scenes/kit';
 //
 // `solved` is level 1 DONE (scenes/kit.ts `solvedAt`): from the frame it turns true, the scene
 // draws its done state — on the list a done card's from the first frame, on the finale the
-// held words inking in, cobalt, under the player's eyes.
+// held words inking in, cobalt, under the player's eyes (a picture that does not move: inked
+// at once).
 const CELL = 3;
 const FRAME_MS = 90;
 const FADE_PX = 56; // the fade band's height
@@ -59,8 +60,9 @@ type ScenesModule = typeof import('./scenes');
 let scenes: ScenesModule | null = null;
 let scenesLoad: Promise<ScenesModule> | null = null;
 // When the chunk was first asked for: a picture mounting while it is still on its way (an
-// article landing over its own hold) owes only the rest of the skeleton's wait, so the hold
-// never blinks out and back between two mounts of one picture.
+// article landing over its own hold) owes only the rest of the skeleton's wait — or, that wait
+// over, picks the hold up where it stands — so the hold never blinks out and back between two
+// mounts of one picture.
 let askedAt = 0;
 function loadScenes(): Promise<ScenesModule> {
   if (!scenesLoad) {
@@ -72,6 +74,7 @@ function loadScenes(): Promise<ScenesModule> {
       })
       .catch((error) => {
         scenesLoad = null;
+        askedAt = 0;
         throw error;
       });
   }
@@ -110,16 +113,21 @@ export default function LevelArt({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [hold, setHold] = useState<Hold>(() => (scenes ? 'none' : 'wait'));
   // The rest of the skeleton's wait, read once as the picture mounts — and when the hold is
-  // therefore first on screen: a load landing before then never shows it at all.
+  // therefore first on screen: a load landing before then never shows it at all. Negative once
+  // the wait is over: the hold's dissolve and its beat resume where they stand (a negative
+  // animation delay), never from nothing.
   const [holdDelay] = useState(() =>
-    scenes ? 0 : Math.max(0, SKELETON_WAIT_MS - (askedAt ? performance.now() - askedAt : 0)),
+    scenes ? 0 : SKELETON_WAIT_MS - (askedAt ? performance.now() - askedAt : 0),
   );
   const holdShownAt = useRef(0);
   if (holdShownAt.current === 0) holdShownAt.current = performance.now() + holdDelay;
-  // The scene time the level was done at (null: not done), and the picture's own clock and
-  // redraw — the done state can arrive between two frames, or on a picture that does not move.
+  // The scene time the level was done at (null: not done), the time a done state arriving NOW
+  // is dated at, and the redraw — the done state can arrive between two frames, or on a picture
+  // that does not move. A moving picture dates it on its own clock, and the held words ink in
+  // from there; a picture that does not move has no moment for that, so it is done before its
+  // one frame (`-Infinity`, the list's done card) and that frame is drawn again.
   const solvedAt = useRef<number | null>(solved ? -Infinity : null);
-  const clock = useRef<() => number>(() => 0);
+  const doneNow = useRef<() => number>(() => -Infinity);
   const redraw = useRef<() => void>(() => {});
 
   // Laid out and drawn BEFORE the first paint: a picture mounting with its scenes in hand (an
@@ -180,7 +188,7 @@ export default function LevelArt({
         : from === undefined
           ? performance.now() / 1000
           : from + (performance.now() - t0) / 1000;
-    clock.current = now;
+    doneNow.current = moving ? now : () => -Infinity;
     redraw.current = () => draw(now());
 
     const layout = () => {
@@ -267,7 +275,7 @@ export default function LevelArt({
   // The level turning done (or back, on a replay that is not): from this frame on.
   useEffect(() => {
     if (solved === (solvedAt.current !== null)) return;
-    solvedAt.current = solved ? clock.current() : null;
+    solvedAt.current = solved ? doneNow.current() : null;
     redraw.current();
   }, [solved]);
 
