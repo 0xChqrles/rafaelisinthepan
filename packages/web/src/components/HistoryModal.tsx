@@ -22,17 +22,19 @@ import MeterCanvas from './MeterCanvas';
 // size for every word (user-decided 2026-09-01: "avoid reducing the font size, even if it
 // leads to less columns"): the column is as wide as the LONGEST word needs, so a wide
 // screen takes as many such columns as fit and a phone gets one or two; only a word that
-// would not fit the whole width of a phone shrinks, alone. Read-only; the shared
+// would not fit the whole width of a phone shrinks, alone, to the face's next whole size down. Read-only; the shared
 // `ModalHeader` and Escape are the ways out, and it FOLDS with a fade like the wheel.
 
 // Press Start 2P advances exactly 1em per glyph, so a word's width is arithmetic: its
-// glyphs at `WORD_PX`, plus the exponent (up to four digits at 0.55em, one pixel off).
-const WORD_PX = 15;
-const WORD_MIN_PX = 9;
-const RANK_PX = 4 * WORD_PX * 0.55 + 1;
-// The chip's own overhang, both sides (the sentence chip's 0.2em), which a found word's
-// column has to hold.
-const CHIP_PX = WORD_PX * 0.4;
+// glyphs at `WORD_PX`, plus the exponent (up to four digits at the face's 8px, one pixel off).
+// The face is crisp only at whole multiples of 8px, so a word is 16px, or 8 where 16 cannot
+// fit the frame — never a size between; the headline 24, then 16, then 8.
+const WORD_PX = 16;
+const RANK_PX = 4 * 8 + 1;
+const HEAD_PX = [24, 16, 8];
+// The chip's own overhang, both sides (0.25em: whole pixels at 16 and 8), which a found
+// word's column has to hold.
+const CHIP_PX = WORD_PX * 0.5;
 // The scroller's side padding, both sides — what a word must fit inside on a phone.
 const SIDES_PX = 40;
 const FRAME_MAX_PX = 1100;
@@ -64,8 +66,8 @@ export default function HistoryModal({
   // than the frame is the one exception that shrinks.
   const longest = model.stops.reduce((max, stop) => Math.max(max, stop.word.length), 1);
   const column = Math.min(width, longest * WORD_PX + RANK_PX + CHIP_PX);
-  const sizeOf = (word: string) =>
-    Math.max(WORD_MIN_PX, Math.min(WORD_PX, (width - RANK_PX) / Math.max(1, word.length)));
+  const sizeOf = (word: string) => (word.length * WORD_PX + RANK_PX <= width ? WORD_PX : WORD_PX / 2);
+  const headPx = (word: string) => HEAD_PX.find((px) => word.length * px <= width) ?? HEAD_PX[HEAD_PX.length - 1];
 
   return createPortal(
     <dialog
@@ -78,7 +80,11 @@ export default function HistoryModal({
       <div className="hw-scroll pixel-scroll">
         <div className="hw-frame">
           {/* The word itself, in the solved ink — what every word below was found for. */}
-          {model.secret && <p className="hw-head">{model.secret}</p>}
+          {model.secret && (
+            <p className="hw-head" style={{ fontSize: `${headPx(model.secret)}px` }}>
+              {model.secret}
+            </p>
+          )}
           <ul className="hw-grid" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${column}px, 1fr))` }}>
             {model.stops.map((stop) => (
               <li

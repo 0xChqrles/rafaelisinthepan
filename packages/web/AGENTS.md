@@ -2782,9 +2782,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   gesture, so a chipped word reads as yours exactly as it does in the sentence), "like on
   a synonyms website". **ONE type size** (user-decided the
   same day: "avoid reducing the font size, even if it leads to less columns"): the column
-  is as wide as the LONGEST word needs at 15px (`repeat(auto-fill, minmax(<that>px, 1fr))`,
-  set inline), so a wide screen fills its width with as many such columns as fit and a
-  phone gets one or two; only a word wider than the whole frame shrinks, alone. The list FADES into the
+  is as wide as the LONGEST word needs at the face's 16px (`repeat(auto-fill, minmax(<that>px,
+  1fr))`, set inline), so a wide screen fills its width with as many such columns as fit and a
+  phone gets one or two; only a word wider than the whole frame steps down, alone, to 8px —
+  the face's whole sizes only, the exponents at 8 and the headline at 24 (16, 8 where it
+  would not fit). The list FADES into the
   ground as it scrolls up under the header (a 40px top mask on `.hw-scroll`, padded so
   nothing fades at rest — the game header's own fade, which a dialog's scroll never
   lights). The
