@@ -297,6 +297,11 @@ export default function BoardTabs({
     cover();
     if (shown === pin) seat(false);
   }, [drawIn, cover, seat, shown, pin]);
+  // The rest reads the row as it stands WHEN IT COMES, never as it stood when it was armed: a
+  // tap's lift arms it before the tap's click turns the tab, and the settle of that earlier
+  // render would seat the chip back on the tab turned from.
+  const settleNow = useRef(settle);
+  settleNow.current = settle;
 
   // THE ROW MOVES from a scroll's first frame (or a turn's scroll asked for) until `REST_MS`
   // pass with no frame and no finger on it. Anything measured meanwhile — a resize, a turn —
@@ -306,9 +311,9 @@ export default function BoardTabs({
     restTimer.current = window.setTimeout(() => {
       restTimer.current = undefined;
       // (A finger still down: its lift arms the rest again.)
-      if (!touching.current) settle();
+      if (!touching.current) settleNow.current();
     }, REST_MS);
-  }, [settle]);
+  }, []);
   const refresh = useCallback(() => {
     if (restTimer.current !== undefined || touching.current) cover();
     else settle();
