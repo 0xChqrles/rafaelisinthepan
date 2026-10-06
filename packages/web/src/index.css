@@ -6033,6 +6033,14 @@ figure.l1-fig {
   background: var(--rail);
   color: transparent;
 }
+/* The player's OWN face whose read FAILED rests on half its cells, STILL — the Bayer tile's
+   50% level is the 2px checker the masthead's failed slots rest on — never the assigned
+   stranger in its place. */
+.link-hold.failed {
+  background: var(--rail);
+  -webkit-mask-image: var(--dz-4);
+  mask-image: var(--dz-4);
+}
 @keyframes link-hold-breathe {
   0% { -webkit-mask-image: var(--dz-1); mask-image: var(--dz-1); }
   25% { -webkit-mask-image: var(--dz-2); mask-image: var(--dz-2); }

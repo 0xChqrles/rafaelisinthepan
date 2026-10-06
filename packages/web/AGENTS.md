@@ -1678,9 +1678,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     blank" to OTHER players' faces): the assigned pseudonym and mark are a stand-in nobody
     mistakes for themselves on somebody else's row, but drawn on the player's own page they
     named a stranger as them (`GoldenComet68` over Rafa_cuisine's masthead). The header key,
-    `/account`'s masthead and the race line's own mark rest on the still stipple
-    (`StatSlot`, 50%), the masthead's mark held in a tappable thing's corners as the retry
-    (`retryOwnFace`, a re-read with no write behind it); while it is out the box breathes,
+    `/account`'s masthead, the email flow's lead (its mark and name boxes,
+    `.link-hold.failed`, the Bayer tile's same 50% checker) and the race line's own mark
+    rest on the still stipple (`StatSlot`, 50%), the masthead's mark held in a tappable
+    thing's corners as the retry (`retryOwnFace`, a re-read with no write behind it — the
+    lead offers none: that screen is about the address); while it is out the box breathes,
     and it lands the face or rests again. A GONE own account draws its GHOST there
     (`.ghost-mark` with no ink: the slate stipple alone) and hides the masthead's pencil.
   - **`GET /profile` HAS FOUR ANSWERS, AND `api.readProfile` IS WHERE THEY ARE TOLD APART**

@@ -144,11 +144,12 @@ const FACE_TRAVEL_STEPS = 4;
 // A face's box while its read is out: the slate checker the house waits in (the archive's
 // and the podium's ghosts), stippled through the Bayer tiles and breathing in whole steps —
 // never a grey rounded block. A settled face with nothing to draw (a DELETED account) keeps
-// the box and draws nothing in it.
-function FaceHold({ size, waiting }: { size: number; waiting: boolean }) {
+// the box and draws nothing in it; the player's OWN face whose read FAILED rests in it on
+// the still stipple (`failed`), never on the assigned stranger.
+function FaceHold({ size, waiting, failed = false }: { size: number; waiting: boolean; failed?: boolean }) {
   return (
     <span
-      className={`link-hold${waiting ? ' waiting' : ''}`}
+      className={`link-hold${waiting ? ' waiting' : failed ? ' failed' : ''}`}
       style={{ width: size, height: size }}
       aria-hidden="true"
     />
@@ -672,6 +673,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // The lead's placeholder breathes only while the read is OUT: a gone account settles with
   // nothing, and a shimmer over it promises a face that is not coming.
   const savingPending = lead === null && !faceSettled(ownState);
+  // A read that FAILED has no face to lead with: the mark's and the name's boxes rest on the
+  // still stipple (`/account`'s masthead's, without its retry — this screen is about the
+  // address), never on the assigned stranger.
+  const savingFailed = lead === null && ownState === 'failed';
 
   // AN ENDING PER CELL of the two-doors × three-outcomes grid. Until vol. 2 four of the six
   // borrowed one of the other two's sentences.
@@ -865,12 +870,14 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
               // AND THE NAME'S BOX IS HELD TOO (2026-09-03). The mark was reserved and the
               // name was not, so the account's own name landed into no space and pushed the
               // field and CONTINUE down as it arrived — the shift the skeleton rule exists to
-              // prevent. Only while the read is OUT: a settled account with no face has no
-              // name coming, and a placeholder held for one would promise what is not on its
-              // way.
+              // prevent. Only while the read is OUT, or resting where it FAILED: a GONE account
+              // has no name coming, and a placeholder held for one would promise what is not
+              // on its way.
               <>
-                <FaceHold size={LEAD_PX} waiting={savingPending} />
-                {savingPending && <span className="link-name link-hold waiting">&nbsp;</span>}
+                <FaceHold size={LEAD_PX} waiting={savingPending} failed={savingFailed} />
+                {(savingPending || savingFailed) && (
+                  <span className={`link-name link-hold ${savingPending ? 'waiting' : 'failed'}`}>&nbsp;</span>
+                )}
               </>
             )}
           </div>
