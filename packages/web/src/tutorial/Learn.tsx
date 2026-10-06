@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, type CSSProperties } from 'react';
 import LangTitle from '../components/LangTitle';
 import { HeaderLeft } from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
@@ -8,16 +8,17 @@ import { navigate } from '../routing';
 import LevelCard from './LevelCard';
 import { LEVELS, PLAY_LEVEL, isReady } from './levels';
 
-// THE TUTORIAL PAGE (#269; re-dressed 2026-09-29): the levels as CARDS, each wearing its
-// illustration (art/) edge to edge — the page has nothing else to show, so the pictures fill
-// it. Level 1, the game played, is the wide card on top; the four articles follow, two by two
-// where the screen is wide enough, one under the other on a phone. A card reads like a track
-// on the article's page: its number, an article's reading time, its title and what it is
-// about. Level 1, played, is untimed: it is the one with a done state — until it is played its
-// title wears the invitation's highlight box, once done its empty corner takes the done mark.
-// The articles are simply there to read. A level not ready in this language holds a still,
-// grey picture and says SOON — the road ahead, not a target. No gating between cards: any
-// ready level can be opened.
+// THE TUTORIAL PAGE (#269; re-dressed 2026-09-29, set on the bare ground 2026-10-06): the
+// levels as CARDS, each its illustration (art/) on the ground inside a tappable thing's corner
+// brackets — the page has nothing else to show, so the pictures fill it. Level 1, the game
+// played, is the wide card on top; the four articles follow, two by two where the screen is
+// wide enough, one under the other on a phone. A card reads like a track on the article's
+// page: its number, an article's reading time, its title and what it is about. Level 1,
+// played, is untimed: it is the one with a done state, said in the card's own material
+// (`LevelCard`). The articles are simply there to read. A level not ready in this language is
+// printed in halftone and says SOON — the road ahead, not a target, so it wears no brackets.
+// No gating between cards: any ready level can be opened. The cards come in through the
+// board's dither, one after the other.
 export default function Learn({ lang }: { lang: LangCode }) {
   const playedOne = useGameStore((s) => s.lessonsDone.includes(PLAY_LEVEL));
   // The list opens at its top: on a phone the page scrolls as a whole, and coming back from
@@ -30,8 +31,8 @@ export default function Learn({ lang }: { lang: LangCode }) {
       <HeaderLeft>
         <LangTitle lang={lang} title={t(lang, 'learnTitle')} to={pathForLearn} />
       </HeaderLeft>
-      <ol className="learn-grid arrive">
-        {LEVELS.map((level) => {
+      <ol className="learn-grid">
+        {LEVELS.map((level, i) => {
           const ready = isReady(level, lang);
           const state = !ready
             ? 'soon'
@@ -41,7 +42,11 @@ export default function Learn({ lang }: { lang: LangCode }) {
                 ? 'done'
                 : 'next';
           return (
-            <li key={level.level} className={`learn-cell${level.level === PLAY_LEVEL ? ' hero' : ''}`}>
+            <li
+              key={level.level}
+              className={`learn-cell${level.level === PLAY_LEVEL ? ' hero' : ''}`}
+              style={{ '--i': i } as CSSProperties}
+            >
               <button
                 type="button"
                 className={`learn-card ${state}`}

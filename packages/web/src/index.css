@@ -8807,13 +8807,26 @@ figure.l1-fig {
   }
 }
 
-/* ===================== the tutorial's LEVELS (#269; re-dressed 2026-09-29) ===================== */
-/* THE LEVELS AS CARDS: the page has nothing else to show, so each level wears its
-   illustration (tutorial/art) edge to edge and the pictures fill the screen. Wide: a bento —
-   level 1, the game played, tall on the left, the four articles two by two beside it, the
-   whole grid one screen high. Tablet: level 1 across the top, the articles two by two. Phone:
-   one card under the other. The header's band is the page's top edge, the column the
-   header's own width. */
+/* ===================== the tutorial's LEVELS (#269; on the bare ground 2026-10-06) ===================== */
+/* THE LEVELS AS CARDS: the page has nothing else to show, so each level's illustration
+   (tutorial/art) fills its card and the pictures fill the screen. Wide: a bento — level 1, the
+   game played, tall on the left, the four articles two by two beside it, the whole grid one
+   screen high. Tablet: level 1 across the top, the articles two by two. Phone: one card under
+   the other. The header's band is the page's top edge, the column the header's own width.
+
+   A CARD IS A TAPPABLE THING ON THE BARE GROUND: no panel, no stroke, no radius — the picture
+   stands on the ground in 8px of air, inside the resting corner brackets of a thing that takes
+   the finger (the slate, 2px, 16px arms at the card's size), which step to white under a mouse
+   alone (a touch screen's emulated hover would stick). A level not ready here takes no tap and
+   wears no brackets. Its foot is ONE height on every card, so the titles of a row stand on one
+   line whatever their subtitles run to. The cards come in through the board's dither, one
+   after the other. */
+:root {
+  /* LEVEL 1'S CARD, its shape where it is the list's hero: the bento's tall column at a
+     laptop's height, the tablet's band, the phone's near-square — and level 1's finale stands
+     its card at the same shape (`LessonBoard`). A plain number: script reads it. */
+  --learn-hero-ar: 0.55;
+}
 .learn {
   width: min(900px, 100%);
   align-self: stretch;
@@ -8828,7 +8841,7 @@ figure.l1-fig {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 12px;
+  gap: 16px;
   grid-template-columns: 1.3fr 1fr 1fr;
   grid-template-rows: repeat(2, minmax(210px, 1fr));
   height: clamp(460px, calc(100vh - 140px), 660px);
@@ -8836,37 +8849,69 @@ figure.l1-fig {
 .learn-cell {
   min-width: 0;
   min-height: 0;
+  animation: board-dissolve 240ms linear calc(var(--i, 0) * 55ms) backwards;
 }
 .learn-cell.hero {
   grid-row: span 2;
 }
 .learn-card {
+  --corner: var(--rail);
   position: relative;
   width: 100%;
   height: 100%;
+  margin: 0;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: #08090d;
-  overflow: hidden;
+  padding: 16px;
+  border: 0;
+  border-radius: 0;
+  background: none;
   color: var(--fg);
   font-family: var(--ui);
   text-align: left;
   text-shadow: none;
   cursor: pointer;
-  transition: border-color 0.12s linear;
 }
-.learn-card:hover:not(:disabled) {
-  border-color: var(--line-strong);
+/* The corner brackets: drawn on the card's own box, over its picture. */
+.learn-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border: 2px solid var(--corner);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) 0 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 0 100% / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 100% / 16px 16px no-repeat;
+  mask:
+    linear-gradient(#000 0 0) 0 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 0 100% / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 100% / 16px 16px no-repeat;
+  transition: border-color 120ms steps(2, jump-end);
+}
+.learn-card.soon::before {
+  content: none;
+}
+/* Under the keyboard's focus the app's ONE indicator speaks alone (`FocusBrackets`). */
+.learn-card[data-bracketed]::before {
+  border-color: transparent;
+}
+@media (hover: hover) and (pointer: fine) {
+  button.learn-card:not(:disabled):hover {
+    --corner: var(--fg);
+  }
 }
 .learn-card .learn-art {
   position: absolute;
-  inset: 0;
-  transition: filter 0.2s linear;
+  inset: 8px;
+}
+/* The picture's hold, while the scenes are on their way: the stage under the number's row. */
+.learn-card .level-art > .level-art-hold {
+  top: 24px;
 }
 .learn-card-top,
 .learn-card-foot {
@@ -8877,46 +8922,47 @@ figure.l1-fig {
 .learn-card-top {
   justify-content: space-between;
   align-items: center;
-  /* The meta chip's box (its 10.5px line and 4px of padding a side), held with or without
-     one: level 1 is untimed, so its corner stays empty until DONE stamps in — on the list
-     and on the finale's card — and the number beside it must not move then. */
-  min-height: 20px;
+  height: 16px;
+}
+/* The number and the reading time stand on the picture: each cuts its own box out of it, in
+   the ground's ink, 4px round its type — never a chip, only the ground showing through. */
+.learn-card-top > span {
+  padding: 4px;
+  margin: -4px;
+  background: var(--bg);
 }
 .learn-card-foot {
+  flex: none;
   flex-direction: column;
   align-items: flex-start;
   gap: 7px;
+  height: 56px;
 }
-/* The level's number, in the game's own face, as the article's page numbers its tracks. */
+.learn-cell.hero .learn-card-foot,
+.learn-card.level-clear .learn-card-foot {
+  height: 62px;
+}
+/* The level's number, in the game's own figures at a whole size, as the article's page
+   numbers its tracks — the accent on a level to read, white on level 1 until it is played,
+   cobalt once DONE, the quiet grey on a level not ready here. */
 .learn-no {
   font-family: var(--pixel-font);
-  font-size: 12px;
-  color: var(--fg);
-}
-.learn-card.done .learn-no {
+  font-size: 16px;
+  line-height: 1;
   color: var(--accent);
 }
-.learn-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 4px 7px;
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
+.learn-card.next .learn-no {
+  color: var(--fg);
 }
-/* The done mark: a small accent square — the app's marker vocabulary (a square, never a
-   circle; 4px is the radius ceiling). */
-.learn-mark {
-  width: 7px;
-  height: 7px;
-  border-radius: 1px;
-  background: var(--accent);
+.learn-card.soon .learn-no {
+  color: var(--muted);
+}
+/* An article's reading time, or SOON: the pixel face's smallest whole size, quiet. */
+.learn-meta {
+  font-family: var(--pixel-font);
+  font-size: 8px;
+  line-height: 1;
+  color: var(--muted);
 }
 .learn-title {
   font-size: 17px;
@@ -8925,10 +8971,12 @@ figure.l1-fig {
   text-transform: uppercase;
   line-height: 1.2;
 }
-.learn-cell.hero .learn-title {
+.learn-cell.hero .learn-title,
+.level-clear .learn-title {
   font-size: 22px;
 }
-/* Level 1 until it is played: its title wears the invitation's selection box, drawn across it. */
+/* Level 1 until it is played: its title wears the white chip — the held word's, the next
+   thing to do. Drawn STILL. */
 .learn-card.next .learn-title-text {
   background: var(--fg);
   color: var(--bg);
@@ -8936,60 +8984,41 @@ figure.l1-fig {
   margin-left: -0.22em;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-  animation: mark-wipe 320ms steps(8, jump-end) 420ms backwards;
-}
-@keyframes mark-wipe {
-  from {
-    clip-path: inset(0 100% 0 0);
-  }
-  to {
-    clip-path: inset(0 0 0 0);
-  }
 }
 .learn-sub {
   font-size: 10.5px;
   font-weight: 500;
+  line-height: 1.3;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
 }
-/* A level not ready in this language: a still, grey picture — the road, not a door. */
 .learn-card.soon {
   cursor: default;
-}
-.learn-card.soon .learn-art {
-  filter: grayscale(1) brightness(0.5);
 }
 .learn-card.soon .learn-title {
   color: var(--muted);
 }
-/* LEVEL 1, CLEARED (2026-09-30): the run's last sentence dissolves into the level's own
-   card, in the board's plate (`.l1-fig`) — same box, same ground. It lands in
-   its NEXT dress — its title in the selection box — and the box is then wiped off, left to
-   right, uncovering the plain title: the level turns DONE (the number inks, the done mark
-   takes the chip). A picture to look at, not a door: nothing to press. */
+/* LEVEL 1, CLEARED: the run's last sentence dissolves and the level's own card stands in the
+   room between the coach's line and PLAY, at the list hero's shape (`LessonBoard` sizes it), on
+   the bare ground in the FRAME's corners — the result card's: white at 38%, a picture to look
+   at, not a door. It comes in through the dither in its NEXT dress, then turns DONE in its own
+   material: the number inks cobalt, the title's chip is wiped off (a copy of it laid over the
+   plain title, `.level-clear-mark`) and the picture's held words ink in. */
 .learn-card.level-clear {
+  --corner: color-mix(in srgb, var(--fg) 38%, transparent);
+  flex: none;
   cursor: default;
-}
-/* The frame is the board's plate, already there: only what is inside it arrives. */
-.learn-card.level-clear > * {
-  animation: arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
-}
-.learn-card.level-clear:hover {
-  border-color: var(--line);
+  animation: board-dissolve 240ms linear backwards;
 }
 .level-clear .learn-title {
   position: relative;
-  font-size: 22px;
 }
-/* The NEXT box, as a copy laid over the plain title, and wiped off 600ms after the card
-   lands (280 + 600; LessonBoard's CLEAR_FLIP_MS). The clip reaches past the box's own
-   overhang, so its first frame is the whole box. */
 .level-clear-mark {
   position: absolute;
   inset: 0;
   white-space: nowrap;
-  animation: mark-unwipe 320ms steps(8, jump-end) 880ms forwards;
+  animation: mark-unwipe 320ms steps(8, jump-end) forwards;
 }
 .level-clear-mark .learn-title-text {
   background: var(--fg);
@@ -9062,36 +9091,40 @@ figure.l1-fig {
   .learn-cell.hero {
     grid-row: auto;
     grid-column: 1 / -1;
-    aspect-ratio: 2.1 / 1;
+    aspect-ratio: var(--learn-hero-ar);
   }
 }
 @media (max-width: 640px) {
+  :root {
+    --learn-hero-ar: 1.2121;
+  }
   .learn {
     padding: 58px 0 12px;
   }
   .learn-grid {
     grid-template-columns: 1fr;
-    gap: 10px;
+    gap: 14px;
   }
   .learn-cell {
     aspect-ratio: 3 / 2;
   }
-  .learn-cell.hero {
-    aspect-ratio: 4 / 3.3;
-  }
-  .learn-cell.hero .learn-title {
+  .learn-cell.hero .learn-title,
+  .level-clear .learn-title {
     font-size: 20px;
   }
 }
 
-/* ===================== an ARTICLE level (2026-09-29) ===================== */
-/* A LEVEL READ, set like the author's article page (chqrles.me): the SLEEVE — the level's
-   illustration, large — then the track number and the title, the credits line; sections
-   opened by a hairline and a numbered cue; figures in their own
-   panels, numbered through the level. The privacy notice's geometry (a column that scrolls
-   itself, pinned to the top of `.app`, the literal header clearance), a little wider for the
-   figures. The prose is the chrome's mono — the app's two voices hold: a word the game would
-   show is quoted in the pixel face, as the coach quotes its own. */
+/* ===================== an ARTICLE level (2026-09-29; set like the privacy notice 2026-10-06) ===================== */
+/* A LEVEL READ, set like the author's article page (chqrles.me) in the house's dress — the
+   app's one other document, the privacy notice, is its model: the BARE GROUND, no panel, no
+   hairline. The SLEEVE — the level's illustration, large, on the ground — then the track number
+   in the accent's pixel figures and the title, the credits line; sections opened by the
+   podium's stippled floor and a numbered cue in the same figures; figures numbered through the
+   level. The privacy notice's geometry (a column that scrolls itself, pinned to the top of
+   `.app`, the literal header clearance), a little wider for the figures. The prose is the
+   chrome's mono — the app's two voices hold: a word the game would show is quoted in the pixel
+   face, as the coach quotes its own. Its sections and its end come in through the board's
+   dither; its head, which its hold already stood, does not move. */
 .article-screen {
   /* Positioned, so the figures' sr-only text is placed inside this scroller and never grows
      the document (the solved stage's recorded trap). */

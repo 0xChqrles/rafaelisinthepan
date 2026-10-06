@@ -3901,11 +3901,23 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is a page of CARDS** (2026-09-29, "fill the
   screen since we have nothing else to display"): each level wears its animated DITHERED
   illustration (`art/scenes/`, the meter's Bayer 8×8, the app's inks and the heat ramp; ~11
-  fps, only on screen, one still frame under reduced motion) edge to edge, dithered out
-  under its title; number, an article's reading time (level 1: an empty corner held open
-  until its done mark), title, subtitle; level 1,
-  until done, wears the invitation's selection box on its title. Wide: level 1 tall on the left, the
-  articles two by two; tablet: level 1 across the top; phone: one card under the other.
+  fps, only on screen, one still frame under reduced motion), composed to its card's whole
+  stage and dithered out under its title; number, an article's reading time (level 1:
+  none), title, subtitle. Wide: level 1 tall on the left, the articles two by two; tablet:
+  level 1 across the top; phone: one card under the other. **A card stands on the BARE
+  GROUND** (no panel, stroke or radius) **in a tappable thing's resting corner brackets**
+  (the slate, 2px, 16px arms), which step to white under a mouse alone (`(hover: hover) and
+  (pointer: fine)`); the number is the accent's pixel figures at 16px, the reading time and
+  SOON the face's 8px in `--muted`, each cutting its box out of the picture in the ground's
+  ink; the card's foot is ONE height, so a row's titles stand on one line. **Its STATE is said
+  in its own material, never in a word** (`LevelCard`): level 1 until done wears its number
+  WHITE and its title in the white chip (the next thing to do); DONE, its number cobalt, the
+  chip gone, the picture's held words inked in (`LevelArt`'s `solved`); a level not ready
+  here takes no tap and wears no brackets, its number `--muted` and its picture PRINTED IN
+  HALFTONE (`LevelArt`'s `halftone`: its inks given up for the slate — `--muted` for the
+  bright ones — and only the cells under the archive's `HALFTONE` share of the Bayer order
+  printed), never a CSS filter. The cards come in through the board's dither, one after the
+  other.
   **Stage progress (user-decided 2026-09-17):** the coach dialog shows `n/4` beside it,
   driven by the current stage and `stages.length` in `LevelOne`.
   **LEVEL 1 (`tutorial/LevelOne.tsx` over `LessonBoard.tsx`, one screen, the script's
