@@ -798,7 +798,10 @@ These are decided and verified against the code. Treat them as load-bearing.
     .btn-secondary`) and every quiet act (`.link-quiet-btn`, `.link-danger`) is the label
     alone at 0.7 strength, lifted to 1 on hover — nothing drawn that is not the word. The
     account area's small act (`.quiet-btn`: SIGN OUT on a device line, RETRY under a read
-    that failed) is that word in a tappable thing's corner brackets, 40px tall. A hover
+    that failed) is that word in a tappable thing's corner brackets, 40px tall. A quiet act
+    that cannot be pressed for now (`.quiet-btn:disabled`, `.link-quiet-btn:disabled`) steps
+    its ink — word and brackets — one COLOUR step down, to the slate `--rail`, never an
+    opacity. A hover
     answers only where a pointer HOVERS (`(hover: hover) and (pointer: fine)`): on a touch
     screen the emulated hover sticks where the finger lifted, and the next screen's call on
     that spot would open pre-pressed. SHARE is the primary on the result screen.
