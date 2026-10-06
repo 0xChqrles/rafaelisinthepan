@@ -14,8 +14,12 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 // the groups' names add up to — sticky on the row's own axis, the groups passing UNDER it.
 // Where everything fits it is simply the last name. Where names are left out before it, it
 // FOLLOWS THE LEFT-OUT RAIL DIRECTLY — drawn in from the row's end to stand just past the rail
-// (`--pin-shift`, its own ground carried on to the row's end), so the row reads as whole names,
-// the rail, GLOBAL, and the ground after it, never a band of nothing between the rail and GLOBAL.
+// (`--pin-shift`, the ground carried on after it to the row's end), so the row reads as whole
+// names, the rail, GLOBAL, and the ground after it, never a band of nothing between the rail
+// and GLOBAL. Where it stands is decided only for a row AT REST — on layout, on a resize, once
+// a scroll has settled, and on a turn for where the turn's scroll will rest — and it HOLDS
+// there while the row moves: the names pass under it and it never slides with them, taking
+// its new place in one step.
 //
 // ONLY WHOLE NAMES SHOW. Where the groups run past the column the row scrolls on its own axis
 // (snapping to names), and a name the column cuts is not drawn cut, nor thinned to a few stray
@@ -73,12 +77,16 @@ const COVER_MARK_PX = 24;
 // Where the pinned name stands when names are left out before it: the mark's room, and the
 // mark's own 10px of air on its far side too.
 const PIN_AFTER_PX = COVER_MARK_PX + 10;
+// A row is AT REST once this long has passed with no scroll frame and no finger on it (iOS
+// Safari has no `scrollend`; a momentum scroll and a snap send a frame every frame).
+const REST_MS = 150;
 // A name's label (`.board-tab-label`): its padding each side, and a glyph's advance — the
 // mono's at 14px, tracked 0.08em.
 const LABEL_PAD_PX = 7;
 const GLYPH_PX = 14 * (UI_ADVANCE_EM + 0.08);
 
 type Chip = { l: number; r: number };
+type Names = { whole: { l: number; r: number; shown: boolean }[]; cutLeft: boolean; cutRight: boolean; a: number; b: number };
 
 export default function BoardTabs({
   tabs,
@@ -107,6 +115,11 @@ export default function BoardTabs({
   // The tab the chip was last seated on (its key): the chip travels only when that changes.
   const chipOn = useRef<string | null>(null);
   const travel = useRef<Animation | null>(null);
+  // How far the pinned name stands drawn in from the row's end — decided at rest, held while
+  // the row moves — and the rest's own clock: the timer, and a finger still on the row.
+  const shift = useRef(0);
+  const restTimer = useRef<number | undefined>(undefined);
+  const touching = useRef(false);
   const bare = tabs[shown]?.bare === true;
   const pin = tabs.findIndex((tab) => tab.pinned);
 
@@ -180,47 +193,93 @@ export default function BoardTabs({
     // `keys` stands for `tabs`: the tabs' content, not the array a parent re-creates.
   }, [pin, keys]);
 
+  // THE NAMES IN VIEW against an end (in the row's own coordinates), the row taken `ahead` px
+  // on from where it stands: the whole names in row order, whether one is cut at either end,
+  // and the run the covers stop at (`a`..`b`: a cover too narrow for the mark takes the next
+  // whole name too, and so on). The SHOWN name counts as whole wherever it is at least partly
+  // in view (it is scrolled to, and its room capped above), so a cover stops short of it —
+  // but one a swipe has taken wholly out of view is left out like any other.
+  const names = useCallback(
+    (end: number, ahead: number): Names | null => {
+      const row = rowRef.current;
+      const line = lineRef.current;
+      if (!row || !line) return null;
+      // (A row scrolled `ahead` px on carries every name that far left.)
+      const origin = row.getBoundingClientRect().left + ahead;
+      const whole: Names['whole'] = [];
+      let cutLeft = false;
+      let cutRight = false;
+      for (let i = 0; i < tabs.length; i += 1) {
+        const label = line.children[i]?.firstElementChild;
+        if (i === pin || !label) continue;
+        const at = label.getBoundingClientRect();
+        const l = at.left - origin;
+        const r = at.right - origin;
+        if (i === shown && r > 0.5 && l < end - 0.5) whole.push({ l: Math.max(0, l), r: Math.min(end, r), shown: true });
+        else if (l < -0.5) cutLeft = true;
+        else if (r > end + 0.5) cutRight = true;
+        else whole.push({ l, r, shown: false });
+      }
+      let a = 0;
+      let b = whole.length - 1;
+      if (cutLeft) while (a < b && !whole[a].shown && whole[a].l < COVER_MARK_PX) a += 1;
+      if (cutRight) while (b > a && !whole[b].shown && end - whole[b].r < COVER_MARK_PX) b -= 1;
+      return { whole, cutLeft, cutRight, a, b };
+    },
+    // `keys` stands for `tabs`: the tabs' content, not the array a parent re-creates.
+    [pin, keys, shown],
+  );
+
+  // Where the pinned name RESTS undrawn: the row's end less its own width (never its drawn
+  // place, which the shift moves).
+  const restEnd = useCallback(() => {
+    const row = rowRef.current;
+    const pinnedTab = pin >= 0 ? button(pin) : undefined;
+    if (!row) return 0;
+    const width = row.getBoundingClientRect().width;
+    return pinnedTab ? width - pinnedTab.offsetWidth + TAB_PAD_PX : width;
+  }, [pin]);
+
+  // GLOBAL DRAWN IN for the row at rest — where it stands, or `ahead` px on, where a turn's
+  // scroll will rest: `PIN_AFTER_PX` past the last whole name when names are left out before
+  // it, else at the row's end; the ground carried on after it to the row's end. Never on a
+  // scroll frame.
+  const drawIn = useCallback(
+    (ahead: number) => {
+      const root = rootRef.current;
+      const row = rowRef.current;
+      if (!root || !row) return;
+      let next = 0;
+      if (pin >= 0) {
+        const end = restEnd();
+        const seen = names(end, ahead);
+        const last = seen && seen.b >= 0 ? seen.whole[seen.b].r : 0;
+        if (seen?.cutRight) next = Math.max(0, Math.floor(end - last - PIN_AFTER_PX));
+      }
+      // (A name's box lands a pixel either way of its place from one rest to the next: the
+      // pinned name does not step for that.)
+      if (next > 0 && shift.current > 0 && Math.abs(next - shift.current) <= 1) next = shift.current;
+      shift.current = next;
+      root.style.setProperty('--pin-shift', `${next}px`);
+      root.style.setProperty('--pin-ground-x', `${Math.round(row.getBoundingClientRect().width - next)}px`);
+    },
+    [pin, names, restEnd],
+  );
+
   // THE COVERS: at each end, from the row's edge to the nearest WHOLE name (the label's box —
   // the chip's), drawn only when a name is left out there; at the far end the pinned name is
-  // the edge, measured where it RESTS (held at the row's end), and then drawn in to stand
-  // `PIN_AFTER_PX` past the last whole name (`--pin-shift`). A cover too narrow for the mark
-  // takes the next whole name too, and so on. The SHOWN name is never left out (it is scrolled
-  // to, and its room capped above): a cover stops short of it. Written straight onto the
-  // control's style (a scroll frame re-renders nothing).
+  // the edge, where it STANDS (drawn in, and held there while the row moves). Every scroll
+  // frame, written straight onto the control's style (a scroll frame re-renders nothing).
   const cover = useCallback(() => {
     const root = rootRef.current;
-    const row = rowRef.current;
-    const line = lineRef.current;
-    if (!root || !row || !line) return;
-    const pinnedTab = pin >= 0 ? button(pin) : undefined;
-    const box = row.getBoundingClientRect();
-    // (Off the tab's own width, never its drawn place: the shift below moves that.)
-    const end = pinnedTab ? box.width - pinnedTab.offsetWidth + TAB_PAD_PX : box.width;
-    // The whole names in row order (the shown one always whole), and whether one is cut at
-    // either end.
-    const whole: { l: number; r: number; shown: boolean }[] = [];
-    let cutLeft = false;
-    let cutRight = false;
-    for (let i = 0; i < tabs.length; i += 1) {
-      const label = line.children[i]?.firstElementChild;
-      if (i === pin || !label) continue;
-      const at = label.getBoundingClientRect();
-      const l = at.left - box.left;
-      const r = at.right - box.left;
-      if (i === shown) whole.push({ l: Math.max(0, l), r: Math.min(end, r), shown: true });
-      else if (l < -0.5) cutLeft = true;
-      else if (r > end + 0.5) cutRight = true;
-      else whole.push({ l, r, shown: false });
-    }
-    let a = 0;
-    let b = whole.length - 1;
-    if (cutLeft) while (a < b && !whole[a].shown && whole[a].l < COVER_MARK_PX) a += 1;
-    if (cutRight) while (b > a && !whole[b].shown && end - whole[b].r < COVER_MARK_PX) b -= 1;
+    if (!root) return;
+    const end = restEnd() - shift.current;
+    const seen = names(end, 0);
+    if (!seen) return;
+    const { whole, cutLeft, cutRight, a, b } = seen;
     const last = b >= 0 ? whole[b].r : 0;
-    const shift = cutRight && pinnedTab ? Math.max(0, Math.floor(end - last - PIN_AFTER_PX)) : 0;
     const coverL = cutLeft && a <= b ? Math.round(whole[a].l) : 0;
-    const coverR = cutRight ? Math.max(0, Math.round(end - shift - last)) : 0;
-    root.style.setProperty('--pin-shift', `${shift}px`);
+    const coverR = cutRight ? Math.max(0, Math.round(end - last)) : 0;
     root.style.setProperty('--cover-l', `${coverL}px`);
     root.style.setProperty('--cover-r-x', `${Math.round(last)}px`);
     root.style.setProperty('--cover-r', `${coverR}px`);
@@ -229,44 +288,79 @@ export default function BoardTabs({
     // The mark only where the cover holds it whole, clear of the names round it.
     root.toggleAttribute('data-mark-l', coverL >= COVER_MARK_PX);
     root.toggleAttribute('data-mark-r', coverR >= COVER_MARK_PX);
-    // `keys` stands for `tabs`: the tabs' content, not the array a parent re-creates.
-  }, [pin, keys, shown]);
+  }, [names, restEnd]);
 
+  // AT REST: the pinned name drawn in afresh, the covers against it, and a pinned chip
+  // re-seated (it stands on the pinned name).
+  const settle = useCallback(() => {
+    drawIn(0);
+    cover();
+    if (shown === pin) seat(false);
+  }, [drawIn, cover, seat, shown, pin]);
+
+  // THE ROW MOVES from a scroll's first frame (or a turn's scroll asked for) until `REST_MS`
+  // pass with no frame and no finger on it. Anything measured meanwhile — a resize, a turn —
+  // re-covers only; the rest draws the pinned name in.
+  const armRest = useCallback(() => {
+    window.clearTimeout(restTimer.current);
+    restTimer.current = window.setTimeout(() => {
+      restTimer.current = undefined;
+      // (A finger still down: its lift arms the rest again.)
+      if (!touching.current) settle();
+    }, REST_MS);
+  }, [settle]);
+  const refresh = useCallback(() => {
+    if (restTimer.current !== undefined || touching.current) cover();
+    else settle();
+  }, [cover, settle]);
+
+  // A scroll frame moves the covers alone (and a pinned chip, held while the line slides).
   const onScroll = useCallback(() => {
     cover();
-    // A pinned chip moves with the row's scroll (it is held while the line slides).
     if (shown === pin) seat(false);
-  }, [cover, seat, shown, pin]);
+    armRest();
+  }, [cover, seat, armRest, shown, pin]);
+  const onTouch = (down: boolean) => {
+    touching.current = down;
+    if (!down) armRest();
+  };
 
   // (The names' room first: the covers and the chip are measured off it.)
   useLayoutEffect(() => {
     caps();
-    cover();
+    refresh();
     seat(true);
-  }, [seat, caps, cover, keys]);
+  }, [seat, caps, refresh, keys]);
   // A name's width moves when the web font lands, and the row's with the column: re-seat.
   useEffect(() => {
     const row = rowRef.current;
     const line = lineRef.current;
     if (!row || !line || typeof ResizeObserver === 'undefined') return undefined;
-    onScroll();
     const ro = new ResizeObserver(() => {
       caps();
-      onScroll();
+      refresh();
       seat(false);
     });
     ro.observe(row);
     ro.observe(line);
     return () => ro.disconnect();
-  }, [caps, onScroll, seat, keys]);
-  useEffect(() => () => travel.current?.cancel(), []);
+  }, [caps, refresh, seat, keys]);
+  useEffect(
+    () => () => {
+      travel.current?.cancel();
+      window.clearTimeout(restTimer.current);
+    },
+    [],
+  );
 
   // A NAME STAYS WHOLE IN VIEW: the row scrolls (on its own axis only) the least it takes to
   // show it entire, clear of the left-out mark's room at either end (the snap's own padding;
   // before the pinned name, unless nothing but the pinned name follows). The pinned name is
-  // always in view.
+  // always in view. On a TURN (`turned`) the pinned name takes its place for where the row
+  // will rest at once; on a focus alone it waits for the rest — a focus lands between a
+  // tap's press and its click, and a name moved under the finger there takes the click.
   const reveal = useCallback(
-    (index: number) => {
+    (index: number, turned: boolean) => {
       const row = rowRef.current;
       const line = lineRef.current;
       const tab = button(index);
@@ -298,14 +392,22 @@ export default function BoardTabs({
         const next = tabs.map((t, i) => (t.pinned ? Infinity : snap(i))).find((start) => start >= least);
         target = Math.min(own, next ?? own);
       }
-      if (target !== null && Math.abs(target - row.scrollLeft) > 0.5) {
-        row.scrollTo({ left: target, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+      if (target === null) return;
+      const ahead = Math.min(target, row.scrollWidth - row.clientWidth) - row.scrollLeft;
+      if (Math.abs(ahead) <= 0.5) return;
+      if (turned) {
+        drawIn(ahead);
+        cover();
       }
+      row.scrollTo({ left: target, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+      armRest();
     },
     // `keys` stands for `tabs`: the tabs' content, not the array a parent re-creates.
-    [keys, pin],
+    [keys, pin, drawIn, cover, armRest],
   );
-  useEffect(() => reveal(shown), [reveal, shown]);
+  // (A layout effect, after the one above: the pinned name's step and the turn land on the
+  // same frame.)
+  useLayoutEffect(() => reveal(shown, true), [reveal, shown]);
 
   const onKeyDown = (e: KeyboardEvent) => {
     const from = Array.from(lineRef.current?.children ?? []).indexOf(document.activeElement as Element);
@@ -328,7 +430,14 @@ export default function BoardTabs({
 
   return (
     <div ref={rootRef} className="board-tabs">
-      <div ref={rowRef} className="board-tabs-row" onScroll={onScroll}>
+      <div
+        ref={rowRef}
+        className="board-tabs-row"
+        onScroll={onScroll}
+        onTouchStart={() => onTouch(true)}
+        onTouchEnd={() => onTouch(false)}
+        onTouchCancel={() => onTouch(false)}
+      >
         <div ref={lineRef} className="board-tabs-line" role="tablist" aria-orientation="horizontal" onKeyDown={onKeyDown}>
           {tabs.map((tab, i) => (
             <button
@@ -341,7 +450,7 @@ export default function BoardTabs({
               className={`board-tab${i === shown ? ' on' : ''}${tab.pinned ? ' pinned' : ''}${tab.bare ? ' bare' : ''}`}
               aria-selected={i === shown}
               tabIndex={i === shown ? 0 : -1}
-              onFocus={() => reveal(i)}
+              onFocus={() => reveal(i, false)}
               onClick={() => (i === shown ? onOpen?.(i) : onTurn(i))}
             >
               <span className="board-tab-label" data-focus-box>
@@ -362,9 +471,11 @@ export default function BoardTabs({
           )}
         </div>
       </div>
-      {/* The names left out, one cover each end (see the header). */}
+      {/* The names left out, one cover each end, and the ground after the pinned name drawn
+          in (see the header). */}
       <span className="board-tabs-cover l" aria-hidden="true" />
       <span className="board-tabs-cover r" aria-hidden="true" />
+      <span className="board-tabs-ground" aria-hidden="true" />
       {onNew && (
         <button type="button" className="board-tabs-new" aria-label={newLabel} onClick={onNew}>
           <PlusIcon className="ui-icon" aria-hidden />

@@ -3781,9 +3781,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     rail (under 24px, `COVER_MARK_PX`) takes the next whole name too — never the shown one,
     so a cover against the shown name can stand unmarked; where names are left out before
     the pinned name, it FOLLOWS THE RAIL DIRECTLY — drawn in from the row's end
-    (`--pin-shift`) to stand 10px past the rail, its ground carried on to the row's end — so
-    the row never shows a band of nothing between the rail and GLOBAL; turning to a tab scrolls its name
-    whole into view. A name too long for the room the row leaves it once scrolled to (clear
+    (`--pin-shift`) to stand 10px past the rail, the ground carried on after it to the row's
+    end (`.board-tabs-ground`, a cover's ground, no tap of its own) — so the row never shows
+    a band of nothing between the rail and GLOBAL. Where it stands is decided only for a row
+    AT REST — on layout, on a resize, once a scroll has settled (`REST_MS`, 150, with no
+    scroll frame and no finger on the row: iOS Safari has no `scrollend`), and on a TURN for
+    where the turn's scroll will rest, in the turn's own frame — and it HOLDS there while the
+    row moves: the names pass under it and it never slides with them. (Never on a focus
+    alone: a focus lands between a tap's press and its click, and GLOBAL moved under the
+    finger there takes the click.) A shown name a swipe has taken wholly out of view is
+    covered like any other. Turning to a tab scrolls its name whole into view. A name too long for the room the row leaves it once scrolled to (clear
     of the left-out rails and of the pinned name) ENDS IN AN ELLIPSIS there (`--label-max`,
     floored to whole glyphs, written when the row's width or names change, never on a
     scroll), so the SHOWN name is never under a cover. A roving tablist for the keyboard (the arrows, Home, End), each tab
