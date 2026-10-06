@@ -1697,6 +1697,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     DRAIN** (`resumeDepartureDrain`, PR-227 review): the verify answer's `departurePending`
     says the server could not finish, and `AccountEmail.finish` hands it over AFTER the
     adoption has published — so the drain runs as the account the link LANDED on.
+    **The SAVE door reads it on open**: `/account/email` on an account ALREADY SAVED opens
+    on the SAVE+already_bound ending (its address under the face, OK back to `/account`) —
+    straight onto it when the summary is in hand; while it is out the lead stands over the
+    address field's bare floor with the call's box held (`deciding`), and the answer either
+    lets the field in (it takes the focus then) or turns the step into that ending, the field
+    never mounting. No Turnstile challenge is prefetched while it decides.
   - **CONTINUE is a DEPLOY BUTTON**, the sixth (#216's five plus this one), and it has to
     be: an email link needs an account to bind, and "this device is empty" is exactly the
     reconnect case. It wears the shape that rule defines — one tap chaining the bootstrap,

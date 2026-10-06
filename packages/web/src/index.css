@@ -6239,6 +6239,16 @@ figure.l1-fig {
   flex: none;
   margin: 6px 0 0;
 }
+/* The SAVE door still asking whether the account is saved: the field's FLOOR alone (the
+   prompt and its placeholder land on it once there is something to save), and the call's
+   box kept, empty, so nothing moves when either answer comes. */
+.link-field.held {
+  height: var(--field-h);
+  cursor: default;
+}
+.mix-btn.held {
+  visibility: hidden;
+}
 
 /* THE CODE PROMPT: six drawn keys over ONE real input (components/CodeInput.tsx explains
    why one). The input is stretched over the whole row and invisible — never
