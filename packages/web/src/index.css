@@ -5941,6 +5941,28 @@ figure.l1-fig {
   color: var(--muted);
 }
 
+/* A STARTUP THAT DIED before React mounted (`main.tsx`): the quiet failure on the bare
+   ground, alone in the middle of the screen — one muted sentence (the `<noscript>` line's
+   type) over RELOAD, the bracketed quiet word. */
+.startup-failed {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 0 16px;
+}
+.startup-failed-note {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+  text-align: center;
+}
+
 /* The email flow's steps hold ONE thing each — `.app` already centres the column, so a
    step needs no centring of its own, only room to breathe. It sets the GAP alone: this
    class is worn BESIDE `.account-screen`, so a `padding` here would win the cascade and

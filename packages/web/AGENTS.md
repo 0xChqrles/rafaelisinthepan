@@ -4740,7 +4740,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   never the browser's white; and a `<noscript>` line (en + fr, muted, centred) says what to
   do with JavaScript off. Nothing else is drawn before React: a header or lockup drawn in
   `#root` would be taken away on the first render by every screen that does not wear one
-  (the invitation, the signed-out screen, the invite landing, the selection drums).
+  (the invitation, the signed-out screen, the invite landing, the selection drums). A
+  startup that dies before React mounts (`main.tsx`, its deadline included) says so on that
+  ground in the URL's language (`/fr`, `/en`, else `?lang=`, else the browser's — never the
+  stored preference, which sits behind the store that may have failed): one muted sentence
+  (`startupFailed`) over RELOAD as the bracketed quiet word (`.quiet-btn`).
 - **Stale-tab auto-reload (user-decided 2026-08-16):** a deployed release must reach tabs
   already open — an SPA loads its JS once, and the deploy's `prune: false` deliberately
   keeps old chunks alive, so nothing ever forces a stale tab to refresh (and under the
