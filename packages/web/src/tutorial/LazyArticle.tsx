@@ -45,7 +45,8 @@ export default function LazyArticle(props: ArticleProps) {
       {/* THE ARTICLE'S HOLD: its head as the article prints it — the sleeve held as the slate
           stipple, its number, title and credits as the real text they are — then the
           paragraphs' rails at the prose's pitch; breathing while the chunk is out, STILL once
-          it is lost, its note and RETRY where the text would start. */}
+          it is lost, its note and RETRY where the text would start — laid over the first
+          lines' rails, out of their flow, so saying it moves no rail. */}
       <div className={`article-screen article-hold${failed ? ' failed' : ''}`} aria-busy={failed ? undefined : true}>
         {!failed && <span className="sr-only">{t(props.lang, 'loading')}</span>}
         <header className="article-head">
@@ -69,18 +70,20 @@ export default function LazyArticle(props: ArticleProps) {
             </li>
           </ul>
         </header>
-        {failed && (
-          <QuietFailure className="start article-failure" lang={props.lang} line={t(props.lang, 'failedPage')} onRetry={retry} />
-        )}
-        <div className="article-rails" aria-hidden="true">
-          {RAILS.map((lines, p) => (
-            // Static: the index is a stable key.
-            <div key={p} className="article-rail-p">
-              {lines.map((w, i) => (
-                <span key={i} className="article-rail" style={{ '--w': `${w}%` } as CSSProperties} />
-              ))}
-            </div>
-          ))}
+        <div className="article-text-hold">
+          <div className="article-rails" aria-hidden="true">
+            {RAILS.map((lines, p) => (
+              // Static: the index is a stable key.
+              <div key={p} className="article-rail-p">
+                {lines.map((w, i) => (
+                  <span key={i} className="article-rail" style={{ '--w': `${w}%` } as CSSProperties} />
+                ))}
+              </div>
+            ))}
+          </div>
+          {failed && (
+            <QuietFailure className="start article-failure" lang={props.lang} line={t(props.lang, 'failedPage')} onRetry={retry} />
+          )}
         </div>
       </div>
     </>

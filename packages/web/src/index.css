@@ -9480,16 +9480,21 @@ figure.l1-fig {
    prints it — the sleeve's picture held as the slate stipple — then the paragraphs' RAILS, the
    boards' skeleton rail through each line's middle at the prose's own pitch, the last line of
    a paragraph short; in once the skeleton's wait is over. A chunk LOST holds them still and
-   says so where the text would start. */
+   says so where the text would start: OVER the first lines' rails, out of their flow, on the
+   ground — three whole lines of it, so the rails under the note give way to it through its
+   own dither and the rest stand where they stood. */
 .article-hold .article-sleeve > .stat-slot {
   position: absolute;
   inset: 0;
+}
+.article-text-hold {
+  position: relative;
+  margin-top: 30px;
 }
 .article-rails {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  margin-top: 30px;
   animation: board-dissolve 240ms linear 320ms backwards;
   -webkit-mask-size: 16px 16px;
   mask-size: 16px 16px;
@@ -9505,7 +9510,12 @@ figure.l1-fig {
   background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
 }
 .article-hold .article-failure {
-  margin-top: 30px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  min-height: calc(15px * 1.75 * 3);
+  background: var(--bg);
 }
 .article-title-row {
   display: flex;
