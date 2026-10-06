@@ -15,10 +15,10 @@ import {
 } from '../streak/sprites';
 import { HEADROOM, calGeometry, keyAt, type CalGeometry } from './geometry';
 import {
-  infinityCells,
   keysBeats,
   keysScene,
   numberCells,
+  sinkOf,
   type KeyState,
   type KeysModel,
   type KeysSpec,
@@ -29,8 +29,8 @@ import {
 // run's link — while 1% still shows ink; a finished day is charged through and through, lit on
 // top and dark at its foot, the other way up from a high %; a number never breaks into dither
 // or slivers; a day not known yet is never drawn as one not started; a day OVER (ended
-// unsolved) is the bare key with the ∞ in its number's place, muted, never charged, linked or
-// foiled; a day out of the window is a number and no key; runs join only finished days of one
+// unsolved) is its key SUNK — lower, out of the light, its number kept — never charged, linked
+// or foiled; a day out of the window is a number and no key; runs join only finished days of one
 // week, across a week's end only inside the month; and the one shiny thing is today's, only
 // once it is done.
 
@@ -376,40 +376,66 @@ describe('a day over (ended unsolved)', () => {
     month((d) => (d === DAY ? { kind: 'over', day: d } : d === DAY - 1 || d === DAY + 1 ? { kind: 'solved', day: d } : none(d)), today);
   const noneMonth = (today = -1) =>
     month((d) => (d === DAY - 1 || d === DAY + 1 ? { kind: 'solved', day: d } : none(d)), today);
+  // The key's top row: the first row holding a cell of it.
+  const topRow = (read: (i: number, lx: number, ly: number) => number, g: CalGeometry, i: number) => {
+    for (let ly = 0; ly < g.keyH; ly += 1) for (let lx = 0; lx < g.keyW; lx += 1) if (read(i, lx, ly) !== 0) return ly;
+    return g.keyH;
+  };
+  const inkOf = (m: Uint8Array) => m.reduce((n, c) => n + (c === 1 ? 1 : 0), 0);
 
-  it('is, at every size, the bare key with the ∞ muted in its number\'s place — iron, never the ghost', () => {
+  it('is, at every size, its key SUNK a quarter of its height — unlit dusk, its number kept, muted', () => {
     for (const g of SIZES) {
       for (const today of [-1, DAY]) {
         const read = frameAt(g, overMonth(today));
         const bare = frameAt(g, noneMonth(today));
-        const inf = infinityCells(g.keyW, g.keyH);
-        const num = numberCells(g.keyW, g.keyH, DAY);
-        const corners = (lx: number, ly: number) => (lx === 0 || lx === g.keyW - 1) && (ly === 0 || ly === g.keyH - 1);
+        const sink = sinkOf(g.keyH);
+        const num = numberCells(g.keyW, g.keyH, DAY, sink);
         const at = `${g.name}${today === DAY ? ' today' : ''}`;
-        expect(inf.reduce((n, c) => n + (c === 1 ? 1 : 0), 0), at).toBe(19);
+        expect(sink, at).toBe(Math.round(g.keyH / 4));
+        // The number stands whole inside what stands of the key, its ring too.
+        expect(inkOf(num), at).toBe(inkOf(numberCells(g.keyW, g.keyH, DAY)));
+        for (let ly = 0; ly < sink; ly += 1) for (let lx = 0; lx < g.keyW; lx += 1) expect(num[ly * g.keyW + lx], at).toBe(0);
+        let muted = 0;
         for (let ly = 0; ly < g.keyH; ly += 1) {
           for (let lx = 0; lx < g.keyW; lx += 1) {
             const c = ly * g.keyW + lx;
             const v = read(DAY, lx, ly);
             const where = `${at} ${lx},${ly}`;
-            if (corners(lx, ly)) {
+            const cut = (lx === 0 || lx === g.keyW - 1) && (ly === sink || ly === g.keyH - 1);
+            // Over its top, the bare ground; its own corners cut.
+            if (ly < sink || cut) {
               expect(v, where).toBe(0);
               continue;
             }
-            // It always draws: no blank cell inside its shape.
-            expect(v, where).not.toBe(0);
-            // Its muted cells are exactly the ∞'s ink.
-            expect(v === MUTED, where).toBe(inf[c] === 1);
-            // Iron and the ∞ alone: no heat, no cobalt or deep, no cut-out — white only as today's cap.
-            if (today === DAY && ly <= 1) expect(v, where).toBe(WHITE);
-            else expect([RAIL, DUSK, MUTED], where).toContain(v);
-            // The cap and the light band are a bare key's, so it never reads as a ghost; and it
-            // differs from the bare key only where the ∞ or the number (and their rings) stand.
-            if (ly <= 2 || (inf[c] === 0 && num[c] === 0)) expect(v, where).toBe(bare(DAY, lx, ly));
+            // It always draws inside its shape: its number muted, the rest unlit dusk — no cap,
+            // no light band, no heat, no cobalt or deep, no cut-out; white only as today's cap.
+            if (num[c] === 1) {
+              expect(v, where).toBe(MUTED);
+              muted += 1;
+            } else if (today === DAY && ly - sink <= 1) expect(v, where).toBe(WHITE);
+            else expect(v, where).toBe(DUSK);
           }
         }
+        expect(muted, at).toBe(inkOf(num));
+        // Not by hue alone: a SHAPE — its top a quarter lower than a standing key's, which is
+        // lit (a slate cap, or today's white one) where the sunk key leaves the bare ground.
+        expect(topRow(bare, g, DAY), at).toBe(0);
+        expect(topRow(read, g, DAY), at).toBe(sink);
+        expect(bare(DAY, 1, 0), at).toBe(today === DAY ? WHITE : RAIL);
+        // …and never the ghost: a solid face, no slate checker.
+        for (let ly = sink; ly < g.keyH; ly += 1) for (let lx = 0; lx < g.keyW; lx += 1) expect(read(DAY, lx, ly), at).not.toBe(RAIL);
       }
     }
+  });
+
+  it('sinks a row further, held down, like any key', () => {
+    const model = overMonth();
+    const tl = keysBeats({ ...SETTLED, model });
+    const px = new Uint32Array(G.cols * G.rows);
+    keysScene(G, model, tl, 1).draw(px, tl.settled + 100, false, DAY);
+    const read = (i: number, lx: number, ly: number) => cell(px, i, lx, ly);
+    // Its top row lost and the key a row lower: its top two rows under the sunk one's.
+    expect(topRow(read, G, DAY)).toBe(sinkOf(H) + 2);
   });
 
   it('takes no link beside a finished neighbour', () => {
@@ -427,25 +453,29 @@ describe('a day over (ended unsolved)', () => {
     expect(tl.lock[DAY]).toBe(-Infinity);
   });
 
-  it('turning over from a %, DISSOLVES from its number to the ∞ — no charge, no burst', () => {
+  it('turning over from a %, DISSOLVES from its standing key to the sunk one — no charge, no burst', () => {
     const changes = [{ index: DAY, from: 'p40' as const }];
     const tl = keysBeats({ ...SETTLED, model: overMonth(), changes });
     expect(tl.dissolve[DAY]).toBe(0);
     expect(tl.charge[DAY]).toBe(-Infinity);
     expect(tl.bursts).toEqual([]);
 
-    // Halfway through, the cells not yet in show the OLD picture — its number, white over its
-    // old heat (or cut out of it) — and never the ∞; those in show the new one.
+    // Halfway through, the cells not yet in show the OLD picture — its cap and light, its number
+    // white over its old heat (or cut out of it); those in show the new one — over the sunk top,
+    // the bare ground.
     const scene = keysScene(G, overMonth(), tl, 1);
     const px = new Uint32Array(G.cols * G.rows);
     scene.draw(px, DISSOLVE_MS / 2, false, -1);
     const old = frame(month((d) => (d === DAY ? { kind: 'progress', day: d, pct: 40 } : d === DAY - 1 || d === DAY + 1 ? { kind: 'solved', day: d } : none(d)))).px;
     const settled = frame(overMonth()).px;
-    const inf = infinityCells(W, H);
+    const sink = sinkOf(H);
     const num = digitMap(DAY);
+    const sunk = numberCells(W, H, DAY, sink);
     const { x, y } = keyAt(G, DAY);
     let oldNumber = 0;
-    let newInfinity = 0;
+    let oldTop = 0;
+    let goneTop = 0;
+    let newNumber = 0;
     for (let ly = 0; ly < H; ly += 1) {
       for (let lx = 0; lx < W; lx += 1) {
         if (corner(lx, ly)) continue;
@@ -454,29 +484,35 @@ describe('a day over (ended unsolved)', () => {
         // (Clear of the dissolve's level at half its time, whichever of its steps that is.)
         if (th >= 5 / 8) {
           expect(v).toBe(cell(old, DAY, lx, ly));
-          expect(v).not.toBe(MUTED);
+          if (ly < sink) oldTop += 1;
           if (num[ly * W + lx] === 1) {
             expect([WHITE, GROUND]).toContain(v);
             oldNumber += 1;
           }
         } else if (th < 3 / 8) {
           expect(v).toBe(cell(settled, DAY, lx, ly));
-          if (inf[ly * W + lx] === 1) {
+          if (ly < sink) {
+            expect(v).toBe(0);
+            goneTop += 1;
+          }
+          if (sunk[ly * W + lx] === 1) {
             expect(v).toBe(MUTED);
-            newInfinity += 1;
+            newNumber += 1;
           }
         }
       }
     }
     expect(oldNumber).toBeGreaterThan(0);
-    expect(newInfinity).toBeGreaterThan(0);
+    expect(oldTop).toBeGreaterThan(0);
+    expect(goneTop).toBeGreaterThan(0);
+    expect(newNumber).toBeGreaterThan(0);
 
     // Once the dissolve is through, it is the over key at rest.
     scene.draw(px, tl.settled + 100, false, -1);
     expect(px).toEqual(settled);
   });
 
-  it('restarted (a republish) charges up from the ∞: its pre-charge frame shows it, muted', () => {
+  it('restarted (a republish) charges up from the sunk key, RISING back to its height, lit', () => {
     // The second of two ups (the first has no frame before its charge): 10 newly played, 14 from over.
     const model = month((d) => (d === 10 ? { kind: 'progress', day: d, pct: 50 } : d === DAY ? { kind: 'progress', day: d, pct: 60 } : none(d)));
     const changes = [
@@ -488,16 +524,32 @@ describe('a day over (ended unsolved)', () => {
     expect(tl.dissolve[DAY]).toBe(-Infinity);
     const scene = keysScene(G, model, tl, 1);
     const px = new Uint32Array(G.cols * G.rows);
+    const read = (i: number, lx: number, ly: number) => cell(px, i, lx, ly);
+    const sink = sinkOf(H);
+    // Before its charge: the sunk key, its number muted, unlit.
     scene.draw(px, tl.charge[DAY] / 2, false, -1);
-    const inf = infinityCells(W, H);
-    for (let ly = 0; ly < H; ly += 1) {
+    expect(topRow(read, G, DAY)).toBe(sink);
+    const sunk = numberCells(W, H, DAY, sink);
+    for (let ly = sink; ly < H; ly += 1) {
       for (let lx = 0; lx < W; lx += 1) {
-        if (corner(lx, ly)) continue;
-        expect(cell(px, DAY, lx, ly) === MUTED, `${lx},${ly}`).toBe(inf[ly * W + lx] === 1);
+        if ((lx === 0 || lx === W - 1) && (ly === sink || ly === H - 1)) continue;
+        expect(cell(px, DAY, lx, ly), `${lx},${ly}`).toBe(sunk[ly * W + lx] === 1 ? MUTED : DUSK);
       }
     }
-    // Charged, it wears its number: no ∞ left.
+    // From the charge's first frame it is lit again (a slate cap on its top row), and it rises
+    // as its front climbs: never lower than at the frame before.
+    let last = sink;
+    for (let t = tl.charge[DAY]; t < tl.charge[DAY] + 240; t += 32) {
+      scene.draw(px, t, false, -1);
+      const top = topRow(read, G, DAY);
+      expect(top).toBeLessThanOrEqual(last);
+      expect(cell(px, DAY, 2, top)).toBe(RAIL);
+      last = top;
+    }
+    expect(last).toBeLessThan(sink);
+    // Charged, it stands at its full height, its number white: nothing muted left.
     scene.draw(px, tl.settled + 100, false, -1);
+    expect(topRow(read, G, DAY)).toBe(0);
     for (let ly = 0; ly < H; ly += 1) for (let lx = 0; lx < W; lx += 1) expect(cell(px, DAY, lx, ly)).not.toBe(MUTED);
   });
 });

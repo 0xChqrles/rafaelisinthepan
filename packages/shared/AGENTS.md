@@ -43,8 +43,7 @@
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
     src/glyphs.ts             pixel-art glyphs the game DRAWS rather than sets: the #214 `∞`
                               path + view box, shared by the OG card, the web result and a
-                              group board's ended row, and its cells (`INFINITY_MASK`, the
-                              archive's over key); the app's mark, traced for the OG cards;
+                              group board's ended row; the app's mark, traced for the OG cards;
                               the pixel face's ten digits as cells (`DIGIT_MASKS`: the
                               result's count, the card's, the score watermark, the streak
                               celebration)
@@ -272,10 +271,9 @@
   the OG rasterizer runs with `loadSystemFonts: false`, so the headline of a round that ended
   unsolved (given up, or capped) ships as pixel-art PATH DATA — one path, one view box. The
   result's headline (the screen's and the card's) sets it on the count's own grid, a cell per
-  font pixel; inline beside type it sizes from `INFINITY_EM_HEIGHT` in `em`. A surface that
-  draws the ∞ as BLOCKS (the archive's over key) reads `INFINITY_MASK`, derived from the
-  path's own rectangles — never a second drawing. The plain-text share line and the preview
-  page's title use the literal character instead: no font is involved there.
+  font pixel; inline beside type it sizes from `INFINITY_EM_HEIGHT` in `em`. The plain-text
+  share line and the preview page's title use the literal character instead: no font is
+  involved there.
 - **The result's pixel readings are ONE spelling for the screen and the share card**: the
   face's digits as cells (`glyphs.ts` `DIGIT_MASKS`, laid out by `countCells.ts`), the value
   noise (`noise.ts`), the holographic foil (`foil.ts`) and the run's heat with its clearing

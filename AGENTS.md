@@ -436,7 +436,7 @@ The live routes then share:
   `roundEnded` (`shared/src/scores.ts`: `!solved && (gaveUp || raw log ≥ ROUND_GUESS_CAP)`,
   read by the web round, the group board and the #211 month read — the last through its
   facts form `endedUnsolved`, `capped` from a one-entry probe; one rule; the archive draws an
-  over day's key with the `∞`). **`solved` wins** over both. No leaderboard
+  over day's key SUNK, its date kept, never the `∞`). **`solved` wins** over both. No leaderboard
   row, streak, celebration or `solve` event; answer + source shown; shareable, and that share
   is NOT counted in the `share` event (share ÷ solve stays the liked-day signal).
   - **THE CAP**: exactly `ROUND_GUESS_CAP` raw entries, derived, never stored. `round_full`

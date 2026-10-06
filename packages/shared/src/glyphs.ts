@@ -35,20 +35,6 @@ export const INFINITY_GLYPH = {
     'M1 4h2v1h-2z M6 4h2v1h-2z',
 } as const;
 
-// The same ∞ as CELLS (`DigitMask`, a row per glyph pixel), for a surface that draws it as
-// blocks on a raster — the archive's key of a day that ended unsolved. DERIVED from the path's
-// own rectangles, so it is the one drawing above read another way, never a second one.
-export const INFINITY_MASK: DigitMask = (() => {
-  const { width, height, path } = INFINITY_GLYPH;
-  const rows = new Uint8Array(width * height);
-  for (const [, x, y, w, h] of path.matchAll(/M(\d+) (\d+)h(\d+)v(\d+)h-\d+z/g)) {
-    for (let gy = Number(y); gy < Number(y) + Number(h); gy += 1) {
-      for (let gx = Number(x); gx < Number(x) + Number(w); gx += 1) rows[gy * width + gx] = 1;
-    }
-  }
-  return { w: width, rows };
-})();
-
 // How tall the glyph is drawn BESIDE TYPE, as a fraction of the font size it stands in for:
 // Press Start 2P's CAP HEIGHT, MEASURED off the rasterized card (67px of ink at font-size 76),
 // so an inline ∞ (the web's `InfinityGlyph`, sized in `em`) fills exactly the band the digits
