@@ -205,7 +205,10 @@
                               onto the surface that opened it (the board, or the result's seat)
       components/ConfirmScreen.tsx  the app's CONFIRMATION surface (#271): the error screen's
                               shape in the plain voice, the act as the quiet danger control
-                              over CANCEL; the leave's successor picker rides it
+                              over CANCEL; the leave's successor picker rides it (its `choice`)
+      components/SuccessorPick.tsx  that picker: the other members as lines in resting slate
+                              corners, the pick locking on in white, a dithered foot while
+                              more lie below
       screens/Leaderboard.tsx the #190/#271 leaderboard (/<lang>/board): the tab row (the groups,
                               then GLOBAL), a group's TODAY / WEEK / MONTH, the PODIUM over the
                               lines from the 4th, the door into a group's screen, NEW GROUP —
@@ -2659,9 +2662,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     sentence, the act as the DANGER cap, CANCEL as the quiet word. The leave's note follows
     the SUCCESSION RULE (root `AGENTS.md`, Groups) off the list on screen: last member →
     "the group will be deleted"; owner of two → "the other member takes it over"; owner of
-    three or more → a PICKER of the others (the board's lines as radios, the one picked
-    FRAMED, dressed by `readGroup`, in whole rows — `round(down, 40vh, 44px)`, snapping),
-    LEAVE held back until one is picked, sent as `successor`; a stale list's 409
+    three or more → a PICKER of the others UNDER THE NOTE, read after the question it
+    answers (`components/SuccessorPick`, ConfirmScreen's `choice`: the board's lines as
+    radios, each resting in the slate corners of a thing to tap — the period switch's
+    cells', held 4px in from the line so two lines' corners never meet — the one picked
+    locking on in white (`own-lock`), dressed by `readGroup`, in whole rows —
+    `round(down, 40vh, 44px)`, snapping — the lines passing its foot thinning through the
+    dither while more lie below), LEAVE held back until one is picked, sent as `successor`; a stale list's 409
     `successor_required` is no failure: the confirmation stays up, its pick cleared, and
     the list is read again (the candidates dressed again when its members change).
   - **A member already skips the landing onto the board, but never one this tab just

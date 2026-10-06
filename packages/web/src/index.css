@@ -8795,34 +8795,80 @@ figure.l1-fig {
   background: var(--fg);
   color: var(--bg);
 }
-/* WHO TAKES IT OVER: the members as the board's lines, radios — the picked one FRAMED by the
-   corner brackets (the house's selection gesture, the reader's own line's dress), one picked
-   at a time. A line is a <button> here, so the reset is restated. */
+/* WHO TAKES IT OVER, under the question it answers: the members as the board's lines, radios,
+   each RESTING in the slate corners of a thing to tap (the period switch's cells: bare names
+   would float with no affordance), the one picked LOCKING ON in white — its corners reaching
+   in from along the line in hard steps (the reader's own line's gesture) — one picked at a
+   time. A line is a <button> here, so the reset is restated. */
 .confirm-pick {
   width: 100%;
   /* Whole lines, so the last one the room holds is never cut — at rest too (it snaps). */
   max-height: 40vh;
   max-height: round(down, 40vh, 44px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   scroll-snap-type: y mandatory;
-  margin: 4px 0 8px;
+  margin: 10px 0 0;
   text-align: left;
 }
 .confirm-pick .board-row {
+  --bc: var(--rail);
   width: 100%;
   margin: 0;
   border: 0;
-  background-color: transparent;
+  /* The switch cells' corners (6px arms, 2px thick) held 4px in from the line's top and
+     bottom, so two lines' corners never meet into a ladder. */
+  background:
+    linear-gradient(var(--bc), var(--bc)) left 0 top 4px / 6px 2px,
+    linear-gradient(var(--bc), var(--bc)) left 0 top 4px / 2px 6px,
+    linear-gradient(var(--bc), var(--bc)) right 0 top 4px / 6px 2px,
+    linear-gradient(var(--bc), var(--bc)) right 0 top 4px / 2px 6px,
+    linear-gradient(var(--bc), var(--bc)) left 0 bottom 4px / 6px 2px,
+    linear-gradient(var(--bc), var(--bc)) left 0 bottom 4px / 2px 6px,
+    linear-gradient(var(--bc), var(--bc)) right 0 bottom 4px / 6px 2px,
+    linear-gradient(var(--bc), var(--bc)) right 0 bottom 4px / 2px 6px;
+  background-repeat: no-repeat;
+  /* The mark stands clear of the corners' arms. */
+  padding-left: 12px;
   cursor: pointer;
   font: inherit;
   text-align: left;
   color: var(--fg);
 }
-.confirm-pick .board-row:not(.picked):hover .board-name {
-  color: var(--fg);
+.confirm-pick .board-row.picked {
+  --bc: var(--fg);
+  animation: own-lock 240ms steps(4, jump-end) backwards;
+}
+@media (hover: hover) and (pointer: fine) {
+  .confirm-pick .board-row:not(.picked):hover {
+    --bc: var(--muted);
+  }
+  .confirm-pick .board-row:not(.picked):hover .board-name {
+    color: var(--fg);
+  }
+}
+/* Under the keyboard's focus a line's own corners give way to the focus brackets: never a
+   frame nested in a frame. */
+.confirm-pick .board-row[data-bracketed] {
+  --bc: transparent;
 }
 .confirm-pick .board-row:not(.picked) .board-name {
   color: var(--muted);
+}
+/* MORE LINES BELOW (`.more`, SuccessorPick): the lines passing under the list's foot thin out
+   through the dither — the board's held-line edge (`--edge-u`, solid at the foot), a band
+   riding the scroll's foot over the last line in view, taking no room of its own. */
+.confirm-pick.more::after {
+  content: '';
+  position: sticky;
+  bottom: 0;
+  flex: none;
+  height: 6px;
+  margin-top: -6px;
+  background: var(--bg);
+  pointer-events: none;
+  -webkit-mask: var(--edge-u) 0 0 / 16px 6px repeat-x;
+  mask: var(--edge-u) 0 0 / 16px 6px repeat-x;
 }
 @media (max-width: 640px), (max-height: 500px) {
   /* 4x rather than 5x — the standing pixel-art rule allows only WHOLE steps. */

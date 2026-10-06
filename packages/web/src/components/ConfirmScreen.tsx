@@ -17,8 +17,9 @@ import { t } from '../i18n';
 // plain ink (nothing has gone wrong yet), and TWO ways out where the error has one — the
 // act itself, in the QUIET DANGER dress (the account area's rule: destruction never glows,
 // so the lit primary is never the button that removes somebody), and CANCEL, a plain
-// secondary. The caller draws WHO or WHAT is at stake above the title (`children`) and may
-// hold the act back until a choice is made (`disabled` — the owner's successor pick).
+// secondary. The caller draws WHO or WHAT is at stake above the title (`children`), may set
+// a CHOICE under the note — read after the question it answers (`choice`: the owner's
+// successor pick) — and may hold the act back until the choice is made (`disabled`).
 //
 // Follows the modal rules (`useModalDismiss`): opening focuses the dialog, Escape leaves
 // through the `fade-out` beat, a backdrop tap is nothing (there is none).
@@ -30,6 +31,7 @@ export default function ConfirmScreen({
   busy = false,
   disabled = false,
   children,
+  choice,
   onConfirm,
   onClose,
 }: {
@@ -42,9 +44,11 @@ export default function ConfirmScreen({
   action: string;
   // The act is in flight: the button holds its loading state, nothing else answers.
   busy?: boolean;
-  // The act is not answerable yet (a choice above it is still open).
+  // The act is not answerable yet (the choice is still open).
   disabled?: boolean;
   children?: ReactNode;
+  // What the act needs chosen first, under the note.
+  choice?: ReactNode;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -61,6 +65,7 @@ export default function ConfirmScreen({
         {children}
         <p className="error-title">{title}</p>
         <p className="error-note">{note}</p>
+        {choice}
         <button
           type="button"
           className="btn btn-secondary btn-danger"
