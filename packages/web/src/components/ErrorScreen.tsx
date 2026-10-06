@@ -1,5 +1,7 @@
 import useModalDismiss from '../hooks/useModalDismiss';
 import Button from './Button';
+// (For its side effect: the root's Bayer tiles the screen comes and goes through.)
+import './bayerTiles';
 import { t } from '../i18n';
 import botIdle from '../assets/error-bot-idle.png';
 
@@ -45,7 +47,7 @@ import botIdle from '../assets/error-bot-idle.png';
 //
 // Follows the modal rules (`useModalDismiss`) for DISMISSAL: opening focuses the dialog, a
 // backdrop tap is not one (there is no backdrop left to tap), and Escape leaves through the
-// `fade-out` exit beat.
+// `board-dissolve-out` exit beat — in and out through the dither, never an opacity fade.
 export default function ErrorScreen({
   lang,
   title,
@@ -59,7 +61,7 @@ export default function ErrorScreen({
   note: string;
   onClose: () => void;
 }) {
-  const { closing, beginClose, dialogProps } = useModalDismiss('fade-out');
+  const { closing, beginClose, dialogProps } = useModalDismiss('board-dissolve-out');
 
   return (
     <dialog

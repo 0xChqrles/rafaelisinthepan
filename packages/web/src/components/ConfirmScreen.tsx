@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import useModalDismiss from '../hooks/useModalDismiss';
 import LoadingWave from './LoadingWave';
+// (For its side effect: the root's Bayer tiles the screen comes and goes through.)
+import './bayerTiles';
 import { t } from '../i18n';
 
 // The app's CONFIRMATION surface for an act that takes something away from somebody
@@ -21,7 +23,7 @@ import { t } from '../i18n';
 // hold the act back until a choice is made (`disabled` — the owner's successor pick).
 //
 // Follows the modal rules (`useModalDismiss`): opening focuses the dialog, Escape leaves
-// through the `fade-out` beat, a backdrop tap is nothing (there is none).
+// through the `board-dissolve-out` beat, a backdrop tap is nothing (there is none).
 export default function ConfirmScreen({
   lang,
   title,
@@ -48,7 +50,7 @@ export default function ConfirmScreen({
   onConfirm: () => void;
   onClose: () => void;
 }) {
-  const { closing, beginClose, dialogProps } = useModalDismiss('fade-out');
+  const { closing, beginClose, dialogProps } = useModalDismiss('board-dissolve-out');
 
   return (
     <dialog

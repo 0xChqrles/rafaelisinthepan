@@ -56,7 +56,7 @@ export default function GroupScreen({
   onLeave: () => void;
   onClose: () => void;
 }) {
-  const { closing, beginClose, dialogProps } = useModalDismiss('fade-out');
+  const { closing, beginClose, dialogProps } = useModalDismiss('board-dissolve-out');
   const owner = group.createdBy === meId;
 
   const [faces, setFaces] = useState<Record<string, BoardPlayer>>({});

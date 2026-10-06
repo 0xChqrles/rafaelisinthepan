@@ -932,19 +932,17 @@ body:has(.app > .board-screen) {
   background: none;
   border: 0;
   cursor: pointer;
-  animation: race-in 240ms ease-out backwards;
-  transition: opacity 200ms ease-out, visibility 0s linear 0s;
+  /* It comes in through the dither and retires out through it (`board-dissolve` /
+     `-out`), the line hidden once its cells are gone. */
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
 }
 .race-line.retired {
-  opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 200ms ease-out, visibility 0s linear 200ms;
-}
-@keyframes race-in {
-  from {
-    opacity: 0;
-  }
+  transition: visibility 0s linear 240ms;
+  animation: board-dissolve-out 240ms linear forwards;
 }
 .race-entry {
   display: inline-flex;
@@ -1488,8 +1486,8 @@ body:has(.app > .board-screen) {
 }
 
 /* ===================== the puzzle selection ===================== */
-/* The title's selection (the reasoning is in PuzzleSelect): the hole wheel's fade in and
-   out on FLAT `--bg`, every full-screen dialog's ground, under the app's header row with
+/* The title's selection (the reasoning is in PuzzleSelect): in and out through the dither
+   on FLAT `--bg`, every full-screen dialog's ground, under the app's header row with
    a BACK CHEVRON in its left slot; and in the middle of the screen ONE DRUM, the
    LANGUAGE's, a column scrolling through a slot — the row in the slot in the title's chip
    at a size the middle of a screen can carry, the others plain. Every number that has to
@@ -1539,8 +1537,8 @@ body:has(.app > .board-screen) {
 /* A ROW: the option in the title's own dress at a larger size — same face, weight,
    tracking and case as the header chip, the chip's padding in `em` so it scales with the
    type. The one in the slot wears the chip; the chip hands itself from row to row on a
-   short cross-fade as the drum turns. Rows arrive on the wheel's own stagger, counted out
-   from the slot (`--i`). */
+   short cross-fade as the drum turns. Rows come in through the dither (`board-dissolve`),
+   the house's stagger apart counted out from the slot (`--i`). */
 .ps-row {
   display: flex;
   align-items: center;
@@ -1551,8 +1549,9 @@ body:has(.app > .board-screen) {
   font: inherit;
   color: var(--fg);
   cursor: pointer;
-  animation: fade-in 120ms ease-out both;
-  animation-delay: calc(var(--i, 0) * 40ms);
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear calc(var(--i, 0) * var(--dz-stagger)) backwards;
 }
 .ps-chip {
   display: inline-block;
@@ -3699,14 +3698,15 @@ body:has(.app > .board-screen) {
   }
 }
 /* LISTEN (#270): a music day's one affordance — an ordinary link to the track's page, a
-   new tab, no embed. The credit's own face, in the action ink, underlined the pixel way. */
-.solved-text.in,
-.solved-listen.in {
+   new tab, no embed. The credit's own face, in the action ink, underlined the pixel way. It
+   holds its box hidden until the sentence's beat, then comes in through the dither. */
+.solved-text.in {
   opacity: 1;
 }
 .solved-listen {
-  opacity: 0;
-  transition: opacity 0.3s ease-out;
+  visibility: hidden;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
   display: inline-block;
   margin-top: clamp(14px, 2.6vh, 22px);
   font-family: var(--pixel-font);
@@ -3717,6 +3717,10 @@ body:has(.app > .board-screen) {
   text-decoration: none;
   padding-bottom: 3px;
   border-bottom: 2px solid currentColor;
+}
+.solved-listen.in {
+  visibility: visible;
+  animation: board-dissolve 240ms linear backwards;
 }
 .solved-listen:hover {
   filter: brightness(1.25);
@@ -3786,10 +3790,13 @@ body:has(.app > .board-screen) {
    must kill the transitions the rehydrated path never starts (a half-popped word killed
    mid-animation is otherwise stranded at full size). */
 .solved-stage.settled,
-.solved-stage.settled .solved-text,
-.solved-stage.settled .solved-listen {
+.solved-stage.settled .solved-text {
   opacity: 1;
   transition: none;
+}
+.solved-stage.settled .solved-listen {
+  visibility: visible;
+  animation: none;
 }
 .solved-stage.settled .solved-secret {
   opacity: 1;
@@ -3921,17 +3928,19 @@ body:has(.app > .board-screen) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: fade-in 100ms ease-out both;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
 }
 .hw-dialog[open].closing {
-  animation: fade-out 100ms ease-in both;
+  animation: board-dissolve-out 240ms linear forwards;
   pointer-events: none;
 }
 .hw-dialog::backdrop {
   background: transparent;
 }
-/* The app's two plain fades: dialogs, the error screen and the wheel's rows enter and leave
-   on these. */
+/* The app's two plain fades: the hole wheel (its dim, its rows) enters and leaves on these.
+   Every other overlay comes and goes through the dither (`board-dissolve`). */
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -4092,15 +4101,22 @@ body:has(.app > .board-screen) {
     background-color: transparent;
   }
 }
+/* The selection's shell (the language drum, a group's own screen, naming a group) is a flat
+   full screen: in and out through the dither, never the wheel's fade. */
+.wheel-dialog.puzzle-select[open] {
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
+}
 .wheel-dialog.puzzle-select[open].closing {
-  animation: fade-out 100ms ease-in both;
+  animation: board-dissolve-out 240ms linear forwards;
 }
 /* THE DRUM: one column under the header, on the word's left edge, whose scroll position
    `HistoryWheel` writes itself — a ratchet with momentum, hopping row by row (see the
    component; native snap with momentum and a one-row-per-gesture stepper were each tried
    and retired the same day). No native scrolling at all (`overflow: hidden`,
-   `touch-action: none`), so no scrollbar; its two ends FADE, so a word entering from
-   above or below arrives out of the dark rather than cut by an edge. */
+   `touch-action: none`), so no scrollbar; its two ends THIN through the dither, so a word
+   entering from above or below arrives out of the dark rather than cut by an edge. */
 .wheel-scroll {
   position: absolute;
   bottom: 0;
@@ -8737,12 +8753,20 @@ figure.l1-fig {
   width: 100%;
   margin-top: 12px;
 }
+/* In and out through the dither, never an opacity fade: the screen's cells light in the
+   Bayer order over what it covers (`board-dissolve`), and leave through the cells it did
+   not take (`board-dissolve-out`, the exit `useModalDismiss` waits on). */
 .error-screen[open] {
-  animation: fade-in 160ms ease-out;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
 }
 .error-screen[open].closing {
-  animation: fade-out 140ms ease-in forwards;
+  animation: board-dissolve-out 240ms linear forwards;
   pointer-events: none;
+}
+.error-screen::backdrop {
+  background: transparent;
 }
 
 /* THE CONFIRMATION (#271, user-decided 2026-09-14): the error screen's shape and beats,

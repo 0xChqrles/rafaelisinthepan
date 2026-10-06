@@ -17,6 +17,8 @@
 import type { CSSProperties } from 'react';
 import { anonName, defaultAvatar, progressHeatColor } from '@whippin/shared';
 import Avatar from './Avatar';
+// (For its side effect: the root's Bayer tiles the line comes and goes through.)
+import './bayerTiles';
 import InfinityGlyph from './InfinityGlyph';
 import SolvedIcon from '../assets/icons/check.svg?react';
 import { shownFace, useOwnFace } from './AccountFace';

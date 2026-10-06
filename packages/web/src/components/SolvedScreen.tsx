@@ -8,6 +8,8 @@ import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import { COUNT_END_MS, COUNT_RUN_MS } from './countRun';
 import useShare from '../hooks/useShare';
 import Button from './Button';
+// (For its side effect: the root's Bayer tiles the page draws through.)
+import './bayerTiles';
 import ResultBoards, { type ResultBoardsData } from './ResultBoards';
 import { useDeviceIdentity } from '../identity';
 import { ariaHoleHistory, t } from '../i18n';

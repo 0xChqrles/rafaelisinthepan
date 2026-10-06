@@ -4,6 +4,8 @@ import { createPortal } from 'react-dom';
 import useDrum from '../hooks/useDrum';
 import useModalDismiss from '../hooks/useModalDismiss';
 import ModalHeader from './ModalHeader';
+// (For its side effect: the root's Bayer tiles — the screen's arrival, the drum's ends.)
+import './bayerTiles';
 import { t } from '../i18n';
 import { LANGS, type LangCode } from '../langs';
 
@@ -23,7 +25,7 @@ import { LANGS, type LangCode } from '../langs';
 // the moment it opens the caller hears what the slot holds (or nothing, when it did not
 // move), so the new screen — its loading state included — is what stands under the veil
 // while it lifts. Answering on the dialog's `close` instead (the hole wheel's "pick lands on
-// the fold", kept here for one pass) showed the OLD screen for the length of the fade, then a
+// the fold", kept here for one pass) showed the OLD screen for the length of the exit, then a
 // beat of loading, then the new one — "a sensation of rapid blinking between multiple
 // screens" (user-reported 2026-09-02). The hole wheel keeps its rule for its own reason (a
 // pick reflows the sentence the wheel stands on); here the screen under the veil is exactly
@@ -67,7 +69,7 @@ export default function PuzzleSelect({
 }) {
   // FIRST hook, per the contract: a closed <dialog> is `display: none`, and the row height
   // is measured below.
-  const { closing, beginClose, dialogProps } = useModalDismiss('fade-out');
+  const { closing, beginClose, dialogProps } = useModalDismiss('board-dissolve-out');
 
   // A row is as tall as the chip it holds — measured once the dialog is open, off a chip
   // in the tree, so the CSS owns the type and the drum follows it.
