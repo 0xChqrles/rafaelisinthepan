@@ -9596,7 +9596,7 @@ figure.l1-fig {
 /* WHO TAKES IT OVER, under the question it answers: the members as the board's lines, radios,
    each RESTING in the slate corners of a thing to tap (the period switch's cells: bare names
    would float with no affordance), the one picked LOCKING ON in white — its corners reaching
-   in from along the line in hard steps (the reader's own line's gesture) — one picked at a
+   in from along the line in hard steps — one picked at a
    time. A line is a <button> here, so the reset is restated. */
 .confirm-pick {
   width: 100%;
@@ -9637,7 +9637,7 @@ figure.l1-fig {
   --bc: var(--fg);
   animation: pick-lock 240ms steps(4, jump-end) backwards;
 }
-/* The own line's lock-on, measured for these 6px arms: each step a whole pixel (22 → 6 by 4,
+/* The pick's lock-on, measured for these 6px arms: each step a whole pixel (22 → 6 by 4,
    14 → 6 by 2). */
 @keyframes pick-lock {
   from {

@@ -391,8 +391,6 @@
                               the picks, the ghost a REVEAL submits, BACK's un-pick
       components/RevealTray.tsx  a picked mask's tray, in the keyboard's place: the price,
                               REVEAL, BACK
-      components/KeyboardHold.tsx  the keyboard's HOLD: every key's slot in the slate stipple,
-                              on the keyboard's own rows, while its keys cannot be pressed yet
       components/HistoryWheel.tsx  an OPEN hole's tap: a picker drum (`useDrum`) through the
                               word's own place — the word the wheel folds on is the sentence's
       components/HistoryModal.tsx  a COMPLETED hole's tap: its words as a plain grid, full
@@ -707,7 +705,8 @@ These are decided and verified against the code. Treat them as load-bearing.
   dress) and their tries muted; a FINISHED member wears the pixel check
   (`assets/icons/check.svg`) and their score in the solve cobalt; one whose round ended
   unsolved wears `∞`. MY entry is my mark (framed in the accent; while my face is read, the
-  header key's own hold in that frame, `FaceHold`) and my LIVE % —
+  header key's own hold in that frame, `FaceHold`, and the still stipple once that read has
+  failed) and my LIVE % —
   `computeProgress` over the board I SEE, so it moves when a hit lands — **the one place the
   play screen prints the player's own percentage.** The order is the boards' own (finished
   by fewest tries, then `orderPlaying`, my entry taken from the screen, never my server
@@ -2138,8 +2137,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - the GAME (`GameHold` still): ONE line for the puzzle, the word list and the round —
     `failedGame` on today's, `failedGamePast` on another day — laid over the prompt's row,
     left-aligned (`.quiet-failure.start`); its RETRY asks each of the three that failed;
-  - the LESSON, its word list lost: the tray's hold still (the stage's button slot, or
-    `KeyboardHold`), `failedKeyboard` on the prompt's row;
+  - the LESSON, its word list lost: the keyboard's hold still (`KeyboardHold`),
+    `failedKeyboard` on the prompt's row;
   - a lost LESSON or ARTICLE chunk (the page's own hold, still): `failedPage` — on the
     lesson's prompt row, over the article's first lines' rails. Level 1 on the first visit
     (the onboarding question open) keeps the invitation's SKIP beside RETRY; nobody else
@@ -2152,9 +2151,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - the ACCOUNT AREA (the profile area's dress, above).
   A lost CODE CHUNK's RETRY RELOADS the page (`lazyChunk`): a document keeps a module it
   failed to fetch failed, so only a new one can fetch it again. A lesson begun from the
-  invitation keeps its way back across that reload (`tutorial/lessonReturn.ts`). `LoadError`
-  is the group invite landing's alone; `.load-error` / `.status.error` serve it and
-  `NoPuzzle`.
+  invitation keeps its way back across that reload (`tutorial/lessonReturn.ts`). The group
+  invite landing says its own failed read the same way, on its own hold (its bullet).
 - **EVERY PAGE CAN CHANGE LANGUAGE (user-decided 2026-09-03).** The game routes always
   could — `PuzzleTitle`'s selection is the language — and the ACCOUNT
   AREA could not: `/account` carried a plain name and its steps carried a back control, so a
@@ -2360,11 +2358,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     never with bars and slates showing through it. Every bar, block and slate stands on the
     pixel of the word, chip and key that replaces it, a returning player's round included.
     The slates' dress is stated as `.kb-key.kb-slate` so it wins over the live key's, and
-    the hold's gate slots keep the hold's own beat (the game gate's dither is
-    `.rules-gate:not(.hold-tray)`). Reduced
+    the hold's gate slots (`.hold-tray`) keep the hold's own beat while the real gate's
+    blocks come in through `.dissolve-in`. Reduced
     motion: still, and gone at once. Forced colours: each bar, block, slate and slot drawn
-    as its `GrayText` outline (masks and stipple would leave a blank screen). No read the
-    game route waits on shows a `LoadingWave`.
+    as its `GrayText` outline (masks and stipple would leave a blank screen).
   - **The animated hole swap survived the board becoming a REPLAY.** The play log is
     authoritative the instant a guess lands, so the visible board replays it MINUS the
     guesses still in the air (`deferred`), and ONE timer per guess releases it at its
@@ -2744,7 +2741,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   history. A NON-CAP 4xx is a VERDICT and continues into the game silently.
   **THE LANDING IS THE CARD, BROUGHT IN**: what the `/g/` link unfurled into, continued on
   the screen it opens onto. The frame — the four corners on a phone (the device frame's on
-  desktop) and the WHIPPIN AI lockup, the signed-out screen's furniture (`.invite-frame`) —
+  desktop) and the WHIPPIN AI lockup, the signed-out screen's furniture (`ScreenFrame`) —
   and in the middle `components/GroupOrbit`:
   the group's NAME in `.link-name`'s white chip, case kept, one line (its size stepped down a
   whole pixel at a time where a long one would touch a mark, its box computed for the size
@@ -2786,8 +2783,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   read has taken `SKELETON_WAIT_MS` (the marks' places hang on how many there are, so no hold
   stands where a mark may not); **a READ that FAILED** is no verdict about the group: the
   chip's hold stands STILL at half its cells, one muted line (`inviteFailed` — never
-  `failedJoin`: nothing was joined) and RETRY as `.quiet-btn`. What lands arrives through the board's dither; no
-  `LoadError`, no `.arrive`, no `LoadingWave` on this screen. Contract-tested
+  `failedJoin`: nothing was joined) and RETRY as `.quiet-btn`. What lands arrives through
+  the board's dither. Contract-tested
   (`GroupInvite.test.ts`: the join's verdicts, `landingOf`, `orbitPlacesFor`).
 
 - **Leaderboard screen (#190; drawn over GROUPS since #271; its design user-decided
@@ -3058,8 +3055,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     to `LINE_PX`, one line at the least, the scroll snapping to a line's start, its last line
     shown thinning through the drum's three dither steps while more wait below, so a list at
     rest says there is more — `useMoreBelow`: a veil of the ground at the list's foot, and
-    the owner's ✕ and your own framed line stand whole above it, since a control or a frame
-    drawn thinned reads as another glyph or as disabled; a screen too
+    the owner's ✕ stands whole above it, since a control drawn thinned reads as another
+    glyph or as disabled; a screen too
     short for that scrolls whole), so INVITE as the primary cap and LEAVE as the quiet
     danger word stand at the screen's foot whatever the group's size —
     there is no MANAGE toggle, the screen is the management. **NAMING A GROUP is THE GAME'S
@@ -3094,7 +3091,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     answers (`components/SuccessorPick`, ConfirmScreen's `choice`: the board's lines as
     radios, each resting in the slate corners of a thing to tap — the period switch's
     cells', held 4px in from the line so two lines' corners never meet — the one picked
-    locking on in white (`pick-lock`, the own line's gesture on the picker's 6px arms),
+    locking on in white (`pick-lock`: its corners reaching in along the line in whole-pixel
+    steps on the picker's 6px arms),
     dressed by `readGroup`, in whole rows — `round(down, 40vh, 44px)`, snapping; every row
     is a control, so none is thinned at rest: while more wait below its foot is the short
     6px edge, on the last row's bare margin, the picked row's frame standing above it),
@@ -3980,12 +3978,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   stops but map distance logarithmically through `rankHeatColor(rank)`, whose absolute
   `HIT_HEAT_CAP = 100` is internal; progress callers never use the rank curve, and rank
   callers never choose a denominator. Both mappings live in `shared/src/heat.ts`.
-  The % ITSELF is no longer displayed anywhere during the round — the
-  header names the day instead (see the app-header bullet) — so this bar, the emoji row and
-  the archive/chooser badges are the only things it now speaks through. It is still computed
-  every guess. *(It is no longer CACHED anywhere: #214 dropped the persisted round, so it
-  is derived from the play log like everything else, and the archive/chooser read the
-  SERVER's summary instead — #211.)* **The SHARE CARD draws the SAME
+  During the round the % ITSELF is printed only on the RACE LINE (the player's own, beside
+  their groups' players); otherwise this bar, the emoji row and the archive's keys are what it
+  speaks through. It is computed every guess, and CACHED nowhere: it is derived from the
+  play log like everything else, and the archive reads the SERVER's summary (#211). **The SHARE CARD draws the SAME
   ruler (decided 2026-07-25, superseding the bucketed-squares card):** the share token
   was bumped to **v2** — and to **v6** by #214, which added the CAPPED flag (a round that ended unsolved: given up, or capped) and skipped the retired Word mode's ids 3–5 — carrying the RAW per-try
   trajectory plus the solve moments instead of the `bucketMeans` squares, so `renderCardSvg` renders the on-screen ruler
@@ -4536,7 +4532,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     found it! You are ready for the real
     game." → PLAY. `STUCK` has no `meter` row
     (the stage is its own script). Not taught: the exact rate.
-  - **THE ROOM (2026-10-06):** the BYLINE stands on the podium's stippled floor — the coach,
+  - **THE ROOM:** the BYLINE stands on the podium's stippled floor — the coach,
     `01` in the accent's pixel figures at 16px, the level's line, the stage counter `n/4` in
     the face's 8px `--muted` (cobalt once the stage's word is found); the BOARD is the stage on
     the bare ground — its box kept (`isolation: isolate`, so the try count stays clipped to
@@ -4547,18 +4543,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
     coming in through the board's dither with its page typing itself in; then it turns DONE
     in its own material — `01` inks cobalt, the title's chip is wiped off, the picture's held
     words ink into the found cobalt and its page stands. PLAY is live throughout.
-  - **THE WAITS (2026-10-06):** the lazy wrappers (`LazyLevelOne`, `LazyArticle`) publish the
-    header's `LangTitle` themselves, so the header never blanks while a chunk loads, and
-    each stands its screen's own layout as the HOLD — the slate stipple coming in after
+  - **THE WAITS:** the lazy wrappers (`LazyLevelOne`, `LazyArticle`) publish the header's
+    `LangTitle` themselves, loaded or not, so the header never blanks while a chunk loads,
+    and each stands its screen's own layout as the HOLD — the slate stipple coming in after
     `SKELETON_WAIT_MS`, then breathing (`.stat-slot`): level 1's byline with `01` and its line
-    as real text beside the coach's box, the board's word and CONTINUE's 52px slot; an
+    as real text beside the coach's box, the board's word, and CONTINUE's slot drawn as the
+    game's hold draws PLAY's (`.gate-slot`: its slate hairline, its word a stipple bar); an
     article's real head (`ArticleHead`: its sleeve, its number, title and credits) over
-    paragraph rails. **The word list is waited for where it is needed**: the reveal needs
-    none, so CONTINUE stands from the first frame; pressed before the list has landed, the
-    keyboard's footprint rises as its HOLD (`components/KeyboardHold`: every key's slot in
-    the stipple, on the keyboard's own rows and sizes), and the keys come in over it through
-    the board's dither once the list lands. The list's pictures HOLD their stage the same way
-    while the scenes chunk loads (`LevelArt`), the picture dissolving in over it.
+    paragraph rails. A chunk LOST holds it still (the failed-read bullet). **The word list is
+    waited for where it is needed**: the reveal needs none, so CONTINUE stands from the first
+    frame; pressed before the list has landed, the keyboard's footprint rises as its HOLD
+    (`components/KeyboardHold`, the game hold's unlit iron keys, breathing at once since it
+    answers that tap), and the keys come in over it through the board's dither once the list
+    lands while it goes out through the cells they take (`.from-hold`, `.kb-hold-out`). A
+    list LOST stands the hold still, `failedKeyboard` and RETRY in the prompt's row. The
+    list's pictures HOLD their stage the same way while the scenes chunk loads (`LevelArt`),
+    the picture dissolving in over it.
   **A WHEEL ROW'S HIT AREA IS ITS WORD** (`.wheel-row` `width: fit-content`, user-reported
   2026-09-16 from the lesson: "when we click next to a word it scrolls to it instead of
   leaving the wheel"): the room beside a word is the scroller's own, and a click there folds
@@ -4638,12 +4638,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   settles the flag), SKIP settles it there. Its preload warms the level-1 chunk
   (`LazyLevelOne`, on `hooks/lazyChunk` like `LazyStreakDialog`; a lost chunk holds the
   lesson's first screen still and says so, with RETRY and — the question still open — the
-  invitation's SKIP beside it, completing nothing). **While the lesson's word list is out**
-  the tray holds what will land there (`LessonBoard`'s `trayHold`): the stage's button as
-  its slot (the reveal's CONTINUE; a solved stage's CONTINUE or PLAY), nothing on the meter
-  stage before its tap, else `KeyboardHold` — in after `SKELETON_WAIT_MS`, through the
-  dither, and at once where the chunk's hold already stood CONTINUE's slot (`held`), so the
-  slot never blinks out between the two holds. Analytics
+  invitation's SKIP beside it, completing nothing); the lesson's waits are level 1's own
+  bullet's (THE WAITS). Analytics
   keep the three events (`start` / `skip` / `finish`). The boards are pruned #154 artifacts
   (`scripts/<lang>.<word>.json`, `prune-word-map.mjs --top 150`; the exact commands in each
   script's header), never published or served; a lesson board touches no `rounds`, no outbox,
