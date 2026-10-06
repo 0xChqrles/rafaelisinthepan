@@ -132,6 +132,12 @@
   /* The on-screen keyboard's key geometry. */
   --kb-gap: 6px;
   --kb-key-max: 46px;
+
+  /* THE COLUMN: the header row's width (`.topbar-inner`), and the play column under it —
+     the game and its sentence (`.game`, `.phrase`), the tutorial's lesson and its list of
+     levels (`.learn`) — so on a wide screen what you play stands under the row that names
+     it. */
+  --column: 900px;
 }
 /* The hero name a step down on the narrowest phones (≤360px): the cap's 16 characters keep
    their one line in `/account`'s masthead at 320 wide — every hero chip with it, so the name
@@ -765,7 +771,7 @@ body:has(.app > .board-screen) {
      and the bottom .tray (keyboard while playing, results once solved). .play's flex:1
      pushes the tray to the bottom edge and centers the sentence + prompt between them. */
   width: 100%;
-  max-width: 1200px;
+  max-width: var(--column);
   display: flex;
   flex-direction: column;
   align-items: start;
@@ -1136,7 +1142,7 @@ body:has(.app > .board-screen) {
 .topbar-inner {
   position: relative;
   margin: 8px auto 0;
-  width: min(900px, calc(100vw - 48px));
+  width: min(var(--column), calc(100vw - 48px));
   height: 50px;
   display: grid;
   /* The LEFT track takes what is left over and the RIGHT track is its own size: the
@@ -1645,7 +1651,7 @@ body:has(.app > .board-screen) {
   font-size: clamp(18px, 3.2vw, 30px);
   line-height: 1.5;
   text-align: left;
-  max-width: 1200px;
+  max-width: var(--column);
   text-shadow: 2px 2px 0 black;
   padding-top: var(--text-shift);
 }
@@ -2432,6 +2438,17 @@ body:has(.app > .board-screen) {
   /* The drawn prompt is not selectable — the real field under it (`.wi-field`) is what
      holds the caret, and it is not on screen. */
   user-select: none;
+}
+/* A SHORT DESKTOP WINDOW (a laptop's browser, 800px tall or less): the sentence tops out at
+   the pixel face's whole 24px instead of 30, the prompt and the flag with it. The column is
+   the header's (`--column`), so a long day wraps onto more lines than a wider one would, and
+   this is what keeps the longest of them standing over the keyboard. */
+@media (min-width: 641px) and (max-height: 800px) {
+  .phrase,
+  .give-up-btn,
+  .word-input {
+    font-size: clamp(18px, 3.2vw, 24px);
+  }
 }
 /* THE PROMPT'S REAL FOCUS TARGET (#267): a field the player never sees, holding the guess
    and every keystroke that builds it. Hidden the `.sr-only` way — never `display: none` or
@@ -5094,9 +5111,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    player, the level's number and line, the stage counter), the coach's line under it as the
    page's own voice with no box, the board in the articles' figure panel, then the prompt and
    the keys. Everything is in flow — nothing is fixed over the board — in ONE column on every
-   stage, the header's own 900px, so nothing changes width between two stages. */
+   stage, the game's own (`--column`, the header's), so nothing changes width between two
+   stages. */
 .tutorial {
-  max-width: 900px;
   align-items: center;
 }
 /* THE LESSON'S BOARD IS CENTRED (user-decided 2026-09-16): the word and the sentence sit on
@@ -5525,14 +5542,12 @@ figure.l1-fig {
    gate's `.rules-gate` — so every breakpoint the game is tuned for holds it the same way: the
    lockup in the header's row, the demo where the day's sentence and prompt stand, the question
    and its two answers in the tray, TUTORIAL exactly where the gate's PLAY lands. --- */
-/* The demo stands in the HEADER's column — `.topbar-inner`'s 900px, centred, less the row's
-   own insets (its 8px and `.topbar-left`'s 4px a side) — so on a wide screen its first
-   letter stands on the mark's pixel column: the game's own 1200px column would set a
-   two-line sentence far left of the mark, the rest of the screen empty beside it. A phone's
-   column is narrower than both, and nothing changes there. */
+/* The demo stands in the column less the header row's own insets (its 8px and
+   `.topbar-left`'s 4px a side), so on a wide screen its first letter stands on the mark's
+   pixel column. A phone's column is narrower than both, and nothing changes there. */
 .invite .play {
   pointer-events: none;
-  max-width: calc(900px - 2 * (8px + 4px));
+  max-width: calc(var(--column) - 2 * (8px + 4px));
   align-self: center;
 }
 /* THE LOCKUP: the app's pixel mark (`MARK_GLYPH`, 22 cells at 1x — the header's own) in the
@@ -8807,7 +8822,7 @@ figure.l1-fig {
    one card under the other. The header's band is the page's top edge, the column the
    header's own width. */
 .learn {
-  width: min(900px, 100%);
+  width: min(var(--column), 100%);
   align-self: stretch;
   max-height: 100%;
   overflow-y: auto;
@@ -9867,8 +9882,8 @@ figure.l1-fig {
     padding-right: max(52px, calc((100% - 680px) / 2));
   }
   .learn {
-    padding-left: max(52px, calc((100% - 900px) / 2));
-    padding-right: max(52px, calc((100% - 900px) / 2));
+    padding-left: max(52px, calc((100% - var(--column)) / 2));
+    padding-right: max(52px, calc((100% - var(--column)) / 2));
   }
 }
 /* The narrowest phones: the next-level card's picture yields to its title, and the

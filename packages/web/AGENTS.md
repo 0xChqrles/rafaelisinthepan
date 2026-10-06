@@ -750,7 +750,9 @@ These are decided and verified against the code. Treat them as load-bearing.
     OPEN-BLANK underline is retired** — under the hole words AND the route terminus's `???`.
   - **The PROMPT wears the SENTENCE's size** (user-decided 2026-09-01, superseding the flat
     24px of 2026-08-06): `.word-input` carries `.phrase`'s exact clamp at both breakpoints
-    — the two move together.
+    — the two move together. On a desktop window 800px tall or less both top out at 24px
+    (the face's whole 3x), the give-up flag with them: the play column is the header's
+    (`--column`), and that is what keeps the longest day standing over the keyboard.
   - **DECORATIVE LIGHT IS GONE**: the game words' soft currentColor aura (the hard 2px
     print stays — it is legibility), the LED self-glows (mosaic cells, meter cells,
     button LEDs, the sheet tick, the code-cell ink glow, the danger-note LED), the ENTER
@@ -919,6 +921,11 @@ These are decided and verified against the code. Treat them as load-bearing.
       the arms. Its words are `--muted`, never the foreground dimmed. Decorative
       (aria-hidden, pointer-events none), z-index 40 under the header's 60, covered by
       opaque dialogs, and DESKTOP ONLY (hidden ≤640px — a phone's viewport is all content).
+    - **THE COLUMN is ONE custom property, `--column` (900px)**: the header row's width
+      (`.topbar-inner`, `min(var(--column), 100vw - 48px)`), the game's and its sentence's
+      (`.game`, `.phrase`; the lesson with them), the tutorial's list of levels (`.learn`),
+      and — less the row's own insets — the invitation's demo. What you play stands under
+      the row that names it.
     - **The KEYBOARD is FLAT (no "old skeuomorphism"):** every key is one solid dark
       tile at the sharp radius, nothing modelled, and **a press is a STATE, not
       travel** — brightness, never translateY (the rule the primary buttons follow
@@ -3943,7 +3950,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     a sentence), and the PROMPT sits just above the keyboard on the LEFT (`.tutorial--word
     .input-area`, `margin-top: auto`), off the word — and at ONE X on every stage: its own
     680px box centred in the column (`.tutorial .input-area`), where stretching it to a 680px
-    word column and a 1200px sentence column put it at two edges — and at ONE Y, parked on
+    word column and a wider sentence column put it at two edges — and at ONE Y, parked on
     the play area's bottom edge on every stage, the sentence's included (user-reported
     2026-09-16). Finding it ends the stage wordless and
     rolls into the sentence.
@@ -4109,7 +4116,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   three-slot finalization recorded below).** The BAND is unchanged — `--glass` +
   hairline + backdrop blur (`components/TopBar.tsx`), full-bleed with one bottom
   hairline on a phone, floating capped-and-rounded just inside the device frame's
-  brackets on desktop (`min(900px, 100vw - 48px)`, 50px, 8px off the top). What changed
+  brackets on desktop (`min(var(--column), 100vw - 48px)`, 50px, 8px off the top). What changed
   is what it holds, and why.
   **THE BAND WAITS FOR SCROLL (user-decided 2026-09-01, amending 2026-08-18's
   always-on glass) — AND WHAT ARRIVES IS THE GROUND, NOT A BOX (same day, later:
