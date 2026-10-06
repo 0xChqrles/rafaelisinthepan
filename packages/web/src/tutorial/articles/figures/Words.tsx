@@ -13,15 +13,25 @@ import Tabs from './Tabs';
 // sentence they were read in, set in the pixel face as the game sets it (the word it is about
 // in the found cobalt), then the words in the pixel face on the bare ground, in columns as wide
 // as the longest word — or, with tabs, one list at a time on the boards' own switch, every list
-// laid out in the same cell so a turn never changes the figure's height, the list turned to
+// laid out in the same cell AND the same columns (as wide as the longest word of any of them),
+// so a turn never changes the figure's height nor moves a word's place, the list turned to
 // dissolving in through the Bayer order as the other dissolves out (a board line's arrival). A
 // marked word wears the heat ramp's end its tone names: the weird red of a MISS for a wrong
 // sense, the calm cobalt of a found word for the right one — and says so in words too.
-function List({ list, state }: { list: WordList; state: 'shown' | 'in' | 'out' | 'hidden' }) {
+const longestOf = (lists: WordList[]) => Math.max(...lists.flatMap((l) => l.words.map((w) => w.length)));
+
+function List({
+  list,
+  longest,
+  state,
+}: {
+  list: WordList;
+  longest: number;
+  state: 'shown' | 'in' | 'out' | 'hidden';
+}) {
   const lang = useArticleLang();
   const tone = list.tone ?? 'wrong';
   const said = t(lang, tone === 'wrong' ? 'levelMarkWrong' : 'levelMarkRight');
-  const longest = Math.max(...list.words.map((w) => w.length));
   return (
     <div className={`ar-list ${state}`} hidden={state === 'hidden'} aria-hidden={state === 'out' || undefined}>
       <ol className="ar-list-words" style={{ '--mark': MISS_COLOR, '--longest': longest } as CSSProperties}>
@@ -73,7 +83,12 @@ export default function Words({
       {/* A tab swaps the list shown: the figure says so itself, as the plane re-reads its lengths. */}
       <div className={`ar-lists${tabs ? ' stacked' : ''}`} aria-live={tabs ? 'polite' : undefined}>
         {lists.map((list, i) => (
-          <List key={list.label ?? list.words[0]} list={list} state={tabs ? stateOf(i) : 'shown'} />
+          <List
+            key={list.label ?? list.words[0]}
+            list={list}
+            longest={longestOf(tabs ? lists : [list])}
+            state={tabs ? stateOf(i) : 'shown'}
+          />
         ))}
       </div>
     </div>
