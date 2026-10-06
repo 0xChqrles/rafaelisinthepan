@@ -808,12 +808,16 @@ These are decided and verified against the code. Treat them as load-bearing.
     confirmations' acts, SAVE): the label stays the act's word at full ink — the button
     animates, it never renames itself — it answers no tap but keeps the focus
     (`aria-disabled`, never dimmed: the 0.45 is for a button that is unavailable, not busy),
-    and `aria-busy` + the sr-only `loading` say it. Nothing shows for `SKELETON_WAIT_MS`;
-    then its wash becomes the house stipple in its own `--btn` ink, breathing `--dz-1…3` on
-    `link-hold-breathe` (640ms, hard steps; reduced motion: the still checker), the word in
-    a clearing of the ground; a danger act's charge is at its border's 55% (destruction
-    never glows). The outcome is the act's own (the keyboard rising, the name inked in, the
-    foil stamp, the next step), never a word on the button.
+    and `aria-busy` + the sr-only `loading` say it. Nothing shows for `SKELETON_WAIT_MS`
+    but the press held; then its wash becomes the house stipple in its own ink, breathing
+    `--dz-1…3` on `link-hold-breathe` (640ms, hard steps; reduced motion: the still checker),
+    the word in a clearing of the ground. **The charge is 55% of the button's ink**
+    (`--charge`, every busy button alike): at the breath's middle step it carries the
+    primary's own wash, at its peak less than the press, so a wide primary charging never
+    outshouts what lands and destruction never glows. It stands on a ground that hides the
+    wash without changing it, so the act landing ends it in ONE frame on the button at rest.
+    The outcome is the act's own (the keyboard rising, the name inked in, the foil stamp, the
+    next step), never a word on the button.
     No other button dress remains.
     *(The two paragraphs below are the designs it replaced, kept for their reasoning.)*
   - **THE BUTTONS ARE KEYCAPS WITH A HARD PRINT (user-decided 2026-09-14: "we should
