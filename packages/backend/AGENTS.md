@@ -24,13 +24,16 @@
 > `location.replace` shell, `noindex`, no OG meta) that moves a person on to the site home:
 > the status keeps a crawler from unfurling anything, and a person's browser gets a page
 > rather than a JSON body. A dead CARD (`/og/…`) stays a JSON 404. Same headers as the JSON
-> answer (CORS, no `Cache-Control`). A LIVE preview page (`ogCard.previewPage`: a share, a
-> signed share, a group invite) carries `og:title`, `og:description` — one short line in the
-> title's language (a share's play line, `Jouer à Whippin AI` / `Play Whippin AI`; on the
-> language-neutral group page the app's name alone, `Whippin AI`) — `og:url`, the page's OWN
-> link (the signed one while it wears its player, the plain one once it falls back; the
-> invite link, never the landing it bounces to), the card as `og:image` with its size, and
-> the Twitter large-image tags. Every page of the shell (`ogCard.redirectPage`,
+> answer (CORS, no `Cache-Control`). Every OTHER path under `/s/`, `/g/` or `/og/` — the
+> prefixes the web distribution hands this origin, so a link a chat app or a copy mangled
+> (`/s/<token>.`, `/g/<groupId>/x`) lands here — is the same dead link: the page home, the
+> card's JSON 404, never the puzzle route's 400. A LIVE preview page (`ogCard.previewPage`:
+> a share, a signed share, a group invite) carries `og:title`, `og:description` — one short
+> line in the title's language (a share's play line, `Jouer à Whippin AI` / `Play Whippin
+> AI`; on the language-neutral group page the app's name alone, `Whippin AI`) — `og:url`,
+> the page's OWN link (the signed one while it wears its player, the plain one once it falls
+> back; the invite link, never the landing it bounces to), the card as `og:image` with its
+> size, and the Twitter large-image tags. Every page of the shell (`ogCard.redirectPage`,
 > the dead ones too) says the dark `color-scheme` and the app's `theme-color` and paints the
 > app's ground inline AHEAD of its redirect, so a frame painted before it fires (WebKit
 > shows the bare ground there, Chromium paints nothing until the target lands), or the page

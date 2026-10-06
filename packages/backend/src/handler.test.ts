@@ -736,6 +736,46 @@ describe('a signed share (the result wearing its player)', () => {
   });
 });
 
+// The web distribution hands this origin everything under `/s/`, `/g/` and `/og/`, so a link
+// mangled on its way — a chat app or a copy taking the sentence's full stop, a stray segment —
+// still lands here. It is a dead link like any other: the page that moves a person on to the
+// site home, the card's JSON 404 — never the puzzle route's 400 on a white page.
+describe('a mangled share or invite link', () => {
+  const ID = 'abcdefghij234567';
+  const token = encodeResult({
+    lang: 'fr',
+    dayNumber: 20638,
+    score: 4,
+    trajectory: [8, 33, 70, 100],
+    solvedAt: [2, 4, 3],
+  });
+
+  it('answers the dead link page for any page path that names nothing', async () => {
+    const handler = makeHandler({ siteOrigin: ORIGIN, groups: memoryGroupStore() });
+    for (const path of [
+      `${sharePath(token)}.`,
+      `${sharePath(token)})`,
+      `${sharePath(token, ID)}/x`,
+      `/${GROUP_SEGMENT}/${ID}/x`,
+      '/s/',
+      `/${GROUP_SEGMENT}/`,
+    ]) {
+      const res = await handler(event({ path }));
+      expectGonePage(res, `${ORIGIN}/`);
+      expect(res.headers['Cache-Control'], path).toBeUndefined();
+    }
+  });
+
+  it('answers a card path that names nothing with the card\'s JSON 404', async () => {
+    const handler = makeHandler({ siteOrigin: ORIGIN });
+    for (const path of ['/og/nope', '/og/', `${shareCardPath(token)}.x`, `/og/${GROUP_SEGMENT}/${ID}`]) {
+      const res = await handler(event({ path }));
+      expect(res.statusCode, path).toBe(404);
+      expect(JSON.parse(res.body).error, path).toBe('not_found');
+    }
+  });
+});
+
 describe('CORS preflight', () => {
   it('OPTIONS -> 204 with CORS headers and no body', async () => {
     const res = await makeHandler()(event({ method: 'OPTIONS' }));
