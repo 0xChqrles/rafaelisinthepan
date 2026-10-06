@@ -432,13 +432,15 @@ body:has(.app > .board-screen) {
    answers with its callout) painted them cobalt as if they were text to copy. So nothing is
    selectable and nothing calls out, on the body and everything portaled onto it; what is
    READ takes both back: the sentence's page, the privacy notice, the tutorial's articles —
-   and every field, since WebKit extends an ancestor's `none` to a nested text input, and an
-   unselectable field is one you cannot type into. */
+   every link (LISTEN keeps the system's own long press on a link) — and every field, since
+   WebKit extends an ancestor's `none` to a nested text input, and an unselectable field is
+   one you cannot type into. */
 body {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
+a,
 input,
 textarea,
 .solved-text,

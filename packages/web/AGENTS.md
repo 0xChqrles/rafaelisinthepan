@@ -4584,8 +4584,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **AND ONLY PROSE IS SELECTABLE**: `body` is `user-select: none` with no iOS long-press
   callout (`-webkit-touch-callout: none`), so a select-all or a long press never paints the
   chrome or the game's data; what is READ takes both back — the sentence's page
-  (`.solved-text`, its CUT excepted: a control), the privacy notice, the articles' prose —
-  and so does every field (WebKit extends an ancestor's `none` to a nested input, and an
+  (`.solved-text`, its CUT excepted: a control), the privacy notice, the articles' prose,
+  every link (LISTEN keeps the system's long press) — and so does every field (WebKit extends an ancestor's `none` to a nested input, and an
   unselectable field takes no typing). **The missing-puzzle screen
   has TWO wordings, told apart by the ROUTE (#77, decided 2026-07-27)** — the backend's
   404 is undifferentiated, and which route asked is the only signal needed: on the
