@@ -4548,7 +4548,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `rgba(51, 181, 229, 0.4)`, a translucent cyan box the shape of the control. A UI that
   draws its own press states, and its own focus outline, wants it on no surface at all, so
   `button` carries `transparent` once beside the global `text-shadow: none`; the hole, the
-  solved word and the wheel row each held a private copy of the same line and are gone. **The missing-puzzle screen
+  solved word and the wheel row each held a private copy of the same line and are gone.
+  **AND ONLY PROSE IS SELECTABLE**: `body` is `user-select: none` with no iOS long-press
+  callout (`-webkit-touch-callout: none`), so a select-all or a long press never paints the
+  chrome or the game's data; what is READ takes both back — the sentence's page
+  (`.solved-text`, its CUT excepted: a control), the privacy notice, the articles' prose —
+  and so does every field (WebKit extends an ancestor's `none` to a nested input, and an
+  unselectable field takes no typing). **The missing-puzzle screen
   has TWO wordings, told apart by the ROUTE (#77, decided 2026-07-27)** — the backend's
   404 is undifferentiated, and which route asked is the only signal needed: on the
   **undated** route (today) it owns that the state is **abnormal** (a publish that did not
