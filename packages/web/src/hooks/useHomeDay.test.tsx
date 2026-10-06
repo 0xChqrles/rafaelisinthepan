@@ -14,7 +14,8 @@
 //     back/forward moves it, round in progress or not.
 //
 // A round ON SCREEN keeps the day it was opened as (`useOpenedAsActive`): the flip passing it
-// does not turn it into an archive day; a new round reads the live value afresh.
+// does not turn it into an archive day; a new round reads it afresh, off the SAME clock the
+// arrival read — so the round an arrival opens on the new day is the active day.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -27,10 +28,22 @@ const AFTER_FLIP = new Date('2026-10-07T02:00:30.000Z');
 
 let shown: string | null;
 let opened: boolean | null;
-function Probe({ hold = false, round = 'fr:2026-10-06', live = true }: { hold?: boolean; round?: string; live?: boolean }) {
+// GameRoute's own wiring: the round is a bonus, the route's date, or the undated route's day.
+function Probe({
+  hold = false,
+  lang = 'fr',
+  date,
+  bonus,
+}: {
+  hold?: boolean;
+  lang?: string;
+  date?: string;
+  bonus?: string;
+}) {
   shown = useHomeDay();
   useHoldHomeDay(hold);
-  opened = useOpenedAsActive(round, live);
+  const day = date ?? shown;
+  opened = useOpenedAsActive(`${lang}:${bonus ?? day}`, bonus === undefined ? day : null);
   return null;
 }
 
@@ -176,22 +189,41 @@ describe('useOpenedAsActive — a round keeps the day it was opened as', () => {
   it('stays the active day when the flip passes it on screen', async () => {
     expect(opened).toBe(true);
     flip();
-    await render({ live: false });
+    await render({});
     expect(opened).toBe(true);
   });
 
   it('reads a NEW round afresh: another day, or another language', async () => {
-    await render({ round: 'fr:2026-10-05', live: false });
+    await render({ date: '2026-10-05' });
     expect(opened).toBe(false);
-    await render({ round: 'en:2026-10-05', live: false });
+    await render({ lang: 'en', date: '2026-10-05' });
     expect(opened).toBe(false);
-    await render({ round: 'fr:2026-10-07', live: true });
+    await render({});
+    expect(opened).toBe(true);
+    // Past the flip, a round opened on the day the screen still shows is an archive day.
+    flip();
+    await render({ lang: 'en' });
+    expect(opened).toBe(false);
+  });
+
+  it('opens the round an arrival brings past the flip as the active day', async () => {
+    // The undated route's day moves on the arrival, and its round is read off that same
+    // clock — never off a reading that has not caught up with it yet.
+    flip();
+    await restore();
+    expect(shown).toBe('2026-10-07');
     expect(opened).toBe(true);
   });
 
-  it('never turns an archive day into the active one', async () => {
-    await render({ round: 'fr:2026-10-05', live: false });
-    await render({ round: 'fr:2026-10-05', live: true });
+  it('opens the round a navigation brings past the flip as the active day', async () => {
+    flip();
+    await act(async () => navigate(window.location.pathname));
+    expect(shown).toBe('2026-10-07');
+    expect(opened).toBe(true);
+  });
+
+  it('never makes a bonus the active day', async () => {
+    await render({ bonus: 'bonus/1234567' });
     expect(opened).toBe(false);
   });
 });

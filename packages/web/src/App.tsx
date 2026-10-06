@@ -332,8 +332,9 @@ function GameRoute({
   const isToday = !isBonusRef(ref) && ref.dayNumber === today;
   // ...and whether the ROUND is: the day it was opened as, for as long as it stays on screen
   // (`useOpenedAsActive`) — so the flip passing it takes nothing from under the player: its
-  // race line, its result's boards, its race band. A new round reads the live value afresh.
-  const isActiveDay = useOpenedAsActive(`${lang}:${puzzleAddress(ref)}`, isToday);
+  // race line, its result's boards, its race band. A new round reads it afresh, off the clock
+  // the undated route's day reads (never `today`'s timer, which can lag an arrival).
+  const isActiveDay = useOpenedAsActive(`${lang}:${puzzleAddress(ref)}`, bonusId === undefined ? day : null);
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
   useEffect(() => {

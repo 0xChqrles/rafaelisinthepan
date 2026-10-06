@@ -4530,8 +4530,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `Game`'s `isActiveDay` is read when the round (a puzzle in a language) comes on screen
     and kept while it stays there, so the flip takes nothing from under the player — the
     race line and its band, the result's boards, the streak read stay; a new round reads it
-    afresh. The HEADER alone follows the live day (`isToday`, off `useToday`): past the flip
-    it shows the day's date, lights the calendar, and HOME leads to the new day — a
+    afresh. It is read off the clock the undated route's day reads — the wall clock at that
+    moment, never `useToday`'s timer, which can lag an arrival (a laptop waking, a page
+    restored from the back/forward cache) — so the round an arrival opens on the new day is
+    the active day. The HEADER alone follows the live day (`isToday`, off `useToday`, which
+    a back/forward-cache restore refreshes too): past the flip it shows the day's date,
+    lights the calendar, and HOME leads to the new day — a
     navigation onto the URL already shown, which REPLACES (`routing.ts`), so the old day
     leaves no entry behind it.
   The topbar is the extension point for future chrome (streaks, stats, …).

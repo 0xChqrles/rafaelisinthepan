@@ -71,13 +71,24 @@ export function useHoldHomeDay(hold: boolean): void {
 // THE ROUND KEEPS THE DAY IT WAS OPENED AS. Whether `round` (one puzzle in one language) is
 // the active day, read when it comes on screen and kept for as long as it stays there: the
 // flip passing a round on screen does not turn it into an archive day under the player — its
-// race line, its result's boards and its race band stay. `live` is the active-day reading
-// right now; a NEW round (another puzzle, another language) takes it afresh.
-export function useOpenedAsActive(round: string, live: boolean): boolean {
-  const [opened, setOpened] = useState({ round, active: live });
+// race line, its result's boards and its race band stay. A NEW round (another puzzle, another
+// language) reads it afresh. `day` is the round's date, null for a bonus (never a day).
+//
+// It is read off the SAME clock the undated route's day is (`useHomeDay`): the wall clock at
+// that moment, never a timer's last tick. An arrival past the flip opens the new day's round
+// in the render that moves the day, and a timer-driven reading (`useToday`, whose timer a
+// sleeping laptop or a page restored from the back/forward cache resumes late) can still say
+// the old day there — a round latched off it would stay an archive day for its whole life.
+export function useOpenedAsActive(round: string, day: string | null): boolean {
+  const [opened, setOpened] = useState(() => ({ round, active: activeNow(day) }));
   if (opened.round !== round) {
-    setOpened({ round, active: live });
-    return live;
+    const active = activeNow(day);
+    setOpened({ round, active });
+    return active;
   }
   return opened.active;
+}
+
+function activeNow(day: string | null): boolean {
+  return day !== null && day === activeDate(new Date());
 }
