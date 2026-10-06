@@ -16,10 +16,11 @@
 //
 // It listens to the identity lifecycle here — the same one readable block identityScope
 // owns — rather than at each of the deploy triggers, so a future trigger cannot forget it.
-// The profile editor's SAVE is no exception: its own write carries what the player was
-// shown (the seed's pair where they left it untouched), and an upsert, so it lands over this
-// create or makes it the settled 409 — while a SAVE that fails still leaves the account on
-// the face the player was wearing, never on the new id's.
+// The ONE trigger it stands down for is the profile editor's SAVE: that tap writes the
+// player's own fields a beat later — the seed's pair where they left a field untouched —
+// so its acquisition runs inside `withoutLocalIdentityDeploy` and nothing races the save.
+// A SAVE that then writes nothing hands the account back (`deployLocalIdentity`), so the
+// account still lands on the face the player was wearing, never on the new id's.
 
 import { anonName, defaultAvatar } from '@whippin/shared';
 import {
@@ -48,6 +49,19 @@ const DEPLOY_TIMEOUT_MS = 6_000;
 
 let uninstall: (() => void) | null = null;
 
+// Set while the profile editor's SAVE acquires the account: whatever identity arrives in
+// this window belongs to a save carrying the player's OWN fields, which must win.
+let suppressed = false;
+
+export async function withoutLocalIdentityDeploy<T>(work: () => Promise<T>): Promise<T> {
+  suppressed = true;
+  try {
+    return await work();
+  } finally {
+    suppressed = false;
+  }
+}
+
 // One deployment in flight per ACCOUNT (the activeScoreFlights pattern): the listener can
 // fire twice for one acquisition — publish and a fast storage echo — and StrictMode
 // remounts re-register it; the second look must not double-write behind the first.
@@ -55,6 +69,13 @@ const inFlight = new Map<string, Promise<void>>();
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// The deploy, asked for directly: the editor's SAVE acquired this account with the
+// listener muted and then wrote nothing, so the placeholder is owed after all. The same
+// create-only flight, so a row the save did land is never replaced.
+export function deployLocalIdentity(identity: DeviceIdentity): Promise<void> {
+  return deploy(identity);
 }
 
 async function deploy(identity: DeviceIdentity): Promise<void> {
@@ -140,8 +161,9 @@ async function run(identity: DeviceIdentity): Promise<void> {
 export function installLocalIdentityDeploy(): () => void {
   uninstall?.();
   const remove = onIdentityChange(({ next }) => {
-    // Leaving an identity deploys nothing.
-    if (next === null) return;
+    // Leaving an identity deploys nothing, and an acquisition inside the editor's SAVE
+    // window belongs to the save's own body — the placeholder must not race it.
+    if (next === null || suppressed) return;
     void deploy(next);
   });
   uninstall = remove;

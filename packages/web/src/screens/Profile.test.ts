@@ -4,8 +4,8 @@
 // only a field the player actually CHANGED from it may speak; an untouched field carries
 // the account's stored value forward verbatim.
 // AND it must not SWAP the face (the username is decided locally, then deployed — root
-// AGENTS.md #216): an account that was NEVER CUSTOMIZED (the 404, a fresh mint above all)
-// stores what the player was SHOWN — the canvas's mark and the line's name, the seed's pair
+// AGENTS.md #216): an account that was NEVER CUSTOMIZED (the 404, a fresh mint above all,
+// or a row that is the placeholder's own deploy) stores what the player was SHOWN — the canvas's mark and the line's name, the seed's pair
 // where untouched — the same pair every other deploy button stores. The EMPTY value would
 // draw the new account id's face instead, one the player never saw.
 
@@ -75,6 +75,19 @@ describe('guardedSaveBody — a NEVER CUSTOMIZED account stores the face the pla
   it('an EMPTIED name stores the pseudonym the line showed in its place', () => {
     const body = guardedSaveBody({ name: '', avatar: baseline.avatar }, baseline, SEED, null);
     expect(body).toEqual({ name: anonName(SEED), avatar: defaultAvatar(SEED) });
+  });
+
+  it('a stored row that IS the placeholder (another tab’s deploy won) is never customized', () => {
+    const deployed = { name: anonName(SEED), avatar: defaultAvatar(SEED) };
+    // The emptied name keeps the pseudonym the line showed — never '' (the new id's).
+    expect(guardedSaveBody({ name: '', avatar: baseline.avatar }, baseline, SEED, deployed)).toEqual(
+      deployed,
+    );
+    const drawn = blankAvatar(3);
+    expect(guardedSaveBody({ name: baseline.name, avatar: drawn }, baseline, SEED, deployed)).toEqual({
+      name: anonName(SEED),
+      avatar: drawn,
+    });
   });
 
   it('nothing in the body is ever the empty value', () => {

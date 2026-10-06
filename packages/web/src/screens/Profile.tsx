@@ -19,9 +19,11 @@ import {
   identityEpochOf,
   markDeviceSignedOut,
   useDeviceIdentity,
+  type DeviceIdentity,
 } from '../identity';
 import { prefetchTurnstileTokens } from '../turnstile';
 import { holdOwnFace, ownProfileWritten } from '../state/ownFace';
+import { deployLocalIdentity, withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
 import ErrorScreen from '../components/ErrorScreen';
 import { navigate } from '../routing';
 import { ACCOUNT_PATH, type LangCode } from '../langs';
@@ -124,7 +126,9 @@ const avatarForStore = (encoded: string, publicId: string) =>
 //     the name on the line (the seed's pseudonym, untouched; the one shown in its place when
 //     the field was emptied). The same pair `localIdentityDeploy` stores for every other
 //     deploy button, so SAVE never swaps the face it lands on: the '' a store-half sends
-//     would draw the NEW account id's face instead, one the player never saw.
+//     would draw the NEW account id's face instead, one the player never saw. A stored row
+//     that IS that pair is the same answer: the deploy's own create (another tab's, which
+//     the SAVE's mute does not reach) landed first, and nobody customized anything.
 // Exported for the contract test — the wipe and the swap are the harshest things this screen
 // can do to an account.
 export function guardedSaveBody(
@@ -136,7 +140,13 @@ export function guardedSaveBody(
   // The account's stored profile; null is the 404 "never customized".
   server: { name: string; avatar: string | null } | null,
 ): { name: string; avatar: string } {
-  if (server === null) return { name: edited.name || anonName(assignedFrom), avatar: edited.avatar };
+  const placeholder =
+    server !== null &&
+    server.name === anonName(assignedFrom) &&
+    server.avatar === defaultAvatar(assignedFrom);
+  if (server === null || placeholder) {
+    return { name: edited.name || anonName(assignedFrom), avatar: edited.avatar };
+  }
   const nameChanged = edited.name !== baseline.name;
   const avatarChanged = edited.avatar !== baseline.avatar;
   return {
@@ -835,15 +845,17 @@ export default function Profile() {
     // than reading a profile that does not exist yet (`state/ownFace.ts`).
     const release = current === null ? holdOwnFace() : null;
     let written = false;
+    // The account this tap acquired, with the background deploy muted for it.
+    let acquired: DeviceIdentity | null = null;
     try {
       if (current === null) {
         try {
-          // `localIdentityDeploy` answers this acquisition as it answers every other: it
-          // creates the seed's face as the first profile (an atomic create, which never
-          // replaces a row), while this save upserts the fields on screen — the same pair
-          // where the player left them untouched — so whichever lands first, the account
-          // ends on what the player was shown, and a save that fails still leaves it there.
-          current = await ensureDeviceIdentity();
+          // The ONE acquisition the background deploy stands down for: this tap stores the
+          // fields on screen a beat later — the seed's pair where the player left them
+          // untouched (`guardedSaveBody`) — so nothing may race it. A save that then writes
+          // nothing hands the account back to the deploy (below).
+          current = await withoutLocalIdentityDeploy(() => ensureDeviceIdentity());
+          acquired = current;
         } catch {
           current = null;
           outcome = 'account';
@@ -868,7 +880,7 @@ export default function Profile() {
           try {
             const stored = await readStoredProfile(current.accountId);
             if (identityEpoch() !== epoch) return;
-            // Never customized (null): the intended save applies in full.
+            // Never customized (null, or the placeholder's own row): the shown pair.
             fields = guardedSaveBody({ name: clean, avatar: encoded }, baseline, assignedFrom, stored);
           } catch {
             if (identityEpoch() !== epoch) return;
@@ -923,6 +935,12 @@ export default function Profile() {
         }
       }
     } finally {
+      // An account this tap acquired and wrote nothing into (a refusal, a failure) is owed
+      // the placeholder the player was wearing: the deploy it muted runs now — first, so
+      // the face is never left with no write held.
+      if (acquired !== null && !written && identityEpoch() === identityEpochOf(acquired)) {
+        void deployLocalIdentity(acquired);
+      }
       if (release) release(written);
       else if (written) ownProfileWritten();
     }

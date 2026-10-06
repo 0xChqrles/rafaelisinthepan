@@ -2,11 +2,11 @@
 // the account. What is pinned here is the rule, not the plumbing: acquiring an identity
 // stores the placeholder this device has been showing (the local seed's assigned name and
 // mark) as the account's profile — but ONLY into an account that holds nothing (the POST
-// is an atomic create; even an empty stored row is somebody's deliberate save), whichever
-// deploy button acquired it — the profile editor's SAVE included, whose own upsert carries
-// the same pair where the player left it untouched. An unknown-device answer signs out
-// through the shared verdict; another failure that will not land gives up after bounded
-// retries.
+// is an atomic create; even an empty stored row is somebody's deliberate save), never
+// inside the profile editor's own SAVE acquisition — that tap stores the same pair itself
+// where the player left it untouched — unless the SAVE hands the account back
+// (`deployLocalIdentity`). An unknown-device answer signs out through the shared verdict;
+// another failure that will not land gives up after bounded retries.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { anonName, defaultAvatar } from '@whippin/shared';
@@ -27,7 +27,11 @@ import {
   resetDeviceIdentity,
   useIdentityStore,
 } from '../identity';
-import { installLocalIdentityDeploy } from './localIdentityDeploy';
+import {
+  deployLocalIdentity,
+  installLocalIdentityDeploy,
+  withoutLocalIdentityDeploy,
+} from './localIdentityDeploy';
 import { useGameStore } from './gameStore';
 
 const bootstrap = vi.mocked(postDevicesBody);
@@ -162,6 +166,36 @@ describe('deploying the locally-decided username (user-decided 2026-08-26)', () 
       await settle();
       expect(fetchMock).toHaveBeenCalledOnce();
       expect(save).not.toHaveBeenCalled();
+    } finally {
+      remove();
+    }
+  });
+
+  it('stands down inside the profile editor’s SAVE acquisition', async () => {
+    const remove = installLocalIdentityDeploy();
+    try {
+      await withoutLocalIdentityDeploy(() => ensureDeviceIdentity());
+      await settle();
+      expect(deviceIdentity()).not.toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+    } finally {
+      remove();
+    }
+  });
+
+  it('a SAVE that wrote nothing hands the account back: the placeholder is stored', async () => {
+    const remove = installLocalIdentityDeploy();
+    try {
+      const identity = await withoutLocalIdentityDeploy(() => ensureDeviceIdentity());
+      await deployLocalIdentity(identity);
+      expect(save).toHaveBeenCalledOnce();
+      expect(save.mock.calls[0][1]).toEqual({
+        token: identity.token,
+        name: anonName(SEED),
+        avatar: defaultAvatar(SEED),
+        createOnly: true,
+      });
     } finally {
       remove();
     }
