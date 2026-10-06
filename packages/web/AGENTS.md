@@ -4731,6 +4731,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     article; the page's description states it) and no SOON (a level's card is the same
     ready or not). HOME's card says the game in no language — its guesses are words
     English and French share — since every route without a page of its own wears it.
+- **The shell's first paint is the ground.** `index.html` says the dark scheme
+  (`<meta name="color-scheme">`) and the ground and ink (`html, body`, `--bg` / `--fg` as
+  literals) inline, before the stylesheet and the bundle, so a slow load paints `#050507`,
+  never the browser's white; and a `<noscript>` line (en + fr, muted, centred) says what to
+  do with JavaScript off. Nothing else is drawn before React: a header or lockup drawn in
+  `#root` would be taken away on the first render by every screen that does not wear one
+  (the invitation, the signed-out screen, the invite landing, the selection drums).
 - **Stale-tab auto-reload (user-decided 2026-08-16):** a deployed release must reach tabs
   already open — an SPA loads its JS once, and the deploy's `prune: false` deliberately
   keeps old chunks alive, so nothing ever forces a stale tab to refresh (and under the

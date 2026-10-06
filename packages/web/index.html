@@ -5,6 +5,33 @@
     <meta name="google" content="notranslate" />
     <!-- The phone's browser chrome wears the app's own ground (--bg). -->
     <meta name="theme-color" content="#050507" />
+    <!-- THE FIRST PAINT IS THE GROUND: the dark scheme and --bg / --fg / --muted said here,
+         before the stylesheet and the bundle, so a slow load is never a white page or a
+         light flash. Nothing else is drawn before React: a frame drawn here would be taken
+         away on the first render by every screen that does not wear it. -->
+    <meta name="color-scheme" content="dark" />
+    <style>
+      html,
+      body {
+        background: #050507;
+        color: #ffffff;
+      }
+      .noscript {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 8px;
+        padding: 0 16px;
+        font: 400 13px/1.6 'Azeret Mono', ui-monospace, 'SF Mono', monospace;
+        color: #a6adb8;
+        text-align: center;
+      }
+      .noscript p {
+        margin: 0;
+      }
+    </style>
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content"
@@ -21,6 +48,12 @@
     <title>Whippin AI</title>
   </head>
   <body>
+    <noscript>
+      <div class="noscript">
+        <p lang="en">Turn on JavaScript to play.</p>
+        <p lang="fr">Activez JavaScript pour jouer.</p>
+      </div>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
