@@ -1,27 +1,27 @@
 import type { ReactNode } from 'react';
 import useModalDismiss from '../hooks/useModalDismiss';
 import LoadingWave from './LoadingWave';
+import ScreenFrame from './ScreenFrame';
 import { t } from '../i18n';
 
-// The app's CONFIRMATION surface for an act that takes something away from somebody
-// (#271, user-decided 2026-09-14: "for such an important action, we actually need a
-// fullscreen modal — to remove people you click the cross, then confirm in the modal; and
-// same to leave the group"). It replaced the two-tap confirms the group board shipped with
-// (a control changing its own word to LEAVE? / REMOVE? and acting on the second tap): a
-// word swap is easy to tap through, and a member shown out of a group is not a state a
-// second tap can undo.
+// The app's CONFIRMATION surface for an act that takes something away (#271, user-decided
+// 2026-09-14: "for such an important action, we actually need a fullscreen modal — to remove
+// people you click the cross, then confirm in the modal; and same to leave the group"; the
+// give-up wears it too). It replaced the two-tap confirms the group board shipped with (a
+// control changing its own word to LEAVE? / REMOVE?): a word swap is easy to tap through.
 //
-// It is the ERROR SCREEN's shape — the whole screen, on flat `--bg`, one narrow column —
-// because the two are the app's two full-screen messages and should be one shape (the
-// SignedOut / NoPuzzle language). What differs is the voice: no bot, the title in the
-// plain ink (nothing has gone wrong yet), and TWO ways out where the error has one — the
-// act itself, in the QUIET DANGER dress (the account area's rule: destruction never glows,
-// so the lit primary is never the button that removes somebody), and CANCEL, a plain
-// secondary. The caller draws WHO or WHAT is at stake above the title (`children`) and may
+// It is the ERROR SCREEN's shape — the whole screen in the full-screen moment's frame (the
+// corners and the lockup, `ScreenFrame`), in through the Bayer dissolve and out the same way —
+// because the two are the app's two full-screen messages. What differs is the voice: no bot,
+// the title in the plain ink (nothing has gone wrong yet), and on the bottom edge TWO ways
+// out where the error has one, in the signed-out screen's geometry: the act itself in the
+// QUIET DANGER dress (destruction never glows, so the lit primary is never the button that
+// removes somebody) with CANCEL as THE WORD under it. The caller draws WHAT is at stake above
+// the title (`children`: a member's face, the group's name, the ∞ a give-up prints) and may
 // hold the act back until a choice is made (`disabled` — the owner's successor pick).
 //
 // Follows the modal rules (`useModalDismiss`): opening focuses the dialog, Escape leaves
-// through the `fade-out` beat, a backdrop tap is nothing (there is none).
+// through the same exit, a backdrop tap is nothing (there is none).
 export default function ConfirmScreen({
   lang,
   title,
@@ -48,7 +48,7 @@ export default function ConfirmScreen({
   onConfirm: () => void;
   onClose: () => void;
 }) {
-  const { closing, beginClose, dialogProps } = useModalDismiss('fade-out');
+  const { closing, beginClose, dialogProps } = useModalDismiss('board-dissolve-out');
 
   return (
     <dialog
@@ -57,10 +57,13 @@ export default function ConfirmScreen({
       aria-label={title}
       onClose={onClose}
     >
+      <ScreenFrame />
       <div className="error-body">
         {children}
         <p className="error-title">{title}</p>
         <p className="error-note">{note}</p>
+      </div>
+      <div className="error-calls">
         <button
           type="button"
           className="btn btn-secondary btn-danger"

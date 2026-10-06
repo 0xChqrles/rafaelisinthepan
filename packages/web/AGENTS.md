@@ -158,9 +158,13 @@
                               read wave's stepped pace (`LOOP_FRAME_MS`): the podium's, the
                               archive's and the record's
       components/DeviceList.tsx  the account's devices + SIGN OUT, as board lines on `/account` (#216)
-      components/ErrorScreen.tsx  the app's error surface: a FULL-SCREEN modal led by the
-                              user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet);
-                              ONE quiet way out since 2026-09-03 — no TRY AGAIN
+      components/ErrorScreen.tsx  the app's error surface for an ACT that did not land: a
+                              FULL-SCREEN modal in the full-screen moment's frame, led by the
+                              user-drawn ERROR BOT, the title naming what was lost; ONE way
+                              out, GO BACK — no TRY AGAIN
+      components/ScreenFrame.tsx  the full-screen moment's frame: the four corner brackets and
+                              the WHIPPIN AI lockup (StreakDialog's markup, standing still) —
+                              worn by SignedOut, ErrorScreen and ConfirmScreen
       state/roundSync.ts      the #201 sync engine, reworked by #214: coalesced prefix writes,
                             the transient server snapshot it publishes for the screen, the
                             outbox it settles by identity, cap + freeze, #203's round-start
@@ -203,8 +207,10 @@
                               screen, the name inked in on CREATE (the solve's beat); it folds
                               onto the surface that opened it (the board, or the result's seat)
       components/ConfirmScreen.tsx  the app's CONFIRMATION surface (#271): the error screen's
-                              shape in the plain voice, the act as the quiet danger control
-                              over CANCEL; the leave's successor picker rides it
+                              shape and frame in the plain voice, the stake over the title, the
+                              act as the quiet danger control over CANCEL on the bottom edge;
+                              the give-up, the remove and the leave (its successor picker
+                              included) ride it
       screens/Leaderboard.tsx the #190/#271 leaderboard (/<lang>/board): the tab row (the groups,
                               then GLOBAL), a group's TODAY / WEEK / MONTH, the PODIUM over the
                               lines from the 4th, the door into a group's screen, NEW GROUP —
@@ -2061,7 +2067,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (`canGiveUp`) once the round holds a guess, not finished, the gate closed, no reveal
     standing or decoding, the prompt not leaving; never in the tutorial (it lives in
     `Game`, not in `Keyboard`). A tap opens the `ConfirmScreen` (`giveUpTitle` /
-    `giveUpNote` / `giveUpAction`, busy while in flight); its act calls
+    `giveUpNote` / `giveUpAction`, busy while in flight), its STAKE over the title the `∞`
+    the result will print (`InfinityGlyph` at 8px a cell, `--muted`, thinned to half its
+    cells through `--dz-4`: what the round becomes, not yet what it is); its act calls
     `giveUpRound(roundKey)` (the sync bullet below); a `false` answer raises the
     `ErrorScreen` (`failedGiveUp` / `failedGiveUpNote`, also an `?error=giveUp` preview).
     A give-up confirmed on THIS device (`giveUpHere`, set before the request so the render
