@@ -1102,11 +1102,11 @@ body:has(.app > .board-screen) {
    listener), the moment content could otherwise pass beneath the controls. WHAT ARRIVES
    IS THE GROUND, NOT A BOX (user-decided 2026-09-01, superseding the glass + hairline
    band the same day): the whole width of the screen behind the row fills with flat
-   `--bg`, and a short vertical gradient from `--bg` to transparent hangs UNDER it, so
-   content scrolling up fades into the ground before it reaches the controls — no
-   border, no blur, no rounded float. Both are pseudo-elements of `.topbar` itself (the
-   full-width fixed layer), faded in by opacity so nothing ever shifts; `.topbar-inner`
-   keeps only its geometry.
+   `--bg`, and the house's dithered EDGE hangs UNDER it (`--edge-d`, the board's held head's
+   own), so content scrolling up thins into the ground through the Bayer cells before it
+   reaches the controls — no border, no blur, no rounded float. Both are pseudo-elements of
+   `.topbar` itself (the full-width fixed layer), shown in ONE step so nothing ever shifts
+   or glides; `.topbar-inner` keeps only its geometry.
    TWO slots since 2026-08-30 (left: which puzzle, or the screen's own name as its way
    back; right: the app's places, the current one lit). The centre went with the mode
    tabs — see PuzzleTitle for what the collision cost. ModalHeader reuses the classes —
@@ -1130,8 +1130,8 @@ body:has(.app > .board-screen) {
   padding: 0 8px;
   pointer-events: auto;
 }
-/* The ground behind the row, and the fade under it. The height the fade runs is the one
-   number here; both layers ride the scrolled state on opacity alone. */
+/* The ground behind the row, and the dithered edge under it: both stand or not, in one
+   step, on the scrolled state. */
 .topbar::before,
 .topbar::after {
   content: '';
@@ -1139,22 +1139,22 @@ body:has(.app > .board-screen) {
   left: 0;
   right: 0;
   pointer-events: none;
-  opacity: 0;
-  transition: opacity 160ms ease;
+  visibility: hidden;
+  background: var(--bg);
 }
 .topbar::before {
   top: 0;
   bottom: 0;
-  background: var(--bg);
 }
 .topbar::after {
   top: 100%;
-  height: 36px;
-  background: linear-gradient(to bottom, var(--bg), transparent);
+  height: 6px;
+  -webkit-mask: var(--edge-d) 0 0 / 16px 6px repeat-x;
+  mask: var(--edge-d) 0 0 / 16px 6px repeat-x;
 }
 .topbar.scrolled::before,
 .topbar.scrolled::after {
-  opacity: 1;
+  visibility: visible;
 }
 /* The header's two corner groups sit DIRECTLY on the backdrop — no chip background/blur
    (removed 2026-07-21: boxes read as floating rectangles over the animated waves); the
@@ -1519,8 +1519,9 @@ body:has(.app > .board-screen) {
   padding: 24px 24px 72px;
 }
 /* A DRUM: a clipped box whose track the component translates by hand (no native
-   scrolling, `touch-action: none`), rows one GAP apart, both ends fading so a row
-   arrives out of the dark rather than cut by an edge. */
+   scrolling, `touch-action: none`), rows one GAP apart, both ends thinning through the
+   dither so a row arrives out of the dark rather than cut by an edge (THE DRUM'S ENDS,
+   with the hole wheel's, below). */
 .ps-drum {
   position: relative;
   overflow: hidden;
@@ -1528,8 +1529,6 @@ body:has(.app > .board-screen) {
   overscroll-behavior: contain;
   user-select: none;
   -webkit-user-select: none;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
-  mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
 }
 .ps-track {
   will-change: translate;
@@ -2697,12 +2696,16 @@ body:has(.app > .board-screen) {
      once. Widened 2026-09-11 (user-asked): the blocks are different things, and the air
      between them is what says so. */
   gap: 48px;
-  /* The bottom edge fades (the rule every scroller wears); the padding is the fade's own
-     height, so the last line rests clear of it. The TOP has no fade: what passes there
-     passes under the sticky credit's own ground. */
+  /* The bottom edge thins through the house's dithered edge (`--edge-d`, solid where the
+     page goes on); the padding keeps the last line clear of it at rest. The TOP has no
+     edge of its own: what passes there passes under the sticky credit's ground. */
   padding-bottom: 24px;
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  -webkit-mask:
+    linear-gradient(#000, #000) 0 0 / 100% calc(100% - 6px) no-repeat,
+    var(--edge-d) 0 100% / 16px 6px repeat-x;
+  mask:
+    linear-gradient(#000, #000) 0 0 / 100% calc(100% - 6px) no-repeat,
+    var(--edge-d) 0 100% / 16px 6px repeat-x;
   opacity: 0;
   /* The stage comes up IN PLACE: the card draws itself on it (`.solved-card.in`), so the
      stage does not travel (mirrored by `RESULTS_IN_MS`). */
@@ -3569,8 +3572,8 @@ body:has(.app > .board-screen) {
 /* The credit, ABOVE the text it belongs to and on its left edge — the small quote-style
    citation it has always been. It lays out from frame one and is simply hidden until its
    beat (the retired prompt's own trick), so the text never moves when it speaks. And it
-   STICKS at the scroller's top edge on its own flat ground, with the header's own short
-   gradient hanging under it, so the text disappears under the credit rather than through
+   STICKS at the scroller's top edge on its own flat ground, with the header's own dithered
+   edge hanging under it, so the text thins under the credit rather than running through
    it; a tap on it scrolls back to the top — the score and SHARE — so the running head
    is also the way back. A BUTTON, like everything tappable on the screen (pointer-only
    app-wide), reset to nothing but its box: the caption inside keeps its own faces. */
@@ -3602,9 +3605,11 @@ body:has(.app > .board-screen) {
   left: 0;
   right: 0;
   top: 100%;
-  height: 24px;
-  background: linear-gradient(to bottom, var(--bg), transparent);
+  height: 6px;
+  background: var(--bg);
   pointer-events: none;
+  -webkit-mask: var(--edge-d) 0 0 / 16px 6px repeat-x;
+  mask: var(--edge-d) 0 0 / 16px 6px repeat-x;
 }
 .solved-source.in {
   visibility: visible;
@@ -3957,19 +3962,23 @@ body:has(.app > .board-screen) {
     opacity: 0;
   }
 }
-/* The list FADES into the ground as it scrolls up under the header (user-decided
-   2026-09-01, the game header's own fade): a mask over the scroller's top 40px, with the
-   same 40px of padding above the content so nothing is faded at rest. The header itself
-   stays bandless — ModalHeader sits in flow on the flat `--bg` dialog, so the fade is
-   the scroller's. */
+/* The list THINS into the ground as it scrolls up under the header (user-decided
+   2026-09-01, the game header's own edge): the house's dithered edge over the scroller's
+   top (`--edge-u`, solid where the list goes on), with 40px of padding above the content
+   so nothing touches it at rest. The header itself stays bandless — ModalHeader sits in
+   flow on the flat `--bg` dialog, so the edge is the scroller's. */
 .hw-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 40px 20px 48px;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 40px);
-  mask-image: linear-gradient(to bottom, transparent, #000 40px);
+  -webkit-mask:
+    var(--edge-u) 0 0 / 16px 6px repeat-x,
+    linear-gradient(#000, #000) 0 6px / 100% calc(100% - 6px) no-repeat;
+  mask:
+    var(--edge-u) 0 0 / 16px 6px repeat-x,
+    linear-gradient(#000, #000) 0 6px / 100% calc(100% - 6px) no-repeat;
 }
 .hw-frame {
   width: min(1100px, 100%);
@@ -4126,11 +4135,32 @@ body:has(.app > .board-screen) {
   scrollbar-width: none;
   user-select: none;
   -webkit-user-select: none;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
-  mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
 }
 .wheel-scroll::-webkit-scrollbar {
   display: none;
+}
+/* THE DRUM'S ENDS (the hole wheel's and the language's): the outer rows thin in hard steps
+   through the Bayer cells a line giving way goes out through (`--dzo-*`) — three whole tiles
+   from each edge, three quarters, a half, a quarter of the cells — never an opacity ramp. A
+   row passing out of the drum steps down through them, cell by cell. */
+.wheel-scroll,
+.ps-drum {
+  -webkit-mask:
+    var(--dzo-6) 0 0 / 16px 16px repeat-x,
+    var(--dzo-4) 0 16px / 16px 16px repeat-x,
+    var(--dzo-2) 0 32px / 16px 16px repeat-x,
+    linear-gradient(#000, #000) 0 48px / 100% calc(100% - 96px) no-repeat,
+    var(--dzo-2) 0 calc(100% - 32px) / 16px 16px repeat-x,
+    var(--dzo-4) 0 calc(100% - 16px) / 16px 16px repeat-x,
+    var(--dzo-6) 0 100% / 16px 16px repeat-x;
+  mask:
+    var(--dzo-6) 0 0 / 16px 16px repeat-x,
+    var(--dzo-4) 0 16px / 16px 16px repeat-x,
+    var(--dzo-2) 0 32px / 16px 16px repeat-x,
+    linear-gradient(#000, #000) 0 48px / 100% calc(100% - 96px) no-repeat,
+    var(--dzo-2) 0 calc(100% - 32px) / 16px 16px repeat-x,
+    var(--dzo-4) 0 calc(100% - 16px) / 16px 16px repeat-x,
+    var(--dzo-6) 0 100% / 16px 16px repeat-x;
 }
 /* THE VEIL: while the wheel stands over a hole, the word and exponent beneath it are
    hidden in place (the box stays, so nothing reflows) — the slot row draws the word there
@@ -8188,6 +8218,20 @@ figure.l1-fig {
   overflow-y: auto;
   overscroll-behavior: contain;
   scroll-snap-type: y mandatory;
+}
+/* The members' list and the successor pick, while they hold more below (`data-more`,
+   `useMoreBelow`), end on the house's dithered edge (`--edge-d`, solid where the list goes
+   on): a line passing out at the foot thins through the Bayer cells instead of being cut.
+   At rest on whole lines it falls on a line's bare margin; a list on its last line ends
+   clean, so a framed line standing there keeps its corners. */
+.group-room > .board-list[data-more],
+.confirm-pick[data-more] {
+  -webkit-mask:
+    linear-gradient(#000, #000) 0 0 / 100% calc(100% - 6px) no-repeat,
+    var(--edge-d) 0 100% / 16px 6px repeat-x;
+  mask:
+    linear-gradient(#000, #000) 0 0 / 100% calc(100% - 6px) no-repeat,
+    var(--edge-d) 0 100% / 16px 6px repeat-x;
 }
 .group-room > .board-list > .board-row,
 .confirm-pick > .board-row {

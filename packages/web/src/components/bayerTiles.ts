@@ -2,8 +2,9 @@ import { BAYER_8 } from '@whippin/shared';
 
 // THE BOARDS' ORDERED DITHER AS CSS MASKS: the house's texture (the run's heat, the meter's
 // charge, the foil) said by the browser itself, on the house's 2px cell, for the two things
-// the board screen thins through it — a line ARRIVING, and the EDGE where your own line, held
-// at the list's edge, meets the lines passing under it. A tile is an SVG of whole 2px cells,
+// the app thins through it — a line or a screen ARRIVING (and giving way), and the EDGE where
+// what scrolls meets a held line (your own line at the list's edge, the header's band, a
+// drum's ends). A tile is an SVG of whole 2px cells,
 // drawn where the Bayer 8×8 threshold (shared `bayer.ts`) is under the density at that cell,
 // and used as a mask: a cell is shown or it is not, never half of one.
 

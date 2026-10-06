@@ -53,7 +53,8 @@ import { LANGS, type LangCode } from '../langs';
 // The air between rows.
 const GAP = 14;
 // Rows visible in a drum, the slot in the middle: room for a row above and below the ends
-// (the CSS fades the outer 44px of each end, so a row arrives out of the dark).
+// (the CSS thins the outer 48px of each end through the dither, so a row arrives out of the
+// dark).
 const VISIBLE = 5;
 
 export default function PuzzleSelect({
