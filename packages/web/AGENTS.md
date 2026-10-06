@@ -173,6 +173,8 @@
       hooks/useRoundSync.ts   its React binding, held by the game ROUTE: reconciles the outbox,
                               registers the round's context once the puzzle is in, and reports
                               WHERE its authoritative state is (the load gate)
+      game/roundOnScreen.ts   what the route's round is drawn from (puzzle, word list, server
+                              state): a round on screen STAYS through a read asked again
       components/GameHold.tsx  the game's HOLD while the route's three reads are out (the puzzle,
                               the word list, the round): the sentence's silhouette over the
                               keyboard's unlit iron keys, in `.game`'s own zones, and `useHold`
@@ -2028,15 +2030,21 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **`useRoundSync` returns WHERE the round's state is** (`RoundLoad`), and the game ROUTE
     (`App`'s `GameRoute`) holds it beside the other two reads — the puzzle, and the
     language's word list, asked at once beside it (it needs only the language); the round
-    is asked as soon as the puzzle names its revision. `Game` mounts only once all three
-    are in (so its first render is already the right one — a day already over opens on its
-    result, never a frame of the board), and until then the route's `.game` column holds
-    THE GAME'S HOLD (bullet below); a failed read is its own `LoadError` + RETRY
-    (`failedPuzzle`, `failedVocab` once the puzzle says there is a game, `failedRound` with
-    `retryRoundSync`). A load can only ever FAIL before it has succeeded once — the engine
-    tracks that as its own `settled` flag rather than reusing `readDone`, which `resync`
-    clears — so a recovery read failing behind a live board is a sync hiccup, never a
-    played round taken away mid-guess.
+    is asked as soon as the puzzle names its revision.
+    `Game` mounts only once all three are in (so its first render is already the right one
+    — a day already over opens on its result, never a frame of the board), and until then
+    the route's `.game` column holds THE GAME'S HOLD (bullet below); a failed read is its
+    own `LoadError` + RETRY (`failedPuzzle`, `failedVocab` once the puzzle says there is a
+    game, `failedRound` with `retryRoundSync`). **Once on screen the round STAYS**
+    (`game/roundOnScreen.ts`): a read it already answered coming back out — an identity
+    adopted from another tab (`rearmRoundSync`), a republish restarting the round
+    (`beginRoundSync`) — leaves `Game` mounted on what it was drawn from until the next
+    answer replaces it (its local state, an open wheel or modal, kept; no hold over a live
+    board); only another round (day, language, bonus) starts over, and a failure there is
+    the engine's retried hiccup, never the route's RETRY. A load can only ever FAIL before
+    it has succeeded once — the engine tracks that as its own `settled` flag rather than
+    reusing `readDone`, which `resync` clears — so a recovery read failing behind a live
+    board is a sync hiccup, never a played round taken away mid-guess.
   - **THE GAME'S HOLD (`components/GameHold.tsx`; the user, 2026-10-06: "the 'loading'
     component is a bit lame compared to the rest")** — no word, TODAY'S GAME TAKING SHAPE:
     ONE hold through the three reads, never restarted, laid over the route's `.game` box in

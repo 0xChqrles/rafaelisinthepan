@@ -1,10 +1,17 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { activeDate, dayNumber as dayNumberOf, isBonusRef, puzzleAddress } from '@whippin/shared';
+import {
+  activeDate,
+  dayNumber as dayNumberOf,
+  isBonusRef,
+  puzzleAddress,
+  type Puzzle,
+} from '@whippin/shared';
 import GameHold, { useHold } from './components/GameHold';
 import usePuzzle from './hooks/usePuzzle';
-import useVocab from './hooks/useVocab';
+import useVocab, { type Vocab } from './hooks/useVocab';
 import useRoundSync from './hooks/useRoundSync';
 import { retryRoundSync } from './state/roundSync';
+import { roundOnScreen, type RoundOnScreen } from './game/roundOnScreen';
 import Account from './screens/Account';
 import AccountEmail from './screens/AccountEmail';
 import Profile from './screens/Profile';
@@ -27,7 +34,7 @@ import Invite from './tutorial/Invite';
 import Learn from './tutorial/Learn';
 import Lesson from './tutorial/Lesson';
 import { PLAY_LEVEL } from './tutorial/levels';
-import { roundKeyFor, useGameStore } from './state/gameStore';
+import { roundKeyFor, useGameStore, type RoundServer } from './state/gameStore';
 import { track } from './analytics';
 import { useLocation, navigate } from './routing';
 import { parseRoute, pathForGame, pathForLesson, type LangCode, type Route } from './langs';
@@ -49,6 +56,9 @@ import {
 // renders it: the header's presence follows this, not the other way round. (The tutorial was
 // a third until #269 gave it routes of its own — `/<lang>/learn`.)
 type GameSurface = 'invite' | 'game';
+
+// What the game route's round is drawn from (`game/roundOnScreen.ts`).
+type Shown = RoundOnScreen<Puzzle, Vocab, RoundServer>;
 
 export default function App() {
   const pathname = useLocation();
@@ -321,6 +331,17 @@ function GameRoute({
   const today = useToday();
   const isActiveDay = bonusId === undefined && (date == null || dayNumberOf(date) === today);
 
+  // Once the round is on screen it STAYS (`game/roundOnScreen.ts`): a read it already
+  // answered coming back out — an identity adopted from another tab, a republish — leaves the
+  // round standing on what it had until the next answer replaces it, and a failure there is
+  // the engine's retried hiccup behind a live board, never this screen's RETRY.
+  const live: Shown | null =
+    puzzle !== null && vocab !== null && round?.status === 'ready'
+      ? { roundKey, puzzle, vocab, server: round.server }
+      : null;
+  const [kept, setKept] = useState<Shown | null>(null);
+  const shown = roundOnScreen(kept, live, roundKey);
+  if (shown !== kept) setKept(shown);
   // What the route can show, in order: a puzzle that failed to come, a day with none, a word
   // list that failed (only once the puzzle says there is a game to play with it), a round
   // read that failed — each its own RETRY — else the game, once all three reads are in,
@@ -332,17 +353,15 @@ function GameRoute({
   const failure =
     error !== null
       ? { message: 'failedPuzzle' as const, onRetry: retry }
-      : noPuzzle || puzzle === null
+      : noPuzzle || puzzle === null || shown !== null
         ? null
         : vocabError !== null
           ? { message: 'failedVocab' as const, onRetry: retryVocab }
           : round?.status === 'failed'
             ? { message: 'failedRound' as const, onRetry: () => retryRoundSync(roundKey) }
             : null;
-  const server = round?.status === 'ready' ? round.server : null;
-  const ready = puzzle !== null && vocab !== null && server !== null;
   // (The invitation stands in for the hold while the reads go on behind it.)
-  const hold = useHold(surface === 'game' && failure === null && !noPuzzle && !ready);
+  const hold = useHold(surface === 'game' && failure === null && !noPuzzle && shown === null);
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
   useEffect(() => {
@@ -382,24 +401,24 @@ function GameRoute({
         // THE GAME'S COLUMN, the route's: the hold stands in it through the three reads and
         // gives way UNDER the round once they are in (first in the column, so the round
         // paints over it).
-        <div className="game" aria-busy={ready ? undefined : true}>
+        <div className="game" aria-busy={shown !== null ? undefined : true}>
           {hold.mounted && (
             <GameHold
               lang={lang}
               puzzle={puzzle}
               wordsIn={vocab !== null}
-              roundIn={server !== null}
+              roundIn={round?.status === 'ready'}
               race={isActiveDay}
               shown={hold.shown}
               leaving={hold.leaving}
             />
           )}
-          {ready && (
+          {shown !== null && (
             <Game
-              puzzle={puzzle}
+              puzzle={shown.puzzle}
               puzzleRef={ref}
-              vocab={vocab}
-              server={server}
+              vocab={shown.vocab}
+              server={shown.server}
               isActiveDay={isActiveDay}
               deferResultsAnimation={preview.streak != null}
               fromHold={hold.leaving}
