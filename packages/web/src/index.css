@@ -1229,8 +1229,8 @@ body:has(.app > .board-screen) {
 /* The screen title ("ARCHIVE", "TUTORIAL") — lives in the top-LEFT status chip, the
    same corner the game gives its percentage (decided 2026-07-21; formerly absolutely
    centered). */
-/* A screen's NAME. Plain type by itself (ModalHeader reuses this class on its flat
-   dialogs); IN THE HEADER it is a HELD WORD — see the chip rule below. */
+/* A screen's NAME. In the header, and in the header row a full-screen dialog wears
+   (ModalHeader's `.modal-bar`), it is a HELD WORD — see the chip rule below. */
 .topbar-title {
   /* ONE SIZE, ON EVERY SCREEN (user-decided 2026-08-31). It was a viewport clamp
      (12–14px) that two phone step-downs then overrode for the puzzle title and the back
@@ -1258,8 +1258,10 @@ body:has(.app > .board-screen) {
    heavy was about a chip INSIDE a glass band; the band is gone (the header sits on the bare
    ground at rest), and the chip is now the app's one emphasis gesture worn by the one
    thing the header is about. Laid out, not drawn: unlike the sentence's, this chip has
-   room to take — the row's centre is empty. */
-.topbar .topbar-title {
+   room to take — the row's centre is empty. A full-screen dialog's own header row
+   (ModalHeader's `.modal-bar`: MOT 3, NEW GROUP, a group's name) wears it the same. */
+.topbar .topbar-title,
+.modal-bar .topbar-title {
   display: inline-block;
   padding: 5px 7px 4px;
   line-height: 1;
@@ -4963,7 +4965,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
      comment already calls the last things that can give; they simply have to give sooner.
      Measured at 341, the worst width (the keys are still 32px there and none of the ≤340
      air has arrived): SAUVEGARDE ran 31px into the keys, 14px after this. */
-  .topbar .topbar-title {
+  .topbar .topbar-title,
+  .modal-bar .topbar-title {
     padding: 5px 5px 4px;
   }
   .title-tag {
@@ -5042,7 +5045,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   display: none;
 }
 @media (max-width: 374px) {
-  .topbar .topbar-title {
+  .topbar .topbar-title,
+  .modal-bar .topbar-title {
     padding: 5px 4px 4px;
   }
 }

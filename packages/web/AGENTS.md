@@ -4184,8 +4184,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `/account`'s plain name, `LangTitle`'s — wears the sentence chip (the game surfaces'
     title is the app's mark instead since 2026-09-16, the code beside it in plain title
     type: the mark is its one emphasis): `--fg` ground, `--bg` ink,
-    square, 12px at 600, laid out rather than drawn (`.topbar .topbar-title`;
-    ModalHeader's flat dialogs keep the plain type). The day and the chevron stand OUTSIDE
+    square, 12px at 600, laid out rather than drawn (`.topbar .topbar-title`, and
+    `.modal-bar .topbar-title`: a full-screen dialog's header row — the words modal's MOT n,
+    NEW GROUP, a group's name — wears it the same). The day and the chevron stand OUTSIDE
     the chip the way a hole's exponent does; hover and press DIM the chip by the hole's
     own mixes, since white cannot brighten. The day states its own 12px now that it sits
     outside the chip's rule (it inherited the body's 16px for one measurement), and the
