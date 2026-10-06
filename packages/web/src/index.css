@@ -9899,8 +9899,9 @@ figure.l1-fig {
   }
 }
 
-/* THE BOOK'S BADGE (#269): the count of built levels this device has not done, a small
-   accent square on the key's top-right corner. A translation off the key's box, so the key
+/* THE BOOK'S BADGE (#269): the count of built levels this device has not done, a plate of
+   whole pixels in the accent on the key's top-right corner, the digit cut out of it in the
+   ground's ink (`HeaderKeys`' `BadgePlate`). A translation off the key's box, so the key
    itself keeps the row's geometry and the dot under it never moves. */
 .home-btn {
   position: relative;
@@ -9908,20 +9909,10 @@ figure.l1-fig {
 .hk-badge {
   position: absolute;
   top: var(--hk-badge-top, 4px);
+  top: round(down, var(--hk-badge-top, 4px), 1px);
   right: 2px;
-  min-width: 12px;
-  height: 12px;
-  padding: 0 3px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 2px;
-  background: var(--accent);
-  color: var(--bg);
-  font-family: var(--ui);
-  font-size: 8px;
-  font-weight: 700;
-  line-height: 1;
+  display: block;
+  color: var(--accent);
   pointer-events: none;
 }
 

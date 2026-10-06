@@ -4261,7 +4261,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (the rules' place; on a lesson the lit book still leads to the list, and any other key
   leaves LEVEL 1 as a SKIP — leaving an article level is only leaving; the fast-forward
   control that slot held, `skip.svg` and `ariaSkipTutorial`, are retired). The book wears a
-  BADGE while level 1 is ready in this language and not done on this device
+  BADGE — a square accent plate of whole pixels, the digit cut out of it in the ground's ink
+  from the pixel face's own cells (`DIGIT_MASKS`, `crispEdges`; `BadgePlate`) — while level
+  1 is ready in this language and not done on this device
   (`undoneLevels(done, lang)`; the articles have no done state). **`profileReturn` is GONE from the store**: every
   place is one tap away, so nothing has to remember where it was opened from, and
   `/account`'s left slot is its plain NAME rather than a back control. **This OVERTURNS #190's ACTIVE-DAY-ONLY crown** (2026-08-20): that rule hid
