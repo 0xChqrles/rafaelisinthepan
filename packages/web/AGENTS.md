@@ -4088,11 +4088,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   prompt retired as on a solve. Its ranks are read off the static single-word maps
   (commands in the file's header) and hardcoded, never the lesson's words. It waits for the
   pixel face (at most 400ms) and for the page to be seen, never loops, is aria-hidden
-  behind one sr-only sentence, and under reduced motion plays as cuts. The question's
-  selection box is the screen's one emphasis gesture, so it waits for the demo's found word
-  (an 8s deadline behind it, counted from the show's start; at once under reduced motion or
-  in a tab opened hidden), the
-  title's words standing from the first frame. TUTORIAL and SKIP work from the first frame;
+  behind one sr-only sentence, and under reduced motion plays as cuts. The question's last
+  words wear the inverted selection box STILL (user-decided 2026-10-06: "this useless
+  animation that means nothing"): drawn from the first frame, never animated, waiting on
+  nothing in the demo — so it stands while the demo's held word wears its own chip
+  (`.invite-mark`: its side padding given back by negative margins, so it moves no letter;
+  the marked words never part across a line). TUTORIAL and SKIP work from the first frame;
   TUTORIAL is the big action's 430px. No line of copy, no time promised. TUTORIAL navigates
   to level 1 (the lesson's PLAY or a header exit
   settles the flag), SKIP settles it there. Its preload warms the level-1 chunk

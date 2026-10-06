@@ -5573,37 +5573,15 @@ figure.l1-fig {
   text-shadow: none;
   padding-top: var(--cap-shift);
 }
-/* The marked words stand in the title's own ink from the first frame, never parting across
-   a line; the BOX is a second, inverted copy laid exactly over them, its padding drawn
-   outward so lighting it moves no letter, hidden until the demo hands the gesture over
-   (`.lit`, Invite). Then it is DRAWN across the words, left to right, in hard steps — a
-   highlighter, not a fade. */
+/* The marked words wear the box STILL, from the first frame — never drawn in, never waiting
+   on the demo — and never part across a line. Its side padding is given back by equal
+   negative margins, so the box moves no letter. */
 .invite-mark {
-  position: relative;
   white-space: nowrap;
-}
-.invite-mark-box {
-  position: absolute;
-  inset: -0.04em -0.22em;
   padding: 0.04em 0.22em;
-  /* A line exactly the face's own height (no leading), so the copy's glyphs stand on the
-     words' own baseline: the inline box the words sit in is that height too. */
-  line-height: normal;
+  margin: 0 -0.22em;
   background: var(--fg);
   color: var(--bg);
-  visibility: hidden;
-}
-.invite-mark.lit .invite-mark-box {
-  visibility: visible;
-  animation: mark-wipe 320ms steps(8, jump-end);
-}
-@keyframes mark-wipe {
-  from {
-    clip-path: inset(0 100% 0 0);
-  }
-  to {
-    clip-path: inset(0 0 0 0);
-  }
 }
 /* The question stands a step apart from the answers under it. */
 .invite .rules-gate .invite-title {
@@ -8959,6 +8937,14 @@ figure.l1-fig {
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
   animation: mark-wipe 320ms steps(8, jump-end) 420ms backwards;
+}
+@keyframes mark-wipe {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
 }
 .learn-sub {
   font-size: 10.5px;

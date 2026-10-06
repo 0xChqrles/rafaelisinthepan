@@ -15,7 +15,8 @@ import type { LangCode } from '../langs';
 // guesses into the prompt: a word outside the map, answered MISS; a closer one, which the
 // hole takes with a smaller number; the secret, which inks the hole in the solve's cobalt.
 // The sentence then states its own pitch, the prompt retires as on a solve, and the screen is
-// still: nothing loops and nothing is said. Then the question asks (`Invite`).
+// still: nothing loops and nothing is said. The question under it (`Invite`) stands from the
+// first frame and waits on nothing here.
 //
 // Every frame reads as a sentence, the number falling as the meaning closes in:
 //   en  Every guess tells you how lost⁹¹ you are.  →  banana: MISS  →  near²  →  close
@@ -102,17 +103,7 @@ const NO_HITS: HitState[] = [];
 const NO_HISTORY: string[] = [];
 const noop = () => {};
 
-export default function InviteDemo({
-  lang,
-  onStart,
-  onDone,
-}: {
-  lang: LangCode;
-  // The show has begun (its face is in, the page is seen): the question's deadline counts
-  // from here, never from the screen's mount.
-  onStart: () => void;
-  onDone: () => void;
-}) {
+export default function InviteDemo({ lang }: { lang: LangCode }) {
   const demo = DEMOS[lang];
   const [hole, setHole] = useState<RuntimeHole>(() => ({
     pos: demo.hole.pos,
@@ -155,7 +146,6 @@ export default function InviteDemo({
   // demo and clears them all.
   useEffect(() => {
     if (!ready) return undefined;
-    onStart();
     const timers: number[] = [];
     const at = (ms: number, step: () => void) => timers.push(window.setTimeout(step, ms));
     let t = FIRST_KEY_MS;
@@ -178,15 +168,12 @@ export default function InviteDemo({
       }
     });
     return () => timers.forEach((id) => window.clearTimeout(id));
-  }, [ready, demo, onStart]);
+  }, [ready, demo]);
 
   const onHitDone = useCallback(() => setMiss(null), []);
   // The hole inked (Phrase's own signal, never a timer guessing it): the prompt leaves as it
-  // does on a solve, and the question may light.
-  const onFound = useCallback(() => {
-    setDone(true);
-    onDone();
-  }, [onDone]);
+  // does on a solve.
+  const onFound = useCallback(() => setDone(true), []);
 
   // The game's own two rows, as children of the invitation's `.play`: the sentence (in the
   // game's `.phrase-anchor`) and the prompt (in its `.prompt-zone`), so they stand at the
