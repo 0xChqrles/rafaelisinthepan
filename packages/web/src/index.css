@@ -10389,6 +10389,14 @@ figure.l1-fig {
 .device-sub.current {
   color: var(--accent);
 }
+/* The day it was last seen, `MM-DD`, in the pixel face's 8px muted figures (the cards' way of
+   writing a day). */
+.device-sub.seen {
+  font-family: var(--pixel-font);
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
 /* THE QUIET WORD in a tappable thing's corner brackets (6px arms), stepping to white on a
    hover — the area's small act: SIGN OUT on a device line (never red: signing a device out
    loses nothing), RETRY under a read that failed. */

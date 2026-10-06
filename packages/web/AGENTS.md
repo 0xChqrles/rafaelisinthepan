@@ -1493,7 +1493,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
       above the edge down to an iPhone SE's browser.
     - **THE DEVICES are board lines**, no title: a pixel device glyph (phone / tablet /
       computer; the accent on THIS device), the label, one quiet fact (THIS ONE, or the
-      last-seen day), SIGN OUT as a bracketed word whose brackets fit the word (28px, the
+      last-seen day as `MM-DD` in the pixel face's 8px muted figures, said in words to a
+      screen reader), SIGN OUT as a bracketed word whose brackets fit the word (28px, the
       finger's target still 44); they dissolve in once the record has CALMED — its count
       landed and today's foil cooled (`useRecordCalm`), the wait counted from the moment the
       lines mount — held as the skeleton line while the record has no numbers yet, and let in
@@ -1774,8 +1775,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     slate iron and are struck in their inks as they fill (THE CODE PROMPT, above); a refusal
     is red only while the wrong code is on screen — once the cells clear
     for the retype the row returns to rest and the tries-left LINE carries the message.
-    Device rows are TWO LINES (label over THIS ONE in the accent, or the last-seen
-    day-month — the single line truncated its own current marker on a phone). The erase
+    Device rows are TWO LINES (label over THIS ONE in the accent, or the last-seen day,
+    `MM-DD` — the single line truncated its own current marker on a phone). The erase
     confirmation SHOWS the account being deleted (mark + name over the stakes, the
     signed-out screen's own move), and the two endings return differently: an ADOPT offers
     PLAY into the game, a BIND offers OK back to `/account` — a settings errand ends where

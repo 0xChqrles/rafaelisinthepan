@@ -9,7 +9,8 @@
 // only ever hold the device reading the screen). It wears the boards' grammar: LINES on the
 // bare ground, no title — each line a pixel GLYPH of the device (a phone, a tablet, a
 // computer; in the accent for the one in your hand), its label, ONE quiet fact (THIS ONE, or
-// the day it was last seen), and SIGN OUT as a word in the corner brackets of a thing to tap.
+// the day it was last seen, `MM-DD` in the pixel face's muted figures), and SIGN OUT as a
+// word in the corner brackets of a thing to tap.
 // The lines come in through the dither, one after the other, once the record has CALMED — its
 // count landed and today's foil link cooled — never under its climax, and never before the
 // record has its numbers at all.
@@ -62,13 +63,18 @@ function DeviceGlyph({ row }: { row: DeviceRow }) {
 // The lines' stagger as they dissolve in, one after the other (the boards' own beat).
 const LINE_STAGGER_MS = 55;
 
-function lastUsed(row: DeviceRow, lang: string): string | null {
+// The day a device was last seen: `MM-DD` as the cards write a day (ISO, its month and day),
+// and in words for a screen reader. No year: the sub-line answers "which one is my old
+// phone?", and every device a person still cares about was seen within months.
+function lastUsed(row: DeviceRow, lang: string): { figures: string; words: string } | null {
   const at = Date.parse(row.lastSeenAt);
   if (!Number.isFinite(at)) return null;
-  // Day + month, no year: the sub-line answers "which one is my old phone?", and every
-  // device a person still cares about was seen within months. The account screen's own
-  // `began` formatter makes the same call.
-  return new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'short' }).format(new Date(at));
+  const day = new Date(at);
+  const two = (n: number) => String(n).padStart(2, '0');
+  return {
+    figures: `${two(day.getMonth() + 1)}-${two(day.getDate())}`,
+    words: new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'long' }).format(day),
+  };
 }
 
 // The route's answer is authoritative: the top-level deviceId names the caller and the
@@ -225,7 +231,12 @@ export default function DeviceList({ lang }: { lang: string }) {
                   {row.current ? (
                     <span className="device-sub current">{t(lang, 'deviceCurrent')}</span>
                   ) : (
-                    used !== null && <span className="device-sub">{used}</span>
+                    used !== null && (
+                      <span className="device-sub seen">
+                        <span aria-hidden="true">{used.figures}</span>
+                        <span className="sr-only">{used.words}</span>
+                      </span>
+                    )
                   )}
                 </span>
                 <button
