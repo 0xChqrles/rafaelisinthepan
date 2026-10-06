@@ -23,8 +23,8 @@
       state/identityScope.ts  what an identity OWNS, cleared when it changes (wired in main)
       state/localIdentityDeploy.ts  the username decided LOCALLY, deployed with the account
                               (2026-08-26): acquiring an identity stores the seed's assigned
-                              face through an atomic create-only profile write, whichever
-                              deploy button acquired it (the editor's SAVE included)
+                              face through an atomic create-only profile write — muted for
+                              the editor's SAVE, which writes that pair itself
       state/gamePersistence.ts  the atomic IndexedDB boundary for cross-tab game-state writes
       state/signedOutVerdict.ts  the ONE spelling of the sign-out resolution every private
                               route client shares (401 + `unknown_device` code)
@@ -67,11 +67,13 @@
       components/AccountKey.tsx  the fifth of them — the account's door in the daily loop
       components/CodeInput.tsx  the six-digit prompt: six drawn iron keys over ONE real input,
                               each struck in its `CODE_INKS` ink; auto-verifying on the sixth
-      components/AccountFace.tsx  the ONE read of "who an account is" (mark + name), shared
-                              by the account screen, the flow's ending and the sign-out screen
+      components/AccountFace.tsx  "who an account is" (mark + name): the player's OWN face,
+                              ONE read every surface drawing it shares (`useOwnFace`), and
+                              another account's (`useAccountFace`, the crossroads' target)
       state/ownFace.ts        when the player's OWN face is read again: the signals its
                               profile's two writers (the deploy, the editor's SAVE) send,
-                              and the masthead's retry of a read that failed (`retryOwnFace`)
+                              and a retry of a read that failed (`retryOwnFace`: the
+                              masthead's mark, the header key when the tab comes back)
       state/account.ts        what `/account` shows — the `{token}` summary and the
                               group-departure drain behind it (#271)
       state/groups.ts         the player's GROUPS (#271): the ONE transient cache every group
@@ -1161,14 +1163,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
     derived-from-accountId face, never surfaced. A 401 `unknown_device` instead goes
     through the shared signed-out-verdict helper and is not retried. It listens to the
     same identity-change signal identityScope does, wired beside it in `main.tsx` — so a
-    future deploy trigger cannot forget it. **The profile editor's SAVE is no exception**
-    (user-delegated 2026-10-06): its own write into an account that was never customized
-    stores what the player was SHOWN — the seed's pair where they left it untouched
-    (`guardedSaveBody`) — and it is an UPSERT, so it lands over this create or makes it the
-    settled 409; either way the account ends on the face the player was wearing, and a SAVE
-    that fails still leaves it there rather than on the new id's assigned face. The player's
-    own face waits for the flight and reads the profile once it settles (the `AccountFace`
-    bullet). Contract-tested
+    future deploy trigger cannot forget it. **The ONE trigger it stands down for is the
+    profile editor's SAVE**: that tap acquires the account inside `withoutLocalIdentityDeploy`
+    and writes the pair itself — into an account never customized (a 404, or a row that IS
+    the seed's pair: another tab's deploy, which the mute does not reach) it stores what the
+    player was SHOWN, the seed's pair where they left it untouched (`guardedSaveBody`) — so
+    nothing races it; and a SAVE that writes nothing (a refusal, a failure) hands the account
+    back (`deployLocalIdentity`), so the account still lands on the face the player was
+    wearing, never on the new id's assigned face. The player's own face waits for the
+    flight and reads the profile once it settles (the `AccountFace` bullet). Contract-tested
     (`localIdentityDeploy.test.ts`, `ownFace.test.tsx`).
   - **Persisted game state is TRANSACTIONAL across tabs** (PR-219 final review, replacing
     rounds 2–3's snapshot merge). Zustand is now only the synchronous UI cache. Every
@@ -1454,9 +1457,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
       edge the row's ONE key, the editor's door: the pixel pencil in a tappable thing's
       corner brackets (SIGN OUT's: 2px, 6px arms, white at 38%; no word, no chevron; the
       edit word its accessible name). NOTHING ELSE in the row is framed, so nothing else
-      reads as editable — save the mark's held box when the face's read FAILED: the still
-      stipple in the same corners (6px arms, 6px off the mark), the tap that asks again, the
-      name's box resting on the stipple beside it; a GONE account's mark is its inkless
+      reads as editable — save the mark's held box when the face's read FAILED: the same
+      corners drawn ON the mark's 50px box (the pencil's way, inside its own key — the row
+      has no side padding, so corners hung outside it would be cut) with the still stipple
+      6px inside them, the tap that asks again, the name's box resting on the stipple beside
+      it; a GONE account's mark is its inkless
       ghost and the pencil goes, its box kept (the `AccountFace` bullet). The words land ONCE, when the face AND what the account is saved as
       are both known (a failed summary read lands the name alone, and it stays printed while
       a RETRY is out) — so nothing moves after,
@@ -1656,13 +1661,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     BESIDE `.account-screen`** — `.link-step` therefore sets the GAP alone, since a `padding`
     there wins the cascade and silently undoes the screen's header clearance (found in the
     browser, on the first run).
-  - **`components/AccountFace.tsx` is the ONE read of who an account is.** Three surfaces
-    draw a mark and a name — the account summary, the flow's ending, the sign-out screen —
-    and each used to fetch it themselves. It resolves to NOTHING until settled and is TAGGED
-    with the account it is about, the leaderboard strip's own rule: a component that is not
-    remounted when its account changes would otherwise render the previous person's face.
-    **The player's OWN face follows the profile this device writes** (`useOwnFace` over
-    `state/ownFace.ts`). `GET /profile` stays its only source; the writers only SIGNAL, and
+  - **`components/AccountFace.tsx` is the read of who an account is** — the player's OWN
+    face (`useOwnFace`) and another account's (`useAccountFace`, the crossroads' joining
+    side; the signed-out screen keeps its own read, `faceFrom`). It resolves to NOTHING
+    until settled and is TAGGED with the account it is about, the leaderboard strip's own
+    rule: a component that is not remounted when its account changes would otherwise render
+    the previous person's face. **The OWN face is ONE read every surface drawing it shares**
+    (module state): asked once per account and revision by whichever surface asks first, so
+    the header's key, `/account`'s masthead, the email flow and the race line cost one
+    request, a surface mounted later draws the settled face at once, and a read asked again
+    from anywhere lands on all of them. **It follows the profile this device writes**
+    (`state/ownFace.ts`). `GET /profile` stays its only source; the writers only SIGNAL, and
     never hand it a face (not the seed's, not a POST body's). The editor's successful SAVE
     re-reads it, the face already drawn standing while the read is out. An account this
     tab MINTED (`mintedHere`) keeps the seed's face while its first profile is being
@@ -1674,17 +1683,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
     once, and read again when the deploy settles. A read that FAILS is no news: it changes
     no face already drawn, and a minted account whose read-back fails keeps the seed's face.
     **Where no face was drawn yet, the OWN face settles `'failed'` — never the assigned
-    identity** (user-delegated 2026-10-06, narrowing the boards' "a failed read dresses
-    blank" to OTHER players' faces): the assigned pseudonym and mark are a stand-in nobody
-    mistakes for themselves on somebody else's row, but drawn on the player's own page they
-    named a stranger as them (`GoldenComet68` over Rafa_cuisine's masthead). The header key,
-    `/account`'s masthead, the email flow's lead (its mark and name boxes,
-    `.link-hold.failed`, the Bayer tile's same 50% checker) and the race line's own mark
-    rest on the still stipple (`StatSlot`, 50%), the masthead's mark held in a tappable
-    thing's corners as the retry (`retryOwnFace`, a re-read with no write behind it — the
-    lead offers none: that screen is about the address); while it is out the box breathes,
-    and it lands the face or rests again. A GONE own account draws its GHOST there
-    (`.ghost-mark` with no ink: the slate stipple alone) and hides the masthead's pencil.
+    identity**: the assigned pseudonym and mark are a stand-in nobody mistakes for
+    themselves on somebody else's row, but drawn as the player's own face they named a
+    stranger as them (`GoldenComet68` over Rafa_cuisine's masthead). The header key,
+    `/account`'s masthead, the email flow (its lead's mark and name boxes, its crossroads'
+    leaving side and its ending — `.link-hold.failed`, the Bayer tile's same 50% checker)
+    and the race line's own mark rest on the still stipple (`StatSlot`, 50%). The read is
+    asked again (`retryOwnFace`, a re-read with no write behind it) by the masthead's mark,
+    held in a tappable thing's corners, and by the header key when the tab comes back (the
+    key stays the account's door; the email flow offers none: that screen is about the
+    address); while it is out the box breathes on every surface, and it lands the face or
+    rests again. A board line is not one of these surfaces: the result's own line, like
+    every row of a list of players, is dressed with the assigned identity when its read
+    failed. A GONE own account draws its GHOST there (`.ghost-mark` with no ink: the slate
+    stipple alone) and hides the masthead's pencil.
   - **`GET /profile` HAS FOUR ANSWERS, AND `api.readProfile` IS WHERE THEY ARE TOLD APART**
     (PR-227 review, 2026-09-02): `shown` (200), `blank` (404 — LIVE, never customized, so the
     assigned identity IS this player's face), `gone` (410 `account_gone` — a DELETED account,
@@ -1699,7 +1711,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     **`AccountFace` DOES TOO** (corrected 2026-09-02 on the PR-227 follow-up review; it
     dressed 404 and 410 alike, on the claim that every caller proves the account live — which
     was FALSE: the flow's crossroads draws `target`, an account this device does not own, and
-    a locally cached token outlives another device's adoption). `useAccountFace` answers
+    a locally cached token outlives another device's adoption). A face read answers
     `Face | 'gone' | 'failed' | null` (`'failed'` the own face's alone — above), with
     `shownFace` and `faceSettled` as the two questions a caller
     asks — so a deleted account draws NOTHING and the box that held its place stops breathing
@@ -2330,12 +2342,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   field the player actually changed from the placeholder speaks, a fetch that fails
   refuses the save rather than risk the wipe, and a successful guarded save re-binds the
   editor to the account's merged truth. **An account that answers "never customized" (a
-  fresh mint, above all) stores the fields the player was SHOWN instead** (user-delegated
-  2026-10-06): the canvas's mark and the line's name verbatim — the seed's pair where
-  untouched, the pseudonym the line showed in place of an emptied field — the same pair
-  every other deploy button stores (`localIdentityDeploy`), never the empty values, which
-  would draw the NEW account id's face on the canvas, the header and the FoilStamp the moment
-  the save landed. The store-halves below ('' for an untouched assigned value) are about an
+  fresh mint, above all — a 404, or a row that IS the seed's pair, another tab's deploy)
+  stores the fields the player was SHOWN instead**: the canvas's mark and the line's name
+  verbatim — the seed's pair where untouched, the pseudonym the line showed in place of an
+  emptied field — the same pair every other deploy button stores (`localIdentityDeploy`,
+  which this tap's acquisition mutes and a save that writes nothing hands the account back
+  to), never the empty values, which would draw the NEW account id's face on the canvas,
+  the header and the FoilStamp the moment the save landed. The store-halves below ('' for an untouched assigned value) are about an
   account the editor loaded, or one that already stores a row. The load effect is
   deliberately keyed on [attempt] alone: an identity arriving under an OPEN editor (a
   deploy elsewhere, another tab) must not reload the fields out from under an edit in
@@ -2544,9 +2557,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (`.board-sub.still`). Under 360px wide a list with no playing member's % to hang in the
     numbers' gutter gives that gutter to the names (`.plays`, set by `BoardUnder`).
   - **Rows CONNECTED to the reader**: YOUR line is said in the ACCENT and the WEIGHT (its
-    rank in the accent, its name bold) — never the corner brackets (user-delegated
-    2026-10-06: brackets are what a tapped thing wears, and these lines are not tapped; the
-    result's boards, whose box IS the tap, keep them round your line) — and STAYS IN SIGHT — sticky under the held head and on the
+    rank in the accent, its name bold) — never the corner brackets (brackets are what a
+    tapped thing wears, and these lines are not tapped; the result's boards, whose box IS
+    the tap, keep them round your line) — and STAYS IN SIGHT — sticky under the held head and on the
     window's foot, and
     held there (`data-stuck`, `hooks/useStuckOwnLine.ts`) the lines passing under it thin
     out through a 3-cell Bayer edge (`bayerTiles.ts`' `--edge-*` tiles) instead of being
@@ -3781,7 +3794,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     %, `ended`): ranked only when the live rows hold their recorded score; else an unranked
     playing row — `∞` among the ended for a round that ended unsolved, 100% for a solve with
     no recorded score — replacing the row the read carries for them. Their face is
-    `useOwnFace`'s.
+    `useOwnFace`'s, dressed as a board dresses any row: where that read failed, the
+    assigned identity.
   - **The block wears the card's ground** (user-decided 2026-10-02, with the card; the
     board screen wears it too): no panel, no row boxes — lines of type set on the column.
     **THE TABS are the boards' ONE control, `components/BoardTabs`** (the board screen's
@@ -4163,8 +4177,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **THE ROW IS APP CHROME, AND IT IS MOUNTED ONCE (user-decided 2026-09-02).** Every
   screen used to render its own `TopBar`, so tapping a header key unmounted the whole row
   and mounted a different screen's copy of it — and the player's own FACE paid for it:
-  `useAccountFace` holds its answer in component state, so every navigation put the key
-  back to its skeleton and re-read `/profile` over the network, which reads as the page
+  a face read held in component state, so every navigation put the key back to its
+  skeleton and re-read `/profile` over the network, which reads as the page
   reloading (user-reported). `App` mounts the row now, above the routed surface, and it
   outlives the screens under it: `TopBar` takes only `right`, and a screen publishes its
   LEFT slot through the exported `HeaderLeft` — a portal into the row's own left track, so
@@ -4179,9 +4193,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (`?streak=`, `?error=`) moved up with that decision, because they are part
   of the answer. Verified in the browser: the `header`, `.hk-row` and `.account-key` DOM
   nodes are the SAME elements across every key, and a deployed account's face never
-  skeletons and issues no second profile read. (Not fixed by this, and worth naming: the
-  ACCOUNT SCREEN's own `useOwnFace` still re-reads on each visit — a shared read cache is
-  the remedy there, not the row.)
+  skeletons and issues no second profile read. (The face's read itself is shared too:
+  `useOwnFace` is ONE read every surface draws, so opening `/account` asks nothing the row
+  has not already read — the `AccountFace` bullet.)
 
   **THE PROBLEM IT SOLVES.** The row carried WHICH PUZZLE in three places — the day as a
   left chip, the daily as a centred segmented switcher, the language as a right chip —
@@ -4316,8 +4330,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     drawn in between; and a SAVE in the editor shows on it at once (the `AccountFace`
     bullet). It HOLDS ITS BOX until the face settles (the leaderboard strip's rule, and it
     matters more here, where the control is on screen every day); settled with no face it
-    says which — a read that FAILED rests on the still stipple, an account GONE is its
-    ghost (the `AccountFace` bullet). **It is A BARE PIXEL TILE, IN COLOUR — the fifth cell
+    says which — a read that FAILED rests on the still stipple (and is asked again when
+    the tab comes back), an account GONE is its ghost (the `AccountFace` bullet). **It is A
+    BARE PIXEL TILE, IN COLOUR — the fifth cell
     drawing in a row of five** (user-decided 2026-09-02, in two steps: square corners, then
     "remove the box shadow"; it kept its COLOUR from 2026-08-31, "actually quite cool", and
     is still the one full-colour chrome control, because that colour is the one thing on the

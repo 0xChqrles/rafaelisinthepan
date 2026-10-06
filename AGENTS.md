@@ -350,9 +350,11 @@ The live routes then share:
   (`gameStore.localSeed`, publicId-shaped); **the username is decided locally, then deployed**:
   on acquiring an account the client stores the placeholder name + mark as the profile, only
   into an account with NO stored row (`createOnly: true`; a lost race is 409 `profile_exists`,
-  settled) — whichever button deployed it, profile SAVE included, whose own write into an
-  account with no row stores the fields the player was shown (the placeholder's where
-  untouched), so no deploy swaps the face. Group invites are gated on neither side.
+  settled). Profile SAVE is the one button that mutes that background write for its own
+  acquisition and writes the pair itself: into an account never customized (no row, or the
+  placeholder's own) it stores the fields the player was shown — the placeholder's where
+  untouched — and a SAVE that writes nothing hands the account back to the background
+  write, so no button swaps the face. Group invites are gated on neither side.
 - **NO TOKEN MEANS NO PRIVATE FETCH**: a tokenless device knows its server state is empty and
   publishes ready-and-empty round/history state without calling `/round` or `/history`.
 - **First bootstrap is ONE origin-wide critical section** (Web Lock over re-read → mint/persist
@@ -722,11 +724,15 @@ The live routes then share:
   Ranking rules are shared pure functions
   (`shared/src/leaderboard.ts`): competition tie ranks, the plain top-50 cut, the ±2 own-row
   window, `standingIn`. Rows dressed with profiles (a missing or FAILED profile read dresses
-  blank → assigned identity; a GONE account is dropped). That fallback is for OTHER players'
-  faces: the player's OWN face as the web reads it for itself (the header's key, `/account`,
-  the email flow's lead, the race line) never takes the assigned identity for a failed read —
-  it rests on the still stipple until read again (user-delegated 2026-10-06; web
-  `AGENTS.md`, `AccountFace`).
+  blank → assigned identity, the caller's own row included; a GONE account is dropped). The
+  web draws the player's OWN face apart from any row: the header's key, `/account`'s
+  masthead, the email flow (its lead, the crossroads' leaving side, its ending) and the race
+  line's own mark draw it from ONE shared read (`useOwnFace`), which never takes the assigned
+  identity for a failed read — it rests on the still stipple until read again (the
+  masthead's retry, the tab coming back). Every list of players — `/board`'s rows, the
+  solved screen's boards, a group's members, the player's own line included — and the
+  signed-out screen's face keep the assigned identity on a failed read (web `AGENTS.md`,
+  `AccountFace`).
 - **THE PERIOD RULE (`rankPeriod`, ONE spelling for both ends and any later consumer):** each
   day of the range is ranked on its own and pays PODIUM POINTS 3 / 2 / 1 to the first three
   RANKS (a shared first pays both 3; the next rank is then third); then SOLVED DAYS (days with
