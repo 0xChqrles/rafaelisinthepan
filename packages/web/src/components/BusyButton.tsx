@@ -36,7 +36,8 @@ export default function BusyButton({
   // word sits wherever centring puts it — half a pixel off a cell, and its width is the
   // type's, not the grid's. So, busy, the word's box is measured against the padding box and
   // the clearing round it rounded OUTWARD to whole cells, before the first busy frame paints
-  // and again whenever the button changes size (the word moving with its centre).
+  // and again whenever the button changes size (the word moving with its centre). The box
+  // ends on the last letter's tracking, which is air: the clearing is measured off the ink.
   useLayoutEffect(() => {
     const button = buttonRef.current;
     const label = labelRef.current;
@@ -44,11 +45,12 @@ export default function BusyButton({
     const place = () => {
       const box = button.getBoundingClientRect();
       const word = label.getBoundingClientRect();
+      const tracking = parseFloat(getComputedStyle(label).letterSpacing) || 0;
       const left = word.left - box.left - button.clientLeft;
       const top = word.top - box.top - button.clientTop;
       const x0 = Math.floor((left - AIR_X) / CELL + EPS) * CELL;
       const y0 = Math.floor((top - AIR_Y) / CELL + EPS) * CELL;
-      const x1 = Math.ceil((left + word.width + AIR_X) / CELL - EPS) * CELL;
+      const x1 = Math.ceil((left + word.width - tracking + AIR_X) / CELL - EPS) * CELL;
       const y1 = Math.ceil((top + word.height + AIR_Y) / CELL - EPS) * CELL;
       button.style.setProperty('--clear-x', `${x0}px`);
       button.style.setProperty('--clear-y', `${y0}px`);
