@@ -5514,8 +5514,15 @@ figure.l1-fig {
    gate's `.rules-gate` — so every breakpoint the game is tuned for holds it the same way: the
    lockup in the header's row, the demo where the day's sentence and prompt stand, the question
    and its two answers in the tray, TUTORIAL exactly where the gate's PLAY lands. --- */
+/* The demo stands in the HEADER's column — `.topbar-inner`'s 900px, centred, less the row's
+   own insets (its 8px and `.topbar-left`'s 4px a side) — so on a wide screen its first
+   letter stands on the mark's pixel column: the game's own 1200px column would set a
+   two-line sentence far left of the mark, the rest of the screen empty beside it. A phone's
+   column is narrower than both, and nothing changes there. */
 .invite .play {
   pointer-events: none;
+  max-width: calc(900px - 2 * (8px + 4px));
+  align-self: center;
 }
 /* THE LOCKUP: the app's pixel mark (`MARK_GLYPH`, 22 cells at 1x — the header's own) in the
    accent, the name beside it in the lockup type (`.streak-lockup`'s). In the header's row
@@ -5545,24 +5552,52 @@ figure.l1-fig {
 .invite-lockup span {
   translate: 0 2px;
 }
-/* THE DEMO: the site's sentence on the game's own `.phrase`, at the game's size, played once.
-   Held to 22 glyphs a line (the pixel face is 1em a glyph), so it is two lines at every
-   width and the hole stands on the second in every state: a hole changing width moves only
-   what follows it, and line 1 never reflows. Two lines are reserved, so nothing below moves
-   while it decodes. THE LEADING is the one thing that differs from the game's: the MISS
-   float rises off the hole on line 2, and at the game's 1.5 it printed across line 1. The
-   float's rise is fixed in pixels (14px, `hit-pop-in`), so the band it needs between the
-   lines is too: one em of words plus 22px puts it clear of line 1 at every size, the phone's
-   18px float over 13px words included. */
+/* THE DEMO: the site's sentence on the game's own `.phrase`, at the game's size and leading,
+   played once — SKIP swaps one sentence for another in the same dress. Held to 22 glyphs a
+   line (the pixel face is 1em a glyph), so it is two lines at every width and the hole
+   stands on the second in every state: a hole changing width moves only what follows it,
+   and line 1 never reflows. Two lines are reserved (the game's 1.5 leading, twice), so
+   nothing below moves while it decodes. */
 .invite-demo .phrase {
   max-width: 22em;
-  line-height: calc(1em + 22px);
-  min-height: calc(2em + 44px);
+  min-height: 3em;
 }
-/* The exponent keeps the game's own leading: inherited as a length, the line's would stand
-   its smaller box taller than the line, and the sentence would shrink by 2px as it inks. */
-.invite-demo .hole-rank {
-  line-height: 1.5;
+/* THE MISS IS THE WORD'S OWN SIZE (the tutorial's rule, `.tutorial .floating-hit`), and it
+   RISES LESS than the game's: at the game's leading the game's 14px climb, and its 28px
+   more as it fades, would print it across line 1. Here it springs up off the chip it lands
+   on, holds astride the chip's top edge, and fades with a breath of rise — clear of line 1
+   at every size, the spring's peak included (half a line of leading is the whole budget).
+   It keeps its red through the spring: the game's white flash lands on dark ground, and
+   here it would land on the white chip. */
+.invite-demo .floating-hit {
+  font-size: 1em;
+  animation:
+    invite-hit-pop-in 0.32s cubic-bezier(0.22, 1.4, 0.4, 1) var(--hit-delay, 0ms) forwards,
+    invite-hit-fade 0.52s ease-in var(--hit-fade-delay, 320ms) forwards;
+}
+@keyframes invite-hit-pop-in {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 4px)) scale(0.5) rotate(-6deg);
+  }
+  55% {
+    opacity: 1;
+    transform: translate(-50%, calc(-50% - 0.15em)) scale(1.35) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, calc(-50% - 0.4em)) scale(1) rotate(0deg);
+  }
+}
+@keyframes invite-hit-fade {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, calc(-50% - 0.4em)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% - 0.5em)) scale(0.86);
+  }
 }
 /* The question, in the tray over its answers: a bold statement with its LAST WORDS in the
    board's inverted selection box (the Zaki-headline highlight, 2026-08-18). One line in
@@ -5642,10 +5677,6 @@ figure.l1-fig {
   .invite .phrase,
   .invite .word-input {
     font-size: 16px;
-  }
-  /* …with the phone's float over it. */
-  .invite .floating-hit {
-    font-size: 18px;
   }
   .invite .tray {
     height: auto;

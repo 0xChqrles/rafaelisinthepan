@@ -30,7 +30,8 @@ import type { LangCode } from '../langs';
 // and none of them is the lesson's, so level 1's REVEAL keeps its surprise.
 //
 // Each guess lands on the board's own choreography and no more: a miss is the game's MISS
-// float and shake; a closer word is the hole's own word change (the exponent rolling down,
+// float and shake (the float at the word's size and kept off line 1 — `.invite-demo
+// .floating-hit`); a closer word is the hole's own word change (the exponent rolling down,
 // the letters churning and settling). No cut, loot or star — those are the player's first
 // hit's to give, and their sprites would cross the question under the demo.
 

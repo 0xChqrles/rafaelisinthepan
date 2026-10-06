@@ -4067,18 +4067,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   gate's `.rules-gate`): the LOCKUP — the pixel mark (`MARK_GLYPH`, 1x, `crispEdges`) in the
   accent with WHIPPIN AI beside it in the lockup type — in the header's row (`.topbar`
   geometry), the mark on the pixel where the game's title draws it; the demo where the day's
-  sentence and prompt stand, at the game's size and left edge; the question and TUTORIAL /
+  sentence and prompt stand, at the game's size and leading and on its left edge (on a wide
+  screen in the header's column instead, its first letter under the mark); the question and
+  TUTORIAL /
   SKIP in the tray, TUTORIAL the gate's own `.mix-btn` and SKIP its word, exactly where PLAY
   and LEARN then stand — so SKIP reads as continuity (the mark stays, the sentence area
   stays, the tray becomes the game's). The question is ONE line in either language (sized
   off the column on a phone); a window 520px tall or less tightens the zones so all of it
   stands on one screen. `tutorial/InviteDemo.tsx` plays the site's own sentence ONCE on the
   real `Phrase`/`Hole` and an inactive `WordInput`, held to 22 glyphs a line (two lines, the
-  hole on the second in every state) with ONE departure from the game's dress, its LEADING
-  (`1em + 22px`), so the MISS float lands between the lines, clear of line 1; every frame a
-  sentence: en *Every guess tells you how
-  lost⁹¹ you are.*, the demo typing `banana` (MISS, the game's own float and shake — it
-  never enters the hole), then `near` (near²), then `close`; fr *Chaque essai te dit si tu
+  hole on the second in every state) with ONE departure from the game's dress, its MISS: the
+  word's own size (the tutorial's rule), springing up off the chip it lands on, holding
+  astride the chip's top edge and fading with a breath of rise, in its red throughout (the
+  game's white flash would land on the chip) — so at the game's leading it never prints
+  across line 1; every frame a sentence: en *Every guess tells you how
+  lost⁹¹ you are.*, the demo typing `banana` (MISS, with the game's shake — it never enters
+  the hole), then `near` (near²), then `close`; fr *Chaque essai te dit si tu
   es paumé³⁵⁵.*, `banane`, `loin` (loin⁴), `proche`. A closer word lands on the hole's own
   word change (no cut, loot or star), and the demo ends on the word found in cobalt, the
   prompt retired as on a solve. Its ranks are read off the static single-word maps
