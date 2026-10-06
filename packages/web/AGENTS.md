@@ -812,12 +812,14 @@ These are decided and verified against the code. Treat them as load-bearing.
     animates, it never renames itself — it answers no tap but keeps the focus
     (`aria-disabled`, never dimmed: the 0.45 is for a button that is unavailable, not busy),
     and `aria-busy` + the sr-only `loading` say it. Nothing shows for `SKELETON_WAIT_MS`
-    but the press held; then its wash becomes the house stipple in its own ink, breathing
-    `--dz-1…3` on `link-hold-breathe` (640ms, hard steps; reduced motion: the still checker),
-    the word in a clearing of the ground cut on the stipple's whole 2px cells (`BusyButton`
-    measures the word against the padding box the stipple is tiled from and rounds the
-    clearing outward, so no cell along its edge is halved). **The charge is 55% of the
-    button's ink**
+    but the press held, and an answer inside that wait lets the press go the way any tap
+    does, on the release beat from the moment the act lands (the busy wash is a hair over
+    the rest's, so leaving busy is a change that cancels the held press); then its wash
+    becomes the house stipple in its own ink, breathing `--dz-1…3` on `link-hold-breathe`
+    (640ms, hard steps; reduced motion: the still checker), the word in a clearing of the
+    ground cut on the stipple's whole 2px cells (`BusyButton` measures the word against the
+    padding box the stipple is tiled from and rounds the clearing outward, so no cell along
+    its edge is halved). **The charge is 55% of the button's ink**
     (`--charge`, every busy button alike): at the breath's middle step it carries the
     primary's own wash, at its peak less than the press, so a wide primary charging never
     outshouts what lands and destruction never glows. It stands on a ground that hides the
