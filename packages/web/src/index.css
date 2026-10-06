@@ -8219,6 +8219,7 @@ figure.l1-fig {
   padding-bottom: 72px;
 }
 .group-create-stage {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -8230,6 +8231,18 @@ figure.l1-fig {
      it grows with the screen up to the sentence's own size. */
   font-size: clamp(14px, 3.7vw, 24px);
   min-width: 0;
+}
+/* A REFUSED name stands in the danger ink once its shake has played, until it is edited. */
+.group-create .word-input.refused {
+  color: var(--danger);
+}
+/* The refusal's note hangs under the line in the air the stage keeps above CREATE — out of the
+   flow, so nothing moves when it speaks, and room for two lines before the button. */
+.group-create-note {
+  position: absolute;
+  top: calc(100% - 6px);
+  left: 0;
+  right: 0;
 }
 .group-create-word {
   font-family: var(--pixel-font);

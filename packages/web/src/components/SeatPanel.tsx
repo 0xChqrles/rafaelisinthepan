@@ -12,8 +12,8 @@
 // back onto the seat already on the new group (named on its tab, INVITE on its call — drawn under
 // the screen as it closes, nothing replayed); INVITE shares the group's `/g/<id>` link — a fresh
 // tap of its own, which iPhone needs for the sheet. Both are the board's own acts
-// (`state/groupActs.ts`), and what does not land speaks on the app's error surface. No analytics
-// event (`tracked: false`).
+// (`state/groupActs.ts`): a refused name or the cap answers at the naming screen's line, and what
+// does not land speaks on the app's error surface. No analytics event (`tracked: false`).
 //
 // What it raises over the result stands OUTSIDE the panel in the React tree — an event bubbles
 // through a portal to its React parents, so a tap inside either would otherwise be the panel's
@@ -31,7 +31,15 @@ import useShare from '../hooks/useShare';
 import { identityEpochOf, useDeviceIdentity } from '../identity';
 import { t } from '../i18n';
 import { useGameStore } from '../state/gameStore';
-import { createGroup, failureOf, groupFailureCopy, inviteText, type GroupFailure } from '../state/groupActs';
+import {
+  createGroup,
+  createVerdictOf,
+  failureOf,
+  groupFailureCopy,
+  inviteText,
+  type CreateVerdict,
+  type GroupFailure,
+} from '../state/groupActs';
 
 export default function SeatPanel({
   lang,
@@ -62,18 +70,15 @@ export default function SeatPanel({
   // The board's create, from here: the write publishes the list, so the seat is on the new
   // group (and the crown's board, and tomorrow's result) before the naming screen folds. The
   // box only stands for an account, and this tap never makes one.
-  const create = async (name: string): Promise<boolean> => {
-    if (busy || identity === null) return false;
+  const create = async (name: string): Promise<CreateVerdict> => {
+    if (busy || identity === null) return 'other';
     setBusy(true);
     setFailure(null);
     const write = await createGroup(identityEpochOf(identity), name);
     setBusy(false);
-    if (write.kind === 'done' && write.created) {
-      setLastGroup(write.created);
-      return true;
-    }
-    setFailure(failureOf(write));
-    return false;
+    if (write.kind === 'done' && write.created) setLastGroup(write.created);
+    setFailure(failureOf('create', write));
+    return createVerdictOf(write);
   };
 
   const invite = async (id: string) => {

@@ -33,7 +33,19 @@ import useToday from '../hooks/useToday';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { identityEpoch, identityEpochOf, useDeviceIdentity } from '../identity';
 import { boardTargetKey, openingGroup, readBoard, takeOpening, type BoardTarget } from '../state/boardOpening';
-import { createGroup, failureOf, groupFailureCopy, inviteText, writeGroups, type GroupFailure, type GroupWrite } from '../state/groupActs';
+import {
+  createGroup,
+  createVerdictOf,
+  failureOf,
+  groupFailureCopy,
+  inviteText,
+  leaveGroup,
+  removeMember,
+  type CreateVerdict,
+  type GroupAct,
+  type GroupFailure,
+  type GroupWrite,
+} from '../state/groupActs';
 import { loadGroups, useGroups } from '../state/groups';
 import { prefetchTurnstileTokens } from '../turnstile';
 import ErrorScreen from '../components/ErrorScreen';
@@ -319,8 +331,9 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // ---- the deliberate acts: CREATE, INVITE, LEAVE, REMOVE — on the group's own screens,
   // never on the board. Each is `state/groupActs.ts`' (the result's seat shares them): the
   // write answers the list as it now stands, published through `adoptGroups`, and a failure
-  // lands on the app's error surface, since saying nothing leaves the player tapping a
-  // button that appears to do nothing.
+  // lands on the app's error surface, named by what was lost, since saying nothing leaves
+  // the player tapping a button that appears to do nothing. A create's own refusals (a
+  // banned name, the cap) are the naming screen's to answer, at its line.
   const [busy, setBusy] = useState<'create' | 'invite' | 'leave' | 'remove' | null>(null);
   const [failure, setFailure] = useState<GroupFailure | null>(null);
   // WHICH SCREEN is up over the board, and WHICH CONFIRMATION over that.
@@ -340,30 +353,27 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // first, the button holding its loading state for both legs), then the signed POST, then
   // the list — and what did not land, on the error surface (`failureOf`: a stale succession
   // is no failure, the leave asks again below).
-  const perform = async (kind: NonNullable<typeof busy>, act: () => Promise<GroupWrite>): Promise<GroupWrite> => {
+  const perform = async (kind: GroupAct, act: () => Promise<GroupWrite>): Promise<GroupWrite> => {
     setBusy(kind);
     setFailure(null);
     const result = await act();
-    setFailure(failureOf(result));
+    setFailure(failureOf(kind, result));
     setBusy(null);
     return result;
   };
-  const write = (kind: NonNullable<typeof busy>, body: (token: string) => GroupsBody) =>
-    perform(kind, () => writeGroups(epoch, body));
 
   // The create screen closes ITSELF once the group exists (it plays the name inked in
-  // first); the board is already on the new group when it does. Refused or failed, it stays
-  // up under the error surface, the name kept.
-  const create = async (name: string): Promise<boolean> => {
-    if (busy) return false;
+  // first); the board is already on the new group when it does. A refused name or the cap it
+  // answers at its own line; failed, it stays up under the error surface, the name kept.
+  const create = async (name: string): Promise<CreateVerdict> => {
+    if (busy) return 'other';
     const result = await perform('create', () => createGroup(epoch, name));
     if (result.kind === 'done' && result.created) {
       setLastGroup(result.created);
       setTab('group');
       setPeriod('day');
-      return true;
     }
-    return false;
+    return createVerdictOf(result);
   };
 
   // Delivery (native sheet -> clipboard + COPIED) is useShare's, like every result.
@@ -398,7 +408,9 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     if (busy || !active) return;
     if (leaveKind === 'pick' && successor === null) return;
     const id = active.id;
-    const result = await write('leave', (token) => leaveBody(token, id, leaveKind, successor));
+    const result = await perform('leave', () =>
+      leaveGroup(epoch, id, (token) => leaveBody(token, id, leaveKind, successor)),
+    );
     setSuccessor(null);
     if (result.kind === 'refused' && result.error === 'successor_required') {
       loadGroups();
@@ -410,7 +422,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
 
   const remove = async (member: string) => {
     if (busy || !active) return;
-    const result = await write('remove', (token) => ({ token, remove: active.id, member }));
+    const result = await perform('remove', () => removeMember(epoch, active.id, member));
     setConfirming(null);
     if (result.kind === 'done') setAttempt((n) => n + 1);
   };
