@@ -21,7 +21,7 @@ import {
   calGeometry,
   type CalGeometry,
 } from '../components/calendar/geometry';
-import type { KeyState, KeysModel } from '../components/calendar/keysScene';
+import { sinkOf, type KeyState, type KeysModel } from '../components/calendar/keysScene';
 import { lastMonth, rememberMonth } from '../components/calendar/memory';
 import { monthTabs } from '../components/calendar/months';
 import useSwipe from '../hooks/useSwipe';
@@ -276,6 +276,7 @@ export default function Archive({ lang }: { lang: LangCode }) {
     '--side-room': `${measured?.sideRoom ?? 0}px`,
     '--key-w': `${G.keyWPx}px`,
     '--key-h': `${G.keyHPx}px`,
+    '--sink': `${sinkOf(G.keyH) * CELL_PX}px`,
     '--col-gap': `${G.colGapPx}px`,
     '--row-gap': `${G.rowGapPx}px`,
     '--air': `${G.airPx}px`,
@@ -340,7 +341,9 @@ export default function Archive({ lang }: { lang: LangCode }) {
                     navigate(pathForDay(lang, date));
                   }}
                 >
-                  <span className="cal-day-box" data-focus-box>
+                  {/* (An over day's key is drawn sunk: its box starts at the sunk top, so the
+                      hover's corners and the focus brackets frame the key as it stands.) */}
+                  <span className={`cal-day-box${model.keys[i].kind === 'over' ? ' sunk' : ''}`} data-focus-box>
                     <span className="cal-day-num">{Number(date.slice(8, 10))}</span>
                   </span>
                 </button>

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COUNT_ROWS, bayerThreshold, progressHeatColor } from '@whippin/shared';
-import { DISSOLVE_MS } from '../bayerTiles';
+import { COUNT_ROWS, progressHeatColor } from '@whippin/shared';
 import { rgbToAbgr } from '../raster';
 import { BURST_ART } from '../strikeArt';
 import {
@@ -453,63 +452,116 @@ describe('a day over (ended unsolved)', () => {
     expect(tl.lock[DAY]).toBe(-Infinity);
   });
 
-  it('turning over from a %, DISSOLVES from its standing key to the sunk one — no charge, no burst', () => {
-    const changes = [{ index: DAY, from: 'p40' as const }];
-    const tl = keysBeats({ ...SETTLED, model: overMonth(), changes });
-    expect(tl.dissolve[DAY]).toBe(0);
-    expect(tl.charge[DAY]).toBe(-Infinity);
-    expect(tl.bursts).toEqual([]);
+  // A day turning over from `from` (a %, or a day never opened: a give-up at 0%), its frames
+  // from the scene's start to its settling, one a FRAME — and each frame's key read back.
+  const pressFrames = (g: CalGeometry, from: 'p40' | 'n', today = -1) => {
+    const model = overMonth(today);
+    const tl = keysBeats({ ...SETTLED, model, changes: [{ index: DAY, from }] });
+    const scene = keysScene(g, model, tl, 1);
+    const frames: ((i: number, lx: number, ly: number) => number)[] = [];
+    for (let t = 0; t <= tl.settled + 32; t += 32) {
+      const px = new Uint32Array(g.cols * g.rows);
+      scene.draw(px, t, false, -1);
+      frames.push((i, lx, ly) => {
+        const { x, y } = keyAt(g, i);
+        return px[(y + ly) * g.cols + x + lx];
+      });
+    }
+    return { tl, frames };
+  };
+  const stateOf = (from: 'p40' | 'n') =>
+    month((d) => (d === DAY ? (from === 'n' ? none(d) : { kind: 'progress', day: d, pct: 40 }) : d === DAY - 1 || d === DAY + 1 ? { kind: 'solved', day: d } : none(d)));
 
-    // Halfway through, the cells not yet in show the OLD picture — its cap and light, its number
-    // white over its old heat (or cut out of it); those in show the new one — over the sunk top,
-    // the bare ground.
-    const scene = keysScene(G, overMonth(), tl, 1);
-    const px = new Uint32Array(G.cols * G.rows);
-    scene.draw(px, DISSOLVE_MS / 2, false, -1);
-    const old = frame(month((d) => (d === DAY ? { kind: 'progress', day: d, pct: 40 } : d === DAY - 1 || d === DAY + 1 ? { kind: 'solved', day: d } : none(d)))).px;
-    const settled = frame(overMonth()).px;
-    const sink = sinkOf(H);
-    const num = digitMap(DAY);
-    const sunk = numberCells(W, H, DAY, sink);
-    const { x, y } = keyAt(G, DAY);
-    let oldNumber = 0;
-    let oldTop = 0;
-    let goneTop = 0;
-    let newNumber = 0;
-    for (let ly = 0; ly < H; ly += 1) {
-      for (let lx = 0; lx < W; lx += 1) {
-        if (corner(lx, ly)) continue;
-        const th = bayerThreshold(x + lx, y + ly);
-        const v = cell(px, DAY, lx, ly);
-        // (Clear of the dissolve's level at half its time, whichever of its steps that is.)
-        if (th >= 5 / 8) {
-          expect(v).toBe(cell(old, DAY, lx, ly));
-          if (ly < sink) oldTop += 1;
-          if (num[ly * W + lx] === 1) {
-            expect([WHITE, GROUND]).toContain(v);
-            oldNumber += 1;
+  it('turning over, is PRESSED — no charge, no burst, no dissolve of the whole picture', () => {
+    for (const from of ['p40', 'n'] as const) {
+      const tl = keysBeats({ ...SETTLED, model: overMonth(), changes: [{ index: DAY, from }] });
+      expect(tl.press[DAY]).toBeGreaterThanOrEqual(0);
+      expect(tl.dissolve[DAY]).toBe(-Infinity);
+      expect(tl.charge[DAY]).toBe(-Infinity);
+      expect(tl.bursts).toEqual([]);
+    }
+  });
+
+  it('pressed, its top drops row by row to its sink, ONE number riding down with it, whole — then it rests sunk', () => {
+    for (const g of SIZES) {
+      for (const from of ['p40', 'n'] as const) {
+        const { frames } = pressFrames(g, from);
+        const sink = sinkOf(g.keyH);
+        const was = frameAt(g, stateOf(from));
+        const settled = frameAt(g, overMonth());
+        const keyCells = (read: (i: number, lx: number, ly: number) => number) =>
+          Array.from({ length: g.keyW * g.keyH }, (_, c) => read(DAY, c % g.keyW, Math.floor(c / g.keyW)));
+        const standing = keyCells(was);
+        const tops: number[] = [];
+        frames.forEach((read, f) => {
+          const at = `${g.name} from ${from}, frame ${f}`;
+          const cells = keyCells(read);
+          // Standing as it was: the picture before the press, whole.
+          if (cells.every((v, c) => v === standing[c])) {
+            expect(tops, `${at}: standing again after going down`).toEqual([]);
+            return;
           }
-        } else if (th < 3 / 8) {
-          expect(v).toBe(cell(settled, DAY, lx, ly));
-          if (ly < sink) {
-            expect(v).toBe(0);
-            goneTop += 1;
-          }
-          if (sunk[ly * W + lx] === 1) {
-            expect(v).toBe(MUTED);
-            newNumber += 1;
-          }
-        }
+          const top = topRow(read, g, DAY);
+          tops.push(top);
+          expect(top, at).toBeLessThanOrEqual(sink);
+          // Exactly one number, whole: the over number's cells where its top stands it, every
+          // one of them in the muted ink, its ring dusk — and no other number ink anywhere in
+          // the key (white, or a digit cut out of a charge).
+          const num = numberCells(g.keyW, g.keyH, DAY, top);
+          let muted = 0;
+          cells.forEach((v, c) => {
+            const where = `${at} ${c % g.keyW},${Math.floor(c / g.keyW)}`;
+            if (num[c] === 1) expect(v, where).toBe(MUTED);
+            else if (num[c] === 2) expect(v, where).toBe(DUSK);
+            expect([WHITE, GROUND], where).not.toContain(v);
+            if (v === MUTED) muted += 1;
+          });
+          expect(muted, at).toBe(inkOf(num));
+        });
+        // Down a row at a time (two on WIDE's deeper sink), never back up, landing at its sink.
+        expect(tops.length, g.name).toBeGreaterThanOrEqual(4);
+        tops.forEach((top, k) => {
+          if (k === 0) return;
+          expect(top - tops[k - 1], `${g.name} step ${k}`).toBeGreaterThanOrEqual(0);
+          expect(top - tops[k - 1], `${g.name} step ${k}`).toBeLessThanOrEqual(2);
+        });
+        expect(tops[tops.length - 1], g.name).toBe(sink);
+        expect(keyCells(frames[frames.length - 1]), g.name).toEqual(keyCells(settled));
       }
     }
-    expect(oldNumber).toBeGreaterThan(0);
-    expect(oldTop).toBeGreaterThan(0);
-    expect(goneTop).toBeGreaterThan(0);
-    expect(newNumber).toBeGreaterThan(0);
+  });
 
-    // Once the dissolve is through, it is the over key at rest.
-    scene.draw(px, tl.settled + 100, false, -1);
-    expect(px).toEqual(settled);
+  it('pressed, its light and its charge go out on the way down, cell by cell, never coming back', () => {
+    for (const g of SIZES) {
+      const { frames } = pressFrames(g, 'p40');
+      const sink = sinkOf(g.keyH);
+      const count = (read: (i: number, lx: number, ly: number) => number, ink: number) => {
+        let n = 0;
+        for (let ly = 0; ly < g.keyH; ly += 1) for (let lx = 0; lx < g.keyW; lx += 1) if (read(DAY, lx, ly) === ink) n += 1;
+        return n;
+      };
+      // From the press's first frame (its number gone muted) to its landing: the slate light on
+      // its top and the 40% charge at its foot only ever thin out…
+      const pressing = frames.filter((read) => count(read, MUTED) > 0);
+      for (const ink of [RAIL, heat(40)]) {
+        const seen = pressing.map((read) => count(read, ink));
+        seen.forEach((n, k) => k > 0 && expect(n, `${g.name} frame ${k}`).toBeLessThanOrEqual(seen[k - 1]));
+        // …some of each still there on the way down, none once it has landed.
+        expect(seen.some((n, k) => n > 0 && n < seen[0] && topRow(pressing[k], g, DAY) < sink), g.name).toBe(true);
+        expect(seen[seen.length - 1], g.name).toBe(0);
+      }
+    }
+  });
+
+  it("pressed on today, keeps today's white cap on its top all the way down", () => {
+    const { frames } = pressFrames(G, 'p40', DAY);
+    for (const read of frames) {
+      const top = topRow(read, G, DAY);
+      for (let lx = 1; lx < W - 1; lx += 1) {
+        expect(read(DAY, lx, top)).toBe(WHITE);
+        expect(read(DAY, lx, top + 1)).toBe(WHITE);
+      }
+    }
   });
 
   it('restarted (a republish) charges up from the sunk key, RISING back to its height, lit', () => {

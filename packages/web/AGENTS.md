@@ -3125,13 +3125,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     played here or on another device) plays its CHANGE as the month is shown again: up to
     three UPGRADES (more done, or done), in date order, 160ms apart, each front travelling
     from what it said to what it says (240ms, white head); a new solve locks with a white
-    cap, bursts in cobalt and welds its run with white links. The rest — more changes, a day
-    turning OVER, a downgrade after a republish's restart — dissolve to their new picture,
-    each picture drawn with its own look (standing and lit, or sunk; the rows over a sunk key
-    giving way to the ground); a day restarted from over charges from its sunk key, lit again
-    and RISING to its height on the charge's easing as its front climbs; a first showing has
-    none (that is the arrival's). The memories are written as a stage is shown, so a
-    ceremony plays ONCE, even left halfway.
+    cap, bursts in cobalt and welds its run with white links. **A day turning OVER is
+    PRESSED** (`PRESS_MS`): three frames standing, then its top drops a row a frame to its
+    sink, its number riding down with it — ONE number, whole, in the over ink from the
+    press's first frame, never the old one beside it — while the iron alone gives way, its
+    cap, its light and any charge going out in the Bayer order into the unlit face. The rest
+    — more changes, a downgrade after a republish's restart — dissolve to their new picture,
+    each picture drawn with its own look (standing and lit, or sunk); a day restarted from
+    over charges from its sunk key, lit again and RISING to its height on the charge's easing
+    as its front climbs; a first showing has none (that is the arrival's). The memories are
+    written as a stage is shown, so a ceremony plays ONCE, even left halfway.
   - **TURNS AND GIVE-WAYS** (`calendar/plan.ts`; the stage latched as the board latches its
     podium's): a turn's day buttons are the new month's AT ONCE (a tap never meets the old
     month); the raster gives way from the frame on screen cell by cell in the Bayer order
@@ -3154,7 +3157,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     travel lets it go) — a one-shot redraw, at rest too; the click has already navigated. A
     mouse over a playable day shows the corner brackets of a tappable thing round its key
     (`--muted` arms, one hard step; never on a disabled day); the focus brackets frame the
-    key's box (`.cal-day-box`) and take the hover's place.
+    key's box (`.cal-day-box`) and take the hover's place. An over day's box starts at its
+    sunk top (`.sunk`, inset by `--sink`, the sink's cells in px), so both frame the key as
+    it is drawn, never the bare rows over it.
   - **SIZES** (`calendar/geometry.ts` `calGeometry`, tested): whole cells and even gaps, the
     first candidate that fits — a desktop window tries WIDE (64px keys), MID (52), REGULAR
     (44), COMPACT (40), then SIDEWAYS; a phone REGULAR (44, a 390 phone), COMPACT (40, the
