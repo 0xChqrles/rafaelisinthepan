@@ -31,6 +31,11 @@
 // the danger ink — the danger rule wins over the spectrum, because a row that half-kept
 // its colours would read as a partial refusal — and while the six digits are being
 // CHECKED the caps light in turn across the row, a scan rather than a dimmed input.
+//
+// **A CODE THAT ACCEPTS NOTHING MORE GOES DEAD IN ITS OWN MATERIAL** (expired, or its attempts
+// spent): the keys stand where they are, empty, their iron thinned to half its cells through
+// the Bayer dither in hard steps (the ghost's way, never an opacity), and take nothing — the
+// caller's held line says why, and its RESEND is the way on.
 
 import { useEffect, useId, useRef, type CSSProperties, type MutableRefObject } from 'react';
 import { LINK_CODE_LENGTH } from '@whippin/shared';
@@ -42,6 +47,7 @@ export default function CodeInput({
   onComplete,
   invalid,
   disabled,
+  dead = false,
   label,
   fieldRef,
   offstage = false,
@@ -53,6 +59,8 @@ export default function CodeInput({
   // The last attempt was refused: the cells wear the miss red and shake.
   invalid?: boolean;
   disabled?: boolean;
+  // The code accepts nothing more: the keys are dead, the input takes nothing.
+  dead?: boolean;
   // What the ONE input is called for a screen reader. The cells are decoration.
   label: string;
   // The caller's handle on the ONE real input, so it can move focus into it INSIDE a tap
@@ -69,15 +77,16 @@ export default function CodeInput({
   // refusal it comes back, since the cells were just cleared for exactly that. Never while
   // OFFSTAGE: this component is mounted from the address step on, and focusing there would
   // take the caret out of the address field the player is typing in.
+  const shut = disabled || dead;
   useEffect(() => {
-    if (!disabled && !offstage) input.current?.focus();
-  }, [disabled, invalid, offstage]);
+    if (!shut && !offstage) input.current?.focus();
+  }, [shut, invalid, offstage]);
 
   const digits = Array.from({ length: LINK_CODE_LENGTH }, (_, i) => value[i] ?? '');
 
   return (
     <div
-      className={`code-input${invalid ? ' invalid' : ''}${disabled ? ' disabled' : ''}${
+      className={`code-input${invalid ? ' invalid' : ''}${dead ? ' dead' : disabled ? ' disabled' : ''}${
         offstage ? ' offstage' : ''
       }`}
       onClick={() => input.current?.focus()}
@@ -111,7 +120,7 @@ export default function CodeInput({
         // length of the send, and moving focus into hidden content is the worse trade.
         tabIndex={offstage ? -1 : undefined}
         value={value}
-        disabled={disabled}
+        disabled={shut}
         onChange={(event) => {
           // A pasted code often arrives with spaces or a stray letter around it; keep the
           // digits and drop the rest rather than refusing the paste.
@@ -124,7 +133,7 @@ export default function CodeInput({
         <span
           key={i}
           className={`code-cell${digit ? ' filled' : ''}${
-            !disabled && i === value.length ? ' next' : ''
+            !shut && i === value.length ? ' next' : ''
           }`}
           // `--i` paces the CHECKING scan across the row (the CSS's).
           style={{ '--cell-ink': CODE_INKS[i % CODE_INKS.length], '--i': i } as CSSProperties}

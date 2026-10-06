@@ -273,30 +273,37 @@ const STRINGS = {
     en: "You're already on this account.",
     fr: 'Vous êtes déjà sur ce compte.',
   },
-  linkFailed: { en: 'LINK FAILED', fr: 'ÉCHEC DE LA LIAISON' },
+  // The SEND that did not land (a 503 `mail_unavailable`, a dropped connection): the one
+  // email failure on the error screen — every VERDICT of the flow answers in place.
+  linkSendFailed: { en: 'CODE NOT SENT', fr: 'CODE NON ENVOYÉ' },
+  linkSendFailedNote: {
+    en: 'Wait a moment, then try again.',
+    fr: 'Attendez un instant, puis réessayez.',
+  },
+  // Too many sends (429), under CONTINUE — or, from RESEND, on the code step's held line.
   linkTooMany: {
-    en: 'Too many codes asked for. Try again in a while.',
-    fr: 'Trop de codes demandés. Réessayez dans un moment.',
+    en: 'Too many codes. Wait a while.',
+    fr: 'Trop de demandes. Patientez.',
   },
   linkBadAddress: {
     en: "That address doesn't look right.",
     fr: 'Cette adresse ne semble pas valide.',
   },
-  linkSendFailedNote: {
-    en: 'The code could not be sent.',
-    fr: "Le code n'a pas pu être envoyé.",
-  },
-  linkVerifyFailedNote: {
-    en: 'The code could not be checked.',
-    fr: "Le code n'a pas pu être vérifié.",
+  // The code step's held line: a check that could not be had (the code cleared, so typing it
+  // again checks it again), and the two codes that accept nothing more (the keys go dead,
+  // RESEND goes live — the line says WHY, the live RESEND under it is the way on). Each is
+  // ONE line at 320px, so RESEND under it never moves.
+  linkCheckFailed: {
+    en: 'Not checked. Type it again.',
+    fr: 'Code non vérifié. Retapez-le.',
   },
   linkCodeSpent: {
-    en: 'Too many wrong codes. Ask for a new one.',
-    fr: 'Trop de codes incorrects. Demandez-en un nouveau.',
+    en: 'Too many wrong codes.',
+    fr: 'Trop de codes incorrects.',
   },
   linkCodeExpired: {
-    en: 'That code has expired. Ask for a new one.',
-    fr: 'Ce code a expiré. Demandez-en un nouveau.',
+    en: 'This code has expired.',
+    fr: 'Ce code a expiré.',
   },
   // An account carries at most ONE address, so a device whose account is already saved under
   // a different one cannot bind a second (the old address would reach an account nobody

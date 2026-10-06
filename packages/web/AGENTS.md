@@ -1263,6 +1263,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
       for its first step only, then its ink with the digit cut out. RESEND is quiet
       and countdown-gated (~30s, the seconds in the cobalt pixel figures), alone under the cells — CHANGE ADDRESS is gone,
       the header's back goes code → address.
+    - **EVERY VERDICT OF THE FLOW ANSWERS IN PLACE; only a SEND that did not land takes the
+      screen** (a 503 `mail_unavailable`, a dropped connection: the `ErrorScreen`'s CODE NOT
+      SENT). A code that accepts nothing more — expired, `code_spent`, or the last wrong
+      attempt once its shake has played — keeps the player ON THE CODE STEP: the keys go
+      DEAD in their own material (`CodeInput`'s `dead`: emptied, thinned to half their cells
+      through the Bayer complement `--dzo-4` in hard steps, taking nothing), the held line
+      says why, and RESEND is the step's one live act — the bracketed `.quiet-btn`, its
+      countdown waived — whose landing brings the keys back through their arrival's dissolve.
+      A check that could not be had says so on the held line, the code cleared for typing
+      again. Too many sends (429) is the danger note under CONTINUE, or the held line when
+      RESEND asked. Every held line is ONE line at 320px, so nothing under it moves.
     - **THE CROSSROADS, NOT A WARNING:** both accounts drawn — the one being left THINNED
       THROUGH THE BAYER DITHER, never an opacity (under DELETED, the area's one red, a GHOST:
       its ink to half its cells, its ground given up for the slate stipple, its three numbers
@@ -1706,7 +1717,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **CONTINUE is a DEPLOY BUTTON**, the sixth (#216's five plus this one), and it has to
     be: an email link needs an account to bind, and "this device is empty" is exactly the
     reconnect case. It wears the shape that rule defines — one tap chaining the bootstrap,
-    a loading state on the button, failures on the `ErrorScreen` — and TWO Turnstile tokens are
+    a loading state on the button, a send that did not land on the `ErrorScreen` (its
+    verdicts answer in place, the code prompt's bullet above) — and TWO Turnstile tokens are
     prefetched while the address is typed, since a tokenless device spends one on the
     bootstrap and one on the send. Every other leg uses `currentRequestIdentity` and stands
     down when there is none.

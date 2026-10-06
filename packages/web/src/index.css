@@ -6104,9 +6104,13 @@ figure.l1-fig {
   margin: 0;
   text-align: center;
 }
-/* The code step's refusal line, held one line tall under the keys whether or not it speaks. */
+/* The code step's held line, one line tall under the keys whether or not it speaks — its note
+   set on exactly that line, so a verdict landing moves RESEND by nothing at all. */
 .link-wrong {
   min-height: 20px;
+}
+.link-wrong .account-note {
+  line-height: 20px;
 }
 /* The caption UNDER a full-width button: pulled toward what it explains, centered on it.
    A centred note that wraps is BALANCED, never a line and a one-word orphan. */
@@ -6383,6 +6387,24 @@ figure.l1-fig {
 }
 .code-input.invalid .code-cell::after {
   content: none;
+}
+/* A CODE THAT ACCEPTS NOTHING MORE (expired, or its attempts spent): the keys go dead in their
+   own material — the iron and its cap thinned to half their cells through the Bayer order, in
+   hard steps (the ghost's way, never an opacity) — and take nothing. RESEND brings them back
+   through the arrival's dissolve. */
+.code-input.dead {
+  pointer-events: none;
+}
+.code-input.dead .code-cell {
+  animation: code-die 200ms linear forwards;
+}
+@keyframes code-die {
+  0% { -webkit-mask-image: none; mask-image: none; }
+  25% { -webkit-mask-image: var(--dzo-1); mask-image: var(--dzo-1); }
+  50% { -webkit-mask-image: var(--dzo-2); mask-image: var(--dzo-2); }
+  75% { -webkit-mask-image: var(--dzo-3); mask-image: var(--dzo-3); }
+  87.5%,
+  100% { -webkit-mask-image: var(--dzo-4); mask-image: var(--dzo-4); }
 }
 @media (max-width: 380px) {
   .code-input {
