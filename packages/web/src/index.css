@@ -8186,7 +8186,9 @@ figure.l1-fig {
    `>`, the pixel face, the blinking cursor — alone in the middle of the screen, over the
    one call. On CREATE the line gives way to the name INKED IN: the solve's cobalt word,
    with the hit's shake, held for a beat before the screen folds — the group is named the
-   way a hole is solved. */
+   way a hole is solved. The line and the inked word are set at the LARGEST whole size of the
+   face (24, 16 or 8px) at which the prompt fits the stage (`GroupCreate`'s `nameSize`, on the
+   stage), so the face lands on whole pixels and a 20-character name is never cut. */
 .group-create {
   width: min(430px, 100% - 28px);
   margin: auto;
@@ -8204,14 +8206,16 @@ figure.l1-fig {
   min-height: 64px;
 }
 .group-create .word-input {
-  /* A 20-character name fits the line on a 375px phone (14px × 20 = 280 beside the `>`);
-     it grows with the screen up to the sentence's own size. */
-  font-size: clamp(14px, 3.7vw, 24px);
+  font-size: inherit;
   min-width: 0;
+  padding-inline: 0;
+}
+/* Half an em of air after the `>`: whole pixels at every size the line takes. */
+.group-create .wi-prompt {
+  margin-right: 0.5em;
 }
 .group-create-word {
   font-family: var(--pixel-font);
-  font-size: clamp(14px, 3.7vw, 24px);
   line-height: 1.5;
   color: var(--solve);
   white-space: nowrap;

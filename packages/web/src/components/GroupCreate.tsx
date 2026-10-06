@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { GROUP_NAME_MAX_LENGTH, sanitizeGroupName } from '@whippin/shared';
 import LoadingWave from './LoadingWave';
@@ -27,6 +35,17 @@ import { t } from '../i18n';
 // guess's own answer.
 const INKED_MS = 1100;
 
+// THE NAME'S SIZE: the pixel face is crisp only at whole multiples of 8px, so the line is set
+// at the LARGEST of them at which the whole prompt fits the stage — the `>`, its half em of
+// air, the name and the cursor, each glyph a full em — the result count's rule
+// (`countSize.ts`). A name grows the line down a step only where it would not fit; the
+// inked word keeps the size the line had, so CREATE moves nothing.
+const NAME_PX = [24, 16, 8] as const;
+const PROMPT_EMS = 2.5;
+function nameSize(width: number, glyphs: number): number {
+  return NAME_PX.find((px) => (glyphs + PROMPT_EMS) * px <= width) ?? NAME_PX[NAME_PX.length - 1];
+}
+
 export default function GroupCreate({
   lang,
   busy,
@@ -47,6 +66,20 @@ export default function GroupCreate({
   const [shaking, setShaking] = useState(false);
   const [inked, setInked] = useState(false);
   const field = useRef<HTMLInputElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
+  // The stage's width, measured before the first paint and on every resize.
+  const [room, setRoom] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = stage.current;
+    if (!el) return undefined;
+    const measure = () => setRoom(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const size = room === null ? NAME_PX[0] : nameSize(room, name.length);
 
   // The prompt takes the keyboard when the screen opens, the game's own way.
   useEffect(() => {
@@ -89,7 +122,7 @@ export default function GroupCreate({
       <ModalHeader lang={lang} title={t(lang, 'groupNew')} back onClose={beginClose} />
 
       <form className="group-create" onSubmit={(event) => void submit(event)}>
-        <div className="group-create-stage">
+        <div ref={stage} className="group-create-stage" style={{ fontSize: `${size}px` }}>
           {inked ? (
             <span className="group-create-word" role="status">
               {name}

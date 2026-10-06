@@ -2639,7 +2639,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the pixel face, the blinking cursor — alone in the middle of its own screen over CREATE
     GROUP, on an EDITABLE field of its own (a name takes digits and underscores the
     on-screen keyboard has no keys for, so the phone's keyboard opens; every keystroke
-    lands through `sanitizeGroupName`, cap 20). On CREATE the line gives way to the name
+    lands through `sanitizeGroupName`, cap 20). The line is set at the LARGEST whole size of
+    the face — 24, 16 or 8px — at which the `>`, its half em of air, the name and the cursor
+    fit the stage (`nameSize`, the result count's rule), so it lands on whole pixels and a
+    full name is never cut; the inked word keeps that size. On CREATE the line gives way to the name
     INKED IN — the solve's cobalt pixel word with the hit's shake, held `INKED_MS` (1100ms)
     — and the screen folds itself onto the surface that opened it, already on the new group
     (the board's tab, or the result's seat); an empty name shakes the line, the invalid
