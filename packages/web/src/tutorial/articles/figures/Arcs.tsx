@@ -10,7 +10,8 @@ import useSeen from './useSeen';
 // sentence — the focus token on the held chip's white ground, what comes after it in the
 // secondary ink, what it cannot hear yet (the causal mask) struck out — and from the focus an
 // arc to every token it listens to, drawn on the house's 2px cells: thicker the larger its
-// share (one cell to three), the share printed under the token in the pixel figures. The arcs
+// share (one cell to three) — a share too small for a second cell a DASHED thread, so a weak
+// one reads weak at a glance — the share printed under the token in the pixel figures. The arcs
 // draw themselves out of the focus, cell by cell in hard steps, once the figure is on screen;
 // under reduced motion they stand drawn.
 const ROWS_WIDE = 44;
@@ -82,6 +83,8 @@ export default function Arcs({
         const shown = Math.ceil(arc.cells.length * drawn);
         const off = Math.floor(arc.thick / 2);
         for (let k = 0; k < shown; k += 1) {
+          // A one-cell thread is dashed: two cells drawn, two left out.
+          if (arc.thick === 1 && k % 4 >= 2) continue;
           const [x, y] = arc.cells[k];
           cells.block(x - off, Math.min(y - off, rows - arc.thick), arc.thick, arc.thick, 'fg');
         }
