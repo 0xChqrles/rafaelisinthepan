@@ -12,9 +12,10 @@
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
       hooks/usePuzzle.ts      fetch the puzzle a `PuzzleRef` names (a day, or a bonus) from the backend
-      hooks/useHomeDay.ts     the day the undated route plays: the active day as of the player's
-                              last ARRIVAL (a load, a navigation, the tab coming back) — never
-                              swapped under a tab on screen at the 22:00 flip
+      hooks/useHomeDay.ts     the day across the 22:00 flip: the undated route plays the active
+                              day as of the player's last ARRIVAL (a load, a navigation, the tab
+                              coming back to no round in progress), and a round on screen keeps
+                              the day it was opened as (`useOpenedAsActive`)
       hooks/puzzleCache.ts    the last 3 PARSED artifacts kept across mounts, no longer than the
                               CDN's own 300s (2026-09-11): today <-> an archive day without a reload
       api.ts                  backend client: puzzleUrl, 404->NO PUZZLE, and
@@ -656,9 +657,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   lies in the column's gap above the tray plus the play area's RACE BAND (`.play-race`):
   on today's sentence the play area keeps the line's footprint clear under the prompt from
   the first frame, line or no line, so the line never covers the hint row (a refused word's
-  feedback) nor takes a tap meant for it, and nothing moves when it arrives or leaves — and
-  it keeps it for the round's life (`raceBand`, decided by the round's first frame), so the
-  22:00 flip passing a round still on screen moves no sentence.
+  feedback) nor takes a tap meant for it, and nothing moves when it arrives or leaves. The
+  22:00 flip passing a round still on screen takes neither the line nor its band away: the
+  round keeps the day it was opened as (`useOpenedAsActive`, the header bullet's day rules).
 - **THE PALETTE IS THREE INDEPENDENT AXES (user-decided 2026-08-17): weird/calm +
   hole/solve + accent — in STAMP-INK tones** (retuned the same day against the user's
   /inspiration set — vintage offset stamps, riso posters — after the first calm cut went
@@ -4502,16 +4503,27 @@ it to the local store — see `packages/backend/AGENTS.md`).
   game — while the loaded screen supplies its live status through the header's `left` slot.
   That keeps the status inside `<header>` and outside `.game`, and navigating into a game
   (e.g. from the archive) never changes the header structure; only its contents and the body
-  under it refresh. **THE UNDATED ROUTE FOLLOWS THE ACTIVE DAY ON ARRIVAL** (`useHomeDay`,
-  App): its day is the active 22:00-ET day as of the player's last arrival — the load, any
-  navigation (a tap on HOME onto the URL already shown included), back/forward, the tab
-  shown again or restored from the back/forward cache — so a tab left open past the flip
-  opens on the new day. It is never swapped under a tab ON SCREEN at the flip itself (a
-  sentence changing mid-guess): until the player leaves and comes back that day is simply
-  no longer the active one — `GameRoute`'s `isActiveDay` (off the live `useToday`) turns
-  false, the header shows the day's date and lights the calendar, HOME leads to the new
-  day, and the race band stays (`raceBand`). Contract-tested (`useHomeDay.test.tsx`). The
-  topbar is the extension point for future chrome (streaks, stats, …).
+  under it refresh. **THE DAY ACROSS THE 22:00 FLIP** (`hooks/useHomeDay.ts`, three rules;
+  contract-tested, `useHomeDay.test.tsx`) — nothing changes under a player looking at the
+  screen, and the new day takes over the moment they ask for it:
+  - **The UNDATED route follows the active day ON ARRIVAL** (`useHomeDay`, App): its day is
+    the active 22:00-ET day as of the player's last arrival — the load, any navigation (a
+    tap on HOME onto the URL already shown included), back/forward, the tab shown again or
+    restored from the back/forward cache — so a tab left open past the flip opens on the new
+    day. Never at the flip itself under a tab ON SCREEN (a sentence changing mid-guess).
+  - **Coming back to a ROUND IN PROGRESS is not an arrival** (`useHoldHomeDay`, held by
+    `Round` while a guess is played and the round is not over): a player who looked away
+    mid-round finds their sentence where they left it, past the flip or not, and takes the
+    new day by asking (HOME, any key). A round with no guess, or over, holds nothing.
+  - **A ROUND ON SCREEN KEEPS THE DAY IT WAS OPENED AS** (`useOpenedAsActive`, GameRoute):
+    `Game`'s `isActiveDay` is read when the round (a puzzle in a language) comes on screen
+    and kept while it stays there, so the flip takes nothing from under the player — the
+    race line and its band, the result's boards, the streak read stay; a new round reads it
+    afresh. The HEADER alone follows the live day (`isToday`, off `useToday`): past the flip
+    it shows the day's date, lights the calendar, and HOME leads to the new day — a
+    navigation onto the URL already shown, which REPLACES (`routing.ts`), so the old day
+    leaves no entry behind it.
+  The topbar is the extension point for future chrome (streaks, stats, …).
 - **The CHOOSER screens are RETIRED — both of them.** The MODE chooser (`/mode`) went
   2026-08-18 for the header's tabs; the LANGUAGE chooser (`/select`, `screens/LanguageSelect`
   + `components/Chooser` and their CSS) went 2026-09-05 (user-decided: "get rid of the

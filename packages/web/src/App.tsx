@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { activeDate, dayNumber as dayNumberOf, isBonusRef, type PuzzleRef } from '@whippin/shared';
+import { activeDate, dayNumber as dayNumberOf, isBonusRef, puzzleAddress, type PuzzleRef } from '@whippin/shared';
 import LoadingWave from './components/LoadingWave';
 import usePuzzle from './hooks/usePuzzle';
 import Account from './screens/Account';
@@ -32,7 +32,7 @@ import { parseRoute, pathForGame, pathForLesson, pathForRoute, type LangCode, ty
 // currentColor like every chrome icon; the button's aria-label names it.
 import { t } from './i18n';
 import useToday from './hooks/useToday';
-import useHomeDay from './hooks/useHomeDay';
+import useHomeDay, { useOpenedAsActive } from './hooks/useHomeDay';
 import useUiLang from './hooks/useUiLang';
 import { streakPreviewFromSearch } from './dev/streakPreview';
 import ErrorScreen from './components/ErrorScreen';
@@ -142,8 +142,9 @@ export default function App() {
   // screen is up (an archived day's date already reads in the header's date chip).
   const editionDay = useToday();
   // The day the UNDATED route plays: the active day as of the player's last arrival (a load,
-  // a navigation, the tab coming back) — never swapped under a visible player at the 22:00
-  // flip (`useHomeDay`). Past the flip until then it is the archive's day like any other.
+  // a navigation, the tab coming back to no round in progress) — never swapped under a
+  // visible player at the 22:00 flip (`useHomeDay`). Past the flip until then the header
+  // labels it as the archive's day, while its round keeps the day it was opened as.
   const homeDay = useHomeDay();
 
   // Signed out from another device (#216). It takes the whole screen because it is not one
@@ -324,11 +325,15 @@ function GameRoute({
   const { puzzle, error, loading, noPuzzle, retry } = usePuzzle(lang, ref);
   const setLastLang = useGameStore((s) => s.setLastLang);
 
-  // Whether the day on screen IS the active game day — the undated route's too, which the
-  // 22:00 flip passes by while its tab stays on screen. Gates the streak celebration + solve
-  // analytics. LIVE, off the app's one day signal: no reload needed either way.
+  // Whether the day on screen IS the active game day RIGHT NOW — the header's question (the
+  // title's date): the undated route's day too, once the 22:00 flip has passed it by on
+  // screen. LIVE, off the app's one day signal.
   const today = useToday();
-  const isActiveDay = !isBonusRef(ref) && ref.dayNumber === today;
+  const isToday = !isBonusRef(ref) && ref.dayNumber === today;
+  // ...and whether the ROUND is: the day it was opened as, for as long as it stays on screen
+  // (`useOpenedAsActive`) — so the flip passing it takes nothing from under the player: its
+  // race line, its result's boards, its race band. A new round reads the live value afresh.
+  const isActiveDay = useOpenedAsActive(`${lang}:${puzzleAddress(ref)}`, isToday);
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
   useEffect(() => {
@@ -359,7 +364,7 @@ function GameRoute({
           missing-puzzle and the loaded game: which puzzle is a fact of the ROUTE, so it
           never waits on a game to report it. */}
       <HeaderLeft>
-        <PuzzleTitle lang={lang} puzzleRef={isActiveDay ? null : ref} />
+        <PuzzleTitle lang={lang} puzzleRef={isToday ? null : ref} />
       </HeaderLeft>
       {loading && (
         <p className="status">
