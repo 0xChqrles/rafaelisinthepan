@@ -2415,7 +2415,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   scene) on the card's slate Bayer ORBIT on the house's 2px cell, the rest folded into the
   card's `+N` checker tile — the card's own placement, trail and tile (`@whippin/shared`
   `orbitPlaces` / `orbitTrail` / `plusTile`, never re-derived), its `GROUP_MARKS_SHOWN`
-  places. **The orbit keeps a SEAT for the reader** (`orbitPlacesFor`): the LAST place,
+  places; the `+N`'s count at the card's size for the tile (`plusLabelSize`) stepped down to
+  a whole size of the pixel face, on a cut-out of whole tile cells centred on the tile
+  (`moreTile`). **The orbit keeps a SEAT for the reader** (`orbitPlacesFor`): the LAST place,
   clockwise from the top, an empty mark's box in the floor's stipple; every place is decided
   ONCE, with the seat in it, so nothing on the orbit ever moves. The calls stand in THREE
   fixed slots on the bottom edge (a line, the call, the word under it), the call in ONE place

@@ -65,8 +65,10 @@ const ACCENT = '#4a6aff';
 // The two voices: the PIXEL face for what the game shows (the count, the indices), the
 // chrome's MONO for everything else — its bold, the one weight the rasterizer is handed.
 // Both are monospaced, so a line's width is a sum of advances and nothing is measured:
-// the pixel face advances 1em a glyph, the mono 0.65em.
-const PIXEL_FONT = 'Press Start 2P';
+// the pixel face advances 1em a glyph, the mono 0.65em. The pixel face's family is QUOTED in
+// the attribute: `2P` is no CSS identifier, so a browser drops a bare `Press Start 2P` and
+// sets its fallback (the web draws the `+N` tile inline); the rasterizer reads either.
+const PIXEL_FONT = "'Press Start 2P'";
 const UI_FONT = 'Azeret Mono';
 // (Exported: the web sets the mono's names to fit off the same advance.)
 export const UI_ADVANCE_EM = 0.65;
@@ -368,15 +370,23 @@ export function orbitTrail({
   return cellsPath(cols, rows, (x, y) => ink[y * cols + x] === 1, cell, 0, 0);
 }
 
+// The `+N` count's size on a `px` tile: a third of the tile for two glyphs, four fifteenths
+// for three (`+45`, the members' cap, holds the tile too). The card sets it as it is; the web
+// steps it down to one of the pixel face's whole sizes.
+export function plusLabelSize(overflow: number, px: number): number {
+  return (px * (`+${overflow}`.length > 2 ? 32 : 40)) / GROUP_MARK_PX;
+}
+
 // `+N`: faces not shown yet — a `px` tile at (x, y), the slate in a checker of the marks' own
-// cells, the count in the pixel face (`size`) on a cut-out of the ground `pad` px round it.
-// `radius` rounds the tile (the card's tiles are rounded; a sharp mark's neighbour is not).
+// cells, the count in the pixel face (`size`) on a cut-out of the ground `padX` px round it
+// across and `padY` down (the web sets the cut-out on the tile's own cells). `radius` rounds
+// the tile (the card's tiles are rounded; a sharp mark's neighbour is not).
 export function plusTile(
   x: number,
   y: number,
   px: number,
   overflow: number,
-  { size, pad, radius }: { size: number; pad: number; radius: number },
+  { size, padX, padY, radius }: { size: number; padX: number; padY: number; radius: number },
 ): string {
   const cell = px / AVATAR_SIZE;
   const label = `+${overflow}`;
@@ -384,7 +394,7 @@ export function plusTile(
   return (
     `<rect x="${x}" y="${y}" width="${px}" height="${px}"${radius > 0 ? ` rx="${radius}"` : ''} fill="${SURFACE}"/>` +
     `<path d="${cellsPath(AVATAR_SIZE, AVATAR_SIZE, (i, j) => (i + j) % 2 === 0, cell, x, y)}" fill="${SLATE}" shape-rendering="crispEdges"/>` +
-    `<rect x="${Math.round(x + px / 2 - lw / 2 - pad)}" y="${Math.round(y + px / 2 - size / 2 - pad)}" width="${lw + 2 * pad}" height="${size + 2 * pad}" fill="${BG}"/>` +
+    `<rect x="${Math.round(x + px / 2 - lw / 2 - padX)}" y="${Math.round(y + px / 2 - size / 2 - padY)}" width="${lw + 2 * padX}" height="${size + 2 * padY}" fill="${BG}"/>` +
     `<text x="${Math.round(x + px / 2 - lw / 2)}" y="${pixelBaseline(y + px / 2, size)}" font-family="${PIXEL_FONT}" font-size="${size}" fill="${FG}">${label}</text>`
   );
 }
@@ -435,9 +445,8 @@ export function renderGroupCardSvg({ name, members }: GroupCardData): string {
   );
   if (overflow > 0) {
     const { x, y } = spots[count - 1];
-    // `+45` (the members' cap) holds the tile too.
-    const size = `+${overflow}`.length > 2 ? 32 : 40;
-    marks.push(plusTile(x, y, GROUP_MARK_PX, overflow, { size, pad: 8, radius: TILE_RADIUS }));
+    const size = plusLabelSize(overflow, GROUP_MARK_PX);
+    marks.push(plusTile(x, y, GROUP_MARK_PX, overflow, { size, padX: 8, padY: 8, radius: TILE_RADIUS }));
   }
 
   const trail = orbitTrail({

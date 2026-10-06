@@ -6,9 +6,9 @@
 // (verdicts the player CAN act on), and an expired link.
 
 import { describe, expect, it, vi } from 'vitest';
-import { GROUPS_MAX, GROUP_MARKS_SHOWN, GROUP_MEMBERS_MAX } from '@whippin/shared';
+import { GROUPS_MAX, GROUP_MARKS_SHOWN, GROUP_MEMBERS_MAX, plusLabelSize } from '@whippin/shared';
 import { groupFrom, landingOf, sendJoin } from './GroupInvite';
-import { orbitPlacesFor } from '../components/GroupOrbit';
+import { moreTile, orbitPlacesFor } from '../components/GroupOrbit';
 
 const postGroupsBody = vi.hoisted(() => vi.fn());
 const adoptGroups = vi.hoisted(() => vi.fn());
@@ -153,5 +153,32 @@ describe('orbitPlacesFor — who stands on the orbit', () => {
     const places = orbitPlacesFor(players(GROUP_MEMBERS_MAX), false);
     expect(places).toHaveLength(GROUP_MARKS_SHOWN);
     expect(places.at(-1)).toEqual({ kind: 'more', count: GROUP_MEMBERS_MAX - (GROUP_MARKS_SHOWN - 1) });
+  });
+});
+
+// The landing's `+N` is the card's tile at the screen's size: its count at the card's own size
+// for the tile (`plusLabelSize`) stepped down to a whole size of the pixel face, on a cut-out set
+// on the tile's own cells, centred, with the checker left either side — every mark size the
+// landing draws, every count it can fold.
+describe('moreTile — the card’s +N on the landing', () => {
+  it('sets the count in the pixel face at a whole size the card’s rule allows, on the tile’s cells', () => {
+    for (const mark of [50, 60, 80]) {
+      const cell = mark / 10;
+      for (let count = 2; count <= GROUP_MEMBERS_MAX - (GROUP_MARKS_SHOWN - 1); count += 1) {
+        const svg = moreTile(count, mark);
+        const size = Number(/font-size="(\d+)"/.exec(svg)![1]);
+        expect([8, 16, 24], `${count} at ${mark}`).toContain(size);
+        expect(size).toBeLessThanOrEqual(Math.max(8, plusLabelSize(count, mark)));
+        const [, x, y, w, h] = /<rect x="(-?\d+)" y="(-?\d+)" width="(\d+)" height="(\d+)" fill="#050507"\/>/
+          .exec(svg)!
+          .map(Number);
+        for (const edge of [x, y, w, h]) expect(edge % cell, `${count} at ${mark}`).toBe(0);
+        expect(x).toBeGreaterThanOrEqual(cell);
+        expect(mark - (x + w)).toBe(x);
+        expect(mark - (y + h)).toBe(y);
+        expect(w).toBeGreaterThanOrEqual(`+${count}`.length * size);
+        expect(h).toBeGreaterThan(size);
+      }
+    }
   });
 });

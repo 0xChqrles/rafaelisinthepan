@@ -11,6 +11,7 @@ import { decodeAvatar, encodeAvatar, AVATAR_CELLS, AVATAR_PALETTES } from './ava
 import {
   orbitPlaces,
   orbitTrail,
+  plusLabelSize,
   plusTile,
   renderCardSvg,
   renderGroupCardSvg,
@@ -346,7 +347,7 @@ describe('renderGroupCardSvg', () => {
     }));
     const svg = renderGroupCardSvg({ name: 'Big', members });
     const label = `+${GROUP_MEMBERS_MAX - 5}`;
-    const text = new RegExp(`<text x="(\\d+)" y="\\d+" font-family="Press Start 2P" font-size="(\\d+)"[^>]*>\\${label}<`).exec(svg)!;
+    const text = new RegExp(`<text x="(\\d+)" y="\\d+" font-family="'Press Start 2P'" font-size="(\\d+)"[^>]*>\\${label}<`).exec(svg)!;
     // The tile is the last one drawn before the lockup: the surface rect the count sits on.
     const tile = /<rect x="(\d+)" y="\d+" width="120" height="120" rx="4" fill="#14151c"\/>/.exec(svg)!;
     expect(Number(text[1])).toBeGreaterThan(Number(tile[1]));
@@ -415,13 +416,45 @@ describe('the orbit pieces', () => {
   });
 
   it('writes the +N count on its checker tile, inside it, at the size asked for', () => {
-    const tile = plusTile(10, 20, 60, 45, { size: 16, pad: 4, radius: 0 });
+    const tile = plusTile(10, 20, 60, 45, { size: 16, padX: 0, padY: 4, radius: 0 });
     expect(tile).toContain('>+45<');
     expect(tile).toContain('font-size="16"');
     expect(tile).not.toContain(' rx=');
     const [, x] = /<text x="(\d+)"/.exec(tile)!.map(Number);
     expect(x).toBeGreaterThanOrEqual(10);
     expect(x + 3 * 16).toBeLessThanOrEqual(10 + 60);
+    // The cut-out is the label's box and the padding asked for, across and down.
+    const [, , , w, h] = /<rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" fill="#050507"\/>/.exec(tile)!.map(Number);
+    expect([w, h]).toEqual([48, 24]);
+  });
+
+  it('sizes the +N count in the card’s proportion to its tile, the one rule for every tile', () => {
+    expect(plusLabelSize(4, 120)).toBe(40);
+    expect(plusLabelSize(45, 120)).toBe(32);
+    expect(plusLabelSize(4, 60)).toBe(20);
+    const nine = Array.from({ length: 9 }, (_, i) => ({ publicId: `member${String(i).padStart(10, '0')}`, name: '', avatar: null }));
+    expect(renderGroupCardSvg({ name: 'Big', members: nine })).toMatch(/font-size="40"[^>]*>\+4</);
+  });
+});
+
+// The cards are SVG a browser reads too (the landing draws the `+N` tile inline): every family
+// they name has to be one CSS keeps — a bare `Press Start 2P` is not (`2P` is no identifier),
+// and a browser drops the whole attribute for its fallback face.
+describe('the card’s font families', () => {
+  it('names every family as CSS reads it, quoted where it is no identifier', () => {
+    const members = Array.from({ length: 9 }, (_, i) => ({ publicId: `member${String(i).padStart(10, '0')}`, name: '', avatar: null }));
+    const svgs = [
+      renderGroupCardSvg({ name: 'Big', members }),
+      renderCardSvg({ lang: 'en', dayNumber: 123, score: 6, trajectory: [8, 8, 33, 33, 70, 100], solvedAt: [2, 5, 6] }),
+    ];
+    for (const svg of svgs) {
+      const families = [...svg.matchAll(/font-family="([^"]*)"/g)].map((m) => m[1]);
+      expect(families.length).toBeGreaterThan(0);
+      for (const family of families) {
+        const bare = /^'[^']+'$/.test(family) ? undefined : family.split(/\s+/).find((word) => !/^[A-Za-z_-][\w-]*$/.test(word));
+        expect(bare, family).toBeUndefined();
+      }
+    }
   });
 });
 

@@ -1,11 +1,13 @@
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
+  AVATAR_SIZE,
   GROUP_MARKS_SHOWN,
   UI_ADVANCE_EM,
   anonName,
   defaultAvatar,
   orbitPlaces,
   orbitTrail,
+  plusLabelSize,
   plusTile,
   type BoardPlayer,
 } from '@whippin/shared';
@@ -75,12 +77,29 @@ function geometry(width: number, height: number) {
   return { mark, cx: Math.round(width / 2), cy: Math.round(height / 2), rx, ry };
 }
 
-// The `+N`'s count in the pixel face at one of its whole sizes, in the card's proportion to
-// its tile — a third of it for two glyphs, four fifteenths for three — on a cut-out 4px round.
-function moreSize(count: number, mark: number): number {
-  const glyphs = `+${count}`.length;
-  const want = (mark * (glyphs > 2 ? 32 : 40)) / 120;
-  return [24, 16, 8].find((size) => size <= want && glyphs * size + 8 <= mark) ?? 8;
+// The `+N` tile on the screen: the card's own (`plusTile`), its count at the card's size for the
+// tile (`plusLabelSize`) stepped down to one of the pixel face's whole sizes, on a cut-out set on
+// the tile's own cells — the fewest whole cells round the count with a font pixel of air round
+// its ink, centred on the tile, and a cell of the checker left either side.
+const PIXEL_SIZES = [24, 16, 8];
+export function moreTile(count: number, mark: number): string {
+  const cell = mark / AVATAR_SIZE;
+  const onCells = (length: number) => {
+    const cells = Math.ceil(length / cell);
+    return (cells + ((AVATAR_SIZE - cells) % 2)) * cell;
+  };
+  // Across, the count's advance already leaves a font pixel either side of its ink (the `+`
+  // opens on one, the last digit closes on one); down, its seven rows of ink take one more.
+  const across = (size: number) => `+${count}`.length * size;
+  const down = (size: number) => size + size / 8;
+  const want = plusLabelSize(count, mark);
+  const size = PIXEL_SIZES.find((px) => px <= want && onCells(across(px)) <= mark - 2 * cell) ?? 8;
+  return plusTile(0, 0, mark, count, {
+    size,
+    padX: (onCells(across(size)) - across(size)) / 2,
+    padY: (onCells(down(size)) - size) / 2,
+    radius: 0,
+  });
 }
 
 // The drop as keyframes on the podium's own clock (`markAt`): each whole-cell step held to the
@@ -281,13 +300,7 @@ export default function GroupOrbit({
                       height={geo.mark}
                       viewBox={`0 0 ${geo.mark} ${geo.mark}`}
                       aria-hidden="true"
-                      dangerouslySetInnerHTML={{
-                        __html: plusTile(0, 0, geo.mark, place.count, {
-                          size: moreSize(place.count, geo.mark),
-                          pad: 4,
-                          radius: 0,
-                        }),
-                      }}
+                      dangerouslySetInnerHTML={{ __html: moreTile(place.count, geo.mark) }}
                     />
                     <span className="sr-only">{`+${place.count}`}</span>
                   </li>
