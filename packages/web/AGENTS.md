@@ -3262,13 +3262,33 @@ it to the local store — see `packages/backend/AGENTS.md`).
     - **BOARDS** (`ResultBoards`, `.result-boards`; the bullet *Solved-screen BOARDS*
       below) — how the day compares, under SHARE, in ONE fixed box (354px). At 375×667 it
       starts at y 552, the page below the fold.
-    - **PAGE** (`.solved-page`) — the sentence's page, read TOP-DOWN the way a page is
-      (user-decided 2026-09-08: "with the source above the text, we can start by a few
-      sentences before the puzzle" — no auto-scroll onto the line): the **SOURCE credit**
-      first, left-aligned, then the **TEXT** in the READING face (`--ui`, 16px, 1.6), where
-      the puzzle's line is in the ink (`.solved-line`) and — with #270 — the raw sentences
-      before and after it are the MUTED text around it. That contrast IS the highlight:
-      never a marker band, never the pixel face inside a paragraph. **The STAGE is the
+    - **PAGE** (`.solved-page`) — the sentence's page, read TOP-DOWN the way a page is,
+      the source above the text (user-decided 2026-09-08): the **SOURCE credit** first,
+      left-aligned, then the **TEXT** in the READING face (`--ui`, 16px, 1.6), which
+      **OPENS ON THE LINE** (user-decided 2026-10-06): its first words are the puzzle's
+      line, in the ink (`.solved-line`). The raw sentences BEFORE it (#270) wait behind
+      **THE CUT** — the printed quote's `[…]` drawn as a tappable thing: the ellipsis in
+      `--muted` inside `.quiet-btn`'s corner brackets at the text's own size (`.solved-cut`,
+      a real button, one row tall and set on the row's top so no row grows; its finger's
+      box, 44×40, reaches past the glyph up into the credit's margin and sideways, never
+      over the next row; bound to the line by a no-break space; `ariaPageBefore`), absent
+      where nothing comes before. It takes a tap only once the secrets have popped
+      (`.solved-text.armed`, at once on a settled frame), so a skip-tap where it sits only
+      skips. **A tap prints those sentences IN ITS PLACE**, muted (`.solved-unfolded`, four
+      hard opacity steps over 160ms), and the reader reads down into the line again — the
+      player's own act, the one thing on the stage that moves what has landed: the text
+      grows from the tap point down (the stage's scroll anchoring is off, `overflow-anchor:
+      none`), and a cut the keyboard pressed hands the focus to the opened text. One way,
+      per mount (the words modal keeps it open, a revisit folds it again), never persisted,
+      no event. The sentences AFTER the line follow it, printed and muted: they are where
+      the line led and bury nothing. The text closes on **THE END MARK**
+      (`.solved-text::after`): the app's LED square in the accent, 0.5em, 0.4em after its
+      last word — the page ends the way a printed article does, without a word. Why the
+      page opens on the line: it is what the player rebuilt, and a page opening on its
+      context put it under up to a screen of other text. Not done: a one-sentence lead-in
+      (the sentence before is cut whole and runs from a few words to a screen), an
+      auto-scroll onto the line. The contrast IS the highlight: never a marker band,
+      never the pixel face inside a paragraph. **The STAGE is the
       scroller** (`overflow-y: auto`, `overscroll-behavior: contain`, `pixel-scroll`,
       `position: relative` so the sr-only hints under a long page are contained rather
       than growing the document — measured 523px of page scroll before), fading its
@@ -3329,15 +3349,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
       beneath it, and a source carrying only a kind is just that word. The typewriter is
       one character run across whatever lines exist.
     - **The EXCERPT and the track link (#270) live HERE and nowhere else**:
-      `source.excerpt.before`/`after` are joined into the muted text around
-      `.solved-line` — one paragraph, read top-down from the credit, no auto-scroll onto
-      the line — and `source.url` is LISTEN (`.solved-listen`, i18n `listen`): an
-      ordinary link under the text, new tab, `rel="noopener noreferrer"`, no embed and no
-      third-party script. A puzzle carrying neither shows credit + sentence, and nothing
-      looks missing. `parsePuzzle` REFUSES a malformed excerpt (two string arrays or
-      nothing) and a non-`http(s)` url (it becomes an href). Songs get NO lyrics (the
-      #270 decision stands, reaffirmed 2026-09-08: a verse or chorus is still reproduced
-      lyrics). Not here: excerpts on the archive calendar, the share page or the card.
+      `source.excerpt.before` waits behind the page's CUT and is printed, joined and
+      muted, in its place on a tap; `source.excerpt.after` follows `.solved-line`, joined
+      and muted — one paragraph, no auto-scroll onto the line — and `source.url` is
+      LISTEN (`.solved-listen`, i18n `listen`): an ordinary link under the text, new tab,
+      `rel="noopener noreferrer"`, no embed and no third-party script. A puzzle carrying
+      neither shows credit + sentence, and nothing looks missing. `parsePuzzle` REFUSES a
+      malformed excerpt (two string arrays or nothing) and a non-`http(s)` url (it becomes
+      an href). Songs get NO lyrics (the #270 decision stands, reaffirmed 2026-09-08: a
+      verse or chorus is still reproduced lyrics). Not here: excerpts on the archive
+      calendar, the share page or the card.
   - **The reveal reads dissolve → score → SHARE → boards → page since 2026-09-11 (see
     the card bullet above; the paragraph below describes the 2026-09-08 page-first order
     it replaced, and its beats still hold in their new places).** The stage comes up;

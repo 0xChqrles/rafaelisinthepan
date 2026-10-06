@@ -386,6 +386,8 @@ const STRINGS = {
   copied: { en: 'COPIED', fr: 'COPIÉ' },
   // A music day's track link on the solved page (#270): an ordinary link, new tab.
   listen: { en: 'LISTEN', fr: 'ÉCOUTER' },
+  // The solved page's CUT: the sentences before the line, printed in its place on a tap.
+  ariaPageBefore: { en: 'Read what comes before', fr: 'Lire ce qui précède' },
   // The solved credit block's one function word (user-decided 2026-08-15): it binds the
   // author to the work in the line under it — `Les Misérables` / `BOOK by Victor Hugo` can
   // only be read one way, where two stacked names could be read either. LOWERCASE, unlike

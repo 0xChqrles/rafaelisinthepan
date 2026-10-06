@@ -2690,6 +2690,10 @@ body:has(.app > .board-screen) {
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+  /* The page's CUT opens ABOVE the line: its text must grow from the tap point down, on
+     every engine. Scroll anchoring would hold the line still and push the new text up,
+     out of view under the credit (WebKit anchors nothing; Chrome and Firefox would). */
+  overflow-anchor: none;
   /* The GAP between the stage's blocks (the card, the boards, the page) — the seam, stated
      once. Widened 2026-09-11 (user-asked): the blocks are different things, and the air
      between them is what says so. */
@@ -3552,12 +3556,12 @@ body:has(.app > .board-screen) {
   }
 }
 
-/* The PAGE: the credit, then the text, read top-down the way a page is (user-decided
-   2026-09-08: "with the source above the text, we can start by a few sentences before
-   the puzzle"). It is the stage's last item, at the score block's width (the scrollbar is
-   on the screen's edge, past the page's inset, so the words need no clearance of their
-   own). It is the sticky credit's CONTAINING BLOCK: the credit sticks while the page is
-   in view and leaves with it. */
+/* The PAGE: the credit, then the text OPENING ON THE LINE, read top-down the way a page
+   is: the source above the text (user-decided 2026-09-08), the sentences before the line
+   behind THE CUT (`.solved-cut`). It is the stage's last item, at the score block's width
+   (the scrollbar is on the screen's edge, past the page's inset, so the words need no
+   clearance of their own). It is the sticky credit's CONTAINING BLOCK: the credit sticks
+   while the page is in view and leaves with it. */
 .solved-page {
   flex: none;
   width: 100%;
@@ -3611,8 +3615,8 @@ body:has(.app > .board-screen) {
   text-align: left;
 }
 /* The TEXT, in the READING face — this is the book's page, not the board. The puzzle's
-   line is in the ink; #270's sentences before and after it will be the muted text around
-   it, which is the whole highlight: contrast, never a marker band. */
+   line is in the ink; #270's sentences around it are the muted text (those before it once
+   their cut is opened), which is the whole highlight: contrast, never a marker band. */
 .solved-text {
   margin: 0;
   /* The sentence follows the CREDIT (user-decided 2026-09-11, "score view → source →
@@ -3644,6 +3648,54 @@ body:has(.app > .board-screen) {
 }
 .solved-line {
   color: var(--fg);
+}
+/* THE CUT: the page opens on the line, and the sentences before it wait behind the printed
+   quote's `[…]` — the ellipsis in `--muted` (the ink of the text it stands for) inside the
+   corner brackets of a tappable thing, `.quiet-btn`'s dress at the text's own size. Exactly
+   one row tall and set on the row's top, so no row grows; the glyph sits on the text's
+   baseline. Its finger's box (`::after`, no layout) grows UP into the credit's margin
+   (`clamp(14px, …)`, never less) and SIDEWAYS, never down over the line's next row, and
+   stops short of the line's first word past the no-break space. */
+.solved-text .solved-cut {
+  height: 1.6em;
+  padding: 0 7px;
+  vertical-align: top;
+  font: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.solved-text .solved-cut::before {
+  inset: 3px 0;
+}
+.solved-text .solved-cut::after {
+  content: '';
+  position: absolute;
+  inset: -14px -10px 0;
+}
+/* Under the keyboard's focus the app's ONE indicator speaks alone (`FocusBrackets`): the
+   cut's own corners give way to it, never a frame nested in a frame. */
+.solved-text .solved-cut[data-bracketed]::before {
+  border-color: transparent;
+}
+/* A tap only once the secrets have popped (`.armed`, at once on a settled frame): until
+   then a skip-tap where the cut sits — unseen, or still fading in — only skips. */
+.solved-text:not(.armed) .solved-cut {
+  pointer-events: none;
+}
+/* The sentences the cut held, printed in its place in four hard steps — the player's own
+   act, so a settled frame plays it too, and reduced motion makes it instant. Focusable for
+   the keyboard's sake alone, so a tap on it paints no browser flash. */
+.solved-unfolded {
+  animation: solved-unfold 160ms steps(4, jump-end) both;
+  -webkit-tap-highlight-color: transparent;
+}
+@keyframes solved-unfold {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 /* LISTEN (#270): a music day's one affordance — an ordinary link to the track's page, a
    new tab, no embed. The credit's own face, in the action ink, underlined the pixel way. */
