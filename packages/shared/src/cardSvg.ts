@@ -65,8 +65,10 @@ const ACCENT = '#4a6aff';
 // The two voices: the PIXEL face for what the game shows (the count, the indices), the
 // chrome's MONO for everything else — its bold, the one weight the rasterizer is handed.
 // Both are monospaced, so a line's width is a sum of advances and nothing is measured:
-// the pixel face advances 1em a glyph, the mono 0.65em.
-const PIXEL_FONT = 'Press Start 2P';
+// the pixel face advances 1em a glyph, the mono 0.65em. The pixel face's family is QUOTED in
+// the attribute: `2P` is no CSS identifier, so a browser drops a bare `Press Start 2P` and
+// sets its fallback (the web draws the `+N` tile inline); the rasterizer reads either.
+const PIXEL_FONT = "'Press Start 2P'";
 const UI_FONT = 'Azeret Mono';
 // (Exported: the web sets the mono's names to fit off the same advance.)
 export const UI_ADVANCE_EM = 0.65;
@@ -278,9 +280,14 @@ const ROOM_CY = (ROOM_TOP + ROOM_BOTTOM) / 2;
 //
 // It draws the ASSIGNED mark for a member who never customized one (`assigned.ts`), so
 // the faces in the chat are the faces the group's board shows.
+//
+// THE ORBIT IS ONE DRAWING, on the card and on the invite landing the card opens onto (web
+// `GroupInvite`): `orbitPlaces` stands the tiles round it, `orbitTrail` draws its dithered
+// stroke knocked out round them, and `plusTile` is the `+N` tile that folds the rest away.
+// The card passes its own geometry; the landing passes the screen's, on the house's 2px cell.
 const GROUP_MARK_PX = 120; // 12px a cell
-// How many marks the orbit holds before it folds the rest into a `+N` tile.
-const GROUP_MARKS_SHOWN = 6;
+// How many places the orbit holds before it folds the rest into a `+N` tile.
+export const GROUP_MARKS_SHOWN = 6;
 const GROUP_NAME_MAX_SIZE = 64;
 // The chip's own width: up to 15 capitals keep the full size, the 20-glyph cap sets at 49 —
 // and smaller still where a tile of the orbit would touch it (a group of three's lower pair).
@@ -291,10 +298,106 @@ const ORBIT_RY = 180;
 const ORBIT_CELL = 4;
 const ORBIT_DENSITY = 0.72;
 const ORBIT_STROKE = 2.6; // cells across
-const ORBIT_CLEAR = 16; // the knock-out around a tile and the chip
+const ORBIT_CLEAR = 4; // cells: the knock-out around a tile and the chip
 const ORBIT_MIN_PIECE = 14; // a scrap under this many cells reads as a stray dot: dropped
 const SLATE = '#4a5578';
 const SURFACE = '#14151c';
+
+// Where `count` tiles of `tile` px stand on the orbit round (cx, cy), as each tile's top-left
+// corner on whole pixels: clockwise from the top, an even count turned half a step, so no tile
+// stands right over or under what the orbit is round.
+export function orbitPlaces(
+  count: number,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  tile: number,
+): { x: number; y: number }[] {
+  return Array.from({ length: count }, (_, k) => {
+    const deg = -90 + (k * 360) / Math.max(1, count) + (count % 2 === 0 ? 180 / count : 0);
+    const a = (deg * Math.PI) / 180;
+    return {
+      x: Math.round(cx + rx * Math.cos(a) - tile / 2),
+      y: Math.round(cy + ry * Math.sin(a) - tile / 2),
+    };
+  });
+}
+
+// The orbit's TRAIL: a stroke of whole cells on a `cell`-px grid over a `width` × `height`
+// box, dithered, knocked out round every box in `clear` (the tiles, the name), its scraps
+// dropped — as ONE path's `d`, drawn in the slate. The stroke, the knock-out
+// and the smallest piece kept are counted in cells, so the trail keeps its grain at any cell.
+export function orbitTrail({
+  width,
+  height,
+  cx,
+  cy,
+  rx,
+  ry,
+  cell,
+  clear,
+}: {
+  width: number;
+  height: number;
+  cx: number;
+  cy: number;
+  rx: number;
+  ry: number;
+  cell: number;
+  clear: readonly { x: number; y: number; w: number; h: number }[];
+}): string {
+  const cols = Math.ceil(width / cell);
+  const rows = Math.ceil(height / cell);
+  const margin = ORBIT_CLEAR * cell;
+  const boxes = clear.map(({ x, y, w, h }) => [x - margin, y - margin, x + w + margin, y + h + margin]);
+  const ink = new Uint8Array(cols * rows);
+  for (let y = 0; y < rows; y += 1) {
+    for (let x = 0; x < cols; x += 1) {
+      const px = x * cell + cell / 2 - cx;
+      const py = y * cell + cell / 2 - cy;
+      // The distance to the ellipse, to first order: its implicit function over its gradient.
+      const k = Math.hypot(px / rx, py / ry);
+      const g = Math.hypot(px / (rx * rx), py / (ry * ry)) || 1;
+      if (Math.abs(k - 1) * (k / g) >= (cell * ORBIT_STROKE) / 2 || ORBIT_DENSITY <= bayerThreshold(x, y)) continue;
+      const cxp = x * cell + cell / 2;
+      const cyp = y * cell + cell / 2;
+      if (boxes.some(([l, t, r, b]) => cxp >= l && cxp <= r && cyp >= t && cyp <= b)) continue;
+      ink[y * cols + x] = 1;
+    }
+  }
+  dropScraps(ink, cols, rows, ORBIT_MIN_PIECE);
+  return cellsPath(cols, rows, (x, y) => ink[y * cols + x] === 1, cell, 0, 0);
+}
+
+// The `+N` count's size on a `px` tile: a third of the tile for two glyphs, four fifteenths
+// for three (`+45`, the members' cap, holds the tile too). The card sets it as it is; the web
+// steps it down to one of the pixel face's whole sizes.
+export function plusLabelSize(overflow: number, px: number): number {
+  return (px * (`+${overflow}`.length > 2 ? 32 : 40)) / GROUP_MARK_PX;
+}
+
+// `+N`: faces not shown yet — a `px` tile at (x, y), the slate in a checker of the marks' own
+// cells, the count in the pixel face (`size`) on a cut-out of the ground `padX` px round it
+// across and `padY` down (the web sets the cut-out on the tile's own cells). `radius` rounds
+// the tile (the card's tiles are rounded; a sharp mark's neighbour is not).
+export function plusTile(
+  x: number,
+  y: number,
+  px: number,
+  overflow: number,
+  { size, padX, padY, radius }: { size: number; padX: number; padY: number; radius: number },
+): string {
+  const cell = px / AVATAR_SIZE;
+  const label = `+${overflow}`;
+  const lw = label.length * size;
+  return (
+    `<rect x="${x}" y="${y}" width="${px}" height="${px}"${radius > 0 ? ` rx="${radius}"` : ''} fill="${SURFACE}"/>` +
+    `<path d="${cellsPath(AVATAR_SIZE, AVATAR_SIZE, (i, j) => (i + j) % 2 === 0, cell, x, y)}" fill="${SLATE}" shape-rendering="crispEdges"/>` +
+    `<rect x="${Math.round(x + px / 2 - lw / 2 - padX)}" y="${Math.round(y + px / 2 - size / 2 - padY)}" width="${lw + 2 * padX}" height="${size + 2 * padY}" fill="${BG}"/>` +
+    `<text x="${Math.round(x + px / 2 - lw / 2)}" y="${pixelBaseline(y + px / 2, size)}" font-family="${PIXEL_FONT}" font-size="${size}" fill="${FG}">${label}</text>`
+  );
+}
 
 export interface GroupCardData {
   name: string;
@@ -307,20 +410,11 @@ export function renderGroupCardSvg({ name, members }: GroupCardData): string {
   const cx = CARD_WIDTH / 2;
   const cy = Math.round(ROOM_CY);
   // The tiles on the orbit, clockwise from the top: the first members, then a `+N` tile in
-  // the last place when the group is larger than the orbit holds. An even count turns
-  // half a step, so no face stands right over or under the name.
+  // the last place when the group is larger than the orbit holds.
   const overflow = members.length > GROUP_MARKS_SHOWN ? members.length - (GROUP_MARKS_SHOWN - 1) : 0;
   const drawn = overflow > 0 ? members.slice(0, GROUP_MARKS_SHOWN - 1) : members;
   const count = drawn.length + (overflow > 0 ? 1 : 0);
-  const place = (k: number) => {
-    const deg = -90 + (k * 360) / Math.max(1, count) + (count % 2 === 0 ? 180 / count : 0);
-    const a = (deg * Math.PI) / 180;
-    return {
-      x: Math.round(cx + ORBIT_RX * Math.cos(a) - GROUP_MARK_PX / 2),
-      y: Math.round(cy + ORBIT_RY * Math.sin(a) - GROUP_MARK_PX / 2),
-    };
-  };
-  const spots = Array.from({ length: count }, (_, k) => place(k));
+  const spots = orbitPlaces(count, cx, cy, ORBIT_RX, ORBIT_RY, GROUP_MARK_PX);
 
   // The name in the chrome's capitals, on one line always — the name is the thing the card
   // is about, and a wrapped one reads as two: the size is what fits the chip's width, and
@@ -350,46 +444,25 @@ export function renderGroupCardSvg({ name, members }: GroupCardData): string {
     markTile(`member${k}`, member.publicId, member.avatar, spots[k].x, spots[k].y, GROUP_MARK_PX),
   );
   if (overflow > 0) {
-    // `+N`: faces not shown yet — the slate in a checker of the marks' own cells, the count
-    // on a cut-out of the ground.
     const { x, y } = spots[count - 1];
-    const cell = GROUP_MARK_PX / AVATAR_SIZE;
-    const label = `+${overflow}`;
-    const size = label.length > 2 ? 32 : 40; // `+45` (the members' cap) holds the tile too
-    const lw = label.length * size;
-    marks.push(
-      `<rect x="${x}" y="${y}" width="${GROUP_MARK_PX}" height="${GROUP_MARK_PX}" rx="${TILE_RADIUS}" fill="${SURFACE}"/>` +
-        `<path d="${cellsPath(AVATAR_SIZE, AVATAR_SIZE, (i, j) => (i + j) % 2 === 0, cell, x, y)}" fill="${SLATE}" shape-rendering="crispEdges"/>` +
-        `<rect x="${Math.round(x + GROUP_MARK_PX / 2 - lw / 2 - 8)}" y="${Math.round(y + GROUP_MARK_PX / 2 - size / 2 - 8)}" width="${lw + 16}" height="${size + 16}" fill="${BG}"/>` +
-        `<text x="${Math.round(x + GROUP_MARK_PX / 2 - lw / 2)}" y="${pixelBaseline(y + GROUP_MARK_PX / 2, size)}" font-family="${PIXEL_FONT}" font-size="${size}" fill="${FG}">${label}</text>`,
-    );
+    const size = plusLabelSize(overflow, GROUP_MARK_PX);
+    marks.push(plusTile(x, y, GROUP_MARK_PX, overflow, { size, padX: 8, padY: 8, radius: TILE_RADIUS }));
   }
 
-  // The orbit: a stroke of whole cells on the 4px grid, dithered, knocked out around every tile
-  // and the chip, its scraps dropped.
-  const cols = Math.ceil(CARD_WIDTH / ORBIT_CELL);
-  const rows = Math.ceil(CARD_HEIGHT / ORBIT_CELL);
-  const clear = [
-    ...spots.map(({ x, y }) => [x, y, GROUP_MARK_PX, GROUP_MARK_PX]),
-    [title.x, title.y, title.w, title.h],
-  ].map(([x, y, w, h]) => [x - ORBIT_CLEAR, y - ORBIT_CLEAR, x + w + ORBIT_CLEAR, y + h + ORBIT_CLEAR]);
-  const ink = new Uint8Array(cols * rows);
-  for (let y = 0; y < rows; y += 1) {
-    for (let x = 0; x < cols; x += 1) {
-      const px = x * ORBIT_CELL + ORBIT_CELL / 2 - cx;
-      const py = y * ORBIT_CELL + ORBIT_CELL / 2 - cy;
-      // The distance to the ellipse, to first order: its implicit function over its gradient.
-      const k = Math.hypot(px / ORBIT_RX, py / ORBIT_RY);
-      const g = Math.hypot(px / (ORBIT_RX * ORBIT_RX), py / (ORBIT_RY * ORBIT_RY)) || 1;
-      if (Math.abs(k - 1) * (k / g) >= (ORBIT_CELL * ORBIT_STROKE) / 2 || ORBIT_DENSITY <= bayerThreshold(x, y)) continue;
-      const cxp = x * ORBIT_CELL + ORBIT_CELL / 2;
-      const cyp = y * ORBIT_CELL + ORBIT_CELL / 2;
-      if (clear.some(([l, t, r, b]) => cxp >= l && cxp <= r && cyp >= t && cyp <= b)) continue;
-      ink[y * cols + x] = 1;
-    }
-  }
-  dropScraps(ink, cols, rows, ORBIT_MIN_PIECE);
-  const orbit = `<path d="${cellsPath(cols, rows, (x, y) => ink[y * cols + x] === 1, ORBIT_CELL, 0, 0)}" fill="${SLATE}" shape-rendering="crispEdges"/>`;
+  const trail = orbitTrail({
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    cx,
+    cy,
+    rx: ORBIT_RX,
+    ry: ORBIT_RY,
+    cell: ORBIT_CELL,
+    clear: [
+      ...spots.map(({ x, y }) => ({ x, y, w: GROUP_MARK_PX, h: GROUP_MARK_PX })),
+      { x: title.x, y: title.y, w: title.w, h: title.h },
+    ],
+  });
+  const orbit = `<path d="${trail}" fill="${SLATE}" shape-rendering="crispEdges"/>`;
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">`,

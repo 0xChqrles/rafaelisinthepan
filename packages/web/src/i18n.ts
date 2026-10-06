@@ -74,11 +74,12 @@ const STRINGS = {
     en: 'The link could not be shared or copied. Try again — the next tap shares directly.',
     fr: "Le lien n'a pas pu être partagé ni copié. Réessayez — le prochain appui partage directement.",
   },
-  // The refusals a player can act on, so they are the refusals that speak (#271). Asking
-  // again cannot change them — a full group is a state, not a hiccup — so this reads as a
-  // fact and its button plays rather than retries. ONE line for both caps: the group is
-  // full, or the clicker is in too many groups; either way this group is not joinable now.
-  groupFull: { en: 'GROUP FULL', fr: 'GROUPE COMPLET' },
+  // The invite landing's caps (#271): refusals a player can act on, so they speak — as a
+  // FACT in one quiet line where JOIN stood, the group's face kept over it and PLAY as the
+  // call. Asking again cannot change them (a full group is a state, not a hiccup). Each names
+  // its own act: the group's room, and the reader's own `GROUPS_MAX` (`{n}`).
+  groupFull: { en: 'This group is full.', fr: 'Ce groupe est complet.' },
+  inviteLimit: { en: 'You are already in {n} groups.', fr: 'Vous êtes déjà dans {n} groupes.' },
   // A group name the server's banned-strings filter refuses (`name_rejected`).
   groupNameRejected: { en: 'NAME NOT ALLOWED', fr: 'NOM REFUSÉ' },
   groupNameRejectedNote: {
@@ -172,8 +173,15 @@ const STRINGS = {
   // So there is no "YOUR ACCOUNT" over a screen titled ACCOUNT, no "SAVED AS" in front of
   // something plainly an email, and no "6-DIGIT CODE" over six cells.
   // An invite link naming no group (#271). It is a STATE, not a failure: there is nothing
-  // to retry, so the screen says so and carries the reader into the game.
-  inviteExpired: { en: 'THIS INVITE LINK HAS EXPIRED', fr: "CE LIEN D'INVITATION A EXPIRÉ" },
+  // to retry, so the screen says so under the board's sad ghost and carries the reader into
+  // the game.
+  inviteExpired: { en: 'This link has expired.', fr: 'Ce lien a expiré.' },
+  // The landing's READ failed: nothing is known about the group — no join was tried, so it
+  // never says one failed — and RETRY reads again.
+  inviteFailed: { en: 'The group could not be shown.', fr: "Le groupe n'a pas pu s'afficher." },
+  // A JOIN that landed, said to a screen reader alone: the screen says it with the reader's
+  // own mark dropping into the seat, and no word.
+  inviteJoined: { en: 'You joined the group.', fr: 'Vous avez rejoint le groupe.' },
   accountTitle: { en: 'ACCOUNT', fr: 'COMPTE' },
   // The account's own age, prefixed once — the only thing this screen can say about an
   // identity whose name and mark it already draws.
@@ -672,9 +680,6 @@ const STRINGS = {
   groupCreate: { en: 'CREATE GROUP', fr: 'CRÉER UN GROUPE' },
   groupMembers: { en: 'Members', fr: 'Membres' },
   groupJoin: { en: 'JOIN', fr: 'REJOINDRE' },
-  // The landing's confirmation: the group's name and marks above this line, the board and
-  // PLAY below it.
-  groupJoined: { en: 'JOINED', fr: 'REJOINT' },
   groupLeave: { en: 'LEAVE GROUP', fr: 'QUITTER LE GROUPE' },
   // The board's line under the tabs on GLOBAL (a group's holds its three periods), and the
   // group's door over its lines: its size.

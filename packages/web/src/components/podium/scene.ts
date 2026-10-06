@@ -367,7 +367,7 @@ const RISE_GAP_MS = 60;
 const PLACE_IN_MS = 160;
 const DROP_AFTER_RISE_MS = 20;
 const DROP_GAP_MS = 100;
-const DROP_MS = 220;
+export const DROP_MS = 220;
 const DROP_CELLS = 24;
 export const SHAKE: readonly (readonly [number, number])[] = [
   [0, 1],

@@ -231,9 +231,10 @@ export default function App() {
             one route a sign-out does not close (`blocked`): it reads no private state. */}
         {!blocked && route.view === 'privacy' && <Privacy />}
         {/* The group invite landing (#271) is a beat, not a screen: it records the
-            membership and hands over to the game or the group's board. */}
+            membership and hands over to the game or the group's board. Keyed by the group:
+            its face is decided once per group. */}
         {!blocked && route.view === 'groupInvite' && (
-          <GroupInvite groupId={route.groupId} lang={homeLang} />
+          <GroupInvite key={route.groupId} groupId={route.groupId} lang={homeLang} />
         )}
         {/* Keyed by language: each language has its own first day (#317), so switching
             language remounts the calendar on a month its range holds. */}

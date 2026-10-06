@@ -6,7 +6,9 @@
 // (verdicts the player CAN act on), and an expired link.
 
 import { describe, expect, it, vi } from 'vitest';
-import { groupFrom, sendJoin } from './GroupInvite';
+import { GROUPS_MAX, GROUP_MARKS_SHOWN, GROUP_MEMBERS_MAX, plusLabelSize } from '@whippin/shared';
+import { groupFrom, landingOf, sendJoin } from './GroupInvite';
+import { moreTile, orbitPlacesFor } from '../components/GroupOrbit';
 
 const postGroupsBody = vi.hoisted(() => vi.fn());
 const adoptGroups = vi.hoisted(() => vi.fn());
@@ -102,5 +104,81 @@ describe('groupFrom — what each read means on the landing', () => {
     expect(groupFrom({ status: 'shown', group })).toBe(group);
     expect(groupFrom({ status: 'gone' })).toBe('gone');
     expect(groupFrom({ status: 'failed' })).toBe('failed');
+  });
+});
+
+const players = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({ publicId: `p${String(i).padStart(15, '0')}`, name: '', avatar: null }));
+const summaries = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({ id: `g${i}`, name: 'G', createdBy: 'x', joinedAt: '', members: [] }));
+
+// A cap the landing already KNOWS is never offered as a JOIN the server can only refuse: the
+// group's room off its public face (which never counts more members than the server does), the
+// reader's own `GROUPS_MAX` off their list once it has been read.
+describe('landingOf — what the landing offers', () => {
+  const group = (members: number) => ({ id: GROUP, name: 'G', createdBy: 'x', members: players(members) });
+
+  it('offers JOIN below both caps, and when the reader’s list is unknown', () => {
+    expect(landingOf(group(GROUP_MEMBERS_MAX - 1), summaries(GROUPS_MAX - 1))).toBe('open');
+    expect(landingOf(group(3), null)).toBe('open');
+  });
+
+  it('lands on FULL at the members cap, whatever the reader holds', () => {
+    expect(landingOf(group(GROUP_MEMBERS_MAX), [])).toBe('full');
+    expect(landingOf(group(GROUP_MEMBERS_MAX), summaries(GROUPS_MAX))).toBe('full');
+  });
+
+  it('lands on LIMIT when the reader is already in GROUPS_MAX groups', () => {
+    expect(landingOf(group(3), summaries(GROUPS_MAX))).toBe('limit');
+  });
+});
+
+// The card's own fold (`GROUP_MARKS_SHOWN` places, a `+N` tile in the last of them) with the
+// reader's SEAT kept as the last place on the orbit — so it is decided once and never moves.
+describe('orbitPlacesFor — who stands on the orbit', () => {
+  it('stands every member and keeps the seat last while they fit', () => {
+    const places = orbitPlacesFor(players(GROUP_MARKS_SHOWN - 1), true);
+    expect(places.map((place) => place.kind)).toEqual([...Array(GROUP_MARKS_SHOWN - 1).fill('member'), 'seat']);
+  });
+
+  it('folds the rest into +N before the seat, never past the card’s places', () => {
+    const places = orbitPlacesFor(players(49), true);
+    expect(places).toHaveLength(GROUP_MARKS_SHOWN);
+    expect(places.at(-1)).toEqual({ kind: 'seat' });
+    const shown = places.filter((place) => place.kind === 'member').length;
+    expect(places.at(-2)).toEqual({ kind: 'more', count: 49 - shown });
+  });
+
+  it('is the card’s own fold with no seat to keep', () => {
+    const places = orbitPlacesFor(players(GROUP_MEMBERS_MAX), false);
+    expect(places).toHaveLength(GROUP_MARKS_SHOWN);
+    expect(places.at(-1)).toEqual({ kind: 'more', count: GROUP_MEMBERS_MAX - (GROUP_MARKS_SHOWN - 1) });
+  });
+});
+
+// The landing's `+N` is the card's tile at the screen's size: its count at the card's own size
+// for the tile (`plusLabelSize`) stepped down to a whole size of the pixel face, on a cut-out set
+// on the tile's own cells, centred, with the checker left either side — every mark size the
+// landing draws, every count it can fold.
+describe('moreTile — the card’s +N on the landing', () => {
+  it('sets the count in the pixel face at a whole size the card’s rule allows, on the tile’s cells', () => {
+    for (const mark of [50, 60, 80]) {
+      const cell = mark / 10;
+      for (let count = 2; count <= GROUP_MEMBERS_MAX - (GROUP_MARKS_SHOWN - 1); count += 1) {
+        const svg = moreTile(count, mark);
+        const size = Number(/font-size="(\d+)"/.exec(svg)![1]);
+        expect([8, 16, 24], `${count} at ${mark}`).toContain(size);
+        expect(size).toBeLessThanOrEqual(Math.max(8, plusLabelSize(count, mark)));
+        const [, x, y, w, h] = /<rect x="(-?\d+)" y="(-?\d+)" width="(\d+)" height="(\d+)" fill="#050507"\/>/
+          .exec(svg)!
+          .map(Number);
+        for (const edge of [x, y, w, h]) expect(edge % cell, `${count} at ${mark}`).toBe(0);
+        expect(x).toBeGreaterThanOrEqual(cell);
+        expect(mark - (x + w)).toBe(x);
+        expect(mark - (y + h)).toBe(y);
+        expect(w).toBeGreaterThanOrEqual(`+${count}`.length * size);
+        expect(h).toBeGreaterThan(size);
+      }
+    }
   });
 });

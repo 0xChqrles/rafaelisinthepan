@@ -8,7 +8,17 @@
 import { describe, it, expect } from 'vitest';
 import { anonName, defaultAvatar } from './assigned';
 import { decodeAvatar, encodeAvatar, AVATAR_CELLS, AVATAR_PALETTES } from './avatar';
-import { renderCardSvg, renderGroupCardSvg, runEdges, shareHeadline, CARD_WIDTH } from './cardSvg';
+import {
+  orbitPlaces,
+  orbitTrail,
+  plusLabelSize,
+  plusTile,
+  renderCardSvg,
+  renderGroupCardSvg,
+  runEdges,
+  shareHeadline,
+  CARD_WIDTH,
+} from './cardSvg';
 import { dateForDayNumber, dayNumber } from './day';
 import { COUNT_ROWS } from './countCells';
 import { FOIL_WHITE, foilInkRgb } from './foil';
@@ -337,7 +347,7 @@ describe('renderGroupCardSvg', () => {
     }));
     const svg = renderGroupCardSvg({ name: 'Big', members });
     const label = `+${GROUP_MEMBERS_MAX - 5}`;
-    const text = new RegExp(`<text x="(\\d+)" y="\\d+" font-family="Press Start 2P" font-size="(\\d+)"[^>]*>\\${label}<`).exec(svg)!;
+    const text = new RegExp(`<text x="(\\d+)" y="\\d+" font-family="'Press Start 2P'" font-size="(\\d+)"[^>]*>\\${label}<`).exec(svg)!;
     // The tile is the last one drawn before the lockup: the surface rect the count sits on.
     const tile = /<rect x="(\d+)" y="\d+" width="120" height="120" rx="4" fill="#14151c"\/>/.exec(svg)!;
     expect(Number(text[1])).toBeGreaterThan(Number(tile[1]));
@@ -372,6 +382,79 @@ describe('renderGroupCardSvg', () => {
     const size = Number(/font-size="(\d+)"[^>]*>W+<\/text>/.exec(svg)![1]);
     expect(name.length * size).toBeLessThan(CARD_WIDTH);
     expect(svg.match(/<text /g)).toHaveLength(2);
+  });
+});
+
+// The ORBIT is one drawing on the card and on the invite landing that continues it (web
+// `GroupOrbit`): the places, the trail and the `+N` tile are read off these three, never
+// re-derived, so the landing stands its marks where the card does at any size.
+describe('the orbit pieces', () => {
+  it('stands its tiles clockwise from the top on whole pixels, an even count turned half a step', () => {
+    const [top, ...rest] = orbitPlaces(3, 200, 300, 150, 180, 60);
+    // An odd count: the first tile on the top of the orbit, centred on its axis.
+    expect(top).toEqual({ x: 170, y: 90 });
+    // Clockwise: the next one to the right of the axis, the last to its left.
+    expect(rest[0].x).toBeGreaterThan(170);
+    expect(rest[1].x).toBeLessThan(170);
+    // An even count stands no tile right over the middle.
+    for (const { x } of orbitPlaces(2, 200, 300, 150, 180, 60)) expect(x + 30).not.toBe(200);
+    for (const { x, y } of orbitPlaces(6, 200.5, 300.5, 150.5, 180.5, 60)) {
+      expect(Number.isInteger(x) && Number.isInteger(y)).toBe(true);
+    }
+  });
+
+  it('draws its trail in whole cells of the grid asked for, and never inside a box it clears', () => {
+    const tile = { x: 140, y: 80, w: 60, h: 60 };
+    const d = orbitTrail({ width: 400, height: 600, cx: 200, cy: 300, rx: 150, ry: 180, cell: 2, clear: [tile] });
+    const runs = [...d.matchAll(/M(\d+) (\d+)h(-?\d+)v(\d+)/g)].map((m) => m.slice(1).map(Number));
+    expect(runs.length).toBeGreaterThan(0);
+    for (const [x, y, w, h] of runs) {
+      expect(x % 2 === 0 && y % 2 === 0 && w % 2 === 0 && h === 2).toBe(true);
+      const inside = x < tile.x + tile.w && x + w > tile.x && y < tile.y + tile.h && y + h > tile.y;
+      expect(inside).toBe(false);
+    }
+  });
+
+  it('writes the +N count on its checker tile, inside it, at the size asked for', () => {
+    const tile = plusTile(10, 20, 60, 45, { size: 16, padX: 0, padY: 4, radius: 0 });
+    expect(tile).toContain('>+45<');
+    expect(tile).toContain('font-size="16"');
+    expect(tile).not.toContain(' rx=');
+    const [, x] = /<text x="(\d+)"/.exec(tile)!.map(Number);
+    expect(x).toBeGreaterThanOrEqual(10);
+    expect(x + 3 * 16).toBeLessThanOrEqual(10 + 60);
+    // The cut-out is the label's box and the padding asked for, across and down.
+    const [, , , w, h] = /<rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" fill="#050507"\/>/.exec(tile)!.map(Number);
+    expect([w, h]).toEqual([48, 24]);
+  });
+
+  it('sizes the +N count in the card’s proportion to its tile, the one rule for every tile', () => {
+    expect(plusLabelSize(4, 120)).toBe(40);
+    expect(plusLabelSize(45, 120)).toBe(32);
+    expect(plusLabelSize(4, 60)).toBe(20);
+    const nine = Array.from({ length: 9 }, (_, i) => ({ publicId: `member${String(i).padStart(10, '0')}`, name: '', avatar: null }));
+    expect(renderGroupCardSvg({ name: 'Big', members: nine })).toMatch(/font-size="40"[^>]*>\+4</);
+  });
+});
+
+// The cards are SVG a browser reads too (the landing draws the `+N` tile inline): every family
+// they name has to be one CSS keeps — a bare `Press Start 2P` is not (`2P` is no identifier),
+// and a browser drops the whole attribute for its fallback face.
+describe('the card’s font families', () => {
+  it('names every family as CSS reads it, quoted where it is no identifier', () => {
+    const members = Array.from({ length: 9 }, (_, i) => ({ publicId: `member${String(i).padStart(10, '0')}`, name: '', avatar: null }));
+    const svgs = [
+      renderGroupCardSvg({ name: 'Big', members }),
+      renderCardSvg({ lang: 'en', dayNumber: 123, score: 6, trajectory: [8, 8, 33, 33, 70, 100], solvedAt: [2, 5, 6] }),
+    ];
+    for (const svg of svgs) {
+      const families = [...svg.matchAll(/font-family="([^"]*)"/g)].map((m) => m[1]);
+      expect(families.length).toBeGreaterThan(0);
+      for (const family of families) {
+        const bare = /^'[^']+'$/.test(family) ? undefined : family.split(/\s+/).find((word) => !/^[A-Za-z_-][\w-]*$/.test(word));
+        expect(bare, family).toBeUndefined();
+      }
+    }
   });
 });
 

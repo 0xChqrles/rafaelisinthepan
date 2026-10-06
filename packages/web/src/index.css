@@ -9012,67 +9012,199 @@ figure.l1-fig {
   text-transform: uppercase;
 }
 
-/* ---- The group invite landing (#271; the shape is #189's, user feedback 2026-08-20): the
-   group's name over its members' marks, JOIN, and after the tap it SAYS what it did —
-   JOINED, the board and PLAY onward. Vertically self-centering (auto margins), like the
-   app's other HUD-less screens. ---- */
-.invite-done {
-  width: min(340px, 100%);
+/* ---- The GROUP INVITE LANDING (#271; "the card, brought in"): the card the
+   `/g/` link unfurled into, continued on the screen — the frame (`.invite-frame`, the
+   signed-out screen's below), the group's NAME in the white chip at the middle of its scene,
+   the members' marks on the card's slate orbit round it, a SEAT kept for the reader, and the
+   calls on the bottom edge: JOIN (the big action) over PLAY (the word). One block, centred,
+   on desktop; on a phone the scene takes the height and the calls the edge MIX and INVITE
+   sit on. Everything is placed on whole pixels by `GroupOrbit`; this only sizes the room. */
+.invite-landing {
+  width: min(720px, 100%);
   margin: auto 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 40px;
   text-align: center;
 }
-.invite-done .avatar {
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
+.invite-scene {
+  position: relative;
+  flex: none;
+  width: 100%;
+  height: 400px;
 }
-.invite-done-name {
-  font-family: var(--ui);
-  font-size: 20px;
-  font-weight: 650;
-  letter-spacing: 0.03em;
-  /* The group's name is the landing's HEADLINE, so it wears the app's one emphasis
-     gesture — the inverted box of a screen title and of the invitation's last words —
-     with its case kept, an identity rather than chrome. */
-  padding: 0.14em 0.4em 0.1em;
-  line-height: 1.2;
-  background: var(--fg);
-  color: var(--bg);
+.invite-stage,
+.invite-places {
+  position: absolute;
+  inset: 0;
 }
-/* The members' marks in a row that wraps, each a small framed tile. */
-.invite-marks {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
+/* What lands arrives through the dither — the scene and its calls on one beat. */
+.invite-stage.in,
+.invite-calls.in,
+.invite-gone {
+  animation: board-dissolve 240ms linear backwards;
+}
+.invite-trail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  fill: var(--rail);
+}
+/* The name: `.link-name`'s white chip at the hero size (stepped down whole pixels where a
+   long one would touch a mark), its box sized and placed by the scene. */
+.invite-name {
+  position: absolute;
+  margin: 0;
+  text-align: left;
+}
+.invite-places {
   margin: 0;
   padding: 0;
   list-style: none;
-  max-width: 100%;
 }
-.invite-marks .avatar {
+.invite-seat {
+  position: absolute;
   display: block;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  line-height: 0;
 }
-.invite-done-line {
+.invite-seat .avatar,
+.invite-seat > svg {
+  display: block;
+}
+/* THE WAIT: the one shape whose place is known before the group is — the name chip's box —
+   in the house's breathing slate (`.link-hold`), shown only once the read has taken
+   SKELETON_WAIT_MS. A read that FAILED leaves it standing STILL at half its cells: what was
+   being read, not read. */
+.invite-holds.first {
+  animation: busy-wait 1ms step-end var(--hold-wait, 0ms) backwards;
+}
+.invite-holds > .link-hold {
+  position: absolute;
+}
+.invite-holds > .link-name.link-hold {
+  max-width: none;
+  height: 32px;
+}
+.invite-holds > .link-hold.failed {
+  background: var(--rail);
+  -webkit-mask-image: var(--dz-4);
+  mask-image: var(--dz-4);
+}
+/* THE READER'S SEAT draws nothing until their JOIN is out (its place kept, the trail knocked
+   out round it). Then the floor's stipple BREATHES in it — after the same SKELETON_WAIT_MS as
+   the button whose act is out: the house's one wait, never a still square that would read as a
+   face that did not load — and the answer ends it in one frame: the mark drops in, or a cap
+   leaves the place empty. */
+.invite-free {
+  position: absolute;
+  inset: 0;
+  background: var(--rail);
+  -webkit-mask-image: var(--dz-2);
+  mask-image: var(--dz-2);
+  animation:
+    busy-wait 1ms step-end var(--hold-wait, 0ms) backwards,
+    link-hold-breathe 640ms steps(1, end) var(--hold-wait, 0ms) infinite;
+}
+.invite-own {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: block;
+}
+/* The landing's BURST behind the mark, in the accent, at the whole scale its mark takes — the
+   podium's 3x round a 60px mark (2x round 50, 4x round 80), dropped by the sheet's own 44%. */
+.invite-burst {
+  position: absolute;
+  z-index: 1;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.invite-burst .strike.burst {
+  width: 159px;
+  height: 198px;
+  transform: translate(-80px, -87px);
+}
+.invite-burst.x2 .strike.burst {
+  width: 106px;
+  height: 132px;
+  transform: translate(-53px, -58px);
+}
+.invite-burst.x4 .strike.burst {
+  width: 212px;
+  height: 264px;
+  transform: translate(-106px, -116px);
+}
+/* EXPIRED: the board's sad ghost at its 4x, bobbing a few beats and resting, over its line. */
+.invite-gone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+.invite-ghost {
+  flex: none;
+  color: var(--muted);
+  animation: ghost-bob 1.6s steps(1) 400ms 5;
+}
+/* The one line a state says — the expired link, a cap, a read that failed: INFO's voice,
+   sentence case, muted. */
+.invite-line {
   margin: 0;
+  max-width: 34ch;
   font-family: var(--ui);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 13px;
+  line-height: 1.6;
   color: var(--muted);
 }
-.invite-done .mix-btn {
-  width: 100%;
-  margin-top: 12px;
+/* The calls stand in THREE fixed slots whatever they hold — a line (a cap's fact, a failed
+   read's), the call (JOIN, the BOARD it turns into, or PLAY), the word under it (PLAY) — so
+   the call is in one place in every state and a state that changes them moves nothing. */
+.invite-calls {
+  display: grid;
+  grid-template-rows: 21px 52px 40px;
+  row-gap: 6px;
+  justify-items: center;
+  align-items: center;
+  width: min(430px, 100%);
 }
-/* PLAY under JOIN is the quiet word (`.mix-btn + .btn-secondary`); the pair's seam is the
-   group's own gap. */
+.invite-calls .mix-btn {
+  width: 100%;
+  margin: 0;
+}
+.invite-calls > .invite-line {
+  max-width: none;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .invite-landing {
+    align-self: stretch;
+    width: 100%;
+    min-height: calc(100dvh - 44px);
+    margin: 0;
+    padding-top: 54px;
+    gap: 24px;
+  }
+  .invite-scene {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 280px;
+  }
+  /* The calls stand INSIDE the frame, in register with it — the signed-out screen's rule. */
+  .invite-calls {
+    width: 100%;
+    margin-bottom: 16px;
+    padding: 0 2px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .invite-ghost {
+    animation: none;
+  }
+}
 
 /* ---- The signed-out screen (#216; the account's face over what happened, so the player
    sees WHO they are being asked to leave before choosing). The face is a GHOST: the square
@@ -9178,20 +9310,25 @@ figure.l1-fig {
   width: 100%;
 }
 /* The frame: the streak celebration's own furniture (`.streak-lockup`, `.streak-corner`),
-   standing still — it arrives through the dither with the face. */
-.signed-out-frame {
+   standing still — it arrives through the dither with the face. The invite landing wears
+   the same one (`.invite-frame`). */
+.signed-out-frame,
+.invite-frame {
   position: fixed;
   inset: 0;
   z-index: 41;
   pointer-events: none;
 }
 .signed-out-frame .streak-lockup,
-.signed-out-frame .streak-corner {
+.signed-out-frame .streak-corner,
+.invite-frame .streak-lockup,
+.invite-frame .streak-corner {
   opacity: 1;
   animation: board-dissolve 240ms linear backwards;
 }
 @media (min-width: 641px) {
-  .signed-out-frame .streak-corner {
+  .signed-out-frame .streak-corner,
+  .invite-frame .streak-corner {
     display: none;
   }
 }

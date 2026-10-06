@@ -68,8 +68,12 @@
     src/cardSvg.ts            the OG cards' SVG: a result from a decoded token — the solved screen's card laid down (the
                               count on the face's cells in the foil, the run's heat over the ruler, a signed share's
                               quiet signature) — and the #271 group card (name + member marks + app name),
-                              in the site previews' frame (brackets + lockup), set in the pixel face and Azeret Mono Bold;
-                              `runEdges`, the run's whole-pixel cell edges, which the web's result ruler splits its bar at too
+                              in the site previews' frame (brackets + lockup), set in the pixel face (its family QUOTED in
+                              the attribute: a browser drops a bare `Press Start 2P`) and Azeret Mono Bold;
+                              `runEdges`, the run's whole-pixel cell edges, which the web's result ruler splits its bar at too;
+                              the group card's ORBIT pieces (`orbitPlaces`, `orbitTrail`, `plusTile` and its count's size
+                              `plusLabelSize`, `GROUP_MARKS_SHOWN`), which the web's invite landing draws the same orbit with
+                              at its own size
     src/index.ts              re-exports
 ```
 
