@@ -156,7 +156,7 @@
       components/rasterWatch.ts  whether anybody can SEE a raster's clock (`watchRaster`: in
                               view, the tab shown — never "touched lately"), and the archive's
                               read wave's stepped pace (`LOOP_FRAME_MS`): the podium's, the
-                              archive's and the record's
+                              archive's, the record's and the article's training loop's
       components/DeviceList.tsx  the account's devices + SIGN OUT, as board lines on `/account` (#216)
       components/ErrorScreen.tsx  the app's error surface: a FULL-SCREEN modal led by the
                               user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet);
@@ -3871,12 +3871,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   like the chqrles.me article, but without all the story telling"): the author's published
   article cut into four, its own sentences and examples, figures redrawn in the app's style
   (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **A FIGURE IS DRAWN WITH
-  THE GAME'S OWN PIECES** (2026-10-06, the presentation call the user delegated): its states on
-  the boards' bracketed switch, a share as the hole's meter charge, the step at hand under the
-  white title chip, a word as the game shows one (the held chip, the found cobalt, a list as
-  the words grid lists them), a ranking as the boards' lines — on the bare ground, its picture
-  on the house's 2px cells, the pixel face at 8 or 16px only, its motion in hard steps once it
-  is on screen; the same information the article's figure gives. **They say how it works,
+  THE GAME'S OWN PIECES**: its states on the boards' bracketed switch, a share as the hole's
+  meter charge (in the slate: cobalt means found), the step at hand under the white title
+  chip, a word as the game shows one (the held chip, the found cobalt, a list as the words
+  grid lists them), a ranking as the boards' lines, a step's words a note in a sentence — on
+  the bare ground, its picture on the house's 2px cells, the pixel face at 8 or 16px only; its
+  motion in hard steps, starting once it is on screen, a motion that repeats (the training
+  loop's chip) resting while nobody can see it (`rasterWatch`), and what a motion says also
+  drawn still (the loop's return), so reduced motion loses nothing; the same information the
+  article's figure gives. **They say how it works,
   never the journey** (user-decided: "we're explaining how it works, not how it didn't work,
   nor how we've tried to make it work") — no attempt, failure or fix is told. **The article's own
   words, not a comma changed** (user-decided: "if you can reuse an article part without

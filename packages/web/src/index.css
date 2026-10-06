@@ -9326,13 +9326,13 @@ figure.l1-fig {
   letter-spacing: 0.14em;
   color: var(--fg);
 }
-/* THE FIGURES ARE THE GAME'S OWN PIECES (2026-10-06, the user's call delegated): what a
-   figure shows is drawn with what the player meets in the game — the boards' switch for its
-   states, the hole's meter for a share, the white title chip for the step at hand, the words
-   as the game lists them, the boards' lines for a ranking — on the house's 2px cells where a
-   picture is needed (`cells.tsx`), the pixel face only at 8 or 16px, its motion in hard steps
-   once the figure is on screen (`useSeen`). On a phone the pixel figures that would not fit
-   at 16px step down to 8. */
+/* THE FIGURES ARE THE GAME'S OWN PIECES: what a figure shows is drawn with what the player
+   meets in the game — the boards' switch for its states, the hole's meter for a share, the
+   white title chip for the step at hand, the words as the game lists them, the boards' lines
+   for a ranking — on the house's 2px cells where a picture is needed (`cells.tsx`), the pixel
+   face only at 8 or 16px, its motion in hard steps starting once the figure is on screen
+   (`useSeen`), a motion that repeats resting while nobody can see it (`rasterWatch`). On a
+   phone the pixel figures that would not fit at 16px step down to 8. */
 
 /* A FIGURE'S STATES on the boards' bracketed switch (`Tabs` over `BracketSwitch`), centred
    over the drawing, as wide as its words need. */
