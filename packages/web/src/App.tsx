@@ -312,10 +312,13 @@ function GameRoute({
 }) {
   // THE GAME'S THREE READS, all held here so ONE hold can stand through them (`GameHold`):
   // the day's puzzle; the language's word list, asked at once beside it (it needs only the
-  // language); and the round's server state, asked as soon as the puzzle names its revision
-  // (#214: the board is replayed from it, so nothing is playable before it answers).
+  // language) while there may be a game — never behind the first visit's invitation, and
+  // dropped the moment the day turns out to have none (a big download for nothing); and the
+  // round's server state, asked as soon as the puzzle names its revision (#214: the board is
+  // replayed from it, so nothing is playable before it answers).
   const { puzzle, ref, error, noPuzzle, retry } = usePuzzle(lang, date, bonusId);
-  const { vocab, error: vocabError, retry: retryVocab } = useVocab(lang);
+  const gameAhead = surface === 'game' && !noPuzzle;
+  const { vocab, error: vocabError, retry: retryVocab } = useVocab(gameAhead ? lang : null);
   const roundKey = useMemo(() => roundKeyFor(ref, lang), [ref, lang]);
   const round = useRoundSync(
     puzzle

@@ -2029,8 +2029,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     run caught and no seeded unit test could.
   - **`useRoundSync` returns WHERE the round's state is** (`RoundLoad`), and the game ROUTE
     (`App`'s `GameRoute`) holds it beside the other two reads — the puzzle, and the
-    language's word list, asked at once beside it (it needs only the language); the round
-    is asked as soon as the puzzle names its revision.
+    language's word list, asked at once beside it (it needs only the language) but only
+    while there may be a game: never behind the first visit's invitation, and ABORTED the
+    moment the day turns out to have no puzzle (`useVocab(null)`: a big download with
+    nothing to play it on); the round is asked as soon as the puzzle names its revision.
     `Game` mounts only once all three are in (so its first render is already the right one
     — a day already over opens on its result, never a frame of the board), and until then
     the route's `.game` column holds THE GAME'S HOLD (bullet below); a failed read is its

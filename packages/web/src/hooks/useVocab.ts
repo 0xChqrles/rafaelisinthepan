@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { buildPrefixSet } from '../game/keyboard';
 
 // The fixed vocabulary (existence set) for a language is immutable across puzzles
@@ -23,7 +23,10 @@ function vocabPath(lang: string): string {
 }
 
 // Loads (and caches) the fixed vocabulary for the chosen language: the existence Set
-// plus the derived prefix Set. Idle until a language is given. Existence is decided by
+// plus the derived prefix Set. Idle until a language is given — and a language taken BACK
+// (`null` while its read is out: the game route learning that the day has no puzzle) stops
+// that read where it stands, since a word list is a big download with nothing to play it on.
+// A read left by an unmount runs on and lands in the cache. Existence is decided by
 // vocabSet, not by a puzzle's ranks.
 export default function useVocab(lang: string | null) {
   const [vocab, setVocab] = useState<Vocab | null>(
@@ -35,10 +38,14 @@ export default function useVocab(lang: string | null) {
   // failed load caches nothing, so retry simply re-fetches.
   const [reloadTick, setReloadTick] = useState(0);
   const retry = useCallback(() => setReloadTick((t) => t + 1), []);
+  // The read out for this hook, until it lands or fails.
+  const reading = useRef<AbortController | null>(null);
 
   useEffect(() => {
     setError(null);
     if (!lang) {
+      reading.current?.abort();
+      reading.current = null;
       setVocab(null);
       return undefined;
     }
@@ -50,7 +57,9 @@ export default function useVocab(lang: string | null) {
 
     setVocab(null);
     let cancelled = false;
-    fetch(vocabPath(lang))
+    const controller = new AbortController();
+    reading.current = controller;
+    fetch(vocabPath(lang), { signal: controller.signal })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -71,6 +80,9 @@ export default function useVocab(lang: string | null) {
       })
       .catch((e) => {
         if (!cancelled) setError(e);
+      })
+      .finally(() => {
+        if (reading.current === controller) reading.current = null;
       });
     return () => {
       cancelled = true;
