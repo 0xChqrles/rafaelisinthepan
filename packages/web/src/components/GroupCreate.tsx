@@ -131,7 +131,10 @@ export default function GroupCreate({
             </div>
           )}
         </div>
-        <BusyButton type="submit" className="btn btn-primary" lang={lang} busy={busy} disabled={inked}>
+        {/* Once the name is inked in, the button stands at full ink until the screen folds:
+            its act has LANDED, so it is neither busy nor unavailable, and dimming it would be
+            a second beat beside the ink-in. `submit` already refuses a tap from there on. */}
+        <BusyButton type="submit" className="btn btn-primary" lang={lang} busy={busy}>
           {t(lang, 'groupCreate')}
         </BusyButton>
       </form>

@@ -817,7 +817,8 @@ These are decided and verified against the code. Treat them as load-bearing.
     outshouts what lands and destruction never glows. It stands on a ground that hides the
     wash without changing it, so the act landing ends it in ONE frame on the button at rest.
     The outcome is the act's own (the keyboard rising, the name inked in, the foil stamp, the
-    next step), never a word on the button.
+    next step), never a word on the button; CREATE GROUP stands at full ink, neither busy nor
+    dimmed, while the new name inks in.
     No other button dress remains.
     *(The two paragraphs below are the designs it replaced, kept for their reasoning.)*
   - **THE BUTTONS ARE KEYCAPS WITH A HARD PRINT (user-decided 2026-09-14: "we should
