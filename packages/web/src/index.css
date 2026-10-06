@@ -8933,6 +8933,13 @@ figure.l1-fig {
   min-height: 0;
   animation: board-dissolve 240ms linear calc(var(--i, 0) * 55ms) backwards;
 }
+/* Reduced motion draws the list landed: the global rule keeps delays, which would hold each
+   card unseen for its beat. */
+@media (prefers-reduced-motion: reduce) {
+  .learn-cell {
+    animation: none;
+  }
+}
 .learn-cell.hero {
   grid-row: span 2;
 }
