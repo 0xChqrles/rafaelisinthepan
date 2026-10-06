@@ -112,7 +112,10 @@ export default function GroupCreate({
                 autoCorrect="off"
                 autoCapitalize="off"
                 spellCheck={false}
-                disabled={busy}
+                // Held, never disabled, while the create is out: a disabled field drops the
+                // focus, and the phone's keyboard with it, moving the whole screen under the
+                // busy button.
+                readOnly={busy}
                 onChange={onChange}
                 onKeyDown={onKeyDown}
               />
