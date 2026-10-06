@@ -969,7 +969,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 aria-label={waitLeft > 0 ? `${t(lang, 'linkResend')} ${waitLeft}` : undefined}
                 onClick={() => void send()}
               >
-                <span className="link-resend-word">{t(lang, 'linkResend')}</span>
+                {t(lang, 'linkResend')}
                 {waitLeft > 0 && <span className="link-wait">{waitLeft}</span>}
               </button>
             </div>
