@@ -9601,10 +9601,12 @@ figure.l1-fig {
 }
 
 /* THE TOURNAMENT: the grade's places, the raster of lines, and the tournament as the boards'
-   own lines one line's pitch apart (`Tournament`). */
+   own lines one line's pitch apart (`Tournament`, which sets the columns, the gaps and the
+   sizes off the figure's own width: `--from-w`, `--gutter-w`, `--row-gap`, `--name-px`,
+   `--score-px`). */
 .ar-climb-draw {
   display: grid;
-  grid-template-columns: 24px 40px minmax(0, 1fr);
+  grid-template-columns: var(--from-w, 24px) var(--gutter-w, 40px) minmax(0, 1fr);
 }
 .ar-climb-head {
   grid-row: 1;
@@ -9644,7 +9646,6 @@ figure.l1-fig {
   grid-row: 2;
 }
 .ar-climb-board {
-  --rank-w: 32px;
   grid-column: 3;
   margin: 0;
   padding: 0;
@@ -9652,29 +9653,20 @@ figure.l1-fig {
 }
 .ar-climb-row {
   grid-template-columns: var(--rank-w) minmax(0, 1fr) auto;
+  gap: var(--row-gap, 12px);
   padding: 0;
+}
+.ar-climb-board .board-name {
+  font-size: var(--name-px, 15px);
 }
 /* The probability is why a word moved, not the board's subject: the quiet ink. */
 .ar-climb-board .board-score {
+  font-size: var(--score-px, 16px);
   color: var(--muted);
 }
 .ar-climb-board .board-gap {
   align-self: center;
-  margin: 0 0 0 calc(var(--rank-w) + 12px);
-}
-/* The narrowest column (`Tournament`'s `.narrow`): the gutter's 24px, tighter gaps and the
-   words a size down, so « imperturbablement » and its probability both stand whole. */
-.ar-climb.narrow .ar-climb-draw {
-  grid-template-columns: 20px 24px minmax(0, 1fr);
-}
-.ar-climb.narrow .ar-climb-row {
-  gap: 8px;
-}
-.ar-climb.narrow .board-name {
-  font-size: 13px;
-}
-.ar-climb.narrow .board-gap {
-  margin-left: calc(var(--rank-w) + 8px);
+  margin: 0 0 0 calc(var(--rank-w) + var(--row-gap, 12px));
 }
 
 /* A phone's column: the pixel figures that would not fit at 16px step down to 8. */
@@ -9684,8 +9676,7 @@ figure.l1-fig {
   }
   .ar-bar-word,
   .ar-bar-value,
-  .ar-token-word,
-  .ar-climb-board .board-score {
+  .ar-token-word {
     font-size: 8px;
   }
   .ar-bar-meter {

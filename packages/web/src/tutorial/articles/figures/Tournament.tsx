@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
+import { UI_ADVANCE_EM } from '@whippin/shared';
 import { BoardRank } from '../../../components/BoardRows';
-import { LINE_PX } from '../../../components/boardMetrics';
+import { LINE_PX, rankColumnPx } from '../../../components/boardMetrics';
 import { prefersReducedMotion } from '../../../hooks/useScramble';
 import { t } from '../../../i18n';
 import { useArticleLang } from '../lang';
@@ -18,16 +19,43 @@ import useSeen from './useSeen';
 // where the word climbs, the slate stipple where it holds or falls. The lines draw themselves
 // from the grade to the tournament, cell by cell in hard steps, once the figure is on screen.
 // Screen readers get the same figures as a table.
-// The lines' gutter, in cells — narrower in the narrowest column (`NARROW_PX`, the figure's own
-// width, its CSS keyed on `.narrow`), so every word and its probability keep their room.
-const GUTTER_CELLS = 20;
-const GUTTER_NARROW_CELLS = 12;
-const NARROW_PX = 320;
+//
+// THE LINES' GUTTER is a quarter of the figure — wide enough that a climb of four places reads
+// as a line CROSSING the others, never a slash — less only what the longest word and its
+// probability need to stand whole: where that leaves under a fifth, the words step down a size
+// (`NAME_PX`) before the gutter gives more. On a phone's column the probability's figures are
+// 8px and the row's gaps tighter.
+const NAME_PX = [15, 13, 12, 11];
+const GUTTER_SHARE = 1 / 4;
+const GUTTER_FLOOR_SHARE = 1 / 5;
+const MIN_GUTTER_CELLS = 12;
+// Under this width (the figure's own), the phone's dress.
+const PHONE_PX = 520;
+// Air kept past the longest word.
+const NAME_AIR = 4;
 // A line's pitch in cells, and the cell row through a slot's middle.
 const PITCH = LINE_PX / CELL;
 const mid = (slot: number) => Math.round((slot + 0.5) * PITCH);
 const DRAW_STEPS = 8;
 const DRAW_MS = 420;
+
+// The figure's dress for its width: the columns, the gaps, the sizes and the gutter in cells.
+function dressFor(width: number, longest: number, pctGlyphs: number, rankW: number) {
+  const phone = width < PHONE_PX;
+  const fromW = phone ? 20 : 24;
+  const gap = phone ? 8 : 12;
+  const scorePx = phone ? 8 : 16;
+  const fixed = fromW + rankW + 2 * gap + pctGlyphs * scorePx;
+  let namePx = NAME_PX[0];
+  let room = 0;
+  for (const px of NAME_PX) {
+    namePx = px;
+    room = width - fixed - Math.ceil(longest * UI_ADVANCE_EM * px) - NAME_AIR;
+    if (room >= width * GUTTER_FLOOR_SHARE) break;
+  }
+  const gutter = Math.max(MIN_GUTTER_CELLS, Math.floor(Math.min(width * GUTTER_SHARE, room) / CELL));
+  return { fromW, gap, scorePx, namePx, gutter };
+}
 
 export default function Tournament({
   rows,
@@ -42,8 +70,6 @@ export default function Tournament({
   const ref = useRef<HTMLDivElement>(null);
   const seen = useSeen(ref);
   const width = useWidth(ref);
-  const narrow = width > 0 && width < NARROW_PX;
-  const gutter = narrow ? GUTTER_NARROW_CELLS : GUTTER_CELLS;
   const [drawn, setDrawn] = useState(0);
   useEffect(() => {
     if (!seen) return undefined;
@@ -70,6 +96,13 @@ export default function Tournament({
   }, [rows]);
   const slots = Math.max(placed[placed.length - 1].line + 1, ...rows.map((row) => row.from));
   const height = slots * PITCH;
+  const rankW = rankColumnPx(String(Math.max(...placed.map((row) => row.to))).length);
+  const { fromW, gap, scorePx, namePx, gutter } = dressFor(
+    width,
+    Math.max(...rows.map((row) => row.word.length)),
+    Math.max(...rows.map((row) => pct(row.win).length)),
+    rankW,
+  );
 
   const draw = useCallback(
     (cells: Cells) => {
@@ -87,7 +120,21 @@ export default function Tournament({
   );
 
   return (
-    <div ref={ref} className={`ar-climb${narrow ? ' narrow' : ''}`} style={{ '--slots': slots } as CSSProperties}>
+    <div
+      ref={ref}
+      className="ar-climb"
+      style={
+        {
+          '--slots': slots,
+          '--from-w': `${fromW}px`,
+          '--gutter-w': `${gutter * CELL}px`,
+          '--rank-w': `${rankW}px`,
+          '--row-gap': `${gap}px`,
+          '--name-px': `${namePx}px`,
+          '--score-px': `${scorePx}px`,
+        } as CSSProperties
+      }
+    >
       <div className="sr-only">
         <table>
           <thead>
