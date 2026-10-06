@@ -1386,25 +1386,24 @@ body:has(.app > .board-screen) {
 .puzzle-title .ui-icon {
   flex: none;
 }
-/* THE GAME SURFACES' TITLE IS THE APP'S MARK (user-decided 2026-09-16): the logo in the
-   accent, the language's CODE beside it in the chrome's title type — no chip, the mark is
-   the one emphasis — then the day on an archive play and the chevron. The logo is the
-   favicon's own pixel mark (`public/logo.png`, 22×22, pure white), so it is painted through
-   a MASK in the accent — the strike sheets' technique — at its exact 1x with nearest
-   sampling (the integer-scale rule): 22px, beside the header icons' 20px. Hover and press
-   answer on the whole title (there is no chip to dim). */
-.app-title-mark {
+/* THE APP'S MARK (`PixelMark`): `MARK_GLYPH`'s 22 cells at 1x in the accent — the header's
+   title and every lockup. A surface drawing it bigger sets a whole multiple (44px). */
+.pixel-mark {
   flex: none;
   display: block;
   width: 22px;
   height: 22px;
+  color: var(--accent);
+}
+/* THE GAME SURFACES' TITLE IS THE APP'S MARK (user-decided 2026-09-16): the logo in the
+   accent, the language's CODE beside it in the chrome's title type — no chip, the mark is
+   the one emphasis — then the day on an archive play and the chevron. The logo is
+   `PixelMark` at its 1x (`.pixel-mark`), 22px beside the header icons' 20px. Hover and
+   press answer on the whole title (there is no chip to dim). */
+.app-title-mark {
   /* A wider seam than the title's own gap (user-asked 2026-09-16): the mark and the code
      are two things, the code, the day and the chevron one line of text. */
   margin-right: 3px;
-  background-color: var(--accent);
-  -webkit-mask: url('/logo.png') center / 22px 22px no-repeat;
-  mask: url('/logo.png') center / 22px 22px no-repeat;
-  image-rendering: pixelated;
 }
 /* THE TEXT SITS ON THE MARK'S WEIGHT, not on its box (user-asked 2026-09-16, "align it
    better"). The logo is bottom-heavy — its widest rows are the lower half, its ink's centre
@@ -4444,12 +4443,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--fg);
   opacity: 0;
 }
-.streak-lockup svg {
-  display: block;
-  width: 22px;
-  height: 22px;
-  color: var(--accent);
-}
 /* The edition: the solved day's date in the pixel face, the accent, on the lockup's line. */
 .streak-edition {
   position: absolute;
@@ -4475,7 +4468,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     left: 40px;
     font-size: 16px;
   }
-  .streak-lockup svg {
+  .streak-lockup .pixel-mark {
     width: 44px;
     height: 44px;
   }
@@ -5516,7 +5509,7 @@ figure.l1-fig {
   max-width: calc(900px - 2 * (8px + 4px));
   align-self: center;
 }
-/* THE LOCKUP: the app's pixel mark (`MARK_GLYPH`, 22 cells at 1x — the header's own) in the
+/* THE LOCKUP (`Lockup`): the app's pixel mark (`PixelMark` at 1x — the header's own) in the
    accent, the name beside it in the lockup type (`.streak-lockup`'s). In the header's row
    and the title's box, so the mark stands on the pixel where the game's title draws it, and
    the name starts where the language code will: the title's seam (the mark's 3px and
@@ -5533,13 +5526,6 @@ figure.l1-fig {
   line-height: 1;
   color: var(--fg);
   white-space: nowrap;
-}
-.invite-lockup svg {
-  flex: none;
-  display: block;
-  width: 22px;
-  height: 22px;
-  color: var(--accent);
 }
 /* The name sits on the mark's weight, the header title's own 2px (`.app-title-lang`). */
 .invite-lockup span {
@@ -5953,6 +5939,28 @@ figure.l1-fig {
   text-align: center;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+/* A STARTUP THAT DIED before React mounted (`main.tsx`): the quiet failure on the bare
+   ground, alone in the middle of the screen — one muted sentence (the `<noscript>` line's
+   type) over RELOAD, the bracketed quiet word. */
+.startup-failed {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 0 16px;
+}
+.startup-failed-note {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+  text-align: center;
 }
 
 /* The email flow's steps hold ONE thing each — `.app` already centres the column, so a

@@ -148,6 +148,7 @@ function expectGonePage(res: FnUrlResult, target: string) {
   expect(res.body).toContain(`href="${target}"`);
   expect(res.body).toContain('<meta name="robots" content="noindex">');
   expect(res.body).not.toContain('og:');
+  expect(res.body).toContain('<meta name="color-scheme" content="dark">');
 }
 
 describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
@@ -490,9 +491,15 @@ describe('group invite link (#271) — the shared link, its preview page and its
     expect(res.body).toContain(`${ORIGIN}${groupCardPath(ID)}`);
     // The click continues to the SPA landing — the one that records the membership.
     expect(res.body).toContain(`${ORIGIN}${groupLandingPath(ID)}`);
-    // The page names itself — the invite link, never the landing — and a line under the title.
+    // The page names itself — the invite link, never the landing — and a line under the title,
+    // the app's name alone: a group's page speaks no one language.
     expect(res.body).toContain(`<meta property="og:url" content="${ORIGIN}/${GROUP_SEGMENT}/${ID}">`);
-    expect(res.body).toContain('<meta property="og:description" content="Play Whippin AI">');
+    expect(res.body).toContain('<meta property="og:description" content="Whippin AI">');
+    // A paint before the redirect is the app's ground, never a white page, under the app's
+    // own browser chrome.
+    expect(res.body).toContain('<meta name="color-scheme" content="dark">');
+    expect(res.body).toContain('<meta name="theme-color" content="#050507">');
+    expect(res.body).toContain('background:#050507');
     expect(res.headers['Cache-Control']).toBe('public, max-age=300');
   });
 
@@ -726,6 +733,46 @@ describe('a signed share (the result wearing its player)', () => {
     const plain = await handler(event({ path: sharePath(token) }));
     expect(plain.headers['Cache-Control']).toBe('public, max-age=31536000, immutable');
     expect(get).not.toHaveBeenCalled();
+  });
+});
+
+// The web distribution hands this origin everything under `/s/`, `/g/` and `/og/`, so a link
+// mangled on its way — a chat app or a copy taking the sentence's full stop, a stray segment —
+// still lands here. It is a dead link like any other: the page that moves a person on to the
+// site home, the card's JSON 404 — never the puzzle route's 400 on a white page.
+describe('a mangled share or invite link', () => {
+  const ID = 'abcdefghij234567';
+  const token = encodeResult({
+    lang: 'fr',
+    dayNumber: 20638,
+    score: 4,
+    trajectory: [8, 33, 70, 100],
+    solvedAt: [2, 4, 3],
+  });
+
+  it('answers the dead link page for any page path that names nothing', async () => {
+    const handler = makeHandler({ siteOrigin: ORIGIN, groups: memoryGroupStore() });
+    for (const path of [
+      `${sharePath(token)}.`,
+      `${sharePath(token)})`,
+      `${sharePath(token, ID)}/x`,
+      `/${GROUP_SEGMENT}/${ID}/x`,
+      '/s/',
+      `/${GROUP_SEGMENT}/`,
+    ]) {
+      const res = await handler(event({ path }));
+      expectGonePage(res, `${ORIGIN}/`);
+      expect(res.headers['Cache-Control'], path).toBeUndefined();
+    }
+  });
+
+  it('answers a card path that names nothing with the card\'s JSON 404', async () => {
+    const handler = makeHandler({ siteOrigin: ORIGIN });
+    for (const path of ['/og/nope', '/og/', `${shareCardPath(token)}.x`, `/og/${GROUP_SEGMENT}/${ID}`]) {
+      const res = await handler(event({ path }));
+      expect(res.statusCode, path).toBe(404);
+      expect(JSON.parse(res.body).error, path).toBe('not_found');
+    }
   });
 });
 

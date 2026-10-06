@@ -134,6 +134,12 @@ const PREVIEW_MAX_AGE = 300;
 const GROUP_PAGE_RE = new RegExp(`^/${GROUP_SEGMENT}/([^/]+)$`);
 const GROUP_CARD_RE = new RegExp(`^/og/${GROUP_SEGMENT}/([^/]+)\\.png$`);
 
+// Everything the web distribution hands this origin lives under these prefixes. A path there
+// that matched none of the routes above — a link a chat app or a copy mangled, `/s/<token>.`
+// or `/g/<id>/x` — is a dead link like any other, never the puzzle route's JSON 400.
+const PAGE_PREFIX_RE = new RegExp(`^/(${SHARE_SEGMENT}|${GROUP_SEGMENT})(/|$)`);
+const CARD_PREFIX_RE = /^\/og(\/|$)/;
+
 // Absolute origin of THIS request — the same host serves /s, /og and the SPA, so it is the
 // base for the OG image URL and the game redirect. Honors the CloudFront forwarded headers.
 function requestOrigin(event: FnUrlEvent): string {
@@ -323,6 +329,12 @@ export function createHandler(deps: HandlerDeps) {
           });
         }
         return gone('Invalid share token.');
+      }
+      if (PAGE_PREFIX_RE.test(normalizedPath)) {
+        return html(404, renderGoneHtml(`${deps.siteOrigin ?? requestOrigin(event)}/`), cors);
+      }
+      if (CARD_PREFIX_RE.test(normalizedPath)) {
+        return errorResponse(404, 'not_found', 'Invalid card link.', cors);
       }
 
       const instant = now();

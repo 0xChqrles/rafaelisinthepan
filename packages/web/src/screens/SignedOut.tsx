@@ -48,10 +48,11 @@
 // address the moment one is bound to it.
 
 import { useEffect, useState } from 'react';
-import { MARK_GLYPH, anonName, defaultAvatar } from '@whippin/shared';
+import { anonName, defaultAvatar } from '@whippin/shared';
 import { readProfile, type ProfileRead } from '../api';
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
+import Lockup from '../components/Lockup';
 // The Bayer tiles on the root (`--dz-*`) that thin the ghost and stipple its hold.
 import '../components/bayerTiles';
 import { startFreshDevice, useSignedOutAccount } from '../identity';
@@ -143,12 +144,7 @@ export default function SignedOut({ lang }: { lang: string }) {
           corner brackets and the WHIPPIN AI lockup top left — so it reads as the app's own
           screen, never an error page. (On desktop the device frame's own corners stand.) */}
       <div className="signed-out-frame" aria-hidden="true">
-        <div className="streak-lockup">
-          <svg viewBox={`0 0 ${MARK_GLYPH.width} ${MARK_GLYPH.height}`} shapeRendering="crispEdges">
-            <path d={MARK_GLYPH.path} fill="currentColor" />
-          </svg>
-          <span>WHIPPIN AI</span>
-        </div>
+        <Lockup className="streak-lockup" />
         {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
           <span key={corner} className={`streak-corner ${corner}`} />
         ))}

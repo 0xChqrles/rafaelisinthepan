@@ -149,12 +149,13 @@ export function renderShareHtml(
 // person sent this link to their people, and their own message already says what it is.
 //
 // Language-neutral: a group belongs to its members, not to a daily, and the landing
-// resolves the reader's own language the way `/` does.
+// resolves the reader's own language the way `/` does — so the line under the title is the
+// app's name alone, which reads the same in every language.
 export function renderGroupHtml(groupId: string, name: string, base: string): string {
   return previewPage({
     lang: 'en',
     title: `Whippin AI — ${name}`,
-    description: 'Play Whippin AI',
+    description: 'Whippin AI',
     pageUrl: `${base}${groupInvitePath(groupId)}`,
     imageUrl: `${base}${groupCardPath(groupId)}`,
     target: `${base}${groupLandingPath(groupId)}`,
@@ -207,6 +208,12 @@ export function renderGoneHtml(target: string): string {
 // The shell both pages share: a redirect in <head>, a no-JS link in the body, and the
 // head `meta` lines between (`title` arrives escaped).
 //
+// It paints the app's GROUND before anything else: the dark scheme, the browser chrome's
+// colour and `--bg` / `--fg` / `--accent` as literals, ahead of the redirect, so a frame
+// painted before it fires — or the whole page with JavaScript off — is the near-black of the
+// app it leads to, never a white page with a blue link, and the address bar does not flash
+// light on the way through. (The web distribution's card headers allow this one inline style.)
+//
 // The redirect is JavaScript, NOT `<meta http-equiv="refresh">`: preview crawlers don't
 // run JS, so they stop here and read THIS page's OG tags. A meta-refresh, by contrast, is
 // followed by some crawlers (e.g. Telegram) to the destination, whose default OG tags then
@@ -229,6 +236,9 @@ function redirectPage(
 <html lang="${lang}">
 <head>
 <meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#050507">
+<style>html,body{background:#050507;color:#ffffff}body{margin:0;padding:16px;font:600 13px/1.6 ui-monospace,'SF Mono',Menlo,monospace}a{color:#4a6aff}</style>
 <script>location.replace(${JSON.stringify(target).replace(/</g, '\\u003c')})</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title}</title>

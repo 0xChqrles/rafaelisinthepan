@@ -47,9 +47,11 @@ export const INFINITY_EM_HEIGHT = 0.88;
 export const INFINITY_EM_WIDTH =
   (INFINITY_EM_HEIGHT * INFINITY_GLYPH.width) / INFINITY_GLYPH.height;
 
-// THE APP'S MARK, the header's own (`web/public/logo.png`, 22×22, one ink), as path data so
-// the cards can draw it: the rasterizer loads fonts and nothing else. One rectangle per
-// run of a row, all wound the same way. Traced from the PNG — a redrawn mark is traced again.
+// THE APP'S MARK (22×22, one ink), as path data: its ONE drawing. The web draws it inline
+// (`PixelMark`), the cards from here (the rasterizer loads fonts and nothing else), and the
+// site's icons (`web/public/favicon.svg`, `favicon.ico`, `apple-touch-icon.png`) are it at
+// whole scales — a redrawn mark redraws them. One rectangle per run of a row, all wound the
+// same way.
 export const MARK_GLYPH = {
   width: 22,
   height: 22,

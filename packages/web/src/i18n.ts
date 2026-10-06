@@ -72,6 +72,10 @@ const STRINGS = {
     fr: 'Quittez un groupe pour en rejoindre ou en créer un autre.',
   },
   retry: { en: 'RETRY', fr: 'RÉESSAYER' },
+  // A startup that died before React mounted (`main.tsx`): said in a sentence, over the one
+  // act that can help.
+  startupFailed: { en: "The game couldn't start.", fr: "Le jeu n'a pas pu démarrer." },
+  reload: { en: 'RELOAD', fr: 'RECHARGER' },
   // The error screen's way OUT (2026-08-27, when the sheet became a full-screen modal).
   // It is not "close" — nothing is being tidied away; the act did not happen and the player
   // is going back to the screen that asked for it.

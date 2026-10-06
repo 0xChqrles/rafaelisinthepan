@@ -53,8 +53,13 @@
                               places on the right and hosts the left slot screens publish
                               into (`HeaderLeft`, `HeaderBack`)
       components/PuzzleTitle.tsx  what the game surfaces put there: the app's MARK
-                              (`public/logo.png`) in the accent + the language CODE (+ the
+                              (`PixelMark`) in the accent + the language CODE (+ the
                               day on an archive route), over the selection that switches it
+      components/PixelMark.tsx  the app's MARK: shared `MARK_GLYPH` as an inline svg,
+                              `crispEdges`, in the accent at whole scales (`.pixel-mark`)
+      components/Lockup.tsx   the mark with WHIPPIN AI beside it — what a screen with no
+                              header wears in the title's place (the invitation, the
+                              signed-out screen, the streak celebration)
       components/PuzzleSelect.tsx  that selection: a flat full screen holding the language's
                               picker DRUM, the pick landing on the fold (the caller decides
                               what a pick means, `onLang`); a back chevron in the header's
@@ -335,6 +340,9 @@
       hooks/useShare.ts       how a RESULT leaves the app (native sheet -> clipboard + COPIED)
     public/                   served at site root (web assets + generated data)
       robots.txt              every crawler allowed, everywhere (a missing object is the bucket's 403)
+      favicon.svg, favicon.ico, apple-touch-icon.png  the app's mark (shared `MARK_GLYPH`) in
+                              the accent on a square of the ground, at whole scales,
+                              nearest-neighbour: 1x in 32px, 7x in 180px
       vocab/<lang>.json       full slugged reduced vocab (existence set) — fetched by the SPA
 ```
 
@@ -901,9 +909,10 @@ These are decided and verified against the code. Treat them as load-bearing.
     in-file size; globe.png and the standalone `.pixel-icon`
     class are deleted) **until 2026-09-02, when the whole chrome set went PIXEL** (see the
     header-keys bullet: marks on the avatar's own 10×10 grid); the Whippin mark is the PIXEL
-    mark (`public/logo.png`, 22×22, traced as `@whippin/shared`'s `MARK_GLYPH`) in the
-    accent, at whole scales only: the header's title, the WHIPPIN AI lockups (the streak
-    celebration, the signed-out screen, the onboarding invitation) and the cards. The BODY's global hard 2px
+    mark (`@whippin/shared`'s `MARK_GLYPH`, 22×22, drawn inline by `components/PixelMark`)
+    in the accent, at whole scales only: the header's title, the WHIPPIN AI lockups
+    (`components/Lockup`: the streak celebration, the signed-out screen, the onboarding
+    invitation) and the cards. The BODY's global hard 2px
     text-shadow is gone; pixel surfaces that relied on it (floating hits, loot) carry
     their own, and the topbar wears a soft bloom shadow instead.
   - **THE VIEWPORT IS AN INSTRUMENT (user-decided 2026-08-18, from the user's
@@ -4067,7 +4076,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **The invitation SHOWS the game, then asks** (`tutorial/Invite.tsx`, no header keys;
   user-decided 2026-10-06): a first visit (no `onboarded`) lands on it. **It is laid out AS
   THE GAME SCREEN IT OPENS ONTO**, on the game's own zones (`.game`, `.play`, `.tray` with the
-  gate's `.rules-gate`): the LOCKUP — the pixel mark (`MARK_GLYPH`, 1x, `crispEdges`) in the
+  gate's `.rules-gate`): the LOCKUP (`Lockup`) — the pixel mark (`PixelMark`, 1x) in the
   accent with WHIPPIN AI beside it in the lockup type — in the header's row (`.topbar`
   geometry), the mark on the pixel where the game's title draws it; the demo where the day's
   sentence and prompt stand, at the game's size and leading and on its left edge (on a wide
@@ -4161,9 +4170,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **LEFT — WHAT YOU ARE LOOKING AT.** On a play surface that is `PuzzleTitle`: the
     APP'S MARK in the accent with the language CODE and a chevron (`▲ FR ⌄`, user-decided
     2026-09-16 — the daily's name held this slot until Word mode was retired). The mark is
-    `public/logo.png`, the favicon's 22×22 white pixel logo, painted through a CSS mask in
-    `--accent` at its exact 1x with nearest sampling (`.app-title-mark`), 3px more air after
-    it than the title's own gap, and the text beside it set 2px down onto the bottom-heavy
+    `PixelMark` — `MARK_GLYPH` inline, `crispEdges`, in `--accent` at its exact 1x, painted in
+    the same frame as the code beside it (an image mask arrived a request late) — 3px more air
+    after it than the title's own gap, and the text beside it set 2px down onto the bottom-heavy
     mark's weight (a translate, measured at 4x), opening the
     drum below; the drum and the `aria-label` name the language in full. It routes by the SURFACE
     it was opened from: from the archive, the other language means that language's
@@ -4555,7 +4564,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   that plainly (no "not supposed to happen", no "check back"), names the day, and offers
   BACK TO ARCHIVE above the existing CHANGE LANGUAGE, both the same `secondary` weight.
   The pixel font is **self-hosted** (`web/src/assets/fonts/PressStart2P.woff2`, `@font-face` in
-  `index.css` — no Google Fonts request).
+  `index.css` — no Google Fonts request). The build PRELOADS it and Azeret's latin subset with
+  the document (`vite.config.ts` `preloadFirstFaces`), so the first screen is set in its own
+  faces a round trip sooner; `font-display` stays `swap`, since on a slow line `block` would
+  hide the sentence for its block period (about 3s) and then swap all the same.
 - **SVG icons (pattern to follow):** monochrome UI icons live as `.svg` files under
   `web/src/assets/icons/` and are imported as **inline React components** via
   `vite-plugin-svgr` — `import Icon from '../assets/icons/name.svg?react'` (the `?react`
@@ -4722,6 +4734,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     article; the page's description states it) and no SOON (a level's card is the same
     ready or not). HOME's card says the game in no language — its guesses are words
     English and French share — since every route without a page of its own wears it.
+- **The shell's first paint is the ground.** `index.html` says the dark scheme
+  (`<meta name="color-scheme">`) and the ground and ink (`html, body`, `--bg` / `--fg` as
+  literals) inline, before the stylesheet and the bundle, so a slow load paints `#050507`,
+  never the browser's white; and a `<noscript>` line (en + fr, muted, centred) says what to
+  do with JavaScript off. Nothing else is drawn before React: a header or lockup drawn in
+  `#root` would be taken away on the first render by every screen that does not wear one
+  (the invitation, the signed-out screen, the invite landing, the selection drums). A
+  startup that dies before React mounts (`main.tsx`, its deadline included) says so on that
+  ground in the URL's language (`/fr`, `/en`, else `?lang=`, else the browser's — never the
+  stored preference, which sits behind the store that may have failed): one muted sentence
+  (`startupFailed`) over RELOAD as the bracketed quiet word (`.quiet-btn`).
 - **Stale-tab auto-reload (user-decided 2026-08-16):** a deployed release must reach tabs
   already open — an SPA loads its JS once, and the deploy's `prune: false` deliberately
   keeps old chunks alive, so nothing ever forces a stale tab to refresh (and under the

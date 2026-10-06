@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { MARK_GLYPH } from '@whippin/shared';
 import Button from '../components/Button';
+import Lockup from '../components/Lockup';
 import { t } from '../i18n';
 import type { LangCode } from '../langs';
 import InviteDemo from './InviteDemo';
@@ -60,12 +60,7 @@ export default function Invite({
       <div className="topbar" aria-hidden="true">
         <div className="topbar-inner">
           <div className="topbar-left">
-            <span className="invite-lockup">
-              <svg viewBox={`0 0 ${MARK_GLYPH.width} ${MARK_GLYPH.height}`} shapeRendering="crispEdges">
-                <path d={MARK_GLYPH.path} fill="currentColor" />
-              </svg>
-              <span>WHIPPIN AI</span>
-            </span>
+            <Lockup className="invite-lockup" />
           </div>
         </div>
       </div>
