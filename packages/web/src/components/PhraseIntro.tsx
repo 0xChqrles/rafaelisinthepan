@@ -13,8 +13,9 @@ import { SCRAMBLE_TICK_MS, prefersReducedMotion } from '../hooks/useScramble';
 
 // The churn's clock is the scramble's own.
 const TICK_MS = SCRAMBLE_TICK_MS;
-// The front's whole run, left to right, whatever the sentence's length…
-const SWEEP_MS = 700;
+// The front's whole run, left to right, whatever the sentence's length (the game's hold
+// stands under the sentence until the front has crossed it)…
+export const SWEEP_MS = 700;
 // …but never slower than this a letter, so a short sentence is not dragged out.
 const CHAR_MS = 14;
 // How long a letter churns once the front has reached it: a hashed 2 to 5 ticks, so the
@@ -47,19 +48,20 @@ export function introPlan(letters: number): IntroPlan {
 // The intro's clock: ONE rAF loop for the whole sentence, read as a store by the words
 // that decode, so the sentence around them (the holes, their meters) never re-renders for
 // it. `running` drops once `totalMs` has passed; it (re)starts whenever `key` — the
-// sentence — changes. Off under reduced motion.
+// sentence — changes. Off under reduced motion, and for a sentence that is not arriving
+// (`off`: the game's hold draws one as its silhouette).
 export interface IntroClock {
   running: boolean;
   subscribe: (onTick: () => void) => () => void;
   tick: () => number;
 }
 
-export function useIntroClock(key: string, totalMs: number): IntroClock {
+export function useIntroClock(key: string, totalMs: number, off = false): IntroClock {
   const [reduced] = useState(prefersReducedMotion);
   // The sentence whose intro has PLAYED: running is read off it in the render itself, so a
   // new sentence starts hidden on its very first frame rather than flashing in whole.
   const [doneKey, setDoneKey] = useState<string | null>(null);
-  const running = !reduced && doneKey !== key;
+  const running = !off && !reduced && doneKey !== key;
   const store = useRef({ key, tick: 0, subs: new Set<() => void>() });
   if (store.current.key !== key) {
     store.current.key = key;

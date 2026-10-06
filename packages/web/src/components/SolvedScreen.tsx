@@ -167,6 +167,7 @@ export default function SolvedScreen({
   start = true,
   onRevealEnd,
   boards = null,
+  fromHold = false,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
@@ -199,8 +200,12 @@ export default function SolvedScreen({
   // How the day compares, on the ACTIVE day only (null on an archive day or a bonus): the
   // live answer the play screen keeps and whether one is on its way.
   boards?: ResultBoardsData | null;
+  // The game's HOLD stands on screen and gives way to this result (a day already over,
+  // loaded slowly): its blocks come in through the dither over it. Read once, at mount.
+  fromHold?: boolean;
 }) {
   const reduceMotion = prefersReducedMotion();
+  const [overHold] = useState(fromHold);
   const hasSource = Boolean(source?.kind || source?.author || source?.work);
   // The page around the line (#270): the source's raw sentences before and after it, as
   // one paragraph of muted text — the line's own highlight is the contrast.
@@ -376,7 +381,9 @@ export default function SolvedScreen({
   return (
     <div
       ref={stageRef}
-      className={`solved-stage pixel-scroll${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}
+      className={`solved-stage pixel-scroll${stageIn ? ' in' : ''}${animate ? '' : ' settled'}${
+        overHold ? ' from-hold' : ''
+      }`}
     >
       {/* ---- THE CARD, at the top: how the round went — the share card this result sends,
            stood up in the column — and SHARE under it, what you do with it. */}

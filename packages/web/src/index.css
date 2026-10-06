@@ -728,6 +728,8 @@ body:has(.app > .board-screen) {
   /* Three vertical zones: fixed HUD (top), the .play area (grows to fill the middle),
      and the bottom .tray (keyboard while playing, results once solved). .play's flex:1
      pushes the tray to the bottom edge and centers the sentence + prompt between them. */
+  /* The game's HOLD is laid over this box (`.game-hold`). */
+  position: relative;
   width: 100%;
   max-width: 1200px;
   display: flex;
@@ -996,6 +998,191 @@ body:has(.app > .board-screen) {
 @keyframes kb-rise {
   from {
     transform: translateY(calc(100% + env(safe-area-inset-bottom, 0px) + 8px));
+  }
+}
+
+/* ===================== the game's HOLD (`components/GameHold.tsx`) ===================== */
+/* Today's game taking shape while its reads are out: laid over the route's `.game` box in
+   that box's own zones — its top padding, its gap, `.play` over the reserved prompt row,
+   `.tray` at the keyboard's height — so each piece stands exactly where the game's will. It
+   comes FIRST in the column, so the round, once it lands, paints over it while it gives
+   way. Never a word: the sr-only `loading` and the column's `aria-busy` say it. */
+.game-hold {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: inherit;
+  gap: var(--game-gap);
+  padding-top: inherit;
+  pointer-events: none;
+}
+/* Its pieces come in through the dither, the sentence and then the keys. */
+.hold-sentence,
+.hold-keys {
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
+}
+.hold-keys {
+  animation-delay: 50ms; /* SKELETON_STAGGER_MS */
+}
+/* A silhouette giving way to the next (the generic sentence to the day's) goes out through
+   the cells the next comes in through, centred where it stood: the sentence's centre in
+   `.play` is the same whatever its height, so neither moves while the column re-centres. */
+.hold-sentence.out {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  translate: 0 -50%;
+  animation: board-dissolve-out 240ms linear forwards;
+}
+/* THE SENTENCE'S SILHOUETTE (`Phrase`'s `silhouette`: the board's own boxes): each word a
+   bar of the slate stipple — the account's face hold, `.link-hold` — and each hole the
+   board skeleton's checker (`.board-skeleton-mark`) in the held chip's exact box. No ink:
+   the letters and the exponent hold their room unseen. */
+.game-hold .phrase,
+.game-hold .phrase .hole-btn,
+.game-hold .phrase .hole-btn * {
+  text-shadow: none;
+}
+.game-hold .phrase .word {
+  color: transparent;
+  background: var(--rail);
+  -webkit-mask-image: var(--dz-2);
+  mask-image: var(--dz-2);
+}
+.game-hold .phrase .hole .hole-word {
+  color: transparent;
+}
+/* (The Bayer order's half IS the skeleton's 2px checker, so a breath can thin and thicken it
+   through the same tiles.) */
+.game-hold .phrase .hole .hole-word::before {
+  background: var(--rail);
+  -webkit-mask-image: var(--dz-4);
+  mask-image: var(--dz-4);
+}
+.game-hold .phrase .hole-rank {
+  visibility: hidden;
+}
+/* THE TRAY'S UNLIT KEYS: the keyboard's boxes in the archive's and the code prompt's IRON —
+   the dusk face, the stippled slate cap, the corners notched a cell — and no glyph. */
+.game-hold .kb-row {
+  animation: none;
+}
+.kb-slate {
+  position: relative;
+  background: var(--surface-hover);
+  border-radius: 0;
+  cursor: default;
+  transition: none;
+  clip-path: polygon(
+    2px 0,
+    calc(100% - 2px) 0,
+    calc(100% - 2px) 2px,
+    100% 2px,
+    100% calc(100% - 2px),
+    calc(100% - 2px) calc(100% - 2px),
+    calc(100% - 2px) 100%,
+    2px 100%,
+    2px calc(100% - 2px),
+    0 calc(100% - 2px),
+    0 2px,
+    2px 2px
+  );
+}
+.kb-slate::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: repeating-conic-gradient(var(--rail) 0 25%, transparent 0 50%) 0 0 / 4px 4px;
+}
+/* WHAT IS STILL OUT BREATHES, what has answered stands still: the bars while the puzzle is
+   out (the house's breath, `link-hold-breathe`), the holes' blocks while the round is, and
+   while the word list is, a light washes across the keys' caps on the diagonal — the
+   archive's read wave over its keys. */
+.game-hold.reading-sentence .phrase .word {
+  animation: link-hold-breathe 640ms steps(1, end) infinite;
+}
+.game-hold.reading-round .phrase .hole .hole-word::before {
+  animation: hold-block-breathe 640ms steps(1, end) infinite;
+}
+@keyframes hold-block-breathe {
+  0% { -webkit-mask-image: var(--dz-3); mask-image: var(--dz-3); }
+  25% { -webkit-mask-image: var(--dz-4); mask-image: var(--dz-4); }
+  50% { -webkit-mask-image: var(--dz-5); mask-image: var(--dz-5); }
+  75% { -webkit-mask-image: var(--dz-4); mask-image: var(--dz-4); }
+}
+.game-hold.reading-keys .kb-slate::before {
+  animation: hold-cap-wash 1280ms steps(1, end) infinite;
+  animation-delay: calc(var(--d, 0) * 40ms);
+}
+@keyframes hold-cap-wash {
+  0% {
+    background: repeating-conic-gradient(var(--muted) 0 25%, transparent 0 50%) 0 0 / 4px 4px;
+  }
+  6.25% {
+    background: repeating-conic-gradient(var(--rail) 0 25%, transparent 0 50%) 0 0 / 4px 4px;
+  }
+}
+/* THE GAME TAKES OVER, over it: the keys light in over their slates, cell for cell (the
+   real keyboard's dissolve in, `.kb-lit`, through exactly the cells these go out through);
+   each bar and block gives way the moment the sentence's decode reaches its word (`--at`,
+   the decode's own front), its cells dropping out in the Bayer order in three hard steps as
+   the word's letters land on it — or the whole sentence at once under a day already over,
+   which decodes nothing. */
+.game-hold.leaving .hold-keys {
+  animation: board-dissolve-out 240ms linear forwards;
+}
+.game-hold.leaving .phrase .word {
+  animation: hold-bar-out 120ms steps(1, end) var(--at, 0ms) forwards;
+}
+.game-hold.leaving .phrase .hole .hole-word::before {
+  animation: hold-block-out 120ms steps(1, end) var(--at, 0ms) forwards;
+}
+@keyframes hold-bar-out {
+  0% { -webkit-mask-image: var(--dz-2); mask-image: var(--dz-2); }
+  34% { -webkit-mask-image: var(--dz-1); mask-image: var(--dz-1); }
+  67%,
+  100% { -webkit-mask-image: linear-gradient(transparent, transparent); mask-image: linear-gradient(transparent, transparent); }
+}
+@keyframes hold-block-out {
+  0% { -webkit-mask-image: var(--dz-3); mask-image: var(--dz-3); }
+  34% { -webkit-mask-image: var(--dz-1); mask-image: var(--dz-1); }
+  67%,
+  100% { -webkit-mask-image: linear-gradient(transparent, transparent); mask-image: linear-gradient(transparent, transparent); }
+}
+.game:has(> .solved-stage) > .game-hold.leaving .hold-sentences {
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve-out 240ms linear forwards;
+}
+/* What lands over the hold comes in through the dither in place, never from elsewhere: the
+   keys (rather than rising row by row), the prompt's row, and a day already over. */
+.keyboard.kb-lit {
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
+}
+.keyboard.kb-lit .kb-row {
+  animation: none;
+}
+.prompt-zone.from-hold,
+.solved-stage.from-hold > * {
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
+}
+/* Reduced motion: the hold stands still and goes at once (`useHold`). */
+@media (prefers-reduced-motion: reduce) {
+  .game-hold .phrase .word,
+  .game-hold .phrase .hole .hole-word::before,
+  .game-hold .kb-slate::before {
+    animation: none !important;
   }
 }
 
@@ -4528,8 +4715,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   gap: var(--kb-gap);
   /* The pad ARRIVES row by row on the app's one "list arriving" gesture — when the round
      opens (PLAY, a load, a lesson handing the turn over) the keys rise into the tray the
-     way the drop (`kb-drop`) takes them out of it. The rows are keyed by index and never
-     remount, so a keystroke replays nothing. */
+     way the drop (`kb-drop`) takes them out of it — save over the game's hold, whose slates
+     already stand where the keys land: there the keys light in place (`.kb-lit`). The rows
+     are keyed by index and never remount, so a keystroke replays nothing. */
   animation: rung-in 240ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
 }
 .kb-row:nth-child(2) {

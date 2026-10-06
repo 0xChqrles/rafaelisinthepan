@@ -1,7 +1,10 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
-import { activeDate, dayNumber as dayNumberOf, isBonusRef } from '@whippin/shared';
-import LoadingWave from './components/LoadingWave';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { activeDate, dayNumber as dayNumberOf, isBonusRef, puzzleAddress } from '@whippin/shared';
+import GameHold, { useHold } from './components/GameHold';
 import usePuzzle from './hooks/usePuzzle';
+import useVocab from './hooks/useVocab';
+import useRoundSync from './hooks/useRoundSync';
+import { retryRoundSync } from './state/roundSync';
 import Account from './screens/Account';
 import AccountEmail from './screens/AccountEmail';
 import Profile from './screens/Profile';
@@ -24,7 +27,7 @@ import Invite from './tutorial/Invite';
 import Learn from './tutorial/Learn';
 import Lesson from './tutorial/Lesson';
 import { PLAY_LEVEL } from './tutorial/levels';
-import { useGameStore } from './state/gameStore';
+import { roundKeyFor, useGameStore } from './state/gameStore';
 import { track } from './analytics';
 import { useLocation, navigate } from './routing';
 import { parseRoute, pathForGame, pathForLesson, type LangCode, type Route } from './langs';
@@ -297,7 +300,18 @@ function GameRoute({
     cycleError: () => void;
   };
 }) {
-  const { puzzle, ref, error, loading, noPuzzle, retry } = usePuzzle(lang, date, bonusId);
+  // THE GAME'S THREE READS, all held here so ONE hold can stand through them (`GameHold`):
+  // the day's puzzle; the language's word list, asked at once beside it (it needs only the
+  // language); and the round's server state, asked as soon as the puzzle names its revision
+  // (#214: the board is replayed from it, so nothing is playable before it answers).
+  const { puzzle, ref, error, noPuzzle, retry } = usePuzzle(lang, date, bonusId);
+  const { vocab, error: vocabError, retry: retryVocab } = useVocab(lang);
+  const roundKey = useMemo(() => roundKeyFor(ref, lang), [ref, lang]);
+  const round = useRoundSync(
+    puzzle
+      ? { roundKey, lang, date: puzzleAddress(ref), revision: puzzle.revision, ranks: puzzle.ranks }
+      : null,
+  );
   const setLastLang = useGameStore((s) => s.setLastLang);
 
   // A dated route replays a past day when its date is not today's active game day; the
@@ -306,6 +320,29 @@ function GameRoute({
   // stops being the active day without a reload.
   const today = useToday();
   const isActiveDay = bonusId === undefined && (date == null || dayNumberOf(date) === today);
+
+  // What the route can show, in order: a puzzle that failed to come, a day with none, a word
+  // list that failed (only once the puzzle says there is a game to play with it), a round
+  // read that failed — each its own RETRY — else the game, once all three reads are in,
+  // with the hold standing until they are. The game is deliberately NETWORK-DEPENDENT at
+  // load (#214): until the round read settles there is nothing honest to show and nothing to
+  // type into, and a FAILED read is said out loud with a RETRY rather than silently starting
+  // the player on a guessed local mirror — the guesses they would then type would be answers
+  // to a board the server disagrees with.
+  const failure =
+    error !== null
+      ? { message: 'failedPuzzle' as const, onRetry: retry }
+      : noPuzzle || puzzle === null
+        ? null
+        : vocabError !== null
+          ? { message: 'failedVocab' as const, onRetry: retryVocab }
+          : round?.status === 'failed'
+            ? { message: 'failedRound' as const, onRetry: () => retryRoundSync(roundKey) }
+            : null;
+  const server = round?.status === 'ready' ? round.server : null;
+  const ready = puzzle !== null && vocab !== null && server !== null;
+  // (The invitation stands in for the hold while the reads go on behind it.)
+  const hold = useHold(surface === 'game' && failure === null && !noPuzzle && !ready);
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
   useEffect(() => {
@@ -338,21 +375,37 @@ function GameRoute({
       <HeaderLeft>
         <PuzzleTitle lang={lang} puzzleRef={isActiveDay ? null : ref} />
       </HeaderLeft>
-      {loading && (
-        <p className="status">
-          <LoadingWave text={t(lang, 'loading')} />
-        </p>
-      )}
-      {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
+      {failure !== null && <LoadError message={t(lang, failure.message)} lang={lang} onRetry={failure.onRetry} />}
       {/* `date` tells NoPuzzle whether this is an archive miss. */}
       {noPuzzle && <NoPuzzle lang={lang} date={date} bonus={bonusId !== undefined} />}
-      {puzzle && (
-        <Game
-          puzzle={puzzle}
-          puzzleRef={ref}
-          isActiveDay={isActiveDay}
-          deferResultsAnimation={preview.streak != null}
-        />
+      {failure === null && !noPuzzle && (
+        // THE GAME'S COLUMN, the route's: the hold stands in it through the three reads and
+        // gives way UNDER the round once they are in (first in the column, so the round
+        // paints over it).
+        <div className="game" aria-busy={ready ? undefined : true}>
+          {hold.mounted && (
+            <GameHold
+              lang={lang}
+              puzzle={puzzle}
+              wordsIn={vocab !== null}
+              roundIn={server !== null}
+              race={isActiveDay}
+              shown={hold.shown}
+              leaving={hold.leaving}
+            />
+          )}
+          {ready && (
+            <Game
+              puzzle={puzzle}
+              puzzleRef={ref}
+              vocab={vocab}
+              server={server}
+              isActiveDay={isActiveDay}
+              deferResultsAnimation={preview.streak != null}
+              fromHold={hold.leaving}
+            />
+          )}
+        </div>
       )}
       {preview.error != null && (
         <ErrorScreen

@@ -170,8 +170,13 @@
       state/history.ts        #211's PRIVATE history: the in-memory month/solved-day cache,
                               its one-flight-per-key reads, the explicit-loading status and
                               the streak credit a fresh solve rides
-      hooks/useRoundSync.ts   its React binding: registers the round's context on mount and
-                              reports WHERE its authoritative state is (the load gate)
+      hooks/useRoundSync.ts   its React binding, held by the game ROUTE: reconciles the outbox,
+                              registers the round's context once the puzzle is in, and reports
+                              WHERE its authoritative state is (the load gate)
+      components/GameHold.tsx  the game's HOLD while the route's three reads are out (the puzzle,
+                              the word list, the round): the sentence's silhouette over the
+                              keyboard's unlit iron keys, in `.game`'s own zones, and `useHold`
+                              (when it shows, and its giving way under the arriving round)
       screens/Profile.tsx     the #188 profile editor (/profile): DICE / CLEAR over the canvas
                               grown out of the masthead's mark, the swatches, the board line
                               the name is typed on, SAVE
@@ -2020,12 +2025,43 @@ it to the local store — see `packages/backend/AGENTS.md`).
     cut did) silently dropped every guess after the first — the board reverted on the next
     replay and the server never heard about them again, which is exactly what a browser
     run caught and no seeded unit test could.
-  - **`useRoundSync` returns WHERE the round's state is** (`RoundLoad`), and `Round` renders
-    the game body only once it is `ready`: `loading` shows the wave, `failed` shows
-    `failedRound` + RETRY (`retryRoundSync`). A load can only ever FAIL before it has
-    succeeded once — the engine tracks that as its own `settled` flag rather than reusing
-    `readDone`, which `resync` clears — so a recovery read failing behind a live board is a
-    sync hiccup, never a played round taken away mid-guess.
+  - **`useRoundSync` returns WHERE the round's state is** (`RoundLoad`), and the game ROUTE
+    (`App`'s `GameRoute`) holds it beside the other two reads — the puzzle, and the
+    language's word list, asked at once beside it (it needs only the language); the round
+    is asked as soon as the puzzle names its revision. `Game` mounts only once all three
+    are in (so its first render is already the right one — a day already over opens on its
+    result, never a frame of the board), and until then the route's `.game` column holds
+    THE GAME'S HOLD (bullet below); a failed read is its own `LoadError` + RETRY
+    (`failedPuzzle`, `failedVocab` once the puzzle says there is a game, `failedRound` with
+    `retryRoundSync`). A load can only ever FAIL before it has succeeded once — the engine
+    tracks that as its own `settled` flag rather than reusing `readDone`, which `resync`
+    clears — so a recovery read failing behind a live board is a sync hiccup, never a
+    played round taken away mid-guess.
+  - **THE GAME'S HOLD (`components/GameHold.tsx`; the user, 2026-10-06: "the 'loading'
+    component is a bit lame compared to the rest")** — no word, TODAY'S GAME TAKING SHAPE:
+    ONE hold through the three reads, never restarted, laid over the route's `.game` box in
+    its own zones (its top padding, its gap, `.play` over the prompt's reserved row, `.tray`
+    at the keyboard's height). The SENTENCE is its silhouette, laid out by the board's own
+    `Phrase` (`silhouette`: no decode, no descriptions): each word a bar of the slate
+    stipple (`--rail` through `--dz-2`), each hole the skeleton's checker in the held chip's
+    exact box — a generic sentence's shape until the puzzle is in, then the day's (the start
+    words in the holes), the one giving way to the other through the dither; never the day's
+    shape before the puzzle answers. The TRAY is the keyboard's three rows as UNLIT IRON KEYS
+    (`.kb-slate`: the code prompt's and the archive's material — the dusk face, the stippled
+    slate cap, the notched corners — at the keys' exact boxes). What is still out moves:
+    the bars breathe while the puzzle is out, the blocks while the round is (640ms steps),
+    a light washes across the caps on the diagonal while the word list is (the archive's
+    read wave). It shows only after `SKELETON_WAIT_MS` (a quick load never flashes it),
+    through the dither; `aria-busy` on the column and the sr-only `loading` carry the words.
+    **The game takes over from it, painted over it** (`useHold`'s `leaving`, latched by
+    what mounts during it): the sentence decodes as ever, each bar and block giving way the
+    moment the decode's front reaches its word (`Phrase` stamps that front, `--at`, on a
+    silhouette's tokens too); the keys LIGHT IN over their slates through exactly the cells
+    the slates go out through (`Keyboard`'s `lit`, `.kb-lit`: in place, not risen row by
+    row); the prompt's row and a day already over (`SolvedScreen`'s `fromHold`: its
+    settled frame, the reveal not replayed) come in through the dither. Measured at
+    390/320/1366: every bar, block and slate on the pixel of the word, chip and key that
+    replaces it. Reduced motion: still, and gone at once.
   - **The animated hole swap survived the board becoming a REPLAY.** The play log is
     authoritative the instant a guess lands, so the visible board replays it MINUS the
     guesses still in the air (`deferred`), and ONE timer per guess releases it at its
@@ -2160,8 +2196,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   as "the local log" is now the play-log PROJECTION, and what is persisted is only the
   outbox. Everything it records about pacing, batching, the cap's two 409s, verdicts and the
   unknown-outcome re-read still holds, and is why they read the way they do.)*
-  `Game`'s Round registers its context with
-  `state/roundSync.ts` (`useRoundSync`) and reports each COUNTED guess to it
+  The game route registers the round's context with
+  `state/roundSync.ts` (`useRoundSync`), and `Game`'s Round reports each COUNTED guess to it
   (a guess is deduped against the play log before it enters the outbox — a repeat owes
   the server nothing). The engine is one module-level conversation per round key (the
   `activeScoreFlights` pattern, so remounts and StrictMode rejoin it): the mount READ
