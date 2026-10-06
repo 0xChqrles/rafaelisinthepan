@@ -14,12 +14,15 @@
 // first answer lands after the round is already on screen) and its leaving move nothing. The
 // room it lies in is the play area's race band (index.css `.play-race`), held for the whole
 // round on today's sentence, so it never lies over the prompt.
-import type { CSSProperties } from 'react';
+import { useRef, type CSSProperties } from 'react';
 import { anonName, defaultAvatar, progressHeatColor } from '@whippin/shared';
 import Avatar from './Avatar';
 import InfinityGlyph from './InfinityGlyph';
 import SolvedIcon from '../assets/icons/check.svg?react';
 import { shownFace, useOwnFace } from './AccountFace';
+import { StatSlot } from './AccountStats';
+// (The dissolve's tiles the line comes in and leaves through: on the document's root.)
+import './bayerTiles';
 import { shownPercent, type RaceEntry } from '../game/race';
 import { ariaRaceLine, type RaceSpoken } from '../i18n';
 import { pathForBoard } from '../langs';
@@ -40,7 +43,11 @@ export default function RaceLine({
   // The round is ending: the line goes out with the prompt and stays laid down, invisible.
   retired: boolean;
 }) {
-  const own = shownFace(useOwnFace());
+  const ownState = useOwnFace();
+  const own = shownFace(ownState);
+  // Born retired (the round was already over when the line first had somebody to show): it
+  // stands invisible, with no leaving to play.
+  const bornRetired = useRef(retired).current;
   const spoken: RaceSpoken[] = entries.map((entry) => {
     const name = entry.name || anonName(entry.publicId);
     return entry.kind === 'done'
@@ -50,7 +57,7 @@ export default function RaceLine({
   return (
     <button
       type="button"
-      className={`race-line${retired ? ' retired' : ''}`}
+      className={`race-line${retired ? ' retired' : ''}${retired && bornRetired ? ' still' : ''}`}
       aria-label={ariaRaceLine(lang, spoken)}
       aria-hidden={retired || undefined}
       disabled={retired}
@@ -71,8 +78,11 @@ export default function RaceLine({
             {face ? (
               <Avatar avatar={face.avatar ?? defaultAvatar(face.publicId)} size={MARK} sharp />
             ) : (
-              // The player's own face is still being read: its box, never a guessed mark.
-              <span className="race-mark-box" />
+              // The player's own face is still being read: its box, never a guessed mark —
+              // and once its read has failed, the box rests on the still stipple.
+              <span className={`race-mark-box${ownState === 'failed' ? ' failed' : ''}`}>
+                {ownState === 'failed' && <StatSlot phase="failed" />}
+              </span>
             )}
             {entry.kind === 'done' ? (
               <span className="race-done">
@@ -80,7 +90,8 @@ export default function RaceLine({
                 {entry.score}
               </span>
             ) : entry.kind === 'over' ? (
-              <InfinityGlyph className="race-inf" />
+              // One face pixel a cell, the 8px digits' own.
+              <InfinityGlyph className="race-inf" cell={1} />
             ) : (
               <>
                 <span

@@ -909,13 +909,19 @@ body:has(.app > .board-screen) {
    it. It sits in the column's gap above the tray plus the play area's race band
    (`.play-race`), which together hold exactly its footprint. ONE line, never wrapping: at
    most three entries of a mark and two short numbers, which fit the narrowest phone's
-   column. The game surface's dress: the pixel face
-   for the numbers, the % in the heat ramp's ink (the board's playing rows), tries muted, a
-   finished member's count in the solve cobalt. */
+   column. The game surface's dress: the pixel face at its own 8px (one face pixel a screen
+   pixel) for the numbers, the % in the heat ramp's ink (the board's playing rows), tries
+   muted, a finished member's count in the solve cobalt. It comes in, and retires, through
+   the board's Bayer dissolve — its cells in threshold order, in hard steps, nothing
+   travelling; a line born retired (the round already over when the first answer lands)
+   simply stands invisible. */
 .race-line {
   position: absolute;
-  bottom: calc(100% + var(--race-lift));
-  height: var(--race-h);
+  /* A pixel past the band on each side, centred on it: the dissolve's mask paints the box
+     alone, and "you"'s accent outline stands 3px off a 20px mark — a 24px box would cut its
+     top and bottom edges until the line had come in. */
+  bottom: calc(100% + var(--race-lift) - 1px);
+  height: calc(var(--race-h) + 2px);
   left: 50%;
   translate: -50% 0;
   display: flex;
@@ -926,25 +932,26 @@ body:has(.app > .board-screen) {
   padding: 2px 4px;
   white-space: nowrap;
   font-family: var(--pixel-font);
-  font-size: 10px;
+  font-size: 8px;
   line-height: 1;
   color: var(--fg);
   background: none;
   border: 0;
   cursor: pointer;
-  animation: race-in 240ms ease-out backwards;
-  transition: opacity 200ms ease-out, visibility 0s linear 0s;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
+  transition: visibility 0s linear 0s;
 }
 .race-line.retired {
-  opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 200ms ease-out, visibility 0s linear 200ms;
+  animation: board-dissolve-out 240ms linear forwards;
+  transition: visibility 0s linear 240ms;
 }
-@keyframes race-in {
-  from {
-    opacity: 0;
-  }
+.race-line.retired.still {
+  animation: none;
+  transition: none;
 }
 .race-entry {
   display: inline-flex;
@@ -960,6 +967,9 @@ body:has(.app > .board-screen) {
 .race-mark-box {
   display: block;
   background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+.race-mark-box.failed {
+  background: none;
 }
 /* The player's own mark is framed in the accent — "you are here", the boards' own marker. */
 .race-entry.me .avatar,

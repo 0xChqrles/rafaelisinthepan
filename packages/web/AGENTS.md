@@ -647,8 +647,13 @@ These are decided and verified against the code. Treat them as load-bearing.
   confirming the solve or the give-up — so the result reads the final rows) and when the tab
   comes back; it holds the cost rule (one read per 10 s, one flight, a trailing call — save
   the read asked by the answer that ENDS the round on screen, which goes at once, `now`) and
-  fails SILENTLY, the last answer standing. The line RETIRES with the prompt (the solving
-  submit, a give-up) and stays mounted, invisible, until the result takes the column. It
+  fails SILENTLY, the last answer standing. Its type is the pixel face at 8px (one face
+  pixel a screen pixel; the `∞` at the same one pixel a cell), and it comes in, and RETIRES
+  with the prompt (the solving submit, a give-up), through the board's Bayer dissolve —
+  never a fade; a line first shown on a round already over stands invisible with no leaving
+  to play. Retired, it stays mounted, invisible, until the result takes the column. Its box
+  reaches a pixel past the band on each side, so the dissolve's mask holds the accent
+  outline round my mark. It
   lies in the column's gap above the tray plus the play area's RACE BAND (`.play-race`):
   on today's sentence the play area keeps the line's footprint clear under the prompt from
   the first frame, line or no line, so the line never covers the hint row (a refused word's
