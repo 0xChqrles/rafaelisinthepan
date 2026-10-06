@@ -10369,10 +10369,6 @@ figure.l1-fig {
 .account-page > .account-cta {
   --in: 260ms;
 }
-/* The record's own failed read, said under it — a section's air between it and the call. */
-.account-page > .account-failure {
-  margin: 4px 0 24px;
-}
 .account-page > .account-foot {
   --in: 340ms;
 }
@@ -10571,6 +10567,21 @@ figure.l1-fig {
   width: 100%;
   /* The initials hang under the raster's foot. */
   margin-bottom: 41px;
+}
+/* A FAILED read's note and RETRY (`Record`'s `failure`), in the flame's room over the count's
+   still box: from under the masthead's foot (the record's own -14px) down to the count's top,
+   centred in it. Out of the flow, so the page is the height it always is. */
+.record-failure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  padding-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
 }
 /* (Offset in its box to a whole pixel by the layout's `ox`: the raster centred, not pinned.) */
 .record-canvas {

@@ -129,8 +129,9 @@ export default function Account() {
   // flash SAVE and swap it for the address on every visit of a linked player.
   const known = identity === null || phase === 'ready' || summary !== null;
   const accountUnknown = phase === 'failed' && summary === null;
-  // A READ THAT FAILED IS SAID ONCE, in place: the record's under the record, the summary's in
-  // the call's own box — and both at once as one line there (one connection lost, one RETRY).
+  // A READ THAT FAILED IS SAID ONCE, in place: the record's in its flame's room, the summary's
+  // in the call's own box — and both at once as one line there (one connection lost, one
+  // RETRY).
   const recordFailed = stats.phase === 'failed';
   // THE MASTHEAD'S WORDS LAND ONCE, with both their facts: the name (the face) and whether an
   // address goes under it (the summary — or its failed read, which leaves the name alone). The
@@ -214,13 +215,15 @@ export default function Account() {
           week={stats.phase === 'ready' ? week : null}
           phase={stats.phase === 'ready' ? 'ready' : recordFailed ? 'failed' : 'loading'}
           size={size}
+          // The RECORD's read failed (and only it): its boxes stand still, and this says so in
+          // the flame's room over them, with its RETRY — adding no height, so the call still
+          // stands on the screen.
+          failure={
+            recordFailed && !accountUnknown ? (
+              <QuietFailure lang={lang} line={t(lang, 'failedRecord')} onRetry={stats.retry} />
+            ) : null
+          }
         />
-
-        {/* The RECORD's read failed (and only it): its boxes stand still above, and this says
-            so under them, with its RETRY. */}
-        {recordFailed && !accountUnknown && (
-          <QuietFailure className="account-failure" lang={lang} line={t(lang, 'failedRecord')} onRetry={stats.retry} />
-        )}
 
         {/* DEVICES — after the record, ONLY once SAVED: an unlinked account holds exactly the
             device reading this screen, and a list of yourself is noise. No caption: the

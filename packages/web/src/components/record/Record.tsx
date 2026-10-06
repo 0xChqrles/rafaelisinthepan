@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { mondayNarrowLabels, weekView } from '../../game/streak';
 import { t } from '../../i18n';
 import useToday from '../../hooks/useToday';
@@ -143,6 +143,7 @@ export default function Record({
   week,
   phase,
   size = 'normal',
+  failure,
 }: {
   lang: string;
   stats: { streak: number; best: number; days: number } | null;
@@ -150,6 +151,10 @@ export default function Record({
   phase: RecordPhase;
   // The screen's height: the count one whole size up or down (`RecordSize`).
   size?: RecordSize;
+  // Its read FAILED (the caller's `QuietFailure`): said in the FLAME'S ROOM over the count's
+  // still box — the room the flame and its flare keep, which a record with no numbers leaves
+  // as ground — so saying it adds no height to the page, and its RETRY takes none away.
+  failure?: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -309,6 +314,11 @@ export default function Record({
         />
         {burstsFrom !== null && width > 0 && (
           <RecordBursts L={L} stops={recordStops(beats, streak, build === true)} start={burstsFrom} />
+        )}
+        {failure && (
+          <div className="record-failure" style={{ height: L.count.y * RECORD_CELL_PX }}>
+            {failure}
+          </div>
         )}
         <span
           className="record-unit"
