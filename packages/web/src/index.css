@@ -6693,7 +6693,8 @@ figure.l1-fig {
   -webkit-mask-image: var(--dz-2);
   mask-image: var(--dz-2);
 }
-.ghost-mark .avatar {
+.ghost-mark .avatar,
+.ghost-mark .ui-icon {
   position: relative;
   -webkit-mask-image: var(--dz-4);
   mask-image: var(--dz-4);
@@ -10466,14 +10467,14 @@ figure.l1-fig {
   border-color: var(--fg);
 }
 @media (hover: hover) and (pointer: fine) {
-  .quiet-btn:hover:not(:disabled) {
+  .quiet-btn:hover:not(:disabled, [aria-disabled='true']) {
     color: var(--fg);
   }
-  .quiet-btn:hover:not(:disabled)::before {
+  .quiet-btn:hover:not(:disabled, [aria-disabled='true'])::before {
     border-color: var(--fg);
   }
 }
-.quiet-btn:active:not(:disabled) {
+.quiet-btn:active:not(:disabled, [aria-disabled='true']) {
   translate: 0 2px;
 }
 .quiet-btn:disabled {
@@ -10493,6 +10494,25 @@ figure.l1-fig {
   content: '';
   position: absolute;
   inset: -8px -4px;
+}
+/* A LINE BEING SIGNED OUT thins in the ghost's material — its glyph a `.ghost-mark` (the ink
+   to half its cells over the slate stipple), its words and its SIGN OUT through the same half
+   of the Bayer cells — never an opacity; nothing else on the list is busy. Once gone it leaves
+   through the board's dissolve (over the thinned ink, so its last cells drop out in the
+   dissolve's first half), and the lines under it close up in one step when it is dropped. */
+.device-row.signing .device-info,
+.device-row.signing .device-signout,
+.device-row.going .device-info,
+.device-row.going .device-signout {
+  -webkit-mask-image: var(--dz-4);
+  mask-image: var(--dz-4);
+}
+.device-row.going {
+  pointer-events: none;
+  animation: board-dissolve-out 240ms linear forwards;
+}
+.device-signout[aria-disabled='true'] {
+  cursor: default;
 }
 /* The list's read still out: one line's boxes in the stippled slate — standing, once the lines
    are in, over the first of them until their dissolve begins. */

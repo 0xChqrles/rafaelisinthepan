@@ -18,7 +18,7 @@
 // the request itself knows — a device that was just created is listed, and one that was just
 // revoked is not. Nothing here has to compensate for the lag.
 
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   devicesUrl,
   parseDeviceIdentity,
@@ -33,7 +33,10 @@ import {
 } from '../identity';
 import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { t } from '../i18n';
-import { clockNow } from './animationClock';
+import { prefersReducedMotion } from '../hooks/useScramble';
+import { clockNow, onClock } from './animationClock';
+import { DISSOLVE_MS } from './bayerTiles';
+import { refuseShake } from './refuseShake';
 import { useRecordCalm } from './record/Record';
 import PhoneIcon from '../assets/icons/phone.svg?react';
 import TabletIcon from '../assets/icons/tablet.svg?react';
@@ -80,12 +83,37 @@ export function revokedCallingDevice(listing: DeviceListing, target: string): bo
   );
 }
 
+// A set held in state, changed by copy.
+function withId(set: ReadonlySet<string>, id: string, on: boolean): ReadonlySet<string> {
+  if (set.has(id) === on) return set;
+  const next = new Set(set);
+  if (on) next.add(id);
+  else next.delete(id);
+  return next;
+}
+
 export default function DeviceList({ lang }: { lang: string }) {
   const [phase, setPhase] = useState<Phase>('loading');
   const [rows, setRows] = useState<DeviceRow[]>([]);
-  // Which row's SIGN OUT is in flight, so the list can disable it without a spinner.
-  const [busy, setBusy] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  // A SIGN OUT, LINE BY LINE. Only the line being signed out is busy — every other line's
+  // SIGN OUT stays live — and it says so in its own material: its ink THINS through the dither
+  // (the glyph a `.ghost-mark`, the words to half their cells) while the request is out. Once
+  // the answer says it is gone it LEAVES (`going`): out through the board's dissolve, then
+  // dropped, the lines under it closing up in one whole-line step. A sign-out that did not
+  // land RE-INKS its line with the refusal's shake, and its one fact gives way to one muted
+  // line saying so (`refused`) until the next try.
+  const [signing, setSigning] = useState<ReadonlySet<string>>(new Set());
+  const [going, setGoing] = useState<ReadonlySet<string>>(new Set());
+  const [refused, setRefused] = useState<ReadonlySet<string>>(new Set());
+  // What a screen reader hears of the last refusal (the line's label and the note).
+  const [spoken, setSpoken] = useState('');
+  // The lines confirmed gone in this mount: every answer is the list as it stood after ITS
+  // write, so one landing after a later one must not bring a line back.
+  const removed = useRef(new Set<string>());
+  const latest = useRef<DeviceRow[]>([]);
+  const lines = useRef(new Map<string, HTMLLIElement>());
+  const listRef = useRef<HTMLElement>(null);
 
   // ONE call answers both the read and every write: the route always returns the list as it
   // now stands, so the screen never has to guess what a write did (the live routes' house rule).
@@ -143,23 +171,48 @@ export default function DeviceList({ lang }: { lang: string }) {
   }, [talk, attempt]);
 
   const signOut = (row: DeviceRow) => {
-    setBusy(row.deviceId);
+    const id = row.deviceId;
+    if (signing.has(id) || going.has(id)) return;
+    setSigning((set) => withId(set, id, true));
+    setRefused((set) => withId(set, id, false));
+    const refuse = () => {
+      setRefused((set) => withId(set, id, true));
+      setSpoken(`${deviceLabel(row, lang)}: ${t(lang, 'deviceSignOutFailed')}`);
+      refuseShake(lines.current.get(id));
+    };
     void talk(row)
       .then((answer) => {
+        // No answer: the identity was dropped or replaced under the call, and the surface
+        // that takes over (the signed-out screen, a scope remount) says what happened.
         if (!answer || identityEpoch() !== answer.epoch) return;
         // A successful self-delete cannot wait for "the next 401": there may be no next
         // private request, and the profile would remain open as a device the server has
         // already revoked. This successful response is the second authoritative sign-out
         // signal, alongside `unknown_device`.
-        if (revokedCallingDevice(answer.listing, row.deviceId)) {
+        if (revokedCallingDevice(answer.listing, id)) {
           markDeviceSignedOut(answer.epoch);
           return;
         }
-        setRows(answer.listing.devices);
+        latest.current = answer.listing.devices;
+        // The list the server answered still holds the line: nothing was signed out.
+        if (answer.listing.devices.some((device) => device.deviceId === id)) {
+          refuse();
+          return;
+        }
+        removed.current.add(id);
+        const settle = () => {
+          setGoing((set) => withId(set, id, false));
+          setRows(latest.current.filter((device) => !removed.current.has(device.deviceId)));
+        };
+        if (prefersReducedMotion()) {
+          settle();
+          return;
+        }
+        setGoing((set) => withId(set, id, true));
+        onClock(listRef.current, DISSOLVE_MS, settle);
       })
-      // A failed revocation leaves the list as it was; the row is still there to try again.
-      .catch(() => {})
-      .finally(() => setBusy(null));
+      .catch(refuse)
+      .finally(() => setSigning((set) => withId(set, id, false)));
   };
 
   // The lines arrive AFTER the record has calmed (`useRecordCalm`): held while it has not
@@ -178,7 +231,10 @@ export default function DeviceList({ lang }: { lang: string }) {
   const shown = phase === 'ready' && after !== null;
 
   return (
-    <section className="device-list" aria-label={t(lang, 'devicesTitle')}>
+    <section ref={listRef} className="device-list" aria-label={t(lang, 'devicesTitle')}>
+      <p className="sr-only" role="status">
+        {spoken}
+      </p>
       {/* While the read is out: one line's boxes as the stippled slate — the glyph's checker and
           the label's rail — at the lines' own pitch, so nothing moves when the list lands. */}
       {/* (Once the lines are in, the skeleton stands over them until their dissolve starts.) */}
@@ -208,21 +264,32 @@ export default function DeviceList({ lang }: { lang: string }) {
       {shown && (
         <ul className="device-lines">
           {rows.map((row, i) => {
+            const id = row.deviceId;
             const used = lastUsed(row, lang);
+            const busy = signing.has(id) || going.has(id);
             return (
               <li
-                className={`device-row${row.current ? ' current' : ''}`}
-                key={row.deviceId}
+                ref={(el) => {
+                  if (el) lines.current.set(id, el);
+                  else lines.current.delete(id);
+                }}
+                className={`device-row${row.current ? ' current' : ''}${signing.has(id) ? ' signing' : ''}${
+                  going.has(id) ? ' going' : ''
+                }`}
+                key={id}
                 style={{ '--delay': `${(after ?? 0) + i * LINE_STAGGER_MS}ms` } as React.CSSProperties}
               >
-                <span className="device-glyph">
+                <span className={`device-glyph${busy ? ' ghost-mark' : ''}`}>
                   <DeviceGlyph row={row} />
                 </span>
                 {/* TWO LINES (#204's polish pass): the label, then ONE quiet fact under it —
-                    THIS ONE for the row the reader is on, the last-seen day for the rest. */}
+                    THIS ONE for the row the reader is on, the last-seen day for the rest — or,
+                    after a sign-out that did not land, the muted line that says so. */}
                 <span className="device-info">
                   <span className="device-name">{deviceLabel(row, lang)}</span>
-                  {row.current ? (
+                  {refused.has(id) ? (
+                    <span className="device-sub">{t(lang, 'deviceSignOutFailed')}</span>
+                  ) : row.current ? (
                     <span className="device-sub current">{t(lang, 'deviceCurrent')}</span>
                   ) : (
                     used !== null && <span className="device-sub">{used}</span>
@@ -231,7 +298,8 @@ export default function DeviceList({ lang }: { lang: string }) {
                 <button
                   type="button"
                   className="quiet-btn device-signout"
-                  disabled={busy !== null}
+                  // Busy, it keeps its place and the keyboard's focus; a press does nothing.
+                  aria-disabled={busy || undefined}
                   onClick={() => signOut(row)}
                 >
                   {t(lang, 'deviceSignOut')}

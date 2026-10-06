@@ -132,6 +132,8 @@ const STRINGS = {
   devicesTitle: { en: 'DEVICES', fr: 'APPAREILS' },
   deviceCurrent: { en: 'THIS ONE', fr: 'CELUI-CI' },
   deviceSignOut: { en: 'SIGN OUT', fr: 'DÉCONNECTER' },
+  // A line's one fact, while its SIGN OUT did not land (the line re-inked and shaken).
+  deviceSignOutFailed: { en: 'NOT SIGNED OUT', fr: 'NON DÉCONNECTÉ' },
   // The UA parser leaves what it cannot read EMPTY rather than guessing, so the SCREEN names
   // an unlabelled device.
   deviceUnknown: { en: 'UNKNOWN DEVICE', fr: 'APPAREIL INCONNU' },

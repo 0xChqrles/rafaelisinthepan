@@ -150,6 +150,8 @@
                               CSS and Web Animations play on
       components/travel.ts    a control's stepped TRAVEL (`travelFrames`): the tab row's chip,
                               the period switch's frame
+      components/refuseShake.ts  the REFUSAL's stepped shake (2px held frames): the archive's
+                              month chip past either end, a device line whose sign-out failed
       components/raster.ts    a canvas raster's ABGR pixel (`abgr`, `hexToAbgr`, and `rgbToAbgr`
                               for `heat.ts`'s `rgb()` inks): the streak's orbit, the podium, the
                               archive's keys, the tutorial's art
@@ -1498,7 +1500,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
       landed and today's foil cooled (`useRecordCalm`), the wait counted from the moment the
       lines mount — held as the skeleton line while the record has no numbers yet, and let in
       at once when it never will (a failed read). Once in they STAY: the record's RETRY
-      does not take them back out.
+      does not take them back out. **A SIGN OUT busies its OWN line only** (every other
+      line's SIGN OUT stays live; several may be out at once): while the request is out the
+      line THINS — the glyph a `.ghost-mark`, the words and the word's brackets through the
+      same half of the Bayer cells, never an opacity — and its SIGN OUT is `aria-disabled`;
+      once the answer no longer lists it, it leaves on `board-dissolve-out` and is dropped,
+      the lines under it closing up in one whole-line step (a line confirmed gone never
+      comes back from a later-landing answer). A sign-out that did not land — a transport
+      failure, a refused call, an answer still listing the line — RE-INKS the line with the
+      refusal's stepped shake (`components/refuseShake.ts`, the archive month chip's too)
+      and its one fact becomes one muted line, NOT SIGNED OUT, until the next try; a
+      status region says it to a screen reader.
     - **`AccountStats` (the crossroads, the recovery ending) is QUIET**: the record's side
       numbers' dress, three across between stippled rails — no foil, no flame, no burst
       (destruction never glows). Its `land` prop (a start delay in ms; omitted, the row
