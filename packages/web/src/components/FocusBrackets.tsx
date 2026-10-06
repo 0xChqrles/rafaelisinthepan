@@ -26,7 +26,8 @@ import { createPortal } from 'react-dom';
 // THAT IS THERE to be seen and used, asked every frame it is up: never on one marked
 // `data-no-frame` (the code prompt's field while it waits OFFSTAGE — focused by the address
 // step's tap so iOS raises a keyboard for it, but nothing anybody can see yet), a box under
-// one cell (2px) either way, a disabled control, or one inside something `aria-busy`. While
+// one cell (2px) either way, or a control that is ITSELF disabled or `aria-busy` — a control
+// merely inside a busy region (a day of a month still being read) is framed like any other. While
 // it may not stand, the brackets hide where they last stood, the focus kept: the moment the
 // target is on stage they come back, travelling to it (the code's keys, once they are the
 // step). It mounts INSIDE an open dialog when the focus is there: the top layer paints
@@ -46,8 +47,8 @@ function framable(el: EventTarget | null): el is HTMLElement {
 }
 // Whether the brackets may stand on a framable target right now (`box`, its framed box).
 function standsOn(el: HTMLElement, box: DOMRect): boolean {
-  if (el.closest('[data-no-frame], [aria-busy="true"]')) return false;
-  if (el.matches(':disabled')) return false;
+  if (el.closest('[data-no-frame]')) return false;
+  if (el.matches(':disabled, [aria-busy="true"]')) return false;
   return box.width >= CELL && box.height >= CELL;
 }
 
