@@ -46,7 +46,7 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import type { RecordSize } from '../components/record/scene';
 import { defaultAvatar } from '@whippin/shared';
-import { faceSettled, shownFace, useOwnFace } from '../components/AccountFace';
+import { shownFace, useOwnFace } from '../components/AccountFace';
 import { StatSlot } from '../components/AccountStats';
 import Avatar from '../components/Avatar';
 import AddressLine from '../components/AddressLine';
@@ -66,6 +66,7 @@ import {
 } from '../langs';
 import { navigate } from '../routing';
 import { loadAccountSummary, useAccountSummary } from '../state/account';
+import { retryOwnFace } from '../state/ownFace';
 import { useAccountStats, useAccountWeek } from '../state/history';
 import useToday from '../hooks/useToday';
 import useUiLang from '../hooks/useUiLang';
@@ -107,8 +108,12 @@ export default function Account() {
   const face = shownFace(faceState);
   // The masthead's placeholders breathe only while the read is OUT. A deleted account
   // (#204's 410) settles with no face, and a shimmer over it promises an arrival that is
-  // not coming — that device is one private call away from the signed-out screen.
-  const facePending = !faceSettled(faceState);
+  // not coming — that device is one private call away from the signed-out screen: its mark
+  // is the GHOST, and the pencil goes (there is no profile left to edit). A read that FAILED
+  // is never answered with a stranger's face: the mark and the name rest on the still
+  // stipple, and the mark's held box is the tap that asks again (the record's own move).
+  const faceFailed = faceState === 'failed';
+  const faceGone = faceState === 'gone';
   // The day the streak is measured against, off the app's ONE day signal — which re-fires
   // at the 22:00 reset, so a screen left open overnight cannot keep showing an expired one.
   const today = useToday();
@@ -177,15 +182,30 @@ export default function Account() {
           <span ref={markRef} className="account-id-mark">
             {face ? (
               <Avatar avatar={face.avatar ?? defaultAvatar(face.publicId)} size={MARK_PX} sharp />
+            ) : faceFailed ? (
+              <button
+                type="button"
+                className="account-id-retry"
+                aria-label={`${t(lang, 'failedProfile')} — ${t(lang, 'retry')}`}
+                onClick={retryOwnFace}
+              >
+                <StatSlot phase="failed" />
+              </button>
+            ) : faceGone ? (
+              <span className="account-id-ghost ghost-mark" aria-hidden="true" />
             ) : (
-              facePending && <StatSlot phase="loading" />
+              <StatSlot phase="loading" />
             )}
           </span>
           <span className="account-id-text">
             {words ? (
               <span className="account-id-name">{face.name}</span>
+            ) : faceFailed ? (
+              <span className="account-id-name-slot failed" aria-hidden="true">
+                <StatSlot phase="failed" />
+              </span>
             ) : (
-              <span className={`account-id-name-slot${facePending || face ? '' : ' gone'}`} aria-hidden="true" />
+              <span className={`account-id-name-slot${faceGone ? ' gone' : ''}`} aria-hidden="true" />
             )}
             {/* The saved ADDRESS (2026-09-05, in the place the account's age held): a fact,
                 no control — an account carries at most one address and the server refuses a
@@ -198,9 +218,10 @@ export default function Account() {
           </span>
           <button
             type="button"
-            className="account-edit"
+            className={`account-edit${faceGone ? ' gone' : ''}`}
             aria-label={t(lang, 'boardEdit')}
             title={t(lang, 'boardEdit')}
+            disabled={faceGone}
             onClick={openEditor}
           >
             <PencilIcon className="ui-icon" aria-hidden="true" />

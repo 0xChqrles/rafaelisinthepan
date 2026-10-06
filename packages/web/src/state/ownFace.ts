@@ -3,7 +3,8 @@
 // value of their own:
 //   - a bumped `revision` re-reads the face, the one already drawn standing meanwhile: the
 //     profile editor bumps it after a successful SAVE, `localIdentityDeploy` when its flight
-//     settles, whatever the outcome;
+//     settles, whatever the outcome, and a RETRY after a read that failed (the masthead's
+//     mark, the header's key when the tab comes back);
 //   - `firstWrites` counts the FIRST profiles of accounts being written (the deploy's
 //     flight, or the editor's SAVE that minted the account): a MINTED account's face is not
 //     read while one is out, since the read would find no profile yet and settle on the face
@@ -42,6 +43,10 @@ export function firstWritesSettled(): Promise<void> {
     });
   });
 }
+
+// The face's read FAILED and it is asked again (the masthead's held mark, the tab coming
+// back): the same re-read, no write behind it.
+export const retryOwnFace = ownProfileWritten;
 
 // An account's first profile is being written; the answer releases it. `written` also
 // bumps the revision, in the SAME state change, so the face's one read follows both.

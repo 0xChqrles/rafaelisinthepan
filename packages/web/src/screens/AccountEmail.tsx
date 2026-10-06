@@ -91,6 +91,7 @@ import {
   useAccountFace,
   useOwnFace,
   type Face,
+  type FaceState,
 } from '../components/AccountFace';
 import ArrowIcon from '../assets/icons/arrow-right.svg?react';
 import AccountStats from '../components/AccountStats';
@@ -154,11 +155,12 @@ const FACE_TRAVEL_STEPS = 4;
 // A face's box while its read is out: the slate checker the house waits in (the archive's
 // and the podium's ghosts), stippled through the Bayer tiles and breathing in whole steps —
 // never a grey rounded block. A settled face with nothing to draw (a DELETED account) keeps
-// the box and draws nothing in it.
-function FaceHold({ size, waiting }: { size: number; waiting: boolean }) {
+// the box and draws nothing in it; the player's OWN face whose read FAILED rests in it on
+// the still stipple (`failed`), never on the assigned stranger.
+function FaceHold({ size, waiting, failed = false }: { size: number; waiting: boolean; failed?: boolean }) {
   return (
     <span
-      className={`link-hold${waiting ? ' waiting' : ''}`}
+      className={`link-hold${waiting ? ' waiting' : failed ? ' failed' : ''}`}
       style={{ width: size, height: size }}
       aria-hidden="true"
     />
@@ -758,21 +760,30 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
     [address, advance, busy, finish, kill, lang, recoverAmbiguous, returning],
   );
 
+  // The SAVE door leads with WHO is being saved — and it is the SAME face whether or not the
+  // account is deployed yet (user-decided 2026-08-26: nothing in the area may tell you
+  // which). `useOwnFace` answers the account's profile or the identical local-seed pair, the
+  // ONE read every surface of the player's own face shares; the crossroads' leaving side and
+  // the ending are this device's own account too, so they draw it as well — a read that
+  // FAILED rests on the still stipple there, never on the assigned stranger.
+  const ownState = useOwnFace();
+  const ownFace = shownFace(ownState);
   // The ending draws the account the player now holds — for an ADOPT that is the recovered
-  // one, and its face is the claim "we found your account" actually makes.
+  // one (the identity moves to it and the own face reads it), and its face is the claim "we
+  // found your account" actually makes.
   const endingId = identity?.accountId ?? null;
   // `shownFace` throughout: a DELETED account (#204's 410) has no face — not even the
   // assigned one, which is still that player's own — so every one of these draws nothing
   // rather than an identity that no longer exists.
-  const endingState = useAccountFace(step === 'done' ? endingId : null);
+  const endingState: FaceState = step === 'done' && endingId !== null ? ownState : null;
   const endingRead = shownFace(endingState);
-  // The crossroads draws BOTH sides of the fork: the account about to be deleted, and the
-  // one about to be joined. The server names the second only since vol. 2, so a missing
-  // `target` degrades to the one-sided prompt rather than failing a refusal the player has
-  // to be able to answer.
-  const eraseState = useAccountFace(step === 'confirm' ? (prompt?.accountId ?? null) : null);
+  // The crossroads draws BOTH sides of the fork: the account about to be left — this
+  // device's own — and the one about to be joined. The server names the second only since
+  // vol. 2, so a missing `target` degrades to the one-sided prompt rather than failing a
+  // refusal the player has to be able to answer.
+  const eraseState: FaceState = step === 'confirm' && prompt !== null ? ownState : null;
   const eraseFace = shownFace(eraseState);
-  const eraseMark = eraseFace && prompt ? (eraseFace.avatar ?? defaultAvatar(prompt.accountId)) : null;
+  const eraseMark = eraseFace ? (eraseFace.avatar ?? defaultAvatar(eraseFace.publicId)) : null;
   // A face about to be DELETED is a GHOST (`.ghost-mark`): it arrives whole on its own
   // ground, then its ink thins through the dither and its ground gives way to the slate.
   const ghostStyle = (mark: string) =>
@@ -783,14 +794,9 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // one-sided prompt, as a missing `target` already does.
   const targetState = useAccountFace(step === 'confirm' ? (prompt?.target ?? null) : null);
   const targetFace = shownFace(targetState);
-  // The SAVE door leads with WHO is being saved — and it is the SAME face whether or not the
-  // account is deployed yet (user-decided 2026-08-26: nothing in the area may tell you
-  // which). `useOwnFace` answers the account's profile or the identical local-seed pair; and
-  // the first face resolved is HELD for the flow's whole life, because the SEND's own deploy
-  // swaps the id from the seed to the account mid-flight, and re-reading then races the
-  // background profile write for a face that is the same by construction.
-  const ownState = useOwnFace();
-  const ownFace = shownFace(ownState);
+  // The lead's first face resolved is HELD for the flow's whole life, because the SEND's
+  // own deploy swaps the id from the seed to the account mid-flight, and re-reading then
+  // races the background profile write for a face that is the same by construction.
   const [lead, setLead] = useState<Face | null>(null);
   useEffect(() => {
     if (ownFace !== null && lead === null) setLead(ownFace);
@@ -799,6 +805,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // The lead's placeholder breathes only while the read is OUT: a gone account settles with
   // nothing, and a shimmer over it promises a face that is not coming.
   const savingPending = lead === null && !faceSettled(ownState);
+  // A read that FAILED has no face to lead with: the mark's and the name's boxes rest on the
+  // still stipple (`/account`'s masthead's, without its retry — this screen is about the
+  // address), never on the assigned stranger.
+  const savingFailed = lead === null && ownState === 'failed';
 
   // AN ENDING PER CELL of the two-doors × three-outcomes grid. Until vol. 2 four of the six
   // borrowed one of the other two's sentences.
@@ -994,12 +1004,14 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
               // AND THE NAME'S BOX IS HELD TOO (2026-09-03). The mark was reserved and the
               // name was not, so the account's own name landed into no space and pushed the
               // field and CONTINUE down as it arrived — the shift the skeleton rule exists to
-              // prevent. Only while the read is OUT: a settled account with no face has no
-              // name coming, and a placeholder held for one would promise what is not on its
-              // way.
+              // prevent. Only while the read is OUT, or resting where it FAILED: a GONE account
+              // has no name coming, and a placeholder held for one would promise what is not
+              // on its way.
               <>
-                <FaceHold size={LEAD_PX} waiting={savingPending} />
-                {savingPending && <span className="link-name link-hold waiting">&nbsp;</span>}
+                <FaceHold size={LEAD_PX} waiting={savingPending} failed={savingFailed} />
+                {(savingPending || savingFailed) && (
+                  <span className={`link-name link-hold ${savingPending ? 'waiting' : 'failed'}`}>&nbsp;</span>
+                )}
               </>
             )}
           </div>
@@ -1156,7 +1168,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                       <Avatar avatar={eraseMark} size={CROSS_PX} sharp />
                     </span>
                   ) : (
-                    <FaceHold size={CROSS_PX} waiting={!faceSettled(eraseState)} />
+                    <FaceHold
+                      size={CROSS_PX}
+                      waiting={!faceSettled(eraseState)}
+                      failed={eraseState === 'failed'}
+                    />
                   )}
                   {/* The LEAVING side says what is happening to it: DELETED when it is
                       about to become unreachable, and its own NAME when it survives — a
@@ -1199,7 +1215,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 <span className="link-name">{eraseFace.name}</span>
               </>
             ) : (
-              <FaceHold size={LEAD_PX} waiting={!faceSettled(eraseState)} />
+              <FaceHold
+                size={LEAD_PX}
+                waiting={!faceSettled(eraseState)}
+                failed={eraseState === 'failed'}
+              />
             )}
             {/* WHAT IS AT STAKE, DIRECTLY UNDER THE FORK — ahead of the sentence, not
                 after it (review finding). Centred below "…come with you. The rest is
@@ -1271,7 +1291,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                   )}
                 </>
               ) : (
-                <FaceHold size={ENDING_PX} waiting={!faceSettled(endingState)} />
+                <FaceHold
+                  size={ENDING_PX}
+                  waiting={!faceSettled(endingState)}
+                  failed={endingState === 'failed'}
+                />
               )}
             </div>
             {face && endingId && (

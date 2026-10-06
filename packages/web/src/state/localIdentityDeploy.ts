@@ -15,10 +15,12 @@
 // same stored values: your own strip, your groups' boards, the group card.
 //
 // It listens to the identity lifecycle here — the same one readable block identityScope
-// owns — rather than at each of the five deploy triggers, so a future trigger cannot
-// forget it. The ONE trigger that must not be overridden is the profile editor's SAVE:
-// there the player typed their own name in the same gesture, so its deploy runs inside
-// `withoutLocalIdentityDeploy`, which mutes this listener for exactly that acquisition.
+// owns — rather than at each of the deploy triggers, so a future trigger cannot forget it.
+// The ONE trigger it stands down for is the profile editor's SAVE: that tap writes the
+// player's own fields a beat later — the seed's pair where they left a field untouched —
+// so its acquisition runs inside `withoutLocalIdentityDeploy` and nothing races the save.
+// A SAVE that then writes nothing hands the account back (`deployLocalIdentity`), so the
+// account still lands on the face the player was wearing, never on the new id's.
 
 import { anonName, defaultAvatar } from '@whippin/shared';
 import {
@@ -47,8 +49,8 @@ const DEPLOY_TIMEOUT_MS = 6_000;
 
 let uninstall: (() => void) | null = null;
 
-// Set while the profile editor's SAVE deploys the account: whatever identity arrives
-// during this window belongs to a save carrying the player's OWN fields, which must win.
+// Set while the profile editor's SAVE acquires the account: whatever identity arrives in
+// this window belongs to a save carrying the player's OWN fields, which must win.
 let suppressed = false;
 
 export async function withoutLocalIdentityDeploy<T>(work: () => Promise<T>): Promise<T> {
@@ -67,6 +69,13 @@ const inFlight = new Map<string, Promise<void>>();
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// The deploy, asked for directly: the editor's SAVE acquired this account with the
+// listener muted and then wrote nothing, so the placeholder is owed after all. The same
+// create-only flight, so a row the save did land is never replaced.
+export function deployLocalIdentity(identity: DeviceIdentity): Promise<void> {
+  return deploy(identity);
 }
 
 async function deploy(identity: DeviceIdentity): Promise<void> {

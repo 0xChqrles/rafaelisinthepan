@@ -101,10 +101,11 @@ import { t } from '../i18n';
 // The rows come ranked from the server (competition ties, the plain top-50 cut, the
 // own-row window, the period rule — @whippin/shared's leaderboard rules); this screen only
 // draws what the API returned, the podium being its first three rows (`game/podium.ts`). Rows
-// CONNECTED to the reader stay apart: your own line is FRAMED by the corner brackets (and stays
-// in sight on a long board, held to the column's edge while it is scrolled out of view), on
-// the podium your name is and your place is in the accent; among the global rows, a member of
-// one of your groups carries a small accent mark.
+// CONNECTED to the reader stay apart: your own line wears its rank in the accent and its name
+// in the bold — never the corner brackets, which are what a tapped thing wears — and stays in
+// sight on a long board, held to the column's edge while it is scrolled out of view; on the
+// podium your name is bold and your place is in the accent; among the global rows, a member
+// of one of your groups carries a small accent mark.
 //
 // **OPENING THIS SCREEN IS NOT A TRIGGER (user-decided 2026-08-24).** A navigation must not
 // create server state: tokenless, the groups list is the KNOWN-EMPTY answer (#216's rule)

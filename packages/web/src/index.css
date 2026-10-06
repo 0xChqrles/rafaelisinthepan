@@ -972,13 +972,19 @@ textarea,
    it. It sits in the column's gap above the tray plus the play area's race band
    (`.play-race`), which together hold exactly its footprint. ONE line, never wrapping: at
    most three entries of a mark and two short numbers, which fit the narrowest phone's
-   column. The game surface's dress: the pixel face's 8px
-   for the numbers (the `∞` on its 1px cells, the check on its own), the % in the heat ramp's ink (the board's playing rows), tries muted, a
-   finished member's count in the solve cobalt. */
+   column. The game surface's dress: the pixel face at its own 8px (one face pixel a screen
+   pixel) for the numbers (the `∞` on its 1px cells, the check on its own), the % in the heat
+   ramp's ink (the board's playing rows), tries muted, a finished member's count in the solve
+   cobalt. It comes in, and retires, through the board's Bayer dissolve — its cells in
+   threshold order, in hard steps, nothing travelling; a line born retired (the round already
+   over when the first answer lands) simply stands invisible. */
 .race-line {
   position: absolute;
-  bottom: calc(100% + var(--race-lift));
-  height: var(--race-h);
+  /* A pixel past the band on each side, centred on it: the dissolve's mask paints the box
+     alone, and "you"'s accent outline stands 3px off a 20px mark — a 24px box would cut its
+     top and bottom edges until the line had come in. */
+  bottom: calc(100% + var(--race-lift) - 1px);
+  height: calc(var(--race-h) + 2px);
   left: 50%;
   translate: -50% 0;
   display: flex;
@@ -995,17 +1001,20 @@ textarea,
   background: none;
   border: 0;
   cursor: pointer;
-  /* It comes in through the dither and retires out through it (`board-dissolve` /
-     `-out`), the line hidden once its cells are gone. */
   -webkit-mask-size: 16px 16px;
   mask-size: 16px 16px;
   animation: board-dissolve 240ms linear backwards;
+  transition: visibility 0s linear 0s;
 }
 .race-line.retired {
   visibility: hidden;
   pointer-events: none;
-  transition: visibility 0s linear 240ms;
   animation: board-dissolve-out 240ms linear forwards;
+  transition: visibility 0s linear 240ms;
+}
+.race-line.retired.still {
+  animation: none;
+  transition: none;
 }
 .race-entry {
   display: inline-flex;
@@ -1023,6 +1032,9 @@ textarea,
    key's own hold (`FaceHold`). */
 .race-mark-box {
   display: block;
+}
+.race-mark-box.failed {
+  background: none;
 }
 /* The player's own mark is framed in the accent — "you are here", the boards' own marker. */
 .race-entry.me .avatar,
@@ -3714,10 +3726,13 @@ textarea,
   margin-right: 2px;
   shape-rendering: crispEdges;
 }
-/* YOUR line is FRAMED: the card's corner brackets, small, round it — and its rank in the
-   accent, its name at the action weight (which a successor PICKED wears too; its corners are
-   the picker's own, `.confirm-pick`). */
-.board-row.me {
+/* YOUR line is said in the accent and the weight: its rank in the accent, its name at the
+   action weight — never in corner brackets, which are what a thing that can be tapped wears
+   (the board screen's lines and the group's own screen are not tapped). Where the lines ARE the tap — the solved screen's boards, whose box opens the
+   board — your line keeps the card's corner brackets, small, round it; so does the successor
+   picker's picked line. */
+.result-board .board-row.me,
+.board-row.picked {
   --bc: rgba(255, 255, 255, 0.38);
   background:
     linear-gradient(var(--bc), var(--bc)) left top / 8px 2px,
@@ -6765,6 +6780,14 @@ figure.l1-fig {
   background: var(--rail);
   color: transparent;
 }
+/* The player's OWN face whose read FAILED rests on half its cells, STILL — the Bayer tile's
+   50% level is the 2px checker the masthead's failed slots rest on — never the assigned
+   stranger in its place. */
+.link-hold.failed {
+  background: var(--rail);
+  -webkit-mask-image: var(--dz-4);
+  mask-image: var(--dz-4);
+}
 @keyframes link-hold-breathe {
   0% { -webkit-mask-image: var(--dz-1); mask-image: var(--dz-1); }
   25% { -webkit-mask-image: var(--dz-2); mask-image: var(--dz-2); }
@@ -8556,8 +8579,8 @@ figure.l1-fig {
 .board-screen .board-under-out .board-hold {
   animation: board-dissolve-out 240ms linear var(--delay, 0ms) forwards;
 }
-/* (Your line, never held at the edge here: four classes, so they outweigh its own dissolve-in
-   and lock-on.) */
+/* (Your line, never held at the edge here: four classes, so they outweigh its own sticky
+   hold.) */
 .board-screen .board-under-out .board-row.me {
   position: relative;
   z-index: auto;
@@ -8680,30 +8703,6 @@ figure.l1-fig {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A SECTION'S CAPTION over a list (the group's own screen: its MEMBERS): the words at the
-   marks' edge, then the stippled rail running on to the lines' end. */
-.board-section {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 36px;
-  padding: 0 30px 0 6px;
-  font-family: var(--ui);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: var(--muted);
-}
-.board-section::after {
-  content: '';
-  flex: 1;
-  height: 2px;
-  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 0 / 6px 2px repeat-x;
-}
-
 /* THE BOARD LANDS (Leaderboard's pace): each line comes in through the BAYER DISSOLVE — its
    mask stepped through the ordered dither's levels (`--dz-0` … `--dz-7`, `bayerTiles.ts`) to
    full, cells lighting in threshold order, nothing travelling — one after another
@@ -8728,21 +8727,6 @@ figure.l1-fig {
 }
 .board-screen .board-progress {
   animation: board-type 160ms steps(4, jump-end) var(--land, 0ms) backwards;
-}
-/* YOUR LINE'S BRACKETS LOCK ON as its number lands — the card's own landing gesture: they come
-   in reaching out along the line and draw back to their arms in whole steps, the frame finding
-   its subject. */
-.board-screen .board-row.me {
-  animation:
-    board-dissolve 240ms linear var(--delay, 0ms) backwards,
-    own-lock 240ms steps(4, jump-end) var(--land, 0ms) backwards;
-}
-@keyframes own-lock {
-  from {
-    background-size:
-      24px 2px, 2px 16px, 24px 2px, 2px 16px,
-      24px 2px, 2px 16px, 24px 2px, 2px 16px;
-  }
 }
 @keyframes board-dissolve {
   0% { -webkit-mask-image: var(--dz-0); mask-image: var(--dz-0); }
@@ -8835,8 +8819,8 @@ figure.l1-fig {
   overflow-y: auto;
   padding: 8px 0 24px;
 }
-/* The members' room: what the caption and the acts leave; the list in it scrolls, as tall as
-   the whole lines that fit (GroupScreen writes it). */
+/* The members' room: what the acts leave; the list in it scrolls, as tall as the whole lines
+   that fit (GroupScreen writes it). */
 .group-room {
   flex: 1 1 auto;
   /* (One line at the least: a screen too short for even that scrolls the body.) */
@@ -8865,7 +8849,7 @@ figure.l1-fig {
 }
 /* The members' foot is a line deep, the drum's ends' own three 16px steps: at rest the last
    line shown thins, three quarters, a half, a quarter — which is what says more wait below —
-   while the owner's ✕ and your own framed line stand whole above the veil. */
+   while the owner's ✕ stands whole above the veil (your own line, unframed, thins like any). */
 .group-room > .board-list[data-more]::after {
   height: 48px;
   margin-top: -48px;
@@ -8888,7 +8872,6 @@ figure.l1-fig {
   mask: var(--edge-u) 0 0 / 16px 6px repeat-x;
 }
 .group-room > .board-list .board-remove,
-.group-room > .board-list > .board-row.me,
 .confirm-pick > .board-row.picked {
   position: relative;
   z-index: 1;
@@ -10999,6 +10982,70 @@ figure.l1-fig {
   background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
 }
 .account-id-name-slot.gone {
+  visibility: hidden;
+}
+/* The OWN face's read FAILED: never the assigned stranger in its place. The name's box rests
+   on the still stipple (`StatSlot`, 50%); the mark's held box is the TAP that asks again —
+   the still checker in a tappable thing's corners, the pencil's own (2px, 6px arms, white at
+   38%), the record's failed count at the masthead's size. The corners are drawn ON the mark's
+   50px box and the checker stands 6px inside them, as the pencil stands inside its key: the
+   row has no side padding, so corners hung outside the box are cut off by the column's
+   scroller on a wide screen and by the row's own dissolve mask on a phone. */
+.account-id-name-slot.failed {
+  background: none;
+}
+.account-id-retry {
+  --bc: color-mix(in srgb, var(--fg) 38%, transparent);
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 6px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.account-id-retry::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--bc);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) 0 0 / 6px 6px no-repeat,
+    linear-gradient(#000 0 0) 100% 0 / 6px 6px no-repeat,
+    linear-gradient(#000 0 0) 0 100% / 6px 6px no-repeat,
+    linear-gradient(#000 0 0) 100% 100% / 6px 6px no-repeat;
+  mask:
+    linear-gradient(#000 0 0) 0 0 / 6px 6px no-repeat,
+    linear-gradient(#000 0 0) 100% 0 / 6px 6px no-repeat,
+    linear-gradient(#000 0 0) 0 100% / 6px 6px no-repeat,
+    linear-gradient(#000 0 0) 100% 100% / 6px 6px no-repeat;
+  transition: border-color 120ms steps(2, jump-end);
+}
+@media (hover: hover) and (pointer: fine) {
+  .account-id-retry:hover::before {
+    border-color: var(--fg);
+  }
+}
+.account-id-retry[data-bracketed]::before {
+  border-color: transparent;
+}
+.account-id-retry:active {
+  translate: 0 2px;
+}
+/* An account GONE (#204's 410): its mark is the GHOST with no ink left in it — the slate
+   stipple alone where the mark stood (the deleted account has no face, not even the assigned
+   one) — and the pencil goes, its box kept so the row stands as it stood. */
+.account-id-ghost {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.account-edit.gone {
   visibility: hidden;
 }
 .account-id-mail {

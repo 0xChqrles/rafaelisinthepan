@@ -19,10 +19,11 @@ import {
   identityEpochOf,
   markDeviceSignedOut,
   useDeviceIdentity,
+  type DeviceIdentity,
 } from '../identity';
 import { prefetchTurnstileTokens } from '../turnstile';
-import { withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
 import { firstWritesSettled, holdOwnFace, ownProfileWritten } from '../state/ownFace';
+import { deployLocalIdentity, withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
 import ErrorScreen from '../components/ErrorScreen';
 import QuietFailure from '../components/QuietFailure';
 import BusyButton from '../components/BusyButton';
@@ -96,6 +97,8 @@ type LoadState = 'loading' | 'ready' | 'failed';
 // The BASELINE therefore lives in DISPLAY space (what the field holds) and the body in
 // STORAGE space. A player who deliberately types their own pseudonym stores empty and
 // renders the same text in the placeholder ink — the one accepted cost of the rule.
+// Both halves are about the account the editor LOADED (or one that already stores a row):
+// an account NEVER CUSTOMIZED stores what it was shown instead (`guardedSaveBody`).
 const nameForEditor = (stored: string, publicId: string) =>
   sanitizeName(stored) || anonName(publicId);
 const nameForStore = (edited: string, publicId: string) =>
@@ -105,8 +108,7 @@ const nameForStore = (edited: string, publicId: string) =>
 // review): a drawing still equal to the assigned mark the editor OPENED ON was never
 // drawn, so the body carries the EMPTY avatar ('' — "no custom mark", which every reader
 // already dresses as the account-derived face). Without this half, saving a name alone
-// froze the placeholder grid into the row for good — on a tokenless open, the local
-// SEED's grid, a face the account never had.
+// froze the assigned grid into the row for good.
 //   READ  — a null stored avatar opens on the assigned mark, exactly as a board row shows it.
 //   WRITE — an avatar still equal to that assigned mark stores as the empty one.
 const avatarForEditor = (stored: string | null, publicId: string) =>
@@ -117,28 +119,42 @@ const avatarForStore = (encoded: string, publicId: string) =>
 // The GUARDED save body (PR-219 round-3 review, P1): when SAVE resolves an account the
 // editor did NOT load — the deploy just minted one, recovered one from a pending token, or
 // adopted one from another tab under an open tokenless editor — the baseline on screen was
-// a PLACEHOLDER, never that account's profile. A whole-profile upsert built from it would
-// wipe whatever the account already holds: change only the placeholder name and the '' in
-// `avatar` deletes a custom mark; change only the drawing and the '' in `name` deletes a
-// custom name. So the save first FETCHES what the account stores and carries every
-// UNTOUCHED field forward verbatim; only a field the player actually changed from the
-// placeholder speaks. Exported for the contract test — the wipe is the harshest thing this
-// screen can do to an account.
+// a PLACEHOLDER, never that account's profile. Two answers, two rules:
+//   - the account STORES a profile: a whole-profile upsert built from the placeholder would
+//     wipe it — change only the name and the '' in `avatar` deletes a custom mark; change
+//     only the drawing and the '' in `name` deletes a custom name. So every UNTOUCHED field
+//     is carried forward verbatim, and only a field the player actually changed speaks.
+//   - the account was NEVER CUSTOMIZED (the 404 — a fresh mint, above all): it stores what
+//     the player was SHOWN, verbatim — the mark on the canvas (the seed's, untouched) and
+//     the name on the line (the seed's pseudonym, untouched; the one shown in its place when
+//     the field was emptied). The same pair `localIdentityDeploy` stores for every other
+//     deploy button, so SAVE never swaps the face it lands on: the '' a store-half sends
+//     would draw the NEW account id's face instead, one the player never saw. A stored row
+//     that IS that pair is the same answer: the deploy's own create (another tab's, which
+//     the SAVE's mute does not reach) landed first, and nobody customized anything.
+// Exported for the contract test — the wipe and the swap are the harshest things this screen
+// can do to an account.
 export function guardedSaveBody(
   edited: { name: string; avatar: string },
   baseline: { name: string; avatar: string },
   // What the placeholder derived from (the local seed, or another account's id) — the
   // store-halves compare a CHANGED field against the pseudonym/mark the player was SHOWN.
   assignedFrom: string,
-  // The account's stored profile; null is the 404 "never customized", where the intended
-  // save applies in full.
+  // The account's stored profile; null is the 404 "never customized".
   server: { name: string; avatar: string | null } | null,
 ): { name: string; avatar: string } {
+  const placeholder =
+    server !== null &&
+    server.name === anonName(assignedFrom) &&
+    server.avatar === defaultAvatar(assignedFrom);
+  if (server === null || placeholder) {
+    return { name: edited.name || anonName(assignedFrom), avatar: edited.avatar };
+  }
   const nameChanged = edited.name !== baseline.name;
   const avatarChanged = edited.avatar !== baseline.avatar;
   return {
-    name: nameChanged ? nameForStore(edited.name, assignedFrom) : (server?.name ?? ''),
-    avatar: avatarChanged ? avatarForStore(edited.avatar, assignedFrom) : (server?.avatar ?? ''),
+    name: nameChanged ? nameForStore(edited.name, assignedFrom) : server.name,
+    avatar: avatarChanged ? avatarForStore(edited.avatar, assignedFrom) : (server.avatar ?? ''),
   };
 }
 
@@ -886,13 +902,17 @@ export default function Profile() {
     // than reading a profile that does not exist yet (`state/ownFace.ts`).
     const release = current === null ? holdOwnFace() : null;
     let written = false;
+    // The account this tap acquired, with the background deploy muted for it.
+    let acquired: DeviceIdentity | null = null;
     try {
       if (current === null) {
         try {
-          // The ONE acquisition the locally-decided username must NOT deploy into: this tap
-          // carries the player's OWN typed fields a beat later, so letting the placeholder
-          // race it would either lose the save or store a name nobody chose.
+          // The ONE acquisition the background deploy stands down for: this tap stores the
+          // fields on screen a beat later — the seed's pair where the player left them
+          // untouched (`guardedSaveBody`) — so nothing may race it. A save that then writes
+          // nothing hands the account back to the deploy (below).
           current = await withoutLocalIdentityDeploy(() => ensureDeviceIdentity());
+          acquired = current;
         } catch {
           current = null;
           outcome = 'account';
@@ -921,7 +941,7 @@ export default function Profile() {
             if (release === null) await firstWritesSettled();
             const stored = await readStoredProfile(current.accountId);
             if (identityEpoch() !== epoch) return;
-            // Never customized (null): the intended save applies in full.
+            // Never customized (null, or the placeholder's own row): the shown pair.
             fields = guardedSaveBody({ name: clean, avatar: encoded }, baseline, assignedFrom, stored);
           } catch {
             if (identityEpoch() !== epoch) return;
@@ -976,6 +996,12 @@ export default function Profile() {
         }
       }
     } finally {
+      // An account this tap acquired and wrote nothing into (a refusal, a failure) is owed
+      // the placeholder the player was wearing: the deploy it muted runs now — first, so
+      // the face is never left with no write held.
+      if (acquired !== null && !written && identityEpoch() === identityEpochOf(acquired)) {
+        void deployLocalIdentity(acquired);
+      }
       if (release) release(written);
       else if (written) ownProfileWritten();
     }
@@ -1012,10 +1038,9 @@ export default function Profile() {
   // pseudonym (the READ half), which a save stores as empty again. A TOKENLESS device's name
   // is dressed as a stored one: a deployed-unsaved account that was deployed from any other
   // button stores the placeholder the device was showing as its first profile
-  // (`localIdentityDeploy`), and the two must show the same screen. THIS screen's SAVE is the
-  // one deploy that bypasses that (`withoutLocalIdentityDeploy` in `onSave`): an UNTOUCHED
-  // placeholder name stores as the empty name, so a tokenless player's first SAVE leaves them
-  // wearing their new account's own pseudonym, in the placeholder ink.
+  // (`localIdentityDeploy`), and the two must show the same screen — this screen's own SAVE
+  // stores that same placeholder where it was left untouched (`guardedSaveBody`), so a
+  // tokenless player's first SAVE keeps the name and the mark they were wearing.
   const anon = name === '' || (identity !== null && assignedFrom === identity.accountId && name === anonName(assignedFrom));
   // An emptied field shows what a board would print in its place: the assigned pseudonym, muted.
   const shownWhenEmpty = assignedFrom ? anonName(assignedFrom) : t(lang, 'profileNamePlaceholder');

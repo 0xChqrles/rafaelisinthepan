@@ -39,6 +39,12 @@ describe('shownFace / faceSettled — the three states of an account face', () =
     expect(shownFace(FACE)).toEqual(FACE);
     expect(faceSettled(FACE)).toBe(true);
   });
+
+  it('the OWN face whose read FAILED draws nothing and rests — no face stands in for it', () => {
+    expect(shownFace('failed')).toBeNull();
+    expect(faceSettled('failed')).toBe(true);
+    expect(faceHoldClass('failed')).toBe('link-hold');
+  });
 });
 
 // The mapping itself, one answer at a time — so a 404 and a 410 can never collapse back
