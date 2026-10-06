@@ -2326,7 +2326,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   same face changes nothing, a different one RE-BINDS the fields while nothing has been
   edited (an edit in hand stands), a failed read leaves the editor open — and until the
   read has answered `loadedFor` stays unset, so a SAVE is GUARDED (above): the face handed
-  over may be the assigned one a failed masthead read stood in with.
+  over may be the assigned one a failed masthead read stood in with. A guarded save that
+  lands before that read answers has bound the fields to what it stored; the read, sent
+  before it, then changes nothing.
   **Otherwise the editor is GATED on the initial read** (the game
   route's own loading / error / content shape): an editable blank shown while the GET
   is in flight would be edited into and then overwritten by the response, and a FAILED

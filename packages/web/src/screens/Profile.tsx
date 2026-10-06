@@ -376,7 +376,11 @@ export default function Profile() {
   // sanitized on the way in (a no-op on anything the server stored, since it enforces the
   // same rule). The BASELINE is those same display values, or a value the editor cannot
   // reproduce would light SAVE up with nothing edited.
+  // Counted on every binding, so an answer can tell whether the fields are still the ones it
+  // opened on (see the read below).
+  const binds = useRef(0);
   const openOn = (storedName: string, storedAvatar: string | null, id: string) => {
+    binds.current += 1;
     const shownName = nameForEditor(storedName, id);
     const shownAvatar = avatarForEditor(storedAvatar, id);
     const decoded = decodeAvatar(shownAvatar);
@@ -438,11 +442,14 @@ export default function Profile() {
   // edit standing. Until it has answered, `loadedFor` stays unset, so a SAVE is GUARDED (the
   // stored profile read first, only the fields the player changed written) — the face handed
   // over may be the assigned one a failed read stood in with, never proof of what is stored.
+  // A guarded save that LANDS first has bound the fields to what it stored: the read, sent
+  // before it, is older news and changes nothing.
   // A layout effect, so a face in hand is drawn on the very first frame.
   useLayoutEffect(() => {
     let cancelled = false;
     let epoch: string | null = null;
     let opened: { name: string; avatar: string } | null = null;
+    let bound = 0;
     const face = attempt === 0 ? (handedRef.current?.face ?? null) : null;
     setLoad('loading');
     (async () => {
@@ -462,6 +469,7 @@ export default function Profile() {
         setAssignedFrom(publicId);
         if (face?.publicId === publicId) {
           opened = openOn(face.name, face.avatar, publicId);
+          bound = binds.current;
           setLoad('ready');
         } else {
           setLoadedFor(publicId);
@@ -469,6 +477,8 @@ export default function Profile() {
         const stored = await readStoredProfile(publicId);
         if (cancelled || identityEpoch() !== epoch) return;
         if (opened !== null) {
+          // A save landed first: the fields hold what it stored.
+          if (binds.current !== bound) return;
           const same =
             nameForEditor(stored?.name ?? '', publicId) === opened.name &&
             avatarForEditor(stored?.avatar ?? null, publicId) === opened.avatar;
