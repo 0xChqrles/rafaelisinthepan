@@ -814,7 +814,10 @@ These are decided and verified against the code. Treat them as load-bearing.
     and `aria-busy` + the sr-only `loading` say it. Nothing shows for `SKELETON_WAIT_MS`
     but the press held; then its wash becomes the house stipple in its own ink, breathing
     `--dz-1…3` on `link-hold-breathe` (640ms, hard steps; reduced motion: the still checker),
-    the word in a clearing of the ground. **The charge is 55% of the button's ink**
+    the word in a clearing of the ground cut on the stipple's whole 2px cells (`BusyButton`
+    measures the word against the padding box the stipple is tiled from and rounds the
+    clearing outward, so no cell along its edge is halved). **The charge is 55% of the
+    button's ink**
     (`--charge`, every busy button alike): at the breath's middle step it carries the
     primary's own wash, at its peak less than the press, so a wide primary charging never
     outshouts what lands and destruction never glows. It stands on a ground that hides the

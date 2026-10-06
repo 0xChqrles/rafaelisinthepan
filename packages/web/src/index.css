@@ -4748,13 +4748,22 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 /* The word stands in a CLEARING of the charge — the ground round its box, two cells above
    and below and four a side, the way the result's count stands in its heat — so the stipple
-   never runs through its letters. The clearing's room is given back by negative margins, so
-   the word does not move; it comes with the stipple, on the same delay. */
-[aria-busy='true'] > .busy-label {
-  padding: 4px 8px;
-  margin: -4px -8px;
-  background-color: var(--bg);
-  transition: background-color 0s linear var(--busy-wait, 0ms);
+   never runs through its letters. It is cut on the stipple's own cells: the stipple is tiled
+   from the button's padding box, and `BusyButton` measures the word against that box and
+   rounds the clearing OUTWARD to whole 2px cells (`--clear-x/y/w/h`), so no cell along its
+   edge is ever cut in half. Drawn on the label's `::before`, placed on the button (a busy
+   button is positioned): above the charge by tree order, under the word, so the word does
+   not move. It comes with the stipple, on the same delay. */
+[aria-busy='true'] > .busy-label::before {
+  content: '';
+  position: absolute;
+  left: var(--clear-x, 50%);
+  top: var(--clear-y, 50%);
+  width: var(--clear-w, 0);
+  height: var(--clear-h, 0);
+  z-index: -1;
+  background: var(--bg);
+  animation: busy-wait 1ms step-end var(--busy-wait, 0ms) backwards;
 }
 /* A floor under the app's one big action (user-decided 2026-08-26): sized to its label
    alone, a short word ("PLAY") read as a minor control in a wide column. */

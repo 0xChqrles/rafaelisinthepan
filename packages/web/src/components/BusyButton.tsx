@@ -1,6 +1,14 @@
-import type { ButtonHTMLAttributes, CSSProperties } from 'react';
+import { useLayoutEffect, useRef, type ButtonHTMLAttributes, type CSSProperties } from 'react';
 import { SKELETON_WAIT_MS } from './bayerTiles';
 import { t } from '../i18n';
+
+// The stipple's cell (`bayerTiles.ts`): the word's clearing is cut on it.
+const CELL = 2;
+// The clearing's air round the word: two cells above and below, four a side.
+const AIR_Y = 2 * CELL;
+const AIR_X = 4 * CELL;
+// A layout length one LayoutUnit off a whole cell still lands on it.
+const EPS = 0.01;
 
 // A BUTTON WHOSE ACT IS OUT — the app's ONE busy dress (the gate's PLAY, JOIN, CONTINUE, the
 // crossroads' answers, CREATE GROUP, the confirmations' acts, the profile's SAVE). The button
@@ -21,8 +29,41 @@ export default function BusyButton({
   'aria-disabled': ariaDisabled,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { busy: boolean; lang: string }) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const labelRef = useRef<HTMLSpanElement>(null);
+
+  // THE CLEARING ON WHOLE CELLS. The stipple is tiled from the button's padding box, but the
+  // word sits wherever centring puts it — half a pixel off a cell, and its width is the
+  // type's, not the grid's. So, busy, the word's box is measured against the padding box and
+  // the clearing round it rounded OUTWARD to whole cells, before the first busy frame paints
+  // and again whenever the button changes size (the word moving with its centre).
+  useLayoutEffect(() => {
+    const button = buttonRef.current;
+    const label = labelRef.current;
+    if (!busy || !button || !label) return undefined;
+    const place = () => {
+      const box = button.getBoundingClientRect();
+      const word = label.getBoundingClientRect();
+      const left = word.left - box.left - button.clientLeft;
+      const top = word.top - box.top - button.clientTop;
+      const x0 = Math.floor((left - AIR_X) / CELL + EPS) * CELL;
+      const y0 = Math.floor((top - AIR_Y) / CELL + EPS) * CELL;
+      const x1 = Math.ceil((left + word.width + AIR_X) / CELL - EPS) * CELL;
+      const y1 = Math.ceil((top + word.height + AIR_Y) / CELL - EPS) * CELL;
+      button.style.setProperty('--clear-x', `${x0}px`);
+      button.style.setProperty('--clear-y', `${y0}px`);
+      button.style.setProperty('--clear-w', `${x1 - x0}px`);
+      button.style.setProperty('--clear-h', `${y1 - y0}px`);
+    };
+    place();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(place) : null;
+    ro?.observe(button);
+    return () => ro?.disconnect();
+  }, [busy]);
+
   return (
     <button
+      ref={buttonRef}
       type={type}
       {...props}
       style={busy ? ({ ...style, '--busy-wait': `${SKELETON_WAIT_MS}ms` } as CSSProperties) : style}
@@ -37,7 +78,9 @@ export default function BusyButton({
         onClick?.(event);
       }}
     >
-      <span className="busy-label">{children}</span>
+      <span ref={labelRef} className="busy-label">
+        {children}
+      </span>
       {busy && <span className="sr-only">{t(lang, 'loading')}</span>}
     </button>
   );
