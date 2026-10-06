@@ -16,7 +16,8 @@
 //
 // The list comes off a GSI and is eventually consistent, so the route corrects it from what
 // the request itself knows — a device that was just created is listed, and one that was just
-// revoked is not. Nothing here has to compensate for the lag.
+// revoked is not. Nothing here has to compensate for the lag, so long as a sign-out is judged
+// by a SIGN-OUT's answer alone: a plain read may still list a device revoked a moment ago.
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
@@ -85,8 +86,8 @@ export function revokedCallingDevice(listing: DeviceListing, target: string): bo
 
 // A REFUSAL the route read and answered: a 4xx other than the signed-out verdict (which `talk`
 // adopts). A 5xx, a dropped connection, a deadline or an unreadable body is no answer at all —
-// the outcome of a write it leaves is UNKNOWN (the root contract), and the list is read again
-// before anything is said.
+// the outcome of a write it leaves is UNKNOWN (the root contract), and the sign-out is sent
+// again before anything is said.
 export class Refused extends Error {}
 
 // One answer of the route: the list as it stands, for the identity epoch that asked.
@@ -94,28 +95,32 @@ type Answer = { listing: DeviceListing; epoch: string };
 
 // WHAT A SIGN-OUT'S ANSWERS SAY ABOUT ITS LINE — the root contract on an unknown outcome, made
 // one function: a 5xx, a dropped connection or an unreadable body is never a verdict, so the
-// list is READ AGAIN before anything is said, and only a readable answer says NOT SIGNED OUT.
-//   - `gone`        the answer, or the list read after none came, no longer holds the line;
+// SAME sign-out is SENT AGAIN before anything is said, and only its own answer is trusted. It
+// is idempotent — a device already gone is the route's success, and the list it answers is
+// corrected for it — where a plain read is not to be trusted here: the list comes off an
+// eventually consistent index that can still hold a device signed out a moment ago.
+//   - `gone`        the answer no longer holds the line;
 //   - `self`        the answer signed THIS device out (its own line, gone);
-//   - `refused`     the server said no: a 4xx, or a list still holding the line;
-//   - `unanswered`  neither the sign-out nor the read after it answered — nothing is known;
-//   - null          the identity changed under the call (another surface says what happened).
-// `revoke` and `read` resolve null exactly when that happened, and throw `Refused` on a 4xx.
+//   - `refused`     the server said no: a 4xx, or an answer still holding the line;
+//   - `unanswered`  neither sending answered — nothing is known;
+//   - null          the identity changed under the call (another surface says what happened) —
+//                   which a second sending after THIS device's own sign-out had landed is
+//                   too: the route answers `unknown_device`, the verdict `talk` adopts.
+// `revoke` resolves null exactly when that happened, and throws `Refused` on a 4xx.
 export async function signOutOutcome(
   target: string,
   revoke: () => Promise<Answer | null>,
-  read: () => Promise<Answer | null>,
 ): Promise<{ kind: 'gone' | 'self' | 'refused'; answer: Answer } | { kind: 'refused' | 'unanswered' } | null> {
   let answer: Answer | null;
   try {
     answer = await revoke();
   } catch (error) {
     if (error instanceof Refused) return { kind: 'refused' };
-    // UNKNOWN: the sign-out may have landed before its answer was lost. The list knows.
+    // UNKNOWN: the sign-out may have landed before its answer was lost. Its second sending knows.
     try {
-      answer = await read();
-    } catch {
-      return { kind: 'unanswered' };
+      answer = await revoke();
+    } catch (again) {
+      return { kind: again instanceof Refused ? 'refused' : 'unanswered' };
     }
   }
   if (!answer) return null;
@@ -124,9 +129,9 @@ export async function signOutOutcome(
   return { kind: listed ? 'refused' : 'gone', answer };
 }
 
-// What a sign-out that did not take says on its line: the server's own NO (refused, or a list
-// still holding it), or no readable answer at all — the sign-out and the read after it both
-// unanswered, so nothing is claimed either way.
+// What a sign-out that did not take says on its line: the server's own NO (a 4xx, or an
+// answer still holding it), or no readable answer at all — both sendings unanswered, so
+// nothing is claimed either way.
 type Note = 'refused' | 'unanswered';
 
 // A map held in state, changed by copy: `null` takes the line's note away.
@@ -156,11 +161,11 @@ export default function DeviceList({ lang }: { lang: string }) {
   // (the glyph a `.ghost-mark`, the words to half their cells) while the request is out. Once
   // an answer says it is gone it LEAVES (`going`): out through the board's dissolve, then
   // dropped, the lines under it closing up in one whole-line step. An answer that never came
-  // readable (a 5xx, a dropped connection) says NOTHING yet: the list is read again first, and
-  // the line leaves if it is gone. A sign-out the server REFUSED — a 4xx, or a list still
-  // holding the line — RE-INKS its line with the refusal's shake, and its one fact gives way
-  // to one muted line, NOT SIGNED OUT; when not even the read after it answered, the line
-  // re-inks unshaken over NO ANSWER (`notes`), until the next try.
+  // readable (a 5xx, a dropped connection) says NOTHING yet: the sign-out is sent again first,
+  // and the line leaves if that answer no longer holds it. A sign-out the server REFUSED — a
+  // 4xx, or an answer still holding the line — RE-INKS its line with the refusal's shake, and
+  // its one fact gives way to one muted line, NOT SIGNED OUT; when the second sending went
+  // unanswered too, the line re-inks unshaken over NO ANSWER (`notes`), until the next try.
   const [signing, setSigning] = useState<ReadonlySet<string>>(new Set());
   const [going, setGoing] = useState<ReadonlySet<string>>(new Set());
   const [notes, setNotes] = useState<ReadonlyMap<string, Note>>(new Map());
@@ -261,7 +266,7 @@ export default function DeviceList({ lang }: { lang: string }) {
       setGoing((set) => withId(set, id, true));
       onClock(listRef.current, DISSOLVE_MS, settle);
     };
-    void signOutOutcome(id, () => talk(row), () => talk())
+    void signOutOutcome(id, () => talk(row))
       .then((outcome) => {
         // No answer: the identity was dropped or replaced under the call, and the surface that
         // takes over (the signed-out screen, a scope remount) says what happened.

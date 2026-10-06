@@ -1517,12 +1517,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
       a page scrolled to its foot never grows shorter under the reader (the browser would
       pull every line above down by the one that left). **An answer that never came readable
       — a 5xx, a dropped connection, a deadline, an unreadable body — says NOTHING** (the
-      root contract on unknown outcomes): the list is read again, still thinned, and the
-      line leaves if it is gone (`signOutOutcome`, contract-tested). Only a READABLE no — a
-      4xx, or a list still holding the line — RE-INKS it with the refusal's stepped shake
+      root contract on unknown outcomes): the SAME sign-out is sent again, still thinned,
+      and only ITS answer is trusted — idempotent, a device already gone is the route's
+      success and its list is corrected for it (`removedKey`), where a plain read of the
+      list comes off the eventually consistent index and can still hold a device signed out
+      a moment ago — and the line leaves if that answer no longer holds it
+      (`signOutOutcome`, contract-tested). Only a READABLE no — a 4xx, or a sign-out's answer
+      still holding the line — RE-INKS it with the refusal's stepped shake
       (`components/refuseShake.ts`, the archive month chip's too) and turns its one fact
-      into one muted line, NOT SIGNED OUT; when not even the read answered, the line re-inks
-      unshaken over NO ANSWER, claiming neither. Either note stands until the next try; a
+      into one muted line, NOT SIGNED OUT; when the second sending went unanswered too, the
+      line re-inks unshaken over NO ANSWER, claiming neither. Either note stands until the next try; a
       status region says it to a screen reader.
     - **`AccountStats` (the crossroads, the recovery ending) is QUIET**: the record's side
       numbers' dress, three across between stippled rails — no foil, no flame, no burst
