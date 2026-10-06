@@ -75,7 +75,7 @@ export default function HistoryModal({
       onClose={onClose}
     >
       <ModalHeader lang={lang} title={title} onClose={beginClose} />
-      <div className="hw-scroll">
+      <div className="hw-scroll pixel-scroll">
         <div className="hw-frame">
           {/* The word itself, in the solved ink — what every word below was found for. */}
           {model.secret && <p className="hw-head">{model.secret}</p>}

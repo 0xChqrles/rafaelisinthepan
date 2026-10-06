@@ -376,7 +376,7 @@ export default function SolvedScreen({
   return (
     <div
       ref={stageRef}
-      className={`solved-stage${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}
+      className={`solved-stage pixel-scroll${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}
     >
       {/* ---- THE CARD, at the top: how the round went — the share card this result sends,
            stood up in the column — and SHARE under it, what you do with it. */}

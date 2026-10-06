@@ -124,7 +124,7 @@ export default function ArticleLevel({ lang, level }: { lang: LangCode; level: n
       <ArticleLang.Provider value={lang}>
       <article
         ref={scroller}
-        className="article-screen"
+        className="article-screen pixel-scroll"
         tabIndex={0}
         aria-labelledby="article-title"
       >
