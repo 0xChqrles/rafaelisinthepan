@@ -14,25 +14,38 @@ const tile = (w: number, h: number, rects: string) =>
     `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}' shape-rendering='crispEdges'>${rects}</svg>`,
   )}")`;
 
-// THE EDGE, short: EDGE_CELLS deep and the matrix's 8 across, solid at the inner side (the line
-// it guards) and thinning to nothing away from it. As deep as a line's empty margin above and
-// below its mark, so on a list resting on whole lines it falls on bare ground and only ever
-// touches a name while one is passing.
-const EDGE_CELLS = 3;
-function edgeTile(towardBottom: boolean): string {
+// AN EDGE: the matrix's 8 cells across, in STEPS of falling density from the inner side (the
+// line it guards) outward — each step `rows` cells tall, its cells drawn where the matrix's
+// threshold is under the step's density. `-d` is dense at its top (a band hanging DOWN from a
+// held line, or a scroller's foot), `-u` dense at its bottom (a scroller's top).
+function edgeTile(densities: readonly number[], rows: number, towardBottom: boolean): string {
+  const steps = towardBottom ? densities : [...densities].reverse();
   let rects = '';
-  for (let r = 0; r < EDGE_CELLS; r += 1) {
-    for (let c = 0; c < 8; c += 1) {
-      const k = (r + 0.5) / EDGE_CELLS;
-      const density = towardBottom ? 1 - k : k;
-      if (BAYER_8[r * 8 + c] < density * 64) rects += `<rect x='${c * CELL}' y='${r * CELL}' width='2' height='2'/>`;
+  steps.forEach((density, s) => {
+    for (let i = 0; i < rows; i += 1) {
+      const r = s * rows + i;
+      for (let c = 0; c < 8; c += 1) {
+        if (BAYER_8[(r % 8) * 8 + c] < density * 64) rects += `<rect x='${c * CELL}' y='${r * CELL}' width='2' height='2'/>`;
+      }
     }
-  }
-  return tile(8 * CELL, EDGE_CELLS * CELL, rects);
+  });
+  return tile(8 * CELL, steps.length * rows * CELL, rects);
 }
+// THE SHORT EDGE (`--edge-*`, 6px: three single cell rows): as deep as a line's empty margin
+// above and below its mark, so on a list resting on whole lines (the board) it falls on bare
+// ground and only ever touches a name while one is passing.
+const SHORT = [5 / 6, 1 / 2, 1 / 6];
+// THE DEEP EDGE (`--edge-deep-*`, 24px: three steps of four cell rows, three quarters, a half,
+// a quarter): about a line of text deep, for what scrolls FREELY past an edge (prose under the
+// header's band, the result's sticky credit, the words modal's top, the result page's foot) —
+// a line passing there steps down through the cells, and is never sliced across a glyph by a
+// strip thinner than it.
+const DEEP = [3 / 4, 1 / 2, 1 / 4];
 const EDGES = {
-  '--edge-d': edgeTile(true),
-  '--edge-u': edgeTile(false),
+  '--edge-d': edgeTile(SHORT, 1, true),
+  '--edge-u': edgeTile(SHORT, 1, false),
+  '--edge-deep-d': edgeTile(DEEP, 4, true),
+  '--edge-deep-u': edgeTile(DEEP, 4, false),
 };
 
 // THE DISSOLVE: the matrix's own tile at DISSOLVE_LEVELS densities, from nothing (`--dz-0`) to
@@ -41,7 +54,8 @@ const EDGES = {
 // order, in hard steps, nothing travelling. And the same levels' COMPLEMENT (`--dzo-1` …
 // `--dzo-7`, the cells not yet lit): what goes out as something comes in over it — the
 // podium's players giving their place to the next — goes through exactly the cells the newcomer
-// has not taken (`board-dissolve-out`).
+// has not taken (`board-dissolve-out`); stacked in 16px steps, they also thin a drum's ends
+// and the foot of a list that holds more below.
 const DISSOLVE_LEVELS = 8;
 function levelTile(level: number, lit: boolean): string {
   let rects = '';
