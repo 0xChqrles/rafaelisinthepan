@@ -5527,11 +5527,12 @@ figure.l1-fig {
 /* THE LOCKUP: the app's pixel mark (`MARK_GLYPH`, 22 cells at 1x — the header's own) in the
    accent, the name beside it in the lockup type (`.streak-lockup`'s). In the header's row
    and the title's box, so the mark stands on the pixel where the game's title draws it, and
-   the name starts where the language code will (the title's seam on a phone, 3px + 5px). */
+   the name starts where the language code will: the title's seam (the mark's 3px and
+   `.puzzle-title`'s gap, stepped down with it on narrower screens below). */
 .invite-lockup {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   padding: 4px 4px 4px 0;
   font-family: var(--ui);
   font-size: 13px;
@@ -5561,43 +5562,6 @@ figure.l1-fig {
 .invite-demo .phrase {
   max-width: 22em;
   min-height: 3em;
-}
-/* THE MISS IS THE WORD'S OWN SIZE (the tutorial's rule, `.tutorial .floating-hit`), and it
-   RISES LESS than the game's: at the game's leading the game's 14px climb, and its 28px
-   more as it fades, would print it across line 1. Here it springs up off the chip it lands
-   on, holds astride the chip's top edge, and fades with a breath of rise — clear of line 1
-   at every size, the spring's peak included (half a line of leading is the whole budget).
-   It keeps its red through the spring: the game's white flash lands on dark ground, and
-   here it would land on the white chip. */
-.invite-demo .floating-hit {
-  font-size: 1em;
-  animation:
-    invite-hit-pop-in 0.32s cubic-bezier(0.22, 1.4, 0.4, 1) var(--hit-delay, 0ms) forwards,
-    invite-hit-fade 0.52s ease-in var(--hit-fade-delay, 320ms) forwards;
-}
-@keyframes invite-hit-pop-in {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, calc(-50% + 4px)) scale(0.5) rotate(-6deg);
-  }
-  55% {
-    opacity: 1;
-    transform: translate(-50%, calc(-50% - 0.15em)) scale(1.35) rotate(2deg);
-  }
-  100% {
-    opacity: 1;
-    transform: translate(-50%, calc(-50% - 0.4em)) scale(1) rotate(0deg);
-  }
-}
-@keyframes invite-hit-fade {
-  0% {
-    opacity: 1;
-    transform: translate(-50%, calc(-50% - 0.4em)) scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translate(-50%, calc(-50% - 0.5em)) scale(0.86);
-  }
 }
 /* The question, in the tray over its answers: a bold statement with its LAST WORDS in the
    board's inverted selection box (the Zaki-headline highlight, 2026-08-18). One line in
@@ -5660,12 +5624,26 @@ figure.l1-fig {
   .invite-title {
     font-size: min(28px, calc((100vw - 28px) / 14));
   }
+  .invite-lockup {
+    gap: 8px;
+  }
+}
+@media (max-width: 400px) {
+  .invite-lockup {
+    gap: 7px;
+  }
+}
+@media (max-width: 340px) {
+  .invite-lockup {
+    gap: 6px;
+  }
 }
 
 /* Landscape phones and short browser windows: the game's own zones are too tall here (its
    header clearance and keyboard footprint leave the sentence no room), so the invitation
    tightens its own — the header's clearance, the play area's gaps, the tray to its stack —
-   and the demo steps down to the phone's 16px, keeping all of it on one screen. */
+   and the demo steps down to 16px (never above the phone's own sentence size, nor past its
+   22-glyph line), keeping all of it on one screen. */
 @media (max-height: 520px) {
   .invite.game {
     padding-top: 52px;
@@ -5676,7 +5654,7 @@ figure.l1-fig {
   }
   .invite .phrase,
   .invite .word-input {
-    font-size: 16px;
+    font-size: min(16px, clamp(13px, 4.2vw, 19px), calc((100vw - 28px) / 22));
   }
   .invite .tray {
     height: auto;

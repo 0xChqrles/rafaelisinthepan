@@ -132,7 +132,7 @@ export function codeOf(key: KeyState): DrawnCode | null {
   if (key.kind === 'solved') return 's';
   return null;
 }
-// Over ranks with none: a day turning over is no upgrade (it dissolves), and one restarted
+// Over ranks with none: a day turning over is no upgrade (it is pressed), and one restarted
 // from it (a republish) charges up like one never opened.
 const codeRank = (code: DrawnCode) =>
   code === 's' ? 101 : code === 'n' || code === 'o' ? 0 : Number(code.slice(1));
@@ -687,8 +687,10 @@ export function keysScene(
       const p = easeOut((ft - c0) / tl.chargeMs);
       const rising = ironAt(f0 + (front - f0) * p, fill, i, done);
       rising.head = Math.ceil(rising.front) - 1;
-      // A key restarted from over is lit again and RISES out of the board on the same easing.
-      if (tl.from[i] === 'o') rising.sink = Math.round(SINK * (1 - p));
+      // A key restarted from over is lit again and RISES out of the board on the same easing —
+      // its number standing where the charge cuts it, so the top rises from no lower than leaves
+      // that number's ring under its cap rows (today's white two included).
+      if (tl.from[i] === 'o') rising.sink = Math.min(Math.round(SINK * (1 - p)), y0 - 3);
       return rising;
     }
     if (done) {
@@ -741,12 +743,13 @@ export function keysScene(
   // riding it — over the unlit dusk.
   const pressPixel = (k: Iron, lx: number, ly: number, X: number, Y: number): number => {
     const { from, fade, light } = k.press!;
+    // Today's white cap rides the top first: a high charge going out never shows through it.
+    const r = ly - k.sink;
+    if (r <= 1 && k.todayCap) return WHITE;
     if (bayerThreshold(X, Y) >= fade) {
       const was = ironPixel(from, lx, ly, 0);
       if (was !== RAIL && was !== DUSK && was !== WHITE) return was;
     }
-    const r = ly - k.sink;
-    if (r <= 1 && k.todayCap) return WHITE;
     return topLit(lx, r, light) ? RAIL : DUSK;
   };
 

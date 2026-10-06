@@ -148,8 +148,8 @@ describe('the archive reopens on the month last turned to', () => {
   });
 });
 
-// An over day's key draws the ∞ where its number stands, so its date is said in words — and
-// so is what happened: "unsolved", never the silence of a day not started.
+// An over day's key says what happened only by its shape (sunk, unlit), so the label says it
+// in words: "unsolved", never the silence of a day not started.
 describe('an over day is said', () => {
   it('names the long date and "unsolved" in its aria-label', async () => {
     vi.setSystemTime(new Date('2026-09-20T12:00:00Z'));

@@ -454,7 +454,7 @@ describe('a day over (ended unsolved)', () => {
 
   // A day turning over from `from` (a %, or a day never opened: a give-up at 0%), its frames
   // from the scene's start to its settling, one a FRAME — and each frame's key read back.
-  const pressFrames = (g: CalGeometry, from: 'p40' | 'n', today = -1) => {
+  const pressFrames = (g: CalGeometry, from: 'n' | `p${number}`, today = -1) => {
     const model = overMonth(today);
     const tl = keysBeats({ ...SETTLED, model, changes: [{ index: DAY, from }] });
     const scene = keysScene(g, model, tl, 1);
@@ -553,13 +553,17 @@ describe('a day over (ended unsolved)', () => {
     }
   });
 
-  it("pressed on today, keeps today's white cap on its top all the way down", () => {
-    const { frames } = pressFrames(G, 'p40', DAY);
-    for (const read of frames) {
-      const top = topRow(read, G, DAY);
-      for (let lx = 1; lx < W - 1; lx += 1) {
-        expect(read(DAY, lx, top)).toBe(WHITE);
-        expect(read(DAY, lx, top + 1)).toBe(WHITE);
+  it("pressed on today, keeps today's white cap on its top all the way down — at every size, from any %", () => {
+    for (const g of SIZES) {
+      for (const from of ['p40', 'p99'] as const) {
+        const { frames } = pressFrames(g, from, DAY);
+        for (const read of frames) {
+          const top = topRow(read, g, DAY);
+          for (let lx = 1; lx < g.keyW - 1; lx += 1) {
+            expect(read(DAY, lx, top), `${g.name} from ${from}`).toBe(WHITE);
+            expect(read(DAY, lx, top + 1), `${g.name} from ${from}`).toBe(WHITE);
+          }
+        }
       }
     }
   });
@@ -603,6 +607,41 @@ describe('a day over (ended unsolved)', () => {
     scene.draw(px, tl.settled + 100, false, -1);
     expect(topRow(read, G, DAY)).toBe(0);
     for (let ly = 0; ly < H; ly += 1) for (let lx = 0; lx < W; lx += 1) expect(cell(px, DAY, lx, ly)).not.toBe(MUTED);
+  });
+});
+
+describe('a day restarted from over, rising', () => {
+  // The second of two ups (the first has no frame before its charge), at a size: 10 newly
+  // played, 14 back from over — today or not.
+  const risingFrames = (g: CalGeometry, today: number) => {
+    const model = month((d) => (d === 10 ? { kind: 'progress', day: d, pct: 50 } : d === 14 ? { kind: 'progress', day: d, pct: 60 } : none(d)), today);
+    const tl = keysBeats({ ...SETTLED, model, changes: [{ index: 10, from: 'n' }, { index: 14, from: 'o' }] });
+    const scene = keysScene(g, model, tl, 1);
+    const frames: ((lx: number, ly: number) => number)[] = [];
+    for (let t = tl.charge[14]; t < tl.charge[14] + tl.chargeMs; t += 32) {
+      const px = new Uint32Array(g.cols * g.rows);
+      scene.draw(px, t, false, -1);
+      const { x, y } = keyAt(g, 14);
+      frames.push((lx, ly) => px[(y + ly) * g.cols + x + lx]);
+    }
+    return frames;
+  };
+
+  it('keeps its number and its ring out of its cap rows on every frame, at every size, today too', () => {
+    for (const g of SIZES) {
+      const num = numberCells(g.keyW, g.keyH, 14);
+      for (const today of [-1, 14]) {
+        risingFrames(g, today).forEach((read, f) => {
+          let top = g.keyH;
+          for (let ly = 0; ly < g.keyH && top === g.keyH; ly += 1) for (let lx = 0; lx < g.keyW; lx += 1) if (read(lx, ly) !== 0) top = ly;
+          for (const ly of [top, top + 1]) {
+            for (let lx = 0; lx < g.keyW; lx += 1) {
+              expect(num[ly * g.keyW + lx], `${g.name} today=${today} frame ${f} at ${lx},${ly}`).toBe(0);
+            }
+          }
+        });
+      }
+    }
   });
 });
 

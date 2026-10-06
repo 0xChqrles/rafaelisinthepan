@@ -3127,14 +3127,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     three UPGRADES (more done, or done), in date order, 160ms apart, each front travelling
     from what it said to what it says (240ms, white head); a new solve locks with a white
     cap, bursts in cobalt and welds its run with white links. **A day turning OVER is
-    PRESSED** (`PRESS_MS`): three frames standing, then its top drops a row a frame to its
-    sink, its number riding down with it — ONE number, whole, in the over ink from the
-    press's first frame, never the old one beside it — while the iron alone gives way, its
+    PRESSED** (`PRESS_MS`): three frames standing, a frame at full height with its number
+    gone to the over ink, then six frames down to its sink, about a row a frame (two on some
+    of WIDE's and MID's, one held on the smaller sizes), its number riding down with it — ONE
+    number, whole, never the old one beside it — while the iron alone gives way, its
     cap, its light and any charge going out in the Bayer order into the unlit face. The rest
     — more changes, a downgrade after a republish's restart — dissolve to their new picture,
     each picture drawn with its own look (standing and lit, or sunk); a day restarted from
     over charges from its sunk key, lit again and RISING to its height on the charge's easing
-    as its front climbs; a first showing has none (that is the arrival's). The memories are
+    as its front climbs (its number standing where the charge cuts it, so the top starts no
+    lower than leaves that number's ring under its cap rows); a first showing has none (that is the arrival's). The memories are
     written as a stage is shown, so a ceremony plays ONCE, even left halfway.
   - **TURNS AND GIVE-WAYS** (`calendar/plan.ts`; the stage latched as the board latches its
     podium's): a turn's day buttons are the new month's AT ONCE (a tap never meets the old
@@ -4074,13 +4076,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   and LEARN then stand — so SKIP reads as continuity (the mark stays, the sentence area
   stays, the tray becomes the game's). The question is ONE line in either language (sized
   off the column on a phone); a window 520px tall or less tightens the zones so all of it
-  stands on one screen. `tutorial/InviteDemo.tsx` plays the site's own sentence ONCE on the
+  stands on one screen (the demo at most 16px, the gate's stack closer, so there TUTORIAL /
+  SKIP stand a few px off PLAY / LEARN). `tutorial/InviteDemo.tsx` plays the site's own sentence ONCE on the
   real `Phrase`/`Hole` and an inactive `WordInput`, held to 22 glyphs a line (two lines, the
-  hole on the second in every state) with ONE departure from the game's dress, its MISS: the
-  word's own size (the tutorial's rule), springing up off the chip it lands on, holding
-  astride the chip's top edge and fading with a breath of rise, in its red throughout (the
-  game's white flash would land on the chip) — so at the game's leading it never prints
-  across line 1; every frame a sentence: en *Every guess tells you how
+  hole on the second in every state), in the game's dress throughout — its MISS the game's
+  own float, rising over the line above as it does in the game; every frame a sentence: en *Every guess tells you how
   lost⁹¹ you are.*, the demo typing `banana` (MISS, with the game's shake — it never enters
   the hole), then `near` (near²), then `close`; fr *Chaque essai te dit si tu
   es paumé³⁵⁵.*, `banane`, `loin` (loin⁴), `proche`. A closer word lands on the hole's own
