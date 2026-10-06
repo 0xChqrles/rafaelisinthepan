@@ -67,8 +67,10 @@ import {
 //
 // FOUR PICTURES, one box (`PodiumMode`), so a state never passes for another: a read still out
 // draws the FLOOR and, if it is slow, the skeleton's own rails where the names will stand (the
-// lines' skeleton under it says the same, on the same beat); a failed one draws NOTHING (its
-// RETRY stands in the box); a board with nobody on it to stand (no group, a group of one, a
+// lines' skeleton under it says the same, on the same beat); a FAILED one holds that picture
+// still — the floor, its caption's line standing where the rails would, RETRY under it, and
+// the read asked again stands its rails at once where the line stood; a board with nobody on
+// it to stand (no group, a group of one, a
 // period nobody scored in) draws the steps' GHOST — their silhouettes in the floor's stipple —
 // for the board's sad ghost to stand on; and a board draws its steps, with whoever finished on
 // them — none yet is the steps alone, each place's value a quiet dash.
@@ -394,9 +396,12 @@ const TURN_STEPS = 8;
 const PAST = -10_000;
 
 export interface BeatSpec {
-  // A board: its steps stand (not a read still out, a failure or the ghost). A read still out.
+  // A board: its steps stand (not a read still out, a failure or the ghost). A read still out
+  // — and, `held`, one asked AGAIN after a failure: its rails stand from the first frame, in the
+  // place the failure's line held, rather than waiting the skeleton's wait in again.
   steps: boolean;
   loading: boolean;
+  held: boolean;
   // The scene builds (else it is settled from its first frame: a board already shown).
   build: boolean;
   // The steps already stand as it begins (the scene before was a board).
@@ -419,6 +424,7 @@ export interface Beats {
   reel: (number | null)[]; // per place: when its value's reels start (null: it stands)
   run: number[]; // per place: its reels' run
   foil: (number | null)[]; // per first place: when its cobalt recedes into the foil (null: born in it)
+  rails: number | null; // a read still out: when its skeleton rails come in (null: none drawn)
   lines: number; // when the lines below start landing
   settled: number; // when nothing but the foil moves any more
 }
@@ -432,7 +438,9 @@ export function beats(spec: BeatSpec): Beats {
   const foil: (number | null)[] = [null, null, null];
   const ends = [TURN_MS];
   if (!spec.steps) {
-    return { rise, land, fall, reel, run, foil, lines: 0, settled: spec.loading ? SKELETON_WAIT_MS + DISSOLVE_MS : TURN_MS };
+    const rails = spec.loading ? (spec.held ? PAST : SKELETON_WAIT_MS) : null;
+    const settled = rails !== null && rails > 0 ? rails + DISSOLVE_MS : TURN_MS;
+    return { rise, land, fall, reel, run, foil, rails, lines: 0, settled };
   }
   const start = spec.startMs;
   let lastDrop = -Infinity;
@@ -472,7 +480,7 @@ export function beats(spec: BeatSpec): Beats {
       : Number.isFinite(lastDrop)
         ? lastDrop + DROP_MS + SHAKE.length * SHAKE_FRAME_MS
         : start + 2 * RISE_GAP_MS + RISE_MS / 2;
-  return { rise, land, fall, reel, run, foil, lines, settled: Math.max(...ends) };
+  return { rise, land, fall, reel, run, foil, rails: null, lines, settled: Math.max(...ends) };
 }
 
 // A whole-cell ease: the share of a travel `k` (0–1) that has been made, eased out.
@@ -717,15 +725,16 @@ export function podiumScene(L: PodiumLayout, data: PodiumData, tl: Beats, seed: 
 
   const draw = (px: Uint32Array, t: number, withFoil: boolean) => {
     px.fill(0);
-    // A failed read: nothing inside the box but what the caller stands in it.
-    if (data.mode === 'failed') return;
     // THE FLOOR: the result's stippled rail, across the column.
     for (let x = 4; x < cols - 4; x += 3) put(px, x, L.floor, RAIL);
+    // A failed read: the floor alone, still — the box's caption says what failed where the
+    // rails stood.
+    if (data.mode === 'failed') return;
     if (data.mode === 'loading') {
       // A slow read: the skeleton's rails where each name will stand, on the floor's lattice —
       // after the lines' skeleton's own wait (a quick read never flashes them), through a
-      // line's dissolve.
-      const lv = level(SKELETON_WAIT_MS, DISSOLVE_MS, t);
+      // line's dissolve; a read asked again after a failure, at once (`tl.rails`).
+      const lv = level(tl.rails, DISSOLVE_MS, t);
       if (lv <= 0) return;
       const y = L.name + NAME_ROWS - 5;
       for (const { slot } of L.places) {

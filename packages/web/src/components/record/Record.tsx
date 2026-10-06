@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { mondayNarrowLabels, weekView } from '../../game/streak';
 import { t } from '../../i18n';
 import useToday from '../../hooks/useToday';
@@ -47,7 +47,7 @@ import {
 // The values are WITHHELD until every collection has landed (`useAccountStats`): the layout
 // and its words stand from the first frame, the count's box, the two numbers' boxes and the
 // chain's links held as the stippled slate — breathing while a read is out, still once one has
-// failed, when the count's box is the tap that asks again. The count's box and the chain's
+// failed (the page says so under the record, with its RETRY). The count's box and the chain's
 // slots are the raster's own; the two numbers' are DOM slots. A build STARTS from that picture:
 // each box stands until its own number's reels start, each link's slot until the link dithers
 // in over it.
@@ -143,7 +143,7 @@ export default function Record({
   week,
   phase,
   size = 'normal',
-  onRetry,
+  failure,
 }: {
   lang: string;
   stats: { streak: number; best: number; days: number } | null;
@@ -151,8 +151,10 @@ export default function Record({
   phase: RecordPhase;
   // The screen's height: the count one whole size up or down (`RecordSize`).
   size?: RecordSize;
-  // Ask for the numbers again after a failed read.
-  onRetry?: () => void;
+  // Its read FAILED (the caller's `QuietFailure`): said in the FLAME'S ROOM over the count's
+  // still box — the room the flame and its flare keep, which a record with no numbers leaves
+  // as ground — so saying it adds no height to the page, and its RETRY takes none away.
+  failure?: ReactNode;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -301,13 +303,6 @@ export default function Record({
     </div>
   );
 
-  const countBox: CSSProperties = {
-    left: L.ox + L.count.x * RECORD_CELL_PX,
-    top: L.count.y * RECORD_CELL_PX,
-    width: L.count.w * RECORD_CELL_PX,
-    height: L.count.h * RECORD_CELL_PX,
-  };
-
   return (
     <div className={`record${ready ? ' ready' : ''}`}>
       <div ref={box} className="record-art" style={{ height: L.rows * RECORD_CELL_PX }}>
@@ -320,16 +315,10 @@ export default function Record({
         {burstsFrom !== null && width > 0 && (
           <RecordBursts L={L} stops={recordStops(beats, streak, build === true)} start={burstsFrom} />
         )}
-        {/* A failed read: the count's held box (the raster's still checker) is the tap that
-            asks again. */}
-        {width > 0 && phase === 'failed' && !ready && (
-          <button
-            type="button"
-            className="record-slot record-retry"
-            style={countBox}
-            aria-label={`${t(lang, 'failedHistory')} — ${t(lang, 'retry')}`}
-            onClick={onRetry}
-          />
+        {failure && (
+          <div className="record-failure" style={{ height: L.count.y * RECORD_CELL_PX }}>
+            {failure}
+          </div>
         )}
         <span
           className="record-unit"

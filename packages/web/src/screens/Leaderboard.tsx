@@ -20,7 +20,7 @@ import SuccessorPick from '../components/SuccessorPick';
 import { LINE_PX } from '../components/boardMetrics';
 import GroupCreate from '../components/GroupCreate';
 import GroupScreen from '../components/GroupScreen';
-import LoadError from '../components/LoadError';
+import QuietFailure from '../components/QuietFailure';
 import PeriodSwitch from '../components/PeriodSwitch';
 import Podium, { nextStage, type PodiumStage } from '../components/podium/Podium';
 import { beats, podiumHeightPx, podiumSize, type PodiumSize } from '../components/podium/scene';
@@ -605,28 +605,38 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     ) : null;
   // RETRY asks the failed board again from scratch: its failure dropped, and the loading picture
   // standing for it (never a board held from before the failure).
-  const retry =
-    now.mode === 'failed' ? (
-      <LoadError
-        message={t(lang, 'failedBoard')}
-        lang={lang}
-        onRetry={() => {
-          if (entry !== 'failed' || boardKey === null) {
-            loadGroups();
-            return;
-          }
-          setBoards((prev) => ({ ...prev, [boardKey]: undefined }));
-          setLapsed(boardKey);
-          setAttempt((n) => n + 1);
-        }}
-      />
-    ) : null;
-  // (With no podium, the empty board's block — or the failed read's RETRY — stands under the
-  // header slot as ONE ROW, the ghost beside its line over its call: the room a landscape phone
-  // has.)
+  const retry = () => {
+    if (entry !== 'failed' || boardKey === null) {
+      loadGroups();
+      return;
+    }
+    setBoards((prev) => ({ ...prev, [boardKey]: undefined }));
+    setLapsed(boardKey);
+    setAttempt((n) => n + 1);
+  };
+  // A FAILED READ HOLDS THE LOADING PICTURE STILL (the podium's floor, the lines' skeleton) and
+  // says so in the podium's caption slots — the note where the names stand, RETRY on the
+  // values' row; the tabs, the head line and the door keep their places.
+  const failedCaption =
+    now.mode === 'failed'
+      ? {
+          line: (
+            <span className="quiet-failure-line" role="status">
+              {t(lang, 'failedBoard')}
+            </span>
+          ),
+          call: (
+            <button type="button" className="quiet-btn" onClick={retry}>
+              {t(lang, 'retry')}
+            </button>
+          ),
+        }
+      : undefined;
+  // (With no podium, the empty board's block — or the failed read's note and RETRY — stands
+  // under the header slot as ONE ROW, the ghost beside its line over its call.)
   const hold =
     now.mode === 'failed' ? (
-      retry
+      <QuietFailure className="start" lang={lang} line={t(lang, 'failedBoard')} onRetry={retry} />
     ) : (
       <div className="board-empty">
         <span className="board-ghost" aria-hidden="true" />
@@ -647,7 +657,11 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // turn caught halfway is turned again from what is on screen: the view still coming in gives
   // way with what of it had come in (`cameIn`), and the one it was replacing goes on going out
   // through the cells it was leaving by. A header slot both views say the same stands.
-  const holdKind = now.mode === 'failed' || now.mode === 'ghost' ? now.mode : null;
+  // A failed read under a podium holds the loading picture's LINES — the very view the
+  // skeleton is, so neither the failure nor its RETRY moves anything under the podium; with no
+  // podium the failure is its own block.
+  const failedUnder = now.mode === 'failed' && size !== null;
+  const holdKind = now.mode === 'ghost' || (now.mode === 'failed' && size === null) ? now.mode : null;
   const viewTab = shown?.tab ?? tab;
   // The header slot heads a group's list (its door), and — with no podium to say it — what the
   // numbers count; an empty board's block takes it only for a door (no group, a failed or empty
@@ -662,16 +676,17 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   const view: UnderView = {
     key: holdKind
       ? `${holdKind}:${now.build}:${size ?? ''}`
-      : shown
+      : shown && !failedUnder
         ? `list:${shown.key}:${size ?? ''}`
         : `skeleton:${viewTab}`,
     size,
     sub,
     door,
     unit: counts && shown ? (isPeriodBoard(shown.board) ? 'points' : 'tries') : null,
-    body: holdKind ? (size ? null : 'hold') : shown ? 'list' : 'skeleton',
-    shown: holdKind ? null : shown,
+    body: holdKind ? (size ? null : 'hold') : shown && !failedUnder ? 'list' : 'skeleton',
+    shown: holdKind || failedUnder ? null : shown,
     hold: holdKind && !size ? hold : null,
+    failed: failedUnder,
   };
   // The view on screen — its key, since when, the run it came in on, whether its header slot
   // stands — and the ones before it giving way under it (`Leaving`).
@@ -789,16 +804,15 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
           // ground).
           style={slots > 0 && under.outs.length > 0 ? { minHeight: `${slots * LINE_PX}px` } : undefined}
         >
-          {/* THE PODIUM, in every state the body can be in: a failed read stands its RETRY in
-              the podium's own box; the ghost's caption is the empty board's terse line and its
-              one call. */}
+          {/* THE PODIUM, in every state the body can be in: its caption slots hold the empty
+              board's terse line and its one call — or a failed read's note and its RETRY. */}
           {size && (
             <Podium
               stage={staged}
               tl={tl}
               size={size}
               ghost={{ line: ghostLine, call: ghostCall }}
-              failed={retry}
+              failed={failedCaption}
             />
           )}
           <div className="board-under">

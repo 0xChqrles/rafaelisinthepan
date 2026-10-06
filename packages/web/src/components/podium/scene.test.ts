@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LINE_PX } from '../boardMetrics';
+import { DISSOLVE_MS, SKELETON_WAIT_MS } from '../bayerTiles';
 import { UI_ADVANCE_EM } from '@whippin/shared';
 import { CELL_PX, NAME_PX, beats, layout, nameRoomPx, podiumHeightPx, podiumSize, type BeatSpec } from './scene';
 
@@ -112,6 +113,7 @@ describe('beats — a build, a turn, a board shown again', () => {
   const spec = (over: Partial<BeatSpec>): BeatSpec => ({
     steps: true,
     loading: false,
+    held: false,
     build: true,
     standing: false,
     present: [true, true, true],
@@ -154,6 +156,18 @@ describe('beats — a build, a turn, a board shown again', () => {
 
   it('settles the whole arrival within about two seconds', () => {
     expect(beats(spec({})).settled).toBeLessThanOrEqual(2400);
+  });
+
+  it("brings a slow read's rails in after the skeleton's wait, and a read asked again at once", () => {
+    const loading = { steps: false, loading: true, present: [false, false, false] };
+    const first = beats(spec(loading));
+    expect(first.rails).toBe(SKELETON_WAIT_MS);
+    expect(first.settled).toBe(SKELETON_WAIT_MS + DISSOLVE_MS);
+    const again = beats(spec({ ...loading, held: true }));
+    expect(again.rails).not.toBeNull();
+    expect(again.rails!).toBeLessThan(0);
+    // A failure draws no rails at all (its caption's line stands there).
+    expect(beats(spec({ steps: false, loading: false, present: [false, false, false] })).rails).toBeNull();
   });
 });
 

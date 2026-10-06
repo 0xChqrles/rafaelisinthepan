@@ -17,10 +17,14 @@ import { scriptFor } from './scripts';
 // The run ends on the level's own card turning DONE (`onCleared`), PLAY under it (`onDone`).
 export default function LevelOne({
   lang,
+  held = false,
   onDone,
   onCleared,
 }: {
   lang: LangCode;
+  // Its chunk's hold stood on screen before it (`LazyLevelOne`): the first stage's tray takes
+  // over from that hold at once.
+  held?: boolean;
   onDone: () => void;
   onCleared: () => void;
 }) {
@@ -55,6 +59,7 @@ export default function LevelOne({
         final={at === script.stages.length - 1}
         arrivedFrom={at > 0 ? script.stages[at - 1].puzzle.words.join(' ') : undefined}
         clearedBefore={clearedBefore}
+        held={held && at === 0}
         onComplete={next}
         onPlay={onDone}
         onCleared={onCleared}

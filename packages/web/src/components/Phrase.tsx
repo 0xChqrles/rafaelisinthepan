@@ -27,6 +27,7 @@ export default function Phrase({
   // a sentence, and a capital on it read wrong (user feedback 2026-09-16).
   capital = true,
   morphFrom,
+  silhouette = false,
 }: {
   words: string[];
   holes: RuntimeHole[];
@@ -54,6 +55,11 @@ export default function Phrase({
   // passes; each hole scrambles in from this many letters (by hole index), as an improved
   // word does. The text before it is gone the same frame, so one text turns into the other.
   morphFrom?: number[];
+  // The SENTENCE'S SILHOUETTE, the game's hold (`GameHold`): laid out exactly as the board
+  // will be — the same boxes, wrapped at the same places — and drawn by the hold's own dress
+  // (bars and blocks, no ink). It does not arrive (no decode), describes nothing and anchors
+  // no wheel (its holes carry no `data-hole-explore`): a picture behind `aria-hidden`.
+  silhouette?: boolean;
 }) {
   const holeIndexByPos = new Map<number, number>(holes.map((h, i) => [h.pos, i]));
   // Sentence case is a DISPLAY rule (`game/sentenceCase.ts`): the first token and every
@@ -85,9 +91,13 @@ export default function Phrase({
     letters += tokenText(w, i).replace(/\s/g, '').length;
   });
   const plan = introPlan(letters);
-  const intro = useIntroClock(key, plan.totalMs);
+  const intro = useIntroClock(key, plan.totalMs, silhouette);
+  // Where the decode's front reaches each token — stamped on a silhouette's every token too:
+  // the hold's bars give way to the arriving sentence on that same front.
   const beat = (i: number) =>
-    intro.running ? ({ '--at': `${Math.round(firsts[i] * plan.charMs)}ms` } as CSSProperties) : undefined;
+    intro.running || silhouette
+      ? ({ '--at': `${Math.round(firsts[i] * plan.charMs)}ms` } as CSSProperties)
+      : undefined;
 
   return (
     <>
@@ -135,6 +145,7 @@ export default function Phrase({
                           hintId: hintId(idx),
                           disabled: exploreDisabled,
                           onOpen: () => onExplore(idx),
+                          picture: silhouette,
                         }
                       : undefined
                   }
@@ -147,7 +158,7 @@ export default function Phrase({
         return (
           <Fragment key={i}>
             {space}
-            <span className="word">
+            <span className="word" style={silhouette ? beat(i) : undefined}>
               {intro.running ? (
                 <DecodeWord
                   text={shownText(w, i)}
@@ -170,6 +181,7 @@ export default function Phrase({
         the DOM. Inside the <p> it would interleave "Explore word 2" into the prose a screen
         reader reads straight through; after it, the sentence stays a sentence. */}
     {onExplore &&
+      !silhouette &&
       exploreLabels?.map((label, idx) => (
         <span key={idx} id={hintId(idx)} className="sr-only">
           {label}

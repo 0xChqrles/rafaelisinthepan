@@ -32,6 +32,10 @@ interface KeyboardProps {
   onType: (char: string) => void; // append a letter or dash
   onBackspace: () => void;
   onSubmit: (value: string) => void;
+  // The keys LIGHT IN PLACE over the game's hold, whose unlit slates stand exactly where they
+  // land (`GameHold`), instead of rising row by row. Read once, at mount: a keyboard that
+  // comes back later (after a reveal, after the gate's PLAY) rises as it always does.
+  lit?: boolean;
 }
 
 // A key that briefly shakes when a disabled key is tapped: (id, nonce). The nonce
@@ -82,8 +86,10 @@ export default function Keyboard({
   onBackspace,
   onSubmit,
   recalled,
+  lit = false,
 }: KeyboardProps) {
   const [shake, setShake] = useState<Shake>(null);
+  const [lights] = useState(lit);
   // When a POINTER last pressed a key here — see `activate`.
   const pointerAt = useRef(-Infinity);
   // Every key's button, by id (the char, `enter`, `back`), for the strike.
@@ -165,7 +171,7 @@ export default function Keyboard({
   const lastRowIndex = KEYBOARD_ROWS.length - 1;
 
   return (
-    <div className="keyboard" role="group" aria-label={t(lang, 'ariaKeyboard')}>
+    <div className={`keyboard${lights ? ' kb-lit' : ''}`} role="group" aria-label={t(lang, 'ariaKeyboard')}>
       {KEYBOARD_ROWS.map((row, rowIndex) => (
         // Rows are fixed; index is a stable key here.
         <div className="kb-row" key={rowIndex}>

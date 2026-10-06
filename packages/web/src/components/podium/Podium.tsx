@@ -130,6 +130,7 @@ export function nextStage(
     spec: {
       steps: next.mode === 'board',
       loading: next.mode === 'loading',
+      held: next.mode === 'loading' && prev?.mode === 'failed',
       build: fresh,
       standing: prev?.mode === 'board',
       present: places.map((entry) => entry !== null),
@@ -244,11 +245,11 @@ export default function Podium({
   tl: Beats;
   // The podium's size, as the screen chose it off its room.
   size: PodiumSize;
-  // What the box holds besides the scene: the ghost's own caption under the floor (its terse
-  // line where a player's name would be, its call where their value would), and a failed
-  // read's RETRY.
+  // What the box holds besides the scene, in the caption's slots under the floor: the ghost's
+  // terse line where a player's name would be and its call where their value would — and a
+  // failed read's note there, its RETRY under it.
   ghost?: { line: ReactNode; call: ReactNode };
-  failed?: ReactNode;
+  failed?: { line: ReactNode; call: ReactNode };
 }) {
   const box = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -480,6 +481,7 @@ export default function Podium({
   }, [L, stage.build, reduced]);
 
   const middle = L.places[0];
+  const caption = mode === 'ghost' ? ghost : mode === 'failed' ? failed : undefined;
   return (
     <div ref={box} className={`podium${L.compact ? ' compact' : ''}`} style={{ height: podiumHeightPx(size) }}>
       <div className="podium-art" aria-hidden="true">
@@ -560,17 +562,17 @@ export default function Podium({
           );
         })}
       </div>
-      {/* The empty board's caption: its line on the names' band, its call on the values' row —
-          one height in every empty state, bare ground where there is no line. */}
-      {mode === 'ghost' && ghost && (
+      {/* The empty board's caption — or the failed read's: its line on the names' band, its
+          call on the values' row — one height in every state, bare ground where there is no
+          line. */}
+      {caption && (
         <div className="podium-hold caption" style={{ top: L.name * CELL_PX }}>
           <span className="podium-hold-line" style={{ height: NAME_ROWS * CELL_PX }}>
-            {ghost.line}
+            {caption.line}
           </span>
-          {ghost.call}
+          {caption.call}
         </div>
       )}
-      {mode === 'failed' && failed && <div className="podium-hold">{failed}</div>}
     </div>
   );
 }

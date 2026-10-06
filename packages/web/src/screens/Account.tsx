@@ -52,6 +52,7 @@ import Avatar from '../components/Avatar';
 import AddressLine from '../components/AddressLine';
 import DeviceList from '../components/DeviceList';
 import LangTitle from '../components/LangTitle';
+import QuietFailure from '../components/QuietFailure';
 import Record from '../components/record/Record';
 import { handOffMark } from '../components/markHandoff';
 import { HeaderLeft } from '../components/TopBar';
@@ -129,6 +130,10 @@ export default function Account() {
   // flash SAVE and swap it for the address on every visit of a linked player.
   const known = identity === null || phase === 'ready' || summary !== null;
   const accountUnknown = phase === 'failed' && summary === null;
+  // A READ THAT FAILED IS SAID ONCE, in place: the record's in its flame's room, the summary's
+  // in the call's own box — and both at once as one line there (one connection lost, one
+  // RETRY).
+  const recordFailed = stats.phase === 'failed';
   // THE MASTHEAD'S WORDS LAND ONCE, with both their facts: the name (the face) and whether an
   // address goes under it (the summary — or its failed read, which leaves the name alone). The
   // row is centred on the mark either way — the name alone, or name and address as one block
@@ -209,23 +214,17 @@ export default function Account() {
           lang={lang}
           stats={stats.phase === 'ready' ? stats : null}
           week={stats.phase === 'ready' ? week : null}
-          phase={stats.phase === 'ready' ? 'ready' : stats.phase === 'failed' ? 'failed' : 'loading'}
+          phase={stats.phase === 'ready' ? 'ready' : recordFailed ? 'failed' : 'loading'}
           size={size}
-          onRetry={stats.retry}
+          // The RECORD's read failed (and only it): its boxes stand still, and this says so in
+          // the flame's room over them, with its RETRY — adding no height, so the call still
+          // stands on the screen.
+          failure={
+            recordFailed && !accountUnknown ? (
+              <QuietFailure lang={lang} line={t(lang, 'failedRecord')} onRetry={stats.retry} />
+            ) : null
+          }
         />
-
-        {/* What the account is SAVED as could not be read: said quietly, and the quiet word in
-            a tappable thing's brackets asks again (the call itself waits — it may not apply). */}
-        {phase === 'failed' && (
-          <div className="account-load-error">
-            <p className="account-load-error-line" role="status">
-              {t(lang, 'failedAccountLoad')}
-            </p>
-            <button type="button" className="quiet-btn" onClick={() => loadAccountSummary(true)}>
-              {t(lang, 'retry')}
-            </button>
-          </div>
-        )}
 
         {/* DEVICES — after the record, ONLY once SAVED: an unlinked account holds exactly the
             device reading this screen, and a list of yourself is noise. No caption: the
@@ -241,6 +240,22 @@ export default function Account() {
             stippled rails (its words laid out unseen, so each rail is its line's length), the
             button's box as the house hold — so the footnote under it never moves when the call
             lands; the call then takes the hold's own box in place. */}
+        {/* What the account is SAVED as could not be read: the call's own box holds the note,
+            and RETRY stands in the call's place (the call itself waits — it may not apply).
+            With the record's read failed too, ONE line for the page and ONE RETRY asking both
+            again. */}
+        {accountUnknown && (
+          <div className="account-cta failed">
+            <QuietFailure
+              lang={lang}
+              line={t(lang, recordFailed ? 'failedAccountAll' : 'failedAccountSave')}
+              onRetry={() => {
+                if (recordFailed) stats.retry();
+                loadAccountSummary(true);
+              }}
+            />
+          </div>
+        )}
         {!accountUnknown && saved === null && (
           <div className={`account-cta${known ? '' : ' holding'}`} aria-hidden={known ? undefined : true}>
             <p className="account-note caption">
