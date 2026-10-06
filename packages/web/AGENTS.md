@@ -11,7 +11,10 @@
   web/                        React + Vite + TS front (pkg @whippin/web)
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
-      hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
+      hooks/usePuzzle.ts      fetch the puzzle a `PuzzleRef` names (a day, or a bonus) from the backend
+      hooks/useHomeDay.ts     the day the undated route plays: the active day as of the player's
+                              last ARRIVAL (a load, a navigation, the tab coming back) — never
+                              swapped under a tab on screen at the 22:00 flip
       hooks/puzzleCache.ts    the last 3 PARSED artifacts kept across mounts, no longer than the
                               CDN's own 300s (2026-09-11): today <-> an archive day without a reload
       api.ts                  backend client: puzzleUrl, 404->NO PUZZLE, and
@@ -653,7 +656,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   lies in the column's gap above the tray plus the play area's RACE BAND (`.play-race`):
   on today's sentence the play area keeps the line's footprint clear under the prompt from
   the first frame, line or no line, so the line never covers the hint row (a refused word's
-  feedback) nor takes a tap meant for it, and nothing moves when it arrives or leaves.
+  feedback) nor takes a tap meant for it, and nothing moves when it arrives or leaves — and
+  it keeps it for the round's life (`raceBand`, decided by the round's first frame), so the
+  22:00 flip passing a round still on screen moves no sentence.
 - **THE PALETTE IS THREE INDEPENDENT AXES (user-decided 2026-08-17): weird/calm +
   hole/solve + accent — in STAMP-INK tones** (retuned the same day against the user's
   /inspiration set — vintage offset stamps, riso posters — after the first calm cut went
@@ -3028,9 +3033,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   contract-tested (`langs.test.ts`). `parseRoute` takes the range bounds as an
   injected arg (App passes the client `activeDate`) so parsing stays pure/testable.
   A BONUS puzzle (root `AGENTS.md`, 2026-09-24) is `/<lang>/bonus/<id>` → the game with
-  `bonusId`; `usePuzzle(lang, date?, bonusId?)` answers a
-  `PuzzleRef`, which `Game`/`SolvedScreen`/`PuzzleTitle` take in place of a day number.
-  `usePuzzle` fetches the given date, else the active day (unchanged); the
+  `bonusId`; `GameRoute` names the puzzle as a `PuzzleRef` — the bonus, the route's date, or
+  the undated route's day (`useHomeDay`) — which `usePuzzle(lang, ref)` fetches and
+  `Game`/`SolvedScreen`/`PuzzleTitle` take in place of a day number; the
   404→`noPuzzle` path is reused as-is. `dateForDayNumber` (`shared/day.ts`) is the
   `dayNumber` inverse. The **OG share page** (`backend/ogCard.ts` `renderShareHtml`) now click-throughs
   to the **shared day's** date-addressed URL (`/<lang>/<dateForDayNumber(dayNumber)>`),
@@ -4493,12 +4498,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   game — while the loaded screen supplies its live status through the header's `left` slot.
   That keeps the status inside `<header>` and outside `.game`, and navigating into a game
   (e.g. from the archive) never changes the header structure; only its contents and the body
-  under it refresh. `usePuzzle`'s **stable
-  `dayNumber`** is still captured ONCE per request (`useMemo` on the requested date) and
-  shared by the fetch, round key, and share, but is no longer rendered in the header. An
-  undated tab held open across the 22:00 flip therefore still keeps its fetched puzzle/day;
-  the puzzle itself does not silently swap. The topbar is the extension point for future
-  chrome (streaks, stats, …).
+  under it refresh. **THE UNDATED ROUTE FOLLOWS THE ACTIVE DAY ON ARRIVAL** (`useHomeDay`,
+  App): its day is the active 22:00-ET day as of the player's last arrival — the load, any
+  navigation (a tap on HOME onto the URL already shown included), back/forward, the tab
+  shown again or restored from the back/forward cache — so a tab left open past the flip
+  opens on the new day. It is never swapped under a tab ON SCREEN at the flip itself (a
+  sentence changing mid-guess): until the player leaves and comes back that day is simply
+  no longer the active one — `GameRoute`'s `isActiveDay` (off the live `useToday`) turns
+  false, the header shows the day's date and lights the calendar, HOME leads to the new
+  day, and the race band stays (`raceBand`). Contract-tested (`useHomeDay.test.tsx`). The
+  topbar is the extension point for future chrome (streaks, stats, …).
 - **The CHOOSER screens are RETIRED — both of them.** The MODE chooser (`/mode`) went
   2026-08-18 for the header's tabs; the LANGUAGE chooser (`/select`, `screens/LanguageSelect`
   + `components/Chooser` and their CSS) went 2026-09-05 (user-decided: "get rid of the

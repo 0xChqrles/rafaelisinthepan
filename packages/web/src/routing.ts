@@ -69,7 +69,9 @@ export function dropLangParam(): void {
   writeEntry(`${url.pathname}${url.search}${url.hash}`, true);
 }
 
-function subscribe(l: Listener): () => void {
+// Every navigation this app makes (a push or a replace, even onto the URL already shown),
+// told as it happens; the browser's own back/forward is `popstate`. Returns the unsubscribe.
+export function onNavigate(l: Listener): () => void {
   listeners.add(l);
   return () => {
     listeners.delete(l);
@@ -94,7 +96,7 @@ export function useLocation(): string {
   useEffect(() => {
     const sync = () => setHref(window.location.pathname + window.location.search);
     window.addEventListener('popstate', sync);
-    const off = subscribe(sync);
+    const off = onNavigate(sync);
     // A navigation that RACED this subscription: a child's mount effect runs before its
     // parent's, so a screen that `navigate`s as soon as it mounts notified nobody — the
     // URL changed and the page stayed empty until a reload. Reading the location once here

@@ -194,6 +194,10 @@ function Round({
   // — and by the time a sentence is solved this read has long landed. An archive route
   // never asks: an archive solve never touches the streak.
   const playerHistory = usePlayerHistory({ lang, enabled: isActiveDay });
+  // The race line's band, decided by the round's FIRST frame: a round begun on the active day
+  // keeps its band clear when the 22:00 flip passes it on screen (`isActiveDay` is live), so
+  // the sentence over it never moves.
+  const [raceBand] = useState(isActiveDay);
 
   // A FAILED collection read would otherwise be final for the whole round: nothing else
   // re-asks, and `noteSolvedDay` credits nothing off a collection that never arrived — so a
@@ -1243,8 +1247,10 @@ function Round({
               It also anchors the score watermark, so the big try count stays centered
               behind THIS content rather than the full-height .game. */}
           {/* `play-race`: today's sentence keeps the race line's band clear under the prompt
-              (index.css `.play-race`) for the whole round, so the line covers nothing. */}
-          <div className={`play${isActiveDay ? ' play-race' : ''}${showResults ? ' play-finished' : ''}`}>
+              (index.css `.play-race`) for the whole round, so the line covers nothing — kept
+              from the round's first frame (`raceBand`), so the 22:00 flip passing a round
+              still on screen moves nothing. */}
+          <div className={`play${raceBand ? ' play-race' : ''}${showResults ? ' play-finished' : ''}`}>
             {/* The sentence, through every phase that owns it: the live holes/hits while
                 playing, the fully resolved sentence through the solving beats — and then
                 its EXIT: once the keyboard has dropped (`resultUp`), the live Phrase hands
