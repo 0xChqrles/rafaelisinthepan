@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { Board, BoardRow, LiveBoard, LiveGroup, LiveRow, PlayingRow } from '@whippin/shared';
+import type { Board, BoardRow, GroupSummary, LiveBoard, LiveGroup, LiveRow, PlayingRow } from '@whippin/shared';
 import {
   RESULT_LINES_MAX,
   GLOBAL_TAB,
+  SEAT_TAB,
   groupResult,
   liveSawEnd,
+  ownRow,
   resultTabs,
   globalResult,
+  seatOf,
   type ResultBoard,
   type ResultMe,
 } from './resultBoards';
@@ -23,6 +26,11 @@ import {
 // first, then the others, then GLOBAL (the global board: podium + own window, filled the
 // same way, nothing invented). The groups are drawn only off a live answer read after the round ended
 // (`liveSawEnd`): one from before it would leave out the score the solve just recorded.
+// THE SEAT (root AGENTS.md, the solved screen's boards): a player none of whose groups holds
+// anybody else — no group, or only groups of one, read off a KNOWN groups list — gets ONE seat
+// tab before GLOBAL (the first tab, so the box opens on it): no group, or their group of one
+// (the one last opened, else the one joined last), holding their own unranked line. An unknown
+// list claims nothing; a group with somebody else in it means no seat, whoever has played.
 
 const ME = 'mmmmmmmmmmmmmmmm';
 const id = (c: string) => c.repeat(16);
@@ -269,6 +277,8 @@ describe('resultTabs', () => {
   const g2 = group([ME, id('b')], 'h', 'Two');
   const lonely = group([ME, id('c')], 'k', 'Lonely');
   const answer = live([g1, lonely, g2], [done(id('a'), 5), done(id('b'), 7), done(ME, 9)], []);
+  // The groups list those groups come from: each holds somebody else.
+  const held: GroupSummary[] = [g1, lonely, g2].map((g) => ({ ...g, createdBy: ME, joinedAt: '2026-09-01T00:00:00.000Z' }));
   const globalBoard: Board = {
     rows: [{ publicId: id('w'), name: '', avatar: null, score: 3, rank: 1 }],
     own: null,
@@ -277,13 +287,73 @@ describe('resultTabs', () => {
   };
 
   it('puts the group last opened first, skips the empty ones, and ends on GLOBAL', () => {
-    expect(resultTabs(answer, globalBoard, id('h'), solvedMe(9)).map((tab) => tab.key)).toEqual([id('h'), id('g'), GLOBAL_TAB]);
-    expect(resultTabs(answer, globalBoard, null, solvedMe(9)).map((tab) => tab.key)).toEqual([id('g'), id('h'), GLOBAL_TAB]);
+    expect(resultTabs(answer, globalBoard, id('h'), solvedMe(9), held).map((tab) => tab.key)).toEqual([id('h'), id('g'), GLOBAL_TAB]);
+    expect(resultTabs(answer, globalBoard, null, solvedMe(9), held).map((tab) => tab.key)).toEqual([id('g'), id('h'), GLOBAL_TAB]);
   });
 
-  it('shows GLOBAL alone without groups, and no GLOBAL without its read', () => {
-    expect(resultTabs(null, globalBoard, null, solvedMe(9)).map((tab) => tab.key)).toEqual([GLOBAL_TAB]);
-    expect(resultTabs(answer, null, null, solvedMe(9)).map((tab) => tab.group?.name)).toEqual(['One', 'Two']);
-    expect(resultTabs(null, null, null, solvedMe(9))).toEqual([]);
+  it('claims nothing off a groups list not known yet, and no GLOBAL without its read', () => {
+    // Unknown (null): never "no group" — GLOBAL alone, or nothing at all.
+    expect(resultTabs(null, globalBoard, null, solvedMe(9), null).map((tab) => tab.key)).toEqual([GLOBAL_TAB]);
+    expect(resultTabs(null, null, null, solvedMe(9), null)).toEqual([]);
+    expect(seatOf(null, null)).toBeNull();
+    // The live answer without GLOBAL still gives the groups' names.
+    const named = resultTabs(answer, null, null, solvedMe(9), held).map((tab) => (tab.kind === 'group' ? tab.group.name : tab.kind));
+    expect(named).toEqual(['One', 'Two']);
+  });
+});
+
+describe('the seat', () => {
+  const globalBoard: Board = {
+    rows: [{ publicId: id('w'), name: '', avatar: null, score: 3, rank: 1 }],
+    own: null,
+    playing: [],
+    waiting: [],
+  };
+  const summary = (key: string, members: string[], joinedAt: string): GroupSummary => ({
+    id: id(key),
+    name: key.toUpperCase(),
+    createdBy: ME,
+    joinedAt,
+    members,
+  });
+  const alone = (key: string, joinedAt: string) => summary(key, [ME], joinedAt);
+
+  it('stands before GLOBAL, with no group, for a player in no group — and alone without the GLOBAL read', () => {
+    const tabs = resultTabs(null, globalBoard, null, solvedMe(9), []);
+    expect(tabs.map((tab) => tab.key)).toEqual([SEAT_TAB, GLOBAL_TAB]);
+    expect(tabs[0]).toMatchObject({ kind: 'seat', group: null });
+    expect(resultTabs(null, null, null, solvedMe(9), []).map((tab) => tab.key)).toEqual([SEAT_TAB]);
+  });
+
+  it('names the group of one last opened, else the one joined last (the first listed of a tie)', () => {
+    const groups = [alone('a', '2026-09-01T10:00:00.000Z'), alone('b', '2026-09-05T10:00:00.000Z'), alone('c', '2026-09-03T10:00:00.000Z')];
+    expect(seatOf(groups, null)?.group?.id).toBe(id('b'));
+    expect(seatOf(groups, id('c'))?.group?.id).toBe(id('c'));
+    // A last-opened group that is not one of them names nothing: the newest stands.
+    expect(seatOf(groups, id('z'))?.group?.id).toBe(id('b'));
+    const tied = [alone('a', '2026-09-01T10:00:00.000Z'), alone('b', '2026-09-01T10:00:00.000Z')];
+    expect(seatOf(tied, null)?.group?.id).toBe(id('a'));
+    const tabs = resultTabs(null, globalBoard, id('a'), solvedMe(9), groups);
+    expect(tabs.map((tab) => tab.key)).toEqual([SEAT_TAB, GLOBAL_TAB]);
+    expect(tabs[0]).toMatchObject({ kind: 'seat', group: { id: id('a'), name: 'A' } });
+  });
+
+  it('is gone wherever a group holds somebody else, even when nobody else has played today', () => {
+    const groups = [alone('a', '2026-09-01T10:00:00.000Z'), summary('b', [ME, id('x')], '2026-09-02T10:00:00.000Z')];
+    expect(seatOf(groups, id('a'))).toBeNull();
+    expect(resultTabs(null, globalBoard, id('a'), solvedMe(9), groups).map((tab) => tab.key)).toEqual([GLOBAL_TAB]);
+  });
+
+  it('holds my own line, off my own result: unranked, finished or ended', () => {
+    const solved = resultTabs(null, globalBoard, null, solvedMe(9), [])[0];
+    expect(solved).toMatchObject({ kind: 'seat', own: { publicId: ME, tries: 9, progress: 100, over: false } });
+    const ended = resultTabs(null, globalBoard, null, endedMe(42, 71), [])[0];
+    expect(ended).toMatchObject({ kind: 'seat', own: { publicId: ME, tries: 42, progress: 71, over: true } });
+  });
+
+  it("draws the player's own line the way a group's board draws it unranked (one spelling)", () => {
+    const g = group([ME, id('a')]);
+    const board = groupResult(live([g], [done(id('a'), 15)], []), g, endedMe(42, 71));
+    expect(board!.lines.at(-1)).toEqual({ kind: 'playing', me: true, row: ownRow(endedMe(42, 71)) });
   });
 });

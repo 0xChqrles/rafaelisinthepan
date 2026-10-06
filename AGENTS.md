@@ -746,8 +746,15 @@ The live routes then share:
   each of the player's groups — the group last opened (`gameStore.lastGroupId`) first, then
   the others; a group where nobody but the player has a row is skipped — then **GLOBAL**,
   the day's global board, under the board screen's own name for it (one name across the
-  app); a player in no group sees GLOBAL alone. No group is created from here: NEW GROUP is
-  the board screen's. The groups come off the LIVE read below (no read
+  app). **A player none of whose groups holds anybody else** (no group, or only groups of
+  one — read off the groups list the play screen already holds, never off an unknown one)
+  **gets ONE SEAT tab before GLOBAL, and the box opens on it**: the board screen's bare `NO
+  GROUP`, else their group of one by name (the one last opened, else the one joined last).
+  Its panel is their own line over ONE call — CREATE GROUP (the board's own `GroupCreate`)
+  or that group's INVITE (`/g/<id>`, `tracked: false`) — done IN PLACE by that call alone; a
+  tap anywhere else on the seat opens the board's group tab. A group whose other members
+  have not played is still skipped, and a result SHARE still carries no group. The groups
+  come off the LIVE read below (no read
   of their own), and only off an answer read after the round ended (one asked during play
   lacks the score the solve recorded); GLOBAL is ONE anonymous `GET /board?…&id=<publicId>`
   per result display (score rows + profiles, no artifact), identity-fenced, a failure

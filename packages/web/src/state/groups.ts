@@ -1,7 +1,7 @@
 // The player's GROUPS (#271), as every surface that draws them needs them: the leaderboard's
-// tabs, the global board's member marks, the invite landing's "already a member" and the
-// play screen's question "is there anybody to race?" (the live read's eligibility,
-// state/liveBoard.ts) all read ONE answer to "which groups am I in".
+// tabs, the global board's member marks, the invite landing's "already a member", the play
+// screen's question "is there anybody to race?" (the live read's eligibility,
+// state/liveBoard.ts) and the result's SEAT all read ONE answer to "which groups am I in".
 //
 // TRANSIENT, never persisted: it is the server's answer about the caller, and #211's rule
 // applies — a list that has not arrived is UNKNOWN, never a guessed empty one. The one
@@ -87,6 +87,13 @@ export function adoptGroups(answer: GroupsAnswer, accountId: string): void {
 
 export function useGroups(): GroupsState {
   return useGroupsStore((state) => state);
+}
+
+// "Is there anybody in my groups but me?" — the ONE reading of it, off the list as held: the
+// play screen's race line runs only when there is (the live read's eligibility), and the
+// result's SEAT stands only when there is not. A list not known yet holds nobody it can name.
+export function holdsSomebody(groups: readonly { members: readonly string[] }[] | null): boolean {
+  return groups?.some((group) => group.members.length > 1) ?? false;
 }
 
 // Registered in `identityScope`: the list belongs to the ACCOUNT.

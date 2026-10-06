@@ -75,7 +75,13 @@
                               group-departure drain behind it (#271)
       state/groups.ts         the player's GROUPS (#271): the ONE transient cache every group
                               surface reads (tabs, marks, the landing's "already in", the race
-                              line's "is there anybody to race")
+                              line's "is there anybody to race"); `holdsSomebody`, the one
+                              reading of "is anybody in my groups but me" (the race line's and
+                              the result's seat's)
+      state/groupActs.ts      the group ACTS every surface shares: `writeGroups` (the deploy,
+                              the signed POST, the answer read off its code, the list adopted),
+                              `failureOf` + `groupFailureCopy` (what the error surface says)
+                              and `inviteText` — the board's and the result's seat's
       state/liveBoard.ts      the LIVE read (`POST /board {token, live: true}`): all my groups
                               merged — the ONE module asking it, throttled (`LIVE_REFRESH_MS`;
                               the read asked as the round ends goes at once), for the race line
@@ -91,9 +97,12 @@
       components/RaceLine.tsx  the race line: marks + % + tries on the tray's top edge, a tap onto
                               the board
       game/resultBoards.ts    the solved screen's BOARDS (pure): one group's day off the live read,
-                              GLOBAL off the global board, the tabs' order, the box's cap
+                              the SEAT (no group holding anybody else, `seatOf`), GLOBAL off the
+                              global board, the tabs' order, the box's cap
       components/ResultBoards.tsx  those boards under SHARE: the boards' tab row (`BoardTabs`)
                               over a fixed box of lines, a tap onto the board
+      components/SeatPanel.tsx  the SEAT's panel: the player's own line over the one call that
+                              creates a group or invites into it in place
       components/SolvedCard.tsx  the RESULT as the share card stood up: brackets, the edition
                               row, the COUNT drawn as a shaped meter (charge, a burst per
                               stopped digit, dithered foil), the run ruler with its heat;
@@ -188,7 +197,8 @@
                               scrolling in whole lines, over INVITE and LEAVE at its foot —
                               everything there is to do with a group
       components/GroupCreate.tsx  naming a new group (#271): the GAME'S PROMPT alone on the
-                              screen, the name inked in on CREATE (the solve's beat)
+                              screen, the name inked in on CREATE (the solve's beat); it folds
+                              onto the surface that opened it (the board, or the result's seat)
       components/ConfirmScreen.tsx  the app's CONFIRMATION surface (#271): the error screen's
                               shape in the plain voice, the act as the quiet danger control
                               over CANCEL; the leave's successor picker rides it
@@ -2386,7 +2396,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     keys (a roving tablist) or a sideways SWIPE on the column (`useSwipe`: a finger's or a
     pen's) turns it; a tap on the shown group's chip goes INTO the group — its own screen;
     GLOBAL opens nothing. **CREATING is the PLUS pinned at the row's end** (`groupNew`),
-    absent in the no-group state, whose CREATE GROUP (`groupCreate`) is then the one way.
+    absent while the no-group tab is shown, whose CREATE GROUP (`groupCreate`) is then the
+    one way on this screen — the result's SEAT is the other door (*Solved-screen BOARDS*),
+    through the same `GroupCreate` and `writeGroups`.
     One control across the app (the archive's months turn through it too) — not a pager of
     this screen's own.
   - **THE HEAD LINE** (`.board-head`, 44px whatever it holds): a group's THREE BOARDS on
@@ -2601,7 +2613,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     would silently redefine what the number measures). NEW GROUP is ONE TAP for a tokenless
     device (the mint, then the create, the button holding a LoadingWave); INVITE needs a
     group, hence an account. Failures land on the `ErrorScreen` — `failedAccount`,
-    `failedShare`, `groupLimit`, `failedGroup`.
+    `failedShare`, `groupLimit`, `profileNameRejected` (a banned name), `failedGroup` — read
+    off the answer's code by `state/groupActs.ts`, the result's seat's acts too.
   - **THE GROUP'S OWN SCREEN (`GroupScreen`, user-decided 2026-09-14: "managing the group
     should have its own screen")** is a full-screen dialog in the selection's shell — the
     way back and the name in the header, the MEMBERS as the board's LINES
@@ -2620,8 +2633,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     on-screen keyboard has no keys for, so the phone's keyboard opens; every keystroke
     lands through `sanitizeGroupName`, cap 20). On CREATE the line gives way to the name
     INKED IN — the solve's cobalt pixel word with the hit's shake, held `INKED_MS` (1100ms)
-    — and the screen folds itself onto the board already on the new group; an empty name
-    shakes the line, the invalid guess's own answer. BOTH DESTRUCTIVE ACTS CONFIRM ON A
+    — and the screen folds itself onto the surface that opened it, already on the new group
+    (the board's tab, or the result's seat); an empty name shakes the line, the invalid
+    guess's own answer. A name the server refuses (`name_rejected`) is said as the profile's
+    is (`profileNameRejected` on the `ErrorScreen`), the naming screen kept up under it with
+    the name; any other failure keeps it up the same way. BOTH DESTRUCTIVE ACTS CONFIRM ON A
     FULL-SCREEN MODAL (`ConfirmScreen`, user-decided 2026-09-14 — "for such an important
     action, we actually need a fullscreen modal", replacing the two-tap word swap `LEAVE?`
     / `REMOVE?`): the member's face or the group's name over the act's title, one
@@ -3654,7 +3670,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     answer with no tab (every read failed, or empty) BEFORE the page's beat (`pageIn`)
     leaves the stage's flow for good; once the page has landed — at once on a settled
     frame — the box keeps its room for good, empty if it must, since removing it would
-    pull the visible page up.
+    pull the visible page up. A box holding the SEAT always has a tab, so it never leaves
+    the flow.
   - **The data is not fetched twice**: the groups are the LIVE read `Game` already keeps
     for the race line (`state/liveBoard.ts`, asked once more when the solve or the give-up
     is confirmed), drawn only off an answer read AFTER the round ended (`liveSawEnd`: the
@@ -3676,7 +3693,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     playing rows — a player on the podium never gets a half-empty box beside a `+N`) and
     `more`; `globalResult` does the same over the global cut + own window (no `+N`: the cut
     does not say how many there are); `resultTabs` orders the group last opened first, skips
-    a group where nobody but the player has a row, and ends on GLOBAL.
+    a group where nobody but the player has a row, puts the SEAT (`seatOf`: no group, or the
+    group of one last opened, else the one joined last) before GLOBAL when none of the
+    player's groups holds anybody else (`holdsSomebody`, off a KNOWN list — an unknown one
+    claims nothing), and ends on GLOBAL; the box opens on the first tab.
   - **The player's own row is drawn from their own result** (`tries`, the trajectory's last
     %, `ended`): ranked only when the live rows hold their recorded score; else an unranked
     playing row — `∞` among the ended for a round that ended unsolved, 100% for a solve with
@@ -3706,8 +3726,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
     scroll), so the SHOWN name is never under a cover. A roving tablist for the keyboard (the arrows, Home, End), each tab
     naming the panel it controls (`tabIds`; here `.result-board`, `role="tabpanel"`,
     labelled by the shown tab). The tab the player turned to is kept by KEY, so a tab
-    arriving later never moves them off it. Here the row holds the tabs alone: no group is
-    created from the result — NEW GROUP is the board screen's pinned plus. A sideways SWIPE
+    arriving later never moves them off it. There is no plus on this row. **THE SEAT**
+    (`SEAT_TAB`, one key whatever it holds; `components/SeatPanel`): the bare `NO GROUP`, or
+    the group of one's name in the chip — decided once the box has drawn, so a later groups
+    list never takes a landed tab away. Its panel (`.result-board.seats`) is the player's own
+    line (`ownRow`: no rank, no %, no frame — the brackets are the act's), then ONE line
+    holding the act: the board's pixel plus where a mark would stand and CREATE GROUP or
+    INVITE as the bracketed quiet word (SIGN OUT's dress, spanning the rest of the line so a
+    wide rank column never pushes it off), the rest of the box empty. ONLY that call acts,
+    in place: `GroupCreate` over the result (`writeGroups`, then `setLastGroup`; the list it
+    publishes puts the seat on the new group, named on the tab, INVITE on the call, before
+    the naming screen folds — nothing replays), or INVITE (`useShare({tracked: false})`,
+    `inviteText`). Its click goes no further than the call, and a swipe's opens nothing.
+    Failures land on the `ErrorScreen`, portaled outside the panel (an event bubbles
+    through a portal to its React parents). No analytics event. A sideways SWIPE
     on the rows turns the tab too (`hooks/useSwipe`, the board screen's and the archive's
     grid's too: `touch-action: pan-y pinch-zoom`; 40px, mostly sideways; a finger's or a
     pen's, the first one down — a mouse dragging across the lines is selecting, turns
@@ -3732,7 +3764,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     min-content and the row of names pushes the lines off the screen's edge.
   - **A tap** on the lines, or on the shown tab's chip (the keyboard's way), opens that
     board: a group sets `lastGroupId` and the board's `group` tab, GLOBAL its `global`
-    tab, then `pathForBoard`; a tap on another name turns to it. No analytics event.
+    tab, the SEAT the board's `group` tab (and `lastGroupId` for a group of one) — where NO
+    GROUP and its CREATE GROUP, or JUST YOU and its INVITE, already stand — then
+    `pathForBoard`; a tap on another name turns to it. No analytics event.
 - **The game's pre-round GATE is an INVITATION into the tutorial (2026-08-11's rules gate;
   DEPLOY duty added by the #216 trigger rework, user-decided 2026-08-24; remade by #269,
   user-decided 2026-09-16).** It states NO rules: the lesson teaches by playing, and a player

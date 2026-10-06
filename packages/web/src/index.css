@@ -3461,6 +3461,64 @@ body:has(.app > .board-screen) {
   align-self: stretch;
   background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
 }
+/* THE SEAT (`SeatPanel`): the board a player with nobody else in their groups would have. Their
+   own line claims nothing — no frame (the brackets are the act's, under it), no %, the count in
+   the plain ink rather than a member still playing's grey. The line where a friend would stand
+   holds the ACT: the board's pixel plus where a mark would be (2px a cell), then CREATE GROUP or
+   INVITE as the bracketed quiet word (SIGN OUT's dress, with `.device-signout`) taking the rest
+   of the line — it has no number — so a rank column of three or four digits never pushes it past
+   the edge. The whole line is the finger's target; the word answers its hover and its press. */
+.result-board.seats .board-row.me {
+  background: none;
+}
+.result-board.seats .board-progress {
+  display: none;
+}
+.result-board.seats .board-row.me:not(.over) .board-score {
+  color: var(--fg);
+}
+.board-seat.call {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.board-seat-plus {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: var(--fg);
+}
+.board-seat-plus .ui-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+.board-seat.call .board-seat-say {
+  grid-column: 3 / -1;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg);
+}
+@media (hover: hover) and (pointer: fine) {
+  .board-seat.call:hover .board-seat-say::before {
+    border-color: var(--fg);
+  }
+}
+.board-seat.call:active .board-seat-say {
+  translate: 0 2px;
+}
+/* Under the keyboard's focus its own corners give way to `FocusBrackets`, never a frame nested
+   in a frame. */
+.board-seat.call .board-seat-say[data-bracketed]::before {
+  border-color: transparent;
+}
 /* The landing: the shown name's chip drawn across, then the lines in one after another; a
    turn of the tab sends the chip travelling and plays the lines again, quicker. */
 .solved-boards.in .board-tabs-ink {
@@ -10315,8 +10373,9 @@ figure.l1-fig {
 }
 /* SIGN OUT's brackets fit the WORD (28px), so a list of devices reads as lines each with its
    own small control — 24px of air between two bracket sets — never a ladder of boxes; the
-   finger's target stays 44px tall around it. */
-.device-signout {
+   finger's target stays 44px tall around it. The result's seat wears the same word. */
+.device-signout,
+.board-seat.call .board-seat-say {
   height: 28px;
   padding: 0 8px;
   letter-spacing: 0.12em;

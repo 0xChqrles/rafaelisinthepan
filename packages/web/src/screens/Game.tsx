@@ -19,7 +19,7 @@ import useRoundSync from '../hooks/useRoundSync';
 import { giveUpRound, notifyGuess, retryRoundSync } from '../state/roundSync';
 import { useGameStore, roundKeyFor } from '../state/gameStore';
 import { noteSolvedDay, usePlayerHistory } from '../state/history';
-import { loadGroups, useGroups } from '../state/groups';
+import { holdsSomebody, loadGroups, useGroups } from '../state/groups';
 import { requestLiveBoard, useLiveBoard, useLiveBoardBusy } from '../state/liveBoard';
 import Phrase from '../components/Phrase';
 import CellDigits from '../components/CellDigits';
@@ -443,7 +443,7 @@ function Round({
     if (racing) loadGroups();
   }, [racing, identity]);
   const { phase: groupsPhase, groups } = useGroups();
-  const raceable = racing && (groups?.some((group) => group.members.length > 1) ?? false);
+  const raceable = racing && holdsSomebody(groups);
   const raceDate = puzzleAddress(puzzleRef);
   // ASKED when the round's server state lands and every time it CHANGES — the round's start,
   // each acknowledged append, and the answer confirming a solve or a give-up (so the result
@@ -472,7 +472,8 @@ function Round({
   // when the solve lands was asked during play and lacks the score the solve just recorded.
   // They hold their room while such an answer is on its way: the groups list still unknown, or
   // a group with somebody else and a read still to come. With none coming (a failed read), the
-  // groups are left out rather than drawn off a stale answer.
+  // groups are left out rather than drawn off a stale answer. The list itself goes with them:
+  // with nobody else in it, it is the result's SEAT.
   const boards = useMemo(() => {
     if (!racing) return null;
     const ended = raceable && liveBoard !== null && identity !== null && liveSawEnd(liveBoard, identity.accountId);
@@ -480,6 +481,7 @@ function Round({
       date: raceDate,
       live: ended ? liveBoard : null,
       awaited: (groups === null && groupsPhase !== 'failed') || (raceable && !ended && liveBusy),
+      groups,
     };
   }, [racing, raceDate, raceable, liveBoard, identity, groups, groupsPhase, liveBusy]);
   // The player's own entry is the SCREEN's: the % of the board they see (it moves when a hit
