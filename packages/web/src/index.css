@@ -8846,10 +8846,20 @@ figure.l1-fig {
 }
 .confirm-pick .board-row.picked {
   --bc: var(--fg);
-  animation: own-lock 240ms steps(4, jump-end) backwards;
+  animation: pick-lock 240ms steps(4, jump-end) backwards;
+}
+/* The own line's lock-on, measured for these 6px arms: each step a whole pixel (22 → 6 by 4,
+   14 → 6 by 2). */
+@keyframes pick-lock {
+  from {
+    background-size:
+      22px 2px, 2px 14px, 22px 2px, 2px 14px,
+      22px 2px, 2px 14px, 22px 2px, 2px 14px;
+  }
 }
 @media (hover: hover) and (pointer: fine) {
-  .confirm-pick .board-row:not(.picked):hover {
+  /* (Never under the focus brackets, below: a hover is no reason to nest a frame.) */
+  .confirm-pick .board-row:not(.picked, [data-bracketed]):hover {
     --bc: var(--muted);
   }
   .confirm-pick .board-row:not(.picked):hover .board-name {

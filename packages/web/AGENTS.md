@@ -2667,9 +2667,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     answers (`components/SuccessorPick`, ConfirmScreen's `choice`: the board's lines as
     radios, each resting in the slate corners of a thing to tap — the period switch's
     cells', held 4px in from the line so two lines' corners never meet — the one picked
-    locking on in white (`own-lock`), dressed by `readGroup`, in whole rows —
-    `round(down, 40vh, 44px)`, snapping — the lines passing its foot thinning through the
-    dither while more lie below), LEAVE held back until one is picked, sent as `successor`; a stale list's 409
+    locking on in white (`pick-lock`, the own line's gesture on the picker's 6px arms),
+    dressed by `readGroup`, in whole rows — `round(down, 40vh, 44px)`, snapping — the
+    lines passing its foot thinning through the dither while more lie below), LEAVE held
+    back until one is picked, sent as `successor`; a stale list's 409
     `successor_required` is no failure: the confirmation stays up, its pick cleared, and
     the list is read again (the candidates dressed again when its members change).
   - **A member already skips the landing onto the board, but never one this tab just
