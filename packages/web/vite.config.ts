@@ -92,9 +92,10 @@ function linkPreviews(): Plugin {
 // THE FIRST SCREEN'S TWO FACES, asked for with the document: the pixel face and the chrome
 // face's latin subset (`src/index.css` @font-face) are otherwise requested only once the
 // stylesheet has been parsed and a glyph needs them, so the first frames set the header in a
-// fallback face and the type jumps when they land. `font-display` stays `swap` — a face held
-// back by `block` would hide the sentence for as long as the network takes. The build names
-// each file by its hash; the dev server serves the source path the stylesheet asks for.
+// fallback face and the type jumps when they land. `font-display` stays `swap` — on a slow
+// line `block` would hide the sentence for its block period (about 3s) and then swap all the
+// same. The build names each file by its hash; the dev server serves the source path the
+// stylesheet asks for.
 const FIRST_FACES = ['PressStart2P.woff2', 'azeret-mono-latin.woff2'];
 
 function preloadFirstFaces(): Plugin {

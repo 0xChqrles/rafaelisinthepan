@@ -4566,8 +4566,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   The pixel font is **self-hosted** (`web/src/assets/fonts/PressStart2P.woff2`, `@font-face` in
   `index.css` — no Google Fonts request). The build PRELOADS it and Azeret's latin subset with
   the document (`vite.config.ts` `preloadFirstFaces`), so the first screen is set in its own
-  faces a round trip sooner; `font-display` stays `swap`, since a face held back by `block`
-  would hide the sentence for as long as the network takes.
+  faces a round trip sooner; `font-display` stays `swap`, since on a slow line `block` would
+  hide the sentence for its block period (about 3s) and then swap all the same.
 - **SVG icons (pattern to follow):** monochrome UI icons live as `.svg` files under
   `web/src/assets/icons/` and are imported as **inline React components** via
   `vite-plugin-svgr` — `import Icon from '../assets/icons/name.svg?react'` (the `?react`
