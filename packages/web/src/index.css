@@ -9019,8 +9019,38 @@ figure.l1-fig {
   top: 0;
   image-rendering: pixelated;
 }
+/* …and while its scenes are on their way, its HOLD: the slate stipple breathing over the
+   picture's stage (above the card's foot), coming in through the dither only once the
+   skeleton's wait is over (`--delay`), giving way through the cells the picture takes. */
+.level-art > .level-art-hold {
+  position: absolute;
+  inset: 0 0 var(--foot, 0px) 0;
+  width: auto;
+  height: auto;
+  animation: board-dissolve 240ms linear var(--delay, 0ms) backwards;
+}
+.level-art > .level-art-hold.breathing {
+  animation:
+    board-dissolve 240ms linear var(--delay, 0ms) backwards,
+    stat-breathe 640ms step-end var(--delay, 0ms) infinite;
+}
+.level-art > .level-art-hold.out {
+  animation: board-dissolve-out 240ms linear forwards;
+}
+.level-art-canvas.in {
+  animation: board-dissolve 240ms linear backwards;
+}
+/* A lesson's length, wherever it is printed: the pixel face's 8px figures. */
+.level-duration {
+  font-family: var(--pixel-font);
+  font-size: 8px;
+  letter-spacing: 0;
+}
 
 @media (max-width: 900px) {
+  :root {
+    --learn-hero-ar: 2.1;
+  }
   .learn-grid {
     grid-template-columns: 1fr 1fr;
     grid-template-rows: none;
