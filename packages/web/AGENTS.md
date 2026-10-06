@@ -1512,7 +1512,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
       same half of the Bayer cells, never an opacity — and its SIGN OUT is `aria-disabled`;
       once an answer no longer lists it, it leaves on `board-dissolve-out` and is dropped,
       the lines under it closing up in one whole-line step (a line confirmed gone never
-      comes back from a later-landing answer). **An answer that never came readable
+      comes back from a later-landing answer) while the lines ABOVE never move: the list
+      keeps the tallest height it has stood at for the visit (`hold`, its `min-height`), so
+      a page scrolled to its foot never grows shorter under the reader (the browser would
+      pull every line above down by the one that left). **An answer that never came readable
       — a 5xx, a dropped connection, a deadline, an unreadable body — says NOTHING** (the
       root contract on unknown outcomes): the list is read again, still thinned, and the
       line leaves if it is gone (`signOutOutcome`, contract-tested). Only a READABLE no — a

@@ -166,6 +166,12 @@ export default function DeviceList({ lang }: { lang: string }) {
   const [notes, setNotes] = useState<ReadonlyMap<string, Note>>(new Map());
   // What a screen reader hears of the last note (the line's label and the note).
   const [spoken, setSpoken] = useState('');
+  // NOTHING ABOVE A LEAVING LINE MOVES: the lines keep the tallest height they have stood at
+  // this visit (`hold`, px), so the page never grows shorter under a reader scrolled to its
+  // foot — where the browser would pull every line above down by the one that left. The
+  // lines under it close up into the room; the hold goes with the visit.
+  const [hold, setHold] = useState(0);
+  const linesRef = useRef<HTMLUListElement>(null);
   // The lines confirmed gone in this mount: every answer is the list as it stood after ITS
   // write, so one landing after a later one must not bring a line back.
   const removed = useRef(new Set<string>());
@@ -243,6 +249,8 @@ export default function DeviceList({ lang }: { lang: string }) {
     const leave = () => {
       removed.current.add(id);
       const settle = () => {
+        const el = linesRef.current;
+        if (el) setHold((tallest) => Math.max(tallest, el.offsetHeight));
         setGoing((set) => withId(set, id, false));
         setRows(latest.current.filter((device) => !removed.current.has(device.deviceId)));
       };
@@ -320,7 +328,7 @@ export default function DeviceList({ lang }: { lang: string }) {
         </div>
       )}
       {shown && (
-        <ul className="device-lines">
+        <ul ref={linesRef} className="device-lines" style={hold > 0 ? { minHeight: hold } : undefined}>
           {rows.map((row, i) => {
             const id = row.deviceId;
             const used = lastUsed(row, lang);
