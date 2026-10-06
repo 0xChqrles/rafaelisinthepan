@@ -6514,26 +6514,17 @@ figure.l1-fig {
   opacity: 1;
   color: var(--muted);
 }
-/* A CONTROL THAT IS NOT A CONTROL YET LOSES ITS BOX (2026-08-30). RESEND spends its first
-   ~30 seconds counting down, and a dimmed hairline box held that long reads as a broken
-   button rather than as a wait — the same reason the second door is held back until the
-   summary settles: a control drawn before it can be pressed is a false offer. Counting, it
-   is a STATUS line (`RESEND (12)`); when the clock runs out the box arrives with the
-   offer. */
+/* Not answerable for now: the word a COLOUR STEP down to the slate `--rail` (under the
+   `--muted` its rest reads as), never an opacity. */
 .link-quiet-btn:disabled {
-  opacity: 0.4;
+  opacity: 1;
+  color: var(--rail);
   cursor: default;
 }
 
-/* RESEND while it counts: only the WORD dims; the seconds — the number being waited on — stay
-   at full strength in the cobalt pixel figures the cards write a number in, a small ticker
-   beside the word. */
-.link-resend:disabled {
-  opacity: 1;
-}
-.link-resend:disabled .link-resend-word {
-  opacity: 0.4;
-}
+/* RESEND while it counts: only the WORD dims (its colour step); the seconds — the number being
+   waited on — stay at full strength in the cobalt pixel figures the cards write a number in, a
+   small ticker beside the word. */
 .link-wait {
   display: inline-block;
   min-width: 2.5em;
@@ -10423,8 +10414,11 @@ figure.l1-fig {
 .quiet-btn:active:not(:disabled) {
   translate: 0 2px;
 }
+/* Not answerable for now: the word and its brackets one COLOUR STEP down — from `--muted` to
+   the slate `--rail` — never an opacity. */
 .quiet-btn:disabled {
-  opacity: 0.45;
+  --bc: var(--rail);
+  color: var(--rail);
   cursor: default;
 }
 /* SIGN OUT's brackets fit the WORD (28px), so a list of devices reads as lines each with its

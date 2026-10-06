@@ -799,7 +799,10 @@ These are decided and verified against the code. Treat them as load-bearing.
     .btn-secondary`) and every quiet act (`.link-quiet-btn`, `.link-danger`) is the label
     alone at 0.7 strength, lifted to 1 on hover — nothing drawn that is not the word. The
     account area's small act (`.quiet-btn`: SIGN OUT on a device line, RETRY under a read
-    that failed) is that word in a tappable thing's corner brackets, 40px tall. A hover
+    that failed) is that word in a tappable thing's corner brackets, 40px tall. A quiet act
+    that cannot be pressed for now (`.quiet-btn:disabled`, `.link-quiet-btn:disabled`) steps
+    its ink — word and brackets — one COLOUR step down, to the slate `--rail`, never an
+    opacity. A hover
     answers only where a pointer HOVERS (`(hover: hover) and (pointer: fine)`): on a touch
     screen the emulated hover sticks where the finger lifted, and the next screen's call on
     that spot would open pre-pressed. SHARE is the primary on the result screen.
@@ -818,7 +821,8 @@ These are decided and verified against the code. Treat them as load-bearing.
     wash without changing it, so the act landing ends it in ONE frame on the button at rest.
     The outcome is the act's own (the keyboard rising, the name inked in, the foil stamp, the
     next step), never a word on the button; CREATE GROUP stands at full ink, neither busy nor
-    dimmed, while the new name inks in.
+    dimmed, while the new name inks in. CANCEL under a busy confirmation waits in the quiet
+    word's colour step, like any quiet act that cannot be pressed for now.
     No other button dress remains.
     *(The two paragraphs below are the designs it replaced, kept for their reasoning.)*
   - **THE BUTTONS ARE KEYCAPS WITH A HARD PRINT (user-decided 2026-09-14: "we should
