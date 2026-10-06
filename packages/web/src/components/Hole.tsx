@@ -87,7 +87,10 @@ export default function Hole({
   // gates it with `disabled` rather than by unwrapping, which would remount the word
   // mid-scramble. `hintId` points at the sr-only "your tries" note Phrase renders OUTSIDE
   // the sentence; see the button below for why it is a description and not a label.
-  explore?: { hintId: string; disabled: boolean; onOpen: () => void };
+  // `picture`: the hole drawn by the game's hold (`Phrase`'s `silhouette`) — the button is
+  // there for its box alone, so nothing describes it and the wheel never takes it for the
+  // hole it measures (`data-hole-explore`): the board's own stands beside it as it leaves.
+  explore?: { hintId: string; disabled: boolean; onOpen: () => void; picture?: boolean };
   // The wheel stands over this hole: its word and exponent are hidden in place (the box
   // stays, so nothing reflows), because the wheel's slot row draws the word there itself
   // and a longer word beneath would show its tail through the dim (user-reported
@@ -483,8 +486,10 @@ export default function Hole({
           // button deleted it from the button AND from the sentence a screen reader reads,
           // leaving "Explore word 2" where "attends -87" belongs. Named by its own content,
           // the hole reads as what it shows and the exploration hint stays supplementary.
-          aria-describedby={chargeHintId ? `${explore.hintId} ${chargeHintId}` : explore.hintId}
-          data-hole-explore={holeIndex}
+          aria-describedby={
+            explore.picture ? undefined : chargeHintId ? `${explore.hintId} ${chargeHintId}` : explore.hintId
+          }
+          data-hole-explore={explore.picture ? undefined : holeIndex}
           disabled={explore.disabled}
           onClick={explore.onOpen}
           onFocus={(e) => {

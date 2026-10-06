@@ -57,8 +57,8 @@ export default function Phrase({
   morphFrom?: number[];
   // The SENTENCE'S SILHOUETTE, the game's hold (`GameHold`): laid out exactly as the board
   // will be — the same boxes, wrapped at the same places — and drawn by the hold's own dress
-  // (bars and blocks, no ink). It does not arrive (no decode) and describes nothing: a
-  // picture behind `aria-hidden`.
+  // (bars and blocks, no ink). It does not arrive (no decode), describes nothing and anchors
+  // no wheel (its holes carry no `data-hole-explore`): a picture behind `aria-hidden`.
   silhouette?: boolean;
 }) {
   const holeIndexByPos = new Map<number, number>(holes.map((h, i) => [h.pos, i]));
@@ -145,6 +145,7 @@ export default function Phrase({
                           hintId: hintId(idx),
                           disabled: exploreDisabled,
                           onOpen: () => onExplore(idx),
+                          picture: silhouette,
                         }
                       : undefined
                   }
