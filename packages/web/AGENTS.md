@@ -142,13 +142,16 @@
                               a window shows the glyph's 7 ink rows, never the next digit's top
       components/bayerTiles.ts  the ordered dither as CSS masks on 2px cells, set ONCE on the
                               document's root as it loads: a line coming in and giving way
-                              (`--dz-*` / `--dzo-*`), your held line's edge (`--edge-d/-u`);
+                              (`--dz-*` / `--dzo-*`), the EDGE where what scrolls meets what
+                              holds (`--edge-d/-u`, 6px, over lines resting whole — your held
+                              line; `--edge-deep-d/-u`, 24px, over prose scrolling freely);
                               and the dissolve's beat script times against (`DISSOLVE_MS`,
                               `SKELETON_WAIT_MS`, `SKELETON_STAGGER_MS` — on the root too as
                               `--dz-stagger`, what `.dissolve-in` staggers a screen's blocks by)
       hooks/useMoreBelow.ts   whether a scrolling list holds more below what it shows: its
-                              foot's dithered edge (`data-more`; the group's members, the
-                              successor pick)
+                              last line shown thinning through the drum's dither steps
+                              (`data-more`; the group's members, the successor pick), measured
+                              again on scroll, on resize and on a row added or removed
       components/animationClock.ts  the page's animation clock (`clockNow`, `onClock`): every
                               beat the board screen and its podium time, on the clock their
                               CSS and Web Animations play on
@@ -2636,8 +2639,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     in through the board's Bayer dissolve, dressed by `readGroup`, the owner tagged under
     their name, the owner's pixel ✕ (the modal header's, `assets/icons/close.svg`) at every
     other line's end (`.board-remove`); the members SCROLL in whole lines (their room floored
-    to `LINE_PX`, one line at the least, the scroll snapping to a line's start, its foot the
-    house's dithered edge while more lines wait below — `useMoreBelow`; a screen too
+    to `LINE_PX`, one line at the least, the scroll snapping to a line's start, its last line
+    shown thinning through the drum's three dither steps while more wait below, so a list at
+    rest says there is more — `useMoreBelow`; a screen too
     short for that scrolls whole), so INVITE as the primary cap and LEAVE as the quiet
     danger word stand at the screen's foot whatever the group's size —
     there is no MANAGE toggle, the screen is the management. **NAMING A GROUP is THE GAME'S
@@ -2661,7 +2665,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     "the group will be deleted"; owner of two → "the other member takes it over"; owner of
     three or more → a PICKER of the others (the board's lines as radios, the one picked
     FRAMED, dressed by `readGroup`, in whole rows — `round(down, 40vh, 44px)`, snapping, its
-    foot the dithered edge while more wait below),
+    last row shown thinning as a drum's end does while more wait below),
     LEAVE held back until one is picked, sent as `successor`; a stale list's 409
     `successor_required` is no failure: the confirmation stays up, its pick cleared, and
     the list is read again (the candidates dressed again when its members change).
@@ -2793,9 +2797,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is as wide as the LONGEST word needs at 15px (`repeat(auto-fill, minmax(<that>px, 1fr))`,
   set inline), so a wide screen fills its width with as many such columns as fit and a
   phone gets one or two; only a word wider than the whole frame shrinks, alone. The list THINS into the
-  ground as it scrolls up under the header (the house's dithered edge over `.hw-scroll`'s
-  top, `--edge-u`, padded so nothing touches it at rest — the game header's own edge,
-  which a dialog's scroll never lights). The
+  ground as it scrolls up under the header (the house's DEEP dithered edge over
+  `.hw-scroll`'s top, `--edge-deep-u`, a line deep so a passing word thins instead of being
+  sliced, padded so nothing touches it at rest — the game header's own edge, which a
+  dialog's scroll never lights). The
   shared `ModalHeader` + Escape are the ways out (through the dither,
   `board-dissolve-out`). The solved stage's
   word buttons open it too. `Game` picks the surface off the hole's rank (`wheelOpen`),
@@ -3248,7 +3253,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
       multiple of 8px whose INK fits the hero (`countSize.ts` — the box is the
       digits' ink, the last glyph's trailing blank column dropped, so the number centres on
       what it prints) AND whose box leaves SHARE above the fold — the card's room from its
-      top in the stage down to the stage's bottom fade, less everything in the card but the
+      top in the stage down to the stage's bottom padding, less everything in the card but the
       count's box: at most 160px on a phone (the share card's own), 192 on a WIDE card (a
       column ≥ 552px in a small viewport ≥ 640px tall — a shorter window keeps the phone's
       sizes, so its room goes to the count, not to the air round it); three digits at 320
@@ -3325,12 +3330,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
       scroller** (`overflow-y: auto`, `overscroll-behavior: contain`, `pixel-scroll`,
       `position: relative` so the sr-only hints under a long page are contained rather
       than growing the document — measured 523px of page scroll before), its BOTTOM edge
-      thinning through the house's dithered edge (`--edge-d`, 6px) inside its own 24px
-      padding (on a phone plus the home-indicator inset); its top has none, because what
+      thinning through the house's DEEP dithered edge (`--edge-deep-d`, 24px — a line of
+      text deep, so a line passing out steps down through the cells and is never sliced)
+      laid on its own 24px padding (on a phone plus the home-indicator inset), so a resting
+      last line is never touched; its top has none, because what
       passes there passes under the credit. **The credit is `position: sticky; top: 0`**
       inside the page (its containing block, so it sticks while the page is in view and
-      leaves with it) on flat `--bg` with the same dithered edge hanging under it
-      (`::after`), so the text thins under the credit rather than running through it, and
+      leaves with it) on flat `--bg` with the same deep edge hanging under it (`::after`,
+      ending inside the text's top margin, so a resting line is never touched), so the text
+      thins under the credit rather than running through it, and
       **a tap on it scrolls the stage back to the top** (`backToTop`, smooth unless reduced
       motion): the running head is the way back to the score and SHARE. On a phone that
       fits, nothing overflows and nothing moves. **A FINISHED round's secrets open the words MODAL, found or not**: an
@@ -4108,8 +4116,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   animation that means nothing"): drawn from the first frame, never animated, waiting on
   nothing in the demo — so it stands while the demo's held word wears its own chip
   (`.invite-mark`: its side padding given back by negative margins, so it moves no letter;
-  the marked words never part across a line). Its blocks — the lockup, the demo, the tray —
-  come in through the dither one after another (`.dissolve-in`, never a glide); TUTORIAL and
+  the marked words never part across a line). Its blocks — the lockup, the demo, then the
+  question, TUTORIAL and SKIP — come in through the dither one after another (`.dissolve-in`,
+  never a glide: the gate's own blocks carry the count on, never the tray's box, whose mask
+  would hide the question standing above it); TUTORIAL and
   SKIP work from the first frame;
   TUTORIAL is the big action's 430px. No line of copy, no time promised. TUTORIAL navigates
   to level 1 (the lesson's PLAY or a header exit
@@ -4133,9 +4143,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   listener — one listener hears every scroller in the app and the phone's page scroll; a
   dialog's scroll never lights it, a horizontal-only scroller says nothing, and a
   scroller that unmounts drops its state on the next render) the whole screen width
-  behind the row fills with flat `--bg` and the house's dithered EDGE hangs under it
-  (`--edge-d`, 6px — the board's held head's own), so content thins into the ground
-  through the Bayer cells before it reaches the controls. No border, no blur, no glass,
+  behind the row fills with flat `--bg` and the house's DEEP dithered EDGE hangs under it
+  (`--edge-deep-d`, 24px: three steps, three quarters, a half, a quarter — a line of text
+  deep), so a line scrolling up thins into the ground step by step before it reaches the
+  controls, never sliced across its glyphs by a strip thinner than it. (The 6px `--edge-*`
+  stays where lines rest WHOLE and their empty margins take it: the board's held head and
+  your held line.) No border, no blur, no glass,
   no rounded float, no gradient: both layers are pseudo-elements of `.topbar` (the
   full-width fixed layer), shown in ONE step so nothing shifts or fades, and
   `.topbar-inner` keeps only its geometry. ModalHeader, which reuses the classes with no
@@ -4233,7 +4246,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     — `.ps-probe`). The row in a slot wears the header chip's dress at 22px (18 ≤640, 16 ≤360),
     the others stand plain at the same size, and the chip hands itself from row to row
     on a 120ms cross-fade as the drum turns; rows come in through the dither, the house's
-    stagger (`--dz-stagger`) apart counted out from the slot. **The drum IS the hole
+    stagger (`--dz-stagger`) apart counted out from the slot (under reduced motion they stand
+    landed). **The drum IS the hole
     wheel's** — its physics moved out of
     `HistoryWheel` into `hooks/useDrum` (`current`/`peek`/`jump`/`glideBy`/
     `tap`/`endedDrag`; the caller supplies only `write`, a scrollTop there and a translate
