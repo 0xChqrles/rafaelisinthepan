@@ -326,6 +326,8 @@
                               the picks, the ghost a REVEAL submits, BACK's un-pick
       components/RevealTray.tsx  a picked mask's tray, in the keyboard's place: the price,
                               REVEAL, BACK
+      components/KeyboardHold.tsx  the keyboard's HOLD: every key's slot in the slate stipple,
+                              on the keyboard's own rows, while its keys cannot be pressed yet
       components/HistoryWheel.tsx  an OPEN hole's tap: a picker drum (`useDrum`) through the
                               word's own place — the word the wheel folds on is the sentence's
       components/HistoryModal.tsx  a COMPLETED hole's tap: its words as a plain grid, full
@@ -4037,6 +4039,29 @@ it to the local store — see `packages/backend/AGENTS.md`).
     found it! You are ready for the real
     game." → PLAY. `STUCK` has no `meter` row
     (the stage is its own script). Not taught: the exact rate.
+  - **THE ROOM (2026-10-06):** the BYLINE stands on the podium's stippled floor — the coach,
+    `01` in the accent's pixel figures at 16px, the level's line, the stage counter `n/4` in
+    the face's 8px `--muted` (cobalt once the stage's word is found); the BOARD is the stage on
+    the bare ground — its box kept (`isolation: isolate`, so the try count stays clipped to
+    it), no ground, stroke or radius. **THE FINALE**: PLAY under the found sentence, which
+    then dissolves, and LEVEL 1's own card (`LevelCard`, the list's) stands in the free height
+    between the coach's line and PLAY, at the list hero's shape (`--learn-hero-ar`, read by
+    `LessonBoard`, sized on whole pixels) on the bare ground in the device frame's corners,
+    coming in through the board's dither with its page typing itself in; then it turns DONE
+    in its own material — `01` inks cobalt, the title's chip is wiped off, the picture's held
+    words ink into the found cobalt and its page stands. PLAY is live throughout.
+  - **THE WAITS (2026-10-06):** the lazy wrappers (`LazyLevelOne`, `LazyArticle`) publish the
+    header's `LangTitle` themselves, so the header never blanks while a chunk loads, and
+    each stands its screen's own layout as the HOLD — the slate stipple coming in after
+    `SKELETON_WAIT_MS`, then breathing (`.stat-slot`): level 1's byline with `01` and its line
+    as real text beside the coach's box, the board's word and CONTINUE's 52px slot; an
+    article's real head (`ArticleHead`: its sleeve, its number, title and credits) over
+    paragraph rails. **The word list is waited for where it is needed**: the reveal needs
+    none, so CONTINUE stands from the first frame; pressed before the list has landed, the
+    keyboard's footprint rises as its HOLD (`components/KeyboardHold`: every key's slot in
+    the stipple, on the keyboard's own rows and sizes), and the keys come in over it through
+    the board's dither once the list lands. The list's pictures HOLD their stage the same way
+    while the scenes chunk loads (`LevelArt`), the picture dissolving in over it.
   **A WHEEL ROW'S HIT AREA IS ITS WORD** (`.wheel-row` `width: fit-content`, user-reported
   2026-09-16 from the lesson: "when we click next to a word it scrolls to it instead of
   leaving the wheel"): the room beside a word is the scroller's own, and a click there folds

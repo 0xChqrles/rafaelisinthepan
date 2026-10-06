@@ -5071,10 +5071,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 /* Screen contract: the EXPLANATION at the top, the board in the middle, INTERACTIONS at the
    bottom (a button, then the keyboard). No modals, no backdrop.
 
-   LEVEL 1 OPENS AS THE ARTICLE LEVELS DO (2026-09-30): a BYLINE band on a hairline (the
-   player, the level's number and line, the stage counter), the coach's line under it as the
-   page's own voice with no box, the board in the articles' figure panel, then the prompt and
-   the keys. Everything is in flow — nothing is fixed over the board — in ONE column on every
+   LEVEL 1 OPENS AS THE ARTICLE LEVELS DO (2026-09-30): a BYLINE band on the stippled floor
+   (the player, the level's number and line, the stage counter), the coach's line under it as
+   the page's own voice with no box, the board on the bare ground, then the prompt and the
+   keys. Everything is in flow — nothing is fixed over the board — in ONE column on every
    stage, the header's own 900px, so nothing changes width between two stages. */
 .tutorial {
   max-width: 900px;
@@ -5111,10 +5111,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
 }
 
-/* THE BYLINE. The band stands on its own hairline — the rule an article's section opens with
-   — and everything in it sits on that line: the player at the left, its feet on the rule,
-   then the level as its card and its article head name it (the number in the pixel face and
-   the accent, the level's line as the title), and the stage counter at the right end. */
+/* THE BYLINE. The band stands on the podium's stippled floor — what an article's section
+   opens on — and everything in it sits on that line: the player at the left, its feet on the
+   floor, then the level as its card and its article head name it (the number in the accent's
+   pixel figures, the level's line as the title), and the stage counter at the right end. */
 .l1-band {
   position: relative;
   width: 100%;
@@ -5122,7 +5122,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   align-items: flex-end;
   gap: 14px;
   padding: 0 0 12px 2px;
-  border-bottom: 1px solid var(--line);
+  background: repeating-linear-gradient(to right, var(--rail) 0 2px, transparent 2px 6px) 0 100% /
+    100% 2px no-repeat;
 }
 .l1-byline {
   flex: 1 1 auto;
@@ -5143,7 +5144,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .l1-no {
   flex: none;
   font-family: var(--pixel-font);
-  font-size: 13px;
+  font-size: 16px;
   color: var(--accent);
 }
 .l1-title {
@@ -5155,14 +5156,13 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--fg);
   text-wrap: balance;
 }
-/* The step counter (n/4) speaks the game's own pixel face (user-decided 2026-09-17), and
-   inks in the solve's cobalt once the stage's word is found. */
+/* The step counter (n/4) speaks the game's own pixel face (user-decided 2026-09-17) — its
+   quiet figures at the face's smallest whole size — and inks in the solve's cobalt once the
+   stage's word is found. */
 .l1-step {
   flex: none;
-  margin-right: -0.2em;
   font-family: var(--pixel-font);
-  font-size: 12px;
-  letter-spacing: 0.2em;
+  font-size: 8px;
   color: var(--muted);
 }
 .l1-step.found {
@@ -5208,11 +5208,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   height: 0.14em;
   background: var(--accent);
 }
-/* THE BOARD IS A FIGURE: the articles' own panel around the stage's word or sentence,
-   isolated so the try count behind the sentence paints ON its ground and is clipped to it
-   (the hits, the loot and the wheel are not). It takes the room between the voice and the
-   prompt (which stays laid out even retired), and has the same box on every stage — the
-   finale's card lands in exactly that box, on the same ground. */
+/* THE BOARD: the stage's word or sentence on the bare ground, as the game sets its own. Its
+   BOX stays — isolated, so the try count behind the sentence paints on the ground and is
+   clipped to the box (the hits, the loot and the wheel are not) — with no ground, stroke or
+   radius of its own. It takes the room between the voice and the prompt (which stays laid out
+   even retired), and has the same box on every stage. */
 .l1-fig {
   flex: 1 1 0;
   width: 100%;
@@ -5227,15 +5227,11 @@ figure.l1-fig {
   flex-direction: column;
   justify-content: center;
   padding: 22px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: #08090d;
 }
 .l1-fig .progress-background {
   overflow: hidden;
-  border-radius: inherit;
 }
-/* In the plate the lesson's SENTENCE steps down a little on a wide screen, the prompt with it
+/* On the board the lesson's SENTENCE steps down a little on a wide screen, the prompt with it
    (the two move together), so the longest stage still stands on ONE line. */
 @media (min-width: 641px) {
   .tutorial:not(.tutorial--word) .phrase,
@@ -5411,9 +5407,97 @@ figure.l1-fig {
   min-height: 52px;
 }
 /* In the lesson the tray's button ARRIVES — the reveal's CONTINUE, then CONTINUE or PLAY
-   where the keyboard dropped away: the app's own `arrive` gesture. */
+   where the keyboard dropped away — through the board's dither, in hard steps. */
 .tutorial .tray > .mix-btn {
-  animation: arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
+  animation: board-dissolve 240ms linear backwards;
+}
+
+/* LEVEL 1, CLEARED (`LessonBoard`): the level's card takes the whole room between the coach's
+   line and PLAY. The prompt, retired since the solve, leaves the flow, and the tray gives up
+   the keyboard's footprint down to PLAY's own height — PLAY stays where it stood (it is parked
+   on the tray's foot), and the room above it is the card's. The card is sized by script to the
+   list hero's shape inside that room. */
+.tutorial.l1-cleared .input-area {
+  display: none;
+}
+.tutorial.l1-cleared .tray {
+  height: auto;
+}
+.l1-clear-room {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* LEVEL 1'S HOLD (`LazyLevelOne`, while the lesson's chunk is on its way): its first screen's
+   own layout, so nothing that lands moves — the byline with the level's number and line as
+   real text, the coach's box, the board's word and the call's slot in the slate stipple. The
+   stipple comes in only once the skeleton's wait is over (a quick chunk never flashes it), then
+   breathes. */
+.l1-hold .l1-bot-hold {
+  flex: none;
+  /* The coach's sprite above its feet: it stands on the floor, as the coach does. */
+  width: 44px;
+  height: 54px;
+  margin-bottom: -12px;
+}
+.l1-hold .l1-step {
+  visibility: hidden;
+}
+.l1-hold .l1-word-hold {
+  display: inline-block;
+  width: 5em;
+  height: 1em;
+  vertical-align: middle;
+}
+.l1-hold .l1-call-hold {
+  width: 100%;
+  max-width: 430px;
+  height: 52px;
+  margin-top: auto;
+}
+.l1-hold .stat-slot.breathing {
+  animation:
+    board-dissolve 240ms linear var(--hold-wait, 320ms) backwards,
+    stat-breathe 640ms step-end var(--hold-wait, 320ms) infinite;
+}
+
+/* THE KEYBOARD'S HOLD (`KeyboardHold`): the pad's footprint before its keys can be pressed —
+   every key's slot in the slate stipple, on the keyboard's own rows and sizes, breathing at
+   once (it answers the act that asked for the keys). It rises into the tray as the keys would
+   (the wrapper's `kb-rise`), and the keys come in over it through the dither as it goes out
+   through the cells they take (`.from-hold`, `.kb-hold-out`). */
+.kb-hold .kb-row {
+  animation: none;
+}
+.kb-hold .kb-slot {
+  background: conic-gradient(var(--rail) 25%, transparent 0 50%, var(--rail) 0 75%, transparent 0) 0 0 / 4px 4px;
+  border-radius: 0;
+  cursor: default;
+  transition: none;
+}
+.kb-hold .kb-slot.breathing {
+  animation: stat-breathe 640ms step-end infinite;
+}
+.kb-exit.from-hold {
+  position: relative;
+}
+.kb-exit.from-hold .keyboard .kb-row {
+  animation: board-dissolve 240ms linear backwards;
+}
+.kb-hold-out {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.kb-hold-out .kb-hold .kb-row {
+  animation: board-dissolve-out 240ms linear forwards;
 }
 @media (max-width: 640px) {
   .tutorial {
@@ -5432,14 +5516,8 @@ figure.l1-fig {
   .l1-title-row {
     gap: 10px;
   }
-  .l1-no {
-    font-size: 10px;
-  }
   .l1-title {
     font-size: 15px;
-  }
-  .l1-step {
-    font-size: 11px;
   }
   .l1-voice {
     --voice-fs: 15px;
@@ -5455,8 +5533,12 @@ figure.l1-fig {
      gap = side gap = 14px. On the BUTTON rather than
      on the tray's padding, because the tray's height is the keyboard's and has to stay
      exactly that. */
-  .mix-btn {
+  .mix-btn,
+  .l1-hold .l1-call-hold {
     margin-bottom: 10px;
+  }
+  .l1-hold .l1-bot-hold {
+    margin-bottom: -10px;
   }
 }
 /* The narrowest phones: the longest line holds in its four lines down to 320, in either
@@ -5473,13 +5555,13 @@ figure.l1-fig {
     letter-spacing: -0.02em;
   }
 }
-/* A short screen: the plate gives up height first. */
+/* A short screen: the board gives up height first. */
 @media (max-height: 700px) {
   .l1-fig {
     min-height: 100px;
   }
 }
-/* A short phone (an SE's 553px of Safari): the page's top, the voice's leading and the plate
+/* A short phone (an SE's 553px of Safari): the page's top, the voice's leading and the board
    give up what keeps the keys and the stage's button on screen. */
 @media (max-width: 640px) and (max-height: 600px) {
   .tutorial {
@@ -5494,10 +5576,6 @@ figure.l1-fig {
   }
   .l1-fig {
     min-height: 84px;
-  }
-  /* The finale's card at that height is its labels and its title alone. */
-  .level-clear .learn-sub {
-    display: none;
   }
 }
 
