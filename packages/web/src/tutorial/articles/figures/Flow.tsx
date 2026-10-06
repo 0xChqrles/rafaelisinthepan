@@ -2,8 +2,8 @@ import { t } from '../../../i18n';
 import { useArticleLang } from '../lang';
 
 // TWO PIPELINES, SIDE BY SIDE: the same reading, a different end. Each pipeline is a column of
-// its steps in the chrome's voice, one after the other down the floor's stipple stood up (the
-// rail between two steps), and the steps where the two part ways wear the WHITE TITLE CHIP, the
+// its steps, each a note in a sentence, one after the other down the floor's stipple stood up
+// (the rail between two steps), and the steps where the two part ways wear the WHITE TITLE CHIP, the
 // one emphasis gesture. Row-aligned on one grid (step n of one beside step n of the other), but
 // written COLUMN BY COLUMN, so it is read one pipeline at a time: each is a list named after its
 // pipeline, its cells placed on the grid explicitly.

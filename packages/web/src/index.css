@@ -9406,15 +9406,22 @@ figure.l1-fig {
   overflow: hidden;
 }
 
-/* THE LOOP: the steps in the chrome's voice, the white title chip on the step at hand — one
-   white sheet over the list carrying its words again in the ground's ink, clipped to that
-   step (`Loop` writes the clip and travels it). */
+/* THE LOOP: the steps as notes in a sentence, the return from the last to the first on the
+   raster in the list's left gutter (`.ar-loop-rail`), and the white title chip on the step at
+   hand — one white sheet over the list carrying its words again in the ground's ink, clipped
+   to that step (`Loop` writes the clip and hops it). */
 .ar-loop {
   position: relative;
 }
+.ar-loop-rail {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+/* The return's gutter on the left, the chip's own padding past the words on the right. */
 .ar-loop ol {
   margin: 0;
-  padding: 0;
+  padding: 0 7px 0 36px;
   list-style: none;
   display: flex;
   flex-direction: column;
@@ -9432,15 +9439,18 @@ figure.l1-fig {
   line-height: 1;
   color: var(--muted);
 }
+/* A step is a note: a sentence, its first letter the only capital. */
 .ar-loop-text {
   justify-self: start;
   font-family: var(--ui);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 15px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 14px;
+  font-weight: 450;
+  line-height: 18px;
   color: var(--muted);
+}
+.ar-loop-text::first-letter,
+.ar-flow-text::first-letter {
+  text-transform: uppercase;
 }
 .ar-loop-ink {
   position: absolute;
@@ -9547,7 +9557,7 @@ figure.l1-fig {
   color: var(--muted);
 }
 
-/* THE FLOW: two columns of steps in the chrome's voice down the floor's stipple stood up, the
+/* THE FLOW: two columns of steps, notes in a sentence, down the floor's stipple stood up, the
    steps where the two part ways in the white title chip (`Flow`). Each step's cell carries the
    rail through its whole height (half of it at the ends), its words on a patch of ground. */
 .ar-flow {
@@ -9586,12 +9596,10 @@ figure.l1-fig {
 .ar-flow-text {
   display: inline-block;
   max-width: 100%;
-  padding: 5px 7px 4px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 15px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  padding: 3px 7px;
+  font-size: 14px;
+  font-weight: 450;
+  line-height: 18px;
   background: var(--bg);
   color: var(--fg);
 }
