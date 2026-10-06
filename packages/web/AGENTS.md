@@ -2410,16 +2410,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   four corners on a phone (the device frame's on desktop) and the WHIPPIN AI lockup, the
   signed-out screen's furniture (`.invite-frame`) — and in the middle `components/GroupOrbit`:
   the group's NAME in `.link-name`'s white chip, case kept, one line (its size stepped down a
-  whole pixel at a time where a long one would touch a mark), the members' MARKS round it
-  (`Avatar sharp`, ten whole pixels a cell: 60px on a phone, 50 under 340, 80 on a wide
-  scene) on the card's slate Bayer ORBIT on the house's 2px cell, the rest folded into the
+  whole pixel at a time where a long one would touch a mark, its box computed for the size
+  it is set at), the members' MARKS round it (`Avatar sharp`, ten cells of whole pixels: 6px
+  a cell on a phone, 60px; 5 under 340, 50px; 8 on a wide scene, 80px) on the card's slate
+  Bayer ORBIT on the house's 2px cell, the rest folded into the
   card's `+N` checker tile — the card's own placement, trail and tile (`@whippin/shared`
   `orbitPlaces` / `orbitTrail` / `plusTile`, never re-derived), its `GROUP_MARKS_SHOWN`
   places; the `+N`'s count at the card's size for the tile (`plusLabelSize`) stepped down to
   a whole size of the pixel face, on a cut-out of whole tile cells centred on the tile
   (`moreTile`). **The orbit keeps a SEAT for the reader** (`orbitPlacesFor`): the LAST place,
-  clockwise from the top, an empty mark's box in the floor's stipple; every place is decided
-  ONCE, with the seat in it, so nothing on the orbit ever moves. The calls stand in THREE
+  clockwise from the top, its room kept and the trail knocked out round it from the first
+  frame, and NOTHING DRAWN in it until the JOIN is out (a still stipple square there reads as a
+  face that did not load); every place is decided ONCE, with the seat in it, so nothing on
+  the orbit ever moves. The calls stand in THREE
   fixed slots on the bottom edge (a line, the call, the word under it), the call in ONE place
   in every state: JOIN (`.mix-btn`) over PLAY (the word). **While the JOIN is out** the
   button charges (`BusyButton`) and the seat BREATHES, both after `SKELETON_WAIT_MS`.
@@ -2432,16 +2435,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
   whose own list holds `GROUPS_MAX` groups, lands with no seat and no JOIN — a control that
   can only be refused is a false offer — so the landing holds until that list is known.
   **The two CAPS the server answers** (409 `group_full` / `group_limit`, each read off its
-  CODE: the group's room and the reader's own `GROUPS_MAX` are different acts) close the
-  seat through the dither, its place left empty. Either way the group's face STAYS, one
+  CODE: the group's room and the reader's own `GROUPS_MAX` are different acts) end the
+  seat's breath in one frame, its place left empty. Either way the group's face STAYS, one
   muted line takes the line's slot (`groupFull`, `inviteLimit`) and PLAY is the call — no
   danger ink. **EXPIRED** (404 `unknown_group`, on the read or the tap) is the board's sad
   ghost at 4x, bobbing five beats, over one line (`inviteExpired`), PLAY the call. **THE
-  WAIT** is the scene's shapes as holds (the chip's box and three marks', the house's
-  breathing slate, `aria-busy` and the sr-only word), shown only once the read has taken
-  `SKELETON_WAIT_MS`; **a READ that FAILED** is no verdict about the group: the holds stand
-  STILL at half their cells, one muted line (`inviteFailed` — never `failedJoin`: nothing
-  was joined) and RETRY as `.quiet-btn`. What lands arrives through the board's dither; no
+  WAIT** holds the one shape whose place is known before the group is — the name chip's box,
+  in the house's breathing slate, with `aria-busy` and the sr-only word — shown only once the
+  read has taken `SKELETON_WAIT_MS` (the marks' places hang on how many there are, so no hold
+  stands where a mark may not); **a READ that FAILED** is no verdict about the group: the
+  chip's hold stands STILL at half its cells, one muted line (`inviteFailed` — never
+  `failedJoin`: nothing was joined) and RETRY as `.quiet-btn`. What lands arrives through the board's dither; no
   `LoadError`, no `.arrive`, no `LoadingWave` on this screen. Contract-tested
   (`GroupInvite.test.ts`: the join's verdicts, `landingOf`, `orbitPlacesFor`).
 

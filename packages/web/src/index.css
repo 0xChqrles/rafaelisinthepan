@@ -8385,9 +8385,10 @@ figure.l1-fig {
 .invite-seat > svg {
   display: block;
 }
-/* THE WAIT: the shapes the scene will hold — the chip's box, three marks' — in the house's
-   breathing slate (`.link-hold`), shown only once the read has taken SKELETON_WAIT_MS. A read
-   that FAILED leaves them standing STILL at half their cells: what was being read, not read. */
+/* THE WAIT: the one shape whose place is known before the group is — the name chip's box —
+   in the house's breathing slate (`.link-hold`), shown only once the read has taken
+   SKELETON_WAIT_MS. A read that FAILED leaves it standing STILL at half its cells: what was
+   being read, not read. */
 .invite-holds.first {
   animation: busy-wait 1ms step-end var(--hold-wait, 0ms) backwards;
 }
@@ -8403,30 +8404,20 @@ figure.l1-fig {
   -webkit-mask-image: var(--dz-4);
   mask-image: var(--dz-4);
 }
-/* THE READER'S SEAT, empty: a mark's box in the floor's stipple (the empty board's own
-   silhouettes). It BREATHES while it fills — after the same SKELETON_WAIT_MS as the button
-   whose act is out — goes through the dither if a cap closes it, and stands until the mark
-   dropping into it lands. */
+/* THE READER'S SEAT draws nothing until their JOIN is out (its place kept, the trail knocked
+   out round it). Then the floor's stipple BREATHES in it — after the same SKELETON_WAIT_MS as
+   the button whose act is out: the house's one wait, never a still square that would read as a
+   face that did not load — and the answer ends it in one frame: the mark drops in, or a cap
+   leaves the place empty. */
 .invite-free {
   position: absolute;
   inset: 0;
   background: var(--rail);
   -webkit-mask-image: var(--dz-2);
   mask-image: var(--dz-2);
-}
-.invite-free.filling {
-  animation: link-hold-breathe 640ms steps(1, end) var(--hold-wait, 0ms) infinite;
-}
-.invite-free.closed {
-  animation: board-dissolve-out 240ms linear forwards;
-}
-.invite-free.landing {
-  animation: invite-seat-taken 1ms step-end var(--land, 0ms) forwards;
-}
-@keyframes invite-seat-taken {
-  to {
-    visibility: hidden;
-  }
+  animation:
+    busy-wait 1ms step-end var(--hold-wait, 0ms) backwards,
+    link-hold-breathe 640ms steps(1, end) var(--hold-wait, 0ms) infinite;
 }
 .invite-own {
   position: absolute;
@@ -8522,8 +8513,7 @@ figure.l1-fig {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .invite-ghost,
-  .invite-free.filling {
+  .invite-ghost {
     animation: none;
   }
 }

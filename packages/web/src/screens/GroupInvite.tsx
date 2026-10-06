@@ -234,13 +234,7 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
   const shown: Phase = phase === 'idle' && face !== null && face.landing !== 'open' ? face.landing : phase;
   const seated = face !== null && face.landing === 'open';
   const seat: SeatState =
-    shown === 'full' || shown === 'limit'
-      ? 'closed'
-      : shown === 'busy' || (shown === 'done' && own === null)
-        ? 'filling'
-        : shown === 'done'
-          ? 'taken'
-          : 'free';
+    shown === 'busy' || (shown === 'done' && own === null) ? 'filling' : shown === 'done' ? 'taken' : 'empty';
 
   // The calls stand in THREE fixed slots — a line, the call, the word under it — so the call
   // is in one place whatever the state, and nothing above it moves when the state changes.

@@ -27,15 +27,17 @@ import { t } from '../i18n';
 // the tile are the card's own (`@whippin/shared` `orbitPlaces` / `orbitTrail` / `plusTile`),
 // drawn at the screen's size on the house's 2px cell.
 //
-// THE ORBIT KEEPS A SEAT FOR THE READER: the last place, clockwise from the top — an empty
-// mark's box in the floor's stipple. It breathes while their JOIN is out, and their own mark
-// DROPS into it when the join lands: the podium's drop (`markAt`, whole cells under gravity),
-// its whole-pixel shake, and the strike sheet's burst behind it in the accent. Nothing else on
-// the orbit moves: every place is decided once, with the seat in it.
+// THE ORBIT KEEPS A SEAT FOR THE READER: the last place, clockwise from the top, its room kept
+// and the trail knocked out round it from the first frame — and nothing drawn in it until their
+// JOIN is out. Then the floor's stipple BREATHES there (a real wait, on the busy button's own
+// beat), and their own mark DROPS into it when the join lands: the podium's drop (`markAt`,
+// whole cells under gravity), its whole-pixel shake, and the strike sheet's burst behind it in
+// the accent. Nothing else on the orbit moves: every place is decided once, with the seat in it.
 //
-// While the group is read its shapes HOLD (`mode: 'wait'`): the chip's box and three marks'
-// boxes in the breathing slate, shown only once the read has taken SKELETON_WAIT_MS; a read
-// that FAILED leaves them standing still, at half their cells (`mode: 'failed'`).
+// While the group is read its NAME HOLDS (`mode: 'wait'`): the chip's box in the breathing
+// slate, shown only once the read has taken SKELETON_WAIT_MS — the one shape whose place is
+// known before the group is (the marks' places hang on how many there are). A read that FAILED
+// leaves it standing still, at half its cells (`mode: 'failed'`).
 
 export type OrbitPlace =
   | { kind: 'member'; member: BoardPlayer }
@@ -56,15 +58,14 @@ export function orbitPlacesFor(members: readonly BoardPlayer[], seat: boolean): 
   ];
 }
 
-// The reader's seat: empty, filling (their JOIN is out, or their mark is not read yet), taken
-// by their mark — or closed (a cap answered the JOIN): it goes, its place left empty.
-export type SeatState = 'free' | 'filling' | 'taken' | 'closed';
+// The reader's seat: empty (nothing drawn: before the JOIN, or after a cap answered it),
+// filling (their JOIN is out, or their mark is not read yet), or taken by their mark.
+export type SeatState = 'empty' | 'filling' | 'taken';
 
-// The scene's geometry off its box: a mark of ten whole pixels a cell (80 on a wide scene, 60
-// on a phone, 50 on the narrowest), the orbit as wide as the box holds its tiles and at most a
-// quarter taller than wide.
+// The scene's geometry off its box: a mark of ten cells, each a whole number of pixels (8px a
+// cell on a wide scene: 80; 6 on a phone: 60; 5 on the narrowest: 50), the orbit as wide as the
+// box holds its tiles and at most a quarter taller than wide.
 const EDGE = 4;
-const HOLD_PLACES = 3;
 const NAME_CLEAR = 12; // the least room between the name's chip and a mark
 const CHIP_LINE = 32; // `.link-name`'s whole 32px box
 const CHIP_PAD = 10; // …and its side padding
@@ -128,7 +129,7 @@ export default function GroupOrbit({
   mode,
   name = '',
   places = [],
-  seat = 'free',
+  seat = 'empty',
   own = null,
   drop = false,
 }: {
@@ -191,7 +192,7 @@ export default function GroupOrbit({
   }, []);
 
   const geo = size ? geometry(size.width, size.height) : null;
-  const count = mode === 'shown' ? places.length : HOLD_PLACES;
+  const count = mode === 'shown' ? places.length : 0;
   const spots = useMemo(
     () => (geo ? orbitPlaces(count, geo.cx, geo.cy, geo.rx, geo.ry, geo.mark) : []),
     [geo?.cx, geo?.cy, geo?.rx, geo?.ry, geo?.mark, count],
@@ -259,13 +260,6 @@ export default function GroupOrbit({
           >
             &nbsp;
           </span>
-          {spots.map(({ x, y }, k) => (
-            <span
-              key={k}
-              className={`invite-seat link-hold ${mode === 'wait' ? 'waiting' : 'failed'}`}
-              style={{ left: x, top: y, width: geo.mark, height: geo.mark }}
-            />
-          ))}
         </div>
       )}
       {geo && chip && mode === 'shown' && (
@@ -332,7 +326,7 @@ export default function GroupOrbit({
   );
 }
 
-// The reader's seat: the empty mark's box in the floor's stipple — breathing while it fills —
+// The reader's seat: nothing while it is empty, the floor's stipple breathing while it fills,
 // and their mark in it, dropping in when it was taken on this screen.
 function Seat({ state, own, mark, drop }: { state: SeatState; own: BoardPlayer | null; mark: number; drop: boolean }) {
   const markRef = useRef<HTMLSpanElement | null>(null);
@@ -344,17 +338,11 @@ function Seat({ state, own, mark, drop }: { state: SeatState; own: BoardPlayer |
     return () => animation.cancel();
   }, [falls]);
 
-  const free = (
-    <span
-      className={`invite-free${state === 'filling' || state === 'closed' ? ` ${state}` : ''}${falls ? ' landing' : ''}`}
-      style={{ '--land': `${DROP_MS}ms` } as CSSProperties}
-    />
-  );
-  if (state !== 'taken' || own === null) return free;
+  if (state === 'filling') return <span className="invite-free" />;
+  if (state !== 'taken' || own === null) return null;
   const burst = mark >= 80 ? ' x4' : mark < 60 ? ' x2' : '';
   return (
     <>
-      {falls && free}
       {falls && (
         <span className={`invite-burst${burst}`} style={{ left: mark / 2, top: mark / 2 }}>
           <Strike id={1} art={BURST_ART} color="var(--accent)" delayMs={DROP_MS} />
