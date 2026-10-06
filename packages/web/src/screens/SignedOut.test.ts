@@ -42,7 +42,7 @@ describe('faceFrom — what each profile answer means on the sign-out screen', (
   });
 
   it('a 404 and a FAILED read both keep the assigned identity, and both SETTLE', () => {
-    // Settling is the point: the screen holds a LoadingWave until the face is tagged with
+    // Settling is the point: the screen holds the face's box until the face is tagged with
     // this account, so a read that never resolved to anything would strand the player on a
     // loading frame with no way to reconnect or start fresh.
     const assigned = { publicId: ACCOUNT, shown: { name: anonName(ACCOUNT), avatar: null } };

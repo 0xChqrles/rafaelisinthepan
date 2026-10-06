@@ -321,59 +321,6 @@ body:has(.app > .board-screen) {
   overflow-y: auto;
 }
 
-.status {
-  font-family: var(--ui);
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--accent);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding-top: var(--cap-shift);
-}
-.status.error {
-  color: var(--danger);
-}
-/* The app's ONE loading shimmer (LoadingWave, user-decided 2026-08-18): every
-   "LOADING..."-style waiting line plays the same wave — a light rolling through the
-   letters in a loop, crest at the surface's full ink, trough sunk to 30% of it. It
-   rides OPACITY, never colour, so each host keeps its own recorded ink and face (the
-   status line's accent mono). Each letter runs the
-   one cycle phase-shifted by its index; the delays are NEGATIVE (index step minus a
-   whole cycle) so the wave is already mid-roll at mount — positive delays would hold
-   every letter flat until its first cycle came round — and the crest travels left to
-   right. Under reduced motion the global rule collapses the loop to one instant run
-   and the string rests plain at full ink. */
-.loading-wave {
-  display: inline-flex;
-}
-.loading-wave > span {
-  animation: loading-wave 1.6s ease-in-out infinite;
-  animation-delay: calc(var(--i, 0) * 0.13s - 1.6s);
-}
-@keyframes loading-wave {
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-/* The missing-puzzle screen's and the invite landing's stack (`NoPuzzle`, `LoadError`): the
-   message above its button, centred like the bare .status states it replaced. (Every other
-   failed read is `.quiet-failure`, said in place.) */
-.load-error {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-
-.load-error > p {
-  text-align: center;
-}
-
 /* THE MISSING PUZZLE (`NoPuzzle`): the board's empty state on the game's own zones. The
    sad ghost over ONE title in the foreground and ONE muted sentence, centred in the play
    area; the call where the gate's PLAY stands (`.tray-gate`'s `.mix-btn`), the other way
@@ -5370,15 +5317,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     padding: var(--app-pad-top) 14px 28px;
   }
 
-  /* Screens with no HUD stay vertically centered (auto margins beat align-items).
-     max-width caps them to the viewport so a long title / the flag grid wrap
-     within it instead of sizing to content and overflowing (h-scroll / clipping). */
-  .app > .status,
-  .app > .load-error {
-    margin: auto 0;
-    max-width: 100%;
-  }
-
   /* The play area still centers between the floating corner chips and the keyboard;
      padding-top clears only the 48px chip row + a breath — the old header+bar band's
      ~52px is reclaimed for play. `stretch` makes the sentence + input fill the width so
@@ -6031,40 +5969,6 @@ figure.l1-fig {
   }
 }
 
-/* THE OVERSHOOT ARRIVAL — the older rung-in gesture, still worn by the invite landing, a
-   load that failed, a missing day and the board's empty ghost (`.arrive` on the column whose
-   children they are). The keyframes name only where a block comes FROM and fill backwards,
-   so the block lands on its own opacity and nothing is held after the landing. A dialog
-   child is left alone. Reduced motion keeps the beats and drops the travel (the global
-   rule). */
-.arrive > :not(dialog) {
-  animation: arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
-}
-.arrive > :nth-child(2) {
-  animation-delay: 45ms;
-}
-.arrive > :nth-child(3) {
-  animation-delay: 90ms;
-}
-.arrive > :nth-child(4) {
-  animation-delay: 135ms;
-}
-.arrive > :nth-child(5) {
-  animation-delay: 180ms;
-}
-.arrive > :nth-child(6) {
-  animation-delay: 225ms;
-}
-.arrive > :nth-child(n + 7) {
-  animation-delay: 270ms;
-}
-@keyframes arrive {
-  from {
-    opacity: 0;
-    translate: 0 12px;
-  }
-}
-
 /* The tutorial's ONE action button — MIX, then PLAY — standing where the keyboard will land
    ("the mix button moves down, the keyboard moves up"). Full width of the keyboard's
    footprint.
@@ -6176,8 +6080,7 @@ figure.l1-fig {
      gap = side gap = 14px. On the BUTTON rather than
      on the tray's padding, because the tray's height is the keyboard's and has to stay
      exactly that. */
-  .mix-btn,
-  .l1-hold .l1-call-hold {
+  .mix-btn {
     margin-bottom: 10px;
   }
   .l1-hold .l1-bot-hold {
