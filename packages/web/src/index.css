@@ -868,8 +868,9 @@ body:has(.app > .board-screen) {
   padding: 0;
 }
 /* The game's gate comes in through the dither, in place — over the game's hold, or on its
-   own. (The invitation, which wears the same stack, stands from its first frame.) */
-.game:not(.invite) .rules-gate {
+   own. (The invitation, which wears the same stack, stands from its first frame; the hold's
+   own gate slots keep the hold's beat, `.game-hold .hold-tray`.) */
+.game:not(.invite) .rules-gate:not(.hold-tray) {
   -webkit-mask-size: 16px 16px;
   mask-size: 16px 16px;
   animation: board-dissolve 240ms linear backwards;
@@ -1087,11 +1088,13 @@ body:has(.app > .board-screen) {
 }
 /* THE TRAY, what the game will put there. For a player who lands on the prompt, the
    keyboard's UNLIT KEYS: its boxes in the archive's and the code prompt's IRON — the dusk
-   face, the stippled slate cap, the corners notched a cell — and no glyph. */
+   face, the stippled slate cap, the corners notched a cell — and no glyph. Stated on
+   `.kb-key.kb-slate`, so it wins over the live key's own dress (`.kb-key`, later in this
+   sheet) and keeps only its box. */
 .game-hold .kb-row {
   animation: none;
 }
-.kb-slate {
+.kb-key.kb-slate {
   position: relative;
   background: var(--surface-hover);
   border-radius: 0;
@@ -1112,7 +1115,7 @@ body:has(.app > .board-screen) {
     2px 2px
   );
 }
-.kb-slate::before {
+.kb-key.kb-slate::before {
   content: '';
   position: absolute;
   top: 0;
