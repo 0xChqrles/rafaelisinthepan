@@ -900,10 +900,10 @@ These are decided and verified against the code. Treat them as load-bearing.
     for the language control, replacing the globe; 24-grid, 1.8px, currentColor, 28px
     in-file size; globe.png and the standalone `.pixel-icon`
     class are deleted) **until 2026-09-02, when the whole chrome set went PIXEL** (see the
-    header-keys bullet: marks on the avatar's own 10×10 grid); the Whippin mark is the USER-DRAWN `assets/logo.svg` since
-    2026-08-18: cobalt with the cobalt-core/violet-halo AURA on the chooser and invite
-    hero spots (it sat in the header, glowing, until the same day's header finalization —
-    the mode tabs took its job and the mark left the bar). The BODY's global hard 2px
+    header-keys bullet: marks on the avatar's own 10×10 grid); the Whippin mark is the PIXEL
+    mark (`public/logo.png`, 22×22, traced as `@whippin/shared`'s `MARK_GLYPH`) in the
+    accent, at whole scales only: the header's title, the WHIPPIN AI lockups (the streak
+    celebration, the signed-out screen, the onboarding invitation) and the cards. The BODY's global hard 2px
     text-shadow is gone; pixel surfaces that relied on it (floating hits, loot) carry
     their own, and the topbar wears a soft bloom shadow instead.
   - **THE VIEWPORT IS AN INSTRUMENT (user-decided 2026-08-18, from the user's
@@ -1975,7 +1975,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     all three.
   - **THREE SURFACES STILL CANNOT SWITCH FROM WITHIN, each by an older decision**: the
     invite landing, the onboarding invitation and the signed-out screen — all three wear no
-    header at all, being surfaces "with nowhere else to be". They do honour `?lang=`, so a
+    header (the invitation draws only its lockup in the row's place), being surfaces "with
+    nowhere else to be". They do honour `?lang=`, so a
     link sent in a language renders them in it. (The missing-puzzle screen, headerless too,
     opens the SAME drums from its CHANGE LANGUAGE button — `NoPuzzle`, since 2026-09-05.)
 
@@ -4060,10 +4061,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the bot's briefing on the last sentence runs to five at 320px — `.coach-text`
   `max-height: 8.5em`, the board's `padding-top` grown to match); copy past five lines is a
   copy bug.
-  **The invitation SHOWS the game, then asks** (`tutorial/Invite.tsx`, no header;
-  user-decided 2026-10-06): a first visit (no `onboarded`) lands on it. Under the logo,
-  `tutorial/InviteDemo.tsx` plays the site's own sentence ONCE on the real `Phrase`/`Hole`
-  and an inactive `WordInput`, every frame a sentence: en *Every guess tells you how
+  **The invitation SHOWS the game, then asks** (`tutorial/Invite.tsx`, no header keys;
+  user-decided 2026-10-06): a first visit (no `onboarded`) lands on it. **It is laid out AS
+  THE GAME SCREEN IT OPENS ONTO**, on the game's own zones (`.game`, `.play`, `.tray` with the
+  gate's `.rules-gate`): the LOCKUP — the pixel mark (`MARK_GLYPH`, 1x, `crispEdges`) in the
+  accent with WHIPPIN AI beside it in the lockup type — in the header's row (`.topbar`
+  geometry), the mark on the pixel where the game's title draws it; the demo where the day's
+  sentence and prompt stand, at the game's size and left edge; the question and TUTORIAL /
+  SKIP in the tray, TUTORIAL the gate's own `.mix-btn` and SKIP its word, exactly where PLAY
+  and LEARN then stand — so SKIP reads as continuity (the mark stays, the sentence area
+  stays, the tray becomes the game's). The question is ONE line in either language (sized
+  off the column on a phone); a window 520px tall or less tightens the zones so all of it
+  stands on one screen. `tutorial/InviteDemo.tsx` plays the site's own sentence ONCE on the
+  real `Phrase`/`Hole` and an inactive `WordInput`, held to 22 glyphs a line (two lines, the
+  hole on the second in every state) with ONE departure from the game's dress, its LEADING
+  (`1em + 22px`), so the MISS float lands between the lines, clear of line 1; every frame a
+  sentence: en *Every guess tells you how
   lost⁹¹ you are.*, the demo typing `banana` (MISS, the game's own float and shake — it
   never enters the hole), then `near` (near²), then `close`; fr *Chaque essai te dit si tu
   es paumé³⁵⁵.*, `banane`, `loin` (loin⁴), `proche`. A closer word lands on the hole's own

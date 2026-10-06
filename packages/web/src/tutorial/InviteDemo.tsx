@@ -187,10 +187,13 @@ export default function InviteDemo({
     onDone();
   }, [onDone]);
 
+  // The game's own two rows, as children of the invitation's `.play`: the sentence (in the
+  // game's `.phrase-anchor`) and the prompt (in its `.prompt-zone`), so they stand at the
+  // game's left edge, size and spacing.
   return (
-    <div className="invite-demo">
+    <>
       <p className="sr-only">{capitalize(demo.words.join(' '))}</p>
-      <div className="invite-demo-board" aria-hidden="true">
+      <div className="phrase-anchor invite-demo" aria-hidden="true">
         {ready ? (
           <Phrase
             words={demo.words}
@@ -204,10 +207,9 @@ export default function InviteDemo({
           // The sentence's box, held empty until its face is in.
           <p className="phrase" />
         )}
-        <div
-          className={`input-area${done ? ' solving' : ''}`}
-          style={ready ? undefined : { visibility: 'hidden' }}
-        >
+      </div>
+      <div className="prompt-zone" aria-hidden="true" style={ready ? undefined : { visibility: 'hidden' }}>
+        <div className={`input-area${done ? ' solving' : ''}`}>
           <WordInput
             value={typed}
             history={NO_HISTORY}
@@ -221,6 +223,6 @@ export default function InviteDemo({
           />
         </div>
       </div>
-    </div>
+    </>
   );
 }

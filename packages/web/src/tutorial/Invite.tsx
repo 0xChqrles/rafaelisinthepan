@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import { MARK_GLYPH } from '@whippin/shared';
 import Button from '../components/Button';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { t } from '../i18n';
 import type { LangCode } from '../langs';
-import Logo from '../assets/logo.svg?react';
 import InviteDemo from './InviteDemo';
 import { preloadLevelOne } from './LazyLevelOne';
 
@@ -37,6 +37,13 @@ const MARK_DEADLINE_MS = 8_000;
 // promises no time. Either answer sets `onboarded`, so the question is never asked
 // again; the header's book remains the way back for a skipper who regrets. A veteran on
 // a new device is one SKIP away from playing.
+//
+// IT IS LAID OUT AS THE GAME SCREEN IT OPENS ONTO, on the game's own zones (`.game`,
+// `.play`, `.tray`): the lockup where the header's title holds the mark, the demo where the
+// day's sentence and prompt stand, and the question with its two answers in the tray, where
+// the gate's PLAY and LEARN then stand (TUTORIAL is the gate's own button, in its place). So
+// SKIP reads as continuity — the mark stays put, the sentence area stays, the tray becomes
+// the game's.
 export default function Invite({
   lang,
   onAccept,
@@ -66,35 +73,53 @@ export default function Invite({
   }, [lit, started, light]);
 
   return (
-    <main className="invite arrive" aria-labelledby="tutorial-invite-title">
-      <Logo className="invite-logo" aria-hidden />
-      <InviteDemo key={lang} lang={lang} onStart={start} onDone={light} />
-      <h1 id="tutorial-invite-title" className="invite-title">
-        {(() => {
-          const [head, mark] = splitHighlight(t(lang, 'inviteTitle'));
-          // The words stand from the first frame; the box is laid over them as a second,
-          // inverted copy and drawn across once lit, so the title never reads with a gap.
-          return (
-            <>
-              {head}
-              <span className={`invite-mark${lit ? ' lit' : ''}`}>
-                {mark}
-                <span className="invite-mark-box" aria-hidden="true">
-                  {mark}
-                </span>
-              </span>
-            </>
-          );
-        })()}
-      </h1>
+    <main className="invite game arrive" aria-labelledby="tutorial-invite-title">
+      {/* The header row, in the header's own geometry: the pixel mark exactly where the
+          game's title draws it, the app's name beside it where the language will stand. */}
+      <div className="topbar" aria-hidden="true">
+        <div className="topbar-inner">
+          <div className="topbar-left">
+            <span className="invite-lockup">
+              <svg viewBox={`0 0 ${MARK_GLYPH.width} ${MARK_GLYPH.height}`} shapeRendering="crispEdges">
+                <path d={MARK_GLYPH.path} fill="currentColor" />
+              </svg>
+              <span>WHIPPIN AI</span>
+            </span>
+          </div>
+        </div>
+      </div>
 
-      <div className="invite-actions">
-        <Button variant="primary" onClick={onAccept}>
-          {t(lang, 'inviteTutorial')}
-        </Button>
-        <Button variant="secondary" onClick={onSkip}>
-          {t(lang, 'inviteSkip')}
-        </Button>
+      <div className="play">
+        <InviteDemo key={lang} lang={lang} onStart={start} onDone={light} />
+      </div>
+
+      <div className="tray tray-gate">
+        <div className="rules-gate">
+          <h1 id="tutorial-invite-title" className="invite-title">
+            {(() => {
+              const [head, mark] = splitHighlight(t(lang, 'inviteTitle'));
+              // The words stand from the first frame; the box is laid over them as a second,
+              // inverted copy and drawn across once lit, so the title never reads with a gap.
+              return (
+                <>
+                  {head}
+                  <span className={`invite-mark${lit ? ' lit' : ''}`}>
+                    {mark}
+                    <span className="invite-mark-box" aria-hidden="true">
+                      {mark}
+                    </span>
+                  </span>
+                </>
+              );
+            })()}
+          </h1>
+          <button type="button" className="mix-btn" onClick={onAccept}>
+            {t(lang, 'inviteTutorial')}
+          </button>
+          <Button variant="secondary" onClick={onSkip}>
+            {t(lang, 'inviteSkip')}
+          </Button>
+        </div>
       </div>
     </main>
   );

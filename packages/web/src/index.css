@@ -5509,65 +5509,75 @@ figure.l1-fig {
   }
 }
 
-/* --- tutorial invitation (#51): the first visit's question, under the game played once
-   (`InviteDemo`), on the bare ground. --- */
-.invite {
-  width: min(560px, 100%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-}
-.invite-logo {
-  display: block;
-  width: 64px;
-  height: 60px;
-  margin-bottom: 34px;
-  color: var(--solve);
-}
-/* THE DEMO: the site's sentence on the real board, played once. ONE font size on the box, and
-   the sentence and the prompt both at 1em of it, so they move together (the prompt wears the
-   sentence's size, as in the game). A fixed box of 22em — 22 glyphs a line at every width,
-   the pixel face being 1em a glyph — centred in the column with its text on the left, as the
-   game's: a hole changing width moves only what follows it, and the line never re-centres.
-   Two lines are reserved and the hole stands on the second in every state (line 1 never
-   reaches it — no `text-wrap: balance` here, which would), so nothing above or below moves
-   while it changes. The game's own sentence and prompt rules do the rest. */
-.invite-demo {
-  width: 22em;
-  max-width: 100%;
-  margin-bottom: 32px;
-  font-size: 24px;
-  text-align: left;
+/* --- tutorial invitation (#51): the first visit's question, LAID OUT AS THE GAME SCREEN it
+   opens onto (`Invite`). It wears the game's own zones — `.game`, `.play`, `.tray` with the
+   gate's `.rules-gate` — so every breakpoint the game is tuned for holds it the same way: the
+   lockup in the header's row, the demo where the day's sentence and prompt stand, the question
+   and its two answers in the tray, TUTORIAL exactly where the gate's PLAY lands. --- */
+.invite .play {
   pointer-events: none;
 }
-.invite-demo-board {
+/* THE LOCKUP: the app's pixel mark (`MARK_GLYPH`, 22 cells at 1x — the header's own) in the
+   accent, the name beside it in the lockup type (`.streak-lockup`'s). In the header's row
+   and the title's box, so the mark stands on the pixel where the game's title draws it, and
+   the name starts where the language code will (the title's seam on a phone, 3px + 5px). */
+.invite-lockup {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.5em;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 0;
+  font-family: var(--ui);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  color: var(--fg);
+  white-space: nowrap;
 }
-.invite-demo .phrase,
-.invite-demo .word-input {
-  font-size: 1em;
+.invite-lockup svg {
+  flex: none;
+  display: block;
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
 }
+/* The name sits on the mark's weight, the header title's own 2px (`.app-title-lang`). */
+.invite-lockup span {
+  translate: 0 2px;
+}
+/* THE DEMO: the site's sentence on the game's own `.phrase`, at the game's size, played once.
+   Held to 22 glyphs a line (the pixel face is 1em a glyph), so it is two lines at every
+   width and the hole stands on the second in every state: a hole changing width moves only
+   what follows it, and line 1 never reflows. Two lines are reserved, so nothing below moves
+   while it decodes. THE LEADING is the one thing that differs from the game's: the MISS
+   float rises off the hole on line 2, and at the game's 1.5 it printed across line 1. The
+   float's rise is fixed in pixels (14px, `hit-pop-in`), so the band it needs between the
+   lines is too: one em of words plus 22px puts it clear of line 1 at every size, the phone's
+   18px float over 13px words included. */
 .invite-demo .phrase {
-  min-height: 3em;
-  max-width: none;
+  max-width: 22em;
+  line-height: calc(1em + 22px);
+  min-height: calc(2em + 44px);
 }
-.invite-demo .word-input {
-  min-width: 0;
+/* The exponent keeps the game's own leading: inherited as a length, the line's would stand
+   its smaller box taller than the line, and the sentence would shrink by 2px as it inks. */
+.invite-demo .hole-rank {
+  line-height: 1.5;
 }
-/* The question, under the demo: a bold statement with its LAST WORDS in the board's
-   inverted selection box (the Zaki-headline highlight, 2026-08-18). */
+/* The question, in the tray over its answers: a bold statement with its LAST WORDS in the
+   board's inverted selection box (the Zaki-headline highlight, 2026-08-18). One line in
+   either language at every width. */
 .invite-title {
+  align-self: stretch;
   margin: 0;
   font-family: var(--ui);
-  font-size: clamp(22px, 3.6vh, 30px);
+  font-size: 28px;
   font-weight: 700;
   line-height: 1.35;
   letter-spacing: 0.02em;
   text-transform: uppercase;
+  text-align: center;
+  white-space: nowrap;
   color: var(--fg);
   text-shadow: none;
   padding-top: var(--cap-shift);
@@ -5604,64 +5614,50 @@ figure.l1-fig {
     clip-path: inset(0 0 0 0);
   }
 }
-.invite-actions {
-  width: 100%;
-  margin-top: 32px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 24px;
-}
-/* The app's one big-action width (`.mix-btn`'s 430px). */
-.invite-actions .btn-primary {
-  width: 100%;
-  max-width: 430px;
+/* The question stands a step apart from the answers under it. */
+.invite .rules-gate .invite-title {
+  margin-bottom: 12px;
 }
 
 @media (max-width: 640px) {
-  /* Like the other no-HUD states, center while it fits and start at the top if a very
-     short viewport needs to scroll. */
-  .app > .invite {
-    margin: auto 0;
-    max-width: 100%;
-  }
-  .invite-logo {
-    margin-bottom: 28px;
-  }
-  /* The phone's game sentence size (`.phrase`'s phone clamp — the game sentence's own
-     exception to the 8px rule, kept so the demo is the size the player then meets),
-     bounded by its line: 22 glyphs in the column between `.app`'s 14px gutters. Below
-     ~368px wide the bound is the smaller and sets the size (a hair under the game's), so a
-     narrow phone shrinks the demo rather than breaking its lines. */
-  .invite-demo {
-    font-size: min(clamp(13px, 4.2vw, 19px), calc((100vw - 28px) / 22));
-    margin-bottom: 28px;
-  }
-
-  .invite-actions {
-    margin-top: 26px;
-    gap: 20px;
+  /* Sized off the column, so the longest question (en's 19 glyphs, about 12.7em with the
+     tracking) keeps a breath of ground on each side of its box. */
+  .invite-title {
+    font-size: min(28px, calc((100vw - 28px) / 14));
   }
 }
 
-/* Landscape phones and short browser windows keep the demo, the question and both buttons
-   visible without changing the primary action's MIX-sized tap target: the logo gives its
-   room, the demo steps down to 16px (still bounded by its line). */
+/* Landscape phones and short browser windows: the game's own zones are too tall here (its
+   header clearance and keyboard footprint leave the sentence no room), so the invitation
+   tightens its own — the header's clearance, the play area's gaps, the tray to its stack —
+   and the demo steps down to the phone's 16px, keeping all of it on one screen. */
 @media (max-height: 520px) {
-  .invite-logo {
-    display: none;
+  .invite.game {
+    padding-top: 52px;
+    gap: 12px;
   }
-  .invite-demo {
-    font-size: min(16px, calc((100vw - 28px) / 22));
-    margin-bottom: 16px;
+  .invite .play {
+    gap: 12px;
+  }
+  .invite .phrase,
+  .invite .word-input {
+    font-size: 16px;
+  }
+  /* …with the phone's float over it. */
+  .invite .floating-hit {
+    font-size: 18px;
+  }
+  .invite .tray {
+    height: auto;
+  }
+  .invite .rules-gate {
+    gap: 4px;
   }
   .invite-title {
-    font-size: 19px;
-    line-height: 1.3;
+    font-size: 22px;
   }
-  .invite-actions {
-    margin-top: 20px;
-    gap: 18px;
+  .invite .rules-gate .invite-title {
+    margin-bottom: 10px;
   }
 }
 
