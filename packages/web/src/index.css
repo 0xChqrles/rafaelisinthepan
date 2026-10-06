@@ -8177,24 +8177,29 @@ figure.l1-fig {
   text-transform: uppercase;
   color: var(--muted);
 }
-/* A GROUP'S THREE BOARDS (`PeriodSwitch`): three EQUAL CELLS said with the corner brackets —
-   every word stands in its own resting corners in the slate rail (the switch's affordance: bare
-   labels "float in the screen with no purpose"), the shown one in the plain ink under the
-   FRAME: one set of white corners, laid over its cell, that travels to the word turned to in
-   hard steps and LOCKS ON when the screen opens (its corners closing in from outside). */
+/* THE BRACKETED SWITCH (`BracketSwitch`: a group's three boards, `PeriodSwitch`, and an
+   article figure's states): EQUAL CELLS said with the corner brackets — every word stands in
+   its own resting corners in the slate rail (the switch's affordance: bare labels "float in
+   the screen with no purpose"), the shown one in the plain ink under the FRAME: one set of
+   white corners, laid over its cell, that travels to the word turned to in hard steps and
+   LOCKS ON when the screen opens (its corners closing in from outside). */
 .period-switch {
   flex: 1;
   min-width: 0;
 }
-/* The three cells share the line evenly, each a WHOLE pixel wide (the resting corners and the
-   frame, measured off the cell, land on the same pixels); the line's spare pixel or two stays at
-   its end. The plain `1fr` line is the fallback where `round()` is missing. */
+/* The cells (`--n`, the switch's count) share the line evenly, each a WHOLE pixel wide (the
+   resting corners and the frame, measured off the cell, land on the same pixels); the line's
+   spare pixel or two stays at its end. The plain `1fr` line is the fallback where `round()` is
+   missing. */
 .period-line {
   --gap: 8px;
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-columns: repeat(3, round(down, calc((100% - 2 * var(--gap)) / 3), 1px));
+  grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr));
+  grid-template-columns: repeat(
+    var(--n, 3),
+    round(down, calc((100% - (var(--n, 3) - 1) * var(--gap)) / var(--n, 3)), 1px)
+  );
   gap: var(--gap);
   margin: 0 6px;
 }
@@ -10375,7 +10380,8 @@ figure.l1-fig {
   font-weight: 650;
 }
 
-/* THE FIGURES — each in its own panel, the caption under it: its number, then what it shows. */
+/* THE FIGURES — each on the bare ground, as the game's pieces stand (no panel: they are drawn
+   with them, below), the caption under it: its number, then what it shows. */
 .ar-fig {
   margin: 8px 0;
   display: flex;
@@ -10383,10 +10389,7 @@ figure.l1-fig {
   gap: 10px;
 }
 .ar-fig-body {
-  padding: 20px 18px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: #0a0b10;
+  padding: 12px 0;
 }
 .ar-fig-caption {
   font-size: 13px;
@@ -10400,148 +10403,166 @@ figure.l1-fig {
   letter-spacing: 0.14em;
   color: var(--fg);
 }
-.ar-tabs {
+/* THE FIGURES ARE THE GAME'S OWN PIECES: what a figure shows is drawn with what the player
+   meets in the game — the boards' switch for its states, the hole's meter for a share, the
+   white title chip for the step at hand, the words as the game lists them, the boards' lines
+   for a ranking — on the house's 2px cells where a picture is needed (`cells.tsx`), the pixel
+   face only at 8 or 16px, its motion in hard steps starting once the figure is on screen
+   (`useSeen`), a motion that repeats resting while nobody can see it (`rasterWatch`). On a
+   phone the pixel figures that would not fit at 16px step down to 8. */
+
+/* A FIGURE'S STATES on the boards' bracketed switch (`Tabs` over `BracketSwitch`), centred
+   over the drawing, as wide as its words need. */
+.ar-switch {
+  width: min(100%, 320px);
+  margin: 0 auto 18px;
+}
+/* Its frame locks on when the figure comes on screen: held on the lock's first frame until. */
+.ar-switch:not(.seen) .period-frame i {
+  animation-play-state: paused;
+}
+/* THE FIGURES' RASTER: one canvas pixel a 2px cell, never smoothed. */
+.ar-cells {
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* THE PLANE: the raster, and over it the words' chips and the pairs' lengths (`Plane`). */
+.ar-plane-box {
   display: flex;
   justify-content: center;
-  gap: 22px;
-  margin-bottom: 14px;
 }
-.ar-tab {
-  padding: 4px 0;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  font-family: var(--ui);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
-  cursor: pointer;
+.ar-plane-draw {
+  position: relative;
+  flex: none;
 }
-.ar-tab.on {
-  color: var(--fg);
-  border-bottom-color: var(--fg);
-}
-/* The plane: grid, edges, words as squares — the focus word in the accent. */
-.ar-plane-svg {
-  display: block;
-  width: 100%;
-  max-width: 460px;
-  height: auto;
-  margin: 0 auto;
-}
-.ar-grid {
-  stroke: rgba(255, 255, 255, 0.07);
-  stroke-width: 1;
-}
-.ar-edge {
-  stroke: var(--muted);
-  stroke-width: 1.3;
-}
-.ar-edge-label rect {
-  fill: #0a0b10;
-}
-.ar-edge-label text {
-  fill: var(--fg);
-  font-family: var(--ui);
-  font-size: 15px;
-  font-weight: 500;
-}
-.ar-point rect {
-  fill: var(--fg);
-}
-.ar-point text {
-  fill: var(--fg);
+.ar-plane-word,
+.ar-plane-length {
+  position: absolute;
   font-family: var(--pixel-font);
-  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
 }
-.ar-point.focus rect,
-.ar-point.focus text {
-  fill: var(--accent);
+/* A word as the game shows one: the held chip's white ground. */
+.ar-plane-word {
+  background: var(--fg);
+  color: var(--bg);
 }
-/* Bars: they grow in when the figure comes on screen, one after the other. */
+/* The subject: the found word's cobalt ink, no chip — on a patch of the ground, so a line
+   passing it stops at its letters. */
+.ar-plane-word.focus {
+  background: var(--bg);
+  color: var(--accent);
+}
+/* A length: the pixel figures in the heat's ink (a rank exponent's), on a cell of ground. */
+.ar-plane-length {
+  padding: 2px;
+  background: var(--bg);
+  color: var(--length-ink);
+}
+
+/* THE BARS: each word, the hole's meter charged to its share in the slate, the share
+   (`Bars`). */
 .ar-bars {
   display: grid;
-  gap: 12px;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 14px 16px;
 }
 .ar-bar-row {
-  display: grid;
-  grid-template-columns: 7.2em 1fr 3.6em;
-  align-items: center;
-  gap: 12px;
+  display: contents;
 }
-.ar-bar-word {
+.ar-bar-word,
+.ar-bar-value {
   font-family: var(--pixel-font);
-  font-size: 8px;
-}
-.ar-bar-track {
-  height: 10px;
-}
-.ar-bar {
-  display: block;
-  height: 100%;
-  width: calc(var(--w) * 100%);
-  background: var(--muted);
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 700ms cubic-bezier(0.2, 0.8, 0.2, 1) calc(var(--i) * 70ms);
-}
-.ar-bars.seen .ar-bar {
-  transform: scaleX(1);
+  font-size: 16px;
+  line-height: 1;
 }
 .ar-bar-value {
-  font-size: 12px;
   color: var(--muted);
   text-align: right;
-  font-variant-numeric: tabular-nums;
 }
-/* The loop: the steps lit one after the other. */
+.ar-bar-meter {
+  position: relative;
+  height: 12px;
+  overflow: hidden;
+}
+/* In the slate: cobalt is a found word, and these guesses mean nothing yet. */
+.ar-bar-meter .hole-meter-canvas {
+  color: var(--rail);
+}
+
+/* THE LOOP: the steps as notes in a sentence, the return from the last to the first on the
+   raster in the list's left gutter (`.ar-loop-rail`), and the white title chip on the step at
+   hand — one white sheet over the list carrying its words again in the ground's ink, clipped
+   to that step (`Loop` writes the clip and hops it). */
 .ar-loop {
-  list-style: none;
+  position: relative;
+}
+.ar-loop-rail {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+/* The return's gutter on the left, the chip's own padding past the words on the right. */
+.ar-loop ol {
   margin: 0;
-  padding: 0;
+  padding: 0 7px 0 36px;
+  list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 16px;
 }
 .ar-loop-step {
-  display: flex;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
   align-items: baseline;
-  gap: 12px;
-  padding: 9px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  font-size: 13.5px;
-  color: var(--muted);
-  transition: color 0.15s linear, border-color 0.15s linear, background-color 0.15s linear;
-}
-.ar-loop-step.lit {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--fg);
+  gap: 14px;
 }
 .ar-loop-no {
   font-family: var(--pixel-font);
   font-size: 8px;
-}
-.ar-loop-back {
-  text-align: center;
-  font-size: 18px;
   line-height: 1;
   color: var(--muted);
 }
-/* Word lists: each word a small tile in the pixel face; a marked word wears the heat ramp's
-   end its tone names. */
+/* A step is a note: a sentence, its first letter the only capital. */
+.ar-loop-text {
+  justify-self: start;
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 450;
+  line-height: 18px;
+  color: var(--muted);
+}
+.ar-loop-text::first-letter,
+.ar-flow-text::first-letter {
+  text-transform: uppercase;
+}
+.ar-loop-ink {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  background: var(--fg);
+  pointer-events: none;
+}
+.ar-loop-ink.on {
+  visibility: visible;
+}
+.ar-loop-ink .ar-loop-no,
+.ar-loop-ink .ar-loop-text {
+  color: var(--bg);
+}
+
+/* THE WORDS: the sentence in the pixel face, then the words as the game lists a hole's —
+   columns as wide as the longest word (`--longest`, in the face's 1em glyphs). A list turned
+   to dissolves in through the cells the one leaving dissolves out through (`Words`). */
 .ar-fig-sentence {
-  margin-bottom: 16px;
+  margin: 0 0 20px;
+  font-family: var(--pixel-font);
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--fg);
 }
-.ar-lists.columns {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 20px;
-}
-/* Tabs: every list in one cell, the hidden ones holding their room, so the tallest sets it. */
 .ar-lists.stacked {
   display: grid;
 }
@@ -10552,156 +10573,144 @@ figure.l1-fig {
   display: block;
   visibility: hidden;
 }
-.ar-list-label {
-  margin: 0 0 10px;
-  font-size: 10.5px;
-  font-weight: 650;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
+.ar-list.in {
+  animation: board-dissolve 240ms linear backwards;
+}
+.ar-list.out {
+  animation: board-dissolve-out 240ms linear forwards;
 }
 .ar-list-words {
-  list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--longest) * 1em), 1fr));
+  gap: 16px 24px;
+  font-family: var(--pixel-font);
+  font-size: 16px;
+  line-height: 1;
+  color: var(--fg);
 }
 .ar-list-words li {
-  padding: 6px 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  font-family: var(--pixel-font);
-  font-size: 8px;
-  line-height: 1.25;
-}
-.ar-list-words li.marked {
-  border-width: 2px;
-  padding: 5px 7px;
+  white-space: nowrap;
 }
 .ar-list-words li.marked.wrong {
   color: var(--mark);
-  border-color: color-mix(in srgb, var(--mark) 55%, transparent);
 }
 .ar-list-words li.marked.right {
   color: var(--solve);
-  border-color: color-mix(in srgb, var(--solve) 55%, transparent);
 }
-/* Attention's arcs, drawn in when the figure arrives, thicker for a larger share. */
-.ar-arcs-svg {
-  display: block;
-  width: 100%;
-  height: 92px;
-  overflow: visible;
-}
-.ar-arc {
-  fill: none;
-  stroke: var(--fg);
-  stroke-width: calc(1.2px + var(--w) * 4px);
-  stroke-linecap: round;
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  transition: stroke-dashoffset 900ms cubic-bezier(0.4, 0, 0.2, 1) calc(var(--i) * 140ms);
-}
-.ar-arcs.seen .ar-arc {
-  stroke-dashoffset: 0;
-}
+
+/* THE ARCS: the raster of arcs standing on the tokens, the sentence in the pixel face — the
+   focus on the held chip — and each share in the 8px figures under its token (`Arcs`). */
 .ar-tokens {
-  list-style: none;
-  margin: 0;
+  margin: 4px 0 0;
   padding: 0;
+  list-style: none;
   display: grid;
 }
 .ar-token {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 .ar-token-word {
-  padding: 3px 5px;
-  font-size: 13px;
-  font-weight: 500;
+  padding: 2px 4px;
+  font-family: var(--pixel-font);
+  font-size: 16px;
+  line-height: 1;
   white-space: nowrap;
+  color: var(--fg);
 }
 .ar-token.focus .ar-token-word {
   background: var(--fg);
   color: var(--bg);
-  font-weight: 650;
 }
-.ar-token.after .ar-token-word {
+.ar-token.after .ar-token-word,
+.ar-token.hidden .ar-token-word {
   color: var(--muted);
 }
 .ar-token.hidden .ar-token-word {
-  color: var(--muted);
-  text-decoration: line-through;
+  text-decoration: line-through 2px;
 }
 .ar-token-share {
-  font-size: 11px;
+  font-family: var(--pixel-font);
+  font-size: 8px;
+  line-height: 1;
+  white-space: pre;
   color: var(--muted);
-  font-variant-numeric: tabular-nums;
 }
-/* Two pipelines, row-aligned; where they part ways, the accent. */
+
+/* THE FLOW: two columns of steps, notes in a sentence, down the floor's stipple stood up, the
+   steps where the two part ways in the white title chip (`Flow`). Each step's cell carries the
+   rail through its whole height (half of it at the ends), its words on a patch of ground. */
 .ar-flow {
   display: grid;
-  gap: 16px 12px;
+  column-gap: 12px;
+}
+.ar-flow-col {
+  display: contents;
 }
 .ar-flow-name {
-  margin: 0;
-  font-size: 10.5px;
-  font-weight: 650;
-  letter-spacing: 0.14em;
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   text-align: center;
   color: var(--muted);
 }
 .ar-flow-step {
-  position: relative;
-  padding: 10px 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  font-size: 12.5px;
-  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 0;
   text-align: center;
+  background: repeating-linear-gradient(to bottom, var(--rail) 0 2px, transparent 2px 6px) 50% 0 / 2px 100%
+    no-repeat;
 }
-.ar-flow-col {
-  display: contents;
+.ar-flow-step.first {
+  background-position: 50% 100%;
+  background-size: 2px 50%;
 }
-.ar-flow-step:not(.last)::after {
-  content: '↓' / '';
-  position: absolute;
-  left: 50%;
-  bottom: -15px;
-  translate: -50% 0;
-  font-size: 11px;
-  color: var(--muted);
+.ar-flow-step.last {
+  background-size: 2px 50%;
 }
-.ar-flow-step.marked {
-  border-color: var(--accent);
-  color: var(--accent);
+.ar-flow-text {
+  display: inline-block;
+  max-width: 100%;
+  padding: 3px 7px;
+  font-size: 14px;
+  font-weight: 450;
+  line-height: 18px;
+  background: var(--bg);
+  color: var(--fg);
 }
-/* The tournament's top, drawn as a climb (Tournament.tsx): places by grade on the left, the
-   lines across, the places after the tournament on the right with each word and its mean win
-   probability. Every head is one word or two, on one line at every width. */
-.ar-climb {
-  --row: 36px;
+.ar-flow-text.marked {
+  background: var(--fg);
+  color: var(--bg);
 }
+
+/* THE TOURNAMENT: the grade's places, the raster of lines, and the tournament as the boards'
+   own lines one line's pitch apart (`Tournament`, which sets the columns, the gaps and the
+   sizes off the figure's own width: `--from-w`, `--gutter-w`, `--row-gap`, `--name-px`,
+   `--score-px`). */
 .ar-climb-draw {
   display: grid;
-  grid-template-columns: auto clamp(40px, 22%, 150px) minmax(0, 1fr);
-  grid-template-rows: auto repeat(var(--slots), var(--row));
+  grid-template-columns: var(--from-w, 24px) var(--gutter-w, 40px) minmax(0, 1fr);
 }
 .ar-climb-head {
   grid-row: 1;
-  padding-bottom: 10px;
-  font-size: 10px;
-  font-weight: 650;
+  padding-bottom: 6px;
+  font-size: 11px;
+  font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--muted);
   white-space: nowrap;
+  color: var(--muted);
 }
 .ar-climb-head-from {
   grid-column: 1 / 3;
@@ -10714,78 +10723,64 @@ figure.l1-fig {
   grid-column: 3;
   justify-self: end;
 }
+.ar-climb-from,
+.ar-climb-board {
+  grid-row: 2;
+  display: grid;
+  grid-template-rows: repeat(var(--slots), 44px);
+}
 .ar-climb-from {
   grid-column: 1;
+}
+.ar-climb-from .board-rank {
   align-self: center;
-  justify-self: end;
-  font-family: var(--pixel-font);
-  font-size: 8px;
-  line-height: 1;
-  color: var(--rank-color);
 }
 .ar-climb-lines {
   grid-column: 2;
-  grid-row: 2 / span var(--slots);
-  width: 100%;
-  height: 100%;
-  padding: 0 8px;
-  box-sizing: border-box;
-  overflow: visible;
+  grid-row: 2;
 }
-.ar-climb-lines line {
-  stroke: var(--muted);
-  stroke-width: 1.5px;
-  opacity: 0.45;
-}
-/* A word the tournament lifts: the one line drawn in full ink. */
-.ar-climb-lines line.up {
-  stroke: var(--fg);
-  stroke-width: 2px;
-  opacity: 1;
-}
-.ar-climb-row,
-.ar-climb-gap {
+.ar-climb-board {
   grid-column: 3;
-  border-top: 1px solid var(--line);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 .ar-climb-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
+  grid-template-columns: var(--rank-w) minmax(0, 1fr) auto;
+  gap: var(--row-gap, 12px);
+  padding: 0;
 }
-.ar-climb-row:last-child {
-  border-bottom: 1px solid var(--line);
+.ar-climb-board .board-name {
+  font-size: var(--name-px, 15px);
 }
-.ar-climb-gap {
-  display: flex;
-  align-items: center;
-  padding-left: 2px;
+/* The probability is why a word moved, not the board's subject: the quiet ink. */
+.ar-climb-board .board-score {
+  font-size: var(--score-px, 16px);
   color: var(--muted);
 }
-.ar-climb-to {
-  flex: none;
-  width: 2.2em;
-  font-family: var(--pixel-font);
-  font-size: 8px;
-  line-height: 1;
-  color: var(--rank-color);
+.ar-climb-board .board-gap {
+  align-self: center;
+  margin: 0 0 0 calc(var(--rank-w) + var(--row-gap, 12px));
 }
-.ar-climb-word {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+
+/* A phone's column: the pixel figures that would not fit at 16px step down to 8. */
+@media (max-width: 560px) {
+  .ar-bars {
+    gap: 12px 10px;
+  }
+  .ar-bar-word,
+  .ar-bar-value,
+  .ar-token-word {
+    font-size: 8px;
+  }
+  .ar-bar-meter {
+    height: 8px;
+  }
+  .ar-token-word {
+    padding: 2px;
+  }
 }
-.ar-climb-win {
-  flex: none;
-  font-size: 12px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
+
 /* THE END, in three bands, opened on the stippled floor: the NEXT LEVEL — a tappable thing, its
    picture and its words in the resting corner brackets of the list's cards, stepping to white
    under a mouse — then the GAME as THE WORD under it (or, after the last level, as the one big
@@ -10964,28 +10959,9 @@ figure.l1-fig {
   .article-rail {
     font-size: 14.5px;
   }
-  .ar-fig-body {
-    padding: 16px 12px;
-  }
   .article-terms > div {
     grid-template-columns: 1fr;
     gap: 2px;
-  }
-  .ar-token-word {
-    font-size: 11.5px;
-    padding: 2px 3px;
-  }
-  .ar-climb {
-    --row: 32px;
-  }
-  .ar-climb-row {
-    gap: 8px;
-  }
-  .ar-climb-word {
-    font-size: 12px;
-  }
-  .ar-climb-win {
-    font-size: 11px;
   }
 }
 /* On a wide screen the list and an article SCROLL THE WHOLE VIEWPORT: each is a fixed box
@@ -11009,12 +10985,8 @@ figure.l1-fig {
     padding-right: max(52px, calc((100% - var(--column)) / 2));
   }
 }
-/* The narrowest phones: the next-level card's picture yields to its title, and the
-   tournament's lines narrow so every word and its probability keep their room. */
+/* The narrowest phones: the next-level card's picture yields to its title. */
 @media (max-width: 360px) {
-  .ar-climb-draw {
-    grid-template-columns: auto 40px minmax(0, 1fr);
-  }
   .article-next {
     grid-template-columns: minmax(0, 34%) minmax(0, 1fr);
   }

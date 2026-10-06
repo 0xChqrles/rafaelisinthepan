@@ -20,6 +20,7 @@ export interface PlanePoint {
 }
 
 export interface WordList {
+  // The list's name on the figure's switch (with `tabs`).
   label?: string;
   words: string[];
   // Words the figure points at: the WRONG sense (the weird red end of the heat ramp) or the
@@ -36,7 +37,7 @@ export type Figure =
   | { kind: 'bars'; rows: [string, number][] }
   // A loop of steps, lit one after another, that starts over.
   | { kind: 'loop'; steps: string[] }
-  // Lists of words, side by side — or, with `tabs`, one list per tab.
+  // Lists of words, one under the other — or, with `tabs`, one list per tab.
   | { kind: 'words'; sentence?: string; lists: WordList[]; tabs?: boolean }
   // Attention: arcs from the `focus` token to the others, weighted; `weights[i]` is the share
   // token i receives (null: no arc), `hidden` the tokens the focus cannot hear yet.

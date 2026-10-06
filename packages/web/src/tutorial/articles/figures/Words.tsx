@@ -1,26 +1,40 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { MISS_COLOR } from '@whippin/shared';
+// The dissolve's tiles are set on the document's root as this module loads.
+import { DISSOLVE_MS } from '../../../components/bayerTiles';
 import { t } from '../../../i18n';
 import { useArticleLang } from '../lang';
 import type { WordList } from '../types';
 import Rich from '../Rich';
 import Tabs from './Tabs';
 
-// LISTS OF NEIGHBOURS: the sentence they were read in (its word of interest a held chip, as
-// in the game), then the lists side by side — or, with tabs, one at a time, every list laid
-// out in the same cell so a tab never changes the figure's height. A marked word
-// wears the heat ramp's end its tone names: weird red for a wrong sense, calm cobalt for
-// the right one.
-// A marked word says what it is in words too (the colour and the heavier frame are for eyes).
-function List({ list, showLabel, hidden }: { list: WordList; showLabel: boolean; hidden?: boolean }) {
+// LISTS OF NEIGHBOURS, as the game lists a hole's words once it is found (the words grid): the
+// sentence they were read in, set in the pixel face as the game sets it (the word it is about
+// in the found cobalt), then the words in the pixel face on the bare ground, in columns as wide
+// as the longest word — or, with tabs, one list at a time on the boards' own switch, every list
+// laid out in the same cell AND the same columns (as wide as the longest word of any of them),
+// so a turn never changes the figure's height nor moves a word's place, the list turned to
+// dissolving in through the Bayer order as the other dissolves out (a board line's arrival). A
+// marked word wears the heat ramp's end its tone names: the weird red of a MISS for a wrong
+// sense, the calm cobalt of a found word for the right one — and says so in words too.
+const longestOf = (lists: WordList[]) => Math.max(...lists.flatMap((l) => l.words.map((w) => w.length)));
+
+function List({
+  list,
+  longest,
+  state,
+}: {
+  list: WordList;
+  longest: number;
+  state: 'shown' | 'in' | 'out' | 'hidden';
+}) {
   const lang = useArticleLang();
   const tone = list.tone ?? 'wrong';
   const said = t(lang, tone === 'wrong' ? 'levelMarkWrong' : 'levelMarkRight');
   return (
-    <div className="ar-list" hidden={hidden}>
-      {showLabel && list.label && <p className="ar-list-label">{list.label}</p>}
-      <ol className="ar-list-words" style={{ '--mark': MISS_COLOR } as CSSProperties}>
+    <div className={`ar-list ${state}`} hidden={state === 'hidden'} aria-hidden={state === 'out' || undefined}>
+      <ol className="ar-list-words" style={{ '--mark': MISS_COLOR, '--longest': longest } as CSSProperties}>
         {list.words.map((w) => {
           const marked = list.marked?.includes(w);
           return (
@@ -45,26 +59,37 @@ export default function Words({
   tabs?: boolean;
 }) {
   const [at, setAt] = useState(0);
+  // The list giving way to the one turned to, while it dissolves out.
+  const [leaving, setLeaving] = useState<number | null>(null);
+  useEffect(() => {
+    if (leaving === null) return undefined;
+    const id = window.setTimeout(() => setLeaving(null), DISSOLVE_MS);
+    return () => window.clearTimeout(id);
+  }, [leaving]);
+  const turn = (i: number) => {
+    setLeaving(at);
+    setAt(i);
+  };
+  const stateOf = (i: number) =>
+    i === at ? (leaving === null ? 'shown' : 'in') : i === leaving ? 'out' : 'hidden';
   return (
     <div className="ar-words">
-      {tabs && <Tabs labels={lists.map((l) => l.label ?? '')} active={at} onPick={setAt} />}
+      {tabs && <Tabs labels={lists.map((l) => l.label ?? '')} active={at} onPick={turn} />}
       {sentence && (
-        <p className="ar-sentence ar-fig-sentence">
+        <p className="ar-fig-sentence">
           <Rich text={sentence} mode="sentence" />
         </p>
       )}
       {/* A tab swaps the list shown: the figure says so itself, as the plane re-reads its lengths. */}
-      <div
-        className={`ar-lists${tabs ? ' stacked' : lists.length > 1 ? ' columns' : ''}`}
-        aria-live={tabs ? 'polite' : undefined}
-      >
-        {tabs ? (
-          lists.map((list, i) => (
-            <List key={list.label ?? list.words[0]} list={list} showLabel={false} hidden={i !== at} />
-          ))
-        ) : (
-          lists.map((list) => <List key={list.label ?? list.words[0]} list={list} showLabel />)
-        )}
+      <div className={`ar-lists${tabs ? ' stacked' : ''}`} aria-live={tabs ? 'polite' : undefined}>
+        {lists.map((list, i) => (
+          <List
+            key={list.label ?? list.words[0]}
+            list={list}
+            longest={longestOf(tabs ? lists : [list])}
+            state={tabs ? stateOf(i) : 'shown'}
+          />
+        ))}
       </div>
     </div>
   );

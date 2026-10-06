@@ -186,7 +186,7 @@
       components/rasterWatch.ts  whether anybody can SEE a raster's clock (`watchRaster`: in
                               view, the tab shown — never "touched lately"), and the archive's
                               read wave's stepped pace (`LOOP_FRAME_MS`): the podium's, the
-                              archive's and the record's
+                              archive's, the record's and the article's training loop's
       components/DeviceList.tsx  the account's devices + SIGN OUT, as board lines on `/account` (#216)
       components/BusyButton.tsx  a button whose act is OUT: the app's one busy dress (the act's
                               word kept, `aria-busy`, the charge after `SKELETON_WAIT_MS`)
@@ -247,9 +247,10 @@
       components/GroupOrbit.tsx  the landing's scene: the group card brought in (the name's
                               chip, the marks on the card's orbit, `+N`, the reader's SEAT and
                               the drop into it), and its holds while the group is read
-      components/PeriodSwitch.tsx  a group's three boards (TODAY / WEEK / MONTH): three equal cells
-                              across the line in resting corner brackets, the white frame
-                              travelling to the one shown
+      components/PeriodSwitch.tsx  a group's three boards (TODAY / WEEK / MONTH) on
+                              `BracketSwitch`: equal cells across the line in resting corner
+                              brackets, the white frame travelling to the one shown — the
+                              article figures' AVANT / APRÈS turn through the same switch
       components/GroupScreen.tsx  a group's own screen (#271): members (the owner's ✕),
                               scrolling in whole lines, over INVITE and LEAVE at its foot —
                               everything there is to do with a group
@@ -330,7 +331,8 @@
                               ArticleLevel.tsx (levels 2+, lazy via LazyArticle, whose
                               hold stands the same ArticleHead) over
                               articles/<lang>.ts (the text, per language; types.ts, Rich.tsx
-                              the inline markup, typeset.ts, figures/); art/ (LevelArt.tsx,
+                              the inline markup, typeset.ts, figures/ — the figures, and
+                              their 2px-cell raster `cells.tsx`); art/ (LevelArt.tsx,
                               the dithered canvas, and scenes/, one picture per level)
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       components/strikeArt.ts the three strike sheets and their animation contract (#301: the
@@ -4350,7 +4352,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (user-decided 2026-09-29: "not fully interactive like the first one… more like an article,
   like the chqrles.me article, but without all the story telling"): the author's published
   article cut into four, its own sentences and examples, figures redrawn in the app's style
-  (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **They say how it works,
+  (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **A FIGURE IS DRAWN WITH
+  THE GAME'S OWN PIECES**: its states on the boards' bracketed switch, a share as the hole's
+  meter charge (in the slate: cobalt means found), the step at hand under the white title
+  chip, a word as the game shows one (the held chip, the found cobalt, a list as the words
+  grid lists them), a ranking as the boards' lines, a step's words a note in a sentence — on
+  the bare ground, its picture on the house's 2px cells, the pixel face at 8 or 16px only; its
+  motion in hard steps, starting once it is on screen, a motion that repeats (the training
+  loop's chip) resting while nobody can see it (`rasterWatch`), and what a motion says also
+  drawn still (the loop's return), so reduced motion loses nothing; the same information the
+  article's figure gives. **They say how it works,
   never the journey** (user-decided: "we're explaining how it works, not how it didn't work,
   nor how we've tried to make it work") — no attempt, failure or fix is told. **The article's own
   words, not a comma changed** (user-decided: "if you can reuse an article part without
