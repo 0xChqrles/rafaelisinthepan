@@ -603,17 +603,12 @@ body:has(.app > .board-screen) {
 .cal-day[disabled] {
   cursor: default;
 }
-/* The drawn key's box: what the focus brackets frame, and where the hover's corners stand —
-   an over day's from its SUNK top (`sinkOf`'s rows, `--sink`), the rows over it bare ground. */
+/* The drawn key's box: what the focus brackets frame, and where the hover's corners stand. */
 .cal-day-box {
   position: relative;
   display: block;
   width: var(--key-w);
   height: var(--key-h);
-}
-.cal-day-box.sunk {
-  margin-top: var(--sink);
-  height: calc(var(--key-h) - var(--sink));
 }
 /* The raster paints every number; this text is for the tests, a screen reader and forced
    colours. */
@@ -625,9 +620,6 @@ body:has(.app > .board-screen) {
   text-align: center;
   color: transparent;
   user-select: none;
-}
-.cal-day-box.sunk .cal-day-num {
-  line-height: calc(var(--key-h) - var(--sink));
 }
 /* HOVER (a mouse): the corner brackets of a thing that can be tapped — four arms in the
    secondary ink, just outside the key, in one hard step; never on a day out of range, never at

@@ -2050,7 +2050,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (`useShare({tracked: false})`), so share ÷ solve stays the liked-day signal. The group
     day board draws the same glyph in an `over` row's tries slot (`.board-inf`), its %
     muted. The archive draws NO `∞`: its key of an over day keeps its date and says over in
-    its shape (SUNK, the archive calendar bullet).
+    its material (PRINTED IN HALFTONE, the archive calendar bullet).
   - **THE GIVE-UP (user-decided 2026-10-02).** A pixel WHITE FLAG (`assets/icons/flag.svg`,
     the lock's 8-cell grid, monochrome, `--muted`; aria `giveUp`) stands at the RIGHT END of
     the prompt row: `.prompt-zone` is a two-column grid whose second column the flag holds
@@ -3078,21 +3078,25 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the streak's edge-on link across the gap (4 rows, cobalt over deep), and a run carries on
     across a week's end as two square 2-cell stubs, out of the last key and into the next
     week's first (this month's days only) — never foil, never called a streak: a late solve
-    joins a run. **AN OVER DAY** (given up, or capped) is its key SUNK — pushed into the
-    board, played out: its top a quarter of the key lower (`sinkOf`: 8 rows on WIDE, 4 on
-    TINY and SIDEWAYS) over the same foot, OUT OF THE LIGHT (no slate cap, no light band:
-    dusk to its top, solid — so never the ghost), its NUMBER KEPT in `--muted` (the board's
-    over ink), centred under where its cap would stand: no charge, no %, no heat, no cobalt,
-    no link, no foil — a door to the revealed sentence, not a day to resume, so a charged key
-    always means one. **Over reads as SHAPE — a low, unlit top in a row of lit caps — never
-    by hue alone**, and never with a glyph of the result's (no `∞`: the calendar's number is
-    the date, its material the state). Held down it sinks a row further, like any key.
+    joins a run. **AN OVER DAY** (given up, or capped) is its key PRINTED IN HALFTONE — a
+    standing key, the same height and cut corners as any, its number where every key's
+    stands — its iron at about half ink: its cap and face through the Bayer order
+    (`HALFTONE`, 5/8 of the cells), each printed cell in the bare key's own ink (the slate
+    cap and light, the dusk face), the rest bare ground. Its NUMBER and their RING stay
+    SOLID — the date in white, as on any key, and a ring of the dusk keeping the digits clear
+    of the dither: no charge, no %, no heat, no cobalt, no link, no foil — a door to the
+    revealed sentence, not a day to resume, so a charged key always means one. **Over reads
+    as TEXTURE — a key printed at half ink in a row of solid ones — never by hue alone**, and
+    never as the ghost: its density is neither the ghost's checker (the Bayer order's exact
+    half) nor its loading quarter, its number stands in a solid ring where the ghost's stands
+    in a clearing, and its iron is the dusk, darker than the ghost's slate. Never a glyph of
+    the result's (no `∞`: the calendar's number is the date, its material the state).
     **A DAY TO COME** is its number in slate on bare ground, no key; a pad is nothing.
   - **TODAY** (the month on screen holds it) wears a WHITE CAP, its top two rows — the key
     that is lit — over whatever it holds, its ghost included; `aria-current="date"`; never a
     ring, brackets or a chip. **FINISHED, it is the screen's ONE shiny thing**: the shared
     FOIL over the key's shape, its number still cut out, its deep foot kept. An over today
-    wears its white cap on the sunk key's top, never foil.
+    wears its white cap solid over the halftone, never foil.
   - **UNKNOWN (#211) is the key's GHOST**: its shape as a slate checker round the white
     number in a 1-cell clearing — no cap, no light band, so it never reads as a day not
     started — keeping its number and its tap. SPARSE (a quarter of the cells) while the read
@@ -3126,18 +3130,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
     played here or on another device) plays its CHANGE as the month is shown again: up to
     three UPGRADES (more done, or done), in date order, 160ms apart, each front travelling
     from what it said to what it says (240ms, white head); a new solve locks with a white
-    cap, bursts in cobalt and welds its run with white links. **A day turning OVER is
-    PRESSED** (`PRESS_MS`): three frames standing, a frame at full height with its number
-    gone to the over ink, then six frames down to its sink, about a row a frame (two on some
-    of WIDE's and MID's, one held on the smaller sizes), its number riding down with it — ONE
-    number, whole, never the old one beside it — while the iron alone gives way, its
-    cap, its light and any charge going out in the Bayer order into the unlit face. The rest
-    — more changes, a downgrade after a republish's restart — dissolve to their new picture,
-    each picture drawn with its own look (standing and lit, or sunk); a day restarted from
-    over charges from its sunk key, lit again and RISING to its height on the charge's easing
-    as its front climbs (its number standing where the charge cuts it, so the top starts no
-    lower than leaves that number's ring under its cap rows); a first showing has none (that is the arrival's). The memories are
-    written as a stage is shown, so a ceremony plays ONCE, even left halfway.
+    cap, bursts in cobalt and welds its run with white links. The rest — **a day turning
+    OVER**, more changes, a downgrade after a republish's restart — DISSOLVE to their new
+    picture in the Bayer order (`DISSOLVE_MS`, 8 steps), each picture drawn with its own
+    look (printed whole, or in halftone); the number never moves, and its MARK — the digits
+    and their ring — changes WHOLE at the dissolve's half (a charge's cut-out digits turning
+    white in one step), never two inks mixed inside it. A day restarted from over charges
+    from its halftone key, printed whole again on the write head's first frame, its front
+    climbing; a first showing has none (that is the arrival's). The memories are written as
+    a stage is shown, so a ceremony plays ONCE, even left halfway.
   - **TURNS AND GIVE-WAYS** (`calendar/plan.ts`; the stage latched as the board latches its
     podium's): a turn's day buttons are the new month's AT ONCE (a tap never meets the old
     month); the raster gives way from the frame on screen cell by cell in the Bayer order
@@ -3160,9 +3161,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     travel lets it go) — a one-shot redraw, at rest too; the click has already navigated. A
     mouse over a playable day shows the corner brackets of a tappable thing round its key
     (`--muted` arms, one hard step; never on a disabled day); the focus brackets frame the
-    key's box (`.cal-day-box`) and take the hover's place. An over day's box starts at its
-    sunk top (`.sunk`, inset by `--sink`, the sink's cells in px), so both frame the key as
-    it is drawn, never the bare rows over it.
+    key's box (`.cal-day-box`) and take the hover's place — an over day's too, its key
+    standing in the same box as every other.
   - **SIZES** (`calendar/geometry.ts` `calGeometry`, tested): whole cells and even gaps, the
     first candidate that fits — a desktop window tries WIDE (64px keys), MID (52), REGULAR
     (44), COMPACT (40), then SIDEWAYS; a phone REGULAR (44, a 390 phone), COMPACT (40, the

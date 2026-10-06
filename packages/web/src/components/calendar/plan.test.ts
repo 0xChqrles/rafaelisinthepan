@@ -128,15 +128,13 @@ describe('a month shown again plays what changed since it was drawn', () => {
       [7, 'p60'],
       [10, 'n'],
     ]);
-    // The first three ups charge; the days turned over are PRESSED — an over day is no up, so
-    // it takes no ceremony's slot, even ahead of the ups; the fourth up and the downgrade
-    // dissolve.
+    // The first three ups charge; the rest dissolve — the days turned over among them, into
+    // their halftone: an over day is no up, so it takes no ceremony's slot, even ahead of the
+    // ups — with the fourth up and the downgrade.
     const charged = back.beats.charge.flatMap((at, i) => (at > -Infinity ? [i] : []));
-    const pressed = back.beats.press.flatMap((at, i) => (at > -Infinity ? [i] : []));
     const dissolved = back.beats.dissolve.flatMap((at, i) => (at > -Infinity ? [i] : []));
     expect(charged).toEqual([2, 3, 4]);
-    expect(pressed).toEqual([1, 5]);
-    expect(dissolved).toEqual([7, 10]);
+    expect(dissolved).toEqual([1, 5, 7, 10]);
   });
 
   it('keeps an over day apart from every other reading', () => {

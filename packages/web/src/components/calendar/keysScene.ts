@@ -58,22 +58,22 @@ import type { DrawnCode } from './memory';
 //     top, a dark foot — against a high % (a dark iron top, ink solid to the foot), never by
 //     hue alone: orchid at 87% and cobalt are neighbours on the ramp, and a colour-blind eye
 //     takes one for the other.
-//   AN OVER DAY (the round ended unsolved: given up, or capped) is the key SUNK — pushed into
-//     the board, played out: its top stands `sinkOf(H)` rows lower (a quarter of the key) over
-//     the same foot, and it is out of the light — no slate cap, no light band, bare dusk iron to
-//     its top — its number kept, in the muted ink the board's over row wears, centred under
-//     where its cap would stand (`numberCells(…, sink)`). No charge, no %, no heat, no cobalt,
-//     no link, no foil: a door to the revealed sentence, never a day to resume — so a charged
-//     key always means one. Over reads as SHAPE — a low, unlit top in a row of lit caps —
-//     never by hue alone, at every size. Each picture carries its own look (`Iron.sink`,
-//     `lit`, its mark): standing and lit with its white number, or sunk. Held down, it sinks a
-//     row further, like any key.
+//   AN OVER DAY (the round ended unsolved: given up, or capped) is the bare key PRINTED IN
+//     HALFTONE — standing, the same height and cut corners as any key, its number where every
+//     key's stands — its iron at about half ink: its cap and face through the Bayer order
+//     (`HALFTONE`), the cells under the threshold in the key's own inks, the rest the bare
+//     ground. Its number and its ring stay SOLID, the ring keeping the digits clear of the
+//     dither. No charge, no %, no heat, no cobalt, no link, no foil: a door to the revealed
+//     sentence, never a day to resume — so a charged key always means one. Over reads as
+//     TEXTURE — a key printed at half ink in a row of solid ones — never by hue alone, at every
+//     size; and never as the ghost, whose slate checker stands round a clearing with no cap.
 //   A RUN: finished keys side by side are JOINED by the streak's edge-on link across the gap
 //     (cobalt over deep), and a run carries on across a week's end — a short stub out of the
 //     last key, one into the next week's first. Never foil, never called a streak (a late
 //     solve joins a run here; the streak would not count it).
-//   TODAY wears a WHITE cap — the key that is lit — and when it is finished it is the
-//     screen's ONE shiny thing: the cobalt recedes into the FOIL, over the key's own foot.
+//   TODAY wears a WHITE cap — the key that is lit, solid over an over day's halftone too — and
+//     when it is finished it is the screen's ONE shiny thing: the cobalt recedes into the FOIL,
+//     over the key's own foot.
 //   A DAY TO COME is its number in slate on bare ground, no key at all; a pad is nothing.
 //   A DAY NOT KNOWN YET (#211) is the key's GHOST: its shape as a slate checker round its
 //     white number — no cap, no light band, so it never reads as a day not started — SPARSE
@@ -87,23 +87,21 @@ import type { DrawnCode } from './memory';
 // with the podium's shake and, as loud as what the day holds, a white impact and a burst (a
 // day never opened, or over, lands quietly); if it is finished, its cobalt recedes into the
 // foil. A day that CHANGED since the month was last drawn plays its own charge (a new solve
-// locks white, bursts and welds its run); a day turning OVER is PRESSED: its top drops row by
-// row to its sunk height in hard frames, its number riding down with it — one number, whole,
-// in the over ink from the first frame, never the old one beside it — while the iron alone
-// gives way, its cap, its light and any charge going out cell by cell into the unlit face.
-// A day restarted from over (a republish) charges from the sunk key, which its pre-charge
-// frame shows: on the write head's first frame it is lit again and RISES back to its full
-// height as its front climbs, on the charge's own easing. Then the clock rests: nothing moves
-// but today's foil.
+// locks white, bursts and welds its run); a day turning OVER DISSOLVES into its halftone, as
+// any change down does — its number standing where it stands, its mark (the digits and their
+// ring) changing whole at the dissolve's half, never two inks mixed inside it. A day restarted
+// from over (a republish) charges from its halftone key, which its pre-charge frames show: on
+// the write head's first frame it is printed whole again, its front climbing. Then the clock
+// rests: nothing moves but today's foil.
 
 // ── The inks: the streak raster's own — the tokens, nothing else — packed for the canvas ──
 const WHITE = inkAbgr(I_WHITE); // --fg: a playable number, the write head, today's cap
-const MUTED = inkAbgr(I_MUTED); // --muted: the read wave's light, an over day's number
+const MUTED = inkAbgr(I_MUTED); // --muted: the read wave's light
 const RAIL = inkAbgr(I_RAIL); // --rail: iron's lit cap, a slate number, the ghost's checker
 const COBALT = inkAbgr(I_COBALT); // --solve: a finished day
 const DEEP = inkAbgr(I_DEEP); // cobalt's under-face: a finished key's foot, a link's shade
 const GROUND = inkAbgr(I_GROUND); // --bg, opaque: a number cut out of its key
-const DUSK = inkAbgr(I_DUSK); // iron's face, and the whole of a sunk key's
+const DUSK = inkAbgr(I_DUSK); // iron's face
 
 // ── The model: what each of the grid's 42 cells shows ──────────────────────────────────────
 export type KeyState =
@@ -132,8 +130,8 @@ export function codeOf(key: KeyState): DrawnCode | null {
   if (key.kind === 'solved') return 's';
   return null;
 }
-// Over ranks with none: a day turning over is no upgrade (it is pressed), and one restarted
-// from it (a republish) charges up like one never opened.
+// Over ranks with none: a day turning over is no upgrade (it dissolves into its halftone), and
+// one restarted from it (a republish) charges up like one never opened.
 const codeRank = (code: DrawnCode) =>
   code === 's' ? 101 : code === 'n' || code === 'o' ? 0 : Number(code.slice(1));
 // Only an UPGRADE gets a ceremony: more done, or done.
@@ -148,8 +146,8 @@ const isUpgrade = (from: DrawnCode, to: DrawnCode) => codeRank(to) > codeRank(fr
 // podium's shake; its links join once it is still, and its cobalt recedes into the foil then,
 // over the podium's RECEDE. A CHANGE: up to MAX_CEREMONIES days in date order, CHANGE_GAP_MS
 // apart, each charging from what it said to what it says over TRAVEL_MS, a new solve's cap and
-// links white for FLASH_MS; a day turning over is pressed from PRESS_AT_MS over PRESS_MS; the
-// rest dissolve to their new picture. LOADING: the numbers
+// links white for FLASH_MS; the rest — a day turning over among them — dissolve to their new
+// picture over DISSOLVE_MS, in CHANGE_STEPS. LOADING: the numbers
 // dissolve in at once on the diagonal, the ghosts after the skeleton's wait (a quick read never
 // flashes one); then the read wave, WAVE_FRAMES frames of WAVE_FRAME_MS, the first WAVE_LIT
 // each lighting a diagonal.
@@ -171,11 +169,6 @@ const MAX_CEREMONIES = 3;
 const CHANGE_GAP_MS = 160;
 const TRAVEL_MS = 240;
 const CHANGE_STEPS = 8;
-// The PRESS of a day turning over: three frames standing first, so the eye has the key before
-// it goes down, then six frames down, a row a frame (two on a frame or two of WIDE's deeper
-// sink, one held on TINY's shallower one).
-const PRESS_AT_MS = 3 * FRAME_MS;
-const PRESS_MS = 6 * FRAME_MS;
 const WAVE_FRAME_MS = 80;
 const WAVE_FRAMES = 20;
 const WAVE_LIT = 12;
@@ -221,8 +214,6 @@ export interface KeysBeats {
   digitIn: number[];
   ghostIn: number[];
   dissolve: number[];
-  // Per cell: when a day turning over starts going down (PAST: no press).
-  press: number[];
   // Per cell: when its charge starts (PAST: charged), from what (a changed day's old reading;
   // null: bare iron), and — finished — when it locks through the cap, its cap white for two
   // frames first or not (`flash`: a change's ceremony; the arrival locks straight to cobalt).
@@ -258,7 +249,6 @@ export function keysBeats(spec: KeysSpec): KeysBeats {
     digitIn: past(),
     ghostIn: past(),
     dissolve: past(),
-    press: past(),
     charge: past(),
     chargeMs: PACES.arrive.charge,
     from: new Array<DrawnCode | null>(n).fill(null),
@@ -343,12 +333,7 @@ export function keysBeats(spec: KeysSpec): KeysBeats {
     });
     for (const c of spec.changes) {
       if (ups.includes(c)) continue;
-      // A day turning over is pressed down; any other change dissolves to its new picture.
-      if (to(c) === 'o') {
-        b.press[c.index] = PRESS_AT_MS;
-        ends.push(PRESS_AT_MS + PRESS_MS);
-        continue;
-      }
+      // Any other change — a day turning over among them — dissolves to its new picture.
       b.dissolve[c.index] = 0;
       ends.push(DISSOLVE_MS);
     }
@@ -420,20 +405,18 @@ function markCells(
   return m;
 }
 
-// HOW FAR AN OVER KEY IS SUNK: a quarter of its height — WIDE's 8 rows to TINY's and SIDEWAYS'
-// 4 — deep enough to read as a key pushed down beside a standing one at every size, and
-// shallow enough to leave its number, ring and all, iron over it and under it.
-export const sinkOf = (H: number) => Math.round(H / 4);
+// AN OVER KEY'S HALFTONE: the share of its iron's cells printed (the Bayer order's cells under
+// it), the rest the bare ground — a little past half, so its texture is never the ghost's: the
+// Bayer order's half is exactly the ghost's resting checker, its quarter the loading one.
+export const HALFTONE = 0.625;
 
-// THE NUMBER: the 16px face on the type grid, centred on its ink box in the rows under the cap
-// — on a key SUNK `sink` rows, in the rows under where its cap would stand, so today's white
-// one never meets its ring.
-const numberTop = (H: number, sink = 0) => sink + 1 + Math.floor((H - sink - 1 - COUNT_ROWS) / 2);
-export function numberCells(W: number, H: number, day: number, sink = 0): Uint8Array {
+// THE NUMBER: the 16px face on the type grid, centred on its ink box in the rows under the cap.
+const numberTop = (H: number) => 1 + Math.floor((H - 1 - COUNT_ROWS) / 2);
+export function numberCells(W: number, H: number, day: number): Uint8Array {
   const text = String(day);
   const inkW = Math.round(inkEms(text.length) * COUNT_EM);
   const on = countInk(DIGIT_MASKS, text);
-  return markCells(W, H, { w: text.length * COUNT_EM, h: COUNT_ROWS, on }, Math.floor((W - inkW) / 2), numberTop(H, sink));
+  return markCells(W, H, { w: text.length * COUNT_EM, h: COUNT_ROWS, on }, Math.floor((W - inkW) / 2), numberTop(H));
 }
 
 export interface KeysScene {
@@ -456,14 +439,9 @@ const level = (from: number, ms: number, steps: number, ft: number) =>
 
 // One key as it stands at a frame: the charge's front (rows inked from the foot) and the row
 // its number is split at, its ink, a flat fill (a finished charge) or the ramp, the write
-// head's row, and the cap — its LOOK: how many rows it is sunk (`sink`: its top row; 0, a key
-// standing) and whether it is in the light (`lit`: the slate cap and the light band; a sunk
-// over key is not) — and its MARK: the cells of its number where that look stands them and
-// the number's ink above the edge. Each picture carries its own, so a day changing kind
-// dissolves from its old look to its new one. A key being PRESSED carries what it is going
-// down out of (`press`): the iron it stood as (`from`, whose CHARGE alone is read: never its
-// number, never its light), how much of that charge has gone out (`fade`, a dissolve level),
-// and how much light its top still catches (`light`, 1 standing to 0 sunk).
+// head's row, and the cap — and its LOOK: printed whole, or in HALFTONE (`half`, an over day).
+// Each picture carries its own, so a day changing kind dissolves from its old look to its new
+// one.
 interface Iron {
   front: number;
   split: number;
@@ -473,11 +451,7 @@ interface Iron {
   locked: boolean;
   capFlash: boolean;
   todayCap: boolean;
-  sink: number;
-  lit: boolean;
-  glyph: Uint8Array;
-  ink: number;
-  press?: { from: Iron; fade: number; light: number };
+  half: boolean;
 }
 
 // `under`: the frame on screen as this scene began, which a key not yet come in still shows
@@ -495,11 +469,10 @@ export function keysScene(
     px[y * cols + x] = v;
   };
   const corner = (lx: number, ly: number) => (lx === 0 || lx === W - 1) && (ly === 0 || ly === H - 1);
-  // A key's cells from its top row `top` down: a SUNK key's starts that many rows lower, and a
-  // key held down has lost its top row besides — its new top row wears the cut corners.
+  // A key's cells from its top row `top` down: a key held down has lost its top row — its new
+  // top row wears the cut corners.
   const shape = (lx: number, ly: number, top: number) =>
     ly >= top && !((lx === 0 || lx === W - 1) && (ly === top || ly === H - 1));
-  const SINK = sinkOf(H);
   // Rows under the cap; the charge's least and most front (a solid foot row; never the iron's
   // top four rows), and a finished charge's, through the cap.
   const n = H - 1;
@@ -525,21 +498,14 @@ export function keysScene(
     ly === H - 1 ||
     (ly > y0 + COUNT_ROWS && ly >= footFrom && bayerThreshold(lx, ly) < (ly - footFrom) / (H - 1 - footFrom));
   const maps = new Map<number, Uint8Array>();
-  const digitMap = (day: number, sink = 0) => {
-    const key = day * 64 + sink;
-    let m = maps.get(key);
+  const digitMap = (day: number) => {
+    let m = maps.get(day);
     if (!m) {
-      m = numberCells(W, H, day, sink);
-      maps.set(key, m);
+      m = numberCells(W, H, day);
+      maps.set(day, m);
     }
     return m;
   };
-  // A picture's LOOK and MARK: an over day SUNK out of the light, its number muted; any other
-  // standing and lit, its number white.
-  const lookOf = (over: boolean, day: number) =>
-    over
-      ? { sink: SINK, lit: false, glyph: digitMap(day, SINK), ink: MUTED }
-      : { sink: 0, lit: true, glyph: digitMap(day), ink: WHITE };
   // THE NUMBER'S EDGE: the first of its rows the ink takes (cut out from there down), off the
   // front — moved to the nearest row that leaves three or more of its rows on each side, or
   // none: a number split one or two rows from its end reads as two broken glyphs.
@@ -619,9 +585,8 @@ export function keysScene(
     return key.kind === 'pad' ? 0 : key.day;
   };
   // A key's front and its number's edge off the front `raw`: agreeing (`edgeOf`) on a ramp of
-  // ink, as they stand on a FLAT fill (a finished charge, solid to its front) — and the look
-  // and mark of what it says now. (Every front above 0 belongs to a standing picture: an over
-  // day's is 0, so its edge never splits its number.)
+  // ink, as they stand on a FLAT fill (a finished charge, solid to its front) — and the look of
+  // what it says now. (An over day's front is 0: its edge never splits its number.)
   const ironAt = (raw: number, fill: number, i: number, flat: boolean): Iron => {
     const day = dayOf(i);
     const { front, split } = flat ? { front: raw, split: splitOf(raw) } : edgeOf(raw, day);
@@ -634,7 +599,7 @@ export function keysScene(
       locked: false,
       capFlash: false,
       todayCap: i === model.today,
-      ...lookOf(model.keys[i].kind === 'over', day),
+      half: model.keys[i].kind === 'over',
     };
   };
   // A played key's front and ink as it said `code` (a changed day's reading before its change).
@@ -645,11 +610,11 @@ export function keysScene(
         ? { front: FULL, fill: COBALT }
         : { front: frontOf(Number(code.slice(1))), fill: heat(Number(code.slice(1))) };
   // …and the picture it was drawn as, with ITS look: a day turning over gives way from its
-  // standing key, a day restarted from over charges from its sunk one.
+  // whole key, a day restarted from over charges from its halftone one.
   const wasOf = (i: number): Iron => {
     const was = readingOf(tl.from[i]);
     const done = tl.from[i] === 's';
-    return { ...ironAt(was.front, was.fill, i, done), locked: done, ...lookOf(tl.from[i] === 'o', dayOf(i)) };
+    return { ...ironAt(was.front, was.fill, i, done), locked: done, half: tl.from[i] === 'o' };
   };
 
   const ironOf = (i: number, ft: number): Iron => {
@@ -658,26 +623,14 @@ export function keysScene(
     const front = done ? FULL : key.kind === 'progress' ? frontOf(key.pct) : 0;
     const fill = done ? COBALT : key.kind === 'progress' ? heat(key.pct) : 0;
     const iron = ironAt(front, fill, i, done);
-    const p0 = tl.press[i];
-    if (ft < p0 + PRESS_MS) {
-      // TURNING OVER, PRESSED: standing as it was until the press, then its top a row lower a
-      // frame (`sink`), the number with it where that top stands it — the over look's, whole,
-      // from the first frame — its top going down out of the light (its cap and light band
-      // thinning as it sinks), its charge staying at its foot and going out cell by cell.
-      if (ft < p0) return wasOf(i);
-      const sink = Math.ceil(SINK * clamp01((ft - p0) / PRESS_MS));
-      iron.sink = sink;
-      iron.glyph = digitMap(dayOf(i), sink);
-      iron.press = { from: wasOf(i), fade: level(p0, PRESS_MS, CHANGE_STEPS, ft), light: 1 - sink / SINK };
-      return iron;
-    }
     const lock = tl.lock[i];
     if (done && ft >= lock + (tl.flash[i] ? FLASH_MS : 0)) {
       iron.locked = true;
       return iron;
     }
     const c0 = tl.charge[i];
-    // (A ceremony is an upgrade: what it charges from is never a finished key.)
+    // (A ceremony is an upgrade: what it charges from is never a finished key. A day restarted
+    // from over stands in its halftone until then.)
     if (ft < c0) return wasOf(i);
     const end = c0 + tl.chargeMs;
     if (ft < end) {
@@ -687,10 +640,6 @@ export function keysScene(
       const p = easeOut((ft - c0) / tl.chargeMs);
       const rising = ironAt(f0 + (front - f0) * p, fill, i, done);
       rising.head = Math.ceil(rising.front) - 1;
-      // A key restarted from over is lit again and RISES out of the board on the same easing —
-      // its number standing where the charge cuts it, so the top rises from no lower than leaves
-      // that number's ring under its cap rows (today's white two included).
-      if (tl.from[i] === 'o') rising.sink = Math.min(Math.round(SINK * (1 - p)), y0 - 3);
       return rising;
     }
     if (done) {
@@ -703,54 +652,36 @@ export function keysScene(
     return iron;
   };
 
-  // Its TOP's light, on the key's own rows from its top (`r`), so it rides a key that moves:
-  // the slate cap, its light dithered into the dusk face — as much as it catches (`light`: 1
-  // standing, thinning in the Bayer order as a pressed key goes down).
-  const topLit = (lx: number, r: number, light = 1) =>
-    r === 0 ? bayerThreshold(lx, r) < light : r === 1 ? bayerThreshold(lx, r) < 0.5 * light : r === 2 && bayerThreshold(lx, r) < 0.2 * light;
+  // Its TOP's light: the slate cap, its light dithered into the dusk face.
+  const topLit = (lx: number, ly: number) =>
+    ly === 0 || (ly === 1 && bayerThreshold(lx, ly) < 0.5) || (ly === 2 && bayerThreshold(lx, ly) < 0.2);
 
-  // A cell of an iron key (`dc`: its mark's ink 1, its ring 2) — `r`, its row from the key's
-  // own top, where a sunk key's caps stand.
+  // A cell of an iron key (`dc`: its mark's ink 1, its ring 2) — 0 where nothing is drawn: the
+  // bare ground through an over key's halftone.
   const ironPixel = (k: Iron, lx: number, ly: number, dc: number): number => {
     const u = H - 1 - ly;
-    const r = ly - k.sink;
     if (k.locked) {
       if (dc === 1) return GROUND;
       if (dc === 2) return COBALT;
-      if (k.todayCap && r <= 1) return WHITE;
+      if (k.todayCap && ly <= 1) return WHITE;
       return footDeep(lx, ly) ? DEEP : COBALT;
     }
     // THE HARD EDGE: the number and its ring read the split, never the dither (a ring cell over
     // or under the number reads the number's nearest row). Above it the mark is its own ink.
     if (dc !== 0) {
       const inked = Math.min(Math.max(ly, y0), y0 + COUNT_ROWS - 1) >= k.split;
-      if (dc === 1) return inked ? GROUND : k.ink;
+      if (dc === 1) return inked ? GROUND : WHITE;
       return inked ? k.fill : DUSK;
     }
     if (u === k.head) return WHITE;
-    if (r === 0 && k.capFlash) return WHITE;
-    if (r <= 1 && k.todayCap) return WHITE;
+    if (ly === 0 && k.capFlash) return WHITE;
+    if (ly <= 1 && k.todayCap) return WHITE;
     if (k.front > 0 && u < k.front) {
       if (k.flat || bayerThreshold(lx, ly) < rampDensity(k.front, u, 3)) return k.fill;
     }
-    // Bare iron, lit from above — or, sunk into the board, out of the light: dusk to its top.
-    return k.lit && topLit(lx, r) ? RAIL : DUSK;
-  };
-
-  // A face cell of a key being PRESSED (`k.press`; its number and ring are `ironPixel`'s): the
-  // charge it stood with, at its foot, until the Bayer order (on the screen's cells: the charge
-  // does not move) takes it out; else its top going down out of the light — today's white cap
-  // riding it — over the unlit dusk.
-  const pressPixel = (k: Iron, lx: number, ly: number, X: number, Y: number): number => {
-    const { from, fade, light } = k.press!;
-    // Today's white cap rides the top first: a high charge going out never shows through it.
-    const r = ly - k.sink;
-    if (r <= 1 && k.todayCap) return WHITE;
-    if (bayerThreshold(X, Y) >= fade) {
-      const was = ironPixel(from, lx, ly, 0);
-      if (was !== RAIL && was !== DUSK && was !== WHITE) return was;
-    }
-    return topLit(lx, r, light) ? RAIL : DUSK;
+    // Bare iron, lit from above — an over key's printed at half ink, the bare ground between.
+    if (k.half && bayerThreshold(lx, ly) >= HALFTONE) return 0;
+    return topLit(lx, ly) ? RAIL : DUSK;
   };
 
   // The read wave's light on diagonal `d` at a frame: 1 lit, 0.5 half-lit, 0 dark.
@@ -778,8 +709,7 @@ export function keysScene(
     const key = model.keys[i];
     if (key.kind === 'pad') return;
     const { x, y } = keyAt(G, i);
-    // The number's cells, for the kinds drawn without iron (a day out of range, a ghost); an
-    // iron key reads its picture's own mark.
+    // The number's cells: where every picture of the day stands them.
     const dmap = digitMap(key.day);
     const isToday = i === model.today;
 
@@ -796,10 +726,9 @@ export function keysScene(
     const down = i === pressed && key.kind !== 'out' ? 1 : 0;
     // (A beat that had not begun when this scene was replaced never begins.)
     const begun = (beat: number) => (beat > until ? Infinity : beat);
-    const lvIn = Math.min(
-      level(tl.keyIn[i], IN_MS, IN_STEPS, ft),
-      level(tl.dissolve[i], DISSOLVE_MS, CHANGE_STEPS, ft),
-    );
+    const lvArrive = level(tl.keyIn[i], IN_MS, IN_STEPS, ft);
+    const lvChange = level(tl.dissolve[i], DISSOLVE_MS, CHANGE_STEPS, ft);
+    const lvIn = Math.min(lvArrive, lvChange);
     const lvDigit = model.phase === 'data' ? lvIn : level(begun(tl.digitIn[i]), IN_MS, IN_STEPS, ft);
     const lvGhost = level(begun(tl.ghostIn[i]), IN_MS, IN_STEPS, ft);
     const iron =
@@ -813,24 +742,28 @@ export function keysScene(
     // (Offsets only once the key has come in whole: what gives way gives way where it stood.)
     const arriving = lvIn < 1 || lvDigit < 1;
     if (arriving) dx = dy = 0;
+    // A changed day's MARK — its number and their ring, standing where they stand on both its
+    // pictures — changes WHOLE at the dissolve's half: never two inks mixed inside it.
+    const markChanged = lvChange >= 0.5;
     for (let ly = 0; ly < H; ly += 1) {
       for (let lx = 0; lx < W; lx += 1) {
         const X = x + lx;
         const Y = y + ly;
         const dc = dmap[ly * W + lx];
         const lv = key.kind === 'unknown' ? (dc === 1 ? lvDigit : lvGhost) : key.kind === 'out' ? lvDigit : lvIn;
-        if (lv < 1 && bayerThreshold(X, Y) >= lv) {
+        const old =
+          iron && dc !== 0
+            ? !markChanged || (lvArrive < 1 && bayerThreshold(X, Y) >= lvArrive)
+            : lv < 1 && bayerThreshold(X, Y) >= lv;
+        if (old) {
           if (under) put(px, X, Y, under[Y * cols + X]);
-          else if (was && shape(lx, ly, was.sink)) put(px, X, Y, ironPixel(was, lx, ly, was.glyph[ly * W + lx]));
+          else if (was && shape(lx, ly, 0)) put(px, X, Y, ironPixel(was, lx, ly, dc));
           continue;
         }
         let v = 0;
         if (key.kind === 'out') v = dc === 1 ? RAIL : 0;
         else if (key.kind === 'unknown') v = ghostPixel(lx, ly, dc, lit, isToday);
-        else if (iron && shape(lx, ly, iron.sink + down)) {
-          const mark = iron.glyph[ly * W + lx];
-          v = struck ? WHITE : iron.press && mark === 0 ? pressPixel(iron, lx, ly, X, Y) : ironPixel(iron, lx, ly, mark);
-        }
+        else if (iron && shape(lx, ly, down)) v = struck ? WHITE : ironPixel(iron, lx, ly, dc);
         if (v !== 0) put(px, X + dx, Y + dy + down, v);
       }
     }
