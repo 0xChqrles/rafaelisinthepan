@@ -5467,16 +5467,19 @@ figure.l1-fig {
 
 /* THE KEYBOARD'S HOLD (`KeyboardHold`): the pad's footprint before its keys can be pressed —
    every key's slot in the slate stipple, on the keyboard's own rows and sizes, breathing at
-   once (it answers the act that asked for the keys). It rises into the tray as the keys would
-   (the wrapper's `kb-rise`), and the keys come in over it through the dither as it goes out
-   through the cells they take (`.from-hold`, `.kb-hold-out`). */
+   once (it answers the act that asked for the keys). It takes no pointer, so a slot never
+   lights as a struck key does. It rises into the tray as the keys would (the wrapper's
+   `kb-rise`), and the keys come in over it through the dither as it goes out through the
+   cells they take (`.from-hold`, `.kb-hold-out`). */
+.kb-hold {
+  pointer-events: none;
+}
 .kb-hold .kb-row {
   animation: none;
 }
 .kb-hold .kb-slot {
   background: conic-gradient(var(--rail) 25%, transparent 0 50%, var(--rail) 0 75%, transparent 0) 0 0 / 4px 4px;
   border-radius: 0;
-  cursor: default;
   transition: none;
 }
 .kb-hold .kb-slot.breathing {
@@ -5485,7 +5488,8 @@ figure.l1-fig {
 .kb-exit.from-hold {
   position: relative;
 }
-.kb-exit.from-hold .keyboard .kb-row {
+/* The real pad alone: the hold going out over it wears `.keyboard` too. */
+.kb-exit.from-hold > .keyboard:not(.kb-hold) .kb-row {
   animation: board-dissolve 240ms linear backwards;
 }
 .kb-hold-out {

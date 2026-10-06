@@ -607,14 +607,15 @@ export default function LessonBoard({
   }, [cleared]);
   // THE KEYBOARD'S HOLD: the keys asked for (the reveal's CONTINUE) before the word list has
   // landed — the pad's footprint stands as its hold, and once the list lands the keys come in
-  // over it through the dither while it goes out (`holdOut`, one dissolve long).
+  // over it through the dither while it goes out (`holdOut`, one dissolve long) — set before
+  // the keys' first frame is painted, so the tray never stands empty between the two.
   const holding = !vocab && !vocabError && !kbGone && !revealed && !waitingTap;
   const [heldKeys, setHeldKeys] = useState(false);
   useEffect(() => {
     if (holding) setHeldKeys(true);
   }, [holding]);
   const [holdOut, setHoldOut] = useState(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!heldKeys || !vocab) return;
     setHoldOut(true);
     later(() => setHoldOut(false), DISSOLVE_MS);
