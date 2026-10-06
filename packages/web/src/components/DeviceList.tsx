@@ -83,6 +83,61 @@ export function revokedCallingDevice(listing: DeviceListing, target: string): bo
   );
 }
 
+// A REFUSAL the route read and answered: a 4xx other than the signed-out verdict (which `talk`
+// adopts). A 5xx, a dropped connection, a deadline or an unreadable body is no answer at all —
+// the outcome of a write it leaves is UNKNOWN (the root contract), and the list is read again
+// before anything is said.
+export class Refused extends Error {}
+
+// One answer of the route: the list as it stands, for the identity epoch that asked.
+type Answer = { listing: DeviceListing; epoch: string };
+
+// WHAT A SIGN-OUT'S ANSWERS SAY ABOUT ITS LINE — the root contract on an unknown outcome, made
+// one function: a 5xx, a dropped connection or an unreadable body is never a verdict, so the
+// list is READ AGAIN before anything is said, and only a readable answer says NOT SIGNED OUT.
+//   - `gone`        the answer, or the list read after none came, no longer holds the line;
+//   - `self`        the answer signed THIS device out (its own line, gone);
+//   - `refused`     the server said no: a 4xx, or a list still holding the line;
+//   - `unanswered`  neither the sign-out nor the read after it answered — nothing is known;
+//   - null          the identity changed under the call (another surface says what happened).
+// `revoke` and `read` resolve null exactly when that happened, and throw `Refused` on a 4xx.
+export async function signOutOutcome(
+  target: string,
+  revoke: () => Promise<Answer | null>,
+  read: () => Promise<Answer | null>,
+): Promise<{ kind: 'gone' | 'self' | 'refused'; answer: Answer } | { kind: 'refused' | 'unanswered' } | null> {
+  let answer: Answer | null;
+  try {
+    answer = await revoke();
+  } catch (error) {
+    if (error instanceof Refused) return { kind: 'refused' };
+    // UNKNOWN: the sign-out may have landed before its answer was lost. The list knows.
+    try {
+      answer = await read();
+    } catch {
+      return { kind: 'unanswered' };
+    }
+  }
+  if (!answer) return null;
+  if (revokedCallingDevice(answer.listing, target)) return { kind: 'self', answer };
+  const listed = answer.listing.devices.some((device) => device.deviceId === target);
+  return { kind: listed ? 'refused' : 'gone', answer };
+}
+
+// What a sign-out that did not take says on its line: the server's own NO (refused, or a list
+// still holding it), or no readable answer at all — the sign-out and the read after it both
+// unanswered, so nothing is claimed either way.
+type Note = 'refused' | 'unanswered';
+
+// A map held in state, changed by copy: `null` takes the line's note away.
+function withNote(map: ReadonlyMap<string, Note>, id: string, note: Note | null): ReadonlyMap<string, Note> {
+  if ((map.get(id) ?? null) === note) return map;
+  const next = new Map(map);
+  if (note === null) next.delete(id);
+  else next.set(id, note);
+  return next;
+}
+
 // A set held in state, changed by copy.
 function withId(set: ReadonlySet<string>, id: string, on: boolean): ReadonlySet<string> {
   if (set.has(id) === on) return set;
@@ -99,14 +154,17 @@ export default function DeviceList({ lang }: { lang: string }) {
   // A SIGN OUT, LINE BY LINE. Only the line being signed out is busy — every other line's
   // SIGN OUT stays live — and it says so in its own material: its ink THINS through the dither
   // (the glyph a `.ghost-mark`, the words to half their cells) while the request is out. Once
-  // the answer says it is gone it LEAVES (`going`): out through the board's dissolve, then
-  // dropped, the lines under it closing up in one whole-line step. A sign-out that did not
-  // land RE-INKS its line with the refusal's shake, and its one fact gives way to one muted
-  // line saying so (`refused`) until the next try.
+  // an answer says it is gone it LEAVES (`going`): out through the board's dissolve, then
+  // dropped, the lines under it closing up in one whole-line step. An answer that never came
+  // readable (a 5xx, a dropped connection) says NOTHING yet: the list is read again first, and
+  // the line leaves if it is gone. A sign-out the server REFUSED — a 4xx, or a list still
+  // holding the line — RE-INKS its line with the refusal's shake, and its one fact gives way
+  // to one muted line, NOT SIGNED OUT; when not even the read after it answered, the line
+  // re-inks unshaken over NO ANSWER (`notes`), until the next try.
   const [signing, setSigning] = useState<ReadonlySet<string>>(new Set());
   const [going, setGoing] = useState<ReadonlySet<string>>(new Set());
-  const [refused, setRefused] = useState<ReadonlySet<string>>(new Set());
-  // What a screen reader hears of the last refusal (the line's label and the note).
+  const [notes, setNotes] = useState<ReadonlyMap<string, Note>>(new Map());
+  // What a screen reader hears of the last note (the line's label and the note).
   const [spoken, setSpoken] = useState('');
   // The lines confirmed gone in this mount: every answer is the list as it stood after ITS
   // write, so one landing after a later one must not bring a line back.
@@ -135,6 +193,7 @@ export default function DeviceList({ lang }: { lang: string }) {
         // is authoritative (`adoptSignedOutVerdict` — the one spelling), but only for the
         // epoch that sent it.
         if (await adoptSignedOutVerdict(response, epoch)) return null;
+        if (response.status < 500) throw new Refused(`devices refused ${response.status}`);
         throw new Error(`devices answered ${response.status}`);
       }
       const listing = parseDeviceIdentity(await response.json());
@@ -174,44 +233,43 @@ export default function DeviceList({ lang }: { lang: string }) {
     const id = row.deviceId;
     if (signing.has(id) || going.has(id)) return;
     setSigning((set) => withId(set, id, true));
-    setRefused((set) => withId(set, id, false));
-    const refuse = () => {
-      setRefused((set) => withId(set, id, true));
-      setSpoken(`${deviceLabel(row, lang)}: ${t(lang, 'deviceSignOutFailed')}`);
-      refuseShake(lines.current.get(id));
+    setNotes((map) => withNote(map, id, null));
+    const say = (note: Note) => {
+      setNotes((map) => withNote(map, id, note));
+      setSpoken(`${deviceLabel(row, lang)}: ${t(lang, note === 'refused' ? 'deviceSignOutFailed' : 'deviceNoAnswer')}`);
+      // The refusal's shake is the server's NO; an unanswered call refused nothing.
+      if (note === 'refused') refuseShake(lines.current.get(id));
     };
-    void talk(row)
-      .then((answer) => {
-        // No answer: the identity was dropped or replaced under the call, and the surface
-        // that takes over (the signed-out screen, a scope remount) says what happened.
-        if (!answer || identityEpoch() !== answer.epoch) return;
-        // A successful self-delete cannot wait for "the next 401": there may be no next
-        // private request, and the profile would remain open as a device the server has
-        // already revoked. This successful response is the second authoritative sign-out
-        // signal, alongside `unknown_device`.
-        if (revokedCallingDevice(answer.listing, id)) {
-          markDeviceSignedOut(answer.epoch);
-          return;
+    const leave = () => {
+      removed.current.add(id);
+      const settle = () => {
+        setGoing((set) => withId(set, id, false));
+        setRows(latest.current.filter((device) => !removed.current.has(device.deviceId)));
+      };
+      if (prefersReducedMotion()) {
+        settle();
+        return;
+      }
+      setGoing((set) => withId(set, id, true));
+      onClock(listRef.current, DISSOLVE_MS, settle);
+    };
+    void signOutOutcome(id, () => talk(row), () => talk())
+      .then((outcome) => {
+        // No answer: the identity was dropped or replaced under the call, and the surface that
+        // takes over (the signed-out screen, a scope remount) says what happened.
+        if (outcome === null) return;
+        if ('answer' in outcome) {
+          if (identityEpoch() !== outcome.answer.epoch) return;
+          latest.current = outcome.answer.listing.devices;
         }
-        latest.current = answer.listing.devices;
-        // The list the server answered still holds the line: nothing was signed out.
-        if (answer.listing.devices.some((device) => device.deviceId === id)) {
-          refuse();
-          return;
-        }
-        removed.current.add(id);
-        const settle = () => {
-          setGoing((set) => withId(set, id, false));
-          setRows(latest.current.filter((device) => !removed.current.has(device.deviceId)));
-        };
-        if (prefersReducedMotion()) {
-          settle();
-          return;
-        }
-        setGoing((set) => withId(set, id, true));
-        onClock(listRef.current, DISSOLVE_MS, settle);
+        // A successful self-delete cannot wait for "the next 401": there may be no next private
+        // request, and the profile would remain open as a device the server has already
+        // revoked. This answer is the second authoritative sign-out signal, alongside
+        // `unknown_device`.
+        if (outcome.kind === 'self' && 'answer' in outcome) markDeviceSignedOut(outcome.answer.epoch);
+        else if (outcome.kind === 'gone') leave();
+        else if (outcome.kind === 'refused' || outcome.kind === 'unanswered') say(outcome.kind);
       })
-      .catch(refuse)
       .finally(() => setSigning((set) => withId(set, id, false)));
   };
 
@@ -287,8 +345,10 @@ export default function DeviceList({ lang }: { lang: string }) {
                     after a sign-out that did not land, the muted line that says so. */}
                 <span className="device-info">
                   <span className="device-name">{deviceLabel(row, lang)}</span>
-                  {refused.has(id) ? (
-                    <span className="device-sub">{t(lang, 'deviceSignOutFailed')}</span>
+                  {notes.has(id) ? (
+                    <span className="device-sub">
+                      {t(lang, notes.get(id) === 'refused' ? 'deviceSignOutFailed' : 'deviceNoAnswer')}
+                    </span>
                   ) : row.current ? (
                     <span className="device-sub current">{t(lang, 'deviceCurrent')}</span>
                   ) : (

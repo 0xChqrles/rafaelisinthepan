@@ -1510,12 +1510,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
       line's SIGN OUT stays live; several may be out at once): while the request is out the
       line THINS — the glyph a `.ghost-mark`, the words and the word's brackets through the
       same half of the Bayer cells, never an opacity — and its SIGN OUT is `aria-disabled`;
-      once the answer no longer lists it, it leaves on `board-dissolve-out` and is dropped,
+      once an answer no longer lists it, it leaves on `board-dissolve-out` and is dropped,
       the lines under it closing up in one whole-line step (a line confirmed gone never
-      comes back from a later-landing answer). A sign-out that did not land — a transport
-      failure, a refused call, an answer still listing the line — RE-INKS the line with the
-      refusal's stepped shake (`components/refuseShake.ts`, the archive month chip's too)
-      and its one fact becomes one muted line, NOT SIGNED OUT, until the next try; a
+      comes back from a later-landing answer). **An answer that never came readable
+      — a 5xx, a dropped connection, a deadline, an unreadable body — says NOTHING** (the
+      root contract on unknown outcomes): the list is read again, still thinned, and the
+      line leaves if it is gone (`signOutOutcome`, contract-tested). Only a READABLE no — a
+      4xx, or a list still holding the line — RE-INKS it with the refusal's stepped shake
+      (`components/refuseShake.ts`, the archive month chip's too) and turns its one fact
+      into one muted line, NOT SIGNED OUT; when not even the read answered, the line re-inks
+      unshaken over NO ANSWER, claiming neither. Either note stands until the next try; a
       status region says it to a screen reader.
     - **`AccountStats` (the crossroads, the recovery ending) is QUIET**: the record's side
       numbers' dress, three across between stippled rails — no foil, no flame, no burst
