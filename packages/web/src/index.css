@@ -952,14 +952,16 @@ body:has(.app > .board-screen) {
   gap: 6px;
 }
 .race-entry .avatar,
-.race-mark-box {
+.race-mark-box,
+.race-face-hold {
   flex: none;
   width: 20px;
   height: 20px;
 }
+/* The player's own mark while it is read: its box, the frame round it, and in it the header
+   key's own hold (`FaceHold`). */
 .race-mark-box {
   display: block;
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
 }
 /* The player's own mark is framed in the accent — "you are here", the boards' own marker. */
 .race-entry.me .avatar,
@@ -1479,8 +1481,9 @@ body:has(.app > .board-screen) {
   height: 20px;
 }
 /* HOLDS ITS BOX until the face settles — the leaderboard strip's rule, and it matters
-   more here, where the control is on screen every day. Square like the tile it stands in
-   for: a placeholder that rounds where the drawing does not is a shape change on arrival. */
+   more here, where the control is on screen every day — as the house hold (`FaceHold`:
+   `.link-hold`, late) on the tile's own 2px cells. Square like the tile it stands in for: a
+   placeholder that rounds where the drawing does not is a shape change on arrival. */
 .account-key-slot {
   display: block;
   width: 20px;
@@ -6023,6 +6026,21 @@ figure.l1-fig {
   50% { -webkit-mask-image: var(--dz-3); mask-image: var(--dz-3); }
   75% { -webkit-mask-image: var(--dz-2); mask-image: var(--dz-2); }
 }
+/* A hold that comes in LATE: unseen until its read has been out `--wait` (SKELETON_WAIT_MS,
+   written by the script), so a quick answer never flashes it — then in on the breath's own
+   thinnest step. Where a box stands on every screen (the header's face key, the race line's own
+   entry, the boards' tab row), a hold from the first frame would blink on every visit. */
+.link-hold.waiting.late {
+  animation:
+    hold-wait 1ms linear var(--wait, 0ms) backwards,
+    link-hold-breathe 640ms steps(1, end) var(--wait, 0ms) infinite;
+}
+@keyframes hold-wait {
+  from,
+  to {
+    visibility: hidden;
+  }
+}
 
 /* The row inside the flow's centered face-stack: the crossroads and the recovery ending
    both draw it, and both want the column's full width rather than the grid's content width,
@@ -8301,31 +8319,6 @@ figure.l1-fig {
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-}
-
-/* A SKELETON while a read is in flight (user feedback 2026-08-20, on the board's
-   identity strip — retired 2026-08-30, the rule outlived it). A surface used to publish
-   the ASSIGNED identity the moment the id derived and correct it a beat later, so every
-   named player watched a stranger's name flash under their own mark. A placeholder says
-   "not yet"; a name says something false. It holds the exact boxes the resolved values
-   take, so nothing moves when they land. The breathe is what tells it from a broken render
-   on a slow read; the global reduced-motion rule collapses it to a single instant pass,
-   which leaves it resting and still. */
-.skeleton {
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
-  border-radius: var(--r-sm);
-  animation: skeleton-breathe 1.4s ease-in-out infinite;
-}
-.skeleton-name {
-  display: block;
-  width: 8em;
-  max-width: 60%;
-  height: 0.9em;
-}
-@keyframes skeleton-breathe {
-  50% {
-    opacity: 0.45;
-  }
 }
 
 /* ---- The group invite landing (#271; the shape is #189's, user feedback 2026-08-20): the
@@ -10774,13 +10767,7 @@ figure.l1-fig {
 .profile-canvas-hold.late {
   animation:
     stat-breathe 640ms step-end infinite,
-    profile-hold-late 1ms linear 250ms backwards;
-}
-@keyframes profile-hold-late {
-  from,
-  to {
-    visibility: hidden;
-  }
+    hold-wait 1ms linear 250ms backwards;
 }
 /* The handed-over mark, frozen in the box it stood in on `/account`. */
 .profile-handed {

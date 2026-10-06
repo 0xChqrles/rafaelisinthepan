@@ -68,7 +68,9 @@
       components/CodeInput.tsx  the six-digit prompt: six drawn iron keys over ONE real input,
                               each struck in its `CODE_INKS` ink; auto-verifying on the sixth
       components/AccountFace.tsx  the ONE read of "who an account is" (mark + name), shared
-                              by the account screen, the flow's ending and the sign-out screen
+                              by the account screen, the flow's ending and the sign-out screen;
+                              `FaceHold`, the own face's 20px box while it is read (the header
+                              key, the race line)
       state/ownFace.ts        when the player's OWN face is read again: the signals its
                               profile's two writers (the deploy, the editor's SAVE) send
       state/account.ts        what `/account` shows — the `{token}` summary and the
@@ -634,7 +636,8 @@ These are decided and verified against the code. Treat them as load-bearing.
   a member still playing prints their % in the heat ramp's ink (the board's playing-row
   dress) and their tries muted; a FINISHED member wears the pixel check
   (`assets/icons/check.svg`) and their score in the solve cobalt; one whose round ended
-  unsolved wears `∞`. MY entry is my mark (framed in the accent) and my LIVE % —
+  unsolved wears `∞`. MY entry is my mark (framed in the accent; while my face is read, the
+  header key's own hold in that frame, `FaceHold`) and my LIVE % —
   `computeProgress` over the board I SEE, so it moves when a hit lands — **the one place the
   play screen prints the player's own percentage.** The order is the boards' own (finished
   by fewest tries, then `orderPlaying`, my entry taken from the screen, never my server
@@ -4279,7 +4282,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     that pair at deployment — the same face before and after (#216), with no other face
     drawn in between; and a SAVE in the editor shows on it at once (the `AccountFace`
     bullet). It HOLDS ITS BOX until the face settles (the leaderboard strip's rule, and it
-    matters more here, where the control is on screen every day). **It is A BARE PIXEL TILE, IN COLOUR — the fifth cell
+    matters more here, where the control is on screen every day): `FaceHold`, the house hold
+    — the slate stippled through the Bayer tiles on the key's own 10×10 grid of 2px cells,
+    square, breathing on `link-hold-breathe` — in only once the read has been out
+    `SKELETON_WAIT_MS` (`.link-hold.waiting.late`); a GONE account keeps the box, empty. **It is A BARE PIXEL TILE, IN COLOUR — the fifth cell
     drawing in a row of five** (user-decided 2026-09-02, in two steps: square corners, then
     "remove the box shadow"; it kept its COLOUR from 2026-08-31, "actually quite cool", and
     is still the one full-colour chrome control, because that colour is the one thing on the
