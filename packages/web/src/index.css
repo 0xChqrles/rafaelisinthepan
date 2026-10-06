@@ -391,10 +391,21 @@ body:has(.app > .board-screen) {
 .no-puzzle .rules-gate {
   animation: board-dissolve 240ms linear backwards;
 }
+/* The ghost here is the 4x sprite (52 × 72), so its bob is ITS texel, 4px — the board's
+   `podium-ghost-bob` is cut for the 3x one. Two frames, held, never a glide. */
 .no-puzzle-ghost {
   color: var(--muted);
   margin-bottom: 24px;
-  animation: podium-ghost-bob 1.6s steps(1) 400ms 5;
+  animation: ghost-bob 1.6s steps(1) 400ms 5;
+}
+@keyframes ghost-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
 }
 /* The confirmation's title and note (`.confirm-screen .error-title`, `.error-note`): the
    title in the chrome's caps, the note a sentence. */
