@@ -6,6 +6,8 @@ import Keyboard from '../components/Keyboard';
 import RevealTray from '../components/RevealTray';
 import LoadError from '../components/LoadError';
 import LoadingWave from '../components/LoadingWave';
+// (For its side effect: the root's Bayer tiles the tray's button comes in through.)
+import '../components/bayerTiles';
 import CellDigits from '../components/CellDigits';
 import HistoryWheel from '../components/HistoryWheel';
 import HistoryModal from '../components/HistoryModal';

@@ -9,6 +9,8 @@ import { holeTitle, srRouteStop, t } from '../i18n';
 import useDrum from '../hooks/useDrum';
 import useModalDismiss from '../hooks/useModalDismiss';
 import MeterCanvas from './MeterCanvas';
+// (For its side effect: the root's Bayer tiles the drum's ends thin through.)
+import './bayerTiles';
 
 // The hole WHEEL (user-decided 2026-09-01 — the day's fifth approach, after the history
 // modal's line, a radial net with lines twice revised, and a plain stack; the brief was

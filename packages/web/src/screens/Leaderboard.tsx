@@ -25,6 +25,7 @@ import Podium, { nextStage, type PodiumStage } from '../components/podium/Podium
 import { beats, podiumHeightPx, podiumSize, type PodiumSize } from '../components/podium/scene';
 import PuzzleTitle from '../components/PuzzleTitle';
 import { HeaderLeft } from '../components/TopBar';
+import useMoreBelow from '../hooks/useMoreBelow';
 import useShare from '../hooks/useShare';
 import useStuckOwnLine from '../hooks/useStuckOwnLine';
 import useSwipe from '../hooks/useSwipe';
@@ -326,6 +327,8 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   const [screen, setScreen] = useState<'group' | 'create' | null>(null);
   const [confirming, setConfirming] = useState<{ kind: 'remove'; member: BoardPlayer } | { kind: 'leave' } | null>(null);
   const [successor, setSuccessor] = useState<string | null>(null);
+  // Whether the picker holds more members below what it shows (its foot's dithered edge).
+  const [pickRef, pickMore] = useMoreBelow<HTMLDivElement>();
   // The members DRESSED (name + mark) for the successor picker: the list carries ids
   // alone, and `GET /groups?id=` is the public face that names them. Decoration — until
   // it lands, and if it never does, the rows wear the assigned identities.
@@ -874,7 +877,13 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
           {leaveKind === 'pick' && (
             // WHO TAKES IT OVER: the members as the board's lines, the one picked FRAMED —
             // the brackets, the house's selection gesture.
-            <div className="board-list confirm-pick" role="radiogroup" aria-label={t(lang, 'groupMembers')}>
+            <div
+              ref={pickRef}
+              className="board-list confirm-pick"
+              data-more={pickMore || undefined}
+              role="radiogroup"
+              aria-label={t(lang, 'groupMembers')}
+            >
               {others.map((id) => {
                 const face = faces[id];
                 const picked = successor === id;

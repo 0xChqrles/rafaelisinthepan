@@ -1,5 +1,7 @@
 import { useId, type PointerEvent } from 'react';
 import Button from './Button';
+// (For its side effect: the root's Bayer tiles the tray comes in through.)
+import './bayerTiles';
 import { t } from '../i18n';
 
 // THE REVEAL TRAY (#301, user-decided 2026-10-02: "When a hidden word is selected, instead
@@ -28,7 +30,7 @@ export default function RevealTray({
   const costId = useId();
   const keepFocus = (e: PointerEvent<HTMLButtonElement>) => e.preventDefault();
   return (
-    <div className="reveal-tray arrive">
+    <div className="reveal-tray dissolve-in">
       <p id={costId} className="reveal-cost">
         {t(lang, 'revealCost')}
       </p>

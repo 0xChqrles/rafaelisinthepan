@@ -151,9 +151,17 @@
                               a window shows the glyph's 7 ink rows, never the next digit's top
       components/bayerTiles.ts  the ordered dither as CSS masks on 2px cells, set ONCE on the
                               document's root as it loads: a line coming in and giving way
-                              (`--dz-*` / `--dzo-*`), your held line's edge (`--edge-d/-u`);
+                              (`--dz-*` / `--dzo-*`), the EDGE where what scrolls meets what
+                              holds (`--edge-d/-u`, 6px, over lines resting whole — your held
+                              line; `--edge-deep-d/-u`, 24px, over prose scrolling freely);
                               and the dissolve's beat script times against (`DISSOLVE_MS`,
-                              `SKELETON_WAIT_MS`, `SKELETON_STAGGER_MS`, `cameIn`)
+                              `SKELETON_WAIT_MS`, `SKELETON_STAGGER_MS` — on the root too as
+                              `--dz-stagger`, what `.dissolve-in` staggers a screen's blocks by —
+                              and `cameIn`)
+      hooks/useMoreBelow.ts   whether a scrolling list holds more below what it shows: the
+                              dithered veil at its foot (`data-more`; the group's members, the
+                              successor pick), measured again on scroll, on resize and on a
+                              row added or removed
       components/animationClock.ts  the page's animation clock (`clockNow`, `onClock`): every
                               beat the board screen and its podium time, on the clock their
                               CSS and Web Animations play on
@@ -342,6 +350,8 @@
       game/share.ts           what a RESULT says: the share text + link (emoji row, the
                               composed message)
       hooks/useShare.ts       how a RESULT leaves the app (native sheet -> clipboard + COPIED)
+      components/SwapLabel.tsx  a control's word changing in place (SHARE → COPIED): out and in
+                              through the dither, in one cell
     public/                   served at site root (web assets + generated data)
       robots.txt              every crawler allowed, everywhere (a missing object is the bucket's 403)
       favicon.svg, favicon.ico, apple-touch-icon.png  the app's mark (shared `MARK_GLYPH`) in
@@ -2677,7 +2687,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     in through the board's Bayer dissolve, dressed by `readGroup`, the owner tagged under
     their name, the owner's pixel ✕ (the modal header's, `assets/icons/close.svg`) at every
     other line's end (`.board-remove`); the members SCROLL in whole lines (their room floored
-    to `LINE_PX`, one line at the least, the scroll snapping to a line's start; a screen too
+    to `LINE_PX`, one line at the least, the scroll snapping to a line's start, its last line
+    shown thinning through the drum's three dither steps while more wait below, so a list at
+    rest says there is more — `useMoreBelow`: a veil of the ground at the list's foot, and
+    the owner's ✕ and your own framed line stand whole above it, since a control or a frame
+    drawn thinned reads as another glyph or as disabled; a screen too
     short for that scrolls whole), so INVITE as the primary cap and LEAVE as the quiet
     danger word stand at the screen's foot whatever the group's size —
     there is no MANAGE toggle, the screen is the management. **NAMING A GROUP is THE GAME'S
@@ -2700,7 +2714,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the SUCCESSION RULE (root `AGENTS.md`, Groups) off the list on screen: last member →
     "the group will be deleted"; owner of two → "the other member takes it over"; owner of
     three or more → a PICKER of the others (the board's lines as radios, the one picked
-    FRAMED, dressed by `readGroup`, in whole rows — `round(down, 40vh, 44px)`, snapping),
+    FRAMED, dressed by `readGroup`, in whole rows — `round(down, 40vh, 44px)`, snapping; every
+    row is a control, so none is thinned at rest: while more wait below its foot is the short
+    6px edge, on the last row's bare margin, the picked row's frame standing above it),
     LEAVE held back until one is picked, sent as `successor`; a stale list's 409
     `successor_required` is no failure: the confirmation stays up, its pick cleared, and
     the list is read again (the candidates dressed again when its members change).
@@ -2831,11 +2847,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   same day: "avoid reducing the font size, even if it leads to less columns"): the column
   is as wide as the LONGEST word needs at 15px (`repeat(auto-fill, minmax(<that>px, 1fr))`,
   set inline), so a wide screen fills its width with as many such columns as fit and a
-  phone gets one or two; only a word wider than the whole frame shrinks, alone. The list FADES into the
-  ground as it scrolls up under the header (a 40px top mask on `.hw-scroll`, padded so
-  nothing fades at rest — the game header's own fade, which a dialog's scroll never
-  lights). The
-  shared `ModalHeader` + Escape are the ways out (a fade, `fade-out`). The solved stage's
+  phone gets one or two; only a word wider than the whole frame shrinks, alone. The list THINS into the
+  ground as it scrolls up under the header (the house's DEEP dithered edge over
+  `.hw-scroll`'s top, `--edge-deep-u`, a line deep so a passing word thins instead of being
+  sliced, padded so nothing touches it at rest — the game header's own edge, which a
+  dialog's scroll never lights). The
+  shared `ModalHeader` + Escape are the ways out (through the dither,
+  `board-dissolve-out`). The solved stage's
   word buttons open it too. `Game` picks the surface off the hole's rank (`wheelOpen`),
   and only the wheel veils the word beneath it.
   Exponents are the hole's own superscript (`.hole-rank` in the slot, `.wheel-rank` on
@@ -2850,7 +2868,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   The column stands on the word's left edge, or on its RIGHT edge when the room on the
   right is under `MIN_COLUMN` or the longest row does not fit there and the left has more
   room; only a row that fits NEITHER side shrinks, alone, to fit (floor `ROW_MIN_PX`) — the
-  words modal's rule. The scroller hides its scrollbar and fades both ends (a mask). **A PLAIN ROW
+  words modal's rule. The scroller hides its scrollbar and its ends thin through the
+  dither (the drum's ends: `--dzo-*` in three 16px steps, a mask). **A PLAIN ROW
   STANDS ON ITS OWN GROUND** (user-decided 2026-09-02: at the quarter dim the rows printed
   over the sentence's words — "you don't have wheel items over sentence text"): `.wheel-plain`
   boxes the WORD on the `--surface` tone, drawn as the chip is drawn (an absolutely
@@ -2880,8 +2899,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   frame after the slot row had gone — one frame with no word at all, measured. For a PICK, `Hole`
   starts its scramble in a LAYOUT effect, so the churn's first frame paints in place of the
   old word instead of one frame after it. The title's selection wears its own whole-screen
-  fade (`fade-out`), since the dim-only exit is the wheel's. It stays a native
-  `<dialog>` on `useModalDismiss` (`wheel-out`) — the sentence and the keyboard under it
+  exit through the dither (`board-dissolve-out`), since the dim-only exit is the wheel's. It
+  stays a native `<dialog>` on `useModalDismiss` (`wheel-out`) — the sentence and the keyboard under it
   must be inert — but it is the PuzzleSelect's KIND, so a tap OUTSIDE closes it. What is
   GONE with the modal (no-back-compat): the MISSED shelf (a miss is not a found word and
   cannot be picked), the `dq`-spaced line and the `???` terminus, `Game.openHistory`'s
@@ -3275,15 +3294,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
       bold), ALONE on the column's axis — no portrait, no name: the boards under it name the
       player; the run RULER with its HEAT; **then SHARE**, under the frame (the brackets hold
       what you send, the button sends it; sharing is what you do with a RESULT,
-      user-decided 2026-08-14). Measured: 390×844 and 375×667, a 160px count, SHARE at
-      y 456–504; 320×568, a two-digit count at 136px (the hero's width), SHARE at y
+      user-decided 2026-08-14) — a copy turns its word to COPIED and back through the
+      dither (`SwapLabel`: the old word out, the new one in through the cells it gives up;
+      the button itself does not change, no glow). Measured: 390×844 and 375×667, a 160px
+      count, SHARE at y 456–504; 320×568, a two-digit count at 136px (the hero's width), SHARE at y
       435–483; 1366×657 (a laptop's browser window), wide, a 160px count, SHARE at y
       556–604.
     - **THE COUNT IS THE SUBJECT, drawn as the METER.** Press Start 2P at the LARGEST whole
       multiple of 8px whose INK fits the hero (`countSize.ts` — the box is the
       digits' ink, the last glyph's trailing blank column dropped, so the number centres on
       what it prints) AND whose box leaves SHARE above the fold — the card's room from its
-      top in the stage down to the stage's bottom fade, less everything in the card but the
+      top in the stage down to the stage's bottom padding, less everything in the card but the
       count's box: at most 160px on a phone (the share card's own), 192 on a WIDE card (a
       column ≥ 552px in a small viewport ≥ 640px tall — a shorter window keeps the phone's
       sizes, so its room goes to the count, not to the air round it); three digits at 320
@@ -3359,16 +3380,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
       never the pixel face inside a paragraph. **The STAGE is the
       scroller** (`overflow-y: auto`, `overscroll-behavior: contain`, `pixel-scroll`,
       `position: relative` so the sr-only hints under a long page are contained rather
-      than growing the document — measured 523px of page scroll before), fading its
-      BOTTOM edge over its own 24px padding (on a phone plus the home-indicator inset);
-      its top has no fade, because what passes there passes under the credit. **The
-      credit is `position: sticky; top: 0`** inside the page (its containing block, so it
-      sticks while the page is in view and leaves with it) on flat `--bg` with a 24px
-      `--bg`→transparent gradient hanging under it (`::after`), so the text disappears
-      under the credit rather than through it, and **a tap on it scrolls the stage back to
-      the top** (`backToTop`, smooth unless reduced motion): the running head is the way
-      back to the score and SHARE. On a phone that fits, nothing overflows and nothing
-      moves. **A FINISHED round's secrets open the words MODAL, found or not**: an
+      than growing the document — measured 523px of page scroll before), its BOTTOM edge
+      thinning through the house's DEEP dithered edge (`--edge-deep-d`, 24px — a line of
+      text deep, so a line passing out steps down through the cells and is never sliced)
+      laid on its own 24px padding (on a phone plus the home-indicator inset), so a resting
+      last line is never touched; its top has none, because what
+      passes there passes under the credit. **The credit is `position: sticky; top: 0`**
+      inside the page (its containing block, so it sticks while the page is in view and
+      leaves with it) on flat `--bg` with the same deep edge hanging under it (`::after`,
+      ending inside the text's top margin, so a resting line is never touched), so the text
+      thins under the credit rather than running through it, and
+      **a tap on it scrolls the stage back to the top** (`backToTop`, smooth unless reduced
+      motion): the running head is the way back to the score and SHARE. On a phone that
+      fits, nothing overflows and nothing moves. **A FINISHED round's secrets open the words MODAL, found or not**: an
       unfinished round's (given up, or capped) unfound holes keep a rank, but the wheel measures the board's own
       `[data-hole-explore] .hole-word-wrap`, which the page's secrets do not wear, and a
       pick has nothing to swap into a page that already shows the answer — `wheelOpen` is
@@ -3879,7 +3903,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   this visit's PLAY (nothing is recorded until a guess lands), so a round already in progress
   never shows it for the lesson alone. On the gate the PHRASE is on screen but the round holds
   back: the prompt lays out `retired`, and the TRAY holds the buttons in the keyboard's own
-  footprint (`.rules-gate`, anchored to the tray's bottom by `.tray-gate`). The holes stay
+  footprint (`.rules-gate`, anchored to the tray's bottom by `.tray-gate`), coming in
+  through the dither one after another (`.dissolve-in`). The holes stay
   tappable and keep their wave — `exploreDisabled` and `quiet` do not read `gateOpen` — so
   each opens its wheel there as it does in play. No analytics event.
   **Since the #216 trigger rework the gate is also the sentence game's DEPLOY BUTTON**: a
@@ -3958,8 +3983,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   fps, only on screen, one still frame under reduced motion) edge to edge, dithered out
   under its title; number, an article's reading time (level 1: an empty corner held open
   until its done mark), title, subtitle; level 1,
-  until done, wears the invitation's selection box on its title. Wide: level 1 tall on the left, the
-  articles two by two; tablet: level 1 across the top; phone: one card under the other.
+  until done, wears the invitation's selection box on its title, STILL (never wiped in). The
+  cards come in through the dither one after another (`.dissolve-in`). Wide: level 1 tall on
+  the left, the articles two by two; tablet: level 1 across the top; phone: one card under the other.
   **Stage progress (user-decided 2026-09-17):** the coach dialog shows `n/4` beside it,
   driven by the current stage and `stages.length` in `LevelOne`.
   **LEVEL 1 (`tutorial/LevelOne.tsx` over `LessonBoard.tsx`, one screen, the script's
@@ -4148,7 +4174,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   animation that means nothing"): drawn from the first frame, never animated, waiting on
   nothing in the demo — so it stands while the demo's held word wears its own chip
   (`.invite-mark`: its side padding given back by negative margins, so it moves no letter;
-  the marked words never part across a line). TUTORIAL and SKIP work from the first frame;
+  the marked words never part across a line). Its blocks — the lockup, the demo, then the
+  question, TUTORIAL and SKIP — come in through the dither one after another (`.dissolve-in`,
+  never a glide: the gate's own blocks carry the count on, never the tray's box, whose mask
+  would hide the question standing above it); TUTORIAL and
+  SKIP work from the first frame;
   TUTORIAL is the big action's 430px. No line of copy, no time promised. TUTORIAL navigates
   to level 1 (the lesson's PLAY or a header exit
   settles the flag), SKIP settles it there. Its preload warms the level-1 chunk
@@ -4165,17 +4195,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is what it holds, and why.
   **THE BAND WAITS FOR SCROLL (user-decided 2026-09-01, amending 2026-08-18's
   always-on glass) — AND WHAT ARRIVES IS THE GROUND, NOT A BOX (same day, later:
-  "do not add a border, just a `--bg` background on the whole width of the screen and a
-  vertical gradient from `--bg` to transparent below to fade content behind it").** At
+  "do not add a border, just a `--bg` background on the whole width of the screen…").** At
   REST the header is TRANSPARENT, sitting directly on the ground; once the screen under
   it has actually scrolled (`.topbar.scrolled`, set by TopBar's own capture-phase scroll
   listener — one listener hears every scroller in the app and the phone's page scroll; a
   dialog's scroll never lights it, a horizontal-only scroller says nothing, and a
   scroller that unmounts drops its state on the next render) the whole screen width
-  behind the row fills with flat `--bg` and a 36px gradient from `--bg` to transparent
-  hangs under it, so content fades into the ground before it reaches the controls. No
-  border, no blur, no glass, no rounded float: both layers are pseudo-elements of
-  `.topbar` (the full-width fixed layer), faded in on opacity so nothing shifts, and
+  behind the row fills with flat `--bg` and the house's DEEP dithered EDGE hangs under it
+  (`--edge-deep-d`, 24px: three steps, three quarters, a half, a quarter — a line of text
+  deep), so a line scrolling up thins into the ground step by step before it reaches the
+  controls, never sliced across its glyphs by a strip thinner than it. (The 6px `--edge-*`
+  stays where lines rest WHOLE and their empty margins take it: the board's held head, your
+  held line and the successor pick's foot.) No border, no blur, no glass,
+  no rounded float, no gradient: both layers are pseudo-elements of `.topbar` (the
+  full-width fixed layer), shown in ONE step so nothing shifts or fades, and
   `.topbar-inner` keeps only its geometry. ModalHeader, which reuses the classes with no
   `.topbar` ancestor, is therefore BANDLESS on its flat-`--bg` dialogs.
   **THE ROW IS APP CHROME, AND IT IS MOUNTED ONCE (user-decided 2026-09-02).** Every
@@ -4262,15 +4295,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
        CHEVRON in the header's left slot** ("use a left chevron as a back icon on the
        header"): the title's own 7×7 pixel chevron turned to point out
        (`assets/icons/chevron-left.svg`), where the modals' ✕ sits top-right.
-    **What stands:** the hole wheel's fade in and out (`.wheel-dialog`, `wheel-out`) on
-    flat `--bg`; the app's header row with the back chevron; and in the middle of the
-    screen ONE DRUM, the LANGUAGE's (the DAILY's stood beside it until Word mode was
+    **What stands:** in and out through the dither (`board-dissolve` /
+    `board-dissolve-out`) on flat `--bg`; the app's header row with the back chevron; and in
+    the middle of the screen ONE DRUM, the LANGUAGE's (the DAILY's stood beside it until Word mode was
     retired), scrolling through a slot (five rows' room, the slot in
-    the middle, both ends fading over 44px, every number set inline from ONE measured chip
+    the middle, both ends thinning through the dither — the outer rows in `--dzo-*` steps,
+    three 16px strips from each edge — every number set inline from ONE measured chip
     — `.ps-probe`). The row in a slot wears the header chip's dress at 22px (18 ≤640, 16 ≤360),
     the others stand plain at the same size, and the chip hands itself from row to row
-    on a 120ms cross-fade as the drum turns; rows arrive on the wheel's stagger counted out
-    from the slot. **The drum IS the hole wheel's** — its physics moved out of
+    on a 120ms cross-fade as the drum turns; rows come in through the dither, the house's
+    stagger (`--dz-stagger`) apart counted out from the slot (under reduced motion they stand
+    landed). **The drum IS the hole
+    wheel's** — its physics moved out of
     `HistoryWheel` into `hooks/useDrum` (`current`/`peek`/`jump`/`glideBy`/
     `tap`/`endedDrag`; the caller supplies only `write`, a scrollTop there and a translate
     here), so a drag, a fling, a wheel delta, an arrow key and a tap on a row all feel the
@@ -4510,7 +4546,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   boxes (the retired route map's opening scroll was exactly that hazard).
   **Which exit each wears:** the hole wheel FOLDS in place (a fade, since 2026-09-01; the
   history modal it replaced RETRACTED INTO ITS WORD, because it belonged to that word — the
-  wheel never leaves the word, so there is nothing to retract). (The retired leaderboard
+  wheel never leaves the word, so there is nothing to retract). Every other modal — the
+  error and confirmation screens, the words modal, the selection's shell (the language
+  drum, a group's own screen, naming a group) — comes in through the dither and leaves
+  through it (`board-dissolve` / `board-dissolve-out`, the exit the hook waits on), never
+  an opacity fade. (The retired leaderboard
   dialog's SHEET exit — up from the bottom edge, back down on the way out, at every width —
   went with it on 2026-08-12; a future full-screen result surface should take that shape
   back up.)

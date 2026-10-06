@@ -1,5 +1,7 @@
 import { useEffect } from 'react';
 import LangTitle from '../components/LangTitle';
+// (For its side effect: the root's Bayer tiles the cards come in through.)
+import '../components/bayerTiles';
 import { HeaderLeft } from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
 import { t } from '../i18n';
@@ -30,7 +32,7 @@ export default function Learn({ lang }: { lang: LangCode }) {
       <HeaderLeft>
         <LangTitle lang={lang} title={t(lang, 'learnTitle')} to={pathForLearn} />
       </HeaderLeft>
-      <ol className="learn-grid arrive">
+      <ol className="learn-grid dissolve-in">
         {LEVELS.map((level) => {
           const ready = isReady(level, lang);
           const state = !ready

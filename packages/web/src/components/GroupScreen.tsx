@@ -10,6 +10,7 @@ import LoadingWave from './LoadingWave';
 import CloseIcon from '../assets/icons/close.svg?react';
 import ModalHeader from './ModalHeader';
 import useModalDismiss from '../hooks/useModalDismiss';
+import useMoreBelow from '../hooks/useMoreBelow';
 import { t } from '../i18n';
 import type { LangCode } from '../langs';
 
@@ -56,7 +57,7 @@ export default function GroupScreen({
   onLeave: () => void;
   onClose: () => void;
 }) {
-  const { closing, beginClose, dialogProps } = useModalDismiss('fade-out');
+  const { closing, beginClose, dialogProps } = useModalDismiss('board-dissolve-out');
   const owner = group.createdBy === meId;
 
   const [faces, setFaces] = useState<Record<string, BoardPlayer>>({});
@@ -85,6 +86,7 @@ export default function GroupScreen({
     ro.observe(room);
     return () => ro.disconnect();
   }, []);
+  const [listRef, more] = useMoreBelow<HTMLOListElement>();
 
   return createPortal(
     <dialog
@@ -98,7 +100,12 @@ export default function GroupScreen({
       <div className="group-body">
         <div className="board-section">{t(lang, 'groupMembers')}</div>
         <div ref={roomRef} className="group-room">
-          <ol className="board-list pixel-scroll" style={lines === null ? undefined : { maxHeight: lines * LINE_PX }}>
+          <ol
+            ref={listRef}
+            className="board-list pixel-scroll"
+            data-more={more || undefined}
+            style={lines === null ? undefined : { maxHeight: lines * LINE_PX }}
+          >
             {group.members.map((id, index) => {
               const player = face(id);
               const me = id === meId;

@@ -8,7 +8,10 @@ import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import { COUNT_END_MS, COUNT_RUN_MS } from './countRun';
 import useShare from '../hooks/useShare';
 import Button from './Button';
+// (For its side effect: the root's Bayer tiles the page draws through.)
+import './bayerTiles';
 import ResultBoards, { type ResultBoardsData } from './ResultBoards';
+import SwapLabel from './SwapLabel';
 import { useDeviceIdentity } from '../identity';
 import { ariaHoleHistory, t } from '../i18n';
 import { capitalize, sentenceStarts } from '../game/sentenceCase';
@@ -395,12 +398,8 @@ export default function SolvedScreen({
         {/* SHARE, under the card's frame, the result's ONE action: hidden in place
             (footprint kept) until the count lands. */}
         <div className={`result-actions${shareIn ? ' in' : ''}`}>
-          <Button
-            variant="primary"
-            className={`result-action${copied ? ' copied' : ''}`}
-            onClick={onShare}
-          >
-            {copied ? t(lang, 'copied') : t(lang, 'share')}
+          <Button variant="primary" className="result-action" onClick={onShare}>
+            <SwapLabel text={copied ? t(lang, 'copied') : t(lang, 'share')} />
           </Button>
         </div>
       </SolvedCard>

@@ -33,6 +33,8 @@ import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakD
 import HistoryWheel from '../components/HistoryWheel';
 import HistoryModal from '../components/HistoryModal';
 import Button from '../components/Button';
+// (For its side effect: the root's Bayer tiles the gate comes in through.)
+import '../components/bayerTiles';
 import { PLAY_LEVEL } from '../tutorial/levels';
 import LoadError from '../components/LoadError';
 import { replayCharge, strikeFor, type HoleCharge } from '../game/charge';
@@ -1363,7 +1365,7 @@ function Round({
                  is not done, LEARN under it as THE WORD — the pair reads as one action and its
                  alternative. No copy: the sentence with its holes is on screen, and the lesson
                  is one tap away for whoever wants it explained. */
-              <div className="rules-gate arrive">
+              <div className="rules-gate dissolve-in">
                 <button
                   type="button"
                   className="mix-btn"

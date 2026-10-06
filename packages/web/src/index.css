@@ -932,19 +932,17 @@ body:has(.app > .board-screen) {
   background: none;
   border: 0;
   cursor: pointer;
-  animation: race-in 240ms ease-out backwards;
-  transition: opacity 200ms ease-out, visibility 0s linear 0s;
+  /* It comes in through the dither and retires out through it (`board-dissolve` /
+     `-out`), the line hidden once its cells are gone. */
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
 }
 .race-line.retired {
-  opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 200ms ease-out, visibility 0s linear 200ms;
-}
-@keyframes race-in {
-  from {
-    opacity: 0;
-  }
+  transition: visibility 0s linear 240ms;
+  animation: board-dissolve-out 240ms linear forwards;
 }
 .race-entry {
   display: inline-flex;
@@ -1106,11 +1104,11 @@ body:has(.app > .board-screen) {
    listener), the moment content could otherwise pass beneath the controls. WHAT ARRIVES
    IS THE GROUND, NOT A BOX (user-decided 2026-09-01, superseding the glass + hairline
    band the same day): the whole width of the screen behind the row fills with flat
-   `--bg`, and a short vertical gradient from `--bg` to transparent hangs UNDER it, so
-   content scrolling up fades into the ground before it reaches the controls — no
-   border, no blur, no rounded float. Both are pseudo-elements of `.topbar` itself (the
-   full-width fixed layer), faded in by opacity so nothing ever shifts; `.topbar-inner`
-   keeps only its geometry.
+   `--bg`, and the house's DEEP dithered edge hangs UNDER it (`--edge-deep-d`, a line of text
+   deep), so content scrolling up thins into the ground through the Bayer cells, step by
+   step, before it reaches the controls — no border, no blur, no rounded float. Both are pseudo-elements of
+   `.topbar` itself (the full-width fixed layer), shown in ONE step so nothing ever shifts
+   or glides; `.topbar-inner` keeps only its geometry.
    TWO slots since 2026-08-30 (left: which puzzle, or the screen's own name as its way
    back; right: the app's places, the current one lit). The centre went with the mode
    tabs — see PuzzleTitle for what the collision cost. ModalHeader reuses the classes —
@@ -1134,8 +1132,8 @@ body:has(.app > .board-screen) {
   padding: 0 8px;
   pointer-events: auto;
 }
-/* The ground behind the row, and the fade under it. The height the fade runs is the one
-   number here; both layers ride the scrolled state on opacity alone. */
+/* The ground behind the row, and the dithered edge under it: both stand or not, in one
+   step, on the scrolled state. */
 .topbar::before,
 .topbar::after {
   content: '';
@@ -1143,22 +1141,22 @@ body:has(.app > .board-screen) {
   left: 0;
   right: 0;
   pointer-events: none;
-  opacity: 0;
-  transition: opacity 160ms ease;
+  visibility: hidden;
+  background: var(--bg);
 }
 .topbar::before {
   top: 0;
   bottom: 0;
-  background: var(--bg);
 }
 .topbar::after {
   top: 100%;
-  height: 36px;
-  background: linear-gradient(to bottom, var(--bg), transparent);
+  height: 24px;
+  -webkit-mask: var(--edge-deep-d) 0 0 / 16px 24px repeat-x;
+  mask: var(--edge-deep-d) 0 0 / 16px 24px repeat-x;
 }
 .topbar.scrolled::before,
 .topbar.scrolled::after {
-  opacity: 1;
+  visibility: visible;
 }
 /* The header's two corner groups sit DIRECTLY on the backdrop — no chip background/blur
    (removed 2026-07-21: boxes read as floating rectangles over the animated waves); the
@@ -1490,8 +1488,8 @@ body:has(.app > .board-screen) {
 }
 
 /* ===================== the puzzle selection ===================== */
-/* The title's selection (the reasoning is in PuzzleSelect): the hole wheel's fade in and
-   out on FLAT `--bg`, every full-screen dialog's ground, under the app's header row with
+/* The title's selection (the reasoning is in PuzzleSelect): in and out through the dither
+   on FLAT `--bg`, every full-screen dialog's ground, under the app's header row with
    a BACK CHEVRON in its left slot; and in the middle of the screen ONE DRUM, the
    LANGUAGE's, a column scrolling through a slot — the row in the slot in the title's chip
    at a size the middle of a screen can carry, the others plain. Every number that has to
@@ -1523,8 +1521,9 @@ body:has(.app > .board-screen) {
   padding: 24px 24px 72px;
 }
 /* A DRUM: a clipped box whose track the component translates by hand (no native
-   scrolling, `touch-action: none`), rows one GAP apart, both ends fading so a row
-   arrives out of the dark rather than cut by an edge. */
+   scrolling, `touch-action: none`), rows one GAP apart, both ends thinning through the
+   dither so a row arrives out of the dark rather than cut by an edge (THE DRUM'S ENDS,
+   with the hole wheel's, below). */
 .ps-drum {
   position: relative;
   overflow: hidden;
@@ -1532,8 +1531,6 @@ body:has(.app > .board-screen) {
   overscroll-behavior: contain;
   user-select: none;
   -webkit-user-select: none;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
-  mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
 }
 .ps-track {
   will-change: translate;
@@ -1541,8 +1538,8 @@ body:has(.app > .board-screen) {
 /* A ROW: the option in the title's own dress at a larger size — same face, weight,
    tracking and case as the header chip, the chip's padding in `em` so it scales with the
    type. The one in the slot wears the chip; the chip hands itself from row to row on a
-   short cross-fade as the drum turns. Rows arrive on the wheel's own stagger, counted out
-   from the slot (`--i`). */
+   short cross-fade as the drum turns. Rows come in through the dither (`board-dissolve`),
+   the house's stagger apart counted out from the slot (`--i`). */
 .ps-row {
   display: flex;
   align-items: center;
@@ -1553,8 +1550,16 @@ body:has(.app > .board-screen) {
   font: inherit;
   color: var(--fg);
   cursor: pointer;
-  animation: fade-in 120ms ease-out both;
-  animation-delay: calc(var(--i, 0) * 40ms);
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear calc(var(--i, 0) * var(--dz-stagger)) backwards;
+}
+/* Reduced motion draws the drum landed: the global rule keeps delays, which would hold each
+   outer row unseen for its beat. */
+@media (prefers-reduced-motion: reduce) {
+  .ps-row {
+    animation: none;
+  }
 }
 .ps-chip {
   display: inline-block;
@@ -2700,12 +2705,17 @@ body:has(.app > .board-screen) {
      once. Widened 2026-09-11 (user-asked): the blocks are different things, and the air
      between them is what says so. */
   gap: 48px;
-  /* The bottom edge fades (the rule every scroller wears); the padding is the fade's own
-     height, so the last line rests clear of it. The TOP has no fade: what passes there
-     passes under the sticky credit's own ground. */
+  /* The bottom edge thins through the house's DEEP dithered edge (`--edge-deep-d`, 24px:
+     solid where the page goes on, a line passing out stepping down through the cells); the
+     padding is the edge's own depth, so the last line rests clear of it. The TOP has no
+     edge of its own: what passes there passes under the sticky credit's ground. */
   padding-bottom: 24px;
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  -webkit-mask:
+    linear-gradient(#000, #000) 0 0 / 100% calc(100% - 24px) no-repeat,
+    var(--edge-deep-d) 0 100% / 16px 24px repeat-x;
+  mask:
+    linear-gradient(#000, #000) 0 0 / 100% calc(100% - 24px) no-repeat,
+    var(--edge-deep-d) 0 100% / 16px 24px repeat-x;
   opacity: 0;
   /* The stage comes up IN PLACE: the card draws itself on it (`.solved-card.in`), so the
      stage does not travel (mirrored by `RESULTS_IN_MS`). */
@@ -3047,8 +3057,8 @@ body:has(.app > .board-screen) {
 }
 /* A settled result draws the last frame outright — and so does reduced motion: the global
    rule keeps the delays, which would hold each part of the card unseen for its beat. Only
-   the DRAWING is stopped (the frame's parts, SHARE's arrival): SHARE itself keeps its
-   COPIED flash, which answers the player's tap, not the reveal. */
+   the DRAWING is stopped (the frame's parts, SHARE's arrival): SHARE's word still swaps to
+   COPIED through the dither (`SwapLabel`), which answers the player's tap, not the reveal. */
 .solved-stage.settled .solved-card-frame *,
 .solved-stage.settled .solved-card .result-actions {
   animation: none !important;
@@ -3618,9 +3628,9 @@ body:has(.app > .board-screen) {
 /* The credit, ABOVE the text it belongs to and on its left edge — the small quote-style
    citation it has always been. It lays out from frame one and is simply hidden until its
    beat (the retired prompt's own trick), so the text never moves when it speaks. And it
-   STICKS at the scroller's top edge on its own flat ground, with the header's own short
-   gradient hanging under it, so the text disappears under the credit rather than through
-   it; a tap on it scrolls back to the top — the score and SHARE — so the running head
+   STICKS at the scroller's top edge on its own flat ground, with the header's own deep
+   dithered edge hanging under it, so the text thins under the credit rather than running
+   through it; a tap on it scrolls back to the top — the score and SHARE — so the running head
    is also the way back. A BUTTON, like everything tappable on the screen (pointer-only
    app-wide), reset to nothing but its box: the caption inside keeps its own faces. */
 .solved-source {
@@ -3634,9 +3644,14 @@ body:has(.app > .board-screen) {
   display: block;
   width: 100%;
   margin: 0;
-  padding: 0 0 10px;
+  /* The ground is the CONTENT box (the caption and its 4px under it), so it stops at the
+     6px of padding where the edge under it begins; then the edge's 24px — which ends inside
+     the text's half leading at rest (the padding and the text's margin are at least 24px
+     together), so a resting line is never touched. A background COLOUR, never an image:
+     forced colours keep it (as Canvas) where they drop a gradient. */
+  padding: 0 0 6px;
   border: 0;
-  background: var(--bg);
+  background: var(--bg) content-box;
   color: inherit;
   font: inherit;
   letter-spacing: inherit;
@@ -3650,10 +3665,12 @@ body:has(.app > .board-screen) {
   position: absolute;
   left: 0;
   right: 0;
-  top: 100%;
+  top: calc(100% - 6px);
   height: 24px;
-  background: linear-gradient(to bottom, var(--bg), transparent);
+  background: var(--bg);
   pointer-events: none;
+  -webkit-mask: var(--edge-deep-d) 0 0 / 16px 24px repeat-x;
+  mask: var(--edge-deep-d) 0 0 / 16px 24px repeat-x;
 }
 .solved-source.in {
   visibility: visible;
@@ -3661,6 +3678,7 @@ body:has(.app > .board-screen) {
 .solved-source .solved-caption {
   align-items: flex-start;
   text-align: left;
+  padding-bottom: 4px;
 }
 /* The TEXT, in the READING face — this is the book's page, not the board. The puzzle's
    line is in the ink; #270's sentences around it are the muted text (those before it once
@@ -3747,14 +3765,15 @@ body:has(.app > .board-screen) {
   }
 }
 /* LISTEN (#270): a music day's one affordance — an ordinary link to the track's page, a
-   new tab, no embed. The credit's own face, in the action ink, underlined the pixel way. */
-.solved-text.in,
-.solved-listen.in {
+   new tab, no embed. The credit's own face, in the action ink, underlined the pixel way. It
+   holds its box hidden until the sentence's beat, then comes in through the dither. */
+.solved-text.in {
   opacity: 1;
 }
 .solved-listen {
-  opacity: 0;
-  transition: opacity 0.3s ease-out;
+  visibility: hidden;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
   display: inline-block;
   margin-top: clamp(14px, 2.6vh, 22px);
   font-family: var(--pixel-font);
@@ -3765,6 +3784,10 @@ body:has(.app > .board-screen) {
   text-decoration: none;
   padding-bottom: 3px;
   border-bottom: 2px solid currentColor;
+}
+.solved-listen.in {
+  visibility: visible;
+  animation: board-dissolve 240ms linear backwards;
 }
 .solved-listen:hover {
   filter: brightness(1.25);
@@ -3834,10 +3857,13 @@ body:has(.app > .board-screen) {
    must kill the transitions the rehydrated path never starts (a half-popped word killed
    mid-animation is otherwise stranded at full size). */
 .solved-stage.settled,
-.solved-stage.settled .solved-text,
-.solved-stage.settled .solved-listen {
+.solved-stage.settled .solved-text {
   opacity: 1;
   transition: none;
+}
+.solved-stage.settled .solved-listen {
+  visibility: visible;
+  animation: none;
 }
 .solved-stage.settled .solved-secret {
   opacity: 1;
@@ -3969,17 +3995,19 @@ body:has(.app > .board-screen) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: fade-in 100ms ease-out both;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
 }
 .hw-dialog[open].closing {
-  animation: fade-out 100ms ease-in both;
+  animation: board-dissolve-out 240ms linear forwards;
   pointer-events: none;
 }
 .hw-dialog::backdrop {
   background: transparent;
 }
-/* The app's two plain fades: dialogs, the error screen and the wheel's rows enter and leave
-   on these. */
+/* The app's two plain fades: the hole wheel (its dim, its rows) enters and leaves on these.
+   Every other overlay comes and goes through the dither (`board-dissolve`). */
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -3996,19 +4024,23 @@ body:has(.app > .board-screen) {
     opacity: 0;
   }
 }
-/* The list FADES into the ground as it scrolls up under the header (user-decided
-   2026-09-01, the game header's own fade): a mask over the scroller's top 40px, with the
-   same 40px of padding above the content so nothing is faded at rest. The header itself
-   stays bandless — ModalHeader sits in flow on the flat `--bg` dialog, so the fade is
-   the scroller's. */
+/* The list THINS into the ground as it scrolls up under the header (user-decided
+   2026-09-01, the game header's own edge): the house's deep dithered edge over the
+   scroller's top (`--edge-deep-u`, 24px, solid where the list goes on), with 40px of
+   padding above the content so nothing touches it at rest. The header itself stays bandless — ModalHeader sits in
+   flow on the flat `--bg` dialog, so the edge is the scroller's. */
 .hw-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 40px 20px 48px;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 40px);
-  mask-image: linear-gradient(to bottom, transparent, #000 40px);
+  -webkit-mask:
+    var(--edge-deep-u) 0 0 / 16px 24px repeat-x,
+    linear-gradient(#000, #000) 0 24px / 100% calc(100% - 24px) no-repeat;
+  mask:
+    var(--edge-deep-u) 0 0 / 16px 24px repeat-x,
+    linear-gradient(#000, #000) 0 24px / 100% calc(100% - 24px) no-repeat;
 }
 .hw-frame {
   width: min(1100px, 100%);
@@ -4124,8 +4156,8 @@ body:has(.app > .board-screen) {
    the slot row — the hole's own markup at the hole's own place — holds at full strength
    until `close` lifts the veil, and the real word takes over under it with no frame
    between. The real word stays VEILED until the dialog has closed, so a fade of the whole
-   dialog would leave its last frames with no word at all. (The title's selection wears its
-   own whole-screen fade, `fade-out`.) */
+   dialog would leave its last frames with no word at all. (The title's selection leaves
+   whole, through the dither, `board-dissolve-out`.) */
 .wheel-dialog.closing .wheel-row:not(.wheel-row-slot) {
   animation: fade-out 100ms ease-in both;
 }
@@ -4140,15 +4172,22 @@ body:has(.app > .board-screen) {
     background-color: transparent;
   }
 }
+/* The selection's shell (the language drum, a group's own screen, naming a group) is a flat
+   full screen: in and out through the dither, never the wheel's fade. */
+.wheel-dialog.puzzle-select[open] {
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
+}
 .wheel-dialog.puzzle-select[open].closing {
-  animation: fade-out 100ms ease-in both;
+  animation: board-dissolve-out 240ms linear forwards;
 }
 /* THE DRUM: one column under the header, on the word's left edge, whose scroll position
    `HistoryWheel` writes itself — a ratchet with momentum, hopping row by row (see the
    component; native snap with momentum and a one-row-per-gesture stepper were each tried
    and retired the same day). No native scrolling at all (`overflow: hidden`,
-   `touch-action: none`), so no scrollbar; its two ends FADE, so a word entering from
-   above or below arrives out of the dark rather than cut by an edge. */
+   `touch-action: none`), so no scrollbar; its two ends THIN through the dither, so a word
+   entering from above or below arrives out of the dark rather than cut by an edge. */
 .wheel-scroll {
   position: absolute;
   bottom: 0;
@@ -4158,11 +4197,32 @@ body:has(.app > .board-screen) {
   scrollbar-width: none;
   user-select: none;
   -webkit-user-select: none;
-  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
-  mask-image: linear-gradient(to bottom, transparent, #000 44px, #000 calc(100% - 44px), transparent);
 }
 .wheel-scroll::-webkit-scrollbar {
   display: none;
+}
+/* THE DRUM'S ENDS (the hole wheel's and the language's): the outer rows thin in hard steps
+   through the Bayer cells a line giving way goes out through (`--dzo-*`) — three whole tiles
+   from each edge, three quarters, a half, a quarter of the cells — never an opacity ramp. A
+   row passing out of the drum steps down through them, cell by cell. */
+.wheel-scroll,
+.ps-drum {
+  -webkit-mask:
+    var(--dzo-6) 0 0 / 16px 16px repeat-x,
+    var(--dzo-4) 0 16px / 16px 16px repeat-x,
+    var(--dzo-2) 0 32px / 16px 16px repeat-x,
+    linear-gradient(#000, #000) 0 48px / 100% calc(100% - 96px) no-repeat,
+    var(--dzo-2) 0 calc(100% - 32px) / 16px 16px repeat-x,
+    var(--dzo-4) 0 calc(100% - 16px) / 16px 16px repeat-x,
+    var(--dzo-6) 0 100% / 16px 16px repeat-x;
+  mask:
+    var(--dzo-6) 0 0 / 16px 16px repeat-x,
+    var(--dzo-4) 0 16px / 16px 16px repeat-x,
+    var(--dzo-2) 0 32px / 16px 16px repeat-x,
+    linear-gradient(#000, #000) 0 48px / 100% calc(100% - 96px) no-repeat,
+    var(--dzo-2) 0 calc(100% - 32px) / 16px 16px repeat-x,
+    var(--dzo-4) 0 calc(100% - 16px) / 16px 16px repeat-x,
+    var(--dzo-6) 0 100% / 16px 16px repeat-x;
 }
 /* THE VEIL: while the wheel stands over a hole, the word and exponent beneath it are
    hidden in place (the box stays, so nothing reflows) — the slot row draws the word there
@@ -4314,16 +4374,22 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .result-action {
   min-width: 180px;
 }
-/* COPIED lands in the accent's own wash: the primary already is — and it lands LIT, the
-   wash flashing deep and settling, so the word swapping in reads as the thing happening. */
-.result-action.copied {
-  --btn: var(--accent);
-  animation: copied-flash 480ms ease-out;
+/* COPIED is SHARE's word changing in place (`SwapLabel`): the old word out through the dither
+   as the new one comes in through the cells it gives up — the button itself does not change.
+   One cell holds both, so the swap moves nothing round it. */
+.swap-label {
+  display: inline-grid;
 }
-@keyframes copied-flash {
-  from {
-    background-color: color-mix(in srgb, var(--accent) 48%, transparent);
-  }
+.swap-label > * {
+  grid-area: 1 / 1;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+}
+.swap-label > .swap-in {
+  animation: board-dissolve 240ms linear backwards;
+}
+.swap-label > .swap-out {
+  animation: board-dissolve-out 240ms linear forwards;
 }
 /* THE STREAK CELEBRATION — "THE ORBIT" (`StreakDialog`, its picture `components/streak/`): the
    link previews' language on the full screen. Bare ground, the frame's corner brackets with
@@ -4932,7 +4998,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
     margin-bottom: -24px;
   }
   /* The result's stage reaches the screen's bottom edge: its last line clears the
-     home-indicator inset as the keyboard's last row does, plus its own fade. */
+     home-indicator inset as the keyboard's last row does, plus its own dithered edge. */
   .solved-stage {
     padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   }
@@ -5396,13 +5462,50 @@ figure.l1-fig {
   }
 }
 
-/* ARRIVAL — a screen's blocks come in on the rung-in gesture, one after another, top to
-   bottom (`.arrive` on the column whose children they are: the account page, the levels,
-   the invitation, the editor, the notice, an empty board, a missing day). The keyframes
-   name only where a block comes FROM and fill backwards, so the block lands on its own
-   opacity (a quiet line at 0.8 stays at 0.8) and nothing is held after the landing. A
-   dialog child is left alone: it arrives in its own dress. Reduced motion keeps the beats
-   and drops the travel (the global rule). */
+/* ARRIVAL THROUGH THE DITHER — a screen's blocks come in one after another, top to bottom
+   (`.dissolve-in` on the column whose children they are: the rules gate, the REVEAL tray,
+   the invitation, the levels, the signed-out face): each block's cells light in the Bayer
+   order in hard steps (`board-dissolve`), nothing travelling, the house's stagger apart
+   (`--dz-stagger`, bayerTiles' SKELETON_STAGGER_MS) — the k-th block `--dz-k` beats in,
+   counted on from `--dz-from` when a column carries on another's count. A dialog child is
+   left alone: it arrives in its own dress. A TRAY is no block either: what it holds can
+   stand above its box (the gate rises out of the keyboard's footprint), where the tray's
+   mask would hide it until the mask lifts, so a tray's blocks come in on a `.dissolve-in` of
+   their own. Reduced motion draws them landed (no beat held unseen). */
+.dissolve-in > :not(dialog, .tray) {
+  --dz-k: 0;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear calc((var(--dz-from, 0) + var(--dz-k)) * var(--dz-stagger))
+    backwards;
+}
+.dissolve-in > :nth-child(2) {
+  --dz-k: 1;
+}
+.dissolve-in > :nth-child(3) {
+  --dz-k: 2;
+}
+.dissolve-in > :nth-child(4) {
+  --dz-k: 3;
+}
+.dissolve-in > :nth-child(5) {
+  --dz-k: 4;
+}
+.dissolve-in > :nth-child(n + 6) {
+  --dz-k: 5;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dissolve-in > :not(dialog, .tray) {
+    animation: none;
+  }
+}
+
+/* THE OVERSHOOT ARRIVAL — the older rung-in gesture, still worn by the invite landing, a
+   load that failed, a missing day and the board's empty ghost (`.arrive` on the column whose
+   children they are). The keyframes name only where a block comes FROM and fill backwards,
+   so the block lands on its own opacity and nothing is held after the landing. A dialog
+   child is left alone. Reduced motion keeps the beats and drops the travel (the global
+   rule). */
 .arrive > :not(dialog) {
   animation: arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
 }
@@ -5453,9 +5556,11 @@ figure.l1-fig {
   min-height: 52px;
 }
 /* In the lesson the tray's button ARRIVES — the reveal's CONTINUE, then CONTINUE or PLAY
-   where the keyboard dropped away: the app's own `arrive` gesture. */
+   where the keyboard dropped away — through the dither, in hard steps. */
 .tutorial .tray > .mix-btn {
-  animation: arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
 }
 @media (max-width: 640px) {
   .tutorial {
@@ -5621,6 +5726,12 @@ figure.l1-fig {
 /* The question stands a step apart from the answers under it. */
 .invite .rules-gate .invite-title {
   margin-bottom: 12px;
+}
+/* The question and its answers come in after the lockup and the demo, the column's count
+   carried on (`.dissolve-in`): the gate's own blocks, never the tray's box, which the
+   question stands above. */
+.invite .rules-gate {
+  --dz-from: 2;
 }
 
 @media (max-width: 640px) {
@@ -8236,6 +8347,51 @@ figure.l1-fig {
   overscroll-behavior: contain;
   scroll-snap-type: y mandatory;
 }
+/* The members' list and the successor pick, while they hold more below (`data-more`,
+   `useMoreBelow`), END ON A VEIL: the ground hung at the list's visible foot (`::after`,
+   sticky on the scroller's bottom, taking no room and no tap) and seen through the Bayer
+   cells, so a line passing out there thins instead of being cut. WHAT CAN BE TAPPED AND A
+   FRAMED LINE STAND ABOVE IT, WHOLE: a control drawn thinned reads as another glyph or as
+   disabled, and a frame thinned loses its corners. A list on its last line ends clean. */
+.group-room > .board-list[data-more]::after,
+.confirm-pick[data-more]::after {
+  content: '';
+  flex: none;
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  pointer-events: none;
+}
+/* The members' foot is a line deep, the drum's ends' own three 16px steps: at rest the last
+   line shown thins, three quarters, a half, a quarter — which is what says more wait below —
+   while the owner's ✕ and your own framed line stand whole above the veil. */
+.group-room > .board-list[data-more]::after {
+  height: 48px;
+  margin-top: -48px;
+  -webkit-mask:
+    var(--dz-2) 0 0 / 16px 16px repeat-x,
+    var(--dz-4) 0 16px / 16px 16px repeat-x,
+    var(--dz-6) 0 32px / 16px 16px repeat-x;
+  mask:
+    var(--dz-2) 0 0 / 16px 16px repeat-x,
+    var(--dz-4) 0 16px / 16px 16px repeat-x,
+    var(--dz-6) 0 32px / 16px 16px repeat-x;
+}
+/* Every line of the pick IS a control (a radio), so its foot stops short of them: the short
+   6px edge, which at rest lies on the last line's bare margin under its mark and touches a
+   line only while one passes; the picked line's frame stands above it. */
+.confirm-pick[data-more]::after {
+  height: 6px;
+  margin-top: -6px;
+  -webkit-mask: var(--edge-u) 0 0 / 16px 6px repeat-x;
+  mask: var(--edge-u) 0 0 / 16px 6px repeat-x;
+}
+.group-room > .board-list .board-remove,
+.group-room > .board-list > .board-row.me,
+.confirm-pick > .board-row.picked {
+  position: relative;
+  z-index: 1;
+}
 .group-room > .board-list > .board-row,
 .confirm-pick > .board-row {
   scroll-snap-align: start;
@@ -8775,12 +8931,20 @@ figure.l1-fig {
   width: 100%;
   margin-top: 12px;
 }
+/* In and out through the dither, never an opacity fade: the screen's cells light in the
+   Bayer order over what it covers (`board-dissolve`), and leave through the cells it did
+   not take (`board-dissolve-out`, the exit `useModalDismiss` waits on). */
 .error-screen[open] {
-  animation: fade-in 160ms ease-out;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
 }
 .error-screen[open].closing {
-  animation: fade-out 140ms ease-in forwards;
+  animation: board-dissolve-out 240ms linear forwards;
   pointer-events: none;
+}
+.error-screen::backdrop {
+  background: transparent;
 }
 
 /* THE CONFIRMATION (#271, user-decided 2026-09-14): the error screen's shape and beats,
@@ -8999,7 +9163,8 @@ figure.l1-fig {
 .learn-cell.hero .learn-title {
   font-size: 22px;
 }
-/* Level 1 until it is played: its title wears the invitation's selection box, drawn across it. */
+/* Level 1 until it is played: its title wears the invitation's selection box, STILL — drawn
+   from the first frame, never animated (the invitation's own rule). */
 .learn-card.next .learn-title-text {
   background: var(--fg);
   color: var(--bg);
@@ -9007,15 +9172,6 @@ figure.l1-fig {
   margin-left: -0.22em;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-  animation: mark-wipe 320ms steps(8, jump-end) 420ms backwards;
-}
-@keyframes mark-wipe {
-  from {
-    clip-path: inset(0 100% 0 0);
-  }
-  to {
-    clip-path: inset(0 0 0 0);
-  }
 }
 .learn-sub {
   font-size: 10.5px;

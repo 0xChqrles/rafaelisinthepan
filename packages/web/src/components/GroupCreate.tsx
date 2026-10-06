@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { GROUP_NAME_MAX_LENGTH, sanitizeGroupName } from '@whippin/shared';
 import LoadingWave from './LoadingWave';
 import ModalHeader from './ModalHeader';
+// (For its side effect: the root's Bayer tiles the screen comes and goes through.)
+import './bayerTiles';
 import useModalDismiss from '../hooks/useModalDismiss';
 import { t } from '../i18n';
 
@@ -42,7 +44,7 @@ export default function GroupCreate({
   onCreate: (name: string) => Promise<boolean>;
   onClose: () => void;
 }) {
-  const { closing, beginClose, dialogProps } = useModalDismiss('fade-out');
+  const { closing, beginClose, dialogProps } = useModalDismiss('board-dissolve-out');
   const [name, setName] = useState('');
   const [shaking, setShaking] = useState(false);
   const [inked, setInked] = useState(false);

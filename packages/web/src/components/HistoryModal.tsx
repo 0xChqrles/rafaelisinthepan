@@ -5,6 +5,8 @@ import { rankHeatColor } from '@whippin/shared';
 import type { HistoryModel } from '../game/history';
 import { holeTitle, srRouteStop } from '../i18n';
 import ModalHeader from './ModalHeader';
+// (For its side effect: the root's Bayer tiles — the screen's arrival, the list's edge.)
+import './bayerTiles';
 import useModalDismiss from '../hooks/useModalDismiss';
 import MeterCanvas from './MeterCanvas';
 
@@ -23,7 +25,8 @@ import MeterCanvas from './MeterCanvas';
 // leads to less columns"): the column is as wide as the LONGEST word needs, so a wide
 // screen takes as many such columns as fit and a phone gets one or two; only a word that
 // would not fit the whole width of a phone shrinks, alone. Read-only; the shared
-// `ModalHeader` and Escape are the ways out, and it FOLDS with a fade like the wheel.
+// `ModalHeader` and Escape are the ways out; it comes in and goes out through the dither
+// (`board-dissolve`, `board-dissolve-out`).
 
 // Press Start 2P advances exactly 1em per glyph, so a word's width is arithmetic: its
 // glyphs at `WORD_PX`, plus the exponent (up to four digits at 0.55em, one pixel off).
@@ -50,7 +53,7 @@ export default function HistoryModal({
   onClose: () => void;
 }) {
   // FIRST hook on purpose: it owns `showModal()` and turns every dismissal into the fold.
-  const { closing, beginClose, dialogProps } = useModalDismiss('fade-out');
+  const { closing, beginClose, dialogProps } = useModalDismiss('board-dissolve-out');
   const title = holeTitle(lang, number);
 
   // The width a word has to fit — the frame's — followed across a resize.
