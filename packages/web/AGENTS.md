@@ -195,6 +195,9 @@
       screens/GroupInvite.tsx  the #271 group invite link's landing (/join/g/<groupId>): JOIN
                               with this device's token, then the board or the game. The link
                               members SHARE is /g/<groupId>, served by the backend for its preview
+      components/GroupOrbit.tsx  the landing's scene: the group card brought in (the name's
+                              chip, the marks on the card's orbit, `+N`, the reader's SEAT and
+                              the drop into it), and its holds while the group is read
       components/PeriodSwitch.tsx  a group's three boards (TODAY / WEEK / MONTH): three equal cells
                               across the line in resting corner brackets, the white frame
                               travelling to the one shown
@@ -1810,9 +1813,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     PLAY into the game, a BIND offers OK back to `/account` — a settings errand ends where
     it began, and `.link-stack` is the one centered face-stack all three moments wear.
   - **The invite landing has an EXPIRED state** (`GroupInvite` since #271; `unknown_group`):
-    neither a hiccup nor the cap, so it takes the cap's own surface (a state with a way ONWARD
-    rather than a retry) — retrying cannot bring a group back, and continuing silently would
-    tell the clicker they joined a group they did not.
+    neither a hiccup nor the cap, so it offers a way ONWARD (PLAY) rather than a retry —
+    retrying cannot bring a group back, and continuing silently would tell the clicker they
+    joined a group they did not.
   - **`game/streak.ts` imports `currentStreak` from `@whippin/shared`** and keeps
     `streakTransition`/`weekView`: the server derives a streak for the erase confirmation, so
     the derivation itself moved.
@@ -2395,19 +2398,50 @@ it to the local store — see `packages/backend/AGENTS.md`).
   issue's earlier AS drum), so `/join/` carries the group landing alone.
   **JOINING IS A BUTTON, for everyone** (#216's trigger rule): the landing draws the group
   (a bounded `readGroup` — `api.readGroup` tells shown / gone / failed apart, the
-  `readProfile` rule; gone ends the landing on EXPIRED, while failed offers RETRY of the
-  bounded read) over ONE primary JOIN; the tap
+  `readProfile` rule) over ONE primary JOIN; the tap
   POSTs `{token, join}` — minted by that same tap for a brand-new visitor — with the
-  button busy and the `ErrorScreen` for a transport/5xx failure. **A member already
-  skips the landing** onto the group's board (the cached groups list says so; tokenless it
-  is known-empty). **A SUCCESSFUL join is CONFIRMED on screen** — the group over `JOINED`,
-  the BOARD as the primary way on and PLAY under it — and the answered list is published
-  through `adoptGroups`, so the board opens on the group without a second read. The
-  landing replaces itself in history. A NON-CAP 4xx is a VERDICT and continues into the
-  game silently; **the two CAPS (409 `group_full` / `group_limit`, each read off its CODE:
-  the group's room and the clicker's own `GROUPS_MAX` are different acts) and an EXPIRED
-  link (404 `unknown_group`) speak** on the `LoadError` surface with PLAY as the way onward
-  (`groupFull`, `groupLimit`, `inviteExpired`). Contract-tested (`GroupInvite.test.ts`).
+  button busy (`BusyButton`) and the `ErrorScreen` for a transport/5xx failure. **A member
+  already skips the landing** onto the group's board (the cached groups list says so;
+  tokenless it is known-empty). The answered list is published through `adoptGroups`, so
+  the board opens on the group without a second read. The landing replaces itself in
+  history. A NON-CAP 4xx is a VERDICT and continues into the game silently.
+  **THE LANDING IS THE CARD, BROUGHT IN** (2026-10-06, the design delegated to the agent):
+  what the `/g/` link unfurled into, continued on the screen it opens onto. The frame — the
+  four corners on a phone (the device frame's on desktop) and the WHIPPIN AI lockup, the
+  signed-out screen's furniture (`.invite-frame`) — and in the middle `components/GroupOrbit`:
+  the group's NAME in `.link-name`'s white chip, case kept, one line (its size stepped down a
+  whole pixel at a time where a long one would touch a mark), the members' MARKS round it
+  (`Avatar sharp`, ten whole pixels a cell: 60px on a phone, 50 under 340, 80 on a wide
+  scene) on the card's slate Bayer ORBIT on the house's 2px cell, the rest folded into the
+  card's `+N` checker tile — the card's own placement, trail and tile (`@whippin/shared`
+  `orbitPlaces` / `orbitTrail` / `plusTile`, never re-derived), its `GROUP_MARKS_SHOWN`
+  places. **The orbit keeps a SEAT for the reader** (`orbitPlacesFor`): the LAST place,
+  clockwise from the top, an empty mark's box in the floor's stipple; every place is decided
+  ONCE, with the seat in it, so nothing on the orbit ever moves. The calls stand in THREE
+  fixed slots on the bottom edge (a line, the call, the word under it), the call in ONE place
+  in every state: JOIN (`.mix-btn`) over PLAY (the word). **While the JOIN is out** the
+  button charges (`BusyButton`) and the seat BREATHES, both after `SKELETON_WAIT_MS`.
+  **JOINED** says no word: the reader's own mark (`useOwnFace` — the seed's for a device the
+  tap minted) DROPS into the seat with the podium's drop (`markAt`: whole cells under
+  gravity), its whole-pixel shake and the strike sheet's BURST behind it in the accent, and
+  the call turns to the BOARD in place; a seat whose mark is not read yet keeps breathing
+  until it is. **A CAP THE LANDING ALREADY KNOWS IS NEVER OFFERED** (`landingOf`,
+  contract-tested): a group whose public face holds `GROUP_MEMBERS_MAX` members, or a reader
+  whose own list holds `GROUPS_MAX` groups, lands with no seat and no JOIN — a control that
+  can only be refused is a false offer — so the landing holds until that list is known.
+  **The two CAPS the server answers** (409 `group_full` / `group_limit`, each read off its
+  CODE: the group's room and the reader's own `GROUPS_MAX` are different acts) close the
+  seat through the dither, its place left empty. Either way the group's face STAYS, one
+  muted line takes the line's slot (`groupFull`, `inviteLimit`) and PLAY is the call — no
+  danger ink. **EXPIRED** (404 `unknown_group`, on the read or the tap) is the board's sad
+  ghost at 4x, bobbing five beats, over one line (`inviteExpired`), PLAY the call. **THE
+  WAIT** is the scene's shapes as holds (the chip's box and three marks', the house's
+  breathing slate, `aria-busy` and the sr-only word), shown only once the read has taken
+  `SKELETON_WAIT_MS`; **a READ that FAILED** is no verdict about the group: the holds stand
+  STILL at half their cells, one muted line (`inviteFailed` — never `failedJoin`: nothing
+  was joined) and RETRY as `.quiet-btn`. What lands arrives through the board's dither; no
+  `LoadError`, no `.arrive`, no `LoadingWave` on this screen. Contract-tested
+  (`GroupInvite.test.ts`: the join's verdicts, `landingOf`, `orbitPlacesFor`).
 
 - **Leaderboard screen (#190; drawn over GROUPS since #271; its design user-decided
   2026-10-04 — "A with B's podium": the result's boards given the whole column, a PODIUM as
