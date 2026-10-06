@@ -867,6 +867,13 @@ body:has(.app > .board-screen) {
      left the box and PLAY 40px narrower than the tutorial's own button. */
   padding: 0;
 }
+/* The game's gate comes in through the dither, in place — over the game's hold, or on its
+   own. (The invitation, which wears the same stack, stands from its first frame.) */
+.game:not(.invite) .rules-gate {
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
+}
 /* The rules can outgrow the keyboard's footprint on a phone, so the gate anchors to the
    tray's BOTTOM and lets the extra height rise upward — into the open play area — never
    below the screen, where it put the

@@ -2058,8 +2058,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     moment the decode's front reaches its word (`Phrase` stamps that front, `--at`, on a
     silhouette's tokens too); the keys LIGHT IN over their slates through exactly the cells
     the slates go out through (`Keyboard`'s `lit`, `.kb-lit`: in place, not risen row by
-    row); the prompt's row and a day already over (`SolvedScreen`'s `fromHold`: its
-    settled frame, the reveal not replayed) come in through the dither. Measured at
+    row); the prompt's row, the gate and a day already over (`SolvedScreen`'s `fromHold`:
+    its settled frame, the reveal not replayed) come in through the dither. Measured at
     390/320/1366: every bar, block and slate on the pixel of the word, chip and key that
     replaces it. Reduced motion: still, and gone at once.
   - **The animated hole swap survived the board becoming a REPLAY.** The play log is
@@ -3861,7 +3861,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   this visit's PLAY (nothing is recorded until a guess lands), so a round already in progress
   never shows it for the lesson alone. On the gate the PHRASE is on screen but the round holds
   back: the prompt lays out `retired`, and the TRAY holds the buttons in the keyboard's own
-  footprint (`.rules-gate`, anchored to the tray's bottom by `.tray-gate`). The holes stay
+  footprint (`.rules-gate`, anchored to the tray's bottom by `.tray-gate`), coming in through
+  the board's dither in place. The holes stay
   tappable and keep their wave — `exploreDisabled` and `quiet` do not read `gateOpen` — so
   each opens its wheel there as it does in play. No analytics event.
   **Since the #216 trigger rework the gate is also the sentence game's DEPLOY BUTTON**: a

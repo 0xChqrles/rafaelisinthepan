@@ -32,8 +32,9 @@ import { t } from '../i18n';
 // Then the game TAKES OVER FROM IT, under which it stood (`useHold`'s `leaving`): the
 // sentence decodes over its bars, each bar and block giving way the moment the decode's
 // front reaches its word (`Phrase` stamps that front, `--at`, on a silhouette too); the keys
-// light in over their slates as the slates go, cell for cell (`.kb-lit`); a day already over
-// dissolves in over it. Reduced motion: no breath, no dissolve — the game at once.
+// light in over their slates as the slates go, cell for cell (`.kb-lit`); the gate, or a day
+// already over, dissolves in over it. Reduced motion: no breath, no dissolve — the game at
+// once.
 
 // The hold's whole exit: the decode's front crossing the sentence, then the last bar's going.
 export const HOLD_LEAVE_MS = SWEEP_MS + DISSOLVE_MS;
