@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { GROUP_NAME_MAX_LENGTH, sanitizeGroupName } from '@whippin/shared';
-import LoadingWave from './LoadingWave';
+import BusyButton from './BusyButton';
 import ModalHeader from './ModalHeader';
 import useModalDismiss from '../hooks/useModalDismiss';
 import { t } from '../i18n';
@@ -128,9 +128,9 @@ export default function GroupCreate({
             </div>
           )}
         </div>
-        <button type="submit" className="btn btn-primary" disabled={busy || inked}>
-          {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'groupCreate')}
-        </button>
+        <BusyButton type="submit" className="btn btn-primary" lang={lang} busy={busy} disabled={inked}>
+          {t(lang, 'groupCreate')}
+        </BusyButton>
       </form>
     </dialog>,
     document.body,

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import useModalDismiss from '../hooks/useModalDismiss';
-import LoadingWave from './LoadingWave';
+import BusyButton from './BusyButton';
 import { t } from '../i18n';
 
 // The app's CONFIRMATION surface for an act that takes something away from somebody
@@ -40,7 +40,7 @@ export default function ConfirmScreen({
   note: string;
   // The act's own word (REMOVE, LEAVE).
   action: string;
-  // The act is in flight: the button holds its loading state, nothing else answers.
+  // The act is in flight: the button is busy (`BusyButton`), nothing else answers.
   busy?: boolean;
   // The act is not answerable yet (a choice above it is still open).
   disabled?: boolean;
@@ -61,14 +61,15 @@ export default function ConfirmScreen({
         {children}
         <p className="error-title">{title}</p>
         <p className="error-note">{note}</p>
-        <button
-          type="button"
+        <BusyButton
           className="btn btn-secondary btn-danger"
-          disabled={busy || disabled}
+          lang={lang}
+          busy={busy}
+          disabled={disabled}
           onClick={onConfirm}
         >
-          {busy ? <LoadingWave text={t(lang, 'loading')} /> : action}
-        </button>
+          {action}
+        </BusyButton>
         <button type="button" className="link-quiet-btn" disabled={busy} onClick={beginClose}>
           {t(lang, 'linkCancel')}
         </button>

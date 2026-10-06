@@ -3,6 +3,7 @@ import { anonName, defaultAvatar, type PublicGroup } from '@whippin/shared';
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
 import LoadingWave from '../components/LoadingWave';
+import BusyButton from '../components/BusyButton';
 import LoadError from '../components/LoadError';
 import ErrorScreen from '../components/ErrorScreen';
 import { groupsUrl, parseGroups, postGroupsBody, readGroup, type GroupRead } from '../api';
@@ -29,7 +30,7 @@ import { timeoutSignal } from '../timeout';
 // mint an account and write a membership. The landing shows the GROUP (its name over its
 // members' marks, the preview card's own face) over ONE primary button; the tap
 // bootstraps the clicker's identity if they have none — the invite funnel — and records
-// the membership, with the button holding a loading state for both legs.
+// the membership, with the button busy (`BusyButton`) for both legs.
 //
 // **A MEMBER ALREADY SKIPS THE LANDING** (user-decided 2026-09-07): a device whose account
 // is in this group is sent straight to the group's board.
@@ -221,9 +222,9 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
         </>
       ) : (
         <>
-          <button type="button" className="mix-btn" onClick={join} disabled={phase === 'busy'}>
-            {phase === 'busy' ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'groupJoin')}
-          </button>
+          <BusyButton className="mix-btn" lang={lang} busy={phase === 'busy'} onClick={join}>
+            {t(lang, 'groupJoin')}
+          </BusyButton>
           <Button variant="secondary" onClick={continueToGame}>
             {t(lang, 'gatePlay')}
           </Button>

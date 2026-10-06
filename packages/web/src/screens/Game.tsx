@@ -14,6 +14,7 @@ import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
 import { latestMaskedPick, selectWord, shownHolesFor, withoutMaskedPicks, type WordPick } from '../game/wordWheel';
 import LoadingWave from '../components/LoadingWave';
+import BusyButton from '../components/BusyButton';
 import useVocab from '../hooks/useVocab';
 import useRoundSync from '../hooks/useRoundSync';
 import { giveUpRound, notifyGuess, retryRoundSync } from '../state/roundSync';
@@ -415,8 +416,8 @@ function Round({
     if (guessCount > 0 && !learned) markLessonDone(PLAY_LEVEL);
   }, [guessCount, learned, markLessonDone]);
   // PLAY, when it is the deploy button: a single tap that creates the account and opens
-  // the round — a clear loading state while the bootstrap runs, and the app's error
-  // surface when it fails (nothing was created; TRY AGAIN re-runs it).
+  // the round — the button busy while the bootstrap runs (`BusyButton`), and the app's error
+  // surface when it fails (nothing was created; PLAY again re-runs it).
   const [deploying, setDeploying] = useState(false);
   const [deployFailed, setDeployFailed] = useState(false);
   const handleGatePlay = useCallback(() => {
@@ -1364,14 +1365,9 @@ function Round({
                  alternative. No copy: the sentence with its holes is on screen, and the lesson
                  is one tap away for whoever wants it explained. */
               <div className="rules-gate arrive">
-                <button
-                  type="button"
-                  className="mix-btn"
-                  onClick={handleGatePlay}
-                  disabled={deploying}
-                >
-                  {deploying ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'gatePlay')}
-                </button>
+                <BusyButton className="mix-btn" lang={lang} busy={deploying} onClick={handleGatePlay}>
+                  {t(lang, 'gatePlay')}
+                </BusyButton>
                 {!learned && (
                   <Button variant="secondary" onClick={openLesson}>
                     {t(lang, 'gateLearn')}

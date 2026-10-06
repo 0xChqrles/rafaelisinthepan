@@ -24,6 +24,7 @@ import { prefetchTurnstileTokens } from '../turnstile';
 import { withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
 import { holdOwnFace, ownProfileWritten } from '../state/ownFace';
 import ErrorScreen from '../components/ErrorScreen';
+import BusyButton from '../components/BusyButton';
 import { navigate } from '../routing';
 import { ACCOUNT_PATH, type LangCode } from '../langs';
 import useUiLang from '../hooks/useUiLang';
@@ -139,21 +140,9 @@ export function guardedSaveBody(
   };
 }
 
-// The SAVE button's two orthogonal facts: its visual PHASE (the label rolls down and
-// out, the dot loader drops in from the top, holds, then the label rolls back up from
-// the bottom) and whether the server REFUSED the write (the line under the button).
-// The label itself always reads SAVE — the button animates, it never renames itself.
-type SavePhase = 'idle' | 'saving' | 'restoring';
-// `account` is the DEPLOY failing (#216 rework: a tokenless SAVE creates the account
+// What a SAVE that did not land ended on. `account` is the DEPLOY failing (#216 rework: a tokenless SAVE creates the account
 // first); nothing was created and nothing was saved, and TRY AGAIN re-runs the whole tap.
 type SaveRefusal = 'name_rejected' | 'avatar_rejected' | 'account' | 'error' | null;
-
-// The loader holds at least this long even on an instant answer — a flash of dots
-// reads as a glitch — and the restore beat covers the label's roll-back animation.
-const SAVE_DOTS_MIN_MS = 750;
-const SAVE_RESTORE_MS = 240;
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 // ---- THE STUDIO'S GEOMETRY (visual only: nothing here decides what is saved). The canvas's
 // cell is a WHOLE, ODD number of px — the grid's pitch (cell + its 1px line) even, so the
@@ -312,7 +301,8 @@ export default function Profile() {
   useLayoutEffect(() => {
     cellsRef.current = cells;
   }, [cells]);
-  const [phase, setPhase] = useState<SavePhase>('idle');
+  // A save is out: SAVE is busy (`BusyButton`) and the editor is frozen (below).
+  const [saving, setSaving] = useState(false);
   const [refused, setRefused] = useState<SaveRefusal>(null);
   // Where the canvas is told what an edit just changed: a changed cell POPS (`EditorCanvas`) —
   // and ONLY a changed one, so loading a stored drawing pops nothing.
@@ -630,7 +620,6 @@ export default function Profile() {
   // phone, and the GUARDED success path re-binds every field to the merged server truth):
   // an edit made mid-save would be silently replayed over when the answer lands — the grid
   // visibly snapping back, SAVE greying out as though the change had been stored.
-  const saving = phase !== 'idle';
   // A tool playing or a save running: the canvas takes no paint and the controls wait. They
   // say so (`aria-disabled`) without leaving the keyboard's reach — a `disabled` control
   // drops the focus it holds to the page.
@@ -811,17 +800,15 @@ export default function Profile() {
     // editor differing from what it just stored.
     const clean = sanitizeName(name);
     setName(clean);
-    setPhase('saving');
+    setSaving(true);
     setRefused(null);
-    const started = Date.now();
-    // The outcome is decided while the dots run; the phases below only pace how the
-    // button tells it — then the error surface says it (#216 rework), where a refusal
-    // used to be an inline line.
+    // The outcome lands as soon as it is decided: the foil stamp, or the error surface
+    // (#216 rework), where a refusal used to be an inline line.
     let outcome: SaveRefusal = null;
     let epoch: string | null = null;
     // SAVING IS A DEPLOY BUTTON (#216 trigger rework, user-decided 2026-08-24): a
     // tokenless editor creates the account on this very tap, then saves into it — one
-    // tap, the button's own dots for both legs. A deploy that fails saves nothing and
+    // tap, the button busy for both legs. A deploy that fails saves nothing and
     // created nothing; TRY AGAIN re-runs the whole tap.
     let current = deviceIdentity();
     // The header's face (`useOwnFace`) reads the profile again once this save has written
@@ -918,17 +905,12 @@ export default function Profile() {
       if (release) release(written);
       else if (written) ownProfileWritten();
     }
-    await sleep(Math.max(0, SAVE_DOTS_MIN_MS - (Date.now() - started)));
-    if (epoch !== null && identityEpoch() !== epoch) return;
     setRefused(outcome);
     // The landing, told on the canvas (visual only): a save that LANDED is stamped in foil, a
     // refused one shakes the card.
     if (written && outcome === null) setStamp((n) => n + 1);
     else if (outcome !== null) setRefusedShake((n) => n + 1);
-    setPhase('restoring');
-    await sleep(SAVE_RESTORE_MS);
-    if (epoch !== null && identityEpoch() !== epoch) return;
-    setPhase((held) => (held === 'restoring' ? 'idle' : held));
+    setSaving(false);
   }, [name, encoded, assignedFrom, baseline, loadedFor]);
 
   // What the error surface says for each outcome (#216 rework, replacing the inline
@@ -959,7 +941,7 @@ export default function Profile() {
   // An emptied field shows what a board would print in its place: the assigned pseudonym, muted.
   const shownWhenEmpty = assignedFrom ? anonName(assignedFrom) : t(lang, 'profileNamePlaceholder');
   const empty = cells.every((value) => value === 0);
-  const canSave = phase === 'idle' && dirty && tool === null;
+  const canSave = !saving && dirty && tool === null;
 
   // THE PALETTES are ONE choice (a radio group): Tab lands on the one in hand, the arrows
   // choose — so the keyboard's brackets and the chosen swatch's corners frame the same tile.
@@ -1150,34 +1132,19 @@ export default function Profile() {
             </div>
 
             {/* Nothing to save = unavailable — the board itself says whether there is a
-                change. While saving, the label rolls out the bottom and the dot loader drops
-                in from the top; the restore beat rolls the label back up — and a save that
-                landed STAMPS the canvas in foil. */}
-            <button
-              type="button"
-              className={`mix-btn profile-save${phase !== 'idle' ? ` ${phase}` : ''}`}
+                change. While saving, the button is busy, and a save that landed STAMPS the
+                canvas in foil. */}
+            <BusyButton
+              className="mix-btn profile-save"
+              lang={lang}
+              busy={saving}
               aria-disabled={!canSave || undefined}
-              aria-busy={phase === 'saving'}
               onClick={() => {
                 if (canSave) void onSave();
               }}
             >
-              <span
-                className={`save-label${phase === 'saving' ? ' out' : phase === 'restoring' ? ' back' : ''}`}
-              >
-                {t(lang, 'profileSave')}
-              </span>
-              {phase !== 'idle' && (
-                <span
-                  className={`save-dots${phase === 'restoring' ? ' out' : ''}`}
-                  aria-hidden="true"
-                >
-                  <i />
-                  <i />
-                  <i />
-                </span>
-              )}
-            </button>
+              {t(lang, 'profileSave')}
+            </BusyButton>
             {/* The save's failure, on the app's error surface (#216 rework). */}
             {saveError && (
               <ErrorScreen
