@@ -15,12 +15,15 @@
 // It HOLDS ITS BOX until the face settles rather than drawing the assigned mark and
 // correcting it a beat later: that is the leaderboard strip's own rule, and it matters more
 // here, where the control is on screen every day. Settled with NO face it says which: a read
-// that FAILED rests on the still stipple (the masthead's mark offers the read again — this
-// key is the account's door, and stays one), an account that is GONE is its ghost.
+// that FAILED rests on the still stipple, an account that is GONE is its ghost. The failed
+// read is asked again when the tab comes back — this key is the account's door and stays
+// one, so the tap that asks is the masthead's mark — and the face is ONE read every surface
+// shares (`useOwnFace`), so a read asked from anywhere lands here too.
 //
 // In the header the mark is drawn in the chrome's ONE INK — the traced shape in `--fg`, no
 // ground — a glyph among the stroke icons rather than a colour swatch beside them (the CSS
 // on `.account-key` holds the reasoning). Full colour is for where the face is content.
+import { useEffect } from 'react';
 import { defaultAvatar } from '@whippin/shared';
 import Avatar from './Avatar';
 import { faceSkeletonClass, shownFace, useOwnFace } from './AccountFace';
@@ -30,6 +33,7 @@ import './bayerTiles';
 import { t } from '../i18n';
 import { ACCOUNT_PATH } from '../langs';
 import { navigate } from '../routing';
+import { retryOwnFace } from '../state/ownFace';
 
 export default function AccountKey({
   lang,
@@ -43,6 +47,15 @@ export default function AccountKey({
 }) {
   const state = useOwnFace();
   const face = shownFace(state);
+  const failed = state === 'failed';
+  useEffect(() => {
+    if (!failed) return undefined;
+    const again = () => {
+      if (document.visibilityState === 'visible') retryOwnFace();
+    };
+    document.addEventListener('visibilitychange', again);
+    return () => document.removeEventListener('visibilitychange', again);
+  }, [failed]);
   return (
     <button
       type="button"
@@ -61,7 +74,7 @@ export default function AccountKey({
         // is worse than no prop). A cell is 2px, and the corners are square: it is a
         // pixel tile among pixel marks.
         <Avatar avatar={face.avatar ?? defaultAvatar(face.publicId)} size={20} sharp />
-      ) : state === 'failed' ? (
+      ) : failed ? (
         <span className="account-key-slot" aria-hidden="true">
           <StatSlot phase="failed" />
         </span>
