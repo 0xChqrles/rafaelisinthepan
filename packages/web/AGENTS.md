@@ -2057,9 +2057,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     browser in the sentence's own type and width, one rail of the slate stipple per line it
     fills — no fake words or holes, nothing the day has not said. Once the puzzle is in, the
     rails give way through the dither to the day's SILHOUETTE, laid out by the board's own
-    `Phrase` (`silhouette`: no decode, no descriptions): each word a bar of the stipple
+    `Phrase` (`silhouette`: no decode, no descriptions, and no `data-hole-explore` — the
+    wheel measures the board's hole, never the hold's): each word a bar of the stipple
     (`--rail` through `--dz-2`), each hole the skeleton's checker in the held chip's exact
-    box (the start words in the holes). Both are centred where the sentence is, so the
+    box. The holes hold the START words until the round's read is in, then — in one step,
+    never through a hole's word change — the words the round will mount on (`App` replays
+    the play log over the fresh holes, `Game`'s own first frame): a returning player's best
+    words in their chips' boxes, a found word as a bar, so the board never re-wraps at the
+    hand-over. Both are centred where the sentence is, so the
     day's arrival moves the block by half a line per line it differs from the median (0 on
     a median day). The TRAY promises only what will land there: the keyboard's three rows
     as UNLIT IRON KEYS (`.kb-slate`: the code prompt's and the archive's material — the
@@ -2082,8 +2087,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     rises as it always does); the prompt's row and the gate come in through the dither. A
     day ALREADY OVER takes the hold away at once — its card (`SolvedScreen`'s `fromHold`:
     its settled frame, the reveal not replayed) comes in through the dither on bare ground,
-    never with bars and slates showing through it. Measured at 390/320/1366: every bar,
-    block and slate on the pixel of the word, chip and key that replaces it. Reduced
+    never with bars and slates showing through it. Every bar, block and slate stands on the
+    pixel of the word, chip and key that replaces it, a returning player's round included.
+    The slates' dress is stated as `.kb-key.kb-slate` so it wins over the live key's, and
+    the hold's gate slots keep the hold's own beat (the game gate's dither is
+    `.rules-gate:not(.hold-tray)`). Reduced
     motion: still, and gone at once. Forced colours: each bar, block, slate and slot drawn
     as its `GrayText` outline (masks and stipple would leave a blank screen). No read the
     game route waits on shows a `LoadingWave`.

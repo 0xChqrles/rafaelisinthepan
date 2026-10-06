@@ -22,7 +22,9 @@ import { t } from '../i18n';
 //     said yet. Once the puzzle is in, the day's own SILHOUETTE, the rails giving way to it
 //     through the dither: each word a bar, each hole a block of the board skeleton's
 //     checker, laid out by the board's own `Phrase` (`silhouette`), so the bars wrap where
-//     the words will and the blocks stand where the holes will.
+//     the words will and the blocks stand where the holes will. The holes hold the START
+//     words until the round's read is in, then — in one step — the words the round stands on
+//     (a returning player's best, a found word's bar), the board's own first frame.
 //   THE TRAY, what the game will put there: the keyboard's three rows of UNLIT IRON KEYS —
 //     the archive's and the code prompt's material — at the keys' exact boxes, for a player
 //     who lands on the prompt; the GATE's slots (PLAY's box, LEARN's word) for everyone else.
@@ -124,23 +126,15 @@ function Rails({ lang, leaving }: { lang: LangCode; leaving?: boolean }) {
   );
 }
 
-// The day's sentence, once the puzzle is in: the board's own layout, the hold's own dress.
-function Silhouette({ puzzle, leaving }: { puzzle: Puzzle; leaving?: boolean }) {
-  const holes = useMemo<RuntimeHole[]>(
-    () =>
-      puzzle.holes.map((h) => ({
-        pos: h.pos,
-        secret: h.secret.slug,
-        word: h.start.word,
-        rank: h.start_rank,
-        startRank: h.start_rank,
-      })),
-    [puzzle],
-  );
+// The day's sentence, once the puzzle is in: the board's own layout, the hold's own dress —
+// each hole at the word the board will mount on (`holes`). Keyed on those words, so the
+// round's read re-lays them in one step, never through the hole's own word change.
+function Silhouette({ puzzle, holes, leaving }: { puzzle: Puzzle; holes: RuntimeHole[]; leaving?: boolean }) {
   const labels = useMemo(() => holes.map(() => '-'), [holes]);
   return (
     <div className={`hold-sentence${leaving ? ' out' : ''}`}>
       <Phrase
+        key={holes.map((h) => h.word).join(' ')}
         silhouette
         words={puzzle.words}
         holes={holes}
@@ -155,9 +149,18 @@ function Silhouette({ puzzle, leaving }: { puzzle: Puzzle; leaving?: boolean }) 
   );
 }
 
-// One sentence the hold draws: the rails (no puzzle yet), or the day's silhouette.
-function Sentence({ lang, puzzle, leaving }: { lang: LangCode; puzzle: Puzzle | null; leaving?: boolean }) {
-  return puzzle ? <Silhouette puzzle={puzzle} leaving={leaving} /> : <Rails lang={lang} leaving={leaving} />;
+// What one sentence of the hold draws: the rails (no puzzle yet), or the day's silhouette.
+interface Drawn {
+  puzzle: Puzzle | null;
+  holes: RuntimeHole[] | null;
+}
+
+function Sentence({ lang, drawn, leaving }: { lang: LangCode; drawn: Drawn; leaving?: boolean }) {
+  return drawn.puzzle && drawn.holes ? (
+    <Silhouette puzzle={drawn.puzzle} holes={drawn.holes} leaving={leaving} />
+  ) : (
+    <Rails lang={lang} leaving={leaving} />
+  );
 }
 
 const sentenceKey = (puzzle: Puzzle | null) => (puzzle ? `${puzzle.lang}:${puzzle.revision}` : 'rails');
@@ -165,6 +168,7 @@ const sentenceKey = (puzzle: Puzzle | null) => (puzzle ? `${puzzle.lang}:${puzzl
 export default function GameHold({
   lang,
   puzzle,
+  holes,
   wordsIn,
   roundIn,
   race,
@@ -175,6 +179,10 @@ export default function GameHold({
   lang: LangCode;
   // The day's puzzle once it is in (its words shape the silhouette), else null.
   puzzle: Puzzle | null;
+  // Its holes as the board will mount on them: the START words until the round's read is
+  // in, then the words the round stands on (a returning player's best), so the board's
+  // words land on their own boxes. Null with no puzzle.
+  holes: RuntimeHole[] | null;
   // The language's word list is in (the keyboard's).
   wordsIn: boolean;
   // The round's server state is in.
@@ -188,16 +196,17 @@ export default function GameHold({
   // A sentence giving way to the next (the rails to the day's silhouette) goes out through
   // the cells the next comes in through — only while the hold is on screen.
   const key = sentenceKey(puzzle);
-  const last = useRef<Puzzle | null>(puzzle);
-  const [outgoing, setOutgoing] = useState<{ key: string; puzzle: Puzzle | null } | null>(null);
+  const drawn: Drawn = { puzzle, holes };
+  const last = useRef<Drawn>(drawn);
+  const [outgoing, setOutgoing] = useState<{ key: string; drawn: Drawn } | null>(null);
   useLayoutEffect(() => {
     const was = last.current;
-    last.current = puzzle;
-    if (sentenceKey(was) === key || !shown) return undefined;
-    setOutgoing({ key: sentenceKey(was), puzzle: was });
+    last.current = { puzzle, holes };
+    if (sentenceKey(was.puzzle) === key || !shown) return undefined;
+    setOutgoing({ key: sentenceKey(was.puzzle), drawn: was });
     const id = window.setTimeout(() => setOutgoing(null), DISSOLVE_MS);
     return () => window.clearTimeout(id);
-  }, [puzzle, key, shown]);
+  }, [puzzle, holes, key, shown]);
 
   // What is still out, each its own motion (index.css).
   const reading = `${puzzle ? '' : ' reading-sentence'}${roundIn ? '' : ' reading-round'}${
@@ -212,8 +221,8 @@ export default function GameHold({
         <>
           <div className={`play${race ? ' play-race' : ''}`} aria-hidden="true" ref={makeInert}>
             <div className="phrase-anchor hold-sentences">
-              {outgoing && <Sentence key={outgoing.key} lang={lang} puzzle={outgoing.puzzle} leaving />}
-              <Sentence key={key} lang={lang} puzzle={puzzle} />
+              {outgoing && <Sentence key={outgoing.key} lang={lang} drawn={outgoing.drawn} leaving />}
+              <Sentence key={key} lang={lang} drawn={drawn} />
             </div>
             {/* The prompt's row, held (its line and its hint's): never drawn. */}
             <div className="prompt-zone">

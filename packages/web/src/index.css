@@ -1049,7 +1049,8 @@ body:has(.app > .board-screen) {
 /* THE SENTENCE. No ink: the letters and the exponent hold their room unseen. */
 .game-hold .phrase,
 .game-hold .phrase .hole-btn,
-.game-hold .phrase .hole-btn * {
+.game-hold .phrase .hole-btn *,
+.game-hold .phrase .hole-btn .hole-word .hole-letter {
   color: transparent;
   text-shadow: none;
 }
@@ -1075,6 +1076,13 @@ body:has(.app > .board-screen) {
 }
 .game-hold .phrase .hole .hole-word {
   color: transparent;
+}
+/* A hole the round has already found (a returning player's) stands free of its chip on the
+   board, a word among words: its bar. */
+.game-hold .phrase .hole.resolved .hole-word {
+  background: var(--rail);
+  -webkit-mask-image: var(--dz-2);
+  mask-image: var(--dz-2);
 }
 /* (The Bayer order's half IS the skeleton's 2px checker, so a breath can thin and thicken it
    through the same tiles.) */
@@ -1176,7 +1184,8 @@ body:has(.app > .board-screen) {
 .game-hold.leaving .hold-tray {
   animation: board-dissolve-out 240ms linear forwards;
 }
-.game-hold.leaving .phrase .word {
+.game-hold.leaving .phrase .word,
+.game-hold.leaving .phrase .hole.resolved .hole-word {
   animation: hold-bar-out 120ms steps(1, end) var(--at, 0ms) forwards;
 }
 .game-hold.leaving .phrase .hole .hole-word::before {
@@ -1233,6 +1242,7 @@ body:has(.app > .board-screen) {
   }
   .game-hold .hold-rail,
   .game-hold .phrase .word,
+  .game-hold .phrase .hole.resolved .hole-word,
   .game-hold .phrase .hole .hole-word::before,
   .game-hold .gate-word,
   .game-hold .kb-slate {
@@ -1246,6 +1256,12 @@ body:has(.app > .board-screen) {
   }
   .game-hold .kb-slate::before {
     display: none;
+  }
+  /* (A found word's outline would take in its letters' line-tall boxes: its own box, drawn
+     inside.) */
+  .game-hold .phrase .hole.resolved .hole-word {
+    outline: none;
+    box-shadow: inset 0 0 0 1px GrayText;
   }
   .game-hold.leaving {
     visibility: hidden;

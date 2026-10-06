@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { computeProgress, guessKey, replayHoles } from '../game/scoring';
+import { computeProgress, freshHolesFor, guessKey, replayHoles } from '../game/scoring';
 import { raceOf } from '../game/race';
 import { liveSawEnd } from '../game/resultBoards';
 import { playLogFor, withoutDeferred } from '../game/playLog';
@@ -169,17 +169,7 @@ function Round({
 }) {
   // Fresh per-hole state derived from the puzzle. Used until the persisted store
   // reconciles to this round, and as the reset state on a new day/language.
-  const freshHoles = useMemo<RuntimeHole[]>(
-    () =>
-      puzzleHoles.map((h) => ({
-        pos: h.pos,
-        secret: h.secret.slug,
-        word: h.start.word,
-        rank: h.start_rank,
-        startRank: h.start_rank,
-      })),
-    [puzzleHoles],
-  );
+  const freshHoles = useMemo(() => freshHolesFor(puzzleHoles), [puzzleHoles]);
 
   // Identity of this round: the server day (or the bonus) + language.
   const roundKey = useMemo(() => roundKeyFor(puzzleRef, lang), [puzzleRef, lang]);

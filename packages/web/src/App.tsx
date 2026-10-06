@@ -13,6 +13,8 @@ import useVocab, { type Vocab } from './hooks/useVocab';
 import useRoundSync from './hooks/useRoundSync';
 import { retryRoundSync } from './state/roundSync';
 import { roundOnScreen, type RoundOnScreen } from './game/roundOnScreen';
+import { freshHolesFor, replayHoles } from './game/scoring';
+import { playLogFor } from './game/playLog';
 import Account from './screens/Account';
 import AccountEmail from './screens/AccountEmail';
 import Profile from './screens/Profile';
@@ -372,6 +374,19 @@ function GameRoute({
   const identity = useDeviceIdentity();
   const learned = useGameStore((s) => s.lessonsDone.includes(PLAY_LEVEL));
   const tray: HoldTray = identity !== null && learned ? 'keys' : learned ? 'gate' : 'gate-learn';
+  // The holes the hold's silhouette lays out: the START words until the round's read is in,
+  // then the board the round will mount on — its fresh holes walked through the play log of
+  // what the server holds and what this device still owes (`Game`'s own first frame) — so a
+  // returning player's best words land on their own boxes, never on the start words'.
+  const roundServer = round?.status === 'ready' ? round.server : null;
+  const owed = useGameStore((s) => s.outbox[roundKey]);
+  const holdHoles = useMemo(() => {
+    if (puzzle === null) return null;
+    const fresh = freshHolesFor(puzzle.holes);
+    if (roundServer === null) return fresh;
+    const outbox = owed?.puzzle === puzzle.revision ? owed.guesses : [];
+    return replayHoles(fresh, puzzle.ranks, playLogFor(puzzle.ranks, roundServer.guesses, outbox));
+  }, [puzzle, roundServer, owed]);
   // A day already over hands over to its RESULT on bare ground: the hold goes at once rather
   // than showing through the card as it comes in.
   const over = shown !== null && (shown.server.solved || roundEnded(shown.server));
@@ -419,6 +434,7 @@ function GameRoute({
             <GameHold
               lang={lang}
               puzzle={puzzle}
+              holes={holdHoles}
               wordsIn={vocab !== null}
               roundIn={round?.status === 'ready'}
               race={isActiveDay}
