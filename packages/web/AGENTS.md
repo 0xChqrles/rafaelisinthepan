@@ -921,6 +921,10 @@ These are decided and verified against the code. Treat them as load-bearing.
       the arms. Its words are `--muted`, never the foreground dimmed. Decorative
       (aria-hidden, pointer-events none), z-index 40 under the header's 60, covered by
       opaque dialogs, and DESKTOP ONLY (hidden ≤640px — a phone's viewport is all content).
+    - **ONE SCROLLBAR** (`index.css`, the unqualified `::-webkit-scrollbar`): the
+      document's and every scroller's — 6px, a square `--rail` thumb in a `--bg` channel,
+      `--muted` under a pointer, no buttons; Firefox gets the same through
+      `scrollbar-color`. A scroller that hides its bar says so on its own selector.
     - **THE COLUMN is ONE custom property, `--column` (900px)**: the header row's width
       (`.topbar-inner`, `min(var(--column), 100vw - 48px)`), the game's and its sentence's
       (`.game`, `.phrase`; the lesson with them), the tutorial's list of levels (`.learn`),
@@ -2940,7 +2944,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `start_rank`.
   **What survived as MODAL chrome:** the zoom out of the tapped word and the retraction
   back into it (`history-zoom`/`history-zoom-out`, same measured-origin plumbing in
-  `Game.openHistory`), `useModalDismiss` + the shared `ModalHeader` above a `.pixel-scroll`
+  `Game.openHistory`), `useModalDismiss` + the shared `ModalHeader` above a
   scroller, close chip + Escape as the only ways out, the solving-beats gating
   (`exploreDisabled`, including the settled-solved-screen re-enable), and "the LINE has no
   motion" — the only animation is the modal arriving and leaving. The title is `MOT n` /
@@ -3319,7 +3323,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
       (the sentence before is cut whole and runs from a few words to a screen), an
       auto-scroll onto the line. The contrast IS the highlight: never a marker band,
       never the pixel face inside a paragraph. **The STAGE is the
-      scroller** (`overflow-y: auto`, `overscroll-behavior: contain`, `pixel-scroll`,
+      scroller** (`overflow-y: auto`, `overscroll-behavior: contain`,
       `position: relative` so the sr-only hints under a long page are contained rather
       than growing the document — measured 523px of page scroll before), fading its
       BOTTOM edge over its own 24px padding (on a phone plus the home-indicator inset);

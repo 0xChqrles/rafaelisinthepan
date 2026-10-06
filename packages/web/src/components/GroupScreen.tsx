@@ -98,7 +98,7 @@ export default function GroupScreen({
       <div className="group-body">
         <div className="board-section">{t(lang, 'groupMembers')}</div>
         <div ref={roomRef} className="group-room">
-          <ol className="board-list pixel-scroll" style={lines === null ? undefined : { maxHeight: lines * LINE_PX }}>
+          <ol className="board-list" style={lines === null ? undefined : { maxHeight: lines * LINE_PX }}>
             {group.members.map((id, index) => {
               const player = face(id);
               const me = id === meId;

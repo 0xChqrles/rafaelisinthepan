@@ -26,7 +26,7 @@ export default function Learn({ lang }: { lang: LangCode }) {
     window.scrollTo(0, 0);
   }, []);
   return (
-    <div className="learn pixel-scroll">
+    <div className="learn">
       <HeaderLeft>
         <LangTitle lang={lang} title={t(lang, 'learnTitle')} to={pathForLearn} />
       </HeaderLeft>

@@ -425,41 +425,42 @@ body:has(.app > .board-screen) {
   }
 }
 
-/* Visually hidden but still announced: the screen-reader live region mirroring the
-   per-hole guess feedback (floating numbers / MISS are invisible to assistive tech). */
-/* The app's scrollbar, on any scroller that opts in with this class (the words modal, the
-   result stage, the boards). The app draws in squares, so its scrollbar does too: a
-   flat RECTANGLE in a flat channel — no rounding, no arrow buttons, no inset. Styling it
-   also makes it always visible where the platform would overlay it, which is the point: a
-   permanent bar is the one thing on a long line that says the line goes on.
+/* ONE SCROLLBAR, EVERYWHERE: the document's and every scroller's. The app draws in squares,
+   so its scrollbar does too: a square slate thumb (`--rail`) in a channel of the ground, 6px,
+   lifted to the secondary ink under a pointer — no rounding, no arrow buttons, no inset.
+   Styling it also makes it always visible where the platform would overlay it, which is the
+   point: a permanent bar is the one thing on a long page that says the page goes on.
 
    The standard `scrollbar-width`/`scrollbar-color` are deliberately NOT set alongside these:
    since Chrome 121 either of them DISABLES the ::-webkit-scrollbar pseudo-elements, and the
    standard scrollbar cannot be squared off — setting both cost the rectangle everywhere and
    left an overlay bar behind. They live in the Firefox-only block below instead, detected by
-   the one engine that has no ::-webkit-scrollbar selector to support. */
-.pixel-scroll::-webkit-scrollbar {
+   the one engine that has no ::-webkit-scrollbar selector to support. (A scroller that hides
+   its bar — the tab rows, the wheel — says so on its own selector, which wins.) */
+::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
-.pixel-scroll::-webkit-scrollbar-track {
-  background: var(--surface);
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: var(--bg);
 }
-.pixel-scroll::-webkit-scrollbar-thumb {
-  background: var(--surface-hover);
+::-webkit-scrollbar-thumb {
+  background: var(--rail);
   border-radius: 0;
 }
-.pixel-scroll::-webkit-scrollbar-thumb:hover {
+::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
 }
-.pixel-scroll::-webkit-scrollbar-button {
+::-webkit-scrollbar-button {
   display: none;
 }
 /* Firefox: no pseudo-elements to style, so it gets the standard properties — the closest it
    can come to the same bar. */
 @supports (scrollbar-width: thin) and (not (selector(::-webkit-scrollbar))) {
-  .pixel-scroll {
+  * {
     scrollbar-width: thin;
-    scrollbar-color: var(--surface-hover) var(--surface);
+    scrollbar-color: var(--rail) var(--bg);
   }
 }
 
@@ -470,6 +471,8 @@ body:has(.app > .board-screen) {
   color: var(--fg);
 }
 
+/* Visually hidden but still announced: the screen-reader live region mirroring the
+   per-hole guess feedback (floating numbers / MISS are invisible to assistive tech). */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -3939,7 +3942,7 @@ body:has(.app > .board-screen) {
    word's inverted chip. ONE type size: the column is as wide as the longest word
    needs (set inline), and the grid fills the whole width with as many such columns as fit
    (`auto-fill`) — a wide screen uses its space, a phone gets one or two. Flat `--bg`
-   like every full-screen dialog, the shared header above a `.pixel-scroll` scroller. */
+   like every full-screen dialog, the shared header above its scroller (`.hw-scroll`). */
 .hw-dialog[open] {
   position: fixed;
   inset: 0;
