@@ -69,7 +69,11 @@ const NAME_CLEAR = 12; // the least room between the name's chip and a mark
 const CHIP_LINE = 32; // `.link-name`'s whole 32px box
 const CHIP_PAD = 10; // …and its side padding
 const CHIP_TRACKING = 0.03; // …and its tracking, in em
-const HERO_PX = 17; // `--name-hero-size`
+// The hero name's size is the root's `--name-hero-size` (a step down on the narrowest phones),
+// read live, so the chip's box and the type set in it come off one number at every width.
+function heroPx(): number {
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--name-hero-size')) || 17;
+}
 function geometry(width: number, height: number) {
   const mark = width >= 600 ? 80 : width < 340 ? 50 : 60;
   const rx = Math.max(0, Math.floor(width / 2 - mark / 2 - EDGE));
@@ -139,7 +143,13 @@ export default function GroupOrbit({
   drop?: boolean;
 }) {
   const box = useRef<HTMLDivElement | null>(null);
-  const [size, setSize] = useState<{ width: number; height: number; snapX: number; snapY: number } | null>(null);
+  const [size, setSize] = useState<{
+    width: number;
+    height: number;
+    snapX: number;
+    snapY: number;
+    hero: number;
+  } | null>(null);
   // The holds wait out SKELETON_WAIT_MS on the FIRST read only: once they have stood (a read
   // that failed), a retry finds them already there.
   const [read, setRead] = useState(mode !== 'wait');
@@ -157,11 +167,13 @@ export default function GroupOrbit({
         height: Math.floor(rect.height),
         snapX: Math.round(rect.left) - rect.left,
         snapY: Math.round(rect.top) - rect.top,
+        hero: heroPx(),
       };
       setSize((prev) =>
         prev &&
         prev.width === next.width &&
         prev.height === next.height &&
+        prev.hero === next.hero &&
         Math.abs(prev.snapX - next.snapX) < 0.01 &&
         Math.abs(prev.snapY - next.snapY) < 0.01
           ? prev
@@ -185,11 +197,12 @@ export default function GroupOrbit({
     [geo?.cx, geo?.cy, geo?.rx, geo?.ry, geo?.mark, count],
   );
 
-  // The name's chip, one line always, its size stepped down a whole pixel at a time until it
-  // keeps clear of every mark beside it (the card's own rule); its width off the mono's fixed
-  // advance, so it stands on whole pixels with nothing measured.
+  // The name's chip, one line always, its size stepped down a whole pixel at a time from the
+  // hero size until it keeps clear of every mark beside it (the card's own rule); its width off
+  // the mono's fixed advance at that size, which is set inline, so it stands on whole pixels
+  // with nothing measured.
   const chip = useMemo(() => {
-    if (!geo) return null;
+    if (!geo || !size) return null;
     const glyphs = Math.max(1, Array.from(name).length);
     let half = geo.cx - EDGE;
     for (const { x, y } of spots) {
@@ -199,7 +212,7 @@ export default function GroupOrbit({
       half = Math.min(half, Math.abs(centre - geo.cx) - geo.mark / 2 - NAME_CLEAR);
     }
     const perGlyph = UI_ADVANCE_EM + CHIP_TRACKING;
-    const font = Math.max(10, Math.min(HERO_PX, Math.floor((2 * half - 2 * CHIP_PAD) / (glyphs * perGlyph))));
+    const font = Math.max(10, Math.min(size.hero, Math.floor((2 * half - 2 * CHIP_PAD) / (glyphs * perGlyph))));
     const width = Math.ceil(glyphs * perGlyph * font) + 2 * CHIP_PAD;
     return {
       font,
@@ -207,7 +220,7 @@ export default function GroupOrbit({
       x: Math.round(geo.cx - width / 2),
       y: geo.cy - CHIP_LINE / 2,
     };
-  }, [geo?.cx, geo?.cy, geo?.mark, spots, name]);
+  }, [geo?.cx, geo?.cy, geo?.mark, size?.hero, spots, name]);
 
   const trail = useMemo(() => {
     if (!geo || !size || !chip || mode !== 'shown') return '';
@@ -273,7 +286,7 @@ export default function GroupOrbit({
               left: chip.x,
               top: chip.y,
               width: chip.width,
-              fontSize: chip.font < HERO_PX ? chip.font : undefined,
+              fontSize: chip.font,
             }}
           >
             {name}
