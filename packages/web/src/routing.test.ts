@@ -10,7 +10,7 @@
 // tab does nothing at all.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { dropLangParam, goBack, navigate } from './routing';
+import { dropLangParam, goBack, navigate, onNavigate } from './routing';
 
 const ORIGIN = 'https://whippin.ai';
 
@@ -85,6 +85,23 @@ describe('history entries', () => {
     // The `/` redirect lands on an entry a pasted URL arrived at: back from there leaves the
     // site, which is exactly what the redirect's own comment promises.
     expect(h.state).toBe(null);
+  });
+
+  it('never stacks the URL already shown: a navigation onto it replaces, and still tells', () => {
+    const h = install('/account');
+    navigate('/fr');
+    let told = 0;
+    const off = onNavigate(() => {
+      told += 1;
+    });
+    navigate('/fr');
+    off();
+    // One entry for /fr, the one the first push made (stamped): back from it is /account.
+    expect(h.depth).toBe(2);
+    expect(h.url).toBe('/fr');
+    expect(h.state).toEqual({ app: true });
+    // Still an ARRIVAL (`useHomeDay` moves the undated route's day on it).
+    expect(told).toBe(1);
   });
 
   it('keeps the stamp an entry already had when it replaces one', () => {

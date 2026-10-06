@@ -1826,6 +1826,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     first cut stamped all three, and it broke the exact journey `?lang=` exists for — a pasted
     `/privacy?lang=en`, a language picked from the wheel (which rewrites the URL), then back:
     off the site, or in a fresh tab nothing at all, since the entry was the tab's first.
+  - **A NAVIGATION ONTO THE URL ALREADY SHOWN REPLACES** (`navigate`, contract-tested in
+    `routing.test.ts`): the same place twice in history is a back press that goes nowhere —
+    HOME tapped on the undated route past the 22:00 flip is the one such tap the screens
+    offer. It still notifies, so it is still an arrival (`useHomeDay`).
   - **A SIGN-OUT DOES NOT CLOSE IT** (`App`'s `blocked`, which is `signedOut` everywhere
     else). The verdict takes the whole screen because every private read answers
     `unknown_device` from there on — and this route makes none: it is a static document about
