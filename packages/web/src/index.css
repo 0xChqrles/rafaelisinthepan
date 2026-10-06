@@ -6496,6 +6496,12 @@ figure.l1-fig {
     border-color: var(--fg);
   }
 }
+/* Under the keyboard's focus the app's ONE indicator speaks alone (`FocusBrackets`, just
+   outside the word): RESEND's own corners give way to it, never a frame nested in a frame —
+   hovered too (the `.quiet-btn` focus and hover rules come later, hence the extra classes). */
+.link-quiet .link-resend.quiet-btn[data-bracketed]::before {
+  border-color: transparent;
+}
 /* The ticker hangs OUTSIDE the word's box, at its right, so the word holds its place when the
    seconds go and the brackets arrive round the word alone. */
 .link-wait {

@@ -1264,7 +1264,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
       for its first step only, then its ink with the digit cut out. RESEND is quiet
       and countdown-gated (~30s, the seconds in the cobalt pixel figures hanging beside the
       word), alone under the cells: the bracketed quiet word (`.quiet-btn`) whose brackets
-      ARRIVE, locking on, when the countdown hits zero — CHANGE ADDRESS is gone,
+      ARRIVE, locking on, when the countdown hits zero, and give way to `FocusBrackets` under
+      the keyboard's focus (never a frame nested in a frame) — CHANGE ADDRESS is gone,
       the header's back goes code → address.
     - **THE CROSSROADS, NOT A WARNING:** both accounts drawn — the one being left THINNED
       THROUGH THE BAYER DITHER, never an opacity (under DELETED, the area's one red, a GHOST:
