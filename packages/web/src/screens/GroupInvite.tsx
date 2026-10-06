@@ -129,6 +129,9 @@ const continueToGame = () => navigate('/', { replace: true });
 
 type Phase = 'idle' | 'busy' | 'done' | 'full' | 'limit' | 'expired';
 
+// How long the face waits for the reader's own list once the group has landed.
+const LIST_WAIT_MS = 2_000;
+
 export default function GroupInvite({ groupId, lang }: { groupId: string; lang: string }) {
   const [group, setGroup] = useState<GroupState>(null);
   // A landing remounted after its own join (an identity swap) stands joined, its seat taken.
@@ -174,8 +177,17 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
   }, [groupId]);
 
   // THE FACE, decided ONCE, when the group and the reader's own list are both known: who
-  // stands on the orbit (never the reader — their place is the seat) and what is offered.
-  const listKnown = listPhase === 'ready' || listPhase === 'failed';
+  // stands on the orbit (never the reader — their place is the seat) and what is offered. The
+  // list is waited for a bounded beat past the group: a read that stalls must not hold the
+  // landing, so the face lands without it and the server's code answers the cap instead.
+  const [listLate, setListLate] = useState(false);
+  const groupShown = typeof group === 'object' && group !== null;
+  useEffect(() => {
+    if (!groupShown) return undefined;
+    const timer = window.setTimeout(() => setListLate(true), LIST_WAIT_MS);
+    return () => window.clearTimeout(timer);
+  }, [groupShown]);
+  const listKnown = listPhase === 'ready' || listPhase === 'failed' || listLate;
   const [face, setFace] = useState<{ members: BoardPlayer[]; landing: Landing } | null>(null);
   if (face === null && typeof group === 'object' && group !== null && listKnown && !member) {
     const me = identity?.accountId;
