@@ -43,7 +43,8 @@
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
     src/glyphs.ts             pixel-art glyphs the game DRAWS rather than sets: the #214 `∞`
                               path + view box, shared by the OG card, the web result and a
-                              group board's ended row; the app's mark, traced for the OG cards;
+                              group board's ended row; the app's mark (the web's `PixelMark`,
+                              the OG cards, the site's icons at whole scales);
                               the pixel face's ten digits as cells (`DIGIT_MASKS`: the
                               result's count, the card's, the score watermark, the streak
                               celebration)

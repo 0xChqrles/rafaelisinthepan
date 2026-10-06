@@ -340,6 +340,9 @@
       hooks/useShare.ts       how a RESULT leaves the app (native sheet -> clipboard + COPIED)
     public/                   served at site root (web assets + generated data)
       robots.txt              every crawler allowed, everywhere (a missing object is the bucket's 403)
+      favicon.svg, favicon.ico, apple-touch-icon.png  the app's mark (shared `MARK_GLYPH`) in
+                              the accent on a square of the ground, at whole scales,
+                              nearest-neighbour: 1x in 32px, 7x in 180px
       vocab/<lang>.json       full slugged reduced vocab (existence set) — fetched by the SPA
 ```
 
