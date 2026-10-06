@@ -40,6 +40,17 @@ const TRAVEL_MS = 300;
 
 const lengthInk = (d: number) => heatColor(1 - d / FAR);
 
+// How far a length may step off its line to clear a square or a name (CSS px), and the air
+// it keeps from a name (so a length never reads as the name's own figure).
+const MAX_LIFT = 48;
+const NAME_AIR = 10;
+type Box = { left: number; top: number; width: number; height: number };
+const overlaps = (a: Box, b: Box, air: number) =>
+  a.left < b.left + b.width + air &&
+  b.left < a.left + a.width + air &&
+  a.top < b.top + b.height + air &&
+  b.top < a.top + a.height + air;
+
 export default function Plane({
   states,
   edges,
@@ -114,6 +125,14 @@ export default function Plane({
   const drawH = rows * CELL;
   const px = (c: number) => c * CELL;
   const half = (SQUARE / 2) * CELL;
+  // Each word's name chip, centred over (or under) its square and kept inside the drawing.
+  const names = points.map((p) => {
+    const width = p.word.length * namePx + 2 * chipX;
+    const height = namePx + 2 * CHIP_Y;
+    const left = Math.min(drawW - width, Math.max(0, px(cx(p.x)) - Math.round(width / 2)));
+    const top = p.label === 'below' ? px(cy(p.y)) + half + NAME_GAP : px(cy(p.y)) - half - NAME_GAP - height;
+    return { word: p.word, focus: p.focus, left, top, width, height };
+  });
 
   return (
     <div className="ar-plane">
@@ -133,17 +152,31 @@ export default function Plane({
               const ay = px(cy(p.y));
               const bx = px(cx(q.x));
               const by = px(cy(q.y));
-              // The length sits ON its line, unless its box would cover one of the two squares
-              // (a pair too close for it): then it steps off along the normal, away from the
-              // words' names — below the line when both name above, above otherwise.
-              const crowded = Math.abs(bx - ax) / 2 < w / 2 + half && Math.abs(by - ay) / 2 < h / 2 + half;
+              // The length sits ON its line, unless its box would cover a square or a name (a
+              // pair too close for it, a name beside the line): then it steps off along the
+              // normal, a cell at a time until it is clear, away from the words' names — below
+              // the line when both name above, above otherwise.
               const away = p.label !== 'below' && q.label !== 'below' ? -1 : 1;
               const len = Math.hypot(bx - ax, by - ay) || 1;
               const sign = Math.sign(bx - ax || 1);
-              const lift = crowded ? (h / 2 + half + 4) * away : 0;
               // The normal (dy, −dx), turned to point up the screen for a pair read left to right.
-              const mx = (ax + bx) / 2 + ((by - ay) / len) * sign * lift;
-              const my = (ay + by) / 2 + (-(bx - ax) / len) * sign * lift;
+              const at = (lift: number) => ({
+                x: (ax + bx) / 2 + ((by - ay) / len) * sign * lift,
+                y: (ay + by) / 2 + (-(bx - ax) / len) * sign * lift,
+              });
+              const clear = ({ x, y }: { x: number; y: number }) => {
+                const box = { left: x - w / 2, top: y - h / 2, width: w, height: h };
+                const squares = points.map((r) => ({
+                  left: px(cx(r.x)) - half,
+                  top: px(cy(r.y)) - half,
+                  width: 2 * half,
+                  height: 2 * half,
+                }));
+                return !squares.some((o) => overlaps(box, o, LENGTH_PAD)) && !names.some((o) => overlaps(box, o, NAME_AIR));
+              };
+              let lift = 0;
+              while (!clear(at(lift)) && Math.abs(lift) < MAX_LIFT) lift += CELL * away;
+              const { x: mx, y: my } = at(lift);
               return (
                 <span
                   key={`${a}-${b}`}
@@ -161,22 +194,15 @@ export default function Plane({
                 </span>
               );
             })}
-            {points.map((p) => {
-              // The name's chip, centred over (or under) its square and kept inside the drawing.
-              const w = p.word.length * namePx + 2 * chipX;
-              const h = namePx + 2 * CHIP_Y;
-              const left = Math.min(drawW - w, Math.max(0, px(cx(p.x)) - Math.round(w / 2)));
-              const top = p.label === 'below' ? px(cy(p.y)) + half + NAME_GAP : px(cy(p.y)) - half - NAME_GAP - h;
-              return (
-                <span
-                  key={p.word}
-                  className={`ar-plane-word${p.focus ? ' focus' : ''}`}
-                  style={{ left, top, fontSize: namePx, padding: `${CHIP_Y}px ${chipX}px` }}
-                >
-                  {p.word}
-                </span>
-              );
-            })}
+            {names.map((n) => (
+              <span
+                key={n.word}
+                className={`ar-plane-word${n.focus ? ' focus' : ''}`}
+                style={{ left: n.left, top: n.top, fontSize: namePx, padding: `${CHIP_Y}px ${chipX}px` }}
+              >
+                {n.word}
+              </span>
+            ))}
           </div>
         )}
       </div>
