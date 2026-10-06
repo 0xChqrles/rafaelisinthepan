@@ -1,8 +1,9 @@
-import type { ComponentProps } from 'react';
+import { useRef, useState, type ComponentProps } from 'react';
 import type LevelOne from './LevelOne';
 import LangTitle from '../components/LangTitle';
 import QuietFailure from '../components/QuietFailure';
 import { HeaderLeft } from '../components/TopBar';
+import { SKELETON_WAIT_MS } from '../components/bayerTiles';
 import { t } from '../i18n';
 import { pathForLesson } from '../langs';
 import { lazyChunk } from '../hooks/lazyChunk';
@@ -24,9 +25,10 @@ const levelOne = LEVELS.find((l) => l.level === PLAY_LEVEL)!;
 // The lesson's first screen, HELD while its chunk is on its way (`.l1-hold`): its own layout,
 // so nothing that lands moves — the byline with the level's number and line as the real text
 // they are, the coach's box and the board's word in the slate stipple, CONTINUE's slot as the
-// game's hold draws PLAY's (after the skeleton's wait, then breathing). The step counter's room is kept, unseen. A chunk LOST
-// holds it STILL, its note and RETRY in the prompt's row — and, on the first visit, the way
-// on to the game beside RETRY (`onSkip`).
+// game's hold draws PLAY's (after the skeleton's wait, then breathing; the lesson's own tray
+// hold takes over from it at once, `held`). The step counter's room is kept, unseen. A chunk
+// LOST holds it STILL at once, its note and RETRY in the prompt's row — and, on the first
+// visit, the way on to the game beside RETRY (`onSkip`).
 function LevelOneHold({
   lang,
   failed,
@@ -84,7 +86,7 @@ function LevelOneHold({
       {/* CONTINUE's slot, drawn as the game's hold draws PLAY's: its box as its slate
           hairline, its word a bar of the stipple where it will print. */}
       <div className="tray" aria-hidden="true">
-        <span className="mix-btn gate-slot">
+        <span className={`mix-btn gate-slot tray-hold${failed ? ' still' : ''}`}>
           <span className="gate-word">{t(lang, 'tutContinue')}</span>
         </span>
       </div>
@@ -92,12 +94,25 @@ function LevelOneHold({
   );
 }
 
-export default function LazyLevelOne({ onSkip, ...props }: LevelOneProps & { onSkip?: () => void }) {
+export default function LazyLevelOne({
+  onSkip,
+  ...props
+}: Omit<LevelOneProps, 'held'> & {
+  onSkip?: () => void;
+}) {
   // A lost chunk must never strand the player on a blank screen: the hold stands still and
-  // says so, RETRY asks again — and the first visit keeps its way on to the game (`onSkip`).
+  // says so, RETRY asks again — a new document — and the first visit keeps its way on to the
+  // game (`onSkip`).
   const { Loaded, failed, retry } = chunk.useLoaded();
+  // Whether the hold had come in by the time the lesson landed (out longer than the
+  // skeleton's wait): the lesson's tray then takes over from it at once, never blinking out.
+  const [holdFrom] = useState(() => (Loaded ? null : performance.now()));
+  const held = useRef<boolean | null>(null);
+  if (Loaded && held.current === null) {
+    held.current = holdFrom !== null && performance.now() - holdFrom >= SKELETON_WAIT_MS;
+  }
 
-  if (Loaded) return <Loaded {...props} />;
+  if (Loaded) return <Loaded {...props} held={held.current ?? false} />;
   return (
     <>
       {/* The header's title while the chunk is out (the lesson publishes its own once in):
@@ -109,7 +124,12 @@ export default function LazyLevelOne({ onSkip, ...props }: LevelOneProps & { onS
           to={(picked) => pathForLesson(picked, PLAY_LEVEL)}
         />
       </HeaderLeft>
-      <LevelOneHold lang={props.lang} failed={failed} onRetry={retry} onSkip={onSkip} />
+      <LevelOneHold
+        lang={props.lang}
+        failed={failed}
+        onRetry={retry}
+        onSkip={onSkip}
+      />
     </>
   );
 }

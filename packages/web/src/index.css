@@ -1123,9 +1123,9 @@ body:has(.app > .board-screen) {
    drawn as the gate is: PLAY's box as its hairline in the slate, no wash, and each label a
    bar of the stipple where its word will print — so the gate lands line on line, word on
    bar. (Stated against the buttons' own rules, which come later in this sheet.) The lesson's
-   hold draws CONTINUE's slot the same way (`.l1-hold`). */
+   tray holds draw CONTINUE's or PLAY's slot the same way (`.tutorial .tray-hold`). */
 .game-hold .rules-gate > .gate-slot,
-.l1-hold .tray > .gate-slot {
+.tutorial .tray > .gate-slot {
   color: transparent;
   background: none;
   opacity: 1;
@@ -1133,11 +1133,11 @@ body:has(.app > .board-screen) {
   transition: none;
 }
 .game-hold .rules-gate > .mix-btn.gate-slot,
-.l1-hold .tray > .mix-btn.gate-slot {
+.tutorial .tray > .mix-btn.gate-slot {
   border-color: var(--rail);
 }
 .game-hold .gate-word,
-.l1-hold .gate-word {
+.tutorial .tray > .gate-slot .gate-word {
   color: transparent;
   background: var(--rail);
   -webkit-mask-image: var(--dz-2);
@@ -5410,16 +5410,31 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   height: 1em;
   vertical-align: middle;
 }
-/* (Through the dither, after the skeleton's wait — never the real call's `arrive`.) */
-.l1-hold .tray > .mix-btn.gate-slot {
+/* THE LESSON'S TRAY HELD (`.tray-hold`: its chunk's hold, and the board's while the word list
+   is out): what will land there — the button's slot, or the keyboard's unlit keys — in
+   through the dither once the skeleton's wait is over (a quick load never flashes it), never
+   the real call's `arrive`; at once where a hold already stood it (`.at-once`: the chunk's
+   hold handing over to the board's) or a read was lost (`.still`). A slot's word breathes
+   while it is out and rests at half once lost. */
+.tutorial .tray > .mix-btn.tray-hold,
+.tutorial .tray > .kb-exit.tray-hold {
   -webkit-mask-size: 16px 16px;
   mask-size: 16px 16px;
-  animation: board-dissolve 240ms linear 320ms backwards;
+  animation: board-dissolve 240ms linear 320ms backwards; /* SKELETON_WAIT_MS */
 }
-.l1-hold:not(.failed) .gate-word {
+.tutorial .tray > .mix-btn.tray-hold.at-once,
+.tutorial .tray > .mix-btn.tray-hold.still,
+.tutorial .tray > .kb-exit.tray-hold.at-once,
+.tutorial .tray > .kb-exit.tray-hold.still {
+  animation: none;
+}
+.tutorial .tray-hold:not(.still) .gate-word {
   animation: link-hold-breathe 640ms steps(1, end) 320ms infinite;
 }
-.l1-hold.failed .gate-word {
+.tutorial .tray > .tray-hold.at-once .gate-word {
+  animation-delay: 0ms;
+}
+.tutorial .tray > .tray-hold.still .gate-word {
   -webkit-mask-image: var(--dz-4);
   mask-image: var(--dz-4);
 }

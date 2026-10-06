@@ -102,6 +102,7 @@ export default function LessonBoard({
   final,
   arrivedFrom,
   clearedBefore,
+  held = false,
   onComplete,
   onPlay,
   onCleared,
@@ -121,6 +122,9 @@ export default function LessonBoard({
   arrivedFrom?: string;
   // Level 1 was already done on this device when the lesson opened: its card lands DONE.
   clearedBefore: boolean;
+  // The lesson's chunk hold already stood its tray (`LazyLevelOne`): the tray's own hold
+  // takes over from it at once, never through the skeleton's wait again.
+  held?: boolean;
   onComplete: () => void;
   onPlay: () => void;
   // The finale's card has turned DONE: the level is recorded.
@@ -659,6 +663,12 @@ export default function LessonBoard({
   }, [shownMeters, holes, lang]);
   // The word list could not be had: the keys cannot be greyed, so the tray holds still.
   const listLost = vocabError != null;
+  // While the word list is out (or lost) the tray HOLDS what will land there once it is in:
+  // the stage's button — the reveal's CONTINUE, a solved stage's CONTINUE or PLAY — as its
+  // slot, nothing on the meter stage before its tap, else the keyboard's unlit keys. In
+  // through the dither once the skeleton's wait is over (a quick list never flashes it) —
+  // at once when the chunk's hold already stood it (`held`), or when the list is lost.
+  const trayHold = `tray-hold${listLost ? ' still' : held ? ' at-once' : ''}`;
 
   return (
     // tutorial--word: the word stage is deliberately CLEAN — one big centered word in the
@@ -798,11 +808,19 @@ export default function LessonBoard({
       {/* The bottom is for INTERACTIONS: the keyboard — which drops away at the very end,
           leaving one button under the solved sentence. */}
       <div className={`tray${ending && !kbGone ? ' kb-leaving' : ''}${rising ? ' kb-rising' : ''}`}>
-        {/* THE WORD LIST STILL OUT, or LOST: the keyboard's own footprint as its HOLD —
-            breathing while the list is out, STILL once it failed (the note and RETRY then in
-            the prompt's row, above). */}
-        {listLost || !vocab ? (
-          <div className="kb-exit" aria-busy={listLost ? undefined : true}>
+        {/* THE WORD LIST STILL OUT, or LOST: the tray's HOLD (`trayHold`) — the button's slot
+            where a button lands, the keyboard's footprint where the keys do — breathing while
+            the list is out, STILL once it failed (the note and RETRY then in the prompt's
+            row, above). */}
+        {!vocab && waitingTap ? null : !vocab && (revealed || kbGone) ? (
+          <span className={`mix-btn gate-slot ${trayHold}`} aria-busy={listLost ? undefined : true}>
+            {!listLost && <span className="sr-only">{t(lang, 'loading')}</span>}
+            <span className="gate-word" aria-hidden="true">
+              {t(lang, kbGone && final ? 'tutPlay' : 'tutContinue')}
+            </span>
+          </span>
+        ) : !vocab ? (
+          <div className={`kb-exit ${trayHold}`} aria-busy={listLost ? undefined : true}>
             {!listLost && <span className="sr-only">{t(lang, 'loading')}</span>}
             <KeyboardHold still={listLost} />
           </div>
