@@ -185,8 +185,8 @@
                               (`DitherWipe.tsx`)
       components/FoilStamp.tsx  the SAVE landing: a foil band over any square mark, played in the
                               mark's own box
-      components/markHandoff.ts  the masthead's mark (its rect and the mark itself), handed to
-                              the editor's canvas
+      components/markHandoff.ts  the masthead's mark (its rect and the face it drew), handed to
+                              the editor, which opens on that face and grows its canvas out of it
       screens/Privacy.tsx     `/privacy` (#229): what the game keeps, why, and how to be rid
                               of it — the app's one DOCUMENT, its words in privacyDoc.ts
       components/LangTitle.tsx  the header's OTHER clickable title: a screen's own name, the
@@ -1459,12 +1459,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
       stands and one ellipsis says where — the SAVED ending prints the address the same way).
       A hover steps the key's corners to white in two steps; a press sinks the pencil 2px;
       under the keyboard's focus its own corners give way to `FocusBrackets`, never a frame
-      nested in a frame. The tap hands the MARK — its box and the mark itself — to the
-      editor (`markHandoff`): the mark stays FROZEN in that box while the editor reads the
-      stored profile (once the read has taken a beat, 250ms, the canvas's box breathes as
-      the stippled slate behind it), then the canvas GROWS out of it in whole-pixel steps —
-      on a phone in place, down and right from the mark's own corner (a direct load holds
-      the canvas's box as the stippled slate, then grows from its centre).
+      nested in a frame. The tap hands the MARK — its box and the face it drew — to the
+      editor (`markHandoff`), which OPENS AT ONCE on that face (the profile bullet) and GROWS
+      its canvas out of the mark in whole-pixel steps — on a phone in place, down and right
+      from the mark's own corner. With no face to hand (the masthead's read still out) the
+      mark's box stays FROZEN while the editor reads the stored profile (once the read has
+      taken a beat, 250ms, the canvas's box breathes as the stippled slate behind it); a
+      direct load holds the canvas's box as the stippled slate, then grows from its centre.
     - **THE RECORD is the screen's subject** (`components/record/`), in the streak
       celebration's own sprites: the blue FLAME over the live STREAK landing on the solved
       count's own SLOT MACHINE (`countRun.ts` at its full `COUNT_RUN_MS`: reels starting almost
@@ -1525,8 +1526,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
       fits a phone unscrolled down to ~550px tall (`EDITOR_CHROME_PX` is the CSS's own sum;
       a short phone takes a tighter dress), every offset on a whole pixel, the desktop column
       held at its full height (a pixel more where that centres it on a whole one). It GROWS
-      out of the masthead's mark (`markHandoff`: frozen where it stood while the stored
-      profile is read, a direct load growing from the centre), DRAWN at a cell 4px bigger
+      out of the masthead's mark (`markHandoff`: at once on the face handed over, frozen
+      where it stood only while a face is still to be read; a direct load growing from the
+      centre), DRAWN at a cell 4px bigger
       each step — repainted crisp at every step, never a bitmap scaled between two sizes.
       Then the SWATCHES across the frame, each the drawing itself in that palette (40px,
       four pixels a cell, in 48px targets; ONE choice — a radio group, the arrows choose —
@@ -2308,7 +2310,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the resolved account can be a RECOVERED or ADOPTED one that already holds a profile,
   and the editor's baseline there was a placeholder — a whole-profile upsert built from
   it would wipe the stored name or mark through the '' an untouched field sends. So when
-  `loadedFor` mismatches, the save FETCHES the account's stored profile first and carries
+  `loadedFor` mismatches — or is still unset because the editor's own read has not yet
+  confirmed the face it opened on (below) — the save FETCHES the account's stored profile
+  first and carries
   every untouched field forward verbatim (`guardedSaveBody`, contract-tested); only a
   field the player actually changed from the placeholder speaks, a fetch that fails
   refuses the save rather than risk the wipe, and a successful guarded save re-binds the
@@ -2316,7 +2320,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   deliberately keyed on [attempt] alone: an identity arriving under an OPEN editor (a
   deploy elsewhere, another tab) must not reload the fields out from under an edit in
   progress — the save path resolves the identity live.
-  **The editor is GATED on the initial read** (the game
+  **The editor opens AT ONCE on the face the masthead handed over** (`markHandoff`, when
+  that face is the held account's — the face the masthead just read off the same route), so
+  the canvas grows out of the mark the moment it lands; its own read runs behind it: the
+  same face changes nothing, a different one RE-BINDS the fields while nothing has been
+  edited (an edit in hand stands), a failed read leaves the editor open — and until the
+  read has answered `loadedFor` stays unset, so a SAVE is GUARDED (above): the face handed
+  over may be the assigned one a failed masthead read stood in with.
+  **Otherwise the editor is GATED on the initial read** (the game
   route's own loading / error / content shape): an editable blank shown while the GET
   is in flight would be edited into and then overwritten by the response, and a FAILED
   read leaves the stored profile unknown — an editor started from that guess would save

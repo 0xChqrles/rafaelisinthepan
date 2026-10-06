@@ -387,8 +387,36 @@ export default function Profile() {
     // A cell's pop belongs to the edit that made it: re-bound fields start with none.
     fx.current?.clear();
     setLinePalette(null);
-    setBaseline({ name: shownName, avatar: shownAvatar });
+    const opened = { name: shownName, avatar: shownAvatar };
+    setBaseline(opened);
+    return opened;
   };
+
+  // THE MARK HANDED OVER by the masthead's tap (`markHandoff`), taken once as the editor opens:
+  // the box the mark stood in, and the face it drew. A note that cannot be that mark (off the
+  // screen, the wrong size) is dropped: the canvas then grows from its own centre. Taken before
+  // the read below, which opens the editor on that face at once.
+  const [handed, setHanded] = useState<HandedMark | null>(null);
+  const handedRef = useRef<HandedMark | null | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (handedRef.current !== undefined) return;
+    const note = takeMark();
+    const box = note?.rect;
+    const usable =
+      box !== undefined &&
+      box.width >= 20 &&
+      box.width <= 120 &&
+      Math.abs(box.width - box.height) < 1 &&
+      box.bottom > 0 &&
+      box.top < window.innerHeight &&
+      box.right > 0 &&
+      box.left < window.innerWidth;
+    handedRef.current = usable ? note : null;
+    setHanded(handedRef.current);
+  }, []);
+  // Whether the fields differ from what the editor opened on, for the read below: an answer
+  // that lands after an edit never re-binds the fields under it.
+  const dirtyRef = useRef(false);
 
   // Read this identity's stored profile, and hold the editor back until it answers
   // (see LoadState). A 404 is the answer "never customized" and lands READY on the
@@ -401,9 +429,21 @@ export default function Profile() {
   // actually changed. Deliberately keyed on [attempt] alone: an identity arriving under
   // an OPEN editor (a deploy elsewhere, another tab) must not reload the fields out from
   // under an edit in progress — the save path resolves the identity live.
-  useEffect(() => {
+  //
+  // OPENED FROM THE MASTHEAD, the editor opens AT ONCE on the face handed over with the mark
+  // (`markHandoff`) when it is this account's — the face the masthead just drew, read off the
+  // same route — so the canvas grows out of the mark the moment it lands, never parked over a
+  // canvas still waiting. The read then runs behind it: an answer naming the same face changes
+  // nothing; a different one RE-BINDS the fields while nothing has been edited, and leaves an
+  // edit standing. Until it has answered, `loadedFor` stays unset, so a SAVE is GUARDED (the
+  // stored profile read first, only the fields the player changed written) — the face handed
+  // over may be the assigned one a failed read stood in with, never proof of what is stored.
+  // A layout effect, so a face in hand is drawn on the very first frame.
+  useLayoutEffect(() => {
     let cancelled = false;
     let epoch: string | null = null;
+    let opened: { name: string; avatar: string } | null = null;
+    const face = attempt === 0 ? (handedRef.current?.face ?? null) : null;
     setLoad('loading');
     (async () => {
       try {
@@ -420,14 +460,30 @@ export default function Profile() {
         epoch = identityEpochOf(held);
         const publicId = held.accountId;
         setAssignedFrom(publicId);
-        setLoadedFor(publicId);
+        if (face?.publicId === publicId) {
+          opened = openOn(face.name, face.avatar, publicId);
+          setLoad('ready');
+        } else {
+          setLoadedFor(publicId);
+        }
         const stored = await readStoredProfile(publicId);
         if (cancelled || identityEpoch() !== epoch) return;
+        if (opened !== null) {
+          const same =
+            nameForEditor(stored?.name ?? '', publicId) === opened.name &&
+            avatarForEditor(stored?.avatar ?? null, publicId) === opened.avatar;
+          if (!same && dirtyRef.current) return;
+          if (!same) openOn(stored?.name ?? '', stored?.avatar ?? null, publicId);
+          setLoadedFor(publicId);
+          return;
+        }
         // Never customized (null): open on the assigned identity the boards already show
         // (see the gating note above) — the same READ halves, over an empty row.
         openOn(stored?.name ?? '', stored?.avatar ?? null, publicId);
         setLoad('ready');
       } catch {
+        // An editor opened on the face handed over stays open on it: the save is guarded.
+        if (opened !== null) return;
         // App remounts on an identity departure, but the fence is still explicit here:
         // a late malformed body/fetch failure from A must not turn B's fresh editor into a
         // failure if the component lifecycle and the answer cross in the same turn.
@@ -655,6 +711,7 @@ export default function Profile() {
   // sent verbatim — so the two strings compared here are the same two strings the
   // route holds, and the re-baseline below is exact.
   const dirty = name !== baseline.name || encoded !== baseline.avatar;
+  dirtyRef.current = dirty;
   // What the canvas SHOWS: the drawing, or the dice's churn over it while it rolls. What the
   // swatches and the board line preview: the drawing, held on the one the roll started from
   // while the die is rolling.
@@ -726,28 +783,6 @@ export default function Profile() {
     };
   }, []);
 
-  // THE MARK HANDED OVER by the masthead's tap (`markHandoff`), taken once as the editor opens:
-  // while the stored profile is read the mark stays FROZEN in the very box it stood in, and the
-  // canvas then grows out of it. A note that cannot be that mark (off the screen, the wrong
-  // size) is dropped: the canvas then grows from its own centre.
-  const [handed, setHanded] = useState<HandedMark | null>(null);
-  const handedRef = useRef<HandedMark | null | undefined>(undefined);
-  useLayoutEffect(() => {
-    if (handedRef.current !== undefined) return;
-    const note = takeMark();
-    const box = note?.rect;
-    const usable =
-      box !== undefined &&
-      box.width >= 20 &&
-      box.width <= 120 &&
-      Math.abs(box.width - box.height) < 1 &&
-      box.bottom > 0 &&
-      box.top < window.innerHeight &&
-      box.right > 0 &&
-      box.left < window.innerWidth;
-    handedRef.current = usable ? note : null;
-    setHanded(handedRef.current);
-  }, []);
   // A read that FAILED lets the handed mark go: the box is the still slate now, and a RETRY
   // breathes the slate in the canvas's box and grows from its centre, like a direct load —
   // never the masthead's small mark back in the corner it stood in on a screen left behind.
@@ -955,7 +990,7 @@ export default function Profile() {
   // one deploy that bypasses that (`withoutLocalIdentityDeploy` in `onSave`): an UNTOUCHED
   // placeholder name stores as the empty name, so a tokenless player's first SAVE leaves them
   // wearing their new account's own pseudonym, in the placeholder ink.
-  const anon = name === '' || (loadedFor !== null && name === anonName(loadedFor));
+  const anon = name === '' || (identity !== null && assignedFrom === identity.accountId && name === anonName(assignedFrom));
   // An emptied field shows what a board would print in its place: the assigned pseudonym, muted.
   const shownWhenEmpty = assignedFrom ? anonName(assignedFrom) : t(lang, 'profileNamePlaceholder');
   const empty = cells.every((value) => value === 0);
@@ -1190,8 +1225,9 @@ export default function Profile() {
           </>
         )}
       </div>
-      {/* The mark handed over by the masthead, FROZEN where it stood while the stored profile
-          is read — the canvas grows out of this very box once it has answered. */}
+      {/* The mark's box handed over by a masthead that had no face to hand (its own read still
+          out), FROZEN where it stood while the stored profile is read — the canvas grows out of
+          this very box once it has answered. */}
       {load === 'loading' && handed && (
         <span
           className="profile-handed"
@@ -1203,11 +1239,7 @@ export default function Profile() {
           }}
           aria-hidden="true"
         >
-          {handed.avatar ? (
-            <Avatar avatar={handed.avatar} size={Math.round(handed.rect.width)} sharp />
-          ) : (
-            <StatSlot phase="loading" />
-          )}
+          <StatSlot phase="loading" />
         </span>
       )}
     </>

@@ -139,15 +139,15 @@ export default function Account() {
   const words = face !== null && (known || phase === 'failed' || landedFor.current === face.publicId);
   if (words) landedFor.current = face.publicId;
 
-  // THE DOOR TO THE EDITOR (the pencil key) hands the MARK's on-screen box over, so the
-  // editor's canvas grows out of exactly where the mark stood (`markHandoff`).
+  // THE DOOR TO THE EDITOR (the pencil key) hands the MARK over — its on-screen box and the face
+  // it drew — so the editor opens at once on that face and its canvas grows out of exactly where
+  // the mark stood (`markHandoff`).
   const markRef = useRef<HTMLSpanElement>(null);
-  const handedAvatar = face ? (face.avatar ?? defaultAvatar(face.publicId)) : null;
   const openEditor = useCallback(() => {
     const rect = markRef.current?.getBoundingClientRect();
-    if (rect && rect.width > 0) handOffMark(rect, handedAvatar);
+    if (rect && rect.width > 0) handOffMark(rect, face);
     navigate(PROFILE_PATH);
-  }, [handedAvatar]);
+  }, [face]);
 
   return (
     <>
