@@ -40,16 +40,18 @@ const TRAVEL_MS = 300;
 
 const lengthInk = (d: number) => heatColor(1 - d / FAR);
 
-// How far a length may step off its line to clear a square or a name (CSS px), and the air
-// it keeps from a name (so a length never reads as the name's own figure).
-const MAX_LIFT = 48;
-const NAME_AIR = 10;
+// How far a length may step off its line to clear a square or a name, in its own lines (the
+// length's box), and the air it keeps from a name in the names' glyphs — TWO beside it on its
+// rows, half of one above or below — so a length never reads as the name's own figure.
+const MAX_LIFT_LINES = 3;
+const NAME_AIR_X = 2;
+const NAME_AIR_Y = 0.5;
 type Box = { left: number; top: number; width: number; height: number };
-const overlaps = (a: Box, b: Box, air: number) =>
-  a.left < b.left + b.width + air &&
-  b.left < a.left + a.width + air &&
-  a.top < b.top + b.height + air &&
-  b.top < a.top + a.height + air;
+const overlaps = (a: Box, b: Box, airX: number, airY = airX) =>
+  a.left < b.left + b.width + airX &&
+  b.left < a.left + a.width + airX &&
+  a.top < b.top + b.height + airY &&
+  b.top < a.top + a.height + airY;
 
 export default function Plane({
   states,
@@ -152,10 +154,11 @@ export default function Plane({
               const ay = px(cy(p.y));
               const bx = px(cx(q.x));
               const by = px(cy(q.y));
-              // The length sits ON its line, unless its box would cover a square or a name (a
-              // pair too close for it, a name beside the line): then it steps off along the
-              // normal, a cell at a time until it is clear, away from the words' names — below
-              // the line when both name above, above otherwise.
+              // The length sits ON its line, unless its box would cover a square or come near a
+              // name (a pair too close for it, a name beside the line): then it steps off along
+              // the normal, a cell at a time until it is clear — away from the words' names
+              // first (below the line when both name above, above otherwise), the other way if
+              // that side has no room.
               const away = p.label !== 'below' && q.label !== 'below' ? -1 : 1;
               const len = Math.hypot(bx - ax, by - ay) || 1;
               const sign = Math.sign(bx - ax || 1);
@@ -172,10 +175,16 @@ export default function Plane({
                   width: 2 * half,
                   height: 2 * half,
                 }));
-                return !squares.some((o) => overlaps(box, o, LENGTH_PAD)) && !names.some((o) => overlaps(box, o, NAME_AIR));
+                return (
+                  !squares.some((o) => overlaps(box, o, LENGTH_PAD)) &&
+                  !names.some((o) => overlaps(box, o, NAME_AIR_X * namePx, NAME_AIR_Y * namePx))
+                );
               };
-              let lift = 0;
-              while (!clear(at(lift)) && Math.abs(lift) < MAX_LIFT) lift += CELL * away;
+              const reach = MAX_LIFT_LINES * h;
+              const lifts = [away, -away].flatMap((dir) =>
+                Array.from({ length: Math.floor(reach / CELL) + 1 }, (_, k) => dir * k * CELL),
+              );
+              const lift = lifts.find((l) => clear(at(l))) ?? away * reach;
               const { x: mx, y: my } = at(lift);
               return (
                 <span
