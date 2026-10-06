@@ -13,7 +13,7 @@ import { nextErrorVariant, ERROR_VARIANT_NAMES, errorPreviewFromSearch } from '.
 describe('errorPreviewFromSearch', () => {
   it('reads a named variant in development', () => {
     expect(errorPreviewFromSearch('?error=account', true)).toBe('account');
-    expect(errorPreviewFromSearch('?foo=x&error=avatar', true)).toBe('avatar');
+    expect(errorPreviewFromSearch('?foo=x&error=leave', true)).toBe('leave');
     expect(errorPreviewFromSearch('?error=giveUp', true)).toBe('giveUp');
   });
 

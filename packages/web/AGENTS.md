@@ -92,10 +92,13 @@
       state/groupActs.ts      the group ACTS every surface shares: `writeGroups` (the deploy,
                               the signed POST, the answer read off its code, the list adopted;
                               an UNKNOWN outcome — a 5xx, a transport failure, no code — reads
-                              the list again before it says anything), `createGroup` (a create
-                              that did land is found in that re-read, never sent twice),
-                              `failureOf` + `groupFailureCopy` (what the error surface says)
-                              and `inviteText` — the board's and the result's seat's
+                              the list again before it says anything), `createGroup`,
+                              `leaveGroup`, `removeMember` (an act that did land is found in
+                              that re-read — a create never sent twice, a leave or a remove
+                              never said to have failed), `createVerdictOf` (what the naming
+                              screen answers at its line), `failureOf` + `groupFailureCopy`
+                              (what the error surface says, named by the act) and `inviteText`
+                              — the board's and the result's seat's
       state/liveBoard.ts      the LIVE read (`POST /board {token, live: true}`): all my groups
                               merged — the ONE module asking it, throttled (`LIVE_REFRESH_MS`;
                               the read asked as the round ends goes at once), for the race line
@@ -184,9 +187,13 @@
       components/DeviceList.tsx  the account's devices + SIGN OUT, as board lines on `/account` (#216)
       components/BusyButton.tsx  a button whose act is OUT: the app's one busy dress (the act's
                               word kept, `aria-busy`, the charge after `SKELETON_WAIT_MS`)
-      components/ErrorScreen.tsx  the app's error surface: a FULL-SCREEN modal led by the
-                              user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet);
-                              ONE quiet way out since 2026-09-03 — no TRY AGAIN
+      components/ErrorScreen.tsx  the app's error surface for an ACT that did not land: a
+                              FULL-SCREEN modal in the full-screen moment's frame, led by the
+                              user-drawn ERROR BOT, the title naming what was lost; ONE way
+                              out, GO BACK — no TRY AGAIN
+      components/ScreenFrame.tsx  the full-screen moment's frame: the four corner brackets and
+                              the WHIPPIN AI lockup (`Lockup`, standing still) — worn by
+                              SignedOut, ErrorScreen, ConfirmScreen and the invite landing
       state/roundSync.ts      the #201 sync engine, reworked by #214: coalesced prefix writes,
                             the transient server snapshot it publishes for the screen, the
                             outbox it settles by identity, cap + freeze, #203's round-start
@@ -247,8 +254,10 @@
                               screen, the name inked in on CREATE (the solve's beat); it folds
                               onto the surface that opened it (the board, or the result's seat)
       components/ConfirmScreen.tsx  the app's CONFIRMATION surface (#271): the error screen's
-                              shape in the plain voice, the act as the quiet danger control
-                              over CANCEL; the leave's successor picker rides it (its `choice`)
+                              shape and frame in the plain voice, the stake over the title, the
+                              act as the quiet danger control over CANCEL on the bottom edge;
+                              the give-up, the remove and the leave ride it (the leave's
+                              successor picker under the note, its `choice`)
       components/SuccessorPick.tsx  that picker: the other members as lines in resting slate
                               corners, the pick locking on in white, a dithered foot while
                               more lie below
@@ -1356,6 +1365,28 @@ it to the local store — see `packages/backend/AGENTS.md`).
       ARRIVE, locking on, when the countdown hits zero, and give way to `FocusBrackets` under
       the keyboard's focus (never a frame nested in a frame) — CHANGE ADDRESS is gone,
       the header's back goes code → address.
+    - **EVERY VERDICT OF THE FLOW ANSWERS IN PLACE; only an ACT that did not land takes the
+      screen**: a SEND (a 503 `mail_unavailable`, a dropped connection: the `ErrorScreen`'s
+      CODE NOT SENT), or a VERIFY whose outcome is UNKNOWN — a dropped connection, a 5xx, an
+      answer the flow cannot read (a link it cannot parse, a confirmation naming no account, a
+      code it does not know; `readVerifyAnswer`, contract-tested) — once the token's account
+      has been read again and shows nothing landed (`recoverAmbiguous`): CODE NOT CHECKED from
+      the code step (the code cleared, so typing it checks it again), STILL ON THIS ACCOUNT
+      from the crossroads (the code kept, so its button presses again). Never a line telling
+      the player to type the code again: an unreadable answer would only come back the same.
+      A code that accepts nothing more — expired, `code_spent`, or the last wrong attempt once
+      its shake has played — keeps the player ON THE CODE STEP: the keys go DEAD in their own
+      material (`CodeInput`'s `dead`: emptied, thinned to half their cells through the Bayer
+      complement `--dzo-4` in hard steps, taking nothing), the held line says why, and RESEND
+      is the step's one live act — the bracketed `.quiet-btn`, its countdown waived — whose
+      landing brings the keys back through their arrival's dissolve. **A verdict on the code
+      pressed from the CROSSROADS steps back to the code step and answers there** (it has no
+      keys of its own): the step comes back in through the crossroads' own dissolve, the keys
+      dead with RESEND live, or — a wrong code, the challenge having been replaced by another
+      send — cleared over the tries left. Too many sends (429) is the danger note under
+      CONTINUE, or the held line when RESEND asked; the next answer to a send replaces the
+      note, and a send that lands leaves none. Every held line is ONE line at 320px, so
+      nothing under it moves.
     - **THE CROSSROADS, NOT A WARNING:** both accounts drawn — the one being left THINNED
       THROUGH THE BAYER DITHER, never an opacity (under DELETED, the area's one red, a GHOST:
       its ink to half its cells, its ground given up for the slate stipple, its three numbers
@@ -1690,7 +1721,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
       save that LANDS is the screen's one shiny thing — the FOIL STAMP over the canvas, laid
       on the cells' own pitch (a band sweeps, the ink holds in foil — the DEEP foil on a light
       ground — then dissolves back in 8 Bayer steps), the brackets lock on, the line's mark
-      hops; a REFUSED one shakes the frame, then the `ErrorScreen`. `FoilStamp` is ONE
+      hops. A save the moderation REFUSES answers AT THE EDITOR, never on the
+      `ErrorScreen`: a refused name shakes the name's field (AddressField's shake) and stands
+      in the danger ink until it is edited; a refused drawing shakes the canvas's frame and
+      stands until the drawing changes; either way ONE danger note under the name's line
+      (`.profile-refusal`, out of the flow on the air above SAVE, so nothing moves). A save
+      that did not LAND (a failed deploy, a transport failure) shakes the frame, then the
+      `ErrorScreen`. `FoilStamp` is ONE
       implementation for any square mark of any whole-pixel size, played in its box, its
       grain always dividing the mark's own pixel.
   - **THE 2026-08-30 PASS, from the mobile navigation review.** Four corrections, each
@@ -1842,7 +1879,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **CONTINUE is a DEPLOY BUTTON**, the sixth (#216's five plus this one), and it has to
     be: an email link needs an account to bind, and "this device is empty" is exactly the
     reconnect case. It wears the shape that rule defines — one tap chaining the bootstrap,
-    the button busy, failures on the `ErrorScreen` — and TWO Turnstile tokens are
+    the button busy, a send that did not land on the `ErrorScreen` (its verdicts answer in
+    place, the code prompt's bullet above) — and TWO Turnstile tokens are
     prefetched while the address is typed, since a tokenless device spends one on the
     bootstrap and one on the send. Every other leg uses `currentRequestIdentity` and stands
     down when there is none.
@@ -2021,16 +2059,30 @@ it to the local store — see `packages/backend/AGENTS.md`).
 
 - **THE ERROR SCREEN HAS ONE WAY OUT (user-decided 2026-09-03: "get rid of the retry
   button… it's weird to retry from a fullscreen error page, just go back and retry if you
-  want").** `ErrorScreen` carried a lit TRY AGAIN wherever asking again could help
-  (2026-08-24), with GO BACK as its secondary; it carries a single SECONDARY that dismisses
-  now. The act that failed belongs to the screen underneath — the typed address, the
+  want").** Its one control is GO BACK, the bracketed quiet word (`.quiet-btn`); nothing on
+  it is lit. The act that failed belongs to the screen underneath — the typed address, the
   drawing, the gate are all still there — and the honest gesture is to go back to it and
-  press the same button again. Gone with it: the `onRetry` prop and its seven wirings, the
-  `retry` flag on `AccountEmail`'s refusals and `Profile`'s save error, the `tryAgain` string,
-  `errorPreview`'s retry shape and its "both layouts" test, and the synchronous-in-tap rule
-  the retry needed on WebKit (the act is re-run inside its own fresh tap now). A READ that
-  failed keeps its RETRY, in place (next bullet): that is a screen that could not open, where
-  this is an act that did not land.
+  press the same button again, inside that button's own fresh tap. Gone with it: the
+  `onRetry` prop and its seven wirings, the `retry` flag on `AccountEmail`'s refusals and
+  `Profile`'s save error, the `tryAgain` string, `errorPreview`'s retry shape and its "both
+  layouts" test, and the synchronous-in-tap rule the retry needed on WebKit. A READ that
+  failed keeps its RETRY, in place (below): that is a screen that could not open, where this
+  is an act that did not land.
+- **THE APP'S TWO FULL-SCREEN MESSAGES WEAR THE FULL-SCREEN MOMENT'S DRESS** (the
+  `ErrorScreen` and the `ConfirmScreen`, the signed-out screen's): `ScreenFrame`'s four
+  corner brackets and WHIPPIN AI lockup — the corners the one place brackets frame
+  something not tapped, the frame of the whole moment — the message in the column's
+  middle, the calls PARKED ON THE BOTTOM EDGE in `.signed-out-calls`' geometry (inside the
+  corners, 44px off the edge; on desktop one centred block). They come in over the screen
+  they answer through the board's Bayer dissolve (`board-dissolve`, the backdrop
+  transparent) and leave the same way (`board-dissolve-out`, `useModalDismiss`'s exit),
+  never a fade. The error's TITLE names WHAT WAS LOST in the chrome voice, never a bare
+  FAILED (`GROUP NOT CREATED`, `STILL IN THE GROUP`, `CODE NOT SENT`), its note a sentence;
+  the bot and its ERROR ! balloon are one drawing in every language. **The error screen is
+  for an ACT that did not land, never for a VERDICT on what the player typed**: a refused
+  name or drawing, a code that expired, a group name the filter refuses or the group cap
+  answer where the next act happens (the profile editor, the code step, the naming
+  screen). `?error=<variant>` (`dev/errorPreview.ts`) previews each real call site's copy.
 - **A READ THAT FAILED IS SAID IN PLACE (`components/QuietFailure.tsx`).** The surface keeps
   its OWN loading picture, held STILL — the stipple at the Bayer order's half (`--dz-4`, the
   `.stat-slot` checker), nothing breathing — and says, in a place of that picture's own, ONE
@@ -2306,7 +2358,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (`canGiveUp`) once the round holds a guess, not finished, the gate closed, no reveal
     standing or decoding, the prompt not leaving; never in the tutorial (it lives in
     `Game`, not in `Keyboard`). A tap opens the `ConfirmScreen` (`giveUpTitle` /
-    `giveUpNote` / `giveUpAction`, busy while in flight); its act calls
+    `giveUpNote` / `giveUpAction`, busy while in flight), its STAKE over the title the `∞`
+    the result will print (`InfinityGlyph` at 8px a cell, `--muted`, thinned to half its
+    cells through `--dz-4`: what the round becomes, not yet what it is); its act calls
     `giveUpRound(roundKey)` (the sync bullet below); a `false` answer raises the
     `ErrorScreen` (`failedGiveUp` / `failedGiveUpNote`, also an `?error=giveUp` preview).
     A give-up confirmed on THIS device (`giveUpHere`, set before the request so the render
@@ -2531,9 +2585,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   block: the copyable-key/paste-to-link UI was removed with `adoptPlayerSecret` (the
   backup affordance's future surface is an open decision — root `AGENTS.md`). Saving
   POSTs `{token, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);
-  server refusals surface on the app's `ErrorScreen` (#216 trigger rework — title +
-  explanatory note; the moderation refusals offer no retry, a transport failure and a
-  failed deploy carry TRY AGAIN, which re-runs the whole single-tap save).
+  the two moderation refusals answer AT THE EDITOR (the profile area's dress, below), and
+  a save that did not land — a transport failure, a failed deploy — raises the
+  `ErrorScreen`, SAVE pressed again re-running the whole single-tap save.
   **OPENING THE EDITOR DEPLOYS NOTHING and SAVING deploys (user-decided 2026-08-24):**
   a tokenless editor opens WITHOUT any request, prefilled from the LOCAL placeholder
   identity (the persisted `gameStore.localSeed`, the leaderboard strip's own face) with
@@ -2933,10 +2987,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     result leaving the app (the three-event invariant), and counting invite links into it
     would silently redefine what the number measures). NEW GROUP is ONE TAP for a tokenless
     device (the mint, then the create, the button busy for both); INVITE needs a
-    group, hence an account. Failures land on the `ErrorScreen` — `failedAccount`,
-    `failedShare`, `groupLimit`, `groupNameRejected` (a banned name), `failedGroup` — read
-    off the answer's code by `state/groupActs.ts`, the result's seat's acts too; an unknown
-    outcome reads the list again first, so the screen behind the error shows what stands.
+    group, hence an account. An act that did not land speaks on the `ErrorScreen`, named by
+    what was lost — `failedAccount`, `failedShare`, `failedCreate`, `failedLeave`,
+    `failedRemove` — read off the answer's code by `state/groupActs.ts`, the result's seat's
+    acts too; an unknown outcome reads the list again first, and a create, a leave or a
+    remove that did land behind a lost answer is found there and said to have landed, so
+    the screen behind the error shows what stands. A create's own refusals answer at the
+    naming screen's line (below).
   - **THE GROUP'S OWN SCREEN (`GroupScreen`, user-decided 2026-09-14: "managing the group
     should have its own screen")** is a full-screen dialog in the selection's shell — the
     way back and the name in the header, the MEMBERS as the board's LINES
@@ -2964,13 +3021,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
     INKED IN — the solve's cobalt pixel word with the hit's shake, held `INKED_MS` (1100ms)
     — and the screen folds itself onto the surface that opened it, already on the new group
     (the board's tab, or the result's seat); an empty name shakes the line, the invalid
-    guess's own answer. A name the server refuses (`name_rejected`) has its own refusal
-    (`groupNameRejected` on the `ErrorScreen`), the naming screen kept up under it with
-    the name; any other failure keeps it up the same way. BOTH DESTRUCTIVE ACTS CONFIRM ON A
+    guess's own answer. **What the server refuses about the create is answered AT THE
+    LINE, never on the `ErrorScreen`** (`createVerdictOf`, on the board's and the seat's
+    naming screen alike): a banned name (`name_rejected`) shakes the line and stands in the
+    danger ink, the name kept, with one note under it until it is edited; the player's own
+    cap (`group_limit`) is the note alone (`{n} groups max`, `GROUPS_MAX`) and CREATE
+    stays dark for the screen's life. The note hangs under the line out of the flow, in the
+    air the stage keeps above CREATE, so nothing moves when it speaks. Any other failure keeps the screen up, the name
+    kept, under the `ErrorScreen`'s GROUP NOT CREATED. BOTH DESTRUCTIVE ACTS CONFIRM ON A
     FULL-SCREEN MODAL (`ConfirmScreen`, user-decided 2026-09-14 — "for such an important
     action, we actually need a fullscreen modal", replacing the two-tap word swap `LEAVE?`
     / `REMOVE?`): the member's face or the group's name over the act's title, one
-    sentence, the act as the DANGER cap, CANCEL as the quiet word. The leave's note follows
+    sentence, the act as the quiet DANGER button with CANCEL as the word under it on the
+    bottom edge (the full-screen dress, above). The leave's note follows
     the SUCCESSION RULE (root `AGENTS.md`, Groups) off the list on screen: last member →
     "the group will be deleted"; owner of two → "the other member takes it over"; owner of
     three or more → a PICKER of the others UNDER THE NOTE, read after the question it
@@ -4145,7 +4208,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     publishes puts the seat on the new group, named on the tab, INVITE on the call, before
     the naming screen folds — nothing replays), or INVITE (`useShare({tracked: false})`,
     `inviteText`). Its click goes no further than the call, and a swipe's opens nothing.
-    Failures land on the `ErrorScreen`, portaled outside the panel (an event bubbles
+    A refused name or the cap answers at the naming screen's line; an act that did not land
+    speaks on the `ErrorScreen`, portaled outside the panel (an event bubbles
     through a portal to its React parents). No analytics event. A sideways SWIPE
     on the rows turns the tab too (`hooks/useSwipe`, the board screen's and the archive's
     grid's too: `touch-action: pan-y pinch-zoom`; 40px, mostly sideways; a finger's or a
@@ -4195,8 +4259,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **Since the #216 trigger rework the gate is also the sentence game's DEPLOY BUTTON**: a
   device with NO account shows it on every sentence day (archive days and post-sign-out
   included), whatever is done, because its PLAY is the only trigger on the screen — the tap
-  bootstraps the account (the button busy, the `ErrorScreen` on failure, nothing created on
-  a failure) and then opens the round. The round engine's append NEVER
+  bootstraps the account (the button busy; on a failure the `ErrorScreen`'s ACCOUNT NOT
+  CREATED, nothing created, its GO BACK returning to PLAY to press again) and then opens the
+  round. The round engine's append NEVER
   mints an identity (`currentRequestIdentity`): a tokenless outbox — the pending-bootstrap
   recovery — waits behind the gate, and the deploy's identity listener kicks every
   conversation loose (`kickRoundSync`).

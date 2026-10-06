@@ -1,54 +1,45 @@
 import useModalDismiss from '../hooks/useModalDismiss';
-import Button from './Button';
 // (For its side effect: the root's Bayer tiles the screen comes and goes through.)
 import './bayerTiles';
+import ScreenFrame from './ScreenFrame';
 import { t } from '../i18n';
 import botIdle from '../assets/error-bot-idle.png';
 
-// The app's ONE error surface for a PRIMARY ACTION that failed (#216 trigger rework,
-// user-decided 2026-08-24). It exists for the five account-deploying buttons — the two PLAY
-// gates, the invite accept, the invite send, the profile save — plus the profile editor's two
-// moderation refusals, whose failures used to be inline lines with as many spellings as
-// surfaces. A READ that failed is said in place instead (`QuietFailure`, over the surface's
-// own loading picture held still): that is a screen that could not open, where this is an ACT
-// that did not land.
+// The app's ONE error surface for an ACT that did not land (#216 trigger rework, user-decided
+// 2026-08-24): the account-deploying buttons (the PLAY gate, the invite accept, the profile
+// save), a group act (create, leave, remove, invite), the give-up, and the email flow's SEND.
+// A READ that failed is said in place instead (`QuietFailure`, over the surface's own loading
+// picture held still): that is a screen that could not open, where this is an act that did
+// not land. A VERDICT ON WHAT THE PLAYER TYPED is never here — a refused name, a refused
+// drawing, a code that expired: those answer at the field, where the player's next act
+// happens (the email code step, the profile editor, the naming screen).
 //
-// **IT IS A FULL-SCREEN MODAL, NOT A SHEET (user-decided 2026-08-27).** It shipped as a
-// centred popup on desktop and a bottom sheet on a phone, and that was the wrong FORMAT for
-// what this box does: a sheet is the dismissal gesture's own shape — it slides up from the
-// edge and asks to be swiped away — while every message here is a CALL TO ACTION. The
-// account one is the sharpest case: the account is what PLAY deploys, so a player who
-// dismisses it has not tidied a notification away, they have declined to play. A surface
-// that reads as disposable cannot carry that. So it takes the whole screen and leads with
-// its action.
+// **IT IS A FULL-SCREEN MODAL, NOT A SHEET (user-decided 2026-08-27).** A sheet is the
+// dismissal gesture's own shape — it slides up from the edge and asks to be swiped away —
+// while every message here is about an act the player meant. So it takes the whole screen.
+//
+// **IT WEARS THE FULL-SCREEN MOMENT'S FRAME** (the signed-out screen's and the streak
+// celebration's: the four corner brackets and the WHIPPIN AI lockup, `ScreenFrame`), so it
+// reads as the app's own screen rather than an error page; it comes in through the board's
+// Bayer dissolve over the screen it answers, and leaves the same way (`board-dissolve-out`).
 //
 // **THE MESSENGER IS THE ERROR BOT (user-drawn, 2026-08-27), and it SPEAKS the error.** A
-// big fail cross was the first cut and it was replaced the same day: a cross is a verdict
-// stamped ON the player, where a character delivering bad news is the game's own voice —
-// the app already talks to you through the tutorial's coach and the pixel ghost, and this is the
-// one screen that only ever appears when something went wrong. `error-bot-idle.png` is a
-// 4-frame 32x32 idle bob, and `error-speech-ballon.png` is the balloon it speaks through —
-// outline, ERROR !, starbursts and tail, all drawn (user-decided 2026-08-27, replacing a
-// CSS rebuild of the same shape around live Press Start 2P text: the art is one file and
-// one integer scale, where the rebuild was four clip-path layers to say a fixed word).
+// character delivering bad news is the game's own voice. `error-bot-idle.png` is a 4-frame
+// 32x32 idle bob, and `error-speech-ballon.png` the balloon it speaks through — ERROR ! is
+// part of the drawing, one word in every language like MISS and STREAK.
 //
-// The stack, top to bottom: the bot saying ERROR ! · WHAT failed (chrome voice, all-caps,
-// in the danger ink) · what happened and what to do about it (coach voice — sentence case,
-// the one mono surface the all-caps rule exempts, because it explains rather than labels) ·
-// ONE quiet way out.
+// The stack: the bot saying ERROR ! · WHAT was lost (chrome voice, all-caps, the danger ink:
+// "GROUP NOT CREATED", never a bare "FAILED") · what to do about it (a sentence) · and, on the
+// bottom edge where the signed-out screen parks its calls, ONE quiet way out.
 //
-// **THERE IS NO TRY AGAIN (user-decided 2026-09-03, retiring the primary it carried since
-// 2026-08-24).** A full-screen error page is not a place to retry FROM: the act that failed
-// belongs to the screen underneath, and the honest gesture is to go back to it and press the
-// same button again — where the state it needs (the typed address, the drawing, the gate) is
-// still on screen. What the retry bought was one tap; what it cost was a lit primary on a
-// page whose only real message is "that did not work", and a second button competing with
-// the way out. So the surface is the bot, the title, the note, and a single SECONDARY that
-// dismisses — the note says what to do, and the screen under it is where to do it.
+// **THERE IS NO TRY AGAIN (user-decided 2026-09-03).** The act that failed belongs to the
+// screen underneath, where the state it needs (the typed address, the drawing, the gate) is
+// still on screen; the honest gesture is to go back to it and press the same button again.
+// So the way out is GO BACK, the bracketed quiet word — nothing on the page is lit.
 //
-// Follows the modal rules (`useModalDismiss`) for DISMISSAL: opening focuses the dialog, a
-// backdrop tap is not one (there is no backdrop left to tap), and Escape leaves through the
-// `board-dissolve-out` exit beat — in and out through the dither, never an opacity fade.
+// Follows the modal rules (`useModalDismiss`): opening focuses the dialog, there is no
+// backdrop to tap, and Escape leaves through the same exit — in and out through the dither,
+// never an opacity fade.
 export default function ErrorScreen({
   lang,
   title,
@@ -56,9 +47,9 @@ export default function ErrorScreen({
   onClose,
 }: {
   lang: string;
-  // WHAT failed, in the chrome voice (all-caps, localized upstream).
+  // WHAT was lost, in the chrome voice (all-caps, localized upstream).
   title: string;
-  // What happened and what to do about it — a sentence, not a code.
+  // What to do about it — a sentence, not a code.
   note: string;
   onClose: () => void;
 }) {
@@ -71,18 +62,21 @@ export default function ErrorScreen({
       aria-label={title}
       onClose={onClose}
     >
+      <ScreenFrame />
       <div className="error-body">
-        {/* Decorative: the balloon says ERROR, the TITLE below says what actually failed,
-            and a reader hearing both would hear the bad news twice. */}
+        {/* Decorative: the balloon says ERROR, the TITLE below says what was lost, and a
+            reader hearing both would hear the bad news twice. */}
         <div className="error-bot" aria-hidden>
           <div className="error-balloon" />
           <div className="error-bot-sprite" style={{ backgroundImage: `url(${botIdle})` }} />
         </div>
         <p className="error-title">{title}</p>
         <p className="error-note">{note}</p>
-        <Button variant="secondary" onClick={beginClose}>
+      </div>
+      <div className="error-calls">
+        <button type="button" className="quiet-btn" onClick={beginClose}>
           {t(lang, 'errorDismiss')}
-        </Button>
+        </button>
       </div>
     </dialog>
   );

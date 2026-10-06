@@ -52,7 +52,7 @@ import { anonName, defaultAvatar } from '@whippin/shared';
 import { readProfile, type ProfileRead } from '../api';
 import Avatar from '../components/Avatar';
 import Button from '../components/Button';
-import Lockup from '../components/Lockup';
+import ScreenFrame from '../components/ScreenFrame';
 // The Bayer tiles on the root (`--dz-*`) that thin the ghost and stipple its hold.
 import '../components/bayerTiles';
 import { startFreshDevice, useSignedOutAccount } from '../identity';
@@ -143,12 +143,7 @@ export default function SignedOut({ lang }: { lang: string }) {
       {/* A FULL-SCREEN MOMENT WITH NO HEADER wears the streak celebration's frame — its
           corner brackets and the WHIPPIN AI lockup top left — so it reads as the app's own
           screen, never an error page. (On desktop the device frame's own corners stand.) */}
-      <div className="signed-out-frame" aria-hidden="true">
-        <Lockup className="streak-lockup" />
-        {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
-          <span key={corner} className={`streak-corner ${corner}`} />
-        ))}
-      </div>
+      <ScreenFrame />
       <div className="signed-out-body dissolve-in">
         {/* While the read is out the face's boxes are held; a DELETED account settles
             faceless but keeps them, empty, so nothing on the screen moves when it does. */}

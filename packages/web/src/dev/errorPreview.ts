@@ -20,11 +20,15 @@ const ERROR_VARIANTS = {
   account: { title: 'failedAccount', note: 'failedAccountNote' },
   share: { title: 'failedShare', note: 'failedShareNote' },
   join: { title: 'failedJoin', note: 'failedJoinNote' },
-  group: { title: 'failedGroup', note: 'failedGroupNote' },
+  create: { title: 'failedCreate', note: 'failedGroupNote' },
+  // The longest title.
+  leave: { title: 'failedLeave', note: 'failedGroupNote' },
+  remove: { title: 'failedRemove', note: 'failedGroupNote' },
   save: { title: 'profileSaveFailed', note: 'failedSaveNote' },
-  name: { title: 'profileNameRejected', note: 'profileNameRejectedNote' },
-  avatar: { title: 'profileAvatarRejected', note: 'profileAvatarRejectedNote' },
   giveUp: { title: 'failedGiveUp', note: 'failedGiveUpNote' },
+  send: { title: 'linkSendFailed', note: 'linkFailedNote' },
+  check: { title: 'linkCheckFailed', note: 'linkFailedNote' },
+  switch: { title: 'linkSwitchFailed', note: 'linkFailedNote' },
 } as const satisfies Record<string, ErrorVariant>;
 
 export type ErrorVariantName = keyof typeof ERROR_VARIANTS;

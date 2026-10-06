@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   GROUPS_MAX,
   GROUP_MEMBERS_MAX,
-  MARK_GLYPH,
   type BoardPlayer,
   type GroupSummary,
   type PublicGroup,
@@ -10,6 +9,7 @@ import {
 import BusyButton from '../components/BusyButton';
 import Button from '../components/Button';
 import ErrorScreen from '../components/ErrorScreen';
+import ScreenFrame from '../components/ScreenFrame';
 import GroupOrbit, { orbitPlacesFor, type SeatState } from '../components/GroupOrbit';
 import { shownFace, useOwnFace } from '../components/AccountFace';
 import { groupsUrl, parseGroups, postGroupsBody, readGroup, type GroupRead } from '../api';
@@ -312,17 +312,7 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
       {/* A FULL-SCREEN MOMENT WITH NO HEADER wears the frame — the corners and the WHIPPIN AI
           lockup — as the card it continues does. (On desktop the device frame's own corners
           stand.) */}
-      <div className="invite-frame" aria-hidden="true">
-        <div className="streak-lockup">
-          <svg viewBox={`0 0 ${MARK_GLYPH.width} ${MARK_GLYPH.height}`} shapeRendering="crispEdges">
-            <path d={MARK_GLYPH.path} fill="currentColor" />
-          </svg>
-          <span>WHIPPIN AI</span>
-        </div>
-        {(['tl', 'tr', 'bl', 'br'] as const).map((corner) => (
-          <span key={corner} className={`streak-corner ${corner}`} />
-        ))}
-      </div>
+      <ScreenFrame />
       {scene}
       <div className={`invite-calls${call ? ' in' : ''}`}>
         <p className="invite-line" role="status">

@@ -58,6 +58,7 @@ import { prefetchTurnstileTokens } from '../turnstile';
 import { deviceIdentity, ensureDeviceIdentity, useDeviceIdentity } from '../identity';
 import ErrorScreen from '../components/ErrorScreen';
 import ConfirmScreen from '../components/ConfirmScreen';
+import InfinityGlyph from '../components/InfinityGlyph';
 import FlagIcon from '../assets/icons/flag.svg?react';
 import type {
   Hole,
@@ -402,7 +403,7 @@ function Round({
   }, [guessCount, learned, markLessonDone]);
   // PLAY, when it is the deploy button: a single tap that creates the account and opens
   // the round — the button busy while the bootstrap runs (`BusyButton`), and the app's error
-  // surface when it fails (nothing was created; PLAY again re-runs it).
+  // surface when it fails (nothing was created; PLAY pressed again re-runs it).
   const [deploying, setDeploying] = useState(false);
   const [deployFailed, setDeployFailed] = useState(false);
   const handleGatePlay = useCallback(() => {
@@ -1381,8 +1382,8 @@ function Round({
         </>
       )}
 
-      {/* The deploy's failure, on the app's error surface: what happened, and TRY AGAIN
-          re-runs the same single-tap chain. */}
+      {/* The deploy's failure, on the app's error surface: what was lost; the gate's PLAY,
+          still under it, re-runs the same single-tap chain. */}
       {deployFailed && (
         <ErrorScreen
           lang={lang}
@@ -1401,7 +1402,10 @@ function Round({
           busy={givingUp}
           onConfirm={confirmGiveUp}
           onClose={() => setConfirmingGiveUp(false)}
-        />
+        >
+          {/* THE STAKE: the ∞ the result will print, thinned — what the round becomes. */}
+          <InfinityGlyph className="confirm-infinity" cell={8} />
+        </ConfirmScreen>
       )}
       {giveUpFailed && (
         <ErrorScreen

@@ -53,23 +53,25 @@ const STRINGS = {
   // needs its own words: a month is drawn, so "couldn't be read" would be plainly false, and
   // the thing the reader has to know is that what they are looking at may be out of date.
   staleHistory: { en: 'May not be up to date.', fr: 'Peut-être pas à jour.' },
-  // The #271 group invite's write, said out loud: it is the one thing that tap existed to
-  // do, so losing it silently would leave everyone none the wiser.
-  failedJoin: { en: 'FAILED TO JOIN', fr: "ÉCHEC DE L'ADHÉSION" },
-  // A group write that did not land (create, leave, remove) — the same loudness.
-  failedGroup: { en: 'FAILED', fr: 'ÉCHEC' },
-  // Said where the outcome is unknown too (the list read again shows what stands), so it
-  // claims nothing about the group.
+  // The #271 group invite's write, loud for the same reason: it is the one thing that
+  // tap existed to do, so losing it silently would leave everyone none the wiser.
+  failedJoin: { en: 'GROUP NOT JOINED', fr: 'GROUPE NON REJOINT' },
+  // A group write that did not land, each named by what was LOST (create, leave, remove) —
+  // the same loudness. Said once the list has been read again, so what it claims is what the
+  // server holds (`state/groupActs.ts`: a write that landed behind a lost answer is found).
+  failedCreate: { en: 'GROUP NOT CREATED', fr: 'GROUPE NON CRÉÉ' },
+  failedLeave: { en: 'STILL IN THE GROUP', fr: 'TOUJOURS DANS LE GROUPE' },
+  failedRemove: { en: 'MEMBER NOT REMOVED', fr: 'MEMBRE NON RETIRÉ' },
   failedGroupNote: {
     en: 'Check your connection and try again.',
     fr: 'Vérifiez votre connexion et réessayez.',
   },
   // Neither the native sheet nor the clipboard could deliver (insecure context, denied
   // clipboard, a spent activation): the one share whose silence reads as a dead button.
-  // On the error surface, whose TRY AGAIN shares inside its own fresh activation — which
-  // is what makes the single-tap INVITE honest (user-decided 2026-08-24: one tap, and the
-  // rare stale-activation failure is SAID, with the retry that cures it).
-  failedShare: { en: 'SHARE FAILED', fr: 'ÉCHEC DU PARTAGE' },
+  // On the error surface; the INVITE pressed again from the screen under it shares inside
+  // its own fresh activation — which is what makes the single-tap INVITE honest
+  // (user-decided 2026-08-24: one tap, and the rare stale-activation failure is SAID).
+  failedShare: { en: 'LINK NOT SHARED', fr: 'LIEN NON PARTAGÉ' },
   failedShareNote: {
     en: 'The link could not be shared or copied. Try again — the next tap shares directly.',
     fr: "Le lien n'a pas pu être partagé ni copié. Réessayez — le prochain appui partage directement.",
@@ -80,17 +82,17 @@ const STRINGS = {
   // its own act: the group's room, and the reader's own `GROUPS_MAX` (`{n}`).
   groupFull: { en: 'This group is full.', fr: 'Ce groupe est complet.' },
   inviteLimit: { en: 'You are already in {n} groups.', fr: 'Vous êtes déjà dans {n} groupes.' },
-  // A group name the server's banned-strings filter refuses (`name_rejected`).
-  groupNameRejected: { en: 'NAME NOT ALLOWED', fr: 'NOM REFUSÉ' },
+  // A group name the server's banned-strings filter refuses (`name_rejected`), said AT the
+  // naming screen's line, which shakes in the danger ink: one note, the name kept.
   groupNameRejectedNote: {
-    en: 'This name is not allowed. Pick another one.',
-    fr: "Ce nom n'est pas autorisé. Choisissez-en un autre.",
+    en: 'This name is not allowed.',
+    fr: "Ce nom n'est pas autorisé.",
   },
-  // The caller's own cap, on a create or a join from the board.
-  groupLimit: { en: 'TOO MANY GROUPS', fr: 'TROP DE GROUPES' },
+  // The caller's own cap at the naming screen's line, where CREATE then stays dark (the
+  // invite landing says its own, `inviteLimit`); `{n}` is the shared `GROUPS_MAX`.
   groupLimitNote: {
-    en: 'Leave a group to join or create another one.',
-    fr: 'Quittez un groupe pour en rejoindre ou en créer un autre.',
+    en: '{n} groups max. Leave one first.',
+    fr: '{n} groupes max. Quittez-en un.',
   },
   retry: { en: 'RETRY', fr: 'RÉESSAYER' },
   // A startup that died before React mounted (`main.tsx`): said in a sentence, over the one
@@ -101,13 +103,12 @@ const STRINGS = {
   // It is not "close" — nothing is being tidied away; the act did not happen and the player
   // is going back to the screen that asked for it.
   errorDismiss: { en: 'GO BACK', fr: 'RETOUR' },
-  // The five deploy buttons' failures, on the error screen: the TITLE says what failed in
-  // the chrome voice, the NOTE explains it in a sentence (the coach-copy exemption from
-  // the all-caps rule). TWO clauses, never three (user-decided 2026-08-27): what happened,
-  // then what to do. The note used to add "so nothing was saved" — true, but it answers a
-  // worry the player has not had yet, and on a screen whose whole job is to get them to
-  // press TRY AGAIN it spends the reader's attention on reassurance instead of the act.
-  failedAccount: { en: 'ACCOUNT SETUP FAILED', fr: 'ÉCHEC DE LA CRÉATION DU COMPTE' },
+  // The deploy buttons' failures, on the error screen: the TITLE names what was LOST in the
+  // chrome voice (never a bare FAILED), the NOTE explains it in a sentence (the coach-copy
+  // exemption from the all-caps rule). TWO clauses, never three (user-decided 2026-08-27):
+  // what happened, then what to do. The note used to add "so nothing was saved" — true, but
+  // it answers a worry the player has not had yet.
+  failedAccount: { en: 'ACCOUNT NOT CREATED', fr: 'COMPTE NON CRÉÉ' },
   failedAccountNote: {
     en: 'Your account could not be set up. Check your connection and try again.',
     fr: "Votre compte n'a pas pu être créé. Vérifiez votre connexion et réessayez.",
@@ -120,13 +121,16 @@ const STRINGS = {
     en: 'Your profile was not saved. Check your connection and try again.',
     fr: "Votre profil n'a pas été enregistré. Vérifiez votre connexion et réessayez.",
   },
+  // The profile's two moderation refusals, said AT the editor: the name in the danger ink
+  // with the field's shake, or the canvas shaking — one note under the name's line, until
+  // the refused value is edited. Short enough for that line at 320px.
   profileNameRejectedNote: {
-    en: 'This name is not allowed. Pick another one and save again.',
-    fr: "Ce nom n'est pas autorisé. Choisissez-en un autre et réenregistrez.",
+    en: 'Name not allowed.',
+    fr: 'Pseudo non autorisé.',
   },
   profileAvatarRejectedNote: {
-    en: 'This drawing is not allowed. Change it and save again.',
-    fr: "Ce dessin n'est pas autorisé. Modifiez-le et réenregistrez.",
+    en: 'Drawing not allowed.',
+    fr: 'Dessin non autorisé.',
   },
   // Signed out from another device (#216). It is a SCREEN, not an error line: the account
   // is intact and reachable, this device simply no longer holds it. The screen shows the
@@ -311,30 +315,36 @@ const STRINGS = {
     en: "You're already on this account.",
     fr: 'Vous êtes déjà sur ce compte.',
   },
-  linkFailed: { en: 'LINK FAILED', fr: 'ÉCHEC DE LA LIAISON' },
+  // The flow's ACTS that did not land, on the error screen — every VERDICT of the flow
+  // answers in place. Each title names what was lost: the SEND (a 503 `mail_unavailable`, a
+  // dropped connection), the VERIFY from the code step, the VERIFY from the crossroads (the
+  // device is still on the account it held). One note for the three.
+  linkSendFailed: { en: 'CODE NOT SENT', fr: 'CODE NON ENVOYÉ' },
+  linkCheckFailed: { en: 'CODE NOT CHECKED', fr: 'CODE NON VÉRIFIÉ' },
+  linkSwitchFailed: { en: 'STILL ON THIS ACCOUNT', fr: 'TOUJOURS SUR CE COMPTE' },
+  linkFailedNote: {
+    en: 'Wait a moment, then try again.',
+    fr: 'Attendez un instant, puis réessayez.',
+  },
+  // Too many sends (429), under CONTINUE — or, from RESEND, on the code step's held line.
   linkTooMany: {
-    en: 'Too many codes asked for. Try again in a while.',
-    fr: 'Trop de codes demandés. Réessayez dans un moment.',
+    en: 'Too many codes. Wait a while.',
+    fr: 'Trop de demandes. Patientez.',
   },
   linkBadAddress: {
     en: "That address doesn't look right.",
     fr: 'Cette adresse ne semble pas valide.',
   },
-  linkSendFailedNote: {
-    en: 'The code could not be sent.',
-    fr: "Le code n'a pas pu être envoyé.",
-  },
-  linkVerifyFailedNote: {
-    en: 'The code could not be checked.',
-    fr: "Le code n'a pas pu être vérifié.",
-  },
+  // The code step's held line for the two codes that accept nothing more (the keys go dead,
+  // RESEND goes live — the line says WHY, the live RESEND under it is the way on). Each is
+  // ONE line at 320px, so RESEND under it never moves.
   linkCodeSpent: {
-    en: 'Too many wrong codes. Ask for a new one.',
-    fr: 'Trop de codes incorrects. Demandez-en un nouveau.',
+    en: 'Too many wrong codes.',
+    fr: 'Trop de codes incorrects.',
   },
   linkCodeExpired: {
-    en: 'That code has expired. Ask for a new one.',
-    fr: 'Ce code a expiré. Demandez-en un nouveau.',
+    en: 'This code has expired.',
+    fr: 'Ce code a expiré.',
   },
   // An account carries at most ONE address, so a device whose account is already saved under
   // a different one cannot bind a second (the old address would reach an account nobody
@@ -417,10 +427,10 @@ const STRINGS = {
     fr: "La phrase est révélée et la partie s'arrête.",
   },
   giveUpAction: { en: 'GIVE UP', fr: 'ABANDONNER' },
-  failedGiveUp: { en: 'GIVE UP FAILED', fr: "ÉCHEC DE L'ABANDON" },
+  failedGiveUp: { en: 'STILL IN PLAY', fr: 'TOUJOURS EN JEU' },
   failedGiveUpNote: {
-    en: 'The round goes on. Check your connection and try again.',
-    fr: 'La partie continue. Vérifiez votre connexion et réessayez.',
+    en: 'The give-up did not go through. Check your connection and try again.',
+    fr: "L'abandon n'est pas passé. Vérifiez votre connexion et réessayez.",
   },
   srGaveUp: { en: 'given up, the sentence is revealed', fr: 'abandon, la phrase est révélée' },
   // The score unit stays NAMED in both languages (lower is better must survive the
@@ -627,9 +637,7 @@ const STRINGS = {
   // The button's ONE label: it never renames itself — saving is said by the dot-loader
   // choreography, success by the button going quiet (disabled, LED off).
   profileSave: { en: 'SAVE', fr: 'ENREGISTRER' },
-  profileSaveFailed: { en: 'SAVE FAILED', fr: "ÉCHEC DE L'ENREGISTREMENT" },
-  profileNameRejected: { en: 'NAME NOT ALLOWED', fr: 'PSEUDO REFUSÉ' },
-  profileAvatarRejected: { en: 'AVATAR NOT ALLOWED', fr: 'AVATAR REFUSÉ' },
+  profileSaveFailed: { en: 'PROFILE NOT SAVED', fr: 'PROFIL NON ENREGISTRÉ' },
   // Untranslated in every language (the user's call, 2026-08-19) — one word everywhere,
   // like MISS and STREAK.
   profileClear: { en: 'CLEAR', fr: 'CLEAR' },

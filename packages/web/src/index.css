@@ -6867,9 +6867,13 @@ figure.l1-fig {
   margin: 0;
   text-align: center;
 }
-/* The code step's refusal line, held one line tall under the keys whether or not it speaks. */
+/* The code step's held line, one line tall under the keys whether or not it speaks — its note
+   set on exactly that line, so a verdict landing moves RESEND by nothing at all. */
 .link-wrong {
   min-height: 20px;
+}
+.link-wrong .account-note {
+  line-height: 20px;
 }
 /* The caption UNDER a full-width button: pulled toward what it explains, centered on it.
    A centred note that wraps is BALANCED, never a line and a one-word orphan. */
@@ -7156,6 +7160,24 @@ figure.l1-fig {
 }
 .code-input.invalid .code-cell::after {
   content: none;
+}
+/* A CODE THAT ACCEPTS NOTHING MORE (expired, or its attempts spent): the keys go dead in their
+   own material — the iron and its cap thinned to half their cells through the Bayer order, in
+   hard steps (the ghost's way, never an opacity) — and take nothing. RESEND brings them back
+   through the arrival's dissolve. */
+.code-input.dead {
+  pointer-events: none;
+}
+.code-input.dead .code-cell {
+  animation: code-die 200ms linear forwards;
+}
+@keyframes code-die {
+  0% { -webkit-mask-image: none; mask-image: none; }
+  25% { -webkit-mask-image: var(--dzo-1); mask-image: var(--dzo-1); }
+  50% { -webkit-mask-image: var(--dzo-2); mask-image: var(--dzo-2); }
+  75% { -webkit-mask-image: var(--dzo-3); mask-image: var(--dzo-3); }
+  87.5%,
+  100% { -webkit-mask-image: var(--dzo-4); mask-image: var(--dzo-4); }
 }
 @media (max-width: 380px) {
   .code-input {
@@ -7654,6 +7676,11 @@ figure.l1-fig {
   animation: board-dissolve-out 120ms linear forwards;
 }
 .link-stack.link-confirm {
+  animation: board-dissolve 240ms linear backwards;
+}
+/* The code step STEPPED BACK TO from the crossroads (a verdict on the code pressed there)
+   comes in the crossroads' own way. */
+.link-step.came-back > * {
   animation: board-dissolve 240ms linear backwards;
 }
 /* The crossroads' two answers, one group: the call and CANCEL under it. */
@@ -8925,6 +8952,7 @@ figure.l1-fig {
   padding-bottom: 72px;
 }
 .group-create-stage {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -8939,6 +8967,18 @@ figure.l1-fig {
 /* Half an em of air after the `>`: whole pixels at every size the line takes. */
 .group-create .wi-prompt {
   margin-right: 0.5em;
+}
+/* A REFUSED name stands in the danger ink once its shake has played, until it is edited. */
+.group-create .word-input.refused {
+  color: var(--danger);
+}
+/* The refusal's note hangs under the line in the air the stage keeps above CREATE — out of the
+   flow, so nothing moves when it speaks, and room for two lines before the button. */
+.group-create-note {
+  position: absolute;
+  top: calc(100% - 6px);
+  left: 0;
+  right: 0;
 }
 .group-create-word {
   font-family: var(--pixel-font);
@@ -9013,7 +9053,7 @@ figure.l1-fig {
 }
 
 /* ---- The GROUP INVITE LANDING (#271; "the card, brought in"): the card the
-   `/g/` link unfurled into, continued on the screen — the frame (`.invite-frame`, the
+   `/g/` link unfurled into, continued on the screen — the frame (`ScreenFrame`, the
    signed-out screen's below), the group's NAME in the white chip at the middle of its scene,
    the members' marks on the card's slate orbit round it, a SEAT kept for the reader, and the
    calls on the bottom edge: JOIN (the big action) over PLAY (the word). One block, centred,
@@ -9309,26 +9349,32 @@ figure.l1-fig {
   gap: 6px;
   width: 100%;
 }
-/* The frame: the streak celebration's own furniture (`.streak-lockup`, `.streak-corner`),
-   standing still — it arrives through the dither with the face. The invite landing wears
-   the same one (`.invite-frame`). */
-.signed-out-frame,
-.invite-frame {
+/* THE FULL-SCREEN MOMENT'S FRAME (`ScreenFrame`: the signed-out screen, the error screen, the
+   confirmation, the invite landing): the streak celebration's own furniture (`.streak-lockup`,
+   `.streak-corner`), standing still, pinned to the screen. The corners are the one place
+   brackets frame something that is not tapped — the whole moment, as on the cards. */
+.screen-frame {
   position: fixed;
   inset: 0;
   z-index: 41;
   pointer-events: none;
 }
-.signed-out-frame .streak-lockup,
-.signed-out-frame .streak-corner,
-.invite-frame .streak-lockup,
-.invite-frame .streak-corner {
+.screen-frame .streak-lockup,
+.screen-frame .streak-corner {
   opacity: 1;
+}
+/* The signed-out screen's and the invite landing's frames arrive through the dither with the
+   face (the two dialogs dissolve in whole, frame and all); on desktop the device frame's own
+   corners stand under those two screens. */
+.signed-out .screen-frame .streak-lockup,
+.signed-out .screen-frame .streak-corner,
+.invite-landing .screen-frame .streak-lockup,
+.invite-landing .screen-frame .streak-corner {
   animation: board-dissolve 240ms linear backwards;
 }
 @media (min-width: 641px) {
-  .signed-out-frame .streak-corner,
-  .invite-frame .streak-corner {
+  .signed-out .screen-frame .streak-corner,
+  .invite-landing .screen-frame .streak-corner {
     display: none;
   }
 }
@@ -9364,25 +9410,21 @@ figure.l1-fig {
 }
 
 /* ---------------------------------------------------------------------------
-   THE ERROR SURFACE (#216 trigger rework, user-decided 2026-08-24): where a
-   PRIMARY ACTION reports that it failed — the two PLAY gates, the invite accept,
-   the invite send, the profile save, and the profile editor's two moderation
-   refusals.
+   THE ERROR SURFACE (#216 trigger rework, user-decided 2026-08-24) and THE
+   CONFIRMATION (#271), the app's two full-screen messages, ONE shape: where an act
+   reports that it did not land, and where an act that takes something away asks first.
 
-   IT IS A FULL-SCREEN MODAL, NOT A SHEET (user-decided 2026-08-27). It shipped as
-   a desktop popup / phone bottom sheet, and a sheet is the DISMISSAL gesture's own
-   shape — it slides up from the edge and asks to be swiped away — where every
-   message here is a CALL TO ACTION. Dismissing the account one is not tidying a
-   notification away; it is declining to play. So the box became the screen: the
-   app's ground, opaque, with the SignedOut column's geometry (that screen is the
-   other consequential full-screen message, and the two now read as one surface),
-   led by the ERROR BOT in the danger ink. */
+   IT IS A FULL-SCREEN MODAL, NOT A SHEET (user-decided 2026-08-27): a sheet is the
+   dismissal gesture's own shape, and every message here is about an act the player meant.
+   So the box is the screen, and it wears the FULL-SCREEN MOMENT'S DRESS — the signed-out
+   screen's: the four frame corners and the lockup (`.screen-frame`), the message in the
+   column's middle, the calls PARKED ON THE BOTTOM EDGE in `.signed-out-calls`' geometry
+   (inside the corners, 44px off the edge). It comes in over the screen it answers through
+   the board's Bayer dissolve and goes the same way — never a fade. */
 .error-screen {
-  /* The page's own ground, edge to edge. No corner brackets: those are the dialog
-     boxes' dress, and this is not a box on a screen any more — it IS the screen
-     (the SignedOut language). */
+  /* The page's own ground, edge to edge. */
   margin: 0;
-  padding: 0;
+  padding: 72px 0 0;
   width: 100vw;
   max-width: 100vw;
   height: 100dvh;
@@ -9392,22 +9434,59 @@ figure.l1-fig {
   color: var(--fg);
   outline: 0;
   display: flex;
-  /* Center through the body's auto margins, NOT flex alignment: auto margins collapse
-     to zero when the column is taller than a short viewport, keeping its top at the
-     scroll origin so every part of the screen remains reachable. */
+  flex-direction: column;
+  align-items: center;
+  /* A column taller than a short viewport scrolls from its top: every part reachable. */
   overflow-y: auto;
   overflow-x: hidden;
 }
+/* Nothing dims the screen under it while the dissolve lets it show through. */
+.error-screen::backdrop {
+  background: transparent;
+}
+/* CLOSED IS GONE. The `display: flex` above outranks the browser's own `dialog:not([open])`,
+   and `close` reaches the owner a task after `dialog.close()` — so without this the closed
+   dialog stands in the page's flow, whole, for the frame between its dissolve ending and its
+   unmount. */
+.error-screen:not([open]) {
+  display: none;
+}
 .error-body {
-  /* SignedOut's exact column, so the app's two full-screen messages are one shape. */
+  /* SignedOut's exact column, so the app's full-screen messages are one shape. */
   width: min(340px, 100% - 40px);
-  margin: auto;
+  flex: 1 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 14px;
   text-align: center;
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+/* THE CALLS, on the bottom edge where the signed-out screen's stand: the column's width on
+   the corners' own column (the frame's 16px inset), ending 44px off the edge, clear of the
+   bottom corners' arms. */
+.error-calls {
+  flex: none;
+  width: min(430px, 100% - 32px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 24px 0 calc(44px + env(safe-area-inset-bottom, 0px));
+}
+/* DESKTOP: one centred block, the calls under the message (SignedOut's), the corners at the
+   cards' inset — this screen covers the device frame, so it draws its own. */
+@media (min-width: 641px) {
+  .error-screen {
+    padding: 100px 0 24px;
+  }
+  .error-body {
+    flex: none;
+    margin-top: auto;
+  }
+  .error-calls {
+    margin: 40px 0 auto;
+  }
 }
 /* THE ERROR BOT (user-drawn, 2026-08-27) — 4-frame 32x32 idle bob, and a speech
    balloon it says ERROR ! through. It replaced a big fail cross the same day: a
@@ -9518,16 +9597,10 @@ figure.l1-fig {
   text-transform: none;
   color: var(--muted);
 }
-/* The ONE way out is the column's width, exactly like SignedOut's and the invite landing's —
-   and it is the QUIET variant (2026-09-03): a full-screen error page is not a place to retry
-   from, so nothing on it is lit. The act is re-run from the screen underneath. */
-.error-body .btn {
-  width: 100%;
-  margin-top: 12px;
-}
-/* In and out through the dither, never an opacity fade: the screen's cells light in the
-   Bayer order over what it covers (`board-dissolve`), and leave through the cells it did
-   not take (`board-dissolve-out`, the exit `useModalDismiss` waits on). */
+/* In over the screen it answers through the board's Bayer dissolve, out the same way — the
+   whole dialog, frame and all (`useModalDismiss` waits on `board-dissolve-out`). The error's
+   ONE way out is GO BACK as the bracketed quiet word: nothing on the page is lit, the act is
+   re-run from the screen underneath. */
 .error-screen[open] {
   -webkit-mask-size: 16px 16px;
   mask-size: 16px 16px;
@@ -9537,23 +9610,28 @@ figure.l1-fig {
   animation: board-dissolve-out 240ms linear forwards;
   pointer-events: none;
 }
-.error-screen::backdrop {
-  background: transparent;
-}
 
 /* THE CONFIRMATION (#271, user-decided 2026-09-14): the error screen's shape and beats,
    in the plain voice — nothing has gone wrong yet, so the title is `--fg`, not the danger
-   ink — with the act as the QUIET DANGER control (destruction never glows) over CANCEL.
-   What is at stake stands above the title: a member's face, or the group's name. */
+   ink — with the act as the QUIET DANGER control (destruction never glows), the column's
+   width, and CANCEL as THE WORD under it. What is at stake stands above the title: a
+   member's face, the group's name, the ∞ a give-up prints. */
 .confirm-screen .error-title {
   color: var(--fg);
 }
-.confirm-screen .error-body .btn-danger {
+.confirm-screen .error-calls .btn-danger {
   width: 100%;
-  margin-top: 12px;
 }
-.confirm-screen .link-quiet-btn {
-  margin-top: 4px;
+/* THE GIVE-UP'S STAKE: the ∞ the result will print (shared `INFINITY_GLYPH`) at 8px a cell,
+   in the quiet ink thinned to half its cells through the Bayer dither — what the round
+   becomes, not yet what it is. */
+.confirm-infinity {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--muted);
+  shape-rendering: crispEdges;
+  -webkit-mask-image: var(--dz-4);
+  mask-image: var(--dz-4);
 }
 .confirm-face {
   display: flex;
@@ -11883,6 +11961,35 @@ figure.l1-fig {
 .profile-name::placeholder {
   color: var(--muted);
   opacity: 1;
+}
+/* A REFUSED name (`name_rejected`) answers at its field: the address line's shake, then the
+   name standing in the danger ink until it is edited. */
+.profile-name.refused {
+  color: var(--danger);
+}
+.profile-name.invalid {
+  animation: input-shake 0.4s ease-in-out;
+}
+/* The refusal's ONE note (a name, or a drawing), under the name on the air the line keeps
+   above SAVE — out of the flow, so the editor's measured column never moves. */
+.profile-line {
+  position: relative;
+}
+.profile-refusal {
+  position: absolute;
+  top: calc(100% - 2px);
+  left: 42px;
+  right: 0;
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.profile-refusal:empty::before {
+  content: none;
 }
 .profile-name::selection {
   background: var(--accent);
