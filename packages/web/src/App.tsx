@@ -355,16 +355,21 @@ function GameRoute({
   // read settles there is nothing honest to show and nothing to type into, and a FAILED read
   // is said, with a RETRY, rather than silently starting the player on a guessed local mirror
   // — the guesses they would then type would be answers to a board the server disagrees with.
+  // ONE line says it for the three, so its ONE RETRY asks again EVERY read that failed (two
+  // fail together offline: the word list is asked beside the puzzle) — a tap that answered
+  // only the first would bring the same line straight back.
+  const puzzleLost = error !== null;
+  const gameLost = !noPuzzle && puzzle !== null && shown === null;
+  const vocabLost = gameLost && vocabError !== null;
+  const roundLost = gameLost && round?.status === 'failed';
   const failedRetry =
-    error !== null
-      ? retry
-      : noPuzzle || puzzle === null || shown !== null
-        ? null
-        : vocabError !== null
-          ? retryVocab
-          : round?.status === 'failed'
-            ? () => retryRoundSync(roundKey)
-            : null;
+    puzzleLost || vocabLost || roundLost
+      ? () => {
+          if (puzzleLost) retry();
+          if (vocabError !== null) retryVocab();
+          if (roundLost) retryRoundSync(roundKey);
+        }
+      : null;
   // (The invitation stands in for the hold while the reads go on behind it.)
   const hold = useHold(surface === 'game' && !noPuzzle && shown === null);
   // What the hold's tray promises: the KEYBOARD only to a player who lands on the prompt —

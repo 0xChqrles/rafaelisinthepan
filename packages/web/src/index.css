@@ -1168,8 +1168,11 @@ body:has(.app > .board-screen) {
 /* A READ THAT FAILED holds the whole picture STILL at half — every bar, rail and word slot
    through the Bayer order's half (`--dz-4`: the `.stat-slot` checker, the archive's failed
    ghosts), the blocks and the caps resting on theirs, nothing breathing — and says so in the
-   prompt's row (`.hold-failure`), the one thing in the hold a finger reaches. A retry hands
-   it back to breathing in place. */
+   prompt's row (`.hold-failure`), the one thing in the hold a finger reaches. The note is
+   laid OVER that row, out of its flow, from its top edge down into the play area's slack: the
+   row keeps its height whether a read failed or not, so neither the failure nor its RETRY
+   moves the sentence the column centres over it. A retry hands the picture back to breathing
+   in place. */
 .game-hold.failed .hold-rail,
 .game-hold.failed .phrase .word,
 .game-hold.failed .phrase .hole.resolved .hole-word,
@@ -1177,11 +1180,14 @@ body:has(.app > .board-screen) {
   -webkit-mask-image: var(--dz-4);
   mask-image: var(--dz-4);
 }
+.game-hold .prompt-zone {
+  position: relative;
+}
 .game-hold .hold-failure {
-  grid-row: 1;
-  grid-column: 1 / -1;
-  align-self: start;
-  justify-self: start;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   pointer-events: auto;
 }
 /* THE GAME TAKES OVER, over it: the tray's slates or slots go out through exactly the cells

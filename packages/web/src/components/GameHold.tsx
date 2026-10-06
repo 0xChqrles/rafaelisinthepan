@@ -44,8 +44,9 @@ import { t } from '../i18n';
 // A READ THAT FAILED holds the picture STILL (`failure`): shown at once, every bar and rail at
 // the Bayer order's half, nothing breathing, and the prompt's row — the one thing in the hold
 // a finger reaches — says so, ONE line for the three reads, over its RETRY (the route's
-// `QuietFailure`). The hold stays mounted through it, so a RETRY hands the same picture back
-// to breathing in place.
+// `QuietFailure`, asking every failed read again). The note is laid over the row, out of its
+// flow, so saying it moves nothing; the hold stays mounted through it, so a RETRY hands the
+// same picture back to breathing in place.
 
 // The hold's whole exit: the decode's front crossing the sentence, then the last bar's going.
 export const HOLD_LEAVE_MS = SWEEP_MS + DISSOLVE_MS;
@@ -235,7 +236,7 @@ export default function GameHold({
               <Sentence key={key} lang={lang} drawn={drawn} />
             </div>
             {/* The prompt's row, held (its line and its hint's): never drawn — and where a read
-                that failed is said, over it, in its own box. */}
+                that failed is said, laid over it (out of its flow: the row keeps its height). */}
             <div className="prompt-zone">
               <div className="input-area retired" aria-hidden="true" ref={makeInert}>
                 <span className="word-input">
