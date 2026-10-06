@@ -917,7 +917,9 @@ These are decided and verified against the code. Treat them as load-bearing.
       edge, on the corners' column, the tagline (`MADE WITH <3`) bottom-left, and the
       day's EDITION SERIAL bottom-right (`N.<dayNumber>` — the interfaces.dev card's
       numbering, fed the ACTIVE day via useToday), both on the corners' bottom line past
-      the arms. Its words are `--muted`, never the foreground dimmed. Decorative
+      the arms — the line the keyboard's last row stands on, so the two captions show only
+      on a window 830px wide or more, where the keyboard leaves them room. Its words are
+      `--muted`, never the foreground dimmed. Decorative
       (aria-hidden, pointer-events none), z-index 40 under the header's 60, covered by
       opaque dialogs, and DESKTOP ONLY (hidden ≤640px — a phone's viewport is all content).
     - **THE COLUMN is ONE custom property, `--column` (900px)**: the header row's width

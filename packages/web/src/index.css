@@ -1106,6 +1106,15 @@ body:has(.app > .board-screen) {
   right: calc(var(--inset) + 24px + 10px);
   font-variant-numeric: tabular-nums;
 }
+/* The captions stand on the line the keyboard's last row stands on (both 24px off the foot),
+   so they need the room beside it: the keyboard's 514px (ten 46px keys, nine 6px gaps),
+   centred, and a caption reaching 150px in off each edge, with 8px of air. A narrower window
+   would print them over the keys, and the furniture yields to the play. */
+@media (max-width: 829px) {
+  .df-cap {
+    display: none;
+  }
+}
 @media (max-width: 640px) {
   .device-frame {
     display: none;
