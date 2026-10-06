@@ -54,8 +54,8 @@ const EDGES = {
 // order, in hard steps, nothing travelling. And the same levels' COMPLEMENT (`--dzo-1` …
 // `--dzo-7`, the cells not yet lit): what goes out as something comes in over it — the
 // podium's players giving their place to the next — goes through exactly the cells the newcomer
-// has not taken (`board-dissolve-out`); stacked in 16px steps, they also thin a drum's ends
-// and the foot of a list that holds more below.
+// has not taken (`board-dissolve-out`); stacked in 16px steps, they also thin a drum's ends —
+// and the lit levels, masking a veil of the ground, the foot of a list that holds more below.
 const DISSOLVE_LEVELS = 8;
 function levelTile(level: number, lit: boolean): string {
   let rects = '';

@@ -148,10 +148,10 @@
                               and the dissolve's beat script times against (`DISSOLVE_MS`,
                               `SKELETON_WAIT_MS`, `SKELETON_STAGGER_MS` — on the root too as
                               `--dz-stagger`, what `.dissolve-in` staggers a screen's blocks by)
-      hooks/useMoreBelow.ts   whether a scrolling list holds more below what it shows: its
-                              last line shown thinning through the drum's dither steps
-                              (`data-more`; the group's members, the successor pick), measured
-                              again on scroll, on resize and on a row added or removed
+      hooks/useMoreBelow.ts   whether a scrolling list holds more below what it shows: the
+                              dithered veil at its foot (`data-more`; the group's members, the
+                              successor pick), measured again on scroll, on resize and on a
+                              row added or removed
       components/animationClock.ts  the page's animation clock (`clockNow`, `onClock`): every
                               beat the board screen and its podium time, on the clock their
                               CSS and Web Animations play on
@@ -2641,7 +2641,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     other line's end (`.board-remove`); the members SCROLL in whole lines (their room floored
     to `LINE_PX`, one line at the least, the scroll snapping to a line's start, its last line
     shown thinning through the drum's three dither steps while more wait below, so a list at
-    rest says there is more — `useMoreBelow`; a screen too
+    rest says there is more — `useMoreBelow`: a veil of the ground at the list's foot, and
+    the owner's ✕ and your own framed line stand whole above it, since a control or a frame
+    drawn thinned reads as another glyph or as disabled; a screen too
     short for that scrolls whole), so INVITE as the primary cap and LEAVE as the quiet
     danger word stand at the screen's foot whatever the group's size —
     there is no MANAGE toggle, the screen is the management. **NAMING A GROUP is THE GAME'S
@@ -2664,8 +2666,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the SUCCESSION RULE (root `AGENTS.md`, Groups) off the list on screen: last member →
     "the group will be deleted"; owner of two → "the other member takes it over"; owner of
     three or more → a PICKER of the others (the board's lines as radios, the one picked
-    FRAMED, dressed by `readGroup`, in whole rows — `round(down, 40vh, 44px)`, snapping, its
-    last row shown thinning as a drum's end does while more wait below),
+    FRAMED, dressed by `readGroup`, in whole rows — `round(down, 40vh, 44px)`, snapping; every
+    row is a control, so none is thinned at rest: while more wait below its foot is the short
+    6px edge, on the last row's bare margin, the picked row's frame standing above it),
     LEAVE held back until one is picked, sent as `successor`; a stale list's 409
     `successor_required` is no failure: the confirmation stays up, its pick cleared, and
     the list is read again (the candidates dressed again when its members change).
@@ -4147,8 +4150,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (`--edge-deep-d`, 24px: three steps, three quarters, a half, a quarter — a line of text
   deep), so a line scrolling up thins into the ground step by step before it reaches the
   controls, never sliced across its glyphs by a strip thinner than it. (The 6px `--edge-*`
-  stays where lines rest WHOLE and their empty margins take it: the board's held head and
-  your held line.) No border, no blur, no glass,
+  stays where lines rest WHOLE and their empty margins take it: the board's held head, your
+  held line and the successor pick's foot.) No border, no blur, no glass,
   no rounded float, no gradient: both layers are pseudo-elements of `.topbar` (the
   full-width fixed layer), shown in ONE step so nothing shifts or fades, and
   `.topbar-inner` keeps only its geometry. ModalHeader, which reuses the classes with no

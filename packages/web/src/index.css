@@ -8252,23 +8252,49 @@ figure.l1-fig {
   scroll-snap-type: y mandatory;
 }
 /* The members' list and the successor pick, while they hold more below (`data-more`,
-   `useMoreBelow`), END AS A DRUM ENDS (the drum's ends' own three 16px steps, `--dzo-*`):
-   at rest the last line shown thins through the Bayer cells, three quarters, a half, a
-   quarter, down to the list's foot — which is what says more wait below — and a line
-   passing out there steps down instead of being cut. A list on its last line ends clean,
-   so a framed line standing there keeps its corners. */
-.group-room > .board-list[data-more],
-.confirm-pick[data-more] {
+   `useMoreBelow`), END ON A VEIL: the ground hung at the list's visible foot (`::after`,
+   sticky on the scroller's bottom, taking no room and no tap) and seen through the Bayer
+   cells, so a line passing out there thins instead of being cut. WHAT CAN BE TAPPED AND A
+   FRAMED LINE STAND ABOVE IT, WHOLE: a control drawn thinned reads as another glyph or as
+   disabled, and a frame thinned loses its corners. A list on its last line ends clean. */
+.group-room > .board-list[data-more]::after,
+.confirm-pick[data-more]::after {
+  content: '';
+  flex: none;
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  pointer-events: none;
+}
+/* The members' foot is a line deep, the drum's ends' own three 16px steps: at rest the last
+   line shown thins, three quarters, a half, a quarter — which is what says more wait below —
+   while the owner's ✕ and your own framed line stand whole above the veil. */
+.group-room > .board-list[data-more]::after {
+  height: 48px;
+  margin-top: -48px;
   -webkit-mask:
-    linear-gradient(#000, #000) 0 0 / 100% calc(100% - 48px) no-repeat,
-    var(--dzo-2) 0 calc(100% - 32px) / 16px 16px repeat-x,
-    var(--dzo-4) 0 calc(100% - 16px) / 16px 16px repeat-x,
-    var(--dzo-6) 0 100% / 16px 16px repeat-x;
+    var(--dz-2) 0 0 / 16px 16px repeat-x,
+    var(--dz-4) 0 16px / 16px 16px repeat-x,
+    var(--dz-6) 0 32px / 16px 16px repeat-x;
   mask:
-    linear-gradient(#000, #000) 0 0 / 100% calc(100% - 48px) no-repeat,
-    var(--dzo-2) 0 calc(100% - 32px) / 16px 16px repeat-x,
-    var(--dzo-4) 0 calc(100% - 16px) / 16px 16px repeat-x,
-    var(--dzo-6) 0 100% / 16px 16px repeat-x;
+    var(--dz-2) 0 0 / 16px 16px repeat-x,
+    var(--dz-4) 0 16px / 16px 16px repeat-x,
+    var(--dz-6) 0 32px / 16px 16px repeat-x;
+}
+/* Every line of the pick IS a control (a radio), so its foot stops short of them: the short
+   6px edge, which at rest lies on the last line's bare margin under its mark and touches a
+   line only while one passes; the picked line's frame stands above it. */
+.confirm-pick[data-more]::after {
+  height: 6px;
+  margin-top: -6px;
+  -webkit-mask: var(--edge-u) 0 0 / 16px 6px repeat-x;
+  mask: var(--edge-u) 0 0 / 16px 6px repeat-x;
+}
+.group-room > .board-list .board-remove,
+.group-room > .board-list > .board-row.me,
+.confirm-pick > .board-row.picked {
+  position: relative;
+  z-index: 1;
 }
 .group-room > .board-list > .board-row,
 .confirm-pick > .board-row {
