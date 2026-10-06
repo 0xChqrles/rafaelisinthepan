@@ -11,7 +11,11 @@
   web/                        React + Vite + TS front (pkg @whippin/web)
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
-      hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
+      hooks/usePuzzle.ts      fetch the puzzle a `PuzzleRef` names (a day, or a bonus) from the backend
+      hooks/useHomeDay.ts     the day across the 22:00 flip: the undated route plays the active
+                              day as of the player's last ARRIVAL (a load, a navigation, the tab
+                              coming back to no round in progress), and a round on screen keeps
+                              the day it was opened as (`useOpenedAsActive`)
       hooks/puzzleCache.ts    the last 3 PARSED artifacts kept across mounts, no longer than the
                               CDN's own 300s (2026-09-11): today <-> an archive day without a reload
       api.ts                  backend client: puzzleUrl, 404->NO PUZZLE, and
@@ -168,6 +172,8 @@
                               CSS and Web Animations play on
       components/travel.ts    a control's stepped TRAVEL (`travelFrames`): the tab row's chip,
                               the period switch's frame
+      components/refuseShake.ts  the REFUSAL's stepped shake (2px held frames): the archive's
+                              month chip past either end, a device line whose sign-out failed
       components/raster.ts    a canvas raster's ABGR pixel (`abgr`, `hexToAbgr`, and `rgbToAbgr`
                               for `heat.ts`'s `rgb()` inks): the streak's orbit, the podium, the
                               archive's keys, the tutorial's art
@@ -678,7 +684,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   lies in the column's gap above the tray plus the play area's RACE BAND (`.play-race`):
   on today's sentence the play area keeps the line's footprint clear under the prompt from
   the first frame, line or no line, so the line never covers the hint row (a refused word's
-  feedback) nor takes a tap meant for it, and nothing moves when it arrives or leaves.
+  feedback) nor takes a tap meant for it, and nothing moves when it arrives or leaves. The
+  22:00 flip passing a round still on screen takes neither the line nor its band away: the
+  round keeps the day it was opened as (`useOpenedAsActive`, the header bullet's day rules).
 - **THE PALETTE IS THREE INDEPENDENT AXES (user-decided 2026-08-17): weird/calm +
   hole/solve + accent — in STAMP-INK tones** (retuned the same day against the user's
   /inspiration set — vintage offset stamps, riso posters — after the first calm cut went
@@ -1546,7 +1554,28 @@ it to the local store — see `packages/backend/AGENTS.md`).
       landed and today's foil cooled (`useRecordCalm`), the wait counted from the moment the
       lines mount — held as the skeleton line while the record has no numbers yet, and let in
       at once when it never will (a failed read). Once in they STAY: the record's RETRY
-      does not take them back out.
+      does not take them back out. **A SIGN OUT busies its OWN line only** (every other
+      line's SIGN OUT stays live; several may be out at once): while the request is out the
+      line THINS — the glyph a `.ghost-mark`, the words and the word's brackets through the
+      same half of the Bayer cells, never an opacity — and its SIGN OUT is `aria-disabled`;
+      once an answer no longer lists it, it leaves on `board-dissolve-out` and is dropped,
+      the lines under it closing up in one whole-line step (a line confirmed gone never
+      comes back from a later-landing answer) while the lines ABOVE never move: the list
+      keeps the tallest height it has stood at for the visit (`hold`, its `min-height`), so
+      a page scrolled to its foot never grows shorter under the reader (the browser would
+      pull every line above down by the one that left). **An answer that never came readable
+      — a 5xx, a dropped connection, a deadline, an unreadable body — says NOTHING** (the
+      root contract on unknown outcomes): the SAME sign-out is sent again, still thinned,
+      and only ITS answer is trusted — idempotent, a device already gone is the route's
+      success and its list is corrected for it (`removedKey`), where a plain read of the
+      list comes off the eventually consistent index and can still hold a device signed out
+      a moment ago — and the line leaves if that answer no longer holds it
+      (`signOutOutcome`, contract-tested). Only a READABLE no — a 4xx, or a sign-out's answer
+      still holding the line — RE-INKS it with the refusal's stepped shake
+      (`components/refuseShake.ts`, the archive month chip's too) and turns its one fact
+      into one muted line, NOT SIGNED OUT; when the second sending went unanswered too, the
+      line re-inks unshaken over NO ANSWER, claiming neither. Either note stands until the next try; a
+      status region says it to a screen reader.
     - **`AccountStats` (the crossroads, the recovery ending) is QUIET**: the record's side
       numbers' dress, three across between stippled rails — no foil, no flame, no burst
       (destruction never glows). Its `land` prop (a start delay in ms; omitted, the row
@@ -1752,6 +1781,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     DRAIN** (`resumeDepartureDrain`, PR-227 review): the verify answer's `departurePending`
     says the server could not finish, and `AccountEmail.finish` hands it over AFTER the
     adoption has published — so the drain runs as the account the link LANDED on.
+    **The SAVE door reads it on open**: `/account/email` on an account ALREADY SAVED opens
+    on the SAVE+already_bound ending (its address under the face, OK back to `/account`) —
+    straight onto it when the summary is in hand; while it is out the lead stands over the
+    address field's bare floor with the call's box held (`deciding`), and the answer either
+    lets the field in (it takes the focus then) or turns the step into that ending, the field
+    never mounting. No Turnstile challenge is prefetched while it decides.
   - **CONTINUE is a DEPLOY BUTTON**, the sixth (#216's five plus this one), and it has to
     be: an email link needs an account to bind, and "this device is empty" is exactly the
     reconnect case. It wears the shape that rule defines — one tap chaining the bootstrap,
@@ -1858,6 +1893,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     first cut stamped all three, and it broke the exact journey `?lang=` exists for — a pasted
     `/privacy?lang=en`, a language picked from the wheel (which rewrites the URL), then back:
     off the site, or in a fresh tab nothing at all, since the entry was the tab's first.
+  - **A NAVIGATION ONTO THE URL ALREADY SHOWN REPLACES** (`navigate`, contract-tested in
+    `routing.test.ts`): the same place twice in history is a back press that goes nowhere —
+    HOME tapped on the undated route past the 22:00 flip is the one such tap the screens
+    offer. It still notifies, so it is still an arrival (`useHomeDay`).
   - **A SIGN-OUT DOES NOT CLOSE IT** (`App`'s `blocked`, which is `signedOut` everywhere
     else). The verdict takes the whole screen because every private read answers
     `unknown_device` from there on — and this route makes none: it is a static document about
@@ -2457,7 +2496,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
 - **Leaderboard screen (#190; drawn over GROUPS since #271; its design user-decided
   2026-10-04 — "A with B's podium": the result's boards given the whole column, a PODIUM as
   its subject; approved the same day, "Let's go for the A+B version"):** `/<lang>/board`
-  (`pathForBoard`; a board is per (day, lang), always the ACTIVE day),
+  (`pathForBoard`; a board is per (day, lang), always the ACTIVE day — opened from a round
+  kept on screen past the 22:00 flip too, see the header bullet's day rules),
   `screens/Leaderboard.tsx` (the state, the reads and the acts — the board's read itself
   `state/boardOpening.ts`; what stands under the podium is `components/BoardUnder.tsx`, the board's readings `game/boardView.ts`, its
   list's order `game/boardSlots.ts`), entered from the header's CROWN KEY (lit while the
@@ -2496,7 +2536,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     cell turned to in whole pixels and hard steps and LOCKS ON as the screen opens. A third of
     a phone's line is narrower than « AUJOURD'HUI » at 12px: at ≤400px the words are 11px and
     tighter, and under 360 the line takes the head's whole width; GLOBAL's `TOP 50`
-    (`boardGlobalSub`); nothing in the no-group state.
+    (`boardGlobalSub`); nothing in the no-group state. It names the board ON SCREEN
+    (`viewTab`, the shown board's tab), never the one asked for: on a turn whose read is out
+    the board held keeps its own head, and the head changes with the body.
   - **THE COLUMN** (`.board-column`, the tab row's `tabpanel` labelled by the shown tab —
     `tabIds` — and a keyboard stop) is the body's room floored to WHOLE slots of `LINE_PX`
     (44px, `components/boardMetrics.ts`), its scroll snapping to them, so a line is never
@@ -3090,14 +3132,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   activeDate]`** (`web/src/config.ts`, one first day PER LANGUAGE since #317 — the languages
   are independent and English starts later: en 2026-10-01, its planned launch, fr
   2026-08-01; the user pins them); the calendar's earliest month is its language's first
-  (keyed by language, so a switch re-clamps the month on screen); a malformed or out-of-range
-  date-shaped segment → `home` redirect, while a **non-date** second segment keeps the old
-  tolerance (`/<lang>/xyz` → today's game). `parseRoute` takes the range bounds as an
+  (keyed by language, so a switch re-clamps the month on screen); anything else under a
+  language — a malformed or out-of-range date, an unknown step (`/<lang>/xyz`), a broken
+  bonus id — plays THAT language's today, never the `home` redirect (which answers in the
+  stored language). **A path read leniently is written back as the screen it resolved to**:
+  App `replaceState`s `pathForRoute(route)` whenever it differs from the URL (`/fr/xyz` →
+  `/fr`, `/fr/learn/99` → `/fr/learn`, `/account/nonsense` → `/account`, a trailing slash
+  dropped), so the address bar, a reload and a copied link name what is on screen;
+  contract-tested (`langs.test.ts`). `parseRoute` takes the range bounds as an
   injected arg (App passes the client `activeDate`) so parsing stays pure/testable.
   A BONUS puzzle (root `AGENTS.md`, 2026-09-24) is `/<lang>/bonus/<id>` → the game with
-  `bonusId` (a broken id → `home`); `usePuzzle(lang, date?, bonusId?)` answers a
-  `PuzzleRef`, which `Game`/`SolvedScreen`/`PuzzleTitle` take in place of a day number.
-  `usePuzzle` fetches the given date, else the active day (unchanged); the
+  `bonusId`; `GameRoute` names the puzzle as a `PuzzleRef` — the bonus, the route's date, or
+  the undated route's day (`useHomeDay`) — which `usePuzzle(lang, ref)` fetches and
+  `Game`/`SolvedScreen`/`PuzzleTitle` take in place of a day number; the
   404→`noPuzzle` path is reused as-is. `dateForDayNumber` (`shared/day.ts`) is the
   `dayNumber` inverse. The **OG share page** (`backend/ogCard.ts` `renderShareHtml`) now click-throughs
   to the **shared day's** date-addressed URL (`/<lang>/<dateForDayNumber(dayNumber)>`),
@@ -4605,12 +4652,33 @@ it to the local store — see `packages/backend/AGENTS.md`).
   game — while the loaded screen supplies its live status through the header's `left` slot.
   That keeps the status inside `<header>` and outside `.game`, and navigating into a game
   (e.g. from the archive) never changes the header structure; only its contents and the body
-  under it refresh. `usePuzzle`'s **stable
-  `dayNumber`** is still captured ONCE per request (`useMemo` on the requested date) and
-  shared by the fetch, round key, and share, but is no longer rendered in the header. An
-  undated tab held open across the 22:00 flip therefore still keeps its fetched puzzle/day;
-  the puzzle itself does not silently swap. The topbar is the extension point for future
-  chrome (streaks, stats, …).
+  under it refresh. **THE DAY ACROSS THE 22:00 FLIP** (`hooks/useHomeDay.ts`, three rules;
+  contract-tested, `useHomeDay.test.tsx`) — nothing changes under a player looking at the
+  screen, and the new day takes over the moment they ask for it:
+  - **The UNDATED route follows the active day ON ARRIVAL** (`useHomeDay`, App): its day is
+    the active 22:00-ET day as of the player's last arrival — the load, any navigation (a
+    tap on HOME onto the URL already shown included), back/forward, the tab shown again or
+    restored from the back/forward cache — so a tab left open past the flip opens on the new
+    day. Never at the flip itself under a tab ON SCREEN (a sentence changing mid-guess).
+  - **Coming back to a ROUND IN PROGRESS is not an arrival** (`useHoldHomeDay`, held by
+    `Round` while a guess is played and the round is not over): a player who looked away
+    mid-round finds their sentence where they left it, past the flip or not, and takes the
+    new day by asking (HOME, any key). A round with no guess, or over, holds nothing.
+  - **A ROUND ON SCREEN KEEPS THE DAY IT WAS OPENED AS** (`useOpenedAsActive`, GameRoute):
+    `Game`'s `isActiveDay` is read when the round (a puzzle in a language) comes on screen
+    and kept while it stays there, so the flip takes nothing from under the player — the
+    race line and its band, the result's boards, the streak read stay; a new round reads it
+    afresh. It is read off the clock the undated route's day reads — the wall clock at that
+    moment, never `useToday`'s timer, which can lag an arrival (a laptop waking, a page
+    restored from the back/forward cache) — so the round an arrival opens on the new day is
+    the active day. **A tap on a kept race line or result board still opens the board, and
+    the board is always the ACTIVE day's** (`pathForBoard` names no day): past the flip it
+    shows the new day, not the round's. The HEADER alone follows the live day (`isToday`,
+    off `useToday`, which a back/forward-cache restore refreshes too): past the flip it
+    shows the day's date, lights the calendar, and HOME leads to the new day — a navigation
+    onto the URL already shown, which REPLACES (`routing.ts`), so the old day leaves no
+    entry behind it.
+  The topbar is the extension point for future chrome (streaks, stats, …).
 - **The CHOOSER screens are RETIRED — both of them.** The MODE chooser (`/mode`) went
   2026-08-18 for the header's tabs; the LANGUAGE chooser (`/select`, `screens/LanguageSelect`
   + `components/Chooser` and their CSS) went 2026-09-05 (user-decided: "get rid of the
@@ -4689,7 +4757,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `rgba(51, 181, 229, 0.4)`, a translucent cyan box the shape of the control. A UI that
   draws its own press states, and its own focus outline, wants it on no surface at all, so
   `button` carries `transparent` once beside the global `text-shadow: none`; the hole, the
-  solved word and the wheel row each held a private copy of the same line and are gone. **The missing-puzzle screen
+  solved word and the wheel row each held a private copy of the same line and are gone.
+  **AND ONLY PROSE IS SELECTABLE**: `body` is `user-select: none` with no iOS long-press
+  callout (`-webkit-touch-callout: none`), so a select-all or a long press never paints the
+  chrome or the game's data; what is READ takes both back — the sentence's page
+  (`.solved-text`, its CUT excepted: a control), the privacy notice, the articles' prose,
+  every link (LISTEN keeps the system's long press) — and so does every field (WebKit
+  extends an ancestor's `none` to a nested input, and an unselectable field takes no
+  typing). **The missing-puzzle screen
   (`NoPuzzle`) has THREE wordings, told apart by the ROUTE (#77, decided 2026-07-27)** —
   the backend's 404 is undifferentiated, and which route asked is the only signal needed: on
   the **undated** route (today) it owns that the state is **abnormal** (a publish that did

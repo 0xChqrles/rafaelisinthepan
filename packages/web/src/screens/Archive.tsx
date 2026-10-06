@@ -26,7 +26,7 @@ import { lastMonth, rememberMonth } from '../components/calendar/memory';
 import { monthTabs } from '../components/calendar/months';
 import useSwipe from '../hooks/useSwipe';
 import useToday from '../hooks/useToday';
-import { prefersReducedMotion } from '../hooks/useScramble';
+import { refuseShake } from '../components/refuseShake';
 import { navigate } from '../routing';
 import { pathForDay, type LangCode } from '../langs';
 import { FIRST_PUZZLE_DATE } from '../config';
@@ -56,15 +56,6 @@ function firstDayOfWeek(lang: string): number {
 // day never flashes it — and a finger travelling this far is a scroll or a swipe, not a press.
 const PRESS_DELAY_MS = 64;
 const PRESS_SLOP_PX = 8;
-// A swipe past either end of the months answers like an invalid guess: the chip shakes.
-const EDGE_SHAKE: Keyframe[] = [
-  { translate: '-2px 0', offset: 0, easing: 'steps(1, end)' },
-  { translate: '2px 0', offset: 0.25, easing: 'steps(1, end)' },
-  { translate: '-2px 0', offset: 0.5, easing: 'steps(1, end)' },
-  { translate: '0 0', offset: 0.75 },
-  { translate: '0 0', offset: 1 },
-];
-const EDGE_SHAKE_MS = 160;
 // Before the column is measured (the one render before the layout effect, never painted): a
 // phone's month for the buttons, and no raster yet.
 const FIRST_GEOMETRY = calGeometry(362, 844, true);
@@ -242,11 +233,8 @@ export default function Archive({ lang }: { lang: LangCode }) {
     rememberMonth(lang, activeDay, ym);
     release();
   };
-  const shakeChip = () => {
-    if (prefersReducedMotion()) return;
-    const ink = rootRef.current?.querySelector<HTMLElement>('.board-tabs-ink');
-    ink?.animate?.(EDGE_SHAKE, { duration: EDGE_SHAKE_MS });
-  };
+  // A swipe past either end of the months answers like an invalid guess: the chip shakes.
+  const shakeChip = () => refuseShake(rootRef.current?.querySelector('.board-tabs-ink'));
   const { handlers: swipe, swiped } = useSwipe((step) => {
     const next = shown + step;
     if (next < 0 || next >= tabs.length) shakeChip();

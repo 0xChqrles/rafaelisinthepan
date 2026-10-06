@@ -1,5 +1,5 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
-import { activeDate, dayNumber as dayNumberOf, isBonusRef } from '@whippin/shared';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { activeDate, dayNumber as dayNumberOf, isBonusRef, puzzleAddress, type PuzzleRef } from '@whippin/shared';
 import LoadingWave from './components/LoadingWave';
 import usePuzzle from './hooks/usePuzzle';
 import Account from './screens/Account';
@@ -27,11 +27,12 @@ import { PLAY_LEVEL } from './tutorial/levels';
 import { useGameStore } from './state/gameStore';
 import { track } from './analytics';
 import { useLocation, navigate } from './routing';
-import { parseRoute, pathForGame, pathForLesson, type LangCode, type Route } from './langs';
+import { parseRoute, pathForGame, pathForLesson, pathForRoute, type LangCode, type Route } from './langs';
 // Inline SVG (vite-plugin-svgr): the header's leaderboard entry, painting with
 // currentColor like every chrome icon; the button's aria-label names it.
 import { t } from './i18n';
 import useToday from './hooks/useToday';
+import useHomeDay, { useOpenedAsActive } from './hooks/useHomeDay';
 import useUiLang from './hooks/useUiLang';
 import { streakPreviewFromSearch } from './dev/streakPreview';
 import ErrorScreen from './components/ErrorScreen';
@@ -107,6 +108,14 @@ export default function App() {
     if (route.view !== 'home') return;
     navigate(pathForGame(homeLang), { replace: true });
   }, [route.view, homeLang]);
+  // AND A PATH READ LENIENTLY NAMES THE SCREEN IT RESOLVED TO: `/fr/xyz` plays today, so the
+  // URL says `/fr`; `/fr/learn/99` is the list, so it says `/fr/learn`. Replaced, never
+  // pushed — the path the player landed on is not a place to go back to — so a reload, a
+  // copied link and the address bar all name what is on screen.
+  const canonical = pathForRoute(route);
+  useEffect(() => {
+    if (canonical !== null && canonical !== pathname) navigate(canonical, { replace: true });
+  }, [canonical, pathname]);
 
   // The board's whose-scores tab belongs to a VISIT (user feedback 2026-08-20, narrowing
   // the first cut's standing preference). It has to survive the two things that remount
@@ -132,6 +141,11 @@ export default function App() {
   // The frame's edition serial is the ACTIVE day's own index — today's number whatever
   // screen is up (an archived day's date already reads in the header's date chip).
   const editionDay = useToday();
+  // The day the UNDATED route plays: the active day as of the player's last arrival (a load,
+  // a navigation, the tab coming back to no round in progress) — never swapped under a
+  // visible player at the 22:00 flip (`useHomeDay`). Past the flip until then the header
+  // labels it as the archive's day, while its round keeps the day it was opened as.
+  const homeDay = useHomeDay();
 
   // Signed out from another device (#216). It takes the whole screen because it is not one
   // surface's problem: every private read on every route answers `unknown_device` from here
@@ -150,7 +164,7 @@ export default function App() {
   // DeviceFrame is decorative and deliberately remains outside.
   const identityScope = useIdentityScopeRevision();
 
-  const place = blocked ? null : headerPlace(route, gameSurface, today);
+  const place = blocked ? null : headerPlace(route, gameSurface, today, homeDay);
   // Leaving the PLAYED lesson (level 1) by the row IS skipping it: tracked as such, and the
   // onboarding question is settled so the invitation does not ask again (nothing is recorded
   // as done). Leaving an article level is only leaving: it was never the onboarding.
@@ -217,6 +231,7 @@ export default function App() {
           <GameRoute
             lang={route.lang}
             date={route.date}
+            homeDay={homeDay}
             bonusId={route.bonusId}
             surface={gameSurface}
             settleOnboarding={setOnboarded}
@@ -238,14 +253,15 @@ export default function App() {
 // WHICH PLACE THE ROW LIGHTS, and `null` where the app wears no header at all: the language
 // chooser, the invite landing, the onboarding question and the signed-out screen are each a
 // surface with nowhere else to be.
-function headerPlace(route: Route, surface: GameSurface, today: string): HeaderPlace | null {
+function headerPlace(route: Route, surface: GameSurface, today: string, homeDay: string): HeaderPlace | null {
   switch (route.view) {
     case 'game':
       if (surface === 'invite') return null;
-      // Any OTHER day is the ARCHIVE's; HOME unlit is a live key, the way back to today.
+      // Any OTHER day is the ARCHIVE's; HOME unlit is a live key, the way back to today —
+      // the undated route's own day included, once the flip has passed it by on screen.
       // A BONUS puzzle is played like an archive day (bonus puzzles, 2026-09-24).
       if (route.bonusId !== undefined) return 'archive';
-      return route.date == null || route.date === today ? 'home' : 'archive';
+      return (route.date ?? homeDay) === today ? 'home' : 'archive';
     case 'archive':
       return 'archive';
     case 'board':
@@ -274,6 +290,8 @@ function headerPlace(route: Route, surface: GameSurface, today: string): HeaderP
 function GameRoute({
   lang,
   date,
+  // The day the undated route plays (`useHomeDay`), when `date` names none.
+  homeDay,
   // A BONUS puzzle (shared bonus.ts), in place of a day: no date, never the active day —
   // played like an archive day, credited nothing.
   bonusId,
@@ -286,6 +304,7 @@ function GameRoute({
 }: {
   lang: LangCode;
   date?: string;
+  homeDay: string;
   bonusId?: number;
   surface: GameSurface;
   settleOnboarding: () => void;
@@ -297,15 +316,25 @@ function GameRoute({
     cycleError: () => void;
   };
 }) {
-  const { puzzle, ref, error, loading, noPuzzle, retry } = usePuzzle(lang, date, bonusId);
+  // WHICH puzzle: the bonus, the route's date, or the undated route's day.
+  const day = date ?? homeDay;
+  const ref = useMemo<PuzzleRef>(
+    () => (bonusId !== undefined ? { bonusId } : { dayNumber: dayNumberOf(day) }),
+    [day, bonusId],
+  );
+  const { puzzle, error, loading, noPuzzle, retry } = usePuzzle(lang, ref);
   const setLastLang = useGameStore((s) => s.setLastLang);
 
-  // A dated route replays a past day when its date is not today's active game day; the
-  // undated route is always the active day. Gates the streak celebration + solve analytics.
-  // LIVE, off the app's one day signal: a dated route held open across the 22:00 flip
-  // stops being the active day without a reload.
+  // Whether the day on screen IS the active game day RIGHT NOW — the header's question (the
+  // title's date): the undated route's day too, once the 22:00 flip has passed it by on
+  // screen. LIVE, off the app's one day signal.
   const today = useToday();
-  const isActiveDay = bonusId === undefined && (date == null || dayNumberOf(date) === today);
+  const isToday = !isBonusRef(ref) && ref.dayNumber === today;
+  // ...and whether the ROUND is: the day it was opened as, for as long as it stays on screen
+  // (`useOpenedAsActive`) — so the flip passing it takes nothing from under the player: its
+  // race line, its result's boards, its race band. A new round reads it afresh, off the clock
+  // the undated route's day reads (never `today`'s timer, which can lag an arrival).
+  const isActiveDay = useOpenedAsActive(`${lang}:${puzzleAddress(ref)}`, bonusId === undefined ? day : null);
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
   useEffect(() => {
@@ -336,7 +365,7 @@ function GameRoute({
           missing-puzzle and the loaded game: which puzzle is a fact of the ROUTE, so it
           never waits on a game to report it. */}
       <HeaderLeft>
-        <PuzzleTitle lang={lang} puzzleRef={isActiveDay ? null : ref} />
+        <PuzzleTitle lang={lang} puzzleRef={isToday ? null : ref} />
       </HeaderLeft>
       {loading && (
         <p className="status">

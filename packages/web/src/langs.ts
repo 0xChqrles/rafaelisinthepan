@@ -1,8 +1,10 @@
 import {
   BONUS_SEGMENT,
+  bonusPath,
   GROUP_ID_PATTERN,
   GROUP_LANDING_SEGMENT,
   GROUP_SEGMENT,
+  groupLandingPath,
   isBonusId,
   isCalendarDate,
   LEARN_SEGMENT,
@@ -137,6 +139,11 @@ export { groupInvitePath as pathForGroupInvite } from '@whippin/shared';
 // notice, /join/g/<groupId> the group invite landing (#271), and anything else (/, unknown paths) is
 // a `home` redirect that bounces to the user's language (see resolveHomeLang). A BONUS
 // puzzle (shared bonus.ts) is a game too, at /<lang>/bonus/<id>: no day, link only.
+//
+// A path that NAMES a language but nothing real under it — an unknown step, a level not
+// ready, a date out of range, a broken bonus id — is that language's own screen, never the
+// home redirect (which would answer in the stored language, not the one the link named);
+// App then writes the screen's own path back into the URL (`pathForRoute`).
 export type Route =
   | { view: 'game'; lang: LangCode; date?: string; bonusId?: number }
   | { view: 'archive'; lang: LangCode }
@@ -189,15 +196,14 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
   if (!isLang(seg)) return { view: 'home' };
   const firstDate = bounds.firstDate ?? FIRST_PUZZLE_DATE[seg];
 
-  // A dated deep link is honored only when it is a real calendar date within range; a
-  // date-SHAPED segment that is malformed OR out of range is treated as unknown -> home
-  // (a clearly date-like deep link that is broken should not silently fall through to
-  // today). The range ends at the client's active day: a day not yet out is no deep link.
-  const dateOf = (s: string): string | 'home' | null => {
-    if (!DATE_RE.test(s)) return null; // not date-shaped at all
-    if (!isCalendarDate(s)) return 'home';
-    if (s < firstDate) return 'home';
-    if (bounds.activeDate && s > bounds.activeDate) return 'home';
+  // A dated deep link is honored only when it is a real calendar date within range. The
+  // range ends at the client's active day: a day not yet out is no deep link. Anything else
+  // under the language — a date malformed or out of range included — plays that language's
+  // today.
+  const dateOf = (s: string): string | null => {
+    if (!DATE_RE.test(s) || !isCalendarDate(s)) return null;
+    if (s < firstDate) return null;
+    if (bounds.activeDate && s > bounds.activeDate) return null;
     return s;
   };
 
@@ -215,17 +221,48 @@ export function parseRoute(pathname: string, bounds: RouteBounds = {}): Route {
     const found = levelOf(level);
     return found && isReady(found, seg) ? { view: 'lesson', lang: seg, level } : { view: 'learn', lang: seg };
   }
-  // /<lang>/bonus/<id> — a bonus puzzle. A broken id is a broken deep link: home.
+  // /<lang>/bonus/<id> — a bonus puzzle. A broken id names no puzzle: today's.
   if (second === BONUS_SEGMENT) {
-    return third && isBonusId(third) ? { view: 'game', lang: seg, bonusId: Number(third) } : { view: 'home' };
+    return third && isBonusId(third) ? { view: 'game', lang: seg, bonusId: Number(third) } : { view: 'game', lang: seg };
   }
   // /<lang>/<YYYY-MM-DD> — a past day.
   const date = dateOf(second);
-  if (date === 'home') return { view: 'home' };
   if (date) return { view: 'game', lang: seg, date };
-  // Any other non-date, non-archive segment keeps today's tolerance: /<lang>/xyz plays
-  // today's game.
+  // Any other segment — a date out of range, /<lang>/xyz — plays today's game.
   return { view: 'game', lang: seg };
+}
+
+// THE PATH OF A SCREEN: what the URL says once a route has been resolved. A path the parser
+// read leniently (`/fr/xyz`, `/fr/learn/99`, an out-of-range date, a trailing slash) resolves
+// to a screen whose own path is another, and App writes that one back (`replaceState`), so
+// the address bar, a reload and a copied link all name the screen on view. `home` has none:
+// it is the redirect itself.
+export function pathForRoute(route: Route): string | null {
+  switch (route.view) {
+    case 'game':
+      if (route.bonusId !== undefined) return bonusPath(route.lang, route.bonusId);
+      return route.date ? pathForDay(route.lang, route.date) : pathForGame(route.lang);
+    case 'archive':
+      return pathForArchive(route.lang);
+    case 'board':
+      return pathForBoard(route.lang);
+    case 'learn':
+      return pathForLearn(route.lang);
+    case 'lesson':
+      return pathForLesson(route.lang, route.level);
+    case 'account':
+      return ACCOUNT_PATH;
+    case 'accountEmail':
+      return route.intent === 'save' ? ACCOUNT_EMAIL_PATH : ACCOUNT_SIGNIN_PATH;
+    case 'profile':
+      return PROFILE_PATH;
+    case 'privacy':
+      return PRIVACY_PATH;
+    case 'groupInvite':
+      return groupLandingPath(route.groupId);
+    case 'home':
+      return null;
+  }
 }
 
 // THE LINK'S OWN LANGUAGE (`?lang=`, user-decided 2026-09-03: "so you can send the privacy

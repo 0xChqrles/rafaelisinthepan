@@ -480,6 +480,31 @@ body:has(.app > .board-screen) {
   background: var(--accent);
   color: var(--fg);
 }
+/* ONLY PROSE IS SELECTABLE. The chrome and the game's data — the keys, the sentence, the
+   boards, the counts — are things to tap, and a select-all (or a long press, which iOS
+   answers with its callout) painted them cobalt as if they were text to copy. So nothing is
+   selectable and nothing calls out, on the body and everything portaled onto it; what is
+   READ takes both back: the sentence's page, the privacy notice, the tutorial's articles —
+   every link (LISTEN keeps the system's own long press on a link) — and every field, since
+   WebKit extends an ancestor's `none` to a nested text input, and an unselectable field is
+   one you cannot type into. */
+body {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+a,
+input,
+textarea,
+.solved-text,
+.privacy-screen,
+.article-head,
+.article-section,
+.article-source {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
 
 .sr-only {
   position: absolute;
@@ -672,7 +697,6 @@ body:has(.app > .board-screen) {
   line-height: var(--key-h);
   text-align: center;
   color: transparent;
-  user-select: none;
 }
 /* HOVER (a mouse): the corner brackets of a thing that can be tapped — four arms in the
    secondary ink, just outside the key, in one hard step; never on a day out of range, never at
@@ -1574,8 +1598,6 @@ body:has(.app > .board-screen) {
   overflow: hidden;
   touch-action: none;
   overscroll-behavior: contain;
-  user-select: none;
-  -webkit-user-select: none;
 }
 .ps-track {
   will-change: translate;
@@ -1657,7 +1679,6 @@ body:has(.app > .board-screen) {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  user-select: none;
 }
 /* The digit canvas: left/top/size are set by CellDigits (viewport-sized since
    2026-08-17); it paints in currentColor —
@@ -2462,9 +2483,6 @@ body:has(.app > .board-screen) {
   font-family: var(--pixel-font);
   font-size: clamp(18px, 3.2vw, 30px); /* = .phrase */
   color: var(--fg);
-  /* The drawn prompt is not selectable — the real field under it (`.wi-field`) is what
-     holds the caret, and it is not on screen. */
-  user-select: none;
 }
 /* THE PROMPT'S REAL FOCUS TARGET (#267): a field the player never sees, holding the guess
    and every keystroke that builds it. Hidden the `.sr-only` way — never `display: none` or
@@ -2486,11 +2504,6 @@ body:has(.app > .board-screen) {
   background: none;
   color: transparent;
   font-size: 16px;
-  /* The drawn prompt around it is `user-select: none`, and WebKit has long extended that to
-     a nested field — an unselectable text input is one you cannot type into. Said back
-     explicitly on the one element that has to be editable. */
-  user-select: text;
-  -webkit-user-select: text;
 }
 .wi-prompt {
   color: var(--accent);
@@ -3780,7 +3793,8 @@ body:has(.app > .board-screen) {
    one row tall and set on the row's top, so no row grows; the glyph sits on the text's
    baseline. Its finger's box (`::after`, no layout) grows UP into the credit's margin
    (`clamp(14px, …)`, never less) and SIDEWAYS, never down over the line's next row, and
-   stops short of the line's first word past the no-break space. */
+   stops short of the line's first word past the no-break space. A control inside the
+   prose, so the prose's selection passes it by. */
 .solved-text .solved-cut {
   height: 1.6em;
   padding: 0 7px;
@@ -3788,6 +3802,8 @@ body:has(.app > .board-screen) {
   font: inherit;
   letter-spacing: 0;
   text-transform: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .solved-text .solved-cut::before {
   inset: 3px 0;
@@ -4255,8 +4271,6 @@ body:has(.app > .board-screen) {
   touch-action: none;
   overscroll-behavior: contain;
   scrollbar-width: none;
-  user-select: none;
-  -webkit-user-select: none;
 }
 .wheel-scroll::-webkit-scrollbar {
   display: none;
@@ -4684,9 +4698,6 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   display: flex;
   flex-direction: column;
   gap: var(--kb-gap);
-  /* Keys are buttons, never a text field: tapping opens no native keyboard and
-     selects no text. */
-  user-select: none;
   touch-action: manipulation;
 }
 /* (The DEVICE PLATE under the keys — a hairline slab behind the desktop keyboard, 2026-08-18
@@ -6498,6 +6509,16 @@ figure.l1-fig {
   flex: none;
   margin: 6px 0 0;
 }
+/* The SAVE door still asking whether the account is saved: the field's FLOOR alone (the
+   prompt and its placeholder land on it once there is something to save), and the call's
+   box kept, empty, so nothing moves when either answer comes. */
+.link-field.held {
+  height: var(--field-h);
+  cursor: default;
+}
+.mix-btn.held {
+  visibility: hidden;
+}
 
 /* THE CODE PROMPT: six drawn keys over ONE real input (components/CodeInput.tsx explains
    why one). The input is stretched over the whole row and invisible — never
@@ -6958,7 +6979,8 @@ figure.l1-fig {
   -webkit-mask-image: var(--dz-2);
   mask-image: var(--dz-2);
 }
-.ghost-mark .avatar {
+.ghost-mark .avatar,
+.ghost-mark .ui-icon {
   position: relative;
   -webkit-mask-image: var(--dz-4);
   mask-image: var(--dz-4);
@@ -10763,14 +10785,14 @@ figure.l1-fig {
   border-color: var(--fg);
 }
 @media (hover: hover) and (pointer: fine) {
-  .quiet-btn:hover:not(:disabled) {
+  .quiet-btn:hover:not(:disabled, [aria-disabled='true']) {
     color: var(--fg);
   }
-  .quiet-btn:hover:not(:disabled)::before {
+  .quiet-btn:hover:not(:disabled, [aria-disabled='true'])::before {
     border-color: var(--fg);
   }
 }
-.quiet-btn:active:not(:disabled) {
+.quiet-btn:active:not(:disabled, [aria-disabled='true']) {
   translate: 0 2px;
 }
 /* Not answerable for now: the word and its brackets one COLOUR STEP down — from `--muted` to
@@ -10793,6 +10815,25 @@ figure.l1-fig {
   content: '';
   position: absolute;
   inset: -8px -4px;
+}
+/* A LINE BEING SIGNED OUT thins in the ghost's material — its glyph a `.ghost-mark` (the ink
+   to half its cells over the slate stipple), its words and its SIGN OUT through the same half
+   of the Bayer cells — never an opacity; nothing else on the list is busy. Once gone it leaves
+   through the board's dissolve (over the thinned ink, so its last cells drop out in the
+   dissolve's first half), and the lines under it close up in one step when it is dropped. */
+.device-row.signing .device-info,
+.device-row.signing .device-signout,
+.device-row.going .device-info,
+.device-row.going .device-signout {
+  -webkit-mask-image: var(--dz-4);
+  mask-image: var(--dz-4);
+}
+.device-row.going {
+  pointer-events: none;
+  animation: board-dissolve-out 240ms linear forwards;
+}
+.device-signout[aria-disabled='true'] {
+  cursor: default;
 }
 /* The list's read still out: one line's boxes in the stippled slate — standing, once the lines
    are in, over the first of them until their dissolve begins. */
@@ -11114,8 +11155,6 @@ figure.l1-fig {
   height: var(--pside);
   touch-action: none;
   cursor: crosshair;
-  user-select: none;
-  -webkit-user-select: none;
 }
 .editor-picture,
 .editor-fx {

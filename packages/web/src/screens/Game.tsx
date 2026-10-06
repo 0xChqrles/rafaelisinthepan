@@ -16,6 +16,7 @@ import { latestMaskedPick, selectWord, shownHolesFor, withoutMaskedPicks, type W
 import LoadingWave from '../components/LoadingWave';
 import useVocab from '../hooks/useVocab';
 import useRoundSync from '../hooks/useRoundSync';
+import { useHoldHomeDay } from '../hooks/useHomeDay';
 import { giveUpRound, notifyGuess, retryRoundSync } from '../state/roundSync';
 import { useGameStore, roundKeyFor } from '../state/gameStore';
 import { noteSolvedDay, usePlayerHistory } from '../state/history';
@@ -99,8 +100,10 @@ export default function Game({
   // WHICH puzzle: a game day, or a BONUS (shared bonus.ts) — no day, so never the active
   // day, and never a streak or an analytics beat.
   puzzleRef: PuzzleRef;
-  // Whether this is the client's active day (false when replaying an archive day, #55):
-  // gates the fresh-solve streak celebration and tags solve analytics as archive/live.
+  // Whether this round is the client's active day (false when replaying an archive day, #55)
+  // — AS IT WAS OPENED, kept for as long as it stays on screen (`useOpenedAsActive`), so the
+  // 22:00 flip passing it takes nothing from under the player. Gates the race line, the
+  // result's boards, the streak read and tags solve analytics as archive/live.
   isActiveDay: boolean;
   // The dev streak preview lives above Game in App, so it supplies the same animation gate
   // as the real in-round dialog without coupling the preview to persisted round state.
@@ -373,6 +376,10 @@ function Round({
   // The round is over either way — the difference is what the headline says and whether
   // anything celebrates.
   const finished = solved || ended;
+  // A round IN PROGRESS — a guess played, the round not over — keeps the undated route on its
+  // day when the tab comes back past the 22:00 flip (`useHoldHomeDay`): the sentence a player
+  // is working on changes only when they ask for the new day.
+  useHoldHomeDay(guessCount > 0 && !finished);
   // Every word on the board is final: the solve's, or a give-up's reveal (which shows every
   // hole at its secret — `boardHoles` below).
   const allWordsResolved = (boardComplete || gaveUp) && resolvedHoleIndices.size === holes.length;
@@ -1245,7 +1252,9 @@ function Round({
               It also anchors the score watermark, so the big try count stays centered
               behind THIS content rather than the full-height .game. */}
           {/* `play-race`: today's sentence keeps the race line's band clear under the prompt
-              (index.css `.play-race`) for the whole round, so the line covers nothing. */}
+              (index.css `.play-race`) for the whole round, so the line covers nothing — the
+              22:00 flip passing a round still on screen included (`isActiveDay` is the day
+              the round was opened as). */}
           <div className={`play${isActiveDay ? ' play-race' : ''}${showResults ? ' play-finished' : ''}`}>
             {/* The sentence, through every phase that owns it: the live holes/hits while
                 playing, the fully resolved sentence through the solving beats — and then

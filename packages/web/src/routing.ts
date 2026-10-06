@@ -27,12 +27,17 @@ function writeEntry(url: string, replace: boolean): void {
 // ?streak= / ?error= survive route changes). `replace` swaps the current history
 // entry instead of pushing — used for the `/` -> /<lang> redirect so `/` never sits in
 // history and back from the game exits rather than bouncing through the redirect.
+//
+// A navigation onto the URL ALREADY SHOWN always replaces: the same place twice in history
+// is a back press that goes nowhere. It still notifies, so it is still an arrival — HOME
+// tapped on the undated route past the 22:00 flip brings the new day (`useHomeDay`) without
+// leaving the old day's entry behind it.
 export function navigate(path: string, opts: { replace?: boolean } = {}): void {
   // A PUSHED entry is stamped as the app's own, which is what `goBack` reads:
   // `history.length` counts the whole tab's browsing, so it cannot tell a screen this app
   // pushed from one the player reached by pasting a URL, and going back from the latter
   // leaves the site.
-  writeEntry(path + window.location.search, opts.replace === true);
+  writeEntry(path + window.location.search, opts.replace === true || path === window.location.pathname);
 }
 
 // LEAVE A SCREEN THE WAY IT WAS ENTERED. Most steps here return to ONE parent, so they
@@ -69,7 +74,9 @@ export function dropLangParam(): void {
   writeEntry(`${url.pathname}${url.search}${url.hash}`, true);
 }
 
-function subscribe(l: Listener): () => void {
+// Every navigation this app makes (a push or a replace, even onto the URL already shown),
+// told as it happens; the browser's own back/forward is `popstate`. Returns the unsubscribe.
+export function onNavigate(l: Listener): () => void {
   listeners.add(l);
   return () => {
     listeners.delete(l);
@@ -94,7 +101,7 @@ export function useLocation(): string {
   useEffect(() => {
     const sync = () => setHref(window.location.pathname + window.location.search);
     window.addEventListener('popstate', sync);
-    const off = subscribe(sync);
+    const off = onNavigate(sync);
     // A navigation that RACED this subscription: a child's mount effect runs before its
     // parent's, so a screen that `navigate`s as soon as it mounts notified nobody — the
     // URL changed and the page stayed empty until a reload. Reading the location once here

@@ -754,11 +754,13 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
       />
 
       {/* THE LINE UNDER THE TABS, one height whatever it holds: a group's three boards,
-          GLOBAL's caption, or nothing. */}
+          GLOBAL's caption, or nothing. It names the board ON SCREEN (`viewTab`), never the
+          one asked for: a turn whose read is out keeps the board before under its own head,
+          and the head changes with the body when the new board lands. */}
       <div className="board-head">
-        {tab === 'group' && active ? (
+        {viewTab === 'group' && active ? (
           <PeriodSwitch lang={lang} period={period} onChange={setPeriod} />
-        ) : tab === 'global' ? (
+        ) : viewTab === 'global' ? (
           <span className="board-caption">{t(lang, 'boardGlobalSub')}</span>
         ) : null}
       </div>

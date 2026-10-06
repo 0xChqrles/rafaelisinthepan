@@ -276,7 +276,27 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // Read ONCE, and only when there is no ending to show: a completed link outranks a code
   // that was in flight before it.
   const [resumed] = useState(() => (carried ? null : readResumable(intent)));
-  const [step, setStep] = useState<Step>(carried ? 'done' : resumed ? 'code' : 'address');
+
+  // WHAT THIS ACCOUNT IS SAVED AS — the cached summary, not a new request (and a tokenless
+  // device gets the answer without one at all, #216). The RETURN door reads it to know what
+  // signing in would cost; the SAVE door to know whether there is anything left to save.
+  const { phase: summaryPhase, summary } = useAccountSummary();
+  const ownSummary = identity !== null && summary?.accountId === identity.accountId ? summary : null;
+  const summaryKnown = identity === null || ownSummary !== null || summaryPhase === 'failed';
+  useEffect(() => {
+    loadAccountSummary();
+  }, [identity]);
+  // THE SAVE DOOR ON AN ACCOUNT ALREADY SAVED opens on its SAVED ENDING — the errand is
+  // done, and an address field would only earn the `account_linked` refusal. Straight onto
+  // it when the summary is in hand; while it is out the lead stands with the field and the
+  // call HELD (`deciding`), and the answer either lets them in or turns the step into the
+  // ending, the lead's face stepping forward as it does on any save.
+  const savedAs = !returning ? (ownSummary?.email ?? null) : null;
+  const fresh = !returning && !carried && !resumed;
+  const [step, setStep] = useState<Step>(
+    carried ? 'done' : resumed ? 'code' : fresh && savedAs !== null ? 'done' : 'address',
+  );
+  const [deciding, setDeciding] = useState(() => fresh && savedAs === null && !summaryKnown);
   // THE STEP LEAVES BEFORE THE NEXT ONE COMES: the code step's lines dissolve out through the
   // dither — the lead (the face, its chip) standing — and only then does the crossroads or the
   // ending take its place. Where the lead stood is noted as it goes, so the ending's face
@@ -310,8 +330,23 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
       setStep(next);
     }, STEP_LEAVE_MS);
   }, []);
-  const [outcome, setOutcome] = useState<LinkOutcome | null>(carried?.outcome ?? null);
-  const [linked, setLinked] = useState<string | null>(carried?.email ?? null);
+  const [outcome, setOutcome] = useState<LinkOutcome | null>(
+    carried?.outcome ?? (step === 'done' ? 'already_bound' : null),
+  );
+  const [linked, setLinked] = useState<string | null>(carried?.email ?? (step === 'done' ? savedAs : null));
+  // (A saved answer keeps the step HELD while it leaves: the field never mounts at all.)
+  const decided = useRef(false);
+  useEffect(() => {
+    if (!deciding || !summaryKnown || decided.current) return;
+    decided.current = true;
+    if (savedAs === null) {
+      setDeciding(false);
+      return;
+    }
+    setOutcome('already_bound');
+    setLinked(savedAs);
+    advance('done');
+  }, [deciding, summaryKnown, savedAs, advance]);
   const [receipt, setReceipt] = useState<AccountStakes | null>(carried?.stakes ?? null);
   const [address, setAddress] = useState(resumed?.address ?? '');
   // The instant the code was SENT — the countdown's anchor, and the resume's clock.
@@ -337,22 +372,13 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
     if (carried) justLinked = null;
   }, [carried]);
 
-  // WHAT SIGNING IN WOULD COST, known before a keystroke is spent. One fact decides it and
-  // the client already holds it — whether this device's account has an address of its own —
-  // so this is the cached summary, not a new request (and a tokenless device gets the
-  // answer without one at all, #216).
-  const { summary } = useAccountSummary();
-  useEffect(() => {
-    if (returning) loadAccountSummary();
-  }, [returning, identity]);
-
   // The challenges are PREFETCHED while the address is being typed (#203's rule): a bot
   // check landing on the tap costs real seconds on a button the player is watching. TWO,
   // because a tokenless device spends one on the bootstrap this tap performs and the next
-  // on the send itself.
+  // on the send itself. (Not while the step is deciding: a saved account sends nothing.)
   useEffect(() => {
-    if (step === 'address') prefetchTurnstileTokens(2);
-  }, [step]);
+    if (step === 'address' && !deciding) prefetchTurnstileTokens(2);
+  }, [step, deciding]);
 
   // The resend cooldown, read off the SEND'S OWN INSTANT rather than counted down. A tick
   // counter stalls in a backgrounded tab — which is precisely the tab this step asks the
@@ -876,7 +902,17 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           </div>
         )}
 
-        {step === 'address' && (
+        {step === 'address' && deciding && (
+          // HELD while the save door does not yet know whether the account is saved: the
+          // field's floor alone, and the call's box. Nothing here can be pressed, so nothing
+          // offers to be; the field mounts (and takes the focus) once there is something to
+          // save.
+          <>
+            <div className="link-field held" aria-hidden="true" />
+            <div className="mix-btn link-call held" aria-hidden="true" />
+          </>
+        )}
+        {step === 'address' && !deciding && (
           <>
             <AddressField
               value={address}

@@ -19,7 +19,10 @@ export function millisecondsUntilTodayRefresh(instant: Date): number {
 // The current game day's id, computed locally from the shared 22:00-ET rule. Unlike a
 // render-only clock read, this hook invalidates itself at the next DST-correct reset, so a
 // long-lived header cannot display an expired streak indefinitely. Visibility refresh is a
-// second line of defense for browsers that heavily throttle background-tab timers.
+// second line of defense for browsers that heavily throttle background-tab timers, and a
+// page restored from the back/forward cache refreshes too: its timer resumes with the time it
+// had left, and WebKit does not reliably flip visibility for the restore (`useHomeDay` moves
+// the undated route's day on that same event, so the header's reading keeps up with it).
 export default function useToday(): number {
   const [today, setToday] = useState(() => todayDayNumberAt(new Date()));
 
@@ -35,12 +38,17 @@ export default function useToday(): number {
     const refreshWhenVisible = () => {
       if (document.visibilityState === 'visible') refresh();
     };
+    const refreshWhenRestored = (event: PageTransitionEvent) => {
+      if (event.persisted) refresh();
+    };
 
     refresh();
     document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('pageshow', refreshWhenRestored);
     return () => {
       window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('pageshow', refreshWhenRestored);
     };
   }, []);
 
