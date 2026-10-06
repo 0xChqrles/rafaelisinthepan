@@ -750,9 +750,7 @@ These are decided and verified against the code. Treat them as load-bearing.
     OPEN-BLANK underline is retired** — under the hole words AND the route terminus's `???`.
   - **The PROMPT wears the SENTENCE's size** (user-decided 2026-09-01, superseding the flat
     24px of 2026-08-06): `.word-input` carries `.phrase`'s exact clamp at both breakpoints
-    — the two move together. On a desktop window 800px tall or less both top out at 24px
-    (the face's whole 3x), the give-up flag with them: the play column is the header's
-    (`--column`), and that is what keeps the longest day standing over the keyboard.
+    — the two move together.
   - **DECORATIVE LIGHT IS GONE**: the game words' soft currentColor aura (the hard 2px
     print stays — it is legibility), the LED self-glows (mosaic cells, meter cells,
     button LEDs, the sheet tick, the code-cell ink glow, the danger-note LED), the ENTER
@@ -922,10 +920,10 @@ These are decided and verified against the code. Treat them as load-bearing.
       (aria-hidden, pointer-events none), z-index 40 under the header's 60, covered by
       opaque dialogs, and DESKTOP ONLY (hidden ≤640px — a phone's viewport is all content).
     - **THE COLUMN is ONE custom property, `--column` (900px)**: the header row's width
-      (`.topbar-inner`, `min(var(--column), 100vw - 48px)`), the game's and its sentence's
-      (`.game`, `.phrase`; the lesson with them), the tutorial's list of levels (`.learn`),
-      and — less the row's own insets — the invitation's demo. What you play stands under
-      the row that names it.
+      (`.topbar-inner`), the tutorial's lesson (`.tutorial`) and list of levels (`.learn`),
+      and — less the row's own insets — the invitation's demo. **The day's game is not on
+      it**: `.game` and `.phrase` stay 1200px wide, because a long day wrapped to 900px
+      pushes the keyboard off a laptop's window.
     - **The KEYBOARD is FLAT (no "old skeuomorphism"):** every key is one solid dark
       tile at the sharp radius, nothing modelled, and **a press is a STATE, not
       travel** — brightness, never translateY (the rule the primary buttons follow
@@ -3950,7 +3948,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     a sentence), and the PROMPT sits just above the keyboard on the LEFT (`.tutorial--word
     .input-area`, `margin-top: auto`), off the word — and at ONE X on every stage: its own
     680px box centred in the column (`.tutorial .input-area`), where stretching it to a 680px
-    word column and a wider sentence column put it at two edges — and at ONE Y, parked on
+    word column and a 1200px sentence column put it at two edges — and at ONE Y, parked on
     the play area's bottom edge on every stage, the sentence's included (user-reported
     2026-09-16). Finding it ends the stage wordless and
     rolls into the sentence.

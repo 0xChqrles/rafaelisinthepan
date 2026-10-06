@@ -133,10 +133,10 @@
   --kb-gap: 6px;
   --kb-key-max: 46px;
 
-  /* THE COLUMN: the header row's width (`.topbar-inner`), and the play column under it —
-     the game and its sentence (`.game`, `.phrase`), the tutorial's lesson and its list of
-     levels (`.learn`) — so on a wide screen what you play stands under the row that names
-     it. */
+  /* THE COLUMN: the header row's width (`.topbar-inner`), and what stands under it in the
+     same column — the tutorial's lesson (`.tutorial`), the invitation's demo (less the
+     row's insets) and the list of levels (`.learn`). The day's game is wider (`.game`,
+     `.phrase`, 1200px): a long sentence needs the lines. */
   --column: 900px;
 }
 /* The hero name a step down on the narrowest phones (≤360px): the cap's 16 characters keep
@@ -771,7 +771,7 @@ body:has(.app > .board-screen) {
      and the bottom .tray (keyboard while playing, results once solved). .play's flex:1
      pushes the tray to the bottom edge and centers the sentence + prompt between them. */
   width: 100%;
-  max-width: var(--column);
+  max-width: 1200px;
   display: flex;
   flex-direction: column;
   align-items: start;
@@ -1651,7 +1651,7 @@ body:has(.app > .board-screen) {
   font-size: clamp(18px, 3.2vw, 30px);
   line-height: 1.5;
   text-align: left;
-  max-width: var(--column);
+  max-width: 1200px;
   text-shadow: 2px 2px 0 black;
   padding-top: var(--text-shift);
 }
@@ -2438,17 +2438,6 @@ body:has(.app > .board-screen) {
   /* The drawn prompt is not selectable — the real field under it (`.wi-field`) is what
      holds the caret, and it is not on screen. */
   user-select: none;
-}
-/* A SHORT DESKTOP WINDOW (a laptop's browser, 800px tall or less): the sentence tops out at
-   the pixel face's whole 24px instead of 30, the prompt and the flag with it. The column is
-   the header's (`--column`), so a long day wraps onto more lines than a wider one would, and
-   this is what keeps the longest of them standing over the keyboard. */
-@media (min-width: 641px) and (max-height: 800px) {
-  .phrase,
-  .give-up-btn,
-  .word-input {
-    font-size: clamp(18px, 3.2vw, 24px);
-  }
 }
 /* THE PROMPT'S REAL FOCUS TARGET (#267): a field the player never sees, holding the guess
    and every keystroke that builds it. Hidden the `.sr-only` way — never `display: none` or
@@ -5111,9 +5100,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    player, the level's number and line, the stage counter), the coach's line under it as the
    page's own voice with no box, the board in the articles' figure panel, then the prompt and
    the keys. Everything is in flow — nothing is fixed over the board — in ONE column on every
-   stage, the game's own (`--column`, the header's), so nothing changes width between two
-   stages. */
+   stage, the header's own (`--column`), so nothing changes width between two stages. */
 .tutorial {
+  max-width: var(--column);
   align-items: center;
 }
 /* THE LESSON'S BOARD IS CENTRED (user-decided 2026-09-16): the word and the sentence sit on
