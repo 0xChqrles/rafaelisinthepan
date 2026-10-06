@@ -1266,17 +1266,28 @@ it to the local store — see `packages/backend/AGENTS.md`).
       for its first step only, then its ink with the digit cut out. RESEND is quiet
       and countdown-gated (~30s, the seconds in the cobalt pixel figures), alone under the cells — CHANGE ADDRESS is gone,
       the header's back goes code → address.
-    - **EVERY VERDICT OF THE FLOW ANSWERS IN PLACE; only a SEND that did not land takes the
-      screen** (a 503 `mail_unavailable`, a dropped connection: the `ErrorScreen`'s CODE NOT
-      SENT). A code that accepts nothing more — expired, `code_spent`, or the last wrong
-      attempt once its shake has played — keeps the player ON THE CODE STEP: the keys go
-      DEAD in their own material (`CodeInput`'s `dead`: emptied, thinned to half their cells
-      through the Bayer complement `--dzo-4` in hard steps, taking nothing), the held line
-      says why, and RESEND is the step's one live act — the bracketed `.quiet-btn`, its
-      countdown waived — whose landing brings the keys back through their arrival's dissolve.
-      A check that could not be had says so on the held line, the code cleared for typing
-      again. Too many sends (429) is the danger note under CONTINUE, or the held line when
-      RESEND asked. Every held line is ONE line at 320px, so nothing under it moves.
+    - **EVERY VERDICT OF THE FLOW ANSWERS IN PLACE; only an ACT that did not land takes the
+      screen**: a SEND (a 503 `mail_unavailable`, a dropped connection: the `ErrorScreen`'s
+      CODE NOT SENT), or a VERIFY whose outcome is UNKNOWN — a dropped connection, a 5xx, an
+      answer the flow cannot read (a link it cannot parse, a confirmation naming no account, a
+      code it does not know; `readVerifyAnswer`, contract-tested) — once the token's account
+      has been read again and shows nothing landed (`recoverAmbiguous`): CODE NOT CHECKED from
+      the code step (the code cleared, so typing it checks it again), STILL ON THIS ACCOUNT
+      from the crossroads (the code kept, so its button presses again). Never a line telling
+      the player to type the code again: an unreadable answer would only come back the same.
+      A code that accepts nothing more — expired, `code_spent`, or the last wrong attempt once
+      its shake has played — keeps the player ON THE CODE STEP: the keys go DEAD in their own
+      material (`CodeInput`'s `dead`: emptied, thinned to half their cells through the Bayer
+      complement `--dzo-4` in hard steps, taking nothing), the held line says why, and RESEND
+      is the step's one live act — the bracketed `.quiet-btn`, its countdown waived — whose
+      landing brings the keys back through their arrival's dissolve. **A verdict on the code
+      pressed from the CROSSROADS steps back to the code step and answers there** (it has no
+      keys of its own): the step comes back in through the crossroads' own dissolve, the keys
+      dead with RESEND live, or — a wrong code, the challenge having been replaced by another
+      send — cleared over the tries left. Too many sends (429) is the danger note under
+      CONTINUE, or the held line when RESEND asked; the next answer to a send replaces the
+      note, and a send that lands leaves none. Every held line is ONE line at 320px, so
+      nothing under it moves.
     - **THE CROSSROADS, NOT A WARNING:** both accounts drawn — the one being left THINNED
       THROUGH THE BAYER DITHER, never an opacity (under DELETED, the area's one red, a GHOST:
       its ink to half its cells, its ground given up for the slate stipple, its three numbers

@@ -6888,6 +6888,11 @@ figure.l1-fig {
 .link-stack.link-confirm {
   animation: board-dissolve 240ms linear backwards;
 }
+/* The code step STEPPED BACK TO from the crossroads (a verdict on the code pressed there)
+   comes in the crossroads' own way. */
+.link-step.came-back > * {
+  animation: board-dissolve 240ms linear backwards;
+}
 /* The crossroads' two answers, one group: the call and CANCEL under it. */
 .link-calls {
   display: flex;

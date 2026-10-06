@@ -278,10 +278,14 @@ const STRINGS = {
     en: "You're already on this account.",
     fr: 'Vous êtes déjà sur ce compte.',
   },
-  // The SEND that did not land (a 503 `mail_unavailable`, a dropped connection): the one
-  // email failure on the error screen — every VERDICT of the flow answers in place.
+  // The flow's ACTS that did not land, on the error screen — every VERDICT of the flow
+  // answers in place. Each title names what was lost: the SEND (a 503 `mail_unavailable`, a
+  // dropped connection), the VERIFY from the code step, the VERIFY from the crossroads (the
+  // device is still on the account it held). One note for the three.
   linkSendFailed: { en: 'CODE NOT SENT', fr: 'CODE NON ENVOYÉ' },
-  linkSendFailedNote: {
+  linkCheckFailed: { en: 'CODE NOT CHECKED', fr: 'CODE NON VÉRIFIÉ' },
+  linkSwitchFailed: { en: 'STILL ON THIS ACCOUNT', fr: 'TOUJOURS SUR CE COMPTE' },
+  linkFailedNote: {
     en: 'Wait a moment, then try again.',
     fr: 'Attendez un instant, puis réessayez.',
   },
@@ -294,14 +298,9 @@ const STRINGS = {
     en: "That address doesn't look right.",
     fr: 'Cette adresse ne semble pas valide.',
   },
-  // The code step's held line: a check that could not be had (the code cleared, so typing it
-  // again checks it again), and the two codes that accept nothing more (the keys go dead,
+  // The code step's held line for the two codes that accept nothing more (the keys go dead,
   // RESEND goes live — the line says WHY, the live RESEND under it is the way on). Each is
   // ONE line at 320px, so RESEND under it never moves.
-  linkCheckFailed: {
-    en: 'Not checked. Type it again.',
-    fr: 'Code non vérifié. Retapez-le.',
-  },
   linkCodeSpent: {
     en: 'Too many wrong codes.',
     fr: 'Trop de codes incorrects.',
