@@ -148,6 +148,7 @@ function expectGonePage(res: FnUrlResult, target: string) {
   expect(res.body).toContain(`href="${target}"`);
   expect(res.body).toContain('<meta name="robots" content="noindex">');
   expect(res.body).not.toContain('og:');
+  expect(res.body).toContain('<meta name="color-scheme" content="dark">');
 }
 
 describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
@@ -490,9 +491,13 @@ describe('group invite link (#271) — the shared link, its preview page and its
     expect(res.body).toContain(`${ORIGIN}${groupCardPath(ID)}`);
     // The click continues to the SPA landing — the one that records the membership.
     expect(res.body).toContain(`${ORIGIN}${groupLandingPath(ID)}`);
-    // The page names itself — the invite link, never the landing — and a line under the title.
+    // The page names itself — the invite link, never the landing — and a line under the title,
+    // the app's name alone: a group's page speaks no one language.
     expect(res.body).toContain(`<meta property="og:url" content="${ORIGIN}/${GROUP_SEGMENT}/${ID}">`);
-    expect(res.body).toContain('<meta property="og:description" content="Play Whippin AI">');
+    expect(res.body).toContain('<meta property="og:description" content="Whippin AI">');
+    // A paint before the redirect is the app's ground, never a white page.
+    expect(res.body).toContain('<meta name="color-scheme" content="dark">');
+    expect(res.body).toContain('background:#050507');
     expect(res.headers['Cache-Control']).toBe('public, max-age=300');
   });
 
