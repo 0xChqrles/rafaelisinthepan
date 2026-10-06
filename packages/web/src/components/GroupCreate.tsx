@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { GROUP_NAME_MAX_LENGTH, sanitizeGroupName } from '@whippin/shared';
-import LoadingWave from './LoadingWave';
+import BusyButton from './BusyButton';
 import ModalHeader from './ModalHeader';
 // (For its side effect: the root's Bayer tiles the screen comes and goes through.)
 import './bayerTiles';
@@ -147,7 +147,10 @@ export default function GroupCreate({
                 autoCorrect="off"
                 autoCapitalize="off"
                 spellCheck={false}
-                disabled={busy}
+                // Held, never disabled, while the create is out: a disabled field drops the
+                // focus, and the phone's keyboard with it, moving the whole screen under the
+                // busy button.
+                readOnly={busy}
                 onChange={onChange}
                 onKeyDown={onKeyDown}
               />
@@ -163,9 +166,12 @@ export default function GroupCreate({
             </div>
           )}
         </div>
-        <button type="submit" className="btn btn-primary" disabled={busy || inked}>
-          {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'groupCreate')}
-        </button>
+        {/* Once the name is inked in, the button stands at full ink until the screen folds:
+            its act has LANDED, so it is neither busy nor unavailable, and dimming it would be
+            a second beat beside the ink-in. `submit` already refuses a tap from there on. */}
+        <BusyButton type="submit" className="btn btn-primary" lang={lang} busy={busy}>
+          {t(lang, 'groupCreate')}
+        </BusyButton>
       </form>
     </dialog>,
     document.body,

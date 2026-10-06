@@ -118,7 +118,6 @@ vi.mock('../components/ErrorScreen', () => ({
   },
 }));
 vi.mock('../components/LoadError', () => ({ default: () => null }));
-vi.mock('../components/LoadingWave', () => ({ default: () => null }));
 vi.mock('../components/Avatar', () => ({ default: () => null }));
 
 import { loadGroups } from '../state/groups';

@@ -182,6 +182,8 @@
                               read wave's stepped pace (`LOOP_FRAME_MS`): the podium's, the
                               archive's and the record's
       components/DeviceList.tsx  the account's devices + SIGN OUT, as board lines on `/account` (#216)
+      components/BusyButton.tsx  a button whose act is OUT: the app's one busy dress (the act's
+                              word kept, `aria-busy`, the charge after `SKELETON_WAIT_MS`)
       components/ErrorScreen.tsx  the app's error surface: a FULL-SCREEN modal led by the
                               user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet);
                               ONE quiet way out since 2026-09-03 — no TRY AGAIN
@@ -857,6 +859,30 @@ These are decided and verified against the code. Treat them as load-bearing.
     answers only where a pointer HOVERS (`(hover: hover) and (pointer: fine)`): on a touch
     screen the emulated hover sticks where the finger lifted, and the next screen's call on
     that spot would open pre-pressed. SHARE is the primary on the result screen.
+    **A BUTTON WHOSE ACT IS OUT KEEPS ITS WORD** (`components/BusyButton.tsx`, every busy
+    site: the gate's PLAY, JOIN, CONTINUE, the crossroads' two answers, CREATE GROUP, the
+    confirmations' acts, SAVE): the label stays the act's word at full ink — the button
+    animates, it never renames itself — it answers no tap but keeps the focus
+    (`aria-disabled`, never dimmed: the 0.45 is for a button that is unavailable, not busy),
+    and `aria-busy` + the sr-only `loading` say it. Nothing shows for `SKELETON_WAIT_MS`
+    but the press held, and an answer inside that wait lets the press go the way any tap
+    does, on the release beat from the moment the act lands (the busy wash is a hair over
+    the rest's, so leaving busy is a change that cancels the held press); then its wash
+    becomes the house stipple in its own ink, breathing `--dz-1…3` on `link-hold-breathe`
+    (640ms, hard steps; reduced motion: the still checker), the word in a clearing of the
+    ground cut on the stipple's whole 2px cells (`BusyButton` measures the word against the
+    padding box the stipple is tiled from and rounds the clearing outward, so no cell along
+    its edge is halved). **The charge is 55% of the button's ink**
+    (`--charge`, every busy button alike): at the breath's middle step it carries the
+    primary's own wash, at its peak less than the press, so a wide primary charging never
+    outshouts what lands and destruction never glows. It stands on a ground that hides the
+    wash without changing it, so the act landing ends it in ONE frame on the button at rest.
+    Under FORCED COLOURS every ground is the canvas, the charge with it, so a busy button's
+    frame turns DASHED instead (`ButtonText`, after the same wait). The outcome is the act's
+    own (the keyboard rising, the name inked in, the foil stamp, the next step), never a word
+    on the button; CREATE GROUP stands at full ink, neither busy nor dimmed, while the new
+    name inks in, answering no pointer (no hover, no press). CANCEL under a busy confirmation
+    waits in the quiet word's colour step, like any quiet act that cannot be pressed for now.
     No other button dress remains.
     *(The two paragraphs below are the designs it replaced, kept for their reasoning.)*
   - **THE BUTTONS ARE KEYCAPS WITH A HARD PRINT (user-decided 2026-09-14: "we should
@@ -1813,7 +1839,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **CONTINUE is a DEPLOY BUTTON**, the sixth (#216's five plus this one), and it has to
     be: an email link needs an account to bind, and "this device is empty" is exactly the
     reconnect case. It wears the shape that rule defines — one tap chaining the bootstrap,
-    a loading state on the button, failures on the `ErrorScreen` — and TWO Turnstile tokens are
+    the button busy, failures on the `ErrorScreen` — and TWO Turnstile tokens are
     prefetched while the address is typed, since a tokenless device spends one on the
     bootstrap and one on the send. Every other leg uses `currentRequestIdentity` and stands
     down when there is none.
@@ -2510,7 +2536,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   identity (the persisted `gameStore.localSeed`, the leaderboard strip's own face) with
   those values as the baseline — so SAVE stays dark until something actually changes —
   and the SAVE tap bootstraps the account first, then saves into it: one tap, the
-  button's own dots for both legs, a prefetched challenge so the deploy is fast. The
+  button busy for both legs, a prefetched challenge so the deploy is fast. The
   name rule's WRITE half compares against the pseudonym the player was actually SHOWN
   (`assignedFrom`: the account's, or the seed's on a tokenless open).
   **A save into an account the editor did NOT load is GUARDED** (PR-219 round-3 review):
@@ -2604,8 +2630,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (a bounded `readGroup` — `api.readGroup` tells shown / gone / failed apart, the
   `readProfile` rule; gone ends the landing on EXPIRED, while failed offers RETRY of the
   bounded read) over ONE primary JOIN; the tap
-  POSTs `{token, join}` — minted by that same tap for a brand-new visitor — with a loading
-  wave in the button and the `ErrorScreen` for a transport/5xx failure. **A member already
+  POSTs `{token, join}` — minted by that same tap for a brand-new visitor — with the
+  button busy and the `ErrorScreen` for a transport/5xx failure. **A member already
   skips the landing** onto the group's board (the cached groups list says so; tokenless it
   is known-empty). **A SUCCESSFUL join is CONFIRMED on screen** — the group over `JOINED`,
   the BOARD as the primary way on and PLAY under it — and the answered list is published
@@ -2862,7 +2888,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `useShare`, `tracked: false` — the pinned `share` analytics event counts a SOLVED DAY's
     result leaving the app (the three-event invariant), and counting invite links into it
     would silently redefine what the number measures). NEW GROUP is ONE TAP for a tokenless
-    device (the mint, then the create, the button holding a LoadingWave); INVITE needs a
+    device (the mint, then the create, the button busy for both); INVITE needs a
     group, hence an account. Failures land on the `ErrorScreen` — `failedAccount`,
     `failedShare`, `groupLimit`, `groupNameRejected` (a banned name), `failedGroup` — read
     off the answer's code by `state/groupActs.ts`, the result's seat's acts too; an unknown
@@ -4121,8 +4147,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **Since the #216 trigger rework the gate is also the sentence game's DEPLOY BUTTON**: a
   device with NO account shows it on every sentence day (archive days and post-sign-out
   included), whatever is done, because its PLAY is the only trigger on the screen — the tap
-  bootstraps the account (loading wave in the button, `ErrorScreen` with TRY AGAIN on failure,
-  nothing created on a failure) and then opens the round. The round engine's append NEVER
+  bootstraps the account (the button busy, the `ErrorScreen` on failure, nothing created on
+  a failure) and then opens the round. The round engine's append NEVER
   mints an identity (`currentRequestIdentity`): a tokenless outbox — the pending-bootstrap
   recovery — waits behind the gate, and the deploy's identity listener kicks every
   conversation loose (`kickRoundSync`).

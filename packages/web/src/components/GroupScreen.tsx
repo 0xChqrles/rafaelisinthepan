@@ -6,7 +6,6 @@ import Avatar from './Avatar';
 // (The dissolve's tiles its members come in through: on the document's root.)
 import './bayerTiles';
 import { LINE_PX, MARK } from './boardMetrics';
-import LoadingWave from './LoadingWave';
 import CloseIcon from '../assets/icons/close.svg?react';
 import ModalHeader from './ModalHeader';
 import useModalDismiss from '../hooks/useModalDismiss';
@@ -139,8 +138,8 @@ export default function GroupScreen({
         </div>
 
         <div className="group-calls">
-          <button type="button" className="btn btn-primary" disabled={busy} onClick={onInvite}>
-            {busy ? <LoadingWave text={t(lang, 'loading')} /> : copied ? t(lang, 'copied') : t(lang, 'boardInvite')}
+          <button type="button" className="btn btn-primary" onClick={onInvite}>
+            {copied ? t(lang, 'copied') : t(lang, 'boardInvite')}
           </button>
           <button type="button" className="link-quiet-btn link-danger" disabled={busy} onClick={onLeave}>
             {t(lang, 'groupLeave')}

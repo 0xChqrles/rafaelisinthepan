@@ -90,12 +90,11 @@ import Avatar from '../components/Avatar';
 // The house's Bayer tiles on the root (`--dz-*`): the face holds stipple through them, the
 // leaving face thins through them, and the ending's lines come in through them.
 import '../components/bayerTiles';
-import Button from '../components/Button';
 import CodeInput from '../components/CodeInput';
 import ErrorScreen from '../components/ErrorScreen';
 import FoilStamp from '../components/FoilStamp';
 import { foilSeed } from '../components/foil';
-import LoadingWave from '../components/LoadingWave';
+import BusyButton from '../components/BusyButton';
 import LangTitle from '../components/LangTitle';
 import { HeaderBack, HeaderLeft } from '../components/TopBar';
 import {
@@ -932,14 +931,15 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
               label={t(lang, 'linkAddressPlaceholder')}
               fieldRef={addressField}
             />
-            <button
-              type="button"
+            <BusyButton
               className="mix-btn link-call"
-              disabled={busy || !isValidEmail(address)}
+              lang={lang}
+              busy={busy}
+              disabled={!isValidEmail(address)}
               onClick={() => void send({ handOff: true })}
             >
-              {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkContinue')}
-            </button>
+              {t(lang, 'linkContinue')}
+            </BusyButton>
             {note && <p className="account-note caption danger">{note}</p>}
           </>
         )}
@@ -1110,22 +1110,23 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 would teach the red to mean "a decision" rather than "a loss". */}
             <div className="link-calls">
               {erasing ? (
-                <Button
-                  variant="secondary"
-                  className="btn-danger"
-                  disabled={busy}
+                <BusyButton
+                  className="btn btn-secondary btn-danger"
+                  lang={lang}
+                  busy={busy}
                   onClick={() => void verify(code, { erase: prompt.accountId })}
                 >
-                  {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkEraseConfirm')}
-                </Button>
+                  {t(lang, 'linkEraseConfirm')}
+                </BusyButton>
               ) : (
-                <Button
-                  variant="primary"
-                  disabled={busy}
+                <BusyButton
+                  className="btn btn-primary"
+                  lang={lang}
+                  busy={busy}
                   onClick={() => void verify(code, { leave: prompt.accountId })}
                 >
-                  {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkSwitchConfirm')}
-                </Button>
+                  {t(lang, 'linkSwitchConfirm')}
+                </BusyButton>
               )}
               <button type="button" className="link-quiet-btn" disabled={busy} onClick={leave}>
                 {t(lang, 'linkCancel')}

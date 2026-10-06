@@ -322,7 +322,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // write answers the list as it now stands, published through `adoptGroups`, and a failure
   // lands on the app's error surface, since saying nothing leaves the player tapping a
   // button that appears to do nothing.
-  const [busy, setBusy] = useState<'create' | 'invite' | 'leave' | 'remove' | null>(null);
+  const [busy, setBusy] = useState<'create' | 'leave' | 'remove' | null>(null);
   const [failure, setFailure] = useState<GroupFailure | null>(null);
   // WHICH SCREEN is up over the board, and WHICH CONFIRMATION over that.
   const [screen, setScreen] = useState<'group' | 'create' | null>(null);
@@ -338,7 +338,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   }, [identity]);
 
   // ONE gesture for every write (`writeGroups`): the deploy (a tokenless tap mints the account
-  // first, the button holding its loading state for both legs), then the signed POST, then
+  // first, the button busy for both legs), then the signed POST, then
   // the list — and what did not land, on the error surface (`failureOf`: a stale succession
   // is no failure, the leave asks again below).
   const perform = async (kind: NonNullable<typeof busy>, act: () => Promise<GroupWrite>): Promise<GroupWrite> => {
