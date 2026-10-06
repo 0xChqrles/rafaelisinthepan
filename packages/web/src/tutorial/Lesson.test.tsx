@@ -1,32 +1,80 @@
 // @vitest-environment jsdom
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import Lesson from './Lesson';
 
-const actions = vi.hoisted(() => ({
+// CONTRACT: a lesson whose chunk is LOST holds its page and says so, with RETRY — it records
+// nothing and goes nowhere on its own; on the FIRST VISIT (the onboarding question still open)
+// it keeps the invitation's way on to the game beside RETRY, which is the SKIP it always was.
+const state = vi.hoisted(() => ({
+  onboarded: false,
   markLessonDone: vi.fn(),
   setOnboarded: vi.fn(),
   navigate: vi.fn(),
   track: vi.fn(),
 }));
 vi.mock('../state/gameStore', () => ({
-  useGameStore: (select: (state: typeof actions) => unknown) => select(actions),
+  useGameStore: (select: (s: typeof state) => unknown) => select(state),
 }));
-vi.mock('../routing', () => ({ navigate: actions.navigate }));
-vi.mock('../analytics', () => ({ track: actions.track }));
-vi.mock('./LevelOne', () => { throw new Error('Chunk download failed'); });
+vi.mock('../routing', () => ({ navigate: state.navigate }));
+vi.mock('../analytics', () => ({ track: state.track }));
+vi.mock('./LevelOne', () => {
+  throw new Error('Chunk download failed');
+});
 
-it('leaves a failed lesson download without recording completion', async () => {
+afterEach(() => {
+  vi.clearAllMocks();
+  state.onboarded = false;
+});
+
+async function renderLost(): Promise<{ host: HTMLElement; unmount: () => Promise<void> }> {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  const root = createRoot(document.createElement('div'));
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () => root.render(<Lesson lang="fr" level={1} />));
+  await vi.waitFor(() => expect(host.textContent).toContain("Cette page n'a pas chargé."));
+  return {
+    host,
+    unmount: async () => {
+      await act(async () => root.unmount());
+      host.remove();
+    },
+  };
+}
+
+const button = (host: HTMLElement, label: string) =>
+  [...host.querySelectorAll('button')].find((b) => b.textContent === label) ?? null;
+
+it('holds a lost lesson in place with RETRY, recording nothing and going nowhere', async () => {
+  state.onboarded = true;
+  const { host, unmount } = await renderLost();
   try {
-    await act(async () => root.render(<Lesson lang="fr" level={1} />));
-    await vi.waitFor(() => expect(actions.navigate).toHaveBeenCalledWith('/fr'));
-    expect(actions.setOnboarded).toHaveBeenCalledOnce();
-    expect(actions.markLessonDone).not.toHaveBeenCalled();
-    expect(actions.track).not.toHaveBeenCalled();
+    expect(button(host, 'RÉESSAYER')).not.toBeNull();
+    // An onboarded player has the header's keys: no way on is added.
+    expect(button(host, 'PASSER')).toBeNull();
+    expect(state.navigate).not.toHaveBeenCalled();
+    expect(state.setOnboarded).not.toHaveBeenCalled();
+    expect(state.markLessonDone).not.toHaveBeenCalled();
+    expect(state.track).not.toHaveBeenCalled();
   } finally {
-    await act(async () => root.unmount());
+    await unmount();
+  }
+});
+
+it('keeps the first visit its way on to the game: the SKIP settles the question and plays', async () => {
+  const { host, unmount } = await renderLost();
+  try {
+    const skip = button(host, 'PASSER');
+    expect(skip).not.toBeNull();
+    expect(state.navigate).not.toHaveBeenCalled();
+    await act(async () => skip!.click());
+    expect(state.setOnboarded).toHaveBeenCalledOnce();
+    expect(state.track).toHaveBeenCalledWith('tutorial', { action: 'skip' });
+    expect(state.navigate).toHaveBeenCalledWith('/fr');
+    expect(state.markLessonDone).not.toHaveBeenCalled();
+  } finally {
+    await unmount();
   }
 });

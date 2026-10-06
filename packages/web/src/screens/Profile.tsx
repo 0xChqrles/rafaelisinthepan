@@ -24,6 +24,7 @@ import { prefetchTurnstileTokens } from '../turnstile';
 import { withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
 import { holdOwnFace, ownProfileWritten } from '../state/ownFace';
 import ErrorScreen from '../components/ErrorScreen';
+import QuietFailure from '../components/QuietFailure';
 import { navigate } from '../routing';
 import { ACCOUNT_PATH, type LangCode } from '../langs';
 import useUiLang from '../hooks/useUiLang';
@@ -1089,17 +1090,15 @@ export default function Profile() {
           </div>
         </div>
 
+        {/* The read that failed: the still checker over the canvas says "unknown", and under
+            it the note and RETRY say what was lost and ask again. */}
         {load === 'failed' && (
-          <div className="profile-retry">
-            <p className="sr-only" role="status">
-              {t(lang, 'failedProfile')}
-            </p>
-            {/* The read that failed, asked again: the quiet word in a tappable thing's
-                brackets — the still checker over the canvas already says "unknown". */}
-            <button type="button" className="quiet-btn" onClick={() => setAttempt((n) => n + 1)}>
-              {t(lang, 'retry')}
-            </button>
-          </div>
+          <QuietFailure
+            className="profile-retry"
+            lang={lang}
+            line={t(lang, 'failedProfile')}
+            onRetry={() => setAttempt((n) => n + 1)}
+          />
         )}
 
         {load === 'ready' && (

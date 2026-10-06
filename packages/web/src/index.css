@@ -354,8 +354,9 @@ body:has(.app > .board-screen) {
   }
 }
 
-/* A failed load: the error message stacked above a RETRY (issue #14). Centered like
-   the bare .status states it replaces. */
+/* The missing-puzzle screen's and the invite landing's stack (`NoPuzzle`, `LoadError`): the
+   message above its button, centred like the bare .status states it replaced. (Every other
+   failed read is `.quiet-failure`, said in place.) */
 .load-error {
   display: flex;
   flex-direction: column;
@@ -643,9 +644,9 @@ body:has(.app > .board-screen) {
     pointer-events: none;
   }
 }
-/* THE HOLD under the grid, one height in every state: a failed read's note over RETRY —
-   `failedHistory` in the danger ink when nothing is drawn, `staleHistory` in the plain status
-   ink over a month still on screen — each dissolving in as it comes. */
+/* THE HOLD under the grid, one height in every state: a failed read's note over RETRY — the
+   house's quiet failure (`.quiet-failure-line`, `.quiet-btn`), `failedHistory` when nothing
+   is drawn, `staleHistory` over a month still on screen — each dissolving in as it comes. */
 .cal-hold {
   flex: none;
   display: flex;
@@ -670,28 +671,11 @@ body:has(.app > .board-screen) {
   mask-size: 16px 16px;
   animation: board-dissolve 240ms linear backwards;
 }
-.cal-note {
-  margin: 0;
-  font-family: var(--ui);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 16px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  text-align: center;
-  white-space: nowrap;
-  color: var(--accent);
-}
-.cal-note.error {
-  color: var(--danger);
-}
 /* A grid under 356px: the note a size down, so fr's failure line holds one line. */
-.cal-hold.narrow .cal-note {
-  font-size: 11px;
-  letter-spacing: 0.06em;
+.cal-hold.narrow .quiet-failure-line {
+  font-size: 12px;
 }
-.archive[data-layout='sideways'] .cal-note {
-  white-space: normal;
+.archive[data-layout='sideways'] .cal-hold .quiet-failure-line {
   text-align: left;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1095,11 +1079,12 @@ body:has(.app > .board-screen) {
   visibility: hidden;
 }
 /* THE TRAY, what the game will put there. For a player who lands on the prompt, the
-   keyboard's UNLIT KEYS: its boxes in the archive's and the code prompt's IRON — the dusk
-   face, the stippled slate cap, the corners notched a cell — and no glyph. Stated on
+   keyboard's UNLIT KEYS (`KeyboardHold`, the lesson's tray's too): its boxes in the archive's
+   and the code prompt's IRON — the dusk face, the stippled slate cap, the corners notched a
+   cell — and no glyph, standing where the keys land (no row's rise). Stated on
    `.kb-key.kb-slate`, so it wins over the live key's own dress (`.kb-key`, later in this
    sheet) and keeps only its box. */
-.game-hold .kb-row {
+.kb-hold .kb-row {
   animation: none;
 }
 .kb-key.kb-slate {
@@ -1137,18 +1122,22 @@ body:has(.app > .board-screen) {
 /* For everyone else, the GATE's slots in its own stack (`.rules-gate` at the tray's bottom),
    drawn as the gate is: PLAY's box as its hairline in the slate, no wash, and each label a
    bar of the stipple where its word will print — so the gate lands line on line, word on
-   bar. (Stated against the buttons' own rules, which come later in this sheet.) */
-.game-hold .rules-gate > .gate-slot {
+   bar. (Stated against the buttons' own rules, which come later in this sheet.) The lesson's
+   hold draws CONTINUE's slot the same way (`.l1-hold`). */
+.game-hold .rules-gate > .gate-slot,
+.l1-hold .tray > .gate-slot {
   color: transparent;
   background: none;
   opacity: 1;
   cursor: default;
   transition: none;
 }
-.game-hold .rules-gate > .mix-btn.gate-slot {
+.game-hold .rules-gate > .mix-btn.gate-slot,
+.l1-hold .tray > .mix-btn.gate-slot {
   border-color: var(--rail);
 }
-.game-hold .gate-word {
+.game-hold .gate-word,
+.l1-hold .gate-word {
   color: transparent;
   background: var(--rail);
   -webkit-mask-image: var(--dz-2);
@@ -1173,8 +1162,27 @@ body:has(.app > .board-screen) {
 .game-hold.reading-tray .gate-word {
   animation: link-hold-breathe 640ms steps(1, end) infinite;
 }
-.game-hold.reading-tray .kb-slate::before {
+.kb-hold.breathing .kb-slate::before {
   animation: hold-block-breathe 640ms steps(1, end) infinite;
+}
+/* A READ THAT FAILED holds the whole picture STILL at half — every bar, rail and word slot
+   through the Bayer order's half (`--dz-4`: the `.stat-slot` checker, the archive's failed
+   ghosts), the blocks and the caps resting on theirs, nothing breathing — and says so in the
+   prompt's row (`.hold-failure`), the one thing in the hold a finger reaches. A retry hands
+   it back to breathing in place. */
+.game-hold.failed .hold-rail,
+.game-hold.failed .phrase .word,
+.game-hold.failed .phrase .hole.resolved .hole-word,
+.game-hold.failed .gate-word {
+  -webkit-mask-image: var(--dz-4);
+  mask-image: var(--dz-4);
+}
+.game-hold .hold-failure {
+  grid-row: 1;
+  grid-column: 1 / -1;
+  align-self: start;
+  justify-self: start;
+  pointer-events: auto;
 }
 /* THE GAME TAKES OVER, over it: the tray's slates or slots go out through exactly the cells
    the keys or the gate come in through; each bar and block gives way the moment the
@@ -1224,7 +1232,7 @@ body:has(.app > .board-screen) {
 @media (prefers-reduced-motion: reduce) {
   .game-hold .hold-rail,
   .game-hold .phrase .hole .hole-word::before,
-  .game-hold .kb-slate::before,
+  .kb-hold .kb-slate::before,
   .game-hold .gate-word {
     animation: none !important;
   }
@@ -1234,8 +1242,13 @@ body:has(.app > .board-screen) {
    (its text stays unseen) and draws each bar, block, slate and slot as its OUTLINE in the
    system's grey instead, still; it goes at once when the game takes over. */
 @media (forced-colors: active) {
-  .game-hold {
+  .game-hold,
+  .kb-hold {
     forced-color-adjust: none;
+  }
+  /* (The failure's note and RETRY are ordinary text and controls: the system colours them.) */
+  .game-hold .hold-failure {
+    forced-color-adjust: auto;
   }
   .game-hold .rules-gate > .mix-btn.gate-slot {
     border-color: GrayText;
@@ -1245,7 +1258,7 @@ body:has(.app > .board-screen) {
   .game-hold .phrase .hole.resolved .hole-word,
   .game-hold .phrase .hole .hole-word::before,
   .game-hold .gate-word,
-  .game-hold .kb-slate {
+  .kb-key.kb-slate {
     -webkit-mask-image: none;
     mask-image: none;
     background: none;
@@ -1254,7 +1267,7 @@ body:has(.app > .board-screen) {
     clip-path: none;
     animation: none !important;
   }
-  .game-hold .kb-slate::before {
+  .kb-key.kb-slate::before {
     display: none;
   }
   /* (A found word's outline would take in its letters' line-tall boxes: its own box, drawn
@@ -5363,6 +5376,61 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   align-self: stretch;
   align-items: start;
 }
+/* The word list LOST: its note and RETRY in the prompt's row — on the play area's foot, at the
+   prompt's left edge — while the keyboard's hold stands still under it. */
+.tutorial .lesson-failure {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+}
+/* LEVEL 1'S HOLD (`LazyLevelOne`, while the lesson's chunk is on its way): its first screen's
+   own layout, so nothing that lands moves — the byline with the level's number and line as
+   real text, the coach's box, the board's word and the call's slot in the slate stipple. The
+   stipple comes in only once the skeleton's wait is over (a quick chunk never flashes it),
+   then breathes; a chunk LOST holds it still, at once. */
+.l1-hold .l1-bot-hold {
+  flex: none;
+  /* The coach's sprite above its feet: it stands on the rule, as the coach does. */
+  width: 44px;
+  height: 54px;
+  margin-bottom: -12px;
+}
+.l1-hold .l1-step {
+  visibility: hidden;
+}
+.l1-hold .l1-word-hold {
+  display: inline-block;
+  width: 5em;
+  height: 1em;
+  vertical-align: middle;
+}
+/* (Through the dither, after the skeleton's wait — never the real call's `arrive`.) */
+.l1-hold .tray > .mix-btn.gate-slot {
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear 320ms backwards;
+}
+.l1-hold:not(.failed) .gate-word {
+  animation: link-hold-breathe 640ms steps(1, end) 320ms infinite;
+}
+.l1-hold.failed .gate-word {
+  -webkit-mask-image: var(--dz-4);
+  mask-image: var(--dz-4);
+}
+.l1-hold .stat-slot,
+.article-hold .stat-slot {
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear 320ms backwards; /* SKELETON_WAIT_MS */
+}
+/* (The dissolve stays in both lists, so a lost chunk's still slot and a RETRY's breathing one
+   never play it again: the picture stands where it is, and only its breath changes.) */
+.l1-hold .stat-slot.breathing,
+.article-hold .stat-slot.breathing {
+  animation:
+    board-dissolve 240ms linear 320ms backwards,
+    stat-breathe 640ms step-end 320ms infinite;
+}
 /* The word stages are CLEAN: ONE big word in the plate, the prompt under it on the left. */
 .tutorial--word .phrase {
   font-size: clamp(28px, 7vw, 48px);
@@ -6203,26 +6271,53 @@ figure.l1-fig {
   margin: 0;
 }
 
-.account-load-error,
-.device-error {
+/* A READ THAT FAILED, SAID IN PLACE (`QuietFailure`, every surface's): the picture around it is
+   the surface's own loading picture held still; this is ONE note under it — INFO's voice:
+   sentence case, muted, regular, the area's 13px on a whole 20px line, balanced — over RETRY,
+   the quiet word in a tappable thing's brackets. Never the danger ink: a failed read is quiet,
+   and the still picture already says "unknown". It comes in through the dither, the beat of
+   a state changing. */
+.quiet-failure {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear backwards;
 }
-/* A read that failed, said in the chrome's quiet ink — the boards' "unknown" is quiet, never
-   an alarm — over the quiet word that asks again. */
-.account-load-error-line,
-.device-error-line {
+.quiet-failure-line {
+  display: block;
   margin: 0;
+  max-width: 40ch;
   font-family: var(--ui);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  line-height: 14px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+  letter-spacing: 0;
   text-align: center;
-  text-transform: uppercase;
+  text-transform: none;
+  /* (A note of two sentences breaks between them, `\n` in the copy; each line balanced.) */
+  white-space: pre-line;
+  text-wrap: balance;
   color: var(--muted);
+}
+.quiet-failure-acts {
+  display: flex;
+  gap: 16px;
+}
+/* Set on a column's LEFT edge (`start`: the prompt's row, where the game and the lesson say
+   it): the note left-aligned, RETRY's brackets standing on that same edge. */
+.quiet-failure.start {
+  align-items: flex-start;
+}
+.quiet-failure.start .quiet-failure-line {
+  text-align: left;
+}
+@media (prefers-reduced-motion: reduce) {
+  .quiet-failure {
+    animation: none;
+  }
 }
 
 /* The email flow's steps hold ONE thing each — `.app` already centres the column, so a
@@ -7829,7 +7924,8 @@ figure.l1-fig {
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
-.podium-hold.caption > .btn-primary {
+.podium-hold.caption > .btn-primary,
+.podium-hold.caption > .quiet-btn {
   margin-top: 4px;
 }
 .podium-mark {
@@ -8116,12 +8212,12 @@ figure.l1-fig {
 .board-screen .board-under-out .board-progress {
   animation: none;
 }
-/* With no podium (a screen too short for one: a landscape phone), the empty board's own block
-   — or a failed read's RETRY — under the header slot, as ONE ROW: the ghost at the podium's 3x
-   beside its line over its call, the message over RETRY — so the column's room the shortest
-   phone leaves it (two lines) holds it whole. It starts where the lines do (6px in), so the
-   ghost stands on whole pixels whatever its words measure, and comes in as a line does, through
-   the dissolve, on its slot's beat (their `.arrive` glide is the other screens'). */
+/* With no podium (a screen too short for one), the empty board's own block — or a failed
+   read's note over RETRY — under the header slot, as ONE ROW: the ghost at the podium's 3x
+   beside its line over its call — so the column's room the shortest screen leaves it (two
+   lines) holds it whole. It starts where the lines do (6px in), so the ghost stands on whole
+   pixels whatever its words measure, and comes in as a line does, through the dissolve, on its
+   slot's beat. */
 .board-hold {
   display: flex;
   padding: 0 6px;
@@ -8129,20 +8225,8 @@ figure.l1-fig {
   mask-size: 16px 16px;
   animation: board-dissolve 240ms linear var(--delay, 0ms) backwards;
 }
-.board-hold .load-error {
-  align-items: flex-start;
-  gap: 8px;
-}
-.board-hold .load-error.arrive > * {
+.board-hold .quiet-failure {
   animation: none;
-}
-/* A failed read speaks in the empty state's voice — the column's small tracked capitals —
-   so its line holds on the narrowest phone; the danger ink says what happened. */
-.board-screen .load-error > p {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
 }
 /* The caption over the numbers: what they count. */
 .board-unit {
@@ -9361,6 +9445,37 @@ figure.l1-fig {
   position: absolute;
   inset: 0;
 }
+/* THE ARTICLE'S HOLD (`LazyArticle`, while its chunk is on its way): its head as the article
+   prints it — the sleeve's picture held as the slate stipple — then the paragraphs' RAILS, the
+   boards' skeleton rail through each line's middle at the prose's own pitch, the last line of
+   a paragraph short; in once the skeleton's wait is over. A chunk LOST holds them still and
+   says so where the text would start. */
+.article-hold .article-sleeve > .stat-slot {
+  position: absolute;
+  inset: 0;
+}
+.article-rails {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 30px;
+  animation: board-dissolve 240ms linear 320ms backwards;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+}
+.article-rail-p {
+  display: flex;
+  flex-direction: column;
+}
+.article-rail {
+  display: block;
+  width: var(--w, 100%);
+  height: calc(15px * 1.75);
+  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
+}
+.article-hold .article-failure {
+  margin-top: 30px;
+}
 .article-title-row {
   display: flex;
   align-items: baseline;
@@ -10213,6 +10328,10 @@ figure.l1-fig {
 .account-page > .account-cta {
   --in: 260ms;
 }
+/* The record's own failed read, said under it — a section's air between it and the call. */
+.account-page > .account-failure {
+  margin: 4px 0 24px;
+}
 .account-page > .account-foot {
   --in: 340ms;
 }
@@ -10418,10 +10537,6 @@ figure.l1-fig {
   top: 0;
   image-rendering: pixelated;
 }
-.record-slot {
-  position: absolute;
-  display: block;
-}
 /* A held box through a build's first beats: gone the moment its number's reels start. */
 .stat-slot.record-hold {
   animation: record-hold-out 1ms linear var(--at, 0ms) forwards;
@@ -10434,46 +10549,6 @@ figure.l1-fig {
   to {
     visibility: hidden;
   }
-}
-/* A failed read: the count's held box is the tap that asks again — the still checker in a
-   tappable thing's corners. */
-.record-retry {
-  --bc: color-mix(in srgb, var(--fg) 38%, transparent);
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  pointer-events: auto;
-}
-.record-retry::before {
-  content: '';
-  position: absolute;
-  inset: -8px;
-  border: 2px solid var(--bc);
-  pointer-events: none;
-  -webkit-mask:
-    linear-gradient(#000 0 0) 0 0 / 8px 8px no-repeat,
-    linear-gradient(#000 0 0) 100% 0 / 8px 8px no-repeat,
-    linear-gradient(#000 0 0) 0 100% / 8px 8px no-repeat,
-    linear-gradient(#000 0 0) 100% 100% / 8px 8px no-repeat;
-  mask:
-    linear-gradient(#000 0 0) 0 0 / 8px 8px no-repeat,
-    linear-gradient(#000 0 0) 100% 0 / 8px 8px no-repeat,
-    linear-gradient(#000 0 0) 0 100% / 8px 8px no-repeat,
-    linear-gradient(#000 0 0) 100% 100% / 8px 8px no-repeat;
-  transition: border-color 120ms steps(2, jump-end);
-}
-.record-retry:focus-visible {
-  outline: none;
-}
-@media (hover: hover) and (pointer: fine) {
-  .record-retry:hover::before {
-    border-color: var(--fg);
-  }
-}
-.record-retry:active {
-  translate: 0 2px;
 }
 /* (Centred on the count, not on the box: the layout gives its width.) */
 .record-unit {
@@ -10769,7 +10844,7 @@ figure.l1-fig {
   height: 2px;
   background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 0 / 6px 2px repeat-x;
 }
-.device-error {
+.device-list > .quiet-failure {
   padding-top: 6px;
 }
 
@@ -11283,10 +11358,8 @@ figure.l1-fig {
   margin-top: 28px;
   animation: board-dissolve 240ms linear 420ms backwards;
 }
-/* A failed read's way back: the quiet word, under the held canvas. */
+/* A failed read's note and its way back, under the held canvas. */
 .profile-retry {
-  display: flex;
-  justify-content: center;
   margin-top: 14px;
 }
 @media (max-width: 640px) {

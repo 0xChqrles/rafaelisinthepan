@@ -31,8 +31,8 @@ import HeaderKeys, { type HeaderPlace } from './components/HeaderKeys';
 import DeviceFrame from './components/DeviceFrame';
 import FocusBrackets from './components/FocusBrackets';
 import LazyStreakDialog from './components/LazyStreakDialog';
-import LoadError from './components/LoadError';
 import NoPuzzle from './components/NoPuzzle';
+import QuietFailure from './components/QuietFailure';
 import Invite from './tutorial/Invite';
 import Learn from './tutorial/Learn';
 import Lesson from './tutorial/Lesson';
@@ -348,26 +348,25 @@ function GameRoute({
   const [kept, setKept] = useState<Shown | null>(null);
   const shown = roundOnScreen(kept, live, roundKey);
   if (shown !== kept) setKept(shown);
-  // What the route can show, in order: a puzzle that failed to come, a day with none, a word
-  // list that failed (only once the puzzle says there is a game to play with it), a round
-  // read that failed — each its own RETRY — else the game, once all three reads are in,
-  // with the hold standing until they are. The game is deliberately NETWORK-DEPENDENT at
-  // load (#214): until the round read settles there is nothing honest to show and nothing to
-  // type into, and a FAILED read is said out loud with a RETRY rather than silently starting
-  // the player on a guessed local mirror — the guesses they would then type would be answers
-  // to a board the server disagrees with.
-  const failure =
+  // What the route can show: a day with none, else the game once all three reads are in, with
+  // the hold standing until they are — and a read that FAILED (the puzzle; the word list, only
+  // once the puzzle says there is a game to play with it; the round's) holds the hold STILL,
+  // with its RETRY. The game is deliberately NETWORK-DEPENDENT at load (#214): until the round
+  // read settles there is nothing honest to show and nothing to type into, and a FAILED read
+  // is said, with a RETRY, rather than silently starting the player on a guessed local mirror
+  // — the guesses they would then type would be answers to a board the server disagrees with.
+  const failedRetry =
     error !== null
-      ? { message: 'failedPuzzle' as const, onRetry: retry }
+      ? retry
       : noPuzzle || puzzle === null || shown !== null
         ? null
         : vocabError !== null
-          ? { message: 'failedVocab' as const, onRetry: retryVocab }
+          ? retryVocab
           : round?.status === 'failed'
-            ? { message: 'failedRound' as const, onRetry: () => retryRoundSync(roundKey) }
+            ? () => retryRoundSync(roundKey)
             : null;
   // (The invitation stands in for the hold while the reads go on behind it.)
-  const hold = useHold(surface === 'game' && failure === null && !noPuzzle && shown === null);
+  const hold = useHold(surface === 'game' && !noPuzzle && shown === null);
   // What the hold's tray promises: the KEYBOARD only to a player who lands on the prompt —
   // an account, and level 1 done (`Round`'s own `gateOpen`, read before the round is in) —
   // else the GATE's slots, LEARN's with them while the lesson is not done.
@@ -422,14 +421,15 @@ function GameRoute({
       <HeaderLeft>
         <PuzzleTitle lang={lang} puzzleRef={isActiveDay ? null : ref} />
       </HeaderLeft>
-      {failure !== null && <LoadError message={t(lang, failure.message)} lang={lang} onRetry={failure.onRetry} />}
       {/* `date` tells NoPuzzle whether this is an archive miss. */}
       {noPuzzle && <NoPuzzle lang={lang} date={date} bonus={bonusId !== undefined} />}
-      {failure === null && !noPuzzle && (
+      {!noPuzzle && (
         // THE GAME'S COLUMN, the route's: the hold stands in it through the three reads and
         // gives way UNDER the round once they are in (first in the column, so the round
-        // paints over it).
-        <div className="game" aria-busy={shown !== null ? undefined : true}>
+        // paints over it). A failed read holds it STILL — shown at once, whatever its wait —
+        // with ONE line for all three reads (the player lost the same thing) and RETRY in the
+        // prompt's row; a retry hands it back to breathing in place.
+        <div className="game" aria-busy={shown !== null || failedRetry !== null ? undefined : true}>
           {hold.mounted && !over && (
             <GameHold
               lang={lang}
@@ -439,8 +439,18 @@ function GameRoute({
               roundIn={round?.status === 'ready'}
               race={isActiveDay}
               tray={tray}
-              shown={hold.shown}
+              shown={hold.shown || failedRetry !== null}
               leaving={hold.leaving}
+              failure={
+                failedRetry && (
+                  <QuietFailure
+                    className="start"
+                    lang={lang}
+                    line={t(lang, isActiveDay ? 'failedGame' : 'failedGamePast')}
+                    onRetry={failedRetry}
+                  />
+                )
+              }
             />
           )}
           {shown !== null && (

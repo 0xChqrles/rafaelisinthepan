@@ -1,12 +1,11 @@
 import Button from './Button';
 import { t } from '../i18n';
 
-// Shared error+action surface for a failed load — the day's puzzle (App) or the
-// language vocabulary (Game). Both use it so the two failures look and behave the
-// same (issue #14): a transient/unexpected failure shows the message plus a RETRY
-// that re-runs the fetch, so an error never dead-ends in a blank / infinite LOADING…
-// screen. (A 404 missing puzzle is NOT an error — NoPuzzle owns that state.)
-// `message` arrives already localized; `lang` localizes the default RETRY label.
+// The group invite landing's error+action surface (its one consumer): the message plus a
+// button that re-runs the read, so the landing never dead-ends. Every other read that fails
+// is said in place, over its own loading picture held still (`QuietFailure`); this goes with
+// the landing's own redesign. `message` arrives already localized; `lang` localizes the
+// default RETRY label.
 //
 // `actionLabel` overrides that label for the one case where asking again cannot help:
 // the #271 invite landing's full group is a state, not a hiccup, so its button

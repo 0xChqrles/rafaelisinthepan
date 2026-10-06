@@ -7,8 +7,9 @@ import botIdle from '../assets/error-bot-idle.png';
 // user-decided 2026-08-24). It exists for the five account-deploying buttons — the two PLAY
 // gates, the invite accept, the invite send, the profile save — plus the profile editor's two
 // moderation refusals, whose failures used to be inline lines with as many spellings as
-// surfaces. A LOAD that failed keeps `LoadError`: that is a screen that could not open, where
-// this is an ACT that did not land.
+// surfaces. A READ that failed is said in place instead (`QuietFailure`, over the surface's
+// own loading picture held still): that is a screen that could not open, where this is an ACT
+// that did not land.
 //
 // **IT IS A FULL-SCREEN MODAL, NOT A SHEET (user-decided 2026-08-27).** It shipped as a
 // centred popup on desktop and a bottom sheet on a phone, and that was the wrong FORMAT for

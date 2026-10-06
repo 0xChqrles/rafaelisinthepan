@@ -1,9 +1,9 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Puzzle } from '@whippin/shared';
 import Phrase from './Phrase';
 import { SWEEP_MS } from './PhraseIntro';
 import { DISSOLVE_MS, SKELETON_WAIT_MS } from './bayerTiles';
-import { KEYBOARD_ROWS } from '../game/keyboard';
+import KeyboardHold from './KeyboardHold';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import type { RuntimeHole } from '../game/types';
 import type { LangCode } from '../langs';
@@ -40,6 +40,12 @@ import { t } from '../i18n';
 // for cell (`.kb-lit`); the gate dissolves in over its slots. A day already over takes the
 // hold away at once (the route): its card comes in through the dither on bare ground.
 // Reduced motion: no breath, no dissolve — the game at once.
+//
+// A READ THAT FAILED holds the picture STILL (`failure`): shown at once, every bar and rail at
+// the Bayer order's half, nothing breathing, and the prompt's row — the one thing in the hold
+// a finger reaches — says so, ONE line for the three reads, over its RETRY (the route's
+// `QuietFailure`). The hold stays mounted through it, so a RETRY hands the same picture back
+// to breathing in place.
 
 // The hold's whole exit: the decode's front crossing the sentence, then the last bar's going.
 export const HOLD_LEAVE_MS = SWEEP_MS + DISSOLVE_MS;
@@ -175,6 +181,7 @@ export default function GameHold({
   tray,
   shown,
   leaving,
+  failure,
 }: {
   lang: LangCode;
   // The day's puzzle once it is in (its words shape the silhouette), else null.
@@ -192,7 +199,11 @@ export default function GameHold({
   tray: HoldTray;
   shown: boolean;
   leaving: boolean;
+  // A read that FAILED: what the prompt's row says instead (the route's `QuietFailure`), the
+  // whole picture held still round it. Null while every read is out or in.
+  failure: ReactNode;
 }) {
+  const failed = failure != null && failure !== false;
   // A sentence giving way to the next (the rails to the day's silhouette) goes out through
   // the cells the next comes in through — only while the hold is on screen.
   const key = sentenceKey(puzzle);
@@ -208,49 +219,37 @@ export default function GameHold({
     return () => window.clearTimeout(id);
   }, [puzzle, holes, key, shown]);
 
-  // What is still out, each its own motion (index.css).
+  // What is still out, each its own motion (index.css) — and nothing moves once a read failed.
   const reading = `${puzzle ? '' : ' reading-sentence'}${roundIn ? '' : ' reading-round'}${
     wordsIn ? '' : ' reading-tray'
   }`;
-  const lastRow = KEYBOARD_ROWS.length - 1;
 
   return (
-    <div className={`game-hold${leaving ? ' leaving' : reading}`}>
-      <span className="sr-only">{t(lang, 'loading')}</span>
+    <div className={`game-hold${leaving ? ' leaving' : failed ? ' failed' : reading}`}>
+      {!failed && <span className="sr-only">{t(lang, 'loading')}</span>}
       {shown && (
         <>
-          <div className={`play${race ? ' play-race' : ''}`} aria-hidden="true" ref={makeInert}>
-            <div className="phrase-anchor hold-sentences">
+          <div className={`play${race ? ' play-race' : ''}`}>
+            <div className="phrase-anchor hold-sentences" aria-hidden="true" ref={makeInert}>
               {outgoing && <Sentence key={outgoing.key} lang={lang} drawn={outgoing.drawn} leaving />}
               <Sentence key={key} lang={lang} drawn={drawn} />
             </div>
-            {/* The prompt's row, held (its line and its hint's): never drawn. */}
+            {/* The prompt's row, held (its line and its hint's): never drawn — and where a read
+                that failed is said, over it, in its own box. */}
             <div className="prompt-zone">
-              <div className="input-area retired">
+              <div className="input-area retired" aria-hidden="true" ref={makeInert}>
                 <span className="word-input">
                   <span className="wi-prompt">&gt;</span>
                 </span>
                 <p className="hint"> </p>
               </div>
+              {failed && <div className="hold-failure">{failure}</div>}
             </div>
           </div>
           {tray === 'keys' ? (
             <div className="tray" aria-hidden="true" ref={makeInert}>
               <div className="kb-exit">
-                <div className="keyboard hold-tray">
-                  {KEYBOARD_ROWS.map((row, r) => {
-                    // The row as the keyboard lays it out: ENTER, the letters, the dash and
-                    // BACKSPACE on the last one.
-                    const count = row.length + (r === lastRow ? 3 : 0);
-                    return (
-                      <div className="kb-row" key={r}>
-                        {Array.from({ length: count }, (_, c) => (
-                          <span key={c} className="kb-key kb-slate" />
-                        ))}
-                      </div>
-                    );
-                  })}
-                </div>
+                <KeyboardHold still={wordsIn || failed} className="hold-tray" />
               </div>
             </div>
           ) : (

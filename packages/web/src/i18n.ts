@@ -14,27 +14,47 @@ const uiLang = (lang: string): UiLang => (lang === 'fr' ? 'fr' : 'en');
 
 const STRINGS = {
   loading: { en: 'LOADING…', fr: 'CHARGEMENT…' },
-  failedPuzzle: { en: 'FAILED TO LOAD PUZZLE', fr: 'ÉCHEC DU CHARGEMENT DU PUZZLE' },
-  failedVocab: { en: 'FAILED TO LOAD VOCABULARY', fr: 'ÉCHEC DU CHARGEMENT DU DICTIONNAIRE' },
-  // The sentence round's own state (#214). The board is a replay of the SERVER's log, so a
-  // read that could not be had is a game that cannot honestly start — loud, with a retry,
-  // rather than a guessed local board the player would then type answers to.
-  failedRound: { en: 'FAILED TO LOAD ROUND', fr: 'ÉCHEC DU CHARGEMENT DE LA PARTIE' },
+  // A READ THAT FAILED IS A NOTE (`QuietFailure`): sentence case, plain words about what the
+  // player lost — never the chrome's caps, never the name of an internal (a dictionary, a
+  // round, a history). The GAME's three reads — the puzzle, the word list, the round's state
+  // — are ONE line: the player lost the same thing whichever failed. (#214: the board is a
+  // replay of the server's log, so a game that cannot honestly start says so, with a RETRY,
+  // rather than starting on a guessed local board.) Today's game, or another day's.
+  // (Two sentences, a line each: `\n`, which the note keeps.)
+  failedGame: {
+    en: "Today's puzzle couldn't open.\nCheck your connection.",
+    fr: "Le puzzle du jour n'a pas pu s'ouvrir.\nVérifiez votre connexion.",
+  },
+  failedGamePast: {
+    en: "This puzzle couldn't open.\nCheck your connection.",
+    fr: "Ce puzzle n'a pas pu s'ouvrir.\nVérifiez votre connexion.",
+  },
+  // The lesson's keyboard: the word list its keys are greyed against.
+  failedKeyboard: { en: "The keyboard didn't load.", fr: "Le clavier n'a pas chargé." },
+  // A tutorial page whose code chunk was lost on the way.
+  failedPage: { en: "This page didn't load.", fr: "Cette page n'a pas chargé." },
   // The #188 profile read. Its failure is NOT silent like background round sync: what
   // the server holds is the editor's whole starting point, so a guess could be saved
   // over the real profile — the reader retries instead.
-  failedProfile: { en: 'FAILED TO LOAD PROFILE', fr: 'ÉCHEC DU CHARGEMENT DU PROFIL' },
-  failedAccountLoad: { en: 'FAILED TO LOAD ACCOUNT', fr: 'ÉCHEC DU CHARGEMENT DU COMPTE' },
-  // The #211 private history read, behind the archive calendar.
-  // Loud like the round's own: since #214 there is no local history left to fall back to,
-  // so a silent failure would draw a month of untouched days over a month that was played.
-  failedHistory: { en: 'FAILED TO LOAD HISTORY', fr: "ÉCHEC DU CHARGEMENT DE L'HISTORIQUE" },
+  failedProfile: { en: "Your profile couldn't be shown.", fr: "Votre profil n'a pas pu s'afficher." },
+  // `/account`: what the account is saved as (the link read), its record (the history
+  // collections), or both at once — then ONE line for the page, under one RETRY.
+  failedAccountSave: {
+    en: "Your email backup couldn't be checked.",
+    fr: "La sauvegarde par e-mail n'a pas pu être vérifiée.",
+  },
+  failedRecord: { en: "Your streak couldn't be shown.", fr: "Votre série n'a pas pu s'afficher." },
+  failedAccountAll: { en: "Your account couldn't be shown.", fr: "Votre compte n'a pas pu s'afficher." },
+  // The #211 private history read, behind the archive calendar. Said whether or not a month
+  // is drawn: since #214 there is no local history to fall back to, so a silent failure would
+  // draw a month of untouched days over a month that was played.
+  failedHistory: { en: "Your days couldn't be read.", fr: "Vos jours n'ont pas pu être lus." },
   // The same read failing on a REVALIDATION, where an older answer is still on screen. It
-  // needs its own words: a month is drawn, so "failed to load" would be plainly false, and
+  // needs its own words: a month is drawn, so "couldn't be read" would be plainly false, and
   // the thing the reader has to know is that what they are looking at may be out of date.
-  staleHistory: { en: 'HISTORY MAY BE OUT OF DATE', fr: 'HISTORIQUE PEUT-ÊTRE OBSOLÈTE' },
-  // The #271 group invite's write, loud for the same reason: it is the one thing that
-  // tap existed to do, so losing it silently would leave everyone none the wiser.
+  staleHistory: { en: 'May not be up to date.', fr: 'Peut-être pas à jour.' },
+  // The #271 group invite's write, said out loud: it is the one thing that tap existed to
+  // do, so losing it silently would leave everyone none the wiser.
   failedJoin: { en: 'FAILED TO JOIN', fr: "ÉCHEC DE L'ADHÉSION" },
   // A group write that did not land (create, leave, remove) — the same loudness.
   failedGroup: { en: 'FAILED', fr: 'ÉCHEC' },
@@ -135,7 +155,7 @@ const STRINGS = {
   // The UA parser leaves what it cannot read EMPTY rather than guessing, so the SCREEN names
   // an unlabelled device.
   deviceUnknown: { en: 'UNKNOWN DEVICE', fr: 'APPAREIL INCONNU' },
-  failedDevices: { en: 'FAILED TO LOAD DEVICES', fr: 'ÉCHEC DU CHARGEMENT DES APPAREILS' },
+  failedDevices: { en: "Your devices couldn't be shown.", fr: "Vos appareils n'ont pas pu s'afficher." },
   signedOutReconnect: { en: 'RECONNECT', fr: 'SE RECONNECTER' },
   // THE ACCOUNT AREA (#204, reworked 2026-08-26). One purpose per screen, and one rule for
   // the words: a line survives only if it says something the screen does not already show.
@@ -679,7 +699,7 @@ const STRINGS = {
     fr: 'Vous avez créé ce groupe. Choisissez qui le reprend.',
   },
   groupLeaveAction: { en: 'LEAVE', fr: 'QUITTER' },
-  failedBoard: { en: 'FAILED TO LOAD LEADERBOARD', fr: 'ÉCHEC DU CHARGEMENT DU CLASSEMENT' },
+  failedBoard: { en: "The leaderboard couldn't be shown.", fr: "Le classement n'a pas pu s'afficher." },
   ariaLeaderboard: { en: 'Leaderboard', fr: 'Classement' },
 } satisfies Record<string, Record<UiLang, string>>;
 

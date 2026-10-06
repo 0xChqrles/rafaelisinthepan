@@ -4,8 +4,8 @@ import DissolvePhrase from '../components/DissolvePhrase';
 import WordInput from '../components/WordInput';
 import Keyboard from '../components/Keyboard';
 import RevealTray from '../components/RevealTray';
-import LoadError from '../components/LoadError';
-import LoadingWave from '../components/LoadingWave';
+import KeyboardHold from '../components/KeyboardHold';
+import QuietFailure from '../components/QuietFailure';
 import CellDigits from '../components/CellDigits';
 import HistoryWheel from '../components/HistoryWheel';
 import HistoryModal from '../components/HistoryModal';
@@ -657,6 +657,8 @@ export default function LessonBoard({
       return { value: c.charge, active: c.active, hint };
     });
   }, [shownMeters, holes, lang]);
+  // The word list could not be had: the keys cannot be greyed, so the tray holds still.
+  const listLost = vocabError != null;
 
   return (
     // tutorial--word: the word stage is deliberately CLEAN — one big centered word in the
@@ -784,17 +786,26 @@ export default function LessonBoard({
           />
           <p className="hint">{feedback || ' '}</p>
         </div>
+        {/* The word list LOST: said in the prompt's row, over it — the game hold's own place
+            for it — while the keyboard's hold stands still in the tray. */}
+        {listLost && (
+          <div className="lesson-failure">
+            <QuietFailure className="start" lang={lang} line={t(lang, 'failedKeyboard')} onRetry={retryVocab} />
+          </div>
+        )}
       </div>
 
       {/* The bottom is for INTERACTIONS: the keyboard — which drops away at the very end,
           leaving one button under the solved sentence. */}
       <div className={`tray${ending && !kbGone ? ' kb-leaving' : ''}${rising ? ' kb-rising' : ''}`}>
-        {vocabError ? (
-          <LoadError message={t(lang, 'failedVocab')} lang={lang} onRetry={retryVocab} />
-        ) : !vocab ? (
-          <p className="status">
-            <LoadingWave text={t(lang, 'loading')} />
-          </p>
+        {/* THE WORD LIST STILL OUT, or LOST: the keyboard's own footprint as its HOLD —
+            breathing while the list is out, STILL once it failed (the note and RETRY then in
+            the prompt's row, above). */}
+        {listLost || !vocab ? (
+          <div className="kb-exit" aria-busy={listLost ? undefined : true}>
+            {!listLost && <span className="sr-only">{t(lang, 'loading')}</span>}
+            <KeyboardHold still={listLost} />
+          </div>
         ) : kbGone ? (
           <button type="button" className="mix-btn" onClick={final ? onPlay : onComplete}>
             {t(lang, final ? 'tutPlay' : 'tutContinue')}

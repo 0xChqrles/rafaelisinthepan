@@ -34,6 +34,7 @@ import {
 import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { t } from '../i18n';
 import { clockNow } from './animationClock';
+import QuietFailure from './QuietFailure';
 import { useRecordCalm } from './record/Record';
 import PhoneIcon from '../assets/icons/phone.svg?react';
 import TabletIcon from '../assets/icons/tablet.svg?react';
@@ -180,9 +181,10 @@ export default function DeviceList({ lang }: { lang: string }) {
   return (
     <section className="device-list" aria-label={t(lang, 'devicesTitle')}>
       {/* While the read is out: one line's boxes as the stippled slate — the glyph's checker and
-          the label's rail — at the lines' own pitch, so nothing moves when the list lands. */}
+          the label's rail — at the lines' own pitch, so nothing moves when the list lands; a
+          read that FAILED keeps that line standing, still, its note and RETRY under it. */}
       {/* (Once the lines are in, the skeleton stands over them until their dissolve starts.) */}
-      {(phase === 'loading' || phase === 'ready') && (
+      {(phase === 'loading' || phase === 'ready' || phase === 'failed') && (
         <div
           className={`device-row device-skeleton${shown ? ' leaving' : ''}`}
           style={shown ? ({ '--at': `${after ?? 0}ms` } as React.CSSProperties) : undefined}
@@ -194,16 +196,8 @@ export default function DeviceList({ lang }: { lang: string }) {
           </span>
         </div>
       )}
-      {/* A failed read: what failed, said quietly, and the quiet word that asks again. */}
       {phase === 'failed' && (
-        <div className="device-error">
-          <p className="device-error-line" role="status">
-            {t(lang, 'failedDevices')}
-          </p>
-          <button type="button" className="quiet-btn" onClick={() => setAttempt((n) => n + 1)}>
-            {t(lang, 'retry')}
-          </button>
-        </div>
+        <QuietFailure lang={lang} line={t(lang, 'failedDevices')} onRetry={() => setAttempt((n) => n + 1)} />
       )}
       {shown && (
         <ul className="device-lines">

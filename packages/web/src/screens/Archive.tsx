@@ -4,7 +4,6 @@ import { dateForDayNumber } from '@whippin/shared';
 import PuzzleTitle from '../components/PuzzleTitle';
 import { HeaderLeft } from '../components/TopBar';
 import BoardTabs, { tabIds } from '../components/BoardTabs';
-import Button from '../components/Button';
 // (For its side effect: the dissolve masks the hold's note comes in through.)
 import '../components/bayerTiles';
 import MonthRaster from '../components/calendar/MonthRaster';
@@ -351,28 +350,30 @@ export default function Archive({ lang }: { lang: LangCode }) {
       </div>
 
       {/* THE HOLD: a read that could not be had says so, under the grid, with the one thing
-          that can help — asking again. LOUD like the round's own load failure and for the same
-          reason: there is no local history left to quietly fall back to. **It speaks whether
-          or not a month is already drawn** (corrected on review): a REVALIDATION deliberately
-          keeps the cached month on screen, so gating it on there being nothing to show meant
-          that after one good visit every later failure was silent. What CHANGES with cached
-          data is the claim: nothing loaded is a failure to load, in the danger ink; an older
-          month still on screen is a note about it, in the plain status ink. Always reserved,
-          so nothing above it moves when it speaks — and its note in a LIVE REGION mounted
-          before it, so the note is heard when it comes (and again on a second failure); RETRY
-          stands beside it, outside the region, so the region says the note alone. */}
+          that can help — asking again. The keys above already fail in place (the still
+          checker), so the note is QUIET, the house's failed-read note (`QuietFailure`'s line
+          over its quiet RETRY): there is no local history left to fall back to, and the still
+          keys say "unknown" without an alarm. **It speaks whether or not a month is already
+          drawn** (corrected on review): a REVALIDATION deliberately keeps the cached month on
+          screen, so gating it on there being nothing to show meant that after one good visit
+          every later failure was silent. What CHANGES with cached data is the claim: nothing
+          loaded is a read that failed; an older month still on screen is a note that it may
+          not be up to date. Always reserved, so nothing above it moves when it speaks — and its
+          note in a LIVE REGION mounted before it, so the note is heard when it comes (and again
+          on a second failure); RETRY stands under it, outside the region, so the region says
+          the note alone. */}
       <div ref={holdRef} className={`cal-hold${G.gridW < NOTE_NARROW_BELOW_PX ? ' narrow' : ''}`}>
         <div role="status">
           {failed && (
-            <p className={`cal-note cal-hold-in${history.days === null ? ' error' : ''}`}>
+            <p className="quiet-failure-line cal-hold-in">
               {t(lang, history.days === null ? 'failedHistory' : 'staleHistory')}
             </p>
           )}
         </div>
         {failed && (
-          <Button variant="secondary" className="cal-hold-in" onClick={retry}>
+          <button type="button" className="quiet-btn cal-hold-in" onClick={retry}>
             {t(lang, 'retry')}
-          </Button>
+          </button>
         )}
       </div>
     </div>

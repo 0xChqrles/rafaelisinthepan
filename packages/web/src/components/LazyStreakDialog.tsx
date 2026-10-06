@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { StreakDialogProps } from './StreakDialog';
 import { lazyChunk } from '../hooks/lazyChunk';
 
@@ -13,7 +14,11 @@ export function preloadStreakDialog(): void {
 export default function LazyStreakDialog(props: StreakDialogProps) {
   // A celebration chunk must never strand the solved flow at frame zero. If the
   // user-visible retry also fails, skip the optional modal and continue to results.
-  const Dialog = chunk.useLoaded(props.onDismiss);
+  const { Loaded: Dialog, failed } = chunk.useLoaded();
+  const { onDismiss } = props;
+  useEffect(() => {
+    if (failed) onDismiss();
+  }, [failed, onDismiss]);
 
   return Dialog ? <Dialog {...props} /> : null;
 }

@@ -69,6 +69,9 @@ export interface UnderView {
   body: 'list' | 'skeleton' | 'hold' | null;
   shown: Shown | null;
   hold: ReactNode;
+  // The skeleton held for a read that FAILED (the podium's caption says so): the same lines,
+  // still, and no "loading" for a screen reader.
+  failed: boolean;
 }
 
 // A view GIVING WAY: how long it had been on screen when it began to, and the run it had come
@@ -159,7 +162,7 @@ export default function Under({
           {...list}
         />
       ) : view.body === 'skeleton' ? (
-        <Skeleton lang={lang} run={run} offset={offset} shownFor={gone?.shownFor ?? null} />
+        <Skeleton lang={lang} run={run} offset={offset} shownFor={gone?.shownFor ?? null} failed={view.failed} />
       ) : view.body === 'hold' && came(offset) ? (
         <div className="board-hold" style={{ '--delay': `${lineRun(run, offset).delayMs}ms` } as CSSProperties}>
           {view.hold}
@@ -183,25 +186,28 @@ function DoorLabel({ lang, count }: { lang: LangCode; count: number }) {
 // names will stand — the box of what is coming, at its pitch, so nothing moves when it lands.
 // They come in only if the read is slow (SKELETON_WAIT_MS, then SKELETON_STAGGER_MS apart).
 // Giving way (`shownFor`: how long it had been on screen), only the lines that had come in by
-// then are there to go.
+// then are there to go. A read that FAILED holds them as they stand (`failed`: no "loading" to
+// say — the podium's caption says what happened).
 function Skeleton({
   lang,
   run,
   offset,
   shownFor,
+  failed,
 }: {
   lang: LangCode;
   run: ListRun;
   offset: number;
   shownFor: number | null;
+  failed: boolean;
 }) {
   const out = shownFor !== null;
   const lines = out
     ? SKELETON_LINES.filter((_, i) => cameIn(SKELETON_WAIT_MS + i * SKELETON_STAGGER_MS, shownFor))
     : SKELETON_LINES;
   return (
-    <div className="board-skeleton" role={out ? undefined : 'status'}>
-      {!out && <span className="sr-only">{t(lang, 'loading')}</span>}
+    <div className="board-skeleton" role={out || failed ? undefined : 'status'}>
+      {!out && !failed && <span className="sr-only">{t(lang, 'loading')}</span>}
       {lines.map((width, i) => (
         <span
           key={i}
