@@ -395,6 +395,9 @@ function Round({
   // round), so it lights in where the hold reserved its row.
   const [promptFromHold] = useState(fromHold);
   const gateOpen = identity === null || (!learned && !played && !finished && guessCount === 0);
+  // The KEYS came up over the hold's slates only when the round opened on them: a gate there
+  // instead hands its PLAY a keyboard that rises as it always does, however soon it is tapped.
+  const [keysFromHold] = useState(fromHold && !gateOpen);
   useEffect(() => {
     if (guessCount > 0 && !learned) markLessonDone(PLAY_LEVEL);
   }, [guessCount, learned, markLessonDone]);
@@ -1373,7 +1376,7 @@ function Round({
                     onType={appendChar}
                     onBackspace={deleteChar}
                     onSubmit={submit}
-                    lit={fromHold}
+                    lit={fromHold && keysFromHold}
                   />
                 )}
               </div>

@@ -2078,7 +2078,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     reaches its word (`Phrase` stamps that front, `--at`, on a silhouette's tokens too);
     the keys LIGHT IN over their slates through exactly the cells the slates go out through
     (`Keyboard`'s `lit`, `.kb-lit`: in place, in hard steps, never the keyboard's eased
-    rise); the prompt's row and the gate come in through the dither. A
+    rise — and only when the round opened on them: a keyboard the gate's PLAY brings up
+    rises as it always does); the prompt's row and the gate come in through the dither. A
     day ALREADY OVER takes the hold away at once — its card (`SolvedScreen`'s `fromHold`:
     its settled frame, the reveal not replayed) comes in through the dither on bare ground,
     never with bars and slates showing through it. Measured at 390/320/1366: every bar,
