@@ -910,13 +910,15 @@ These are decided and verified against the code. Treat them as load-bearing.
     /inspiration/modern board — "fresh and deep update"):** the content floats in the
     middle while decorative furniture clings to the edges.
     - **`components/DeviceFrame`** (mounted once in App, under every screen): four
-      corner BRACKETS — the board's focused-card selection frame drawn around the whole
-      app — a vertical `WHIPPIN AI ©2026` brand rail on the left edge, the localized
-      tagline (`frameTagline`, the STRINGS table) bottom-left, and the day's EDITION
-      SERIAL bottom-right (`N.<dayNumber>` — the interfaces.dev card's numbering, fed
-      the ACTIVE day via useToday). Decorative (aria-hidden, pointer-events none),
-      z-index 40 under the header's 60, covered by opaque dialogs, and DESKTOP ONLY
-      (hidden ≤640px — a phone's viewport is all content).
+      corner BRACKETS — `.streak-corner` itself, the streak celebration's and the
+      signed-out screen's frame (2px, 24px arms, white at 38%), standing still, 16px in
+      and 24px from 1200px wide — a vertical `WHIPPIN AI ©2026` brand rail on the left
+      edge, on the corners' column, the tagline (`MADE WITH <3`) bottom-left, and the
+      day's EDITION SERIAL bottom-right (`N.<dayNumber>` — the interfaces.dev card's
+      numbering, fed the ACTIVE day via useToday), both on the corners' bottom line past
+      the arms. Its words are `--muted`, never the foreground dimmed. Decorative
+      (aria-hidden, pointer-events none), z-index 40 under the header's 60, covered by
+      opaque dialogs, and DESKTOP ONLY (hidden ≤640px — a phone's viewport is all content).
     - **The KEYBOARD is FLAT (no "old skeuomorphism"):** every key is one solid dark
       tile at the sharp radius, nothing modelled, and **a press is a STATE, not
       travel** — brightness, never translateY (the rule the primary buttons follow

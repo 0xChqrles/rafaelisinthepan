@@ -1036,78 +1036,61 @@ body:has(.app > .board-screen) {
 }
 
 /* ===================== the device frame (2026-08-18) ===================== */
-/* The viewport as an INSTRUMENT (the /inspiration/modern board): corner brackets — the
-   focused-card selection frame, drawn around the whole app — a vertical brand rail, the
-   tagline and the day's edition serial in the bottom corners. Content floats in the
-   middle; the furniture clings to the edges. Decorative (aria-hidden), never
-   interactive, DESKTOP ONLY: a phone's viewport is all content. Sits under the header
-   (z 40 < 60); opaque full-screen dialogs simply cover it. */
+/* The viewport as an INSTRUMENT (the /inspiration/modern board): corner brackets, a
+   vertical brand rail, the tagline and the day's edition serial in the bottom corners.
+   Content floats in the middle; the furniture clings to the edges. Decorative
+   (aria-hidden), never interactive, DESKTOP ONLY: a phone's viewport is all content. Sits
+   under the header (z 40 < 60); opaque full-screen dialogs simply cover it.
+   ONE BRACKET on every full screen: the corners ARE `.streak-corner` (2px, 24px arms,
+   white at 38%), standing still, 16px in and 24px from 1200px wide; the words are the
+   secondary ink, never the foreground dimmed, and stand in the corners' register — the
+   rail on their column, the captions on their bottom line past the arms. */
 .device-frame {
+  --inset: 16px;
   position: fixed;
   inset: 0;
   z-index: 40;
   pointer-events: none;
   font-family: var(--ui);
-  color: var(--fg);
+  color: var(--muted);
 }
-.df-bracket {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border: 1.5px solid rgba(255, 255, 255, 0.3);
+@media (min-width: 1200px) {
+  .device-frame {
+    --inset: 24px;
+  }
 }
-.df-tl {
-  top: 10px;
-  left: 10px;
-  border-right: 0;
-  border-bottom: 0;
-}
-.df-tr {
-  top: 10px;
-  right: 10px;
-  border-left: 0;
-  border-bottom: 0;
-}
-.df-bl {
-  bottom: 10px;
-  left: 10px;
-  border-right: 0;
-  border-top: 0;
-}
-.df-br {
-  bottom: 10px;
-  right: 10px;
-  border-left: 0;
-  border-top: 0;
+.device-frame .streak-corner {
+  --inset: inherit;
+  opacity: 1;
 }
 /* The vertical brand rail, reading upward along the left edge. */
 .df-edge {
   position: absolute;
-  left: 10px;
+  left: var(--inset);
   top: 50%;
   transform: translateY(-50%) rotate(180deg);
   writing-mode: vertical-rl;
   font-size: 10px;
   font-weight: 550;
+  line-height: 1;
   letter-spacing: 0.14em;
-  opacity: 0.38;
   white-space: nowrap;
 }
 .df-cap {
   position: absolute;
-  bottom: 12px;
+  bottom: var(--inset);
   font-size: 10px;
   font-weight: 550;
+  line-height: 1;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  opacity: 0.38;
   white-space: nowrap;
 }
 .df-cap-left {
-  left: 34px;
+  left: calc(var(--inset) + 24px + 10px);
 }
 .df-cap-right {
-  right: 34px;
+  right: calc(var(--inset) + 24px + 10px);
   font-variant-numeric: tabular-nums;
 }
 @media (max-width: 640px) {
