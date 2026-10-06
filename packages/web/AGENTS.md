@@ -2426,11 +2426,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   fixed slots on the bottom edge (a line, the call, the word under it), the call in ONE place
   in every state: JOIN (`.mix-btn`) over PLAY (the word). **While the JOIN is out** the
   button charges (`BusyButton`) and the seat BREATHES, both after `SKELETON_WAIT_MS`.
-  **JOINED** says no word: the reader's own mark (`useOwnFace` — the seed's for a device the
-  tap minted) DROPS into the seat with the podium's drop (`markAt`: whole cells under
-  gravity), its whole-pixel shake and the strike sheet's BURST behind it in the accent, and
-  the call turns to the BOARD in place; a seat whose mark is not read yet keeps breathing
-  until it is. **A CAP THE LANDING ALREADY KNOWS IS NEVER OFFERED** (`landingOf`,
+  **JOINED** says no word on screen: the reader's own mark (`useOwnFace` — the seed's for a
+  device the tap minted) DROPS into the seat with the podium's drop (`markAt`: whole cells
+  under gravity), its whole-pixel shake and the strike sheet's BURST behind it in the accent,
+  and the call turns to the BOARD in place; a seat whose mark is not read yet keeps breathing
+  until it is. A screen reader hears it from the line's slot, a live region
+  (`inviteJoined`, sr-only). **THE CALL IS ONE BUTTON** (`BusyButton`, JOIN, the BOARD, PLAY
+  alike), so a state change is a word change and the keyboard's focus stays on it. **A CAP THE LANDING ALREADY KNOWS IS NEVER OFFERED** (`landingOf`,
   contract-tested): a group whose public face holds `GROUP_MEMBERS_MAX` members, or a reader
   whose own list holds `GROUPS_MAX` groups, lands with no seat and no JOIN — a control that
   can only be refused is a false offer — so the landing holds until that list is known.
@@ -2726,10 +2728,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     LEAVE held back until one is picked, sent as `successor`; a stale list's 409
     `successor_required` is no failure: the confirmation stays up, its pick cleared, and
     the list is read again (the candidates dressed again when its members change).
-  - **A member already skips the landing onto the board, but never one this tab just
-    joined** (`GroupInvite`'s module-level `joinedHere`): the tap that joins can also MINT
-    the identity, and an acquired identity remounts the routed surface, so a remounted
-    landing would otherwise read "member already" and skip the confirmation it just earned.
+  - **A member already skips the landing onto the board, but never one this tab is joining
+    or has joined** (`GroupInvite`'s module-level `joinsHere`, entered at the TAP and taken
+    back out by any outcome but joined): the tap that joins can also MINT the identity, which
+    reloads the groups list — and that list can name the new membership before the join's
+    own answer is read — and an identity change remounts the routed surface; either would
+    otherwise read "member already" and skip the arrival the join earned. A landing mounted
+    again stands joined only for a join that LANDED (contract-tested,
+    `GroupInviteJoin.test.tsx`).
   - **Tests**: the podium's pick (`game/podium.test.ts`), its scene's box, sizes, layout,
     beats and name setting (`components/podium/scene.test.ts`), and the board's readings
     and list order (`game/boardView.test.ts`, `game/boardSlots.test.ts`) are tested; the

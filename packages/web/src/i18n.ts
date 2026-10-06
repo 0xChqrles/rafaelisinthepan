@@ -149,6 +149,9 @@ const STRINGS = {
   // The landing's READ failed: nothing is known about the group — no join was tried, so it
   // never says one failed — and RETRY reads again.
   inviteFailed: { en: 'The group could not be shown.', fr: "Le groupe n'a pas pu s'afficher." },
+  // A JOIN that landed, said to a screen reader alone: the screen says it with the reader's
+  // own mark dropping into the seat, and no word.
+  inviteJoined: { en: 'You joined the group.', fr: 'Vous avez rejoint le groupe.' },
   accountTitle: { en: 'ACCOUNT', fr: 'COMPTE' },
   // The account's own age, prefixed once — the only thing this screen can say about an
   // identity whose name and mark it already draws.

@@ -67,11 +67,14 @@ import { timeoutSignal } from '../timeout';
 // group: its shapes stand still, one line says it could not be shown, and RETRY reads again.
 type JoinOutcome = 'joined' | 'settled' | 'full' | 'limit' | 'failed' | 'expired';
 
-// The groups THIS tab joined from a landing. Module-level, because the tap that joins can
-// also MINT the identity, and an acquired identity remounts the routed surface — a
-// remounted landing would then read "member already" and skip the confirmation it just
-// earned. The skip is for a membership that predates the landing, never one it made.
-const joinedHere = new Set<string>();
+// The groups THIS tab is joining (`out`) or has joined (`joined`) from a landing.
+// Module-level, so a landing mounted again (an identity change remounts the routed surface)
+// still knows them. Entered at the TAP, not the answer: a tap that MINTS the identity
+// reloads the groups list, which can name the new membership before the join's own answer
+// is read — and the member skip would then take the landing away before the drop it earned.
+// The skip is for a membership that predates the landing, never one it is making; an outcome
+// other than joined takes the group back out.
+const joinsHere = new Map<string, 'out' | 'joined'>();
 
 export async function sendJoin(groupId: string): Promise<JoinOutcome> {
   const request = await ensureRequestIdentity();
@@ -80,7 +83,7 @@ export async function sendJoin(groupId: string): Promise<JoinOutcome> {
   const response = await postGroupsBody(groupsUrl(), { token: identity.token, join: groupId });
   if (identityEpoch() !== epoch) return 'settled';
   if (response.ok) {
-    joinedHere.add(groupId);
+    joinsHere.set(groupId, 'joined');
     // The answer is the caller's groups as they now stand — publish them, so the board
     // this landing hands over to opens on the group without a second read.
     try {
@@ -134,8 +137,9 @@ const LIST_WAIT_MS = 2_000;
 
 export default function GroupInvite({ groupId, lang }: { groupId: string; lang: string }) {
   const [group, setGroup] = useState<GroupState>(null);
-  // A landing remounted after its own join (an identity swap) stands joined, its seat taken.
-  const [phase, setPhase] = useState<Phase>(() => (joinedHere.has(groupId) ? 'done' : 'idle'));
+  // A landing remounted after its own join (an identity swap) stands joined, its seat taken —
+  // only a join that LANDED; one still out is not a seat taken.
+  const [phase, setPhase] = useState<Phase>(() => (joinsHere.get(groupId) === 'joined' ? 'done' : 'idle'));
   const [dropped, setDropped] = useState(false);
   const [failed, setFailed] = useState(false);
   const [readAttempt, setReadAttempt] = useState(0);
@@ -164,7 +168,7 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
   useEffect(() => {
     loadGroups();
   }, [identity]);
-  const member = (groups?.some((held) => held.id === groupId) ?? false) && !joinedHere.has(groupId);
+  const member = (groups?.some((held) => held.id === groupId) ?? false) && !joinsHere.has(groupId);
   useEffect(() => {
     if (!member) return;
     setLastGroup(groupId);
@@ -198,32 +202,30 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
   }
 
   const join = () => {
-    if (phase === 'busy') return;
+    if (phase !== 'idle') return;
     setPhase('busy');
     setFailed(false);
-    void sendJoin(groupId)
-      .then((outcome) => {
-        if (outcome === 'settled') {
-          continueToGame();
-          return;
-        }
-        if (outcome === 'joined') {
-          setLastGroup(groupId);
-          setDropped(true);
-          setPhase('done');
-          return;
-        }
-        if (outcome === 'full' || outcome === 'limit' || outcome === 'expired') {
-          setPhase(outcome);
-          return;
-        }
-        setPhase('idle');
-        setFailed(true);
-      })
-      .catch(() => {
-        setPhase('idle');
-        setFailed(true);
-      });
+    joinsHere.set(groupId, 'out');
+    const settle = (outcome: JoinOutcome) => {
+      if (outcome !== 'joined') joinsHere.delete(groupId);
+      if (outcome === 'settled') {
+        continueToGame();
+        return;
+      }
+      if (outcome === 'joined') {
+        setLastGroup(groupId);
+        setDropped(true);
+        setPhase('done');
+        return;
+      }
+      if (outcome === 'full' || outcome === 'limit' || outcome === 'expired') {
+        setPhase(outcome);
+        return;
+      }
+      setPhase('idle');
+      setFailed(true);
+    };
+    void sendJoin(groupId).then(settle, () => settle('failed'));
   };
 
   const openBoard = () => navigate(pathForBoard(lang), { replace: true });
@@ -238,10 +240,12 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
 
   // The calls stand in THREE fixed slots — a line, the call, the word under it — so the call
   // is in one place whatever the state, and nothing above it moves when the state changes.
+  // THE CALL IS ONE BUTTON whatever it says (JOIN, the BOARD it turns into, PLAY): one element
+  // in one slot, so a state change is a word change and the keyboard's focus stays on it.
   const play = (
-    <button type="button" className="mix-btn" onClick={continueToGame}>
+    <BusyButton className="mix-btn" lang={lang} busy={false} onClick={continueToGame}>
       {t(lang, 'gatePlay')}
-    </button>
+    </BusyButton>
   );
   let scene;
   let line: string | null = null;
@@ -286,16 +290,16 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
     } else {
       // JOIN and the BOARD it turns into are ONE call in one place; PLAY is the way out for
       // a reader who wants the game and not the group (a landing with one door is a wall).
-      call =
-        shown === 'done' ? (
-          <button type="button" className="mix-btn" onClick={openBoard}>
-            {t(lang, 'boardTitle')}
-          </button>
-        ) : (
-          <BusyButton className="mix-btn" lang={lang} busy={shown === 'busy'} onClick={join}>
-            {t(lang, 'groupJoin')}
-          </BusyButton>
-        );
+      call = (
+        <BusyButton
+          className="mix-btn"
+          lang={lang}
+          busy={shown === 'busy'}
+          onClick={shown === 'done' ? openBoard : join}
+        >
+          {t(lang, shown === 'done' ? 'boardTitle' : 'groupJoin')}
+        </BusyButton>
+      );
       word = (
         <Button variant="secondary" onClick={continueToGame}>
           {t(lang, 'gatePlay')}
@@ -324,6 +328,7 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
       <div className={`invite-calls${call ? ' in' : ''}`}>
         <p className="invite-line" role="status">
           {line}
+          {shown === 'done' && !expired && <span className="sr-only">{t(lang, 'inviteJoined')}</span>}
         </p>
         {call ?? <span className="invite-slot" />}
         {word ?? <span className="invite-slot" />}
