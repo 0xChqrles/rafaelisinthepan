@@ -3,13 +3,12 @@ import { anonName, dateForDayNumber, defaultAvatar, type BoardPeriod, type Board
 import { readGroup, type GroupsBody } from '../api';
 import { clockNow, onClock } from '../components/animationClock';
 import Avatar from '../components/Avatar';
-import { DISSOLVE_MS } from '../components/bayerTiles';
+import { DISSOLVE_MS, cameIn } from '../components/bayerTiles';
 import BoardTabs, { tabIds, type BoardTabItem } from '../components/BoardTabs';
 import Under, {
   ARRIVE,
   PACE_CAP,
   TURN,
-  cameIn,
   lineRun,
   type Gone,
   type ListRun,

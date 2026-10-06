@@ -105,7 +105,8 @@
                               the SEAT (no group holding anybody else, `seatOf`), GLOBAL off the
                               global board, the tabs' order, the box's cap
       components/ResultBoards.tsx  those boards under SHARE: the boards' tab row (`BoardTabs`)
-                              over a fixed box of lines, a tap onto the board
+                              over a fixed box of lines, a tap onto the board; the box's hold
+                              while its first answers are out
       components/SeatPanel.tsx  the SEAT's panel: the player's own line over the one call that
                               creates a group or invites into it in place
       components/SolvedCard.tsx  the RESULT as the share card stood up: brackets, the edition
@@ -127,7 +128,8 @@
       hooks/useGlobalBoard.ts  the GLOBAL tab's one anonymous global-board read per result display
       components/BoardRows.tsx  a board's LINES (rank/crown, ranked, playing, waiting) in ONE
                               dress, drawn alike by the board screen and the result's boards;
-                              the board screen passes each line its run (`LineRun`)
+                              the board screen passes each line its run (`LineRun`); the
+                              skeleton's line (`SkeletonLine`, `SKELETON_WIDTHS`), both surfaces'
       components/boardMetrics.ts  what every list of players shares (pure): `MARK` (30px, 10
                               cells of 3px), `LINE_PX` (44px, a list's pitch) and the rank
                               column's width (`rankColumnPx`: 16px a digit, two at the least)
@@ -146,7 +148,7 @@
                               document's root as it loads: a line coming in and giving way
                               (`--dz-*` / `--dzo-*`), your held line's edge (`--edge-d/-u`);
                               and the dissolve's beat script times against (`DISSOLVE_MS`,
-                              `SKELETON_WAIT_MS`, `SKELETON_STAGGER_MS`)
+                              `SKELETON_WAIT_MS`, `SKELETON_STAGGER_MS`, `cameIn`)
       components/animationClock.ts  the page's animation clock (`clockNow`, `onClock`): every
                               beat the board screen and its podium time, on the clock their
                               CSS and Web Animations play on
@@ -3481,8 +3483,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     that the skip-tap that lands where it sits, unseen or at the arrival's first
     transparent frames, only skips; once it shows, a tap on it skips AND opens that board,
     like any other target. The boards' box snaps to whatever
-    is true right now: it stands empty while a read is out and fills in place when one
-    lands, so the skip never blocks on, or fakes, the network. Reduced motion is unchanged (already near-instant). **Skipping the SOLVING
+    is true right now: it holds its skeleton while a read is out and fills in place when
+    one lands, so the skip never blocks on, or fakes, the network. Reduced motion is unchanged (already near-instant). **Skipping the SOLVING
     choreography is deliberately out of scope.**
   - **REMOVED with the 2026-08-14 redesign** (no-back-compat rule, all were left without a
     consumer): the caption's `masked` veil and its prompt-zone overlay (the caption mounts
@@ -3708,9 +3710,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     one after another (`BOARDS_ARRIVE_MS`; reduced motion: no arrival at all); the page's
     beat follows it.
   - **ONE FIXED BOX** (`.result-boards`, 354px): the tabs' 44px row, room for
-    `RESULT_LINES_MAX` (6) 44px lines and two 20px rails (a gap's, and the `+N`'s) — whatever it holds, so it
-    stands EMPTY in its place while the first answers are out and a read landing or a swipe
-    moves nothing. It holds its room while the LIVE answer is `awaited` — the groups list
+    `RESULT_LINES_MAX` (6) 44px lines and two 20px rails (a gap's, and the `+N`'s) — whatever it holds, so a
+    read landing or a swipe moves nothing. **While the first answers are out it HOLDS what is
+    coming** (`aria-busy`), the board screen's own way: one stippled chip where the tab's chip
+    will stand (`BoardTabs`' hold) and the skeleton's lines (`SkeletonLine`) at `LINE_PX` —
+    in only once the box is on screen (its beat, `arrived`) and the reads have been out
+    `SKELETON_WAIT_MS` more, the lines `SKELETON_STAGGER_MS` apart, so a quick answer never
+    flashes them. Lines that land in a box already on screen (`.over-hold`) DISSOLVE in, the
+    skeleton's stagger apart, each over the skeleton line going out through the cells it takes
+    (the lines that had come in, `cameIn`); lines that land before the box shows arrive on its
+    own beat. It holds its room while the LIVE answer is `awaited` — the groups list
     still unknown, or a group with somebody else and no answer that has seen the round's
     end while a read is still to come (`useLiveBoardBusy`) — rather than draw GLOBAL
     first and turn to a group a moment later; and it holds it until the GLOBAL read has

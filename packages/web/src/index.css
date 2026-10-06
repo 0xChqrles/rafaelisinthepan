@@ -3440,9 +3440,12 @@ body:has(.app > .board-screen) {
   height: calc(44px + 6px + 6 * 44px + 2 * 20px);
 }
 .result-boards .board-tabs {
+  grid-row: 1;
   margin: 0 4px;
 }
 .result-board {
+  grid-row: 2;
+  grid-column: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -3453,6 +3456,26 @@ body:has(.app > .board-screen) {
 }
 .result-board .board-list {
   overflow: hidden;
+}
+/* WHILE THE FIRST ANSWERS ARE OUT (`ResultBoards`' hold): the skeleton's lines in the lines' own
+   cell, the board's own wait and dissolve — and the wait counts from the box's beat: before it,
+   nothing plays. Where the lines land over it, the lines that had come in go out under them
+   through the cells they take (`board-dissolve-out`, `.leaving`), staying hidden after. */
+.result-boards-hold {
+  grid-row: 2;
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.solved-boards:not(.in) .board-skeleton-line,
+.solved-boards:not(.in) .board-tabs-hold.link-hold {
+  animation: none;
+}
+.result-boards-hold.leaving .board-skeleton-line {
+  animation: board-dissolve-out 240ms linear var(--delay, 0ms) forwards;
 }
 /* Under the lines, how many with a day of their own the box leaves out — `+N` in the rank
    column, the rail running on. */
@@ -3557,14 +3580,28 @@ body:has(.app > .board-screen) {
 .solved-stage.settled .solved-boards:not(.moved) .result-board-more {
   animation: none;
 }
+/* LINES LANDING IN A BOX ALREADY ON SCREEN (`.over-hold`: the first answers came after its beat)
+   come in through the dither, the skeleton's stagger apart, each over the skeleton line going
+   out under it — not on the box's own arrival, which has played. A turn after that is a turn. */
+.solved-boards.in.over-hold:not(.moved) .result-board .board-row,
+.solved-boards.in.over-hold:not(.moved) .result-board .board-gap,
+.solved-boards.in.over-hold:not(.moved) .result-board-more {
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear calc(var(--i, 0) * var(--stagger, 50ms)) backwards;
+}
 /* Reduced motion lands the lines as the settled frame draws them: no arrival at all (the
-   global rule keeps delays, which would hold each line unseen for its beat). */
+   global rule keeps delays, which would hold each line unseen for its beat) — and the skeleton
+   they replace simply goes. */
 @media (prefers-reduced-motion: reduce) {
   .solved-boards .board-tabs-ink,
   .solved-boards .board-row,
   .solved-boards .board-gap,
   .solved-boards .result-board-more {
     animation: none !important;
+  }
+  .result-boards-hold.leaving {
+    display: none;
   }
 }
 
