@@ -4564,7 +4564,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   that plainly (no "not supposed to happen", no "check back"), names the day, and offers
   BACK TO ARCHIVE above the existing CHANGE LANGUAGE, both the same `secondary` weight.
   The pixel font is **self-hosted** (`web/src/assets/fonts/PressStart2P.woff2`, `@font-face` in
-  `index.css` — no Google Fonts request).
+  `index.css` — no Google Fonts request). The build PRELOADS it and Azeret's latin subset with
+  the document (`vite.config.ts` `preloadFirstFaces`), so the first screen is set in its own
+  faces a round trip sooner; `font-display` stays `swap`, since a face held back by `block`
+  would hide the sentence for as long as the network takes.
 - **SVG icons (pattern to follow):** monochrome UI icons live as `.svg` files under
   `web/src/assets/icons/` and are imported as **inline React components** via
   `vite-plugin-svgr` — `import Icon from '../assets/icons/name.svg?react'` (the `?react`

@@ -89,6 +89,40 @@ function linkPreviews(): Plugin {
   };
 }
 
+// THE FIRST SCREEN'S TWO FACES, asked for with the document: the pixel face and the chrome
+// face's latin subset (`src/index.css` @font-face) are otherwise requested only once the
+// stylesheet has been parsed and a glyph needs them, so the first frames set the header in a
+// fallback face and the type jumps when they land. `font-display` stays `swap` — a face held
+// back by `block` would hide the sentence for as long as the network takes. The build names
+// each file by its hash; the dev server serves the source path the stylesheet asks for.
+const FIRST_FACES = ['PressStart2P.woff2', 'azeret-mono-latin.woff2'];
+
+function preloadFirstFaces(): Plugin {
+  return {
+    name: 'preload-first-faces',
+    transformIndexHtml: {
+      order: 'post',
+      handler(_html, { bundle }) {
+        return FIRST_FACES.map((face) => {
+          let href = `/src/assets/fonts/${face}`;
+          if (bundle) {
+            const asset = Object.values(bundle).find(
+              (file) => file.type === 'asset' && file.names.includes(face),
+            );
+            if (!asset) throw new Error(`preload-first-faces: ${face} is not in the bundle`);
+            href = `/${asset.fileName}`;
+          }
+          return {
+            tag: 'link',
+            attrs: { rel: 'preload', href, as: 'font', type: 'font/woff2', crossorigin: '' },
+            injectTo: 'head',
+          };
+        });
+      },
+    },
+  };
+}
+
 // https://vite.dev/config/
 // @whippin/shared is a linked workspace package; Vite resolves it via its
 // package.json "exports" to TS source and transpiles it as part of the app.
@@ -125,6 +159,7 @@ export default defineConfig(({ command, mode }) => {
           });
         },
       },
+      preloadFirstFaces(),
       linkPreviews(),
     ],
     define: { __BUILD_ID__: JSON.stringify(build) },
