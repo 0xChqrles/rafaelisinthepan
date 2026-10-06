@@ -4312,16 +4312,22 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .result-action {
   min-width: 180px;
 }
-/* COPIED lands in the accent's own wash: the primary already is — and it lands LIT, the
-   wash flashing deep and settling, so the word swapping in reads as the thing happening. */
-.result-action.copied {
-  --btn: var(--accent);
-  animation: copied-flash 480ms ease-out;
+/* COPIED is SHARE's word changing in place (`SwapLabel`): the old word out through the dither
+   as the new one comes in through the cells it gives up — the button itself does not change.
+   One cell holds both, so the swap moves nothing round it. */
+.swap-label {
+  display: inline-grid;
 }
-@keyframes copied-flash {
-  from {
-    background-color: color-mix(in srgb, var(--accent) 48%, transparent);
-  }
+.swap-label > * {
+  grid-area: 1 / 1;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+}
+.swap-label > .swap-in {
+  animation: board-dissolve 240ms linear backwards;
+}
+.swap-label > .swap-out {
+  animation: board-dissolve-out 240ms linear forwards;
 }
 /* THE STREAK CELEBRATION — "THE ORBIT" (`StreakDialog`, its picture `components/streak/`): the
    link previews' language on the full screen. Bare ground, the frame's corner brackets with
