@@ -5093,7 +5093,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   align-self: stretch;
   align-items: start;
 }
-/* The word stages are CLEAN: ONE big word in the plate, the prompt under it on the left. */
+/* The word stages are CLEAN: ONE big word on the bare ground, the prompt under it on the left. */
 .tutorial--word .phrase {
   font-size: clamp(28px, 7vw, 48px);
 }

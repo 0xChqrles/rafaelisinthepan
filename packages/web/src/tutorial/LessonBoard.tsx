@@ -724,12 +724,12 @@ export default function LessonBoard({
         {announce}
       </div>
 
-      {/* LEVEL 1 OPENS AS THE ARTICLE LEVELS DO (2026-09-30): a BYLINE on a hairline — the
-          player, the level's number and line, the stage counter (the pixel face, user-decided
-          2026-09-17) — then the coach's line under it as the page's own voice, no box. THE
-          COACH IS THE PLAYER (user-decided 2026-09-16: "people would want to read it more if
-          it's something telling it"): the old lineup's PLAYER idle sheet stands on the rule
-          and speaks the line under it. */}
+      {/* LEVEL 1 OPENS AS THE ARTICLE LEVELS DO (2026-09-30): a BYLINE on the stippled floor —
+          the player, the level's number and line, the stage counter (the pixel face,
+          user-decided 2026-09-17) — then the coach's line under it as the page's own voice, no
+          box. THE COACH IS THE PLAYER (user-decided 2026-09-16: "people would want to read it
+          more if it's something telling it"): the old lineup's PLAYER idle sheet stands on the
+          floor and speaks the line under it. */}
       <div className="l1-band">
         {/* Keyed on the line: the character HOPS each time it says something new. The key is
             its own — CoachText is keyed on the same line, and two siblings sharing a key leave
@@ -830,9 +830,10 @@ export default function LessonBoard({
           </figure>
         )}
         {/* Once there is nothing left to type the prompt retires in place — still laid out, so
-            the board (and the finale's card after it) does not move, but invisible and inert;
-            the reveal has nothing to type yet either (the button below is the one action), nor
-            has the meter stage before the tap. */}
+            the board does not move, but invisible and inert; the reveal has nothing to type
+            yet either (the button below is the one action), nor has the meter stage before the
+            tap. Level 1 cleared, it leaves the flow (`.l1-cleared`): the room is the finale's
+            card's. */}
         <div
           className={`input-area${ending || revealed || waitingTap || cleared ? ' retired' : ''}`}
           aria-hidden={ending || revealed || waitingTap || cleared || undefined}

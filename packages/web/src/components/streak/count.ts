@@ -91,7 +91,7 @@ export function countLayer(L: Layout, from: NumberCells, to: NumberCells, tl: Ti
         }
       }
       // The STAMP: one frame of a white chip with the count cut out of it (the title chip,
-      // the app's one emphasis), then UNWIPED left to right in the mark-wipe's eight
+      // the app's one emphasis), then UNWIPED left to right in the mark-unwipe's eight
       // steps, the front a few cells of dither — the count legible on every frame.
       const fade = Math.floor(at(t, tl.impact + CHIP_FLASH_MS, CHIP_FADE_MS) * 8) / 8;
       // Today struck: the count NODS.
