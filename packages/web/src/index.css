@@ -9340,6 +9340,10 @@ figure.l1-fig {
   width: min(100%, 320px);
   margin: 0 auto 18px;
 }
+/* Its frame locks on when the figure comes on screen: held on the lock's first frame until. */
+.ar-switch:not(.seen) .period-frame i {
+  animation-play-state: paused;
+}
 /* THE FIGURES' RASTER: one canvas pixel a 2px cell, never smoothed. */
 .ar-cells {
   display: block;
@@ -9380,7 +9384,8 @@ figure.l1-fig {
   color: var(--length-ink);
 }
 
-/* THE BARS: each word, the hole's meter charged to its share, the share (`Bars`). */
+/* THE BARS: each word, the hole's meter charged to its share in the slate, the share
+   (`Bars`). */
 .ar-bars {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) max-content;
@@ -9404,6 +9409,10 @@ figure.l1-fig {
   position: relative;
   height: 12px;
   overflow: hidden;
+}
+/* In the slate: cobalt is a found word, and these guesses mean nothing yet. */
+.ar-bar-meter .hole-meter-canvas {
+  color: var(--rail);
 }
 
 /* THE LOOP: the steps as notes in a sentence, the return from the last to the first on the
