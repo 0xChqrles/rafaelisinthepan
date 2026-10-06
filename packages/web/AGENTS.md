@@ -2418,7 +2418,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     cell turned to in whole pixels and hard steps and LOCKS ON as the screen opens. A third of
     a phone's line is narrower than « AUJOURD'HUI » at 12px: at ≤400px the words are 11px and
     tighter, and under 360 the line takes the head's whole width; GLOBAL's `TOP 50`
-    (`boardGlobalSub`); nothing in the no-group state.
+    (`boardGlobalSub`); nothing in the no-group state. It names the board ON SCREEN
+    (`viewTab`, the shown board's tab), never the one asked for: on a turn whose read is out
+    the board held keeps its own head, and the head changes with the body.
   - **THE COLUMN** (`.board-column`, the tab row's `tabpanel` labelled by the shown tab —
     `tabIds` — and a keyboard stop) is the body's room floored to WHOLE slots of `LINE_PX`
     (44px, `components/boardMetrics.ts`), its scroll snapping to them, so a line is never
