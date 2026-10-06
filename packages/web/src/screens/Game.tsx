@@ -417,7 +417,7 @@ function Round({
   }, [guessCount, learned, markLessonDone]);
   // PLAY, when it is the deploy button: a single tap that creates the account and opens
   // the round — a clear loading state while the bootstrap runs, and the app's error
-  // surface when it fails (nothing was created; TRY AGAIN re-runs it).
+  // surface when it fails (nothing was created; PLAY pressed again re-runs it).
   const [deploying, setDeploying] = useState(false);
   const [deployFailed, setDeployFailed] = useState(false);
   const handleGatePlay = useCallback(() => {

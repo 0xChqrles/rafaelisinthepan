@@ -828,14 +828,15 @@ export default function Profile() {
     setRefused(null);
     const started = Date.now();
     // The outcome is decided while the dots run; the phases below only pace how the
-    // button tells it — then the error surface says it (#216 rework), where a refusal
-    // used to be an inline line.
+    // button tells it. Then a moderation VERDICT answers at the editor (the refused field
+    // shakes, one note under the name's line), and only a save that did not land reaches
+    // the error surface.
     let outcome: SaveRefusal = null;
     let epoch: string | null = null;
     // SAVING IS A DEPLOY BUTTON (#216 trigger rework, user-decided 2026-08-24): a
     // tokenless editor creates the account on this very tap, then saves into it — one
     // tap, the button's own dots for both legs. A deploy that fails saves nothing and
-    // created nothing; TRY AGAIN re-runs the whole tap.
+    // created nothing; SAVE pressed again re-runs the whole tap.
     let current = deviceIdentity();
     // The header's face (`useOwnFace`) reads the profile again once this save has written
     // it — and when this tap MINTS the account, it keeps the seed's face until then rather
@@ -878,7 +879,7 @@ export default function Profile() {
           } catch {
             if (identityEpoch() !== epoch) return;
             // What the account holds is UNKNOWN — refusing beats risking the wipe the
-            // guard exists to prevent. TRY AGAIN re-runs the whole tap.
+            // guard exists to prevent. SAVE pressed again re-runs the whole tap.
             outcome = 'error';
           }
         } else {
