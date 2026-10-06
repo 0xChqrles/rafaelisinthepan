@@ -3596,13 +3596,14 @@ body:has(.app > .board-screen) {
   display: block;
   width: 100%;
   margin: 0;
-  padding: 0 0 10px;
+  /* The ground is the CONTENT box (the caption and its 4px under it), so it stops at the
+     6px of padding where the edge under it begins; then the edge's 24px — which ends inside
+     the text's half leading at rest (the padding and the text's margin are at least 24px
+     together), so a resting line is never touched. A background COLOUR, never an image:
+     forced colours keep it (as Canvas) where they drop a gradient. */
+  padding: 0 0 6px;
   border: 0;
-  /* The ground stops 6px short of the box's foot, where the edge under it begins: 4px of
-     ground under the caption, then the edge's 24px — which ends inside the text's half
-     leading at rest (the padding and the text's margin are at least 24px together), so a
-     resting line is never touched. */
-  background: linear-gradient(var(--bg), var(--bg)) 0 0 / 100% calc(100% - 6px) no-repeat;
+  background: var(--bg) content-box;
   color: inherit;
   font: inherit;
   letter-spacing: inherit;
@@ -3629,6 +3630,7 @@ body:has(.app > .board-screen) {
 .solved-source .solved-caption {
   align-items: flex-start;
   text-align: left;
+  padding-bottom: 4px;
 }
 /* The TEXT, in the READING face — this is the book's page, not the board. The puzzle's
    line is in the ink; #270's sentences around it are the muted text (those before it once
