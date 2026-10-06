@@ -12,11 +12,12 @@ import { LEVELS, PLAY_LEVEL, isReady } from './levels';
 // illustration (art/) edge to edge — the page has nothing else to show, so the pictures fill
 // it. Level 1, the game played, is the wide card on top; the four articles follow, two by two
 // where the screen is wide enough, one under the other on a phone. A card reads like a track
-// on the article's page: its number, how long it takes, its title and what it is about. Level
-// 1 is the one with a done state: until it is played its title wears the invitation's
-// highlight box, once done it trades its duration for the done mark. The articles are simply
-// there to read. A level not ready in this language holds a still, grey picture and says SOON
-// — the road ahead, not a target. No gating between cards: any ready level can be opened.
+// on the article's page: its number, an article's reading time, its title and what it is
+// about. Level 1, played, is untimed: it is the one with a done state — until it is played its
+// title wears the invitation's highlight box, once done its empty corner takes the done mark.
+// The articles are simply there to read. A level not ready in this language holds a still,
+// grey picture and says SOON — the road ahead, not a target. No gating between cards: any
+// ready level can be opened.
 export default function Learn({ lang }: { lang: LangCode }) {
   const playedOne = useGameStore((s) => s.lessonsDone.includes(PLAY_LEVEL));
   // The list opens at its top: on a phone the page scrolls as a whole, and coming back from

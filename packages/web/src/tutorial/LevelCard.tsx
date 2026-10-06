@@ -5,8 +5,8 @@ import LevelArt from './art/LevelArt';
 import Duration from './Duration';
 import type { Level } from './levels';
 
-// ONE LEVEL'S CARD, its inside: the illustration edge to edge, the number and how long it
-// takes (or the done mark, or SOON) on top, the title and what it is about at the foot, where
+// ONE LEVEL'S CARD, its inside: the illustration edge to edge, the number and an article's
+// reading time (or the done mark, or SOON) on top, the title and what it is about at the foot, where
 // the picture dithers out. The list wraps it in a button; level 1's finale draws the same card
 // on its own, cleared (`LessonBoard`) — one card, so the two can never disagree.
 export type LevelCardState = 'soon' | 'done' | 'next' | 'todo';
@@ -44,7 +44,9 @@ export default function LevelCard({
             {t(lang, 'levelDone')}
           </span>
         ) : (
-          seconds !== undefined && (
+          // Level 1 is untimed (null): its corner stays empty until DONE stamps in, and the row
+          // holds the chip's height (`.learn-card-top`), so the number does not move then.
+          seconds != null && (
             <span className="learn-meta">
               <Duration lang={lang} seconds={seconds} />
             </span>

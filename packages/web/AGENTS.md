@@ -256,7 +256,9 @@
                               `AbortSignal.timeout()` is above the browser floor and throws
                               BEFORE the fetch (it took the #216 bootstrap out on iOS 15)
       i18n.ts                 UI chrome strings (en+fr), t(lang, key); parity type-enforced
-      tutorial/               the tutorial (#51/#155/#269): Learn.tsx (the levels as cards),
+      tutorial/               the tutorial (#51/#155/#269): Invite.tsx (the first visit's
+                              question) over InviteDemo.tsx (the site's sentence, played
+                              once); Learn.tsx (the levels as cards),
                               Lesson.tsx (dispatch), LevelOne.tsx over LessonBoard.tsx,
                               coach.ts (the reactive coach), levels.ts (each level's face over
                               `shared/src/tutorial.ts`, which levels exist and where) + data scripts/<lang>.ts
@@ -3865,8 +3867,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   credit to the article apart. On a wide screen the list and an article scroll the WHOLE
   VIEWPORT, so the scrollbar stands on the screen's edge (user-decided 2026-09-29). **Written in French first** (user-decided 2026-09-29: "wait for the article
   translation… for the moment just create the french version"): a level is READY in a
-  language when its lesson exists there (`Level.duration`, which also carries the reading
-  time the card prints — `levels.test.ts` holds it to the text); elsewhere its card is grey
+  language when its lesson exists there (`Level.duration`: an ARTICLE's reading time, which
+  its card prints and `levels.test.ts` holds to the text; LEVEL 1, played, is ready with
+  `null`, because a game takes as long as the player, so no surface prints a time for it);
+  elsewhere its card is grey
   and says SOON. **Only LEVEL 1 has a DONE state**: the articles are read as often as anyone
   likes and record nothing — no done mark, no highlight, no badge. Completion is
   DEVICE-LOCAL (`lessonsDone`, never on the account), and level 1 is INFERRED FROM PLAY (see
@@ -3877,7 +3881,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   screen since we have nothing else to display"): each level wears its animated DITHERED
   illustration (`art/scenes/`, the meter's Bayer 8×8, the app's inks and the heat ramp; ~11
   fps, only on screen, one still frame under reduced motion) edge to edge, dithered out
-  under its title; number, duration (or level 1's done mark), title, subtitle; level 1,
+  under its title; number, an article's reading time (level 1: an empty corner held open
+  until its done mark), title, subtitle; level 1,
   until done, wears the invitation's selection box on its title. Wide: level 1 tall on the left, the
   articles two by two; tablet: level 1 across the top; phone: one card under the other.
   **Stage progress (user-decided 2026-09-17):** the coach dialog shows `n/4` beside it,
@@ -4038,8 +4043,23 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the bot's briefing on the last sentence runs to five at 320px — `.coach-text`
   `max-height: 8.5em`, the board's `padding-top` grown to match); copy past five lines is a
   copy bug.
-  **The invitation is unchanged** (`tutorial/Invite.tsx`, no header): a first visit (no
-  `onboarded`) lands on it; TUTORIAL navigates to level 1 (the lesson's PLAY or a header exit
+  **The invitation SHOWS the game, then asks** (`tutorial/Invite.tsx`, no header;
+  user-decided 2026-10-06): a first visit (no `onboarded`) lands on it. Under the logo,
+  `tutorial/InviteDemo.tsx` plays the site's own sentence ONCE on the real `Phrase`/`Hole`
+  and an inactive `WordInput`, every frame a sentence: en *Every guess tells you how
+  lost⁹¹ you are.*, the demo typing `banana` (MISS, the game's own float and shake — it
+  never enters the hole), then `near` (near²), then `close`; fr *Chaque essai te dit si tu
+  es paumé³⁵⁵.*, `banane`, `loin` (loin⁴), `proche`. A closer word lands on the hole's own
+  word change (no cut, loot or star), and the demo ends on the word found in cobalt, the
+  prompt retired as on a solve. Its ranks are read off the static single-word maps
+  (commands in the file's header) and hardcoded, never the lesson's words. It waits for the
+  pixel face (at most 400ms) and for the page to be seen, never loops, is aria-hidden
+  behind one sr-only sentence, and under reduced motion plays as cuts. The question's
+  selection box is the screen's one emphasis gesture, so it waits for the demo's found word
+  (a 7s deadline behind it; at once under reduced motion or in a tab opened hidden), the
+  title's words standing from the first frame. TUTORIAL and SKIP work from the first frame;
+  TUTORIAL is the big action's 430px. No line of copy, no time promised. TUTORIAL navigates
+  to level 1 (the lesson's PLAY or a header exit
   settles the flag), SKIP settles it there. Its preload warms the level-1 chunk
   (`LazyLevelOne`, on `hooks/lazyChunk` like `LazyStreakDialog`; a failed chunk exits without completing the lesson). Analytics
   keep the three events (`start` / `skip` / `finish`). The boards are pruned #154 artifacts
@@ -4646,8 +4666,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   preview off the page's HTML and runs no JavaScript, so a page with its own card is BUILT as
   one. `src/linkPreviews.ts` names them — HOME (every route with no page at or above it), the
   tutorial's LIST per language and every level READY in a language — the tutorial's words
-  taken from the app's own strings (a level's title, what it is about, `levelOf`, its
-  duration), sentence-cased; HOME keeps the site's own sentence. `index.html` carries one
+  taken from the app's own strings (a level's title, what it is about, `levelOf`, an
+  article's reading time), sentence-cased; HOME keeps the site's own sentence. `index.html` carries one
   `<!-- link-preview -->` slot: the build's `link-previews` plugin (`vite.config.ts`) fills it
   with HOME's block and writes the same shell once more per page (`fr/learn/2/index.html`), its
   own block and `<html lang>`; infra's SPA fallback serves a route the NEAREST page the build

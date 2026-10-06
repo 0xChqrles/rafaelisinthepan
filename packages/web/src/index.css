@@ -5500,11 +5500,10 @@ figure.l1-fig {
   }
 }
 
-/* --- tutorial invitation (#51): a direct-on-background first-run prompt. The gold
-   primary action previews the interaction language the player meets on MIX; SKIP stays
-   a quiet text exit. --- */
+/* --- tutorial invitation (#51): the first visit's question, under the game played once
+   (`InviteDemo`), on the bare ground. --- */
 .invite {
-  width: min(480px, 100%);
+  width: min(560px, 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -5517,8 +5516,41 @@ figure.l1-fig {
   margin-bottom: 34px;
   color: var(--solve);
 }
-/* The first thing a new player ever reads: a bold statement with its LAST WORDS in the
-   board's inverted selection box (the Zaki-headline highlight, 2026-08-18). */
+/* THE DEMO: the site's sentence on the real board, played once. ONE font size on the box, and
+   the sentence and the prompt both at 1em of it, so they move together (the prompt wears the
+   sentence's size, as in the game). A fixed box of 22em — 22 glyphs a line at every width,
+   the pixel face being 1em a glyph — centred in the column with its text on the left, as the
+   game's: a hole changing width moves only what follows it, and the line never re-centres.
+   Two lines are reserved and the hole stands on the second in every state (line 1 never
+   reaches it — no `text-wrap: balance` here, which would), so nothing above or below moves
+   while it changes. The game's own sentence and prompt rules do the rest. */
+.invite-demo {
+  width: 22em;
+  max-width: 100%;
+  margin-bottom: 32px;
+  font-size: 24px;
+  text-align: left;
+  pointer-events: none;
+}
+.invite-demo-board {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5em;
+}
+.invite-demo .phrase,
+.invite-demo .word-input {
+  font-size: 1em;
+}
+.invite-demo .phrase {
+  min-height: 3em;
+  max-width: none;
+}
+.invite-demo .word-input {
+  min-width: 0;
+}
+/* The question, under the demo: a bold statement with its LAST WORDS in the board's
+   inverted selection box (the Zaki-headline highlight, 2026-08-18). */
 .invite-title {
   margin: 0;
   font-family: var(--ui);
@@ -5531,15 +5563,29 @@ figure.l1-fig {
   text-shadow: none;
   padding-top: var(--cap-shift);
 }
+/* The marked words stand in the title's own ink from the first frame, never parting across
+   a line; the BOX is a second, inverted copy laid exactly over them, its padding drawn
+   outward so lighting it moves no letter, hidden until the demo hands the gesture over
+   (`.lit`, Invite). Then it is DRAWN across the words, left to right, in hard steps — a
+   highlighter, not a fade. */
 .invite-mark {
+  position: relative;
+  white-space: nowrap;
+}
+.invite-mark-box {
+  position: absolute;
+  inset: -0.04em -0.22em;
+  padding: 0.04em 0.22em;
+  /* A line exactly the face's own height (no leading), so the copy's glyphs stand on the
+     words' own baseline: the inline box the words sit in is that height too. */
+  line-height: normal;
   background: var(--fg);
   color: var(--bg);
-  padding: 0.04em 0.22em;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-  /* Once the title has landed, the selection box is DRAWN across its words, left to right,
-     in hard steps — a highlighter, not a fade. */
-  animation: mark-wipe 320ms steps(8, jump-end) 360ms backwards;
+  visibility: hidden;
+}
+.invite-mark.lit .invite-mark-box {
+  visibility: visible;
+  animation: mark-wipe 320ms steps(8, jump-end);
 }
 @keyframes mark-wipe {
   from {
@@ -5549,20 +5595,6 @@ figure.l1-fig {
     clip-path: inset(0 0 0 0);
   }
 }
-.invite-text {
-  margin: 12px auto 0;
-  max-width: 44ch;
-  font-family: var(--ui);
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  line-height: 1.7;
-  text-transform: uppercase;
-  color: var(--fg);
-  opacity: 0.8;
-  text-shadow: none;
-}
-
 .invite-actions {
   width: 100%;
   margin-top: 32px;
@@ -5571,8 +5603,10 @@ figure.l1-fig {
   align-items: center;
   gap: 24px;
 }
+/* The app's one big-action width (`.mix-btn`'s 430px). */
 .invite-actions .btn-primary {
   width: 100%;
+  max-width: 430px;
 }
 
 @media (max-width: 640px) {
@@ -5585,6 +5619,14 @@ figure.l1-fig {
   .invite-logo {
     margin-bottom: 28px;
   }
+  /* The phone's game sentence size (`.phrase`'s phone clamp — the game sentence's own
+     exception to the 8px rule, kept so the demo is the size the player then meets),
+     bounded by its line: 22 glyphs in the column between `.app`'s 14px gutters, so a
+     screen narrower than ~314px shrinks the demo rather than breaking its lines. */
+  .invite-demo {
+    font-size: min(clamp(13px, 4.2vw, 19px), calc((100vw - 28px) / 22));
+    margin-bottom: 28px;
+  }
 
   .invite-actions {
     margin-top: 26px;
@@ -5592,21 +5634,20 @@ figure.l1-fig {
   }
 }
 
-/* Landscape phones and short browser windows keep the full choice visible without
-   changing the primary action's MIX-sized tap target. */
+/* Landscape phones and short browser windows keep the demo, the question and both buttons
+   visible without changing the primary action's MIX-sized tap target: the logo gives its
+   room, the demo steps down to 16px (still bounded by its line). */
 @media (max-height: 520px) {
   .invite-logo {
-    width: 46px;
-    height: 43px;
+    display: none;
+  }
+  .invite-demo {
+    font-size: min(16px, calc((100vw - 28px) / 22));
     margin-bottom: 16px;
   }
   .invite-title {
     font-size: 19px;
     line-height: 1.3;
-  }
-  .invite-text {
-    margin-top: 6px;
-    line-height: 1.5;
   }
   .invite-actions {
     margin-top: 20px;
@@ -8851,6 +8892,10 @@ figure.l1-fig {
 .learn-card-top {
   justify-content: space-between;
   align-items: center;
+  /* The meta chip's box (its 10.5px line and 4px of padding a side), held with or without
+     one: level 1 is untimed, so its corner stays empty until DONE stamps in — on the list
+     and on the finale's card — and the number beside it must not move then. */
+  min-height: 20px;
 }
 .learn-card-foot {
   flex-direction: column;

@@ -8,8 +8,10 @@
 //                       any other `n` on the list)
 //
 // A level is READY IN A LANGUAGE when its lesson exists in it: `duration` names the
-// languages, and says how long the lesson takes in each (the list prints it). What a level
-// is called and what it looks like are the web's (`web/src/tutorial/levels.ts`).
+// languages. A NUMBER beside one is an article's reading time, which the list prints; NULL
+// is the PLAYED level, ready and untimed — a game takes as long as the player, so no screen
+// promises a time for it. What a level is called and what it looks like are the web's
+// (`web/src/tutorial/levels.ts`).
 
 export const LEARN_SEGMENT = 'learn';
 
@@ -23,14 +25,16 @@ export function lessonPath(lang: string, level: number): string {
 
 export interface TutorialLevel {
   level: number;
-  // Seconds the lesson takes, per language it is ready in (absent = not ready there).
-  duration: Partial<Record<string, number>>;
+  // Per language it is ready in (absent = not ready there): an article's reading seconds,
+  // or null for the played level. `!` strips null as well as undefined, so a printer must
+  // test the value (`!= null`), never assert it.
+  duration: Partial<Record<string, number | null>>;
 }
 
 // 1 the game, PLAYED · 2 the distance · 3 many meanings · 4 attention · 5 the judge — the
 // last four ARTICLES, written in French first.
 export const TUTORIAL_LEVELS: readonly TutorialLevel[] = [
-  { level: 1, duration: { en: 60, fr: 60 } },
+  { level: 1, duration: { en: null, fr: null } },
   { level: 2, duration: { fr: 220 } },
   { level: 3, duration: { fr: 90 } },
   { level: 4, duration: { fr: 230 } },

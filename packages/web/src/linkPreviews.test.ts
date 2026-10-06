@@ -33,11 +33,14 @@ describe('link previews', () => {
     }
   });
 
-  it('names a level in its own words: its title, what it is about, its place and its length', () => {
+  it("names a level in its own words: its title, what it is about, its place, and an article's length", () => {
     expect(at('/fr/learn/2')).toMatchObject({
       title: 'La distance — Whippin AI',
       description: 'Des mots en coordonnées. Niveau 2 sur 5 · 3′40″',
     });
+    // The played level is untimed: no length, never a NaN′NaN″ printed off its null.
+    expect(at('/en/learn/1')).toMatchObject({ description: 'Guess the secret words. Level 1 of 5' });
+    expect(at('/fr/learn/1')).toMatchObject({ description: 'Deviner les mots secrets. Niveau 1 sur 5' });
     expect(at('/fr/learn')).toMatchObject({
       title: 'Tutoriel — Whippin AI',
       description: 'Le jeu · La distance · Plusieurs sens · L’attention · Le juge',

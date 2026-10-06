@@ -427,10 +427,6 @@ const STRINGS = {
     en: 'First time playing?',
     fr: 'Première partie ?',
   },
-  inviteText: {
-    en: 'Learn how to play in 60 seconds.',
-    fr: 'Apprends à jouer en 60 secondes.',
-  },
   inviteTutorial: { en: 'TUTORIAL', fr: 'TUTORIEL' },
   inviteSkip: { en: 'SKIP', fr: 'PASSER' },
   // ---- the LESSON (#51, remade by #269): level 1 is the game, played. The coach is

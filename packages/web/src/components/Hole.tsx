@@ -55,6 +55,8 @@ const SEA_IN_BURST_MS = BURST_ART.ms * 0.6;
 // A hole: "displayed_word^current_rank" (ex: sailor^87). Rank 0 = solved. The exponent is
 // written WITHOUT a leading minus (user-decided 2026-08-16): it is a distance, and distances
 // are not negative — the app writes a rank the same bare way everywhere it shows one.
+// It also stands OUTSIDE a round: the invitation's demo (`tutorial/InviteDemo`) mounts it
+// with no explore, charge or strike, so a change here must not assume a round around it.
 export default function Hole({
   capital = false,
   hole,

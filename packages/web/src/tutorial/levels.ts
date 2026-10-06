@@ -10,9 +10,11 @@
 // the WhatsApp bot links them. What each is called and the picture it wears are here.
 //
 // A level is READY IN A LANGUAGE when its lesson exists in it: `duration` names the
-// languages, and says how long the lesson takes in each (the list prints it the way the
-// article's page prints its own). A level not ready in the list's language is shown, greyed,
-// and says SOON — the road ahead — but is not a target, and the route to it lands on the list.
+// languages. An ARTICLE's carries its reading time, which the list prints the way the
+// article's page prints its own; level 1, played, carries none (null) — a game takes as long
+// as the player, so no screen promises a time for it. A level not ready in the list's
+// language is shown, greyed, and says SOON — the road ahead — but is not a target, and the
+// route to it lands on the list.
 //
 // Only LEVEL 1 can be DONE: it is the one the game invites into, and the one the header's
 // badge counts (while it is ready in the language and not done). The articles are read, as
