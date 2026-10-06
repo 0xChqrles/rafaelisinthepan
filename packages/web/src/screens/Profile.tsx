@@ -140,8 +140,9 @@ export function guardedSaveBody(
   };
 }
 
-// What a SAVE that did not land ended on. `account` is the DEPLOY failing (#216 rework: a tokenless SAVE creates the account
-// first); nothing was created and nothing was saved, and TRY AGAIN re-runs the whole tap.
+// What a SAVE that did not land ended on. `account` is the DEPLOY failing (#216 rework: a
+// tokenless SAVE creates the account first); nothing was created and nothing was saved, and
+// SAVE again re-runs the whole tap.
 type SaveRefusal = 'name_rejected' | 'avatar_rejected' | 'account' | 'error' | null;
 
 // ---- THE STUDIO'S GEOMETRY (visual only: nothing here decides what is saved). The canvas's
@@ -809,7 +810,7 @@ export default function Profile() {
     // SAVING IS A DEPLOY BUTTON (#216 trigger rework, user-decided 2026-08-24): a
     // tokenless editor creates the account on this very tap, then saves into it — one
     // tap, the button busy for both legs. A deploy that fails saves nothing and
-    // created nothing; TRY AGAIN re-runs the whole tap.
+    // created nothing; SAVE again re-runs the whole tap.
     let current = deviceIdentity();
     // The header's face (`useOwnFace`) reads the profile again once this save has written
     // it — and when this tap MINTS the account, it keeps the seed's face until then rather
@@ -852,7 +853,7 @@ export default function Profile() {
           } catch {
             if (identityEpoch() !== epoch) return;
             // What the account holds is UNKNOWN — refusing beats risking the wipe the
-            // guard exists to prevent. TRY AGAIN re-runs the whole tap.
+            // guard exists to prevent. SAVE again re-runs the whole tap.
             outcome = 'error';
           }
         } else {
@@ -914,9 +915,9 @@ export default function Profile() {
   }, [name, encoded, assignedFrom, baseline, loadedFor]);
 
   // What the error surface says for each outcome (#216 rework, replacing the inline
-  // status line): the moderation refusals explain themselves and offer no retry — asking
-  // again with the same value cannot help — while a transport failure and a failed deploy
-  // both carry TRY AGAIN, which re-runs the whole single-tap save.
+  // status line): the moderation refusals ask for another value — saving the same one again
+  // cannot help — while a transport failure and a failed deploy say to try again: SAVE again
+  // re-runs the whole single-tap save.
   const saveError =
     refused === 'name_rejected'
       ? { title: t(lang, 'profileNameRejected'), note: t(lang, 'profileNameRejectedNote') }
