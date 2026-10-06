@@ -193,9 +193,10 @@
       screens/GroupInvite.tsx  the #271 group invite link's landing (/join/g/<groupId>): JOIN
                               with this device's token, then the board or the game. The link
                               members SHARE is /g/<groupId>, served by the backend for its preview
-      components/PeriodSwitch.tsx  a group's three boards (TODAY / WEEK / MONTH): three equal cells
-                              across the line in resting corner brackets, the white frame
-                              travelling to the one shown
+      components/PeriodSwitch.tsx  a group's three boards (TODAY / WEEK / MONTH) on
+                              `BracketSwitch`: equal cells across the line in resting corner
+                              brackets, the white frame travelling to the one shown — the
+                              article figures' AVANT / APRÈS turn through the same switch
       components/GroupScreen.tsx  a group's own screen (#271): members (the owner's ✕),
                               scrolling in whole lines, over INVITE and LEAVE at its foot —
                               everything there is to do with a group
@@ -268,7 +269,8 @@
                               (+ <lang>.<word>.json, the pruned #154 boards it plays on);
                               ArticleLevel.tsx (levels 2+, lazy via LazyArticle) over
                               articles/<lang>.ts (the text, per language; types.ts, Rich.tsx
-                              the inline markup, typeset.ts, figures/); art/ (LevelArt.tsx,
+                              the inline markup, typeset.ts, figures/ — the figures, and
+                              their 2px-cell raster `cells.tsx`); art/ (LevelArt.tsx,
                               the dithered canvas, and scenes/, one picture per level)
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       components/strikeArt.ts the three strike sheets and their animation contract (#301: the
@@ -3868,7 +3870,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (user-decided 2026-09-29: "not fully interactive like the first one… more like an article,
   like the chqrles.me article, but without all the story telling"): the author's published
   article cut into four, its own sentences and examples, figures redrawn in the app's style
-  (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **They say how it works,
+  (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **A FIGURE IS DRAWN WITH
+  THE GAME'S OWN PIECES** (2026-10-06, the presentation call the user delegated): its states on
+  the boards' bracketed switch, a share as the hole's meter charge, the step at hand under the
+  white title chip, a word as the game shows one (the held chip, the found cobalt, a list as
+  the words grid lists them), a ranking as the boards' lines — on the bare ground, its picture
+  on the house's 2px cells, the pixel face at 8 or 16px only, its motion in hard steps once it
+  is on screen; the same information the article's figure gives. **They say how it works,
   never the journey** (user-decided: "we're explaining how it works, not how it didn't work,
   nor how we've tried to make it work") — no attempt, failure or fix is told. **The article's own
   words, not a comma changed** (user-decided: "if you can reuse an article part without

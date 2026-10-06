@@ -1,22 +1,44 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
+import { heatColor } from '@whippin/shared';
 import { prefersReducedMotion } from '../../../hooks/useScramble';
 import { useArticleLang } from '../lang';
 import type { PlanePoint } from '../types';
+import { CELL, CellCanvas, lineCells, useWidth, type Cells } from './cells';
+import { easedStep, runSteps } from './steps';
 import Tabs from './Tabs';
 
-// WORDS AS POINTS (the article's first figure, and its AVANT / APRÈS): a grid of plane units,
-// each word a square, each edge its length printed across its middle. With several states the
-// words glide from one to the other and the lengths are re-read; a word's label keeps its
-// side (`label`) in every state, so it never jumps across its square.
-const UNIT = 64;
-const W = 6;
-const PAD = 20;
-const SQUARE = 9;
-// An edge's length is printed in a box this size, on the edge's middle.
-const LABEL_W = 38;
-const LABEL_H = 22;
+// WORDS AS POINTS (the article's first figure, and its AVANT / APRÈS), drawn with the game's own
+// pieces on the house's 2px cells: the plane's lattice as the floor's stipple (a slate dot where
+// two lines would cross), each word a square on it with its NAME as the game shows a word — the
+// pixel face on the held chip's white ground, the subject in the found cobalt ink with no chip —
+// and each pair joined by a stippled line with its LENGTH printed across its middle in the HEAT
+// RAMP, the game's one way of saying how far (a rank exponent's ink): calm cobalt for a near
+// pair, the weird red for a far one, on one scale for every plane (`FAR`). With several states
+// the words TRAVEL from one to the other in hard steps (the board's chip's travel) and the
+// lengths are re-read at each; a word's name keeps its side (`label`) in every state, so it
+// never jumps across its square.
+const UNITS = 6;
+// The cells round the lattice: room for a name past the outer squares.
+const PAD = 4;
+// The plane's widest drawing (CSS px): past it a unit only spends height.
+const MAX_W = 460;
+// A word's square, in cells, and the air between it and its name's chip.
+const SQUARE = 4;
+const NAME_GAP = 4;
+// A name in the pixel face, one em a glyph: 16px where the plane is wide, 8px on a phone; the
+// chip round it a cell above and below, two (16px) or one (8px) cells each side.
+const WIDE_PX = 440;
+const CHIP_Y = 2;
+// A length: the names' figures with a cell of ground round them.
+const LENGTH_PAD = 2;
+// The distance (plane units) at which a length reaches the ramp's weird end.
+const FAR = 4;
+// The travel between two states.
+const TRAVEL_STEPS = 6;
+const TRAVEL_MS = 300;
 
-const GLIDE_MS = 650;
+const lengthInk = (d: number) => heatColor(1 - d / FAR);
 
 export default function Plane({
   states,
@@ -28,12 +50,14 @@ export default function Plane({
   tabs?: string[];
 }) {
   const lang = useArticleLang();
+  const boxRef = useRef<HTMLDivElement>(null);
+  const width = Math.min(MAX_W, useWidth(boxRef));
   const [at, setAt] = useState(0);
   const [points, setPoints] = useState(states[0]);
   const shown = useRef(points);
   shown.current = points;
-  // A tab glides every word from where it stands to its place in the picked state — the
-  // edges and their lengths follow, re-read on every frame.
+
+  // A state picked: every word travels from where it stands to its place there, in hard steps.
   const target = states[Math.min(at, states.length - 1)];
   useEffect(() => {
     const from = shown.current;
@@ -42,83 +66,122 @@ export default function Plane({
       setPoints(target);
       return undefined;
     }
-    const start = performance.now();
-    let raf = 0;
-    const frame = (now: number) => {
-      const k = Math.min(1, (now - start) / GLIDE_MS);
-      const e = 1 - (1 - k) ** 3;
+    return runSteps(TRAVEL_STEPS, TRAVEL_MS, (k) => {
+      const e = easedStep(k, TRAVEL_STEPS);
       setPoints(
-        target.map((p, i) => ({ ...p, x: from[i].x + (p.x - from[i].x) * e, y: from[i].y + (p.y - from[i].y) * e })),
+        k === TRAVEL_STEPS
+          ? target
+          : target.map((p, i) => ({ ...p, x: from[i].x + (p.x - from[i].x) * e, y: from[i].y + (p.y - from[i].y) * e })),
       );
-      if (k < 1) raf = requestAnimationFrame(frame);
-    };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
+    });
   }, [target]);
+
   const fmt = useMemo(() => new Intl.NumberFormat(lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 }), [lang]);
   const ys = states.flat().map((p) => p.y);
   const y0 = Math.max(0, Math.floor(Math.min(...ys) - 0.5));
   const y1 = Math.ceil(Math.max(...ys) + 0.6);
-  const px = (x: number) => PAD + x * UNIT;
-  const py = (y: number) => PAD + (y1 - y) * UNIT;
-  const width = PAD * 2 + W * UNIT;
-  const height = PAD * 2 + (y1 - y0) * UNIT;
+
+  // The lattice's unit in whole cells, off the box's width.
+  const unit = Math.max(8, Math.floor((Math.floor(width / CELL) - 2 * PAD) / UNITS));
+  const cols = 2 * PAD + UNITS * unit;
+  const rows = 2 * PAD + (y1 - y0) * unit;
+  const cx = useCallback((x: number) => PAD + Math.round(x * unit), [unit]);
+  const cy = useCallback((y: number) => PAD + Math.round((y1 - y) * unit), [unit, y1]);
+  const namePx = width >= WIDE_PX ? 16 : 8;
+  const chipX = namePx / 4;
+
+  const draw = useCallback(
+    (cells: Cells) => {
+      // The lattice: one slate cell where each two lines cross.
+      for (let i = 0; i <= UNITS; i += 1) {
+        for (let j = y0; j <= y1; j += 1) cells.set(cx(i), cy(j), 'rail');
+      }
+      // The pairs: a stippled line, a cell every other, from square to square.
+      for (const [a, b] of edges) {
+        const run = lineCells(cx(points[a].x), cy(points[a].y), cx(points[b].x), cy(points[b].y));
+        run.forEach(([x, y], i) => i % 2 === 0 && cells.set(x, y, 'muted'));
+      }
+      // The words' squares, the subject's in the accent.
+      for (const p of points) {
+        const h = SQUARE / 2;
+        cells.block(cx(p.x) - h, cy(p.y) - h, SQUARE, SQUARE, p.focus ? 'accent' : 'fg');
+      }
+    },
+    [points, edges, cx, cy, y0, y1],
+  );
+
+  const drawW = cols * CELL;
+  const drawH = rows * CELL;
+  const px = (c: number) => c * CELL;
+  const half = (SQUARE / 2) * CELL;
+
   return (
     <div className="ar-plane">
       {tabs && <Tabs labels={tabs} active={at} onPick={setAt} />}
-      <svg viewBox={`0 0 ${width} ${height}`} className="ar-plane-svg" aria-hidden="true">
-        {Array.from({ length: W + 1 }, (_, i) => (
-          <line key={`x${i}`} className="ar-grid" x1={px(i)} x2={px(i)} y1={py(y0)} y2={py(y1)} />
-        ))}
-        {Array.from({ length: y1 - y0 + 1 }, (_, i) => (
-          <line key={`y${i}`} className="ar-grid" x1={px(0)} x2={px(W)} y1={py(y0 + i)} y2={py(y0 + i)} />
-        ))}
-        {edges.map(([a, b]) => {
-          const p = points[a];
-          const q = points[b];
-          const d = Math.hypot(p.x - q.x, p.y - q.y);
-          // The number sits ON its edge, unless its box would cover one of the two squares
-          // (an edge too short for it): then it steps off along the normal, to the side away
-          // from the words' labels — below the edge when both label above, above otherwise.
-          const crowded =
-            Math.abs(px(q.x) - px(p.x)) / 2 < LABEL_W / 2 + SQUARE &&
-            Math.abs(py(q.y) - py(p.y)) / 2 < LABEL_H / 2 + SQUARE;
-          const away = p.label !== 'below' && q.label !== 'below' ? -1 : 1;
-          const lift = crowded ? 24 * away : 0;
-          const nx = d ? (-(q.y - p.y) / d) * Math.sign(q.x - p.x || 1) : 0;
-          const ny = d ? (-(q.x - p.x) / d) * Math.sign(q.x - p.x || 1) : 0;
-          const mx = (px(p.x) + px(q.x)) / 2 + nx * lift;
-          const my = (py(p.y) + py(q.y)) / 2 + ny * lift;
-          return (
-            <g key={`${a}-${b}`}>
-              <line className="ar-edge" x1={px(p.x)} y1={py(p.y)} x2={px(q.x)} y2={py(q.y)} />
-              <g className="ar-edge-label" style={{ transform: `translate(${mx}px, ${my}px)` }}>
-                <rect x={-LABEL_W / 2} y={-LABEL_H / 2} width={LABEL_W} height={LABEL_H} />
-                <text textAnchor="middle" dominantBaseline="central">
-                  {fmt.format(d)}
-                </text>
-              </g>
-            </g>
-          );
-        })}
-        {points.map((p) => (
-          <g
-            key={p.word}
-            className={`ar-point${p.focus ? ' focus' : ''}`}
-            style={{ transform: `translate(${px(p.x)}px, ${py(p.y)}px)` }}
-          >
-            <rect x={-SQUARE / 2} y={-SQUARE / 2} width={SQUARE} height={SQUARE} />
-            <text
-              textAnchor="middle"
-              y={p.label === 'below' ? SQUARE + 16 : -SQUARE - 6}
-            >
-              {p.word}
-            </text>
-          </g>
-        ))}
-      </svg>
+      <div ref={boxRef} className="ar-plane-box">
+        {width > 0 && (
+          <div className="ar-plane-draw" style={{ width: drawW, height: drawH }} aria-hidden="true">
+            <CellCanvas cols={cols} rows={rows} draw={draw} />
+            {edges.map(([a, b]) => {
+              const p = points[a];
+              const q = points[b];
+              const d = Math.hypot(p.x - q.x, p.y - q.y);
+              const text = fmt.format(d);
+              const w = text.length * namePx + 2 * LENGTH_PAD;
+              const h = namePx + 2 * LENGTH_PAD;
+              const ax = px(cx(p.x));
+              const ay = px(cy(p.y));
+              const bx = px(cx(q.x));
+              const by = px(cy(q.y));
+              // The length sits ON its line, unless its box would cover one of the two squares
+              // (a pair too close for it): then it steps off along the normal, away from the
+              // words' names — below the line when both name above, above otherwise.
+              const crowded = Math.abs(bx - ax) / 2 < w / 2 + half && Math.abs(by - ay) / 2 < h / 2 + half;
+              const away = p.label !== 'below' && q.label !== 'below' ? -1 : 1;
+              const len = Math.hypot(bx - ax, by - ay) || 1;
+              const sign = Math.sign(bx - ax || 1);
+              const lift = crowded ? (h / 2 + half + 4) * away : 0;
+              // The normal (dy, −dx), turned to point up the screen for a pair read left to right.
+              const mx = (ax + bx) / 2 + ((by - ay) / len) * sign * lift;
+              const my = (ay + by) / 2 + (-(bx - ax) / len) * sign * lift;
+              return (
+                <span
+                  key={`${a}-${b}`}
+                  className="ar-plane-length"
+                  style={
+                    {
+                      left: Math.round(mx - w / 2),
+                      top: Math.round(my - h / 2),
+                      fontSize: namePx,
+                      '--length-ink': lengthInk(d),
+                    } as CSSProperties
+                  }
+                >
+                  {text}
+                </span>
+              );
+            })}
+            {points.map((p) => {
+              // The name's chip, centred over (or under) its square and kept inside the drawing.
+              const w = p.word.length * namePx + 2 * chipX;
+              const h = namePx + 2 * CHIP_Y;
+              const left = Math.min(drawW - w, Math.max(0, px(cx(p.x)) - Math.round(w / 2)));
+              const top = p.label === 'below' ? px(cy(p.y)) + half + NAME_GAP : px(cy(p.y)) - half - NAME_GAP - h;
+              return (
+                <span
+                  key={p.word}
+                  className={`ar-plane-word${p.focus ? ' focus' : ''}`}
+                  style={{ left, top, fontSize: namePx, padding: `${CHIP_Y}px ${chipX}px` }}
+                >
+                  {p.word}
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
       {/* What the drawing says, in words: the final lengths of the state shown, re-read when a
-          tab changes it. */}
+          state is picked. */}
       <p className="sr-only" aria-live={tabs ? 'polite' : undefined}>
         {edges
           .map(([a, b]) => {

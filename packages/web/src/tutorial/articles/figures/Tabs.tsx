@@ -1,6 +1,9 @@
-// A figure's two (or more) states, as the article's own AVANT / APRÈS: a row of labels, the
-// shown one underlined. Pressed-state buttons, not tabs (the profile's palette swatches'
-// pattern): each is a plain button, and the figure announces what changed itself.
+import BracketSwitch from '../../../components/BracketSwitch';
+
+// A figure's two (or more) states, as the article's own AVANT / APRÈS — on the board's own
+// switch (`BracketSwitch`, a group's TODAY / WEEK / MONTH): equal cells in resting corner
+// brackets, the shown one under the white frame that travels to the state turned to. Pressed
+// buttons, not tabs: the figure announces what changed itself.
 export default function Tabs({
   labels,
   active,
@@ -11,18 +14,8 @@ export default function Tabs({
   onPick: (i: number) => void;
 }) {
   return (
-    <div className="ar-tabs" role="group">
-      {labels.map((label, i) => (
-        <button
-          key={label}
-          type="button"
-          aria-pressed={i === active}
-          className={`ar-tab${i === active ? ' on' : ''}`}
-          onClick={() => onPick(i)}
-        >
-          {label}
-        </button>
-      ))}
+    <div className="ar-switch" role="group">
+      <BracketSwitch labels={labels} shown={active} onPick={onPick} pressed />
     </div>
   );
 }
