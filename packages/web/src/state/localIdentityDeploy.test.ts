@@ -2,9 +2,11 @@
 // the account. What is pinned here is the rule, not the plumbing: acquiring an identity
 // stores the placeholder this device has been showing (the local seed's assigned name and
 // mark) as the account's profile — but ONLY into an account that holds nothing (the POST
-// is an atomic create; even an empty stored row is somebody's deliberate save), never
-// inside the profile editor's own SAVE deploy. An unknown-device answer signs out through
-// the shared verdict; another failure that will not land gives up after bounded retries.
+// is an atomic create; even an empty stored row is somebody's deliberate save), whichever
+// deploy button acquired it — the profile editor's SAVE included, whose own upsert carries
+// the same pair where the player left it untouched. An unknown-device answer signs out
+// through the shared verdict; another failure that will not land gives up after bounded
+// retries.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { anonName, defaultAvatar } from '@whippin/shared';
@@ -25,10 +27,7 @@ import {
   resetDeviceIdentity,
   useIdentityStore,
 } from '../identity';
-import {
-  installLocalIdentityDeploy,
-  withoutLocalIdentityDeploy,
-} from './localIdentityDeploy';
+import { installLocalIdentityDeploy } from './localIdentityDeploy';
 import { useGameStore } from './gameStore';
 
 const bootstrap = vi.mocked(postDevicesBody);
@@ -162,19 +161,6 @@ describe('deploying the locally-decided username (user-decided 2026-08-26)', () 
       await ensureDeviceIdentity();
       await settle();
       expect(fetchMock).toHaveBeenCalledOnce();
-      expect(save).not.toHaveBeenCalled();
-    } finally {
-      remove();
-    }
-  });
-
-  it('stands down inside the profile editor\u2019s SAVE deploy', async () => {
-    const remove = installLocalIdentityDeploy();
-    try {
-      await withoutLocalIdentityDeploy(() => ensureDeviceIdentity());
-      await settle();
-      expect(deviceIdentity()).not.toBeNull();
-      expect(fetchMock).not.toHaveBeenCalled();
       expect(save).not.toHaveBeenCalled();
     } finally {
       remove();

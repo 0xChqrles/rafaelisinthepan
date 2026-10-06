@@ -15,10 +15,11 @@
 // same stored values: your own strip, your groups' boards, the group card.
 //
 // It listens to the identity lifecycle here — the same one readable block identityScope
-// owns — rather than at each of the five deploy triggers, so a future trigger cannot
-// forget it. The ONE trigger that must not be overridden is the profile editor's SAVE:
-// there the player typed their own name in the same gesture, so its deploy runs inside
-// `withoutLocalIdentityDeploy`, which mutes this listener for exactly that acquisition.
+// owns — rather than at each of the deploy triggers, so a future trigger cannot forget it.
+// The profile editor's SAVE is no exception: its own write carries what the player was
+// shown (the seed's pair where they left it untouched), and an upsert, so it lands over this
+// create or makes it the settled 409 — while a SAVE that fails still leaves the account on
+// the face the player was wearing, never on the new id's.
 
 import { anonName, defaultAvatar } from '@whippin/shared';
 import {
@@ -46,19 +47,6 @@ const DEPLOY_RETRY_MS = 1_000;
 const DEPLOY_TIMEOUT_MS = 6_000;
 
 let uninstall: (() => void) | null = null;
-
-// Set while the profile editor's SAVE deploys the account: whatever identity arrives
-// during this window belongs to a save carrying the player's OWN fields, which must win.
-let suppressed = false;
-
-export async function withoutLocalIdentityDeploy<T>(work: () => Promise<T>): Promise<T> {
-  suppressed = true;
-  try {
-    return await work();
-  } finally {
-    suppressed = false;
-  }
-}
 
 // One deployment in flight per ACCOUNT (the activeScoreFlights pattern): the listener can
 // fire twice for one acquisition — publish and a fast storage echo — and StrictMode
@@ -152,9 +140,8 @@ async function run(identity: DeviceIdentity): Promise<void> {
 export function installLocalIdentityDeploy(): () => void {
   uninstall?.();
   const remove = onIdentityChange(({ next }) => {
-    // Leaving an identity deploys nothing, and an acquisition inside the editor's SAVE
-    // window belongs to the save's own body — the placeholder must not race it.
-    if (next === null || suppressed) return;
+    // Leaving an identity deploys nothing.
+    if (next === null) return;
     void deploy(next);
   });
   uninstall = remove;

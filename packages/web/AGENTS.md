@@ -23,8 +23,8 @@
       state/identityScope.ts  what an identity OWNS, cleared when it changes (wired in main)
       state/localIdentityDeploy.ts  the username decided LOCALLY, deployed with the account
                               (2026-08-26): acquiring an identity stores the seed's assigned
-                              face through an atomic create-only profile write (the editor's
-                              SAVE exempt)
+                              face through an atomic create-only profile write, whichever
+                              deploy button acquired it (the editor's SAVE included)
       state/gamePersistence.ts  the atomic IndexedDB boundary for cross-tab game-state writes
       state/signedOutVerdict.ts  the ONE spelling of the sign-out resolution every private
                               route client shares (401 + `unknown_device` code)
@@ -1155,11 +1155,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     derived-from-accountId face, never surfaced. A 401 `unknown_device` instead goes
     through the shared signed-out-verdict helper and is not retried. It listens to the
     same identity-change signal identityScope does, wired beside it in `main.tsx` — so a
-    future deploy trigger cannot forget it. The ONE exemption is the profile editor's
-    SAVE: its own deploy carries the player's typed fields, so it wraps its bootstrap in
-    `withoutLocalIdentityDeploy` to keep the placeholder from racing (and possibly
-    overwriting) the save. The player's own face waits for the flight and reads the
-    profile once it settles (the `AccountFace` bullet). Contract-tested
+    future deploy trigger cannot forget it. **The profile editor's SAVE is no exception**
+    (user-delegated 2026-10-06): its own write into an account that was never customized
+    stores what the player was SHOWN — the seed's pair where they left it untouched
+    (`guardedSaveBody`) — and it is an UPSERT, so it lands over this create or makes it the
+    settled 409; either way the account ends on the face the player was wearing, and a SAVE
+    that fails still leaves it there rather than on the new id's assigned face. The player's
+    own face waits for the flight and reads the profile once it settles (the `AccountFace`
+    bullet). Contract-tested
     (`localIdentityDeploy.test.ts`, `ownFace.test.tsx`).
   - **Persisted game state is TRANSACTIONAL across tabs** (PR-219 final review, replacing
     rounds 2–3's snapshot merge). Zustand is now only the synchronous UI cache. Every
@@ -1535,10 +1538,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
       emptied field shows the assigned pseudonym, muted — what a board prints; the
       placeholder ink only for an empty name or the loaded account's own pseudonym, so a
       TOKENLESS device's placeholder is dressed as a stored name, the same screen a
-      deployed-unsaved account shows; but this screen's SAVE is the one deploy that bypasses
-      `localIdentityDeploy`, so a tokenless player's first SAVE with the name untouched
-      stores it EMPTY and leaves them wearing the new account's own pseudonym, muted; no
-      rank, crown or count — it claims none), and SAVE on the bottom edge. EVERY painted cell
+      deployed-unsaved account shows — and this screen's SAVE stores that placeholder where
+      it was left untouched, so a tokenless player's first SAVE keeps the name and the mark
+      they were wearing (the profile editor bullet); no rank, crown or count — it claims
+      none), and SAVE on the bottom edge. EVERY painted cell
       POPS whole pixels proud (6, 4, 2px, 50ms a step) and throws eight 4px sparks of its own
       ink (stepping out 14 → 20 → 26px, the last at 2px); an erased one shrinks into its
       middle; a stroke is ONE pointer's, painted along the line between samples. The canvas
@@ -2286,8 +2289,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   backup affordance's future surface is an open decision — root `AGENTS.md`). Saving
   POSTs `{token, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);
   server refusals surface on the app's `ErrorScreen` (#216 trigger rework — title +
-  explanatory note; the moderation refusals offer no retry, a transport failure and a
-  failed deploy carry TRY AGAIN, which re-runs the whole single-tap save).
+  explanatory note; its one way out returns to the editor, whose SAVE re-runs the whole
+  single-tap save).
   **OPENING THE EDITOR DEPLOYS NOTHING and SAVING deploys (user-decided 2026-08-24):**
   a tokenless editor opens WITHOUT any request, prefilled from the LOCAL placeholder
   identity (the persisted `gameStore.localSeed`, the leaderboard strip's own face) with
@@ -2304,7 +2307,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   every untouched field forward verbatim (`guardedSaveBody`, contract-tested); only a
   field the player actually changed from the placeholder speaks, a fetch that fails
   refuses the save rather than risk the wipe, and a successful guarded save re-binds the
-  editor to the account's merged truth. The load effect is
+  editor to the account's merged truth. **An account that answers "never customized" (a
+  fresh mint, above all) stores the fields the player was SHOWN instead** (user-delegated
+  2026-10-06): the canvas's mark and the line's name verbatim — the seed's pair where
+  untouched, the pseudonym the line showed in place of an emptied field — the same pair
+  every other deploy button stores (`localIdentityDeploy`), never the empty values, which
+  would draw the NEW account id's face on the canvas, the header and the FoilStamp the moment
+  the save landed. The store-halves below ('' for an untouched assigned value) are about an
+  account the editor loaded, or one that already stores a row. The load effect is
   deliberately keyed on [attempt] alone: an identity arriving under an OPEN editor (a
   deploy elsewhere, another tab) must not reload the fields out from under an edit in
   progress — the save path resolves the identity live.
@@ -3831,8 +3841,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **Since the #216 trigger rework the gate is also the sentence game's DEPLOY BUTTON**: a
   device with NO account shows it on every sentence day (archive days and post-sign-out
   included), whatever is done, because its PLAY is the only trigger on the screen — the tap
-  bootstraps the account (loading wave in the button, `ErrorScreen` with TRY AGAIN on failure,
-  nothing created on a failure) and then opens the round. The round engine's append NEVER
+  bootstraps the account (loading wave in the button, the `ErrorScreen` on failure — its one
+  way out returns to PLAY — nothing created on a failure) and then opens the round. The round engine's append NEVER
   mints an identity (`currentRequestIdentity`): a tokenless outbox — the pending-bootstrap
   recovery — waits behind the gate, and the deploy's identity listener kicks every
   conversation loose (`kickRoundSync`).

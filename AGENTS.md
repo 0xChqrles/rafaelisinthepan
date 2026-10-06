@@ -350,7 +350,9 @@ The live routes then share:
   (`gameStore.localSeed`, publicId-shaped); **the username is decided locally, then deployed**:
   on acquiring an account the client stores the placeholder name + mark as the profile, only
   into an account with NO stored row (`createOnly: true`; a lost race is 409 `profile_exists`,
-  settled). Group invites are gated on neither side.
+  settled) — whichever button deployed it, profile SAVE included, whose own write into an
+  account with no row stores the fields the player was shown (the placeholder's where
+  untouched), so no deploy swaps the face. Group invites are gated on neither side.
 - **NO TOKEN MEANS NO PRIVATE FETCH**: a tokenless device knows its server state is empty and
   publishes ready-and-empty round/history state without calling `/round` or `/history`.
 - **First bootstrap is ONE origin-wide critical section** (Web Lock over re-read → mint/persist
