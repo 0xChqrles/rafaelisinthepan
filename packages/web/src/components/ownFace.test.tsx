@@ -9,7 +9,11 @@
 //   - a SAVE re-reads the face, the previous one standing while the read is out;
 //   - a FAILED read changes nothing already drawn, and a minted account whose read-back
 //     fails keeps the seed's face;
-//   - an account that is GONE (410) settles on no face: nothing masks it.
+//   - an account that is GONE (410) settles on no face: nothing masks it;
+//   - the seed's face IS a minted account's face (`isAccountFace`), what the profile editor
+//     opens on at once — never an adopted account's, whose face is its stored profile;
+//   - nothing waiting on `firstWritesSettled` reads the account while its first profile is
+//     being written.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,9 +30,9 @@ vi.mock('../api', async (importOriginal) => ({
 import { postDevicesBody, postProfileBody } from '../api';
 import { ensureDeviceIdentity, loadDeviceIdentity, resetDeviceIdentity } from '../identity';
 import { installLocalIdentityDeploy } from '../state/localIdentityDeploy';
-import { ownProfileWritten } from '../state/ownFace';
+import { firstWritesSettled, ownProfileWritten } from '../state/ownFace';
 import { useGameStore } from '../state/gameStore';
-import { useOwnFace, type FaceState } from './AccountFace';
+import { isAccountFace, useOwnFace, type Face, type FaceState } from './AccountFace';
 
 const ACCOUNT = 'abcdefghij234567';
 const DEVICE = 'zyxwvutsrq765432';
@@ -230,5 +234,56 @@ describe('the own face after a SAVE', () => {
     await flush();
     expect(log[log.length - 1]).toBe(`GET ${ACCOUNT}`);
     expect(new Set(drawnSinceSettled())).toEqual(new Set([`Zoe|${OTHER_AVATAR}`]));
+  });
+});
+
+describe('the seed face as the minted account’s face', () => {
+  const seedFace: Face = { publicId: SEED, name: anonName(SEED), avatar: null };
+
+  it('is the account’s face on an account this tab MINTED, while its first profile is written', async () => {
+    await act(async () => {
+      await ensureDeviceIdentity();
+    });
+    await flush();
+    const drawnNow = seen[seen.length - 1];
+    expect(drawnNow !== null && drawnNow !== 'gone' && drawnNow.publicId).toBe(SEED);
+    expect(isAccountFace(seedFace, ACCOUNT)).toBe(true);
+    // Never another account's.
+    expect(isAccountFace(seedFace, 'qqqqqqqqqqqqqqqq')).toBe(false);
+    await act(async () => releaseCreate());
+    await flush();
+  });
+
+  it('is NOT an ADOPTED account’s face: that account’s face is what it stores', async () => {
+    rows.set(ACCOUNT, { name: 'Zoe', avatar: null });
+    window.localStorage.setItem(
+      'whippin-device',
+      JSON.stringify({ token: TOKEN, accountId: ACCOUNT, deviceId: DEVICE }),
+    );
+    loadDeviceIdentity();
+    await flush();
+    expect(isAccountFace(seedFace, ACCOUNT)).toBe(false);
+    // The account's own face always is.
+    expect(isAccountFace({ publicId: ACCOUNT, name: 'Zoe', avatar: null }, ACCOUNT)).toBe(true);
+  });
+
+  it('firstWritesSettled waits for the first profile to land', async () => {
+    await act(async () => {
+      await ensureDeviceIdentity();
+    });
+    await flush();
+    expect(log).toEqual([`GET ${ACCOUNT}`, 'POST']);
+    let settled = false;
+    void firstWritesSettled().then(() => {
+      settled = true;
+    });
+    await flush();
+    expect(settled).toBe(false);
+    await act(async () => releaseCreate());
+    await flush();
+    expect(settled).toBe(true);
+    expect(rows.get(ACCOUNT)).toEqual({ name: anonName(SEED), avatar: defaultAvatar(SEED) });
+    // Nothing is written: it settles at once.
+    await expect(firstWritesSettled()).resolves.toBeUndefined();
   });
 });

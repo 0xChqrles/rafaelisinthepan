@@ -28,10 +28,11 @@
 // behind it is the false claim #211's loading rule forbids. `shownFace` and `faceSettled`
 // are how a caller asks each question without restating the union.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { anonName } from '@whippin/shared';
 import { readProfile, type ProfileRead } from '../api';
-import { useDeviceIdentity, useMintedHere } from '../identity';
+import { SKELETON_WAIT_MS } from './bayerTiles';
+import { useDeviceIdentity, useIdentityStore, useMintedHere } from '../identity';
 import { useGameStore } from '../state/gameStore';
 import { useOwnFaceSignal } from '../state/ownFace';
 import { timeoutSignal } from '../timeout';
@@ -70,9 +71,26 @@ export function faceSettled(state: FaceState): boolean {
 
 // A face slot breathes only while its read is genuinely pending. Keep the class decision
 // beside the state model so a caller cannot accidentally turn the settled `gone` state
-// back into an endless loading promise.
-export function faceSkeletonClass(state: FaceState): '' | ' skeleton' {
-  return faceSettled(state) ? '' : ' skeleton';
+// back into an endless loading promise: the house hold (`.link-hold`) WAITING, and only once
+// the read has been out SKELETON_WAIT_MS (`.late`) — or, settled with nothing to draw, the box
+// held and empty.
+export function faceHoldClass(state: FaceState): 'link-hold' | 'link-hold waiting late' {
+  return faceSettled(state) ? 'link-hold' : 'link-hold waiting late';
+}
+
+// THE OWN FACE'S BOX while its read is out, where the face stands as a 20px mark among pixel
+// marks (the header's face key, the race line's own entry): the house hold — the slate
+// stippled through the Bayer tiles on the mark's own 10×10 grid of 2px cells, square,
+// breathing in hard steps — never a grey rounded block. It comes in only once the read has
+// been out SKELETON_WAIT_MS, so a quick one never flashes it.
+export function FaceHold({ state, className }: { state: FaceState; className: string }) {
+  return (
+    <span
+      className={`${className} ${faceHoldClass(state)}`}
+      style={{ '--wait': `${SKELETON_WAIT_MS}ms` } as CSSProperties}
+      aria-hidden="true"
+    />
+  );
 }
 
 // The pseudonym and mark an id derives (`@whippin/shared` assigned.ts), as a face.
@@ -182,4 +200,18 @@ export function useOwnFace(): FaceState {
     seeded ? seedFace : null,
   );
   return seeded && state === null ? seedFace : state;
+}
+
+// IS A FACE `useOwnFace` DREW THE ACCOUNT'S OWN? Its read's face, or — on the account this tab
+// MINTED — the seed's, which is the face that account's first profile is written as
+// (`localIdentityDeploy`). The profile editor asks it of the face the masthead handed over, and
+// opens at once on either.
+export function isAccountFace(face: Face, accountId: string): boolean {
+  if (face.publicId === accountId) return true;
+  const { identity, mintedHere } = useIdentityStore.getState();
+  return (
+    mintedHere &&
+    identity?.accountId === accountId &&
+    face.publicId === useGameStore.getState().localSeed
+  );
 }

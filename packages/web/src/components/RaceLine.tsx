@@ -19,7 +19,7 @@ import { anonName, defaultAvatar, progressHeatColor } from '@whippin/shared';
 import Avatar from './Avatar';
 import InfinityGlyph from './InfinityGlyph';
 import SolvedIcon from '../assets/icons/check.svg?react';
-import { shownFace, useOwnFace } from './AccountFace';
+import { FaceHold, shownFace, useOwnFace } from './AccountFace';
 import { shownPercent, type RaceEntry } from '../game/race';
 import { ariaRaceLine, type RaceSpoken } from '../i18n';
 import { pathForBoard } from '../langs';
@@ -40,7 +40,8 @@ export default function RaceLine({
   // The round is ending: the line goes out with the prompt and stays laid down, invisible.
   retired: boolean;
 }) {
-  const own = shownFace(useOwnFace());
+  const ownState = useOwnFace();
+  const own = shownFace(ownState);
   const spoken: RaceSpoken[] = entries.map((entry) => {
     const name = entry.name || anonName(entry.publicId);
     return entry.kind === 'done'
@@ -71,8 +72,11 @@ export default function RaceLine({
             {face ? (
               <Avatar avatar={face.avatar ?? defaultAvatar(face.publicId)} size={MARK} sharp />
             ) : (
-              // The player's own face is still being read: its box, never a guessed mark.
-              <span className="race-mark-box" />
+              // The player's own face is still being read: its box, never a guessed mark — the
+              // header key's own hold, inside the frame that says "you".
+              <span className="race-mark-box">
+                <FaceHold state={ownState} className="race-face-hold" />
+              </span>
             )}
             {entry.kind === 'done' ? (
               <span className="race-done">

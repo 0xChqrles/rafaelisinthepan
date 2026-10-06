@@ -73,7 +73,9 @@
       components/CodeInput.tsx  the six-digit prompt: six drawn iron keys over ONE real input,
                               each struck in its `CODE_INKS` ink; auto-verifying on the sixth
       components/AccountFace.tsx  the ONE read of "who an account is" (mark + name), shared
-                              by the account screen, the flow's ending and the sign-out screen
+                              by the account screen, the flow's ending and the sign-out screen;
+                              `FaceHold`, the own face's 20px box while it is read (the header
+                              key, the race line)
       state/ownFace.ts        when the player's OWN face is read again: the signals its
                               profile's two writers (the deploy, the editor's SAVE) send
       state/account.ts        what `/account` shows — the `{token}` summary and the
@@ -108,7 +110,8 @@
                               the SEAT (no group holding anybody else, `seatOf`), GLOBAL off the
                               global board, the tabs' order, the box's cap
       components/ResultBoards.tsx  those boards under SHARE: the boards' tab row (`BoardTabs`)
-                              over a fixed box of lines, a tap onto the board
+                              over a fixed box of lines, a tap onto the board; the box's hold
+                              while its first answers are out
       components/SeatPanel.tsx  the SEAT's panel: the player's own line over the one call that
                               creates a group or invites into it in place
       components/SolvedCard.tsx  the RESULT as the share card stood up: brackets, the edition
@@ -130,7 +133,8 @@
       hooks/useGlobalBoard.ts  the GLOBAL tab's one anonymous global-board read per result display
       components/BoardRows.tsx  a board's LINES (rank/crown, ranked, playing, waiting) in ONE
                               dress, drawn alike by the board screen and the result's boards;
-                              the board screen passes each line its run (`LineRun`)
+                              the board screen passes each line its run (`LineRun`); the
+                              skeleton's line (`SkeletonLine`, `SKELETON_WIDTHS`), both surfaces'
       components/boardMetrics.ts  what every list of players shares (pure): `MARK` (30px, 10
                               cells of 3px), `LINE_PX` (44px, a list's pitch) and the rank
                               column's width (`rankColumnPx`: 16px a digit, two at the least)
@@ -139,7 +143,7 @@
                               pinned last, the white chip travelling to the name shown, a cut
                               name covered, a name past its room ending in an ellipsis; a tab's
                               optional `ariaLabel`; `tabIds` ties each tab to the panel it
-                              controls
+                              controls; with no tabs yet, ONE stippled chip holding the row
       hooks/useSwipe.ts       a sideways swipe on a board's lines turns its tab (both surfaces),
                               on the archive's grid its month: a finger's or a pen's, never the
                               mouse; its trailing click opens nothing (a tap right after does)
@@ -149,7 +153,7 @@
                               document's root as it loads: a line coming in and giving way
                               (`--dz-*` / `--dzo-*`), your held line's edge (`--edge-d/-u`);
                               and the dissolve's beat script times against (`DISSOLVE_MS`,
-                              `SKELETON_WAIT_MS`, `SKELETON_STAGGER_MS`)
+                              `SKELETON_WAIT_MS`, `SKELETON_STAGGER_MS`, `cameIn`)
       components/animationClock.ts  the page's animation clock (`clockNow`, `onClock`): every
                               beat the board screen and its podium time, on the clock their
                               CSS and Web Animations play on
@@ -186,8 +190,8 @@
                               (`DitherWipe.tsx`)
       components/FoilStamp.tsx  the SAVE landing: a foil band over any square mark, played in the
                               mark's own box
-      components/markHandoff.ts  the masthead's mark (its rect and the mark itself), handed to
-                              the editor's canvas
+      components/markHandoff.ts  the masthead's mark (its rect and the face it drew), handed to
+                              the editor, which opens on that face and grows its canvas out of it
       screens/Privacy.tsx     `/privacy` (#229): what the game keeps, why, and how to be rid
                               of it — the app's one DOCUMENT, its words in privacyDoc.ts
       components/LangTitle.tsx  the header's OTHER clickable title: a screen's own name, the
@@ -642,7 +646,8 @@ These are decided and verified against the code. Treat them as load-bearing.
   a member still playing prints their % in the heat ramp's ink (the board's playing-row
   dress) and their tries muted; a FINISHED member wears the pixel check
   (`assets/icons/check.svg`) and their score in the solve cobalt; one whose round ended
-  unsolved wears `∞`. MY entry is my mark (framed in the accent) and my LIVE % —
+  unsolved wears `∞`. MY entry is my mark (framed in the accent; while my face is read, the
+  header key's own hold in that frame, `FaceHold`) and my LIVE % —
   `computeProgress` over the board I SEE, so it moves when a hit lands — **the one place the
   play screen prints the player's own percentage.** The order is the boards' own (finished
   by fewest tries, then `orderPlaying`, my entry taken from the screen, never my server
@@ -1463,12 +1468,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
       stands and one ellipsis says where — the SAVED ending prints the address the same way).
       A hover steps the key's corners to white in two steps; a press sinks the pencil 2px;
       under the keyboard's focus its own corners give way to `FocusBrackets`, never a frame
-      nested in a frame. The tap hands the MARK — its box and the mark itself — to the
-      editor (`markHandoff`): the mark stays FROZEN in that box while the editor reads the
-      stored profile (once the read has taken a beat, 250ms, the canvas's box breathes as
-      the stippled slate behind it), then the canvas GROWS out of it in whole-pixel steps —
-      on a phone in place, down and right from the mark's own corner (a direct load holds
-      the canvas's box as the stippled slate, then grows from its centre).
+      nested in a frame. The tap hands the MARK — its box and the face it drew — to the
+      editor (`markHandoff`), which OPENS AT ONCE on that face (the profile bullet) and GROWS
+      its canvas out of the mark in whole-pixel steps — on a phone in place, down and right
+      from the mark's own corner — the seed's face a minted account wears until its read lands
+      included, since it is the face that account's first profile is written as. With no face
+      to hand (the masthead's read still out) the mark's box stays FROZEN where it stood,
+      stippled, while the editor reads the stored profile (once the read has taken a beat,
+      250ms, the canvas's box breathes as the stippled slate behind it); a
+      direct load holds the canvas's box as the stippled slate, then grows from its centre.
     - **THE RECORD is the screen's subject** (`components/record/`), in the streak
       celebration's own sprites: the blue FLAME over the live STREAK landing on the solved
       count's own SLOT MACHINE (`countRun.ts` at its full `COUNT_RUN_MS`: reels starting almost
@@ -1529,8 +1537,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
       fits a phone unscrolled down to ~550px tall (`EDITOR_CHROME_PX` is the CSS's own sum;
       a short phone takes a tighter dress), every offset on a whole pixel, the desktop column
       held at its full height (a pixel more where that centres it on a whole one). It GROWS
-      out of the masthead's mark (`markHandoff`: frozen where it stood while the stored
-      profile is read, a direct load growing from the centre), DRAWN at a cell 4px bigger
+      out of the masthead's mark (`markHandoff`: at once on the face handed over — the
+      account's, or the seed's a minted account wears; with no face in hand the mark's box,
+      stippled, frozen where it stood while the editor reads; a direct load growing from the
+      centre), DRAWN at a cell 4px bigger
       each step — repainted crisp at every step, never a bitmap scaled between two sizes.
       Then the SWATCHES across the frame, each the drawing itself in that palette (40px,
       four pixels a cell, in 48px targets; ONE choice — a radio group, the arrows choose —
@@ -1638,10 +1648,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     tokenless device and now leads with that same face — HELD across the deploy
     (`AccountEmail`'s `lead`), because CONTINUE swaps the id from the seed to the account
     mid-flight and re-reading would race the background profile write for a face that is
-    the same by construction; and the account screen's action holds a SKELETON while the
-    summary is out rather than offering SAVE before it knows (#211's explicit-loading
-    rule — a guessed empty answer is a false claim, and it also stopped SAVE flashing
-    before the address landed on every linked player's first visit).
+    the same by construction; and the account screen's call is HELD while the summary is
+    out rather than offering SAVE before it knows (#211's explicit-loading rule — a guessed
+    empty answer is a false claim, and it also stopped SAVE flashing before the address
+    landed on every linked player's first visit): `.account-cta.holding`, the call at its
+    final size — the note's words laid out unseen with a stippled rail through each of its
+    lines, the button's box as the house hold (`.link-hold.waiting`) — so the footnote under
+    it never moves when the call takes the same boxes.
   - **The saved address carries NO chip.** An account carries at most ONE address and the
     server refuses a second (`account_linked`), so a CHANGE chip promised something the
     route would break — and with the devices inline there is nothing left for a MANAGE
@@ -1670,6 +1683,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     third face on the header for a beat, or until a reload. An ADOPTED account is read at
     once, and read again when the deploy settles. A read that FAILS is no news: it changes
     no face already drawn, and a minted account whose read-back fails keeps the seed's face.
+    The profile editor reads nothing the account stores while such a write is out either
+    (`firstWritesSettled`, the profile bullet).
   - **`GET /profile` HAS FOUR ANSWERS, AND `api.readProfile` IS WHERE THEY ARE TOLD APART**
     (PR-227 review, 2026-09-02): `shown` (200), `blank` (404 — LIVE, never customized, so the
     assigned identity IS this player's face), `gone` (410 `account_gone` — a DELETED account,
@@ -2309,7 +2324,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the resolved account can be a RECOVERED or ADOPTED one that already holds a profile,
   and the editor's baseline there was a placeholder — a whole-profile upsert built from
   it would wipe the stored name or mark through the '' an untouched field sends. So when
-  `loadedFor` mismatches, the save FETCHES the account's stored profile first and carries
+  `loadedFor` mismatches — or is still unset because the editor's own read has not yet
+  confirmed the face it opened on (below) — the save FETCHES the account's stored profile
+  first and carries
   every untouched field forward verbatim (`guardedSaveBody`, contract-tested); only a
   field the player actually changed from the placeholder speaks, a fetch that fails
   refuses the save rather than risk the wipe, and a successful guarded save re-binds the
@@ -2317,7 +2334,24 @@ it to the local store — see `packages/backend/AGENTS.md`).
   deliberately keyed on [attempt] alone: an identity arriving under an OPEN editor (a
   deploy elsewhere, another tab) must not reload the fields out from under an edit in
   progress — the save path resolves the identity live.
-  **The editor is GATED on the initial read** (the game
+  **The editor opens AT ONCE on the face the masthead handed over** (`markHandoff`, when
+  that face is the held account's — `isAccountFace`: the face the masthead just read off the
+  same route, or, on an account this tab MINTED, the seed's face it wears until that read
+  lands, which is the face its first profile is written as; the seed's mark is bound
+  explicitly, never derived from the account id), so
+  the canvas grows out of the mark the moment it lands; its own read runs behind it: the
+  same face changes nothing, a different one RE-BINDS the fields while nothing has been
+  edited (an edit in hand stands), a failed read leaves the editor open — and until the
+  read has answered `loadedFor` stays unset, so a SAVE is GUARDED (above): the face handed
+  over may be the assigned one a failed masthead read stood in with. A guarded save that
+  lands before that read answers has bound the fields to what it stored; the read, sent
+  before it, then changes nothing. **While this tab is writing an account's FIRST profile**
+  (`localIdentityDeploy`'s flight, `firstWritesSettled`) **the editor's read and a guarded
+  save's read WAIT for it**: until it lands the account stores no row, so the read would
+  re-bind the canvas to the new account id's face and the guarded save would store '' for
+  the untouched mark — the face nobody chose, where the seed's is the one being stored. (A
+  save that mints the account holds that count itself and writes the first profile.)
+  **Otherwise the editor is GATED on the initial read** (the game
   route's own loading / error / content shape): an editable blank shown while the GET
   is in flight would be edited into and then overwritten by the response, and a FAILED
   read leaves the stored profile unknown — an editor started from that guess would save
@@ -2414,7 +2448,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     GLOBAL opens nothing. **CREATING is the PLUS pinned at the row's end** (`groupNew`),
     absent while the no-group tab is shown, whose CREATE GROUP (`groupCreate`) is then the
     one way on this screen — the result's SEAT is the other door (*Solved-screen BOARDS*),
-    through the same `GroupCreate` and `writeGroups`.
+    through the same `GroupCreate` and `writeGroups`. While the groups list is unknown the
+    row holds its room with ONE stippled chip where the shown chip will stand (`BoardTabs`'
+    `hold`: `.link-hold`, breathing while the list is read and in only after
+    `SKELETON_WAIT_MS`, still once a read has failed; a RETRY's read breathes the chip
+    already drawn at once, never out for another wait).
     One control across the app (the archive's months turn through it too) — not a pager of
     this screen's own.
   - **THE HEAD LINE** (`.board-head`, 44px whatever it holds): a group's THREE BOARDS on
@@ -3484,8 +3522,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     that the skip-tap that lands where it sits, unseen or at the arrival's first
     transparent frames, only skips; once it shows, a tap on it skips AND opens that board,
     like any other target. The boards' box snaps to whatever
-    is true right now: it stands empty while a read is out and fills in place when one
-    lands, so the skip never blocks on, or fakes, the network. Reduced motion is unchanged (already near-instant). **Skipping the SOLVING
+    is true right now: it holds its skeleton while a read is out and fills in place when
+    one lands, so the skip never blocks on, or fakes, the network. Reduced motion is unchanged (already near-instant). **Skipping the SOLVING
     choreography is deliberately out of scope.**
   - **REMOVED with the 2026-08-14 redesign** (no-back-compat rule, all were left without a
     consumer): the caption's `masked` veil and its prompt-zone overlay (the caption mounts
@@ -3711,9 +3749,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     one after another (`BOARDS_ARRIVE_MS`; reduced motion: no arrival at all); the page's
     beat follows it.
   - **ONE FIXED BOX** (`.result-boards`, 354px): the tabs' 44px row, room for
-    `RESULT_LINES_MAX` (6) 44px lines and two 20px rails (a gap's, and the `+N`'s) — whatever it holds, so it
-    stands EMPTY in its place while the first answers are out and a read landing or a swipe
-    moves nothing. It holds its room while the LIVE answer is `awaited` — the groups list
+    `RESULT_LINES_MAX` (6) 44px lines and two 20px rails (a gap's, and the `+N`'s) — whatever it holds, so a
+    read landing or a swipe moves nothing. **While the first answers are out it HOLDS what is
+    coming** (`aria-busy`), the board screen's own way: one stippled chip where the tab's chip
+    will stand (`BoardTabs`' hold) and the skeleton's lines (`SkeletonLine`) at `LINE_PX` —
+    in only once the box is on screen (its beat, `arrived`) and the reads have been out
+    `SKELETON_WAIT_MS` more, the lines `SKELETON_STAGGER_MS` apart, so a quick answer never
+    flashes them. Lines that land in a box already on screen (`.over-hold`) DISSOLVE in, the
+    skeleton's stagger apart, each over the skeleton line going out through the cells it takes
+    (the lines that had come in, `cameIn`); lines that land before the box shows arrive on its
+    own beat. It holds its room while the LIVE answer is `awaited` — the groups list
     still unknown, or a group with somebody else and no answer that has seen the round's
     end while a read is still to come (`useLiveBoardBusy`) — rather than draw GLOBAL
     first and turn to a group a moment later; and it holds it until the GLOBAL read has
@@ -4288,7 +4333,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     that pair at deployment — the same face before and after (#216), with no other face
     drawn in between; and a SAVE in the editor shows on it at once (the `AccountFace`
     bullet). It HOLDS ITS BOX until the face settles (the leaderboard strip's rule, and it
-    matters more here, where the control is on screen every day). **It is A BARE PIXEL TILE, IN COLOUR — the fifth cell
+    matters more here, where the control is on screen every day): `FaceHold`, the house hold
+    — the slate stippled through the Bayer tiles on the key's own 10×10 grid of 2px cells,
+    square, breathing on `link-hold-breathe` — in only once the read has been out
+    `SKELETON_WAIT_MS` (`.link-hold.waiting.late`); a GONE account keeps the box, empty. **It is A BARE PIXEL TILE, IN COLOUR — the fifth cell
     drawing in a row of five** (user-decided 2026-09-02, in two steps: square corners, then
     "remove the box shadow"; it kept its COLOUR from 2026-08-31, "actually quite cool", and
     is still the one full-colour chrome control, because that colour is the one thing on the

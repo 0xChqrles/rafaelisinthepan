@@ -76,3 +76,9 @@ if (typeof document !== 'undefined') {
 export const DISSOLVE_MS = 240;
 export const SKELETON_WAIT_MS = 320;
 export const SKELETON_STAGGER_MS = 50;
+
+// Whether a slot dissolving in from `delayMs` had come in after `shownFor` on screen. What gives
+// way sends out only the slots that had: one still coming in simply goes (drawn whole to leave,
+// it would flash in at full ink first). Slots come in in order, so those are always the first
+// ones, and every slot they leave in place is where it was.
+export const cameIn = (delayMs: number, shownFor: number): boolean => shownFor >= delayMs + DISSOLVE_MS;

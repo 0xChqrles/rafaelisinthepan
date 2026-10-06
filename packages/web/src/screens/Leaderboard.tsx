@@ -3,13 +3,12 @@ import { anonName, dateForDayNumber, defaultAvatar, type BoardPeriod, type Board
 import { readGroup, type GroupsBody } from '../api';
 import { clockNow, onClock } from '../components/animationClock';
 import Avatar from '../components/Avatar';
-import { DISSOLVE_MS } from '../components/bayerTiles';
+import { DISSOLVE_MS, cameIn } from '../components/bayerTiles';
 import BoardTabs, { tabIds, type BoardTabItem } from '../components/BoardTabs';
 import Under, {
   ARRIVE,
   PACE_CAP,
   TURN,
-  cameIn,
   lineRun,
   type Gone,
   type ListRun,
@@ -736,7 +735,8 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
       {/* THE HEAD, held while the page scrolls under it (`.board-top`). */}
       <div ref={topRef} className="board-top">
       {/* WHICH BOARD: the tab row — the result's own. A tap on the shown group goes into it;
-          the pinned plus creates. Held at its height while the list of groups is unknown. */}
+          the pinned plus creates. While the list of groups is unknown its room is held by one
+          stippled chip (breathing while the list is read, still once a read has failed). */}
       <BoardTabs
         tabs={tabs}
         shown={activeIndex}
@@ -748,6 +748,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
         onNew={onNone ? undefined : () => setScreen('create')}
         newLabel={t(lang, 'groupNew')}
         idBase={tabsId}
+        hold={groupsPhase === 'failed' ? 'failed' : 'waiting'}
       />
 
       {/* THE LINE UNDER THE TABS, one height whatever it holds: a group's three boards,

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { anonName } from '@whippin/shared';
 import { onClock } from './animationClock';
-import { DISSOLVE_MS, SKELETON_STAGGER_MS, SKELETON_WAIT_MS } from './bayerTiles';
+import { DISSOLVE_MS, SKELETON_STAGGER_MS, SKELETON_WAIT_MS, cameIn } from './bayerTiles';
 import { rankColumnPx } from './boardMetrics';
-import { BoardRowItem, PlayingRowItem, WaitingRowItem, type LineRun } from './BoardRows';
+import { BoardRowItem, PlayingRowItem, SKELETON_WIDTHS, SkeletonLine, WaitingRowItem, type LineRun } from './BoardRows';
 import { runEnd } from './countRun';
 import type { PodiumEntry } from './podium/Podium';
 import type { PodiumSize } from './podium/scene';
@@ -43,7 +43,6 @@ export const lineRun = ({ pace, fold }: ListRun, i: number): LineRun => ({
   delayMs: pace.startMs + Math.min(i, fold) * pace.staggerMs,
   runMs: pace.runMs,
 });
-const SKELETON_LINES = [62, 48, 70, 54, 40];
 // The room a list that marks your people keeps before its ranks for the mark (`.board-list.marks`).
 const MATE_ROOM_PX = 8;
 
@@ -77,12 +76,6 @@ export interface Gone {
   shownFor: number;
   inRun: ListRun;
 }
-
-// Whether a slot dissolving in from `delayMs` had come in after `shownFor` on screen. A view
-// giving way sends out only the slots that had: one still coming in simply goes (drawn whole to
-// leave, it would flash in at full ink first). A view's slots come in in order, so those are
-// always its first ones, and every slot they leave in place is where it was.
-export const cameIn = (delayMs: number, shownFor: number): boolean => shownFor >= delayMs + DISSOLVE_MS;
 
 // A view under the podium, slot after slot: the header slot first (a group's), then the body.
 // `gone`: the view before, giving way — every slot that had come in dissolving OUT on the beat
@@ -197,26 +190,17 @@ function Skeleton({
 }) {
   const out = shownFor !== null;
   const lines = out
-    ? SKELETON_LINES.filter((_, i) => cameIn(SKELETON_WAIT_MS + i * SKELETON_STAGGER_MS, shownFor))
-    : SKELETON_LINES;
+    ? SKELETON_WIDTHS.filter((_, i) => cameIn(SKELETON_WAIT_MS + i * SKELETON_STAGGER_MS, shownFor))
+    : SKELETON_WIDTHS;
   return (
     <div className="board-skeleton" role={out ? undefined : 'status'}>
       {!out && <span className="sr-only">{t(lang, 'loading')}</span>}
       {lines.map((width, i) => (
-        <span
+        <SkeletonLine
           key={i}
-          className="board-skeleton-line"
-          style={
-            {
-              '--w': `${width}%`,
-              '--delay': `${out ? lineRun(run, offset + i).delayMs : SKELETON_WAIT_MS + i * SKELETON_STAGGER_MS}ms`,
-            } as CSSProperties
-          }
-          aria-hidden="true"
-        >
-          <span className="board-skeleton-mark" />
-          <span className="board-skeleton-name" />
-        </span>
+          width={width}
+          delayMs={out ? lineRun(run, offset + i).delayMs : SKELETON_WAIT_MS + i * SKELETON_STAGGER_MS}
+        />
       ))}
     </div>
   );

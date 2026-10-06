@@ -415,6 +415,7 @@ export default function SolvedScreen({
           progress={trajectory[trajectory.length - 1] ?? 0}
           ended={unfinished}
           pageIn={textIn}
+          arrived={boardsIn}
         />
       )}
 

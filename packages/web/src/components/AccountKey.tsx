@@ -21,7 +21,7 @@
 // on `.account-key` holds the reasoning). Full colour is for where the face is content.
 import { defaultAvatar } from '@whippin/shared';
 import Avatar from './Avatar';
-import { faceSkeletonClass, shownFace, useOwnFace } from './AccountFace';
+import { FaceHold, shownFace, useOwnFace } from './AccountFace';
 import { t } from '../i18n';
 import { ACCOUNT_PATH } from '../langs';
 import { navigate } from '../routing';
@@ -57,10 +57,10 @@ export default function AccountKey({
         // pixel tile among pixel marks.
         <Avatar avatar={face.avatar ?? defaultAvatar(face.publicId)} size={20} sharp />
       ) : (
-        // The box, always. It BREATHES only while the read is out: an account that came
-        // back GONE (#204) has settled with nothing to draw, and a skeleton over it would
-        // promise an arrival that is not coming — the archive cells' rule.
-        <span className={`account-key-slot${faceSkeletonClass(state)}`} aria-hidden="true" />
+        // The box, always: the house hold while the read is out (`FaceHold`), and empty once
+        // an account came back GONE (#204) — settled with nothing to draw, where a breath
+        // would promise an arrival that is not coming (the archive cells' rule).
+        <FaceHold state={state} className="account-key-slot" />
       )}
     </button>
   );

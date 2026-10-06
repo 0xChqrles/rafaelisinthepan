@@ -952,14 +952,16 @@ body:has(.app > .board-screen) {
   gap: 6px;
 }
 .race-entry .avatar,
-.race-mark-box {
+.race-mark-box,
+.race-face-hold {
   flex: none;
   width: 20px;
   height: 20px;
 }
+/* The player's own mark while it is read: its box, the frame round it, and in it the header
+   key's own hold (`FaceHold`). */
 .race-mark-box {
   display: block;
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
 }
 /* The player's own mark is framed in the accent — "you are here", the boards' own marker. */
 .race-entry.me .avatar,
@@ -1478,8 +1480,9 @@ body:has(.app > .board-screen) {
   height: 20px;
 }
 /* HOLDS ITS BOX until the face settles — the leaderboard strip's rule, and it matters
-   more here, where the control is on screen every day. Square like the tile it stands in
-   for: a placeholder that rounds where the drawing does not is a shape change on arrival. */
+   more here, where the control is on screen every day — as the house hold (`FaceHold`:
+   `.link-hold`, late) on the tile's own 2px cells. Square like the tile it stands in for: a
+   placeholder that rounds where the drawing does not is a shape change on arrival. */
 .account-key-slot {
   display: block;
   width: 20px;
@@ -3215,6 +3218,15 @@ body:has(.app > .board-screen) {
     clip-path: inset(10px calc(100% - var(--chip-l, 0px)) 10px var(--chip-l, 0px));
   }
 }
+/* THE ROW'S ROOM while its names are unknown (`BoardTabs`' hold): ONE chip in the house hold
+   (`.link-hold`), where the shown name's chip will stand — the label's 24px band, a tab's 4px
+   in; only its width is a guess. */
+.board-tabs-hold {
+  align-self: center;
+  width: 72px;
+  height: 24px;
+  margin: 0 4px;
+}
 /* The pinned PLUS (the board screen's): a new group. The header's own pixel plus at 2px a
    cell, in the secondary ink, lifted on hover. */
 .board-tabs-new {
@@ -3427,9 +3439,12 @@ body:has(.app > .board-screen) {
   height: calc(44px + 6px + 6 * 44px + 2 * 20px);
 }
 .result-boards .board-tabs {
+  grid-row: 1;
   margin: 0 4px;
 }
 .result-board {
+  grid-row: 2;
+  grid-column: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -3440,6 +3455,26 @@ body:has(.app > .board-screen) {
 }
 .result-board .board-list {
   overflow: hidden;
+}
+/* WHILE THE FIRST ANSWERS ARE OUT (`ResultBoards`' hold): the skeleton's lines in the lines' own
+   cell, the board's own wait and dissolve — and the wait counts from the box's beat: before it,
+   nothing plays. Where the lines land over it, the lines that had come in go out under them
+   through the cells they take (`board-dissolve-out`, `.leaving`), staying hidden after. */
+.result-boards-hold {
+  grid-row: 2;
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.solved-boards:not(.in) .board-skeleton-line,
+.solved-boards:not(.in) .board-tabs-hold.link-hold {
+  animation: none;
+}
+.result-boards-hold.leaving .board-skeleton-line {
+  animation: board-dissolve-out 240ms linear var(--delay, 0ms) forwards;
 }
 /* Under the lines, how many with a day of their own the box leaves out — `+N` in the rank
    column, the rail running on. */
@@ -3544,14 +3579,28 @@ body:has(.app > .board-screen) {
 .solved-stage.settled .solved-boards:not(.moved) .result-board-more {
   animation: none;
 }
+/* LINES LANDING IN A BOX ALREADY ON SCREEN (`.over-hold`: the first answers came after its beat)
+   come in through the dither, the skeleton's stagger apart, each over the skeleton line going
+   out under it — not on the box's own arrival, which has played. A turn after that is a turn. */
+.solved-boards.in.over-hold:not(.moved) .result-board .board-row,
+.solved-boards.in.over-hold:not(.moved) .result-board .board-gap,
+.solved-boards.in.over-hold:not(.moved) .result-board-more {
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+  animation: board-dissolve 240ms linear calc(var(--i, 0) * var(--stagger, 50ms)) backwards;
+}
 /* Reduced motion lands the lines as the settled frame draws them: no arrival at all (the
-   global rule keeps delays, which would hold each line unseen for its beat). */
+   global rule keeps delays, which would hold each line unseen for its beat) — and the skeleton
+   they replace simply goes. */
 @media (prefers-reduced-motion: reduce) {
   .solved-boards .board-tabs-ink,
   .solved-boards .board-row,
   .solved-boards .board-gap,
   .solved-boards .result-board-more {
     animation: none !important;
+  }
+  .result-boards-hold.leaving {
+    display: none;
   }
 }
 
@@ -5918,6 +5967,23 @@ figure.l1-fig {
 .account-cta .account-note.caption {
   margin: 0;
 }
+/* THE CALL'S ROOM while the summary is out (`Account`): the call at its final size as a hold —
+   the note's words laid out unseen, a stippled rail through the middle of each of its lines
+   (each line's own length), and the button's box as the house hold — so nothing under it moves
+   when the call takes the same boxes. */
+.account-cta.holding .account-note {
+  color: transparent;
+}
+.account-cta-rail {
+  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.account-cta.holding .mix-btn {
+  color: transparent;
+  border-color: transparent;
+  cursor: default;
+}
 
 .account-load-error,
 .device-error {
@@ -6016,6 +6082,13 @@ figure.l1-fig {
   mask-image: var(--dz-2);
   animation: link-hold-breathe 640ms steps(1, end) infinite;
 }
+/* A hold whose read FAILED: the same stipple at rest (the breath's middle step) — a box whose
+   content is unknown, never breathing with no read behind it. */
+.link-hold.still {
+  background: var(--rail);
+  -webkit-mask-image: var(--dz-2);
+  mask-image: var(--dz-2);
+}
 /* The NAME's hold is the chip's own box (one blank character in the chip's type), stippled
    the same way: only its width is a guess, and the stack is centred, so a wrong one moves
    nothing. */
@@ -6030,6 +6103,21 @@ figure.l1-fig {
   25% { -webkit-mask-image: var(--dz-2); mask-image: var(--dz-2); }
   50% { -webkit-mask-image: var(--dz-3); mask-image: var(--dz-3); }
   75% { -webkit-mask-image: var(--dz-2); mask-image: var(--dz-2); }
+}
+/* A hold that comes in LATE: unseen until its read has been out `--wait` (SKELETON_WAIT_MS,
+   written by the script), so a quick answer never flashes it — then in on the breath's own
+   thinnest step. Where a box stands on every screen (the header's face key, the race line's own
+   entry, the boards' tab row), a hold from the first frame would blink on every visit. */
+.link-hold.waiting.late {
+  animation:
+    hold-wait 1ms linear var(--wait, 0ms) backwards,
+    link-hold-breathe 640ms steps(1, end) var(--wait, 0ms) infinite;
+}
+@keyframes hold-wait {
+  from,
+  to {
+    visibility: hidden;
+  }
 }
 
 /* The row inside the flow's centered face-stack: the crossroads and the recovery ending
@@ -8309,31 +8397,6 @@ figure.l1-fig {
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-}
-
-/* A SKELETON while a read is in flight (user feedback 2026-08-20, on the board's
-   identity strip — retired 2026-08-30, the rule outlived it). A surface used to publish
-   the ASSIGNED identity the moment the id derived and correct it a beat later, so every
-   named player watched a stranger's name flash under their own mark. A placeholder says
-   "not yet"; a name says something false. It holds the exact boxes the resolved values
-   take, so nothing moves when they land. The breathe is what tells it from a broken render
-   on a slow read; the global reduced-motion rule collapses it to a single instant pass,
-   which leaves it resting and still. */
-.skeleton {
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
-  border-radius: var(--r-sm);
-  animation: skeleton-breathe 1.4s ease-in-out infinite;
-}
-.skeleton-name {
-  display: block;
-  width: 8em;
-  max-width: 60%;
-  height: 0.9em;
-}
-@keyframes skeleton-breathe {
-  50% {
-    opacity: 0.45;
-  }
 }
 
 /* ---- The group invite landing (#271; the shape is #189's, user feedback 2026-08-20): the
@@ -10782,23 +10845,15 @@ figure.l1-fig {
 .profile-canvas-hold.late {
   animation:
     stat-breathe 640ms step-end infinite,
-    profile-hold-late 1ms linear 250ms backwards;
+    hold-wait 1ms linear 250ms backwards;
 }
-@keyframes profile-hold-late {
-  from,
-  to {
-    visibility: hidden;
-  }
-}
-/* The handed-over mark, frozen in the box it stood in on `/account`. */
+/* The handed-over mark's box, frozen where it stood on `/account`: the stippled slate
+   (`StatSlot`) of a masthead whose read was still out. */
 .profile-handed {
   position: fixed;
   z-index: 5;
   display: block;
   pointer-events: none;
-}
-.profile-handed .avatar {
-  display: block;
 }
 /* THE CANVAS (`EditorCanvas`): the picture, and over it the one overlay the pops, the sparks
    and a fine pointer's ring are drawn on — its own layer, reaching past the canvas's edge
