@@ -961,15 +961,18 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 the address (user-decided 2026-08-29), so the row that used to hold two
                 similar-looking words holds the one that has nowhere else to live. */}
             <div className="link-quiet">
+              {/* The quiet word in a tappable thing's brackets — which it wears only once it
+                  CAN be pressed: counting, it is a status line, and its brackets arrive with
+                  the offer when the clock runs out. */}
               <button
                 type="button"
-                className="link-quiet-btn link-resend"
+                className={`quiet-btn link-resend${waitLeft > 0 ? ' counting' : ''}`}
                 disabled={busy || waitLeft > 0}
                 // (Read as one phrase — the word and its seconds — never "RESEND12".)
                 aria-label={waitLeft > 0 ? `${t(lang, 'linkResend')} ${waitLeft}` : undefined}
                 onClick={() => void send()}
               >
-                <span className="link-resend-word">{t(lang, 'linkResend')}</span>
+                {t(lang, 'linkResend')}
                 {waitLeft > 0 && <span className="link-wait">{waitLeft}</span>}
               </button>
             </div>

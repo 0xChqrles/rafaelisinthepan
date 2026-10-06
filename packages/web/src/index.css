@@ -6474,15 +6474,34 @@ figure.l1-fig {
   cursor: default;
 }
 
-/* RESEND while it counts: only the WORD dims (its colour step); the seconds — the number being
-   waited on — stay at full strength in the cobalt pixel figures the cards write a number in, a
-   small ticker beside the word. */
+/* RESEND (`.quiet-btn.link-resend`) WEARS ITS BRACKETS ONLY ONCE IT CAN BE PRESSED (a control
+   drawn before it can be pressed is a false offer, and a dimmed box held for ~30s reads as a
+   broken button): COUNTING it is a status line — the word in its disabled colour step, no
+   brackets, the seconds at full strength in the cobalt pixel figures the cards write a number
+   in, a small ticker beside the word — and when the clock runs out the brackets ARRIVE with the
+   offer, locking on from outside at full white in hard steps (the switch's frame's own
+   gesture). */
+.link-resend.counting::before {
+  border-color: transparent;
+}
+.link-resend:not(.counting)::before {
+  animation: resend-lock 150ms steps(3, jump-end) backwards;
+}
+@keyframes resend-lock {
+  from {
+    inset: -6px;
+    border-color: var(--fg);
+  }
+}
+/* The ticker hangs OUTSIDE the word's box, at its right, so the word holds its place when the
+   seconds go and the brackets arrive round the word alone. */
 .link-wait {
-  display: inline-block;
-  min-width: 2.5em;
-  margin-left: 10px;
+  position: absolute;
+  left: 100%;
+  top: calc(50% - 4px);
   font-family: var(--pixel-font);
   font-size: 8px;
+  line-height: 8px;
   letter-spacing: 0;
   text-align: left;
   color: var(--accent);

@@ -1259,7 +1259,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
       A wrong code stays at the input (shake, clear, one attempts-left line, its line HELD
       under the keys from the start so nothing moves when it speaks). A struck key is white
       for its first step only, then its ink with the digit cut out. RESEND is quiet
-      and countdown-gated (~30s, the seconds in the cobalt pixel figures), alone under the cells — CHANGE ADDRESS is gone,
+      and countdown-gated (~30s, the seconds in the cobalt pixel figures hanging beside the
+      word), alone under the cells: the bracketed quiet word (`.quiet-btn`) whose brackets
+      ARRIVE, locking on, when the countdown hits zero — CHANGE ADDRESS is gone,
       the header's back goes code → address.
     - **THE CROSSROADS, NOT A WARNING:** both accounts drawn — the one being left THINNED
       THROUGH THE BAYER DITHER, never an opacity (under DELETED, the area's one red, a GHOST:
@@ -1613,11 +1615,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
       PRIMARY BUTTON's own mark (the device card's power light); the address is a fact
       that REPLACES that button when there is nothing left to do, and wearing its costume
       it read as a control that did not respond to being pressed.
-    - **RESEND drops its box while it counts down.** It spends its first ~30s disabled,
-      and a dimmed hairline box held that long reads as a broken button rather than as a
+    - **RESEND wears no brackets while it counts down.** It spends its first ~30s
+      disabled, and a dimmed box held that long reads as a broken button rather than as a
       wait — the same rule that holds the second door back until the summary settles: a
       control drawn before it can be pressed is a false offer. Counting it is a STATUS
-      line; when the clock runs out the box arrives with the offer.
+      line; when the clock runs out the tappable thing's brackets arrive with the offer.
   - **DEVICES appear only once an email is SAVED** (user-decided 2026-08-26): an unlinked
     account can only ever hold the one device reading the screen — multi-device arrives
     through the email link and no other way — so the list would be a list of yourself.
