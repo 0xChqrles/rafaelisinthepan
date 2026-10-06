@@ -8243,18 +8243,23 @@ figure.l1-fig {
   scroll-snap-type: y mandatory;
 }
 /* The members' list and the successor pick, while they hold more below (`data-more`,
-   `useMoreBelow`), end on the house's dithered edge (`--edge-d`, solid where the list goes
-   on): a line passing out at the foot thins through the Bayer cells instead of being cut.
-   At rest on whole lines it falls on a line's bare margin; a list on its last line ends
-   clean, so a framed line standing there keeps its corners. */
+   `useMoreBelow`), END AS A DRUM ENDS (the drum's ends' own three 16px steps, `--dzo-*`):
+   at rest the last line shown thins through the Bayer cells, three quarters, a half, a
+   quarter, down to the list's foot — which is what says more wait below — and a line
+   passing out there steps down instead of being cut. A list on its last line ends clean,
+   so a framed line standing there keeps its corners. */
 .group-room > .board-list[data-more],
 .confirm-pick[data-more] {
   -webkit-mask:
-    linear-gradient(#000, #000) 0 0 / 100% calc(100% - 6px) no-repeat,
-    var(--edge-d) 0 100% / 16px 6px repeat-x;
+    linear-gradient(#000, #000) 0 0 / 100% calc(100% - 48px) no-repeat,
+    var(--dzo-2) 0 calc(100% - 32px) / 16px 16px repeat-x,
+    var(--dzo-4) 0 calc(100% - 16px) / 16px 16px repeat-x,
+    var(--dzo-6) 0 100% / 16px 16px repeat-x;
   mask:
-    linear-gradient(#000, #000) 0 0 / 100% calc(100% - 6px) no-repeat,
-    var(--edge-d) 0 100% / 16px 6px repeat-x;
+    linear-gradient(#000, #000) 0 0 / 100% calc(100% - 48px) no-repeat,
+    var(--dzo-2) 0 calc(100% - 32px) / 16px 16px repeat-x,
+    var(--dzo-4) 0 calc(100% - 16px) / 16px 16px repeat-x,
+    var(--dzo-6) 0 100% / 16px 16px repeat-x;
 }
 .group-room > .board-list > .board-row,
 .confirm-pick > .board-row {
