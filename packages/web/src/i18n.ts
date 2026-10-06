@@ -330,9 +330,10 @@ const STRINGS = {
   // The missing-puzzle state is ABNORMAL (a publish that did not happen), and the
   // wording says so — it must not read like a scheduled day off.
   noPuzzle: { en: "TODAY'S PUZZLE IS MISSING", fr: 'LE PUZZLE DU JOUR EST INTROUVABLE' },
+  // (The dash is held to the word before it: a balanced line never opens on it.)
   noPuzzleNote: {
-    en: 'This is not supposed to happen — check back in a moment.',
-    fr: "Ce n'est pas normal — revenez d'ici quelques instants.",
+    en: 'This is not supposed to happen — check back in a moment.',
+    fr: "Ce n'est pas normal — revenez d'ici quelques instants.",
   },
   // Since the archive (#55) that same screen also renders on a DATED route, where the
   // wording above is wrong twice over: it isn't today, and a past day that was never

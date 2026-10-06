@@ -1977,8 +1977,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     invite landing, the onboarding invitation and the signed-out screen — all three wear no
     header (the invitation draws only its lockup in the row's place), being surfaces "with
     nowhere else to be". They do honour `?lang=`, so a
-    link sent in a language renders them in it. (The missing-puzzle screen, headerless too,
-    opens the SAME drums from its CHANGE LANGUAGE button — `NoPuzzle`, since 2026-09-05.)
+    link sent in a language renders them in it. (The missing-puzzle screen, under the
+    header, also opens the SAME drums from its CHANGE LANGUAGE call — `NoPuzzle`.)
 
 - **THE CARD (user-decided 2026-09-11, from the three references in `inspiration/card/`:
   on a phone "it's hard to understand what's on screen quickly"; "everywhere in the app where
@@ -4479,8 +4479,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   + `components/Chooser` and their CSS) went 2026-09-05 (user-decided: "get rid of the
   /select page; change lang should open the select modal") — every header title already
   opens the selection drums (`PuzzleSelect`), so a page of its own answered a question every
-  page answers. Both paths parse as `home`. The one headerless surface that offered CHANGE
-  LANGUAGE, the missing-puzzle screen, opens those drums itself (`NoPuzzle`).
+  page answers. Both paths parse as `home`. The missing-puzzle screen's CHANGE LANGUAGE
+  opens those drums itself (`NoPuzzle`).
 - **UI chrome is localized + a11y'd (decided 2026-07-06):** `web/src/i18n.ts` holds every
   UI string in **en + fr** (`t(lang, key)`; the `satisfies` clause makes a missing
   translation a type error, so parity needs no test). Game screens resolve strings with
@@ -4547,13 +4547,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   draws its own press states, and its own focus outline, wants it on no surface at all, so
   `button` carries `transparent` once beside the global `text-shadow: none`; the hole, the
   solved word and the wheel row each held a private copy of the same line and are gone. **The missing-puzzle screen
-  has TWO wordings, told apart by the ROUTE (#77, decided 2026-07-27)** — the backend's
-  404 is undifferentiated, and which route asked is the only signal needed: on the
-  **undated** route (today) it owns that the state is **abnormal** (a publish that did not
-  happen), unchanged; on a **dated** archive route (#55) it is usually NORMAL — a
-  pre-launch date, or a language backfilled later, simply was never published — so it says
-  that plainly (no "not supposed to happen", no "check back"), names the day, and offers
-  BACK TO ARCHIVE above the existing CHANGE LANGUAGE, both the same `secondary` weight.
+  (`NoPuzzle`) has THREE wordings, told apart by the ROUTE (#77, decided 2026-07-27)** —
+  the backend's 404 is undifferentiated, and which route asked is the only signal needed: on
+  the **undated** route (today) it owns that the state is **abnormal** (a publish that did
+  not happen); on a **dated** archive route (#55) it is usually NORMAL — a pre-launch date,
+  or a language backfilled later, simply was never published — so it says that plainly (no
+  "not supposed to happen", no "check back"); on a **bonus** link it names no puzzle in this
+  language. **It is the board's empty state on the game's own zones**: the sad ghost (bobbing
+  five beats, then resting) over ONE title in `--fg` (no accent, no danger) and ONE muted
+  sentence in the play area, all coming in through the dither; ONE call as the `.mix-btn`
+  where the gate's PLAY stands (`.tray-gate`) — BACK TO ARCHIVE on an archive day with
+  CHANGE LANGUAGE as THE WORD under it, CHANGE LANGUAGE alone on today and a bonus. It wears
+  the header, which names the day, so the screen does not say it again.
   The pixel font is **self-hosted** (`web/src/assets/fonts/PressStart2P.woff2`, `@font-face` in
   `index.css` — no Google Fonts request).
 - **SVG icons (pattern to follow):** monochrome UI icons live as `.svg` files under
