@@ -361,8 +361,8 @@ export function parseRound(data: unknown): RoundState {
   };
 }
 
-// The PRIVATE player history (#211): the archive calendar's month, the chooser's status
-// strip and the streak's solved-day list, all off what the server already derives from the
+// The PRIVATE player history (#211): the archive calendar's month and the streak's
+// solved-day list, all off what the server already derives from the
 // guess log (#203). POST-only — the device token authenticates in the BODY, so
 // there is no way to ask for someone else's history. `month` is OPTIONAL: the streak needs
 // the solved-day collection alone, and making that read spend a month Query would cost a
@@ -375,7 +375,7 @@ export function historyUrl(lang: string, month?: string, base: string = apiBase(
 
 export async function postHistoryBody(
   url: string,
-  // `collection: false` opts out of the solved-day read (the chooser never renders the
+  // `collection: false` opts out of the solved-day read (the archive never renders the
   // streak); omitted means true, so the original body shape keeps its meaning.
   body: { token: string; collection?: boolean },
 ): Promise<Response> {

@@ -25,7 +25,7 @@ const STRINGS = {
   // over the real profile — the reader retries instead.
   failedProfile: { en: 'FAILED TO LOAD PROFILE', fr: 'ÉCHEC DU CHARGEMENT DU PROFIL' },
   failedAccountLoad: { en: 'FAILED TO LOAD ACCOUNT', fr: 'ÉCHEC DU CHARGEMENT DU COMPTE' },
-  // The #211 private history read, behind the archive calendar and the chooser strips.
+  // The #211 private history read, behind the archive calendar.
   // Loud like the round's own: since #214 there is no local history left to fall back to,
   // so a silent failure would draw a month of untouched days over a month that was played.
   failedHistory: { en: 'FAILED TO LOAD HISTORY', fr: "ÉCHEC DU CHARGEMENT DE L'HISTORIQUE" },
@@ -38,9 +38,11 @@ const STRINGS = {
   failedJoin: { en: 'FAILED TO JOIN', fr: "ÉCHEC DE L'ADHÉSION" },
   // A group write that did not land (create, leave, remove) — the same loudness.
   failedGroup: { en: 'FAILED', fr: 'ÉCHEC' },
+  // Said where the outcome is unknown too (the list read again shows what stands), so it
+  // claims nothing about the group.
   failedGroupNote: {
-    en: 'The group was not changed. Check your connection and try again.',
-    fr: "Le groupe n'a pas été modifié. Vérifiez votre connexion et réessayez.",
+    en: 'Check your connection and try again.',
+    fr: 'Vérifiez votre connexion et réessayez.',
   },
   // Neither the native sheet nor the clipboard could deliver (insecure context, denied
   // clipboard, a spent activation): the one share whose silence reads as a dead button.
@@ -57,6 +59,12 @@ const STRINGS = {
   // fact and its button plays rather than retries. ONE line for both caps: the group is
   // full, or the clicker is in too many groups; either way this group is not joinable now.
   groupFull: { en: 'GROUP FULL', fr: 'GROUPE COMPLET' },
+  // A group name the server's banned-strings filter refuses (`name_rejected`).
+  groupNameRejected: { en: 'NAME NOT ALLOWED', fr: 'NOM REFUSÉ' },
+  groupNameRejectedNote: {
+    en: 'This name is not allowed. Pick another one.',
+    fr: "Ce nom n'est pas autorisé. Choisissez-en un autre.",
+  },
   // The caller's own cap, on a create or a join from the board.
   groupLimit: { en: 'TOO MANY GROUPS', fr: 'TROP DE GROUPES' },
   groupLimitNote: {
@@ -349,7 +357,7 @@ const STRINGS = {
   // A round that ENDED UNSOLVED, in words: the calendar's day, the race line's member, the
   // board's over row. Given up or capped, never told apart — as the share card never does.
   srUnsolved: { en: 'unsolved', fr: 'non résolu' },
-  // What a calendar cell or a chooser card says when its private summary (#211) has not
+  // What a calendar cell says when its private summary (#211) has not
   // arrived. The visual placeholder says "not yet" by breathing; silence would read as
   // "not started", which is the one thing an unloaded day must never claim.
   srStatusUnknown: { en: 'status not loaded', fr: 'statut non chargé' },

@@ -1,6 +1,6 @@
 // The PRIVATE player history (#211): what a summary surface may know about days it is not
 // opening. #214 made the game network-dependent and removed the persisted sentence round,
-// so the archive calendar, the language chooser and the streak have no local source left —
+// so the archive calendar and the streak have no local source left —
 // this is the server-backed one they read instead.
 //
 // It is cross-package for the usual reason: the BACKEND derives these values from the round

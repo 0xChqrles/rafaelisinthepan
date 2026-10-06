@@ -209,7 +209,9 @@ export function resultTabs(
       if (board) tabs.push({ kind: 'group', key: group.id, group, board });
     }
   }
-  const seat = seatOf(groups, lastGroupId);
+  // (Never beside a group's board: a group with a row from somebody else holds somebody, so a
+  // seat there could only come from a list read before they joined.)
+  const seat = tabs.length === 0 ? seatOf(groups, lastGroupId) : null;
   if (seat !== null) tabs.push({ kind: 'seat', key: SEAT_TAB, group: seat.group, own: ownRow(me) });
   if (globalBoard !== null) {
     const board = globalResult(globalBoard, me.publicId);

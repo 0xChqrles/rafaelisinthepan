@@ -25,9 +25,10 @@ function splitHighlight(title: string): [string, string] {
 
 // The question's highlight is the screen's one emphasis gesture, and the demo's held word
 // wears the same white chip: the box waits until the chip leaves the found word, so the two
-// never stand at once. A deadline stands behind the demo's signal (its word inks about 6.5s
-// after its face is in), so a lost report can only make the box late, never missing.
-const MARK_DEADLINE_MS = 7_000;
+// never stand at once. A deadline stands behind the demo's signal, counted from the show's
+// START (its word inks about 6.5s after it), so a lost report can only make the box late,
+// never missing — and a slow face or a hidden tab never lights it under a chip still held.
+const MARK_DEADLINE_MS = 8_000;
 
 // The tutorial invitation (#51): the tutorial NEVER starts without an action. On a
 // first visit this screen stands where LOADING would (the day's puzzle keeps loading
@@ -56,16 +57,18 @@ export default function Invite({
   // waits to be seen, and the question is what the tab opens on).
   const [lit, setLit] = useState(() => prefersReducedMotion() || document.visibilityState !== 'visible');
   const light = useCallback(() => setLit(true), []);
+  const [started, setStarted] = useState(false);
+  const start = useCallback(() => setStarted(true), []);
   useEffect(() => {
-    if (lit) return undefined;
+    if (lit || !started) return undefined;
     const id = window.setTimeout(light, MARK_DEADLINE_MS);
     return () => window.clearTimeout(id);
-  }, [lit, light]);
+  }, [lit, started, light]);
 
   return (
     <main className="invite arrive" aria-labelledby="tutorial-invite-title">
       <Logo className="invite-logo" aria-hidden />
-      <InviteDemo key={lang} lang={lang} onDone={light} />
+      <InviteDemo key={lang} lang={lang} onStart={start} onDone={light} />
       <h1 id="tutorial-invite-title" className="invite-title">
         {(() => {
           const [head, mark] = splitHighlight(t(lang, 'inviteTitle'));

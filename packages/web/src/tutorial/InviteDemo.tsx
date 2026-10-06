@@ -101,7 +101,17 @@ const NO_HITS: HitState[] = [];
 const NO_HISTORY: string[] = [];
 const noop = () => {};
 
-export default function InviteDemo({ lang, onDone }: { lang: LangCode; onDone: () => void }) {
+export default function InviteDemo({
+  lang,
+  onStart,
+  onDone,
+}: {
+  lang: LangCode;
+  // The show has begun (its face is in, the page is seen): the question's deadline counts
+  // from here, never from the screen's mount.
+  onStart: () => void;
+  onDone: () => void;
+}) {
   const demo = DEMOS[lang];
   const [hole, setHole] = useState<RuntimeHole>(() => ({
     pos: demo.hole.pos,
@@ -144,6 +154,7 @@ export default function InviteDemo({ lang, onDone }: { lang: LangCode; onDone: (
   // demo and clears them all.
   useEffect(() => {
     if (!ready) return undefined;
+    onStart();
     const timers: number[] = [];
     const at = (ms: number, step: () => void) => timers.push(window.setTimeout(step, ms));
     let t = FIRST_KEY_MS;
@@ -166,7 +177,7 @@ export default function InviteDemo({ lang, onDone }: { lang: LangCode; onDone: (
       }
     });
     return () => timers.forEach((id) => window.clearTimeout(id));
-  }, [ready, demo]);
+  }, [ready, demo, onStart]);
 
   const onHitDone = useCallback(() => setMiss(null), []);
   // The hole inked (Phrase's own signal, never a timer guessing it): the prompt leaves as it

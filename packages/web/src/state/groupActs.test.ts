@@ -7,6 +7,8 @@
 //     about); the invite link is `<site>/g/<groupId>` after one line of copy.
 //   - The board and the result's seat share ONE write, ONE reading of its answer and ONE
 //     invite message.
+//   - On a write whose outcome is unknown the client re-reads before writing again: a create
+//     that landed behind a lost answer is found in that read, never sent twice.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GroupSummary } from '@whippin/shared';
@@ -20,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   ensure: vi.fn(),
   epoch: null as string | null,
   adopt: vi.fn(),
+  reload: vi.fn(),
+  held: null as GroupSummary[] | null,
 }));
 vi.mock('../api', () => ({
   groupsUrl: () => 'https://api.test/groups',
@@ -30,10 +34,14 @@ vi.mock('../identity', () => ({
   ensureRequestIdentity: mocks.ensure,
   identityEpoch: () => mocks.epoch,
 }));
-vi.mock('./groups', () => ({ adoptGroups: mocks.adopt }));
+vi.mock('./groups', () => ({
+  adoptGroups: mocks.adopt,
+  loadGroups: mocks.reload,
+  useGroupsStore: { getState: () => ({ groups: mocks.held }) },
+}));
 vi.mock('./signedOutVerdict', () => ({ adoptSignedOutVerdict: vi.fn() }));
 
-import { failureOf, groupFailureCopy, inviteText, writeGroups } from './groupActs';
+import { createGroup, failureOf, groupFailureCopy, inviteText, writeGroups } from './groupActs';
 
 const created: GroupSummary = { id: GROUP, name: 'CREW', createdBy: A.accountId, joinedAt: '2026-10-06T00:00:00.000Z', members: [A.accountId] };
 // An answer as `fetch` gives it: its body read once, a copy readable too.
@@ -47,6 +55,9 @@ beforeEach(() => {
   mocks.post.mockReset();
   mocks.adopt.mockReset();
   mocks.ensure.mockReset();
+  mocks.reload.mockReset();
+  mocks.reload.mockResolvedValue(undefined);
+  mocks.held = null;
   mocks.epoch = EPOCH;
   mocks.ensure.mockImplementation(async (expected: string | null) =>
     expected !== null && expected !== mocks.epoch ? null : { identity: A, epoch: mocks.epoch },
@@ -100,6 +111,16 @@ describe('writeGroups', () => {
     mocks.post.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     expect(await writeGroups(EPOCH, create)).toEqual({ kind: 'failed' });
     expect(mocks.adopt).not.toHaveBeenCalled();
+    // Each unknown outcome read the list again before saying anything.
+    expect(mocks.reload).toHaveBeenCalledTimes(4);
+  });
+
+  it('reads nothing again after an answer it can read', async () => {
+    mocks.post.mockResolvedValueOnce(answer(400, { error: 'name_rejected' }));
+    await writeGroups(EPOCH, create);
+    mocks.post.mockResolvedValueOnce(answer(200, { groups: [created], created: GROUP }));
+    await writeGroups(EPOCH, create);
+    expect(mocks.reload).not.toHaveBeenCalled();
   });
 
   it('says the account failed when the deploy before it did, and sends nothing', async () => {
@@ -128,12 +149,45 @@ describe('writeGroups', () => {
   });
 });
 
+describe('createGroup', () => {
+  const other: GroupSummary = { ...created, id: 'abcdefghijklmnop', name: 'OLD' };
+
+  it('finds the group a lost answer created in the list read again, and says it landed', async () => {
+    mocks.held = [other];
+    mocks.post.mockResolvedValueOnce(answer(502, '<html>bad gateway</html>'));
+    mocks.reload.mockImplementationOnce(async () => {
+      mocks.held = [other, created];
+    });
+    const write = await createGroup(EPOCH, 'CREW');
+    expect(write).toEqual({ kind: 'done', created: GROUP });
+    expect(failureOf(write)).toBeNull();
+  });
+
+  it('still fails when the list read again holds no new group of that name', async () => {
+    mocks.held = [other];
+    mocks.post.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    expect(await createGroup(EPOCH, 'CREW')).toEqual({ kind: 'failed' });
+    // A group of that name held BEFORE the tap is not this tap's.
+    mocks.held = [created];
+    mocks.post.mockResolvedValueOnce(answer(500, {}));
+    expect(await createGroup(EPOCH, 'CREW')).toEqual({ kind: 'failed' });
+  });
+
+  it('passes a readable answer through untouched', async () => {
+    mocks.post.mockResolvedValueOnce(answer(409, { error: 'group_limit' }));
+    expect(await createGroup(EPOCH, 'CREW')).toEqual({ kind: 'refused', error: 'group_limit' });
+    expect(mocks.reload).not.toHaveBeenCalled();
+  });
+});
+
 describe('the error copy', () => {
-  it("says a banned group name the way the profile's banned name is said", () => {
+  it('says a banned group name as its own refusal, and claims nothing an unknown outcome hides', () => {
     expect(groupFailureCopy('en', 'name')).toEqual({
       title: 'NAME NOT ALLOWED',
-      note: 'This name is not allowed. Pick another one and save again.',
+      note: 'This name is not allowed. Pick another one.',
     });
+    expect(groupFailureCopy('fr', 'name').title).toBe('NOM REFUSÉ');
+    expect(groupFailureCopy('en', 'group').note).toBe('Check your connection and try again.');
     expect(groupFailureCopy('fr', 'limit').title).toBe('TROP DE GROUPES');
     expect(groupFailureCopy('en', 'group').title).toBe('FAILED');
   });

@@ -31,7 +31,7 @@ import useShare from '../hooks/useShare';
 import { identityEpochOf, useDeviceIdentity } from '../identity';
 import { t } from '../i18n';
 import { useGameStore } from '../state/gameStore';
-import { failureOf, groupFailureCopy, inviteText, writeGroups, type GroupFailure } from '../state/groupActs';
+import { createGroup, failureOf, groupFailureCopy, inviteText, type GroupFailure } from '../state/groupActs';
 
 export default function SeatPanel({
   lang,
@@ -66,7 +66,7 @@ export default function SeatPanel({
     if (busy || identity === null) return false;
     setBusy(true);
     setFailure(null);
-    const write = await writeGroups(identityEpochOf(identity), (token) => ({ token, create: true, name }));
+    const write = await createGroup(identityEpochOf(identity), name);
     setBusy(false);
     if (write.kind === 'done' && write.created) {
       setLastGroup(write.created);

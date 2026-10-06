@@ -79,7 +79,10 @@
                               reading of "is anybody in my groups but me" (the race line's and
                               the result's seat's)
       state/groupActs.ts      the group ACTS every surface shares: `writeGroups` (the deploy,
-                              the signed POST, the answer read off its code, the list adopted),
+                              the signed POST, the answer read off its code, the list adopted;
+                              an UNKNOWN outcome — a 5xx, a transport failure, no code — reads
+                              the list again before it says anything), `createGroup` (a create
+                              that did land is found in that re-read, never sent twice),
                               `failureOf` + `groupFailureCopy` (what the error surface says)
                               and `inviteText` — the board's and the result's seat's
       state/liveBoard.ts      the LIVE read (`POST /board {token, live: true}`): all my groups
@@ -2141,8 +2144,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     player secret with the device token): a visitor with no token cannot own server rows,
     so `loadPlayerHistory` publishes a ready-and-EMPTY history without a request — and
     without MINTING one, keeping identity.ts's "a visit that performs none of the
-    deliberate acts creates nothing". The language
-    chooser passes `collection: false` (the body says so), so its month strip does not
+    deliberate acts creates nothing". The archive
+    passes `collection: false` (the body says so), so its month does not
     spend the solved-day collection's consistent GetItem on an answer it never renders.
     And `solved[lang]`'s PHASE is driven only by the most recently started collection
     read (`solvedReads`): a stale month's failure landing last fails its own month, never
@@ -2615,8 +2618,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     would silently redefine what the number measures). NEW GROUP is ONE TAP for a tokenless
     device (the mint, then the create, the button holding a LoadingWave); INVITE needs a
     group, hence an account. Failures land on the `ErrorScreen` — `failedAccount`,
-    `failedShare`, `groupLimit`, `profileNameRejected` (a banned name), `failedGroup` — read
-    off the answer's code by `state/groupActs.ts`, the result's seat's acts too.
+    `failedShare`, `groupLimit`, `groupNameRejected` (a banned name), `failedGroup` — read
+    off the answer's code by `state/groupActs.ts`, the result's seat's acts too; an unknown
+    outcome reads the list again first, so the screen behind the error shows what stands.
   - **THE GROUP'S OWN SCREEN (`GroupScreen`, user-decided 2026-09-14: "managing the group
     should have its own screen")** is a full-screen dialog in the selection's shell — the
     way back and the name in the header, the MEMBERS as the board's LINES
@@ -2637,8 +2641,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     INKED IN — the solve's cobalt pixel word with the hit's shake, held `INKED_MS` (1100ms)
     — and the screen folds itself onto the surface that opened it, already on the new group
     (the board's tab, or the result's seat); an empty name shakes the line, the invalid
-    guess's own answer. A name the server refuses (`name_rejected`) is said as the profile's
-    is (`profileNameRejected` on the `ErrorScreen`), the naming screen kept up under it with
+    guess's own answer. A name the server refuses (`name_rejected`) has its own refusal
+    (`groupNameRejected` on the `ErrorScreen`), the naming screen kept up under it with
     the name; any other failure keeps it up the same way. BOTH DESTRUCTIVE ACTS CONFIRM ON A
     FULL-SCREEN MODAL (`ConfirmScreen`, user-decided 2026-09-14 — "for such an important
     action, we actually need a fullscreen modal", replacing the two-tap word swap `LEAVE?`
@@ -3416,7 +3420,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     ruler's index lane held on every run — the boards' box is one fixed size whatever it
     holds,
     the credit holds its box hidden, the secrets' boxes are open before they pop.
-    Rehydrated solves render `.settled` and replay nothing.
+    Rehydrated solves render `.settled` and replay nothing. The one exception is the
+    player's own act: a cut opened (*PAGE*) prints its text where they tapped, and only
+    what follows it moves down.
   - **The score WATERMARK goes with the round** (`.play-finished`): it fades the moment the
     board is solved — the count's next appearance is the result's own headline — so it is
     already gone when the sentence dissolves.
@@ -4056,7 +4062,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   pixel face (at most 400ms) and for the page to be seen, never loops, is aria-hidden
   behind one sr-only sentence, and under reduced motion plays as cuts. The question's
   selection box is the screen's one emphasis gesture, so it waits for the demo's found word
-  (a 7s deadline behind it; at once under reduced motion or in a tab opened hidden), the
+  (an 8s deadline behind it, counted from the show's start; at once under reduced motion or
+  in a tab opened hidden), the
   title's words standing from the first frame. TUTORIAL and SKIP work from the first frame;
   TUTORIAL is the big action's 430px. No line of copy, no time promised. TUTORIAL navigates
   to level 1 (the lesson's PLAY or a header exit

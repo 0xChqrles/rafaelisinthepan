@@ -470,8 +470,9 @@ function Round({
   // The result's boards (SolvedScreen) read the same answer, but only one read AFTER the round
   // ended (`liveSawEnd`: the server's row for the player shows the end) — the answer in hand
   // when the solve lands was asked during play and lacks the score the solve just recorded.
-  // They hold their room while such an answer is on its way: the groups list still unknown, or
-  // a group with somebody else and a read still to come. With none coming (a failed read), the
+  // They hold their room while such an answer is on its way: the groups list unknown or being
+  // read again (a list held from earlier may be about to show a friend who joined — the seat is
+  // never decided off it), or a group with somebody else and a read still to come. With none coming (a failed read), the
   // groups are left out rather than drawn off a stale answer. The list itself goes with them:
   // with nobody else in it, it is the result's SEAT.
   const boards = useMemo(() => {
@@ -480,7 +481,10 @@ function Round({
     return {
       date: raceDate,
       live: ended ? liveBoard : null,
-      awaited: (groups === null && groupsPhase !== 'failed') || (raceable && !ended && liveBusy),
+      awaited:
+        (groups === null && groupsPhase !== 'failed') ||
+        groupsPhase === 'loading' ||
+        (raceable && !ended && liveBusy),
       groups,
     };
   }, [racing, raceDate, raceable, liveBoard, identity, groups, groupsPhase, liveBusy]);

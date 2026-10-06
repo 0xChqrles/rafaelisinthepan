@@ -747,7 +747,8 @@ The live routes then share:
   the others; a group where nobody but the player has a row is skipped — then **GLOBAL**,
   the day's global board, under the board screen's own name for it (one name across the
   app). **A player none of whose groups holds anybody else** (no group, or only groups of
-  one — read off the groups list the play screen already holds, never off an unknown one)
+  one — read off the groups list the play screen already holds, never off an unknown one
+  nor one being read again)
   **gets ONE SEAT tab before GLOBAL, and the box opens on it**: the board screen's bare `NO
   GROUP`, else their group of one by name (the one last opened, else the one joined last).
   Its panel is their own line over ONE call — CREATE GROUP (the board's own `GroupCreate`)

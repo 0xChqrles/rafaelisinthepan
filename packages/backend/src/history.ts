@@ -5,7 +5,7 @@
 //                 collection.
 //
 // #214 made the game deliberately network-dependent and removed the persisted sentence
-// round, so the archive calendar, the language chooser and the streak lost the local
+// round, so the archive calendar and the streak lost the local
 // materialized view they used to read. This is what replaced it (#211). It serves EVERY
 // identity, linked or unlinked: after #214 it is the normal source on every device, not a
 // linked-account enhancement.
@@ -24,15 +24,15 @@
 //   the STREAK — the solved-day collection on the private player row (historyStore.ts),
 //                which the round route credits when it confirms a solve.
 //
-// `month` is OPTIONAL because the two readers want different things: the archive and the
-// chooser want a calendar, while the game screen only needs the collection the streak
+// `month` is OPTIONAL because the two readers want different things: the archive wants a
+// calendar, while the game screen only needs the collection the streak
 // choreography derives its previous/next values and its week row from — and making that
 // read spend a month Query would be a whole calendar's cost per game load.
 //
 // This is a private, currently unmetered read whose cost scales with the caller's played
 // rows (issue #211): monitor abnormal usage and act on the account rather than add a
 // rate-limiting layer. Turnstile does not fit a NAVIGATION read — verification would add
-// another external call to every month or chooser load.
+// another external call to every month load.
 
 import { HISTORY_MONTH_PATTERN } from '@whippin/shared';
 import type { DeviceStore } from './deviceStore';
@@ -90,10 +90,10 @@ export async function handleHistory(
   if (!auth.ok) return auth.response;
   const publicId = auth.value.account.accountId;
 
-  // `collection: false` in the body opts OUT of the solved-day read: the language chooser
-  // wants a month strip and never renders the streak, and the collection's consistent
-  // GetItem is real read capacity spent on an answer nobody draws. Absent means true — the
-  // archive and the game screen both want it, and the old body shape keeps its meaning.
+  // `collection: false` in the body opts OUT of the solved-day read: the archive wants a
+  // month and never renders the streak, and the collection's consistent GetItem is real
+  // read capacity spent on an answer nobody draws. Absent means true — the game screen and
+  // the account's record want it, and the old body shape keeps its meaning.
   const collection = parsed.value.collection !== false;
 
   // Neither read depends on the other, so the month Query and the collection's GetItem go

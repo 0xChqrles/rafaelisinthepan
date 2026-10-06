@@ -7,14 +7,17 @@
 // POST, then the list the answer carries, published through `adoptGroups`. What it answered
 // is read off the CODE, never the status alone (root AGENTS.md, the live routes): a 4xx that
 // names a code is a REFUSAL, the server's verdict; a 5xx, a transport failure or a body with
-// no code to read is a FAILURE — never a verdict. A request whose identity moved under it
-// (another tab's adopt) is STALE: nothing is sent, or nothing it answered is published.
+// no code to read is a FAILURE — never a verdict, so its outcome is UNKNOWN (the write may
+// have landed) and the list is READ AGAIN before the failure is said: what the screen then
+// draws is what the server holds, and a create that did land is found there (`createGroup`)
+// rather than sent twice. A request whose identity moved under it (another tab's adopt) is
+// STALE: nothing is sent, or nothing it answered is published.
 
 import { groupsUrl, parseGroups, postGroupsBody, type GroupsBody } from '../api';
 import { ensureRequestIdentity, identityEpoch } from '../identity';
 import { t, type UiKey } from '../i18n';
 import { pathForGroupInvite } from '../langs';
-import { adoptGroups } from './groups';
+import { adoptGroups, loadGroups, useGroupsStore } from './groups';
 import { adoptSignedOutVerdict } from './signedOutVerdict';
 
 export type GroupWrite =
@@ -57,21 +60,37 @@ export async function writeGroups(
       const copy = response.clone();
       await adoptSignedOutVerdict(response, request.epoch);
       const error = response.status < 500 ? await codeOf(copy) : null;
-      return error === null ? { kind: 'failed' } : { kind: 'refused', error };
+      if (error !== null) return { kind: 'refused', error };
+    } else {
+      const answer = parseGroups(await response.json());
+      adoptGroups(answer, request.identity.accountId);
+      return { kind: 'done', created: answer.created };
     }
-    const answer = parseGroups(await response.json());
-    adoptGroups(answer, request.identity.accountId);
-    return { kind: 'done', created: answer.created };
   } catch {
-    return { kind: 'failed' };
+    // (An unknown outcome, like the 5xx above: read below.)
   }
+  await loadGroups();
+  return { kind: 'failed' };
+}
+
+// THE CREATE, the one write that is not idempotent (each mints a new group): a failure whose
+// outcome is unknown is answered by the list read again — a group of this name that is ours
+// and was not there before the tap is the one this tap made, and the create LANDED.
+export async function createGroup(epoch: string | null, name: string): Promise<GroupWrite> {
+  const before = new Set((useGroupsStore.getState().groups ?? []).map((group) => group.id));
+  const write = await writeGroups(epoch, (token) => ({ token, create: true, name }));
+  if (write.kind !== 'failed') return write;
+  const made = (useGroupsStore.getState().groups ?? []).find(
+    (group) => !before.has(group.id) && group.name === name,
+  );
+  return made ? { kind: 'done', created: made.id } : write;
 }
 
 // WHAT A WRITE THAT DID NOT LAND PUTS ON THE ERROR SURFACE — saying nothing would leave the
 // player tapping a button that appears to do nothing. Null where there is nothing to say: it
 // landed, the identity moved (nothing happened), or the screen answers the code itself (a
-// stale succession: the leave asks again). A banned name is the profile's own refusal, said
-// the same way (one answer for one code); the naming screen stays up under it, the name kept.
+// stale succession: the leave asks again). A banned name has its own refusal (the server's
+// `name_rejected`); the naming screen stays up under it, the name kept.
 export type GroupFailure = 'account' | 'group' | 'limit' | 'name' | 'share';
 
 export function failureOf(write: GroupWrite): GroupFailure | null {
@@ -99,7 +118,7 @@ const FAILURE_COPY: Record<GroupFailure, { title: UiKey; note: UiKey }> = {
   account: { title: 'failedAccount', note: 'failedAccountNote' },
   share: { title: 'failedShare', note: 'failedShareNote' },
   limit: { title: 'groupLimit', note: 'groupLimitNote' },
-  name: { title: 'profileNameRejected', note: 'profileNameRejectedNote' },
+  name: { title: 'groupNameRejected', note: 'groupNameRejectedNote' },
   group: { title: 'failedGroup', note: 'failedGroupNote' },
 };
 

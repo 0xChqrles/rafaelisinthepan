@@ -33,14 +33,7 @@ import useToday from '../hooks/useToday';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { identityEpoch, identityEpochOf, useDeviceIdentity } from '../identity';
 import { boardTargetKey, openingGroup, readBoard, takeOpening, type BoardTarget } from '../state/boardOpening';
-import {
-  failureOf,
-  groupFailureCopy,
-  inviteText,
-  writeGroups,
-  type GroupFailure,
-  type GroupWrite,
-} from '../state/groupActs';
+import { createGroup, failureOf, groupFailureCopy, inviteText, writeGroups, type GroupFailure, type GroupWrite } from '../state/groupActs';
 import { loadGroups, useGroups } from '../state/groups';
 import { prefetchTurnstileTokens } from '../turnstile';
 import ErrorScreen from '../components/ErrorScreen';
@@ -347,21 +340,23 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // first, the button holding its loading state for both legs), then the signed POST, then
   // the list — and what did not land, on the error surface (`failureOf`: a stale succession
   // is no failure, the leave asks again below).
-  const write = async (kind: NonNullable<typeof busy>, body: (token: string) => GroupsBody): Promise<GroupWrite> => {
+  const perform = async (kind: NonNullable<typeof busy>, act: () => Promise<GroupWrite>): Promise<GroupWrite> => {
     setBusy(kind);
     setFailure(null);
-    const result = await writeGroups(epoch, body);
+    const result = await act();
     setFailure(failureOf(result));
     setBusy(null);
     return result;
   };
+  const write = (kind: NonNullable<typeof busy>, body: (token: string) => GroupsBody) =>
+    perform(kind, () => writeGroups(epoch, body));
 
   // The create screen closes ITSELF once the group exists (it plays the name inked in
   // first); the board is already on the new group when it does. Refused or failed, it stays
   // up under the error surface, the name kept.
   const create = async (name: string): Promise<boolean> => {
     if (busy) return false;
-    const result = await write('create', (token) => ({ token, create: true, name }));
+    const result = await perform('create', () => createGroup(epoch, name));
     if (result.kind === 'done' && result.created) {
       setLastGroup(result.created);
       setTab('group');

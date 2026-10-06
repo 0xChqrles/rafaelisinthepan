@@ -3673,8 +3673,9 @@ body:has(.app > .board-screen) {
   inset: -14px -10px 0;
 }
 /* Under the keyboard's focus the app's ONE indicator speaks alone (`FocusBrackets`): the
-   cut's own corners give way to it, never a frame nested in a frame. */
-.solved-text .solved-cut[data-bracketed]::before {
+   cut's own corners give way to it, never a frame nested in a frame — hovered too (the
+   `.quiet-btn` hover rule weighs as much and comes later, hence the extra class). */
+.solved-text .solved-cut.quiet-btn[data-bracketed]::before {
   border-color: transparent;
 }
 /* A tap only once the secrets have popped (`.armed`, at once on a settled frame): until
@@ -5621,8 +5622,9 @@ figure.l1-fig {
   }
   /* The phone's game sentence size (`.phrase`'s phone clamp — the game sentence's own
      exception to the 8px rule, kept so the demo is the size the player then meets),
-     bounded by its line: 22 glyphs in the column between `.app`'s 14px gutters, so a
-     screen narrower than ~314px shrinks the demo rather than breaking its lines. */
+     bounded by its line: 22 glyphs in the column between `.app`'s 14px gutters. Below
+     ~368px wide the bound is the smaller and sets the size (a hair under the game's), so a
+     narrow phone shrinks the demo rather than breaking its lines. */
   .invite-demo {
     font-size: min(clamp(13px, 4.2vw, 19px), calc((100vw - 28px) / 22));
     margin-bottom: 28px;

@@ -33,15 +33,17 @@ let flight: Promise<void> | null = null;
 let loadedFor: string | null = null;
 let generation = 0;
 
-// Refresh on each surface entry, keeping a previous answer visible while it loads.
-export function loadGroups(): void {
+// Refresh on each surface entry, keeping a previous answer visible while it loads. It settles
+// when the read does (the flight already out, if one is): a write whose outcome is unknown
+// waits on it before it says anything (`state/groupActs.ts`).
+export function loadGroups(): Promise<void> {
   const identity = deviceIdentity();
   if (identity === null) {
     loadedFor = null;
     useGroupsStore.setState({ phase: 'ready', groups: [] });
-    return;
+    return Promise.resolve();
   }
-  if (flight) return;
+  if (flight) return flight;
   const epoch = identityEpochOf(identity);
   const requestGeneration = generation;
   const current = () => generation === requestGeneration && currentRequestIdentity(epoch) !== null;
@@ -51,7 +53,7 @@ export function loadGroups(): void {
     // stale-but-good rule.
     groups: loadedFor === identity.accountId ? state.groups : null,
   }));
-  flight = (async () => {
+  const read = (async () => {
     try {
       const resolved = currentRequestIdentity(epoch);
       if (!resolved) return;
@@ -74,6 +76,8 @@ export function loadGroups(): void {
       if (generation === requestGeneration) flight = null;
     }
   })();
+  flight = read;
+  return read;
 }
 
 // A write answered with the list as it now stands: publish it for the account it is about.
