@@ -2427,7 +2427,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     through the same `GroupCreate` and `writeGroups`. While the groups list is unknown the
     row holds its room with ONE stippled chip where the shown chip will stand (`BoardTabs`'
     `hold`: `.link-hold`, breathing while the list is read and in only after
-    `SKELETON_WAIT_MS`, still once a read has failed).
+    `SKELETON_WAIT_MS`, still once a read has failed; a RETRY's read breathes the chip
+    already drawn at once, never out for another wait).
     One control across the app (the archive's months turn through it too) — not a pager of
     this screen's own.
   - **THE HEAD LINE** (`.board-head`, 44px whatever it holds): a group's THREE BOARDS on

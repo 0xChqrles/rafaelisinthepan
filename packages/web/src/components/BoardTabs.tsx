@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, type CSSProperties, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { UI_ADVANCE_EM } from '@whippin/shared';
 import { SKELETON_WAIT_MS } from './bayerTiles';
 import { travelFrames } from './travel';
@@ -50,7 +50,8 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 // HOLDS ITS ROOM with ONE CHIP in the house hold where the shown chip will stand (`hold`): the
 // slate stippled through the Bayer tiles at the chip's 24px, breathing while the read is out —
 // and in only once it has been out SKELETON_WAIT_MS, so a quick one never flashes it — still
-// once it has failed. Only its width is a guess. The names then take the row, the chip wiped
+// once it has failed. A chip once drawn stays drawn: a RETRY's read breathes it at once, never
+// out for another wait. Only its width is a guess. The names then take the row, the chip wiped
 // across the shown one on each surface's own beat.
 export const tabIds = (base: string) => ({ panel: `${base}panel`, tab: (key: string) => `${base}tab-${key}` });
 export interface BoardTabItem {
@@ -114,6 +115,12 @@ export default function BoardTabs({
   const travel = useRef<Animation | null>(null);
   const bare = tabs[shown]?.bare === true;
   const pin = tabs.findIndex((tab) => tab.pinned);
+  // Whether the hold has been DRAWN in this wait (a failed read stands it still): the read a
+  // retry sends then breathes it at once — coming in late again would blink it out for the wait.
+  const holding = tabs.length === 0;
+  const [drawn, setDrawn] = useState(false);
+  const drawnNow = holding && (drawn || hold === 'failed');
+  if (drawnNow !== drawn) setDrawn(drawnNow);
 
   const button = (index: number) => lineRef.current?.children[index] as HTMLElement | undefined;
   const keys = tabs.map((tab) => `${tab.key}:${tab.label}`).join(' ');
@@ -331,9 +338,9 @@ export default function BoardTabs({
     <div ref={rootRef} className="board-tabs">
       <div ref={rowRef} className="board-tabs-row" onScroll={onScroll}>
         <div ref={lineRef} className="board-tabs-line" role="tablist" aria-orientation="horizontal" onKeyDown={onKeyDown}>
-          {tabs.length === 0 && (
+          {holding && (
             <span
-              className={`board-tabs-hold link-hold${hold === 'waiting' ? ' waiting late' : ' still'}`}
+              className={`board-tabs-hold link-hold${hold === 'failed' ? ' still' : drawn ? ' waiting' : ' waiting late'}`}
               style={{ '--wait': `${SKELETON_WAIT_MS}ms` } as CSSProperties}
               aria-hidden="true"
             />
