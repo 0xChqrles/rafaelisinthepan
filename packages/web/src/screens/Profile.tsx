@@ -22,7 +22,7 @@ import {
 } from '../identity';
 import { prefetchTurnstileTokens } from '../turnstile';
 import { withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
-import { holdOwnFace, ownProfileWritten } from '../state/ownFace';
+import { firstWritesSettled, holdOwnFace, ownProfileWritten } from '../state/ownFace';
 import ErrorScreen from '../components/ErrorScreen';
 import { navigate } from '../routing';
 import { ACCOUNT_PATH, type LangCode } from '../langs';
@@ -30,6 +30,7 @@ import useUiLang from '../hooks/useUiLang';
 import { t } from '../i18n';
 import Avatar from '../components/Avatar';
 import { StatSlot } from '../components/AccountStats';
+import { isAccountFace } from '../components/AccountFace';
 import { MARK } from '../components/boardMetrics';
 import DitherWipe, { WIPE_MS, type WipeShot } from '../components/editor/DitherWipe';
 import EditorCanvas, { type PaintFx } from '../components/editor/EditorCanvas';
@@ -435,15 +436,20 @@ export default function Profile() {
   // under an edit in progress — the save path resolves the identity live.
   //
   // OPENED FROM THE MASTHEAD, the editor opens AT ONCE on the face handed over with the mark
-  // (`markHandoff`) when it is this account's — the face the masthead just drew, read off the
-  // same route — so the canvas grows out of the mark the moment it lands, never parked over a
-  // canvas still waiting. The read then runs behind it: an answer naming the same face changes
-  // nothing; a different one RE-BINDS the fields while nothing has been edited, and leaves an
-  // edit standing. Until it has answered, `loadedFor` stays unset, so a SAVE is GUARDED (the
-  // stored profile read first, only the fields the player changed written) — the face handed
-  // over may be the assigned one a failed read stood in with, never proof of what is stored.
-  // A guarded save that LANDS first has bound the fields to what it stored: the read, sent
-  // before it, is older news and changes nothing.
+  // (`markHandoff`) when it is this account's (`isAccountFace`) — the face the masthead just
+  // drew off the same route, or, on an account this tab minted, the seed's face its first
+  // profile is written as — so the canvas grows out of the mark the moment it lands, never
+  // parked over a canvas still waiting. The read then runs behind it: an answer naming the
+  // same face changes nothing; a different one RE-BINDS the fields while nothing has been
+  // edited, and leaves an edit standing. Until it has answered, `loadedFor` stays unset, so a
+  // SAVE is GUARDED (the stored profile read first, only the fields the player changed
+  // written) — the face handed over may be the assigned one a failed read stood in with, never
+  // proof of what is stored. A guarded save that LANDS first has bound the fields to what it
+  // stored: the read, sent before it, is older news and changes nothing.
+  //
+  // While this tab is writing an account's FIRST profile (`firstWritesSettled`), the read
+  // waits for it: until then the account stores no row, and the answer would re-bind the seed's
+  // face to the face of the new account id, which nobody chose.
   // A layout effect, so a face in hand is drawn on the very first frame.
   useLayoutEffect(() => {
     let cancelled = false;
@@ -467,13 +473,17 @@ export default function Profile() {
         epoch = identityEpochOf(held);
         const publicId = held.accountId;
         setAssignedFrom(publicId);
-        if (face?.publicId === publicId) {
-          opened = openOn(face.name, face.avatar, publicId);
+        if (face !== null && isAccountFace(face, publicId)) {
+          // The mark made explicit: the seed's face carries none of its own, and the account's
+          // id must never derive one in its place.
+          opened = openOn(face.name, face.avatar ?? defaultAvatar(face.publicId), publicId);
           bound = binds.current;
           setLoad('ready');
         } else {
           setLoadedFor(publicId);
         }
+        await firstWritesSettled();
+        if (cancelled || identityEpoch() !== epoch) return;
         const stored = await readStoredProfile(publicId);
         if (cancelled || identityEpoch() !== epoch) return;
         if (opened !== null) {
@@ -903,6 +913,10 @@ export default function Profile() {
         let fields: { name: string; avatar: string } | null = null;
         if (guarded) {
           try {
+            // A first profile still being written — the deploy of an account this tab minted
+            // from another button — is not yet what the account stores. (A tap that minted the
+            // account holds that count itself, and writes the first profile.)
+            if (release === null) await firstWritesSettled();
             const stored = await readStoredProfile(current.accountId);
             if (identityEpoch() !== epoch) return;
             // Never customized (null): the intended save applies in full.
@@ -1235,11 +1249,9 @@ export default function Profile() {
           </>
         )}
       </div>
-      {/* The mark handed over when the editor could not open on it — the face the masthead drew
-          when it is not this account's own (the seed's, which a minted account wears until its
-          read lands), else the stippled box of a read still out — FROZEN where it stood while
-          the stored profile is read: the canvas grows out of this very box once it has
-          answered. */}
+      {/* The mark's box handed over by a masthead that had no face of the account's to hand
+          (its read still out), FROZEN where it stood while the stored profile is read — the
+          canvas grows out of this very box once it has answered. */}
       {load === 'loading' && handed && (
         <span
           className="profile-handed"
@@ -1251,15 +1263,7 @@ export default function Profile() {
           }}
           aria-hidden="true"
         >
-          {handed.face ? (
-            <Avatar
-              avatar={handed.face.avatar ?? defaultAvatar(handed.face.publicId)}
-              size={Math.round(handed.rect.width)}
-              sharp
-            />
-          ) : (
-            <StatSlot phase="loading" />
-          )}
+          <StatSlot phase="loading" />
         </span>
       )}
     </>

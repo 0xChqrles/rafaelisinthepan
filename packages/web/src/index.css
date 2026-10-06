@@ -10839,16 +10839,13 @@ figure.l1-fig {
     stat-breathe 640ms step-end infinite,
     hold-wait 1ms linear 250ms backwards;
 }
-/* The handed-over mark, frozen in the box it stood in on `/account`: the face the masthead
-   drew, or the stippled box (`StatSlot`) of its read still out. */
+/* The handed-over mark's box, frozen where it stood on `/account`: the stippled slate
+   (`StatSlot`) of a masthead whose read was still out. */
 .profile-handed {
   position: fixed;
   z-index: 5;
   display: block;
   pointer-events: none;
-}
-.profile-handed .avatar {
-  display: block;
 }
 /* THE CANVAS (`EditorCanvas`): the picture, and over it the one overlay the pops, the sparks
    and a fine pointer's ring are drawn on — its own layer, reaching past the canvas's edge

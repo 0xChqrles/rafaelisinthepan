@@ -32,7 +32,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { anonName } from '@whippin/shared';
 import { readProfile, type ProfileRead } from '../api';
 import { SKELETON_WAIT_MS } from './bayerTiles';
-import { useDeviceIdentity, useMintedHere } from '../identity';
+import { useDeviceIdentity, useIdentityStore, useMintedHere } from '../identity';
 import { useGameStore } from '../state/gameStore';
 import { useOwnFaceSignal } from '../state/ownFace';
 import { timeoutSignal } from '../timeout';
@@ -200,4 +200,18 @@ export function useOwnFace(): FaceState {
     seeded ? seedFace : null,
   );
   return seeded && state === null ? seedFace : state;
+}
+
+// IS A FACE `useOwnFace` DREW THE ACCOUNT'S OWN? Its read's face, or — on the account this tab
+// MINTED — the seed's, which is the face that account's first profile is written as
+// (`localIdentityDeploy`). The profile editor asks it of the face the masthead handed over, and
+// opens at once on either.
+export function isAccountFace(face: Face, accountId: string): boolean {
+  if (face.publicId === accountId) return true;
+  const { identity, mintedHere } = useIdentityStore.getState();
+  return (
+    mintedHere &&
+    identity?.accountId === accountId &&
+    face.publicId === useGameStore.getState().localSeed
+  );
 }

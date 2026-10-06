@@ -1462,11 +1462,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
       nested in a frame. The tap hands the MARK — its box and the face it drew — to the
       editor (`markHandoff`), which OPENS AT ONCE on that face (the profile bullet) and GROWS
       its canvas out of the mark in whole-pixel steps — on a phone in place, down and right
-      from the mark's own corner. With no face of the account's to hand (the masthead's read
-      still out, or the seed's face a minted account wears until it lands) the mark stays
-      FROZEN where it stood — that face, or its stippled box — while the editor reads the
-      stored profile (once the read has taken a beat, 250ms, the canvas's box breathes as the
-      stippled slate behind it); a
+      from the mark's own corner — the seed's face a minted account wears until its read lands
+      included, since it is the face that account's first profile is written as. With no face
+      to hand (the masthead's read still out) the mark's box stays FROZEN where it stood,
+      stippled, while the editor reads the stored profile (once the read has taken a beat,
+      250ms, the canvas's box breathes as the stippled slate behind it); a
       direct load holds the canvas's box as the stippled slate, then grows from its centre.
     - **THE RECORD is the screen's subject** (`components/record/`), in the streak
       celebration's own sprites: the blue FLAME over the live STREAK landing on the solved
@@ -1528,9 +1528,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
       fits a phone unscrolled down to ~550px tall (`EDITOR_CHROME_PX` is the CSS's own sum;
       a short phone takes a tighter dress), every offset on a whole pixel, the desktop column
       held at its full height (a pixel more where that centres it on a whole one). It GROWS
-      out of the masthead's mark (`markHandoff`: at once on the face handed over when it is
-      the account's; else that mark — the face it drew, or the stippled box of its read still
-      out — frozen where it stood while the editor reads; a direct load growing from the
+      out of the masthead's mark (`markHandoff`: at once on the face handed over — the
+      account's, or the seed's a minted account wears; with no face in hand the mark's box,
+      stippled, frozen where it stood while the editor reads; a direct load growing from the
       centre), DRAWN at a cell 4px bigger
       each step — repainted crisp at every step, never a bitmap scaled between two sizes.
       Then the SWATCHES across the frame, each the drawing itself in that palette (40px,
@@ -1674,6 +1674,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     third face on the header for a beat, or until a reload. An ADOPTED account is read at
     once, and read again when the deploy settles. A read that FAILS is no news: it changes
     no face already drawn, and a minted account whose read-back fails keeps the seed's face.
+    The profile editor reads nothing the account stores while such a write is out either
+    (`firstWritesSettled`, the profile bullet).
   - **`GET /profile` HAS FOUR ANSWERS, AND `api.readProfile` IS WHERE THEY ARE TOLD APART**
     (PR-227 review, 2026-09-02): `shown` (200), `blank` (404 — LIVE, never customized, so the
     assigned identity IS this player's face), `gone` (410 `account_gone` — a DELETED account,
@@ -2324,14 +2326,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   deploy elsewhere, another tab) must not reload the fields out from under an edit in
   progress — the save path resolves the identity live.
   **The editor opens AT ONCE on the face the masthead handed over** (`markHandoff`, when
-  that face is the held account's — the face the masthead just read off the same route), so
+  that face is the held account's — `isAccountFace`: the face the masthead just read off the
+  same route, or, on an account this tab MINTED, the seed's face it wears until that read
+  lands, which is the face its first profile is written as; the seed's mark is bound
+  explicitly, never derived from the account id), so
   the canvas grows out of the mark the moment it lands; its own read runs behind it: the
   same face changes nothing, a different one RE-BINDS the fields while nothing has been
   edited (an edit in hand stands), a failed read leaves the editor open — and until the
   read has answered `loadedFor` stays unset, so a SAVE is GUARDED (above): the face handed
   over may be the assigned one a failed masthead read stood in with. A guarded save that
   lands before that read answers has bound the fields to what it stored; the read, sent
-  before it, then changes nothing.
+  before it, then changes nothing. **While this tab is writing an account's FIRST profile**
+  (`localIdentityDeploy`'s flight, `firstWritesSettled`) **the editor's read and a guarded
+  save's read WAIT for it**: until it lands the account stores no row, so the read would
+  re-bind the canvas to the new account id's face and the guarded save would store '' for
+  the untouched mark — the face nobody chose, where the seed's is the one being stored. (A
+  save that mints the account holds that count itself and writes the first profile.)
   **Otherwise the editor is GATED on the initial read** (the game
   route's own loading / error / content shape): an editable blank shown while the GET
   is in flight would be edited into and then overwritten by the response, and a FAILED
