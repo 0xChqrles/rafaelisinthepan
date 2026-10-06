@@ -5410,30 +5410,36 @@ figure.l1-fig {
    (`.dissolve-in` on the column whose children they are: the rules gate, the REVEAL tray,
    the invitation, the levels, the signed-out face): each block's cells light in the Bayer
    order in hard steps (`board-dissolve`), nothing travelling, the house's stagger apart
-   (`--dz-stagger`, bayerTiles' SKELETON_STAGGER_MS). A dialog child is left alone: it
-   arrives in its own dress. Reduced motion draws them landed (no beat held unseen). */
-.dissolve-in > :not(dialog) {
+   (`--dz-stagger`, bayerTiles' SKELETON_STAGGER_MS) — the k-th block `--dz-k` beats in,
+   counted on from `--dz-from` when a column carries on another's count. A dialog child is
+   left alone: it arrives in its own dress. A TRAY is no block either: what it holds can
+   stand above its box (the gate rises out of the keyboard's footprint), where the tray's
+   mask would hide it until the mask lifts, so a tray's blocks come in on a `.dissolve-in` of
+   their own. Reduced motion draws them landed (no beat held unseen). */
+.dissolve-in > :not(dialog, .tray) {
+  --dz-k: 0;
   -webkit-mask-size: 16px 16px;
   mask-size: 16px 16px;
-  animation: board-dissolve 240ms linear backwards;
+  animation: board-dissolve 240ms linear calc((var(--dz-from, 0) + var(--dz-k)) * var(--dz-stagger))
+    backwards;
 }
 .dissolve-in > :nth-child(2) {
-  animation-delay: var(--dz-stagger);
+  --dz-k: 1;
 }
 .dissolve-in > :nth-child(3) {
-  animation-delay: calc(2 * var(--dz-stagger));
+  --dz-k: 2;
 }
 .dissolve-in > :nth-child(4) {
-  animation-delay: calc(3 * var(--dz-stagger));
+  --dz-k: 3;
 }
 .dissolve-in > :nth-child(5) {
-  animation-delay: calc(4 * var(--dz-stagger));
+  --dz-k: 4;
 }
 .dissolve-in > :nth-child(n + 6) {
-  animation-delay: calc(5 * var(--dz-stagger));
+  --dz-k: 5;
 }
 @media (prefers-reduced-motion: reduce) {
-  .dissolve-in > :not(dialog) {
+  .dissolve-in > :not(dialog, .tray) {
     animation: none;
   }
 }
@@ -5671,6 +5677,12 @@ figure.l1-fig {
 /* The question stands a step apart from the answers under it. */
 .invite .rules-gate .invite-title {
   margin-bottom: 12px;
+}
+/* The question and its answers come in after the lockup and the demo, the column's count
+   carried on (`.dissolve-in`): the gate's own blocks, never the tray's box, which the
+   question stands above. */
+.invite .rules-gate {
+  --dz-from: 2;
 }
 
 @media (max-width: 640px) {

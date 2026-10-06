@@ -76,8 +76,10 @@ export default function Invite({
         <InviteDemo key={lang} lang={lang} />
       </div>
 
+      {/* The tray is no block of the column's arrival: the question stands above its box,
+          so the gate's own blocks come in, the column's count carried on. */}
       <div className="tray tray-gate">
-        <div className="rules-gate">
+        <div className="rules-gate dissolve-in">
           <h1 id="tutorial-invite-title" className="invite-title">
             {head}
             <span className="invite-mark">{mark}</span>
