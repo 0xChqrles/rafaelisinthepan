@@ -8399,7 +8399,7 @@ figure.l1-fig {
   max-width: none;
   height: 32px;
 }
-.link-hold.failed {
+.invite-holds > .link-hold.failed {
   background: var(--rail);
   -webkit-mask-image: var(--dz-4);
   mask-image: var(--dz-4);
