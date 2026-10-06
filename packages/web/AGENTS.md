@@ -53,8 +53,13 @@
                               places on the right and hosts the left slot screens publish
                               into (`HeaderLeft`, `HeaderBack`)
       components/PuzzleTitle.tsx  what the game surfaces put there: the app's MARK
-                              (`public/logo.png`) in the accent + the language CODE (+ the
+                              (`PixelMark`) in the accent + the language CODE (+ the
                               day on an archive route), over the selection that switches it
+      components/PixelMark.tsx  the app's MARK: shared `MARK_GLYPH` as an inline svg,
+                              `crispEdges`, in the accent at whole scales (`.pixel-mark`)
+      components/Lockup.tsx   the mark with WHIPPIN AI beside it — what a screen with no
+                              header wears in the title's place (the invitation, the
+                              signed-out screen, the streak celebration)
       components/PuzzleSelect.tsx  that selection: a flat full screen holding the language's
                               picker DRUM, the pick landing on the fold (the caller decides
                               what a pick means, `onLang`); a back chevron in the header's
@@ -901,9 +906,10 @@ These are decided and verified against the code. Treat them as load-bearing.
     in-file size; globe.png and the standalone `.pixel-icon`
     class are deleted) **until 2026-09-02, when the whole chrome set went PIXEL** (see the
     header-keys bullet: marks on the avatar's own 10×10 grid); the Whippin mark is the PIXEL
-    mark (`public/logo.png`, 22×22, traced as `@whippin/shared`'s `MARK_GLYPH`) in the
-    accent, at whole scales only: the header's title, the WHIPPIN AI lockups (the streak
-    celebration, the signed-out screen, the onboarding invitation) and the cards. The BODY's global hard 2px
+    mark (`@whippin/shared`'s `MARK_GLYPH`, 22×22, drawn inline by `components/PixelMark`)
+    in the accent, at whole scales only: the header's title, the WHIPPIN AI lockups
+    (`components/Lockup`: the streak celebration, the signed-out screen, the onboarding
+    invitation) and the cards. The BODY's global hard 2px
     text-shadow is gone; pixel surfaces that relied on it (floating hits, loot) carry
     their own, and the topbar wears a soft bloom shadow instead.
   - **THE VIEWPORT IS AN INSTRUMENT (user-decided 2026-08-18, from the user's
@@ -4067,7 +4073,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **The invitation SHOWS the game, then asks** (`tutorial/Invite.tsx`, no header keys;
   user-decided 2026-10-06): a first visit (no `onboarded`) lands on it. **It is laid out AS
   THE GAME SCREEN IT OPENS ONTO**, on the game's own zones (`.game`, `.play`, `.tray` with the
-  gate's `.rules-gate`): the LOCKUP — the pixel mark (`MARK_GLYPH`, 1x, `crispEdges`) in the
+  gate's `.rules-gate`): the LOCKUP (`Lockup`) — the pixel mark (`PixelMark`, 1x) in the
   accent with WHIPPIN AI beside it in the lockup type — in the header's row (`.topbar`
   geometry), the mark on the pixel where the game's title draws it; the demo where the day's
   sentence and prompt stand, at the game's size and leading and on its left edge (on a wide
@@ -4161,9 +4167,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **LEFT — WHAT YOU ARE LOOKING AT.** On a play surface that is `PuzzleTitle`: the
     APP'S MARK in the accent with the language CODE and a chevron (`▲ FR ⌄`, user-decided
     2026-09-16 — the daily's name held this slot until Word mode was retired). The mark is
-    `public/logo.png`, the favicon's 22×22 white pixel logo, painted through a CSS mask in
-    `--accent` at its exact 1x with nearest sampling (`.app-title-mark`), 3px more air after
-    it than the title's own gap, and the text beside it set 2px down onto the bottom-heavy
+    `PixelMark` — `MARK_GLYPH` inline, `crispEdges`, in `--accent` at its exact 1x, painted in
+    the same frame as the code beside it (an image mask arrived a request late) — 3px more air
+    after it than the title's own gap, and the text beside it set 2px down onto the bottom-heavy
     mark's weight (a translate, measured at 4x), opening the
     drum below; the drum and the `aria-label` name the language in full. It routes by the SURFACE
     it was opened from: from the archive, the other language means that language's
