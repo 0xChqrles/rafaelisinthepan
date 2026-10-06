@@ -3006,12 +3006,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
   activeDate]`** (`web/src/config.ts`, one first day PER LANGUAGE since #317 — the languages
   are independent and English starts later: en 2026-10-01, its planned launch, fr
   2026-08-01; the user pins them); the calendar's earliest month is its language's first
-  (keyed by language, so a switch re-clamps the month on screen); a malformed or out-of-range
-  date-shaped segment → `home` redirect, while a **non-date** second segment keeps the old
-  tolerance (`/<lang>/xyz` → today's game). `parseRoute` takes the range bounds as an
+  (keyed by language, so a switch re-clamps the month on screen); anything else under a
+  language — a malformed or out-of-range date, an unknown step (`/<lang>/xyz`), a broken
+  bonus id — plays THAT language's today, never the `home` redirect (which answers in the
+  stored language). **A path read leniently is written back as the screen it resolved to**:
+  App `replaceState`s `pathForRoute(route)` whenever it differs from the URL (`/fr/xyz` →
+  `/fr`, `/fr/learn/99` → `/fr/learn`, `/account/nonsense` → `/account`, a trailing slash
+  dropped), so the address bar, a reload and a copied link name what is on screen;
+  contract-tested (`langs.test.ts`). `parseRoute` takes the range bounds as an
   injected arg (App passes the client `activeDate`) so parsing stays pure/testable.
   A BONUS puzzle (root `AGENTS.md`, 2026-09-24) is `/<lang>/bonus/<id>` → the game with
-  `bonusId` (a broken id → `home`); `usePuzzle(lang, date?, bonusId?)` answers a
+  `bonusId`; `usePuzzle(lang, date?, bonusId?)` answers a
   `PuzzleRef`, which `Game`/`SolvedScreen`/`PuzzleTitle` take in place of a day number.
   `usePuzzle` fetches the given date, else the active day (unchanged); the
   404→`noPuzzle` path is reused as-is. `dateForDayNumber` (`shared/day.ts`) is the

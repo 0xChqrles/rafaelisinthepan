@@ -24,6 +24,7 @@ import {
   resolveUiLang,
   pathForLearn,
   pathForLesson,
+  pathForRoute,
 } from './langs';
 
 describe('isLang', () => {
@@ -99,7 +100,8 @@ describe('parseRoute — archive + past-day deep links (#55)', () => {
       const first = FIRST_PUZZLE_DATE[lang];
       expect(parseRoute(`/${lang}/${first}`, { activeDate })).toEqual({ view: 'game', lang, date: first });
       const before = new Date(Date.parse(`${first}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
-      expect(parseRoute(`/${lang}/${before}`, { activeDate })).toEqual({ view: 'home' });
+      // A day before the language's first is that language's today, never the home redirect.
+      expect(parseRoute(`/${lang}/${before}`, { activeDate })).toEqual({ view: 'game', lang });
     }
   });
 
@@ -122,15 +124,18 @@ describe('parseRoute — archive + past-day deep links (#55)', () => {
     });
   });
 
-  it('treats malformed / impossible dates as unknown -> home', () => {
-    expect(parseRoute('/fr/2026-13-40', bounds)).toEqual({ view: 'home' }); // no month 13
-    expect(parseRoute('/fr/2026-02-30', bounds)).toEqual({ view: 'home' }); // no Feb 30
-    expect(parseRoute('/fr/2026-6-1', bounds)).toEqual({ view: 'game', lang: 'fr' }); // not \d{4}-\d{2}-\d{2}: tolerated -> today
+  // A broken date under a language plays THAT language's today — never the home redirect,
+  // which answers in the stored language (an English link opened on a French device used to
+  // land on /fr).
+  it('plays the language\'s today for a malformed or impossible date', () => {
+    expect(parseRoute('/fr/2026-13-40', bounds)).toEqual({ view: 'game', lang: 'fr' }); // no month 13
+    expect(parseRoute('/en/2026-02-30', bounds)).toEqual({ view: 'game', lang: 'en' }); // no Feb 30
+    expect(parseRoute('/fr/2026-6-1', bounds)).toEqual({ view: 'game', lang: 'fr' }); // not \d{4}-\d{2}-\d{2}
   });
 
-  it('treats a real date outside [firstDate, activeDate] as unknown -> home', () => {
-    expect(parseRoute('/fr/2025-12-31', bounds)).toEqual({ view: 'home' }); // before first
-    expect(parseRoute('/fr/2026-07-01', bounds)).toEqual({ view: 'home' }); // after active day
+  it('plays the language\'s today for a real date outside [firstDate, activeDate]', () => {
+    expect(parseRoute('/fr/2025-12-31', bounds)).toEqual({ view: 'game', lang: 'fr' }); // before first
+    expect(parseRoute('/en/2026-07-01', bounds)).toEqual({ view: 'game', lang: 'en' }); // after active day
   });
 
   it('skips the future bound when no activeDate is supplied', () => {
@@ -152,10 +157,10 @@ describe('parseRoute — a bonus puzzle (/<lang>/bonus/<id>)', () => {
     expect(parseRoute('/en/bonus/9999999/')).toEqual({ view: 'game', lang: 'en', bonusId: 9999999 });
   });
 
-  it('sends a broken bonus link home', () => {
-    expect(parseRoute('/fr/bonus')).toEqual({ view: 'home' });
-    expect(parseRoute('/fr/bonus/0123456')).toEqual({ view: 'home' });
-    expect(parseRoute('/fr/bonus/123')).toEqual({ view: 'home' });
+  it('plays the language\'s today for a broken bonus link', () => {
+    expect(parseRoute('/fr/bonus')).toEqual({ view: 'game', lang: 'fr' });
+    expect(parseRoute('/en/bonus/0123456')).toEqual({ view: 'game', lang: 'en' });
+    expect(parseRoute('/fr/bonus/123')).toEqual({ view: 'game', lang: 'fr' });
   });
 });
 
@@ -335,5 +340,54 @@ describe('privacy route (#229)', () => {
 
   it('is not language-scoped — a lang prefix is a GAME route', () => {
     expect(parseRoute('/fr/privacy')).toEqual({ view: 'game', lang: 'fr' });
+  });
+});
+
+// CONTRACT (the shell's routes): a path read leniently resolves to a SCREEN, and App writes
+// that screen's own path back into the URL — so the address bar, a reload and a copied link
+// name what is on view. `pathForRoute` is that path: every canonical path round-trips, and a
+// lenient one maps onto the canonical path of the screen it opens.
+describe('pathForRoute — the path a resolved screen writes back', () => {
+  const bounds = { firstDate: '2026-01-01', activeDate: '2026-06-30' };
+  const resolved = (path: string) => pathForRoute(parseRoute(path, bounds));
+
+  it('round-trips every canonical path', () => {
+    for (const path of [
+      '/fr',
+      '/en/2026-06-12',
+      '/fr/bonus/1234567',
+      '/en/archive',
+      '/fr/board',
+      '/fr/learn',
+      '/fr/learn/1',
+      ACCOUNT_PATH,
+      ACCOUNT_EMAIL_PATH,
+      ACCOUNT_SIGNIN_PATH,
+      PROFILE_PATH,
+      PRIVACY_PATH,
+      groupLandingPath('abcdefghij234567'),
+    ]) {
+      expect(resolved(path)).toBe(path);
+    }
+  });
+
+  it('names the screen a lenient path opens', () => {
+    expect(resolved('/fr/xyz')).toBe('/fr'); // an unknown step: today's game
+    expect(resolved('/fr/')).toBe('/fr');
+    expect(resolved('/fr/learn/99')).toBe('/fr/learn'); // no such level: the list
+    expect(resolved('/en/learn/2')).toBe('/en/learn'); // not ready in English: the list
+    expect(resolved('/account/nonsense')).toBe(ACCOUNT_PATH);
+    expect(resolved('/fr/bonus/123')).toBe('/fr');
+  });
+
+  it('sends a date out of range to THAT language\'s today', () => {
+    expect(resolved('/en/2025-12-31')).toBe('/en'); // before the first day
+    expect(resolved('/en/2026-07-01')).toBe('/en'); // after the active day
+    expect(resolved('/fr/2026-13-40')).toBe('/fr'); // no such date
+  });
+
+  it('has no path for the home redirect, which is the redirect itself', () => {
+    expect(pathForRoute(parseRoute('/'))).toBeNull();
+    expect(pathForRoute(parseRoute('/de'))).toBeNull();
   });
 });

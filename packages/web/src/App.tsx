@@ -27,7 +27,7 @@ import { PLAY_LEVEL } from './tutorial/levels';
 import { useGameStore } from './state/gameStore';
 import { track } from './analytics';
 import { useLocation, navigate } from './routing';
-import { parseRoute, pathForGame, pathForLesson, type LangCode, type Route } from './langs';
+import { parseRoute, pathForGame, pathForLesson, pathForRoute, type LangCode, type Route } from './langs';
 // Inline SVG (vite-plugin-svgr): the header's leaderboard entry, painting with
 // currentColor like every chrome icon; the button's aria-label names it.
 import { t } from './i18n';
@@ -107,6 +107,14 @@ export default function App() {
     if (route.view !== 'home') return;
     navigate(pathForGame(homeLang), { replace: true });
   }, [route.view, homeLang]);
+  // AND A PATH READ LENIENTLY NAMES THE SCREEN IT RESOLVED TO: `/fr/xyz` plays today, so the
+  // URL says `/fr`; `/fr/learn/99` is the list, so it says `/fr/learn`. Replaced, never
+  // pushed — the path the player landed on is not a place to go back to — so a reload, a
+  // copied link and the address bar all name what is on screen.
+  const canonical = pathForRoute(route);
+  useEffect(() => {
+    if (canonical !== null && canonical !== pathname) navigate(canonical, { replace: true });
+  }, [canonical, pathname]);
 
   // The board's whose-scores tab belongs to a VISIT (user feedback 2026-08-20, narrowing
   // the first cut's standing preference). It has to survive the two things that remount
