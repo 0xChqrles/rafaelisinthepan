@@ -934,13 +934,23 @@ These are decided and verified against the code. Treat them as load-bearing.
     /inspiration/modern board — "fresh and deep update"):** the content floats in the
     middle while decorative furniture clings to the edges.
     - **`components/DeviceFrame`** (mounted once in App, under every screen): four
-      corner BRACKETS — the board's focused-card selection frame drawn around the whole
-      app — a vertical `WHIPPIN AI ©2026` brand rail on the left edge, the localized
-      tagline (`frameTagline`, the STRINGS table) bottom-left, and the day's EDITION
-      SERIAL bottom-right (`N.<dayNumber>` — the interfaces.dev card's numbering, fed
-      the ACTIVE day via useToday). Decorative (aria-hidden, pointer-events none),
-      z-index 40 under the header's 60, covered by opaque dialogs, and DESKTOP ONLY
-      (hidden ≤640px — a phone's viewport is all content).
+      corner BRACKETS — `.streak-corner` itself, the streak celebration's and the
+      signed-out screen's frame (2px, 24px arms, white at 38%), standing still and placed
+      by its own rule (16px in, 24px where the short side is 600 or more; the frame's words
+      take the same step) — a vertical `WHIPPIN AI ©2026` brand rail on the left
+      edge, on the corners' column, the tagline (`MADE WITH <3`) bottom-left, and the
+      day's EDITION SERIAL bottom-right (`N.<dayNumber>` — the interfaces.dev card's
+      numbering, fed the ACTIVE day via useToday), both on the corners' bottom line past
+      the arms — the line the keyboard's last row stands on, so the two captions show only
+      on a window 830px wide or more, where the keyboard leaves them room. Its words are
+      `--muted`, never the foreground dimmed. Decorative
+      (aria-hidden, pointer-events none), z-index 40 under the header's 60, covered by
+      opaque dialogs, and DESKTOP ONLY (hidden ≤640px — a phone's viewport is all content).
+    - **THE COLUMN is ONE custom property, `--column` (900px)**: the header row's width
+      (`.topbar-inner`), the tutorial's lesson (`.tutorial`) and list of levels (`.learn`),
+      and — less the row's own insets — the invitation's demo. **The day's game is not on
+      it**: `.game` and `.phrase` stay 1200px wide, because a long day wrapped to 900px
+      pushes the keyboard off a laptop's window.
     - **The KEYBOARD is FLAT (no "old skeuomorphism"):** every key is one solid dark
       tile at the sharp radius, nothing modelled, and **a press is a STATE, not
       travel** — brightness, never translateY (the rule the primary buttons follow
@@ -2011,8 +2021,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     invite landing, the onboarding invitation and the signed-out screen — all three wear no
     header (the invitation draws only its lockup in the row's place), being surfaces "with
     nowhere else to be". They do honour `?lang=`, so a
-    link sent in a language renders them in it. (The missing-puzzle screen, headerless too,
-    opens the SAME drums from its CHANGE LANGUAGE button — `NoPuzzle`, since 2026-09-05.)
+    link sent in a language renders them in it. (The missing-puzzle screen, under the
+    header, also opens the SAME drums from its CHANGE LANGUAGE call — `NoPuzzle`.)
 
 - **THE CARD (user-decided 2026-09-11, from the three references in `inspiration/card/`:
   on a phone "it's hard to understand what's on screen quickly"; "everywhere in the app where
@@ -4191,7 +4201,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   three-slot finalization recorded below).** The BAND is unchanged — `--glass` +
   hairline + backdrop blur (`components/TopBar.tsx`), full-bleed with one bottom
   hairline on a phone, floating capped-and-rounded just inside the device frame's
-  brackets on desktop (`min(900px, 100vw - 48px)`, 50px, 8px off the top). What changed
+  brackets on desktop (`min(var(--column), 100vw - 96px)`: its edges where the brackets'
+  arms end at their widest, 24px in + 24px; 50px, 8px off the top). What changed
   is what it holds, and why.
   **THE BAND WAITS FOR SCROLL (user-decided 2026-09-01, amending 2026-08-18's
   always-on glass) — AND WHAT ARRIVES IS THE GROUND, NOT A BOX (same day, later:
@@ -4576,8 +4587,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   + `components/Chooser` and their CSS) went 2026-09-05 (user-decided: "get rid of the
   /select page; change lang should open the select modal") — every header title already
   opens the selection drums (`PuzzleSelect`), so a page of its own answered a question every
-  page answers. Both paths parse as `home`. The one headerless surface that offered CHANGE
-  LANGUAGE, the missing-puzzle screen, opens those drums itself (`NoPuzzle`).
+  page answers. Both paths parse as `home`. The missing-puzzle screen's CHANGE LANGUAGE
+  opens those drums itself (`NoPuzzle`).
 - **UI chrome is localized + a11y'd (decided 2026-07-06):** `web/src/i18n.ts` holds every
   UI string in **en + fr** (`t(lang, key)`; the `satisfies` clause makes a missing
   translation a type error, so parity needs no test). Game screens resolve strings with
@@ -4644,13 +4655,22 @@ it to the local store — see `packages/backend/AGENTS.md`).
   draws its own press states, and its own focus outline, wants it on no surface at all, so
   `button` carries `transparent` once beside the global `text-shadow: none`; the hole, the
   solved word and the wheel row each held a private copy of the same line and are gone. **The missing-puzzle screen
-  has TWO wordings, told apart by the ROUTE (#77, decided 2026-07-27)** — the backend's
-  404 is undifferentiated, and which route asked is the only signal needed: on the
-  **undated** route (today) it owns that the state is **abnormal** (a publish that did not
-  happen), unchanged; on a **dated** archive route (#55) it is usually NORMAL — a
-  pre-launch date, or a language backfilled later, simply was never published — so it says
-  that plainly (no "not supposed to happen", no "check back"), names the day, and offers
-  BACK TO ARCHIVE above the existing CHANGE LANGUAGE, both the same `secondary` weight.
+  (`NoPuzzle`) has THREE wordings, told apart by the ROUTE (#77, decided 2026-07-27)** —
+  the backend's 404 is undifferentiated, and which route asked is the only signal needed: on
+  the **undated** route (today) it owns that the state is **abnormal** (a publish that did
+  not happen); on a **dated** archive route (#55) it is usually NORMAL — a pre-launch date,
+  or a language backfilled later, simply was never published — so it says that plainly (no
+  "not supposed to happen", no "check back"); on a **bonus** link it names no puzzle in this
+  language. The calendar's today cell opens a DATED route, so a missing today reached from
+  the calendar takes the archive wording. **It is the board's empty state on the game's own zones**: the sad ghost (bobbing
+  five beats, then resting) over ONE title in `--fg` (no accent, no danger) and ONE muted
+  sentence in the play area, all coming in through the dither; ONE call as the `.mix-btn`
+  where the gate's PLAY stands (`.tray-gate`) — BACK TO ARCHIVE on an archive day with
+  CHANGE LANGUAGE as THE WORD under it, CHANGE LANGUAGE alone on today and a bonus. It wears
+  the header: on an archive day the header names the day (`FR 01/09`), so the screen does
+  not say the date again, and on a bonus it tags `BONUS`; on TODAY the header names no day
+  (`FR` alone), so the undated route's title is what says TODAY, and the calendar's dated
+  today names no day anywhere.
   The pixel font is **self-hosted** (`web/src/assets/fonts/PressStart2P.woff2`, `@font-face` in
   `index.css` — no Google Fonts request). The build PRELOADS it and Azeret's latin subset with
   the document (`vite.config.ts` `preloadFirstFaces`), so the first screen is set in its own

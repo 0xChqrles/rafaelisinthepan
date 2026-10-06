@@ -1,30 +1,37 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import Button from './Button';
 import PuzzleSelect from './PuzzleSelect';
+import './bayerTiles';
 import { navigate } from '../routing';
 import { pathForArchive, pathForGame, type LangCode } from '../langs';
 import { t } from '../i18n';
 
 // Shown when the backend has no puzzle for the requested day in this language (404 ->
 // noPuzzle). That 404 is UNDIFFERENTIATED — never published and out-of-window look the
-// same from here — so the ROUTE is what tells the two states apart, which is all the
-// signal this needs:
+// same from here — so the ROUTE is what tells the states apart, which is all the signal
+// this needs:
 //
 //   undated route (today's puzzle) — ABNORMAL. A daily puzzle is the product's promise,
 //     so reaching here means a publish did not happen. The wording owns that ("is
 //     missing", "not supposed to happen") instead of reading like a scheduled day off.
 //   dated route (an archive day, #55) — usually NORMAL. A pre-launch date, or a language
 //     backfilled later, simply was never published; apologizing for it would be a lie.
-//     It says so plainly and sends the player back to the calendar they came from.
-//
+//     It says so plainly and sends the player back to the calendar they came from. The
+//     calendar's TODAY cell opens a dated route too, so a missing today reached from there
+//     gets this wording, not the one above.
 //   a BONUS link (bonus puzzles, 2026-09-24) — a mistyped id or the other language's link:
 //     it says so, and offers the language.
 //
-// Neither is a failure to RETRY (nothing transient to re-fetch), so both offer only
-// navigation. Renders WITHOUT the HUD, on the shared .load-error surface — which is why
-// CHANGE LANGUAGE opens the header's own selection drum (`PuzzleSelect`, folding onto
-// today's puzzle in the picked language) right here: the `/select` screen it used to send
-// the player to was retired 2026-09-05 (user-decided) for exactly that dialog.
+// THE BOARD'S EMPTY STATE, on the game's own zones: the sad ghost over ONE title in the
+// foreground (no accent, no danger: the ghost already says it) and ONE muted sentence in
+// the play area; ONE call where the gate's PLAY stands (`.tray-gate`'s `.mix-btn`), the
+// other way out as THE WORD under it. On an archive day the header names the day
+// (`EN 01/10`), so the screen does not say the date again; on a bonus it tags `BONUS`. On
+// TODAY the header names no day (`EN` alone): the undated route's title is what says
+// TODAY, and the calendar's dated today names no day anywhere. None of them is a failure
+// to RETRY (nothing transient to re-fetch), so every way out is navigation. CHANGE
+// LANGUAGE opens the header's own selection drum (`PuzzleSelect`, folding onto today's
+// puzzle in the picked language).
 export default function NoPuzzle({
   lang,
   date,
@@ -35,59 +42,47 @@ export default function NoPuzzle({
   bonus?: boolean;
 }) {
   const [selecting, setSelecting] = useState(false);
-  const select = selecting && (
-    <PuzzleSelect
-      lang={lang}
-      onLang={(picked) => navigate(pathForGame(picked))}
-      onClose={() => setSelecting(false)}
-    />
-  );
-  // The day is worth naming: nothing else on this screen says WHICH day is missing (the
-  // header carries no date). `parseRoute` only ever yields a real calendar date, but the
-  // prop is a plain string — an unparseable one drops the line rather than printing NaN.
-  const longDate = useMemo(() => {
-    if (date == null) return null;
-    const day = new Date(`${date}T00:00:00Z`);
-    return Number.isNaN(day.getTime())
-      ? null
-      : new Intl.DateTimeFormat(lang, { dateStyle: 'long', timeZone: 'UTC' }).format(day);
-  }, [lang, date]);
+  const archiveDay = !bonus && date != null;
+  const changeLanguage = () => setSelecting(true);
 
-  if (bonus || date == null) {
-    return (
-      <div className="load-error arrive">
-        <span className="board-ghost no-puzzle-ghost" aria-hidden="true" />
-        <p className={bonus ? 'status' : 'status error'}>{t(lang, bonus ? 'noBonus' : 'noPuzzle')}</p>
-        <p className="no-puzzle-note">{t(lang, bonus ? 'noBonusNote' : 'noPuzzleNote')}</p>
-        <Button variant="secondary" onClick={() => setSelecting(true)}>
-          {t(lang, 'changeLanguage')}
-        </Button>
-        {select}
-      </div>
-    );
-  }
-
-  // Not an error, so not the danger-colored `.status.error` title the today variant uses.
   return (
-    <div className="load-error arrive">
-      <span className="board-ghost no-puzzle-ghost" aria-hidden="true" />
-      <p className="status">{t(lang, 'noPuzzleDay')}</p>
-      <p className="no-puzzle-note">
-        {longDate !== null && (
-          <>
-            {longDate}
-            <br />
-          </>
-        )}
-        {t(lang, 'noPuzzleDayNote')}
-      </p>
-      <Button variant="secondary" onClick={() => navigate(pathForArchive(lang))}>
-        {t(lang, 'backToArchive')}
-      </Button>
-      <Button variant="secondary" onClick={() => setSelecting(true)}>
-        {t(lang, 'changeLanguage')}
-      </Button>
-      {select}
+    <div className="game no-puzzle">
+      <div className="play">
+        <div className="no-puzzle-say">
+          <span className="board-ghost no-puzzle-ghost" aria-hidden="true" />
+          <p className="no-puzzle-title">
+            {t(lang, archiveDay ? 'noPuzzleDay' : bonus ? 'noBonus' : 'noPuzzle')}
+          </p>
+          <p className="no-puzzle-note">
+            {t(lang, archiveDay ? 'noPuzzleDayNote' : bonus ? 'noBonusNote' : 'noPuzzleNote')}
+          </p>
+        </div>
+      </div>
+      <div className="tray tray-gate">
+        <div className="rules-gate">
+          {archiveDay ? (
+            <>
+              <button type="button" className="mix-btn" onClick={() => navigate(pathForArchive(lang))}>
+                {t(lang, 'backToArchive')}
+              </button>
+              <Button variant="secondary" onClick={changeLanguage}>
+                {t(lang, 'changeLanguage')}
+              </Button>
+            </>
+          ) : (
+            <button type="button" className="mix-btn" onClick={changeLanguage}>
+              {t(lang, 'changeLanguage')}
+            </button>
+          )}
+        </div>
+      </div>
+      {selecting && (
+        <PuzzleSelect
+          lang={lang}
+          onLang={(picked) => navigate(pathForGame(picked))}
+          onClose={() => setSelecting(false)}
+        />
+      )}
     </div>
   );
 }

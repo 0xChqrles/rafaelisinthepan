@@ -132,6 +132,12 @@
   /* The on-screen keyboard's key geometry. */
   --kb-gap: 6px;
   --kb-key-max: 46px;
+
+  /* THE COLUMN: the header row's width (`.topbar-inner`), and what stands under it in the
+     same column — the tutorial's lesson (`.tutorial`), the invitation's demo (less the
+     row's insets) and the list of levels (`.learn`). The day's game is wider (`.game`,
+     `.phrase`, 1200px): a long sentence needs the lines. */
+  --column: 900px;
 }
 /* The hero name a step down on the narrowest phones (≤360px): the cap's 16 characters keep
    their one line in `/account`'s masthead at 320 wide — every hero chip with it, so the name
@@ -367,20 +373,67 @@ body:has(.app > .board-screen) {
   text-align: center;
 }
 
-/* Sub-line of the missing-puzzle screen: owns that the state is ABNORMAL (a publish
-   that did not happen), so it never reads like a scheduled day off. */
-.no-puzzle-note {
-  margin: 0;
-  max-width: 44ch;
+/* THE MISSING PUZZLE (`NoPuzzle`): the board's empty state on the game's own zones. The
+   sad ghost over ONE title in the foreground and ONE muted sentence, centred in the play
+   area; the call where the gate's PLAY stands (`.tray-gate`'s `.mix-btn`), the other way
+   out as THE WORD under it. Everything comes in through the dither, and the ghost bobs a
+   few beats and rests, like the board's. */
+.no-puzzle .play {
+  align-items: center;
+}
+.no-puzzle-say {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
+}
+.no-puzzle-say,
+.no-puzzle .rules-gate {
+  animation: board-dissolve 240ms linear backwards;
+}
+/* The ghost here is the 4x sprite (52 × 72), so its bob is ITS texel, 4px — the board's
+   `podium-ghost-bob` is cut for the 3x one. Two frames, held, never a glide. */
+.no-puzzle-ghost {
+  color: var(--muted);
+  margin-bottom: 24px;
+  animation: ghost-bob 1.6s steps(1) 400ms 5;
+}
+@keyframes ghost-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+/* The confirmation's title and note (`.confirm-screen .error-title`, `.error-note`): the
+   title in the chrome's caps, the note a sentence. */
+.no-puzzle-title {
+  margin: 0;
+  font-family: var(--ui);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.4;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-wrap: balance;
+  color: var(--fg);
+}
+.no-puzzle-note {
+  margin: 12px 0 0;
+  max-width: 34ch;
   font-family: var(--ui);
   font-size: 14px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  line-height: 1.7;
-  text-transform: uppercase;
-  color: var(--fg);
-  opacity: 0.85;
+  font-weight: 350;
+  line-height: 1.55;
+  text-wrap: balance;
+  color: var(--muted);
+}
+@media (prefers-reduced-motion: reduce) {
+  .no-puzzle-ghost {
+    animation: none;
+  }
 }
 
 /* Visually hidden but still announced: the screen-reader live region mirroring the
@@ -1000,79 +1053,67 @@ body:has(.app > .board-screen) {
 }
 
 /* ===================== the device frame (2026-08-18) ===================== */
-/* The viewport as an INSTRUMENT (the /inspiration/modern board): corner brackets — the
-   focused-card selection frame, drawn around the whole app — a vertical brand rail, the
-   tagline and the day's edition serial in the bottom corners. Content floats in the
-   middle; the furniture clings to the edges. Decorative (aria-hidden), never
-   interactive, DESKTOP ONLY: a phone's viewport is all content. Sits under the header
-   (z 40 < 60); opaque full-screen dialogs simply cover it. */
+/* The viewport as an INSTRUMENT (the /inspiration/modern board): corner brackets, a
+   vertical brand rail, the tagline and the day's edition serial in the bottom corners.
+   Content floats in the middle; the furniture clings to the edges. Decorative
+   (aria-hidden), never interactive, DESKTOP ONLY: a phone's viewport is all content. Sits
+   under the header (z 40 < 60); opaque full-screen dialogs simply cover it.
+   ONE BRACKET on every full screen: the corners ARE `.streak-corner`, placed by its own
+   rule (2px, 24px arms, white at 38%; 16px in, 24px where the short side is 600 or more),
+   standing still. The words are the secondary ink, never the foreground dimmed, and stand
+   in the corners' register — the rail on their column, the captions on their bottom line
+   past the arms: `--inset` here is the corners' own, set with theirs (`.streak-corner`'s
+   600 step). */
 .device-frame {
+  --inset: 16px;
   position: fixed;
   inset: 0;
   z-index: 40;
   pointer-events: none;
   font-family: var(--ui);
-  color: var(--fg);
+  color: var(--muted);
 }
-.df-bracket {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border: 1.5px solid rgba(255, 255, 255, 0.3);
-}
-.df-tl {
-  top: 10px;
-  left: 10px;
-  border-right: 0;
-  border-bottom: 0;
-}
-.df-tr {
-  top: 10px;
-  right: 10px;
-  border-left: 0;
-  border-bottom: 0;
-}
-.df-bl {
-  bottom: 10px;
-  left: 10px;
-  border-right: 0;
-  border-top: 0;
-}
-.df-br {
-  bottom: 10px;
-  right: 10px;
-  border-left: 0;
-  border-top: 0;
+.device-frame .streak-corner {
+  opacity: 1;
 }
 /* The vertical brand rail, reading upward along the left edge. */
 .df-edge {
   position: absolute;
-  left: 10px;
+  left: var(--inset);
   top: 50%;
   transform: translateY(-50%) rotate(180deg);
   writing-mode: vertical-rl;
   font-size: 10px;
   font-weight: 550;
+  line-height: 1;
   letter-spacing: 0.14em;
-  opacity: 0.38;
   white-space: nowrap;
 }
 .df-cap {
   position: absolute;
-  bottom: 12px;
+  bottom: var(--inset);
   font-size: 10px;
   font-weight: 550;
+  line-height: 1;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  opacity: 0.38;
   white-space: nowrap;
 }
 .df-cap-left {
-  left: 34px;
+  left: calc(var(--inset) + 24px + 10px);
 }
 .df-cap-right {
-  right: 34px;
+  right: calc(var(--inset) + 24px + 10px);
   font-variant-numeric: tabular-nums;
+}
+/* The captions stand on the line the keyboard's last row stands on (both 24px off the foot),
+   so they need the room beside it: the keyboard's 514px (ten 46px keys, nine 6px gaps),
+   centred, and a caption reaching 150px in off each edge, with 8px of air. A narrower window
+   would print them over the keys, and the furniture yields to the play. */
+@media (max-width: 829px) {
+  .df-cap {
+    display: none;
+  }
 }
 @media (max-width: 640px) {
   .device-frame {
@@ -1117,7 +1158,9 @@ body:has(.app > .board-screen) {
 .topbar-inner {
   position: relative;
   margin: 8px auto 0;
-  width: min(900px, calc(100vw - 48px));
+  /* Clear of the device frame's corner brackets: its edges stand where their arms end at
+     their widest (24px in + a 24px arm), as the row's own 8px pads its content off them. */
+  width: min(var(--column), calc(100vw - 2 * (24px + 24px)));
   height: 50px;
   display: grid;
   /* The LEFT track takes what is left over and the RIGHT track is its own size: the
@@ -4570,9 +4613,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   opacity: 0;
 }
 /* The raster's 4px cells (`cellFor`: the short side at 600 or more): the frame at the
-   cards' inset, the furniture at the next whole size. */
+   cards' inset — the device frame's words with its corners — the furniture at the next
+   whole size. */
 @media (min-width: 600px) and (min-height: 600px) {
-  .streak-corner {
+  .streak-corner,
+  .device-frame {
     --inset: 24px;
   }
   .streak-day {
@@ -5183,9 +5228,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    player, the level's number and line, the stage counter), the coach's line under it as the
    page's own voice with no box, the board in the articles' figure panel, then the prompt and
    the keys. Everything is in flow — nothing is fixed over the board — in ONE column on every
-   stage, the header's own 900px, so nothing changes width between two stages. */
+   stage, the header's own (`--column`), so nothing changes width between two stages. */
 .tutorial {
-  max-width: 900px;
+  max-width: var(--column);
   align-items: center;
 }
 /* THE LESSON'S BOARD IS CENTRED (user-decided 2026-09-16): the word and the sentence sit on
@@ -5653,14 +5698,12 @@ figure.l1-fig {
    gate's `.rules-gate` — so every breakpoint the game is tuned for holds it the same way: the
    lockup in the header's row, the demo where the day's sentence and prompt stand, the question
    and its two answers in the tray, TUTORIAL exactly where the gate's PLAY lands. --- */
-/* The demo stands in the HEADER's column — `.topbar-inner`'s 900px, centred, less the row's
-   own insets (its 8px and `.topbar-left`'s 4px a side) — so on a wide screen its first
-   letter stands on the mark's pixel column: the game's own 1200px column would set a
-   two-line sentence far left of the mark, the rest of the screen empty beside it. A phone's
-   column is narrower than both, and nothing changes there. */
+/* The demo stands in the column less the header row's own insets (its 8px and
+   `.topbar-left`'s 4px a side), so on a wide screen its first letter stands on the mark's
+   pixel column. A phone's column is narrower than both, and nothing changes there. */
 .invite .play {
   pointer-events: none;
-  max-width: calc(900px - 2 * (8px + 4px));
+  max-width: calc(var(--column) - 2 * (8px + 4px));
   align-self: center;
 }
 /* THE LOCKUP (`Lockup`): the app's pixel mark (`PixelMark` at 1x — the header's own) in the
@@ -8519,33 +8562,6 @@ figure.l1-fig {
   mask-size: 100% 100%;
   image-rendering: pixelated;
 }
-/* The ghost FLOATS, the way a sprite idles: two frames, one texel (4px at its 4x) apart,
-   held — never a glide between pixels. It arrives with the block first, then bobs. */
-.arrive > .board-ghost {
-  animation:
-    arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards,
-    ghost-bob 1.6s steps(1) 400ms infinite;
-}
-@keyframes ghost-bob {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-4px);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .arrive > .board-ghost {
-    animation: none;
-  }
-}
-/* The missing day wears the same ghost: nothing here, said by the drawing that says it on
-   an empty board, in its secondary ink. */
-.no-puzzle-ghost {
-  color: var(--muted);
-  margin-bottom: 8px;
-}
 .board-empty-say > p {
   margin: 0;
   font-family: var(--ui);
@@ -8786,7 +8802,7 @@ figure.l1-fig {
 .error-screen {
   /* The page's own ground, edge to edge. No corner brackets: those are the dialog
      boxes' dress, and this is not a box on a screen any more — it IS the screen
-     (the SignedOut / NoPuzzle language). */
+     (the SignedOut language). */
   margin: 0;
   padding: 0;
   width: 100vw;
@@ -9050,7 +9066,7 @@ figure.l1-fig {
    one card under the other. The header's band is the page's top edge, the column the
    header's own width. */
 .learn {
-  width: min(900px, 100%);
+  width: min(var(--column), 100%);
   align-self: stretch;
   max-height: 100%;
   overflow-y: auto;
@@ -10102,8 +10118,8 @@ figure.l1-fig {
     padding-right: max(52px, calc((100% - 680px) / 2));
   }
   .learn {
-    padding-left: max(52px, calc((100% - 900px) / 2));
-    padding-right: max(52px, calc((100% - 900px) / 2));
+    padding-left: max(52px, calc((100% - var(--column)) / 2));
+    padding-right: max(52px, calc((100% - var(--column)) / 2));
   }
 }
 /* The narrowest phones: the next-level card's picture yields to its title, and the
