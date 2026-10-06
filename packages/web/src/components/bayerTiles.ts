@@ -60,19 +60,24 @@ const DISSOLVES: Record<string, string> = Object.fromEntries(
   ]).flat(),
 );
 
+// THE DISSOLVE'S BEAT, for what script times against it: a slot's dissolve, in or out (the
+// CSS keyframes' own 240ms) — the podium's raster gives way over the same — and the loading
+// skeleton's lines, which come in only if the read is slow: this long, this far apart, then a
+// dissolve each. The stagger is also what a screen's blocks come in apart (`.dissolve-in`,
+// `--dz-stagger`).
+export const DISSOLVE_MS = 240;
+export const SKELETON_WAIT_MS = 320;
+export const SKELETON_STAGGER_MS = 50;
+
 // The tiles are custom properties on the DOCUMENT'S ROOT, set once as this module loads: every
 // surface whose lines arrive that way (the board screen, its podium, the group's own screen in
 // the top layer) inherits them, and none carries them in its own style.
 if (typeof document !== 'undefined') {
-  for (const [name, value] of Object.entries({ ...DISSOLVES, ...EDGES })) {
+  for (const [name, value] of Object.entries({
+    ...DISSOLVES,
+    ...EDGES,
+    '--dz-stagger': `${SKELETON_STAGGER_MS}ms`,
+  })) {
     document.documentElement.style.setProperty(name, value);
   }
 }
-
-// THE DISSOLVE'S BEAT, for what script times against it: a slot's dissolve, in or out (the
-// CSS keyframes' own 240ms) — the podium's raster gives way over the same — and the loading
-// skeleton's lines, which come in only if the read is slow: this long, this far apart, then a
-// dissolve each.
-export const DISSOLVE_MS = 240;
-export const SKELETON_WAIT_MS = 320;
-export const SKELETON_STAGGER_MS = 50;

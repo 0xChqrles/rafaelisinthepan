@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { MARK_GLYPH } from '@whippin/shared';
 import Button from '../components/Button';
+// (For its side effect: the root's Bayer tiles the screen comes in through.)
+import '../components/bayerTiles';
 import { t } from '../i18n';
 import type { LangCode } from '../langs';
 import InviteDemo from './InviteDemo';
@@ -54,7 +56,7 @@ export default function Invite({
   const [head, mark] = splitHighlight(t(lang, 'inviteTitle'));
 
   return (
-    <main className="invite game arrive" aria-labelledby="tutorial-invite-title">
+    <main className="invite game dissolve-in" aria-labelledby="tutorial-invite-title">
       {/* The header row, in the header's own geometry: the pixel mark exactly where the
           game's title draws it, the app's name beside it where the language will stand. */}
       <div className="topbar" aria-hidden="true">

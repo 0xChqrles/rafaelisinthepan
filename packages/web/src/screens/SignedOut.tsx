@@ -153,7 +153,7 @@ export default function SignedOut({ lang }: { lang: string }) {
           <span key={corner} className={`streak-corner ${corner}`} />
         ))}
       </div>
-      <div className="signed-out-body arrive">
+      <div className="signed-out-body dissolve-in">
         {/* While the read is out the face's boxes are held; a DELETED account settles
             faceless but keeps them, empty, so nothing on the screen moves when it does. */}
         {waiting || (account !== null && shown === null) ? (
