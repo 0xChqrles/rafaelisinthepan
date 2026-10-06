@@ -2405,10 +2405,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   tokenless it is known-empty). The answered list is published through `adoptGroups`, so
   the board opens on the group without a second read. The landing replaces itself in
   history. A NON-CAP 4xx is a VERDICT and continues into the game silently.
-  **THE LANDING IS THE CARD, BROUGHT IN** (2026-10-06, the design delegated to the agent):
-  what the `/g/` link unfurled into, continued on the screen it opens onto. The frame — the
-  four corners on a phone (the device frame's on desktop) and the WHIPPIN AI lockup, the
-  signed-out screen's furniture (`.invite-frame`) — and in the middle `components/GroupOrbit`:
+  **THE LANDING IS THE CARD, BROUGHT IN**: what the `/g/` link unfurled into, continued on
+  the screen it opens onto. The frame — the four corners on a phone (the device frame's on
+  desktop) and the WHIPPIN AI lockup, the signed-out screen's furniture (`.invite-frame`) —
+  and in the middle `components/GroupOrbit`:
   the group's NAME in `.link-name`'s white chip, case kept, one line (its size stepped down a
   whole pixel at a time where a long one would touch a mark, its box computed for the size
   it is set at), the members' MARKS round it (`Avatar sharp`, ten cells of whole pixels: 6px
@@ -2435,7 +2435,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   alike), so a state change is a word change and the keyboard's focus stays on it. **A CAP THE LANDING ALREADY KNOWS IS NEVER OFFERED** (`landingOf`,
   contract-tested): a group whose public face holds `GROUP_MEMBERS_MAX` members, or a reader
   whose own list holds `GROUPS_MAX` groups, lands with no seat and no JOIN — a control that
-  can only be refused is a false offer — so the landing holds until that list is known.
+  can only be refused is a false offer — so the landing waits for that list, at most
+  `LIST_WAIT_MS` (2s) past the group's own read; a list later than that is not waited for:
+  the face lands without it, and the server's `group_limit` answers the cap.
   **The two CAPS the server answers** (409 `group_full` / `group_limit`, each read off its
   CODE: the group's room and the reader's own `GROUPS_MAX` are different acts) end the
   seat's breath in one frame, its place left empty. Either way the group's face STAYS, one

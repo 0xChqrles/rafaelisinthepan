@@ -32,11 +32,10 @@ import { timeoutSignal } from '../timeout';
 // preview cannot touch the group, because the membership needs the clicker's key and the
 // clicker's device is the only place it exists.
 //
-// **THE CARD, BROUGHT IN** (the 2026-10-06 redesign): the landing CONTINUES that card on the
-// screen — the frame's corners and the WHIPPIN AI lockup (the full-screen moments' furniture,
-// the signed-out screen's), and in the middle the card's own scene (`GroupOrbit`): the name in
-// the chip, up to five marks on the slate orbit, the rest in the `+N` tile, and a SEAT kept
-// for the reader. JOIN is the app's big action on the bottom edge, PLAY the word under it.
+// **THE CARD, BROUGHT IN**: the landing CONTINUES that card on the screen — the frame's
+// corners and the WHIPPIN AI lockup (the full-screen moments' furniture, the signed-out
+// screen's), and in the middle the card's own scene (`GroupOrbit`): the name in the chip, up to
+// five marks on the slate orbit, the rest in the `+N` tile, and a SEAT kept for the reader. JOIN is the app's big action on the bottom edge, PLAY the word under it.
 // Joining DROPS the reader's own mark into the seat; the call turns to the BOARD in place.
 // Nothing that has landed moves: the places are decided once, with the seat in them.
 //
