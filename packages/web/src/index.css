@@ -8928,7 +8928,8 @@ figure.l1-fig {
 .learn-cell.hero .learn-title {
   font-size: 22px;
 }
-/* Level 1 until it is played: its title wears the invitation's selection box, drawn across it. */
+/* Level 1 until it is played: its title wears the invitation's selection box, STILL — drawn
+   from the first frame, never animated (the invitation's own rule). */
 .learn-card.next .learn-title-text {
   background: var(--fg);
   color: var(--bg);
@@ -8936,15 +8937,6 @@ figure.l1-fig {
   margin-left: -0.22em;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-  animation: mark-wipe 320ms steps(8, jump-end) 420ms backwards;
-}
-@keyframes mark-wipe {
-  from {
-    clip-path: inset(0 100% 0 0);
-  }
-  to {
-    clip-path: inset(0 0 0 0);
-  }
 }
 .learn-sub {
   font-size: 10.5px;
