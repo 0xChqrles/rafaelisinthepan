@@ -278,6 +278,8 @@
                               question) over InviteDemo.tsx (the site's sentence, played
                               once); Learn.tsx (the levels as cards),
                               Lesson.tsx (dispatch), LevelOne.tsx over LessonBoard.tsx,
+                              lessonReturn.ts (the lesson's way back, kept across a lost
+                              chunk's RETRY reload),
                               coach.ts (the reactive coach), levels.ts (each level's face over
                               `shared/src/tutorial.ts`, which levels exist and where) + data scripts/<lang>.ts
                               (+ <lang>.<word>.json, the pruned #154 boards it plays on);
@@ -1449,10 +1451,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     pixels, corner brackets only on what is tapped, ONE shiny thing a screen. A read that
     FAILED is quiet (the house's `QuietFailure`, the bullet *A READ THAT FAILED IS SAID IN
     PLACE*): the stippled checker still at 50% where its values would be, its note and RETRY
-    under it, ONE RETRY per failure — on `/account` the record's under the record (its held
-    count is no tap), the summary's in the call's own box (`.account-cta.failed`), and both
-    failed at once ONE line there (`failedAccountAll`) whose RETRY asks both; the devices'
-    skeleton line stays mounted, still, over theirs. `/account`'s chrome speaks in TWO
+    by it, ONE RETRY per failure — on `/account` the record's in the FLAME'S ROOM over its
+    still count (`Record`'s `failure`: room the record keeps anyway, so the page grows by
+    nothing and the call stays on a phone's screen; its held count is no tap), the summary's
+    in the call's own box (`.account-cta.failed`), and both failed at once ONE line there
+    (`failedAccountAll`) whose RETRY asks both; the devices' skeleton line stays mounted,
+    still, over theirs. `/account`'s chrome speaks in TWO
     roles beside the hero name and its quiet address caption: the LABEL (11px bold tracked
     caps, muted — BEST and DAYS, `AccountStats`' labels with them, a device's one fact, SIGN
     OUT, the footnote) and the ROW TITLE (13px bold — a device's label; DAY STREAK at that
@@ -1904,31 +1908,36 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the retry needed on WebKit (the act is re-run inside its own fresh tap now). A READ that
   failed keeps its RETRY, in place (next bullet): that is a screen that could not open, where
   this is an act that did not land.
-- **A READ THAT FAILED IS SAID IN PLACE (`components/QuietFailure.tsx`; the 2026-10-06
-  audit's load-failure theme, its presentation delegated by the user).** The surface keeps
+- **A READ THAT FAILED IS SAID IN PLACE (`components/QuietFailure.tsx`).** The surface keeps
   its OWN loading picture, held STILL — the stipple at the Bayer order's half (`--dz-4`, the
-  `.stat-slot` checker), nothing breathing — and says under it ONE muted NOTE: sentence case
-  (a note, not chrome), plain words about what the player lost, never an internal's name;
-  13px `--ui` regular on a 20px line, a `\n` between two sentences. Then RETRY, the bracketed
-  `.quiet-btn`. Never the danger ink, never a box, never a full screen. A retry hands the
-  picture back to breathing in place. The sites:
+  `.stat-slot` checker), nothing breathing — and says, in a place of that picture's own, ONE
+  muted NOTE: sentence case (a note, not chrome), plain words about what the player lost,
+  never an internal's name; 13px `--ui` regular on a 20px line, a `\n` between two
+  sentences. Then RETRY, the bracketed `.quiet-btn`. Never the danger ink, never a box,
+  never a full screen. **Saying it moves nothing that has landed, and neither does its
+  RETRY**: the note stands in room the picture keeps for it, or is laid over the picture out
+  of its flow. RETRY asks again EVERY read the note covers, handing the picture back to
+  breathing in place — save a lost code chunk's, below. The sites:
   - the GAME (`GameHold` still): ONE line for the puzzle, the word list and the round —
-    `failedGame` on today's, `failedGamePast` on another day — in the prompt's row,
-    left-aligned (`.quiet-failure.start`);
-  - the LESSON's tray (`KeyboardHold` still): `failedKeyboard`, in the prompt's row;
-  - a lost LESSON or ARTICLE chunk (the page's own hold, still): `failedPage`. Level 1 on
-    the first visit (the onboarding question open) keeps the invitation's SKIP beside
-    RETRY; nobody else gets an escape, since the header's keys are theirs;
+    `failedGame` on today's, `failedGamePast` on another day — laid over the prompt's row,
+    left-aligned (`.quiet-failure.start`); its RETRY asks each of the three that failed;
+  - the LESSON, its word list lost: the tray's hold still (the stage's button slot, or
+    `KeyboardHold`), `failedKeyboard` on the prompt's row;
+  - a lost LESSON or ARTICLE chunk (the page's own hold, still): `failedPage` — on the
+    lesson's prompt row, over the article's first lines' rails. Level 1 on the first visit
+    (the onboarding question open) keeps the invitation's SKIP beside RETRY; nobody else
+    gets an escape, since the header's keys are theirs;
   - the LEADERBOARD: the podium's floor, still; the note on the names' band, where the rails
     stand, and RETRY on the values' row (the empty board's caption slots); over the lines'
     skeleton, the same view as loading, so nothing under the podium moves. With no podium
     it is its own row;
   - the ARCHIVE: the keys' still checker, then the note and the quiet RETRY in the hold;
   - the ACCOUNT AREA (the profile area's dress, above).
-  A lost CODE CHUNK's RETRY reloads the page (`lazyChunk`). Chromium and WebKit keep a module
-  they failed to fetch failed for the document's life: measured, a second `import()` rejects
-  with no request. `LoadError` survives for the group invite landing alone, until its own
-  redesign; `.load-error` / `.status.error` serve it and `NoPuzzle`.
+  A lost CODE CHUNK's RETRY RELOADS the page (`lazyChunk`): a document keeps a module it
+  failed to fetch failed, so only a new one can fetch it again. A lesson begun from the
+  invitation keeps its way back across that reload (`tutorial/lessonReturn.ts`). `LoadError`
+  is the group invite landing's alone; `.load-error` / `.status.error` serve it and
+  `NoPuzzle`.
 - **EVERY PAGE CAN CHANGE LANGUAGE (user-decided 2026-09-03).** The game routes always
   could — `PuzzleTitle`'s selection is the language — and the ACCOUNT
   AREA could not: `/account` carried a plain name and its steps carried a back control, so a
@@ -2073,8 +2082,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `Game` mounts only once all three are in (so its first render is already the right one
     — a day already over opens on its result, never a frame of the board), and until then
     the route's `.game` column holds THE GAME'S HOLD (bullet below); a failed read holds it
-    STILL with ONE line and its RETRY (the puzzle's `retry`, the word list's once the puzzle
-    says there is a game, the round's `retryRoundSync`). **Once on screen the round STAYS**
+    STILL with ONE line, the word list's said once the puzzle says there is a game, and ONE
+    RETRY that asks every read that failed again (the puzzle's `retry`, the word list's, the
+    round's `retryRoundSync`). **Once on screen the round STAYS**
     (`game/roundOnScreen.ts`): a read it already answered coming back out — an identity
     adopted from another tab (`rearmRoundSync`), a republish restarting the round
     (`beginRoundSync`) — leaves `Game` mounted on what it was drawn from until the next
@@ -2117,9 +2127,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     STILL** (`failed`): shown at once whatever its wait, every bar, rail and word slot at the
     Bayer order's half (`--dz-4`; the blocks and caps rest on theirs), nothing breathing, and
     the prompt's row — the one thing in it a finger reaches (`.hold-failure`) — says ONE line
-    for the three reads and holds RETRY; the hold stays mounted through the failure, so a
-    RETRY hands the same picture back to breathing in place. **The game takes over from it,
-    painted over it** (`useHold`'s `leaving`, latched by what mounts during it): the
+    for the three reads and holds RETRY, laid over the row out of its flow (the row keeps its
+    height, so the sentence the column centres never moves); the hold stays mounted through
+    the failure, so a RETRY hands the same picture back to breathing in place. **The game
+    takes over from it, painted over it** (`useHold`'s `leaving`, latched by what mounts
+    during it): the
     sentence decodes as ever, each bar and block giving way the moment the decode's front
     reaches its word (`Phrase` stamps that front, `--at`, on a silhouette's tokens too);
     the keys LIGHT IN over their slates through exactly the cells the slates go out through
@@ -4074,7 +4086,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     graduation: `markLessonDone(1)`, `setOnboarded`, `track finish`, and BACK WHERE THE
     INVITATION STOOD (`App`'s `lessonReturn`, the path TUTORIAL was pressed on — a dated
     link's day — cleared by any non-lesson route; the plain game otherwise, a reload
-    included; user-fixed 2026-09-17).
+    included — save a lost chunk's RETRY, which keeps it across its own reload,
+    `tutorial/lessonReturn.ts`; user-fixed 2026-09-17).
   - **THE METER (#301 TAUGHT; user-decided 2026-09-16 — "after saying that real sentences
     are harder, the onboarding should continue and explain the first letter concept",
     SCRIPTED the same day; the letter became the ACTIVATION on 2026-09-22 and the stage's
@@ -4217,7 +4230,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   settles the flag), SKIP settles it there. Its preload warms the level-1 chunk
   (`LazyLevelOne`, on `hooks/lazyChunk` like `LazyStreakDialog`; a lost chunk holds the
   lesson's first screen still and says so, with RETRY and — the question still open — the
-  invitation's SKIP beside it, completing nothing). Analytics
+  invitation's SKIP beside it, completing nothing). **While the lesson's word list is out**
+  the tray holds what will land there (`LessonBoard`'s `trayHold`): the stage's button as
+  its slot (the reveal's CONTINUE; a solved stage's CONTINUE or PLAY), nothing on the meter
+  stage before its tap, else `KeyboardHold` — in after `SKELETON_WAIT_MS`, through the
+  dither, and at once where the chunk's hold already stood CONTINUE's slot (`held`), so the
+  slot never blinks out between the two holds. Analytics
   keep the three events (`start` / `skip` / `finish`). The boards are pruned #154 artifacts
   (`scripts/<lang>.<word>.json`, `prune-word-map.mjs --top 150`; the exact commands in each
   script's header), never published or served; a lesson board touches no `rounds`, no outbox,
