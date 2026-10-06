@@ -824,10 +824,12 @@ These are decided and verified against the code. Treat them as load-bearing.
     primary's own wash, at its peak less than the press, so a wide primary charging never
     outshouts what lands and destruction never glows. It stands on a ground that hides the
     wash without changing it, so the act landing ends it in ONE frame on the button at rest.
-    The outcome is the act's own (the keyboard rising, the name inked in, the foil stamp, the
-    next step), never a word on the button; CREATE GROUP stands at full ink, neither busy nor
-    dimmed, while the new name inks in, answering no pointer (no hover, no press). CANCEL under a busy confirmation waits in the quiet
-    word's colour step, like any quiet act that cannot be pressed for now.
+    Under FORCED COLOURS every ground is the canvas, the charge with it, so a busy button's
+    frame turns DASHED instead (`ButtonText`, after the same wait). The outcome is the act's
+    own (the keyboard rising, the name inked in, the foil stamp, the next step), never a word
+    on the button; CREATE GROUP stands at full ink, neither busy nor dimmed, while the new
+    name inks in, answering no pointer (no hover, no press). CANCEL under a busy confirmation
+    waits in the quiet word's colour step, like any quiet act that cannot be pressed for now.
     No other button dress remains.
     *(The two paragraphs below are the designs it replaced, kept for their reasoning.)*
   - **THE BUTTONS ARE KEYCAPS WITH A HARD PRINT (user-decided 2026-09-14: "we should

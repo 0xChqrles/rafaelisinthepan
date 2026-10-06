@@ -4770,6 +4770,25 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   background: var(--bg);
   animation: busy-wait 1ms step-end var(--busy-wait, 0ms) backwards;
 }
+/* Forced colours paint every ground as the canvas, the charge with it, so a busy button
+   would look at rest while it answers no tap: its frame turns DASHED instead — drawn by the
+   ground over the button's own border, on the same delay as the charge. */
+@media (forced-colors: active) {
+  .btn-primary[aria-busy='true']::before,
+  .btn-secondary[aria-busy='true']::before,
+  .mix-btn[aria-busy='true']::before {
+    display: none;
+  }
+  .btn-primary[aria-busy='true']::after,
+  .btn-secondary[aria-busy='true']::after,
+  .mix-btn[aria-busy='true']::after {
+    forced-color-adjust: none;
+    inset: -1px;
+    border: 1px dashed ButtonText;
+    border-radius: inherit;
+    background: ButtonFace;
+  }
+}
 /* A floor under the app's one big action (user-decided 2026-08-26): sized to its label
    alone, a short word ("PLAY") read as a minor control in a wide column. */
 .btn-primary {
