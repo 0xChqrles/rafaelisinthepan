@@ -3219,6 +3219,15 @@ body:has(.app > .board-screen) {
     clip-path: inset(10px calc(100% - var(--chip-l, 0px)) 10px var(--chip-l, 0px));
   }
 }
+/* THE ROW'S ROOM while its names are unknown (`BoardTabs`' hold): ONE chip in the house hold
+   (`.link-hold`), where the shown name's chip will stand — the label's 24px band, a tab's 4px
+   in; only its width is a guess. */
+.board-tabs-hold {
+  align-self: center;
+  width: 72px;
+  height: 24px;
+  margin: 0 4px;
+}
 /* The pinned PLUS (the board screen's): a new group. The header's own pixel plus at 2px a
    cell, in the secondary ink, lifted on hover. */
 .board-tabs-new {
@@ -6010,6 +6019,13 @@ figure.l1-fig {
   -webkit-mask-image: var(--dz-2);
   mask-image: var(--dz-2);
   animation: link-hold-breathe 640ms steps(1, end) infinite;
+}
+/* A hold whose read FAILED: the same stipple at rest (the breath's middle step) — a box whose
+   content is unknown, never breathing with no read behind it. */
+.link-hold.still {
+  background: var(--rail);
+  -webkit-mask-image: var(--dz-2);
+  mask-image: var(--dz-2);
 }
 /* The NAME's hold is the chip's own box (one blank character in the chip's type), stippled
    the same way: only its width is a guess, and the stack is centred, so a wrong one moves

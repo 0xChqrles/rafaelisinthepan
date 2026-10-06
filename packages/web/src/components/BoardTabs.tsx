@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, type CSSProperties, type KeyboardEvent } from 'react';
 import { UI_ADVANCE_EM } from '@whippin/shared';
+import { SKELETON_WAIT_MS } from './bayerTiles';
 import { travelFrames } from './travel';
 import PlusIcon from '../assets/icons/plus.svg?react';
 import { prefersReducedMotion } from '../hooks/useScramble';
@@ -44,6 +45,13 @@ import { prefersReducedMotion } from '../hooks/useScramble';
 // (`onNew`): creating a group is the row's one other act, and pinned it never scrolls out of
 // reach. Each tab names the PANEL it controls — the surface's board, which takes its name from
 // the shown tab (`tabIds`, off one id the surface owns).
+//
+// WHILE THE NAMES ARE UNKNOWN (no tabs yet: the groups' list still out, or failed), the row
+// HOLDS ITS ROOM with ONE CHIP in the house hold where the shown chip will stand (`hold`): the
+// slate stippled through the Bayer tiles at the chip's 24px, breathing while the read is out —
+// and in only once it has been out SKELETON_WAIT_MS, so a quick one never flashes it — still
+// once it has failed. Only its width is a guess. The names then take the row, the chip wiped
+// across the shown one on each surface's own beat.
 export const tabIds = (base: string) => ({ panel: `${base}panel`, tab: (key: string) => `${base}tab-${key}` });
 export interface BoardTabItem {
   key: string;
@@ -82,8 +90,11 @@ export default function BoardTabs({
   onNew,
   newLabel,
   idBase,
+  hold = 'waiting',
 }: {
   tabs: readonly BoardTabItem[];
+  // What the empty row says (see the header): a read still out, or one that failed.
+  hold?: 'waiting' | 'failed';
   shown: number;
   // The surface's id for the tabs and their panel (`tabIds`).
   idBase: string;
@@ -320,6 +331,13 @@ export default function BoardTabs({
     <div ref={rootRef} className="board-tabs">
       <div ref={rowRef} className="board-tabs-row" onScroll={onScroll}>
         <div ref={lineRef} className="board-tabs-line" role="tablist" aria-orientation="horizontal" onKeyDown={onKeyDown}>
+          {tabs.length === 0 && (
+            <span
+              className={`board-tabs-hold link-hold${hold === 'waiting' ? ' waiting late' : ' still'}`}
+              style={{ '--wait': `${SKELETON_WAIT_MS}ms` } as CSSProperties}
+              aria-hidden="true"
+            />
+          )}
           {tabs.map((tab, i) => (
             <button
               key={tab.key}

@@ -136,7 +136,7 @@
                               pinned last, the white chip travelling to the name shown, a cut
                               name covered, a name past its room ending in an ellipsis; a tab's
                               optional `ariaLabel`; `tabIds` ties each tab to the panel it
-                              controls
+                              controls; with no tabs yet, ONE stippled chip holding the row
       hooks/useSwipe.ts       a sideways swipe on a board's lines turns its tab (both surfaces),
                               on the archive's grid its month: a finger's or a pen's, never the
                               mouse; its trailing click opens nothing (a tap right after does)
@@ -2408,7 +2408,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     GLOBAL opens nothing. **CREATING is the PLUS pinned at the row's end** (`groupNew`),
     absent while the no-group tab is shown, whose CREATE GROUP (`groupCreate`) is then the
     one way on this screen — the result's SEAT is the other door (*Solved-screen BOARDS*),
-    through the same `GroupCreate` and `writeGroups`.
+    through the same `GroupCreate` and `writeGroups`. While the groups list is unknown the
+    row holds its room with ONE stippled chip where the shown chip will stand (`BoardTabs`'
+    `hold`: `.link-hold`, breathing while the list is read and in only after
+    `SKELETON_WAIT_MS`, still once a read has failed).
     One control across the app (the archive's months turn through it too) — not a pager of
     this screen's own.
   - **THE HEAD LINE** (`.board-head`, 44px whatever it holds): a group's THREE BOARDS on
