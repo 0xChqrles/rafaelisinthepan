@@ -1,26 +1,26 @@
 import { useEffect, useRef } from 'react';
-import Button from '../components/Button';
-import LangTitle from '../components/LangTitle';
-import { HeaderLeft } from '../components/TopBar';
 import { t } from '../i18n';
 import { pathForGame, pathForLesson, type LangCode } from '../langs';
 import { navigate } from '../routing';
 import LevelArt from './art/LevelArt';
+import ArticleHead from './ArticleHead';
 import { articleFor } from './articles';
 import { ArticleLang } from './articles/lang';
 import Rich from './articles/Rich';
 import FigureBody from './articles/figures/Figure';
 import type { Block } from './articles/types';
-import Duration from './Duration';
 import { keyboardLast } from './keyboardLast';
-import { LEVELS, levelOf, nextReady } from './levels';
+import { levelOf, nextReady } from './levels';
 
-// AN ARTICLE LEVEL (levels 2+, 2026-09-29): the level read, not played — set like the
-// author's article page. Its sleeve (the level's illustration, large), the track number and
-// the title, the credits line (how long, which level of how many); then the sections, each
-// opened by its numbered cue, the figures numbered through the level. Nothing is recorded:
-// an article is there to read, as often as anyone likes. The end leads on to the next level
-// ready in this language, and always to the game.
+// AN ARTICLE LEVEL (levels 2+, 2026-09-29; set like the privacy notice 2026-10-06): the level
+// read, not played — the author's article page in the house's dress. On the bare ground: its
+// head (`ArticleHead` — the sleeve, the track number and the title, the credits), then the
+// sections, each opening on the stippled floor with its numbered cue, the figures numbered
+// through the level. Nothing is recorded: an article is there to read, as often as anyone
+// likes. The end leads on to the next level ready in this language — a tappable thing, in its
+// corner brackets — with the game as the word under it (or, after the last level, the game as
+// the one big action), then the credit to the article apart. The header's title is published
+// by `LazyArticle`, held across this chunk's wait.
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
 function BlockView({ block, lang, figNo }: { block: Block; lang: string; figNo: number }) {
@@ -111,44 +111,19 @@ export default function ArticleLevel({ lang, level }: { lang: LangCode; level: n
   }, [level]);
 
   if (!meta || !article) return null;
-  const seconds = meta.duration[lang];
   const next = nextReady(level, lang);
   let figures = 0;
   let cues = 0;
 
   return (
-    <>
-      <HeaderLeft>
-        <LangTitle lang={lang} title={t(lang, meta.titleKey)} to={(picked) => pathForLesson(picked, level)} />
-      </HeaderLeft>
-      <ArticleLang.Provider value={lang}>
+    <ArticleLang.Provider value={lang}>
       <article
         ref={scroller}
         className="article-screen pixel-scroll"
         tabIndex={0}
         aria-labelledby="article-title"
       >
-        <header className="article-head">
-          <div className="article-sleeve">
-            <LevelArt name={meta.art} />
-          </div>
-          <div className="article-title-row">
-            <span className="article-no" aria-hidden="true">
-              {pad2(level)}
-            </span>
-            <h1 id="article-title" className="article-title">
-              {t(lang, meta.subKey)}
-            </h1>
-          </div>
-          <ul className="article-credits">
-            {seconds != null && (
-              <li>
-                <Duration lang={lang} seconds={seconds} />
-              </li>
-            )}
-            <li>{t(lang, 'levelOf').replace('{n}', String(level)).replace('{total}', String(LEVELS.length))}</li>
-          </ul>
-        </header>
+        <ArticleHead lang={lang} level={level} />
         {article.sections.map((section, i) => (
           // Static per article: the index is a stable key.
           <section key={i} className="article-section">
@@ -180,20 +155,25 @@ export default function ArticleLevel({ lang, level }: { lang: LangCode; level: n
               </span>
             </button>
           )}
-          <Button variant={next ? 'secondary' : 'primary'} className="article-play" onClick={() => navigate(pathForGame(lang))}>
+          {/* The game: THE WORD under the way on, or — after the last level, nothing left to
+              read — the one big action. */}
+          <button
+            type="button"
+            className={`article-play ${next ? 'link-quiet-btn' : 'mix-btn'}`}
+            onClick={() => navigate(pathForGame(lang))}
+          >
             {t(lang, 'tutPlay')}
-          </Button>
+          </button>
           {article.source && (
             <p className="article-source">
               <span className="article-source-label">{t(lang, 'levelSource')}</span>
-              <a href={article.source.href} target="_blank" rel="noopener noreferrer">
+              <a className="article-source-link" href={article.source.href} target="_blank" rel="noopener noreferrer">
                 {article.source.text}
               </a>
             </p>
           )}
         </footer>
       </article>
-      </ArticleLang.Provider>
-    </>
+    </ArticleLang.Provider>
   );
 }

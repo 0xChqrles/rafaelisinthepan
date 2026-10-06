@@ -266,7 +266,8 @@
                               coach.ts (the reactive coach), levels.ts (each level's face over
                               `shared/src/tutorial.ts`, which levels exist and where) + data scripts/<lang>.ts
                               (+ <lang>.<word>.json, the pruned #154 boards it plays on);
-                              ArticleLevel.tsx (levels 2+, lazy via LazyArticle) over
+                              ArticleLevel.tsx (levels 2+, lazy via LazyArticle, whose
+                              hold stands the same ArticleHead) over
                               articles/<lang>.ts (the text, per language; types.ts, Rich.tsx
                               the inline markup, typeset.ts, figures/); art/ (LevelArt.tsx,
                               the dithered canvas, and scenes/, one picture per level)
@@ -3887,14 +3888,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   word the prose quotes wears the held chip's white ground** (user-decided: the accent word is
   the one you are trying to get close to, the white ones are the others). Every level
   ends on the problem the next one answers. The end is three bands: NEXT LEVEL, PLAY, then the
-  credit to the article apart. On a wide screen the list and an article scroll the WHOLE
+  credit to the article apart. **The page is SET LIKE THE PRIVACY NOTICE**, the app's other
+  document: the bare ground (no panel, no hairline) — the sleeve, the track number in the
+  accent's pixel figures at 16px, the title, the credits line — each section opening on the
+  podium's stippled floor with its cue in the same figures; NEXT LEVEL a tappable thing in
+  the list cards' resting corner brackets, PLAY THE WORD under it (or, after the last level,
+  the `.mix-btn`), the credit's link on the privacy mail link's stippled underline. (Its
+  figures are their own.) On a wide screen the list and an article scroll the WHOLE
   VIEWPORT, so the scrollbar stands on the screen's edge (user-decided 2026-09-29). **Written in French first** (user-decided 2026-09-29: "wait for the article
   translation… for the moment just create the french version"): a level is READY in a
   language when its lesson exists there (`Level.duration`: an ARTICLE's reading time, which
   its card prints and `levels.test.ts` holds to the text; LEVEL 1, played, is ready with
   `null`, because a game takes as long as the player, so no surface prints a time for it);
-  elsewhere its card is grey
-  and says SOON. **Only LEVEL 1 has a DONE state**: the articles are read as often as anyone
+  elsewhere its card is printed in HALFTONE and says SOON. **Only LEVEL 1 has a DONE state**: the articles are read as often as anyone
   likes and record nothing — no done mark, no highlight, no badge. Completion is
   DEVICE-LOCAL (`lessonsDone`, never on the account), and level 1 is INFERRED FROM PLAY (see
   the gate bullet). The header's badge (`.hk-badge`, `undoneLevels(done, lang)`) is 1 while

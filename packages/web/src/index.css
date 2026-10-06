@@ -9219,12 +9219,13 @@ figure.l1-fig {
   display: flex;
   flex-direction: column;
 }
+.article-section,
+.article-end {
+  animation: board-dissolve 240ms linear backwards;
+}
 .article-sleeve {
   position: relative;
   aspect-ratio: 16 / 9;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: #08090d;
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -9240,7 +9241,7 @@ figure.l1-fig {
 }
 .article-no {
   font-family: var(--pixel-font);
-  font-size: 13px;
+  font-size: 16px;
   color: var(--accent);
 }
 .article-title {
@@ -9256,6 +9257,7 @@ figure.l1-fig {
   padding: 0;
   display: flex;
   flex-wrap: wrap;
+  align-items: baseline;
   gap: 6px 18px;
   font-size: 11px;
   font-weight: 500;
@@ -9270,13 +9272,16 @@ figure.l1-fig {
   gap: 18px;
   margin-top: 30px;
 }
+/* A SECTION opens on the podium's stippled floor (2px dots, 6px apart, the slate) — the
+   privacy notice's own opening, never a hairline. */
 .article-heading {
   display: flex;
   align-items: baseline;
   gap: 12px;
   margin: 12px 0 0;
-  padding-top: 24px;
-  border-top: 1px solid var(--line);
+  padding-top: 26px;
+  background: repeating-linear-gradient(to right, var(--rail) 0 2px, transparent 2px 6px) 0 0 /
+    100% 2px no-repeat;
   font-size: 12.5px;
   font-weight: 650;
   letter-spacing: 0.12em;
@@ -9284,7 +9289,7 @@ figure.l1-fig {
 }
 .article-cue {
   font-family: var(--pixel-font);
-  font-size: 10px;
+  font-size: 8px;
   letter-spacing: 0;
   color: var(--accent);
 }
@@ -9309,12 +9314,16 @@ figure.l1-fig {
   font-weight: 500;
   color: var(--fg);
 }
+/* A block set apart from the prose — the code, an example sentence — stands on the ground
+   behind a stippled rail down its left edge: the floor's own dots, stood up. */
+.article-code,
+.article-sentence {
+  background: repeating-linear-gradient(to bottom, var(--rail) 0 2px, transparent 2px 6px) 0 0 /
+    2px 100% no-repeat;
+}
 .article-code {
   margin: 0;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--surface);
+  padding: 2px 0 2px 18px;
   font-family: var(--ui);
   font-size: 12.5px;
   line-height: 1.75;
@@ -9365,7 +9374,7 @@ figure.l1-fig {
 .article-steps li::before {
   content: counter(step, decimal-leading-zero);
   font-family: var(--pixel-font);
-  font-size: 9px;
+  font-size: 8px;
   color: var(--accent);
 }
 /* AN EXAMPLE SENTENCE is set whole in the pixel face, as the game sets its own: plain words
@@ -9377,10 +9386,7 @@ figure.l1-fig {
   color: var(--fg);
 }
 .article-sentence {
-  padding: 14px 18px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--surface);
+  padding: 2px 0 2px 18px;
 }
 .article-sentence p,
 .ar-fig-sentence {
@@ -9851,46 +9857,74 @@ figure.l1-fig {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-/* THE END, in three bands: the NEXT LEVEL as a card with its picture (the way on), the GAME
-   under it as a full-width secondary (or the primary, after the last level), and — set apart
-   by a hairline and air — the CREDIT: a small label over the article's title. */
+/* THE END, in three bands, opened on the stippled floor: the NEXT LEVEL — a tappable thing, its
+   picture and its words in the resting corner brackets of the list's cards, stepping to white
+   under a mouse — then the GAME as THE WORD under it (or, after the last level, as the one big
+   action), and — set apart by the floor and air — the CREDIT: a small label over the article's
+   title, on the privacy notice's stippled underline. */
 .article-end {
   display: flex;
   flex-direction: column;
   gap: 12px;
   margin-top: 56px;
   padding-top: 32px;
-  border-top: 1px solid var(--line);
+  background: repeating-linear-gradient(to right, var(--rail) 0 2px, transparent 2px 6px) 0 0 /
+    100% 2px no-repeat;
 }
 .article-next {
+  --corner: var(--rail);
+  position: relative;
   display: grid;
   grid-template-columns: minmax(120px, 40%) 1fr;
   min-height: 132px;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: #08090d;
-  overflow: hidden;
+  margin: 0;
+  padding: 12px;
+  border: 0;
+  border-radius: 0;
+  background: none;
   color: var(--fg);
   font-family: var(--ui);
   text-align: left;
   text-shadow: none;
   cursor: pointer;
-  transition: border-color 0.12s linear;
 }
-.article-next:hover {
-  border-color: var(--line-strong);
+.article-next::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: 2px solid var(--corner);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) 0 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 0 100% / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 100% / 16px 16px no-repeat;
+  mask:
+    linear-gradient(#000 0 0) 0 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 0 100% / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 100% / 16px 16px no-repeat;
+  transition: border-color 120ms steps(2, jump-end);
+}
+.article-next[data-bracketed]::before {
+  border-color: transparent;
+}
+@media (hover: hover) and (pointer: fine) {
+  .article-next:hover {
+    --corner: var(--fg);
+  }
 }
 .article-next .article-next-art {
   height: 100%;
-  min-height: 132px;
+  min-height: 108px;
 }
 .article-next-text {
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 7px;
-  padding: 16px 18px;
+  padding: 8px 10px 8px 18px;
 }
 .article-next-label {
   font-size: 10.5px;
@@ -9909,8 +9943,8 @@ figure.l1-fig {
 }
 .article-next-no {
   font-family: var(--pixel-font);
-  font-size: 11px;
-  color: var(--muted);
+  font-size: 16px;
+  color: var(--accent);
 }
 .article-next-sub {
   font-size: 10.5px;
@@ -9918,44 +9952,73 @@ figure.l1-fig {
   text-transform: uppercase;
   color: var(--muted);
 }
+/* The game: THE WORD, centred under the way on — or the big action, centred too. */
 .article-play {
-  width: 100%;
+  align-self: center;
 }
 .article-source {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
   margin-top: 36px;
-  padding-top: 20px;
-  border-top: 1px solid var(--line);
+  padding-top: 22px;
+  background: repeating-linear-gradient(to right, var(--rail) 0 2px, transparent 2px 6px) 0 0 /
+    100% 2px no-repeat;
 }
 .article-source-label {
+  display: block;
+  margin-bottom: 8px;
   font-size: 10.5px;
   font-weight: 650;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
 }
-.ar-link {
+/* A LINK OUT, in the prose and in the credit: the reading ink over the privacy notice's
+   stippled pixel underline (the floor's dots at the type's scale), lifted to the accent under a
+   mouse. Inline, its underline cloned onto every line it wraps to. */
+.ar-link,
+.article-source-link {
   color: var(--fg);
-  text-decoration: underline;
-  text-decoration-color: var(--line-strong);
-  text-underline-offset: 3px;
+  text-decoration: none;
+  padding-bottom: 3px;
+  background: repeating-linear-gradient(to right, var(--line-strong) 0 2px, transparent 2px 4px) 0
+    100% / 100% 2px no-repeat;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
-.ar-link:hover {
-  text-decoration-color: var(--fg);
-}
-.article-source a {
+.article-source-link {
   font-size: 13.5px;
-  line-height: 1.5;
-  color: var(--fg);
-  text-decoration: underline;
-  text-decoration-color: var(--line-strong);
-  text-underline-offset: 3px;
+  line-height: 1.6;
+  font-weight: 600;
 }
-.article-source a:hover {
-  color: var(--accent);
+@media (hover: hover) and (pointer: fine) {
+  .ar-link:hover,
+  .article-source-link:hover {
+    color: var(--accent);
+    background-image: repeating-linear-gradient(to right, var(--accent) 0 2px, transparent 2px 4px);
+  }
 }
+/* THE ARTICLE'S HOLD (`LazyArticle`, while its chunk is on its way): its head as the article
+   shows it, then the paragraphs' RAILS — the boards' skeleton rail, a dotted slate line through
+   each line's middle at the prose's own pitch, the last line of a paragraph short — coming in
+   only once the skeleton's wait is over (a quick chunk never flashes them). */
+.article-rails {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 30px;
+  animation: board-dissolve 240ms linear 320ms backwards;
+}
+.article-rail-p {
+  display: flex;
+  flex-direction: column;
+}
+.article-rail {
+  display: block;
+  width: var(--w, 100%);
+  font-size: 15px;
+  height: 1.75em;
+  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
+}
+
 @media (max-width: 640px) {
   .article-screen {
     padding: 48px 0 40px;
@@ -9968,7 +10031,8 @@ figure.l1-fig {
   }
   .article-p,
   .article-quote p,
-  .article-steps li {
+  .article-steps li,
+  .article-rail {
     font-size: 14.5px;
   }
   .ar-fig-body {
