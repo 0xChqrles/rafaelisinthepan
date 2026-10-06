@@ -27,6 +27,14 @@
 // for the read and then stops, because a placeholder that breathes forever with no request
 // behind it is the false claim #211's loading rule forbids. `shownFace` and `faceSettled`
 // are how a caller asks each question without restating the union.
+//
+// **THE PLAYER'S OWN FACE HAS A FOURTH: `'failed'`** (user-delegated 2026-10-06). Another
+// account whose read failed is dressed with its ASSIGNED identity, as a board row is — a
+// stand-in nobody mistakes for themselves. The player's OWN face cannot be: a player who
+// drew their mark and named themselves would be shown a stranger's pseudonym and mark as
+// their own (`GoldenComet68` over Rafa_cuisine's page). So `useOwnFace` settles a failed
+// first read as `'failed'` — what it is, the still stipple a failed read rests on — and a
+// caller offers the read again (`retryOwnFace`), the box breathing while it is out.
 
 import { useEffect, useMemo, useState } from 'react';
 import { anonName } from '@whippin/shared';
@@ -47,23 +55,23 @@ export interface Face {
   avatar: string | null;
 }
 
-// A settled read, TAGGED: `face: null` is the account being GONE, which is why the tag
-// lives out here rather than on the face itself.
+export type FaceState = Face | 'gone' | 'failed' | null;
+
+// A settled read, TAGGED with the account it is about.
 interface Settled {
   publicId: string;
-  face: Face | null;
+  face: Exclude<FaceState, null>;
 }
 
-export type FaceState = Face | 'gone' | null;
-
-// The face to DRAW, or null when there is none — the read is still out, or the account is
-// gone. `faceSettled` is what tells those two apart.
+// The face to DRAW, or null when there is none — the read is still out, it failed (the own
+// face), or the account is gone. `faceSettled` is what tells the first apart.
 export function shownFace(state: FaceState): Face | null {
-  return state === null || state === 'gone' ? null : state;
+  return state === null || state === 'gone' || state === 'failed' ? null : state;
 }
 
 // Has the read ANSWERED? A deleted account answers with nothing to draw, and a caller that
-// keeps a skeleton breathing over it is promising an arrival that is not coming.
+// keeps a skeleton breathing over it is promising an arrival that is not coming; a failed
+// read rests too, until it is asked again.
 export function faceSettled(state: FaceState): boolean {
   return state !== null;
 }
@@ -100,14 +108,16 @@ export function faceFromRead(read: ProfileRead, publicId: string): Face | null {
 // TOKENLESS case: the id is a placeholder seed no account exists for, so there is nothing
 // to ask about and the assigned identity IS the answer — settled immediately, never a
 // breathing promise, and never gone. A new `revision` reads the same account AGAIN (its
-// profile was just written), and the face already settled stands until the answer lands.
-// A FAILED answer is no news: it never replaces a face already settled for this account,
-// and where none is settled yet the caller's `standIn` settles (else the assigned one).
+// profile was just written, or a failed read is asked again), and the face already settled
+// stands until the answer lands — a `'failed'` one goes back to waiting, so the box
+// breathes while the read is out. A FAILED answer is no news: it never replaces a face
+// already settled for this account, and where none is settled yet the caller's `standIn`
+// settles — a face, or `'failed'` — else the assigned one.
 export function useAccountFace(
   publicId: string | null,
   local = false,
   revision = 0,
-  standIn: Face | null = null,
+  standIn: Face | 'failed' | null = null,
 ): FaceState {
   const [read, setRead] = useState<Settled | null>(null);
 
@@ -120,13 +130,14 @@ export function useAccountFace(
       setRead({ publicId, face: assignedFace(publicId) });
       return;
     }
+    setRead((prev) => (prev?.publicId === publicId && prev.face === 'failed' ? null : prev));
     let mounted = true;
     (async () => {
       const answer = await readProfile(publicId, timeoutSignal(FACE_TIMEOUT_MS));
       if (!mounted) return;
       setRead((prev) =>
         answer.status !== 'failed'
-          ? { publicId, face: faceFromRead(answer, publicId) }
+          ? { publicId, face: faceFromRead(answer, publicId) ?? 'gone' }
           : prev?.publicId === publicId
             ? prev
             : { publicId, face: standIn ?? assignedFace(publicId) },
@@ -140,7 +151,7 @@ export function useAccountFace(
   // Never a face belonging to a PREVIOUS account: a caller that is not remounted would
   // otherwise render the wrong person for as long as the new read takes.
   if (read?.publicId !== publicId) return null;
-  return read.face ?? 'gone';
+  return read.face;
 }
 
 // THE FACE THIS DEVICE WEARS, whether or not it has an account yet — and the reason the
@@ -158,7 +169,7 @@ export function useAccountFace(
 // from the new account id instead, a third face. What the read then answers wins: another
 // writer's row (a 409), the id's face (the write never landed), or nothing (gone). A read
 // that FAILED answers nothing, so the face already drawn stands: the seed's, on a minted
-// account.
+// account — and where no face was drawn yet, `'failed'`, never the id's assigned stranger.
 export function useOwnFace(): FaceState {
   const identity = useDeviceIdentity();
   const mintedHere = useMintedHere();
@@ -179,7 +190,7 @@ export function useOwnFace(): FaceState {
     seeded && firstWrite ? null : (identity?.accountId ?? localSeed),
     identity === null,
     revision,
-    seeded ? seedFace : null,
+    seeded ? seedFace : 'failed',
   );
   return seeded && state === null ? seedFace : state;
 }

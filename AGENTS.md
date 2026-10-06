@@ -722,7 +722,10 @@ The live routes then share:
   Ranking rules are shared pure functions
   (`shared/src/leaderboard.ts`): competition tie ranks, the plain top-50 cut, the ±2 own-row
   window, `standingIn`. Rows dressed with profiles (a missing or FAILED profile read dresses
-  blank → assigned identity; a GONE account is dropped).
+  blank → assigned identity; a GONE account is dropped). That fallback is for OTHER players'
+  faces: the player's OWN face as the web reads it for itself (the header's key, `/account`,
+  the race line) never takes the assigned identity for a failed read — it rests on the still
+  stipple until read again (user-delegated 2026-10-06; web `AGENTS.md`, `AccountFace`).
 - **THE PERIOD RULE (`rankPeriod`, ONE spelling for both ends and any later consumer):** each
   day of the range is ranked on its own and pays PODIUM POINTS 3 / 2 / 1 to the first three
   RANKS (a shared first pays both 3; the next rank is then third); then SOLVED DAYS (days with

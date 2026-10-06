@@ -70,7 +70,8 @@
       components/AccountFace.tsx  the ONE read of "who an account is" (mark + name), shared
                               by the account screen, the flow's ending and the sign-out screen
       state/ownFace.ts        when the player's OWN face is read again: the signals its
-                              profile's two writers (the deploy, the editor's SAVE) send
+                              profile's two writers (the deploy, the editor's SAVE) send,
+                              and the masthead's retry of a read that failed (`retryOwnFace`)
       state/account.ts        what `/account` shows — the `{token}` summary and the
                               group-departure drain behind it (#271)
       state/groups.ts         the player's GROUPS (#271): the ONE transient cache every group
@@ -1448,7 +1449,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
       edge the row's ONE key, the editor's door: the pixel pencil in a tappable thing's
       corner brackets (SIGN OUT's: 2px, 6px arms, white at 38%; no word, no chevron; the
       edit word its accessible name). NOTHING ELSE in the row is framed, so nothing else
-      reads as editable. The words land ONCE, when the face AND what the account is saved as
+      reads as editable — save the mark's held box when the face's read FAILED: the still
+      stipple in the same corners (6px arms, 6px off the mark), the tap that asks again, the
+      name's box resting on the stipple beside it; a GONE account's mark is its inkless
+      ghost and the pencil goes, its box kept (the `AccountFace` bullet). The words land ONCE, when the face AND what the account is saved as
       are both known (a failed summary read lands the name alone, and it stays printed while
       a RETRY is out) — so nothing moves after,
       and a tokenless device and a deployed unsaved one settle to the same row; until then
@@ -1664,6 +1668,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     third face on the header for a beat, or until a reload. An ADOPTED account is read at
     once, and read again when the deploy settles. A read that FAILS is no news: it changes
     no face already drawn, and a minted account whose read-back fails keeps the seed's face.
+    **Where no face was drawn yet, the OWN face settles `'failed'` — never the assigned
+    identity** (user-delegated 2026-10-06, narrowing the boards' "a failed read dresses
+    blank" to OTHER players' faces): the assigned pseudonym and mark are a stand-in nobody
+    mistakes for themselves on somebody else's row, but drawn on the player's own page they
+    named a stranger as them (`GoldenComet68` over Rafa_cuisine's masthead). The header key,
+    `/account`'s masthead and the race line's own mark rest on the still stipple
+    (`StatSlot`, 50%), the masthead's mark held in a tappable thing's corners as the retry
+    (`retryOwnFace`, a re-read with no write behind it); while it is out the box breathes,
+    and it lands the face or rests again. A GONE own account draws its GHOST there
+    (`.ghost-mark` with no ink: the slate stipple alone) and hides the masthead's pencil.
   - **`GET /profile` HAS FOUR ANSWERS, AND `api.readProfile` IS WHERE THEY ARE TOLD APART**
     (PR-227 review, 2026-09-02): `shown` (200), `blank` (404 — LIVE, never customized, so the
     assigned identity IS this player's face), `gone` (410 `account_gone` — a DELETED account,
@@ -1679,7 +1693,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     dressed 404 and 410 alike, on the claim that every caller proves the account live — which
     was FALSE: the flow's crossroads draws `target`, an account this device does not own, and
     a locally cached token outlives another device's adoption). `useAccountFace` answers
-    `Face | 'gone' | null`, with `shownFace` and `faceSettled` as the two questions a caller
+    `Face | 'gone' | 'failed' | null` (`'failed'` the own face's alone — above), with
+    `shownFace` and `faceSettled` as the two questions a caller
     asks — so a deleted account draws NOTHING and the box that held its place stops breathing
     (a skeleton over an arrival that is not coming is #211's own false claim). The
     consumers that stay on the raw fetch are the WRITE paths whose caller genuinely holds the
@@ -4289,7 +4304,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     that pair at deployment — the same face before and after (#216), with no other face
     drawn in between; and a SAVE in the editor shows on it at once (the `AccountFace`
     bullet). It HOLDS ITS BOX until the face settles (the leaderboard strip's rule, and it
-    matters more here, where the control is on screen every day). **It is A BARE PIXEL TILE, IN COLOUR — the fifth cell
+    matters more here, where the control is on screen every day); settled with no face it
+    says which — a read that FAILED rests on the still stipple, an account GONE is its
+    ghost (the `AccountFace` bullet). **It is A BARE PIXEL TILE, IN COLOUR — the fifth cell
     drawing in a row of five** (user-decided 2026-09-02, in two steps: square corners, then
     "remove the box shadow"; it kept its COLOUR from 2026-08-31, "actually quite cool", and
     is still the one full-colour chrome control, because that colour is the one thing on the

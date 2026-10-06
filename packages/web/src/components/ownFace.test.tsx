@@ -9,6 +9,8 @@
 //   - a SAVE re-reads the face, the previous one standing while the read is out;
 //   - a FAILED read changes nothing already drawn, and a minted account whose read-back
 //     fails keeps the seed's face;
+//   - a FIRST read that fails, with no face drawn, settles `'failed'` — never the account
+//     id's assigned stranger — and asking again (`retryOwnFace`) waits, then lands the face;
 //   - an account that is GONE (410) settles on no face: nothing masks it.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -26,7 +28,7 @@ vi.mock('../api', async (importOriginal) => ({
 import { postDevicesBody, postProfileBody } from '../api';
 import { ensureDeviceIdentity, loadDeviceIdentity, resetDeviceIdentity } from '../identity';
 import { installLocalIdentityDeploy } from '../state/localIdentityDeploy';
-import { ownProfileWritten } from '../state/ownFace';
+import { ownProfileWritten, retryOwnFace } from '../state/ownFace';
 import { useGameStore } from '../state/gameStore';
 import { useOwnFace, type FaceState } from './AccountFace';
 
@@ -61,7 +63,7 @@ const fetchMock = vi.fn(async (url: string): Promise<Response> => {
 
 // What the face DRAWS: the name, and the mark (a missing avatar draws the id's assigned one).
 function drawn(state: FaceState): string | null {
-  if (state === null || state === 'gone') return state;
+  if (state === null || state === 'gone' || state === 'failed') return state;
   return `${state.name}|${state.avatar ?? defaultAvatar(state.publicId)}`;
 }
 const SEED_FACE = `${anonName(SEED)}|${defaultAvatar(SEED)}`;
@@ -143,7 +145,7 @@ describe('the own face across a MINT and its deploy', () => {
     await act(async () => releaseCreate());
     await flush();
     const last = seen[seen.length - 1];
-    expect(last !== null && last !== 'gone' && last.publicId).toBe(ACCOUNT);
+    expect(last !== null && last !== 'gone' && last !== 'failed' && last.publicId).toBe(ACCOUNT);
     // The face is READ BACK once the profile exists, and only then.
     expect(log).toEqual([`GET ${ACCOUNT}`, 'POST', `GET ${ACCOUNT}`]);
     expect(new Set(drawnSinceSettled())).toEqual(new Set([SEED_FACE]));
@@ -230,5 +232,53 @@ describe('the own face after a SAVE', () => {
     await flush();
     expect(log[log.length - 1]).toBe(`GET ${ACCOUNT}`);
     expect(new Set(drawnSinceSettled())).toEqual(new Set([`Zoe|${OTHER_AVATAR}`]));
+  });
+});
+
+describe('the own face when its FIRST read fails', () => {
+  async function mountOn(account: string) {
+    await act(async () => root.unmount());
+    window.localStorage.setItem(
+      'whippin-device',
+      JSON.stringify({ token: TOKEN, accountId: account, deviceId: DEVICE }),
+    );
+    loadDeviceIdentity();
+    await flush();
+    seen = [];
+    root = createRoot(container);
+    await act(async () => root.render(<Probe />));
+    await flush();
+  }
+
+  it('settles FAILED — never the account id\u2019s assigned stranger', async () => {
+    rows.set(ACCOUNT, { name: 'Zoe', avatar: OTHER_AVATAR });
+    unavailable = true;
+    await mountOn(ACCOUNT);
+    expect(seen[seen.length - 1]).toBe('failed');
+    expect(seen.map(drawn)).not.toContain(ACCOUNT_FACE);
+  });
+
+  it('asked again, it waits for the read, then lands the stored face', async () => {
+    rows.set(ACCOUNT, { name: 'Zoe', avatar: OTHER_AVATAR });
+    unavailable = true;
+    await mountOn(ACCOUNT);
+    expect(seen[seen.length - 1]).toBe('failed');
+
+    unavailable = false;
+    seen = [];
+    await act(async () => retryOwnFace());
+    await flush();
+    // The box breathes while the read is out (null), and the face lands — nothing between.
+    expect(seen).toContain(null);
+    expect(drawn(seen[seen.length - 1])).toBe(`Zoe|${OTHER_AVATAR}`);
+    expect(seen.map(drawn)).not.toContain(ACCOUNT_FACE);
+  });
+
+  it('a retry that fails again rests on FAILED', async () => {
+    unavailable = true;
+    await mountOn(ACCOUNT);
+    await act(async () => retryOwnFace());
+    await flush();
+    expect(seen[seen.length - 1]).toBe('failed');
   });
 });

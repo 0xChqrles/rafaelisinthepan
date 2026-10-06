@@ -14,7 +14,9 @@
 //
 // It HOLDS ITS BOX until the face settles rather than drawing the assigned mark and
 // correcting it a beat later: that is the leaderboard strip's own rule, and it matters more
-// here, where the control is on screen every day.
+// here, where the control is on screen every day. Settled with NO face it says which: a read
+// that FAILED rests on the still stipple (the masthead's mark offers the read again — this
+// key is the account's door, and stays one), an account that is GONE is its ghost.
 //
 // In the header the mark is drawn in the chrome's ONE INK — the traced shape in `--fg`, no
 // ground — a glyph among the stroke icons rather than a colour swatch beside them (the CSS
@@ -22,6 +24,9 @@
 import { defaultAvatar } from '@whippin/shared';
 import Avatar from './Avatar';
 import { faceSkeletonClass, shownFace, useOwnFace } from './AccountFace';
+import { StatSlot } from './AccountStats';
+// (The ghost's stipple is a Bayer tile on the document's root.)
+import './bayerTiles';
 import { t } from '../i18n';
 import { ACCOUNT_PATH } from '../langs';
 import { navigate } from '../routing';
@@ -56,11 +61,19 @@ export default function AccountKey({
         // is worse than no prop). A cell is 2px, and the corners are square: it is a
         // pixel tile among pixel marks.
         <Avatar avatar={face.avatar ?? defaultAvatar(face.publicId)} size={20} sharp />
+      ) : state === 'failed' ? (
+        <span className="account-key-slot" aria-hidden="true">
+          <StatSlot phase="failed" />
+        </span>
       ) : (
         // The box, always. It BREATHES only while the read is out: an account that came
-        // back GONE (#204) has settled with nothing to draw, and a skeleton over it would
-        // promise an arrival that is not coming — the archive cells' rule.
-        <span className={`account-key-slot${faceSkeletonClass(state)}`} aria-hidden="true" />
+        // back GONE (#204) has settled with nothing to draw — its ghost, the slate stipple
+        // with no ink in it — and a skeleton over it would promise an arrival that is not
+        // coming, the archive cells' rule.
+        <span
+          className={`account-key-slot${state === 'gone' ? ' ghost-mark' : faceSkeletonClass(state)}`}
+          aria-hidden="true"
+        />
       )}
     </button>
   );
