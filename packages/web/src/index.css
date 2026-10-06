@@ -3358,9 +3358,9 @@ body:has(.app > .board-screen) {
   shape-rendering: crispEdges;
 }
 /* YOUR line is FRAMED: the card's corner brackets, small, round it — and its rank in the
-   accent, its name at the action weight. */
-.board-row.me,
-.board-row.picked {
+   accent, its name at the action weight (which a successor PICKED wears too; its corners are
+   the picker's own, `.confirm-pick`). */
+.board-row.me {
   --bc: rgba(255, 255, 255, 0.38);
   background:
     linear-gradient(var(--bc), var(--bc)) left top / 8px 2px,
@@ -6434,8 +6434,8 @@ figure.l1-fig {
   pointer-events: none;
 }
 
-/* The quiet row under the cells: RESEND and CHANGE ADDRESS are alternatives, never calls
-   to action — the send allowance is 5 an hour, so the UI must not invite spending it. */
+/* The quiet row under the cells: RESEND, never a call to action — the send allowance is 5
+   an hour, so the UI must not invite spending it. */
 .link-quiet {
   display: flex;
   align-items: center;
@@ -6444,7 +6444,7 @@ figure.l1-fig {
 }
 /* THE WORD (2026-09-14, user-specified: no underline, no box shadow): a quiet act is the
    label alone — a bare tracked word at a finger's height, a step under full strength,
-   lifted to it on hover. RESEND, LEAVE THE GROUP, CANCEL under a danger shape. */
+   lifted to it on hover. LEAVE THE GROUP, and CANCEL under a danger act or a crossroads. */
 .link-quiet-btn {
   padding: 14px 8px;
   border: 0;
