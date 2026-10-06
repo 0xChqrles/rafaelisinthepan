@@ -519,12 +519,17 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   this read is addressed by a MONTH rather than a day); `month` is validated against the
   shared `HISTORY_MONTH_PATTERN` and is OPTIONAL, and there is deliberately NO future guard —
   a month past the active day simply holds no rows. The body may carry `collection: false`
-  (PR-218 review) to skip the solved-day read entirely — the chooser's month-only shape;
+  (PR-218 review) to skip the solved-day read entirely — the archive's month-only shape;
   absent means true. The two reads go out CONCURRENTLY (the
   /round rule): `RoundStore.listMonth` — one Query over the caller's own partition behind the
-  `<lang>#sentence#<YYYY-MM>-` prefix, `ProjectionExpression`-limited to `sk`/`progress`/`solved`
-  so the raw guess logs never leave the store, strongly consistent (a player opens the archive
-  right after finishing a day) and PAGED — and `PlayerHistoryStore.solvedDays`. Every response
+  `<lang>#sentence#<YYYY-MM>-` prefix, `ProjectionExpression`-limited to `sk`/`progress`/
+  `solved`/`gaveUp` plus the PROBE `guesses[ROUND_GUESS_CAP − 1]` (built from the constant),
+  which says the log reached the cap without the log leaving the store — only that one slug
+  of a CAPPED row reaches the Lambda, nothing of the log the client; each row's `over` is the
+  shared `endedUnsolved` of those facts (the memory store's, `roundEnded` over its full row);
+  read units are unchanged (a Query is metered on item size, never on the projection) —
+  strongly consistent (a player opens the archive right after finishing a day) and PAGED —
+  and `PlayerHistoryStore.solvedDays`. Every response
   is `no-store`; a player with nothing played answers `{days: [], solvedDays: []}`, which is an
   ANSWER. **The write is the ROUND route's**: the append that CONFIRMS a solve credits the day
   when the round was played ON THE DAY — `onTime`, ONE predicate, checked once in

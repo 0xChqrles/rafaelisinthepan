@@ -2,6 +2,8 @@ import {
   COUNT_EM,
   COUNT_ROWS,
   DIGIT_MASKS,
+  INFINITY_GLYPH,
+  INFINITY_MASK,
   SPARKLE_SHARE,
   bayerThreshold,
   countInk,
@@ -58,6 +60,12 @@ import type { DrawnCode } from './memory';
 //     top, a dark foot — against a high % (a dark iron top, ink solid to the foot), never by
 //     hue alone: orchid at 87% and cobalt are neighbours on the ramp, and a colour-blind eye
 //     takes one for the other.
+//   AN OVER DAY (the round ended unsolved: given up, or capped) is the bare key — its cap and
+//     light kept, so it never reads as the ghost — with the shared ∞ (`INFINITY_MASK`, a cell
+//     per font pixel) in its number's place, centred in the number's band, in the muted ink the
+//     board's over row wears: no charge, no %, no heat, no cobalt, no link, no foil. A door to
+//     the revealed sentence, never a day to resume — so a charged key always means one. Each
+//     picture carries its own mark (`Iron.glyph`): the number, or the ∞.
 //   A RUN: finished keys side by side are JOINED by the streak's edge-on link across the gap
 //     (cobalt over deep), and a run carries on across a week's end — a short stub out of the
 //     last key, one into the next week's first. Never foil, never called a streak (a late
@@ -75,13 +83,17 @@ import type { DrawnCode } from './memory';
 // write head — the one white the arrival spends — the finished ones locking through their caps
 // and the links joining as each run closes; then TODAY FALLS into its place, eased in, lands
 // with the podium's shake and, as loud as what the day holds, a white impact and a burst (a
-// day never opened lands quietly); if it is finished, its cobalt recedes into the foil. A day
-// that CHANGED since the month was last drawn plays its own charge (a new solve locks white,
-// bursts and welds its run). Then the clock rests: nothing moves but today's foil.
+// day never opened, or over, lands quietly); if it is finished, its cobalt recedes into the
+// foil. A day that CHANGED since the month was last drawn plays its own charge (a new solve
+// locks white, bursts and welds its run); a day turning OVER dissolves from its old picture —
+// its number, white over its old heat — into the ∞. A day restarted from over (a republish)
+// charges from the ∞, which its pre-charge frame shows — except as the first of the change's
+// ceremonies, which has no pre-charge frame: there the ∞ cuts to the number on the write
+// head's first frame. Then the clock rests: nothing moves but today's foil.
 
 // ── The inks: the streak raster's own — the tokens, nothing else — packed for the canvas ──
 const WHITE = inkAbgr(I_WHITE); // --fg: a playable number, the write head, today's cap
-const MUTED = inkAbgr(I_MUTED); // --muted: the read wave's light
+const MUTED = inkAbgr(I_MUTED); // --muted: the read wave's light, an over day's ∞
 const RAIL = inkAbgr(I_RAIL); // --rail: iron's lit cap, a slate number, the ghost's checker
 const COBALT = inkAbgr(I_COBALT); // --solve: a finished day
 const DEEP = inkAbgr(I_DEEP); // cobalt's under-face: a finished key's foot, a link's shade
@@ -95,6 +107,7 @@ export type KeyState =
   | { kind: 'unknown'; day: number } // the month has not arrived
   | { kind: 'none'; day: number }
   | { kind: 'progress'; day: number; pct: number } // 1–99: 100 is only ever a solve
+  | { kind: 'over'; day: number } // ended unsolved: given up, or capped
   | { kind: 'solved'; day: number };
 
 export interface KeysModel {
@@ -109,11 +122,15 @@ export interface KeysModel {
 // A key's reading as the DRAWN memory keeps it.
 export function codeOf(key: KeyState): DrawnCode | null {
   if (key.kind === 'none') return 'n';
+  if (key.kind === 'over') return 'o';
   if (key.kind === 'progress') return `p${key.pct}`;
   if (key.kind === 'solved') return 's';
   return null;
 }
-const codeRank = (code: DrawnCode) => (code === 's' ? 101 : code === 'n' ? 0 : Number(code.slice(1)));
+// Over ranks with none: a day turning over is no upgrade (it dissolves), and one restarted
+// from it (a republish) charges up like one never opened.
+const codeRank = (code: DrawnCode) =>
+  code === 's' ? 101 : code === 'n' || code === 'o' ? 0 : Number(code.slice(1));
 // Only an UPGRADE gets a ceremony: more done, or done.
 const isUpgrade = (from: DrawnCode, to: DrawnCode) => codeRank(to) > codeRank(from);
 
@@ -203,7 +220,7 @@ export interface KeysBeats {
   flash: boolean[];
   links: LinkBeat[];
   // Today's fall: its first frame and the impact (null: no drop), and whether the impact
-  // flashes white (a day that holds something; a day never opened lands quietly).
+  // flashes white (a day that holds something; a day never opened, or over, lands quietly).
   drop: number | null;
   impact: number | null;
   impactFlash: boolean;
@@ -350,22 +367,23 @@ export function keysBeats(spec: KeysSpec): KeysBeats {
 const settledAfter = (ends: readonly number[]) => Math.max(...ends) + FRAME_MS;
 
 // ── The raster ────────────────────────────────────────────────────────────────────────────
-// THE NUMBER on a `W` × `H` key: the 16px face on the type grid (a font pixel a cell), centred
-// on its ink box in the rows under the cap — and the cell of RING round it (its eight
-// neighbours), where the hard edge stands. 1: the digit's ink; 2: its ring; 0: the key's face.
-const numberTop = (H: number) => 1 + Math.floor((H - 1 - COUNT_ROWS) / 2);
-export function numberCells(W: number, H: number, day: number): Uint8Array {
+// A key's MARK on a `W` × `H` key: a glyph `w` × `h` cells read off `on`, its first cell at
+// (x0, y0) — a font pixel a cell — and the cell of RING round it (its eight neighbours), where
+// the hard edge stands. 1: the mark's ink; 2: its ring; 0: the key's face. The height is the
+// glyph's own, never assumed: the digits stand COUNT_ROWS tall, the ∞ its own five.
+function markCells(
+  W: number,
+  H: number,
+  mark: { w: number; h: number; on: (gx: number, gy: number) => boolean },
+  x0: number,
+  y0: number,
+): Uint8Array {
   const m = new Uint8Array(W * H);
-  const text = String(day);
-  const inkW = Math.round(inkEms(text.length) * COUNT_EM);
-  const x0 = Math.floor((W - inkW) / 2);
-  const y0 = numberTop(H);
-  const on = countInk(DIGIT_MASKS, text);
-  for (let gy = 0; gy < COUNT_ROWS; gy += 1) {
-    for (let gx = 0; gx < text.length * COUNT_EM; gx += 1) {
+  for (let gy = 0; gy < mark.h; gy += 1) {
+    for (let gx = 0; gx < mark.w; gx += 1) {
       const x = x0 + gx;
       const y = y0 + gy;
-      if (on(gx, gy) && x >= 0 && x < W && y >= 0 && y < H) m[y * W + x] = 1;
+      if (mark.on(gx, gy) && x >= 0 && x < W && y >= 0 && y < H) m[y * W + x] = 1;
     }
   }
   for (let y = 0; y < H; y += 1) {
@@ -381,6 +399,29 @@ export function numberCells(W: number, H: number, day: number): Uint8Array {
     }
   }
   return m;
+}
+
+// THE NUMBER: the 16px face on the type grid, centred on its ink box in the rows under the cap.
+const numberTop = (H: number) => 1 + Math.floor((H - 1 - COUNT_ROWS) / 2);
+export function numberCells(W: number, H: number, day: number): Uint8Array {
+  const text = String(day);
+  const inkW = Math.round(inkEms(text.length) * COUNT_EM);
+  const on = countInk(DIGIT_MASKS, text);
+  return markCells(W, H, { w: text.length * COUNT_EM, h: COUNT_ROWS, on }, Math.floor((W - inkW) / 2), numberTop(H));
+}
+
+// THE ∞ of an over day, in its number's place: the shared glyph's cells, centred across the key
+// and in the number's band — the share card's own seat for it.
+export function infinityCells(W: number, H: number): Uint8Array {
+  const { w, rows } = INFINITY_MASK;
+  const h = INFINITY_GLYPH.height;
+  return markCells(
+    W,
+    H,
+    { w, h, on: (gx, gy) => rows[gy * w + gx] === 1 },
+    Math.floor((W - w) / 2),
+    numberTop(H) + (COUNT_ROWS - h) / 2,
+  );
 }
 
 export interface KeysScene {
@@ -403,7 +444,9 @@ const level = (from: number, ms: number, steps: number, ft: number) =>
 
 // One key as it stands at a frame: the charge's front (rows inked from the foot) and the row
 // its number is split at, its ink, a flat fill (a finished charge) or the ramp, the write
-// head's row, and the cap.
+// head's row, and the cap — and its MARK: the cells of what is painted on it (the number, or
+// an over day's ∞) and that mark's ink above the edge. Each picture carries its own, so a day
+// changing kind dissolves from its old mark to its new one.
 interface Iron {
   front: number;
   split: number;
@@ -413,6 +456,8 @@ interface Iron {
   locked: boolean;
   capFlash: boolean;
   todayCap: boolean;
+  glyph: Uint8Array;
+  ink: number;
 }
 
 // `under`: the frame on screen as this scene began, which a key not yet come in still shows
@@ -466,6 +511,10 @@ export function keysScene(
     }
     return m;
   };
+  // A picture's MARK: an over day's ∞ in the muted ink, else its number in white.
+  const infMap = infinityCells(W, H);
+  const markOf = (over: boolean, day: number) =>
+    over ? { glyph: infMap, ink: MUTED } : { glyph: digitMap(day), ink: WHITE };
   // THE NUMBER'S EDGE: the first of its rows the ink takes (cut out from there down), off the
   // front — moved to the nearest row that leaves three or more of its rows on each side, or
   // none: a number split one or two rows from its end reads as two broken glyphs.
@@ -539,24 +588,43 @@ export function keysScene(
     return edge;
   };
 
-  // A key's front and its number's edge off the front `raw`: agreeing (`edgeOf`) on a ramp of
-  // ink, as they stand on a FLAT fill (a finished charge, solid to its front).
-  const ironAt = (raw: number, fill: number, i: number, flat: boolean): Iron => {
+  // (Only a day's key is ever iron: a pad's number is never asked for.)
+  const dayOf = (i: number) => {
     const key = model.keys[i];
-    const { front, split } = flat || key.kind === 'pad' ? { front: raw, split: splitOf(raw) } : edgeOf(raw, key.day);
-    return { front, split, fill, flat, head: -1, locked: false, capFlash: false, todayCap: i === model.today };
+    return key.kind === 'pad' ? 0 : key.day;
+  };
+  // A key's front and its number's edge off the front `raw`: agreeing (`edgeOf`) on a ramp of
+  // ink, as they stand on a FLAT fill (a finished charge, solid to its front) — and the mark
+  // of what it says now. (Every front above 0 belongs to a numbered picture: an over day's is
+  // 0, so its edge never splits a mark.)
+  const ironAt = (raw: number, fill: number, i: number, flat: boolean): Iron => {
+    const day = dayOf(i);
+    const { front, split } = flat ? { front: raw, split: splitOf(raw) } : edgeOf(raw, day);
+    return {
+      front,
+      split,
+      fill,
+      flat,
+      head: -1,
+      locked: false,
+      capFlash: false,
+      todayCap: i === model.today,
+      ...markOf(model.keys[i].kind === 'over', day),
+    };
   };
   // A played key's front and ink as it said `code` (a changed day's reading before its change).
   const readingOf = (code: DrawnCode | null) =>
-    code === null || code === 'n'
+    code === null || code === 'n' || code === 'o'
       ? { front: 0, fill: 0 }
       : code === 's'
         ? { front: FULL, fill: COBALT }
         : { front: frontOf(Number(code.slice(1))), fill: heat(Number(code.slice(1))) };
+  // …and the picture it was drawn as, with ITS mark: a day turning over gives way from its
+  // number, a day restarted from over charges from its ∞.
   const wasOf = (i: number): Iron => {
     const was = readingOf(tl.from[i]);
     const done = tl.from[i] === 's';
-    return { ...ironAt(was.front, was.fill, i, done), locked: done };
+    return { ...ironAt(was.front, was.fill, i, done), locked: done, ...markOf(tl.from[i] === 'o', dayOf(i)) };
   };
 
   const ironOf = (i: number, ft: number): Iron => {
@@ -592,7 +660,7 @@ export function keysScene(
     return iron;
   };
 
-  // A cell of an iron key (`dc`: the number's ink 1, its ring 2).
+  // A cell of an iron key (`dc`: its mark's ink 1, its ring 2).
   const ironPixel = (k: Iron, lx: number, ly: number, dc: number): number => {
     const u = H - 1 - ly;
     if (k.locked) {
@@ -602,10 +670,10 @@ export function keysScene(
       return footDeep(lx, ly) ? DEEP : COBALT;
     }
     // THE HARD EDGE: the number and its ring read the split, never the dither (a ring cell over
-    // or under the number reads the number's nearest row).
+    // or under the number reads the number's nearest row). Above it the mark is its own ink.
     if (dc !== 0) {
       const inked = Math.min(Math.max(ly, y0), y0 + COUNT_ROWS - 1) >= k.split;
-      if (dc === 1) return inked ? GROUND : WHITE;
+      if (dc === 1) return inked ? GROUND : k.ink;
       return inked ? k.fill : DUSK;
     }
     if (u === k.head) return WHITE;
@@ -646,6 +714,8 @@ export function keysScene(
     const key = model.keys[i];
     if (key.kind === 'pad') return;
     const { x, y } = keyAt(G, i);
+    // The number's cells, for the kinds drawn without iron (a day out of range, a ghost); an
+    // iron key reads its picture's own mark.
     const dmap = digitMap(key.day);
     const isToday = i === model.today;
 
@@ -668,7 +738,10 @@ export function keysScene(
     );
     const lvDigit = model.phase === 'data' ? lvIn : level(begun(tl.digitIn[i]), IN_MS, IN_STEPS, ft);
     const lvGhost = level(begun(tl.ghostIn[i]), IN_MS, IN_STEPS, ft);
-    const iron = key.kind === 'none' || key.kind === 'progress' || key.kind === 'solved' ? ironOf(i, ft) : null;
+    const iron =
+      key.kind === 'none' || key.kind === 'over' || key.kind === 'progress' || key.kind === 'solved'
+        ? ironOf(i, ft)
+        : null;
     // A changed day with no frame before it on screen (the screen opened on it) gives way from
     // its old reading.
     const was = !under && iron && tl.from[i] !== null ? wasOf(i) : null;
@@ -684,13 +757,13 @@ export function keysScene(
         const lv = key.kind === 'unknown' ? (dc === 1 ? lvDigit : lvGhost) : key.kind === 'out' ? lvDigit : lvIn;
         if (lv < 1 && bayerThreshold(X, Y) >= lv) {
           if (under) put(px, X, Y, under[Y * cols + X]);
-          else if (was && shape(lx, ly, 0)) put(px, X, Y, ironPixel(was, lx, ly, dc));
+          else if (was && shape(lx, ly, 0)) put(px, X, Y, ironPixel(was, lx, ly, was.glyph[ly * W + lx]));
           continue;
         }
         let v = 0;
         if (key.kind === 'out') v = dc === 1 ? RAIL : 0;
         else if (key.kind === 'unknown') v = ghostPixel(lx, ly, dc, lit, isToday);
-        else if (iron && shape(lx, ly, down)) v = struck ? WHITE : ironPixel(iron, lx, ly, dc);
+        else if (iron && shape(lx, ly, down)) v = struck ? WHITE : ironPixel(iron, lx, ly, iron.glyph[ly * W + lx]);
         if (v !== 0) put(px, X + dx, Y + dy + down, v);
       }
     }

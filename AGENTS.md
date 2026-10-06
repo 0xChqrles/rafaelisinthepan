@@ -434,7 +434,9 @@ The live routes then share:
   from a mount read or a `round_solved` refusal is adopted history (shown, never celebrated).
 - **A ROUND THAT ENDS UNSOLVED PRINTS `∞`** — given up, or capped; ONE reading,
   `roundEnded` (`shared/src/scores.ts`: `!solved && (gaveUp || raw log ≥ ROUND_GUESS_CAP)`,
-  read by the web round and the group board). **`solved` wins** over both. No leaderboard
+  read by the web round, the group board and the #211 month read — the last through its
+  facts form `endedUnsolved`, `capped` from a one-entry probe; one rule; the archive draws an
+  over day's key with the `∞`). **`solved` wins** over both. No leaderboard
   row, streak, celebration or `solve` event; answer + source shown; shareable, and that share
   is NOT counted in the `share` event (share ÷ solve stays the liked-day signal).
   - **THE CAP**: exactly `ROUND_GUESS_CAP` raw entries, derived, never stored. `round_full`
@@ -492,9 +494,12 @@ The live routes then share:
   the collection); body `collection: false` skips the solved-day read (the archive, since
   2026-08-28). No `date` in its allowList.
 - **The calendar has no storage of its own**: one Query over `<lang>#sentence#<month>-`,
-  projected to `progress`/`solved`, PAGED, never revision-scoped. Client keeps an IN-MEMORY
-  cache only and revalidates when a month comes on screen. **Loading is a THIRD status
-  (unknown), never "not started"**; a failed read says so and offers to ask again.
+  projected to `progress`/`solved`/`gaveUp` and ONE probe of the log at its last slot under
+  the cap (`guesses[ROUND_GUESS_CAP − 1]`, present only at the cap — the log never leaves the
+  store), PAGED, never revision-scoped; each day answers `{date, progress, solved, over}`,
+  `over` the shared `endedUnsolved` made on the server (the web never holds the log). Client
+  keeps an IN-MEMORY cache only and revalidates when a month comes on screen. **Loading is a
+  THIRD status (unknown), never "not started"**; a failed read says so and offers to ask again.
 - **The STREAK stores the per-language SOLVED-DAY COLLECTION** on `player#<publicId>` /
   `history#<lang>` (never a counter — the week row needs the days), credited idempotently by
   the solving append (bounded by `MAX_SOLVED_DAYS`), private read only. **Both ends only ever

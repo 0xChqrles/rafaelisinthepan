@@ -11,10 +11,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../components/PuzzleTitle', () => ({ default: () => null }));
 vi.mock('../components/TopBar', () => ({ HeaderLeft: () => null }));
 vi.mock('../routing', () => ({ navigate: vi.fn() }));
-// A settled month holding no round: every in-range day is simply "not started".
+// A settled month holding no round — every in-range day is simply "not started" — but for the
+// days a test names as OVER (ended unsolved).
+const overDays = vi.hoisted(() => new Set<string>());
 vi.mock('../state/history', () => ({
   usePlayerHistory: () => ({ days: new Map(), daysPhase: 'ready', retry: () => {} }),
-  daySummaryStatus: () => ({ kind: 'none' }),
+  daySummaryStatus: (_view: unknown, date: string) => (overDays.has(date) ? { kind: 'over' } : { kind: 'none' }),
 }));
 // The month's picture is a canvas, which jsdom has none of; the days are the screen's buttons.
 vi.mock('../components/calendar/MonthRaster', () => ({ default: () => null }));
@@ -65,6 +67,7 @@ const nextMonth = () => host.querySelector<HTMLButtonElement>('[data-cal="next"]
 
 beforeEach(() => {
   resetCalendarMemory();
+  overDays.clear();
   vi.useFakeTimers();
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   host = document.createElement('div');
@@ -142,5 +145,18 @@ describe('the archive reopens on the month last turned to', () => {
     vi.setSystemTime(new Date('2026-10-05T12:00:00Z'));
     await remount();
     expect(nextMonth()).toBeNull();
+  });
+});
+
+// An over day's key draws the ∞ where its number stands, so its date is said in words — and
+// so is what happened: "unsolved", never the silence of a day not started.
+describe('an over day is said', () => {
+  it('names the long date and "unsolved" in its aria-label', async () => {
+    vi.setSystemTime(new Date('2026-09-20T12:00:00Z'));
+    overDays.add('2026-09-14');
+    await act(async () => root.render(<Archive lang="fr" />));
+    expect(day(14).getAttribute('aria-label')).toBe('14 septembre 2026 — non résolu');
+    expect(day(14).disabled).toBe(false);
+    expect(day(13).getAttribute('aria-label')).toBe('13 septembre 2026');
   });
 });

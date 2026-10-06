@@ -346,6 +346,9 @@ const STRINGS = {
   backToArchive: { en: 'BACK TO ARCHIVE', fr: "RETOUR À L'ARCHIVE" },
   changeLanguage: { en: 'CHANGE LANGUAGE', fr: 'CHANGER DE LANGUE' },
   srLangSolved: { en: 'solved', fr: 'résolu' },
+  // A round that ENDED UNSOLVED, in words: the calendar's day, the race line's member, the
+  // board's over row. Given up or capped, never told apart — as the share card never does.
+  srUnsolved: { en: 'unsolved', fr: 'non résolu' },
   // What a calendar cell or a chooser card says when its private summary (#211) has not
   // arrived. The visual placeholder says "not yet" by breathing; silence would read as
   // "not started", which is the one thing an unloaded day must never claim.
@@ -758,7 +761,7 @@ export function ariaRaceLine(lang: string, entries: readonly RaceSpoken[]): stri
   const parts = entries.map((entry) => {
     if (entry.kind === 'done') return fr ? `${entry.name}, trouvé en ${tries(entry.score)}` : `${entry.name}, solved in ${tries(entry.score)}`;
     if (entry.me) return fr ? `vous, ${entry.percent} %` : `you, ${entry.percent}%`;
-    if (entry.kind === 'over') return fr ? `${entry.name}, non résolu` : `${entry.name}, unsolved`;
+    if (entry.kind === 'over') return `${entry.name}, ${t(lang, 'srUnsolved')}`;
     return fr ? `${entry.name}, ${entry.percent} %, ${tries(entry.tries)}` : `${entry.name}, ${entry.percent}%, ${tries(entry.tries)}`;
   });
   return fr ? `Vos groupes : ${parts.join(' ; ')}` : `Your groups: ${parts.join('; ')}`;

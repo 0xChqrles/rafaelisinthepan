@@ -16,9 +16,11 @@
 //
 //   the MONTH  — ONE Query over the caller's own round partition behind the
 //                `<lang>#sentence#<YYYY-MM>-` sort-key prefix #203 reordered the key for,
-//                projected down to the `progress`/`solved` the server derived (#203). NO
-//                second calendar row and no extra per-guess write: those fields already
-//                ride the round mutation.
+//                projected down to the `progress`/`solved` the server derived (#203), the
+//                give-up and ONE probe of the log at the cap's last slot, each day answering
+//                whether the round is `over` (the shared `endedUnsolved`). NO second
+//                calendar row and no extra per-guess write: those fields already ride the
+//                round mutation, and the cap stays derived.
 //   the STREAK — the solved-day collection on the private player row (historyStore.ts),
 //                which the round route credits when it confirms a solve.
 //

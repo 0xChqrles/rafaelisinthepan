@@ -6,7 +6,7 @@ import {
   type DynamoDBClient,
   type TransactWriteItem,
 } from '@aws-sdk/client-dynamodb';
-import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
+import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, endedUnsolved } from '@whippin/shared';
 import { batchGetAll } from './dynamoBatchGet';
 import { isConditionFailure } from './dynamoErrors';
 import { sleep, type Wait } from './dynamoRetry';
@@ -97,11 +97,19 @@ export function dynamoRoundStore(
   const aliases = (...attributes: (keyof typeof NAMES)[]): Record<string, string> =>
     Object.fromEntries(attributes.map((attribute) => [NAMES[attribute], attribute]));
 
+  // THE CAP PROBE: one element of the log, at the last slot under the cap. The append never
+  // lets the log grow past the cap, so an element there says the round holds it — the one
+  // fact the month read needs of the log, learned without the log. Built from the constant,
+  // never a literal index.
+  const CAP_PROBE = `${NAMES.guesses}[${ROUND_GUESS_CAP - 1}]`;
+
   return {
     // The private calendar read (#211): ONE Query over the player's own partition behind a
-    // month prefix, PROJECTED down to the summary attributes. The projection does not lower
-    // what DynamoDB READS (capacity is measured on the whole item), but it is what keeps a
-    // month's raw guess logs — megabytes of slugs — from crossing the wire for a calendar.
+    // month prefix, PROJECTED down to the summary attributes, the give-up and the cap probe.
+    // Projection never lowered the read units (AWS measures a Query's capacity on the whole
+    // item), so the give-up and the probe are free; what it does is keep a month's raw guess
+    // logs — megabytes of slugs — in the store: only one slug of a CAPPED row reaches the
+    // Lambda, and nothing of the log reaches the client.
     //
     // It pages, even though ~31 rows of a few KB sit far inside the 1 MB response limit:
     // silently rendering a PARTIAL month is the one failure a calendar cannot show.
@@ -119,13 +127,13 @@ export function dynamoRoundStore(
             ExpressionAttributeNames: {
               '#pk': 'pk',
               '#sk': 'sk',
-              ...aliases('progress', 'solved'),
+              ...aliases('progress', 'solved', 'gaveUp', 'guesses'),
             },
             ExpressionAttributeValues: {
               ':pk': { S: roundPartition(publicId) },
               ':prefix': { S: prefix },
             },
-            ProjectionExpression: `#sk, ${NAMES.progress}, ${NAMES.solved}`,
+            ProjectionExpression: `#sk, ${NAMES.progress}, ${NAMES.solved}, ${NAMES.gaveUp}, ${CAP_PROBE}`,
             // Strongly consistent, the score Query's rule: a player opens the archive right
             // after finishing a day, and a calendar that has not caught up with their own
             // last guess reads as the game losing it.
@@ -137,10 +145,20 @@ export function dynamoRoundStore(
         // it, so reading it back needs no second attribute on the item. The slice is the
         // formatters' own inverse (`roundSortKeyDate`), never local offset arithmetic.
         for (const item of response.Items ?? []) {
+          const solved = item.solved?.BOOL === true;
           rows.push({
             date: roundSortKeyDate(item.sk?.S ?? '', key),
             progress: numberOf(item.progress) ?? 0,
-            solved: item.solved?.BOOL === true,
+            solved,
+            // `guesses` here is the PROBE, NEVER THE LOG: DynamoDB answers the one projected
+            // element as `{L: [x]}` and leaves out a path that does not exist (a log short of
+            // the cap). Never hand it to `itemToState` or `roundEnded`, which would read a
+            // one-entry log; it says `capped` and nothing else.
+            over: endedUnsolved({
+              solved,
+              gaveUp: item.gaveUp?.BOOL === true,
+              capped: (item.guesses?.L?.length ?? 0) > 0,
+            }),
           });
         }
         cursor = response.LastEvaluatedKey;

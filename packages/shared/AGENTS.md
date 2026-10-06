@@ -11,8 +11,9 @@
   shared/                     cross-cutting TS consumed by web + backend (pkg @whippin/shared)
     src/slug.ts               fold() — the slug/fold contract (byte-identical to slug())
     src/day.ts                the ONE 22:00-ET DST-correct game-day logic (client + server + publish)
-    src/scores.ts             the #201 round bounds, `roundEnded` (given up or capped),
-                              the #271 group caps, VIEWER_IP_HEADER (infra+backend)
+    src/scores.ts             the #201 round bounds, `roundEnded` + its facts form
+                              `endedUnsolved` (given up or capped), the #271 group caps,
+                              VIEWER_IP_HEADER (infra+backend)
     src/cors.ts               the API's CORS answer and its PREFLIGHT's (`preflightHeaders`):
                               the handler sends them, the CDN's edge functions answer with them
     src/scoring.ts            what a guess LOG means (#203): s()/holeProgress, rankCount,
@@ -42,10 +43,11 @@
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
     src/glyphs.ts             pixel-art glyphs the game DRAWS rather than sets: the #214 `∞`
                               path + view box, shared by the OG card, the web result and a
-                              group board's ended row; the
-                              app's mark, traced for the OG cards; the pixel face's ten digits
-                              as cells (`DIGIT_MASKS`: the result's count, the card's, the
-                              score watermark, the streak celebration)
+                              group board's ended row, and its cells (`INFINITY_MASK`, the
+                              archive's over key); the app's mark, traced for the OG cards;
+                              the pixel face's ten digits as cells (`DIGIT_MASKS`: the
+                              result's count, the card's, the score watermark, the streak
+                              celebration)
     src/countCells.ts         the result's COUNT as cells on the face's 8-pixel advance:
                               countInk/glyphBoxes/capCorners/inkEms (the screen + the card) and
                               the tally's reels (reelInk/reelRow, the screen's)
@@ -186,10 +188,13 @@
   than from its send (`web/state/roundSync.ts` `writeDelayMs`), which puts the server's
   round trip inside the interval. Pacing from the send instant leaves zero margin and
   refuses every request that travels faster than its predecessor — the same permanent-429
-  outcome this one spelling exists to prevent. It also owns `roundEnded`, the ONE reading of
-  "the round ENDED UNSOLVED" (given up, or the raw log at `ROUND_GUESS_CAP`; `solved` wins)
-  — the web's round screen and the backend's group day board (`over`) both read it, so the
-  two can never disagree about whether a member is still playing (`scores.test.ts`).
+  outcome this one spelling exists to prevent. It also owns `roundEnded` and its facts form
+  `endedUnsolved({solved, gaveUp, capped})`, the ONE reading of "the round ENDED UNSOLVED"
+  (given up, or the raw log at `ROUND_GUESS_CAP`; `solved` wins) — `roundEnded` is defined
+  through it, and `scores.test.ts` holds the two in agreement. The web's round screen, the
+  backend's group day board (`over`) and the #211 month read (`over`, its `capped` a
+  one-entry probe of the log) all read it, so none can disagree about whether a round is
+  over.
 - **`src/heat.ts` is the app's ONE gradient, and it runs WEIRD → CALM (user-decided
   2026-08-17, the calm redesign — superseding the FLIR iron bow of the same day and the
   crimson→cyan heat stops before it).** Solving is RESTORING PEACE to a weird sentence:
@@ -243,8 +248,9 @@
   the wire types and `periodRange` (the calendar week, Monday first, and the calendar
   month, both ending on the day addressed) — tested in `groups.test.ts`.
 - `src/history.ts` is the ONE shape of the #211 private player history — the month's
-  per-day `{date, progress, solved}` summary and the per-language solved-day collection —
-  plus `MAX_SOLVED_DAYS` and the `boundSolvedDays` both ends apply. The BACKEND derives the
+  per-day `{date, progress, solved, over}` summary (`over`: the server's `endedUnsolved`) and
+  the per-language solved-day collection — plus `MAX_SOLVED_DAYS` and the `boundSolvedDays`
+  both ends apply. The BACKEND derives the
   days from the round rows it already writes (#203's `progress`/`solved`) and bounds the
   collection on write AND read; the WEB renders them and bounds what it adopts. A second
   spelling would let a calendar fill from numbers the server never meant, or a streak count
@@ -266,9 +272,10 @@
   the OG rasterizer runs with `loadSystemFonts: false`, so the headline of a round that ended
   unsolved (given up, or capped) ships as pixel-art PATH DATA — one path, one view box. The
   result's headline (the screen's and the card's) sets it on the count's own grid, a cell per
-  font pixel; inline beside type it sizes from `INFINITY_EM_HEIGHT` in `em`. The plain-text
-  share line and the preview page's title use the literal character instead: no font is
-  involved there.
+  font pixel; inline beside type it sizes from `INFINITY_EM_HEIGHT` in `em`. A surface that
+  draws the ∞ as BLOCKS (the archive's over key) reads `INFINITY_MASK`, derived from the
+  path's own rectangles — never a second drawing. The plain-text share line and the preview
+  page's title use the literal character instead: no font is involved there.
 - **The result's pixel readings are ONE spelling for the screen and the share card**: the
   face's digits as cells (`glyphs.ts` `DIGIT_MASKS`, laid out by `countCells.ts`), the value
   noise (`noise.ts`), the holographic foil (`foil.ts`) and the run's heat with its clearing

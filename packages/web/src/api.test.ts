@@ -775,7 +775,7 @@ describe('roundUrl + parseRound (#201/#203)', () => {
 // month of NaN fills or a streak counted off garbage.
 describe('parsePlayerHistory (#211)', () => {
   const valid = () => ({
-    days: [{ date: '2026-08-21', progress: 62.5, solved: false }],
+    days: [{ date: '2026-08-21', progress: 62.5, solved: false, over: false }],
     solvedDays: [20686, 20687],
   });
 
@@ -794,6 +794,10 @@ describe('parsePlayerHistory (#211)', () => {
     expect(() => parsePlayerHistory({ ...valid(), days: [{ ...day, progress: Number.NaN }] })).toThrow(/days/);
     expect(() => parsePlayerHistory({ ...valid(), days: [{ ...day, progress: '62' }] })).toThrow(/days/);
     expect(() => parsePlayerHistory({ ...valid(), days: [{ ...day, solved: 1 }] })).toThrow(/days/);
+    // `over` is required: a day without it would be drawn as one still to resume.
+    const { over: _over, ...noOver } = day;
+    expect(() => parsePlayerHistory({ ...valid(), days: [noOver] })).toThrow(/days/);
+    expect(() => parsePlayerHistory({ ...valid(), days: [{ ...day, over: 1 }] })).toThrow(/days/);
     expect(() => parsePlayerHistory({ ...valid(), solvedDays: undefined })).toThrow(/solvedDays/);
     expect(() => parsePlayerHistory({ ...valid(), solvedDays: [20686.5] })).toThrow(/solvedDays/);
     expect(() => parsePlayerHistory({ ...valid(), solvedDays: ['20686'] })).toThrow(/solvedDays/);

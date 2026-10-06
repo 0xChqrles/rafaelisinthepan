@@ -16,8 +16,9 @@ import type { YearMonth } from '../../calendar';
 //   LAST     the month last turned to, per language, today: the archive reopens on it (a day
 //            played from September comes back to September). A new day opens on its own month.
 
-// A day's reading as the calendar drew it: none, a % (`p<pct>`), or solved.
-export type DrawnCode = 'n' | `p${number}` | 's';
+// A day's reading as the calendar drew it: none, over (ended unsolved), a % (`p<pct>`), or
+// solved.
+export type DrawnCode = 'n' | 'o' | `p${number}` | 's';
 
 const built = { scope: '', months: new Set<string>() };
 const stamped = new Set<string>();

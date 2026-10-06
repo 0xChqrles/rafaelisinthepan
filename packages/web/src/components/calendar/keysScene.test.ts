@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { COUNT_ROWS, progressHeatColor } from '@whippin/shared';
+import { COUNT_ROWS, bayerThreshold, progressHeatColor } from '@whippin/shared';
+import { DISSOLVE_MS } from '../bayerTiles';
 import { rgbToAbgr } from '../raster';
 import { BURST_ART } from '../strikeArt';
 import {
@@ -13,15 +14,25 @@ import {
   inkAbgr,
 } from '../streak/sprites';
 import { HEADROOM, calGeometry, keyAt, type CalGeometry } from './geometry';
-import { keysBeats, keysScene, numberCells, type KeyState, type KeysModel, type KeysSpec } from './keysScene';
+import {
+  infinityCells,
+  keysBeats,
+  keysScene,
+  numberCells,
+  type KeyState,
+  type KeysModel,
+  type KeysSpec,
+} from './keysScene';
 
-// The month's keys carry the archive's promises (contract.md K9, K16; the direction's own):
+// The month's keys carry the archive's promises (the archive bullet of packages/web/AGENTS.md):
 // a day under 100 is never drawn finished — its cap and light band stay iron, it never takes a
 // run's link — while 1% still shows ink; a finished day is charged through and through, lit on
 // top and dark at its foot, the other way up from a high %; a number never breaks into dither
-// or slivers; a day not known yet is never drawn as one not started; a day out of the window is
-// a number and no key; runs join only finished days of one week, across a week's end only
-// inside the month; and the one shiny thing is today's, only once it is done.
+// or slivers; a day not known yet is never drawn as one not started; a day OVER (ended
+// unsolved) is the bare key with the ∞ in its number's place, muted, never charged, linked or
+// foiled; a day out of the window is a number and no key; runs join only finished days of one
+// week, across a week's end only inside the month; and the one shiny thing is today's, only
+// once it is done.
 
 // The streak raster's inks, the scene's own.
 const WHITE = inkAbgr(I_WHITE);
@@ -358,6 +369,139 @@ describe('a day not known yet is never a day not started', () => {
   });
 });
 
+describe('a day over (ended unsolved)', () => {
+  const DAY = 14;
+  // Day 14 over between two finished days (13 closes the week before, 15 shares its week).
+  const overMonth = (today = -1) =>
+    month((d) => (d === DAY ? { kind: 'over', day: d } : d === DAY - 1 || d === DAY + 1 ? { kind: 'solved', day: d } : none(d)), today);
+  const noneMonth = (today = -1) =>
+    month((d) => (d === DAY - 1 || d === DAY + 1 ? { kind: 'solved', day: d } : none(d)), today);
+
+  it('is, at every size, the bare key with the ∞ muted in its number\'s place — iron, never the ghost', () => {
+    for (const g of SIZES) {
+      for (const today of [-1, DAY]) {
+        const read = frameAt(g, overMonth(today));
+        const bare = frameAt(g, noneMonth(today));
+        const inf = infinityCells(g.keyW, g.keyH);
+        const num = numberCells(g.keyW, g.keyH, DAY);
+        const corners = (lx: number, ly: number) => (lx === 0 || lx === g.keyW - 1) && (ly === 0 || ly === g.keyH - 1);
+        const at = `${g.name}${today === DAY ? ' today' : ''}`;
+        expect(inf.reduce((n, c) => n + (c === 1 ? 1 : 0), 0), at).toBe(19);
+        for (let ly = 0; ly < g.keyH; ly += 1) {
+          for (let lx = 0; lx < g.keyW; lx += 1) {
+            const c = ly * g.keyW + lx;
+            const v = read(DAY, lx, ly);
+            const where = `${at} ${lx},${ly}`;
+            if (corners(lx, ly)) {
+              expect(v, where).toBe(0);
+              continue;
+            }
+            // It always draws: no blank cell inside its shape.
+            expect(v, where).not.toBe(0);
+            // Its muted cells are exactly the ∞'s ink.
+            expect(v === MUTED, where).toBe(inf[c] === 1);
+            // Iron and the ∞ alone: no heat, no cobalt or deep, no cut-out — white only as today's cap.
+            if (today === DAY && ly <= 1) expect(v, where).toBe(WHITE);
+            else expect([RAIL, DUSK, MUTED], where).toContain(v);
+            // The cap and the light band are a bare key's, so it never reads as a ghost; and it
+            // differs from the bare key only where the ∞ or the number (and their rings) stand.
+            if (ly <= 2 || (inf[c] === 0 && num[c] === 0)) expect(v, where).toBe(bare(DAY, lx, ly));
+          }
+        }
+      }
+    }
+  });
+
+  it('takes no link beside a finished neighbour', () => {
+    const { tl, px } = frame(overMonth());
+    expect(tl.links.some((l) => l.a === DAY || l.b === DAY)).toBe(false);
+    // Nothing in the gap to its finished neighbour of the week.
+    const { x, y } = keyAt(G, DAY);
+    for (let r = 0; r < H; r += 1) for (let gx = 1; gx <= G.colGap; gx += 1) expect(px[(y + r) * G.cols + x + W - 1 + gx]).toBe(0);
+  });
+
+  it('comes in with the arrival and never charges', () => {
+    const tl = keysBeats({ ...SETTLED, model: overMonth(), build: 'arrive' });
+    expect(tl.keyIn[DAY]).toBeGreaterThan(-Infinity);
+    expect(tl.charge[DAY]).toBe(-Infinity);
+    expect(tl.lock[DAY]).toBe(-Infinity);
+  });
+
+  it('turning over from a %, DISSOLVES from its number to the ∞ — no charge, no burst', () => {
+    const changes = [{ index: DAY, from: 'p40' as const }];
+    const tl = keysBeats({ ...SETTLED, model: overMonth(), changes });
+    expect(tl.dissolve[DAY]).toBe(0);
+    expect(tl.charge[DAY]).toBe(-Infinity);
+    expect(tl.bursts).toEqual([]);
+
+    // Halfway through, the cells not yet in show the OLD picture — its number, white over its
+    // old heat (or cut out of it) — and never the ∞; those in show the new one.
+    const scene = keysScene(G, overMonth(), tl, 1);
+    const px = new Uint32Array(G.cols * G.rows);
+    scene.draw(px, DISSOLVE_MS / 2, false, -1);
+    const old = frame(month((d) => (d === DAY ? { kind: 'progress', day: d, pct: 40 } : d === DAY - 1 || d === DAY + 1 ? { kind: 'solved', day: d } : none(d)))).px;
+    const settled = frame(overMonth()).px;
+    const inf = infinityCells(W, H);
+    const num = digitMap(DAY);
+    const { x, y } = keyAt(G, DAY);
+    let oldNumber = 0;
+    let newInfinity = 0;
+    for (let ly = 0; ly < H; ly += 1) {
+      for (let lx = 0; lx < W; lx += 1) {
+        if (corner(lx, ly)) continue;
+        const th = bayerThreshold(x + lx, y + ly);
+        const v = cell(px, DAY, lx, ly);
+        // (Clear of the dissolve's level at half its time, whichever of its steps that is.)
+        if (th >= 5 / 8) {
+          expect(v).toBe(cell(old, DAY, lx, ly));
+          expect(v).not.toBe(MUTED);
+          if (num[ly * W + lx] === 1) {
+            expect([WHITE, GROUND]).toContain(v);
+            oldNumber += 1;
+          }
+        } else if (th < 3 / 8) {
+          expect(v).toBe(cell(settled, DAY, lx, ly));
+          if (inf[ly * W + lx] === 1) {
+            expect(v).toBe(MUTED);
+            newInfinity += 1;
+          }
+        }
+      }
+    }
+    expect(oldNumber).toBeGreaterThan(0);
+    expect(newInfinity).toBeGreaterThan(0);
+
+    // Once the dissolve is through, it is the over key at rest.
+    scene.draw(px, tl.settled + 100, false, -1);
+    expect(px).toEqual(settled);
+  });
+
+  it('restarted (a republish) charges up from the ∞: its pre-charge frame shows it, muted', () => {
+    // The second of two ups (the first has no frame before its charge): 10 newly played, 14 from over.
+    const model = month((d) => (d === 10 ? { kind: 'progress', day: d, pct: 50 } : d === DAY ? { kind: 'progress', day: d, pct: 60 } : none(d)));
+    const changes = [
+      { index: 10, from: 'n' as const },
+      { index: DAY, from: 'o' as const },
+    ];
+    const tl = keysBeats({ ...SETTLED, model, changes });
+    expect(tl.charge[DAY]).toBeGreaterThan(0);
+    expect(tl.dissolve[DAY]).toBe(-Infinity);
+    const scene = keysScene(G, model, tl, 1);
+    const px = new Uint32Array(G.cols * G.rows);
+    scene.draw(px, tl.charge[DAY] / 2, false, -1);
+    const inf = infinityCells(W, H);
+    for (let ly = 0; ly < H; ly += 1) {
+      for (let lx = 0; lx < W; lx += 1) {
+        if (corner(lx, ly)) continue;
+        expect(cell(px, DAY, lx, ly) === MUTED, `${lx},${ly}`).toBe(inf[ly * W + lx] === 1);
+      }
+    }
+    // Charged, it wears its number: no ∞ left.
+    scene.draw(px, tl.settled + 100, false, -1);
+    for (let ly = 0; ly < H; ly += 1) for (let lx = 0; lx < W; lx += 1) expect(cell(px, DAY, lx, ly)).not.toBe(MUTED);
+  });
+});
+
 describe('out of the window, and the pads', () => {
   it('draws a day out of range as its number alone, and a pad as nothing', () => {
     const model = month((d) => (d > 4 ? { kind: 'out', day: d } : none(d)));
@@ -451,11 +595,16 @@ describe('today', () => {
     expect(cell(px, 11, 5, 5)).toBe(DUSK);
   });
 
-  it('lands as loud as it is full: no burst and no white for a day never opened', () => {
+  it('lands as loud as it is full: no burst and no white for a day never opened, or over', () => {
     const land = (state: KeyState) => keysBeats({ ...SETTLED, model: month((d) => (d === 4 ? state : none(d)), 4), drop: 'build' });
-    const quiet = land(none(4));
-    expect(quiet.bursts).toEqual([]);
-    expect(quiet.impactFlash).toBe(false);
+    for (const state of [none(4), { kind: 'over', day: 4 }] as const) {
+      const quiet = land(state);
+      expect(quiet.bursts).toEqual([]);
+      expect(quiet.impactFlash).toBe(false);
+      // Never the foil: that is a finished today's alone.
+      expect(quiet.foil).toBeUndefined();
+      expect(keysScene(G, month((d) => (d === 4 ? state : none(d)), 4), quiet, 1).foilBoxes).toEqual([]);
+    }
     for (const state of [{ kind: 'progress', day: 4, pct: 40 }, { kind: 'solved', day: 4 }] as const) {
       const loud = land(state);
       expect(loud.bursts).toEqual([{ index: 4, at: loud.impact }]);

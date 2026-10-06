@@ -1,4 +1,4 @@
-import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS } from '@whippin/shared';
+import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, roundEnded } from '@whippin/shared';
 import {
   roundMonthPrefix,
   roundPartition,
@@ -55,7 +55,8 @@ export function memoryRoundStore(): RoundStore & LinkRoundWrites {
   return {
     // The private calendar read (#211): the same month prefix the Dynamo Query runs, over
     // this process's own map. A day with no record is simply absent, which is how "not
-    // started" is said.
+    // started" is said. The item holds its whole log beside `solved` and `gaveUp`, so `over`
+    // is the log form of the one rule (`roundEnded`) — the facts the Dynamo store probes for.
     async listMonth(key, publicId) {
       // The map key is `pk/sk`, so the sort key starts after the partition's own slash —
       // and the date comes back out of it through the formatters' one inverse
@@ -69,6 +70,7 @@ export function memoryRoundStore(): RoundStore & LinkRoundWrites {
           date: roundSortKeyDate(id.slice(partition.length), key),
           progress: item.progress ?? 0,
           solved: item.solved === true,
+          over: roundEnded(item),
         });
       }
       // Ascending by date, like the Query's own sort-key order — a caller that renders in

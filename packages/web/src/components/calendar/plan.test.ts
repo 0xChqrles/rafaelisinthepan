@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { KeyState, KeysModel } from './keysScene';
 import { isBuilt, isStamped, markBuilt, resetCalendarMemory } from './memory';
-import { markShown, nextStage, type Shown, type Stage, type Viewer } from './plan';
+import { codesOf, markShown, nextStage, stageId, type Shown, type Stage, type Viewer } from './plan';
 
 // The calendar's memory keeps the archive's promise that NOTHING THAT HAS LANDED MOVES: a
 // month arrives once per day and account — a remount, a resize, a refetch never replays it —
@@ -101,23 +101,50 @@ describe('a month shown again plays what changed since it was drawn', () => {
   });
 
   it('plays a ceremony only for what went up, at most three', () => {
-    show(null, sep((d) => (d === 7 ? { kind: 'progress', day: d, pct: 60 } : none(d))));
-    // Back from playing: 2, 3, 4 and 10 solved, 7 down to 20% (a republished day restarted).
+    show(null, sep((d) => (d === 7 || d === 5 ? { kind: 'progress', day: d, pct: 60 } : none(d))));
+    // Back from playing: 2, 3, 4 and 10 solved, 7 down to 20% (a republished day restarted),
+    // and 1 (never opened) and 5 (at 60%) OVER — given up.
     const solved = new Set([2, 3, 4, 10]);
-    const back = show(null, sep((d) => (solved.has(d) ? { kind: 'solved', day: d } : d === 7 ? { kind: 'progress', day: d, pct: 20 } : none(d))));
+    const over = new Set([1, 5]);
+    const back = show(
+      null,
+      sep((d) =>
+        solved.has(d)
+          ? { kind: 'solved', day: d }
+          : over.has(d)
+            ? { kind: 'over', day: d }
+            : d === 7
+              ? { kind: 'progress', day: d, pct: 20 }
+              : none(d),
+      ),
+    );
     expect(back.spec.build).toBe(null);
     expect(back.spec.changes.map((c) => [c.index, c.from])).toEqual([
+      [1, 'n'],
       [2, 'n'],
       [3, 'n'],
       [4, 'n'],
+      [5, 'p60'],
       [7, 'p60'],
       [10, 'n'],
     ]);
-    // The first three ups charge; the fourth up and the downgrade dissolve.
+    // The first three ups charge; the fourth up, the downgrade and the days turned over
+    // dissolve — an over day is no up, so it takes no ceremony's slot, even ahead of the ups.
     const charged = back.beats.charge.flatMap((at, i) => (at > -Infinity ? [i] : []));
     const dissolved = back.beats.dissolve.flatMap((at, i) => (at > -Infinity ? [i] : []));
     expect(charged).toEqual([2, 3, 4]);
-    expect(dissolved).toEqual([7, 10]);
+    expect(dissolved).toEqual([1, 5, 7, 10]);
+  });
+
+  it('keeps an over day apart from every other reading', () => {
+    const over = sep((d) => (d === 12 ? { kind: 'over', day: d } : none(d)));
+    expect(codesOf(over.model, over.cells).get('2026-09-12')).toBe('o');
+    // Its stage is its own: never mistaken for the % it reached, a day out of range, or none.
+    const others: KeyState[] = [{ kind: 'progress', day: 12, pct: 40 }, { kind: 'out', day: 12 }, none(12)];
+    for (const other of others) {
+      const shown = sep((d) => (d === 12 ? other : none(d)));
+      expect(stageId(shown, viewer)).not.toBe(stageId(over, viewer));
+    }
   });
 
   it('compares a fresh answer for the month on screen with the frame on screen', () => {

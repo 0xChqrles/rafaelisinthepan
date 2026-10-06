@@ -170,7 +170,10 @@ export async function loadPlayerHistory(
       setMonth(monthId, () => ({
         phase: 'ready',
         days: new Map(
-          history.days.map((day) => [day.date, { progress: day.progress, solved: day.solved }]),
+          history.days.map((day) => [
+            day.date,
+            { progress: day.progress, solved: day.solved, over: day.over },
+          ]),
         ),
       }));
       // **The collection is MERGED, never replaced** (corrected on review). A read started

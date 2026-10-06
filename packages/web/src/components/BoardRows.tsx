@@ -15,6 +15,7 @@ import InfinityGlyph from './InfinityGlyph';
 import ReelNumber from './ReelNumber';
 import CrownIcon from '../assets/icons/board.svg?react';
 import { shownPercent } from '../game/race';
+import { t } from '../i18n';
 
 // A line's arrival on the board screen: when it comes in (its mask dissolving through the
 // Bayer levels, CSS `--delay`) and how long its number's reels then run; the number LANDS at
@@ -90,15 +91,18 @@ export function BoardRowItem({
 
 // A member mid-round — or done with nothing recorded: a round that ENDED UNSOLVED (`over`:
 // given up, or capped) prints `∞` where the tries would be, its % kept quiet, after the live
-// rows (the shared `orderPlaying`). No rank: a position mid-round is never a rank claim (#206).
+// rows (the shared `orderPlaying`), and says `srUnsolved` to a screen reader — the word the
+// race line and the calendar say. No rank: a position mid-round is never a rank claim (#206).
 export function PlayingRowItem({
   row,
   me,
+  lang,
   index,
   run,
 }: {
   row: PlayingRow;
   me: boolean;
+  lang: string;
   index: number;
   run?: LineRun;
 }) {
@@ -116,7 +120,7 @@ export function PlayingRowItem({
         {row.over ? (
           <>
             <InfinityGlyph className="board-inf" cell={2} />
-            <span className="sr-only">∞</span>
+            <span className="sr-only">{t(lang, 'srUnsolved')}</span>
           </>
         ) : (
           <Count value={row.tries} run={run} />

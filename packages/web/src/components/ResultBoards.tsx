@@ -185,7 +185,7 @@ export default function ResultBoards({
                 ) : line.kind === 'ranked' ? (
                   <BoardRowItem key={line.row.publicId} row={line.row} value={line.row.score} me={line.me} index={i} />
                 ) : (
-                  <PlayingRowItem key={line.row.publicId} row={line.row} me={line.me} index={i} />
+                  <PlayingRowItem key={line.row.publicId} row={line.row} me={line.me} lang={lang} index={i} />
                 ),
               )}
             </ol>

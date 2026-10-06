@@ -385,7 +385,8 @@ export async function postHistoryBody(
 // Runtime shape check for the history response — the parsePuzzle contract: a wrong-shaped
 // body surfaces as the calendar's failure state, never as a month of NaN fills or a streak
 // counted off garbage. Both numbers are checked as REAL values, since one feeds a heat-ramp
-// colour and the other the streak arithmetic.
+// colour and the other the streak arithmetic; `over` is REQUIRED, since a day the answer
+// leaves it off is a day the calendar would draw as resumable.
 export function parsePlayerHistory(data: unknown): PlayerHistory {
   if (!isRecord(data)) throw new Error('malformed history: not an object');
   const { days, solvedDays } = data;
@@ -397,7 +398,8 @@ export function parsePlayerHistory(data: unknown): PlayerHistory {
       typeof day.date !== 'string' ||
       typeof day.progress !== 'number' ||
       !Number.isFinite(day.progress) ||
-      typeof day.solved !== 'boolean'
+      typeof day.solved !== 'boolean' ||
+      typeof day.over !== 'boolean'
     ) {
       throw new Error('malformed history: bad "days" entry');
     }

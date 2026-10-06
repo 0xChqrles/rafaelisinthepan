@@ -9,7 +9,7 @@
 // credits the streak's day exactly where `recordSolve` used to.
 
 import { describe, expect, it, vi } from 'vitest';
-import { generatePublicId, type PlayerHistory } from '@whippin/shared';
+import { ROUND_GUESS_CAP, generatePublicId, type PlayerHistory } from '@whippin/shared';
 import { createHandler } from './handler';
 import { memoryDeviceStore } from './memoryDeviceStore';
 import { memoryHistoryStore } from './memoryHistoryStore';
@@ -70,18 +70,22 @@ async function playDay(
   progress: number,
   solved: boolean,
   lang = 'fr',
+  guesses = ['bois'],
 ) {
   await rounds.append({
     date,
     lang,
     publicId,
     puzzle: 'rev1',
-    guesses: ['bois'],
+    guesses,
     progress,
     solved,
     now: new Date(`${date}T12:00:00Z`),
   });
 }
+
+// A log of `n` distinct folded guesses.
+const logOf = (n: number) => Array.from({ length: n }, (_, i) => `essai${i}`);
 
 describe('history route (#211)', () => {
   it('answers the asked-for MONTH with the summary the server derived — never the log', async () => {
@@ -93,11 +97,44 @@ describe('history route (#211)', () => {
     expect(result.statusCode).toBe(200);
     const body = JSON.parse(result.body) as PlayerHistory;
     expect(body.days).toEqual([
-      { date: '2026-08-03', progress: 42, solved: false },
-      { date: '2026-08-04', progress: 100, solved: true },
+      { date: '2026-08-03', progress: 42, solved: false, over: false },
+      { date: '2026-08-04', progress: 100, solved: true, over: false },
     ]);
     // The raw guesses are the one thing a summary surface may never be handed.
     expect(result.body).not.toContain('bois');
+  });
+
+  it('answers a day the player GAVE UP on as over, the % it reached kept', async () => {
+    const { handler, roundStore, me } = await makeHandler();
+    await playDay(roundStore, me.accountId, '2026-08-03', 42, false);
+    await roundStore.giveUp({ date: '2026-08-03', lang: 'fr', publicId: me.accountId, puzzle: 'rev1' });
+
+    const body = JSON.parse((await handler(post(MONTH, me))).body) as PlayerHistory;
+    expect(body.days).toEqual([{ date: '2026-08-03', progress: 42, solved: false, over: true }]);
+  });
+
+  it('answers a give-up after only misses as over — never a day not started', async () => {
+    const { handler, roundStore, me } = await makeHandler();
+    await playDay(roundStore, me.accountId, '2026-08-03', 0, false);
+    await roundStore.giveUp({ date: '2026-08-03', lang: 'fr', publicId: me.accountId, puzzle: 'rev1' });
+
+    const body = JSON.parse((await handler(post(MONTH, me))).body) as PlayerHistory;
+    expect(body.days).toEqual([{ date: '2026-08-03', progress: 0, solved: false, over: true }]);
+  });
+
+  it('answers a log at the CAP as over unless it is solved — and never hands the log', async () => {
+    const { handler, roundStore, me } = await makeHandler();
+    const log = logOf(ROUND_GUESS_CAP);
+    await playDay(roundStore, me.accountId, '2026-08-03', 71, false, 'fr', log);
+    await playDay(roundStore, me.accountId, '2026-08-04', 100, true, 'fr', log);
+
+    const result = await handler(post(MONTH, me));
+    const body = JSON.parse(result.body) as PlayerHistory;
+    expect(body.days).toEqual([
+      { date: '2026-08-03', progress: 71, solved: false, over: true },
+      { date: '2026-08-04', progress: 100, solved: true, over: false },
+    ]);
+    expect(result.body).not.toContain(log[0]);
   });
 
   it('is scoped to the asked-for month and language', async () => {

@@ -50,6 +50,8 @@ export interface Stage extends Shown {
 }
 
 export function stageId(next: Shown, viewer: Viewer): string {
+  // A day by its kind's first two letters (`no`, `ov`, `ou`, `un`, `so`, `pa`: all distinct),
+  // a % by its value.
   const days = next.model.keys.map((key) => (key.kind === 'progress' ? `p${key.pct}` : key.kind.slice(0, 2))).join(',');
   return `${viewer.lang}|${viewer.accountId ?? '-'}|${viewer.motion ? 'm' : 'r'}|${next.month}|${next.activeDay}|${next.model.phase}|${next.model.today}|${days}`;
 }

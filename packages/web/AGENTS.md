@@ -2033,7 +2033,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     flag set (the flag means ended unsolved) — a share the `share` event does NOT count
     (`useShare({tracked: false})`), so share ÷ solve stays the liked-day signal. The group
     day board draws the same glyph in an `over` row's tries slot (`.board-inf`), its %
-    muted.
+    muted, and the archive's over key in the muted ink, from its cells (`INFINITY_MASK`).
   - **THE GIVE-UP (user-decided 2026-10-02).** A pixel WHITE FLAG (`assets/icons/flag.svg`,
     the lock's 8-cell grid, monochrome, `--muted`; aria `giveUp`) stands at the RIGHT END of
     the prompt row: `.prompt-zone` is a two-column grid whose second column the flag holds
@@ -2059,8 +2059,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (`revealedAt`, `.chip-out`), and the result page's unfound secrets wear the chip too
     (`SolvedHole.found`, `.solved-secret.revealed`). A give-up read at mount, or made on
     another device, lands on the settled result at once, like the cap.
-  - **`statusOf` takes a SERVER summary** (`{progress, solved}`), and #211 is its producer —
-    the two shipped together, as the Ordering note on both issues required.
+  - **`statusOf` takes a SERVER summary** (`{progress, solved, over}`), and #211 is its
+    producer — the two shipped together, as the Ordering note on both issues required. It
+    reads solved, then over, then a 0% day as none, then progress: an over day is never
+    `none`, whatever its %.
 
 - **Server-backed player history (#211).** The product contract — why the summary surfaces
   have no local source after #214, the explicit-loading rule, the streak window, the metering
@@ -2082,8 +2084,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     calendar reads itself: a read out, and the one frame before the read is asked for, are the
     WAIT (sparse ghosts under the read wave); a FAILED read RESTS (a still 50% checker). Drawn
     resting, the frame before the ask would stand its ghosts before the wait began, and they
-    would flash in without the skeleton's 320ms. The chooser draws the app's skeleton strip;
-    `srStatus` says `srStatusUnknown`, because silence there reads as "not started".
+    would flash in without the skeleton's 320ms. `srStatus` says `srStatusUnknown`, because
+    silence there reads as "not started". A round that ENDED UNSOLVED (given up, or capped)
+    is `{kind:'over'}` — no %; `srStatus` says `srUnsolved` (unsolved / non résolu, the race
+    line's own word, and the board's over row's).
   - **A FAILED read speaks whether or not a month is already drawn** (corrected on review).
     A revalidation deliberately keeps its cached month on screen, so gating the block on
     there being nothing to show made every failure after the first good visit SILENT — an
@@ -3050,12 +3054,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the streak's edge-on link across the gap (4 rows, cobalt over deep), and a run carries on
     across a week's end as two square 2-cell stubs, out of the last key and into the next
     week's first (this month's days only) — never foil, never called a streak: a late solve
-    joins a run. **A DAY TO COME** is its number in slate on bare ground, no key; a pad is
-    nothing.
+    joins a run. **AN OVER DAY** (given up, or capped) is the bare key — cap and light kept,
+    so never the ghost — with the shared ∞ (`INFINITY_MASK`, 9 × 5 cells, a cell per font
+    pixel) in its number's place, centred in the number's band, in `--muted` (the board's
+    over ink): no charge, no %, no heat, no cobalt, no link, no foil — a door to the revealed
+    sentence, not a day to resume, so a charged key always means one. Its date stays in the
+    button (aria-label, forced colours). **A DAY TO COME** is its number in slate on bare
+    ground, no key; a pad is nothing.
   - **TODAY** (the month on screen holds it) wears a WHITE CAP, its top two rows — the key
     that is lit — over whatever it holds, its ghost included; `aria-current="date"`; never a
     ring, brackets or a chip. **FINISHED, it is the screen's ONE shiny thing**: the shared
-    FOIL over the key's shape, its number still cut out, its deep foot kept.
+    FOIL over the key's shape, its number still cut out, its deep foot kept. An over today
+    keeps its white cap over the ∞, never foil.
   - **UNKNOWN (#211) is the key's GHOST**: its shape as a slate checker round the white
     number in a 1-cell clearing — no cap, no light band, so it never reads as a day not
     started — keeping its number and its tap. SPARSE (a quarter of the cells) while the read
@@ -3080,18 +3090,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
     held back as bare ground, it falls as itself from 10 cells up over four frames, eased
     in, lands at 864ms with the podium's shake and — as loud as the day is full — a white
     impact frame and the strike sheet's BURST behind it (heat ink played, cobalt finished; a
-    day never opened lands quietly); its links join once it is still, and, finished, its
-    cobalt recedes into the foil (the podium's RECEDE, 400ms in 8 steps). A month first
-    shown under a TURN arrives at a quicker pace (20ms a diagonal, 200ms charges). **A month
-    shown again is SETTLED** from its first frame: a remount, a resize or a refetch never
-    replays an arrival.
+    day never opened, or over, lands quietly); its links join once it is still, and,
+    finished, its cobalt recedes into the foil (the podium's RECEDE, 400ms in 8 steps). A
+    month first shown under a TURN arrives at a quicker pace (20ms a diagonal, 200ms
+    charges). **A month shown again is SETTLED** from its first frame: a remount, a resize or
+    a refetch never replays an arrival.
   - **A DAY THAT CHANGED since the month was last DRAWN** (memory DRAWN: what each day said,
     played here or on another device) plays its CHANGE as the month is shown again: up to
     three UPGRADES (more done, or done), in date order, 160ms apart, each front travelling
     from what it said to what it says (240ms, white head); a new solve locks with a white
-    cap, bursts in cobalt and welds its run with white links. The rest — more changes, a
-    downgrade after a republish's restart — dissolve to their new picture; a first showing
-    has none (that is the arrival's). The memories are written as a stage is shown, so a
+    cap, bursts in cobalt and welds its run with white links. The rest — more changes, a day
+    turning OVER, a downgrade after a republish's restart — dissolve to their new picture,
+    each picture drawn with its own mark (the date number, or the ∞); a first showing has
+    none (that is the arrival's). The memories are written as a stage is shown, so a
     ceremony plays ONCE, even left halfway.
   - **TURNS AND GIVE-WAYS** (`calendar/plan.ts`; the stage latched as the board latches its
     podium's): a turn's day buttons are the new month's AT ONCE (a tap never meets the old
