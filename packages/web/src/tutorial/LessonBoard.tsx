@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Phrase from '../components/Phrase';
 import DissolvePhrase from '../components/DissolvePhrase';
 import WordInput from '../components/WordInput';
@@ -6,8 +6,7 @@ import Keyboard from '../components/Keyboard';
 import RevealTray from '../components/RevealTray';
 import KeyboardHold from '../components/KeyboardHold';
 import QuietFailure from '../components/QuietFailure';
-// (For its side effect: the root's Bayer tiles the tray's button comes in through.)
-import '../components/bayerTiles';
+import { DISSOLVE_MS } from '../components/bayerTiles';
 import CellDigits from '../components/CellDigits';
 import HistoryWheel from '../components/HistoryWheel';
 import HistoryModal from '../components/HistoryModal';
@@ -54,8 +53,14 @@ import { LEVELS, PLAY_LEVEL } from './levels';
 //
 // A STAGE TURNS INTO THE NEXT ONE THE WAY A WORD CHANGES (2026-09-30): the next board's
 // letters churn in place from its first frame and settle, as an improved word does
-// (Phrase's `morphFrom`). The last one dissolves into LEVEL 1's own card, which turns DONE
-// under the player's eyes.
+// (Phrase's `morphFrom`). The last one dissolves into LEVEL 1's own card, which stands in the
+// room between the coach's line and PLAY at the list hero's shape and turns DONE under the
+// player's eyes, in its own material (`LevelCard`).
+//
+// THE WORD LIST IS WAITED FOR WHERE IT IS NEEDED, NOT BEFORE: the reveal needs none, so its
+// CONTINUE stands from the first frame; pressed before the list has landed, the keyboard's
+// footprint rises as its HOLD (`KeyboardHold`), and the keys come in over it through the
+// dither once they can be greyed.
 
 // The board's holes at their start words — the same shape Game derives from a real puzzle, so
 // every component it feeds behaves identically.
@@ -89,9 +94,18 @@ const JUMP_FRAME_MS = 70;
 // The finale: PLAY has arrived under the found sentence; this long after, the sentence
 // dissolves into the level's card.
 const END_HOLD_MS = 900;
-// The card lands (`arrive`), stands in its NEXT dress, then its title's selection box is
-// wiped off and the level turns DONE — this long after it mounts (index.css `.level-clear`).
-const CLEAR_FLIP_MS = 280 + 600 + 320;
+// The card dissolves in at this scene time of its picture (the page typing itself in), stands
+// in its NEXT dress while the page types, then turns DONE this long after it mounts — its
+// number inked, its title's chip wiped off (index.css `mark-unwipe`, UNWIPE_MS), its held
+// words inked in.
+const CARD_FROM_S = 0.6;
+const CLEAR_AT_MS = 2400;
+const UNWIPE_MS = 320;
+// The card's shape: the list hero's (index.css `--learn-hero-ar`), read where the card stands.
+function heroAspect(el: Element): number {
+  const v = parseFloat(getComputedStyle(el).getPropertyValue('--learn-hero-ar'));
+  return Number.isFinite(v) && v > 0 ? v : 1;
+}
 
 export default function LessonBoard({
   lang,
@@ -104,7 +118,6 @@ export default function LessonBoard({
   final,
   arrivedFrom,
   clearedBefore,
-  held = false,
   onComplete,
   onPlay,
   onCleared,
@@ -124,9 +137,6 @@ export default function LessonBoard({
   arrivedFrom?: string;
   // Level 1 was already done on this device when the lesson opened: its card lands DONE.
   clearedBefore: boolean;
-  // The lesson's chunk hold already stood its tray (`LazyLevelOne`): the tray's own hold
-  // takes over from it at once, never through the skeleton's wait again.
-  held?: boolean;
   onComplete: () => void;
   onPlay: () => void;
   // The finale's card has turned DONE: the level is recorded.
@@ -543,14 +553,18 @@ export default function LessonBoard({
   useEffect(() => {
     if (ending) later(() => setKbGone(true), KB_EXIT_FALLBACK_MS);
   }, [ending, later]);
-  // THE FINALE (2026-09-30): PLAY stands under the found sentence, then the sentence
-  // dissolves and LEVEL 1's own card takes its place — the list's card, the page typing
-  // itself in — and turns DONE in front of the player: its title's NEXT box wiped off, the
-  // done mark in its chip. PLAY is live throughout.
+  // THE FINALE (2026-09-30; its room and its material 2026-10-06): PLAY stands under the
+  // found sentence, then the sentence dissolves and LEVEL 1's own card takes the room between
+  // the coach's line and PLAY — the list's card at the list hero's shape, on the bare ground in
+  // the frame's corners, coming in through the dither with its page typing itself in — and
+  // turns DONE in front of the player: its number inks cobalt, its title's chip is wiped off,
+  // its held words ink in. PLAY is live throughout.
   useEffect(() => {
     if (final && kbGone) later(() => setLeaving(true), END_HOLD_MS);
   }, [final, kbGone, later]);
   const [cleared, setCleared] = useState(false);
+  // The card's DONE beat has begun (the chip being wiped off), and has landed.
+  const [clearing, setClearing] = useState(false);
   const [clearDone, setClearDone] = useState(clearedBefore);
   const onLeft = useCallback(() => setCleared(true), []);
   const flipped = useRef(false);
@@ -562,12 +576,50 @@ export default function LessonBoard({
   }, [onCleared]);
   useEffect(() => {
     if (!cleared || clearedBefore) return;
-    // Reduced motion: the card lands in its final state; the wipe's own end otherwise, with a
-    // deadline behind it (a lost `animationend` must not leave the level unrecorded).
+    // Reduced motion: the card lands in its final state. Otherwise DONE on its beat, landing on
+    // the wipe's own end, with a deadline behind it (a lost `animationend` must not leave the
+    // level unrecorded).
     if (prefersReducedMotion()) flip();
-    else later(flip, CLEAR_FLIP_MS + 500);
+    else {
+      later(() => setClearing(true), CLEAR_AT_MS);
+      later(flip, CLEAR_AT_MS + UNWIPE_MS + 500);
+    }
   }, [cleared, clearedBefore, flip, later]);
   const levelOne = LEVELS.find((l) => l.level === PLAY_LEVEL)!;
+  const cardState = clearing || clearDone ? 'done' : 'next';
+  // The card's box: the list hero's shape, as large as the room holds, on whole pixels —
+  // measured before the first frame it shows, and again as the room changes.
+  const room = useRef<HTMLDivElement>(null);
+  const [cardBox, setCardBox] = useState<{ w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = room.current;
+    if (!cleared || !el) return undefined;
+    const fit = () => {
+      const ar = heroAspect(el);
+      const w = Math.floor(Math.min(el.clientWidth, el.clientHeight * ar));
+      const h = Math.floor(w / ar);
+      setCardBox((cur) => (cur && cur.w === w && cur.h === h ? cur : { w, h }));
+    };
+    fit();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [cleared]);
+  // THE KEYBOARD'S HOLD: the keys asked for (the reveal's CONTINUE) before the word list has
+  // landed — the pad's footprint stands as its hold, and once the list lands the keys come in
+  // over it through the dither while it goes out (`holdOut`, one dissolve long) — set before
+  // the keys' first frame is painted, so the tray never stands empty between the two.
+  const holding = !vocab && !vocabError && !kbGone && !revealed && !waitingTap;
+  const [heldKeys, setHeldKeys] = useState(false);
+  useEffect(() => {
+    if (holding) setHeldKeys(true);
+  }, [holding]);
+  const [holdOut, setHoldOut] = useState(false);
+  useLayoutEffect(() => {
+    if (!heldKeys || !vocab) return;
+    setHoldOut(true);
+    later(() => setHoldOut(false), DISSOLVE_MS);
+  }, [heldKeys, vocab, later]);
 
   // --- the tries: a tap on a word (the wheel while open, the grid once found) ---
   const [historyHole, setHistoryHole] = useState<number | null>(null);
@@ -663,29 +715,24 @@ export default function LessonBoard({
       return { value: c.charge, active: c.active, hint };
     });
   }, [shownMeters, holes, lang]);
-  // The word list could not be had: the keys cannot be greyed, so the tray holds still.
+  // The word list could not be had: the keys cannot be greyed, so the keyboard's hold stands
+  // still and the prompt's row says so.
   const listLost = vocabError != null;
-  // While the word list is out (or lost) the tray HOLDS what will land there once it is in:
-  // the stage's button — the reveal's CONTINUE, a solved stage's CONTINUE or PLAY — as its
-  // slot, nothing on the meter stage before its tap, else the keyboard's unlit keys. In
-  // through the dither once the skeleton's wait is over (a quick list never flashes it) —
-  // at once when the chunk's hold already stood it (`held`), or when the list is lost.
-  const trayHold = `tray-hold${listLost ? ' still' : held ? ' at-once' : ''}`;
 
   return (
     // tutorial--word: the word stage is deliberately CLEAN — one big centered word in the
     // middle; the sentence stage wears the game's own layout.
-    <div className={`game tutorial${sentenceLike ? '' : ' tutorial--word'}`}>
+    <div className={`game tutorial${sentenceLike ? '' : ' tutorial--word'}${cleared ? ' l1-cleared' : ''}`}>
       <div className="sr-only" role="status" aria-live="polite">
         {announce}
       </div>
 
-      {/* LEVEL 1 OPENS AS THE ARTICLE LEVELS DO (2026-09-30): a BYLINE on a hairline — the
-          player, the level's number and line, the stage counter (the pixel face, user-decided
-          2026-09-17) — then the coach's line under it as the page's own voice, no box. THE
-          COACH IS THE PLAYER (user-decided 2026-09-16: "people would want to read it more if
-          it's something telling it"): the old lineup's PLAYER idle sheet stands on the rule
-          and speaks the line under it. */}
+      {/* LEVEL 1 OPENS AS THE ARTICLE LEVELS DO (2026-09-30): a BYLINE on the stippled floor —
+          the player, the level's number and line, the stage counter (the pixel face,
+          user-decided 2026-09-17) — then the coach's line under it as the page's own voice, no
+          box. THE COACH IS THE PLAYER (user-decided 2026-09-16: "people would want to read it
+          more if it's something telling it"): the old lineup's PLAYER idle sheet stands on the
+          floor and speaks the line under it. */}
       <div className="l1-band">
         {/* Keyed on the line: the character HOPS each time it says something new. The key is
             its own — CoachText is keyed on the same line, and two siblings sharing a key leave
@@ -713,24 +760,35 @@ export default function LessonBoard({
       {/* The voice's height is reserved on this wrapper, so nothing under it ever moves. */}
       <div className="l1-voice">{shownCoach && <CoachText key={shownCoach} copy={shownCoach} />}</div>
 
-      <div className={`play${leaving ? ' play-finished' : ''}${cleared ? ' play-cleared' : ''}`}>
-        {/* THE BOARD IS A FIGURE: the stage's word or sentence in the articles' own panel, the
-            try count clipped inside it; the finale's card lands in exactly its box. */}
+      <div className={`play${leaving ? ' play-finished' : ''}`}>
+        {/* THE BOARD: the stage's word or sentence on the bare ground, the try count clipped
+            inside its box; the finale's card then takes the whole room. */}
         {cleared ? (
-          <div className={`l1-fig learn-card level-clear ${clearDone ? 'done' : 'todo'}`} aria-hidden="true">
-            <LevelCard
-              level={levelOne}
-              lang={lang}
-              state={clearDone ? 'done' : 'todo'}
-              from={0}
-              titleMark={
-                clearDone ? null : (
-                  <span className="level-clear-mark" onAnimationEnd={(e) => e.target === e.currentTarget && flip()}>
-                    <span className="learn-title-text">{t(lang, levelOne.titleKey)}</span>
-                  </span>
-                )
-              }
-            />
+          <div ref={room} className="l1-clear-room">
+            {cardBox && (
+              <div
+                className={`learn-card level-clear ${cardState}`}
+                style={{ width: cardBox.w, height: cardBox.h }}
+                aria-hidden="true"
+              >
+                <LevelCard
+                  level={levelOne}
+                  lang={lang}
+                  state={cardState}
+                  from={CARD_FROM_S}
+                  titleMark={
+                    clearing && !clearDone ? (
+                      <span
+                        className="level-clear-mark"
+                        onAnimationEnd={(e) => e.target === e.currentTarget && flip()}
+                      >
+                        <span className="learn-title-text">{t(lang, levelOne.titleKey)}</span>
+                      </span>
+                    ) : null
+                  }
+                />
+              </div>
+            )}
           </div>
         ) : (
           // The hiding PLAYS as the game's own word change (user-decided 2026-09-16): the Hole
@@ -775,9 +833,10 @@ export default function LessonBoard({
           </figure>
         )}
         {/* Once there is nothing left to type the prompt retires in place — still laid out, so
-            the board (and the finale's card after it) does not move, but invisible and inert;
-            the reveal has nothing to type yet either (the button below is the one action), nor
-            has the meter stage before the tap. */}
+            the board does not move, but invisible and inert; the reveal has nothing to type
+            yet either (the button below is the one action), nor has the meter stage before the
+            tap. Level 1 cleared, it leaves the flow (`.l1-cleared`): the room is the finale's
+            card's. */}
         <div
           className={`input-area${ending || revealed || waitingTap || cleared ? ' retired' : ''}`}
           aria-hidden={ending || revealed || waitingTap || cleared || undefined}
@@ -809,24 +868,11 @@ export default function LessonBoard({
 
       {/* The bottom is for INTERACTIONS: the keyboard — which drops away at the very end,
           leaving one button under the solved sentence. */}
-      <div className={`tray${ending && !kbGone ? ' kb-leaving' : ''}${rising ? ' kb-rising' : ''}`}>
-        {/* THE WORD LIST STILL OUT, or LOST: the tray's HOLD (`trayHold`) — the button's slot
-            where a button lands, the keyboard's footprint where the keys do — breathing while
-            the list is out, STILL once it failed (the note and RETRY then in the prompt's
-            row, above). */}
-        {!vocab && waitingTap ? null : !vocab && (revealed || kbGone) ? (
-          <span className={`mix-btn gate-slot ${trayHold}`} aria-busy={listLost ? undefined : true}>
-            {!listLost && <span className="sr-only">{t(lang, 'loading')}</span>}
-            <span className="gate-word" aria-hidden="true">
-              {t(lang, kbGone && final ? 'tutPlay' : 'tutContinue')}
-            </span>
-          </span>
-        ) : !vocab ? (
-          <div className={`kb-exit ${trayHold}`} aria-busy={listLost ? undefined : true}>
-            {!listLost && <span className="sr-only">{t(lang, 'loading')}</span>}
-            <KeyboardHold still={listLost} />
-          </div>
-        ) : kbGone ? (
+      <div
+        className={`tray${ending && !kbGone ? ' kb-leaving' : ''}${rising ? ' kb-rising' : ''}`}
+        aria-busy={holding || undefined}
+      >
+        {kbGone ? (
           <button type="button" className="mix-btn" onClick={final ? onPlay : onComplete}>
             {t(lang, final ? 'tutPlay' : 'tutContinue')}
           </button>
@@ -839,7 +885,7 @@ export default function LessonBoard({
           </button>
         ) : waitingTap ? null : (
           <div
-            className={`kb-exit${ending ? ' leaving' : rising ? ' rising' : ''}`}
+            className={`kb-exit${ending ? ' leaving' : rising ? ' rising' : ''}${heldKeys ? ' from-hold' : ''}`}
             onAnimationEnd={(e) => {
               // Child animations (key shakes) bubble here too: only the wrapper's own
               // kb-drop end unmounts it, and its own kb-rise end settles it.
@@ -848,8 +894,15 @@ export default function LessonBoard({
               else setRising(false);
             }}
           >
-            {/* A picked mask takes the keyboard's place with REVEAL (Game's tray swap). */}
-            {decoding !== null || ghost !== null ? (
+            {/* The word list still on its way: the pad's hold, breathing — STILL once the list
+                is LOST (its note and RETRY then in the prompt's row, above). A picked mask takes
+                the keyboard's place with REVEAL (Game's tray swap). */}
+            {!vocab ? (
+              <>
+                {!listLost && <span className="sr-only">{t(lang, 'loading')}</span>}
+                <KeyboardHold still={listLost} />
+              </>
+            ) : decoding !== null || ghost !== null ? (
               <RevealTray lang={lang} decoding={decoding !== null} onReveal={() => submit('')} onBack={unpickMask} />
             ) : (
               <Keyboard
@@ -862,6 +915,11 @@ export default function LessonBoard({
                 onBackspace={deleteChar}
                 onSubmit={submit}
               />
+            )}
+            {holdOut && (
+              <div className="kb-hold-out">
+                <KeyboardHold still />
+              </div>
             )}
           </div>
         )}

@@ -6,8 +6,8 @@ import { HeaderLeft } from '../components/TopBar';
 import { t } from '../i18n';
 import { pathForLesson } from '../langs';
 import { lazyChunk } from '../hooks/lazyChunk';
-import Duration from './Duration';
-import { LEVELS, levelOf } from './levels';
+import ArticleHead from './ArticleHead';
+import { levelOf } from './levels';
 // Imported for its listener: it must be listening before the key that opens an article.
 import './keyboardLast';
 
@@ -29,63 +29,48 @@ export default function LazyArticle(props: ArticleProps) {
   const { Loaded, failed, retry } = chunk.useLoaded();
   const meta = levelOf(props.level);
 
-  if (Loaded) return <Loaded {...props} />;
-  if (!meta) return null;
-  const seconds = meta.duration[props.lang];
   return (
     <>
-      {/* The header's title while the chunk is out (the article publishes its own once in). */}
-      <HeaderLeft>
-        <LangTitle
-          lang={props.lang}
-          title={t(props.lang, meta.titleKey)}
-          to={(picked) => pathForLesson(picked, props.level)}
-        />
-      </HeaderLeft>
-      {/* THE ARTICLE'S HOLD: its head as the article prints it — the sleeve held as the slate
-          stipple, its number, title and credits as the real text they are — then the
-          paragraphs' rails at the prose's pitch; breathing while the chunk is out, STILL once
-          it is lost, its note and RETRY where the text would start — laid over the first
-          lines' rails, out of their flow, so saying it moves no rail. */}
-      <div className={`article-screen article-hold${failed ? ' failed' : ''}`} aria-busy={failed ? undefined : true}>
-        {!failed && <span className="sr-only">{t(props.lang, 'loading')}</span>}
-        <header className="article-head">
-          <div className="article-sleeve" aria-hidden="true">
-            <span className={`stat-slot${failed ? '' : ' breathing'}`} />
-          </div>
-          <div className="article-title-row">
-            <span className="article-no" aria-hidden="true">
-              {String(props.level).padStart(2, '0')}
-            </span>
-            <h1 className="article-title">{t(props.lang, meta.subKey)}</h1>
-          </div>
-          <ul className="article-credits">
-            {seconds != null && (
-              <li>
-                <Duration lang={props.lang} seconds={seconds} />
-              </li>
+      {/* The header's title is published HERE, held across the chunk's wait, so the header
+          never blanks: the level's name and the language — a pick NAVIGATES to the same level
+          in that language. */}
+      {meta && (
+        <HeaderLeft>
+          <LangTitle
+            lang={props.lang}
+            title={t(props.lang, meta.titleKey)}
+            to={(picked) => pathForLesson(picked, props.level)}
+          />
+        </HeaderLeft>
+      )}
+      {Loaded ? (
+        <Loaded {...props} />
+      ) : (
+        // THE ARTICLE'S HOLD: the very head the article shows — its sleeve (holding as its own
+        // picture does), its number, its title and its credits as the real text they are — then
+        // the paragraphs' rails at the prose's pitch; breathing while the chunk is out, STILL
+        // once it is lost, its note and RETRY where the text would start — laid over the first
+        // lines' rails, out of their flow, so saying it moves no rail.
+        <div className={`article-screen article-hold${failed ? ' failed' : ''}`} aria-busy={failed ? undefined : true}>
+          {!failed && <span className="sr-only">{t(props.lang, 'loading')}</span>}
+          <ArticleHead lang={props.lang} level={props.level} />
+          <div className="article-text-hold">
+            <div className="article-rails" aria-hidden="true">
+              {RAILS.map((lines, p) => (
+                // Static: the index is a stable key.
+                <div key={p} className="article-rail-p">
+                  {lines.map((w, i) => (
+                    <span key={i} className="article-rail" style={{ '--w': `${w}%` } as CSSProperties} />
+                  ))}
+                </div>
+              ))}
+            </div>
+            {failed && (
+              <QuietFailure className="start article-failure" lang={props.lang} line={t(props.lang, 'failedPage')} onRetry={retry} />
             )}
-            <li>
-              {t(props.lang, 'levelOf').replace('{n}', String(props.level)).replace('{total}', String(LEVELS.length))}
-            </li>
-          </ul>
-        </header>
-        <div className="article-text-hold">
-          <div className="article-rails" aria-hidden="true">
-            {RAILS.map((lines, p) => (
-              // Static: the index is a stable key.
-              <div key={p} className="article-rail-p">
-                {lines.map((w, i) => (
-                  <span key={i} className="article-rail" style={{ '--w': `${w}%` } as CSSProperties} />
-                ))}
-              </div>
-            ))}
           </div>
-          {failed && (
-            <QuietFailure className="start article-failure" lang={props.lang} line={t(props.lang, 'failedPage')} onRetry={retry} />
-          )}
         </div>
-      </div>
+      )}
     </>
   );
 }

@@ -327,7 +327,8 @@
                               coach.ts (the reactive coach), levels.ts (each level's face over
                               `shared/src/tutorial.ts`, which levels exist and where) + data scripts/<lang>.ts
                               (+ <lang>.<word>.json, the pruned #154 boards it plays on);
-                              ArticleLevel.tsx (levels 2+, lazy via LazyArticle) over
+                              ArticleLevel.tsx (levels 2+, lazy via LazyArticle, whose
+                              hold stands the same ArticleHead) over
                               articles/<lang>.ts (the text, per language; types.ts, Rich.tsx
                               the inline markup, typeset.ts, figures/); art/ (LevelArt.tsx,
                               the dithered canvas, and scenes/, one picture per level)
@@ -388,6 +389,8 @@
                               the picks, the ghost a REVEAL submits, BACK's un-pick
       components/RevealTray.tsx  a picked mask's tray, in the keyboard's place: the price,
                               REVEAL, BACK
+      components/KeyboardHold.tsx  the keyboard's HOLD: every key's slot in the slate stipple,
+                              on the keyboard's own rows, while its keys cannot be pressed yet
       components/HistoryWheel.tsx  an OPEN hole's tap: a picker drum (`useDrum`) through the
                               word's own place — the word the wheel folds on is the sentence's
       components/HistoryModal.tsx  a COMPLETED hole's tap: its words as a plain grid, full
@@ -4364,14 +4367,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   word the prose quotes wears the held chip's white ground** (user-decided: the accent word is
   the one you are trying to get close to, the white ones are the others). Every level
   ends on the problem the next one answers. The end is three bands: NEXT LEVEL, PLAY, then the
-  credit to the article apart. On a wide screen the list and an article scroll the WHOLE
+  credit to the article apart. **The page is SET LIKE THE PRIVACY NOTICE**, the app's other
+  document: the bare ground (no panel, no hairline) — the sleeve, the track number in the
+  accent's pixel figures at 16px, the title, the credits line — each section opening on the
+  podium's stippled floor with its cue in the same figures; NEXT LEVEL a tappable thing in
+  the list cards' resting corner brackets, PLAY THE WORD under it (or, after the last level,
+  the `.mix-btn`), the credit's link on the privacy mail link's stippled underline. (Its
+  figures are their own.) On a wide screen the list and an article scroll the WHOLE
   VIEWPORT, so the scrollbar stands on the screen's edge (user-decided 2026-09-29). **Written in French first** (user-decided 2026-09-29: "wait for the article
   translation… for the moment just create the french version"): a level is READY in a
   language when its lesson exists there (`Level.duration`: an ARTICLE's reading time, which
   its card prints and `levels.test.ts` holds to the text; LEVEL 1, played, is ready with
   `null`, because a game takes as long as the player, so no surface prints a time for it);
-  elsewhere its card is grey
-  and says SOON. **Only LEVEL 1 has a DONE state**: the articles are read as often as anyone
+  elsewhere its card is printed in HALFTONE and says SOON. **Only LEVEL 1 has a DONE state**: the articles are read as often as anyone
   likes and record nothing — no done mark, no highlight, no badge. Completion is
   DEVICE-LOCAL (`lessonsDone`, never on the account), and level 1 is INFERRED FROM PLAY (see
   the gate bullet). The header's badge (`.hk-badge`, `undoneLevels(done, lang)`) is 1 while
@@ -4380,12 +4388,23 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is a page of CARDS** (2026-09-29, "fill the
   screen since we have nothing else to display"): each level wears its animated DITHERED
   illustration (`art/scenes/`, the meter's Bayer 8×8, the app's inks and the heat ramp; ~11
-  fps, only on screen, one still frame under reduced motion) edge to edge, dithered out
-  under its title; number, an article's reading time (level 1: an empty corner held open
-  until its done mark), title, subtitle; level 1,
-  until done, wears the invitation's selection box on its title, STILL (never wiped in). The
-  cards come in through the dither one after another (`.dissolve-in`). Wide: level 1 tall on
-  the left, the articles two by two; tablet: level 1 across the top; phone: one card under the other.
+  fps, only on screen, one still frame under reduced motion), composed to its card's whole
+  stage and dithered out under its title; number, an article's reading time (level 1:
+  none), title, subtitle. Wide: level 1 tall on the left, the articles two by two; tablet:
+  level 1 across the top; phone: one card under the other. **A card stands on the BARE
+  GROUND** (no panel, stroke or radius) **in a tappable thing's resting corner brackets**
+  (the slate, 2px, 16px arms), which step to white under a mouse alone (`(hover: hover) and
+  (pointer: fine)`); the number is the accent's pixel figures at 16px, the reading time and
+  SOON the face's 8px in `--muted`, each cutting its box out of the picture in the ground's
+  ink; the card's foot is ONE height, so a row's titles stand on one line. **Its STATE is said
+  in its own material, never in a word** (`LevelCard`): level 1 until done wears its number
+  WHITE and its title in the white chip (the next thing to do); DONE, its number cobalt, the
+  chip gone, the picture's held words inked in (`LevelArt`'s `solved`); a level not ready
+  here takes no tap and wears no brackets, its number `--muted` and its picture PRINTED IN
+  HALFTONE (`LevelArt`'s `halftone`: its inks given up for the slate — `--muted` for the
+  bright ones — and only the cells under the archive's `HALFTONE` share of the Bayer order
+  printed), never a CSS filter. The cards come in through the board's dither, one after the
+  other.
   **Stage progress (user-decided 2026-09-17):** the coach dialog shows `n/4` beside it,
   driven by the current stage and `stages.length` in `LevelOne`.
   **LEVEL 1 (`tutorial/LevelOne.tsx` over `LessonBoard.tsx`, one screen, the script's
@@ -4506,6 +4525,29 @@ it to the local store — see `packages/backend/AGENTS.md`).
     found it! You are ready for the real
     game." → PLAY. `STUCK` has no `meter` row
     (the stage is its own script). Not taught: the exact rate.
+  - **THE ROOM (2026-10-06):** the BYLINE stands on the podium's stippled floor — the coach,
+    `01` in the accent's pixel figures at 16px, the level's line, the stage counter `n/4` in
+    the face's 8px `--muted` (cobalt once the stage's word is found); the BOARD is the stage on
+    the bare ground — its box kept (`isolation: isolate`, so the try count stays clipped to
+    it), no ground, stroke or radius. **THE FINALE**: PLAY under the found sentence, which
+    then dissolves, and LEVEL 1's own card (`LevelCard`, the list's) stands in the free height
+    between the coach's line and PLAY, at the list hero's shape (`--learn-hero-ar`, read by
+    `LessonBoard`, sized on whole pixels) on the bare ground in the device frame's corners,
+    coming in through the board's dither with its page typing itself in; then it turns DONE
+    in its own material — `01` inks cobalt, the title's chip is wiped off, the picture's held
+    words ink into the found cobalt and its page stands. PLAY is live throughout.
+  - **THE WAITS (2026-10-06):** the lazy wrappers (`LazyLevelOne`, `LazyArticle`) publish the
+    header's `LangTitle` themselves, so the header never blanks while a chunk loads, and
+    each stands its screen's own layout as the HOLD — the slate stipple coming in after
+    `SKELETON_WAIT_MS`, then breathing (`.stat-slot`): level 1's byline with `01` and its line
+    as real text beside the coach's box, the board's word and CONTINUE's 52px slot; an
+    article's real head (`ArticleHead`: its sleeve, its number, title and credits) over
+    paragraph rails. **The word list is waited for where it is needed**: the reveal needs
+    none, so CONTINUE stands from the first frame; pressed before the list has landed, the
+    keyboard's footprint rises as its HOLD (`components/KeyboardHold`: every key's slot in
+    the stipple, on the keyboard's own rows and sizes), and the keys come in over it through
+    the board's dither once the list lands. The list's pictures HOLD their stage the same way
+    while the scenes chunk loads (`LevelArt`), the picture dissolving in over it.
   **A WHEEL ROW'S HIT AREA IS ITS WORD** (`.wheel-row` `width: fit-content`, user-reported
   2026-09-16 from the lesson: "when we click next to a word it scrolls to it instead of
   leaving the wheel"): the room beside a word is the scroller's own, and a click there folds

@@ -1,9 +1,8 @@
-import { useRef, useState, type ComponentProps } from 'react';
+import type { ComponentProps } from 'react';
 import type LevelOne from './LevelOne';
 import LangTitle from '../components/LangTitle';
 import QuietFailure from '../components/QuietFailure';
 import { HeaderLeft } from '../components/TopBar';
-import { SKELETON_WAIT_MS } from '../components/bayerTiles';
 import { t } from '../i18n';
 import { pathForLesson } from '../langs';
 import { lazyChunk } from '../hooks/lazyChunk';
@@ -25,8 +24,8 @@ const levelOne = LEVELS.find((l) => l.level === PLAY_LEVEL)!;
 // The lesson's first screen, HELD while its chunk is on its way (`.l1-hold`): its own layout,
 // so nothing that lands moves — the byline with the level's number and line as the real text
 // they are, the coach's box and the board's word in the slate stipple, CONTINUE's slot as the
-// game's hold draws PLAY's (after the skeleton's wait, then breathing; the lesson's own tray
-// hold takes over from it at once, `held`). The step counter's room is kept, unseen. A chunk
+// game's hold draws PLAY's (after the skeleton's wait, then breathing; the lesson's own
+// CONTINUE lands on it). The step counter's room is kept, unseen. A chunk
 // LOST holds it STILL at once, its note and RETRY in the prompt's row — and, on the first
 // visit, the way on to the game beside RETRY (`onSkip`).
 function LevelOneHold({
@@ -98,7 +97,7 @@ export default function LazyLevelOne({
   onSkip,
   beforeReload,
   ...props
-}: Omit<LevelOneProps, 'held'> & {
+}: LevelOneProps & {
   onSkip?: () => void;
   // What must outlive RETRY's reload (the lesson's way back, `lessonReturn`).
   beforeReload?: () => void;
@@ -107,19 +106,12 @@ export default function LazyLevelOne({
   // says so, RETRY asks again — a new document — and the first visit keeps its way on to the
   // game (`onSkip`).
   const { Loaded, failed, retry } = chunk.useLoaded();
-  // Whether the hold had come in by the time the lesson landed (out longer than the
-  // skeleton's wait): the lesson's tray then takes over from it at once, never blinking out.
-  const [holdFrom] = useState(() => (Loaded ? null : performance.now()));
-  const held = useRef<boolean | null>(null);
-  if (Loaded && held.current === null) {
-    held.current = holdFrom !== null && performance.now() - holdFrom >= SKELETON_WAIT_MS;
-  }
 
-  if (Loaded) return <Loaded {...props} held={held.current ?? false} />;
   return (
     <>
-      {/* The header's title while the chunk is out (the lesson publishes its own once in):
-          the level's name and the language it is taught in. */}
+      {/* The header's title is published HERE, held across the chunk's wait, so the header
+          never blanks: the level's name and the language it is taught in — a pick NAVIGATES to
+          the same lesson in that language, and App keys the screen on it. */}
       <HeaderLeft>
         <LangTitle
           lang={props.lang}
@@ -127,15 +119,19 @@ export default function LazyLevelOne({
           to={(picked) => pathForLesson(picked, PLAY_LEVEL)}
         />
       </HeaderLeft>
-      <LevelOneHold
-        lang={props.lang}
-        failed={failed}
-        onRetry={() => {
-          beforeReload?.();
-          retry();
-        }}
-        onSkip={onSkip}
-      />
+      {Loaded ? (
+        <Loaded {...props} />
+      ) : (
+        <LevelOneHold
+          lang={props.lang}
+          failed={failed}
+          onRetry={() => {
+            beforeReload?.();
+            retry();
+          }}
+          onSkip={onSkip}
+        />
+      )}
     </>
   );
 }

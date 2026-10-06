@@ -14,6 +14,10 @@ import type { SceneMaker } from './kit';
 // behind the word; full, the chip turns to foil, and the word typed right inks it in, cobalt.
 // When all three stand solved the page dissolves and the next day's types itself in — three
 // days, round and round.
+//
+// DONE (`solvedAt`, level 1 played): the first day's page and no more. Every hole still open
+// at that moment inks in with the solve's own sweep, cobalt; nothing is typed after it and the
+// page stands — a finished page, the cursor gone.
 
 // The inks, indexed from 1.
 const INKS = [WHITE, MUTED, RAIL, COBALT, CYAN, ORCHID, CORAL, AMBER, RED, DEEP];
@@ -133,7 +137,9 @@ const game: SceneMaker = (cols, rows, stage) => {
   const room = Math.min(avail, Math.max(46, Math.round(avail * 0.9)));
   const fit = Math.max(2, Math.floor((room - promptGap - box) / M.pitch) + 1);
   const nSent = Math.min(wide ? 3 : 4, fit);
-  const nCtx = wide ? 0 : Math.max(0, Math.min(14, fit - nSent));
+  // The book fills whatever room the sentence leaves, wide or tall: the picture is composed to
+  // its whole stage, never a few lines over an empty band.
+  const nCtx = Math.max(0, Math.min(14, fit - nSent));
   const nBefore = Math.ceil(nCtx / 2);
   const nLines = nCtx + nSent;
   const lastSent = nBefore + nSent - 1;
@@ -155,11 +161,18 @@ const game: SceneMaker = (cols, rows, stage) => {
   const makePage = (seed: number): Page => {
     const base = (i: number) => LETTERS[Math.floor(rnd(seed, i, 11) * LETTERS.length)];
     const fxs = HOLE_FX[seed % HOLE_FX.length];
-    const targets = [0, 1, 2].map((k) => ({ line: HOLE_LINES[k], fx: fxs[k] }));
+    // Each hole's length is drawn once (5–7 letters), so whether it still fits after the next
+    // word is the same question as whether it fits once that word is set: a hole is never
+    // passed over on a narrow card. One its line cannot take goes on to the next.
+    const targets = [0, 1, 2].map((k) => ({
+      line: HOLE_LINES[k],
+      fx: fxs[k],
+      n: 5 + Math.floor(rnd(seed, 100 + k, 13) * 3),
+    }));
     targets.sort((a, b) => a.line - b.line || a.fx - b.fx);
     // Set the stream into lines, ragged as the game sets its sentence. A hole is the word
-    // standing at its place — or the last one it still fits after — lengthened to 5–7
-    // letters, with its chip's padding and its exponent.
+    // standing at its place — or the last one it still fits after — with its chip's padding
+    // and its exponent.
     const placed: { i: number; x: number; line: number; n: number; hole: boolean }[] = [];
     let i = 0;
     let next = 0;
@@ -170,8 +183,8 @@ const game: SceneMaker = (cols, rows, stage) => {
         let n = base(i);
         let hole = false;
         const target = targets[next];
-        if (target && target.line === l) {
-          const nh = Math.max(n, 5 + Math.floor(rnd(seed, i, 13) * 3));
+        if (target && target.line <= l) {
+          const nh = target.n;
           const need = (wn: number) => M.padX * 2 + wn * M.adv - 1 + expGap + EXP;
           const nowFits = x + gap + need(nh) <= measure;
           const laterFits = x + gap + n * M.adv - 1 + M.space + need(nh) <= measure;
@@ -243,7 +256,7 @@ const game: SceneMaker = (cols, rows, stage) => {
 
   // One hole's state at `tau`: the guess it holds, its best rank, the meter, the foil, the
   // solve.
-  const holeAt = (h: number, start: number, tau: number) => {
+  const holeAt = (h: number, start: number, tau: number, done: number) => {
     let best = start;
     let held = -1;
     let fill = 0;
@@ -253,7 +266,7 @@ const game: SceneMaker = (cols, rows, stage) => {
     const meter = (rank: number) => (rank <= FULL_RANK ? 1 : clamp01(1 - Math.log(rank + 1) / Math.log(start + 1)));
     for (let k = 0; k < SCRIPT.length; k += 1) {
       const e = SCRIPT[k];
-      if (e.h !== h || tau < e.t + LAND) continue;
+      if (e.h !== h || tau < e.t + LAND || e.t > done) continue;
       if (e.rank === 0) {
         solveAt = e.t + LAND;
         continue;
@@ -266,6 +279,8 @@ const game: SceneMaker = (cols, rows, stage) => {
       fill = from + (meter(best) - from) * smooth((tau - e.t - LAND) / METER_S);
       if (meter(best) >= 1) foilFrom = e.t + LAND + METER_S;
     }
+    // Done: a hole still open inks in at that moment.
+    if (solveAt === Infinity && tau >= done) solveAt = done;
     return {
       best,
       held,
@@ -279,12 +294,14 @@ const game: SceneMaker = (cols, rows, stage) => {
 
   return {
     inks: INKS,
-    draw(r, t) {
-      const day = Math.floor(t / DAY);
+    draw(r, t, solvedAt) {
+      // Done, the clock runs on the first day and never wraps: the page stands.
+      const done = solvedAt ?? Infinity;
+      const day = done < Infinity ? 0 : Math.floor(t / DAY);
       const tau = t - day * DAY;
       const page = pages[((day % 3) + 3) % 3];
       // The day's end: the solved page dissolves through the ordered dither.
-      const vis = 1 - clamp01((tau - OUT_AT) / OUT_S);
+      const vis = done < Infinity ? 1 : 1 - clamp01((tau - OUT_AT) / OUT_S);
       if (vis <= 0) return;
       const set = (x: number, y: number, ink: number) => {
         if (x < 0 || y < 0 || x >= r.cols || y >= r.rows) return;
@@ -329,7 +346,7 @@ const game: SceneMaker = (cols, rows, stage) => {
 
       page.holes.forEach((w, h) => {
         if (tau < at(w.order)) return;
-        const s = holeAt(h, w.start, tau);
+        const s = holeAt(h, w.start, tau, done);
         const band = bandY(w.line);
         if (s.solve >= 1) {
           word(w.x, band, w.secret, I_COBALT);
@@ -396,7 +413,7 @@ const game: SceneMaker = (cols, rows, stage) => {
       // does, and fades through the dim ink.
       for (const e of SCRIPT) {
         const u = (tau - e.t - LAND) / FLOAT_S;
-        if (e.rank === 0 || u < 0 || u >= 1) continue;
+        if (e.rank === 0 || u < 0 || u >= 1 || e.t > done) continue;
         const w = page.holes[e.h];
         if (!w) continue;
         const chipTop = bandY(w.line) - M.asc - M.padY;
@@ -417,6 +434,7 @@ const game: SceneMaker = (cols, rows, stage) => {
         for (let k = 0; k < SCRIPT.length; k += 1) {
           const s = page.typed[k];
           const from = SCRIPT[k].t - HOLD_S - s.n * KEY_S;
+          if (SCRIPT[k].t > done) break;
           if (tau >= from && tau < SCRIPT[k].t) {
             typed = Math.min(s.n, Math.floor((tau - from) / KEY_S) + 1);
             shape = s;
@@ -425,7 +443,8 @@ const game: SceneMaker = (cols, rows, stage) => {
         const tx = cx + 3 + M.space;
         if (shape) word(tx, promptBand, shape, I_MUTED, typed);
         const curX = tx + typed * M.adv;
-        if (shape || tau % 1.6 < 0.9) for (let y = promptBand - M.asc; y < promptBand + M.xh; y += 1) set(curX, y, I_COBALT);
+        // Done, nothing is left to type: no cursor.
+        if (shape || (tau < done && tau % 1.6 < 0.9)) for (let y = promptBand - M.asc; y < promptBand + M.xh; y += 1) set(curX, y, I_COBALT);
       }
     },
   };

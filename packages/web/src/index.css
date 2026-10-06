@@ -5646,10 +5646,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 /* Screen contract: the EXPLANATION at the top, the board in the middle, INTERACTIONS at the
    bottom (a button, then the keyboard). No modals, no backdrop.
 
-   LEVEL 1 OPENS AS THE ARTICLE LEVELS DO (2026-09-30): a BYLINE band on a hairline (the
-   player, the level's number and line, the stage counter), the coach's line under it as the
-   page's own voice with no box, the board in the articles' figure panel, then the prompt and
-   the keys. Everything is in flow — nothing is fixed over the board — in ONE column on every
+   LEVEL 1 OPENS AS THE ARTICLE LEVELS DO (2026-09-30): a BYLINE band on the stippled floor
+   (the player, the level's number and line, the stage counter), the coach's line under it as
+   the page's own voice with no box, the board on the bare ground, then the prompt and the
+   keys. Everything is in flow — nothing is fixed over the board — in ONE column on every
    stage, the header's own (`--column`), so nothing changes width between two stages. */
 .tutorial {
   max-width: var(--column);
@@ -5699,29 +5699,20 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   height: 1em;
   vertical-align: middle;
 }
-/* THE LESSON'S TRAY HELD (`.tray-hold`: its chunk's hold, and the board's while the word list
-   is out): what will land there — the button's slot, or the keyboard's unlit keys — in
-   through the dither once the skeleton's wait is over (a quick load never flashes it), never
-   the real call's `arrive`; at once where a hold already stood it (`.at-once`: the chunk's
-   hold handing over to the board's) or a read was lost (`.still`). A slot's word breathes
-   while it is out and rests at half once lost. */
-.tutorial .tray > .mix-btn.tray-hold,
-.tutorial .tray > .kb-exit.tray-hold {
+/* THE LESSON'S TRAY HELD while its chunk is out (`.tray-hold`, the chunk's hold): CONTINUE's
+   slot, in through the dither once the skeleton's wait is over (a quick load never flashes
+   it), never the real call's `arrive`; at once, still, where the chunk was lost (`.still`). Its
+   word breathes while it is out and rests at half once lost. */
+.tutorial .tray > .mix-btn.tray-hold {
   -webkit-mask-size: 16px 16px;
   mask-size: 16px 16px;
   animation: board-dissolve 240ms linear 320ms backwards; /* SKELETON_WAIT_MS */
 }
-.tutorial .tray > .mix-btn.tray-hold.at-once,
-.tutorial .tray > .mix-btn.tray-hold.still,
-.tutorial .tray > .kb-exit.tray-hold.at-once,
-.tutorial .tray > .kb-exit.tray-hold.still {
+.tutorial .tray > .mix-btn.tray-hold.still {
   animation: none;
 }
 .tutorial .tray-hold:not(.still) .gate-word {
   animation: link-hold-breathe 640ms steps(1, end) 320ms infinite;
-}
-.tutorial .tray > .tray-hold.at-once .gate-word {
-  animation-delay: 0ms;
 }
 .tutorial .tray > .tray-hold.still .gate-word {
   -webkit-mask-image: var(--dz-4);
@@ -5745,7 +5736,7 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 .article-hold.failed .article-rails {
   animation: none;
 }
-/* The word stages are CLEAN: ONE big word in the plate, the prompt under it on the left. */
+/* The word stages are CLEAN: ONE big word on the bare ground, the prompt under it on the left. */
 .tutorial--word .phrase {
   font-size: clamp(28px, 7vw, 48px);
 }
@@ -5763,10 +5754,10 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   }
 }
 
-/* THE BYLINE. The band stands on its own hairline — the rule an article's section opens with
-   — and everything in it sits on that line: the player at the left, its feet on the rule,
-   then the level as its card and its article head name it (the number in the pixel face and
-   the accent, the level's line as the title), and the stage counter at the right end. */
+/* THE BYLINE. The band stands on the podium's stippled floor — what an article's section
+   opens on — and everything in it sits on that line: the player at the left, its feet on the
+   floor, then the level as its card and its article head name it (the number in the accent's
+   pixel figures, the level's line as the title), and the stage counter at the right end. */
 .l1-band {
   position: relative;
   width: 100%;
@@ -5774,7 +5765,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   align-items: flex-end;
   gap: 14px;
   padding: 0 0 12px 2px;
-  border-bottom: 1px solid var(--line);
+  background: repeating-linear-gradient(to right, var(--rail) 0 2px, transparent 2px 6px) 0 100% /
+    100% 2px no-repeat;
 }
 .l1-byline {
   flex: 1 1 auto;
@@ -5807,15 +5799,13 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   color: var(--fg);
   text-wrap: balance;
 }
-/* The step counter (n/4) speaks the game's own pixel face (user-decided 2026-09-17), at the
-   number's own whole size (16px, a phone's 8), and inks in the solve's cobalt once the stage's
-   word is found. Its tracking is a quarter of the face (whole pixels), given back at its end. */
+/* The step counter (n/4) speaks the game's own pixel face (user-decided 2026-09-17) — its
+   quiet figures at the face's smallest whole size — and inks in the solve's cobalt once the
+   stage's word is found. */
 .l1-step {
   flex: none;
-  margin-right: -0.25em;
   font-family: var(--pixel-font);
-  font-size: 16px;
-  letter-spacing: 0.25em;
+  font-size: 8px;
   color: var(--muted);
 }
 .l1-step.found {
@@ -5861,11 +5851,11 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   height: 0.14em;
   background: var(--accent);
 }
-/* THE BOARD IS A FIGURE: the articles' own panel around the stage's word or sentence,
-   isolated so the try count behind the sentence paints ON its ground and is clipped to it
-   (the hits, the loot and the wheel are not). It takes the room between the voice and the
-   prompt (which stays laid out even retired), and has the same box on every stage — the
-   finale's card lands in exactly that box, on the same ground. */
+/* THE BOARD: the stage's word or sentence on the bare ground, as the game sets its own. Its
+   BOX stays — isolated, so the try count behind the sentence paints on the ground and is
+   clipped to the box (the hits, the loot and the wheel are not) — with no ground, stroke or
+   radius of its own. It takes the room between the voice and the prompt (which stays laid out
+   even retired), and has the same box on every stage. */
 .l1-fig {
   flex: 1 1 0;
   width: 100%;
@@ -5880,15 +5870,11 @@ figure.l1-fig {
   flex-direction: column;
   justify-content: center;
   padding: 22px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: #08090d;
 }
 .l1-fig .progress-background {
   overflow: hidden;
-  border-radius: inherit;
 }
-/* In the plate the lesson's SENTENCE steps down a little on a wide screen, the prompt with it
+/* On the board the lesson's SENTENCE steps down a little on a wide screen, the prompt with it
    (the two move together), so the longest stage still stands on ONE line. */
 @media (min-width: 641px) {
   .tutorial:not(.tutorial--word) .phrase,
@@ -6107,6 +6093,52 @@ figure.l1-fig {
   mask-size: 16px 16px;
   animation: board-dissolve 240ms linear backwards;
 }
+
+/* LEVEL 1, CLEARED (`LessonBoard`): the level's card takes the whole room between the coach's
+   line and PLAY. The prompt, retired since the solve, leaves the flow, and the tray gives up
+   the keyboard's footprint down to PLAY's own height — PLAY stays where it stood (it is parked
+   on the tray's foot), and the room above it is the card's. The card is sized by script to the
+   list hero's shape inside that room. */
+.tutorial.l1-cleared .input-area {
+  display: none;
+}
+.tutorial.l1-cleared .tray {
+  height: auto;
+}
+.l1-clear-room {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* THE KEYBOARD'S HOLD in the lesson (`KeyboardHold`, the game hold's unlit keys): it takes no
+   pointer, so a slot never lights as a struck key does. It rises into the tray as the keys
+   would (the wrapper's `kb-rise`), and the keys come in over it through the dither as it goes
+   out through the cells they take (`.from-hold`, `.kb-hold-out`). */
+.kb-hold {
+  pointer-events: none;
+}
+.kb-exit.from-hold {
+  position: relative;
+}
+/* The real pad alone: the hold going out over it wears `.keyboard` too. */
+.kb-exit.from-hold > .keyboard:not(.kb-hold) .kb-row {
+  animation: board-dissolve 240ms linear backwards;
+}
+.kb-hold-out {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.kb-hold-out .kb-hold .kb-row {
+  animation: board-dissolve-out 240ms linear forwards;
+}
 @media (max-width: 640px) {
   .tutorial {
     padding-top: 52px;
@@ -6127,10 +6159,6 @@ figure.l1-fig {
   .l1-title-row {
     gap: 10px;
   }
-  .l1-no,
-  .l1-step {
-    font-size: 8px;
-  }
   .l1-title {
     font-size: 15px;
   }
@@ -6148,8 +6176,12 @@ figure.l1-fig {
      gap = side gap = 14px. On the BUTTON rather than
      on the tray's padding, because the tray's height is the keyboard's and has to stay
      exactly that. */
-  .mix-btn {
+  .mix-btn,
+  .l1-hold .l1-call-hold {
     margin-bottom: 10px;
+  }
+  .l1-hold .l1-bot-hold {
+    margin-bottom: -10px;
   }
 }
 /* The narrowest phones: the longest line holds in its four lines down to 320, in either
@@ -6166,13 +6198,13 @@ figure.l1-fig {
     letter-spacing: -0.02em;
   }
 }
-/* A short screen: the plate gives up height first. */
+/* A short screen: the board gives up height first. */
 @media (max-height: 700px) {
   .l1-fig {
     min-height: 100px;
   }
 }
-/* A short phone (an SE's 553px of Safari): the page's top, the voice's leading and the plate
+/* A short phone (an SE's 553px of Safari): the page's top, the voice's leading and the board
    give up what keeps the keys and the stage's button on screen. */
 @media (max-width: 640px) and (max-height: 600px) {
   .tutorial {
@@ -6187,10 +6219,6 @@ figure.l1-fig {
   }
   .l1-fig {
     min-height: 84px;
-  }
-  /* The finale's card at that height is its labels and its title alone. */
-  .level-clear .learn-sub {
-    display: none;
   }
 }
 
@@ -9738,13 +9766,26 @@ figure.l1-fig {
   }
 }
 
-/* ===================== the tutorial's LEVELS (#269; re-dressed 2026-09-29) ===================== */
-/* THE LEVELS AS CARDS: the page has nothing else to show, so each level wears its
-   illustration (tutorial/art) edge to edge and the pictures fill the screen. Wide: a bento —
-   level 1, the game played, tall on the left, the four articles two by two beside it, the
-   whole grid one screen high. Tablet: level 1 across the top, the articles two by two. Phone:
-   one card under the other. The header's band is the page's top edge, the column the
-   header's own width. */
+/* ===================== the tutorial's LEVELS (#269; on the bare ground 2026-10-06) ===================== */
+/* THE LEVELS AS CARDS: the page has nothing else to show, so each level's illustration
+   (tutorial/art) fills its card and the pictures fill the screen. Wide: a bento — level 1, the
+   game played, tall on the left, the four articles two by two beside it, the whole grid one
+   screen high. Tablet: level 1 across the top, the articles two by two. Phone: one card under
+   the other. The header's band is the page's top edge, the column the header's own width.
+
+   A CARD IS A TAPPABLE THING ON THE BARE GROUND: no panel, no stroke, no radius — the picture
+   stands on the ground in 8px of air, inside the resting corner brackets of a thing that takes
+   the finger (the slate, 2px, 16px arms at the card's size), which step to white under a mouse
+   alone (a touch screen's emulated hover would stick). A level not ready here takes no tap and
+   wears no brackets. Its foot is ONE height on every card, so the titles of a row stand on one
+   line whatever their subtitles run to. The cards come in through the board's dither, one
+   after the other. */
+:root {
+  /* LEVEL 1'S CARD, its shape where it is the list's hero: the bento's tall column at a
+     laptop's height, the tablet's band, the phone's near-square — and level 1's finale stands
+     its card at the same shape (`LessonBoard`). A plain number: script reads it. */
+  --learn-hero-ar: 0.55;
+}
 .learn {
   width: min(var(--column), 100%);
   align-self: stretch;
@@ -9759,7 +9800,7 @@ figure.l1-fig {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 12px;
+  gap: 16px;
   grid-template-columns: 1.3fr 1fr 1fr;
   grid-template-rows: repeat(2, minmax(210px, 1fr));
   height: clamp(460px, calc(100vh - 140px), 660px);
@@ -9767,37 +9808,76 @@ figure.l1-fig {
 .learn-cell {
   min-width: 0;
   min-height: 0;
+  animation: board-dissolve 240ms linear calc(var(--i, 0) * 55ms) backwards;
+}
+/* Reduced motion draws the list landed: the global rule keeps delays, which would hold each
+   card unseen for its beat. */
+@media (prefers-reduced-motion: reduce) {
+  .learn-cell {
+    animation: none;
+  }
 }
 .learn-cell.hero {
   grid-row: span 2;
 }
 .learn-card {
+  --corner: var(--rail);
   position: relative;
   width: 100%;
   height: 100%;
+  margin: 0;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: #08090d;
-  overflow: hidden;
+  padding: 16px;
+  border: 0;
+  border-radius: 0;
+  background: none;
   color: var(--fg);
   font-family: var(--ui);
   text-align: left;
   text-shadow: none;
   cursor: pointer;
-  transition: border-color 0.12s linear;
 }
-.learn-card:hover:not(:disabled) {
-  border-color: var(--line-strong);
+/* The corner brackets: drawn on the card's own box, over its picture. */
+.learn-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border: 2px solid var(--corner);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) 0 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 0 100% / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 100% / 16px 16px no-repeat;
+  mask:
+    linear-gradient(#000 0 0) 0 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 0 100% / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 100% / 16px 16px no-repeat;
+  transition: border-color 120ms steps(2, jump-end);
+}
+.learn-card.soon::before {
+  content: none;
+}
+/* Under the keyboard's focus the app's ONE indicator speaks alone (`FocusBrackets`). */
+.learn-card[data-bracketed]::before {
+  border-color: transparent;
+}
+@media (hover: hover) and (pointer: fine) {
+  button.learn-card:not(:disabled):hover {
+    --corner: var(--fg);
+  }
 }
 .learn-card .learn-art {
   position: absolute;
-  inset: 0;
-  transition: filter 0.2s linear;
+  inset: 8px;
+}
+/* The picture's hold, while the scenes are on their way: the stage under the number's row. */
+.learn-card .level-art > .level-art-hold {
+  top: 24px;
 }
 .learn-card-top,
 .learn-card-foot {
@@ -9808,46 +9888,47 @@ figure.l1-fig {
 .learn-card-top {
   justify-content: space-between;
   align-items: center;
-  /* The meta chip's box (its 10.5px line and 4px of padding a side), held with or without
-     one: level 1 is untimed, so its corner stays empty until DONE stamps in — on the list
-     and on the finale's card — and the number beside it must not move then. */
-  min-height: 20px;
+  height: 16px;
+}
+/* The number and the reading time stand on the picture: each cuts its own box out of it, in
+   the ground's ink, 4px round its type — never a chip, only the ground showing through. */
+.learn-card-top > span {
+  padding: 4px;
+  margin: -4px;
+  background: var(--bg);
 }
 .learn-card-foot {
+  flex: none;
   flex-direction: column;
   align-items: flex-start;
   gap: 7px;
+  height: 56px;
 }
-/* The level's number, in the game's own face, as the article's page numbers its tracks. */
+.learn-cell.hero .learn-card-foot,
+.learn-card.level-clear .learn-card-foot {
+  height: 62px;
+}
+/* The level's number, in the game's own figures at a whole size, as the article's page
+   numbers its tracks — the accent on a level to read, white on level 1 until it is played,
+   cobalt once DONE, the quiet grey on a level not ready here. */
 .learn-no {
   font-family: var(--pixel-font);
   font-size: 16px;
-  color: var(--fg);
-}
-.learn-card.done .learn-no {
+  line-height: 1;
   color: var(--accent);
 }
-.learn-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 4px 7px;
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
+.learn-card.next .learn-no {
+  color: var(--fg);
 }
-/* The done mark: a small accent square — the app's marker vocabulary (a square, never a
-   circle; 4px is the radius ceiling). */
-.learn-mark {
-  width: 7px;
-  height: 7px;
-  border-radius: 1px;
-  background: var(--accent);
+.learn-card.soon .learn-no {
+  color: var(--muted);
+}
+/* An article's reading time, or SOON: the pixel face's smallest whole size, quiet. */
+.learn-meta {
+  font-family: var(--pixel-font);
+  font-size: 8px;
+  line-height: 1;
+  color: var(--muted);
 }
 .learn-title {
   font-size: 17px;
@@ -9856,11 +9937,12 @@ figure.l1-fig {
   text-transform: uppercase;
   line-height: 1.2;
 }
-.learn-cell.hero .learn-title {
+.learn-cell.hero .learn-title,
+.level-clear .learn-title {
   font-size: 22px;
 }
-/* Level 1 until it is played: its title wears the invitation's selection box, STILL — drawn
-   from the first frame, never animated (the invitation's own rule). */
+/* Level 1 until it is played: its title wears the white chip — the held word's, the next
+   thing to do. Drawn STILL. */
 .learn-card.next .learn-title-text {
   background: var(--fg);
   color: var(--bg);
@@ -9872,47 +9954,37 @@ figure.l1-fig {
 .learn-sub {
   font-size: 10.5px;
   font-weight: 500;
+  line-height: 1.3;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
 }
-/* A level not ready in this language: a still, grey picture — the road, not a door. */
 .learn-card.soon {
   cursor: default;
-}
-.learn-card.soon .learn-art {
-  filter: grayscale(1) brightness(0.5);
 }
 .learn-card.soon .learn-title {
   color: var(--muted);
 }
-/* LEVEL 1, CLEARED (2026-09-30): the run's last sentence dissolves into the level's own
-   card, in the board's plate (`.l1-fig`) — same box, same ground. It lands in
-   its NEXT dress — its title in the selection box — and the box is then wiped off, left to
-   right, uncovering the plain title: the level turns DONE (the number inks, the done mark
-   takes the chip). A picture to look at, not a door: nothing to press. */
+/* LEVEL 1, CLEARED: the run's last sentence dissolves and the level's own card stands in the
+   room between the coach's line and PLAY, at the list hero's shape (`LessonBoard` sizes it), on
+   the bare ground in the FRAME's corners — the result card's: white at 38%, a picture to look
+   at, not a door. It comes in through the dither in its NEXT dress, then turns DONE in its own
+   material: the number inks cobalt, the title's chip is wiped off (a copy of it laid over the
+   plain title, `.level-clear-mark`) and the picture's held words ink in. */
 .learn-card.level-clear {
+  --corner: color-mix(in srgb, var(--fg) 38%, transparent);
+  flex: none;
   cursor: default;
-}
-/* The frame is the board's plate, already there: only what is inside it arrives. */
-.learn-card.level-clear > * {
-  animation: arrive 280ms cubic-bezier(0.2, 1.3, 0.4, 1) backwards;
-}
-.learn-card.level-clear:hover {
-  border-color: var(--line);
+  animation: board-dissolve 240ms linear backwards;
 }
 .level-clear .learn-title {
   position: relative;
-  font-size: 22px;
 }
-/* The NEXT box, as a copy laid over the plain title, and wiped off 600ms after the card
-   lands (280 + 600; LessonBoard's CLEAR_FLIP_MS). The clip reaches past the box's own
-   overhang, so its first frame is the whole box. */
 .level-clear-mark {
   position: absolute;
   inset: 0;
   white-space: nowrap;
-  animation: mark-unwipe 320ms steps(8, jump-end) 880ms forwards;
+  animation: mark-unwipe 320ms steps(8, jump-end) forwards;
 }
 .level-clear-mark .learn-title-text {
   background: var(--fg);
@@ -9942,8 +10014,38 @@ figure.l1-fig {
   top: 0;
   image-rendering: pixelated;
 }
+/* …and while its scenes are on their way, its HOLD: the slate stipple breathing over the
+   picture's stage (above the card's foot), coming in through the dither only once the
+   skeleton's wait is over (`--delay`), giving way through the cells the picture takes. */
+.level-art > .level-art-hold {
+  position: absolute;
+  inset: 0 0 var(--foot, 0px) 0;
+  width: auto;
+  height: auto;
+  animation: board-dissolve 240ms linear var(--delay, 0ms) backwards;
+}
+.level-art > .level-art-hold.breathing {
+  animation:
+    board-dissolve 240ms linear var(--delay, 0ms) backwards,
+    stat-breathe 640ms step-end var(--delay, 0ms) infinite;
+}
+.level-art > .level-art-hold.out {
+  animation: board-dissolve-out 240ms linear forwards;
+}
+.level-art-canvas.in {
+  animation: board-dissolve 240ms linear backwards;
+}
+/* A lesson's length, wherever it is printed: the pixel face's 8px figures. */
+.level-duration {
+  font-family: var(--pixel-font);
+  font-size: 8px;
+  letter-spacing: 0;
+}
 
 @media (max-width: 900px) {
+  :root {
+    --learn-hero-ar: 2.1;
+  }
   .learn-grid {
     grid-template-columns: 1fr 1fr;
     grid-template-rows: none;
@@ -9955,36 +10057,40 @@ figure.l1-fig {
   .learn-cell.hero {
     grid-row: auto;
     grid-column: 1 / -1;
-    aspect-ratio: 2.1 / 1;
+    aspect-ratio: var(--learn-hero-ar);
   }
 }
 @media (max-width: 640px) {
+  :root {
+    --learn-hero-ar: 1.2121;
+  }
   .learn {
     padding: 58px 0 12px;
   }
   .learn-grid {
     grid-template-columns: 1fr;
-    gap: 10px;
+    gap: 14px;
   }
   .learn-cell {
     aspect-ratio: 3 / 2;
   }
-  .learn-cell.hero {
-    aspect-ratio: 4 / 3.3;
-  }
-  .learn-cell.hero .learn-title {
+  .learn-cell.hero .learn-title,
+  .level-clear .learn-title {
     font-size: 20px;
   }
 }
 
-/* ===================== an ARTICLE level (2026-09-29) ===================== */
-/* A LEVEL READ, set like the author's article page (chqrles.me): the SLEEVE — the level's
-   illustration, large — then the track number and the title, the credits line; sections
-   opened by a hairline and a numbered cue; figures in their own
-   panels, numbered through the level. The privacy notice's geometry (a column that scrolls
-   itself, pinned to the top of `.app`, the literal header clearance), a little wider for the
-   figures. The prose is the chrome's mono — the app's two voices hold: a word the game would
-   show is quoted in the pixel face, as the coach quotes its own. */
+/* ===================== an ARTICLE level (2026-09-29; set like the privacy notice 2026-10-06) ===================== */
+/* A LEVEL READ, set like the author's article page (chqrles.me) in the house's dress — the
+   app's one other document, the privacy notice, is its model: the BARE GROUND, no panel, no
+   hairline. The SLEEVE — the level's illustration, large, on the ground — then the track number
+   in the accent's pixel figures and the title, the credits line; sections opened by the
+   podium's stippled floor and a numbered cue in the same figures; figures numbered through the
+   level. The privacy notice's geometry (a column that scrolls itself, pinned to the top of
+   `.app`, the literal header clearance), a little wider for the figures. The prose is the
+   chrome's mono — the app's two voices hold: a word the game would show is quoted in the pixel
+   face, as the coach quotes its own. Its sections and its end come in through the board's
+   dither; its head, which its hold already stood, does not move. */
 .article-screen {
   /* Positioned, so the figures' sr-only text is placed inside this scroller and never grows
      the document (the solved stage's recorded trap). */
@@ -10001,12 +10107,13 @@ figure.l1-fig {
   display: flex;
   flex-direction: column;
 }
+.article-section,
+.article-end {
+  animation: board-dissolve 240ms linear backwards;
+}
 .article-sleeve {
   position: relative;
   aspect-ratio: 16 / 9;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: #08090d;
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -10079,6 +10186,7 @@ figure.l1-fig {
   padding: 0;
   display: flex;
   flex-wrap: wrap;
+  align-items: baseline;
   gap: 6px 18px;
   font-size: 11px;
   font-weight: 500;
@@ -10093,13 +10201,16 @@ figure.l1-fig {
   gap: 18px;
   margin-top: 30px;
 }
+/* A SECTION opens on the podium's stippled floor (2px dots, 6px apart, the slate) — the
+   privacy notice's own opening, never a hairline. */
 .article-heading {
   display: flex;
   align-items: baseline;
   gap: 12px;
   margin: 12px 0 0;
-  padding-top: 24px;
-  border-top: 1px solid var(--line);
+  padding-top: 26px;
+  background: repeating-linear-gradient(to right, var(--rail) 0 2px, transparent 2px 6px) 0 0 /
+    100% 2px no-repeat;
   font-size: 12.5px;
   font-weight: 650;
   letter-spacing: 0.12em;
@@ -10132,12 +10243,16 @@ figure.l1-fig {
   font-weight: 500;
   color: var(--fg);
 }
+/* A block set apart from the prose — the code, an example sentence — stands on the ground
+   behind a stippled rail down its left edge: the floor's own dots, stood up. */
+.article-code,
+.article-sentence {
+  background: repeating-linear-gradient(to bottom, var(--rail) 0 2px, transparent 2px 6px) 0 0 /
+    2px 100% no-repeat;
+}
 .article-code {
   margin: 0;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--surface);
+  padding: 2px 0 2px 18px;
   font-family: var(--ui);
   font-size: 12.5px;
   line-height: 1.75;
@@ -10201,10 +10316,7 @@ figure.l1-fig {
   color: var(--fg);
 }
 .article-sentence {
-  padding: 14px 18px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--surface);
+  padding: 2px 0 2px 18px;
 }
 .article-sentence p,
 .ar-fig-sentence {
@@ -10674,46 +10786,74 @@ figure.l1-fig {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-/* THE END, in three bands: the NEXT LEVEL as a card with its picture (the way on), the GAME
-   under it as a full-width secondary (or the primary, after the last level), and — set apart
-   by a hairline and air — the CREDIT: a small label over the article's title. */
+/* THE END, in three bands, opened on the stippled floor: the NEXT LEVEL — a tappable thing, its
+   picture and its words in the resting corner brackets of the list's cards, stepping to white
+   under a mouse — then the GAME as THE WORD under it (or, after the last level, as the one big
+   action), and — set apart by the floor and air — the CREDIT: a small label over the article's
+   title, on the privacy notice's stippled underline. */
 .article-end {
   display: flex;
   flex-direction: column;
   gap: 12px;
   margin-top: 56px;
   padding-top: 32px;
-  border-top: 1px solid var(--line);
+  background: repeating-linear-gradient(to right, var(--rail) 0 2px, transparent 2px 6px) 0 0 /
+    100% 2px no-repeat;
 }
 .article-next {
+  --corner: var(--rail);
+  position: relative;
   display: grid;
   grid-template-columns: minmax(120px, 40%) 1fr;
   min-height: 132px;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: #08090d;
-  overflow: hidden;
+  margin: 0;
+  padding: 12px;
+  border: 0;
+  border-radius: 0;
+  background: none;
   color: var(--fg);
   font-family: var(--ui);
   text-align: left;
   text-shadow: none;
   cursor: pointer;
-  transition: border-color 0.12s linear;
 }
-.article-next:hover {
-  border-color: var(--line-strong);
+.article-next::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: 2px solid var(--corner);
+  pointer-events: none;
+  -webkit-mask:
+    linear-gradient(#000 0 0) 0 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 0 100% / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 100% / 16px 16px no-repeat;
+  mask:
+    linear-gradient(#000 0 0) 0 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 0 / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 0 100% / 16px 16px no-repeat,
+    linear-gradient(#000 0 0) 100% 100% / 16px 16px no-repeat;
+  transition: border-color 120ms steps(2, jump-end);
+}
+.article-next[data-bracketed]::before {
+  border-color: transparent;
+}
+@media (hover: hover) and (pointer: fine) {
+  .article-next:hover {
+    --corner: var(--fg);
+  }
 }
 .article-next .article-next-art {
   height: 100%;
-  min-height: 132px;
+  min-height: 108px;
 }
 .article-next-text {
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 7px;
-  padding: 16px 18px;
+  padding: 8px 10px 8px 18px;
 }
 .article-next-label {
   font-size: 10.5px;
@@ -10733,7 +10873,7 @@ figure.l1-fig {
 .article-next-no {
   font-family: var(--pixel-font);
   font-size: 16px;
-  color: var(--muted);
+  color: var(--accent);
 }
 .article-next-sub {
   font-size: 10.5px;
@@ -10741,44 +10881,73 @@ figure.l1-fig {
   text-transform: uppercase;
   color: var(--muted);
 }
+/* The game: THE WORD, centred under the way on — or the big action, centred too. */
 .article-play {
-  width: 100%;
+  align-self: center;
 }
 .article-source {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
   margin-top: 36px;
-  padding-top: 20px;
-  border-top: 1px solid var(--line);
+  padding-top: 22px;
+  background: repeating-linear-gradient(to right, var(--rail) 0 2px, transparent 2px 6px) 0 0 /
+    100% 2px no-repeat;
 }
 .article-source-label {
+  display: block;
+  margin-bottom: 8px;
   font-size: 10.5px;
   font-weight: 650;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
 }
-.ar-link {
+/* A LINK OUT, in the prose and in the credit: the reading ink over the privacy notice's
+   stippled pixel underline (the floor's dots at the type's scale), lifted to the accent under a
+   mouse. Inline, its underline cloned onto every line it wraps to. */
+.ar-link,
+.article-source-link {
   color: var(--fg);
-  text-decoration: underline;
-  text-decoration-color: var(--line-strong);
-  text-underline-offset: 3px;
+  text-decoration: none;
+  padding-bottom: 3px;
+  background: repeating-linear-gradient(to right, var(--line-strong) 0 2px, transparent 2px 4px) 0
+    100% / 100% 2px no-repeat;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
-.ar-link:hover {
-  text-decoration-color: var(--fg);
-}
-.article-source a {
+.article-source-link {
   font-size: 13.5px;
-  line-height: 1.5;
-  color: var(--fg);
-  text-decoration: underline;
-  text-decoration-color: var(--line-strong);
-  text-underline-offset: 3px;
+  line-height: 1.6;
+  font-weight: 600;
 }
-.article-source a:hover {
-  color: var(--accent);
+@media (hover: hover) and (pointer: fine) {
+  .ar-link:hover,
+  .article-source-link:hover {
+    color: var(--accent);
+    background-image: repeating-linear-gradient(to right, var(--accent) 0 2px, transparent 2px 4px);
+  }
 }
+/* THE ARTICLE'S HOLD (`LazyArticle`, while its chunk is on its way): its head as the article
+   shows it, then the paragraphs' RAILS — the boards' skeleton rail, a dotted slate line through
+   each line's middle at the prose's own pitch, the last line of a paragraph short — coming in
+   only once the skeleton's wait is over (a quick chunk never flashes them). */
+.article-rails {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-top: 30px;
+  animation: board-dissolve 240ms linear 320ms backwards;
+}
+.article-rail-p {
+  display: flex;
+  flex-direction: column;
+}
+.article-rail {
+  display: block;
+  width: var(--w, 100%);
+  font-size: 15px;
+  height: 1.75em;
+  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
+}
+
 @media (max-width: 640px) {
   .article-screen {
     padding: 48px 0 40px;
@@ -10791,7 +10960,8 @@ figure.l1-fig {
   }
   .article-p,
   .article-quote p,
-  .article-steps li {
+  .article-steps li,
+  .article-rail {
     font-size: 14.5px;
   }
   .ar-fig-body {
