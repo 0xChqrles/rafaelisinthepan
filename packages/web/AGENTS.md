@@ -4564,12 +4564,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   not happen); on a **dated** archive route (#55) it is usually NORMAL — a pre-launch date,
   or a language backfilled later, simply was never published — so it says that plainly (no
   "not supposed to happen", no "check back"); on a **bonus** link it names no puzzle in this
-  language. **It is the board's empty state on the game's own zones**: the sad ghost (bobbing
+  language. The calendar's today cell opens a DATED route, so a missing today reached from
+  the calendar takes the archive wording. **It is the board's empty state on the game's own zones**: the sad ghost (bobbing
   five beats, then resting) over ONE title in `--fg` (no accent, no danger) and ONE muted
   sentence in the play area, all coming in through the dither; ONE call as the `.mix-btn`
   where the gate's PLAY stands (`.tray-gate`) — BACK TO ARCHIVE on an archive day with
   CHANGE LANGUAGE as THE WORD under it, CHANGE LANGUAGE alone on today and a bonus. It wears
-  the header, which names the day, so the screen does not say it again.
+  the header: on an archive day the header names the day (`FR 01/09`), so the screen does
+  not say the date again, and on a bonus it tags `BONUS`; on TODAY the header names no day
+  (`FR` alone), so the undated route's title is what says TODAY, and the calendar's dated
+  today names no day anywhere.
   The pixel font is **self-hosted** (`web/src/assets/fonts/PressStart2P.woff2`, `@font-face` in
   `index.css` — no Google Fonts request).
 - **SVG icons (pattern to follow):** monochrome UI icons live as `.svg` files under

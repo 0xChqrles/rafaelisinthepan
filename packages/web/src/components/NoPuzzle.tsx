@@ -16,17 +16,22 @@ import { t } from '../i18n';
 //     missing", "not supposed to happen") instead of reading like a scheduled day off.
 //   dated route (an archive day, #55) — usually NORMAL. A pre-launch date, or a language
 //     backfilled later, simply was never published; apologizing for it would be a lie.
-//     It says so plainly and sends the player back to the calendar they came from.
+//     It says so plainly and sends the player back to the calendar they came from. The
+//     calendar's TODAY cell opens a dated route too, so a missing today reached from there
+//     gets this wording, not the one above.
 //   a BONUS link (bonus puzzles, 2026-09-24) — a mistyped id or the other language's link:
 //     it says so, and offers the language.
 //
 // THE BOARD'S EMPTY STATE, on the game's own zones: the sad ghost over ONE title in the
 // foreground (no accent, no danger: the ghost already says it) and ONE muted sentence in
 // the play area; ONE call where the gate's PLAY stands (`.tray-gate`'s `.mix-btn`), the
-// other way out as THE WORD under it. Under the header, which names the day: the screen
-// does not say it again. None of them is a failure to RETRY (nothing transient to
-// re-fetch), so every way out is navigation. CHANGE LANGUAGE opens the header's own
-// selection drum (`PuzzleSelect`, folding onto today's puzzle in the picked language).
+// other way out as THE WORD under it. On an archive day the header names the day
+// (`EN 01/10`), so the screen does not say the date again; on a bonus it tags `BONUS`. On
+// TODAY the header names no day (`EN` alone): the undated route's title is what says
+// TODAY, and the calendar's dated today names no day anywhere. None of them is a failure
+// to RETRY (nothing transient to re-fetch), so every way out is navigation. CHANGE
+// LANGUAGE opens the header's own selection drum (`PuzzleSelect`, folding onto today's
+// puzzle in the picked language).
 export default function NoPuzzle({
   lang,
   date,
