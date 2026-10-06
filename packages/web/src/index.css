@@ -1552,6 +1552,13 @@ body:has(.app > .board-screen) {
   mask-size: 16px 16px;
   animation: board-dissolve 240ms linear calc(var(--i, 0) * var(--dz-stagger)) backwards;
 }
+/* Reduced motion draws the drum landed: the global rule keeps delays, which would hold each
+   outer row unseen for its beat. */
+@media (prefers-reduced-motion: reduce) {
+  .ps-row {
+    animation: none;
+  }
+}
 .ps-chip {
   display: inline-block;
   padding: 0.4em 0.55em 0.33em;
