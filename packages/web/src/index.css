@@ -5393,10 +5393,13 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    own layout, so nothing that lands moves — the byline with the level's number and line as
    real text, the coach's box, the board's word and the call's slot in the slate stipple. The
    stipple comes in only once the skeleton's wait is over (a quick chunk never flashes it),
-   then breathes; a chunk LOST holds it still, at once. */
+   then breathes; a chunk LOST holds it still, at once (`.failed`). */
 .l1-hold .l1-bot-hold {
   flex: none;
-  /* The coach's sprite above its feet: it stands on the rule, as the coach does. */
+  /* The coach's sprite above its feet (`.coach-bot`'s 62px less the 8 under them): it stands
+     on the rule, as the coach does, its margin giving back the band's padding — so the band
+     is the coach's own height, to the pixel, and the title and the rule never step when the
+     lesson lands. */
   width: 44px;
   height: 54px;
   margin-bottom: -12px;
@@ -5444,13 +5447,17 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   mask-size: 16px 16px;
   animation: board-dissolve 240ms linear 320ms backwards; /* SKELETON_WAIT_MS */
 }
-/* (The dissolve stays in both lists, so a lost chunk's still slot and a RETRY's breathing one
-   never play it again: the picture stands where it is, and only its breath changes.) */
 .l1-hold .stat-slot.breathing,
 .article-hold .stat-slot.breathing {
   animation:
     board-dissolve 240ms linear 320ms backwards,
     stat-breathe 640ms step-end 320ms infinite;
+}
+/* (A LOST chunk's picture stands at once, whatever its wait: its RETRY is a new document.) */
+.l1-hold.failed .stat-slot,
+.article-hold.failed .stat-slot,
+.article-hold.failed .article-rails {
+  animation: none;
 }
 /* The word stages are CLEAN: ONE big word in the plate, the prompt under it on the left. */
 .tutorial--word .phrase {
@@ -5784,6 +5791,9 @@ figure.l1-fig {
   }
   .coach-bot {
     margin-bottom: -18px;
+  }
+  .l1-hold .l1-bot-hold {
+    margin-bottom: -10px;
   }
   .l1-byline {
     gap: 12px;
