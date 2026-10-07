@@ -43,11 +43,12 @@
 // SAVE is live either way — its tap leads to the flow whose CONTINUE is the account-deploying
 // trigger.
 
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore, type CSSProperties } from 'react';
 import type { RecordSize } from '../components/record/scene';
 import { defaultAvatar } from '@whippin/shared';
 import { shownFace, useOwnFace } from '../components/AccountFace';
 import { StatSlot } from '../components/AccountStats';
+import { SKELETON_WAIT_MS } from '../components/bayerTiles';
 import Avatar from '../components/Avatar';
 import AddressLine from '../components/AddressLine';
 import DeviceList from '../components/DeviceList';
@@ -278,7 +279,13 @@ export default function Account() {
           </div>
         )}
         {!accountUnknown && saved === null && (
-          <div className={`account-cta${known ? '' : ' holding'}`} aria-hidden={known ? undefined : true}>
+          // (The hold comes in only once the summary has been out SKELETON_WAIT_MS: a saved
+          // account's answer, which takes the call away, mostly lands before it.)
+          <div
+            className={`account-cta${known ? '' : ' holding'}`}
+            aria-hidden={known ? undefined : true}
+            style={known ? undefined : ({ '--wait': `${SKELETON_WAIT_MS}ms` } as CSSProperties)}
+          >
             <p className="account-note caption">
               {known ? t(lang, 'accountSaveNote') : <span className="account-cta-rail">{t(lang, 'accountSaveNote')}</span>}
             </p>
@@ -291,7 +298,7 @@ export default function Account() {
                 {t(lang, 'accountSave')}
               </button>
             ) : (
-              <span className="mix-btn link-hold waiting">{t(lang, 'accountSave')}</span>
+              <span className="mix-btn link-hold waiting late">{t(lang, 'accountSave')}</span>
             )}
           </div>
         )}

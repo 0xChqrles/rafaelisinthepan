@@ -1276,15 +1276,19 @@ textarea,
    (its text stays unseen) and draws each bar, block, slate and slot as its OUTLINE in the
    system's grey instead, still; it goes at once when the game takes over. */
 @media (forced-colors: active) {
+  /* (The lesson's CONTINUE slot and the account call's hold keep a word unseen the same way.) */
   .game-hold,
-  .kb-hold {
+  .kb-hold,
+  .tutorial .tray > .tray-hold,
+  .account-cta.holding {
     forced-color-adjust: none;
   }
   /* (The failure's note and RETRY are ordinary text and controls: the system colours them.) */
   .game-hold .hold-failure {
     forced-color-adjust: auto;
   }
-  .game-hold .rules-gate > .mix-btn.gate-slot {
+  .game-hold .rules-gate > .mix-btn.gate-slot,
+  .tutorial .tray > .mix-btn.tray-hold {
     border-color: GrayText;
   }
   .game-hold .hold-rail,
@@ -1292,6 +1296,9 @@ textarea,
   .game-hold .phrase .hole.resolved .hole-word,
   .game-hold .phrase .hole .hole-word::before,
   .game-hold .gate-word,
+  .tutorial .tray > .tray-hold .gate-word,
+  .account-cta.holding .account-cta-rail,
+  .account-cta.holding .mix-btn,
   .kb-key.kb-slate {
     -webkit-mask-image: none;
     mask-image: none;
@@ -6549,8 +6556,10 @@ figure.l1-fig {
 }
 /* THE CALL'S ROOM while the summary is out (`Account`): the call at its final size as a hold —
    the note's words laid out unseen, a stippled rail through the middle of each of its lines
-   (each line's own length), and the button's box as the house hold — so nothing under it moves
-   when the call takes the same boxes. */
+   (each line's own length), and the button's box as the house hold (`.link-hold.waiting.late`)
+   — so nothing under it moves when the call takes the same boxes. The rails and the box come
+   in only once the summary has been out `--wait` (SKELETON_WAIT_MS): a saved account's
+   answer takes the call away, and a quick one never draws it first. */
 .account-cta.holding .account-note {
   color: transparent;
 }
@@ -6558,6 +6567,7 @@ figure.l1-fig {
   background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
+  animation: hold-wait 1ms linear var(--wait, 0ms) backwards;
 }
 .account-cta.holding .mix-btn {
   color: transparent;
