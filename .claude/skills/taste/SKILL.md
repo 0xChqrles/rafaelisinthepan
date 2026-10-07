@@ -279,6 +279,15 @@ such day reached 70%). Keep at most one, and only when it is worth the search.
 
 Ask: when a player has the meaning, would they say this word — or the common one beside it?
 
+**Every day is somebody's first day.** A newcomer who solves their first day comes back
+more than twice as often (37% against 16%); two thirds failed theirs, and a third of
+those who never came back left within five guesses, before they understood the game.
+So prefer a trio where every word is one players say: the one word they don't say is
+worth it only as the punch, with the two words beside it plain. A word the line hands
+over only weakly is fine when players say it (Graeber, 2026-09-08: 81% finished). Easy
+is never handed over: the line leads, the player still searches (2026-09-21, median 5,
+was dead).
+
 ## How to judge
 
 - **Compare, don't approve.** Side by side, the best candidate wins — not the first
