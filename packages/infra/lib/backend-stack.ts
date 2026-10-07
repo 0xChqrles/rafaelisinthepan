@@ -32,9 +32,11 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as ses from 'aws-cdk-lib/aws-ses';
+import * as budgets from 'aws-cdk-lib/aws-budgets';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import { NagSuppressions } from 'cdk-nag';
 import { MailAlerts, MailReceiving } from './mail';
+import { ALL_RATE_LIMIT, rateLimitedWebAcl } from './rate-limits';
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // packages/infra/lib
 // The Lambda IS the backend package's existing entrypoint (createHandler over the S3 puzzle
@@ -75,6 +77,10 @@ const ROW_STORE_ACTIONS = [
   'dynamodb:DeleteItem',
   'dynamodb:ConditionCheckItem',
 ] as const;
+
+// The month's bill (the whole account's, in USD) past which the operator is mailed. The
+// game at 1000 players a day is ~$35 with its WAF; the bot and the rest add ~$15.
+const MONTHLY_BUDGET_USD = 100;
 
 interface BackendStackProps extends StackProps {
   // The exact web origin permitted to read the API via CORS. Defaults to "*".
@@ -227,14 +233,15 @@ export class BackendStack extends Stack {
       // a month: the per-ms price grows with memory, the CPU-bound milliseconds shrink with it.
       memorySize: 1769,
       timeout: Duration.seconds(10),
-      // Cost/abuse ceiling: /og/<token>.png is unauthenticated compute and every distinct
-      // token misses the CDN, so cap the blast radius until the game warrants WAF rate
-      // limiting. 10 concurrent executions vastly exceeds legitimate load (requests are
-      // milliseconds and the CDN absorbs the repeats).
-      reservedConcurrentExecutions: 10,
+      // The CEILING on what the API can cost: the card renders are unauthenticated compute
+      // and every distinct token misses the CDN. One address is stopped long before it by
+      // the WAF rate limits (lib/rate-limits.ts); this bounds what many addresses at once can
+      // spend (~$17 an hour with every slot busy), and the throttle alarm below says when a
+      // crowd or an attack reaches it. It sits far above the load a launch brings — a page
+      // open fires several calls at once, and a cold start holds its slot ~0.6 s — and leaves
+      // the account (400 concurrent in us-east-1) the 100 unreserved it must keep.
+      reservedConcurrentExecutions: 200,
       logGroup,
-      // X-Ray active tracing for request-level latency/error visibility.
-      tracing: lambda.Tracing.ACTIVE,
       // Read by backend/src/config.ts at runtime.
       environment: {
         PUZZLE_BUCKET: bucket.bucketName,
@@ -406,7 +413,6 @@ export class BackendStack extends Stack {
       // `Errors` an hour's single failure counts.
       retryAttempts: 0,
       logGroup: purgeLogGroup,
-      tracing: lambda.Tracing.ACTIVE,
       // The table and nothing else: no secret (it verifies no challenge and hashes no
       // address), no origin, no sender.
       environment: { SCORE_TABLE: scoreTable.tableName },
@@ -441,6 +447,62 @@ export class BackendStack extends Stack {
           'The account purge worker failed a job. A deleted account\'s rows are still stored; the job stays queued and the next hourly run retries it. Read the PurgeFn logs.',
       });
       purgeErrors.addAlarmAction(new cwActions.SnsAction(mailAlerts.topic));
+    }
+
+    // ── Capacity and spend alerts ─────────────────────────────────────────────
+    // A THROTTLE is a player's request refused at the reserved-concurrency ceiling: a crowd
+    // the ceiling no longer fits, or many addresses spending it at once. Lambda answers it with
+    // a 429 carrying no CORS headers, which the browser hands the clients as a transport
+    // failure, an unknown outcome they read again; but the game reads as slow, so it wants a human within
+    // minutes, and the recovery is worth a mail too. Missing data is not breaching: Lambda
+    // publishes no Throttles while none happen. The BUDGET is the slow backstop for what no
+    // alarm counts — the account's whole bill, which Budgets refreshes a few times a day,
+    // passing an amount a month here never reaches.
+    if (mailAlerts) {
+      const throttles = new cloudwatch.Alarm(this, 'PuzzleFnThrottles', {
+        metric: fn.metricThrottles({ period: Duration.minutes(5), statistic: 'Sum' }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+        alarmDescription:
+          'The API Lambda refused requests at its reserved concurrency. Players are seeing failures. Look at the WAF and Lambda metrics: a crowd means raising the ceiling, an attack means blocking it.',
+      });
+      throttles.addAlarmAction(new cwActions.SnsAction(mailAlerts.topic));
+      throttles.addOkAction(new cwActions.SnsAction(mailAlerts.topic));
+
+      // Budgets publishes as its own service principal, which the topic policy must name, as
+      // it names CloudWatch (lib/mail.ts: `enforceSSL` replaced the default policy).
+      const budgetsMayPublish = mailAlerts.topic.addToResourcePolicy(
+        new iam.PolicyStatement({
+          sid: 'AllowBudgets',
+          effect: iam.Effect.ALLOW,
+          principals: [new iam.ServicePrincipal('budgets.amazonaws.com')],
+          actions: ['sns:Publish'],
+          resources: [mailAlerts.topic.topicArn],
+          conditions: { StringEquals: { 'aws:SourceAccount': this.account } },
+        }),
+      );
+      const budget = new budgets.CfnBudget(this, 'MonthlyBudget', {
+        budget: {
+          budgetType: 'COST',
+          timeUnit: 'MONTHLY',
+          budgetLimit: { amount: MONTHLY_BUDGET_USD, unit: 'USD' },
+        },
+        notificationsWithSubscribers: [
+          {
+            notification: {
+              notificationType: 'ACTUAL',
+              comparisonOperator: 'GREATER_THAN',
+              threshold: 100,
+              thresholdType: 'PERCENTAGE',
+            },
+            subscribers: [{ subscriptionType: 'SNS', address: mailAlerts.topic.topicArn }],
+          },
+        ],
+      });
+      // Budgets checks it may publish when the budget is created.
+      if (budgetsMayPublish.policyDependable) budget.node.addDependency(budgetsMayPublish.policyDependable);
     }
 
     // ── CloudFront: CDN in front of the Function URL ──────────────────────────
@@ -718,8 +780,17 @@ export class BackendStack extends Stack {
       ...overrides,
     });
 
+    // Every request that reaches the Lambda passes here, so this is where one address spending
+    // the API is stopped. The render limit is NOT repeated here: the web distribution's own
+    // fetches of the share pages, cards and invite previews arrive from a few of its edge
+    // servers, each carrying many viewers' misses, and only the web distribution sees whose
+    // they are (lib/rate-limits.ts). A direct caller of the render paths meets the limit on
+    // every request, and the reserved concurrency above.
+    const apiRateLimits = rateLimitedWebAcl(this, 'ApiRateLimits', [ALL_RATE_LIMIT]);
+
     const distribution = new cloudfront.Distribution(this, 'PuzzleCdn', {
       comment: 'Whippin daily-puzzle API',
+      webAclId: apiRateLimits.attrArn,
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // NA + EU (en/fr audience)
       httpVersion: cloudfront.HttpVersion.HTTP2_AND_3, // QUIC: faster connection setup
       minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
@@ -817,7 +888,7 @@ export class BackendStack extends Stack {
         {
           id: 'AwsSolutions-IAM4',
           reason:
-            'AWS-managed basic-execution + X-Ray-write policies — the standard least-broad managed policies for CloudWatch Logs and active tracing.',
+            'AWS-managed basic-execution policy — the standard least-broad managed policy for CloudWatch Logs.',
         },
         {
           id: 'AwsSolutions-IAM5',
@@ -838,12 +909,12 @@ export class BackendStack extends Stack {
         {
           id: 'AwsSolutions-IAM4',
           reason:
-            'AWS-managed basic-execution + X-Ray-write policies — the standard least-broad managed policies for CloudWatch Logs and active tracing.',
+            'AWS-managed basic-execution policy — the standard least-broad managed policy for CloudWatch Logs.',
         },
         {
           id: 'AwsSolutions-IAM5',
           reason:
-            'DynamoDB is scoped to this table and its indexes — the grant\'s <table>/index/* resource covers exactly the one DeviceByAccount GSI (#216), which lists a deleted account\'s devices — with the API function\'s own Query/GetItem/BatchGetItem/PutItem/UpdateItem/DeleteItem/ConditionCheckItem (no Scan): the worker runs the API\'s stores, whose group leave asserts rows it does not write. The X-Ray wildcard is the service\'s own requirement.',
+            'DynamoDB is scoped to this table and its indexes — the grant\'s <table>/index/* resource covers exactly the one DeviceByAccount GSI (#216), which lists a deleted account\'s devices — with the API function\'s own Query/GetItem/BatchGetItem/PutItem/UpdateItem/DeleteItem/ConditionCheckItem (no Scan): the worker runs the API\'s stores, whose group leave asserts rows it does not write.',
         },
         {
           id: 'AwsSolutions-L1',
@@ -866,14 +937,9 @@ export class BackendStack extends Stack {
         reason: 'Daily word game served globally on purpose — no geo restriction.',
       },
       {
-        id: 'AwsSolutions-CFR2',
-        reason:
-          'No WAF: the origin is IAM-only via OAC; the requests that create state (device bootstrap, round creation, the link-code send) require Turnstile, the score row a solved round records is capped per HMAC-IP atomically, and the Lambda\'s reserved concurrency bounds the compute. WAF cost is unjustified at this scale.',
-      },
-      {
         id: 'AwsSolutions-CFR3',
         reason:
-          'CloudFront access logging intentionally off (chosen observability tier: Lambda log retention + X-Ray).',
+          'CloudFront access logging intentionally off (chosen observability tier: Lambda log retention + CloudFront and WAF metrics).',
       },
     ]);
     NagSuppressions.addResourceSuppressions(bucket, [

@@ -493,7 +493,7 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   first (the boards). The revision a caller asks with is always learned fresh — the solve's
   is the round's own tag, which the append's fresh slice was just checked against — so a held
   entry can never answer for a corrected day. Why held at all: the live read asks at guess
-  cadence and the API has 10 concurrent Lambdas. **`publish` stamps a `revision`** on the puzzle and its slice — a hash of the
+  cadence on a bounded pool of Lambdas (reserved concurrency 200). **`publish` stamps a `revision`** on the puzzle and its slice — a hash of the
   complete puzzle content, rank maps included, so an identical republish is a no-op — and
   `loadSlice`/`loadPuzzle` refuse anything that does not name the version the caller sent.
   Publish writes the slice FIRST; the shared revision makes the two-object window fail closed

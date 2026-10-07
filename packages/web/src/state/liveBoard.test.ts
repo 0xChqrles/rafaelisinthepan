@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LiveBoard } from '@whippin/shared';
 
-// CONTRACT: the live read is asked at guess cadence and the API runs on 10 concurrent
-// Lambdas, so this module is the ONE place its cost is bounded — at most one read per
+// CONTRACT: the live read is asked at guess cadence against a bounded pool of Lambdas
+// (reserved concurrency 200), so this module is the ONE place its cost is bounded — at most one read per
 // LIVE_REFRESH_MS, one flight at a time, a request inside the window served ONCE at its end
 // (never dropped), no request without an identity, an answer fenced by the identity epoch,
 // and a failure that keeps the last answer. It says whether an answer is still to come

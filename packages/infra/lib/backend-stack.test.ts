@@ -579,6 +579,7 @@ describe('mail plumbing (#230)', () => {
     expect(Object.keys(bare.findResources('AWS::CloudWatch::Alarm'))).toHaveLength(0);
     expect(Object.keys(bare.findResources('AWS::SNS::Topic'))).toHaveLength(0);
     expect(Object.keys(bare.findResources('AWS::SES::ReceiptRuleSet'))).toHaveLength(0);
+    expect(Object.keys(bare.findResources('AWS::Budgets::Budget'))).toHaveLength(0);
     bare.resourcePropertiesCountIs('AWS::Route53::RecordSet', { Type: 'MX' }, 0);
   });
 });
@@ -657,6 +658,62 @@ describe('account purge worker (#207)', () => {
     // The worker itself is built either way: a deleted account is purged whether or not
     // anybody is told when it fails.
     lambdaFunction(mailTemplate(undefined), 'PurgeFn');
+  });
+});
+
+// ── Capacity: the ceiling, the edge limits, and who hears when either is reached ──
+describe('launch capacity', () => {
+  it('limits every request by its address, and leaves the card renders to the web distribution', () => {
+    const config = distributions()[0].Properties.DistributionConfig;
+    const acl = template.findResources('AWS::WAFv2::WebACL')[config.WebACLId['Fn::GetAtt'][0]];
+    expect(acl.Properties).toMatchObject({ Scope: 'CLOUDFRONT', DefaultAction: { Allow: {} } });
+    const rules = (acl.Properties.Rules as Record<string, any>[]).map(({ Action, Statement }) => {
+      const { Limit, AggregateKeyType, ScopeDownStatement } = Statement.RateBasedStatement;
+      expect(Action).toEqual({ Block: { CustomResponse: { ResponseCode: 429 } } });
+      expect(AggregateKeyType).toBe('IP');
+      return { Limit, scoped: ScopeDownStatement !== undefined };
+    });
+    // The renders arrive from the web distribution's edge servers, many viewers to an
+    // address: a render limit here would block a whole region's share cards at once.
+    expect(rules).toEqual([{ Limit: 3000, scoped: false }]);
+    expect(lambdaFunction(template, 'PuzzleFn').properties.ReservedConcurrentExecutions).toBe(200);
+  });
+
+  it('mails the operator when the ceiling refuses a request, and when the bill passes the budget', () => {
+    const [topicId] = Object.keys(mail.findResources('AWS::SNS::Topic'));
+    const { logicalId } = lambdaFunction(mail, 'PuzzleFn');
+    const alarm = Object.values(mail.findResources('AWS::CloudWatch::Alarm'))
+      .map((resource) => resource.Properties as Record<string, unknown>)
+      .find(({ MetricName, Dimensions }) =>
+        MetricName === 'Throttles' && JSON.stringify(Dimensions).includes(`"${logicalId}"`));
+    expect(alarm).toMatchObject({
+      Namespace: 'AWS/Lambda',
+      Statistic: 'Sum',
+      Period: 300,
+      Threshold: 1,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [{ Ref: topicId }],
+      OKActions: [{ Ref: topicId }],
+    });
+
+    mail.hasResourceProperties('AWS::Budgets::Budget', {
+      Budget: { BudgetType: 'COST', TimeUnit: 'MONTHLY', BudgetLimit: { Amount: 100, Unit: 'USD' } },
+      NotificationsWithSubscribers: [
+        { Subscribers: [{ SubscriptionType: 'SNS', Address: { Ref: topicId } }] },
+      ],
+    });
+    // Budgets publishes as its own principal, and the explicit topic policy allows only
+    // whom it names: without this the budget mails nobody.
+    const [policy] = Object.values(mail.findResources('AWS::SNS::TopicPolicy'));
+    expect(policy.Properties.PolicyDocument.Statement).toContainEqual(
+      expect.objectContaining({
+        Effect: 'Allow',
+        Action: 'sns:Publish',
+        Principal: { Service: 'budgets.amazonaws.com' },
+        Condition: { StringEquals: { 'aws:SourceAccount': ACCOUNT } },
+      }),
+    );
   });
 });
 

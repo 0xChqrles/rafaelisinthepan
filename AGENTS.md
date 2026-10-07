@@ -427,7 +427,7 @@ The live routes then share:
   every read first learns the current revision fresh — the append's own slice, or a fresh
   slice read on the boards — and reuses the parsed artifact only when it carries that
   revision, else reads it fresh and checks it names the same one. Why: the live ranking reads
-  the full artifact at guess cadence and the API runs on 10 concurrent Lambdas; a published
+  the full artifact at guess cadence on a bounded pool of Lambdas (reserved concurrency 200); a published
   version's content never changes, so an entry keyed by it never goes stale and a
   correction simply misses. The slice fetch runs concurrently with the round read. **A
   missing slice or a revision mismatch is the day-addressed 404** — no degraded mode.
@@ -832,7 +832,7 @@ The live routes then share:
   screen (a solve or a give-up confirmed) goes at once (still behind a flight already out),
   so the result's group boards are built from a post-end answer without waiting out the
   window**. Why the throttle lives client-side and nowhere else: the read is at guess cadence
-  against 10 Lambdas. Nothing polls an idle player: the triggers above are the whole list.
+  against a bounded pool of Lambdas (reserved concurrency 200). Nothing polls an idle player: the triggers above are the whole list.
   The race line is an ORDER, never a rank (#206):
   finished members first (fewest tries), then the playing ones by `orderPlaying` with the
   player's own entry taken from the screen (their live % and tries), the ended-unsolved last;
