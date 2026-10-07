@@ -150,12 +150,13 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   word players don't say; ONE makes a hard day a loved day may hold (« moucheron »,
   « mammifères »), TWO or more made the worst days (finished by a median 40 % of the
   players, against 57 % with one and 71 % with none), so a trio holding two
-  carries that fact on each of them (`rules.unsaid`) and the taste keeps at most one;
+  carries that fact on each of them (`rules.unsaid`), and the taste hides none, not even
+  as the punch (user-decided 2026-10-07: every day is somebody's first day);
   and, once the map is built, where the reader's nearest word
   lands in the hole's own map (`rules.map_nearest_filler`). BEFORE the ranking is paid
   for, `llm.keep_trio` reads the three words with the notes measured so far and keeps
   them or names ONE to swap — a word most readers would write themselves is dead, a word
-  players don't say is out of reach unless it is the punch — so a swap costs one question,
+  players don't say is out of reach, even as the punch — so a swap costs one question,
   never a second ranking. With all the notes and each hole's band, `llm.pick_starts`
   chooses the three starts by the taste — or names ONE hidden word no start can save and
   another word of the line to hide instead (`Replace`: the draft is erased, the day

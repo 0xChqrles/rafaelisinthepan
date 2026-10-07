@@ -515,7 +515,7 @@ def test_a_hard_hole_draws_its_start_from_nearer_and_the_model_is_told(monkeypat
 
 def test_two_words_players_dont_say_are_told_to_the_start_step_one_is_not(monkeypatch):
     # User-decided 2026-10-06: one such word is a hard day (a loved day may hide one); two
-    # made the worst days, and the model is told to keep at most one.
+    # made the worst days; the taste (not code) says how many to keep.
     seen = {}
 
     def generate(_c, _l, _sentence, _words, _source, _lang, context, *_a, **_k):

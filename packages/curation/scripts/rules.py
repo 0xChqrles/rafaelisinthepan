@@ -178,7 +178,7 @@ def unsaid(chances: dict[str, float | None]) -> str | None:
         return None
     return (f"this trio hides {len(under)} words players don't say ({', '.join(under)}): on real play the "
             f"days with two or more were finished by a median 40% of the players (none reached 70%), against "
-            f"57% with one and 71% with none — keep at most one, replace another by a word of the line")
+            f"57% with one and 71% with none")
 
 
 def map_nearest_filler(rank_map: dict, secret_slug: str, fillers: list[str]) -> tuple[str, int | None] | None:
