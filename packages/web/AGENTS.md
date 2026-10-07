@@ -4416,8 +4416,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the list cards' resting corner brackets, PLAY THE WORD under it (or, after the last level,
   the `.mix-btn`), the credit's link on the privacy mail link's stippled underline. (Its
   figures are their own.) On a wide screen the list and an article scroll the WHOLE
-  VIEWPORT, so the scrollbar stands on the screen's edge (user-decided 2026-09-29). **Written in French first** (user-decided 2026-09-29: "wait for the article
-  translation… for the moment just create the french version"): a level is READY in a
+  VIEWPORT, so the scrollbar stands on the screen's edge (user-decided 2026-09-29). **Written in French and in English** (`articles/fr.ts`, `articles/en.ts`): the
+  English levels are the French ones block for block over the author's English article —
+  its paragraph wherever the French level reuses one unedited, the French level's edits made
+  the same way, its own sentences translated (`en.ts`'s header). A level is READY in a
   language when its lesson exists there (`Level.duration`: an ARTICLE's reading time, which
   its card prints and `levels.test.ts` holds to the text; LEVEL 1, played, is ready with
   `null`, because a game takes as long as the player, so no surface prints a time for it);

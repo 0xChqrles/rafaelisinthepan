@@ -1,9 +1,10 @@
 // The article levels' text, per language (levels.ts says which levels are ready where; a
 // test holds the two to each other). Reached only through the lazy lesson chunk.
 import type { Article } from './types';
+import { EN_ARTICLES } from './en';
 import { FR_ARTICLES } from './fr';
 
-const ARTICLES: Partial<Record<string, Record<number, Article>>> = { fr: FR_ARTICLES };
+const ARTICLES: Partial<Record<string, Record<number, Article>>> = { en: EN_ARTICLES, fr: FR_ARTICLES };
 
 export function articleFor(lang: string, level: number): Article | undefined {
   return ARTICLES[lang]?.[level];

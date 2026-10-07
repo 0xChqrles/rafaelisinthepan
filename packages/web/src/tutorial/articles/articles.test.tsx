@@ -17,8 +17,9 @@ const blocks = (a: Article): Block[] => a.sections.flatMap((s) => s.blocks);
 const figures = (a: Article): Figure[] => blocks(a).flatMap((b) => ('fig' in b ? [b.fig] : []));
 
 describe('the article levels’ data', () => {
-  it('exist for the French levels', () => {
+  it('exist for the French and English levels', () => {
     expect(articles.filter(([lang]) => lang === 'fr').map(([, n]) => n)).toEqual([2, 3, 4, 5]);
+    expect(articles.filter(([lang]) => lang === 'en').map(([, n]) => n)).toEqual([2, 3, 4, 5]);
   });
 
   it.each(articles)('%s level %i: every backtick and ** mark is closed', (_lang, _n, article) => {

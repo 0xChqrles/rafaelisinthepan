@@ -32,13 +32,13 @@ export interface TutorialLevel {
 }
 
 // 1 the game, PLAYED · 2 the distance · 3 many meanings · 4 attention · 5 the judge — the
-// last four ARTICLES, written in French first.
+// last four ARTICLES.
 export const TUTORIAL_LEVELS: readonly TutorialLevel[] = [
   { level: 1, duration: { en: null, fr: null } },
-  { level: 2, duration: { fr: 220 } },
-  { level: 3, duration: { fr: 90 } },
-  { level: 4, duration: { fr: 230 } },
-  { level: 5, duration: { fr: 240 } },
+  { level: 2, duration: { en: 220, fr: 220 } },
+  { level: 3, duration: { en: 90, fr: 90 } },
+  { level: 4, duration: { en: 230, fr: 230 } },
+  { level: 5, duration: { en: 230, fr: 240 } },
 ];
 
 // The one level the game invites into: the game itself, played.

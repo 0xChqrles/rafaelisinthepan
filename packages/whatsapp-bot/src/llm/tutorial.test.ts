@@ -14,8 +14,8 @@ describe("the tutorial's levels, as the conversation links them (2026-10-02)", (
     for (const level of TUTORIAL_LEVELS) expect(fr).toContain(`${SITE}/fr/learn/${level.level}\n`);
     expect(fr).toContain(`${SITE}/fr/learn\n`);
     const en = tutorialSection(SITE, 'en');
-    expect(en).toContain(`${SITE}/en/learn/1\n`);
-    expect(en).toContain(`${SITE}/fr/learn/2 (in French)`);
+    for (const level of TUTORIAL_LEVELS) expect(en).toContain(`${SITE}/en/learn/${level.level}\n`);
+    expect(en).not.toContain('(in French)');
     expect(en).toContain(`${SITE}/en/learn\n`);
   });
 
@@ -31,7 +31,6 @@ describe("the tutorial's levels, as the conversation links them (2026-10-02)", (
 
   it('leaves alone, with no card, a page the shared table does not hold and any other link', () => {
     for (const text of [
-      'https://whippin.ai/en/learn/3', // not written in English
       'https://whippin.ai/fr/learn/9', // no such level
       'https://whippin.ai/de/learn', // no tutorial in German
       'https://whippin.ai/fr/learn/2/more', // a longer path
