@@ -1,7 +1,7 @@
 // THE LEVELS (#269, user-decided 2026-09-16; re-cut 2026-09-29 once the game ranked its
 // sentences by context): the tutorial is a LIST of levels, each a way of understanding the
 // game one layer deeper. Level 1 is the game itself, PLAYED. The others are ARTICLES — the
-// author's published piece on how the game measures closeness (chqrles.me/cemantix), cut
+// author's published piece on how the game measures closeness (chqrles.me/words-in-context), cut
 // into four explanations with its story taken out: the distance (words as coordinates),
 // one word holding several meanings, how a machine reads a sentence, and the judge that
 // now orders every daily map.

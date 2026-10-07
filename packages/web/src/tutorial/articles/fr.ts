@@ -1,5 +1,5 @@
 // THE FRENCH ARTICLE LEVELS: the author's article « J’ai amélioré Cémantix avec une IA qui ne
-// peut pas parler » (chqrles.me/cemantix), cut into four levels with its story taken out. The
+// peut pas parler » (chqrles.me/fr/words-in-context), cut into four levels with its story taken out. The
 // levels explain, in order: the embedding; what it lacks, the context; how a transformer reads
 // one; Jev, which reads like one but judges instead of writing. The article's experiments with
 // an LLM's hidden states are not told: level 4 ends on one paragraph that links to them.
@@ -29,7 +29,7 @@ import { frenchSpaces, typesetArticle } from './typeset';
 
 const SOURCE = {
   text: '« J’ai amélioré Cémantix avec une IA qui ne peut pas parler »',
-  href: 'https://chqrles.me/cemantix/',
+  href: 'https://chqrles.me/fr/words-in-context/',
 };
 
 const distance: Article = {
@@ -300,7 +300,7 @@ const attention: Article = {
           p: 'Pour entraîner un modèle comme GPT, on lui donne une tâche assez proche de celle qu’on a utilisée pour les embeddings, prédire la suite d’un texte. On lui montre par exemple `Le pigeon` et il doit prédire `vole`, puis `Le pigeon vole` et il doit prédire `dans`, et ainsi de suite sur des milliards de morceaux de texte. À chaque prédiction, on calcule la **loss**, puis les **gradients**, et on modifie légèrement tous les paramètres. À force de prédire la suite de milliards de phrases, le modèle apprend progressivement quels mots doivent s’écouter et quelles informations doivent circuler entre eux. C’est ainsi qu’un immense empilement de couches Transformer, entraîné avec l’objectif assez basique de deviner le mot suivant, finit par construire quelque chose qui ressemble dangereusement à une compréhension fine du contexte.',
         },
         {
-          p: 'On pourrait alors utiliser les Transformers d’un LLM pour modifier les vecteurs de nos mots en fonction de leur contexte. Mais en pratique ça ne marche pas très bien pour plusieurs raisons détaillées dans [cet article](https://chqrles.me/cemantix/#ouvrir-le-capot). Pour résoudre notre problème on va effectivement utiliser des Transformers mais pas de LLM.',
+          p: 'On pourrait alors utiliser les Transformers d’un LLM pour modifier les vecteurs de nos mots en fonction de leur contexte. Mais en pratique ça ne marche pas très bien pour plusieurs raisons détaillées dans [cet article](https://chqrles.me/fr/words-in-context/#ouvrir-le-capot). Pour résoudre notre problème on va effectivement utiliser des Transformers mais pas de LLM.',
         },
       ],
     },
