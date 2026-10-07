@@ -887,7 +887,11 @@ These are decided and verified against the code. Treat them as load-bearing.
     a press is a STATE, nothing travels, no shadow, no underline. **THE WORD**: a
     secondary directly under a primary (`.btn-primary + .btn-secondary`, `.mix-btn +
     .btn-secondary`) and every quiet act (`.link-quiet-btn`, `.link-danger`) is the label
-    alone at 0.7 strength, lifted to 1 on hover — nothing drawn that is not the word. The
+    alone at 0.7 strength, lifted to 1 on hover — nothing drawn that is not the word. **A
+    call and the word under it stand ONE distance apart on every screen** (user-decided
+    2026-10-07): 20px from the call's bottom edge to the word's text — 6px between the boxes
+    plus the word's 14px padding (the reveal tray: 10 + 10) — and the phone `.mix-btn`'s
+    10px edge margin comes off a call with a word under it (`:has`). The
     account area's small act (`.quiet-btn`: SIGN OUT on a device line, RETRY under a read
     that failed) is that word in a tappable thing's corner brackets, 40px tall. A quiet act
     that cannot be pressed for now (`.quiet-btn:disabled`, `.link-quiet-btn:disabled`) steps

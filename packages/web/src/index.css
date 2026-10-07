@@ -866,7 +866,9 @@ textarea,
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(16px, 2.4vh, 24px);
+  /* The pair's own 6px (THE WORD under its call, below): the stack holds nothing else but
+     the invitation's question, which keeps its own distance. */
+  gap: 6px;
   /* NO padding at all. It carried 10px at the bottom "to keep PLAY off the screen's edge —
      the tutorial's own offset", but that offset is `.mix-btn`'s OWN phone margin, which PLAY
      already wears: the two stacked, and PLAY sat 10px higher than MIX and INVITE on every
@@ -5268,7 +5270,12 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
    directly under a primary, answering it, a secondary is THE WORD — the label alone, no
    border, no wash (`.link-quiet-btn`'s exact dress) — so the pair reads as one action and
    its way out, on every screen the same. Restated in full here rather than shared through
-   a class, because the sibling rule has to WIN over the shape's. */
+   a class, because the sibling rule has to WIN over the shape's.
+   AND ONE DISTANCE (user-decided 2026-10-07): 20px from the call's bottom edge to the word's
+   text, everywhere — 6px between the two boxes (the stack's gap, or the confirmations'
+   `.error-calls`) plus the word's own 14px of finger padding; never the phone `.mix-btn`'s
+   10px edge margin between them. (The reveal tray's word wears 10px padding, so its stack
+   parts the pair by 10px.) */
 .btn-primary + .btn-secondary,
 .mix-btn + .btn-secondary {
   width: auto;
@@ -6096,6 +6103,11 @@ figure.l1-fig {
   .mix-btn {
     margin-bottom: 10px;
   }
+  /* Not when THE WORD stands under it: the word is then the stack's last line and its own
+     padding keeps it off the edge, while the 10px would only part the pair. */
+  .mix-btn:has(+ :is(.btn-secondary, .link-quiet-btn)) {
+    margin-bottom: 0;
+  }
 }
 /* The narrowest phones: the longest line holds in its four lines down to 320, in either
    language (measured). */
@@ -6208,9 +6220,9 @@ figure.l1-fig {
   background: var(--fg);
   color: var(--bg);
 }
-/* The question stands a step apart from the answers under it. */
+/* The question stands a step apart from the answers under it: the stack's 6px plus this. */
 .invite .rules-gate .invite-title {
-  margin-bottom: 12px;
+  margin-bottom: calc(clamp(16px, 2.4vh, 24px) + 6px);
 }
 /* The question and its answers come in after the lockup and the demo, the column's count
    carried on (`.dissolve-in`): the gate's own blocks, never the tray's box, which the
@@ -6260,14 +6272,11 @@ figure.l1-fig {
   .invite .tray {
     height: auto;
   }
-  .invite .rules-gate {
-    gap: 4px;
-  }
   .invite-title {
     font-size: 22px;
   }
   .invite .rules-gate .invite-title {
-    margin-bottom: 10px;
+    margin-bottom: 8px;
   }
 }
 
@@ -7654,7 +7663,7 @@ figure.l1-fig {
 .link-calls {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 6px;
   width: 100%;
 }
 /* THE FINAL STEPS' CALL TAKES THE BOTTOM EDGE ON A PHONE — the crossroads' answers and the
@@ -8840,7 +8849,7 @@ figure.l1-fig {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
+  gap: 6px;
   padding-top: 24px;
 }
 .group-calls .btn-primary {
