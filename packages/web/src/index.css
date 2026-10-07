@@ -3675,11 +3675,11 @@ textarea,
 }
 /* YOUR line is said in the accent and the weight: its rank in the accent, its name at the
    action weight — never in corner brackets, which are what a thing that can be tapped wears
-   (the board screen's lines and the group's own screen are not tapped). Where the lines ARE the tap — the solved screen's boards, whose box opens the
-   board — your line keeps the card's corner brackets, small, round it; so does the successor
-   picker's picked line. */
-.result-board .board-row.me,
-.board-row.picked {
+   (the board screen's lines and the group's own screen are not tapped). Where the lines ARE
+   the tap — the solved screen's boards, whose box opens the board — your line keeps the card's
+   corner brackets, small, round it. (The successor picker draws its own corners:
+   `.confirm-pick .board-row`.) */
+.result-board .board-row.me {
   --bc: rgba(255, 255, 255, 0.38);
   background:
     linear-gradient(var(--bc), var(--bc)) left top / 8px 2px,
@@ -5656,21 +5656,18 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   -webkit-mask-image: var(--dz-4);
   mask-image: var(--dz-4);
 }
-.l1-hold .stat-slot,
-.article-hold .stat-slot {
+.l1-hold .stat-slot {
   -webkit-mask-size: 16px 16px;
   mask-size: 16px 16px;
   animation: board-dissolve 240ms linear 320ms backwards; /* SKELETON_WAIT_MS */
 }
-.l1-hold .stat-slot.breathing,
-.article-hold .stat-slot.breathing {
+.l1-hold .stat-slot.breathing {
   animation:
     board-dissolve 240ms linear 320ms backwards,
     stat-breathe 640ms step-end 320ms infinite;
 }
 /* (A LOST chunk's picture stands at once, whatever its wait: its RETRY is a new document.) */
 .l1-hold.failed .stat-slot,
-.article-hold.failed .stat-slot,
 .article-hold.failed .article-rails {
   animation: none;
 }
@@ -6082,9 +6079,6 @@ figure.l1-fig {
      exactly that. */
   .mix-btn {
     margin-bottom: 10px;
-  }
-  .l1-hold .l1-bot-hold {
-    margin-bottom: -10px;
   }
 }
 /* The narrowest phones: the longest line holds in its four lines down to 320, in either
@@ -10037,10 +10031,6 @@ figure.l1-fig {
    says so where the text would start: OVER the first lines' rails, out of their flow, on the
    ground — three whole lines of it, so the rails under the note give way to it through its
    own dither and the rest stand where they stood. */
-.article-hold .article-sleeve > .stat-slot {
-  position: absolute;
-  inset: 0;
-}
 .article-text-hold {
   position: relative;
   margin-top: 30px;
@@ -10060,7 +10050,8 @@ figure.l1-fig {
 .article-rail {
   display: block;
   width: var(--w, 100%);
-  height: calc(15px * 1.75);
+  font-size: 15px;
+  height: 1.75em;
   background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
 }
 .article-hold .article-failure {
@@ -10824,29 +10815,6 @@ figure.l1-fig {
     background-image: repeating-linear-gradient(to right, var(--accent) 0 2px, transparent 2px 4px);
   }
 }
-/* THE ARTICLE'S HOLD (`LazyArticle`, while its chunk is on its way): its head as the article
-   shows it, then the paragraphs' RAILS — the boards' skeleton rail, a dotted slate line through
-   each line's middle at the prose's own pitch, the last line of a paragraph short — coming in
-   only once the skeleton's wait is over (a quick chunk never flashes them). */
-.article-rails {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  margin-top: 30px;
-  animation: board-dissolve 240ms linear 320ms backwards;
-}
-.article-rail-p {
-  display: flex;
-  flex-direction: column;
-}
-.article-rail {
-  display: block;
-  width: var(--w, 100%);
-  font-size: 15px;
-  height: 1.75em;
-  background: linear-gradient(90deg, var(--rail) 2px, transparent 2px) 0 50% / 6px 2px repeat-x;
-}
-
 @media (max-width: 640px) {
   .article-screen {
     padding: 48px 0 40px;
