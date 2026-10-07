@@ -429,7 +429,9 @@ The sentence, holes marked with the hidden word in brackets:
 Choose the three starts together, by the taste's start words and its difficulty, so the
 day lands where the taste's aim says, difficulty tuned
 by the start, never by a duller word. If one hidden word is dead or out of reach whatever
-its start, say so and name ONE replacement from the line instead of starts.
+its start — a word most readers would write themselves is dead; a word players don't say
+is out of reach unless it is the line's punch — say so and name ONE replacement from the
+line instead of starts.
 
 Return {{"starts": {{"<hidden word>": "<chosen candidate, exactly>", ...}}, "why": "<one line per hole: what ties the start to the word>"}},
 or {{"replace": {{"secret": "<hidden word>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")
