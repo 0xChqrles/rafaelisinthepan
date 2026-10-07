@@ -196,6 +196,15 @@
   `VITE_API_BASE_URL=https://api.<domain>` (the backend `ApiUrl`); the backend's CORS origin
   defaults to this site's `SiteUrl` (`https://<domain>`). Outputs: `SiteUrl`,
   `SiteBucketName`, `DistributionId`, `DistributionDomainName`.
+- **The account purge worker (#207):** a second backend `NodejsFunction`, `PurgeFn`
+  (`backend/src/purgeWorker.ts`, 512 MB, 5 min, reserved concurrency 1, `retryAttempts: 0` —
+  the next hourly run is the retry), env `SCORE_TABLE` only, its own one-month log group, an
+  EventBridge `rate(1 hour)` rule. It gets the API's exact DynamoDB action list
+  (`ROW_STORE_ACTIONS`, ConditionCheckItem included, the index ARN with it) — no Scan, no
+  BatchWriteItem, so a purge step that needs either has to widen the list and its test. With
+  an operator address, a `PurgeFnErrors` alarm (`Errors` ≥ 1 over a day, missing data not
+  breaching) notifies the `MailAlerts` topic. The privacy notice's "within 7 days" rests on
+  this schedule.
 - **Mail plumbing (#230):** `lib/mail.ts`, two constructs inside `BackendStack`, both gated on
   `-c operatorEmail=` (no default — a personal address in a public repo; CI passes the
   `OPERATOR_EMAIL` repository SECRET, masked in the public job log, and FAILS the backend

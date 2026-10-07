@@ -224,6 +224,37 @@ const STRINGS = {
   // fr VIE PRIVÉE rather than CONFIDENTIALITÉ: plainer, and five characters shorter in a
   // header slot that ellipsises at 320px (the `linkTitleReturn` finding).
   privacyTitle: { en: 'PRIVACY', fr: 'VIE PRIVÉE' },
+  // DELETING THE ACCOUNT (#207): the quiet control in `/account`'s footnote beside PRIVACY,
+  // and its full-screen confirmation — the title says the act, the note what goes (the
+  // address only where one is saved, and the devices with it: an unsaved account is signed
+  // in on the one device reading the screen), the button is the act's own word. A failure
+  // answers IN PLACE under the note, and the act may be pressed again: `deleteAccountFailed`
+  // where nothing was deleted (refused, or the account read standing after a lost answer),
+  // `deleteAccountUnknown` where nothing could be read at all — it claims nothing, the house
+  // NO ANSWER, and pressing again is safe (a deletion that landed answers as one).
+  deleteAccount: { en: 'DELETE ACCOUNT', fr: 'SUPPRIMER LE COMPTE' },
+  deleteAccountTitle: { en: 'DELETE THE ACCOUNT', fr: 'SUPPRIMER LE COMPTE' },
+  deleteAccountNote: {
+    en: 'Your name, drawing and days are erased for good, and you leave your groups.',
+    fr: 'Votre nom, votre dessin et vos jours sont effacés pour de bon, et vous quittez vos groupes.',
+  },
+  deleteAccountNoteSaved: {
+    en: 'Your name, drawing, email and days are erased for good, you leave your groups, and every device is signed out.',
+    fr: 'Votre nom, votre dessin, votre e-mail et vos jours sont effacés pour de bon, vous quittez vos groupes, et chaque appareil est déconnecté.',
+  },
+  deleteAccountAction: { en: 'DELETE', fr: 'SUPPRIMER' },
+  deleteAccountFailed: {
+    en: 'Nothing was deleted. Try again.',
+    fr: "Rien n'a été supprimé. Réessayez.",
+  },
+  deleteAccountUnknown: {
+    en: 'No answer. Press DELETE again.',
+    fr: 'Pas de réponse. Appuyez à nouveau sur SUPPRIMER.',
+  },
+  deleteAccountChanged: {
+    en: 'This device is on another account now. Nothing was deleted.',
+    fr: "Cet appareil est maintenant sur un autre compte. Rien n'a été supprimé.",
+  },
 
   // WHAT SCREEN THIS IS. `back` renders the CURRENT screen's name as the way out of it —
   // `/account` says ACCOUNT and `/profile` says PROFILE — and the flow was passing

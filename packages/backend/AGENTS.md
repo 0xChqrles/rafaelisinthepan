@@ -71,6 +71,11 @@
                               code send, and the verification that binds or adopts an account
       accountLink.ts          what a verified link DOES: the stakes read, the active-day
                               transfer, the group departure and its resumable drain (#271)
+      purge.ts                #207: what follows a self-deletion's one transaction — the
+                              device revocation and group departure (now, by the route) and
+                              the idempotent physical purge each queued job owes
+      purgeWorker.ts          the hourly PurgeFn Lambda entry: drains the purge jobs to a
+                              deadline (SCORE_TABLE only, no secrets)
       linkStore.ts            link storage contract: the challenge/binding/allowance/job keys,
                               the address + code hashing, and the one indivisible `adopt`
       dynamoLinkStore.ts      prod conditional counters, the attempt-counting verify, and the

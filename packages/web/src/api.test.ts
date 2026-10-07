@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import {
   apiBase,
   boardUrl,
+  deleteAccount,
   devicesUrl,
   groupsUrl,
   parseBoard,
@@ -25,6 +26,7 @@ import {
   parseProfile,
   parseRound,
   profileUrl,
+  readDeviceStanding,
   readGroup,
   readProfile,
   roundUrl,
@@ -355,6 +357,92 @@ describe('readProfile — the four answers (#204)', () => {
 // CONTRACT (#271): `GET /groups?id=` has THREE answers (the `readProfile` rule), told apart
 // on the error CODE: the group, GONE (404 `unknown_group` — the invite landing's EXPIRED) and
 // FAILED (the landing's RETRY). A 404 that does not say so is not an expired link.
+describe('deleteAccount + readDeviceStanding — the answers to a deletion (#207)', () => {
+  const TOKEN = 'f'.repeat(64);
+  const ACCOUNT = 'lfd5pqz5pa7zjm5u';
+  const answer = (status: number, body?: unknown) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => (body === undefined ? Promise.reject(new Error('no body')) : body),
+  });
+
+  beforeEach(() => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.example');
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it('POSTs {token, deleteAccount: <accountId>} to /devices, the OAC hash over those exact bytes', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => answer(200, { deleted: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(deleteAccount({ token: TOKEN, accountId: ACCOUNT })).resolves.toBe('deleted');
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://api.example/devices');
+    const bytes = init.body as Uint8Array<ArrayBuffer>;
+    expect(JSON.parse(new TextDecoder().decode(bytes))).toEqual({ token: TOKEN, deleteAccount: ACCOUNT });
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+    const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    expect((init.headers as Record<string, string>)['x-amz-content-sha256']).toBe(hex);
+  });
+
+  it('a 200 that does not SAY deleted is no verdict — unknown', async () => {
+    vi.stubGlobal('fetch', async () => answer(200, { devices: [] }));
+    await expect(deleteAccount({ token: TOKEN, accountId: ACCOUNT })).resolves.toBe('unknown');
+  });
+
+  it('401 unknown_device is GONE; a 401 with another code is a refusal', async () => {
+    vi.stubGlobal('fetch', async () => answer(401, { error: 'unknown_device' }));
+    await expect(deleteAccount({ token: TOKEN, accountId: ACCOUNT })).resolves.toBe('gone');
+    vi.stubGlobal('fetch', async () => answer(401, { error: 'something_else' }));
+    await expect(deleteAccount({ token: TOKEN, accountId: ACCOUNT })).resolves.toBe('refused');
+  });
+
+  it('409 account_changed is CHANGED, read off the code', async () => {
+    vi.stubGlobal('fetch', async () => answer(409, { error: 'account_changed' }));
+    await expect(deleteAccount({ token: TOKEN, accountId: ACCOUNT })).resolves.toBe('changed');
+    vi.stubGlobal('fetch', async () => answer(409, { error: 'other' }));
+    await expect(deleteAccount({ token: TOKEN, accountId: ACCOUNT })).resolves.toBe('refused');
+  });
+
+  it('a 400 is a refusal', async () => {
+    vi.stubGlobal('fetch', async () => answer(400, { error: 'bad_request' }));
+    await expect(deleteAccount({ token: TOKEN, accountId: ACCOUNT })).resolves.toBe('refused');
+  });
+
+  it('a 5xx, a dropped connection or an unreadable body is UNKNOWN — never a verdict', async () => {
+    vi.stubGlobal('fetch', async () => answer(503, { error: 'unknown_device' }));
+    await expect(deleteAccount({ token: TOKEN, accountId: ACCOUNT })).resolves.toBe('unknown');
+    vi.stubGlobal('fetch', async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    await expect(deleteAccount({ token: TOKEN, accountId: ACCOUNT })).resolves.toBe('unknown');
+    vi.stubGlobal('fetch', async () => answer(401));
+    await expect(deleteAccount({ token: TOKEN, accountId: ACCOUNT })).resolves.toBe('unknown');
+  });
+
+  it('readDeviceStanding: the plain {token} list — gone, standing, or unknown', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => answer(401, { error: 'unknown_device' }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(readDeviceStanding(TOKEN)).resolves.toBe('gone');
+    expect(JSON.parse(new TextDecoder().decode(fetchMock.mock.calls[0][1].body as Uint8Array))).toEqual({
+      token: TOKEN,
+    });
+    vi.stubGlobal('fetch', async () => answer(200, { accountId: ACCOUNT, deviceId: 'd'.repeat(16), devices: [] }));
+    await expect(readDeviceStanding(TOKEN)).resolves.toBe('standing');
+    vi.stubGlobal('fetch', async () => answer(503));
+    await expect(readDeviceStanding(TOKEN)).resolves.toBe('unknown');
+    vi.stubGlobal('fetch', async () => answer(401, { error: 'other' }));
+    await expect(readDeviceStanding(TOKEN)).resolves.toBe('unknown');
+    vi.stubGlobal('fetch', async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    await expect(readDeviceStanding(TOKEN)).resolves.toBe('unknown');
+  });
+});
+
 describe('readGroup — the three answers (#271)', () => {
   const ID = 'abcdefghij234567';
   const OWNER = 'zwjxqk37xfkvtxqu';

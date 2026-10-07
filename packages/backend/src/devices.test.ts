@@ -7,10 +7,18 @@
 // identity); an arbitrary unknown token is `unknown_device` and never a fresh account; a
 // revoked device's next call is signed out; and no answer ever carries the token back.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DEVICE_ID_PATTERN, PUBLIC_ID_PATTERN } from '@whippin/shared';
 import { createHandler } from './handler';
+import { emailHash } from './linkStore';
+import { consoleMailer } from './mailer';
 import { memoryDeviceStore } from './memoryDeviceStore';
+import { memoryGroupStore } from './memoryGroupStore';
+import { memoryHistoryStore } from './memoryHistoryStore';
+import { memoryLinkStore } from './memoryLinkStore';
+import { memoryProfileStore } from './memoryProfileStore';
+import { memoryRoundStore } from './memoryRoundStore';
+import { memoryScoreStore } from './memoryScoreStore';
 import {
   deviceTokenHash,
   staleLastSeen,
@@ -384,5 +392,307 @@ describe('what a device IS, read from the User-Agent (#216)', () => {
   it('leaves what it cannot read EMPTY rather than guessing', () => {
     expect(parseUserAgent(undefined)).toEqual({ device: '', os: '', browser: '' });
     expect(parseUserAgent('curl/8.4.0')).toEqual({ device: '', os: '', browser: '' });
+  });
+});
+
+// CONTRACT (#207): a player deletes their own account. The body NAMES the account it
+// deletes; the deletion is ONE commit after which the account is gone for every surface —
+// no token of it authenticates, no profile read dresses it, its address reaches nobody —
+// and a purge job is queued for the rest. Devices and groups go at once, best-effort: the
+// answer is about the deletion, which has already happened.
+describe('deleting an account (#207)', () => {
+  function world() {
+    const devices = memoryDeviceStore();
+    const profiles = memoryProfileStore((id) => devices.accountExists(id));
+    const groups = memoryGroupStore((id) => devices.accountExists(id));
+    const rounds = memoryRoundStore();
+    const scores = memoryScoreStore();
+    const history = memoryHistoryStore();
+    const links = memoryLinkStore({ devices, profiles, rounds, scores, history });
+    const handler = createHandler({
+      store: emptyStore,
+      profiles,
+      groups,
+      deviceStore: devices,
+      devices: { turnstile: { verify: async () => true }, allowSourceIp: true },
+      link: {
+        links,
+        groups,
+        history,
+        mailer: consoleMailer,
+        turnstile: { verify: async () => true },
+        ipHmacSecret: 'x'.repeat(32),
+        allowSourceIp: true,
+      },
+    });
+    return { handler, devices, profiles, groups, links };
+  }
+
+  async function signedUp(harnessed: ReturnType<typeof world>, token = TOKEN) {
+    const result = await harnessed.handler(post({ token, turnstileToken: 'ok' }));
+    return JSON.parse(result.body) as Listing;
+  }
+
+  // Bind an address the way a verified link does: a standing challenge consumed by `bind`.
+  async function linkEmail(harnessed: ReturnType<typeof world>, accountId: string, email: string) {
+    const hash = emailHash(email);
+    const now = '2026-08-26T12:00:00.000Z';
+    await harnessed.links.putChallenge(hash, {
+      codeHash: 'c'.repeat(64),
+      attempts: 0,
+      createdAt: now,
+      expiresAt: Math.floor(Date.parse(now) / 1_000) + 600,
+    });
+    const outcome = await harnessed.links.bind({
+      emailHash: hash,
+      codeHash: 'c'.repeat(64),
+      email,
+      accountId,
+      now,
+    });
+    expect(outcome).toBe('bound');
+  }
+
+  it('deletes the account: every token of it is signed out, its face is gone, a purge is queued', async () => {
+    const harnessed = world();
+    const me = await signedUp(harnessed);
+    // A second device on the same account, and a stranger who must be left alone.
+    await harnessed.devices.bootstrap({
+      tokenHash: deviceTokenHash(OTHER_TOKEN),
+      accountId: me.accountId,
+      deviceId: 'zzzzzzzzzzzzzzzz',
+      agent: { device: '', os: '', browser: '' },
+      now: '2026-08-26T12:00:00.000Z',
+    });
+    const stranger = await signedUp(harnessed, 'c3'.repeat(32));
+    await harnessed.profiles.upsert({
+      publicId: me.accountId,
+      name: 'Zoe',
+      avatar: '',
+      now: '2026-08-26T12:00:00.000Z',
+    });
+
+    const result = await harnessed.handler(post({ token: TOKEN, deleteAccount: me.accountId }));
+    expect(result.statusCode).toBe(200);
+    expect(JSON.parse(result.body)).toEqual({ deleted: true });
+
+    // Both devices fail authentication, and their items are gone now rather than at the purge.
+    for (const token of [TOKEN, OTHER_TOKEN]) {
+      const after = await harnessed.handler(post({ token }));
+      expect(after.statusCode).toBe(401);
+      expect(JSON.parse(after.body).error).toBe('unknown_device');
+    }
+    await expect(harnessed.devices.list(me.accountId)).resolves.toEqual([]);
+    // No surface dresses the deleted account: the public profile read says it is GONE.
+    const profile = await harnessed.handler({
+      rawPath: '/profile',
+      queryStringParameters: { id: me.accountId },
+      requestContext: { http: { method: 'GET' } },
+    });
+    expect(profile.statusCode).toBe(410);
+    // The stranger is untouched.
+    expect((await harnessed.handler(post({ token: 'c3'.repeat(32) }))).statusCode).toBe(200);
+    await expect(harnessed.devices.accountExists(stranger.accountId)).resolves.toBe(true);
+    // The rest is owed by the purge worker.
+    const jobs = await harnessed.links.pendingPurges();
+    expect(jobs.map((job) => job.accountId)).toEqual([me.accountId]);
+  });
+
+  it('frees the ADDRESS: the binding goes with the account, and the job never names it', async () => {
+    const harnessed = world();
+    const me = await signedUp(harnessed);
+    await linkEmail(harnessed, me.accountId, 'zoe@example.com');
+
+    const result = await harnessed.handler(post({ token: TOKEN, deleteAccount: me.accountId }));
+    expect(result.statusCode).toBe(200);
+    await expect(harnessed.links.binding(emailHash('zoe@example.com'))).resolves.toBeNull();
+    expect(JSON.stringify(await harnessed.links.pendingPurges())).not.toContain('zoe');
+  });
+
+  it('a REPLAY after a lost answer authenticates no more — 401 `unknown_device`, which the client reads as done', async () => {
+    const harnessed = world();
+    const me = await signedUp(harnessed);
+    expect((await harnessed.handler(post({ token: TOKEN, deleteAccount: me.accountId }))).statusCode).toBe(200);
+    const replay = await harnessed.handler(post({ token: TOKEN, deleteAccount: me.accountId }));
+    expect(replay.statusCode).toBe(401);
+    expect(JSON.parse(replay.body).error).toBe('unknown_device');
+  });
+
+  it('refuses to delete an account the body does not NAME — 409 `account_changed`, nothing goes', async () => {
+    const harnessed = world();
+    const me = await signedUp(harnessed);
+    const other = await signedUp(harnessed, 'c3'.repeat(32));
+    const result = await harnessed.handler(post({ token: TOKEN, deleteAccount: other.accountId }));
+    expect(result.statusCode).toBe(409);
+    expect(JSON.parse(result.body).error).toBe('account_changed');
+    expect((await harnessed.handler(post({ token: TOKEN }))).statusCode).toBe(200);
+    await expect(harnessed.devices.accountExists(me.accountId)).resolves.toBe(true);
+    await expect(harnessed.links.pendingPurges()).resolves.toEqual([]);
+  });
+
+  // A store refusal says only that the snapshot this call authenticated with no longer
+  // stands; the route reads the device AGAIN to tell what happened. 409 `account_changed`
+  // then means exactly one thing — this device is on ANOTHER account — and the client may
+  // read it so.
+  it('deletes ANYWAY when only the address changed between the read and the commit — the player named this account', async () => {
+    const harnessed = world();
+    const me = await signedUp(harnessed);
+    // The bind lands after this call authenticated (no address read) and before it commits.
+    const original = harnessed.links.deleteAccount.bind(harnessed.links);
+    const asked: (string | undefined)[] = [];
+    harnessed.links.deleteAccount = async (input) => {
+      asked.push(input.email);
+      if (asked.length === 1) await linkEmail(harnessed, me.accountId, 'zoe@example.com');
+      return original(input);
+    };
+    const result = await harnessed.handler(post({ token: TOKEN, deleteAccount: me.accountId }));
+    expect(result.statusCode).toBe(200);
+    expect(JSON.parse(result.body)).toEqual({ deleted: true });
+    // Tried again over the FRESH snapshot — the address it now carries — which also frees it.
+    expect(asked).toEqual([undefined, 'zoe@example.com']);
+    await expect(harnessed.devices.accountExists(me.accountId)).resolves.toBe(false);
+    await expect(harnessed.links.binding(emailHash('zoe@example.com'))).resolves.toBeNull();
+  });
+
+  it('answers 401 `unknown_device` when ANOTHER device of the account deleted it first — the client reads that as done', async () => {
+    const harnessed = world();
+    const me = await signedUp(harnessed);
+    await harnessed.devices.bootstrap({
+      tokenHash: deviceTokenHash(OTHER_TOKEN),
+      accountId: me.accountId,
+      deviceId: 'zzzzzzzzzzzzzzzz',
+      agent: { device: '', os: '', browser: '' },
+      now: '2026-08-26T12:00:00.000Z',
+    });
+    const original = harnessed.links.deleteAccount.bind(harnessed.links);
+    harnessed.links.deleteAccount = async (input) => {
+      // The sibling's deletion commits between this call's authentication and its own.
+      if (input.tokenHash === deviceTokenHash(TOKEN)) {
+        await original({ ...input, tokenHash: deviceTokenHash(OTHER_TOKEN) });
+      }
+      return original(input);
+    };
+    const result = await harnessed.handler(post({ token: TOKEN, deleteAccount: me.accountId }));
+    expect(result.statusCode).toBe(401);
+    expect(JSON.parse(result.body).error).toBe('unknown_device');
+    await expect(harnessed.devices.accountExists(me.accountId)).resolves.toBe(false);
+  });
+
+  it('answers 409 `account_changed` when a LINK moved this device to another account meanwhile — and deletes neither', async () => {
+    const harnessed = world();
+    const me = await signedUp(harnessed);
+    const other = await signedUp(harnessed, 'c3'.repeat(32));
+    // A saved account (it has an address), so the link on a sibling tab leaves it standing.
+    await linkEmail(harnessed, me.accountId, 'zoe@example.com');
+    const original = harnessed.links.deleteAccount.bind(harnessed.links);
+    harnessed.links.deleteAccount = async (input) => {
+      expect(
+        harnessed.devices.adoptDevice({
+          tokenHash: deviceTokenHash(TOKEN),
+          deviceId: me.deviceId,
+          from: me.accountId,
+          to: other.accountId,
+          erase: false,
+          now: '2026-08-26T12:00:00.000Z',
+        }),
+      ).toBe('adopted');
+      return original(input);
+    };
+    const result = await harnessed.handler(post({ token: TOKEN, deleteAccount: me.accountId }));
+    expect(result.statusCode).toBe(409);
+    expect(JSON.parse(result.body).error).toBe('account_changed');
+    // The account it LEFT still stands, and so does the one it holds now.
+    await expect(harnessed.devices.accountExists(me.accountId)).resolves.toBe(true);
+    await expect(harnessed.devices.accountExists(other.accountId)).resolves.toBe(true);
+    await expect(harnessed.links.pendingPurges()).resolves.toEqual([]);
+  });
+
+  it('fails LOUDLY after three refusals on an account that keeps changing — never a guessed answer', async () => {
+    const harnessed = world();
+    const me = await signedUp(harnessed);
+    let calls = 0;
+    harnessed.links.deleteAccount = async () => {
+      calls += 1;
+      return 'account_changed';
+    };
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const result = await harnessed.handler(post({ token: TOKEN, deleteAccount: me.accountId }));
+      expect(result.statusCode).toBe(500);
+    } finally {
+      error.mockRestore();
+    }
+    expect(calls).toBe(3);
+    await expect(harnessed.devices.accountExists(me.accountId)).resolves.toBe(true);
+  });
+
+  it('refuses a malformed name, and a body that also bootstraps or revokes — 400 `bad_request`', async () => {
+    const harnessed = world();
+    const me = await signedUp(harnessed);
+    for (const body of [
+      { token: TOKEN, deleteAccount: 'NOT-AN-ID' },
+      { token: TOKEN, deleteAccount: 42 },
+      { token: TOKEN, deleteAccount: me.accountId, turnstileToken: 'ok' },
+      { token: TOKEN, deleteAccount: me.accountId, revoke: me.deviceId },
+      { token: TOKEN, deleteAccount: me.accountId, revokeKey: 'a'.repeat(64) },
+    ]) {
+      const result = await harnessed.handler(post(body));
+      expect(result.statusCode, JSON.stringify(body)).toBe(400);
+      expect(JSON.parse(result.body).error).toBe('bad_request');
+    }
+    await expect(harnessed.devices.accountExists(me.accountId)).resolves.toBe(true);
+  });
+
+  it('authenticates like every private call: a malformed token is 400, an unknown one 401', async () => {
+    const harnessed = world();
+    const id = 'aaaaaaaaaaaaaaaa';
+    expect((await harnessed.handler(post({ token: 'nope', deleteAccount: id }))).statusCode).toBe(400);
+    const unknown = await harnessed.handler(post({ token: TOKEN, deleteAccount: id }));
+    expect(unknown.statusCode).toBe(401);
+    expect(JSON.parse(unknown.body).error).toBe('unknown_device');
+  });
+
+  it('LEAVES every group at once, under the succession rule — an owned group goes to the oldest other member', async () => {
+    const harnessed = world();
+    const me = await signedUp(harnessed);
+    const second = await signedUp(harnessed, 'c3'.repeat(32));
+    const third = await signedUp(harnessed, 'd4'.repeat(32));
+    const at = (minute: number) => `2026-08-26T12:0${minute}:00.000Z`;
+    await harnessed.groups.create({ id: 'gaaaaaaaaaaaaaaa', name: 'crew', createdBy: me.accountId, now: at(0) });
+    await harnessed.groups.join({ id: 'gaaaaaaaaaaaaaaa', publicId: second.accountId, now: at(1) });
+    await harnessed.groups.join({ id: 'gaaaaaaaaaaaaaaa', publicId: third.accountId, now: at(2) });
+    // A group of one: left, it is deleted.
+    await harnessed.groups.create({ id: 'gbbbbbbbbbbbbbbb', name: 'solo', createdBy: me.accountId, now: at(3) });
+
+    expect((await harnessed.handler(post({ token: TOKEN, deleteAccount: me.accountId }))).statusCode).toBe(200);
+    await expect(harnessed.groups.listMine(me.accountId)).resolves.toEqual([]);
+    const crew = await harnessed.groups.get('gaaaaaaaaaaaaaaa');
+    expect(crew?.createdBy).toBe(second.accountId);
+    expect((await harnessed.groups.members('gaaaaaaaaaaaaaaa')).map((m) => m.publicId)).toEqual([
+      second.accountId,
+      third.accountId,
+    ]);
+    await expect(harnessed.groups.get('gbbbbbbbbbbbbbbb')).resolves.toBeNull();
+  });
+
+  it('answers the deletion even when the steps after the commit FAIL — they are owed by the purge', async () => {
+    const harnessed = world();
+    const me = await signedUp(harnessed);
+    harnessed.groups.leaveAll = async () => {
+      throw new Error('throttled');
+    };
+    harnessed.devices.list = async () => {
+      throw new Error('throttled');
+    };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const result = await harnessed.handler(post({ token: TOKEN, deleteAccount: me.accountId }));
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body)).toEqual({ deleted: true });
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
+    await expect(harnessed.links.pendingPurges()).resolves.toHaveLength(1);
   });
 });

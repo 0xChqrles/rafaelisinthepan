@@ -21,6 +21,10 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as eventsTargets from 'aws-cdk-lib/aws-events-targets';
 import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
@@ -42,6 +46,35 @@ const REPO_LOCKFILE = path.resolve(here, '..', '..', '..', 'pnpm-lock.yaml');
 // `./assets` at runtime. esbuild bundles resvg-wasm's JS but not these data files, so copy
 // them next to the bundled index.mjs so the same `./assets/*` paths resolve in the Lambda.
 const LAMBDA_ASSETS = path.resolve(here, '..', '..', 'backend', 'src', 'assets');
+// #207's sweeper: the physical purge of a deleted account, run on a schedule over the durable
+// queue the deletion enqueues. Its own entrypoint in the backend package (the same stores,
+// built from the same config), so nothing about the purge is written twice.
+const PURGE_ENTRY = path.resolve(here, '..', '..', 'backend', 'src', 'purgeWorker.ts');
+
+// The bundling every backend function shares: the backend is ESM ("type":"module") and uses
+// `import.meta`, so it stays ESM; the AWS SDK v3 ships in the Node runtime, so bundling it
+// would only bloat the artifact.
+const BACKEND_BUNDLING = {
+  format: OutputFormat.ESM,
+  target: 'node22',
+  minify: true,
+  sourceMap: true,
+  externalModules: ['@aws-sdk/*'],
+};
+
+// The table surface a backend function is granted — ONE list for the API and the purge
+// worker, because the worker runs the API's own stores (the group leave, the device revoke,
+// the departure drain) and a store method it reaches is one the API reaches. What each
+// action serves is written beside the API's grant below. No Scan, anywhere.
+const ROW_STORE_ACTIONS = [
+  'dynamodb:Query',
+  'dynamodb:GetItem',
+  'dynamodb:BatchGetItem',
+  'dynamodb:PutItem',
+  'dynamodb:UpdateItem',
+  'dynamodb:DeleteItem',
+  'dynamodb:ConditionCheckItem',
+] as const;
 
 interface BackendStackProps extends StackProps {
   // The exact web origin permitted to read the API via CORS. Defaults to "*".
@@ -221,13 +254,7 @@ export class BackendStack extends Stack {
       },
       depsLockFilePath: REPO_LOCKFILE,
       bundling: {
-        // The backend is ESM ("type":"module") and uses `import.meta` — keep it ESM.
-        format: OutputFormat.ESM,
-        target: 'node22',
-        minify: true,
-        sourceMap: true,
-        // The AWS SDK v3 ships in the Node runtime; bundling it only bloats the artifact.
-        externalModules: ['@aws-sdk/*'],
+        ...BACKEND_BUNDLING,
         // Copy the share-card assets (resvg .wasm + fonts) next to the bundle so ogCard.ts's
         // `./assets/*` fs reads resolve at runtime (esbuild bundles resvg-wasm's JS, not the
         // data files it loads). Cross-platform `cp -R`; the bundle dir is fresh each synth.
@@ -266,16 +293,7 @@ export class BackendStack extends Stack {
     // the sign-out list a Query and revocation a DeleteItem — and no explicit index ARN:
     // a Query against a secondary index is authorized on `<table>/index/*`, which `grant`
     // adds by itself once the table HAS an index (the GSI declared above is the one).
-    scoreTable.grant(
-      fn,
-      'dynamodb:Query',
-      'dynamodb:GetItem',
-      'dynamodb:BatchGetItem',
-      'dynamodb:PutItem',
-      'dynamodb:UpdateItem',
-      'dynamodb:DeleteItem',
-      'dynamodb:ConditionCheckItem',
-    );
+    scoreTable.grant(fn, ...ROW_STORE_ACTIONS);
     const parameterArn = (name: string) =>
       this.formatArn({
         service: 'ssm',
@@ -355,6 +373,74 @@ export class BackendStack extends Stack {
         forwardTo: props.operatorEmail,
         alerts: mailAlerts,
       });
+    }
+
+    // ── Lambda: the account purge worker (#207) ──────────────────────────────
+    // Deleting an account is ONE transaction on the API (the account row, its profile, its
+    // email binding, and a purge JOB in the fixed `purge` partition) — authentication fails
+    // for every one of its tokens from that commit on. What the account LEFT BEHIND (round
+    // logs, score rows, the solved-day collections, device items the GSI had not listed yet)
+    // is removed here, off the request path: every step is idempotent and the deletion itself
+    // is the progress, so a run cut off anywhere is simply the next run's work. The job
+    // partition is ONE Query, so this needs no Scan and no index of its own.
+    const purgeLogGroup = new logs.LogGroup(this, 'PurgeFnLogs', {
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    const purgeFn = new NodejsFunction(this, 'PurgeFn', {
+      entry: PURGE_ENTRY,
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_22_X,
+      architecture: lambda.Architecture.ARM_64,
+      // Pages of small items and conditional deletes: I/O-bound, not the API's CPU-bound parse.
+      memorySize: 512,
+      // The worker stops taking new jobs ~30s before this (it reads the remaining time off its
+      // context) and leaves the rest for the next hour; a job interrupted mid-way is safe.
+      timeout: Duration.minutes(5),
+      // ONE sweeper at a time. Two runs over the same job would not corrupt anything (every
+      // step is idempotent), but they would race each other's conditional deletes into
+      // retries for no gain.
+      reservedConcurrentExecutions: 1,
+      // The hourly schedule IS the retry. Lambda's own async retries would re-run a failed
+      // sweep twice within minutes — the same queue, the same likely failure — and triple the
+      // `Errors` an hour's single failure counts.
+      retryAttempts: 0,
+      logGroup: purgeLogGroup,
+      tracing: lambda.Tracing.ACTIVE,
+      // The table and nothing else: no secret (it verifies no challenge and hashes no
+      // address), no origin, no sender.
+      environment: { SCORE_TABLE: scoreTable.tableName },
+      depsLockFilePath: REPO_LOCKFILE,
+      bundling: BACKEND_BUNDLING,
+    });
+    // The API's own surface (ROW_STORE_ACTIONS): the worker reads and deletes through the
+    // API's stores, and a group leave's transaction asserts rows it does not write — a
+    // standalone ConditionCheck, authorized only by `dynamodb:ConditionCheckItem`. The
+    // device list is a Query on the GSI, which `grant` covers through `<table>/index/*`.
+    scoreTable.grant(purgeFn, ...ROW_STORE_ACTIONS);
+    new events.Rule(this, 'PurgeSchedule', {
+      description: 'Purge what deleted accounts left behind (#207).',
+      schedule: events.Schedule.rate(Duration.hours(1)),
+      targets: [new eventsTargets.LambdaFunction(purgeFn)],
+    });
+    // A purge that keeps FAILING is a deleted player's data that keeps existing, which is a
+    // promise broken, not a slow page — so it reaches the same human the mail alarms do. The
+    // worker throws only when a job failed with an error (never for a deadline cut-off), so
+    // one `Errors` is worth a look. A day's window, because the schedule is hourly and one
+    // transient failure the next hour cleared is the same queue doing its job: the alarm
+    // stays raised while any run of the day failed, and sends nothing on recovery, like the
+    // forwarder's. Missing data is not breaching: an idle hour failed nothing.
+    if (mailAlerts) {
+      const purgeErrors = new cloudwatch.Alarm(this, 'PurgeFnErrors', {
+        metric: purgeFn.metricErrors({ period: Duration.days(1), statistic: 'Sum' }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+        alarmDescription:
+          'The account purge worker failed a job. A deleted account\'s rows are still stored; the job stays queued and the next hourly run retries it. Read the PurgeFn logs.',
+      });
+      purgeErrors.addAlarmAction(new cwActions.SnsAction(mailAlerts.topic));
     }
 
     // ── CloudFront: CDN in front of the Function URL ──────────────────────────
@@ -737,6 +823,27 @@ export class BackendStack extends Stack {
           id: 'AwsSolutions-IAM5',
           reason:
             'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table and its indexes — the grant\'s <table>/index/* resource covers exactly the one DeviceByAccount GSI (#216) — with only Query/GetItem/BatchGetItem/PutItem/UpdateItem/DeleteItem/ConditionCheckItem (BatchGetItem reads a group board\'s known key set; DeleteItem serves leaving a group, device revocation and #204\'s account erase; ConditionCheckItem serves the rows #204\'s adoption asserts without writing), and SSM GetParameters to the two exact secret-parameter ARNs; no parameter wildcard exists. ses:SendEmail is conditioned on the single ses:FromAddress it may send as, which is the bound that matters; the identity wildcard is required because SES also evaluates the statement against a RECIPIENT that is a verified identity of this account, and the configuration-set wildcard is required by SES on every SendEmail call and grants nothing on its own.',
+        },
+        {
+          id: 'AwsSolutions-L1',
+          reason:
+            'Runtime is pinned to NODEJS_22_X — the current maintained Node LTS on Lambda — for reproducible builds; we deliberately pin a specific LTS rather than a floating "latest". cdk-nag\'s bundled runtime list lags new LTS releases.',
+        },
+      ],
+      true, // also apply to the function's generated role/policy (children)
+    );
+    NagSuppressions.addResourceSuppressions(
+      purgeFn,
+      [
+        {
+          id: 'AwsSolutions-IAM4',
+          reason:
+            'AWS-managed basic-execution + X-Ray-write policies — the standard least-broad managed policies for CloudWatch Logs and active tracing.',
+        },
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'DynamoDB is scoped to this table and its indexes — the grant\'s <table>/index/* resource covers exactly the one DeviceByAccount GSI (#216), which lists a deleted account\'s devices — with the API function\'s own Query/GetItem/BatchGetItem/PutItem/UpdateItem/DeleteItem/ConditionCheckItem (no Scan): the worker runs the API\'s stores, whose group leave asserts rows it does not write. The X-Ray wildcard is the service\'s own requirement.',
         },
         {
           id: 'AwsSolutions-L1',

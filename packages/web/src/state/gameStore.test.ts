@@ -522,3 +522,38 @@ describe('a republished puzzle resets its round (#203/#214)', () => {
     expect(useHistoryStore.getState().solved.fr?.days).toEqual([5]);
   });
 });
+
+// CONTRACT (#207): an account DELETED by its own player leaves a brand-new visitor behind —
+// the whole persisted record forgotten (the outbox, its owner, the preferences, the tutorial's
+// progress) and a NEW placeholder seed, so the next account never wears the deleted one's
+// face. Owner-blind: the account that owned the outbox exists nowhere any more.
+describe('forgetAll (#207)', () => {
+  const lived = {
+    ...initialPersistedState(),
+    identityOwner: OWNER,
+    outbox: { [roundKeyForDay(5, 'fr')]: { puzzle: REV, guesses: ['chat'] } },
+    lastLang: 'fr',
+    onboarded: true,
+    boardTab: 'global' as const,
+    lastGroupId: 'g'.repeat(16),
+    lessonsDone: [1],
+    localSeed: 'a'.repeat(16),
+  };
+
+  it('returns the initial state under a NEW seed, whatever was held', () => {
+    const seed = 'b'.repeat(16);
+    const result = applyGameMutation(lived, { type: 'forgetAll', seed });
+    expect(result.changed).toBe(true);
+    expect(result.state).toEqual({ ...initialPersistedState(), localSeed: seed });
+  });
+
+  it('the store method commits it and drops the transient round states', () => {
+    useGameStore.setState({ ...lived, roundLoads: { [roundKeyForDay(5, 'fr')]: { status: 'loading', puzzle: REV } as never } });
+    useGameStore.getState().forgetAll();
+    const state = useGameStore.getState();
+    expect(persistedStateOf(state)).toEqual({ ...initialPersistedState(), localSeed: state.localSeed });
+    expect(state.localSeed).not.toBeNull();
+    expect(state.localSeed).not.toBe(lived.localSeed);
+    expect(state.roundLoads).toEqual({});
+  });
+});

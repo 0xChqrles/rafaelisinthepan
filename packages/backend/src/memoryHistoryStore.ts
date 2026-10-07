@@ -1,5 +1,6 @@
 import { boundSolvedDays, MAX_SOLVED_DAYS } from '@whippin/shared';
 import type { PlayerHistoryStore } from './historyStore';
+import type { LinkHistoryWrites } from './linkStore';
 
 // Process-local store for `pnpm backend:dev` and tests: the same PlayerHistoryStore
 // contract as DynamoDB with no AWS account. Restarting the local server intentionally
@@ -11,7 +12,11 @@ import type { PlayerHistoryStore } from './historyStore';
 // whole-set rewrite, but this file is the contract's reference implementation for
 // `backend:dev` and the route tests — the next store copied from it must not inherit a
 // read-modify-write the real one forbids as a lost update.
-export function memoryHistoryStore(): PlayerHistoryStore {
+//
+// It also carries #207's `purge`, which is NOT on the PlayerHistoryStore contract: in
+// production the collections go as items of the deleted account's swept partition
+// (`LinkStore.purgePlayer`), so the history store never issues it. See `LinkHistoryWrites`.
+export function memoryHistoryStore(): PlayerHistoryStore & LinkHistoryWrites {
   const days = new Map<string, Set<number>>();
   const key = (publicId: string, lang: string) => `${publicId}#${lang}`;
 
@@ -34,6 +39,12 @@ export function memoryHistoryStore(): PlayerHistoryStore {
       const all = [...set].sort((a, b) => a - b);
       for (const drop of all.slice(0, Math.max(0, all.length - MAX_SOLVED_DAYS))) {
         set.delete(drop);
+      }
+    },
+
+    purge(publicId) {
+      for (const id of [...days.keys()]) {
+        if (id.startsWith(`${publicId}#`)) days.delete(id);
       }
     },
   };

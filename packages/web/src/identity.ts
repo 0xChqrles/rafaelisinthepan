@@ -151,6 +151,13 @@ const departedTokens = new Set<string>();
 // unwritable storage. Without this fence the next sync would re-adopt the verdict it can
 // still read and SKIP would loop forever; with it, the still-readable tombstone reads as
 // emptiness for this session (the departedTokens shape, for the tombstone).
+//
+// It is also the FENCE a DELETED account leaves (#207, `startFreshDevice`'s `deleted`): a
+// sibling tab whose private call answered `unknown_device` a beat after this tab wiped the
+// device writes a tombstone naming the account the player just erased (the key held no token
+// to refuse it). That verdict is the deletion's own echo, never a sign-out to explain — so
+// the dismissed identity is fenced BEFORE any such write can land, and a sync that meets it
+// REMOVES it from the key (`syncFromStorage`), every tab converging on the fresh device.
 let dismissedTombstone: SignedOutTombstone | null = null;
 
 // Whether the signed-out verdict this tab shows is BACKED BY THE SHARED KEY — read from a
@@ -490,8 +497,13 @@ function syncFromStorage(): DeviceIdentity | null {
       publish(null, true, false, tombstone);
       return null;
     }
-    // Dismissed and unremovable: this tab already chose START FRESH, so the verdict it
-    // can still read counts as emptiness for the rest of this session.
+    // Dismissed: this tab already chose START FRESH (or deleted the account it names), so
+    // the verdict it can still read counts as emptiness for the rest of this session — and
+    // it is taken OUT of the key once more, since a sibling tab may have written it after
+    // this tab's own removal (a late `unknown_device` about a deleted account): the sibling
+    // tabs then follow the empty key off their own signed-out screens (`tombstoneShared`).
+    // Unwritable storage leaves it readable, which the fence already answers.
+    removeTombstone();
   }
   // The shared key holds NO standing tombstone here. If the verdict this tab shows was
   // backed by one (read from the key, or successfully written to it), its absence means
@@ -790,7 +802,11 @@ export function adoptLinkedAccount(
 // token is minted lazily by the next deliberate act, exactly like a first-ever visit.
 // This is also what lifts the signed-out TOMBSTONE — the one gesture the fenced state
 // waits for — so the next act may mint again, origin-wide.
-export function startFreshDevice(): void {
+//
+// `deleted` names an account its own player DELETED (#207): it is fenced as a dismissed
+// tombstone whether or not one stands yet, so a verdict about it written later by a sibling
+// tab reads as emptiness here and is removed from the key (`dismissedTombstone`).
+export function startFreshDevice(deleted?: SignedOutTombstone): void {
   const stored = readStored();
   const departedStored =
     stored.available && stored.token !== null && departedTokens.has(stored.token)
@@ -802,6 +818,9 @@ export function startFreshDevice(): void {
   // stick (unwritable storage), the fence keeps the still-readable verdict from being
   // re-adopted, or SKIP would loop this tab back onto the screen forever.
   if (stored.available && stored.signedOut !== null) dismissedTombstone = stored.signedOut;
+  if (deleted !== undefined) {
+    dismissedTombstone = { accountId: deleted.accountId, deviceId: deleted.deviceId };
+  }
   clearStored(token);
   removeTombstone();
   tombstoneShared = false;

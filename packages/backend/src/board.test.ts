@@ -45,6 +45,9 @@ function fixedScores(rows: ScoreRow[]): ScoreStore {
     submit: async () => {
       throw new Error('the board route never submits');
     },
+    remove: async () => {
+      throw new Error('the board route never removes');
+    },
   };
 }
 
@@ -349,6 +352,9 @@ describe('group period boards and the standing (#271)', () => {
         rows.filter((row) => row.date === key.date && ids.includes(row.publicId)),
       submit: async () => {
         throw new Error('the board route never submits');
+      },
+      remove: async () => {
+        throw new Error('the board route never removes');
       },
     };
   }
