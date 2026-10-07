@@ -20,7 +20,7 @@ import SuccessorPick from '../components/SuccessorPick';
 import { LINE_PX } from '../components/boardMetrics';
 import GroupCreate from '../components/GroupCreate';
 import GroupScreen from '../components/GroupScreen';
-import QuietFailure from '../components/QuietFailure';
+import QuietFailure, { SpokenLater } from '../components/QuietFailure';
 import PeriodSwitch from '../components/PeriodSwitch';
 import Podium, { nextStage, type PodiumStage } from '../components/podium/Podium';
 import { beats, podiumHeightPx, podiumSize, type PodiumSize } from '../components/podium/scene';
@@ -185,6 +185,18 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   useEffect(() => {
     loadGroups();
   }, [identity]);
+  // A list LOST with none in hand leaves the tab row its still chip — and on GLOBAL no note
+  // covers it (the board there stands): it is asked again when the tab comes back, the header
+  // key's way with the face, as well as by any RETRY on screen.
+  const groupsLost = groupsPhase === 'failed' && groups === null;
+  useEffect(() => {
+    if (!groupsLost) return undefined;
+    const again = () => {
+      if (document.visibilityState === 'visible') loadGroups();
+    };
+    document.addEventListener('visibilitychange', again);
+    return () => document.removeEventListener('visibilitychange', again);
+  }, [groupsLost]);
   const active: GroupSummary | null = openingGroup(groups, lastGroupId);
   // The reader's own people, for marking rows among the global ones: the union of every
   // group they are in, which the list already carries.
@@ -616,13 +628,12 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
         {copied ? t(lang, 'copied') : t(lang, 'boardInvite')}
       </button>
     ) : null;
-  // RETRY asks the failed board again from scratch: its failure dropped, and the loading picture
-  // standing for it (never a board held from before the failure).
+  // RETRY asks again EVERY read that failed: the groups list, and the failed board from
+  // scratch — its failure dropped, and the loading picture standing for it (never a board held
+  // from before the failure).
   const retry = () => {
-    if (entry !== 'failed' || boardKey === null) {
-      loadGroups();
-      return;
-    }
+    if (groupsPhase === 'failed' || entry !== 'failed' || boardKey === null) loadGroups();
+    if (entry !== 'failed' || boardKey === null) return;
     setBoards((prev) => ({ ...prev, [boardKey]: undefined }));
     setLapsed(boardKey);
     setAttempt((n) => n + 1);
@@ -634,9 +645,12 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     now.mode === 'failed'
       ? {
           line: (
-            <span className="quiet-failure-line" role="status">
-              {t(lang, 'failedBoard')}
-            </span>
+            <>
+              <span className="quiet-failure-line" aria-hidden="true">
+                {t(lang, 'failedBoard')}
+              </span>
+              <SpokenLater line={t(lang, 'failedBoard')} />
+            </>
           ),
           call: (
             <button type="button" className="quiet-btn" onClick={retry}>

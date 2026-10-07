@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { t } from '../i18n';
 
 // A READ THAT FAILED, SAID IN PLACE (the house's one spelling of it): the surface keeps its own
@@ -23,9 +23,10 @@ export default function QuietFailure({
 }) {
   return (
     <div className={`quiet-failure${className ? ` ${className}` : ''}`}>
-      <p className="quiet-failure-line" role="status">
+      <p className="quiet-failure-line" aria-hidden="true">
         {line}
       </p>
+      <SpokenLater line={line} />
       <div className="quiet-failure-acts">
         <button type="button" className="quiet-btn" onClick={onRetry}>
           {t(lang, 'retry')}
@@ -33,5 +34,22 @@ export default function QuietFailure({
         {children}
       </div>
     </div>
+  );
+}
+
+// THE NOTE'S VOICE: a live region that EXISTS BEFORE IT SPEAKS — mounted empty with the note,
+// the line set in it a turn later — since a status region inserted already holding its words
+// is often not announced. The note on screen is that line's picture (`aria-hidden`), so a
+// reader moving through the page meets the words once, here. Out of the flow (`.sr-only`).
+export function SpokenLater({ line }: { line: string }) {
+  const [said, setSaid] = useState('');
+  useEffect(() => {
+    const id = window.setTimeout(() => setSaid(line), 0);
+    return () => window.clearTimeout(id);
+  }, [line]);
+  return (
+    <span className="sr-only" role="status">
+      {said}
+    </span>
   );
 }

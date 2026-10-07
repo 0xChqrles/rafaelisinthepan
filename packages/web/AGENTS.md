@@ -2130,7 +2130,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   muted NOTE: sentence case (a note, not chrome), plain words about what the player lost,
   never an internal's name; 13px `--ui` regular on a 20px line, a `\n` between two
   sentences. Then RETRY, the bracketed `.quiet-btn`. Never the danger ink, never a box,
-  never a full screen. **Saying it moves nothing that has landed, and neither does its
+  never a full screen. A screen reader hears the note from a live region that exists before
+  it speaks (`SpokenLater`: mounted empty with the note, its words set a turn later — the
+  note on screen is their `aria-hidden` picture), since one inserted with its words is
+  often not announced. **Saying it moves nothing that has landed, and neither does its
   RETRY**: the note stands in room the picture keeps for it, or is laid over the picture out
   of its flow. RETRY asks again EVERY read the note covers, handing the picture back to
   breathing in place — save a lost code chunk's, below. The sites:
@@ -2817,7 +2820,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     row holds its room with ONE stippled chip where the shown chip will stand (`BoardTabs`'
     `hold`: `.link-hold`, breathing while the list is read and in only after
     `SKELETON_WAIT_MS`, still once a read has failed; a RETRY's read breathes the chip
-    already drawn at once, never out for another wait).
+    already drawn at once, never out for another wait). A list LOST is asked again by the
+    screen's RETRY whatever else it asks (the board's failure and the list's are one note),
+    and when the browser tab comes back — the one way on GLOBAL, whose board stands with no
+    note over it.
     One control across the app (the archive's months turn through it too) — not a pager of
     this screen's own.
   - **THE HEAD LINE** (`.board-head`, 44px whatever it holds): a group's THREE BOARDS on
