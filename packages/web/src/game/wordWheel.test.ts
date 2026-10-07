@@ -48,7 +48,7 @@ describe('the selected hint — the ghost a REVEAL submits', () => {
   const holes: RuntimeHole[] = [0, 1, 2].map((pos) => ({
     pos, secret: `secret${pos}`, word: 'best', rank: 10, startRank: 50,
   }));
-  const charges = holes.map(() => ({ charge: 100, active: true, given: [{ rank: 9, consumed: false }] }));
+  const charges = holes.map(() => ({ charge: 100, active: true, given: [{ rank: 9, consumed: false }], stretch: false }));
   const mask = (rank: number): HistoryStop => ({ ...stop(rank), masked: true, given: true, display: '?????', word: '' });
 
   it('is the latest masked selection, even when it is earlier in the sentence', () => {
@@ -108,8 +108,8 @@ describe('shownHolesFor — a pick stands in its hole, display only', () => {
   ];
   // The first hole is active and offers rank 9; the second gives nothing.
   const meters = [
-    { charge: 100, active: true, given: [{ rank: 9, consumed: false }] },
-    { charge: 0, active: false, given: [] },
+    { charge: 100, active: true, given: [{ rank: 9, consumed: false }], stretch: false },
+    { charge: 0, active: false, given: [], stretch: false },
   ];
   const hint: HistoryStop = { ...stop(9), masked: true, given: true, display: MASK, word: '', slug: 'foret' };
 
@@ -135,13 +135,13 @@ describe('shownHolesFor — a pick stands in its hole, display only', () => {
     const picks = selectWord({}, 0, hint, 10);
     expect(shownHolesFor(board, picks, meters)[0]).toEqual({ ...board[0], word: MASK, rank: 9 });
     const revealed = [{ ...board[0], word: 'forêt', rank: 9 }, board[1]];
-    const after = [{ charge: 100, active: true, given: [{ rank: 8, consumed: false }, { rank: 9, consumed: true }] }, meters[1]];
+    const after = [{ charge: 100, active: true, given: [{ rank: 8, consumed: false }, { rank: 9, consumed: true }], stretch: false }, meters[1]];
     expect(shownHolesFor(revealed, picks, after)[0]).toBe(revealed[0]);
   });
 
   it('a masked pick the meters no longer offer — or a board showing no meters — is the hole itself', () => {
     const picks = selectWord({}, 0, hint, 10);
-    const moved = [{ charge: 100, active: true, given: [{ rank: 7, consumed: false }] }, meters[1]];
+    const moved = [{ charge: 100, active: true, given: [{ rank: 7, consumed: false }], stretch: false }, meters[1]];
     expect(shownHolesFor(board, picks, moved)[0]).toBe(board[0]);
     expect(shownHolesFor(board, picks, undefined)[0]).toBe(board[0]);
     // A pick of a word the player already holds needs no meter.

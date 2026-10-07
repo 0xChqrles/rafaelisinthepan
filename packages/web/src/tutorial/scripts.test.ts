@@ -184,7 +184,7 @@ for (const lang of ['en', 'fr'] as const) {
         expect(played).not.toContain(rank2);
         expect(ranks[secret][rank2].rank).toBe(1);
         // Revealed, it is a hint taken that halves the meter, and nothing is left to offer
-        // but the secret — a meter filled again activates nothing.
+        // but the secret — a meter filled again offers nothing and names the stretch.
         const [, taken] = replayCharge(fresh, ranks, [...filled, rank2]);
         expect(taken.given).toEqual([{ rank: 1, consumed: true }]);
         expect(taken.charge).toBeCloseTo(CHARGE_TARGET / 2, 9);
@@ -192,7 +192,10 @@ for (const lang of ['en', 'fr'] as const) {
         const near = [3, 4, 5, 6].map((r) => Object.keys(ranks[secret]).find((k) => ranks[secret][k].rank === r)!);
         const refilled = replayCharge(fresh, ranks, [...filled, rank2, ...near]);
         expect(refilled[1].charge).toBe(CHARGE_TARGET);
-        expect(refilled[1].active).toBe(false); // full, with nothing to offer: no activation
+        // Full at a best of 1, nothing to offer: the meter names the stretch (2026-10-07) —
+        // active, but no word offered, so the coach's activation line stays silent.
+        expect(refilled[1].active).toBe(true);
+        expect(refilled[1].stretch).toBe(true);
         expect(activatedHole(replayCharge(fresh, ranks, [...filled, rank2]), refilled)).toBeNull();
       });
       it('off the script, the meter filled without the obvious word offers the word at half the best; revealed, the halved meter filled again offers the next half', () => {
@@ -222,7 +225,7 @@ for (const lang of ['en', 'fr'] as const) {
         const before = charge(log);
         log = [...log, at(half)];
         expect(replayHoles(fresh, ranks, log)[1].rank).toBe(half);
-        expect(charge(log)[1]).toEqual({ charge: before[1].charge / 2, active: false, given: [{ rank: half, consumed: true }] });
+        expect(charge(log)[1]).toEqual({ charge: before[1].charge / 2, active: false, given: [{ rank: half, consumed: true }], stretch: false });
         // Near words fill it again, the hole activates again, and offers half the new best.
         const refill = fill(log, [3, 6, 7, 9, 12, 15, 20]);
         expect(charge(refill)[1].active).toBe(true);

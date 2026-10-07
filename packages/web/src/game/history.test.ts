@@ -15,7 +15,8 @@
 //     best is a stop flagged `given` — MASKED (no word, the MASK to display, its rank, a
 //     key to reveal it by) until the player consumes it, when it stands as their typed
 //     stop wearing `given`; the solve unmasks the one left, still given, apart from what
-//     it merely names;
+//     it merely names — and the meter's STRETCH (user-decided 2026-10-07): a full meter at
+//     a best of 1 names what the solve would, the hole still live, the secret censored;
 //   - a round OVER with the hole unsolved (the cap) is presented like the solve: no mask,
 //     and the secret is named — the hole itself stays unsolved;
 //   - what stays retired: no censored census while the round is LIVE.
@@ -114,6 +115,25 @@ describe('buildHistory', () => {
     // Named with the group's canonical form: nobody typed these, so there is no typed
     // form to prefer.
     expect(solved.stops.find((s) => s.rank === 3)!.word).toBe('arbre');
+  });
+
+  it('the meter\'s STRETCH names the walked stretch on a LIVE hole; the secret stays censored', () => {
+    // A full meter at a best of 1 (`replayCharge`'s `stretch`): every group from the word
+    // just before the secret out to the departure is named, as the solve would — and
+    // nothing behind the departure.
+    const live = buildHistory({
+      rankMap: RANKS, tried: ['bois', 'fleur'], hole: hole(1), startRank: 87, secretWord: 'forêt', stretch: true,
+    });
+    expect(live.secret).toBeNull();
+    expect(live.solved).toBe(false);
+    expect(live.stops.map((s) => [s.rank, s.revealed, s.best])).toEqual([
+      [1, false, true], // played — "you are here"
+      [3, true, false], // named by the stretch
+      [40, true, false], // named by the stretch
+      [87, false, false], // the departure
+      [812, false, false], // played, behind the start — never named, only typed
+    ]);
+    expect(live.stops.find((s) => s.rank === 3)!.word).toBe('arbre');
   });
 
   it('the reveal stops AT the departure — nothing behind it is ever named', () => {

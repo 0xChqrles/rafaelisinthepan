@@ -52,7 +52,9 @@ import './bayerTiles';
 // FOIL — the activated chip's own holographic dress (`MeterCanvas`), on the WORD ALONE so
 // the exponent stands clear of it on the ground (user-reviewed the same day: "the exponent
 // should be out of the background") — so the list says which words are theirs and which
-// were handed over with no label. THE SLOT ROW NEVER MOVES: the word the wheel holds
+// were handed over with no label; the STRETCH a full meter names at a best of 1 (user-
+// decided 2026-10-07) stands on the plain ground in the muted ink, words nobody typed —
+// the post-mortem's "named, not found". THE SLOT ROW NEVER MOVES: the word the wheel holds
 // wears the regular white chip, foil or not ("when wheel focused, a word should not have
 // a moving background, just the regular white for a better UX").
 //
@@ -392,8 +394,9 @@ export default function HistoryWheel({
       // wheel items over sentence text") — one box around the word AND its exponent, drawn
       // by CSS as the chip is drawn, so the row's letters keep the slot's exact x. A GIVEN
       // row's ground is the sea, on the word alone (the canvas over the word's own white
-      // box), its exponent standing outside on the ground.
-      <span className={`wheel-plain${stop.given ? ' wheel-given' : ''}`}>
+      // box), its exponent standing outside on the ground. A NAMED row (the meter's
+      // stretch) is the plain row in the muted ink: a word the player never typed.
+      <span className={`wheel-plain${stop.given ? ' wheel-given' : stop.revealed ? ' wheel-named' : ''}`}>
         <span className="wheel-word">
           {stop.given && foil(stop)}
           {stop.masked ? MASK : stop.word}

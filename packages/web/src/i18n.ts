@@ -807,6 +807,18 @@ export function srHoleGiven(lang: string, n?: number): string {
   return n === undefined ? what : `word ${n}: ${what}`;
 }
 
+// The STRETCH (user-decided 2026-10-07): what a full meter gives at a best of 1 — every
+// word from the start down, named in the hole's tries, free. With `n`, the live
+// announcement the moment it lands; without, the hole's standing description.
+export function srHoleStretch(lang: string, n?: number): string {
+  if (uiLang(lang) === 'fr') {
+    const what = 'tous les mots depuis son mot de départ, nommés dans ses essais';
+    return n === undefined ? what : `mot ${n} : ${what}`;
+  }
+  const what = 'every word from its start word down, named in its tries';
+  return n === undefined ? what : `word ${n}: ${what}`;
+}
+
 // THE RACE LINE, in words (the line itself is wordless): the members of the player's groups
 // around them, in the line's order. A finished member says how many tries; one whose round
 // ended unsolved says so; the player is "you" with their live %.

@@ -18,6 +18,13 @@
 // offered, so a best of 1 offers nothing. A closer word typed by hand moves the offer to
 // half of it the same way, the meter full. A hint TAKEN stays given.
 //
+// AT 1, A FULL METER NAMES THE WHOLE STRETCH (user-decided 2026-10-07: "When you're at -1,
+// and you have filled the word, you automatically get all the previous words revealed,
+// from -1 to the starting word"): with nothing left to offer but the secret, the full meter
+// gives every word from the start down to the best at once — no mask, no reveal, no try.
+// Nothing can halve that meter again, so the stretch stays named until the solve, which
+// names it anyway.
+//
 // THE HINTS ARE MASKED, AND A REVEAL IS A GUESS (user-decided 2026-09-22: "making the hint
 // words masked, and you can just select them with the wheel, it counts as a guess, but
 // this way users who don't want help don't get penalized, and those who need help just
@@ -80,12 +87,14 @@ export function strikeFor(rank: number | undefined, isNew: boolean, gained: numb
 }
 
 // One hole's meter: its charge in [0, CHARGE_TARGET], whether the hole is ACTIVE (the meter
-// reached its target AND it has a word to offer — a full meter at a best of 1 has none), and
-// the ranks it has GIVEN — ascending, empty until the activation:
+// reached its target AND it gives something — a word to offer, or, at a best of 1, the
+// stretch), the ranks it has GIVEN — ascending, empty until the activation:
 // the hints TAKEN (CONSUMED: guessed while offered, the try spent) and the one mask it
-// offers now, if any. Repeated occurrences of one secret slug share one meter and one
-// mask (one logical target, as reconstruction progress already treats them), so two holes
-// can carry equal readings.
+// offers now, if any — and whether it has named its STRETCH (a full meter at a best with
+// nothing closer but the secret: every word from the start down, `buildHistory` names
+// them). Repeated occurrences of one secret slug share one meter and one mask (one logical
+// target, as reconstruction progress already treats them), so two holes can carry equal
+// readings.
 export interface GivenRank {
   rank: number;
   consumed: boolean;
@@ -94,6 +103,7 @@ export interface HoleCharge {
   charge: number;
   active: boolean;
   given: GivenRank[];
+  stretch: boolean;
 }
 
 // One secret's map as its distinct ranks above the secret, ascending — the ladder a hint
@@ -143,6 +153,7 @@ function offerFor(rankMap: Record<string, RankEntry>, best: number): number | un
 // THE OFFER, while the meter is full: after every guess, the rank at half the hole's best.
 // The offered rank guessed is a hint taken and stays given; it is the new best, it pays
 // no charge, and it HALVES the meter, so the next offer waits for the meter to fill again.
+// THE STRETCH, while the meter is full at a best nothing but the secret is closer to.
 // A hole solved before its meter fills gives nothing; the post-mortem names its stretch
 // anyway.
 export function replayCharge(
@@ -190,10 +201,13 @@ export function replayCharge(
     const meter = meters.get(h.secret)!;
     const given = [...meter.taken].map((rank) => ({ rank, consumed: true }));
     if (meter.offered !== undefined) given.push({ rank: meter.offered, consumed: false });
+    const full = meter.charge >= CHARGE_TARGET;
+    const stretch = full && !meter.solved && closerThan(ranks[h.secret], meter.best) === undefined;
     return {
       charge: meter.charge,
-      active: meter.charge >= CHARGE_TARGET && meter.offered !== undefined,
+      active: full && (meter.offered !== undefined || stretch),
       given: given.sort((a, b) => a.rank - b.rank),
+      stretch,
     };
   });
 }

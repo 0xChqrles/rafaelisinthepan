@@ -343,8 +343,9 @@
                               and falling away
       game/charge.ts          #301's hole CHARGE METER: the rank -> charge function, the replay
                               of the play log onto every hole's meter, the ACTIVATION, the
-                              ONE masked word it offers at half the hole's best, and the half
-                              meter a hint taken costs
+                              ONE masked word it offers at half the hole's best, the half
+                              meter a hint taken costs, and the STRETCH a full meter names
+                              at a best of 1
       components/ChargeLoot.tsx  the blood a charging guess knocks out of the hole, gathered
                               onto the meter
       components/MeterCanvas.tsx  the meter's drawing: the chip converting as an ordered
@@ -497,9 +498,16 @@ These are decided and verified against the code. Treat them as load-bearing.
   it is inactive. (Why: one rank closer per reveal, offered again at once, walked a player
   stuck at 133 through some 120 reveals — "j'ai l'impression d'être un hamster coincé dans
   sa roue".) THE SECRET IS NEVER OFFERED (a best of 1 offers nothing — a hint that solved
-  would make every hole buyable, and "solved" would stop meaning "found"), so ACTIVE means
-  the meter full AND a word to offer: a full meter at a best of 1 shows the full chip, no
-  burst, no foil. A closer word
+  would make every hole buyable, and "solved" would stop meaning "found"). **INSTEAD, A FULL
+  METER AT A BEST OF 1 NAMES THE STRETCH (user-decided 2026-10-07: "When you're at -1, and
+  you have filled the word, you automatically get all the previous words revealed, from -1
+  to the starting word")**: with nothing left to offer but the secret, the full meter gives
+  every word from the start word down to the best at once — free (no mask, no reveal, no
+  try), named in the hole's wheel exactly as the solve's post-mortem names them
+  (`HoleCharge.stretch`, `buildHistory`'s `stretch`), the secret still censored. Nothing
+  can halve that meter, so the stretch stays named until the solve. ACTIVE means the meter
+  full AND something given — a word to offer, or the stretch — so the stretch plays the
+  activation (fill → burst → the foil) and its foil stands until the solve. A closer word
   typed by hand while the meter is full moves the offer to half of it, the meter staying
   full; a farther guess leaves it where it is; a hint TAKEN is given for good**
   (`replayCharge`, `game/charge.ts`). Repeated occurrences of one secret share one meter
@@ -637,7 +645,8 @@ These are decided and verified against the code. Treat them as load-bearing.
   ALONE, the exponent standing clear on the ground, nudged past the box's overhang ("the
   exponent should be out of the background"; "it touches it") — so three grounds say three
   things with no label: the surface (typed), the foil (given — a masked hint is the foil
-  under `?????`), the plain word (named by the solve). **THE WHEEL'S SLOT ROW NEVER
+  under `?????`), the plain word (named by the solve). In the WHEEL a word of the meter's
+  stretch is the plain row in `--muted` ink (`.wheel-named`): named, never typed. **THE WHEEL'S SLOT ROW NEVER
   MOVES**: the word the wheel holds wears the regular white chip, active hole or given
   word ("when wheel focused, a word should not have a moving background, just the regular
   white for a better UX") — except a MASKED hint in the slot, which keeps its foil: it is
@@ -680,10 +689,10 @@ These are decided and verified against the code. Treat them as load-bearing.
   never the heat. A11y: the meter and the
   offered word are the hole button's DESCRIPTION (`srHoleCharge` / `srHoleGiven` — "a
   masked word closer than its best in its tries, one try and half the meter to reveal"; a
-  full meter with nothing left to offer, and a meter a hint taken halved, are described as
-  their meter — sr-only spans outside the sentence
-  like the exploration hints, never words in the prose); a word a guess has the hole
-  offer is also announced with it. Reduced motion keeps the state and snaps:
+  stretch named is `srHoleStretch`, "every word from its start word down, named in its
+  tries"; a meter a hint taken halved is described as its meter — sr-only spans outside
+  the sentence like the exploration hints, never words in the prose); a word a guess has
+  the hole offer, and a stretch it names, are also announced with it. Reduced motion keeps the state and snaps:
   no sparks, no fill travel, the sea holds one frame. Not done, deliberately: a second
   payout (the letter as a second fill was proposed and not taken), a manual hint button
   (a hint asked for with no mask picked — REVEAL only reveals the mask the player picked),

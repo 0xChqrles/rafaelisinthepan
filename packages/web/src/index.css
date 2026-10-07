@@ -4638,6 +4638,12 @@ textarea,
   background: var(--fg);
 }
 
+/* A NAMED row (user-decided 2026-10-07): a word of the stretch a full meter names at a
+   best of 1 — on the plain ground, in the muted ink, apart from the words the player typed. */
+.wheel-named .wheel-word {
+  color: var(--muted);
+}
+
 .wheel-sea {
   position: absolute;
   left: -0.2em;
