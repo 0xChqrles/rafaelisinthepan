@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import ChevronLeftIcon from '../assets/icons/chevron-left.svg?react';
+// (For its side effect: the root's Bayer tiles — the band's dithered edge.)
+import './bayerTiles';
 
-// The app header. At REST it is TRANSPARENT — the controls sit directly on the dark grain
-// ground — and the glass band + hairline arrive only once the screen under it scrolls (the
-// hook below). Mobile-first: full-bleed slim band when scrolled; on desktop the band floats
-// capped and rounded just inside the device frame's brackets, a piece of the instrument.
+// The app header. At REST it is TRANSPARENT — the controls sit directly on the flat ground —
+// and the band arrives only once the screen under it scrolls (the hook below): the ground
+// behind the row and the house's dithered edge under it, in one step.
 //
 // **THE ROW IS APP CHROME, NOT SCREEN CONTENT (2026-09-02).** Every screen used to render
 // its own TopBar, so tapping a header key unmounted the whole row and mounted a different
@@ -42,11 +43,11 @@ import ChevronLeftIcon from '../assets/icons/chevron-left.svg?react';
 // key again "is not intuitive at all"). Nothing wears both.
 
 // THE BAND WAITS FOR SCROLL (user-decided 2026-09-01): at rest the header is transparent
-// on the dark grain ground, and the glass + hairline arrive only once the surface under
-// it has actually scrolled — the moment content could pass beneath the controls. ONE
-// capture-phase listener hears every scroller in the app (each screen owns its own; on a
-// phone the page itself scrolls), because the header cannot know which screen is under
-// it. Three filters keep the signal honest: a DIALOG's scroll never lights the band (the
+// on the flat ground, and the band (the ground, its dithered edge) arrives only once the
+// surface under it has actually scrolled — the moment content could pass beneath the
+// controls. ONE capture-phase listener hears every scroller in the app (each screen owns its
+// own; on a phone the page itself scrolls), because the header cannot know which screen is
+// under it. Three filters keep the signal honest: a DIALOG's scroll never lights the band (the
 // header is under the dialog), a horizontal-only scroller says nothing about the
 // header's edge, and a scroller that UNMOUNTS (navigation) fires no final scroll event —
 // so a post-render check drops a scrolled state whose element left the tree.

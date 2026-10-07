@@ -43,7 +43,8 @@
     src/types.ts              shared puzzle + score-API schema types (Puzzle, Hole, ScoreHistogram, …)
     src/glyphs.ts             pixel-art glyphs the game DRAWS rather than sets: the #214 `∞`
                               path + view box, shared by the OG card, the web result and a
-                              group board's ended row; the app's mark, traced for the OG cards;
+                              group board's ended row; the app's mark (the web's `PixelMark`,
+                              the OG cards, the site's icons at whole scales);
                               the pixel face's ten digits as cells (`DIGIT_MASKS`: the
                               result's count, the card's, the score watermark, the streak
                               celebration)
@@ -67,8 +68,12 @@
     src/cardSvg.ts            the OG cards' SVG: a result from a decoded token — the solved screen's card laid down (the
                               count on the face's cells in the foil, the run's heat over the ruler, a signed share's
                               quiet signature) — and the #271 group card (name + member marks + app name),
-                              in the site previews' frame (brackets + lockup), set in the pixel face and Azeret Mono Bold;
-                              `runEdges`, the run's whole-pixel cell edges, which the web's result ruler splits its bar at too
+                              in the site previews' frame (brackets + lockup), set in the pixel face (its family QUOTED in
+                              the attribute: a browser drops a bare `Press Start 2P`) and Azeret Mono Bold;
+                              `runEdges`, the run's whole-pixel cell edges, which the web's result ruler splits its bar at too;
+                              the group card's ORBIT pieces (`orbitPlaces`, `orbitTrail`, `plusTile` and its count's size
+                              `plusLabelSize`, `GROUP_MARKS_SHOWN`), which the web's invite landing draws the same orbit with
+                              at its own size
     src/index.ts              re-exports
 ```
 

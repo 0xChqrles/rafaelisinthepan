@@ -21,11 +21,17 @@
 // already holds; GLOBAL is one anonymous read of the global board per mount (`useGlobalBoard`).
 // The active day only — the caller mounts this for nothing else.
 //
-// ONE FIXED BOX, whatever it holds: empty while the first answers are out, the same height on
-// every tab, so nothing that has landed moves when a read arrives or a swipe turns the page.
-// It draws nothing until the GLOBAL read has answered too (a failure is an answer): the tabs
-// and the rank column they share are decided together, and a global rank of three digits
-// landing late would widen that column under a group's lines already shown.
+// ONE FIXED BOX, whatever it holds: the same height on every tab, so nothing that has landed
+// moves when a read arrives or a swipe turns the page. It draws no tab until the GLOBAL read has
+// answered too (a failure is an answer): the tabs and the rank column they share are decided
+// together, and a global rank of three digits landing late would widen that column under a
+// group's lines already shown.
+// WHILE THE FIRST ANSWERS ARE OUT the box HOLDS what is coming, the board screen's own way: one
+// stippled chip where the tab's chip will stand (`BoardTabs`' hold) and the skeleton's lines at
+// the lines' pitch (`SkeletonLine`) — in only once the box is on screen and the reads have been
+// out SKELETON_WAIT_MS more, so a quick answer never flashes them. Lines landing in a box already
+// on screen DISSOLVE in, the skeleton's lines that had come in going out through the cells they
+// take, one for one; lines that land before the box shows arrive on its own beat.
 // Its fate is decided ONCE, by the page under it: a box whose reads have all answered with
 // nothing to show BEFORE the page lands leaves the stage's flow (the page has not shown, so
 // nothing seen moves) and never comes back; once the page has landed — at once on a settled
@@ -41,8 +47,10 @@
 import { useId, useState } from 'react';
 import type { CSSProperties, HTMLAttributes } from 'react';
 import type { GroupSummary, LiveBoard } from '@whippin/shared';
+import { clockNow } from './animationClock';
+import { SKELETON_STAGGER_MS, SKELETON_WAIT_MS, cameIn } from './bayerTiles';
 import BoardTabs, { tabIds } from './BoardTabs';
-import { BoardRowItem, PlayingRowItem } from './BoardRows';
+import { BoardRowItem, PlayingRowItem, SKELETON_WIDTHS, SkeletonLine } from './BoardRows';
 import { rankColumnPx } from './boardMetrics';
 import { shownFace, useOwnFace } from './AccountFace';
 import SeatPanel from './SeatPanel';
@@ -89,6 +97,7 @@ export default function ResultBoards({
   progress,
   ended,
   pageIn,
+  arrived,
 }: ResultBoardsData & {
   // The stage's own dress for the block (its beat), on the box itself: a block that draws
   // nothing leaves nothing in the stage's flow.
@@ -100,6 +109,8 @@ export default function ResultBoards({
   ended: boolean;
   // The sentence's page under the box has landed: from then on the box keeps its room.
   pageIn: boolean;
+  // The box is on screen (its beat has come): the hold's wait counts from here.
+  arrived: boolean;
 }) {
   const identity = useDeviceIdentity();
   const own = shownFace(useOwnFace());
@@ -141,6 +152,23 @@ export default function ResultBoards({
           seatGroups,
         );
   const empty = tabs.length === 0 && !pending;
+
+  // THE HOLD (see the header), for the FIRST answers only: when it went on screen, and — latched
+  // as they land — whether the lines land over it, and how many of its lines had come in by then.
+  const [holdFrom, setHoldFrom] = useState<number | null>(null);
+  const [landed, setLanded] = useState<{ over: boolean; came: number } | null>(null);
+  const holding = pending && landed === null;
+  if (holding && arrived && holdFrom === null) setHoldFrom(clockNow());
+  if (!pending && identity !== null && landed === null) {
+    const shownFor = holdFrom === null ? null : clockNow() - holdFrom;
+    setLanded({
+      over: shownFor !== null,
+      came:
+        shownFor === null
+          ? 0
+          : SKELETON_WIDTHS.filter((_, i) => cameIn(SKELETON_WAIT_MS + i * SKELETON_STAGGER_MS, shownFor)).length,
+    });
+  }
   const index = Math.max(0, tabs.findIndex((tab) => tab.key === chosen));
   const shown = tabs[index] as ResultTab | undefined;
   if (shown !== undefined && seatFrom !== seatGroups) setSeatFrom(seatGroups);
@@ -188,10 +216,26 @@ export default function ResultBoards({
 
   return (
     <section
-      className={`result-boards ${className}${moved ? ' moved' : ''}`}
+      className={`result-boards ${className}${moved ? ' moved' : ''}${landed?.over ? ' over-hold' : ''}`}
       aria-label={t(lang, 'ariaLeaderboard')}
-      style={{ '--rank-w': `${rankWidth}px` } as CSSProperties}
+      aria-busy={holding || undefined}
+      style={{ '--rank-w': `${rankWidth}px`, '--stagger': `${SKELETON_STAGGER_MS}ms` } as CSSProperties}
     >
+      {holding && <BoardTabs tabs={[]} shown={0} onTurn={() => {}} idBase={tabsId} />}
+      {/* The skeleton: in while the first answers are out; then, where the lines land over it,
+          what of it had come in, going out under them. */}
+      {(holding || (landed !== null && landed.came > 0)) && (
+        <div className={`result-boards-hold${holding ? '' : ' leaving'}`} role={holding ? 'status' : undefined}>
+          {holding && <span className="sr-only">{t(lang, 'loading')}</span>}
+          {SKELETON_WIDTHS.slice(0, holding ? undefined : landed?.came).map((width, i) => (
+            <SkeletonLine
+              key={i}
+              width={width}
+              delayMs={holding ? SKELETON_WAIT_MS + i * SKELETON_STAGGER_MS : i * SKELETON_STAGGER_MS}
+            />
+          ))}
+        </div>
+      )}
       {shown && (
         <>
           <BoardTabs

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { DIGIT_MASKS, MARK_GLYPH, dateForDayNumber } from '@whippin/shared';
+import { DIGIT_MASKS, dateForDayNumber } from '@whippin/shared';
 import { coarsePointer, prefersReducedMotion } from '../hooks/useScramble';
 import { useSolvedDays } from '../state/history';
 import { mondayNarrowLabels, streakTransition, weekView } from '../game/streak';
@@ -11,6 +11,7 @@ import { RESERVE_BITS, layout, numberCells, numberPlace, pastWeeks } from './str
 import type { ClearRect } from './streak/field';
 import { orbitScene, type FoilField, type OrbitDay } from './streak/scene';
 import { hexToAbgr } from './raster';
+import Lockup from './Lockup';
 
 const NO_SOLVED_DAYS: number[] = [];
 
@@ -478,12 +479,7 @@ export default function StreakDialog({
           </>
         )}
         {/* The frame's furniture, as on the cards: the lockup and the day's edition. */}
-        <div ref={lockupRef} className="streak-lockup">
-          <svg viewBox={`0 0 ${MARK_GLYPH.width} ${MARK_GLYPH.height}`} shapeRendering="crispEdges">
-            <path d={MARK_GLYPH.path} fill="currentColor" />
-          </svg>
-          <span>WHIPPIN AI</span>
-        </div>
+        <Lockup ref={lockupRef} className="streak-lockup" />
         <span ref={editionRef} className="streak-edition">
           {edition}
         </span>

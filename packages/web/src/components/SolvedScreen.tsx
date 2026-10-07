@@ -8,7 +8,10 @@ import SolvedCaption, { captionDurationMs } from './SolvedCaption';
 import { COUNT_END_MS, COUNT_RUN_MS } from './countRun';
 import useShare from '../hooks/useShare';
 import Button from './Button';
+// (For its side effect: the root's Bayer tiles the page draws through.)
+import './bayerTiles';
 import ResultBoards, { type ResultBoardsData } from './ResultBoards';
+import SwapLabel from './SwapLabel';
 import { useDeviceIdentity } from '../identity';
 import { ariaHoleHistory, t } from '../i18n';
 import { capitalize, sentenceStarts } from '../game/sentenceCase';
@@ -167,6 +170,7 @@ export default function SolvedScreen({
   start = true,
   onRevealEnd,
   boards = null,
+  fromHold = false,
 }: {
   guessCount: number;
   trajectory: number[]; // reconstruction % after each counted guess (one per try)
@@ -199,8 +203,12 @@ export default function SolvedScreen({
   // How the day compares, on the ACTIVE day only (null on an archive day or a bonus): the
   // live answer the play screen keeps and whether one is on its way.
   boards?: ResultBoardsData | null;
+  // The game's HOLD stands on screen and gives way to this result (a day already over,
+  // loaded slowly): its blocks come in through the dither over it. Read once, at mount.
+  fromHold?: boolean;
 }) {
   const reduceMotion = prefersReducedMotion();
+  const [overHold] = useState(fromHold);
   const hasSource = Boolean(source?.kind || source?.author || source?.work);
   // The page around the line (#270): the source's raw sentences before and after it, as
   // one paragraph of muted text — the line's own highlight is the contrast.
@@ -376,7 +384,9 @@ export default function SolvedScreen({
   return (
     <div
       ref={stageRef}
-      className={`solved-stage pixel-scroll${stageIn ? ' in' : ''}${animate ? '' : ' settled'}`}
+      className={`solved-stage pixel-scroll${stageIn ? ' in' : ''}${animate ? '' : ' settled'}${
+        overHold ? ' from-hold' : ''
+      }`}
     >
       {/* ---- THE CARD, at the top: how the round went — the share card this result sends,
            stood up in the column — and SHARE under it, what you do with it. */}
@@ -395,12 +405,8 @@ export default function SolvedScreen({
         {/* SHARE, under the card's frame, the result's ONE action: hidden in place
             (footprint kept) until the count lands. */}
         <div className={`result-actions${shareIn ? ' in' : ''}`}>
-          <Button
-            variant="primary"
-            className={`result-action${copied ? ' copied' : ''}`}
-            onClick={onShare}
-          >
-            {copied ? t(lang, 'copied') : t(lang, 'share')}
+          <Button variant="primary" className="result-action" onClick={onShare}>
+            <SwapLabel text={copied ? t(lang, 'copied') : t(lang, 'share')} />
           </Button>
         </div>
       </SolvedCard>
@@ -415,6 +421,7 @@ export default function SolvedScreen({
           progress={trajectory[trajectory.length - 1] ?? 0}
           ended={unfinished}
           pageIn={textIn}
+          arrived={boardsIn}
         />
       )}
 

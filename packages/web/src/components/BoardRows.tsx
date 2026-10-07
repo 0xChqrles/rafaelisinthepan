@@ -141,3 +141,21 @@ export function WaitingRowItem({ player, index, run }: { player: BoardPlayer; in
     </li>
   );
 }
+
+// WHILE A BOARD'S FIRST READ IS OUT: a line's boxes as stippled slate — a checker where the mark
+// will stand, a rail where the name will — at the lines' own pitch, so nothing moves when the
+// board lands (the board screen's skeleton and the result's). The rails' lengths, line by line;
+// and one line: its rail's length (`--w`) and when it comes in through the dither (`--delay`).
+export const SKELETON_WIDTHS = [62, 48, 70, 54, 40] as const;
+export function SkeletonLine({ width, delayMs }: { width: number; delayMs: number }) {
+  return (
+    <span
+      className="board-skeleton-line"
+      style={{ '--w': `${width}%`, '--delay': `${delayMs}ms` } as CSSProperties}
+      aria-hidden="true"
+    >
+      <span className="board-skeleton-mark" />
+      <span className="board-skeleton-name" />
+    </span>
+  );
+}

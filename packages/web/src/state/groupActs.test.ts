@@ -8,7 +8,10 @@
 //   - The board and the result's seat share ONE write, ONE reading of its answer and ONE
 //     invite message.
 //   - On a write whose outcome is unknown the client re-reads before writing again: a create
-//     that landed behind a lost answer is found in that read, never sent twice.
+//     that landed behind a lost answer is found in that read, never sent twice — and a leave
+//     or a remove that landed is found there too, so what the error surface says is what the
+//     list holds. That read is one SENT AFTER the write; when it fails too, the outcome stays
+//     unknown and the error surface claims nothing about the group.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GroupSummary } from '@whippin/shared';
@@ -41,7 +44,17 @@ vi.mock('./groups', () => ({
 }));
 vi.mock('./signedOutVerdict', () => ({ adoptSignedOutVerdict: vi.fn() }));
 
-import { createGroup, failureOf, groupFailureCopy, inviteText, writeGroups } from './groupActs';
+import {
+  createGroup,
+  createRefusalOf,
+  createVerdictOf,
+  failureOf,
+  groupFailureCopy,
+  inviteText,
+  leaveGroup,
+  removeMember,
+  writeGroups,
+} from './groupActs';
 
 const created: GroupSummary = { id: GROUP, name: 'CREW', createdBy: A.accountId, joinedAt: '2026-10-06T00:00:00.000Z', members: [A.accountId] };
 // An answer as `fetch` gives it: its body read once, a copy readable too.
@@ -56,7 +69,8 @@ beforeEach(() => {
   mocks.adopt.mockReset();
   mocks.ensure.mockReset();
   mocks.reload.mockReset();
-  mocks.reload.mockResolvedValue(undefined);
+  // The list read again lands (`loadGroups` answers whether its read published the list).
+  mocks.reload.mockResolvedValue(true);
   mocks.held = null;
   mocks.epoch = EPOCH;
   mocks.ensure.mockImplementation(async (expected: string | null) =>
@@ -71,27 +85,38 @@ describe('writeGroups', () => {
     expect(write).toEqual({ kind: 'done', created: GROUP });
     expect(mocks.post).toHaveBeenCalledWith('https://api.test/groups', { token: A.token, create: true, name: 'CREW' });
     expect(mocks.adopt).toHaveBeenCalledWith({ groups: [created], created: GROUP }, A.accountId);
-    expect(failureOf(write)).toBeNull();
+    expect(failureOf('create', write)).toBeNull();
+    expect(createVerdictOf(write)).toBe('created');
   });
 
   it('reads a refusal off its code: a banned name, the cap, a stale succession', async () => {
+    // A create's own two refusals are the naming screen's to answer, never the error surface's.
     mocks.post.mockResolvedValueOnce(answer(400, { error: 'name_rejected' }));
     const banned = await writeGroups(EPOCH, create);
     expect(banned).toEqual({ kind: 'refused', error: 'name_rejected' });
-    expect(failureOf(banned)).toBe('name');
+    expect(createRefusalOf(banned)).toBe('name');
+    expect(createVerdictOf(banned)).toBe('name');
+    expect(failureOf('create', banned)).toBeNull();
 
     mocks.post.mockResolvedValueOnce(answer(409, { error: 'group_limit' }));
     const capped = await writeGroups(EPOCH, create);
     expect(capped).toEqual({ kind: 'refused', error: 'group_limit' });
-    expect(failureOf(capped)).toBe('limit');
+    expect(createRefusalOf(capped)).toBe('limit');
+    expect(createVerdictOf(capped)).toBe('limit');
+    expect(failureOf('create', capped)).toBeNull();
 
     // The leave asks again: no failure to say.
     mocks.post.mockResolvedValueOnce(answer(409, { error: 'successor_required' }));
-    expect(failureOf(await writeGroups(EPOCH, (token) => ({ token, leave: GROUP })))).toBeNull();
+    expect(failureOf('leave', await writeGroups(EPOCH, (token) => ({ token, leave: GROUP })))).toBeNull();
 
-    // Any other code is a refusal the board names plainly.
+    // Any other code is a refusal the surface names by its act.
     mocks.post.mockResolvedValueOnce(answer(409, { error: 'group_full' }));
-    expect(failureOf(await writeGroups(EPOCH, create))).toBe('group');
+    const full = await writeGroups(EPOCH, create);
+    expect(failureOf('create', full)).toBe('create');
+    expect(createRefusalOf(full)).toBeNull();
+    expect(createVerdictOf(full)).toBe('other');
+    mocks.post.mockResolvedValueOnce(answer(403, { error: 'not_creator' }));
+    expect(failureOf('remove', await writeGroups(EPOCH, (token) => ({ token, remove: GROUP, member: 'm' })))).toBe('remove');
     expect(mocks.adopt).not.toHaveBeenCalled();
   });
 
@@ -99,7 +124,10 @@ describe('writeGroups', () => {
     mocks.post.mockResolvedValueOnce(answer(500, { error: 'name_rejected' }));
     const crashed = await writeGroups(EPOCH, create);
     expect(crashed).toEqual({ kind: 'failed' });
-    expect(failureOf(crashed)).toBe('group');
+    expect(failureOf('create', crashed)).toBe('create');
+    expect(failureOf('leave', crashed)).toBe('leave');
+    // A banned-looking body behind a 5xx is no verdict on the name.
+    expect(createRefusalOf(crashed)).toBeNull();
 
     mocks.post.mockResolvedValueOnce(answer(502, '<html>bad gateway</html>'));
     expect(await writeGroups(EPOCH, create)).toEqual({ kind: 'failed' });
@@ -111,8 +139,25 @@ describe('writeGroups', () => {
     mocks.post.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     expect(await writeGroups(EPOCH, create)).toEqual({ kind: 'failed' });
     expect(mocks.adopt).not.toHaveBeenCalled();
-    // Each unknown outcome read the list again before saying anything.
+    // Each unknown outcome read the list again before saying anything — a read SENT AFTER the
+    // write, never one already out, which may have left before it.
     expect(mocks.reload).toHaveBeenCalledTimes(4);
+    for (const call of mocks.reload.mock.calls) expect(call).toEqual([{ fresh: true }]);
+  });
+
+  it('claims nothing when the list read again after a lost answer fails too', async () => {
+    mocks.reload.mockResolvedValue(false);
+    mocks.post.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const lost = await writeGroups(EPOCH, create);
+    expect(lost).toEqual({ kind: 'unknown' });
+    expect(failureOf('create', lost)).toBe('unknown');
+    expect(failureOf('leave', lost)).toBe('unknown');
+    expect(createVerdictOf(lost)).toBe('other');
+    expect(groupFailureCopy('en', 'unknown')).toEqual({
+      title: 'NO ANSWER',
+      note: "Check your groups again once you're back online.",
+    });
+    expect(groupFailureCopy('fr', 'unknown').title).toBe('PAS DE RÉPONSE');
   });
 
   it('reads nothing again after an answer it can read', async () => {
@@ -127,7 +172,7 @@ describe('writeGroups', () => {
     mocks.ensure.mockRejectedValue(new Error('bootstrap failed'));
     const write = await writeGroups(EPOCH, create);
     expect(write).toEqual({ kind: 'account' });
-    expect(failureOf(write)).toBe('account');
+    expect(failureOf('create', write)).toBe('account');
     expect(mocks.post).not.toHaveBeenCalled();
   });
 
@@ -135,7 +180,8 @@ describe('writeGroups', () => {
     mocks.epoch = 'bbbbbbbbbbbbbbbb:dddddddddddddddd';
     const write = await writeGroups(EPOCH, create);
     expect(write).toEqual({ kind: 'stale' });
-    expect(failureOf(write)).toBeNull();
+    expect(failureOf('create', write)).toBeNull();
+    expect(createVerdictOf(write)).toBe('other');
     expect(mocks.post).not.toHaveBeenCalled();
   });
 
@@ -157,10 +203,18 @@ describe('createGroup', () => {
     mocks.post.mockResolvedValueOnce(answer(502, '<html>bad gateway</html>'));
     mocks.reload.mockImplementationOnce(async () => {
       mocks.held = [other, created];
+      return true;
     });
     const write = await createGroup(EPOCH, 'CREW');
     expect(write).toEqual({ kind: 'done', created: GROUP });
-    expect(failureOf(write)).toBeNull();
+    expect(failureOf('create', write)).toBeNull();
+  });
+
+  it('says nothing landed or not when the list could not be read again, whatever it held', async () => {
+    mocks.held = [other, created];
+    mocks.reload.mockResolvedValueOnce(false);
+    mocks.post.mockResolvedValueOnce(answer(502, '<html>bad gateway</html>'));
+    expect(await createGroup(EPOCH, 'CREW')).toEqual({ kind: 'unknown' });
   });
 
   it('still fails when the list read again holds no new group of that name', async () => {
@@ -180,16 +234,80 @@ describe('createGroup', () => {
   });
 });
 
-describe('the error copy', () => {
-  it('says a banned group name as its own refusal, and claims nothing an unknown outcome hides', () => {
-    expect(groupFailureCopy('en', 'name')).toEqual({
-      title: 'NAME NOT ALLOWED',
-      note: 'This name is not allowed. Pick another one.',
+describe('leaveGroup and removeMember', () => {
+  const crew: GroupSummary = { ...created, members: [A.accountId, 'mmmmmmmmmmmmmmmm'] };
+
+  it('find a leave that landed behind a lost answer in the list read again', async () => {
+    mocks.held = [crew];
+    mocks.post.mockResolvedValueOnce(answer(502, '<html>bad gateway</html>'));
+    mocks.reload.mockImplementationOnce(async () => {
+      mocks.held = [];
+      return true;
     });
-    expect(groupFailureCopy('fr', 'name').title).toBe('NOM REFUSÉ');
-    expect(groupFailureCopy('en', 'group').note).toBe('Check your connection and try again.');
-    expect(groupFailureCopy('fr', 'limit').title).toBe('TROP DE GROUPES');
-    expect(groupFailureCopy('en', 'group').title).toBe('FAILED');
+    const write = await leaveGroup(EPOCH, GROUP, (token) => ({ token, leave: GROUP }));
+    expect(write).toEqual({ kind: 'done' });
+    expect(failureOf('leave', write)).toBeNull();
+  });
+
+  it('say the leave failed while the list read again still holds the group', async () => {
+    mocks.held = [crew];
+    mocks.post.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const write = await leaveGroup(EPOCH, GROUP, (token) => ({ token, leave: GROUP }));
+    expect(write).toEqual({ kind: 'failed' });
+    expect(failureOf('leave', write)).toBe('leave');
+    // A list nobody holds claims nothing landed.
+    mocks.held = null;
+    mocks.post.mockResolvedValueOnce(answer(500, {}));
+    expect(await leaveGroup(EPOCH, GROUP, (token) => ({ token, leave: GROUP }))).toEqual({ kind: 'failed' });
+    // A list read again that failed claims neither: the leave may have landed.
+    mocks.held = [crew];
+    mocks.reload.mockResolvedValueOnce(false);
+    mocks.post.mockResolvedValueOnce(answer(500, {}));
+    const unread = await leaveGroup(EPOCH, GROUP, (token) => ({ token, leave: GROUP }));
+    expect(unread).toEqual({ kind: 'unknown' });
+    expect(failureOf('leave', unread)).toBe('unknown');
+  });
+
+  it('find a remove that landed in the members read again, and send the member named', async () => {
+    mocks.held = [crew];
+    mocks.post.mockResolvedValueOnce(answer(503, {}));
+    mocks.reload.mockImplementationOnce(async () => {
+      mocks.held = [{ ...crew, members: [A.accountId] }];
+      return true;
+    });
+    expect(await removeMember(EPOCH, GROUP, 'mmmmmmmmmmmmmmmm')).toEqual({ kind: 'done' });
+    expect(mocks.post).toHaveBeenCalledWith('https://api.test/groups', {
+      token: A.token,
+      remove: GROUP,
+      member: 'mmmmmmmmmmmmmmmm',
+    });
+
+    mocks.post.mockResolvedValueOnce(answer(503, {}));
+    const still = await removeMember(EPOCH, GROUP, A.accountId);
+    expect(still).toEqual({ kind: 'failed' });
+    expect(failureOf('remove', still)).toBe('remove');
+  });
+
+  it('pass a readable answer through untouched', async () => {
+    mocks.post.mockResolvedValueOnce(answer(409, { error: 'successor_required' }));
+    expect(await leaveGroup(EPOCH, GROUP, (token) => ({ token, leave: GROUP }))).toEqual({
+      kind: 'refused',
+      error: 'successor_required',
+    });
+    expect(mocks.reload).not.toHaveBeenCalled();
+  });
+});
+
+describe('the error copy', () => {
+  it('names each act by what was lost, and the cause by what to do', () => {
+    expect(groupFailureCopy('en', 'create')).toEqual({
+      title: 'GROUP NOT CREATED',
+      note: 'Check your connection and try again.',
+    });
+    expect(groupFailureCopy('fr', 'create').title).toBe('GROUPE NON CRÉÉ');
+    expect(groupFailureCopy('fr', 'leave').title).toBe('TOUJOURS DANS LE GROUPE');
+    expect(groupFailureCopy('en', 'remove').title).toBe('MEMBER NOT REMOVED');
+    expect(groupFailureCopy('fr', 'share').title).toBe('LIEN NON PARTAGÉ');
   });
 });
 

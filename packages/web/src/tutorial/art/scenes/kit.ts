@@ -15,6 +15,10 @@ export { th };
 // A scene draws INK INDICES into a raster of cells (0 = the ground, left transparent); the
 // canvas (`LevelArt`) turns them into pixels. A scene is built for one raster size and draws
 // any time `t` (seconds) — no state between frames, so a frame is the same on every device.
+//
+// `solvedAt` is the scene time a level was DONE at (`-Infinity`: done before the picture
+// mounted): a scene that has a done state draws it from then on — the game's three held words
+// ink into the found cobalt and the page stands. Scenes with no done state ignore it.
 
 export interface Raster {
   cols: number;
@@ -25,7 +29,7 @@ export interface Raster {
 export interface Scene {
   // The inks, index 1…n (index 0 is the ground).
   inks: readonly string[];
-  draw(r: Raster, t: number): void;
+  draw(r: Raster, t: number, solvedAt?: number): void;
 }
 
 // A scene is built for one raster and one STAGE: the part of the raster it composes in. The

@@ -41,7 +41,20 @@
 // **CONTINUE IS AN ACCOUNT-DEPLOYING TRIGGER** (#216's sixth), on BOTH doors: an email link
 // needs an account to bind, and "this device is empty" is precisely the reconnect case this
 // screen exists for. It wears the shape that rule defines — one tap chaining the bootstrap,
-// a loading state on the button, failures on the app's error surface.
+// a loading state on the button, a SEND that did not land on the app's error surface.
+//
+// **EVERY VERDICT ANSWERS IN PLACE; only an act that did not land takes the screen.** The
+// error bot is for an ACT that failed: a SEND (a 503 `mail_unavailable`, a dropped
+// connection: CODE NOT SENT), or a VERIFY whose answer was lost or cannot be read — read
+// again first (`recoverAmbiguous`), then CODE NOT CHECKED from the code step, STILL ON THIS
+// ACCOUNT from the crossroads (NO ANSWER there when the read again could not be had either:
+// the erase or the switch may have committed). What the server says about what was typed
+// stays where it was typed: too many sends is the danger line under CONTINUE (or, from
+// RESEND, the code step's held line); a wrong code shakes the keys; a code that accepts
+// nothing more — expired, or its attempts spent — keeps the player ON THE CODE STEP, the
+// keys gone dead in their own material, the held line saying why and RESEND live. The
+// crossroads has no keys, so a verdict on the code pressed there steps back to them and
+// answers there.
 
 import {
   Fragment,
@@ -80,6 +93,7 @@ import {
   useAccountFace,
   useOwnFace,
   type Face,
+  type FaceState,
 } from '../components/AccountFace';
 import ArrowIcon from '../assets/icons/arrow-right.svg?react';
 import AccountStats from '../components/AccountStats';
@@ -90,12 +104,11 @@ import Avatar from '../components/Avatar';
 // The house's Bayer tiles on the root (`--dz-*`): the face holds stipple through them, the
 // leaving face thins through them, and the ending's lines come in through them.
 import '../components/bayerTiles';
-import Button from '../components/Button';
 import CodeInput from '../components/CodeInput';
 import ErrorScreen from '../components/ErrorScreen';
 import FoilStamp from '../components/FoilStamp';
 import { foilSeed } from '../components/foil';
-import LoadingWave from '../components/LoadingWave';
+import BusyButton from '../components/BusyButton';
 import LangTitle from '../components/LangTitle';
 import { HeaderBack, HeaderLeft } from '../components/TopBar';
 import {
@@ -110,7 +123,7 @@ import {
 import useKeyboardInset from '../hooks/useKeyboardInset';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import useUiLang from '../hooks/useUiLang';
-import { t, tn } from '../i18n';
+import { t, tn, type UiKey } from '../i18n';
 import { ACCOUNT_PATH, type LinkIntent } from '../langs';
 import { navigate } from '../routing';
 import {
@@ -144,11 +157,23 @@ const FACE_TRAVEL_STEPS = 4;
 // A face's box while its read is out: the slate checker the house waits in (the archive's
 // and the podium's ghosts), stippled through the Bayer tiles and breathing in whole steps —
 // never a grey rounded block. A settled face with nothing to draw (a DELETED account) keeps
-// the box and draws nothing in it.
-function FaceHold({ size, waiting }: { size: number; waiting: boolean }) {
+// the box and draws nothing in it — the player's OWN account gone draws its ghost there
+// (`gone`); the player's OWN face whose read FAILED rests in it on the still stipple
+// (`failed`), never on the assigned stranger.
+function FaceHold({
+  size,
+  waiting,
+  failed = false,
+  gone = false,
+}: {
+  size: number;
+  waiting: boolean;
+  failed?: boolean;
+  gone?: boolean;
+}) {
   return (
     <span
-      className={`link-hold${waiting ? ' waiting' : ''}`}
+      className={`link-hold${waiting ? ' waiting' : failed ? ' failed' : gone ? ' ghost-mark' : ''}`}
       style={{ width: size, height: size }}
       aria-hidden="true"
     />
@@ -241,6 +266,63 @@ export function verifyBody(
   return { token, email, code, bind: !returning, ...(confirm ?? {}) };
 }
 
+// WHAT A VERIFY'S ANSWER MEANS, read off its CODE, never its status alone (the root
+// AGENTS.md's live routes). A 5xx, a transport failure (the caller's), or an answer this
+// screen cannot read — a link it cannot parse, a confirmation naming no account, a code it
+// does not know — is UNKNOWN, never a verdict: the verify may have landed, so the caller
+// reads again before it says anything.
+export type VerifyAnswer =
+  | { kind: 'linked'; result: LinkResult }
+  | { kind: 'signedOut' }
+  | { kind: 'confirm'; prompt: LinkErasePrompt }
+  | { kind: 'wrong'; attemptsLeft: number; exhausted: boolean }
+  // The code accepts nothing more: why, as the code step's held line says it.
+  | { kind: 'dead'; line: 'linkCodeExpired' | 'linkCodeSpent' }
+  // A fact about the ADDRESS, said at its field.
+  | { kind: 'address'; note: 'linkNoAccountThere' | 'linkAlreadySaved' }
+  | { kind: 'unknown' };
+
+export function readVerifyAnswer(status: number, body: unknown): VerifyAnswer {
+  if (status >= 200 && status < 300) {
+    try {
+      return { kind: 'linked', result: parseLinkResult(body) };
+    } catch {
+      return { kind: 'unknown' };
+    }
+  }
+  const error = typeof body === 'object' && body !== null ? (body as { error?: unknown }).error : undefined;
+  if (isUnknownDeviceAnswer(status, error)) return { kind: 'signedOut' };
+  if (status >= 500) return { kind: 'unknown' };
+  // THE TWO CONFIRMATIONS, one screen. `would_erase` names an account that is about to
+  // become unreachable; `would_switch` an account that survives and is merely being left.
+  // The prompt degrades a long way (a missing `target` falls back to one face, missing stakes
+  // print no numbers), so one that names no account to ask about is an answer this screen
+  // cannot read.
+  if (error === 'would_erase' || error === 'would_switch') {
+    const prompt = parseErasePrompt(body, error === 'would_erase' ? 'erase' : 'switch');
+    return prompt ? { kind: 'confirm', prompt } : { kind: 'unknown' };
+  }
+  if (error === 'bad_code') return { kind: 'wrong', ...parseBadCode(body) };
+  if (error === 'code_expired' || error === 'no_code') return { kind: 'dead', line: 'linkCodeExpired' };
+  if (error === 'code_spent') return { kind: 'dead', line: 'linkCodeSpent' };
+  // Nobody is at that address, and this door did not authorize creating anybody.
+  if (error === 'no_account') return { kind: 'address', note: 'linkNoAccountThere' };
+  // SAVE-door only: the returning door never reaches the bind branch, so this is a device
+  // that came to save an account which already carries an address of its own.
+  if (error === 'account_linked') return { kind: 'address', note: 'linkAlreadySaved' };
+  return { kind: 'unknown' };
+}
+
+// The flow's acts that did not land, each named by what was lost (the error surface's title)
+// — or, where nothing could be read about it, by no claim at all (`unknown`).
+type Failure = 'send' | 'check' | 'switch' | 'unknown';
+const FAILURE_TITLE = {
+  send: 'linkSendFailed',
+  check: 'linkCheckFailed',
+  switch: 'linkSwitchFailed',
+  unknown: 'noAnswer',
+} as const satisfies Record<Failure, UiKey>;
+
 // The address the code went to, as the line may WRAP it: a break offered before the '@' and
 // after each dot, so a long address reads whole over two lines rather than cut short.
 function breakableAddress(address: string): ReactNode {
@@ -276,7 +358,27 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // Read ONCE, and only when there is no ending to show: a completed link outranks a code
   // that was in flight before it.
   const [resumed] = useState(() => (carried ? null : readResumable(intent)));
-  const [step, setStep] = useState<Step>(carried ? 'done' : resumed ? 'code' : 'address');
+
+  // WHAT THIS ACCOUNT IS SAVED AS — the cached summary, not a new request (and a tokenless
+  // device gets the answer without one at all, #216). The RETURN door reads it to know what
+  // signing in would cost; the SAVE door to know whether there is anything left to save.
+  const { phase: summaryPhase, summary } = useAccountSummary();
+  const ownSummary = identity !== null && summary?.accountId === identity.accountId ? summary : null;
+  const summaryKnown = identity === null || ownSummary !== null || summaryPhase === 'failed';
+  useEffect(() => {
+    loadAccountSummary();
+  }, [identity]);
+  // THE SAVE DOOR ON AN ACCOUNT ALREADY SAVED opens on its SAVED ENDING — the errand is
+  // done, and an address field would only earn the `account_linked` refusal. Straight onto
+  // it when the summary is in hand; while it is out the lead stands with the field and the
+  // call HELD (`deciding`), and the answer either lets them in or turns the step into the
+  // ending, the lead's face stepping forward as it does on any save.
+  const savedAs = !returning ? (ownSummary?.email ?? null) : null;
+  const fresh = !returning && !carried && !resumed;
+  const [step, setStep] = useState<Step>(
+    carried ? 'done' : resumed ? 'code' : fresh && savedAs !== null ? 'done' : 'address',
+  );
+  const [deciding, setDeciding] = useState(() => fresh && savedAs === null && !summaryKnown);
   // THE STEP LEAVES BEFORE THE NEXT ONE COMES: the code step's lines dissolve out through the
   // dither — the lead (the face, its chip) standing — and only then does the crossroads or the
   // ending take its place. Where the lead stood is noted as it goes, so the ending's face
@@ -310,8 +412,23 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
       setStep(next);
     }, STEP_LEAVE_MS);
   }, []);
-  const [outcome, setOutcome] = useState<LinkOutcome | null>(carried?.outcome ?? null);
-  const [linked, setLinked] = useState<string | null>(carried?.email ?? null);
+  const [outcome, setOutcome] = useState<LinkOutcome | null>(
+    carried?.outcome ?? (step === 'done' ? 'already_bound' : null),
+  );
+  const [linked, setLinked] = useState<string | null>(carried?.email ?? (step === 'done' ? savedAs : null));
+  // (A saved answer keeps the step HELD while it leaves: the field never mounts at all.)
+  const decided = useRef(false);
+  useEffect(() => {
+    if (!deciding || !summaryKnown || decided.current) return;
+    decided.current = true;
+    if (savedAs === null) {
+      setDeciding(false);
+      return;
+    }
+    setOutcome('already_bound');
+    setLinked(savedAs);
+    advance('done');
+  }, [deciding, summaryKnown, savedAs, advance]);
   const [receipt, setReceipt] = useState<AccountStakes | null>(carried?.stakes ?? null);
   const [address, setAddress] = useState(resumed?.address ?? '');
   // The instant the code was SENT — the countdown's anchor, and the resume's clock.
@@ -319,10 +436,19 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [wrong, setWrong] = useState<number | null>(null);
+  // The code step's HELD LINE, when it says something other than the tries left: too many
+  // sends from RESEND, a code that accepts nothing more.
+  const [codeLine, setCodeLine] = useState<UiKey | null>(null);
+  // The code accepts nothing more (expired, or its attempts spent): the keys are dead and
+  // RESEND is the step's one live act, whatever its countdown says.
+  const [dead, setDead] = useState(false);
+  // The code step was stepped back to from the crossroads: it comes in through the dither,
+  // the crossroads' own arrival.
+  const [cameBack, setCameBack] = useState(false);
   const [prompt, setPrompt] = useState<LinkErasePrompt | null>(null);
-  // What went wrong, as the note the error surface shows under its one title. The screen
-  // has one way out, and the act is re-run from the step that owns it.
-  const [refusal, setRefusal] = useState<string | null>(null);
+  // The act that did not land, on the error surface. Its one way out goes back to the step
+  // that owns the act, where pressing it again re-runs it.
+  const [failed, setFailed] = useState<Failure | null>(null);
   // A standing explanation under the address field — something true about this account that
   // the player has to read before typing again, rather than a failure with a retry.
   const [note, setNote] = useState<string | null>(null);
@@ -337,22 +463,13 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
     if (carried) justLinked = null;
   }, [carried]);
 
-  // WHAT SIGNING IN WOULD COST, known before a keystroke is spent. One fact decides it and
-  // the client already holds it — whether this device's account has an address of its own —
-  // so this is the cached summary, not a new request (and a tokenless device gets the
-  // answer without one at all, #216).
-  const { summary } = useAccountSummary();
-  useEffect(() => {
-    if (returning) loadAccountSummary();
-  }, [returning, identity]);
-
   // The challenges are PREFETCHED while the address is being typed (#203's rule): a bot
   // check landing on the tap costs real seconds on a button the player is watching. TWO,
   // because a tokenless device spends one on the bootstrap this tap performs and the next
-  // on the send itself.
+  // on the send itself. (Not while the step is deciding: a saved account sends nothing.)
   useEffect(() => {
-    if (step === 'address') prefetchTurnstileTokens(2);
-  }, [step]);
+    if (step === 'address' && !deciding) prefetchTurnstileTokens(2);
+  }, [step, deciding]);
 
   // The resend cooldown, read off the SEND'S OWN INSTANT rather than counted down. A tick
   // counter stalls in a backgrounded tab — which is precisely the tab this step asks the
@@ -379,7 +496,13 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
 
   useEffect(() => () => clearTimeout(shakeTimer.current), []);
 
-  const fail = useCallback((note: string) => setRefusal(note), []);
+  // The code accepts nothing more: the keys go dead, the held line says why.
+  const kill = useCallback((line: UiKey) => {
+    setCode('');
+    setWrong(null);
+    setDead(true);
+    setCodeLine(line);
+  }, []);
 
   const leave = () => {
     writeResumable(null);
@@ -397,14 +520,16 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
     setStep('address');
     setCode('');
     setWrong(null);
+    setDead(false);
+    setCodeLine(null);
+    setCameBack(false);
   };
 
   // ── SEND ──────────────────────────────────────────────────────────────────────────────
   // `handOff` moves the caret into the code prompt BEFORE the request — the tap is the only
   // moment iOS will open a keyboard, and by the time the send answers it is long over. Only
-  // the address step's two entry points ask for it: a retry tapped inside the error dialog
-  // does not (moving focus out of an open modal is worse than a closed keyboard), and RESEND
-  // does not (the caret is already in the prompt).
+  // the address step's two entry points ask for it: RESEND does not (the caret is already in
+  // the prompt, or the keys are dead and there is no prompt to hand it to).
   const send = useCallback(
     async ({ handOff = false }: { handOff?: boolean } = {}) => {
       const email = normalizeEmail(address);
@@ -415,8 +540,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
       // typing into a field that is not on screen, which is worse than the keyboard never
       // opening at all.
       let handedOn = false;
+      // Where the act was pressed: RESEND's answers speak on the code step's line.
+      const resending = step === 'code';
       setBusy(true);
-      setRefusal(null);
+      setFailed(null);
       try {
         // The DEPLOY: this tap is what gives a tokenless device its account, because an
         // email link has to have one to bind — and a reconnect is by definition a device
@@ -431,12 +558,17 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           turnstileToken: challenge,
           lang,
         });
+        // What stood under CONTINUE was said about the LAST answer (too many sends, a fact
+        // about the address): this one replaces it, and a send that lands leaves none.
+        setNote(null);
         if (response.ok) {
           // ALWAYS clear, a resend included: the digits already typed were aimed at the
           // code this send just replaced, so leaving them meant the next two keystrokes
           // auto-submitted a poisoned six and spent one of the five wrong-code attempts.
           setCode('');
           setWrong(null);
+          setDead(false);
+          setCodeLine(null);
           const now = Date.now();
           setSentAt(now);
           writeResumable({ intent, address: email, sentAt: now });
@@ -449,23 +581,29 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           markDeviceSignedOut(resolved.epoch);
           return;
         }
+        // A VERDICT on the sends asked for: said where it was asked — under CONTINUE, or on
+        // the code step's held line.
         if (response.status === 429) {
-          fail(t(lang, 'linkTooMany'));
+          if (resending) setCodeLine('linkTooMany');
+          else setNote(t(lang, 'linkTooMany'));
           return;
         }
+        // A verdict on the ADDRESS: the line shakes, the note says why.
         if (error === 'bad_email') {
-          fail(t(lang, 'linkBadAddress'));
+          setShaking(true);
+          setNote(t(lang, 'linkBadAddress'));
           return;
         }
-        fail(t(lang, 'linkSendFailedNote'));
+        setFailed('send');
       } catch {
-        fail(t(lang, 'linkSendFailedNote'));
+        setNote(null);
+        setFailed('send');
       } finally {
         setBusy(false);
         if (handOff && !handedOn) addressField.current?.focus();
       }
     },
-    [address, busy, fail, intent, lang],
+    [address, busy, intent, lang, step],
   );
 
   // ── VERIFY ────────────────────────────────────────────────────────────────────────────
@@ -497,8 +635,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
     resumeDepartureDrain(result.departurePending);
   }, [advance]);
 
+  // What the read again answered: the outcome is SETTLED (the link landed, or the device is
+  // signed out, or the identity moved), the account was read and NOTHING LANDED, or it could
+  // not be read at all — and then nothing is known either way.
   const recoverAmbiguous = useCallback(
-    async (resolved: RequestIdentity, email: string): Promise<boolean> => {
+    async (resolved: RequestIdentity, email: string): Promise<'settled' | 'notLanded' | 'unread'> => {
       try {
         // A VERIFY can commit and then lose its response. Ask the token what account it NOW
         // acts as before offering a retry whose challenge may already be consumed.
@@ -507,11 +648,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         if (!response.ok) {
           if (isUnknownDeviceAnswer(response.status, body.error)) {
             markDeviceSignedOut(resolved.epoch);
-            return true;
+            return 'settled';
           }
-          return false;
+          return 'unread';
         }
-        if (currentRequestIdentity(resolved.epoch) === null) return true;
+        if (currentRequestIdentity(resolved.epoch) === null) return 'settled';
         const result = recoveredLinkResult({
           summary: parseAccountSummary(body),
           previousAccountId: resolved.identity.accountId,
@@ -520,26 +661,50 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           requestedEmail: email,
           bindingAuthorized: !returning,
         });
-        if (!result) return false;
+        if (!result) return 'notLanded';
         finish(resolved, result);
-        return true;
+        return 'settled';
       } catch {
-        return false;
+        return 'unread';
       }
     },
     [finish, returning, summary],
   );
 
   // Takes the code as an ARGUMENT: the sixth keystroke submits, and React state has not
-  // flushed by then. `erase` is present only on the SECOND call, after the player has read
-  // what the first one refused to do silently.
+  // flushed by then. `confirm` is present only from the CROSSROADS, after the player has
+  // read what the first verify refused to do silently — and it is how a verdict knows where
+  // it was pressed.
   const verify = useCallback(
     async (typed: string, confirm?: { erase?: string; leave?: string }) => {
       const email = normalizeEmail(address);
       if (email === null || !isValidLinkCode(typed) || busy) return;
+      const crossroads = confirm !== undefined;
       setBusy(true);
-      setRefusal(null);
+      setCodeLine(null);
       let request: RequestIdentity | null = null;
+      // THE VERIFY DID NOT LAND, and the read again found nothing it did: an ACT that did
+      // not land, on the error surface — never a line telling the player to type the code
+      // again, which the same unreadable answer would only refuse again. From the code step
+      // the code is cleared, so typing it checks it again; from the crossroads it is KEPT,
+      // so its button presses again — and where the read again could not be had either, the
+      // crossroads claims nothing about which account the device is on (`unknown`): pressed
+      // again, a verify that did land meets its spent code and reads again.
+      const didNotLand = (recovery: 'notLanded' | 'unread') => {
+        if (crossroads) {
+          setFailed(recovery === 'unread' ? 'unknown' : 'switch');
+          return;
+        }
+        setCode('');
+        setFailed('check');
+      };
+      // A verdict on the CODE answers on the code step. The crossroads has no keys to
+      // answer on, so it steps back to them first, through the dither.
+      const toKeys = () => {
+        if (!crossroads) return;
+        setCameBack(true);
+        advance('code');
+      };
       try {
         // NOT `ensureRequestIdentity`: the SEND has already deployed the account, and a
         // verification is not a moment to mint one (#216 — everything else resolves what
@@ -552,100 +717,95 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           linkUrl(),
           verifyBody(resolved.identity.token, email, typed, returning, confirm),
         );
-        const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-        if (response.ok) {
-          finish(resolved, parseLinkResult(body));
-          return;
-        }
-        const error = body.error;
-        if (isUnknownDeviceAnswer(response.status, error)) {
-          markDeviceSignedOut(resolved.epoch);
-          return;
-        }
-        // THE TWO CONFIRMATIONS, one screen. `would_erase` names an account that is about
-        // to become unreachable; `would_switch` an account that survives and is merely
-        // being left. Both are the crossroads, and both are answered by NAMING the account
-        // being left rather than by merely agreeing.
-        if (error === 'would_erase' || error === 'would_switch') {
-          const stakes = parseErasePrompt(body, error === 'would_erase' ? 'erase' : 'switch');
-          if (stakes) {
-            setPrompt(stakes);
+        const answer = readVerifyAnswer(response.status, await response.json().catch(() => null));
+        switch (answer.kind) {
+          case 'linked':
+            finish(resolved, answer.result);
+            return;
+          case 'signedOut':
+            markDeviceSignedOut(resolved.epoch);
+            return;
+          case 'confirm':
+            // Both confirmations are the crossroads, and both are answered by NAMING the
+            // account being left rather than by merely agreeing.
+            setPrompt(answer.prompt);
             advance('confirm');
             return;
+          case 'address':
+            // A FACT, not a failure: said AT the address field with the field still there to
+            // type in — a modal would be a dead end on a screen whose one remaining move is
+            // to try another address.
+            backToAddress();
+            setNote(t(lang, answer.note));
+            return;
+          case 'wrong':
+            // The refusal stays AT the input: shake, clear, and say how many tries remain.
+            // The LAST allowed mismatch answers here too, with none left (#204's attempt
+            // ladder): once the row has shaken, the keys go dead and the held line says so.
+            // From the crossroads (another send has replaced the code it held) there is no
+            // typed row to shake: the keys come back cleared.
+            setWrong(answer.attemptsLeft);
+            if (crossroads) {
+              toKeys();
+              if (answer.exhausted) kill('linkCodeSpent');
+              else setCode('');
+              return;
+            }
+            shakeTimer.current = setTimeout(() => {
+              setCode('');
+              if (answer.exhausted) kill('linkCodeSpent');
+            }, 420);
+            return;
+          case 'dead':
+            // A committed bind/adoption consumes the challenge. If that answer was lost and
+            // the first reconciliation read also failed, the player's explicit retry lands
+            // here; ask the unchanged token before calling the completed operation expired.
+            if ((await recoverAmbiguous(resolved, email)) === 'settled') return;
+            // The code accepts nothing more: the keys dead, the line saying why, RESEND live.
+            toKeys();
+            kill(answer.line);
+            return;
+          case 'unknown': {
+            const recovery = await recoverAmbiguous(resolved, email);
+            if (recovery !== 'settled') didNotLand(recovery);
+            return;
           }
-          // The confirmation degrades a long way — a missing `target` falls back to one
-          // face, missing stakes simply print no numbers — so reaching here means the body
-          // named no account this screen could ask about, and there is nothing to confirm.
-          // It closes WITHOUT a retry: the same code re-sent gets the same refusal, and the
-          // generic failure's TRY AGAIN spun that loop with no way out of it.
-          fail(t(lang, 'linkVerifyFailedNote'));
-          return;
         }
-        if (error === 'bad_code') {
-          // The refusal stays AT the input: shake, clear, and say how many tries remain.
-          // The LAST allowed mismatch answers here too, with none left (#204's attempt
-          // ladder), which is what puts "too many wrong codes" on screen.
-          const { attemptsLeft, exhausted } = parseBadCode(body);
-          setWrong(attemptsLeft);
-          shakeTimer.current = setTimeout(() => setCode(''), 420);
-          if (exhausted) fail(t(lang, 'linkCodeSpent'));
-          return;
-        }
-        if (error === 'code_expired' || error === 'code_spent' || error === 'no_code') {
-          // A committed bind/adoption consumes the challenge. If that answer was lost and
-          // the first reconciliation read also failed, the player's explicit retry lands
-          // here; ask the unchanged token before calling the completed operation expired.
-          if (await recoverAmbiguous(resolved, email)) return;
-          backToAddress();
-          fail(t(lang, 'linkCodeExpired'));
-          return;
-        }
-        // Nobody is at that address, and this door did not authorize creating anybody.
-        // The answer is about the ADDRESS, because that is what the player asked about.
-        if (error === 'no_account') {
-          backToAddress();
-          setNote(t(lang, 'linkNoAccountThere'));
-          return;
-        }
-        if (error === 'account_linked') {
-          // A FACT, not a failure: it is said AT the address field with the field still
-          // there to type in — a modal would be a dead end on a screen whose one remaining
-          // move is to try another address.
-          //
-          // SAVE-door only now: the returning door never reaches the bind branch at all,
-          // so this can only be a device that came to save an account which already carries
-          // an address of its own.
-          backToAddress();
-          setNote(t(lang, 'linkAlreadySaved'));
-          return;
-        }
-        if (response.status >= 500 && (await recoverAmbiguous(resolved, email))) return;
-        fail(t(lang, 'linkVerifyFailedNote'));
       } catch {
-        if (request && (await recoverAmbiguous(request, email))) return;
-        fail(t(lang, 'linkVerifyFailedNote'));
+        // (Nothing was sent without a request: nothing can have landed.)
+        const recovery = request ? await recoverAmbiguous(request, email) : 'notLanded';
+        if (recovery !== 'settled') didNotLand(recovery);
       } finally {
         setBusy(false);
       }
     },
-    [address, advance, busy, fail, finish, lang, recoverAmbiguous, returning],
+    [address, advance, busy, finish, kill, lang, recoverAmbiguous, returning],
   );
 
+  // The SAVE door leads with WHO is being saved — and it is the SAME face whether or not the
+  // account is deployed yet (user-decided 2026-08-26: nothing in the area may tell you
+  // which). `useOwnFace` answers the account's profile or the identical local-seed pair, the
+  // ONE read every surface of the player's own face shares; the crossroads' leaving side and
+  // the ending are this device's own account too, so they draw it as well — a read that
+  // FAILED rests on the still stipple there, never on the assigned stranger.
+  const ownState = useOwnFace();
+  const ownFace = shownFace(ownState);
   // The ending draws the account the player now holds — for an ADOPT that is the recovered
-  // one, and its face is the claim "we found your account" actually makes.
+  // one (the identity moves to it and the own face reads it), and its face is the claim "we
+  // found your account" actually makes.
   const endingId = identity?.accountId ?? null;
   // `shownFace` throughout: a DELETED account (#204's 410) has no face — not even the
   // assigned one, which is still that player's own — so every one of these draws nothing
   // rather than an identity that no longer exists.
-  const endingState = useAccountFace(step === 'done' ? endingId : null);
+  const endingState: FaceState = step === 'done' && endingId !== null ? ownState : null;
   const endingRead = shownFace(endingState);
-  // The crossroads draws BOTH sides of the fork: the account about to be deleted, and the
-  // one about to be joined. The server names the second only since vol. 2, so a missing
-  // `target` degrades to the one-sided prompt rather than failing a refusal the player has
-  // to be able to answer.
-  const eraseState = useAccountFace(step === 'confirm' ? (prompt?.accountId ?? null) : null);
+  // The crossroads draws BOTH sides of the fork: the account about to be left — this
+  // device's own — and the one about to be joined. The server names the second only since
+  // vol. 2, so a missing `target` degrades to the one-sided prompt rather than failing a
+  // refusal the player has to be able to answer.
+  const eraseState: FaceState = step === 'confirm' && prompt !== null ? ownState : null;
   const eraseFace = shownFace(eraseState);
-  const eraseMark = eraseFace && prompt ? (eraseFace.avatar ?? defaultAvatar(prompt.accountId)) : null;
+  const eraseMark = eraseFace ? (eraseFace.avatar ?? defaultAvatar(eraseFace.publicId)) : null;
   // A face about to be DELETED is a GHOST (`.ghost-mark`): it arrives whole on its own
   // ground, then its ink thins through the dither and its ground gives way to the slate.
   const ghostStyle = (mark: string) =>
@@ -656,14 +816,9 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // one-sided prompt, as a missing `target` already does.
   const targetState = useAccountFace(step === 'confirm' ? (prompt?.target ?? null) : null);
   const targetFace = shownFace(targetState);
-  // The SAVE door leads with WHO is being saved — and it is the SAME face whether or not the
-  // account is deployed yet (user-decided 2026-08-26: nothing in the area may tell you
-  // which). `useOwnFace` answers the account's profile or the identical local-seed pair; and
-  // the first face resolved is HELD for the flow's whole life, because the SEND's own deploy
-  // swaps the id from the seed to the account mid-flight, and re-reading then races the
-  // background profile write for a face that is the same by construction.
-  const ownState = useOwnFace();
-  const ownFace = shownFace(ownState);
+  // The lead's first face resolved is HELD for the flow's whole life, because the SEND's
+  // own deploy swaps the id from the seed to the account mid-flight, and re-reading then
+  // races the background profile write for a face that is the same by construction.
   const [lead, setLead] = useState<Face | null>(null);
   useEffect(() => {
     if (ownFace !== null && lead === null) setLead(ownFace);
@@ -672,6 +827,10 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // The lead's placeholder breathes only while the read is OUT: a gone account settles with
   // nothing, and a shimmer over it promises a face that is not coming.
   const savingPending = lead === null && !faceSettled(ownState);
+  // A read that FAILED has no face to lead with: the mark's and the name's boxes rest on the
+  // still stipple (`/account`'s masthead's, without its retry — this screen is about the
+  // address), never on the assigned stranger.
+  const savingFailed = lead === null && ownState === 'failed';
 
   // AN ENDING PER CELL of the two-doors × three-outcomes grid. Until vol. 2 four of the six
   // borrowed one of the other two's sentences.
@@ -772,9 +931,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   // to exist before its content changes to be announced. So the regions moved off the
   // visible copy (which is read normally when focus lands on it) and into this one, which
   // never unmounts. Priority is what the player most needs: a standing refusal about the
-  // address, then a refused code, then where the flow now stands.
+  // address, then the code step's held line, then a refused code, then where the flow now
+  // stands.
   const spoken = (() => {
     if (note !== null) return note;
+    if (step === 'code' && codeLine !== null) return t(lang, codeLine);
     if (wrong !== null && wrong > 0) {
       return wrong === 1 ? t(lang, 'linkWrongCodeOne') : tn(lang, 'linkWrongCode', wrong);
     }
@@ -832,7 +993,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
       <div
         className={`account-screen link-step${step === 'confirm' || step === 'done' ? ' link-final' : ''}${
           leaving ? ' leaving' : ''
-        }`}
+        }${cameBack && step === 'code' ? ' came-back' : ''}`}
       >
         <p className="sr-only" role="status">
           {spoken}
@@ -865,18 +1026,35 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
               // AND THE NAME'S BOX IS HELD TOO (2026-09-03). The mark was reserved and the
               // name was not, so the account's own name landed into no space and pushed the
               // field and CONTINUE down as it arrived — the shift the skeleton rule exists to
-              // prevent. Only while the read is OUT: a settled account with no face has no
-              // name coming, and a placeholder held for one would promise what is not on its
-              // way.
+              // prevent. Only while the read is OUT, or resting where it FAILED: a GONE account
+              // has no name coming, and a placeholder held for one would promise what is not
+              // on its way.
               <>
-                <FaceHold size={LEAD_PX} waiting={savingPending} />
-                {savingPending && <span className="link-name link-hold waiting">&nbsp;</span>}
+                <FaceHold
+                  size={LEAD_PX}
+                  waiting={savingPending}
+                  failed={savingFailed}
+                  gone={lead === null && ownState === 'gone'}
+                />
+                {(savingPending || savingFailed) && (
+                  <span className={`link-name link-hold ${savingPending ? 'waiting' : 'failed'}`}>&nbsp;</span>
+                )}
               </>
             )}
           </div>
         )}
 
-        {step === 'address' && (
+        {step === 'address' && deciding && (
+          // HELD while the save door does not yet know whether the account is saved: the
+          // field's floor alone, and the call's box. Nothing here can be pressed, so nothing
+          // offers to be; the field mounts (and takes the focus) once there is something to
+          // save.
+          <>
+            <div className="link-field held" aria-hidden="true" />
+            <div className="mix-btn link-call held" aria-hidden="true" />
+          </>
+        )}
+        {step === 'address' && !deciding && (
           <>
             <AddressField
               value={address}
@@ -896,14 +1074,15 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
               label={t(lang, 'linkAddressPlaceholder')}
               fieldRef={addressField}
             />
-            <button
-              type="button"
+            <BusyButton
               className="mix-btn link-call"
-              disabled={busy || !isValidEmail(address)}
+              lang={lang}
+              busy={busy}
+              disabled={!isValidEmail(address)}
               onClick={() => void send({ handOff: true })}
             >
-              {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkContinue')}
-            </button>
+              {t(lang, 'linkContinue')}
+            </BusyButton>
             {note && <p className="account-note caption danger">{note}</p>}
           </>
         )}
@@ -929,6 +1108,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             onChange={(next) => {
               setCode(next);
               if (wrong !== null) setWrong(null);
+              if (codeLine !== null) setCodeLine(null);
             }}
             onComplete={(typed) => void verify(typed)}
             // Red only while the refused code is still on screen: once the cells clear
@@ -939,6 +1119,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             // caret CONTINUE just placed there would be thrown straight back out and the
             // keyboard would close — which is the whole thing this is here to prevent.
             disabled={step === 'code' ? busy || leaving : false}
+            dead={step === 'code' && dead}
             offstage={step !== 'code'}
             fieldRef={codeField}
             label={t(lang, 'linkCodeLabel')}
@@ -949,28 +1130,39 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           <>
             {/* Only once an attempt has been SPENT: stating the budget up front reads as a
                 warning to somebody who has typed nothing wrong. Its line is HELD under the
-                keys from the start, so the refusal lands in place and RESEND never moves. */}
+                keys from the start, so a verdict lands in place and RESEND never moves — the
+                tries left, or what the code step has to say instead (a check not had, too
+                many sends, a code that accepts nothing more). */}
             <div className="link-wrong">
-              {wrong !== null && wrong > 0 && (
-                <p className="account-note account-note-center danger">
-                  {wrong === 1 ? t(lang, 'linkWrongCodeOne') : tn(lang, 'linkWrongCode', wrong)}
-                </p>
+              {codeLine !== null ? (
+                <p className="account-note account-note-center danger">{t(lang, codeLine)}</p>
+              ) : (
+                wrong !== null &&
+                wrong > 0 && (
+                  <p className="account-note account-note-center danger">
+                    {wrong === 1 ? t(lang, 'linkWrongCodeOne') : tn(lang, 'linkWrongCode', wrong)}
+                  </p>
+                )
               )}
             </div>
             {/* ONE quiet control under the cells now: the header's BACK is what changes
                 the address (user-decided 2026-08-29), so the row that used to hold two
-                similar-looking words holds the one that has nowhere else to live. */}
+                similar-looking words holds the one that has nowhere else to live. The quiet
+                word in a tappable thing's brackets — which it wears only once it CAN be
+                pressed: counting, it is a status line, and its brackets arrive with the offer
+                when the clock runs out. Once the code is DEAD it is the step's one live act,
+                the countdown waived (the code it guards is gone). */}
             <div className="link-quiet">
               <button
                 type="button"
-                className="link-quiet-btn link-resend"
-                disabled={busy || waitLeft > 0}
+                className={`quiet-btn link-resend${!dead && waitLeft > 0 ? ' counting' : ''}`}
+                disabled={busy || (!dead && waitLeft > 0)}
                 // (Read as one phrase — the word and its seconds — never "RESEND12".)
-                aria-label={waitLeft > 0 ? `${t(lang, 'linkResend')} ${waitLeft}` : undefined}
+                aria-label={!dead && waitLeft > 0 ? `${t(lang, 'linkResend')} ${waitLeft}` : undefined}
                 onClick={() => void send()}
               >
-                <span className="link-resend-word">{t(lang, 'linkResend')}</span>
-                {waitLeft > 0 && <span className="link-wait">{waitLeft}</span>}
+                {t(lang, 'linkResend')}
+                {!dead && waitLeft > 0 && <span className="link-wait">{waitLeft}</span>}
               </button>
             </div>
           </>
@@ -1003,7 +1195,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                       <Avatar avatar={eraseMark} size={CROSS_PX} sharp />
                     </span>
                   ) : (
-                    <FaceHold size={CROSS_PX} waiting={!faceSettled(eraseState)} />
+                    <FaceHold
+                      size={CROSS_PX}
+                      waiting={!faceSettled(eraseState)}
+                      failed={eraseState === 'failed'}
+                    />
                   )}
                   {/* The LEAVING side says what is happening to it: DELETED when it is
                       about to become unreachable, and its own NAME when it survives — a
@@ -1046,7 +1242,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 <span className="link-name">{eraseFace.name}</span>
               </>
             ) : (
-              <FaceHold size={LEAD_PX} waiting={!faceSettled(eraseState)} />
+              <FaceHold
+                size={LEAD_PX}
+                waiting={!faceSettled(eraseState)}
+                failed={eraseState === 'failed'}
+              />
             )}
             {/* WHAT IS AT STAKE, DIRECTLY UNDER THE FORK — ahead of the sentence, not
                 after it (review finding). Centred below "…come with you. The rest is
@@ -1071,22 +1271,23 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                 would teach the red to mean "a decision" rather than "a loss". */}
             <div className="link-calls">
               {erasing ? (
-                <Button
-                  variant="secondary"
-                  className="btn-danger"
-                  disabled={busy}
+                <BusyButton
+                  className="btn btn-secondary btn-danger"
+                  lang={lang}
+                  busy={busy}
                   onClick={() => void verify(code, { erase: prompt.accountId })}
                 >
-                  {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkEraseConfirm')}
-                </Button>
+                  {t(lang, 'linkEraseConfirm')}
+                </BusyButton>
               ) : (
-                <Button
-                  variant="primary"
-                  disabled={busy}
+                <BusyButton
+                  className="btn btn-primary"
+                  lang={lang}
+                  busy={busy}
                   onClick={() => void verify(code, { leave: prompt.accountId })}
                 >
-                  {busy ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'linkSwitchConfirm')}
-                </Button>
+                  {t(lang, 'linkSwitchConfirm')}
+                </BusyButton>
               )}
               <button type="button" className="link-quiet-btn" disabled={busy} onClick={leave}>
                 {t(lang, 'linkCancel')}
@@ -1117,7 +1318,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
                   )}
                 </>
               ) : (
-                <FaceHold size={ENDING_PX} waiting={!faceSettled(endingState)} />
+                <FaceHold
+                  size={ENDING_PX}
+                  waiting={!faceSettled(endingState)}
+                  failed={endingState === 'failed'}
+                />
               )}
             </div>
             {face && endingId && (
@@ -1165,12 +1370,12 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         )}
       </div>
 
-      {refusal !== null && (
+      {failed !== null && (
         <ErrorScreen
           lang={lang}
-          title={t(lang, 'linkFailed')}
-          note={refusal}
-          onClose={() => setRefusal(null)}
+          title={t(lang, FAILURE_TITLE[failed])}
+          note={t(lang, 'linkFailedNote')}
+          onClose={() => setFailed(null)}
         />
       )}
     </>

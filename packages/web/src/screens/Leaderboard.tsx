@@ -3,13 +3,12 @@ import { anonName, dateForDayNumber, defaultAvatar, type BoardPeriod, type Board
 import { readGroup, type GroupsBody } from '../api';
 import { clockNow, onClock } from '../components/animationClock';
 import Avatar from '../components/Avatar';
-import { DISSOLVE_MS } from '../components/bayerTiles';
+import { DISSOLVE_MS, cameIn } from '../components/bayerTiles';
 import BoardTabs, { tabIds, type BoardTabItem } from '../components/BoardTabs';
 import Under, {
   ARRIVE,
   PACE_CAP,
   TURN,
-  cameIn,
   lineRun,
   type Gone,
   type ListRun,
@@ -17,15 +16,17 @@ import Under, {
   type UnderView,
 } from '../components/BoardUnder';
 import ConfirmScreen from '../components/ConfirmScreen';
-import { LINE_PX, MARK } from '../components/boardMetrics';
+import SuccessorPick from '../components/SuccessorPick';
+import { LINE_PX } from '../components/boardMetrics';
 import GroupCreate from '../components/GroupCreate';
 import GroupScreen from '../components/GroupScreen';
-import LoadError from '../components/LoadError';
+import QuietFailure, { SpokenLater } from '../components/QuietFailure';
 import PeriodSwitch from '../components/PeriodSwitch';
 import Podium, { nextStage, type PodiumStage } from '../components/podium/Podium';
 import { beats, podiumHeightPx, podiumSize, type PodiumSize } from '../components/podium/scene';
 import PuzzleTitle from '../components/PuzzleTitle';
 import { HeaderLeft } from '../components/TopBar';
+import useMoreBelow from '../hooks/useMoreBelow';
 import useShare from '../hooks/useShare';
 import useStuckOwnLine from '../hooks/useStuckOwnLine';
 import useSwipe from '../hooks/useSwipe';
@@ -33,7 +34,19 @@ import useToday from '../hooks/useToday';
 import { prefersReducedMotion } from '../hooks/useScramble';
 import { identityEpoch, identityEpochOf, useDeviceIdentity } from '../identity';
 import { boardTargetKey, openingGroup, readBoard, takeOpening, type BoardTarget } from '../state/boardOpening';
-import { createGroup, failureOf, groupFailureCopy, inviteText, writeGroups, type GroupFailure, type GroupWrite } from '../state/groupActs';
+import {
+  createGroup,
+  createVerdictOf,
+  failureOf,
+  groupFailureCopy,
+  inviteText,
+  leaveGroup,
+  removeMember,
+  type CreateVerdict,
+  type GroupAct,
+  type GroupFailure,
+  type GroupWrite,
+} from '../state/groupActs';
 import { loadGroups, useGroups } from '../state/groups';
 import { prefetchTurnstileTokens } from '../turnstile';
 import ErrorScreen from '../components/ErrorScreen';
@@ -88,10 +101,11 @@ import { t } from '../i18n';
 // The rows come ranked from the server (competition ties, the plain top-50 cut, the
 // own-row window, the period rule — @whippin/shared's leaderboard rules); this screen only
 // draws what the API returned, the podium being its first three rows (`game/podium.ts`). Rows
-// CONNECTED to the reader stay apart: your own line is FRAMED by the corner brackets (and stays
-// in sight on a long board, held to the column's edge while it is scrolled out of view), on
-// the podium your name is and your place is in the accent; among the global rows, a member of
-// one of your groups carries a small accent mark.
+// CONNECTED to the reader stay apart: your own line wears its rank in the accent and its name
+// in the bold — never the corner brackets, which are what a tapped thing wears — and stays in
+// sight on a long board, held to the column's edge while it is scrolled out of view; on the
+// podium your name is bold and your place is in the accent; among the global rows, a member
+// of one of your groups carries a small accent mark.
 //
 // **OPENING THIS SCREEN IS NOT A TRIGGER (user-decided 2026-08-24).** A navigation must not
 // create server state: tokenless, the groups list is the KNOWN-EMPTY answer (#216's rule)
@@ -171,6 +185,18 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   useEffect(() => {
     loadGroups();
   }, [identity]);
+  // A list LOST with none in hand leaves the tab row its still chip — and on GLOBAL no note
+  // covers it (the board there stands): it is asked again when the tab comes back, the header
+  // key's way with the face, as well as by any RETRY on screen.
+  const groupsLost = groupsPhase === 'failed' && groups === null;
+  useEffect(() => {
+    if (!groupsLost) return undefined;
+    const again = () => {
+      if (document.visibilityState === 'visible') loadGroups();
+    };
+    document.addEventListener('visibilitychange', again);
+    return () => document.removeEventListener('visibilitychange', again);
+  }, [groupsLost]);
   const active: GroupSummary | null = openingGroup(groups, lastGroupId);
   // The reader's own people, for marking rows among the global ones: the union of every
   // group they are in, which the list already carries.
@@ -319,9 +345,10 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // ---- the deliberate acts: CREATE, INVITE, LEAVE, REMOVE — on the group's own screens,
   // never on the board. Each is `state/groupActs.ts`' (the result's seat shares them): the
   // write answers the list as it now stands, published through `adoptGroups`, and a failure
-  // lands on the app's error surface, since saying nothing leaves the player tapping a
-  // button that appears to do nothing.
-  const [busy, setBusy] = useState<'create' | 'invite' | 'leave' | 'remove' | null>(null);
+  // lands on the app's error surface, named by what was lost, since saying nothing leaves
+  // the player tapping a button that appears to do nothing. A create's own refusals (a
+  // banned name, the cap) are the naming screen's to answer, at its line.
+  const [busy, setBusy] = useState<GroupAct | null>(null);
   const [failure, setFailure] = useState<GroupFailure | null>(null);
   // WHICH SCREEN is up over the board, and WHICH CONFIRMATION over that.
   const [screen, setScreen] = useState<'group' | 'create' | null>(null);
@@ -337,33 +364,30 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   }, [identity]);
 
   // ONE gesture for every write (`writeGroups`): the deploy (a tokenless tap mints the account
-  // first, the button holding its loading state for both legs), then the signed POST, then
+  // first, the button busy for both legs), then the signed POST, then
   // the list — and what did not land, on the error surface (`failureOf`: a stale succession
   // is no failure, the leave asks again below).
-  const perform = async (kind: NonNullable<typeof busy>, act: () => Promise<GroupWrite>): Promise<GroupWrite> => {
+  const perform = async (kind: GroupAct, act: () => Promise<GroupWrite>): Promise<GroupWrite> => {
     setBusy(kind);
     setFailure(null);
     const result = await act();
-    setFailure(failureOf(result));
+    setFailure(failureOf(kind, result));
     setBusy(null);
     return result;
   };
-  const write = (kind: NonNullable<typeof busy>, body: (token: string) => GroupsBody) =>
-    perform(kind, () => writeGroups(epoch, body));
 
   // The create screen closes ITSELF once the group exists (it plays the name inked in
-  // first); the board is already on the new group when it does. Refused or failed, it stays
-  // up under the error surface, the name kept.
-  const create = async (name: string): Promise<boolean> => {
-    if (busy) return false;
+  // first); the board is already on the new group when it does. A refused name or the cap it
+  // answers at its own line; failed, it stays up under the error surface, the name kept.
+  const create = async (name: string): Promise<CreateVerdict> => {
+    if (busy) return 'other';
     const result = await perform('create', () => createGroup(epoch, name));
     if (result.kind === 'done' && result.created) {
       setLastGroup(result.created);
       setTab('group');
       setPeriod('day');
-      return true;
     }
-    return false;
+    return createVerdictOf(result);
   };
 
   // Delivery (native sheet -> clipboard + COPIED) is useShare's, like every result.
@@ -398,7 +422,9 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
     if (busy || !active) return;
     if (leaveKind === 'pick' && successor === null) return;
     const id = active.id;
-    const result = await write('leave', (token) => leaveBody(token, id, leaveKind, successor));
+    const result = await perform('leave', () =>
+      leaveGroup(epoch, id, (token) => leaveBody(token, id, leaveKind, successor)),
+    );
     setSuccessor(null);
     if (result.kind === 'refused' && result.error === 'successor_required') {
       loadGroups();
@@ -410,7 +436,7 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
 
   const remove = async (member: string) => {
     if (busy || !active) return;
-    const result = await write('remove', (token) => ({ token, remove: active.id, member }));
+    const result = await perform('remove', () => removeMember(epoch, active.id, member));
     setConfirming(null);
     if (result.kind === 'done') setAttempt((n) => n + 1);
   };
@@ -602,30 +628,42 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
         {copied ? t(lang, 'copied') : t(lang, 'boardInvite')}
       </button>
     ) : null;
-  // RETRY asks the failed board again from scratch: its failure dropped, and the loading picture
-  // standing for it (never a board held from before the failure).
-  const retry =
-    now.mode === 'failed' ? (
-      <LoadError
-        message={t(lang, 'failedBoard')}
-        lang={lang}
-        onRetry={() => {
-          if (entry !== 'failed' || boardKey === null) {
-            loadGroups();
-            return;
-          }
-          setBoards((prev) => ({ ...prev, [boardKey]: undefined }));
-          setLapsed(boardKey);
-          setAttempt((n) => n + 1);
-        }}
-      />
-    ) : null;
-  // (With no podium, the empty board's block — or the failed read's RETRY — stands under the
-  // header slot as ONE ROW, the ghost beside its line over its call: the room a landscape phone
-  // has.)
+  // RETRY asks again EVERY read that failed: the groups list, and the failed board from
+  // scratch — its failure dropped, and the loading picture standing for it (never a board held
+  // from before the failure).
+  const retry = () => {
+    if (groupsPhase === 'failed' || entry !== 'failed' || boardKey === null) loadGroups();
+    if (entry !== 'failed' || boardKey === null) return;
+    setBoards((prev) => ({ ...prev, [boardKey]: undefined }));
+    setLapsed(boardKey);
+    setAttempt((n) => n + 1);
+  };
+  // A FAILED READ HOLDS THE LOADING PICTURE STILL (the podium's floor, the lines' skeleton) and
+  // says so in the podium's caption slots — the note where the names stand, RETRY on the
+  // values' row; the tabs, the head line and the door keep their places.
+  const failedCaption =
+    now.mode === 'failed'
+      ? {
+          line: (
+            <>
+              <span className="quiet-failure-line" aria-hidden="true">
+                {t(lang, 'failedBoard')}
+              </span>
+              <SpokenLater line={t(lang, 'failedBoard')} />
+            </>
+          ),
+          call: (
+            <button type="button" className="quiet-btn" onClick={retry}>
+              {t(lang, 'retry')}
+            </button>
+          ),
+        }
+      : undefined;
+  // (With no podium, the empty board's block — or the failed read's note and RETRY — stands
+  // under the header slot as ONE ROW, the ghost beside its line over its call.)
   const hold =
     now.mode === 'failed' ? (
-      retry
+      <QuietFailure className="start" lang={lang} line={t(lang, 'failedBoard')} onRetry={retry} />
     ) : (
       <div className="board-empty">
         <span className="board-ghost" aria-hidden="true" />
@@ -646,7 +684,11 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   // turn caught halfway is turned again from what is on screen: the view still coming in gives
   // way with what of it had come in (`cameIn`), and the one it was replacing goes on going out
   // through the cells it was leaving by. A header slot both views say the same stands.
-  const holdKind = now.mode === 'failed' || now.mode === 'ghost' ? now.mode : null;
+  // A failed read under a podium holds the loading picture's LINES — the very view the
+  // skeleton is, so neither the failure nor its RETRY moves anything under the podium; with no
+  // podium the failure is its own block.
+  const failedUnder = now.mode === 'failed' && size !== null;
+  const holdKind = now.mode === 'ghost' || (now.mode === 'failed' && size === null) ? now.mode : null;
   const viewTab = shown?.tab ?? tab;
   // The header slot heads a group's list (its door), and — with no podium to say it — what the
   // numbers count; an empty board's block takes it only for a door (no group, a failed or empty
@@ -661,16 +703,17 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
   const view: UnderView = {
     key: holdKind
       ? `${holdKind}:${now.build}:${size ?? ''}`
-      : shown
+      : shown && !failedUnder
         ? `list:${shown.key}:${size ?? ''}`
         : `skeleton:${viewTab}`,
     size,
     sub,
     door,
     unit: counts && shown ? (isPeriodBoard(shown.board) ? 'points' : 'tries') : null,
-    body: holdKind ? (size ? null : 'hold') : shown ? 'list' : 'skeleton',
-    shown: holdKind ? null : shown,
+    body: holdKind ? (size ? null : 'hold') : shown && !failedUnder ? 'list' : 'skeleton',
+    shown: holdKind || failedUnder ? null : shown,
     hold: holdKind && !size ? hold : null,
+    failed: failedUnder,
   };
   // The view on screen — its key, since when, the run it came in on, whether its header slot
   // stands — and the ones before it giving way under it (`Leaving`).
@@ -736,7 +779,8 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
       {/* THE HEAD, held while the page scrolls under it (`.board-top`). */}
       <div ref={topRef} className="board-top">
       {/* WHICH BOARD: the tab row — the result's own. A tap on the shown group goes into it;
-          the pinned plus creates. Held at its height while the list of groups is unknown. */}
+          the pinned plus creates. While the list of groups is unknown its room is held by one
+          stippled chip (breathing while the list is read, still once a read has failed). */}
       <BoardTabs
         tabs={tabs}
         shown={activeIndex}
@@ -748,14 +792,17 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
         onNew={onNone ? undefined : () => setScreen('create')}
         newLabel={t(lang, 'groupNew')}
         idBase={tabsId}
+        hold={groupsPhase === 'failed' ? 'failed' : 'waiting'}
       />
 
       {/* THE LINE UNDER THE TABS, one height whatever it holds: a group's three boards,
-          GLOBAL's caption, or nothing. */}
+          GLOBAL's caption, or nothing. It names the board ON SCREEN (`viewTab`), never the
+          one asked for: a turn whose read is out keeps the board before under its own head,
+          and the head changes with the body when the new board lands. */}
       <div className="board-head">
-        {tab === 'group' && active ? (
+        {viewTab === 'group' && active ? (
           <PeriodSwitch lang={lang} period={period} onChange={setPeriod} />
-        ) : tab === 'global' ? (
+        ) : viewTab === 'global' ? (
           <span className="board-caption">{t(lang, 'boardGlobalSub')}</span>
         ) : null}
       </div>
@@ -784,16 +831,15 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
           // ground).
           style={slots > 0 && under.outs.length > 0 ? { minHeight: `${slots * LINE_PX}px` } : undefined}
         >
-          {/* THE PODIUM, in every state the body can be in: a failed read stands its RETRY in
-              the podium's own box; the ghost's caption is the empty board's terse line and its
-              one call. */}
+          {/* THE PODIUM, in every state the body can be in: its caption slots hold the empty
+              board's terse line and its one call — or a failed read's note and its RETRY. */}
           {size && (
             <Podium
               stage={staged}
               tl={tl}
               size={size}
               ghost={{ line: ghostLine, call: ghostCall }}
-              failed={retry}
+              failed={failedCaption}
             />
           )}
           <div className="board-under">
@@ -868,31 +914,14 @@ export default function Leaderboard({ lang }: { lang: LangCode }) {
           disabled={leaveKind === 'pick' && successor === null}
           onConfirm={() => void leave()}
           onClose={() => setConfirming(null)}
+          choice={
+            // WHO TAKES IT OVER, under the question it answers.
+            leaveKind === 'pick' && (
+              <SuccessorPick lang={lang} members={others} faces={faces} picked={successor} onPick={setSuccessor} />
+            )
+          }
         >
           <span className="confirm-group">{active.name}</span>
-          {leaveKind === 'pick' && (
-            // WHO TAKES IT OVER: the members as the board's lines, the one picked FRAMED —
-            // the brackets, the house's selection gesture.
-            <div className="board-list confirm-pick" role="radiogroup" aria-label={t(lang, 'groupMembers')}>
-              {others.map((id) => {
-                const face = faces[id];
-                const picked = successor === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    role="radio"
-                    aria-checked={picked}
-                    className={`board-row member${picked ? ' picked' : ''}`}
-                    onClick={() => setSuccessor(id)}
-                  >
-                    <Avatar avatar={face?.avatar ?? defaultAvatar(id)} size={MARK} sharp />
-                    <span className={`board-name${face?.name ? '' : ' anon'}`}>{face?.name || anonName(id)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </ConfirmScreen>
       )}
 

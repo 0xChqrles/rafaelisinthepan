@@ -1,20 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import LangTitle from '../components/LangTitle';
-import { HeaderLeft } from '../components/TopBar';
 import useVocab from '../hooks/useVocab';
 import { useGameStore } from '../state/gameStore';
-import { t } from '../i18n';
-import { pathForLesson, type LangCode } from '../langs';
+import type { LangCode } from '../langs';
 import { preloadScenes } from './art/LevelArt';
 import LessonBoard from './LessonBoard';
-import { LEVELS, PLAY_LEVEL } from './levels';
+import { PLAY_LEVEL } from './levels';
 import { scriptFor } from './scripts';
 
 // LEVEL 1 — THE GAME, PLAYED (#269): the script's stages on one screen — the reveal, the
-// word, the sentence — each a real board (LessonBoard). The header stays in place throughout with the BOOK lit;
-// its left slot is the level's name and the language it is taught in — a pick NAVIGATES to
-// the same lesson in that language, and App keys the screen on it, so it restarts there.
-// The run ends on the level's own card turning DONE (`onCleared`), PLAY under it (`onDone`).
+// word, the sentence — each a real board (LessonBoard). The header stays in place throughout
+// with the BOOK lit; its left slot is published by `LazyLevelOne`, held across this chunk's
+// wait. The run ends on the level's own card turning DONE (`onCleared`), PLAY under it
+// (`onDone`).
 export default function LevelOne({
   lang,
   onDone,
@@ -34,13 +31,9 @@ export default function LevelOne({
   const [clearedBefore] = useState(() => useGameStore.getState().lessonsDone.includes(PLAY_LEVEL));
   // The finale's picture must be there when its card lands.
   useEffect(preloadScenes, []);
-  const title = t(lang, LEVELS.find((l) => l.level === PLAY_LEVEL)!.titleKey);
 
   return (
     <>
-      <HeaderLeft>
-        <LangTitle lang={lang} title={title} to={(picked) => pathForLesson(picked, PLAY_LEVEL)} />
-      </HeaderLeft>
       {/* key={at}: a stage is a fresh board with fresh state, scrambling in from the text the
           stage before it ended on. */}
       <LessonBoard

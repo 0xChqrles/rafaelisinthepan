@@ -27,6 +27,7 @@
 // does not sink into the band and a loud one is contained.
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type React from 'react';
+import { DIGIT_MASKS, GLYPH_GAP, GLYPH_ROWS } from '@whippin/shared';
 import { primaryPress, startOpening } from '../state/boardOpening';
 import { useGameStore } from '../state/gameStore';
 import AccountKey from './AccountKey';
@@ -40,6 +41,43 @@ import { undoneLevels } from '../tutorial/levels';
 import { navigate } from '../routing';
 
 export type HeaderPlace = 'home' | 'archive' | 'board' | 'rules' | 'account';
+
+// THE BOOK'S BADGE is a PLATE of whole pixels: a square in the accent with the count cut out of
+// it in the ground's ink — the pixel face's own digits (shared `DIGIT_MASKS`), a font pixel a
+// cell, `PLATE_PAD` cells of plate round them — drawn crisp (`crispEdges`), never set as type.
+const PLATE_PAD = 2;
+function BadgePlate({ count }: { count: number }) {
+  const masks = String(count)
+    .split('')
+    .map((digit) => DIGIT_MASKS[Number(digit)]);
+  const inkW = masks.reduce((w, mask, i) => w + mask.w + (i > 0 ? GLYPH_GAP : 0), 0);
+  const h = GLYPH_ROWS + 2 * PLATE_PAD;
+  const w = Math.max(h, inkW + 2 * PLATE_PAD);
+  let x = Math.floor((w - inkW) / 2);
+  let d = '';
+  for (const mask of masks) {
+    for (let row = 0; row < GLYPH_ROWS; row += 1) {
+      for (let col = 0; col < mask.w; col += 1) {
+        if (mask.rows[row * mask.w + col]) d += `M${x + col} ${PLATE_PAD + row}h1v1h-1z`;
+      }
+    }
+    x += mask.w + GLYPH_GAP;
+  }
+  return (
+    <svg
+      className="hk-badge"
+      width={w}
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      shapeRendering="crispEdges"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect width={w} height={h} fill="currentColor" />
+      <path d={d} fill="var(--bg)" />
+    </svg>
+  );
+}
 
 // The row's DOM order — the dot indexes keys by it.
 const PLACES: HeaderPlace[] = ['home', 'archive', 'board', 'rules', 'account'];
@@ -182,11 +220,7 @@ export default function HeaderKeys({
         }}
       >
         <Icon className="ui-icon" aria-hidden />
-        {badge > 0 && (
-          <span className="hk-badge" aria-hidden="true">
-            {badge}
-          </span>
-        )}
+        {badge > 0 && <BadgePlate count={badge} />}
       </button>
     );
   };

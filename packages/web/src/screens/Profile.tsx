@@ -1,4 +1,4 @@
-import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import {
   anonName,
   AVATAR_CELLS,
@@ -19,17 +19,21 @@ import {
   identityEpochOf,
   markDeviceSignedOut,
   useDeviceIdentity,
+  type DeviceIdentity,
 } from '../identity';
 import { prefetchTurnstileTokens } from '../turnstile';
-import { withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
-import { holdOwnFace, ownProfileWritten } from '../state/ownFace';
+import { firstWritesSettled, holdOwnFace, ownProfileWritten } from '../state/ownFace';
+import { deployLocalIdentity, withoutLocalIdentityDeploy } from '../state/localIdentityDeploy';
 import ErrorScreen from '../components/ErrorScreen';
+import QuietFailure from '../components/QuietFailure';
+import BusyButton from '../components/BusyButton';
 import { navigate } from '../routing';
 import { ACCOUNT_PATH, type LangCode } from '../langs';
 import useUiLang from '../hooks/useUiLang';
 import { t } from '../i18n';
 import Avatar from '../components/Avatar';
 import { StatSlot } from '../components/AccountStats';
+import { isAccountFace } from '../components/AccountFace';
 import { MARK } from '../components/boardMetrics';
 import DitherWipe, { WIPE_MS, type WipeShot } from '../components/editor/DitherWipe';
 import EditorCanvas, { type PaintFx } from '../components/editor/EditorCanvas';
@@ -93,6 +97,8 @@ type LoadState = 'loading' | 'ready' | 'failed';
 // The BASELINE therefore lives in DISPLAY space (what the field holds) and the body in
 // STORAGE space. A player who deliberately types their own pseudonym stores empty and
 // renders the same text in the placeholder ink — the one accepted cost of the rule.
+// Both halves are about the account the editor LOADED (or one that already stores a row):
+// an account NEVER CUSTOMIZED stores what it was shown instead (`guardedSaveBody`).
 const nameForEditor = (stored: string, publicId: string) =>
   sanitizeName(stored) || anonName(publicId);
 const nameForStore = (edited: string, publicId: string) =>
@@ -102,8 +108,7 @@ const nameForStore = (edited: string, publicId: string) =>
 // review): a drawing still equal to the assigned mark the editor OPENED ON was never
 // drawn, so the body carries the EMPTY avatar ('' — "no custom mark", which every reader
 // already dresses as the account-derived face). Without this half, saving a name alone
-// froze the placeholder grid into the row for good — on a tokenless open, the local
-// SEED's grid, a face the account never had.
+// froze the assigned grid into the row for good.
 //   READ  — a null stored avatar opens on the assigned mark, exactly as a board row shows it.
 //   WRITE — an avatar still equal to that assigned mark stores as the empty one.
 const avatarForEditor = (stored: string | null, publicId: string) =>
@@ -114,46 +119,54 @@ const avatarForStore = (encoded: string, publicId: string) =>
 // The GUARDED save body (PR-219 round-3 review, P1): when SAVE resolves an account the
 // editor did NOT load — the deploy just minted one, recovered one from a pending token, or
 // adopted one from another tab under an open tokenless editor — the baseline on screen was
-// a PLACEHOLDER, never that account's profile. A whole-profile upsert built from it would
-// wipe whatever the account already holds: change only the placeholder name and the '' in
-// `avatar` deletes a custom mark; change only the drawing and the '' in `name` deletes a
-// custom name. So the save first FETCHES what the account stores and carries every
-// UNTOUCHED field forward verbatim; only a field the player actually changed from the
-// placeholder speaks. Exported for the contract test — the wipe is the harshest thing this
-// screen can do to an account.
+// a PLACEHOLDER, never that account's profile. Two answers, two rules:
+//   - the account STORES a profile: a whole-profile upsert built from the placeholder would
+//     wipe it — change only the name and the '' in `avatar` deletes a custom mark; change
+//     only the drawing and the '' in `name` deletes a custom name. So every UNTOUCHED field
+//     is carried forward verbatim, and only a field the player actually changed speaks.
+//   - the account was NEVER CUSTOMIZED (the 404 — a fresh mint, above all): it stores what
+//     the player was SHOWN, verbatim — the mark on the canvas (the seed's, untouched) and
+//     the name on the line (the seed's pseudonym, untouched; the one shown in its place when
+//     the field was emptied). The same pair `localIdentityDeploy` stores for every other
+//     deploy button, so SAVE never swaps the face it lands on: the '' a store-half sends
+//     would draw the NEW account id's face instead, one the player never saw. A stored row
+//     that IS that pair is the same answer: the deploy's own create (another tab's, which
+//     the SAVE's mute does not reach) landed first, and nobody customized anything.
+// Exported for the contract test — the wipe and the swap are the harshest things this screen
+// can do to an account.
 export function guardedSaveBody(
   edited: { name: string; avatar: string },
   baseline: { name: string; avatar: string },
   // What the placeholder derived from (the local seed, or another account's id) — the
   // store-halves compare a CHANGED field against the pseudonym/mark the player was SHOWN.
   assignedFrom: string,
-  // The account's stored profile; null is the 404 "never customized", where the intended
-  // save applies in full.
+  // The account's stored profile; null is the 404 "never customized".
   server: { name: string; avatar: string | null } | null,
 ): { name: string; avatar: string } {
+  const placeholder =
+    server !== null &&
+    server.name === anonName(assignedFrom) &&
+    server.avatar === defaultAvatar(assignedFrom);
+  if (server === null || placeholder) {
+    return { name: edited.name || anonName(assignedFrom), avatar: edited.avatar };
+  }
   const nameChanged = edited.name !== baseline.name;
   const avatarChanged = edited.avatar !== baseline.avatar;
   return {
-    name: nameChanged ? nameForStore(edited.name, assignedFrom) : (server?.name ?? ''),
-    avatar: avatarChanged ? avatarForStore(edited.avatar, assignedFrom) : (server?.avatar ?? ''),
+    name: nameChanged ? nameForStore(edited.name, assignedFrom) : server.name,
+    avatar: avatarChanged ? avatarForStore(edited.avatar, assignedFrom) : (server.avatar ?? ''),
   };
 }
 
-// The SAVE button's two orthogonal facts: its visual PHASE (the label rolls down and
-// out, the dot loader drops in from the top, holds, then the label rolls back up from
-// the bottom) and whether the server REFUSED the write (the line under the button).
-// The label itself always reads SAVE — the button animates, it never renames itself.
-type SavePhase = 'idle' | 'saving' | 'restoring';
-// `account` is the DEPLOY failing (#216 rework: a tokenless SAVE creates the account
-// first); nothing was created and nothing was saved, and TRY AGAIN re-runs the whole tap.
+// What a SAVE that did not land, or was refused, ended on. `account` is the DEPLOY failing
+// (#216 rework: a tokenless SAVE creates the account first); nothing was created and nothing
+// was saved, and SAVE pressed again re-runs the whole tap. The two moderation refusals are
+// VERDICTS on what was typed or drawn, answered AT the editor (the name, or the canvas);
+// `account` and `error` are acts that did not land, on the error screen.
 type SaveRefusal = 'name_rejected' | 'avatar_rejected' | 'account' | 'error' | null;
 
-// The loader holds at least this long even on an instant answer — a flash of dots
-// reads as a glitch — and the restore beat covers the label's roll-back animation.
-const SAVE_DOTS_MIN_MS = 750;
-const SAVE_RESTORE_MS = 240;
-
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+// A DRAWING EDIT answers a refused drawing alone: a refused name stands until the name is edited.
+const dropDrawingRefusal = (held: SaveRefusal): SaveRefusal => (held === 'avatar_rejected' ? null : held);
 
 // ---- THE STUDIO'S GEOMETRY (visual only: nothing here decides what is saved). The canvas's
 // cell is a WHOLE, ODD number of px — the grid's pitch (cell + its 1px line) even, so the
@@ -312,8 +325,13 @@ export default function Profile() {
   useLayoutEffect(() => {
     cellsRef.current = cells;
   }, [cells]);
-  const [phase, setPhase] = useState<SavePhase>('idle');
+  // A save is out: SAVE is busy (`BusyButton`) and the editor is frozen (below).
+  const [saving, setSaving] = useState(false);
   const [refused, setRefused] = useState<SaveRefusal>(null);
+  // A refused NAME shakes its field (AddressField's gesture), and the refusal's one note
+  // under the line is what the field and the canvas point at.
+  const [nameShake, setNameShake] = useState(false);
+  const refusalId = useId();
   // Where the canvas is told what an edit just changed: a changed cell POPS (`EditorCanvas`) —
   // and ONLY a changed one, so loading a stored drawing pops nothing.
   const fx = useRef<PaintFx | null>(null);
@@ -376,7 +394,11 @@ export default function Profile() {
   // sanitized on the way in (a no-op on anything the server stored, since it enforces the
   // same rule). The BASELINE is those same display values, or a value the editor cannot
   // reproduce would light SAVE up with nothing edited.
+  // Counted on every binding, so an answer can tell whether the fields are still the ones it
+  // opened on (see the read below).
+  const binds = useRef(0);
   const openOn = (storedName: string, storedAvatar: string | null, id: string) => {
+    binds.current += 1;
     const shownName = nameForEditor(storedName, id);
     const shownAvatar = avatarForEditor(storedAvatar, id);
     const decoded = decodeAvatar(shownAvatar);
@@ -387,8 +409,36 @@ export default function Profile() {
     // A cell's pop belongs to the edit that made it: re-bound fields start with none.
     fx.current?.clear();
     setLinePalette(null);
-    setBaseline({ name: shownName, avatar: shownAvatar });
+    const opened = { name: shownName, avatar: shownAvatar };
+    setBaseline(opened);
+    return opened;
   };
+
+  // THE MARK HANDED OVER by the masthead's tap (`markHandoff`), taken once as the editor opens:
+  // the box the mark stood in, and the face it drew. A note that cannot be that mark (off the
+  // screen, the wrong size) is dropped: the canvas then grows from its own centre. Taken before
+  // the read below, which opens the editor on that face at once.
+  const [handed, setHanded] = useState<HandedMark | null>(null);
+  const handedRef = useRef<HandedMark | null | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (handedRef.current !== undefined) return;
+    const note = takeMark();
+    const box = note?.rect;
+    const usable =
+      box !== undefined &&
+      box.width >= 20 &&
+      box.width <= 120 &&
+      Math.abs(box.width - box.height) < 1 &&
+      box.bottom > 0 &&
+      box.top < window.innerHeight &&
+      box.right > 0 &&
+      box.left < window.innerWidth;
+    handedRef.current = usable ? note : null;
+    setHanded(handedRef.current);
+  }, []);
+  // Whether the fields differ from what the editor opened on, for the read below: an answer
+  // that lands after an edit never re-binds the fields under it.
+  const dirtyRef = useRef(false);
 
   // Read this identity's stored profile, and hold the editor back until it answers
   // (see LoadState). A 404 is the answer "never customized" and lands READY on the
@@ -401,9 +451,29 @@ export default function Profile() {
   // actually changed. Deliberately keyed on [attempt] alone: an identity arriving under
   // an OPEN editor (a deploy elsewhere, another tab) must not reload the fields out from
   // under an edit in progress — the save path resolves the identity live.
-  useEffect(() => {
+  //
+  // OPENED FROM THE MASTHEAD, the editor opens AT ONCE on the face handed over with the mark
+  // (`markHandoff`) when it is this account's (`isAccountFace`) — the face the masthead just
+  // drew off the same route, or, on an account this tab minted, the seed's face its first
+  // profile is written as — so the canvas grows out of the mark the moment it lands, never
+  // parked over a canvas still waiting. The read then runs behind it: an answer naming the
+  // same face changes nothing; a different one RE-BINDS the fields while nothing has been
+  // edited, and leaves an edit standing. Until it has answered, `loadedFor` stays unset, so a
+  // SAVE is GUARDED (the stored profile read first, only the fields the player changed
+  // written) — the face handed over may be the assigned one a failed read stood in with, never
+  // proof of what is stored. A guarded save that LANDS first has bound the fields to what it
+  // stored: the read, sent before it, is older news and changes nothing.
+  //
+  // While this tab is writing an account's FIRST profile (`firstWritesSettled`), the read
+  // waits for it: until then the account stores no row, and the answer would re-bind the seed's
+  // face to the face of the new account id, which nobody chose.
+  // A layout effect, so a face in hand is drawn on the very first frame.
+  useLayoutEffect(() => {
     let cancelled = false;
     let epoch: string | null = null;
+    let opened: { name: string; avatar: string } | null = null;
+    let bound = 0;
+    const face = attempt === 0 ? (handedRef.current?.face ?? null) : null;
     setLoad('loading');
     (async () => {
       try {
@@ -420,14 +490,37 @@ export default function Profile() {
         epoch = identityEpochOf(held);
         const publicId = held.accountId;
         setAssignedFrom(publicId);
-        setLoadedFor(publicId);
+        if (face !== null && isAccountFace(face, publicId)) {
+          // The mark made explicit: the seed's face carries none of its own, and the account's
+          // id must never derive one in its place.
+          opened = openOn(face.name, face.avatar ?? defaultAvatar(face.publicId), publicId);
+          bound = binds.current;
+          setLoad('ready');
+        } else {
+          setLoadedFor(publicId);
+        }
+        await firstWritesSettled();
+        if (cancelled || identityEpoch() !== epoch) return;
         const stored = await readStoredProfile(publicId);
         if (cancelled || identityEpoch() !== epoch) return;
+        if (opened !== null) {
+          // A save landed first: the fields hold what it stored.
+          if (binds.current !== bound) return;
+          const same =
+            nameForEditor(stored?.name ?? '', publicId) === opened.name &&
+            avatarForEditor(stored?.avatar ?? null, publicId) === opened.avatar;
+          if (!same && dirtyRef.current) return;
+          if (!same) openOn(stored?.name ?? '', stored?.avatar ?? null, publicId);
+          setLoadedFor(publicId);
+          return;
+        }
         // Never customized (null): open on the assigned identity the boards already show
         // (see the gating note above) — the same READ halves, over an empty row.
         openOn(stored?.name ?? '', stored?.avatar ?? null, publicId);
         setLoad('ready');
       } catch {
+        // An editor opened on the face handed over stays open on it: the save is guarded.
+        if (opened !== null) return;
         // App remounts on an identity departure, but the fence is still explicit here:
         // a late malformed body/fetch failure from A must not turn B's fresh editor into a
         // failure if the component lifecycle and the answer cross in the same turn.
@@ -519,7 +612,7 @@ export default function Profile() {
       // Every changed cell pops, and every inked one throws its sparks.
       if (stroke === 1) commitCells(next, changed);
       else commitCells(next, [], changed);
-      setRefused(null);
+      setRefused(dropDrawingRefusal);
     },
     [commitCells],
   );
@@ -568,7 +661,7 @@ export default function Profile() {
     const target = rollShape(from);
     if (prefersReducedMotion()) {
       commitCells(target);
-      setRefused(null);
+      setRefused(dropDrawingRefusal);
       return;
     }
     setTool('dice');
@@ -595,7 +688,7 @@ export default function Profile() {
           if (step === DICE_LAND_STEPS) {
             setTool(null);
             setRollFrom(null);
-            setRefused(null);
+            setRefused(dropDrawingRefusal);
           }
         }, DICE_CHURN_MS + step * DICE_LAND_STEP_MS),
       );
@@ -608,7 +701,7 @@ export default function Profile() {
     if (toolRef.current !== null) return;
     if (prefersReducedMotion()) {
       commitCells(new Array<number>(AVATAR_CELLS).fill(0));
-      setRefused(null);
+      setRefused(dropDrawingRefusal);
       return;
     }
     setTool('clear');
@@ -619,7 +712,7 @@ export default function Profile() {
           if (gone.length > 0) commitCells(next, [], gone);
           if (step === CLEAR_STEPS) {
             setTool(null);
-            setRefused(null);
+            setRefused(dropDrawingRefusal);
           }
         }, step * CLEAR_STEP_MS),
       );
@@ -630,7 +723,6 @@ export default function Profile() {
   // phone, and the GUARDED success path re-binds every field to the merged server truth):
   // an edit made mid-save would be silently replayed over when the answer lands — the grid
   // visibly snapping back, SAVE greying out as though the change had been stored.
-  const saving = phase !== 'idle';
   // A tool playing or a save running: the canvas takes no paint and the controls wait. They
   // say so (`aria-disabled`) without leaving the keyboard's reach — a `disabled` control
   // drops the focus it holds to the page.
@@ -641,7 +733,7 @@ export default function Profile() {
     wipeKey.current += 1;
     setWipe({ palette, cells: churn ?? cells, key: wipeKey.current });
     setPalette(index);
-    setRefused(null);
+    setRefused(dropDrawingRefusal);
     window.clearTimeout(lineTimer.current);
     if (prefersReducedMotion()) return;
     setLinePalette((held) => held ?? palette);
@@ -655,6 +747,7 @@ export default function Profile() {
   // sent verbatim — so the two strings compared here are the same two strings the
   // route holds, and the re-baseline below is exact.
   const dirty = name !== baseline.name || encoded !== baseline.avatar;
+  dirtyRef.current = dirty;
   // What the canvas SHOWS: the drawing, or the dice's churn over it while it rolls. What the
   // swatches and the board line preview: the drawing, held on the one the roll started from
   // while the die is rolling.
@@ -726,28 +819,6 @@ export default function Profile() {
     };
   }, []);
 
-  // THE MARK HANDED OVER by the masthead's tap (`markHandoff`), taken once as the editor opens:
-  // while the stored profile is read the mark stays FROZEN in the very box it stood in, and the
-  // canvas then grows out of it. A note that cannot be that mark (off the screen, the wrong
-  // size) is dropped: the canvas then grows from its own centre.
-  const [handed, setHanded] = useState<HandedMark | null>(null);
-  const handedRef = useRef<HandedMark | null | undefined>(undefined);
-  useLayoutEffect(() => {
-    if (handedRef.current !== undefined) return;
-    const note = takeMark();
-    const box = note?.rect;
-    const usable =
-      box !== undefined &&
-      box.width >= 20 &&
-      box.width <= 120 &&
-      Math.abs(box.width - box.height) < 1 &&
-      box.bottom > 0 &&
-      box.top < window.innerHeight &&
-      box.right > 0 &&
-      box.left < window.innerWidth;
-    handedRef.current = usable ? note : null;
-    setHanded(handedRef.current);
-  }, []);
   // A read that FAILED lets the handed mark go: the box is the still slate now, and a RETRY
   // breathes the slate in the canvas's box and grows from its centre, like a direct load —
   // never the masthead's small mark back in the corner it stood in on a screen left behind.
@@ -791,7 +862,8 @@ export default function Profile() {
     }
   }, [cellPx, load]);
 
-  // A REFUSED save shakes the frame, in whole pixels (the ErrorScreen then says why).
+  // A REFUSED save shakes the frame, in whole pixels — the drawing's refusal at the canvas
+  // itself, a failed act before the ErrorScreen says why. (A refused NAME shakes the name.)
   useEffect(() => {
     const frame = frameRef.current;
     if (refusedShake === 0 || !frame || prefersReducedMotion() || typeof frame.animate !== 'function') return;
@@ -804,6 +876,11 @@ export default function Profile() {
     frame.animate(frames, { duration: REFUSE_SHAKE.length * REFUSE_SHAKE_FRAME_MS });
   }, [refusedShake]);
 
+  // A refused DRAWING stands until the drawing changes (a refused name, until it is edited).
+  useEffect(() => {
+    setRefused(dropDrawingRefusal);
+  }, [cells]);
+
   const onSave = useCallback(async () => {
     // The last door the rule stands in: a composition still OPEN when SAVE is tapped
     // would leave `name` holding its raw mirror, so it lands here too. A no-op on every
@@ -811,31 +888,34 @@ export default function Profile() {
     // editor differing from what it just stored.
     const clean = sanitizeName(name);
     setName(clean);
-    setPhase('saving');
+    setSaving(true);
     setRefused(null);
-    const started = Date.now();
-    // The outcome is decided while the dots run; the phases below only pace how the
-    // button tells it — then the error surface says it (#216 rework), where a refusal
-    // used to be an inline line.
+    // The outcome lands as soon as it is decided: the foil stamp; a moderation VERDICT
+    // answered at the editor (the refused field shakes, one note under the name's line); or,
+    // for a save that did not land, the error surface.
     let outcome: SaveRefusal = null;
     let epoch: string | null = null;
     // SAVING IS A DEPLOY BUTTON (#216 trigger rework, user-decided 2026-08-24): a
     // tokenless editor creates the account on this very tap, then saves into it — one
-    // tap, the button's own dots for both legs. A deploy that fails saves nothing and
-    // created nothing; TRY AGAIN re-runs the whole tap.
+    // tap, the button busy for both legs. A deploy that fails saves nothing and
+    // created nothing; SAVE pressed again re-runs the whole tap.
     let current = deviceIdentity();
     // The header's face (`useOwnFace`) reads the profile again once this save has written
     // it — and when this tap MINTS the account, it keeps the seed's face until then rather
     // than reading a profile that does not exist yet (`state/ownFace.ts`).
     const release = current === null ? holdOwnFace() : null;
     let written = false;
+    // The account this tap acquired, with the background deploy muted for it.
+    let acquired: DeviceIdentity | null = null;
     try {
       if (current === null) {
         try {
-          // The ONE acquisition the locally-decided username must NOT deploy into: this tap
-          // carries the player's OWN typed fields a beat later, so letting the placeholder
-          // race it would either lose the save or store a name nobody chose.
+          // The ONE acquisition the background deploy stands down for: this tap stores the
+          // fields on screen a beat later — the seed's pair where the player left them
+          // untouched (`guardedSaveBody`) — so nothing may race it. A save that then writes
+          // nothing hands the account back to the deploy (below).
           current = await withoutLocalIdentityDeploy(() => ensureDeviceIdentity());
+          acquired = current;
         } catch {
           current = null;
           outcome = 'account';
@@ -858,14 +938,18 @@ export default function Profile() {
         let fields: { name: string; avatar: string } | null = null;
         if (guarded) {
           try {
+            // A first profile still being written — the deploy of an account this tab minted
+            // from another button — is not yet what the account stores. (A tap that minted the
+            // account holds that count itself, and writes the first profile.)
+            if (release === null) await firstWritesSettled();
             const stored = await readStoredProfile(current.accountId);
             if (identityEpoch() !== epoch) return;
-            // Never customized (null): the intended save applies in full.
+            // Never customized (null, or the placeholder's own row): the shown pair.
             fields = guardedSaveBody({ name: clean, avatar: encoded }, baseline, assignedFrom, stored);
           } catch {
             if (identityEpoch() !== epoch) return;
             // What the account holds is UNKNOWN — refusing beats risking the wipe the
-            // guard exists to prevent. TRY AGAIN re-runs the whole tap.
+            // guard exists to prevent. SAVE pressed again re-runs the whole tap.
             outcome = 'error';
           }
         } else {
@@ -915,51 +999,56 @@ export default function Profile() {
         }
       }
     } finally {
+      // An account this tap acquired and wrote nothing into (a refusal, a failure) is owed
+      // the placeholder the player was wearing: the deploy it muted runs now — first, so
+      // the face is never left with no write held.
+      if (acquired !== null && !written && identityEpoch() === identityEpochOf(acquired)) {
+        void deployLocalIdentity(acquired);
+      }
       if (release) release(written);
       else if (written) ownProfileWritten();
     }
-    await sleep(Math.max(0, SAVE_DOTS_MIN_MS - (Date.now() - started)));
-    if (epoch !== null && identityEpoch() !== epoch) return;
     setRefused(outcome);
-    // The landing, told on the canvas (visual only): a save that LANDED is stamped in foil, a
-    // refused one shakes the card.
+    // The landing, told where it belongs (visual only): a save that LANDED is stamped in foil
+    // on the canvas; a refused NAME shakes the name; any other refusal shakes the card.
     if (written && outcome === null) setStamp((n) => n + 1);
-    else if (outcome !== null) setRefusedShake((n) => n + 1);
-    setPhase('restoring');
-    await sleep(SAVE_RESTORE_MS);
-    if (epoch !== null && identityEpoch() !== epoch) return;
-    setPhase((held) => (held === 'restoring' ? 'idle' : held));
+    else if (outcome === 'name_rejected') {
+      setNameShake(false);
+      requestAnimationFrame(() => setNameShake(true));
+    } else if (outcome !== null) setRefusedShake((n) => n + 1);
+    setSaving(false);
   }, [name, encoded, assignedFrom, baseline, loadedFor]);
 
-  // What the error surface says for each outcome (#216 rework, replacing the inline
-  // status line): the moderation refusals explain themselves and offer no retry — asking
-  // again with the same value cannot help — while a transport failure and a failed deploy
-  // both carry TRY AGAIN, which re-runs the whole single-tap save.
+  // What a save that did not land puts on the error surface (#216 rework): a failed deploy or
+  // a transport failure — the act is pressed again from here, SAVE still lit.
   const saveError =
+    refused === 'account'
+      ? { title: t(lang, 'failedAccount'), note: t(lang, 'failedAccountNote') }
+      : refused === 'error'
+        ? { title: t(lang, 'profileSaveFailed'), note: t(lang, 'failedSaveNote') }
+        : null;
+  // What the editor answers itself: the moderation VERDICTS, one note under the name's line
+  // until the refused value is edited.
+  const refusalNote =
     refused === 'name_rejected'
-      ? { title: t(lang, 'profileNameRejected'), note: t(lang, 'profileNameRejectedNote') }
+      ? t(lang, 'profileNameRejectedNote')
       : refused === 'avatar_rejected'
-        ? { title: t(lang, 'profileAvatarRejected'), note: t(lang, 'profileAvatarRejectedNote') }
-        : refused === 'account'
-          ? { title: t(lang, 'failedAccount'), note: t(lang, 'failedAccountNote') }
-          : refused === 'error'
-            ? { title: t(lang, 'profileSaveFailed'), note: t(lang, 'failedSaveNote') }
-            : null;
+        ? t(lang, 'profileAvatarRejectedNote')
+        : null;
 
   // How others will see the player: the line every board draws. A board wears the placeholder
   // ink only for a STORED empty name — on an account, the field reading that account's own
   // pseudonym (the READ half), which a save stores as empty again. A TOKENLESS device's name
   // is dressed as a stored one: a deployed-unsaved account that was deployed from any other
   // button stores the placeholder the device was showing as its first profile
-  // (`localIdentityDeploy`), and the two must show the same screen. THIS screen's SAVE is the
-  // one deploy that bypasses that (`withoutLocalIdentityDeploy` in `onSave`): an UNTOUCHED
-  // placeholder name stores as the empty name, so a tokenless player's first SAVE leaves them
-  // wearing their new account's own pseudonym, in the placeholder ink.
-  const anon = name === '' || (loadedFor !== null && name === anonName(loadedFor));
+  // (`localIdentityDeploy`), and the two must show the same screen — this screen's own SAVE
+  // stores that same placeholder where it was left untouched (`guardedSaveBody`), so a
+  // tokenless player's first SAVE keeps the name and the mark they were wearing.
+  const anon = name === '' || (identity !== null && assignedFrom === identity.accountId && name === anonName(assignedFrom));
   // An emptied field shows what a board would print in its place: the assigned pseudonym, muted.
   const shownWhenEmpty = assignedFrom ? anonName(assignedFrom) : t(lang, 'profileNamePlaceholder');
   const empty = cells.every((value) => value === 0);
-  const canSave = phase === 'idle' && dirty && tool === null;
+  const canSave = !saving && dirty && tool === null;
 
   // THE PALETTES are ONE choice (a radio group): Tab lands on the one in hand, the arrows
   // choose — so the keyboard's brackets and the chosen swatch's corners frame the same tile.
@@ -1089,17 +1178,15 @@ export default function Profile() {
           </div>
         </div>
 
+        {/* The read that failed: the still checker over the canvas says "unknown", and under
+            it the note and RETRY say what was lost and ask again. */}
         {load === 'failed' && (
-          <div className="profile-retry">
-            <p className="sr-only" role="status">
-              {t(lang, 'failedProfile')}
-            </p>
-            {/* The read that failed, asked again: the quiet word in a tappable thing's
-                brackets — the still checker over the canvas already says "unknown". */}
-            <button type="button" className="quiet-btn" onClick={() => setAttempt((n) => n + 1)}>
-              {t(lang, 'retry')}
-            </button>
-          </div>
+          <QuietFailure
+            className="profile-retry"
+            lang={lang}
+            line={t(lang, 'failedProfile')}
+            onRetry={() => setAttempt((n) => n + 1)}
+          />
         )}
 
         {load === 'ready' && (
@@ -1123,13 +1210,18 @@ export default function Profile() {
               <LineMark key={`hop${stamp}`} avatar={encodeAvatar(linePalette ?? palette, shownPreview)} stamp={stamp} />
               <input
                 ref={nameRef}
-                className={`profile-name${anon ? ' anon' : ''}`}
+                className={`profile-name${anon ? ' anon' : ''}${refused === 'name_rejected' ? ' refused' : ''}${
+                  nameShake ? ' invalid' : ''
+                }`}
                 type="text"
                 value={name}
                 readOnly={saving}
                 maxLength={NAME_MAX_LENGTH}
                 placeholder={shownWhenEmpty}
                 aria-label={t(lang, 'profileNamePlaceholder')}
+                aria-invalid={refused === 'name_rejected' || undefined}
+                aria-describedby={refusalNote !== null ? refusalId : undefined}
+                onAnimationEnd={() => setNameShake(false)}
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
@@ -1144,40 +1236,33 @@ export default function Profile() {
                 onChange={(e) => {
                   if (composingRef.current) setName(e.target.value);
                   else applyName(e.target.value, e.target.selectionStart);
-                  setRefused(null);
+                  // A refused name stands until it is edited; a refused drawing, until the
+                  // drawing is.
+                  setRefused((held) => (held === 'avatar_rejected' ? held : null));
                 }}
               />
+              {/* A moderation refusal's ONE note, under the name's line on the air above SAVE
+                  (out of the flow: nothing moves when it speaks). A live region that exists
+                  before it does. */}
+              <p id={refusalId} className="account-note danger profile-refusal" role="status">
+                {refusalNote}
+              </p>
             </div>
 
             {/* Nothing to save = unavailable — the board itself says whether there is a
-                change. While saving, the label rolls out the bottom and the dot loader drops
-                in from the top; the restore beat rolls the label back up — and a save that
-                landed STAMPS the canvas in foil. */}
-            <button
-              type="button"
-              className={`mix-btn profile-save${phase !== 'idle' ? ` ${phase}` : ''}`}
+                change. While saving, the button is busy, and a save that landed STAMPS the
+                canvas in foil. */}
+            <BusyButton
+              className="mix-btn profile-save"
+              lang={lang}
+              busy={saving}
               aria-disabled={!canSave || undefined}
-              aria-busy={phase === 'saving'}
               onClick={() => {
                 if (canSave) void onSave();
               }}
             >
-              <span
-                className={`save-label${phase === 'saving' ? ' out' : phase === 'restoring' ? ' back' : ''}`}
-              >
-                {t(lang, 'profileSave')}
-              </span>
-              {phase !== 'idle' && (
-                <span
-                  className={`save-dots${phase === 'restoring' ? ' out' : ''}`}
-                  aria-hidden="true"
-                >
-                  <i />
-                  <i />
-                  <i />
-                </span>
-              )}
-            </button>
+              {t(lang, 'profileSave')}
+            </BusyButton>
             {/* The save's failure, on the app's error surface (#216 rework). */}
             {saveError && (
               <ErrorScreen
@@ -1190,8 +1275,9 @@ export default function Profile() {
           </>
         )}
       </div>
-      {/* The mark handed over by the masthead, FROZEN where it stood while the stored profile
-          is read — the canvas grows out of this very box once it has answered. */}
+      {/* The mark's box handed over by a masthead that had no face of the account's to hand
+          (its read still out), FROZEN where it stood while the stored profile is read — the
+          canvas grows out of this very box once it has answered. */}
       {load === 'loading' && handed && (
         <span
           className="profile-handed"
@@ -1203,11 +1289,7 @@ export default function Profile() {
           }}
           aria-hidden="true"
         >
-          {handed.avatar ? (
-            <Avatar avatar={handed.avatar} size={Math.round(handed.rect.width)} sharp />
-          ) : (
-            <StatSlot phase="loading" />
-          )}
+          <StatSlot phase="loading" />
         </span>
       )}
     </>

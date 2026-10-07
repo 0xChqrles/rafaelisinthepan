@@ -156,10 +156,12 @@ export class WebStack extends Stack {
     // The card pages get their OWN headers policy, not the SPA's: the /s page redirects humans
     // with a tiny inline <script>, which the SPA's `script-src 'self'` CSP would block. This
     // trivial, server-rendered redirect stub (all values escaped/sanitized) has no injection
-    // surface, so `script-src 'unsafe-inline'` is fine here; HSTS/nosniff/frame stay on.
+    // surface, so `script-src 'unsafe-inline'` is fine here; HSTS/nosniff/frame stay on. Its
+    // one inline <style> paints the app's dark ground (backend `ogCard.ts` `redirectPage`),
+    // so a paint before the redirect is never white: `style-src 'unsafe-inline'`, same reason.
     const cardHeaders = new cloudfront.ResponseHeadersPolicy(this, 'CardHeaders', {
       responseHeadersPolicyName: 'WhippinCardHeaders',
-      comment: 'Share card (#8): HSTS + nosniff/frame; CSP permits the /s inline redirect.',
+      comment: 'Share card (#8): HSTS + nosniff/frame; CSP permits the inline redirect and ground.',
       // The API answers these with CloudFront's Server-Timing (one fill's timings); this
       // distribution caches them a year, so it would replay that fill to every viewer.
       removeHeaders: ['Server-Timing'],
@@ -176,7 +178,7 @@ export class WebStack extends Stack {
         },
         frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: true },
         contentSecurityPolicy: {
-          contentSecurityPolicy: "default-src 'none'; script-src 'unsafe-inline'",
+          contentSecurityPolicy: "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'",
           override: true,
         },
       },

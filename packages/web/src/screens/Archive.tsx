@@ -4,7 +4,6 @@ import { dateForDayNumber } from '@whippin/shared';
 import PuzzleTitle from '../components/PuzzleTitle';
 import { HeaderLeft } from '../components/TopBar';
 import BoardTabs, { tabIds } from '../components/BoardTabs';
-import Button from '../components/Button';
 // (For its side effect: the dissolve masks the hold's note comes in through.)
 import '../components/bayerTiles';
 import MonthRaster from '../components/calendar/MonthRaster';
@@ -26,7 +25,7 @@ import { lastMonth, rememberMonth } from '../components/calendar/memory';
 import { monthTabs } from '../components/calendar/months';
 import useSwipe from '../hooks/useSwipe';
 import useToday from '../hooks/useToday';
-import { prefersReducedMotion } from '../hooks/useScramble';
+import { refuseShake } from '../components/refuseShake';
 import { navigate } from '../routing';
 import { pathForDay, type LangCode } from '../langs';
 import { FIRST_PUZZLE_DATE } from '../config';
@@ -56,15 +55,6 @@ function firstDayOfWeek(lang: string): number {
 // day never flashes it — and a finger travelling this far is a scroll or a swipe, not a press.
 const PRESS_DELAY_MS = 64;
 const PRESS_SLOP_PX = 8;
-// A swipe past either end of the months answers like an invalid guess: the chip shakes.
-const EDGE_SHAKE: Keyframe[] = [
-  { translate: '-2px 0', offset: 0, easing: 'steps(1, end)' },
-  { translate: '2px 0', offset: 0.25, easing: 'steps(1, end)' },
-  { translate: '-2px 0', offset: 0.5, easing: 'steps(1, end)' },
-  { translate: '0 0', offset: 0.75 },
-  { translate: '0 0', offset: 1 },
-];
-const EDGE_SHAKE_MS = 160;
 // Before the column is measured (the one render before the layout effect, never painted): a
 // phone's month for the buttons, and no raster yet.
 const FIRST_GEOMETRY = calGeometry(362, 844, true);
@@ -242,11 +232,8 @@ export default function Archive({ lang }: { lang: LangCode }) {
     rememberMonth(lang, activeDay, ym);
     release();
   };
-  const shakeChip = () => {
-    if (prefersReducedMotion()) return;
-    const ink = rootRef.current?.querySelector<HTMLElement>('.board-tabs-ink');
-    ink?.animate?.(EDGE_SHAKE, { duration: EDGE_SHAKE_MS });
-  };
+  // A swipe past either end of the months answers like an invalid guess: the chip shakes.
+  const shakeChip = () => refuseShake(rootRef.current?.querySelector('.board-tabs-ink'));
   const { handlers: swipe, swiped } = useSwipe((step) => {
     const next = shown + step;
     if (next < 0 || next >= tabs.length) shakeChip();
@@ -351,28 +338,30 @@ export default function Archive({ lang }: { lang: LangCode }) {
       </div>
 
       {/* THE HOLD: a read that could not be had says so, under the grid, with the one thing
-          that can help — asking again. LOUD like the round's own load failure and for the same
-          reason: there is no local history left to quietly fall back to. **It speaks whether
-          or not a month is already drawn** (corrected on review): a REVALIDATION deliberately
-          keeps the cached month on screen, so gating it on there being nothing to show meant
-          that after one good visit every later failure was silent. What CHANGES with cached
-          data is the claim: nothing loaded is a failure to load, in the danger ink; an older
-          month still on screen is a note about it, in the plain status ink. Always reserved,
-          so nothing above it moves when it speaks — and its note in a LIVE REGION mounted
-          before it, so the note is heard when it comes (and again on a second failure); RETRY
-          stands beside it, outside the region, so the region says the note alone. */}
+          that can help — asking again. The keys above already fail in place (the still
+          checker), so the note is QUIET, the house's failed-read note (`QuietFailure`'s line
+          over its quiet RETRY): there is no local history left to fall back to, and the still
+          keys say "unknown" without an alarm. **It speaks whether or not a month is already
+          drawn** (corrected on review): a REVALIDATION deliberately keeps the cached month on
+          screen, so gating it on there being nothing to show meant that after one good visit
+          every later failure was silent. What CHANGES with cached data is the claim: nothing
+          loaded is a read that failed; an older month still on screen is a note that it may
+          not be up to date. Always reserved, so nothing above it moves when it speaks — and its
+          note in a LIVE REGION mounted before it, so the note is heard when it comes (and again
+          on a second failure); RETRY stands under it, outside the region, so the region says
+          the note alone. */}
       <div ref={holdRef} className={`cal-hold${G.gridW < NOTE_NARROW_BELOW_PX ? ' narrow' : ''}`}>
         <div role="status">
           {failed && (
-            <p className={`cal-note cal-hold-in${history.days === null ? ' error' : ''}`}>
+            <p className="quiet-failure-line cal-hold-in">
               {t(lang, history.days === null ? 'failedHistory' : 'staleHistory')}
             </p>
           )}
         </div>
         {failed && (
-          <Button variant="secondary" className="cal-hold-in" onClick={retry}>
+          <button type="button" className="quiet-btn cal-hold-in" onClick={retry}>
             {t(lang, 'retry')}
-          </Button>
+          </button>
         )}
       </div>
     </div>

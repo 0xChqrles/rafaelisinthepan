@@ -1,6 +1,7 @@
-// IS ANYBODY WATCHING a raster's clock (the podium's, the archive's month, the account's record):
+// IS ANYBODY WATCHING a raster's clock (the podium's, the archive's month, the account's record,
+// an article figure's loop):
 // a scene at rest moves only its loop (a foil, a flame, a read wave), and that loop rests while
-// nobody can SEE it — its canvas scrolled out of view, the tab hidden. `wake` is told whenever
+// nobody can SEE it — what draws it scrolled out of view, the tab hidden. `wake` is told whenever
 // the answer may have turned to yes (back in view, the tab shown): each clock keeps its own tick
 // and decides what a yes starts.
 //
@@ -17,7 +18,7 @@ export interface RasterWatch {
   stop: () => void;
 }
 
-export function watchRaster(canvas: HTMLCanvasElement, wake: () => void): RasterWatch {
+export function watchRaster(el: Element, wake: () => void): RasterWatch {
   let inView = true;
   const io =
     typeof IntersectionObserver !== 'undefined'
@@ -27,7 +28,7 @@ export function watchRaster(canvas: HTMLCanvasElement, wake: () => void): Raster
           wake();
         })
       : null;
-  io?.observe(canvas);
+  io?.observe(el);
   document.addEventListener('visibilitychange', wake);
   return {
     seen: () => inView && !document.hidden,

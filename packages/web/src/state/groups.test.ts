@@ -92,6 +92,26 @@ describe('group refreshes', () => {
     await vi.waitFor(() => expect(useGroupsStore.getState()).toEqual({ phase: 'ready', groups: [] }));
   });
 
+  it('sends a FRESH read past a flight already out, and answers whether its own read landed', async () => {
+    // A read out before a write may describe the list as it stood before it.
+    const before = deferred<ReturnType<typeof response>>();
+    const after = deferred<ReturnType<typeof response>>();
+    mocks.post.mockReturnValueOnce(before.promise).mockReturnValueOnce(after.promise);
+    const early = loadGroups();
+    const fresh = loadGroups({ fresh: true });
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    after.resolve(response([group(['A', 'B'])]));
+    expect(await fresh).toBe(true);
+    // The read it overtook publishes nothing, and says so.
+    before.resolve(response([group(['A'])]));
+    expect(await early).toBe(false);
+    expect(useGroupsStore.getState()).toEqual({ phase: 'ready', groups: [group(['A', 'B'])] });
+    // A read that fails answers false.
+    mocks.post.mockRejectedValueOnce(new Error('offline'));
+    expect(await loadGroups({ fresh: true })).toBe(false);
+    expect(useGroupsStore.getState().phase).toBe('failed');
+  });
+
   it('does not make a private request without an identity', () => {
     mocks.identity = null;
     loadGroups();

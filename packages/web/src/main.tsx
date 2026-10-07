@@ -13,6 +13,8 @@ import { installIdentityScope } from './state/identityScope';
 import { installLocalIdentityDeploy } from './state/localIdentityDeploy';
 import { installVersionCheck } from './versionCheck';
 import { installKeylog } from './keylog';
+import { t } from './i18n';
+import { isLang, resolveUiLang, type LangCode } from './langs';
 import { installTheme } from './theme';
 import './index.css';
 
@@ -91,19 +93,36 @@ async function mount(): Promise<void> {
   );
 }
 
+// The failure's language: the one the URL names (`/fr/…`), else the link's `?lang=`, else
+// the browser's — never the stored preference, which lives behind the very store that may be
+// what failed.
+function startupLang(): LangCode {
+  const named = window.location.pathname.split('/')[1];
+  return isLang(named) ? named : resolveUiLang(window.location.search, null, navigator.language);
+}
+
 mount().catch((error: unknown) => {
   // A startup that died must SAY so: `mount` is asynchronous, so an uncaught rejection
   // anywhere in it (a persistence blob a newer build wrote, an IndexedDB fallback that
   // itself failed) is otherwise a permanently blank page with nothing in the console's
-  // place. Plain DOM, because React never mounted — and unlocalized, because the language
-  // preference lives behind the very store that may be what failed. Reloading is the one
-  // action that can help.
+  // place. Plain DOM, because React never mounted, in the app's quiet dress: one muted
+  // sentence over RELOAD, the bracketed quiet word — reloading is the one act that can help.
   console.error('Failed to start the app', error);
   const root = document.getElementById('root');
-  if (root !== null && root.childElementCount === 0) {
-    const message = document.createElement('p');
-    message.textContent = 'SOMETHING WENT WRONG — RELOAD TO TRY AGAIN';
-    message.setAttribute('style', 'margin: 40vh auto 0; padding: 0 24px; text-align: center;');
-    root.append(message);
-  }
+  if (root === null || root.childElementCount !== 0) return;
+  const lang = startupLang();
+  document.documentElement.lang = lang;
+  const failed = document.createElement('div');
+  failed.className = 'startup-failed';
+  failed.setAttribute('role', 'alert');
+  const note = document.createElement('p');
+  note.className = 'startup-failed-note';
+  note.textContent = t(lang, 'startupFailed');
+  const reload = document.createElement('button');
+  reload.type = 'button';
+  reload.className = 'quiet-btn';
+  reload.textContent = t(lang, 'reload');
+  reload.addEventListener('click', () => window.location.reload());
+  failed.append(note, reload);
+  root.append(failed);
 });

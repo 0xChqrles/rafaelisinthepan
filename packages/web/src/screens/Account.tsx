@@ -38,19 +38,22 @@
 // face either way; the STATS are zero for a tokenless device by the same fact that makes
 // them zero for a deployed one that has not played (#216: no token, no rows, no request);
 // the DEVICES still appear only once SAVED, because an unlinked account can only ever hold
-// the one device reading the screen; and the action holds its box while the summary is out
-// rather than claiming UNSAVED before it knows (#211's explicit-loading rule). SAVE is live
-// either way — its tap leads to the flow whose CONTINUE is the account-deploying trigger.
+// the one device reading the screen; and the action's room is HELD as stippled slate while the
+// summary is out rather than claiming UNSAVED before it knows (#211's explicit-loading rule).
+// SAVE is live either way — its tap leads to the flow whose CONTINUE is the account-deploying
+// trigger.
 
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore, type CSSProperties } from 'react';
 import type { RecordSize } from '../components/record/scene';
 import { defaultAvatar } from '@whippin/shared';
-import { faceSettled, shownFace, useOwnFace } from '../components/AccountFace';
+import { shownFace, useOwnFace } from '../components/AccountFace';
 import { StatSlot } from '../components/AccountStats';
+import { SKELETON_WAIT_MS } from '../components/bayerTiles';
 import Avatar from '../components/Avatar';
 import AddressLine from '../components/AddressLine';
 import DeviceList from '../components/DeviceList';
 import LangTitle from '../components/LangTitle';
+import QuietFailure from '../components/QuietFailure';
 import Record from '../components/record/Record';
 import { handOffMark } from '../components/markHandoff';
 import { HeaderLeft } from '../components/TopBar';
@@ -64,6 +67,7 @@ import {
 } from '../langs';
 import { navigate } from '../routing';
 import { loadAccountSummary, useAccountSummary } from '../state/account';
+import { retryOwnFace } from '../state/ownFace';
 import { useAccountStats, useAccountWeek } from '../state/history';
 import useToday from '../hooks/useToday';
 import useUiLang from '../hooks/useUiLang';
@@ -105,8 +109,12 @@ export default function Account() {
   const face = shownFace(faceState);
   // The masthead's placeholders breathe only while the read is OUT. A deleted account
   // (#204's 410) settles with no face, and a shimmer over it promises an arrival that is
-  // not coming — that device is one private call away from the signed-out screen.
-  const facePending = !faceSettled(faceState);
+  // not coming — that device is one private call away from the signed-out screen: its mark
+  // is the GHOST, and the pencil goes (there is no profile left to edit). A read that FAILED
+  // is never answered with a stranger's face: the mark and the name rest on the still
+  // stipple, and the mark's held box is the tap that asks again (the record's own move).
+  const faceFailed = faceState === 'failed';
+  const faceGone = faceState === 'gone';
   // The day the streak is measured against, off the app's ONE day signal — which re-fires
   // at the 22:00 reset, so a screen left open overnight cannot keep showing an expired one.
   const today = useToday();
@@ -128,6 +136,10 @@ export default function Account() {
   // flash SAVE and swap it for the address on every visit of a linked player.
   const known = identity === null || phase === 'ready' || summary !== null;
   const accountUnknown = phase === 'failed' && summary === null;
+  // A READ THAT FAILED IS SAID ONCE, in place: the record's in its flame's room, the summary's
+  // in the call's own box — and both at once as one line there (one connection lost, one
+  // RETRY).
+  const recordFailed = stats.phase === 'failed';
   // THE MASTHEAD'S WORDS LAND ONCE, with both their facts: the name (the face) and whether an
   // address goes under it (the summary — or its failed read, which leaves the name alone). The
   // row is centred on the mark either way — the name alone, or name and address as one block
@@ -138,15 +150,15 @@ export default function Account() {
   const words = face !== null && (known || phase === 'failed' || landedFor.current === face.publicId);
   if (words) landedFor.current = face.publicId;
 
-  // THE DOOR TO THE EDITOR (the pencil key) hands the MARK's on-screen box over, so the
-  // editor's canvas grows out of exactly where the mark stood (`markHandoff`).
+  // THE DOOR TO THE EDITOR (the pencil key) hands the MARK over — its on-screen box and the face
+  // it drew — so the editor opens at once on that face and its canvas grows out of exactly where
+  // the mark stood (`markHandoff`).
   const markRef = useRef<HTMLSpanElement>(null);
-  const handedAvatar = face ? (face.avatar ?? defaultAvatar(face.publicId)) : null;
   const openEditor = useCallback(() => {
     const rect = markRef.current?.getBoundingClientRect();
-    if (rect && rect.width > 0) handOffMark(rect, handedAvatar);
+    if (rect && rect.width > 0) handOffMark(rect, face);
     navigate(PROFILE_PATH);
-  }, [handedAvatar]);
+  }, [face]);
 
   return (
     <>
@@ -171,15 +183,30 @@ export default function Account() {
           <span ref={markRef} className="account-id-mark">
             {face ? (
               <Avatar avatar={face.avatar ?? defaultAvatar(face.publicId)} size={MARK_PX} sharp />
+            ) : faceFailed ? (
+              <button
+                type="button"
+                className="account-id-retry"
+                aria-label={`${t(lang, 'failedProfile')} — ${t(lang, 'retry')}`}
+                onClick={retryOwnFace}
+              >
+                <StatSlot phase="failed" />
+              </button>
+            ) : faceGone ? (
+              <span className="account-id-ghost ghost-mark" aria-hidden="true" />
             ) : (
-              facePending && <StatSlot phase="loading" />
+              <StatSlot phase="loading" />
             )}
           </span>
           <span className="account-id-text">
             {words ? (
               <span className="account-id-name">{face.name}</span>
+            ) : faceFailed ? (
+              <span className="account-id-name-slot failed" aria-hidden="true">
+                <StatSlot phase="failed" />
+              </span>
             ) : (
-              <span className={`account-id-name-slot${facePending || face ? '' : ' gone'}`} aria-hidden="true" />
+              <span className={`account-id-name-slot${faceGone ? ' gone' : ''}`} aria-hidden="true" />
             )}
             {/* The saved ADDRESS (2026-09-05, in the place the account's age held): a fact,
                 no control — an account carries at most one address and the server refuses a
@@ -192,9 +219,10 @@ export default function Account() {
           </span>
           <button
             type="button"
-            className="account-edit"
+            className={`account-edit${faceGone ? ' gone' : ''}`}
             aria-label={t(lang, 'boardEdit')}
             title={t(lang, 'boardEdit')}
+            disabled={faceGone}
             onClick={openEditor}
           >
             <PencilIcon className="ui-icon" aria-hidden="true" />
@@ -208,23 +236,17 @@ export default function Account() {
           lang={lang}
           stats={stats.phase === 'ready' ? stats : null}
           week={stats.phase === 'ready' ? week : null}
-          phase={stats.phase === 'ready' ? 'ready' : stats.phase === 'failed' ? 'failed' : 'loading'}
+          phase={stats.phase === 'ready' ? 'ready' : recordFailed ? 'failed' : 'loading'}
           size={size}
-          onRetry={stats.retry}
+          // The RECORD's read failed (and only it): its boxes stand still, and this says so in
+          // the flame's room over them, with its RETRY — adding no height, so the call still
+          // stands on the screen.
+          failure={
+            recordFailed && !accountUnknown ? (
+              <QuietFailure lang={lang} line={t(lang, 'failedRecord')} onRetry={stats.retry} />
+            ) : null
+          }
         />
-
-        {/* What the account is SAVED as could not be read: said quietly, and the quiet word in
-            a tappable thing's brackets asks again (the call itself waits — it may not apply). */}
-        {phase === 'failed' && (
-          <div className="account-load-error">
-            <p className="account-load-error-line" role="status">
-              {t(lang, 'failedAccountLoad')}
-            </p>
-            <button type="button" className="quiet-btn" onClick={() => loadAccountSummary(true)}>
-              {t(lang, 'retry')}
-            </button>
-          </div>
-        )}
 
         {/* DEVICES — after the record, ONLY once SAVED: an unlinked account holds exactly the
             device reading this screen, and a list of yourself is noise. No caption: the
@@ -235,17 +257,49 @@ export default function Account() {
             sits (the tutorial's MIX, the board's INVITE, both gates' PLAY), in exactly
             their geometry. Only while UNSAVED: saved, there is nothing left to call for. The
             ONE line that earns its place stands over it: why a game wants an email is
-            genuinely not obvious, and it is said once, where the decision is made. */}
-        {known && !accountUnknown && saved === null && (
-          <div className="account-cta">
-            <p className="account-note caption">{t(lang, 'accountSaveNote')}</p>
-            <button
-              type="button"
-              className="mix-btn"
-              onClick={() => navigate(ACCOUNT_EMAIL_PATH)}
-            >
-              {t(lang, 'accountSave')}
-            </button>
+            genuinely not obvious, and it is said once, where the decision is made.
+            WHILE THE SUMMARY IS OUT its room is HELD at its final size — the note's lines as
+            stippled rails (its words laid out unseen, so each rail is its line's length), the
+            button's box as the house hold — so the footnote under it never moves when the call
+            lands; the call then takes the hold's own box in place. */}
+        {/* What the account is SAVED as could not be read: the call's own box holds the note,
+            and RETRY stands in the call's place (the call itself waits — it may not apply).
+            With the record's read failed too, ONE line for the page and ONE RETRY asking both
+            again. */}
+        {accountUnknown && (
+          <div className="account-cta failed">
+            <QuietFailure
+              lang={lang}
+              line={t(lang, recordFailed ? 'failedAccountAll' : 'failedAccountSave')}
+              onRetry={() => {
+                if (recordFailed) stats.retry();
+                loadAccountSummary(true);
+              }}
+            />
+          </div>
+        )}
+        {!accountUnknown && saved === null && (
+          // (The hold comes in only once the summary has been out SKELETON_WAIT_MS: a saved
+          // account's answer, which takes the call away, mostly lands before it.)
+          <div
+            className={`account-cta${known ? '' : ' holding'}`}
+            aria-hidden={known ? undefined : true}
+            style={known ? undefined : ({ '--wait': `${SKELETON_WAIT_MS}ms` } as CSSProperties)}
+          >
+            <p className="account-note caption">
+              {known ? t(lang, 'accountSaveNote') : <span className="account-cta-rail">{t(lang, 'accountSaveNote')}</span>}
+            </p>
+            {known ? (
+              <button
+                type="button"
+                className="mix-btn"
+                onClick={() => navigate(ACCOUNT_EMAIL_PATH)}
+              >
+                {t(lang, 'accountSave')}
+              </button>
+            ) : (
+              <span className="mix-btn link-hold waiting late">{t(lang, 'accountSave')}</span>
+            )}
           </div>
         )}
 

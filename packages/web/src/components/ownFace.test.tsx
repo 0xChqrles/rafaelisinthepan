@@ -9,8 +9,18 @@
 //   - a SAVE re-reads the face, the previous one standing while the read is out;
 //   - a FAILED read changes nothing already drawn, and a minted account whose read-back
 //     fails keeps the seed's face;
-//   - an account that is GONE (410) settles on no face: nothing masks it.
-import { act } from 'react';
+//   - a FIRST read that fails, with no face drawn, settles `'failed'` — never the account
+//     id's assigned stranger — and asking again (`retryOwnFace`) reads again, the box
+//     breathing, then lands the face or rests again;
+//   - an account that is GONE (410) settles on no face: nothing masks it;
+//   - it is ONE read every surface shares: two surfaces cost one request, a surface mounted
+//     later asks nothing, a retry from anywhere lands on every surface, and the header key
+//     asks a failed read again when the tab comes back;
+//   - the seed's face IS a minted account's face (`isAccountFace`), what the profile editor
+//     opens on at once — never an adopted account's, whose face is its stored profile;
+//   - nothing waiting on `firstWritesSettled` reads the account while its first profile is
+//     being written.
+import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { anonName, defaultAvatar } from '@whippin/shared';
@@ -26,9 +36,10 @@ vi.mock('../api', async (importOriginal) => ({
 import { postDevicesBody, postProfileBody } from '../api';
 import { ensureDeviceIdentity, loadDeviceIdentity, resetDeviceIdentity } from '../identity';
 import { installLocalIdentityDeploy } from '../state/localIdentityDeploy';
-import { ownProfileWritten } from '../state/ownFace';
+import { firstWritesSettled, ownProfileWritten, retryOwnFace } from '../state/ownFace';
 import { useGameStore } from '../state/gameStore';
-import { useOwnFace, type FaceState } from './AccountFace';
+import { isAccountFace, useOwnFace, type Face, type FaceState } from './AccountFace';
+import AccountKey from './AccountKey';
 
 const ACCOUNT = 'abcdefghij234567';
 const DEVICE = 'zyxwvutsrq765432';
@@ -61,7 +72,7 @@ const fetchMock = vi.fn(async (url: string): Promise<Response> => {
 
 // What the face DRAWS: the name, and the mark (a missing avatar draws the id's assigned one).
 function drawn(state: FaceState): string | null {
-  if (state === null || state === 'gone') return state;
+  if (state === null || state === 'gone' || state === 'failed') return state;
   return `${state.name}|${state.avatar ?? defaultAvatar(state.publicId)}`;
 }
 const SEED_FACE = `${anonName(SEED)}|${defaultAvatar(SEED)}`;
@@ -70,6 +81,12 @@ const ACCOUNT_FACE = `${anonName(ACCOUNT)}|${defaultAvatar(ACCOUNT)}`;
 let seen: FaceState[];
 function Probe() {
   seen.push(useOwnFace());
+  return null;
+}
+// A second surface drawing the same face (the header key beside the masthead).
+let other: FaceState[];
+function OtherProbe() {
+  other.push(useOwnFace());
   return null;
 }
 
@@ -143,7 +160,7 @@ describe('the own face across a MINT and its deploy', () => {
     await act(async () => releaseCreate());
     await flush();
     const last = seen[seen.length - 1];
-    expect(last !== null && last !== 'gone' && last.publicId).toBe(ACCOUNT);
+    expect(last !== null && last !== 'gone' && last !== 'failed' && last.publicId).toBe(ACCOUNT);
     // The face is READ BACK once the profile exists, and only then.
     expect(log).toEqual([`GET ${ACCOUNT}`, 'POST', `GET ${ACCOUNT}`]);
     expect(new Set(drawnSinceSettled())).toEqual(new Set([SEED_FACE]));
@@ -230,5 +247,178 @@ describe('the own face after a SAVE', () => {
     await flush();
     expect(log[log.length - 1]).toBe(`GET ${ACCOUNT}`);
     expect(new Set(drawnSinceSettled())).toEqual(new Set([`Zoe|${OTHER_AVATAR}`]));
+  });
+});
+
+describe('the seed face as the minted account’s face', () => {
+  const seedFace: Face = { publicId: SEED, name: anonName(SEED), avatar: null };
+
+  it('is the account’s face on an account this tab MINTED, while its first profile is written', async () => {
+    await act(async () => {
+      await ensureDeviceIdentity();
+    });
+    await flush();
+    const drawnNow = seen[seen.length - 1];
+    expect(drawnNow !== null && drawnNow !== 'gone' && drawnNow !== 'failed' && drawnNow.publicId).toBe(SEED);
+    expect(isAccountFace(seedFace, ACCOUNT)).toBe(true);
+    // Never another account's.
+    expect(isAccountFace(seedFace, 'qqqqqqqqqqqqqqqq')).toBe(false);
+    await act(async () => releaseCreate());
+    await flush();
+  });
+
+  it('is NOT an ADOPTED account’s face: that account’s face is what it stores', async () => {
+    rows.set(ACCOUNT, { name: 'Zoe', avatar: null });
+    window.localStorage.setItem(
+      'whippin-device',
+      JSON.stringify({ token: TOKEN, accountId: ACCOUNT, deviceId: DEVICE }),
+    );
+    loadDeviceIdentity();
+    await flush();
+    expect(isAccountFace(seedFace, ACCOUNT)).toBe(false);
+    // The account's own face always is.
+    expect(isAccountFace({ publicId: ACCOUNT, name: 'Zoe', avatar: null }, ACCOUNT)).toBe(true);
+  });
+
+  it('firstWritesSettled waits for the first profile to land', async () => {
+    await act(async () => {
+      await ensureDeviceIdentity();
+    });
+    await flush();
+    expect(log).toEqual([`GET ${ACCOUNT}`, 'POST']);
+    let settled = false;
+    void firstWritesSettled().then(() => {
+      settled = true;
+    });
+    await flush();
+    expect(settled).toBe(false);
+    await act(async () => releaseCreate());
+    await flush();
+    expect(settled).toBe(true);
+    expect(rows.get(ACCOUNT)).toEqual({ name: anonName(SEED), avatar: defaultAvatar(SEED) });
+    // Nothing is written: it settles at once.
+    await expect(firstWritesSettled()).resolves.toBeUndefined();
+  });
+});
+
+// The profile reads of one account so far.
+const reads = (account: string) => log.filter((entry) => entry === `GET ${account}`).length;
+
+async function mountOn(account: string, tree: ReactNode = <Probe />) {
+  await act(async () => root.unmount());
+  window.localStorage.setItem(
+    'whippin-device',
+    JSON.stringify({ token: TOKEN, accountId: account, deviceId: DEVICE }),
+  );
+  loadDeviceIdentity();
+  await flush();
+  seen = [];
+  other = [];
+  root = createRoot(container);
+  await act(async () => root.render(tree));
+  await flush();
+}
+
+describe('the own face when its FIRST read fails', () => {
+  it('settles FAILED — never the account id\u2019s assigned stranger', async () => {
+    rows.set(ACCOUNT, { name: 'Zoe', avatar: OTHER_AVATAR });
+    unavailable = true;
+    await mountOn(ACCOUNT);
+    expect(seen[seen.length - 1]).toBe('failed');
+    expect(seen.map(drawn)).not.toContain(ACCOUNT_FACE);
+  });
+
+  it('asked again, it waits for the read, then lands the stored face', async () => {
+    rows.set(ACCOUNT, { name: 'Zoe', avatar: OTHER_AVATAR });
+    unavailable = true;
+    await mountOn(ACCOUNT);
+    expect(seen[seen.length - 1]).toBe('failed');
+
+    unavailable = false;
+    seen = [];
+    await act(async () => retryOwnFace());
+    await flush();
+    // The box breathes while the read is out (null), and the face lands — nothing between.
+    expect(seen).toContain(null);
+    expect(drawn(seen[seen.length - 1])).toBe(`Zoe|${OTHER_AVATAR}`);
+    expect(seen.map(drawn)).not.toContain(ACCOUNT_FACE);
+  });
+
+  it('a retry that fails again asks once more, breathes, and rests on FAILED', async () => {
+    unavailable = true;
+    await mountOn(ACCOUNT);
+    expect(reads(ACCOUNT)).toBe(1);
+    seen = [];
+    await act(async () => retryOwnFace());
+    await flush();
+    expect(reads(ACCOUNT)).toBe(2);
+    expect(seen).toContain(null);
+    expect(seen[seen.length - 1]).toBe('failed');
+  });
+});
+
+describe('the own face is ONE read, shared by every surface that draws it', () => {
+  it('two surfaces cost one read, and a retry from either heals both', async () => {
+    rows.set(ACCOUNT, { name: 'Zoe', avatar: OTHER_AVATAR });
+    unavailable = true;
+    await mountOn(
+      ACCOUNT,
+      <>
+        <Probe />
+        <OtherProbe />
+      </>,
+    );
+    expect(reads(ACCOUNT)).toBe(1);
+    expect(seen[seen.length - 1]).toBe('failed');
+    expect(other[other.length - 1]).toBe('failed');
+
+    unavailable = false;
+    await act(async () => retryOwnFace());
+    await flush();
+    expect(reads(ACCOUNT)).toBe(2);
+    expect(drawn(seen[seen.length - 1])).toBe(`Zoe|${OTHER_AVATAR}`);
+    expect(drawn(other[other.length - 1])).toBe(`Zoe|${OTHER_AVATAR}`);
+  });
+
+  it('a surface mounted later draws the settled face at once, asking nothing', async () => {
+    rows.set(ACCOUNT, { name: 'Zoe', avatar: OTHER_AVATAR });
+    await mountOn(ACCOUNT);
+    expect(reads(ACCOUNT)).toBe(1);
+    await act(async () =>
+      root.render(
+        <>
+          <Probe />
+          <OtherProbe />
+        </>,
+      ),
+    );
+    await flush();
+    expect(reads(ACCOUNT)).toBe(1);
+    expect(other.map(drawn)).toEqual(other.map(() => `Zoe|${OTHER_AVATAR}`));
+  });
+
+  it('the header key asks a failed read again when the tab comes back', async () => {
+    rows.set(ACCOUNT, { name: 'Zoe', avatar: OTHER_AVATAR });
+    unavailable = true;
+    await mountOn(
+      ACCOUNT,
+      <>
+        <Probe />
+        <AccountKey lang="fr" lit={false} />
+      </>,
+    );
+    expect(seen[seen.length - 1]).toBe('failed');
+    unavailable = false;
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+    try {
+      await act(async () => {
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await flush();
+    } finally {
+      Reflect.deleteProperty(document, 'visibilityState');
+    }
+    expect(reads(ACCOUNT)).toBe(2);
+    expect(drawn(seen[seen.length - 1])).toBe(`Zoe|${OTHER_AVATAR}`);
   });
 });

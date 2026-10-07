@@ -11,7 +11,11 @@
   web/                        React + Vite + TS front (pkg @whippin/web)
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
-      hooks/usePuzzle.ts      fetch the client-computed day's puzzle from the backend
+      hooks/usePuzzle.ts      fetch the puzzle a `PuzzleRef` names (a day, or a bonus) from the backend
+      hooks/useHomeDay.ts     the day across the 22:00 flip: the undated route plays the active
+                              day as of the player's last ARRIVAL (a load, a navigation, the tab
+                              coming back to no round in progress), and a round on screen keeps
+                              the day it was opened as (`useOpenedAsActive`)
       hooks/puzzleCache.ts    the last 3 PARSED artifacts kept across mounts, no longer than the
                               CDN's own 300s (2026-09-11): today <-> an archive day without a reload
       api.ts                  backend client: puzzleUrl, 404->NO PUZZLE, and
@@ -23,8 +27,8 @@
       state/identityScope.ts  what an identity OWNS, cleared when it changes (wired in main)
       state/localIdentityDeploy.ts  the username decided LOCALLY, deployed with the account
                               (2026-08-26): acquiring an identity stores the seed's assigned
-                              face through an atomic create-only profile write (the editor's
-                              SAVE exempt)
+                              face through an atomic create-only profile write — muted for
+                              the editor's SAVE, which writes that pair itself
       state/gamePersistence.ts  the atomic IndexedDB boundary for cross-tab game-state writes
       state/signedOutVerdict.ts  the ONE spelling of the sign-out resolution every private
                               route client shares (401 + `unknown_device` code)
@@ -53,8 +57,13 @@
                               places on the right and hosts the left slot screens publish
                               into (`HeaderLeft`, `HeaderBack`)
       components/PuzzleTitle.tsx  what the game surfaces put there: the app's MARK
-                              (`public/logo.png`) in the accent + the language CODE (+ the
+                              (`PixelMark`) in the accent + the language CODE (+ the
                               day on an archive route), over the selection that switches it
+      components/PixelMark.tsx  the app's MARK: shared `MARK_GLYPH` as an inline svg,
+                              `crispEdges`, in the accent at whole scales (`.pixel-mark`)
+      components/Lockup.tsx   the mark with WHIPPIN AI beside it — what a screen with no
+                              header wears in the title's place (the invitation, the
+                              signed-out screen, the streak celebration)
       components/PuzzleSelect.tsx  that selection: a flat full screen holding the language's
                               picker DRUM, the pick landing on the fold (the caller decides
                               what a pick means, `onLang`); a back chevron in the header's
@@ -67,10 +76,15 @@
       components/AccountKey.tsx  the fifth of them — the account's door in the daily loop
       components/CodeInput.tsx  the six-digit prompt: six drawn iron keys over ONE real input,
                               each struck in its `CODE_INKS` ink; auto-verifying on the sixth
-      components/AccountFace.tsx  the ONE read of "who an account is" (mark + name), shared
-                              by the account screen, the flow's ending and the sign-out screen
+      components/AccountFace.tsx  "who an account is" (mark + name): the player's OWN face,
+                              ONE read every surface drawing it shares (`useOwnFace`), and
+                              another account's (`useAccountFace`, the crossroads' target);
+                              `FaceHold`, the own face's 20px box while it is read (the header
+                              key, the race line); `isAccountFace`
       state/ownFace.ts        when the player's OWN face is read again: the signals its
-                              profile's two writers (the deploy, the editor's SAVE) send
+                              profile's two writers (the deploy, the editor's SAVE) send,
+                              and a retry of a read that failed (`retryOwnFace`: the
+                              masthead's mark, the header key when the tab comes back)
       state/account.ts        what `/account` shows — the `{token}` summary and the
                               group-departure drain behind it (#271)
       state/groups.ts         the player's GROUPS (#271): the ONE transient cache every group
@@ -81,10 +95,14 @@
       state/groupActs.ts      the group ACTS every surface shares: `writeGroups` (the deploy,
                               the signed POST, the answer read off its code, the list adopted;
                               an UNKNOWN outcome — a 5xx, a transport failure, no code — reads
-                              the list again before it says anything), `createGroup` (a create
-                              that did land is found in that re-read, never sent twice),
-                              `failureOf` + `groupFailureCopy` (what the error surface says)
-                              and `inviteText` — the board's and the result's seat's
+                              the list again, by a read sent after it, before it says anything;
+                              a list that cannot be read either is `unknown`), `createGroup`,
+                              `leaveGroup`, `removeMember` (an act that did land is found in
+                              that re-read — a create never sent twice, a leave or a remove
+                              never said to have failed), `createVerdictOf` (what the naming
+                              screen answers at its line), `failureOf` + `groupFailureCopy`
+                              (what the error surface says, named by the act) and `inviteText`
+                              — the board's and the result's seat's
       state/liveBoard.ts      the LIVE read (`POST /board {token, live: true}`): all my groups
                               merged — the ONE module asking it, throttled (`LIVE_REFRESH_MS`;
                               the read asked as the round ends goes at once), for the race line
@@ -103,7 +121,8 @@
                               the SEAT (no group holding anybody else, `seatOf`), GLOBAL off the
                               global board, the tabs' order, the box's cap
       components/ResultBoards.tsx  those boards under SHARE: the boards' tab row (`BoardTabs`)
-                              over a fixed box of lines, a tap onto the board
+                              over a fixed box of lines, a tap onto the board; the box's hold
+                              while its first answers are out
       components/SeatPanel.tsx  the SEAT's panel: the player's own line over the one call that
                               creates a group or invites into it in place
       components/SolvedCard.tsx  the RESULT as the share card stood up: brackets, the edition
@@ -125,16 +144,18 @@
       hooks/useGlobalBoard.ts  the GLOBAL tab's one anonymous global-board read per result display
       components/BoardRows.tsx  a board's LINES (rank/crown, ranked, playing, waiting) in ONE
                               dress, drawn alike by the board screen and the result's boards;
-                              the board screen passes each line its run (`LineRun`)
+                              the board screen passes each line its run (`LineRun`); the
+                              skeleton's line (`SkeletonLine`, `SKELETON_WIDTHS`), both surfaces'
       components/boardMetrics.ts  what every list of players shares (pure): `MARK` (30px, 10
                               cells of 3px), `LINE_PX` (44px, a list's pitch) and the rank
                               column's width (`rankColumnPx`: 16px a digit, two at the least)
       components/BoardTabs.tsx  WHICH BOARD, the boards' ONE control (the result's, the board
                               screen's, and the archive's month row): the names in a row, one
-                              pinned last, the white chip travelling to the name shown, a cut
+                              pinned last (following the left-out rail directly when names
+                              are cut before it), the white chip travelling to the name shown, a cut
                               name covered, a name past its room ending in an ellipsis; a tab's
                               optional `ariaLabel`; `tabIds` ties each tab to the panel it
-                              controls
+                              controls; with no tabs yet, ONE stippled chip holding the row
       hooks/useSwipe.ts       a sideways swipe on a board's lines turns its tab (both surfaces),
                               on the archive's grid its month: a finger's or a pen's, never the
                               mouse; its trailing click opens nothing (a tap right after does)
@@ -142,25 +163,41 @@
                               a window shows the glyph's 7 ink rows, never the next digit's top
       components/bayerTiles.ts  the ordered dither as CSS masks on 2px cells, set ONCE on the
                               document's root as it loads: a line coming in and giving way
-                              (`--dz-*` / `--dzo-*`), your held line's edge (`--edge-d/-u`);
+                              (`--dz-*` / `--dzo-*`), the EDGE where what scrolls meets what
+                              holds (`--edge-d/-u`, 6px, over lines resting whole — your held
+                              line; `--edge-deep-d/-u`, 24px, over prose scrolling freely);
                               and the dissolve's beat script times against (`DISSOLVE_MS`,
-                              `SKELETON_WAIT_MS`, `SKELETON_STAGGER_MS`)
+                              `SKELETON_WAIT_MS`, `SKELETON_STAGGER_MS` — on the root too as
+                              `--dz-stagger`, what `.dissolve-in` staggers a screen's blocks by —
+                              and `cameIn`)
+      hooks/useMoreBelow.ts   whether a scrolling list holds more below what it shows: the
+                              dithered veil at its foot (`data-more`; the group's members, the
+                              successor pick), measured again on scroll, on resize and on a
+                              row added or removed
       components/animationClock.ts  the page's animation clock (`clockNow`, `onClock`): every
                               beat the board screen and its podium time, on the clock their
                               CSS and Web Animations play on
       components/travel.ts    a control's stepped TRAVEL (`travelFrames`): the tab row's chip,
                               the period switch's frame
+      components/refuseShake.ts  the REFUSAL's stepped shake (2px held frames): the archive's
+                              month chip past either end, a device line whose sign-out failed
       components/raster.ts    a canvas raster's ABGR pixel (`abgr`, `hexToAbgr`, and `rgbToAbgr`
                               for `heat.ts`'s `rgb()` inks): the streak's orbit, the podium, the
                               archive's keys, the tutorial's art
       components/rasterWatch.ts  whether anybody can SEE a raster's clock (`watchRaster`: in
                               view, the tab shown — never "touched lately"), and the archive's
                               read wave's stepped pace (`LOOP_FRAME_MS`): the podium's, the
-                              archive's and the record's
+                              archive's, the record's and the article's training loop's
       components/DeviceList.tsx  the account's devices + SIGN OUT, as board lines on `/account` (#216)
-      components/ErrorScreen.tsx  the app's error surface: a FULL-SCREEN modal led by the
-                              user-drawn ERROR BOT (2026-08-27, replacing the popup/sheet);
-                              ONE quiet way out since 2026-09-03 — no TRY AGAIN
+      components/BusyButton.tsx  a button whose act is OUT: the app's one busy dress (the act's
+                              word kept, `aria-busy`, the charge after `SKELETON_WAIT_MS`)
+      components/ErrorScreen.tsx  the app's error surface for an ACT that did not land: a
+                              FULL-SCREEN modal in the full-screen moment's frame, led by the
+                              user-drawn ERROR BOT, the title naming what was lost; ONE way
+                              out, GO BACK — no TRY AGAIN
+      components/ScreenFrame.tsx  the full-screen moment's frame: the four corner brackets and
+                              the WHIPPIN AI lockup (`Lockup`, standing still) — worn by
+                              SignedOut, ErrorScreen, ConfirmScreen and the invite landing
       state/roundSync.ts      the #201 sync engine, reworked by #214: coalesced prefix writes,
                             the transient server snapshot it publishes for the screen, the
                             outbox it settles by identity, cap + freeze, #203's round-start
@@ -170,8 +207,23 @@
       state/history.ts        #211's PRIVATE history: the in-memory month/solved-day cache,
                               its one-flight-per-key reads, the explicit-loading status and
                               the streak credit a fresh solve rides
-      hooks/useRoundSync.ts   its React binding: registers the round's context on mount and
-                              reports WHERE its authoritative state is (the load gate)
+      hooks/useRoundSync.ts   its React binding, held by the game ROUTE: reconciles the outbox,
+                              registers the round's context once the puzzle is in, and reports
+                              WHERE its authoritative state is (the load gate)
+      game/roundOnScreen.ts   what the route's round is drawn from (puzzle, word list, server
+                              state): a round on screen STAYS through a read asked again
+      components/GameHold.tsx  the game's HOLD while the route's three reads are out (the puzzle,
+                              the word list, the round): the sentence's rails, then the day's
+                              silhouette, over what the tray will hold (the keyboard's unlit
+                              iron keys, or the gate's slots), in `.game`'s own zones — held
+                              STILL when a read failed, its note and RETRY in the prompt's row —
+                              and `useHold` (when it shows, and its giving way under the round)
+      components/KeyboardHold.tsx  the on-screen keyboard's footprint as unlit iron keys while
+                              its word list is out (breathing) or lost (still): the game's hold
+                              and the lesson's tray
+      components/QuietFailure.tsx  A READ THAT FAILED, said in place: one muted note in sentence
+                              case over RETRY (`.quiet-btn`), under the surface's own loading
+                              picture held still — every failed read's one spelling
       screens/Profile.tsx     the #188 profile editor (/profile): DICE / CLEAR over the canvas
                               grown out of the masthead's mark, the swatches, the board line
                               the name is typed on, SAVE
@@ -181,8 +233,8 @@
                               (`DitherWipe.tsx`)
       components/FoilStamp.tsx  the SAVE landing: a foil band over any square mark, played in the
                               mark's own box
-      components/markHandoff.ts  the masthead's mark (its rect and the mark itself), handed to
-                              the editor's canvas
+      components/markHandoff.ts  the masthead's mark (its rect and the face it drew), handed to
+                              the editor, which opens on that face and grows its canvas out of it
       screens/Privacy.tsx     `/privacy` (#229): what the game keeps, why, and how to be rid
                               of it — the app's one DOCUMENT, its words in privacyDoc.ts
       components/LangTitle.tsx  the header's OTHER clickable title: a screen's own name, the
@@ -193,9 +245,13 @@
       screens/GroupInvite.tsx  the #271 group invite link's landing (/join/g/<groupId>): JOIN
                               with this device's token, then the board or the game. The link
                               members SHARE is /g/<groupId>, served by the backend for its preview
-      components/PeriodSwitch.tsx  a group's three boards (TODAY / WEEK / MONTH): three equal cells
-                              across the line in resting corner brackets, the white frame
-                              travelling to the one shown
+      components/GroupOrbit.tsx  the landing's scene: the group card brought in (the name's
+                              chip, the marks on the card's orbit, `+N`, the reader's SEAT and
+                              the drop into it), and its holds while the group is read
+      components/PeriodSwitch.tsx  a group's three boards (TODAY / WEEK / MONTH) on
+                              `BracketSwitch`: equal cells across the line in resting corner
+                              brackets, the white frame travelling to the one shown — the
+                              article figures' AVANT / APRÈS turn through the same switch
       components/GroupScreen.tsx  a group's own screen (#271): members (the owner's ✕),
                               scrolling in whole lines, over INVITE and LEAVE at its foot —
                               everything there is to do with a group
@@ -203,8 +259,13 @@
                               screen, the name inked in on CREATE (the solve's beat); it folds
                               onto the surface that opened it (the board, or the result's seat)
       components/ConfirmScreen.tsx  the app's CONFIRMATION surface (#271): the error screen's
-                              shape in the plain voice, the act as the quiet danger control
-                              over CANCEL; the leave's successor picker rides it
+                              shape and frame in the plain voice, the stake over the title, the
+                              act as the quiet danger control over CANCEL on the bottom edge;
+                              the give-up, the remove and the leave ride it (the leave's
+                              successor picker under the note, its `choice`)
+      components/SuccessorPick.tsx  that picker: the other members as lines in resting slate
+                              corners, the pick locking on in white, a dithered foot while
+                              more lie below
       screens/Leaderboard.tsx the #190/#271 leaderboard (/<lang>/board): the tab row (the groups,
                               then GLOBAL), a group's TODAY / WEEK / MONTH, the PODIUM over the
                               lines from the 4th, the door into a group's screen, NEW GROUP —
@@ -228,8 +289,8 @@
                               one clock, the marks, the landings' bursts, the captions;
                               `nextStage` latches what it shows and how it comes — builds,
                               stays, gives way), and its picture, pure and tested: scene.ts (the
-                              two sizes and `podiumSize`, the layout, the names' setting
-                              `runsOf` / `setName`, the beats, the raster deterministic in t —
+                              two sizes and `podiumSize`, the layout, the names' room
+                              `nameRoomPx`, the beats, the raster deterministic in t —
                               steps, places, values on the reels, heat, foil)
       game/podium.ts          the podium's PICK (pure, tested): the first three ranked rows in
                               the server's order, the rest lines; each place's value and `near`;
@@ -263,12 +324,16 @@
                               question) over InviteDemo.tsx (the site's sentence, played
                               once); Learn.tsx (the levels as cards),
                               Lesson.tsx (dispatch), LevelOne.tsx over LessonBoard.tsx,
+                              lessonReturn.ts (the lesson's way back, kept across a lost
+                              chunk's RETRY reload),
                               coach.ts (the reactive coach), levels.ts (each level's face over
                               `shared/src/tutorial.ts`, which levels exist and where) + data scripts/<lang>.ts
                               (+ <lang>.<word>.json, the pruned #154 boards it plays on);
-                              ArticleLevel.tsx (levels 2+, lazy via LazyArticle) over
+                              ArticleLevel.tsx (levels 2+, lazy via LazyArticle, whose
+                              hold stands the same ArticleHead) over
                               articles/<lang>.ts (the text, per language; types.ts, Rich.tsx
-                              the inline markup, typeset.ts, figures/); art/ (LevelArt.tsx,
+                              the inline markup, typeset.ts, figures/ — the figures, and
+                              their 2px-cell raster `cells.tsx`); art/ (LevelArt.tsx,
                               the dithered canvas, and scenes/, one picture per level)
       screens/Game.tsx        the guess loop, hole state (imports fold from @whippin/shared)
       components/strikeArt.ts the three strike sheets and their animation contract (#301: the
@@ -317,7 +382,8 @@
                               FLOATING_HIT_INTRO_MS, REVEAL_HOLD_MS, KB_EXIT_FALLBACK_MS,
                               GIVE_UP_HOLD_MS), one spelling for the game and the lesson board
       hooks/lazyChunk.ts      one component kept out of the startup bundle: preload, the
-                              lazy render, and the retry a failed preload must not poison
+                              lazy render, whether its load was lost, and the user's RETRY (a
+                              reload: a document keeps a module it failed to fetch failed)
       components/Phrase.tsx,Hole.tsx,WordInput.tsx,FloatingHit.tsx  rendering
       hooks/useLetterWave.ts  #129's ambient ripple on the holes
       game/history.ts         a hole's guess log ranked against its secret (buildHistory)
@@ -333,8 +399,13 @@
       game/share.ts           what a RESULT says: the share text + link (emoji row, the
                               composed message)
       hooks/useShare.ts       how a RESULT leaves the app (native sheet -> clipboard + COPIED)
+      components/SwapLabel.tsx  a control's word changing in place (SHARE → COPIED): out and in
+                              through the dither, in one cell
     public/                   served at site root (web assets + generated data)
       robots.txt              every crawler allowed, everywhere (a missing object is the bucket's 403)
+      favicon.svg, favicon.ico, apple-touch-icon.png  the app's mark (shared `MARK_GLYPH`) in
+                              the accent on a square of the ground, at whole scales,
+                              nearest-neighbour: 1x in 32px, 7x in 180px
       vocab/<lang>.json       full slugged reduced vocab (existence set) — fetched by the SPA
 ```
 
@@ -634,7 +705,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   a member still playing prints their % in the heat ramp's ink (the board's playing-row
   dress) and their tries muted; a FINISHED member wears the pixel check
   (`assets/icons/check.svg`) and their score in the solve cobalt; one whose round ended
-  unsolved wears `∞`. MY entry is my mark (framed in the accent) and my LIVE % —
+  unsolved wears `∞`. MY entry is my mark (framed in the accent; while my face is read, the
+  header key's own hold in that frame, `FaceHold`, the still stipple once that read has
+  failed, and the key's ghost for an account gone) and my LIVE % —
   `computeProgress` over the board I SEE, so it moves when a hit lands — **the one place the
   play screen prints the player's own percentage.** The order is the boards' own (finished
   by fewest tries, then `orderPlaying`, my entry taken from the screen, never my server
@@ -646,12 +719,19 @@ These are decided and verified against the code. Treat them as load-bearing.
   confirming the solve or the give-up — so the result reads the final rows) and when the tab
   comes back; it holds the cost rule (one read per 10 s, one flight, a trailing call — save
   the read asked by the answer that ENDS the round on screen, which goes at once, `now`) and
-  fails SILENTLY, the last answer standing. The line RETIRES with the prompt (the solving
-  submit, a give-up) and stays mounted, invisible, until the result takes the column. It
+  fails SILENTLY, the last answer standing. Its type is the pixel face at 8px (one face
+  pixel a screen pixel; the `∞` at the same one pixel a cell), and it comes in, and RETIRES
+  with the prompt (the solving submit, a give-up), through the board's Bayer dissolve —
+  never a fade; a line first shown on a round already over stands invisible with no leaving
+  to play. Retired, it stays mounted, invisible, until the result takes the column. Its box
+  reaches a pixel past the band on each side, so the dissolve's mask holds the accent
+  outline round my mark. It
   lies in the column's gap above the tray plus the play area's RACE BAND (`.play-race`):
   on today's sentence the play area keeps the line's footprint clear under the prompt from
   the first frame, line or no line, so the line never covers the hint row (a refused word's
-  feedback) nor takes a tap meant for it, and nothing moves when it arrives or leaves.
+  feedback) nor takes a tap meant for it, and nothing moves when it arrives or leaves. The
+  22:00 flip passing a round still on screen takes neither the line nor its band away: the
+  round keeps the day it was opened as (`useOpenedAsActive`, the header bullet's day rules).
 - **THE PALETTE IS THREE INDEPENDENT AXES (user-decided 2026-08-17): weird/calm +
   hole/solve + accent — in STAMP-INK tones** (retuned the same day against the user's
   /inspiration set — vintage offset stamps, riso posters — after the first calm cut went
@@ -797,10 +877,37 @@ These are decided and verified against the code. Treat them as load-bearing.
     .btn-secondary`) and every quiet act (`.link-quiet-btn`, `.link-danger`) is the label
     alone at 0.7 strength, lifted to 1 on hover — nothing drawn that is not the word. The
     account area's small act (`.quiet-btn`: SIGN OUT on a device line, RETRY under a read
-    that failed) is that word in a tappable thing's corner brackets, 40px tall. A hover
+    that failed) is that word in a tappable thing's corner brackets, 40px tall. A quiet act
+    that cannot be pressed for now (`.quiet-btn:disabled`, `.link-quiet-btn:disabled`) steps
+    its ink — word and brackets — one COLOUR step down, to the slate `--rail`, never an
+    opacity. A hover
     answers only where a pointer HOVERS (`(hover: hover) and (pointer: fine)`): on a touch
     screen the emulated hover sticks where the finger lifted, and the next screen's call on
     that spot would open pre-pressed. SHARE is the primary on the result screen.
+    **A BUTTON WHOSE ACT IS OUT KEEPS ITS WORD** (`components/BusyButton.tsx`, every busy
+    site: the gate's PLAY, JOIN, CONTINUE, the crossroads' two answers, CREATE GROUP, the
+    confirmations' acts, SAVE): the label stays the act's word at full ink — the button
+    animates, it never renames itself — it answers no tap but keeps the focus
+    (`aria-disabled`, never dimmed: the 0.45 is for a button that is unavailable, not busy),
+    and `aria-busy` + the sr-only `loading` say it. Nothing shows for `SKELETON_WAIT_MS`
+    but the press held, and an answer inside that wait lets the press go the way any tap
+    does, on the release beat from the moment the act lands (the busy wash is a hair over
+    the rest's, so leaving busy is a change that cancels the held press); then its wash
+    becomes the house stipple in its own ink, breathing `--dz-1…3` on `link-hold-breathe`
+    (640ms, hard steps; reduced motion: the still checker), the word in a clearing of the
+    ground cut on the stipple's whole 2px cells (`BusyButton` measures the word against the
+    padding box the stipple is tiled from and rounds the clearing outward, so no cell along
+    its edge is halved). **The charge is 55% of the button's ink**
+    (`--charge`, every busy button alike): at the breath's middle step it carries the
+    primary's own wash, at its peak less than the press, so a wide primary charging never
+    outshouts what lands and destruction never glows. It stands on a ground that hides the
+    wash without changing it, so the act landing ends it in ONE frame on the button at rest.
+    Under FORCED COLOURS every ground is the canvas, the charge with it, so a busy button's
+    frame turns DASHED instead (`ButtonText`, after the same wait). The outcome is the act's
+    own (the keyboard rising, the name inked in, the foil stamp, the next step), never a word
+    on the button; CREATE GROUP stands at full ink, neither busy nor dimmed, while the new
+    name inks in, answering no pointer (no hover, no press). CANCEL under a busy confirmation
+    waits in the quiet word's colour step, like any quiet act that cannot be pressed for now.
     No other button dress remains.
     *(The two paragraphs below are the designs it replaced, kept for their reasoning.)*
   - **THE BUTTONS ARE KEYCAPS WITH A HARD PRINT (user-decided 2026-09-14: "we should
@@ -858,8 +965,13 @@ These are decided and verified against the code. Treat them as load-bearing.
     glyph pixel a whole square of the celebration's raster cells; the day's date set in the
     face) — and the ARCHIVE's day numbers (the 16px face's own digits, shared `DIGIT_MASKS`,
     painted on the month's raster a font pixel a cell). **Every monospace layout assumption therefore still holds** — MixWord's ch
-    reservations and CellDigits' grid sit on surfaces that stayed pixel. The coach text's inline `[[b:]]`/`[[w:]]` words are
-    pixel at 0.82em INSIDE modern copy — game words quoted in chrome.
+    reservations and CellDigits' grid sit on surfaces that stayed pixel. **A game word QUOTED
+    inside the mono's prose is the face's SECOND named exception to its whole sizes** (beside
+    the play sentence, prompt and keyboard's fluid size): the coach's line (`[[b:]]`, `[[w:]]`,
+    `[[m:]]`, `.rt-*`), an article's paragraphs and its figures' captions (`.ar-held`,
+    `.ar-word`, `.ar-solved`) set it at 0.82em of that prose, its exponent (`.ar-rank`) at
+    0.62em, so its em box sits on the prose's line and the coach's measured room holds — game
+    words quoted in chrome. Everything else in the face stays at 8, 16 or 24px.
   - **MONO (Azeret Mono variable 100-900, `--ui`)** is EVERYTHING else — body default,
     header (title/date), buttons, coach copy,
     the archive's chrome (its month row, weekday letters and note), streak, statuses, and every moment the retired serif
@@ -901,22 +1013,33 @@ These are decided and verified against the code. Treat them as load-bearing.
     in-file size; globe.png and the standalone `.pixel-icon`
     class are deleted) **until 2026-09-02, when the whole chrome set went PIXEL** (see the
     header-keys bullet: marks on the avatar's own 10×10 grid); the Whippin mark is the PIXEL
-    mark (`public/logo.png`, 22×22, traced as `@whippin/shared`'s `MARK_GLYPH`) in the
-    accent, at whole scales only: the header's title, the WHIPPIN AI lockups (the streak
-    celebration, the signed-out screen, the onboarding invitation) and the cards. The BODY's global hard 2px
+    mark (`@whippin/shared`'s `MARK_GLYPH`, 22×22, drawn inline by `components/PixelMark`)
+    in the accent, at whole scales only: the header's title, the WHIPPIN AI lockups
+    (`components/Lockup`: the streak celebration, the signed-out screen, the onboarding
+    invitation) and the cards. The BODY's global hard 2px
     text-shadow is gone; pixel surfaces that relied on it (floating hits, loot) carry
     their own, and the topbar wears a soft bloom shadow instead.
   - **THE VIEWPORT IS AN INSTRUMENT (user-decided 2026-08-18, from the user's
     /inspiration/modern board — "fresh and deep update"):** the content floats in the
     middle while decorative furniture clings to the edges.
     - **`components/DeviceFrame`** (mounted once in App, under every screen): four
-      corner BRACKETS — the board's focused-card selection frame drawn around the whole
-      app — a vertical `WHIPPIN AI ©2026` brand rail on the left edge, the localized
-      tagline (`frameTagline`, the STRINGS table) bottom-left, and the day's EDITION
-      SERIAL bottom-right (`N.<dayNumber>` — the interfaces.dev card's numbering, fed
-      the ACTIVE day via useToday). Decorative (aria-hidden, pointer-events none),
-      z-index 40 under the header's 60, covered by opaque dialogs, and DESKTOP ONLY
-      (hidden ≤640px — a phone's viewport is all content).
+      corner BRACKETS — `.streak-corner` itself, the streak celebration's and the
+      signed-out screen's frame (2px, 24px arms, white at 38%), standing still and placed
+      by its own rule (16px in, 24px where the short side is 600 or more; the frame's words
+      take the same step) — a vertical `WHIPPIN AI ©2026` brand rail on the left
+      edge, on the corners' column, the tagline (`MADE WITH <3`) bottom-left, and the
+      day's EDITION SERIAL bottom-right (`N.<dayNumber>` — the interfaces.dev card's
+      numbering, fed the ACTIVE day via useToday), both on the corners' bottom line past
+      the arms — the line the keyboard's last row stands on, so the two captions show only
+      on a window 830px wide or more, where the keyboard leaves them room. Its words are
+      `--muted`, never the foreground dimmed. Decorative
+      (aria-hidden, pointer-events none), z-index 40 under the header's 60, covered by
+      opaque dialogs, and DESKTOP ONLY (hidden ≤640px — a phone's viewport is all content).
+    - **THE COLUMN is ONE custom property, `--column` (900px)**: the header row's width
+      (`.topbar-inner`), the tutorial's lesson (`.tutorial`) and list of levels (`.learn`),
+      and — less the row's own insets — the invitation's demo. **The day's game is not on
+      it**: `.game` and `.phrase` stay 1200px wide, because a long day wrapped to 900px
+      pushes the keyboard off a laptop's window.
     - **The KEYBOARD is FLAT (no "old skeuomorphism"):** every key is one solid dark
       tile at the sharp radius, nothing modelled, and **a press is a STATE, not
       travel** — brightness, never translateY (the rule the primary buttons follow
@@ -1155,11 +1278,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
     derived-from-accountId face, never surfaced. A 401 `unknown_device` instead goes
     through the shared signed-out-verdict helper and is not retried. It listens to the
     same identity-change signal identityScope does, wired beside it in `main.tsx` — so a
-    future deploy trigger cannot forget it. The ONE exemption is the profile editor's
-    SAVE: its own deploy carries the player's typed fields, so it wraps its bootstrap in
-    `withoutLocalIdentityDeploy` to keep the placeholder from racing (and possibly
-    overwriting) the save. The player's own face waits for the flight and reads the
-    profile once it settles (the `AccountFace` bullet). Contract-tested
+    future deploy trigger cannot forget it. **The ONE trigger it stands down for is the
+    profile editor's SAVE**: that tap acquires the account inside `withoutLocalIdentityDeploy`
+    and writes the pair itself — into an account never customized (a 404, or a row that IS
+    the seed's pair: another tab's deploy, which the mute does not reach) it stores what the
+    player was SHOWN, the seed's pair where they left it untouched (`guardedSaveBody`) — so
+    nothing races it; and a SAVE that writes nothing (a refusal, a failure) hands the account
+    back (`deployLocalIdentity`), so the account still lands on the face the player was
+    wearing, never on the new id's assigned face. The player's own face waits for the
+    flight and reads the profile once it settles (the `AccountFace` bullet). Contract-tested
     (`localIdentityDeploy.test.ts`, `ownFace.test.tsx`).
   - **Persisted game state is TRANSACTIONAL across tabs** (PR-219 final review, replacing
     rounds 2–3's snapshot merge). Zustand is now only the synchronous UI cache. Every
@@ -1255,8 +1382,36 @@ it to the local store — see `packages/backend/AGENTS.md`).
       A wrong code stays at the input (shake, clear, one attempts-left line, its line HELD
       under the keys from the start so nothing moves when it speaks). A struck key is white
       for its first step only, then its ink with the digit cut out. RESEND is quiet
-      and countdown-gated (~30s, the seconds in the cobalt pixel figures), alone under the cells — CHANGE ADDRESS is gone,
+      and countdown-gated (~30s, the seconds in the cobalt pixel figures hanging beside the
+      word), alone under the cells: the bracketed quiet word (`.quiet-btn`) whose brackets
+      ARRIVE, locking on, when the countdown hits zero, and give way to `FocusBrackets` under
+      the keyboard's focus (never a frame nested in a frame) — CHANGE ADDRESS is gone,
       the header's back goes code → address.
+    - **EVERY VERDICT OF THE FLOW ANSWERS IN PLACE; only an ACT that did not land takes the
+      screen**: a SEND (a 503 `mail_unavailable`, a dropped connection: the `ErrorScreen`'s
+      CODE NOT SENT), or a VERIFY whose outcome is UNKNOWN — a dropped connection, a 5xx, an
+      answer the flow cannot read (a link it cannot parse, a confirmation naming no account, a
+      code it does not know; `readVerifyAnswer`, contract-tested) — once the token's account
+      has been read again and shows nothing landed (`recoverAmbiguous`): CODE NOT CHECKED from
+      the code step (the code cleared, so typing it checks it again), STILL ON THIS ACCOUNT
+      from the crossroads (the code kept, so its button presses again) — and NO ANSWER from
+      the crossroads where the account could not be read again either, since the erase or the
+      switch may have committed (pressed again, a verify that did land meets its spent code
+      and reads again). Never a line telling
+      the player to type the code again: an unreadable answer would only come back the same.
+      A code that accepts nothing more — expired, `code_spent`, or the last wrong attempt once
+      its shake has played — keeps the player ON THE CODE STEP: the keys go DEAD in their own
+      material (`CodeInput`'s `dead`: emptied, thinned to half their cells through the Bayer
+      complement `--dzo-4` in hard steps, taking nothing), the held line says why, and RESEND
+      is the step's one live act — the bracketed `.quiet-btn`, its countdown waived — whose
+      landing brings the keys back through their arrival's dissolve. **A verdict on the code
+      pressed from the CROSSROADS steps back to the code step and answers there** (it has no
+      keys of its own): the step comes back in through the crossroads' own dissolve, the keys
+      dead with RESEND live, or — a wrong code, the challenge having been replaced by another
+      send — cleared over the tries left. Too many sends (429) is the danger note under
+      CONTINUE, or the held line when RESEND asked; the next answer to a send replaces the
+      note, and a send that lands leaves none. Every held line is ONE line at 320px, so
+      nothing under it moves.
     - **THE CROSSROADS, NOT A WARNING:** both accounts drawn — the one being left THINNED
       THROUGH THE BAYER DITHER, never an opacity (under DELETED, the area's one red, a GHOST:
       its ink to half its cells, its ground given up for the slate stipple, its three numbers
@@ -1431,9 +1586,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     offered a dialog saying 9 has been told the app does not know its own numbers.
   - **THE PROFILE AREA'S DRESS** — the rest of the app's language: bare ground, whole
     pixels, corner brackets only on what is tapped, ONE shiny thing a screen. A read that
-    FAILED is quiet: the stippled checker still at 50% where its values would be, and RETRY
-    as the bracketed quiet word (`.quiet-btn`, SIGN OUT's dress) — `/account`'s failed
-    history makes the count's held box itself that tap. `/account`'s chrome speaks in TWO
+    FAILED is quiet (the house's `QuietFailure`, the bullet *A READ THAT FAILED IS SAID IN
+    PLACE*): the stippled checker still at 50% where its values would be, its note and RETRY
+    by it, ONE RETRY per failure — on `/account` the record's in the FLAME'S ROOM over its
+    still count (`Record`'s `failure`: room the record keeps anyway, so the page grows by
+    nothing and the call stays on a phone's screen; its held count is no tap), the summary's
+    in the call's own box (`.account-cta.failed`), and both failed at once ONE line there
+    (`failedAccountAll`) whose RETRY asks both; the devices' skeleton line stays mounted,
+    still, over theirs. `/account`'s chrome speaks in TWO
     roles beside the hero name and its quiet address caption: the LABEL (11px bold tracked
     caps, muted — BEST and DAYS, `AccountStats`' labels with them, a device's one fact, SIGN
     OUT, the footnote) and the ROW TITLE (13px bold — a device's label; DAY STREAK at that
@@ -1445,7 +1605,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
       edge the row's ONE key, the editor's door: the pixel pencil in a tappable thing's
       corner brackets (SIGN OUT's: 2px, 6px arms, white at 38%; no word, no chevron; the
       edit word its accessible name). NOTHING ELSE in the row is framed, so nothing else
-      reads as editable. The words land ONCE, when the face AND what the account is saved as
+      reads as editable — save the mark's held box when the face's read FAILED: the same
+      corners drawn ON the mark's 50px box (the pencil's way, inside its own key — the row
+      has no side padding, so corners hung outside it would be cut) with the still stipple
+      6px inside them, the tap that asks again, the name's box resting on the stipple beside
+      it; a GONE account's mark is its inkless
+      ghost and the pencil goes, its box kept (the `AccountFace` bullet). The words land ONCE, when the face AND what the account is saved as
       are both known (a failed summary read lands the name alone, and it stays printed while
       a RETRY is out) — so nothing moves after,
       and a tokenless device and a deployed unsaved one settle to the same row; until then
@@ -1454,12 +1619,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
       stands and one ellipsis says where — the SAVED ending prints the address the same way).
       A hover steps the key's corners to white in two steps; a press sinks the pencil 2px;
       under the keyboard's focus its own corners give way to `FocusBrackets`, never a frame
-      nested in a frame. The tap hands the MARK — its box and the mark itself — to the
-      editor (`markHandoff`): the mark stays FROZEN in that box while the editor reads the
-      stored profile (once the read has taken a beat, 250ms, the canvas's box breathes as
-      the stippled slate behind it), then the canvas GROWS out of it in whole-pixel steps —
-      on a phone in place, down and right from the mark's own corner (a direct load holds
-      the canvas's box as the stippled slate, then grows from its centre).
+      nested in a frame. The tap hands the MARK — its box and the face it drew — to the
+      editor (`markHandoff`), which OPENS AT ONCE on that face (the profile bullet) and GROWS
+      its canvas out of the mark in whole-pixel steps — on a phone in place, down and right
+      from the mark's own corner — the seed's face a minted account wears until its read lands
+      included, since it is the face that account's first profile is written as. With no face
+      to hand (the masthead's read still out) the mark's box stays FROZEN where it stood,
+      stippled, while the editor reads the stored profile (once the read has taken a beat,
+      250ms, the canvas's box breathes as the stippled slate behind it); a
+      direct load holds the canvas's box as the stippled slate, then grows from its centre.
     - **THE RECORD is the screen's subject** (`components/record/`), in the streak
       celebration's own sprites: the blue FLAME over the live STREAK landing on the solved
       count's own SLOT MACHINE (`countRun.ts` at its full `COUNT_RUN_MS`: reels starting almost
@@ -1493,12 +1661,34 @@ it to the local store — see `packages/backend/AGENTS.md`).
       above the edge down to an iPhone SE's browser.
     - **THE DEVICES are board lines**, no title: a pixel device glyph (phone / tablet /
       computer; the accent on THIS device), the label, one quiet fact (THIS ONE, or the
-      last-seen day), SIGN OUT as a bracketed word whose brackets fit the word (28px, the
+      last-seen day as `MM-DD` in the pixel face's 8px muted figures, said in words to a
+      screen reader), SIGN OUT as a bracketed word whose brackets fit the word (28px, the
       finger's target still 44); they dissolve in once the record has CALMED — its count
       landed and today's foil cooled (`useRecordCalm`), the wait counted from the moment the
       lines mount — held as the skeleton line while the record has no numbers yet, and let in
       at once when it never will (a failed read). Once in they STAY: the record's RETRY
-      does not take them back out.
+      does not take them back out. **A SIGN OUT busies its OWN line only** (every other
+      line's SIGN OUT stays live; several may be out at once): while the request is out the
+      line THINS — the glyph a `.ghost-mark`, the words and the word's brackets through the
+      same half of the Bayer cells, never an opacity — and its SIGN OUT is `aria-disabled`;
+      once an answer no longer lists it, it leaves on `board-dissolve-out` and is dropped,
+      the lines under it closing up in one whole-line step (a line confirmed gone never
+      comes back from a later-landing answer) while the lines ABOVE never move: the list
+      keeps the tallest height it has stood at for the visit (`hold`, its `min-height`), so
+      a page scrolled to its foot never grows shorter under the reader (the browser would
+      pull every line above down by the one that left). **An answer that never came readable
+      — a 5xx, a dropped connection, a deadline, an unreadable body — says NOTHING** (the
+      root contract on unknown outcomes): the SAME sign-out is sent again, still thinned,
+      and only ITS answer is trusted — idempotent, a device already gone is the route's
+      success and its list is corrected for it (`removedKey`), where a plain read of the
+      list comes off the eventually consistent index and can still hold a device signed out
+      a moment ago — and the line leaves if that answer no longer holds it
+      (`signOutOutcome`, contract-tested). Only a READABLE no — a 4xx, or a sign-out's answer
+      still holding the line — RE-INKS it with the refusal's stepped shake
+      (`components/refuseShake.ts`, the archive month chip's too) and turns its one fact
+      into one muted line, NOT SIGNED OUT; when the second sending went unanswered too, the
+      line re-inks unshaken over NO ANSWER, claiming neither. Either note stands until the next try; a
+      status region says it to a screen reader.
     - **`AccountStats` (the crossroads, the recovery ending) is QUIET**: the record's side
       numbers' dress, three across between stippled rails — no foil, no flame, no burst
       (destruction never glows). Its `land` prop (a start delay in ms; omitted, the row
@@ -1520,8 +1710,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
       fits a phone unscrolled down to ~550px tall (`EDITOR_CHROME_PX` is the CSS's own sum;
       a short phone takes a tighter dress), every offset on a whole pixel, the desktop column
       held at its full height (a pixel more where that centres it on a whole one). It GROWS
-      out of the masthead's mark (`markHandoff`: frozen where it stood while the stored
-      profile is read, a direct load growing from the centre), DRAWN at a cell 4px bigger
+      out of the masthead's mark (`markHandoff`: at once on the face handed over — the
+      account's, or the seed's a minted account wears; with no face in hand the mark's box,
+      stippled, frozen where it stood while the editor reads; a direct load growing from the
+      centre), DRAWN at a cell 4px bigger
       each step — repainted crisp at every step, never a bitmap scaled between two sizes.
       Then the SWATCHES across the frame, each the drawing itself in that palette (40px,
       four pixels a cell, in 48px targets; ONE choice — a radio group, the arrows choose —
@@ -1535,10 +1727,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
       emptied field shows the assigned pseudonym, muted — what a board prints; the
       placeholder ink only for an empty name or the loaded account's own pseudonym, so a
       TOKENLESS device's placeholder is dressed as a stored name, the same screen a
-      deployed-unsaved account shows; but this screen's SAVE is the one deploy that bypasses
-      `localIdentityDeploy`, so a tokenless player's first SAVE with the name untouched
-      stores it EMPTY and leaves them wearing the new account's own pseudonym, muted; no
-      rank, crown or count — it claims none), and SAVE on the bottom edge. EVERY painted cell
+      deployed-unsaved account shows — and this screen's SAVE stores that placeholder where
+      it was left untouched, so a tokenless player's first SAVE keeps the name and the mark
+      they were wearing (the profile editor bullet); no rank, crown or count — it claims
+      none), and SAVE on the bottom edge. EVERY painted cell
       POPS whole pixels proud (6, 4, 2px, 50ms a step) and throws eight 4px sparks of its own
       ink (stepping out 14 → 20 → 26px, the last at 2px); an erased one shrinks into its
       middle; a stroke is ONE pointer's, painted along the line between samples. The canvas
@@ -1559,7 +1751,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
       save that LANDS is the screen's one shiny thing — the FOIL STAMP over the canvas, laid
       on the cells' own pitch (a band sweeps, the ink holds in foil — the DEEP foil on a light
       ground — then dissolves back in 8 Bayer steps), the brackets lock on, the line's mark
-      hops; a REFUSED one shakes the frame, then the `ErrorScreen`. `FoilStamp` is ONE
+      hops. A save the moderation REFUSES answers AT THE EDITOR, never on the
+      `ErrorScreen`: a refused name shakes the name's field (AddressField's shake) and stands
+      in the danger ink until it is edited; a refused drawing shakes the canvas's frame and
+      stands until the drawing changes; either way ONE danger note under the name's line
+      (`.profile-refusal`, out of the flow on the air above SAVE, so nothing moves). A save
+      that did not LAND (a failed deploy, a transport failure) shakes the frame, then the
+      `ErrorScreen`. `FoilStamp` is ONE
       implementation for any square mark of any whole-pixel size, played in its box, its
       grain always dividing the mark's own pixel.
   - **THE 2026-08-30 PASS, from the mobile navigation review.** Four corrections, each
@@ -1608,11 +1806,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
       PRIMARY BUTTON's own mark (the device card's power light); the address is a fact
       that REPLACES that button when there is nothing left to do, and wearing its costume
       it read as a control that did not respond to being pressed.
-    - **RESEND drops its box while it counts down.** It spends its first ~30s disabled,
-      and a dimmed hairline box held that long reads as a broken button rather than as a
+    - **RESEND wears no brackets while it counts down.** It spends its first ~30s
+      disabled, and a dimmed box held that long reads as a broken button rather than as a
       wait — the same rule that holds the second door back until the summary settles: a
       control drawn before it can be pressed is a false offer. Counting it is a STATUS
-      line; when the clock runs out the box arrives with the offer.
+      line; when the clock runs out the tappable thing's brackets arrive with the offer.
   - **DEVICES appear only once an email is SAVED** (user-decided 2026-08-26): an unlinked
     account can only ever hold the one device reading the screen — multi-device arrives
     through the email link and no other way — so the list would be a list of yourself.
@@ -1629,10 +1827,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     tokenless device and now leads with that same face — HELD across the deploy
     (`AccountEmail`'s `lead`), because CONTINUE swaps the id from the seed to the account
     mid-flight and re-reading would race the background profile write for a face that is
-    the same by construction; and the account screen's action holds a SKELETON while the
-    summary is out rather than offering SAVE before it knows (#211's explicit-loading
-    rule — a guessed empty answer is a false claim, and it also stopped SAVE flashing
-    before the address landed on every linked player's first visit).
+    the same by construction; and the account screen's call is HELD while the summary is
+    out rather than offering SAVE before it knows (#211's explicit-loading rule — a guessed
+    empty answer is a false claim): `.account-cta.holding`, the call at its final size — the
+    note's words laid out unseen with a stippled rail through each of its lines, the button's
+    box as the house hold (`.link-hold.waiting.late`) — so the footnote under it never moves
+    when the call takes the same boxes. The rails and the box come in only once the summary
+    has been out `SKELETON_WAIT_MS`, so a linked player's quick answer never draws a call it
+    then takes away; a slower one does, the hold going when the address lands.
   - **The saved address carries NO chip.** An account carries at most ONE address and the
     server refuses a second (`account_linked`), so a CHANGE chip promised something the
     route would break — and with the devices inline there is nothing left for a MANAGE
@@ -1644,13 +1846,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     BESIDE `.account-screen`** — `.link-step` therefore sets the GAP alone, since a `padding`
     there wins the cascade and silently undoes the screen's header clearance (found in the
     browser, on the first run).
-  - **`components/AccountFace.tsx` is the ONE read of who an account is.** Three surfaces
-    draw a mark and a name — the account summary, the flow's ending, the sign-out screen —
-    and each used to fetch it themselves. It resolves to NOTHING until settled and is TAGGED
-    with the account it is about, the leaderboard strip's own rule: a component that is not
-    remounted when its account changes would otherwise render the previous person's face.
-    **The player's OWN face follows the profile this device writes** (`useOwnFace` over
-    `state/ownFace.ts`). `GET /profile` stays its only source; the writers only SIGNAL, and
+  - **`components/AccountFace.tsx` is the read of who an account is** — the player's OWN
+    face (`useOwnFace`) and another account's (`useAccountFace`, the crossroads' joining
+    side; the signed-out screen keeps its own read, `faceFrom`). It resolves to NOTHING
+    until settled and is TAGGED with the account it is about, the leaderboard strip's own
+    rule: a component that is not remounted when its account changes would otherwise render
+    the previous person's face. **The OWN face is ONE read every surface drawing it shares**
+    (module state): asked once per account and revision by whichever surface asks first, so
+    the header's key, `/account`'s masthead, the email flow and the race line cost one
+    request, a surface mounted later draws the settled face at once, and a read asked again
+    from anywhere lands on all of them. **It follows the profile this device writes**
+    (`state/ownFace.ts`). `GET /profile` stays its only source; the writers only SIGNAL, and
     never hand it a face (not the seed's, not a POST body's). The editor's successful SAVE
     re-reads it, the face already drawn standing while the read is out. An account this
     tab MINTED (`mintedHere`) keeps the seed's face while its first profile is being
@@ -1661,6 +1867,24 @@ it to the local store — see `packages/backend/AGENTS.md`).
     third face on the header for a beat, or until a reload. An ADOPTED account is read at
     once, and read again when the deploy settles. A read that FAILS is no news: it changes
     no face already drawn, and a minted account whose read-back fails keeps the seed's face.
+    The profile editor reads nothing the account stores while such a write is out either
+    (`firstWritesSettled`, the profile bullet).
+    **Where no face was drawn yet, the OWN face settles `'failed'` — never the assigned
+    identity**: the assigned pseudonym and mark are a stand-in nobody mistakes for
+    themselves on somebody else's row, but drawn as the player's own face they named a
+    stranger as them (`GoldenComet68` over Rafa_cuisine's masthead). The header key,
+    `/account`'s masthead, the email flow (its lead's mark and name boxes, its crossroads'
+    leaving side and its ending — `.link-hold.failed`, the Bayer tile's same 50% checker)
+    and the race line's own mark rest on the still stipple (`StatSlot`, 50%). The read is
+    asked again (`retryOwnFace`, a re-read with no write behind it) by the masthead's mark,
+    held in a tappable thing's corners, and by the header key when the tab comes back (the
+    key stays the account's door; the email flow offers none: that screen is about the
+    address); while it is out the box breathes on every surface, and it lands the face or
+    rests again. A board line is not one of these surfaces: the result's own line, like
+    every row of a list of players, is dressed with the assigned identity when its read
+    failed. A GONE own account draws its GHOST on the own-face surfaces — the header key, the
+    masthead, the email flow's lead, the race line (`.ghost-mark` with no ink: the slate
+    stipple alone) — and hides the masthead's pencil.
   - **`GET /profile` HAS FOUR ANSWERS, AND `api.readProfile` IS WHERE THEY ARE TOLD APART**
     (PR-227 review, 2026-09-02): `shown` (200), `blank` (404 — LIVE, never customized, so the
     assigned identity IS this player's face), `gone` (410 `account_gone` — a DELETED account,
@@ -1675,8 +1899,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     **`AccountFace` DOES TOO** (corrected 2026-09-02 on the PR-227 follow-up review; it
     dressed 404 and 410 alike, on the claim that every caller proves the account live — which
     was FALSE: the flow's crossroads draws `target`, an account this device does not own, and
-    a locally cached token outlives another device's adoption). `useAccountFace` answers
-    `Face | 'gone' | null`, with `shownFace` and `faceSettled` as the two questions a caller
+    a locally cached token outlives another device's adoption). A face read answers
+    `Face | 'gone' | 'failed' | null` (`'failed'` the own face's alone — above), with
+    `shownFace` and `faceSettled` as the two questions a caller
     asks — so a deleted account draws NOTHING and the box that held its place stops breathing
     (a skeleton over an arrival that is not coming is #211's own false claim). The
     consumers that stay on the raw fetch are the WRITE paths whose caller genuinely holds the
@@ -1697,10 +1922,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     DRAIN** (`resumeDepartureDrain`, PR-227 review): the verify answer's `departurePending`
     says the server could not finish, and `AccountEmail.finish` hands it over AFTER the
     adoption has published — so the drain runs as the account the link LANDED on.
+    **The SAVE door reads it on open**: `/account/email` on an account ALREADY SAVED opens
+    on the SAVE+already_bound ending (its address under the face, OK back to `/account`) —
+    straight onto it when the summary is in hand; while it is out the lead stands over the
+    address field's bare floor with the call's box held (`deciding`), and the answer either
+    lets the field in (it takes the focus then) or turns the step into that ending, the field
+    never mounting. No Turnstile challenge is prefetched while it decides.
   - **CONTINUE is a DEPLOY BUTTON**, the sixth (#216's five plus this one), and it has to
     be: an email link needs an account to bind, and "this device is empty" is exactly the
     reconnect case. It wears the shape that rule defines — one tap chaining the bootstrap,
-    a loading state on the button, failures on the `ErrorScreen` — and TWO Turnstile tokens are
+    the button busy, a send that did not land on the `ErrorScreen` (its verdicts answer in
+    place, the code prompt's bullet above) — and TWO Turnstile tokens are
     prefetched while the address is typed, since a tokenless device spends one on the
     bootstrap and one on the send. Every other leg uses `currentRequestIdentity` and stands
     down when there is none.
@@ -1774,16 +2006,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
     slate iron and are struck in their inks as they fill (THE CODE PROMPT, above); a refusal
     is red only while the wrong code is on screen — once the cells clear
     for the retype the row returns to rest and the tries-left LINE carries the message.
-    Device rows are TWO LINES (label over THIS ONE in the accent, or the last-seen
-    day-month — the single line truncated its own current marker on a phone). The erase
+    Device rows are TWO LINES (label over THIS ONE in the accent, or the last-seen day,
+    `MM-DD` — the single line truncated its own current marker on a phone). The erase
     confirmation SHOWS the account being deleted (mark + name over the stakes, the
     signed-out screen's own move), and the two endings return differently: an ADOPT offers
     PLAY into the game, a BIND offers OK back to `/account` — a settings errand ends where
     it began, and `.link-stack` is the one centered face-stack all three moments wear.
   - **The invite landing has an EXPIRED state** (`GroupInvite` since #271; `unknown_group`):
-    neither a hiccup nor the cap, so it takes the cap's own surface (a state with a way ONWARD
-    rather than a retry) — retrying cannot bring a group back, and continuing silently would
-    tell the clicker they joined a group they did not.
+    neither a hiccup nor the cap, so it offers a way ONWARD (PLAY) rather than a retry —
+    retrying cannot bring a group back, and continuing silently would tell the clicker they
+    joined a group they did not.
   - **`game/streak.ts` imports `currentStreak` from `@whippin/shared`** and keeps
     `streakTransition`/`weekView`: the server derives a streak for the erase confirmation, so
     the derivation itself moved.
@@ -1803,6 +2035,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     first cut stamped all three, and it broke the exact journey `?lang=` exists for — a pasted
     `/privacy?lang=en`, a language picked from the wheel (which rewrites the URL), then back:
     off the site, or in a fresh tab nothing at all, since the entry was the tab's first.
+  - **A NAVIGATION ONTO THE URL ALREADY SHOWN REPLACES** (`navigate`, contract-tested in
+    `routing.test.ts`): the same place twice in history is a back press that goes nowhere —
+    HOME tapped on the undated route past the 22:00 flip is the one such tap the screens
+    offer. It still notifies, so it is still an arrival (`useHomeDay`).
   - **A SIGN-OUT DOES NOT CLOSE IT** (`App`'s `blocked`, which is `signedOut` everywhere
     else). The verdict takes the whole screen because every private read answers
     `unknown_device` from there on — and this route makes none: it is a static document about
@@ -1875,16 +2111,62 @@ it to the local store — see `packages/backend/AGENTS.md`).
 
 - **THE ERROR SCREEN HAS ONE WAY OUT (user-decided 2026-09-03: "get rid of the retry
   button… it's weird to retry from a fullscreen error page, just go back and retry if you
-  want").** `ErrorScreen` carried a lit TRY AGAIN wherever asking again could help
-  (2026-08-24), with GO BACK as its secondary; it carries a single SECONDARY that dismisses
-  now. The act that failed belongs to the screen underneath — the typed address, the
+  want").** Its one control is GO BACK, the bracketed quiet word (`.quiet-btn`); nothing on
+  it is lit. The act that failed belongs to the screen underneath — the typed address, the
   drawing, the gate are all still there — and the honest gesture is to go back to it and
-  press the same button again. Gone with it: the `onRetry` prop and its seven wirings, the
-  `retry` flag on `AccountEmail`'s refusals and `Profile`'s save error, the `tryAgain` string,
-  `errorPreview`'s retry shape and its "both layouts" test, and the synchronous-in-tap rule
-  the retry needed on WebKit (the act is re-run inside its own fresh tap now). `LoadError`'s
-  RETRY is untouched: that is a screen that could not open, where this is an act that did
-  not land.
+  press the same button again, inside that button's own fresh tap. Gone with it: the
+  `onRetry` prop and its seven wirings, the `retry` flag on `AccountEmail`'s refusals and
+  `Profile`'s save error, the `tryAgain` string, `errorPreview`'s retry shape and its "both
+  layouts" test, and the synchronous-in-tap rule the retry needed on WebKit. A READ that
+  failed keeps its RETRY, in place (below): that is a screen that could not open, where this
+  is an act that did not land.
+- **THE APP'S TWO FULL-SCREEN MESSAGES WEAR THE FULL-SCREEN MOMENT'S DRESS** (the
+  `ErrorScreen` and the `ConfirmScreen`, the signed-out screen's): `ScreenFrame`'s four
+  corner brackets and WHIPPIN AI lockup — the corners the one place brackets frame
+  something not tapped, the frame of the whole moment — the message in the column's
+  middle, the calls PARKED ON THE BOTTOM EDGE in `.signed-out-calls`' geometry (inside the
+  corners, 44px off the edge; on desktop one centred block). They come in over the screen
+  they answer through the board's Bayer dissolve (`board-dissolve`, the backdrop
+  transparent) and leave the same way (`board-dissolve-out`, `useModalDismiss`'s exit),
+  never a fade. The error's TITLE names WHAT WAS LOST in the chrome voice, never a bare
+  FAILED (`GROUP NOT CREATED`, `STILL IN THE GROUP`, `CODE NOT SENT`), its note a sentence;
+  the bot and its ERROR ! balloon are one drawing in every language. **The error screen is
+  for an ACT that did not land, never for a VERDICT on what the player typed**: a refused
+  name or drawing, a code that expired, a group name the filter refuses or the group cap
+  answer where the next act happens (the profile editor, the code step, the naming
+  screen). `?error=<variant>` (`dev/errorPreview.ts`) previews each real call site's copy.
+- **A READ THAT FAILED IS SAID IN PLACE (`components/QuietFailure.tsx`).** The surface keeps
+  its OWN loading picture, held STILL — the stipple at the Bayer order's half (`--dz-4`, the
+  `.stat-slot` checker), nothing breathing — and says, in a place of that picture's own, ONE
+  muted NOTE: sentence case (a note, not chrome), plain words about what the player lost,
+  never an internal's name; 13px `--ui` regular on a 20px line, a `\n` between two
+  sentences. Then RETRY, the bracketed `.quiet-btn`. Never the danger ink, never a box,
+  never a full screen. A screen reader hears the note from a live region that exists before
+  it speaks (`SpokenLater`: mounted empty with the note, its words set a turn later — the
+  note on screen is their `aria-hidden` picture), since one inserted with its words is
+  often not announced. **Saying it moves nothing that has landed, and neither does its
+  RETRY**: the note stands in room the picture keeps for it, or is laid over the picture out
+  of its flow. RETRY asks again EVERY read the note covers, handing the picture back to
+  breathing in place — save a lost code chunk's, below. The sites:
+  - the GAME (`GameHold` still): ONE line for the puzzle, the word list and the round —
+    `failedGame` on today's, `failedGamePast` on another day — laid over the prompt's row,
+    left-aligned (`.quiet-failure.start`); its RETRY asks each of the three that failed;
+  - the LESSON, its word list lost: the keyboard's hold still (`KeyboardHold`),
+    `failedKeyboard` on the prompt's row;
+  - a lost LESSON or ARTICLE chunk (the page's own hold, still): `failedPage` — on the
+    lesson's prompt row, over the article's first lines' rails. Level 1 on the first visit
+    (the onboarding question open) keeps the invitation's SKIP beside RETRY; nobody else
+    gets an escape, since the header's keys are theirs;
+  - the LEADERBOARD: the podium's floor, still; the note on the names' band, where the rails
+    stand, and RETRY on the values' row (the empty board's caption slots); over the lines'
+    skeleton, the same view as loading, so nothing under the podium moves. With no podium
+    it is its own row;
+  - the ARCHIVE: the keys' still checker, then the note and the quiet RETRY in the hold;
+  - the ACCOUNT AREA (the profile area's dress, above).
+  A lost CODE CHUNK's RETRY RELOADS the page (`lazyChunk`): a document keeps a module it
+  failed to fetch failed, so only a new one can fetch it again. A lesson begun from the
+  invitation keeps its way back across that reload (`tutorial/lessonReturn.ts`). The group
+  invite landing says its own failed read the same way, on its own hold (its bullet).
 - **EVERY PAGE CAN CHANGE LANGUAGE (user-decided 2026-09-03).** The game routes always
   could — `PuzzleTitle`'s selection is the language — and the ACCOUNT
   AREA could not: `/account` carried a plain name and its steps carried a back control, so a
@@ -1977,8 +2259,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     invite landing, the onboarding invitation and the signed-out screen — all three wear no
     header (the invitation draws only its lockup in the row's place), being surfaces "with
     nowhere else to be". They do honour `?lang=`, so a
-    link sent in a language renders them in it. (The missing-puzzle screen, headerless too,
-    opens the SAME drums from its CHANGE LANGUAGE button — `NoPuzzle`, since 2026-09-05.)
+    link sent in a language renders them in it. (The missing-puzzle screen, under the
+    header, also opens the SAME drums from its CHANGE LANGUAGE call — `NoPuzzle`.)
 
 - **THE CARD (user-decided 2026-09-11, from the three references in `inspiration/card/`:
   on a phone "it's hard to understand what's on screen quickly"; "everywhere in the app where
@@ -2020,12 +2302,80 @@ it to the local store — see `packages/backend/AGENTS.md`).
     cut did) silently dropped every guess after the first — the board reverted on the next
     replay and the server never heard about them again, which is exactly what a browser
     run caught and no seeded unit test could.
-  - **`useRoundSync` returns WHERE the round's state is** (`RoundLoad`), and `Round` renders
-    the game body only once it is `ready`: `loading` shows the wave, `failed` shows
-    `failedRound` + RETRY (`retryRoundSync`). A load can only ever FAIL before it has
-    succeeded once — the engine tracks that as its own `settled` flag rather than reusing
-    `readDone`, which `resync` clears — so a recovery read failing behind a live board is a
-    sync hiccup, never a played round taken away mid-guess.
+  - **`useRoundSync` returns WHERE the round's state is** (`RoundLoad`), and the game ROUTE
+    (`App`'s `GameRoute`) holds it beside the other two reads — the puzzle, and the
+    language's word list, asked at once beside it (it needs only the language) but only
+    while there may be a game: never behind the first visit's invitation, and ABORTED the
+    moment the day turns out to have no puzzle (`useVocab(null)`: a big download with
+    nothing to play it on); the round is asked as soon as the puzzle names its revision.
+    `Game` mounts only once all three are in (so its first render is already the right one
+    — a day already over opens on its result, never a frame of the board), and until then
+    the route's `.game` column holds THE GAME'S HOLD (bullet below); a failed read holds it
+    STILL with ONE line, the word list's said once the puzzle says there is a game, and ONE
+    RETRY that asks every read that failed again (the puzzle's `retry`, the word list's, the
+    round's `retryRoundSync`). **Once on screen the round STAYS**
+    (`game/roundOnScreen.ts`): a read it already answered coming back out — an identity
+    adopted from another tab (`rearmRoundSync`), a republish restarting the round
+    (`beginRoundSync`) — leaves `Game` mounted on what it was drawn from until the next
+    answer replaces it (its local state, an open wheel or modal, kept; no hold over a live
+    board); only another round (day, language, bonus) starts over, and a failure there is
+    the engine's retried hiccup, never the route's RETRY. A load can only ever FAIL before
+    it has succeeded once — the engine tracks that as its own `settled` flag rather than
+    reusing `readDone`, which `resync` clears — so a recovery read failing behind a live
+    board is a sync hiccup, never a played round taken away mid-guess.
+  - **THE GAME'S HOLD (`components/GameHold.tsx`; the user, 2026-10-06: "the 'loading'
+    component is a bit lame compared to the rest")** — no word, TODAY'S GAME TAKING SHAPE:
+    ONE hold through the three reads, never restarted, laid over the route's `.game` box in
+    its own zones (its top padding, its gap, `.play` over the prompt's reserved row, `.tray`
+    at the keyboard's height). The SENTENCE, until the puzzle is in, is RAILS: a sentence of
+    the language's MEDIAN length (`MEDIAN_CHARS`: fr 144, en 112 characters) laid out by the
+    browser in the sentence's own type and width, one rail of the slate stipple per line it
+    fills — no fake words or holes, nothing the day has not said. Once the puzzle is in, the
+    rails give way through the dither to the day's SILHOUETTE, laid out by the board's own
+    `Phrase` (`silhouette`: no decode, no descriptions, and no `data-hole-explore` — the
+    wheel measures the board's hole, never the hold's): each word a bar of the stipple
+    (`--rail` through `--dz-2`), each hole the skeleton's checker in the held chip's exact
+    box. The holes hold the START words until the round's read is in, then — in one step,
+    never through a hole's word change — the words the round will mount on (`App` replays
+    the play log over the fresh holes, `Game`'s own first frame): a returning player's best
+    words in their chips' boxes, a found word as a bar, so the board never re-wraps at the
+    hand-over. Both are centred where the sentence is, so the
+    day's arrival moves the block by half a line per line it differs from the median (0 on
+    a median day). The TRAY promises only what will land there: the keyboard's three rows
+    as UNLIT IRON KEYS (`.kb-slate`: the code prompt's and the archive's material — the
+    dusk face, the stippled slate cap, the notched corners — at the keys' exact boxes) for a
+    player who lands on the prompt (an account, and level 1 done: `Round`'s `gateOpen` read
+    before the round is in); for everyone else the GATE's slots in its own stack — PLAY's
+    box as its slate hairline, each label a stipple bar where its word prints, LEARN's while
+    the lesson is not done. What is still out moves, on ONE 640ms stepped beat: the rails
+    breathe while the puzzle is out, the hole blocks while the round is, the tray (the
+    caps, or the gate's words) while the word list is — never a travelling glint (a wash
+    across the 4px caps read as a shimmer on a phone). It shows only after
+    `SKELETON_WAIT_MS` (a quick load never flashes it), through the dither; `aria-busy` on
+    the column and the sr-only `loading` carry the words. **A read that FAILED holds it
+    STILL** (`failed`): shown at once whatever its wait, every bar, rail and word slot at the
+    Bayer order's half (`--dz-4`; the blocks and caps rest on theirs), nothing breathing, and
+    the prompt's row — the one thing in it a finger reaches (`.hold-failure`) — says ONE line
+    for the three reads and holds RETRY, laid over the row out of its flow (the row keeps its
+    height, so the sentence the column centres never moves); the hold stays mounted through
+    the failure, so a RETRY hands the same picture back to breathing in place. **The game
+    takes over from it, painted over it** (`useHold`'s `leaving`, latched by what mounts
+    during it): the
+    sentence decodes as ever, each bar and block giving way the moment the decode's front
+    reaches its word (`Phrase` stamps that front, `--at`, on a silhouette's tokens too);
+    the keys LIGHT IN over their slates through exactly the cells the slates go out through
+    (`Keyboard`'s `lit`, `.kb-lit`: in place, in hard steps, never the keyboard's eased
+    rise — and only when the round opened on them: a keyboard the gate's PLAY brings up
+    rises as it always does); the prompt's row and the gate come in through the dither. A
+    day ALREADY OVER takes the hold away at once — its card (`SolvedScreen`'s `fromHold`:
+    its settled frame, the reveal not replayed) comes in through the dither on bare ground,
+    never with bars and slates showing through it. Every bar, block and slate stands on the
+    pixel of the word, chip and key that replaces it, a returning player's round included.
+    The slates' dress is stated as `.kb-key.kb-slate` so it wins over the live key's, and
+    the hold's gate slots (`.hold-tray`) keep the hold's own beat while the real gate's
+    blocks come in through `.dissolve-in`. Reduced
+    motion: still, and gone at once. Forced colours: each bar, block, slate and slot drawn
+    as its `GrayText` outline (masks and stipple would leave a blank screen).
   - **The animated hole swap survived the board becoming a REPLAY.** The play log is
     authoritative the instant a guess lands, so the visible board replays it MINUS the
     guesses still in the air (`deferred`), and ONE timer per guess releases it at its
@@ -2061,7 +2411,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (`canGiveUp`) once the round holds a guess, not finished, the gate closed, no reveal
     standing or decoding, the prompt not leaving; never in the tutorial (it lives in
     `Game`, not in `Keyboard`). A tap opens the `ConfirmScreen` (`giveUpTitle` /
-    `giveUpNote` / `giveUpAction`, busy while in flight); its act calls
+    `giveUpNote` / `giveUpAction`, busy while in flight), its STAKE over the title the `∞`
+    the result will print (`InfinityGlyph` at 8px a cell, `--muted`, thinned to half its
+    cells through `--dz-4`: what the round becomes, not yet what it is); its act calls
     `giveUpRound(roundKey)` (the sync bullet below); a `false` answer raises the
     `ErrorScreen` (`failedGiveUp` / `failedGiveUpNote`, also an `?error=giveUp` preview).
     A give-up confirmed on THIS device (`giveUpHere`, set before the request so the render
@@ -2109,10 +2461,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     A revalidation deliberately keeps its cached month on screen, so gating the block on
     there being nothing to show made every failure after the first good visit SILENT — an
     offline player reading a stale calendar as the truth. What changes with cached data is
-    the CLAIM, not the presence: nothing loaded is `failedHistory` in the danger ink, an
-    older answer still on screen is `staleHistory` in the plain status ink, and both carry
-    the same RETRY. Loud either way, for the round load's reason: there is no local history
-    left to fall back to.
+    the CLAIM, not the presence: nothing loaded is `failedHistory`, an older answer still on
+    screen is `staleHistory`, and both carry the same RETRY. Said either way, for the round
+    load's reason (there is no local history left to fall back to) — QUIETLY, as every failed
+    read is (*A READ THAT FAILED IS SAID IN PLACE*): the keys' still checker already says
+    "unknown", and neither note wears the danger ink or the accent.
   - **`noteSolvedDay` replaced the store's `recordSolve`**, and since the PR-218 review it
     reads the SERVER's own verdict rather than re-making the on-time comparison on the
     device clock: the solving append's answer carries `credited` (root `AGENTS.md`), and
@@ -2160,8 +2513,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   as "the local log" is now the play-log PROJECTION, and what is persisted is only the
   outbox. Everything it records about pacing, batching, the cap's two 409s, verdicts and the
   unknown-outcome re-read still holds, and is why they read the way they do.)*
-  `Game`'s Round registers its context with
-  `state/roundSync.ts` (`useRoundSync`) and reports each COUNTED guess to it
+  The game route registers the round's context with
+  `state/roundSync.ts` (`useRoundSync`), and `Game`'s Round reports each COUNTED guess to it
   (a guess is deduped against the play log before it enters the outbox — a repeat owes
   the server nothing). The engine is one module-level conversation per round key (the
   `activeScoreFlights` pattern, so remounts and StrictMode rejoin it): the mount READ
@@ -2285,30 +2638,57 @@ it to the local store — see `packages/backend/AGENTS.md`).
   block: the copyable-key/paste-to-link UI was removed with `adoptPlayerSecret` (the
   backup affordance's future surface is an open decision — root `AGENTS.md`). Saving
   POSTs `{token, name, avatar}` via the OAC-hashed body (`api.postProfileBody`);
-  server refusals surface on the app's `ErrorScreen` (#216 trigger rework — title +
-  explanatory note; the moderation refusals offer no retry, a transport failure and a
-  failed deploy carry TRY AGAIN, which re-runs the whole single-tap save).
+  the two moderation refusals answer AT THE EDITOR (the profile area's dress, below), and
+  a save that did not land — a transport failure, a failed deploy — raises the
+  `ErrorScreen`, SAVE pressed again re-running the whole single-tap save.
   **OPENING THE EDITOR DEPLOYS NOTHING and SAVING deploys (user-decided 2026-08-24):**
   a tokenless editor opens WITHOUT any request, prefilled from the LOCAL placeholder
   identity (the persisted `gameStore.localSeed`, the leaderboard strip's own face) with
   those values as the baseline — so SAVE stays dark until something actually changes —
   and the SAVE tap bootstraps the account first, then saves into it: one tap, the
-  button's own dots for both legs, a prefetched challenge so the deploy is fast. The
+  button busy for both legs, a prefetched challenge so the deploy is fast. The
   name rule's WRITE half compares against the pseudonym the player was actually SHOWN
   (`assignedFrom`: the account's, or the seed's on a tokenless open).
   **A save into an account the editor did NOT load is GUARDED** (PR-219 round-3 review):
   the resolved account can be a RECOVERED or ADOPTED one that already holds a profile,
   and the editor's baseline there was a placeholder — a whole-profile upsert built from
   it would wipe the stored name or mark through the '' an untouched field sends. So when
-  `loadedFor` mismatches, the save FETCHES the account's stored profile first and carries
+  `loadedFor` mismatches — or is still unset because the editor's own read has not yet
+  confirmed the face it opened on (below) — the save FETCHES the account's stored profile
+  first and carries
   every untouched field forward verbatim (`guardedSaveBody`, contract-tested); only a
   field the player actually changed from the placeholder speaks, a fetch that fails
   refuses the save rather than risk the wipe, and a successful guarded save re-binds the
-  editor to the account's merged truth. The load effect is
+  editor to the account's merged truth. **An account that answers "never customized" (a
+  fresh mint, above all — a 404, or a row that IS the seed's pair, another tab's deploy)
+  stores the fields the player was SHOWN instead**: the canvas's mark and the line's name
+  verbatim — the seed's pair where untouched, the pseudonym the line showed in place of an
+  emptied field — the same pair every other deploy button stores (`localIdentityDeploy`,
+  which this tap's acquisition mutes and a save that writes nothing hands the account back
+  to), never the empty values, which would draw the NEW account id's face on the canvas,
+  the header and the FoilStamp the moment the save landed. The store-halves below ('' for an untouched assigned value) are about an
+  account the editor loaded, or one that already stores a row. The load effect is
   deliberately keyed on [attempt] alone: an identity arriving under an OPEN editor (a
   deploy elsewhere, another tab) must not reload the fields out from under an edit in
   progress — the save path resolves the identity live.
-  **The editor is GATED on the initial read** (the game
+  **The editor opens AT ONCE on the face the masthead handed over** (`markHandoff`, when
+  that face is the held account's — `isAccountFace`: the face the masthead just read off the
+  same route, or, on an account this tab MINTED, the seed's face it wears until that read
+  lands, which is the face its first profile is written as; the seed's mark is bound
+  explicitly, never derived from the account id), so
+  the canvas grows out of the mark the moment it lands; its own read runs behind it: the
+  same face changes nothing, a different one RE-BINDS the fields while nothing has been
+  edited (an edit in hand stands), a failed read leaves the editor open — and until the
+  read has answered `loadedFor` stays unset, so a SAVE is GUARDED (above): the face handed
+  over may be the assigned one a failed masthead read stood in with. A guarded save that
+  lands before that read answers has bound the fields to what it stored; the read, sent
+  before it, then changes nothing. **While this tab is writing an account's FIRST profile**
+  (`localIdentityDeploy`'s flight, `firstWritesSettled`) **the editor's read and a guarded
+  save's read WAIT for it**: until it lands the account stores no row, so the read would
+  re-bind the canvas to the new account id's face and the guarded save would store '' for
+  the untouched mark — the face nobody chose, where the seed's is the one being stored. (A
+  save that mints the account holds that count itself and writes the first profile.)
+  **Otherwise the editor is GATED on the initial read** (the game
   route's own loading / error / content shape): an editable blank shown while the GET
   is in flight would be edited into and then overwritten by the response, and a FAILED
   read leaves the stored profile unknown — an editor started from that guess would save
@@ -2366,24 +2746,70 @@ it to the local store — see `packages/backend/AGENTS.md`).
   issue's earlier AS drum), so `/join/` carries the group landing alone.
   **JOINING IS A BUTTON, for everyone** (#216's trigger rule): the landing draws the group
   (a bounded `readGroup` — `api.readGroup` tells shown / gone / failed apart, the
-  `readProfile` rule; gone ends the landing on EXPIRED, while failed offers RETRY of the
-  bounded read) over ONE primary JOIN; the tap
-  POSTs `{token, join}` — minted by that same tap for a brand-new visitor — with a loading
-  wave in the button and the `ErrorScreen` for a transport/5xx failure. **A member already
-  skips the landing** onto the group's board (the cached groups list says so; tokenless it
-  is known-empty). **A SUCCESSFUL join is CONFIRMED on screen** — the group over `JOINED`,
-  the BOARD as the primary way on and PLAY under it — and the answered list is published
-  through `adoptGroups`, so the board opens on the group without a second read. The
-  landing replaces itself in history. A NON-CAP 4xx is a VERDICT and continues into the
-  game silently; **the two CAPS (409 `group_full` / `group_limit`, each read off its CODE:
-  the group's room and the clicker's own `GROUPS_MAX` are different acts) and an EXPIRED
-  link (404 `unknown_group`) speak** on the `LoadError` surface with PLAY as the way onward
-  (`groupFull`, `groupLimit`, `inviteExpired`). Contract-tested (`GroupInvite.test.ts`).
+  `readProfile` rule) over ONE primary JOIN; the tap
+  POSTs `{token, join}` — minted by that same tap for a brand-new visitor — with the
+  button busy (`BusyButton`) and the `ErrorScreen` for a transport/5xx failure. **A member
+  already skips the landing** onto the group's board (the cached groups list says so;
+  tokenless it is known-empty). The answered list is published through `adoptGroups`, so
+  the board opens on the group without a second read. The landing replaces itself in
+  history. A NON-CAP 4xx is a VERDICT and continues into the game silently.
+  **THE LANDING IS THE CARD, BROUGHT IN**: what the `/g/` link unfurled into, continued on
+  the screen it opens onto. The frame — the four corners on a phone (the device frame's on
+  desktop) and the WHIPPIN AI lockup, the signed-out screen's furniture (`ScreenFrame`) —
+  and in the middle `components/GroupOrbit`:
+  the group's NAME in `.link-name`'s white chip, case kept, one line (its size stepped down a
+  whole pixel at a time where a long one would touch a mark, its box computed for the size
+  it is set at), the members' MARKS round it (`Avatar sharp`, ten cells of whole pixels: 6px
+  a cell on a phone, 60px; 5 under 340, 50px; 8 on a wide scene, 80px) on the card's slate
+  Bayer ORBIT on the house's 2px cell, the rest folded into the
+  card's `+N` checker tile — the card's own placement, trail and tile (`@whippin/shared`
+  `orbitPlaces` / `orbitTrail` / `plusTile`, never re-derived), its `GROUP_MARKS_SHOWN`
+  places; the `+N`'s count at the card's size for the tile (`plusLabelSize`) stepped down to
+  a whole size of the pixel face, on a cut-out of whole tile cells centred on the tile
+  (`moreTile`). **The orbit keeps a SEAT for the reader** (`orbitPlacesFor`): the LAST place,
+  clockwise from the top, its room kept and the trail knocked out round it from the first
+  frame, and NOTHING DRAWN in it until the JOIN is out (a still stipple square there reads as a
+  face that did not load); every place is decided ONCE, with the seat in it, so nothing on
+  the orbit ever moves. The calls stand in THREE
+  fixed slots on the bottom edge (a line, the call, the word under it), the call in ONE place
+  in every state: JOIN (`.mix-btn`) over PLAY (the word). **While the JOIN is out** the
+  button charges (`BusyButton`) and the seat BREATHES, both after `SKELETON_WAIT_MS`.
+  **JOINED** says no word on screen: the reader's own mark (`useOwnFace` — the seed's for a
+  device the tap minted) DROPS into the seat with the podium's drop (`markAt`: whole cells
+  under gravity), its whole-pixel shake and the strike sheet's BURST behind it in the accent,
+  and the call turns to the BOARD in place; a seat whose mark is being read keeps breathing
+  until it lands (`seatFor`, contract-tested). Where that read FAILED the seat rests on the
+  still stipple — never the assigned stranger, the own face's rule — and the landing asks it
+  again once as the join lands and then when the tab comes back (it wears no header, whose
+  key asks it everywhere else); an account gone leaves the seat empty. A screen reader hears
+  it from the line's slot, a live region
+  (`inviteJoined`, sr-only). **THE CALL IS ONE BUTTON** (`BusyButton`, JOIN, the BOARD, PLAY
+  alike), so a state change is a word change and the keyboard's focus stays on it. **A CAP THE LANDING ALREADY KNOWS IS NEVER OFFERED** (`landingOf`,
+  contract-tested): a group whose public face holds `GROUP_MEMBERS_MAX` members, or a reader
+  whose own list holds `GROUPS_MAX` groups, lands with no seat and no JOIN — a control that
+  can only be refused is a false offer — so the landing waits for that list, at most
+  `LIST_WAIT_MS` (2s) past the group's own read; a list later than that is not waited for:
+  the face lands without it, and the server's `group_limit` answers the cap.
+  **The two CAPS the server answers** (409 `group_full` / `group_limit`, each read off its
+  CODE: the group's room and the reader's own `GROUPS_MAX` are different acts) end the
+  seat's breath in one frame, its place left empty. Either way the group's face STAYS, one
+  muted line takes the line's slot (`groupFull`, `inviteLimit`) and PLAY is the call — no
+  danger ink. **EXPIRED** (404 `unknown_group`, on the read or the tap) is the board's sad
+  ghost at 4x, bobbing five beats, over one line (`inviteExpired`), PLAY the call. **THE
+  WAIT** holds the one shape whose place is known before the group is — the name chip's box,
+  in the house's breathing slate, with `aria-busy` and the sr-only word — shown only once the
+  read has taken `SKELETON_WAIT_MS` (the marks' places hang on how many there are, so no hold
+  stands where a mark may not); **a READ that FAILED** is no verdict about the group: the
+  chip's hold stands STILL at half its cells, one muted line (`inviteFailed` — never
+  `failedJoin`: nothing was joined) and RETRY as `.quiet-btn`. What lands arrives through
+  the board's dither. Contract-tested
+  (`GroupInvite.test.ts`: the join's verdicts, `landingOf`, `orbitPlacesFor`).
 
 - **Leaderboard screen (#190; drawn over GROUPS since #271; its design user-decided
   2026-10-04 — "A with B's podium": the result's boards given the whole column, a PODIUM as
   its subject; approved the same day, "Let's go for the A+B version"):** `/<lang>/board`
-  (`pathForBoard`; a board is per (day, lang), always the ACTIVE day),
+  (`pathForBoard`; a board is per (day, lang), always the ACTIVE day — opened from a round
+  kept on screen past the 22:00 flip too, see the header bullet's day rules),
   `screens/Leaderboard.tsx` (the state, the reads and the acts — the board's read itself
   `state/boardOpening.ts`; what stands under the podium is `components/BoardUnder.tsx`, the board's readings `game/boardView.ts`, its
   list's order `game/boardSlots.ts`), entered from the header's CROWN KEY (lit while the
@@ -2405,7 +2831,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     GLOBAL opens nothing. **CREATING is the PLUS pinned at the row's end** (`groupNew`),
     absent while the no-group tab is shown, whose CREATE GROUP (`groupCreate`) is then the
     one way on this screen — the result's SEAT is the other door (*Solved-screen BOARDS*),
-    through the same `GroupCreate` and `writeGroups`.
+    through the same `GroupCreate` and `writeGroups`. While the groups list is unknown the
+    row holds its room with ONE stippled chip where the shown chip will stand (`BoardTabs`'
+    `hold`: `.link-hold`, breathing while the list is read and in only after
+    `SKELETON_WAIT_MS`, still once a read has failed; a RETRY's read breathes the chip
+    already drawn at once, never out for another wait). A list LOST is asked again by the
+    screen's RETRY whatever else it asks (the board's failure and the list's are one note),
+    and when the browser tab comes back — the one way on GLOBAL, whose board stands with no
+    note over it.
     One control across the app (the archive's months turn through it too) — not a pager of
     this screen's own.
   - **THE HEAD LINE** (`.board-head`, 44px whatever it holds): a group's THREE BOARDS on
@@ -2418,7 +2851,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     cell turned to in whole pixels and hard steps and LOCKS ON as the screen opens. A third of
     a phone's line is narrower than « AUJOURD'HUI » at 12px: at ≤400px the words are 11px and
     tighter, and under 360 the line takes the head's whole width; GLOBAL's `TOP 50`
-    (`boardGlobalSub`); nothing in the no-group state.
+    (`boardGlobalSub`); nothing in the no-group state. It names the board ON SCREEN
+    (`viewTab`, the shown board's tab), never the one asked for: on a turn whose read is out
+    the board held keeps its own head, and the head changes with the body.
   - **THE COLUMN** (`.board-column`, the tab row's `tabpanel` labelled by the shown tab —
     `tabIds` — and a keyboard stop) is the body's room floored to WHOLE slots of `LINE_PX`
     (44px, `components/boardMetrics.ts`), its scroll snapping to them, so a line is never
@@ -2447,17 +2882,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (user-decided 2026-10-04, of the tiebreakers stacked under the points: "nobody
     understands it"), on the podium and on the lines alike: the period rule's solved days
     and tries ORDER the rows (the server's order) and are shown nowhere. **A value stands
-    with its name, never on a step: a number on a step reads as a place.** **A NAME IS
-    NEVER CUT**: it owns a third of the podium less a 4px gutter each side and wraps at its
-    JOINTS (`<wbr>` after an underscore, before a capital after a small letter, before
-    digits after a letter; balanced — `SwiftCactus45` reads `Swift` / `Cactus45`), in a band
-    that holds two lines whatever it holds. A name whose runs will not set in those two
-    lines at the face's 12px steps down to 11, then 10 (`setName` / `runsOf`,
-    `podium/scene.ts`: by glyph count off the mono's fixed advance, shared `cardSvg.ts`
-    `UI_ADVANCE_EM` — nothing measured), so it is set smaller before it is broken; at 10 a
-    run still too long splits evenly in its middle (never a letter alone), and a name that
-    would still take three lines is cut at its own middle — never a third line, never under
-    10px. YOUR place is the accent on your step and your name the bold — never the corner
+    with its name, never on a step: a number on a step reads as a place.** **A NAME STANDS
+    ON ONE LINE**: it owns a third of the podium less a 4px gutter each side, at the face's
+    12px, on the last line of a band that holds two lines' room whatever it holds (so it sits
+    on its value); a name longer than its slot ends in an ELLIPSIS on a WHOLE GLYPH — the tab
+    chip's own cut (`nameRoomPx`, `podium/scene.ts`: the slot floored to whole glyphs of the
+    mono's fixed advance, shared `cardSvg.ts` `UI_ADVANCE_EM` — nothing measured) — so three
+    names read on one baseline, never one broken over two lines. YOUR place is the accent on
+    your step and your name the bold — never the corner
     brackets (user-decided 2026-10-04: they are the language of what can be tapped, and the
     podium is a picture); on GLOBAL one of your people carries the lines' accent square.
   - **FIRST PLACE'S COUNT IS THE SCREEN'S ONE SHINY THING** (the #1 line carries no foil of
@@ -2477,8 +2909,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     phone's toolbar never flips it, and a column narrower than its steps narrows them alike.
   - **FOUR PICTURES, so no state passes for another** (`PodiumMode`): a read still out
     draws the FLOOR and, if it is slow, skeleton rails where the names will stand (the
-    lines' skeleton under it on the same beat); a FAILED read draws nothing, `LoadError`'s
-    RETRY standing in the box; an EMPTY board is the GHOST — the steps' silhouettes in the
+    lines' skeleton under it on the same beat); a FAILED read holds that picture STILL — the
+    floor, its note (`failedBoard`) on the names' band where the rails would stand and its
+    quiet RETRY on the values' row, the ghost's own caption slots, over the lines' skeleton
+    (the SAME view as loading's, `UnderView.failed`, so neither the failure nor its RETRY
+    moves anything under the podium); the read asked again stands its rails at once where
+    the note stood (`BeatSpec.held`); an EMPTY board is the GHOST — the steps' silhouettes in the
     floor's stipple, the user's sad ghost on the middle step (3x, 39 × 54, bobbing five beats
     and resting), its terse line on the names' band and its one call at the values' row,
     one height in every empty state: `NO GROUP` (the bare tab says it; the call is CREATE
@@ -2488,11 +2924,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (TODAY early) is the bare steps, a dash for each value, the playing members listed
     below; fewer than three, the empty places' dashes. **With no podium** the empty board —
     or the failed read — is ONE ROW under the header slot (`.board-hold`): the same 3x ghost
-    beside its line over its call (`.board-empty`), or the message over RETRY, starting at
-    the lines' 6px inset so the ghost stands on whole pixels, coming in through a slot's
-    dissolve — so the two lines' room the shortest landscape phone leaves holds it whole.
-    Over an empty or a failed board the header slot stands only for a door (none with no
-    group, none on GLOBAL).
+    beside its line over its call (`.board-empty`), or the failed read's note over RETRY
+    (`QuietFailure`), starting at the lines' 6px inset so the ghost stands on whole pixels,
+    coming in through a slot's dissolve — so the two lines' room the shortest screen leaves
+    holds it whole. Over an empty board the header slot stands only for a door (none with
+    no group, none on GLOBAL); over a failed one it is the loading picture's.
   - **THE LINES** are `BoardRows` in the result's dress (*Solved-screen BOARDS*), in the
     order `game/boardSlots.ts` gives them, one slot each: the ranked rows past the podium;
     on GLOBAL below the cut the caller's own window under the left-out rail; then the
@@ -2511,8 +2947,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
     podium. A header slot that says the same on the board turned to STANDS across the turn
     (`.board-sub.still`). Under 360px wide a list with no playing member's % to hang in the
     numbers' gutter gives that gutter to the names (`.plays`, set by `BoardUnder`).
-  - **Rows CONNECTED to the reader**: YOUR line is FRAMED (the brackets, the rank in the
-    accent, the name bold) and STAYS IN SIGHT — sticky under the held head and on the
+  - **Rows CONNECTED to the reader**: YOUR line is said in the ACCENT and the WEIGHT (its
+    rank in the accent, its name bold) — never the corner brackets (brackets are what a
+    tapped thing wears, and these lines are not tapped; the result's boards, whose box IS
+    the tap, keep them round your line) — and STAYS IN SIGHT — sticky under the held head and on the
     window's foot, and
     held there (`data-stuck`, `hooks/useStuckOwnLine.ts`) the lines passing under it thin
     out through a 3-cell Bayer edge (`bayerTiles.ts`' `--edge-*` tiles) instead of being
@@ -2538,7 +2976,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     through the BAYER DISSOLVE (`board-dissolve` over the root's `--dz-*` tiles), one after
     another, their numbers on the reels (`ReelNumber`) only where the board builds — put
     away once the last has stopped and shaken, so a list at rest prints bare numbers — a
-    playing member's % typed in as it lands, your brackets locking on. The FIRST board on
+    playing member's % typed in as it lands. The FIRST board on
     screen ARRIVES (`ARRIVE`: after the head's own beats — the chip wiped across, the
     brackets locking on — lines 55ms apart, reels 650ms) and its lines wait until the last
     landing's shake has played, so the impact owns its beat (all landed in about two
@@ -2618,19 +3056,31 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `useShare`, `tracked: false` — the pinned `share` analytics event counts a SOLVED DAY's
     result leaving the app (the three-event invariant), and counting invite links into it
     would silently redefine what the number measures). NEW GROUP is ONE TAP for a tokenless
-    device (the mint, then the create, the button holding a LoadingWave); INVITE needs a
-    group, hence an account. Failures land on the `ErrorScreen` — `failedAccount`,
-    `failedShare`, `groupLimit`, `groupNameRejected` (a banned name), `failedGroup` — read
-    off the answer's code by `state/groupActs.ts`, the result's seat's acts too; an unknown
-    outcome reads the list again first, so the screen behind the error shows what stands.
+    device (the mint, then the create, the button busy for both); INVITE needs a
+    group, hence an account. An act that did not land speaks on the `ErrorScreen`, named by
+    what was lost — `failedAccount`, `failedShare`, `failedCreate`, `failedLeave`,
+    `failedRemove` — read off the answer's code by `state/groupActs.ts`, the result's seat's
+    acts too; an unknown outcome reads the list again first — a read SENT AFTER the write,
+    never one already out — and a create, a leave or a remove that did land behind a lost
+    answer is found there and said to have landed, so the screen behind the error shows what
+    stands; where that read fails too, nothing is known, and the error says NO ANSWER over a
+    note that claims nothing and invites no second try (`unknownGroupNote`). A create's own
+    refusals answer at the
+    naming screen's line (below).
   - **THE GROUP'S OWN SCREEN (`GroupScreen`, user-decided 2026-09-14: "managing the group
     should have its own screen")** is a full-screen dialog in the selection's shell — the
-    way back and the name in the header, the MEMBERS as the board's LINES
-    (`.board-row.member`: no rank column, the mark at 3px a cell, your own framed) coming
+    way back and the group's NAME in the header's white chip (what the screen is about),
+    then, under no caption (the lines say what they are), the MEMBERS as the board's LINES
+    (`.board-row.member`: no rank column, the mark at 3px a cell, your own name bold, no
+    brackets — the owner's ✕ is the tapped thing on these lines) coming
     in through the board's Bayer dissolve, dressed by `readGroup`, the owner tagged under
     their name, the owner's pixel ✕ (the modal header's, `assets/icons/close.svg`) at every
     other line's end (`.board-remove`); the members SCROLL in whole lines (their room floored
-    to `LINE_PX`, one line at the least, the scroll snapping to a line's start; a screen too
+    to `LINE_PX`, one line at the least, the scroll snapping to a line's start, its last line
+    shown thinning through the drum's three dither steps while more wait below, so a list at
+    rest says there is more — `useMoreBelow`: a veil of the ground at the list's foot, and
+    the owner's ✕ stands whole above it, since a control drawn thinned reads as another
+    glyph or as disabled; a screen too
     short for that scrolls whole), so INVITE as the primary cap and LEAVE as the quiet
     danger word stand at the screen's foot whatever the group's size —
     there is no MANAGE toggle, the screen is the management. **NAMING A GROUP is THE GAME'S
@@ -2639,28 +3089,49 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the pixel face, the blinking cursor — alone in the middle of its own screen over CREATE
     GROUP, on an EDITABLE field of its own (a name takes digits and underscores the
     on-screen keyboard has no keys for, so the phone's keyboard opens; every keystroke
-    lands through `sanitizeGroupName`, cap 20). On CREATE the line gives way to the name
+    lands through `sanitizeGroupName`, cap 20). The line is set at the LARGEST whole size of
+    the face — 24, 16 or 8px — at which the `>`, its half em of air, the name and the cursor
+    fit the stage (`nameSize`, the result count's rule), so it lands on whole pixels and a
+    full name is never cut; the inked word keeps that size. On CREATE the line gives way to the name
     INKED IN — the solve's cobalt pixel word with the hit's shake, held `INKED_MS` (1100ms)
     — and the screen folds itself onto the surface that opened it, already on the new group
     (the board's tab, or the result's seat); an empty name shakes the line, the invalid
-    guess's own answer. A name the server refuses (`name_rejected`) has its own refusal
-    (`groupNameRejected` on the `ErrorScreen`), the naming screen kept up under it with
-    the name; any other failure keeps it up the same way. BOTH DESTRUCTIVE ACTS CONFIRM ON A
+    guess's own answer. **What the server refuses about the create is answered AT THE
+    LINE, never on the `ErrorScreen`** (`createVerdictOf`, on the board's and the seat's
+    naming screen alike): a banned name (`name_rejected`) shakes the line and stands in the
+    danger ink, the name kept, with one note under it until it is edited; the player's own
+    cap (`group_limit`) is the note alone (`{n} groups max`, `GROUPS_MAX`) and CREATE
+    stays dark for the screen's life. The note hangs under the line out of the flow, in the
+    air the stage keeps above CREATE, so nothing moves when it speaks. Any other failure keeps the screen up, the name
+    kept, under the `ErrorScreen`'s GROUP NOT CREATED. BOTH DESTRUCTIVE ACTS CONFIRM ON A
     FULL-SCREEN MODAL (`ConfirmScreen`, user-decided 2026-09-14 — "for such an important
     action, we actually need a fullscreen modal", replacing the two-tap word swap `LEAVE?`
     / `REMOVE?`): the member's face or the group's name over the act's title, one
-    sentence, the act as the DANGER cap, CANCEL as the quiet word. The leave's note follows
+    sentence, the act as the quiet DANGER button with CANCEL as the word under it on the
+    bottom edge (the full-screen dress, above). The leave's note follows
     the SUCCESSION RULE (root `AGENTS.md`, Groups) off the list on screen: last member →
     "the group will be deleted"; owner of two → "the other member takes it over"; owner of
-    three or more → a PICKER of the others (the board's lines as radios, the one picked
-    FRAMED, dressed by `readGroup`, in whole rows — `round(down, 40vh, 44px)`, snapping),
+    three or more → a PICKER of the others UNDER THE NOTE, read after the question it
+    answers (`components/SuccessorPick`, ConfirmScreen's `choice`: the board's lines as
+    radios, each resting in the slate corners of a thing to tap — the period switch's
+    cells', held 4px in from the line so two lines' corners never meet — the one picked
+    locking on in white (`pick-lock`: its corners reaching in along the line in whole-pixel
+    steps on the picker's 6px arms),
+    dressed by `readGroup`, in whole rows — `round(down, 40vh, 44px)`, snapping; every row
+    is a control, so none is thinned at rest: while more wait below its foot is the short
+    edge's last 4px, on the last row's bare margin under its resting corners, the picked
+    row's frame standing above it),
     LEAVE held back until one is picked, sent as `successor`; a stale list's 409
     `successor_required` is no failure: the confirmation stays up, its pick cleared, and
     the list is read again (the candidates dressed again when its members change).
-  - **A member already skips the landing onto the board, but never one this tab just
-    joined** (`GroupInvite`'s module-level `joinedHere`): the tap that joins can also MINT
-    the identity, and an acquired identity remounts the routed surface, so a remounted
-    landing would otherwise read "member already" and skip the confirmation it just earned.
+  - **A member already skips the landing onto the board, but never one this tab is joining
+    or has joined** (`GroupInvite`'s module-level `joinsHere`, entered at the TAP and taken
+    back out by any outcome but joined): the tap that joins can also MINT the identity, which
+    reloads the groups list — and that list can name the new membership before the join's
+    own answer is read — and an identity change remounts the routed surface; either would
+    otherwise read "member already" and skip the arrival the join earned. A landing mounted
+    again stands joined only for a join that LANDED (contract-tested,
+    `GroupInviteJoin.test.tsx`).
   - **Tests**: the podium's pick (`game/podium.test.ts`), its scene's box, sizes, layout,
     beats and name setting (`components/podium/scene.test.ts`), and the board's readings
     and list order (`game/boardView.test.ts`, `game/boardSlots.test.ts`) are tested; the
@@ -2782,13 +3253,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   gesture, so a chipped word reads as yours exactly as it does in the sentence), "like on
   a synonyms website". **ONE type size** (user-decided the
   same day: "avoid reducing the font size, even if it leads to less columns"): the column
-  is as wide as the LONGEST word needs at 15px (`repeat(auto-fill, minmax(<that>px, 1fr))`,
-  set inline), so a wide screen fills its width with as many such columns as fit and a
-  phone gets one or two; only a word wider than the whole frame shrinks, alone. The list FADES into the
-  ground as it scrolls up under the header (a 40px top mask on `.hw-scroll`, padded so
-  nothing fades at rest — the game header's own fade, which a dialog's scroll never
-  lights). The
-  shared `ModalHeader` + Escape are the ways out (a fade, `fade-out`). The solved stage's
+  is as wide as the LONGEST word needs at the face's 16px (`repeat(auto-fill, minmax(<that>px,
+  1fr))`, set inline), so a wide screen fills its width with as many such columns as fit and a
+  phone gets one or two; only a word wider than the whole frame steps down, alone, to 8px —
+  the face's whole sizes only, the exponents at 8 and the headline at 24 (16, 8 where it
+  would not fit). The list THINS into the ground as it scrolls up under the header (the
+  house's DEEP dithered edge over `.hw-scroll`'s top, `--edge-deep-u`, a line deep so a
+  passing word thins instead of being sliced, padded so nothing touches it at rest — the
+  game header's own edge, which a dialog's scroll never lights). The
+  shared `ModalHeader` + Escape are the ways out (through the dither,
+  `board-dissolve-out`). The solved stage's
   word buttons open it too. `Game` picks the surface off the hole's rank (`wheelOpen`),
   and only the wheel veils the word beneath it.
   Exponents are the hole's own superscript (`.hole-rank` in the slot, `.wheel-rank` on
@@ -2803,7 +3277,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   The column stands on the word's left edge, or on its RIGHT edge when the room on the
   right is under `MIN_COLUMN` or the longest row does not fit there and the left has more
   room; only a row that fits NEITHER side shrinks, alone, to fit (floor `ROW_MIN_PX`) — the
-  words modal's rule. The scroller hides its scrollbar and fades both ends (a mask). **A PLAIN ROW
+  words modal's rule. The scroller hides its scrollbar and its ends thin through the
+  dither (the drum's ends: `--dzo-*` in three 16px steps, a mask). **A PLAIN ROW
   STANDS ON ITS OWN GROUND** (user-decided 2026-09-02: at the quarter dim the rows printed
   over the sentence's words — "you don't have wheel items over sentence text"): `.wheel-plain`
   boxes the WORD on the `--surface` tone, drawn as the chip is drawn (an absolutely
@@ -2833,8 +3308,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   frame after the slot row had gone — one frame with no word at all, measured. For a PICK, `Hole`
   starts its scramble in a LAYOUT effect, so the churn's first frame paints in place of the
   old word instead of one frame after it. The title's selection wears its own whole-screen
-  fade (`fade-out`), since the dim-only exit is the wheel's. It stays a native
-  `<dialog>` on `useModalDismiss` (`wheel-out`) — the sentence and the keyboard under it
+  exit through the dither (`board-dissolve-out`), since the dim-only exit is the wheel's. It
+  stays a native `<dialog>` on `useModalDismiss` (`wheel-out`) — the sentence and the keyboard under it
   must be inert — but it is the PuzzleSelect's KIND, so a tap OUTSIDE closes it. What is
   GONE with the modal (no-back-compat): the MISSED shelf (a miss is not a found word and
   cannot be picked), the `dq`-spaced line and the `???` terminus, `Game.openHistory`'s
@@ -2998,14 +3473,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   activeDate]`** (`web/src/config.ts`, one first day PER LANGUAGE since #317 — the languages
   are independent and English starts later: en 2026-10-01, its planned launch, fr
   2026-08-01; the user pins them); the calendar's earliest month is its language's first
-  (keyed by language, so a switch re-clamps the month on screen); a malformed or out-of-range
-  date-shaped segment → `home` redirect, while a **non-date** second segment keeps the old
-  tolerance (`/<lang>/xyz` → today's game). `parseRoute` takes the range bounds as an
+  (keyed by language, so a switch re-clamps the month on screen); anything else under a
+  language — a malformed or out-of-range date, an unknown step (`/<lang>/xyz`), a broken
+  bonus id — plays THAT language's today, never the `home` redirect (which answers in the
+  stored language). **A path read leniently is written back as the screen it resolved to**:
+  App `replaceState`s `pathForRoute(route)` whenever it differs from the URL (`/fr/xyz` →
+  `/fr`, `/fr/learn/99` → `/fr/learn`, `/account/nonsense` → `/account`, a trailing slash
+  dropped), so the address bar, a reload and a copied link name what is on screen;
+  contract-tested (`langs.test.ts`). `parseRoute` takes the range bounds as an
   injected arg (App passes the client `activeDate`) so parsing stays pure/testable.
   A BONUS puzzle (root `AGENTS.md`, 2026-09-24) is `/<lang>/bonus/<id>` → the game with
-  `bonusId` (a broken id → `home`); `usePuzzle(lang, date?, bonusId?)` answers a
-  `PuzzleRef`, which `Game`/`SolvedScreen`/`PuzzleTitle` take in place of a day number.
-  `usePuzzle` fetches the given date, else the active day (unchanged); the
+  `bonusId`; `GameRoute` names the puzzle as a `PuzzleRef` — the bonus, the route's date, or
+  the undated route's day (`useHomeDay`) — which `usePuzzle(lang, ref)` fetches and
+  `Game`/`SolvedScreen`/`PuzzleTitle` take in place of a day number; the
   404→`noPuzzle` path is reused as-is. `dateForDayNumber` (`shared/day.ts`) is the
   `dayNumber` inverse. The **OG share page** (`backend/ogCard.ts` `renderShareHtml`) now click-throughs
   to the **shared day's** date-addressed URL (`/<lang>/<dateForDayNumber(dayNumber)>`),
@@ -3108,8 +3588,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     cached month as data with no indicator; a TOKENLESS device's month is bare keys, nothing
     waiting.
   - **THE HOLD** under the grid, reserved in every state so nothing above it moves when it
-    speaks: a failed read's note — `failedHistory` in the danger ink when nothing is drawn,
-    `staleHistory` in the plain status ink over a cached month — over RETRY. The note is a
+    speaks: a failed read's note — `failedHistory` when nothing is drawn, `staleHistory` over
+    a cached month — over RETRY, the house's quiet failure (`.quiet-failure-line`, the muted
+    note, never the danger ink or the accent; `.quiet-btn`). The note is a
     LIVE REGION mounted before it (heard when it comes, again on a second failure), RETRY
     outside it; RETRY, focused, hands the focus to the shown month's tab before the hold
     empties.
@@ -3228,15 +3709,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
       bold), ALONE on the column's axis — no portrait, no name: the boards under it name the
       player; the run RULER with its HEAT; **then SHARE**, under the frame (the brackets hold
       what you send, the button sends it; sharing is what you do with a RESULT,
-      user-decided 2026-08-14). Measured: 390×844 and 375×667, a 160px count, SHARE at
-      y 456–504; 320×568, a two-digit count at 136px (the hero's width), SHARE at y
+      user-decided 2026-08-14) — a copy turns its word to COPIED and back through the
+      dither (`SwapLabel`: the old word out, the new one in through the cells it gives up;
+      the button itself does not change, no glow). Measured: 390×844 and 375×667, a 160px
+      count, SHARE at y 456–504; 320×568, a two-digit count at 136px (the hero's width), SHARE at y
       435–483; 1366×657 (a laptop's browser window), wide, a 160px count, SHARE at y
       556–604.
     - **THE COUNT IS THE SUBJECT, drawn as the METER.** Press Start 2P at the LARGEST whole
       multiple of 8px whose INK fits the hero (`countSize.ts` — the box is the
       digits' ink, the last glyph's trailing blank column dropped, so the number centres on
       what it prints) AND whose box leaves SHARE above the fold — the card's room from its
-      top in the stage down to the stage's bottom fade, less everything in the card but the
+      top in the stage down to the stage's bottom padding, less everything in the card but the
       count's box: at most 160px on a phone (the share card's own), 192 on a WIDE card (a
       column ≥ 552px in a small viewport ≥ 640px tall — a shorter window keeps the phone's
       sizes, so its room goes to the count, not to the air round it); three digits at 320
@@ -3312,16 +3795,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
       never the pixel face inside a paragraph. **The STAGE is the
       scroller** (`overflow-y: auto`, `overscroll-behavior: contain`, `pixel-scroll`,
       `position: relative` so the sr-only hints under a long page are contained rather
-      than growing the document — measured 523px of page scroll before), fading its
-      BOTTOM edge over its own 24px padding (on a phone plus the home-indicator inset);
-      its top has no fade, because what passes there passes under the credit. **The
-      credit is `position: sticky; top: 0`** inside the page (its containing block, so it
-      sticks while the page is in view and leaves with it) on flat `--bg` with a 24px
-      `--bg`→transparent gradient hanging under it (`::after`), so the text disappears
-      under the credit rather than through it, and **a tap on it scrolls the stage back to
-      the top** (`backToTop`, smooth unless reduced motion): the running head is the way
-      back to the score and SHARE. On a phone that fits, nothing overflows and nothing
-      moves. **A FINISHED round's secrets open the words MODAL, found or not**: an
+      than growing the document — measured 523px of page scroll before), its BOTTOM edge
+      thinning through the house's DEEP dithered edge (`--edge-deep-d`, 24px — a line of
+      text deep, so a line passing out steps down through the cells and is never sliced)
+      laid on its own 24px padding (on a phone plus the home-indicator inset), so a resting
+      last line is never touched; its top has none, because what
+      passes there passes under the credit. **The credit is `position: sticky; top: 0`**
+      inside the page (its containing block, so it sticks while the page is in view and
+      leaves with it) on flat `--bg` with the same deep edge hanging under it (`::after`,
+      ending inside the text's top margin, so a resting line is never touched), so the text
+      thins under the credit rather than running through it, and
+      **a tap on it scrolls the stage back to the top** (`backToTop`, smooth unless reduced
+      motion): the running head is the way back to the score and SHARE. On a phone that
+      fits, nothing overflows and nothing moves. **A FINISHED round's secrets open the words MODAL, found or not**: an
       unfinished round's (given up, or capped) unfound holes keep a rank, but the wheel measures the board's own
       `[data-hole-explore] .hole-word-wrap`, which the page's secrets do not wear, and a
       pick has nothing to swap into a page that already shows the answer — `wheelOpen` is
@@ -3471,12 +3957,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     dismissal lands 200ms later, past its exit fade, so the arming cannot catch that same
     gesture either) — and never under the dev `?streak=N` preview, which holds the result
     at frame zero behind a modal this round never sees. The boards' box is INERT until it
-    has LANDED (`.solved-boards.armed`, its rung-in played — `BOARDS_ARRIVE_MS`): before
-    that the skip-tap that lands where it sits, unseen or at the arrival's first
-    transparent frames, only skips; once it shows, a tap on it skips AND opens that board,
+    has LANDED (`.solved-boards.armed`, its first line dissolved in — `BOARDS_ARRIVE_MS`):
+    before that the skip-tap that lands where it sits, unseen or in the arrival's first
+    dissolving frames, only skips; once it shows, a tap on it skips AND opens that board,
     like any other target. The boards' box snaps to whatever
-    is true right now: it stands empty while a read is out and fills in place when one
-    lands, so the skip never blocks on, or fakes, the network. Reduced motion is unchanged (already near-instant). **Skipping the SOLVING
+    is true right now: it holds its skeleton while a read is out and fills in place when
+    one lands, so the skip never blocks on, or fakes, the network. Reduced motion is unchanged (already near-instant). **Skipping the SOLVING
     choreography is deliberately out of scope.**
   - **REMOVED with the 2026-08-14 redesign** (no-back-compat rule, all were left without a
     consumer): the caption's `masked` veil and its prompt-zone overlay (the caption mounts
@@ -3517,12 +4003,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
   stops but map distance logarithmically through `rankHeatColor(rank)`, whose absolute
   `HIT_HEAT_CAP = 100` is internal; progress callers never use the rank curve, and rank
   callers never choose a denominator. Both mappings live in `shared/src/heat.ts`.
-  The % ITSELF is no longer displayed anywhere during the round — the
-  header names the day instead (see the app-header bullet) — so this bar, the emoji row and
-  the archive/chooser badges are the only things it now speaks through. It is still computed
-  every guess. *(It is no longer CACHED anywhere: #214 dropped the persisted round, so it
-  is derived from the play log like everything else, and the archive/chooser read the
-  SERVER's summary instead — #211.)* **The SHARE CARD draws the SAME
+  During the round the % ITSELF is printed only on the RACE LINE (the player's own, beside
+  their groups' players); otherwise this bar, the emoji row and the archive's keys are what it
+  speaks through. It is computed every guess, and CACHED nowhere: it is derived from the
+  play log like everything else, and the archive reads the SERVER's summary (#211). **The SHARE CARD draws the SAME
   ruler (decided 2026-07-25, superseding the bucketed-squares card):** the share token
   was bumped to **v2** — and to **v6** by #214, which added the CAPPED flag (a round that ended unsolved: given up, or capped) and skipped the retired Word mode's ids 3–5 — carrying the RAW per-try
   trajectory plus the solve moments instead of the `bucketMeans` squares, so `renderCardSvg` renders the on-screen ruler
@@ -3698,13 +4182,20 @@ it to the local store — see `packages/backend/AGENTS.md`).
     only on the ACTIVE day with an account (`racing`: never an archive day or a bonus), and
     draws `components/ResultBoards` between THE CARD and the PAGE. It lands a breath after
     SHARE (`boardsIn`, hung off `stageIn` like every beat, so the `?streak=N` hold and the
-    #179 skip both answer it): the shown tab's chip is drawn across, then the lines come in
-    one after another (`BOARDS_ARRIVE_MS`; reduced motion: no arrival at all); the page's
-    beat follows it.
+    #179 skip both answer it): the shown tab's chip is drawn across, then the lines dissolve in
+    one after another through the board's dither, as the board screen's do
+    (`BOARDS_ARRIVE_MS`; reduced motion: no arrival at all); the page's beat follows it.
   - **ONE FIXED BOX** (`.result-boards`, 354px): the tabs' 44px row, room for
-    `RESULT_LINES_MAX` (6) 44px lines and two 20px rails (a gap's, and the `+N`'s) — whatever it holds, so it
-    stands EMPTY in its place while the first answers are out and a read landing or a swipe
-    moves nothing. It holds its room while the LIVE answer is `awaited` — the groups list
+    `RESULT_LINES_MAX` (6) 44px lines and two 20px rails (a gap's, and the `+N`'s) — whatever it holds, so a
+    read landing or a swipe moves nothing. **While the first answers are out it HOLDS what is
+    coming** (`aria-busy`), the board screen's own way: one stippled chip where the tab's chip
+    will stand (`BoardTabs`' hold) and the skeleton's lines (`SkeletonLine`) at `LINE_PX` —
+    in only once the box is on screen (its beat, `arrived`) and the reads have been out
+    `SKELETON_WAIT_MS` more, the lines `SKELETON_STAGGER_MS` apart, so a quick answer never
+    flashes them. Lines that land in a box already on screen (`.over-hold`) DISSOLVE in, the
+    skeleton's stagger apart, each over the skeleton line going out through the cells it takes
+    (the lines that had come in, `cameIn`); lines that land before the box shows arrive on its
+    own beat. It holds its room while the LIVE answer is `awaited` — the groups list
     still unknown, or a group with somebody else and no answer that has seen the round's
     end while a read is still to come (`useLiveBoardBusy`) — rather than draw GLOBAL
     first and turn to a group a moment later; and it holds it until the GLOBAL read has
@@ -3745,7 +4236,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     %, `ended`): ranked only when the live rows hold their recorded score; else an unranked
     playing row — `∞` among the ended for a round that ended unsolved, 100% for a solve with
     no recorded score — replacing the row the read carries for them. Their face is
-    `useOwnFace`'s.
+    `useOwnFace`'s, dressed as a board dresses any row: where that read failed, the
+    assigned identity.
   - **The block wears the card's ground** (user-decided 2026-10-02, with the card; the
     board screen wears it too): no panel, no row boxes — lines of type set on the column.
     **THE TABS are the boards' ONE control, `components/BoardTabs`** (the board screen's
@@ -3763,8 +4255,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
     the column cuts is COVERED by the ground, the cover carrying the boards' own left-out
     rail against the whole name next to it (on whole pixels); a cover too narrow for the
     rail (under 24px, `COVER_MARK_PX`) takes the next whole name too — never the shown one,
-    so a cover against the shown name can stand unmarked; turning to a tab scrolls its name
-    whole into view. A name too long for the room the row leaves it once scrolled to (clear
+    so a cover against the shown name can stand unmarked; where names are left out before
+    the pinned name, it FOLLOWS THE RAIL DIRECTLY — drawn in from the row's end
+    (`--pin-shift`) to stand 10px past the rail, the ground carried on after it to the row's
+    end (`.board-tabs-ground`, a cover's ground, no tap of its own) — so the row never shows
+    a band of nothing between the rail and GLOBAL. Where it stands is decided only for a row
+    AT REST — on layout, on a resize, once a scroll has settled (`REST_MS`, 150, with no
+    scroll frame and no finger on the row: iOS Safari has no `scrollend`), and on a TURN for
+    where the turn's scroll will rest, in the turn's own frame — and it HOLDS there while the
+    row moves: the names pass under it and it never slides with them. (Never on a focus
+    alone: a focus lands between a tap's press and its click, and GLOBAL moved under the
+    finger there takes the click.) A shown name a swipe has taken wholly out of view is
+    covered like any other. Turning to a tab scrolls its name whole into view. A name too long for the room the row leaves it once scrolled to (clear
     of the left-out rails and of the pinned name) ENDS IN AN ELLIPSIS there (`--label-max`,
     floored to whole glyphs, written when the row's width or names change, never on a
     scroll), so the SHOWN name is never under a cover. A roving tablist for the keyboard (the arrows, Home, End), each tab
@@ -3782,7 +4284,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     publishes puts the seat on the new group, named on the tab, INVITE on the call, before
     the naming screen folds — nothing replays), or INVITE (`useShare({tracked: false})`,
     `inviteText`). Its click goes no further than the call, and a swipe's opens nothing.
-    Failures land on the `ErrorScreen`, portaled outside the panel (an event bubbles
+    A refused name or the cap answers at the naming screen's line; an act that did not land
+    speaks on the `ErrorScreen`, portaled outside the panel (an event bubbles
     through a portal to its React parents). No analytics event. A sideways SWIPE
     on the rows turns the tab too (`hooks/useSwipe`, the board screen's and the archive's
     grid's too: `touch-action: pan-y pinch-zoom`; 40px, mostly sideways; a finger's or a
@@ -3825,14 +4328,16 @@ it to the local store — see `packages/backend/AGENTS.md`).
   this visit's PLAY (nothing is recorded until a guess lands), so a round already in progress
   never shows it for the lesson alone. On the gate the PHRASE is on screen but the round holds
   back: the prompt lays out `retired`, and the TRAY holds the buttons in the keyboard's own
-  footprint (`.rules-gate`, anchored to the tray's bottom by `.tray-gate`). The holes stay
+  footprint (`.rules-gate`, anchored to the tray's bottom by `.tray-gate`), coming in
+  through the dither one after another (`.dissolve-in`), in place. The holes stay
   tappable and keep their wave — `exploreDisabled` and `quiet` do not read `gateOpen` — so
   each opens its wheel there as it does in play. No analytics event.
   **Since the #216 trigger rework the gate is also the sentence game's DEPLOY BUTTON**: a
   device with NO account shows it on every sentence day (archive days and post-sign-out
   included), whatever is done, because its PLAY is the only trigger on the screen — the tap
-  bootstraps the account (loading wave in the button, `ErrorScreen` with TRY AGAIN on failure,
-  nothing created on a failure) and then opens the round. The round engine's append NEVER
+  bootstraps the account (the button busy; on a failure the `ErrorScreen`'s ACCOUNT NOT
+  CREATED, nothing created, its GO BACK returning to PLAY to press again) and then opens the
+  round. The round engine's append NEVER
   mints an identity (`currentRequestIdentity`): a tokenless outbox — the pending-bootstrap
   recovery — waits behind the gate, and the deploy's identity listener kicks every
   conversation loose (`kickRoundSync`).
@@ -3868,7 +4373,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (user-decided 2026-09-29: "not fully interactive like the first one… more like an article,
   like the chqrles.me article, but without all the story telling"): the author's published
   article cut into four, its own sentences and examples, figures redrawn in the app's style
-  (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **They say how it works,
+  (`ArticleLevel.tsx` over `articles/<lang>.ts`, lazy like level 1). **A FIGURE IS DRAWN WITH
+  THE GAME'S OWN PIECES**: its states on the boards' bracketed switch, a share as the hole's
+  meter charge (in the slate: cobalt means found), the step at hand under the white title
+  chip, a word as the game shows one (the held chip, the found cobalt, a list as the words
+  grid lists them), a ranking as the boards' lines, a step's words a note in a sentence — on
+  the bare ground, its picture on the house's 2px cells, the pixel face at 8 or 16px only (a
+  word its caption quotes is the quoted-word exception, 0.82em of the caption); its motion
+  in hard steps, starting once it is on screen, a motion that repeats (the training
+  loop's chip) resting while nobody can see it (`rasterWatch`), and what a motion says also
+  drawn still (the loop's return), so reduced motion loses nothing; the same information the
+  article's figure gives. **They say how it works,
   never the journey** (user-decided: "we're explaining how it works, not how it didn't work,
   nor how we've tried to make it work") — no attempt, failure or fix is told. **The article's own
   words, not a comma changed** (user-decided: "if you can reuse an article part without
@@ -3885,14 +4400,19 @@ it to the local store — see `packages/backend/AGENTS.md`).
   word the prose quotes wears the held chip's white ground** (user-decided: the accent word is
   the one you are trying to get close to, the white ones are the others). Every level
   ends on the problem the next one answers. The end is three bands: NEXT LEVEL, PLAY, then the
-  credit to the article apart. On a wide screen the list and an article scroll the WHOLE
+  credit to the article apart. **The page is SET LIKE THE PRIVACY NOTICE**, the app's other
+  document: the bare ground (no panel, no hairline) — the sleeve, the track number in the
+  accent's pixel figures at 16px, the title, the credits line — each section opening on the
+  podium's stippled floor with its cue in the same figures; NEXT LEVEL a tappable thing in
+  the list cards' resting corner brackets, PLAY THE WORD under it (or, after the last level,
+  the `.mix-btn`), the credit's link on the privacy mail link's stippled underline. (Its
+  figures are their own.) On a wide screen the list and an article scroll the WHOLE
   VIEWPORT, so the scrollbar stands on the screen's edge (user-decided 2026-09-29). **Written in French first** (user-decided 2026-09-29: "wait for the article
   translation… for the moment just create the french version"): a level is READY in a
   language when its lesson exists there (`Level.duration`: an ARTICLE's reading time, which
   its card prints and `levels.test.ts` holds to the text; LEVEL 1, played, is ready with
   `null`, because a game takes as long as the player, so no surface prints a time for it);
-  elsewhere its card is grey
-  and says SOON. **Only LEVEL 1 has a DONE state**: the articles are read as often as anyone
+  elsewhere its card is printed in HALFTONE and says SOON. **Only LEVEL 1 has a DONE state**: the articles are read as often as anyone
   likes and record nothing — no done mark, no highlight, no badge. Completion is
   DEVICE-LOCAL (`lessonsDone`, never on the account), and level 1 is INFERRED FROM PLAY (see
   the gate bullet). The header's badge (`.hk-badge`, `undoneLevels(done, lang)`) is 1 while
@@ -3901,11 +4421,23 @@ it to the local store — see `packages/backend/AGENTS.md`).
   is a page of CARDS** (2026-09-29, "fill the
   screen since we have nothing else to display"): each level wears its animated DITHERED
   illustration (`art/scenes/`, the meter's Bayer 8×8, the app's inks and the heat ramp; ~11
-  fps, only on screen, one still frame under reduced motion) edge to edge, dithered out
-  under its title; number, an article's reading time (level 1: an empty corner held open
-  until its done mark), title, subtitle; level 1,
-  until done, wears the invitation's selection box on its title. Wide: level 1 tall on the left, the
-  articles two by two; tablet: level 1 across the top; phone: one card under the other.
+  fps, only on screen, one still frame under reduced motion), composed to its card's whole
+  stage and dithered out under its title; number, an article's reading time (level 1:
+  none), title, subtitle. Wide: level 1 tall on the left, the articles two by two; tablet:
+  level 1 across the top; phone: one card under the other. **A card stands on the BARE
+  GROUND** (no panel, stroke or radius) **in a tappable thing's resting corner brackets**
+  (the slate, 2px, 16px arms), which step to white under a mouse alone (`(hover: hover) and
+  (pointer: fine)`); the number is the accent's pixel figures at 16px, the reading time and
+  SOON the face's 8px in `--muted`, each cutting its box out of the picture in the ground's
+  ink; the card's foot is ONE height, so a row's titles stand on one line. **Its STATE is said
+  in its own material, never in a word** (`LevelCard`): level 1 until done wears its number
+  WHITE and its title in the white chip (the next thing to do); DONE, its number cobalt, the
+  chip gone, the picture's held words inked in (`LevelArt`'s `solved`); a level not ready
+  here takes no tap and wears no brackets, its number `--muted` and its picture PRINTED IN
+  HALFTONE (`LevelArt`'s `halftone`: its inks given up for the slate — `--muted` for the
+  bright ones — and only the cells under the archive's `HALFTONE` share of the Bayer order
+  printed), never a CSS filter. The cards come in through the board's dither, one after the
+  other.
   **Stage progress (user-decided 2026-09-17):** the coach dialog shows `n/4` beside it,
   driven by the current stage and `stages.length` in `LevelOne`.
   **LEVEL 1 (`tutorial/LevelOne.tsx` over `LessonBoard.tsx`, one screen, the script's
@@ -3938,13 +4470,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     its 17th closest word, ski¹⁷." — user-decided 2026-09-16). The real keyboard
     and the real vocabulary from the first frame. **A LONE WORD IS NOT TAPPABLE** (same day):
     the wheel is the sentences' own. NO CAPITAL on a lone word (`Phrase`'s `capital={false}`: a word is not
-    a sentence), and the PROMPT sits just above the keyboard on the LEFT (`.tutorial--word
-    .input-area`, `margin-top: auto`), off the word — and at ONE X on every stage: its own
-    680px box centred in the column (`.tutorial .input-area`), where stretching it to a 680px
-    word column and a 1200px sentence column put it at two edges — and at ONE Y, parked on
-    the play area's bottom edge on every stage, the sentence's included (user-reported
-    2026-09-16). Finding it ends the stage wordless and
-    rolls into the sentence.
+    a sentence), and the PROMPT sits just above the keyboard on the column's LEFT edge
+    (`.tutorial .input-area`, stretched across the one column every stage shares), off the
+    word — at ONE X and ONE Y on every stage, the sentence's included, parked on the play
+    area's foot under the board, which takes the room between (`.l1-fig`, `flex: 1 1 0`).
+    Finding it ends the stage wordless and rolls into the sentence.
   - **THE SENTENCE** — two holes, start words in the game's own 50–150 band (en "a dog barks
     at the moon." from `coyote^63` / `star^69`; fr « un chien aboie à la lune. » from
     `loup^52` / `pénombre^63`), the try count printed behind it as the day does, CENTRED on
@@ -3957,7 +4487,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     graduation: `markLessonDone(1)`, `setOnboarded`, `track finish`, and BACK WHERE THE
     INVITATION STOOD (`App`'s `lessonReturn`, the path TUTORIAL was pressed on — a dated
     link's day — cleared by any non-lesson route; the plain game otherwise, a reload
-    included; user-fixed 2026-09-17).
+    included — save a lost chunk's RETRY, which keeps it across its own reload,
+    `tutorial/lessonReturn.ts`; user-fixed 2026-09-17).
   - **THE METER (#301 TAUGHT; user-decided 2026-09-16 — "after saying that real sentences
     are harder, the onboarding should continue and explain the first letter concept",
     SCRIPTED the same day; the letter became the ACTIVATION on 2026-09-22 and the stage's
@@ -4025,6 +4556,34 @@ it to the local store — see `packages/backend/AGENTS.md`).
     found it! You are ready for the real
     game." → PLAY. `STUCK` has no `meter` row
     (the stage is its own script). Not taught: the exact rate.
+  - **THE ROOM:** the BYLINE stands on the podium's stippled floor — the coach,
+    `01` in the accent's pixel figures at 16px, the level's line, the stage counter `n/4` in
+    the face's 8px `--muted` (cobalt once the stage's word is found); the BOARD is the stage on
+    the bare ground — its box kept (`isolation: isolate`, so the try count stays clipped to
+    it), no ground, stroke or radius. **THE FINALE**: PLAY under the found sentence, which
+    then dissolves, and LEVEL 1's own card (`LevelCard`, the list's) stands in the free height
+    between the coach's line and PLAY, at the list hero's shape (`--learn-hero-ar`, read by
+    `LessonBoard`, sized on whole pixels) on the bare ground in the device frame's corners,
+    coming in through the board's dither with its page typing itself in; then it turns DONE
+    in its own material — `01` inks cobalt, the title's chip is wiped off, the picture's held
+    words ink into the found cobalt and its page stands. PLAY is live throughout.
+  - **THE WAITS:** the lazy wrappers (`LazyLevelOne`, `LazyArticle`) publish the header's
+    `LangTitle` themselves, loaded or not, so the header never blanks while a chunk loads,
+    and each stands its screen's own layout as the HOLD — the slate stipple coming in after
+    `SKELETON_WAIT_MS`, then breathing (`.stat-slot`): level 1's byline with `01` and its line
+    as real text beside the coach's box, the board's word, and CONTINUE's slot drawn as the
+    game's hold draws PLAY's (`.gate-slot`: its slate hairline, its word a stipple bar); an
+    article's real head (`ArticleHead`: its sleeve, its number, title and credits) over
+    paragraph rails. A chunk LOST holds it still (the failed-read bullet). **The word list is
+    waited for where it is needed**: the reveal needs none, so CONTINUE stands from the first
+    frame; pressed before the list has landed, the keyboard's footprint rises as its HOLD
+    (`components/KeyboardHold`, the game hold's unlit iron keys, breathing at once since it
+    answers that tap), and the keys come in over it through the board's dither once the list
+    lands while it goes out through the cells they take (`.from-hold`, `.kb-hold-out`). A
+    list LOST stands the hold still and retires the prompt, `failedKeyboard` and RETRY in
+    the prompt's row. The
+    list's pictures HOLD their stage the same way while the scenes chunk loads (`LevelArt`),
+    the picture dissolving in over it.
   **A WHEEL ROW'S HIT AREA IS ITS WORD** (`.wheel-row` `width: fit-content`, user-reported
   2026-09-16 from the lesson: "when we click next to a word it scrolls to it instead of
   leaving the wheel"): the room beside a word is the scroller's own, and a click there folds
@@ -4032,9 +4591,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **THE COACH IS THE PLAYER (user-decided 2026-09-16, "people would want to read it more if
   it's something telling it"):** the old lineup's PLAYER idle sheet (`player-idle.png`, 8
   frames of 22x31, restored from the benchmark display's removal — the error bot stood in
-  first, replaced the same day on the user's ask) at 2x stands on the coach box's top-left
-  edge (`.coach--bot` / `.coach-bot`, drawn ABOVE the box so the text budget stands; the box
-  and the board's `padding-top` drop by the sprite's 56px).
+  first, replaced the same day on the user's ask) at 2x (`.coach-bot`, 44×62) stands on the
+  byline's stippled floor, its feet on the rule, at the band's left end (THE ROOM).
   **THE REACTIVE COACH (`tutorial/coach.ts`, pure; `coach.test.ts` replays sequences):**
   the one line the board's state calls for — and when a beat has nothing new to say THE BOX
   KEEPS THE LAST LINE UP, it never disappears (user-decided 2026-09-16). **Every line
@@ -4059,15 +4617,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   7 essais !\nEssayons une phrase plus dure. » / "Found in 7 tries!\nLet’s try a harder
   sentence." — the score, said once, and the hook the METER stage hangs from, user-decided
   2026-09-16, cut 2026-09-30; a found single word still says nothing). The `{braces}` are filled from the board itself, so a line can never
-  name a word the map does not rank. THE COACH BOX IS THREE LINES, FIVE AT MOST (user-decided 2026-09-16, lifting the
-  exact-three rule of 2026-08-04: the box is fixed-positioned and moves nothing beneath, and
-  the bot's briefing on the last sentence runs to five at 320px — `.coach-text`
-  `max-height: 8.5em`, the board's `padding-top` grown to match); copy past five lines is a
-  copy bug.
+  name a word the map does not rank. THE VOICE'S ROOM IS RESERVED (`.l1-voice`,
+  `--voice-lines`): two lines, three on a tablet (≤820px), four on a phone (≤640px) — the
+  longest line's need at each, measured down to 320px in either language — so an absent line
+  never collapses it and nothing under it moves; copy past the room is clipped
+  (`overflow: hidden`), a copy bug made visible instead of a voice that grows.
   **The invitation SHOWS the game, then asks** (`tutorial/Invite.tsx`, no header keys;
   user-decided 2026-10-06): a first visit (no `onboarded`) lands on it. **It is laid out AS
   THE GAME SCREEN IT OPENS ONTO**, on the game's own zones (`.game`, `.play`, `.tray` with the
-  gate's `.rules-gate`): the LOCKUP — the pixel mark (`MARK_GLYPH`, 1x, `crispEdges`) in the
+  gate's `.rules-gate`): the LOCKUP (`Lockup`) — the pixel mark (`PixelMark`, 1x) in the
   accent with WHIPPIN AI beside it in the lockup type — in the header's row (`.topbar`
   geometry), the mark on the pixel where the game's title draws it; the demo where the day's
   sentence and prompt stand, at the game's size and leading and on its left edge (on a wide
@@ -4094,11 +4652,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
   animation that means nothing"): drawn from the first frame, never animated, waiting on
   nothing in the demo — so it stands while the demo's held word wears its own chip
   (`.invite-mark`: its side padding given back by negative margins, so it moves no letter;
-  the marked words never part across a line). TUTORIAL and SKIP work from the first frame;
+  the marked words never part across a line). Its blocks — the lockup, the demo, then the
+  question, TUTORIAL and SKIP — come in through the dither one after another (`.dissolve-in`,
+  never a glide: the gate's own blocks carry the count on, never the tray's box, whose mask
+  would hide the question standing above it); TUTORIAL and
+  SKIP work from the first frame;
   TUTORIAL is the big action's 430px. No line of copy, no time promised. TUTORIAL navigates
   to level 1 (the lesson's PLAY or a header exit
   settles the flag), SKIP settles it there. Its preload warms the level-1 chunk
-  (`LazyLevelOne`, on `hooks/lazyChunk` like `LazyStreakDialog`; a failed chunk exits without completing the lesson). Analytics
+  (`LazyLevelOne`, on `hooks/lazyChunk` like `LazyStreakDialog`; a lost chunk holds the
+  lesson's first screen still and says so, with RETRY and — the question still open — the
+  invitation's SKIP beside it, completing nothing); the lesson's waits are level 1's own
+  bullet's (THE WAITS). Analytics
   keep the three events (`start` / `skip` / `finish`). The boards are pruned #154 artifacts
   (`scripts/<lang>.<word>.json`, `prune-word-map.mjs --top 150`; the exact commands in each
   script's header), never published or served; a lesson board touches no `rounds`, no outbox,
@@ -4107,28 +4672,32 @@ it to the local store — see `packages/backend/AGENTS.md`).
   three-slot finalization recorded below).** The BAND is unchanged — `--glass` +
   hairline + backdrop blur (`components/TopBar.tsx`), full-bleed with one bottom
   hairline on a phone, floating capped-and-rounded just inside the device frame's
-  brackets on desktop (`min(900px, 100vw - 48px)`, 50px, 8px off the top). What changed
+  brackets on desktop (`min(var(--column), 100vw - 96px)`: its edges where the brackets'
+  arms end at their widest, 24px in + 24px; 50px, 8px off the top). What changed
   is what it holds, and why.
   **THE BAND WAITS FOR SCROLL (user-decided 2026-09-01, amending 2026-08-18's
   always-on glass) — AND WHAT ARRIVES IS THE GROUND, NOT A BOX (same day, later:
-  "do not add a border, just a `--bg` background on the whole width of the screen and a
-  vertical gradient from `--bg` to transparent below to fade content behind it").** At
+  "do not add a border, just a `--bg` background on the whole width of the screen…").** At
   REST the header is TRANSPARENT, sitting directly on the ground; once the screen under
   it has actually scrolled (`.topbar.scrolled`, set by TopBar's own capture-phase scroll
   listener — one listener hears every scroller in the app and the phone's page scroll; a
   dialog's scroll never lights it, a horizontal-only scroller says nothing, and a
   scroller that unmounts drops its state on the next render) the whole screen width
-  behind the row fills with flat `--bg` and a 36px gradient from `--bg` to transparent
-  hangs under it, so content fades into the ground before it reaches the controls. No
-  border, no blur, no glass, no rounded float: both layers are pseudo-elements of
-  `.topbar` (the full-width fixed layer), faded in on opacity so nothing shifts, and
+  behind the row fills with flat `--bg` and the house's DEEP dithered EDGE hangs under it
+  (`--edge-deep-d`, 24px: three steps, three quarters, a half, a quarter — a line of text
+  deep), so a line scrolling up thins into the ground step by step before it reaches the
+  controls, never sliced across its glyphs by a strip thinner than it. (The 6px `--edge-*`
+  stays where lines rest WHOLE and their empty margins take it: the board's held head, your
+  held line and, its last 4px, the successor pick's foot.) No border, no blur, no glass,
+  no rounded float, no gradient: both layers are pseudo-elements of `.topbar` (the
+  full-width fixed layer), shown in ONE step so nothing shifts or fades, and
   `.topbar-inner` keeps only its geometry. ModalHeader, which reuses the classes with no
   `.topbar` ancestor, is therefore BANDLESS on its flat-`--bg` dialogs.
   **THE ROW IS APP CHROME, AND IT IS MOUNTED ONCE (user-decided 2026-09-02).** Every
   screen used to render its own `TopBar`, so tapping a header key unmounted the whole row
   and mounted a different screen's copy of it — and the player's own FACE paid for it:
-  `useAccountFace` holds its answer in component state, so every navigation put the key
-  back to its skeleton and re-read `/profile` over the network, which reads as the page
+  a face read held in component state, so every navigation put the key back to its
+  skeleton and re-read `/profile` over the network, which reads as the page
   reloading (user-reported). `App` mounts the row now, above the routed surface, and it
   outlives the screens under it: `TopBar` takes only `right`, and a screen publishes its
   LEFT slot through the exported `HeaderLeft` — a portal into the row's own left track, so
@@ -4143,9 +4712,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (`?streak=`, `?error=`) moved up with that decision, because they are part
   of the answer. Verified in the browser: the `header`, `.hk-row` and `.account-key` DOM
   nodes are the SAME elements across every key, and a deployed account's face never
-  skeletons and issues no second profile read. (Not fixed by this, and worth naming: the
-  ACCOUNT SCREEN's own `useOwnFace` still re-reads on each visit — a shared read cache is
-  the remedy there, not the row.)
+  skeletons and issues no second profile read. (The face's read itself is shared too:
+  `useOwnFace` is ONE read every surface draws, so opening `/account` asks nothing the row
+  has not already read — the `AccountFace` bullet.)
 
   **THE PROBLEM IT SOLVES.** The row carried WHICH PUZZLE in three places — the day as a
   left chip, the daily as a centred segmented switcher, the language as a right chip —
@@ -4161,9 +4730,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **LEFT — WHAT YOU ARE LOOKING AT.** On a play surface that is `PuzzleTitle`: the
     APP'S MARK in the accent with the language CODE and a chevron (`▲ FR ⌄`, user-decided
     2026-09-16 — the daily's name held this slot until Word mode was retired). The mark is
-    `public/logo.png`, the favicon's 22×22 white pixel logo, painted through a CSS mask in
-    `--accent` at its exact 1x with nearest sampling (`.app-title-mark`), 3px more air after
-    it than the title's own gap, and the text beside it set 2px down onto the bottom-heavy
+    `PixelMark` — `MARK_GLYPH` inline, `crispEdges`, in `--accent` at its exact 1x, painted in
+    the same frame as the code beside it (an image mask arrived a request late) — 3px more air
+    after it than the title's own gap, and the text beside it set 2px down onto the bottom-heavy
     mark's weight (a translate, measured at 4x), opening the
     drum below; the drum and the `aria-label` name the language in full. It routes by the SURFACE
     it was opened from: from the archive, the other language means that language's
@@ -4177,8 +4746,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     `/account`'s plain name, `LangTitle`'s — wears the sentence chip (the game surfaces'
     title is the app's mark instead since 2026-09-16, the code beside it in plain title
     type: the mark is its one emphasis): `--fg` ground, `--bg` ink,
-    square, 12px at 600, laid out rather than drawn (`.topbar .topbar-title`;
-    ModalHeader's flat dialogs keep the plain type). The day and the chevron stand OUTSIDE
+    square, 12px at 600, laid out rather than drawn (`.topbar .topbar-title`, and
+    `.modal-bar .topbar-title`: a full-screen dialog's header row — the words modal's MOT n,
+    NEW GROUP, a group's name — wears it the same). The day and the chevron stand OUTSIDE
     the chip the way a hole's exponent does; hover and press DIM the chip by the hole's
     own mixes, since white cannot brighten. The day states its own 12px now that it sits
     outside the chip's rule (it inherited the body's 16px for one measurement), and the
@@ -4208,15 +4778,18 @@ it to the local store — see `packages/backend/AGENTS.md`).
        CHEVRON in the header's left slot** ("use a left chevron as a back icon on the
        header"): the title's own 7×7 pixel chevron turned to point out
        (`assets/icons/chevron-left.svg`), where the modals' ✕ sits top-right.
-    **What stands:** the hole wheel's fade in and out (`.wheel-dialog`, `wheel-out`) on
-    flat `--bg`; the app's header row with the back chevron; and in the middle of the
-    screen ONE DRUM, the LANGUAGE's (the DAILY's stood beside it until Word mode was
+    **What stands:** in and out through the dither (`board-dissolve` /
+    `board-dissolve-out`) on flat `--bg`; the app's header row with the back chevron; and in
+    the middle of the screen ONE DRUM, the LANGUAGE's (the DAILY's stood beside it until Word mode was
     retired), scrolling through a slot (five rows' room, the slot in
-    the middle, both ends fading over 44px, every number set inline from ONE measured chip
+    the middle, both ends thinning through the dither — the outer rows in `--dzo-*` steps,
+    three 16px strips from each edge — every number set inline from ONE measured chip
     — `.ps-probe`). The row in a slot wears the header chip's dress at 22px (18 ≤640, 16 ≤360),
     the others stand plain at the same size, and the chip hands itself from row to row
-    on a 120ms cross-fade as the drum turns; rows arrive on the wheel's stagger counted out
-    from the slot. **The drum IS the hole wheel's** — its physics moved out of
+    on a 120ms cross-fade as the drum turns; rows come in through the dither, the house's
+    stagger (`--dz-stagger`) apart counted out from the slot (under reduced motion they stand
+    landed). **The drum IS the hole
+    wheel's** — its physics moved out of
     `HistoryWheel` into `hooks/useDrum` (`current`/`peek`/`jump`/`glideBy`/
     `tap`/`endedDrag`; the caller supplies only `write`, a scrollTop there and a translate
     here), so a drag, a fling, a wheel delta, an arrow key and a tap on a row all feel the
@@ -4256,7 +4829,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   (the rules' place; on a lesson the lit book still leads to the list, and any other key
   leaves LEVEL 1 as a SKIP — leaving an article level is only leaving; the fast-forward
   control that slot held, `skip.svg` and `ariaSkipTutorial`, are retired). The book wears a
-  BADGE while level 1 is ready in this language and not done on this device
+  BADGE — a square accent plate of whole pixels, the digit cut out of it in the ground's ink
+  from the pixel face's own cells (`DIGIT_MASKS`, `crispEdges`; `BadgePlate`) — while level
+  1 is ready in this language and not done on this device
   (`undoneLevels(done, lang)`; the articles have no done state). **`profileReturn` is GONE from the store**: every
   place is one tap away, so nothing has to remember where it was opened from, and
   `/account`'s left slot is its plain NAME rather than a back control. **This OVERTURNS #190's ACTIVE-DAY-ONLY crown** (2026-08-20): that rule hid
@@ -4279,7 +4854,13 @@ it to the local store — see `packages/backend/AGENTS.md`).
     that pair at deployment — the same face before and after (#216), with no other face
     drawn in between; and a SAVE in the editor shows on it at once (the `AccountFace`
     bullet). It HOLDS ITS BOX until the face settles (the leaderboard strip's rule, and it
-    matters more here, where the control is on screen every day). **It is A BARE PIXEL TILE, IN COLOUR — the fifth cell
+    matters more here, where the control is on screen every day): `FaceHold`, the house hold
+    — the slate stippled through the Bayer tiles on the key's own 10×10 grid of 2px cells,
+    square, breathing on `link-hold-breathe` — in only once the read has been out
+    `SKELETON_WAIT_MS` (`.link-hold.waiting.late`); settled with no face it says which — a
+    read that FAILED rests on the still stipple (and is asked again when the tab comes back),
+    an account GONE is its ghost (the `AccountFace` bullet). **It is A BARE PIXEL TILE, IN
+    COLOUR — the fifth cell
     drawing in a row of five** (user-decided 2026-09-02, in two steps: square corners, then
     "remove the box shadow"; it kept its COLOUR from 2026-08-31, "actually quite cool", and
     is still the one full-colour chrome control, because that colour is the one thing on the
@@ -4453,7 +5034,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   boxes (the retired route map's opening scroll was exactly that hazard).
   **Which exit each wears:** the hole wheel FOLDS in place (a fade, since 2026-09-01; the
   history modal it replaced RETRACTED INTO ITS WORD, because it belonged to that word — the
-  wheel never leaves the word, so there is nothing to retract). (The retired leaderboard
+  wheel never leaves the word, so there is nothing to retract). Every other modal — the
+  error and confirmation screens, the words modal, the selection's shell (the language
+  drum, a group's own screen, naming a group) — comes in through the dither and leaves
+  through it (`board-dissolve` / `board-dissolve-out`, the exit the hook waits on), never
+  an opacity fade. (The retired leaderboard
   dialog's SHEET exit — up from the bottom edge, back down on the way out, at every width —
   went with it on 2026-08-12; a future full-screen result surface should take that shape
   back up.)
@@ -4468,19 +5053,40 @@ it to the local store — see `packages/backend/AGENTS.md`).
   game — while the loaded screen supplies its live status through the header's `left` slot.
   That keeps the status inside `<header>` and outside `.game`, and navigating into a game
   (e.g. from the archive) never changes the header structure; only its contents and the body
-  under it refresh. `usePuzzle`'s **stable
-  `dayNumber`** is still captured ONCE per request (`useMemo` on the requested date) and
-  shared by the fetch, round key, and share, but is no longer rendered in the header. An
-  undated tab held open across the 22:00 flip therefore still keeps its fetched puzzle/day;
-  the puzzle itself does not silently swap. The topbar is the extension point for future
-  chrome (streaks, stats, …).
+  under it refresh. **THE DAY ACROSS THE 22:00 FLIP** (`hooks/useHomeDay.ts`, three rules;
+  contract-tested, `useHomeDay.test.tsx`) — nothing changes under a player looking at the
+  screen, and the new day takes over the moment they ask for it:
+  - **The UNDATED route follows the active day ON ARRIVAL** (`useHomeDay`, App): its day is
+    the active 22:00-ET day as of the player's last arrival — the load, any navigation (a
+    tap on HOME onto the URL already shown included), back/forward, the tab shown again or
+    restored from the back/forward cache — so a tab left open past the flip opens on the new
+    day. Never at the flip itself under a tab ON SCREEN (a sentence changing mid-guess).
+  - **Coming back to a ROUND IN PROGRESS is not an arrival** (`useHoldHomeDay`, held by
+    `Round` while a guess is played and the round is not over): a player who looked away
+    mid-round finds their sentence where they left it, past the flip or not, and takes the
+    new day by asking (HOME, any key). A round with no guess, or over, holds nothing.
+  - **A ROUND ON SCREEN KEEPS THE DAY IT WAS OPENED AS** (`useOpenedAsActive`, GameRoute):
+    `Game`'s `isActiveDay` is read when the round (a puzzle in a language) comes on screen
+    and kept while it stays there, so the flip takes nothing from under the player — the
+    race line and its band, the result's boards, the streak read stay; a new round reads it
+    afresh. It is read off the clock the undated route's day reads — the wall clock at that
+    moment, never `useToday`'s timer, which can lag an arrival (a laptop waking, a page
+    restored from the back/forward cache) — so the round an arrival opens on the new day is
+    the active day. **A tap on a kept race line or result board still opens the board, and
+    the board is always the ACTIVE day's** (`pathForBoard` names no day): past the flip it
+    shows the new day, not the round's. The HEADER alone follows the live day (`isToday`,
+    off `useToday`, which a back/forward-cache restore refreshes too): past the flip it
+    shows the day's date, lights the calendar, and HOME leads to the new day — a navigation
+    onto the URL already shown, which REPLACES (`routing.ts`), so the old day leaves no
+    entry behind it.
+  The topbar is the extension point for future chrome (streaks, stats, …).
 - **The CHOOSER screens are RETIRED — both of them.** The MODE chooser (`/mode`) went
   2026-08-18 for the header's tabs; the LANGUAGE chooser (`/select`, `screens/LanguageSelect`
   + `components/Chooser` and their CSS) went 2026-09-05 (user-decided: "get rid of the
   /select page; change lang should open the select modal") — every header title already
   opens the selection drums (`PuzzleSelect`), so a page of its own answered a question every
-  page answers. Both paths parse as `home`. The one headerless surface that offered CHANGE
-  LANGUAGE, the missing-puzzle screen, opens those drums itself (`NoPuzzle`).
+  page answers. Both paths parse as `home`. The missing-puzzle screen's CHANGE LANGUAGE
+  opens those drums itself (`NoPuzzle`).
 - **UI chrome is localized + a11y'd (decided 2026-07-06):** `web/src/i18n.ts` holds every
   UI string in **en + fr** (`t(lang, key)`; the `satisfies` clause makes a missing
   translation a type error, so parity needs no test). Game screens resolve strings with
@@ -4512,6 +5118,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     wheel's slot `.hole-word-wrap`); the code row is `fit-content` so the
     field's box is its six cells. It never frames the guess field (its caret is its
     focus), a dialog focused as a whole, or a `tabindex="-1"` container.
+  - It **stands only on a target that is there**, asked every frame: never one marked
+    `data-no-frame` (the code field waiting OFFSTAGE, focused by the address step's tap so
+    iOS raises its keyboard), a box under one 2px cell, or a control that is itself
+    disabled or `aria-busy` — never one merely inside a busy region (a day of a month still
+    being read is framed). There the brackets hide where they last stood, the focus kept,
+    and come back — travelling — the moment the target is on stage (the code's keys).
   - It **follows a focus that moves** — a drum turning under it, a scroll, a resize — one
     measurement a frame while it shows, and only while it shows; it mounts INSIDE an open
     dialog when the focus is there (the top layer paints above the document).
@@ -4546,16 +5158,35 @@ it to the local store — see `packages/backend/AGENTS.md`).
   `rgba(51, 181, 229, 0.4)`, a translucent cyan box the shape of the control. A UI that
   draws its own press states, and its own focus outline, wants it on no surface at all, so
   `button` carries `transparent` once beside the global `text-shadow: none`; the hole, the
-  solved word and the wheel row each held a private copy of the same line and are gone. **The missing-puzzle screen
-  has TWO wordings, told apart by the ROUTE (#77, decided 2026-07-27)** — the backend's
-  404 is undifferentiated, and which route asked is the only signal needed: on the
-  **undated** route (today) it owns that the state is **abnormal** (a publish that did not
-  happen), unchanged; on a **dated** archive route (#55) it is usually NORMAL — a
-  pre-launch date, or a language backfilled later, simply was never published — so it says
-  that plainly (no "not supposed to happen", no "check back"), names the day, and offers
-  BACK TO ARCHIVE above the existing CHANGE LANGUAGE, both the same `secondary` weight.
+  solved word and the wheel row each held a private copy of the same line and are gone.
+  **AND ONLY PROSE IS SELECTABLE**: `body` is `user-select: none` with no iOS long-press
+  callout (`-webkit-touch-callout: none`), so a select-all or a long press never paints the
+  chrome or the game's data; what is READ takes both back — the sentence's page
+  (`.solved-text`, its CUT excepted: a control), the privacy notice, the articles' prose,
+  every link (LISTEN keeps the system's long press) — and so does every field (WebKit
+  extends an ancestor's `none` to a nested input, and an unselectable field takes no
+  typing). **The missing-puzzle screen
+  (`NoPuzzle`) has THREE wordings, told apart by the ROUTE (#77, decided 2026-07-27)** —
+  the backend's 404 is undifferentiated, and which route asked is the only signal needed: on
+  the **undated** route (today) it owns that the state is **abnormal** (a publish that did
+  not happen); on a **dated** archive route (#55) it is usually NORMAL — a pre-launch date,
+  or a language backfilled later, simply was never published — so it says that plainly (no
+  "not supposed to happen", no "check back"); on a **bonus** link it names no puzzle in this
+  language. The calendar's today cell opens a DATED route, so a missing today reached from
+  the calendar takes the archive wording. **It is the board's empty state on the game's own zones**: the sad ghost (bobbing
+  five beats, then resting) over ONE title in `--fg` (no accent, no danger) and ONE muted
+  sentence in the play area, all coming in through the dither; ONE call as the `.mix-btn`
+  where the gate's PLAY stands (`.tray-gate`) — BACK TO ARCHIVE on an archive day with
+  CHANGE LANGUAGE as THE WORD under it, CHANGE LANGUAGE alone on today and a bonus. It wears
+  the header: on an archive day the header names the day (`FR 01/09`), so the screen does
+  not say the date again, and on a bonus it tags `BONUS`; on TODAY the header names no day
+  (`FR` alone), so the undated route's title is what says TODAY, and the calendar's dated
+  today names no day anywhere.
   The pixel font is **self-hosted** (`web/src/assets/fonts/PressStart2P.woff2`, `@font-face` in
-  `index.css` — no Google Fonts request).
+  `index.css` — no Google Fonts request). The build PRELOADS it and Azeret's latin subset with
+  the document (`vite.config.ts` `preloadFirstFaces`), so the first screen is set in its own
+  faces a round trip sooner; `font-display` stays `swap`, since on a slow line `block` would
+  hide the sentence for its block period (about 3s) and then swap all the same.
 - **SVG icons (pattern to follow):** monochrome UI icons live as `.svg` files under
   `web/src/assets/icons/` and are imported as **inline React components** via
   `vite-plugin-svgr` — `import Icon from '../assets/icons/name.svg?react'` (the `?react`
@@ -4722,6 +5353,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
     article; the page's description states it) and no SOON (a level's card is the same
     ready or not). HOME's card says the game in no language — its guesses are words
     English and French share — since every route without a page of its own wears it.
+- **The shell's first paint is the ground.** `index.html` says the dark scheme
+  (`<meta name="color-scheme">`) and the ground and ink (`html, body`, `--bg` / `--fg` as
+  literals) inline, before the stylesheet and the bundle, so a slow load paints `#050507`,
+  never the browser's white; and a `<noscript>` line (en + fr, muted, centred) says what to
+  do with JavaScript off. Nothing else is drawn before React: a header or lockup drawn in
+  `#root` would be taken away on the first render by every screen that does not wear one
+  (the invitation, the signed-out screen, the invite landing, the selection drums). A
+  startup that dies before React mounts (`main.tsx`, its deadline included) says so on that
+  ground in the URL's language (`/fr`, `/en`, else `?lang=`, else the browser's — never the
+  stored preference, which sits behind the store that may have failed): one muted sentence
+  (`startupFailed`) over RELOAD as the bracketed quiet word (`.quiet-btn`).
 - **Stale-tab auto-reload (user-decided 2026-08-16):** a deployed release must reach tabs
   already open — an SPA loads its JS once, and the deploy's `prune: false` deliberately
   keeps old chunks alive, so nothing ever forces a stale tab to refresh (and under the

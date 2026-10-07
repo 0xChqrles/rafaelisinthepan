@@ -67,8 +67,10 @@ import {
 //
 // FOUR PICTURES, one box (`PodiumMode`), so a state never passes for another: a read still out
 // draws the FLOOR and, if it is slow, the skeleton's own rails where the names will stand (the
-// lines' skeleton under it says the same, on the same beat); a failed one draws NOTHING (its
-// RETRY stands in the box); a board with nobody on it to stand (no group, a group of one, a
+// lines' skeleton under it says the same, on the same beat); a FAILED one holds that picture
+// still — the floor, its caption's line standing where the rails would, RETRY under it, and
+// the read asked again stands its rails at once where the line stood; a board with nobody on
+// it to stand (no group, a group of one, a
 // period nobody scored in) draws the steps' GHOST — their silhouettes in the floor's stipple —
 // for the board's sad ghost to stand on; and a board draws its steps, with whoever finished on
 // them — none yet is the steps alone, each place's value a quiet dash.
@@ -142,9 +144,9 @@ const SIZES: Record<PodiumSize, Dims> = {
   compact: { wide: 50, narrow: 44, gap: 1, tiers: [24, 19, 15], mark1: 25, mark: 20, glyph: 1, value: 2, air: 8, block: 27, bottom: 1 },
 };
 // Under the floor, every place's CAPTION: a gap of bare ground, the NAME's band (the DOM's: two
-// 13px lines and 3px of air over and under them — a name wraps rather than being
-// cut, and the band holds two lines whatever it holds, so nothing under it moves), a gap, then
-// the block: the VALUE's row, a gap, the UNIT's line (the DOM's, 12px).
+// 13px lines' room and 3px of air over and under them, the name on ONE line set on its last, so
+// it sits on its value — the band one height whatever it holds, so nothing under it moves), a
+// gap, then the block: the VALUE's row, a gap, the UNIT's line (the DOM's, 12px).
 const NAME_GAP = 6;
 export const NAME_ROWS = 16;
 const VALUE_GAP = 2;
@@ -333,55 +335,14 @@ export function layout(
 // dissolves as one).
 export const captionRows = (L: PodiumLayout, p: number): number => L.places[p].unit + UNIT_ROWS - L.name;
 
-// A name's RUNS, split at its JOINTS: after an underscore, before a capital that follows a small
-// letter, and before digits that follow a letter.
-export function runsOf(name: string): string[] {
-  const runs: string[] = [];
-  let run = '';
-  for (let i = 0; i < name.length; i += 1) {
-    const prev = name[i - 1] ?? '';
-    const ch = name[i];
-    const joint =
-      prev === '_' || (/[a-z]/.test(prev) && /[A-Z]/.test(ch)) || (/[A-Za-z]/.test(prev) && /[0-9]/.test(ch));
-    if (joint && run) {
-      runs.push(run);
-      run = '';
-    }
-    run += ch;
-  }
-  runs.push(run);
-  return runs;
-}
-
-// How a name SETS in the band's TWO lines, each `roomPx` wide: the face's 12px, or the first size
-// a pixel smaller (to 10) at which its runs set in them, none broken — the chrome's mono advances
-// a fixed 0.65em a glyph, so a run's width is its length, nothing measured. At 10, a run still
-// too long for a line is split in its middle (two even halves rather than a letter left alone);
-// and a name whose runs take three lines even so is cut in two at its own middle — a name is at
-// most 16 glyphs, 8 a line, which every slot holds at 10. The browser breaks only at the runs'
-// joints, so it sets what this says: never a third line.
-export const NAME_PX = [12, 11, 10];
-export function setName(runs: readonly string[], roomPx: number): { px: number; runs: readonly string[] } {
-  const fits = (glyphs: number, px: number) => glyphs * UI_ADVANCE_EM * px <= roomPx;
-  const lines = (parts: readonly string[], px: number) => {
-    let count = 1;
-    let line = 0;
-    for (const part of parts) {
-      if (!fits(part.length, px)) return Infinity;
-      if (fits(line + part.length, px)) line += part.length;
-      else {
-        count += 1;
-        line = part.length;
-      }
-    }
-    return count;
-  };
-  const px = NAME_PX.find((size) => lines(runs, size) <= 2);
-  if (px !== undefined) return { px, runs };
-  const least = NAME_PX[NAME_PX.length - 1];
-  const halves = (text: string) => [text.slice(0, Math.ceil(text.length / 2)), text.slice(Math.ceil(text.length / 2))];
-  const halved = runs.flatMap((run) => (fits(run.length, least) ? [run] : halves(run)));
-  return { px: least, runs: lines(halved, least) <= 2 ? halved : halves(runs.join('')) };
+// A NAME IS SET ON ONE LINE, at the chrome's 12px (`NAME_PX`), and a name longer than its slot
+// ends in an ELLIPSIS on a WHOLE GLYPH — the tab chip's own cut (BoardTabs' `--label-max`): the
+// room is floored to whole glyphs of the mono's fixed advance (shared `cardSvg.ts`
+// `UI_ADVANCE_EM` — nothing measured), so the `…` takes a glyph's place, never a sliver of one.
+export const NAME_PX = 12;
+export function nameRoomPx(slotPx: number): number {
+  const glyph = UI_ADVANCE_EM * NAME_PX;
+  return Math.ceil(Math.max(0, Math.floor(slotPx / glyph)) * glyph);
 }
 
 // How a step's face is lit: its light dithers down from the lip over its first SHADE rows,
@@ -406,7 +367,7 @@ const RISE_GAP_MS = 60;
 const PLACE_IN_MS = 160;
 const DROP_AFTER_RISE_MS = 20;
 const DROP_GAP_MS = 100;
-const DROP_MS = 220;
+export const DROP_MS = 220;
 const DROP_CELLS = 24;
 export const SHAKE: readonly (readonly [number, number])[] = [
   [0, 1],
@@ -435,9 +396,12 @@ const TURN_STEPS = 8;
 const PAST = -10_000;
 
 export interface BeatSpec {
-  // A board: its steps stand (not a read still out, a failure or the ghost). A read still out.
+  // A board: its steps stand (not a read still out, a failure or the ghost). A read still out
+  // — and, `held`, one asked AGAIN after a failure: its rails stand from the first frame, in the
+  // place the failure's line held, rather than waiting the skeleton's wait in again.
   steps: boolean;
   loading: boolean;
+  held: boolean;
   // The scene builds (else it is settled from its first frame: a board already shown).
   build: boolean;
   // The steps already stand as it begins (the scene before was a board).
@@ -460,6 +424,7 @@ export interface Beats {
   reel: (number | null)[]; // per place: when its value's reels start (null: it stands)
   run: number[]; // per place: its reels' run
   foil: (number | null)[]; // per first place: when its cobalt recedes into the foil (null: born in it)
+  rails: number | null; // a read still out: when its skeleton rails come in (null: none drawn)
   lines: number; // when the lines below start landing
   settled: number; // when nothing but the foil moves any more
 }
@@ -473,7 +438,9 @@ export function beats(spec: BeatSpec): Beats {
   const foil: (number | null)[] = [null, null, null];
   const ends = [TURN_MS];
   if (!spec.steps) {
-    return { rise, land, fall, reel, run, foil, lines: 0, settled: spec.loading ? SKELETON_WAIT_MS + DISSOLVE_MS : TURN_MS };
+    const rails = spec.loading ? (spec.held ? PAST : SKELETON_WAIT_MS) : null;
+    const settled = rails !== null && rails > 0 ? rails + DISSOLVE_MS : TURN_MS;
+    return { rise, land, fall, reel, run, foil, rails, lines: 0, settled };
   }
   const start = spec.startMs;
   let lastDrop = -Infinity;
@@ -513,7 +480,7 @@ export function beats(spec: BeatSpec): Beats {
       : Number.isFinite(lastDrop)
         ? lastDrop + DROP_MS + SHAKE.length * SHAKE_FRAME_MS
         : start + 2 * RISE_GAP_MS + RISE_MS / 2;
-  return { rise, land, fall, reel, run, foil, lines, settled: Math.max(...ends) };
+  return { rise, land, fall, reel, run, foil, rails: null, lines, settled: Math.max(...ends) };
 }
 
 // A whole-cell ease: the share of a travel `k` (0–1) that has been made, eased out.
@@ -758,15 +725,16 @@ export function podiumScene(L: PodiumLayout, data: PodiumData, tl: Beats, seed: 
 
   const draw = (px: Uint32Array, t: number, withFoil: boolean) => {
     px.fill(0);
-    // A failed read: nothing inside the box but what the caller stands in it.
-    if (data.mode === 'failed') return;
     // THE FLOOR: the result's stippled rail, across the column.
     for (let x = 4; x < cols - 4; x += 3) put(px, x, L.floor, RAIL);
+    // A failed read: the floor alone, still — the box's caption says what failed where the
+    // rails stood.
+    if (data.mode === 'failed') return;
     if (data.mode === 'loading') {
       // A slow read: the skeleton's rails where each name will stand, on the floor's lattice —
       // after the lines' skeleton's own wait (a quick read never flashes them), through a
-      // line's dissolve.
-      const lv = level(SKELETON_WAIT_MS, DISSOLVE_MS, t);
+      // line's dissolve; a read asked again after a failure, at once (`tl.rails`).
+      const lv = level(tl.rails, DISSOLVE_MS, t);
       if (lv <= 0) return;
       const y = L.name + NAME_ROWS - 5;
       for (const { slot } of L.places) {

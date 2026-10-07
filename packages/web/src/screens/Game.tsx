@@ -6,18 +6,18 @@ import {
   useRef,
   useState,
 } from 'react';
-import { computeProgress, guessKey, replayHoles } from '../game/scoring';
+import { computeProgress, freshHolesFor, guessKey, replayHoles } from '../game/scoring';
 import { raceOf } from '../game/race';
 import { liveSawEnd } from '../game/resultBoards';
 import { playLogFor, withoutDeferred } from '../game/playLog';
 import { replayRun, type RunReplay } from '../game/share';
 import { canExtend } from '../game/keyboard';
 import { latestMaskedPick, selectWord, shownHolesFor, withoutMaskedPicks, type WordPick } from '../game/wordWheel';
-import LoadingWave from '../components/LoadingWave';
-import useVocab from '../hooks/useVocab';
-import useRoundSync from '../hooks/useRoundSync';
-import { giveUpRound, notifyGuess, retryRoundSync } from '../state/roundSync';
-import { useGameStore, roundKeyFor } from '../state/gameStore';
+import BusyButton from '../components/BusyButton';
+import type { Vocab } from '../hooks/useVocab';
+import { useHoldHomeDay } from '../hooks/useHomeDay';
+import { giveUpRound, notifyGuess } from '../state/roundSync';
+import { useGameStore, roundKeyFor, type RoundServer } from '../state/gameStore';
 import { noteSolvedDay, usePlayerHistory } from '../state/history';
 import { holdsSomebody, loadGroups, useGroups } from '../state/groups';
 import { requestLiveBoard, useLiveBoard, useLiveBoardBusy } from '../state/liveBoard';
@@ -33,8 +33,9 @@ import LazyStreakDialog, { preloadStreakDialog } from '../components/LazyStreakD
 import HistoryWheel from '../components/HistoryWheel';
 import HistoryModal from '../components/HistoryModal';
 import Button from '../components/Button';
+// (For its side effect: the root's Bayer tiles the gate comes in through.)
+import '../components/bayerTiles';
 import { PLAY_LEVEL } from '../tutorial/levels';
-import LoadError from '../components/LoadError';
 import { replayCharge, strikeFor, type HoleCharge } from '../game/charge';
 import { navigate } from '../routing';
 import { pathForLesson } from '../langs';
@@ -57,6 +58,7 @@ import { prefetchTurnstileTokens } from '../turnstile';
 import { deviceIdentity, ensureDeviceIdentity, useDeviceIdentity } from '../identity';
 import ErrorScreen from '../components/ErrorScreen';
 import ConfirmScreen from '../components/ConfirmScreen';
+import InfinityGlyph from '../components/InfinityGlyph';
 import FlagIcon from '../assets/icons/flag.svg?react';
 import type {
   Hole,
@@ -83,39 +85,38 @@ const STREAK_READ_RETRY_MS = 4_000;
 // fresh array on every render.
 const EMPTY_LOG: string[] = [];
 
-// Wrapper: drives the single puzzle. Loads the language's fixed vocabulary
-// (existence set + keyboard prefix set) before playing — existence is decided by it,
-// not by ranks. GameRoute supplies the actual app-header renderer; the round puts the
-// day's DATE in the header's left slot (2026-08-16, replacing the progress counter).
+// Wrapper: drives the single puzzle, once the game route's three reads are in (the puzzle,
+// the language's fixed vocabulary — existence set + keyboard prefix set — and the round's
+// server state; `GameRoute` stands the game's hold until they are). Existence is decided by
+// the vocabulary, not by ranks. The round renders INTO the route's `.game` column.
 export default function Game({
   puzzle,
   puzzleRef,
+  vocab,
+  server,
   isActiveDay,
   deferResultsAnimation,
+  fromHold,
 }: {
   puzzle: Puzzle;
   // WHICH puzzle: a game day, or a BONUS (shared bonus.ts) — no day, so never the active
   // day, and never a streak or an analytics beat.
   puzzleRef: PuzzleRef;
-  // Whether this is the client's active day (false when replaying an archive day, #55):
-  // gates the fresh-solve streak celebration and tags solve analytics as archive/live.
+  vocab: Vocab;
+  // The round's authoritative server state (#214): the board is replayed from it.
+  server: RoundServer;
+  // Whether this round is the client's active day (false when replaying an archive day, #55)
+  // — AS IT WAS OPENED, kept for as long as it stays on screen (`useOpenedAsActive`), so the
+  // 22:00 flip passing it takes nothing from under the player. Gates the race line, the
+  // result's boards, the streak read and tags solve analytics as archive/live.
   isActiveDay: boolean;
   // The dev streak preview lives above Game in App, so it supplies the same animation gate
   // as the real in-round dialog without coupling the preview to persisted round state.
   deferResultsAnimation: boolean;
+  // The game's HOLD stood on screen and gives way to this round as it mounts: what arrives
+  // lights in over it (`GameHold`) rather than rising from nowhere.
+  fromHold: boolean;
 }) {
-  const { vocab, error, retry } = useVocab(puzzle.lang);
-
-  if (error !== null) {
-    return <LoadError message={t(puzzle.lang, 'failedVocab')} lang={puzzle.lang} onRetry={retry} />;
-  }
-  if (!vocab)
-    return (
-      <p className="status">
-        <LoadingWave text={t(puzzle.lang, 'loading')} />
-      </p>
-    );
-
   return (
     <Round
       words={puzzle.words}
@@ -124,11 +125,13 @@ export default function Game({
       source={puzzle.source}
       vocabSet={vocab.vocabSet}
       prefixSet={vocab.prefixSet}
+      server={server}
       lang={puzzle.lang}
       revision={puzzle.revision}
       puzzleRef={puzzleRef}
       isActiveDay={isActiveDay}
       deferResultsAnimation={deferResultsAnimation}
+      fromHold={fromHold}
     />
   );
 }
@@ -142,11 +145,13 @@ function Round({
   source,
   vocabSet,
   prefixSet,
+  server,
   lang,
   revision,
   puzzleRef,
   isActiveDay,
   deferResultsAnimation,
+  fromHold,
 }: {
   words: string[];
   puzzleHoles: Hole[];
@@ -154,31 +159,27 @@ function Round({
   source?: Source;
   vocabSet: Set<string>;
   prefixSet: Set<string>;
+  // The server owns this round's log (#201), and since #214 the client waits for it: the
+  // round mounts only once the game route's read of it has settled (`useRoundSync`, held by
+  // `GameRoute`), and the board is replayed from what it answers. Archive days sync exactly
+  // like today's (the same date-addressed route), which is what makes a player's full
+  // history follow them to a new device.
+  server: RoundServer;
   lang: string;
   // WHICH PUBLISHED VERSION this puzzle is (#203) — the round's identity everywhere.
   revision: string;
   puzzleRef: PuzzleRef;
   isActiveDay: boolean;
   deferResultsAnimation: boolean;
+  fromHold: boolean;
 }) {
   // Fresh per-hole state derived from the puzzle. Used until the persisted store
   // reconciles to this round, and as the reset state on a new day/language.
-  const freshHoles = useMemo<RuntimeHole[]>(
-    () =>
-      puzzleHoles.map((h) => ({
-        pos: h.pos,
-        secret: h.secret.slug,
-        word: h.start.word,
-        rank: h.start_rank,
-        startRank: h.start_rank,
-      })),
-    [puzzleHoles],
-  );
+  const freshHoles = useMemo(() => freshHolesFor(puzzleHoles), [puzzleHoles]);
 
   // Identity of this round: the server day (or the bonus) + language.
   const roundKey = useMemo(() => roundKeyFor(puzzleRef, lang), [puzzleRef, lang]);
 
-  const ensureOutbox = useGameStore((s) => s.ensureOutbox);
   const appendOutbox = useGameStore((s) => s.appendOutbox);
   // The tutorial's level 1 (#269): done on this device, or not — the gate's invitation
   // hangs on it, and a round holding a guess marks it done by itself (below).
@@ -218,27 +219,6 @@ function Round({
     return () => window.clearTimeout(id);
   }, [isActiveDay, playerHistory.solvedPhase, playerHistory.retry]);
 
-  // Reconcile the OUTBOX before paint (#214): an outbox naming a different published
-  // revision answered a retired question and is dropped. A layout effect commits that
-  // before the browser paints, so a retired round's guesses never reach a render.
-  useLayoutEffect(() => {
-    ensureOutbox(roundKey, revision);
-  }, [ensureOutbox, roundKey, revision]);
-
-  // The server owns this round's log (#201), and since #214 the client waits for it: the
-  // read below is what the board is replayed from, and until it settles there is nothing
-  // to play. Archive days sync exactly like today's (the same date-addressed route), which
-  // is what makes a player's full history follow them to a new device.
-  const load = useRoundSync({
-    roundKey,
-    lang,
-    date: puzzleAddress(puzzleRef),
-    // The round's identity on the wire (#203): the version this puzzle was published as.
-    revision,
-    ranks,
-  });
-  const server = load.status === 'ready' ? load.server : null;
-
   // The unacknowledged half — the ONLY persisted sentence-round state. Read straight out
   // of the map and checked against the revision: `ensureOutbox` reconciles in a layout
   // effect, so the very first render of a re-published round can still see the retired
@@ -250,10 +230,7 @@ function Round({
   // canonical identity. Everything the screen shows is derived from it — the board, the
   // score, the recall history, the run ruler, the solve moments — so there is no second
   // copy of a round's state anywhere to reconcile against.
-  const playLog = useMemo(
-    () => (server ? playLogFor(ranks, server.guesses, outbox) : EMPTY_LOG),
-    [ranks, server, outbox],
-  );
+  const playLog = useMemo(() => playLogFor(ranks, server.guesses, outbox), [ranks, server, outbox]);
 
   // Guess IDENTITIES whose BOARD effect is still animating. The play log is authoritative
   // the instant a guess lands, but a hole's word/rank swap is deliberately deferred to its
@@ -361,16 +338,20 @@ function Round({
   // board flips a beat earlier, while the solving append is still in flight, so everything
   // that must not happen twice or too early — the result, the leaderboard, the streak, the
   // `solve` event — hangs off this and never off `boardComplete`.
-  const solved = server?.solved === true;
+  const solved = server.solved;
   // ENDED UNSOLVED (the shared `roundEnded`): the player GAVE UP (a flag the server stores),
   // or the stored raw log holds the cap (#214, derived — the outbox's own length can never
   // reveal it, since what counts is what was STORED). `solved` wins over both: a solve
   // accepted as raw entry 500, or one that raced a give-up, is an ordinary solved round.
   const ended = roundEnded(server);
-  const gaveUp = ended && server?.gaveUp === true;
+  const gaveUp = ended && server.gaveUp;
   // The round is over either way — the difference is what the headline says and whether
   // anything celebrates.
   const finished = solved || ended;
+  // A round IN PROGRESS — a guess played, the round not over — keeps the undated route on its
+  // day when the tab comes back past the 22:00 flip (`useHoldHomeDay`): the sentence a player
+  // is working on changes only when they ask for the new day.
+  useHoldHomeDay(guessCount > 0 && !finished);
   // Every word on the board is final: the solve's, or a give-up's reveal (which shows every
   // hole at its secret — `boardHoles` below).
   const allWordsResolved = (boardComplete || gaveUp) && resolvedHoleIndices.size === holes.length;
@@ -410,13 +391,19 @@ function Round({
   // shows it for the lesson alone. PLAY without an account to deploy simply opens the round
   // for this visit (`played`); nothing is recorded until a guess lands.
   const [played, setPlayed] = useState(false);
+  // The prompt came up over the game's hold (read once: the prompt never remounts within a
+  // round), so it lights in where the hold reserved its row.
+  const [promptFromHold] = useState(fromHold);
   const gateOpen = identity === null || (!learned && !played && !finished && guessCount === 0);
+  // The KEYS came up over the hold's slates only when the round opened on them: a gate there
+  // instead hands its PLAY a keyboard that rises as it always does, however soon it is tapped.
+  const [keysFromHold] = useState(fromHold && !gateOpen);
   useEffect(() => {
     if (guessCount > 0 && !learned) markLessonDone(PLAY_LEVEL);
   }, [guessCount, learned, markLessonDone]);
   // PLAY, when it is the deploy button: a single tap that creates the account and opens
-  // the round — a clear loading state while the bootstrap runs, and the app's error
-  // surface when it fails (nothing was created; TRY AGAIN re-runs it).
+  // the round — the button busy while the bootstrap runs (`BusyButton`), and the app's error
+  // surface when it fails (nothing was created; PLAY pressed again re-runs it).
   const [deploying, setDeploying] = useState(false);
   const [deployFailed, setDeployFailed] = useState(false);
   const handleGatePlay = useCallback(() => {
@@ -454,8 +441,8 @@ function Round({
   const racePlaying = useRef(false);
   useEffect(() => {
     const endedHere = finished && racePlaying.current;
-    racePlaying.current = server !== null && !finished;
-    if (raceable && server !== null) requestLiveBoard(lang, raceDate, endedHere);
+    racePlaying.current = !finished;
+    if (raceable) requestLiveBoard(lang, raceDate, endedHere);
   }, [raceable, server, finished, lang, raceDate]);
   useEffect(() => {
     if (!raceable) return undefined;
@@ -577,7 +564,7 @@ function Round({
     // this device is played — the unfound words revealed in the sentence, then the exit
     // beats — but celebrates nothing.
     const justFinished = finished && !prevFinished.current;
-    const freshSolve = solved && server?.solvedByAppend === true;
+    const freshSolve = solved && server.solvedByAppend;
     const freshGiveUp = gaveUp && giveUpHere.current;
     prevFinished.current = finished;
     setRevealEnded(false);
@@ -636,7 +623,7 @@ function Round({
     // new refusal: a collection that never arrived cannot say what the previous streak was,
     // so it celebrates nothing rather than printing a guess.
     const didAdvanceStreak =
-      !isBonusRef(puzzleRef) && noteSolvedDay(lang, puzzleRef.dayNumber, server?.credited === true);
+      !isBonusRef(puzzleRef) && noteSolvedDay(lang, puzzleRef.dayNumber, server.credited);
     setAnimateResults(true);
     setStreakAdvanced(didAdvanceStreak);
     if (didAdvanceStreak) preloadStreakDialog();
@@ -1172,30 +1159,10 @@ function Round({
     ],
   );
 
-  // The game is deliberately NETWORK-DEPENDENT at load (#214): the board is replayed from
-  // the server's own log, so until that read settles there is nothing honest to show and
-  // nothing to type into. A FAILED read is said out loud with a RETRY rather than silently
-  // starting the player on a guessed local mirror — the guesses they would then type would
-  // be answers to a board the server disagrees with.
-  if (load.status === 'failed') {
-    return (
-      <LoadError
-        message={t(lang, 'failedRound')}
-        lang={lang}
-        onRetry={() => retryRoundSync(roundKey)}
-      />
-    );
-  }
-  if (load.status !== 'ready') {
-    return (
-      <p className="status">
-        <LoadingWave text={t(lang, 'loading')} />
-      </p>
-    );
-  }
-
+  // The round's pieces, in the route's `.game` column (`GameRoute` owns it: the game's hold
+  // stands in it until this round mounts, and gives way under it).
   return (
-    <div className="game">
+    <>
       {/* Invisible live region: the screen-reader mirror of the per-hole visual
           feedback (see `say`). Polite, so it never interrupts the player's own typing
           echo mid-word. */}
@@ -1235,6 +1202,8 @@ function Round({
           // land on a finished frame: the exact choreography the harness exists to
           // replay, spent unseen. The prop flips false on dismissal, which is the cue.
           start={!deferResultsAnimation}
+          // Over the game's hold, a day already over comes in through the dither in place.
+          fromHold={fromHold}
         />
       ) : (
         <>
@@ -1243,7 +1212,9 @@ function Round({
               It also anchors the score watermark, so the big try count stays centered
               behind THIS content rather than the full-height .game. */}
           {/* `play-race`: today's sentence keeps the race line's band clear under the prompt
-              (index.css `.play-race`) for the whole round, so the line covers nothing. */}
+              (index.css `.play-race`) for the whole round, so the line covers nothing — the
+              22:00 flip passing a round still on screen included (`isActiveDay` is the day
+              the round was opened as). */}
           <div className={`play${isActiveDay ? ' play-race' : ''}${showResults ? ' play-finished' : ''}`}>
             {/* The sentence, through every phase that owns it: the live holes/hits while
                 playing, the fully resolved sentence through the solving beats — and then
@@ -1286,7 +1257,7 @@ function Round({
             {/* Below the sentence: the prompt. It exits on the solving submit and stays
                 laid out (retired, invisible) through the streak and the dissolve, so the
                 centered sentence never moves while it erodes. */}
-            <div className="prompt-zone">
+            <div className={`prompt-zone${promptFromHold ? ' from-hold' : ''}`}>
               <div
                 className={`input-area${promptExiting ? ' solving' : ''}${
                   showResults || gateOpen ? ' retired' : ''
@@ -1363,15 +1334,10 @@ function Round({
                  is not done, LEARN under it as THE WORD — the pair reads as one action and its
                  alternative. No copy: the sentence with its holes is on screen, and the lesson
                  is one tap away for whoever wants it explained. */
-              <div className="rules-gate arrive">
-                <button
-                  type="button"
-                  className="mix-btn"
-                  onClick={handleGatePlay}
-                  disabled={deploying}
-                >
-                  {deploying ? <LoadingWave text={t(lang, 'loading')} /> : t(lang, 'gatePlay')}
-                </button>
+              <div className="rules-gate dissolve-in">
+                <BusyButton className="mix-btn" lang={lang} busy={deploying} onClick={handleGatePlay}>
+                  {t(lang, 'gatePlay')}
+                </BusyButton>
                 {!learned && (
                   <Button variant="secondary" onClick={openLesson}>
                     {t(lang, 'gateLearn')}
@@ -1407,6 +1373,7 @@ function Round({
                     onType={appendChar}
                     onBackspace={deleteChar}
                     onSubmit={submit}
+                    lit={fromHold && keysFromHold}
                   />
                 )}
               </div>
@@ -1415,8 +1382,8 @@ function Round({
         </>
       )}
 
-      {/* The deploy's failure, on the app's error surface: what happened, and TRY AGAIN
-          re-runs the same single-tap chain. */}
+      {/* The deploy's failure, on the app's error surface: what was lost; the gate's PLAY,
+          still under it, re-runs the same single-tap chain. */}
       {deployFailed && (
         <ErrorScreen
           lang={lang}
@@ -1435,7 +1402,10 @@ function Round({
           busy={givingUp}
           onConfirm={confirmGiveUp}
           onClose={() => setConfirmingGiveUp(false)}
-        />
+        >
+          {/* THE STAKE: the ∞ the result will print, thinned — what the round becomes. */}
+          <InfinityGlyph className="confirm-infinity" cell={8} />
+        </ConfirmScreen>
       )}
       {giveUpFailed && (
         <ErrorScreen
@@ -1481,6 +1451,6 @@ function Round({
           onClose={closeHistory}
         />
       )}
-    </div>
+    </>
   );
 }

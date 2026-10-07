@@ -1,7 +1,21 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
-import { activeDate, dayNumber as dayNumberOf, isBonusRef } from '@whippin/shared';
-import LoadingWave from './components/LoadingWave';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  activeDate,
+  dayNumber as dayNumberOf,
+  isBonusRef,
+  puzzleAddress,
+  roundEnded,
+  type Puzzle,
+  type PuzzleRef,
+} from '@whippin/shared';
+import GameHold, { useHold, type HoldTray } from './components/GameHold';
 import usePuzzle from './hooks/usePuzzle';
+import useVocab, { type Vocab } from './hooks/useVocab';
+import useRoundSync from './hooks/useRoundSync';
+import { retryRoundSync } from './state/roundSync';
+import { roundOnScreen, type RoundOnScreen } from './game/roundOnScreen';
+import { freshHolesFor, replayHoles } from './game/scoring';
+import { playLogFor } from './game/playLog';
 import Account from './screens/Account';
 import AccountEmail from './screens/AccountEmail';
 import Profile from './screens/Profile';
@@ -10,7 +24,7 @@ import GroupInvite from './screens/GroupInvite';
 import Archive from './screens/Archive';
 import Leaderboard from './screens/Leaderboard';
 import SignedOut from './screens/SignedOut';
-import { useIdentityScopeRevision, useSignedOut } from './identity';
+import { useDeviceIdentity, useIdentityScopeRevision, useSignedOut } from './identity';
 import Game from './screens/Game';
 import TopBar, { HeaderLeft } from './components/TopBar';
 import PuzzleTitle from './components/PuzzleTitle';
@@ -18,20 +32,22 @@ import HeaderKeys, { type HeaderPlace } from './components/HeaderKeys';
 import DeviceFrame from './components/DeviceFrame';
 import FocusBrackets from './components/FocusBrackets';
 import LazyStreakDialog from './components/LazyStreakDialog';
-import LoadError from './components/LoadError';
 import NoPuzzle from './components/NoPuzzle';
+import QuietFailure from './components/QuietFailure';
 import Invite from './tutorial/Invite';
 import Learn from './tutorial/Learn';
 import Lesson from './tutorial/Lesson';
+import { stashedLessonReturn } from './tutorial/lessonReturn';
 import { PLAY_LEVEL } from './tutorial/levels';
-import { useGameStore } from './state/gameStore';
+import { roundKeyFor, useGameStore, type RoundServer } from './state/gameStore';
 import { track } from './analytics';
 import { useLocation, navigate } from './routing';
-import { parseRoute, pathForGame, pathForLesson, type LangCode, type Route } from './langs';
+import { parseRoute, pathForGame, pathForLesson, pathForRoute, type LangCode, type Route } from './langs';
 // Inline SVG (vite-plugin-svgr): the header's leaderboard entry, painting with
 // currentColor like every chrome icon; the button's aria-label names it.
 import { t } from './i18n';
 import useToday from './hooks/useToday';
+import useHomeDay, { useOpenedAsActive } from './hooks/useHomeDay';
 import useUiLang from './hooks/useUiLang';
 import { streakPreviewFromSearch } from './dev/streakPreview';
 import ErrorScreen from './components/ErrorScreen';
@@ -47,9 +63,14 @@ import {
 // a third until #269 gave it routes of its own — `/<lang>/learn`.)
 type GameSurface = 'invite' | 'game';
 
+// What the game route's round is drawn from (`game/roundOnScreen.ts`).
+type Shown = RoundOnScreen<Puzzle, Vocab, RoundServer>;
+
 export default function App() {
   const pathname = useLocation();
-  const [lessonReturn, setLessonReturn] = useState<string | undefined>();
+  // Where a lesson begun from the invitation goes back to — kept across a lost lesson's RETRY,
+  // the one reload the app makes itself (`tutorial/lessonReturn.ts`).
+  const [lessonReturn, setLessonReturn] = useState<string | undefined>(stashedLessonReturn);
   const startOnboardingLesson = useCallback((lang: LangCode) => {
     setLessonReturn(pathname);
     track('tutorial', { action: 'start' });
@@ -107,6 +128,14 @@ export default function App() {
     if (route.view !== 'home') return;
     navigate(pathForGame(homeLang), { replace: true });
   }, [route.view, homeLang]);
+  // AND A PATH READ LENIENTLY NAMES THE SCREEN IT RESOLVED TO: `/fr/xyz` plays today, so the
+  // URL says `/fr`; `/fr/learn/99` is the list, so it says `/fr/learn`. Replaced, never
+  // pushed — the path the player landed on is not a place to go back to — so a reload, a
+  // copied link and the address bar all name what is on screen.
+  const canonical = pathForRoute(route);
+  useEffect(() => {
+    if (canonical !== null && canonical !== pathname) navigate(canonical, { replace: true });
+  }, [canonical, pathname]);
 
   // The board's whose-scores tab belongs to a VISIT (user feedback 2026-08-20, narrowing
   // the first cut's standing preference). It has to survive the two things that remount
@@ -132,6 +161,11 @@ export default function App() {
   // The frame's edition serial is the ACTIVE day's own index — today's number whatever
   // screen is up (an archived day's date already reads in the header's date chip).
   const editionDay = useToday();
+  // The day the UNDATED route plays: the active day as of the player's last arrival (a load,
+  // a navigation, the tab coming back to no round in progress) — never swapped under a
+  // visible player at the 22:00 flip (`useHomeDay`). Past the flip until then the header
+  // labels it as the archive's day, while its round keeps the day it was opened as.
+  const homeDay = useHomeDay();
 
   // Signed out from another device (#216). It takes the whole screen because it is not one
   // surface's problem: every private read on every route answers `unknown_device` from here
@@ -150,7 +184,7 @@ export default function App() {
   // DeviceFrame is decorative and deliberately remains outside.
   const identityScope = useIdentityScopeRevision();
 
-  const place = blocked ? null : headerPlace(route, gameSurface, today);
+  const place = blocked ? null : headerPlace(route, gameSurface, today, homeDay);
   // Leaving the PLAYED lesson (level 1) by the row IS skipping it: tracked as such, and the
   // onboarding question is settled so the invitation does not ask again (nothing is recorded
   // as done). Leaving an article level is only leaving: it was never the onboarding.
@@ -197,9 +231,10 @@ export default function App() {
             one route a sign-out does not close (`blocked`): it reads no private state. */}
         {!blocked && route.view === 'privacy' && <Privacy />}
         {/* The group invite landing (#271) is a beat, not a screen: it records the
-            membership and hands over to the game or the group's board. */}
+            membership and hands over to the game or the group's board. Keyed by the group:
+            its face is decided once per group. */}
         {!blocked && route.view === 'groupInvite' && (
-          <GroupInvite groupId={route.groupId} lang={homeLang} />
+          <GroupInvite key={route.groupId} groupId={route.groupId} lang={homeLang} />
         )}
         {/* Keyed by language: each language has its own first day (#317), so switching
             language remounts the calendar on a month its range holds. */}
@@ -217,6 +252,7 @@ export default function App() {
           <GameRoute
             lang={route.lang}
             date={route.date}
+            homeDay={homeDay}
             bonusId={route.bonusId}
             surface={gameSurface}
             settleOnboarding={setOnboarded}
@@ -238,14 +274,15 @@ export default function App() {
 // WHICH PLACE THE ROW LIGHTS, and `null` where the app wears no header at all: the language
 // chooser, the invite landing, the onboarding question and the signed-out screen are each a
 // surface with nowhere else to be.
-function headerPlace(route: Route, surface: GameSurface, today: string): HeaderPlace | null {
+function headerPlace(route: Route, surface: GameSurface, today: string, homeDay: string): HeaderPlace | null {
   switch (route.view) {
     case 'game':
       if (surface === 'invite') return null;
-      // Any OTHER day is the ARCHIVE's; HOME unlit is a live key, the way back to today.
+      // Any OTHER day is the ARCHIVE's; HOME unlit is a live key, the way back to today —
+      // the undated route's own day included, once the flip has passed it by on screen.
       // A BONUS puzzle is played like an archive day (bonus puzzles, 2026-09-24).
       if (route.bonusId !== undefined) return 'archive';
-      return route.date == null || route.date === today ? 'home' : 'archive';
+      return (route.date ?? homeDay) === today ? 'home' : 'archive';
     case 'archive':
       return 'archive';
     case 'board':
@@ -274,6 +311,8 @@ function headerPlace(route: Route, surface: GameSurface, today: string): HeaderP
 function GameRoute({
   lang,
   date,
+  // The day the undated route plays (`useHomeDay`), when `date` names none.
+  homeDay,
   // A BONUS puzzle (shared bonus.ts), in place of a day: no date, never the active day —
   // played like an archive day, credited nothing.
   bonusId,
@@ -286,6 +325,7 @@ function GameRoute({
 }: {
   lang: LangCode;
   date?: string;
+  homeDay: string;
   bonusId?: number;
   surface: GameSurface;
   settleOnboarding: () => void;
@@ -297,15 +337,97 @@ function GameRoute({
     cycleError: () => void;
   };
 }) {
-  const { puzzle, ref, error, loading, noPuzzle, retry } = usePuzzle(lang, date, bonusId);
+  // THE GAME'S THREE READS, all held here so ONE hold can stand through them (`GameHold`):
+  // the day's puzzle — the bonus, the route's date, or the undated route's day; the
+  // language's word list, asked at once beside it (it needs only the language) while there
+  // may be a game — never behind the first visit's invitation, and dropped the moment the
+  // day turns out to have none (a big download for nothing); and the round's server state,
+  // asked as soon as the puzzle names its revision (#214: the board is replayed from it, so
+  // nothing is playable before it answers).
+  const day = date ?? homeDay;
+  const ref = useMemo<PuzzleRef>(
+    () => (bonusId !== undefined ? { bonusId } : { dayNumber: dayNumberOf(day) }),
+    [day, bonusId],
+  );
+  const { puzzle, error, noPuzzle, retry } = usePuzzle(lang, ref);
+  const gameAhead = surface === 'game' && !noPuzzle;
+  const { vocab, error: vocabError, retry: retryVocab } = useVocab(gameAhead ? lang : null);
+  const roundKey = useMemo(() => roundKeyFor(ref, lang), [ref, lang]);
+  const round = useRoundSync(
+    puzzle
+      ? { roundKey, lang, date: puzzleAddress(ref), revision: puzzle.revision, ranks: puzzle.ranks }
+      : null,
+  );
   const setLastLang = useGameStore((s) => s.setLastLang);
 
-  // A dated route replays a past day when its date is not today's active game day; the
-  // undated route is always the active day. Gates the streak celebration + solve analytics.
-  // LIVE, off the app's one day signal: a dated route held open across the 22:00 flip
-  // stops being the active day without a reload.
+  // Whether the day on screen IS the active game day RIGHT NOW — the header's question (the
+  // title's date): the undated route's day too, once the 22:00 flip has passed it by on
+  // screen. LIVE, off the app's one day signal.
   const today = useToday();
-  const isActiveDay = bonusId === undefined && (date == null || dayNumberOf(date) === today);
+  const isToday = !isBonusRef(ref) && ref.dayNumber === today;
+  // ...and whether the ROUND is: the day it was opened as, for as long as it stays on screen
+  // (`useOpenedAsActive`) — so the flip passing it takes nothing from under the player: its
+  // race line, its result's boards, its race band. A new round reads it afresh, off the clock
+  // the undated route's day reads (never `today`'s timer, which can lag an arrival).
+  const isActiveDay = useOpenedAsActive(`${lang}:${puzzleAddress(ref)}`, bonusId === undefined ? day : null);
+
+  // Once the round is on screen it STAYS (`game/roundOnScreen.ts`): a read it already
+  // answered coming back out — an identity adopted from another tab, a republish — leaves the
+  // round standing on what it had until the next answer replaces it, and a failure there is
+  // the engine's retried hiccup behind a live board, never this screen's RETRY.
+  const live: Shown | null =
+    puzzle !== null && vocab !== null && round?.status === 'ready'
+      ? { roundKey, puzzle, vocab, server: round.server }
+      : null;
+  const [kept, setKept] = useState<Shown | null>(null);
+  const shown = roundOnScreen(kept, live, roundKey);
+  if (shown !== kept) setKept(shown);
+  // What the route can show: a day with none, else the game once all three reads are in, with
+  // the hold standing until they are — and a read that FAILED (the puzzle; the word list, only
+  // once the puzzle says there is a game to play with it; the round's) holds the hold STILL,
+  // with its RETRY. The game is deliberately NETWORK-DEPENDENT at load (#214): until the round
+  // read settles there is nothing honest to show and nothing to type into, and a FAILED read
+  // is said, with a RETRY, rather than silently starting the player on a guessed local mirror
+  // — the guesses they would then type would be answers to a board the server disagrees with.
+  // ONE line says it for the three, so its ONE RETRY asks again EVERY read that failed (two
+  // fail together offline: the word list is asked beside the puzzle) — a tap that answered
+  // only the first would bring the same line straight back.
+  const puzzleLost = error !== null;
+  const gameLost = !noPuzzle && puzzle !== null && shown === null;
+  const vocabLost = gameLost && vocabError !== null;
+  const roundLost = gameLost && round?.status === 'failed';
+  const failedRetry =
+    puzzleLost || vocabLost || roundLost
+      ? () => {
+          if (puzzleLost) retry();
+          if (vocabError !== null) retryVocab();
+          if (roundLost) retryRoundSync(roundKey);
+        }
+      : null;
+  // (The invitation stands in for the hold while the reads go on behind it.)
+  const hold = useHold(surface === 'game' && !noPuzzle && shown === null);
+  // What the hold's tray promises: the KEYBOARD only to a player who lands on the prompt —
+  // an account, and level 1 done (`Round`'s own `gateOpen`, read before the round is in) —
+  // else the GATE's slots, LEARN's with them while the lesson is not done.
+  const identity = useDeviceIdentity();
+  const learned = useGameStore((s) => s.lessonsDone.includes(PLAY_LEVEL));
+  const tray: HoldTray = identity !== null && learned ? 'keys' : learned ? 'gate' : 'gate-learn';
+  // The holes the hold's silhouette lays out: the START words until the round's read is in,
+  // then the board the round will mount on — its fresh holes walked through the play log of
+  // what the server holds and what this device still owes (`Game`'s own first frame) — so a
+  // returning player's best words land on their own boxes, never on the start words'.
+  const roundServer = round?.status === 'ready' ? round.server : null;
+  const owed = useGameStore((s) => s.outbox[roundKey]);
+  const holdHoles = useMemo(() => {
+    if (puzzle === null) return null;
+    const fresh = freshHolesFor(puzzle.holes);
+    if (roundServer === null) return fresh;
+    const outbox = owed?.puzzle === puzzle.revision ? owed.guesses : [];
+    return replayHoles(fresh, puzzle.ranks, playLogFor(puzzle.ranks, roundServer.guesses, outbox));
+  }, [puzzle, roundServer, owed]);
+  // A day already over hands over to its RESULT on bare ground: the hold goes at once rather
+  // than showing through the card as it comes in.
+  const over = shown !== null && (shown.server.solved || roundEnded(shown.server));
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
   useEffect(() => {
@@ -336,23 +458,52 @@ function GameRoute({
           missing-puzzle and the loaded game: which puzzle is a fact of the ROUTE, so it
           never waits on a game to report it. */}
       <HeaderLeft>
-        <PuzzleTitle lang={lang} puzzleRef={isActiveDay ? null : ref} />
+        <PuzzleTitle lang={lang} puzzleRef={isToday ? null : ref} />
       </HeaderLeft>
-      {loading && (
-        <p className="status">
-          <LoadingWave text={t(lang, 'loading')} />
-        </p>
-      )}
-      {error !== null && <LoadError message={t(lang, 'failedPuzzle')} lang={lang} onRetry={retry} />}
       {/* `date` tells NoPuzzle whether this is an archive miss. */}
       {noPuzzle && <NoPuzzle lang={lang} date={date} bonus={bonusId !== undefined} />}
-      {puzzle && (
-        <Game
-          puzzle={puzzle}
-          puzzleRef={ref}
-          isActiveDay={isActiveDay}
-          deferResultsAnimation={preview.streak != null}
-        />
+      {!noPuzzle && (
+        // THE GAME'S COLUMN, the route's: the hold stands in it through the three reads and
+        // gives way UNDER the round once they are in (first in the column, so the round
+        // paints over it). A failed read holds it STILL — shown at once, whatever its wait —
+        // with ONE line for all three reads (the player lost the same thing) and RETRY in the
+        // prompt's row; a retry hands it back to breathing in place.
+        <div className="game" aria-busy={shown !== null || failedRetry !== null ? undefined : true}>
+          {hold.mounted && !over && (
+            <GameHold
+              lang={lang}
+              puzzle={puzzle}
+              holes={holdHoles}
+              wordsIn={vocab !== null}
+              roundIn={round?.status === 'ready'}
+              race={isActiveDay}
+              tray={tray}
+              shown={hold.shown || failedRetry !== null}
+              leaving={hold.leaving}
+              failure={
+                failedRetry && (
+                  <QuietFailure
+                    className="start"
+                    lang={lang}
+                    line={t(lang, isActiveDay ? 'failedGame' : 'failedGamePast')}
+                    onRetry={failedRetry}
+                  />
+                )
+              }
+            />
+          )}
+          {shown !== null && (
+            <Game
+              puzzle={shown.puzzle}
+              puzzleRef={ref}
+              vocab={shown.vocab}
+              server={shown.server}
+              isActiveDay={isActiveDay}
+              deferResultsAnimation={preview.streak != null}
+              fromHold={hold.leaving}
+            />
+          )}
+        </div>
       )}
       {preview.error != null && (
         <ErrorScreen

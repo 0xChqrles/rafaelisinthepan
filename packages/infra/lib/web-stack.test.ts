@@ -93,6 +93,27 @@ describe('web hosting stack (#21)', () => {
     }
   });
 
+  // The backend's preview and dead-link pages are a redirect stub that paints the app's
+  // ground inline (backend `ogCard.ts`): a policy refusing either inline piece is a white
+  // page before the redirect, or no redirect at all — seen on the real CDN alone.
+  it('lets the share and invite pages run their redirect and paint their ground', () => {
+    const behaviors = config.CacheBehaviors as { PathPattern: string; ResponseHeadersPolicyId: { Ref: string } }[];
+    const policies = template.findResources('AWS::CloudFront::ResponseHeadersPolicy');
+    for (const behavior of behaviors) {
+      const csp = policies[behavior.ResponseHeadersPolicyId.Ref].Properties.ResponseHeadersPolicyConfig
+        .SecurityHeadersConfig.ContentSecurityPolicy.ContentSecurityPolicy as string;
+      const directives = Object.fromEntries(
+        csp.split('; ').map((directive) => {
+          const [name, ...sources] = directive.split(' ');
+          return [name, sources];
+        }),
+      );
+      expect(directives['default-src'], behavior.PathPattern).toEqual(["'none'"]);
+      expect(directives['script-src'], behavior.PathPattern).toEqual(["'unsafe-inline'"]);
+      expect(directives['style-src'], behavior.PathPattern).toEqual(["'unsafe-inline'"]);
+    }
+  });
+
   // The SPA fallback is a viewer-request function on the DEFAULT behavior, never a
   // distribution-wide error response: those rewrite every behavior's 403/404, so a dead
   // invite, share or card from the API origin would answer 200 with the SPA shell.
