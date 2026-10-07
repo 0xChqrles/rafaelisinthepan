@@ -98,6 +98,7 @@ const handler = createHandler({
       profiles: localProfileStore,
       rounds: localRoundStore,
       scores: localScoreStore,
+      history: localHistoryStore,
     }),
     groups: localGroupStore,
     history: localHistoryStore,

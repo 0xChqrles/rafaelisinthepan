@@ -26,7 +26,10 @@
 // item's hashed token and coarse user-agent (#216), the round rows' folded guesses (#201),
 // the HMAC-of-IP dedup and its 48h TTL (`SCORE_DEDUP_TTL_SECONDS`), the 10-minute code
 // (`LINK_CODE_TTL_SECONDS`), the inbound-mail buffer and its 30 days (#230,
-// `infra/lib/mail.ts` `INBOUND_RETENTION_DAYS`), the us-east-1 stacks (`infra/bin/app.ts`), Turnstile
+// `infra/lib/mail.ts` `INBOUND_RETENTION_DAYS`), the account deletion's two halves (#207: what
+// `LinkStore.deleteAccount` removes in its one transaction, and what the hourly purge worker,
+// `backend/src/purge.ts`, erases after it — stated as "within 7 days", an upper bound like the
+// TTLs below), the us-east-1 stacks (`infra/bin/app.ts`), Turnstile
 // (`turnstile.ts`) and Umami's three events (`analytics.ts`). A change to any of those is
 // a change to this file. Two values here are NOT in the code and are read off the world
 // instead — the host's legal entity and the mailbox provider, both below.
@@ -67,7 +70,7 @@ const PRIVACY_MAILBOX_PROVIDER = 'Google';
 
 // WHEN THIS WAS LAST TRUE. An ISO instant rather than a sentence per language: the two would
 // drift, and a date reads differently in the two locales anyway (the screen formats it).
-export const PRIVACY_UPDATED = '2026-09-28';
+export const PRIVACY_UPDATED = '2026-10-07';
 
 // A NAMED THING and what is true of it — the shape four of the six sections take, because the
 // question this page answers is "what, and why" and a bare paragraph buries the "what".
@@ -147,8 +150,10 @@ const PRIVACY: Record<UiLang, PrivacyDoc> = {
       {
         heading: 'DELETING IT',
         paragraphs: [
+          'You can delete your account yourself, from your account page. The screen asks you to confirm first.',
+          'Some things go at once: your email address, your name and avatar, every device signed in to the account, and your place in every group. From that moment the account can no longer be reached or shown anywhere.',
+          'Your guesses, scores and streak are kept a little longer, cut off from you and shown nowhere. Until they go, they may still count, without your name, in the overall numbers of a day. They are erased automatically within 7 days. We keep no backups of the game\'s data.',
           'If you sign in to another account from this device, the account you leave behind is deleted, unless it has its own email address. The screen tells you what will be deleted before you confirm.',
-          'There is no button yet to delete everything else. Just write to {mail} and we will take care of it.',
         ],
       },
       {
@@ -235,8 +240,10 @@ const PRIVACY: Record<UiLang, PrivacyDoc> = {
       {
         heading: 'TOUT EFFACER',
         paragraphs: [
+          "Vous pouvez supprimer votre compte vous-même, depuis la page de votre compte. L'écran vous demande de confirmer d'abord.",
+          "Certaines choses partent tout de suite : votre adresse e-mail, votre nom et votre avatar, chaque appareil connecté au compte, et votre place dans chaque groupe. Dès ce moment, le compte ne peut plus être retrouvé ni affiché nulle part.",
+          "Vos propositions, vos scores et votre série restent un peu plus longtemps, détachés de vous, et n'apparaissent nulle part. D'ici là, ils peuvent encore compter, sans votre nom, dans les chiffres globaux d'une journée. Ils sont effacés automatiquement sous 7 jours. On ne garde aucune sauvegarde des données du jeu.",
           "Si vous vous connectez à un autre compte depuis cet appareil, le compte que vous quittez est supprimé, sauf s'il a sa propre adresse e-mail. L'écran vous indique ce qui va être supprimé avant que vous confirmiez.",
-          "Il n'y a pas encore de bouton pour supprimer tout le reste. Écrivez simplement à {mail} et on s'en occupe.",
         ],
       },
       {

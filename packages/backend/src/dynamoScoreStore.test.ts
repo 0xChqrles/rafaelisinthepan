@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   BatchGetItemCommand,
+  DeleteItemCommand,
   GetItemCommand,
   QueryCommand,
   TransactWriteItemsCommand,
@@ -413,5 +414,20 @@ describe('planScoreMove (#204)', () => {
     expect(items[1].Delete!.ConditionExpression).toBe(
       'attribute_exists(pk) AND attribute_not_exists(#stamp)',
     );
+  });
+});
+
+// CONTRACT (#207): the purge deletes a deleted account's row for one daily, unconditionally.
+describe('dynamoScoreStore.remove — the purge (#207)', () => {
+  it('deletes the player\'s row of the day, with no condition', async () => {
+    const send = vi.fn(async (_command: unknown) => ({}));
+    const store = dynamoScoreStore({ send } as unknown as DynamoDBClient, 'scores');
+    await store.remove(KEY, SUBMISSION.publicId);
+    const command = send.mock.calls[0][0] as DeleteItemCommand;
+    expect(command).toBeInstanceOf(DeleteItemCommand);
+    expect(command.input).toEqual({
+      TableName: 'scores',
+      Key: { pk: { S: 'score#2026-08-13#fr#sentence' }, sk: { S: SUBMISSION.publicId } },
+    });
   });
 });

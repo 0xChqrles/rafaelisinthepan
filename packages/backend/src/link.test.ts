@@ -6,6 +6,7 @@ import {
   LINK_SENDS_PER_ADDRESS,
   LINK_SENDS_PER_IP,
 } from '@whippin/shared';
+import { deviceTokenHash } from './deviceStore';
 import { createHandler } from './handler';
 import { memoryDeviceStore } from './memoryDeviceStore';
 import { memoryGroupStore } from './memoryGroupStore';
@@ -17,6 +18,7 @@ import { memoryRoundStore } from './memoryRoundStore';
 import { memoryScoreStore } from './memoryScoreStore';
 import type { MailMessage } from './mailer';
 import type { FnUrlEvent } from './respond';
+import { PURGE_SETTLE_MS, runPurges } from './purge';
 import type { PuzzleStore } from './store';
 import { seedDevice } from './testDevice';
 
@@ -53,7 +55,7 @@ function harness(
   const rounds = memoryRoundStore();
   const scores = memoryScoreStore(() => clock.now);
   const history = memoryHistoryStore();
-  const links = memoryLinkStore({ devices, profiles, rounds, scores });
+  const links = memoryLinkStore({ devices, profiles, rounds, scores, history });
   const sent: MailMessage[] = [];
   const handler = createHandler({
     store: emptyStore,
@@ -684,6 +686,59 @@ describe('email account linking (#204) — the erase confirmation', () => {
       },
     });
     await expect(h.devices.accountExists(playing.accountId)).resolves.toBe(false);
+  });
+
+  // CONTRACT (#207): an account a link ERASES is a deleted account like any other. The
+  // active day's play moves with the device; everything else it left — an older day's round
+  // among it — is owed by the purge the adoption queued, and nothing of the account it
+  // joined goes with it.
+  it('queues the PURGE of the account it erases, which erases its other days and nothing of the adopted one', async () => {
+    const h = harness();
+    const saved = await seedDevice(h.devices);
+    await h.handler(
+      post({
+        token: saved.token,
+        email: 'zoe@example.com',
+        code: await askForCode(h, saved.token, 'zoe@example.com'),
+      }),
+    );
+    const playing = await seedDevice(h.devices);
+    const yesterday = { date: activeDate(new Date(NOW.getTime() - 86_400_000)), lang: 'fr' };
+    for (const publicId of [playing.accountId, saved.accountId]) {
+      await h.rounds.append({
+        ...yesterday,
+        publicId,
+        guesses: ['chat'],
+        puzzle: 'rev1',
+        progress: 10,
+        solved: false,
+        now: NOW,
+      });
+    }
+
+    const linked = await h.handler(
+      post({
+        token: playing.token,
+        email: 'zoe@example.com',
+        code: await askForCode(h, playing.token, 'zoe@example.com'),
+        erase: playing.accountId,
+      }),
+    );
+    expect(linked.statusCode).toBe(200);
+    await expect(h.links.pendingPurges()).resolves.toEqual([
+      { accountId: playing.accountId, enqueuedAt: NOW.toISOString() },
+    ]);
+
+    const run = await runPurges(
+      { links: h.links, groups: h.groups, devices: h.devices, rounds: h.rounds, scores: h.scores },
+      { deadlineMs: Number.POSITIVE_INFINITY, now: () => NOW.getTime() + PURGE_SETTLE_MS },
+    );
+    expect(run).toMatchObject({ jobs: 1, done: 1, failed: 0 });
+    await expect(h.rounds.listKeys(playing.accountId)).resolves.toEqual([]);
+    await expect(h.rounds.listKeys(saved.accountId)).resolves.toEqual([yesterday]);
+    // The device that linked is untouched: it now holds the adopted account.
+    const device = await h.devices.resolve(deviceTokenHash(playing.token));
+    expect(device?.account.accountId).toBe(saved.accountId);
   });
 
   // CONTRACT (#204's UX rework vol. 2, 2026-08-28): BINDING IS A CONSENT. A caller that

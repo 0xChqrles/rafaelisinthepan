@@ -349,7 +349,17 @@ export function createHandler(deps: HandlerDeps) {
         if (!deps.devices || !deps.deviceStore) {
           throw new Error('Device identity is not configured.');
         }
-        return await handleDevices(event, deps.deviceStore, deps.devices, instant, cors);
+        // Deleting an account (#207) acts through the LINK route's own stores — the one
+        // account-lifecycle writer, and the group store its departures drain through — so
+        // a deletion and a link can never be wired to two different instances.
+        return await handleDevices(
+          event,
+          deps.deviceStore,
+          deps.devices,
+          instant,
+          cors,
+          deps.link ? { links: deps.link.links, groups: deps.link.groups } : undefined,
+        );
       }
 
       if (isProfileRoute) {

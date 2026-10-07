@@ -141,6 +141,16 @@ export function noteAccountEmail(accountId: string, email: string): void {
   loadedFor = null;
 }
 
+// Whether a device HOLDING an account knows what that account is: the summary has landed,
+// or an earlier answer still stands under a read asked again. `/account`'s calls wait on it:
+// SAVE (#211's rule: never a guessed "unsaved" offer) and DELETE ACCOUNT (#207: its
+// confirmation names the address erased and the other devices signed out only for a SAVED
+// account, so opened before this it would hide them from one). A read that failed with
+// nothing in hand is not knowing; the page's RETRY is the way on there.
+export function summaryKnown({ phase, summary }: AccountState): boolean {
+  return phase === 'ready' || summary !== null;
+}
+
 export function useAccountSummary(): AccountState {
   return useAccountStore((state) => state);
 }

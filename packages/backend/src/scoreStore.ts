@@ -51,6 +51,11 @@ export interface ScoreStore {
   // version conditionally replaces that same row without spending another allowance;
   // within one version first write wins. Every refusal changes nothing.
   submit(input: ScoreSubmission): Promise<ScoreSubmitOutcome>;
+  // #207's PURGE of a deleted account: delete the player's row for one daily,
+  // UNCONDITIONALLY — idempotent, so a purge run again deletes nothing twice. The IP
+  // allowance it spent is left to its own 48h TTL: it is keyed by a hashed address, never by
+  // the player.
+  remove(key: ScoreKey, publicId: string): Promise<void>;
 }
 
 // The `sentence` segment is a FIXED part of both keys: it named the daily while Word mode

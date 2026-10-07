@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+  DeleteItemCommand,
   GetItemCommand,
   QueryCommand,
   TransactWriteItemsCommand,
@@ -204,6 +205,17 @@ export function dynamoScoreStore(
         }
         throw error;
       }
+    },
+
+    // #207's purge: the player's row for one daily, deleted UNCONDITIONALLY — the account
+    // is gone, and deleting an absent row is the no-op a purge run twice has to be.
+    async remove(key, publicId) {
+      await client.send(
+        new DeleteItemCommand({
+          TableName: tableName,
+          Key: { pk: { S: dayKey(key) }, sk: { S: publicId } },
+        }),
+      );
     },
   };
 }

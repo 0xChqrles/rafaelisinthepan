@@ -87,6 +87,9 @@
                               masthead's mark, the header key when the tab comes back)
       state/account.ts        what `/account` shows — the `{token}` summary and the
                               group-departure drain behind it (#271)
+      state/accountDeletion.ts  #207's DELETE: the send, the re-read on an unknown outcome,
+                              and the device forgetting everything (`startFreshDevice` with
+                              the deleted pair fenced + `gameStore.forgetAll`)
       state/groups.ts         the player's GROUPS (#271): the ONE transient cache every group
                               surface reads (tabs, marks, the landing's "already in", the race
                               line's "is there anybody to race"); `holdsSomebody`, the one
@@ -2111,10 +2114,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     line is read off the invoice again, never adjusted from memory. (A `PRIVACY_HOST_CONFIRMED`
     flag failed the production build while it was a guess, and left with the guess: once true
     it could never fire again, and it protects nothing against a later edit.)
-  - **NOT done, and both are the user's call:** there is no self-serve "delete my account"
-    (#207 is filed and specified — when it lands, DELETING IT loses its "no button yet"
-    paragraph and gains the purge delay #207's own scope requires, and ASKING shrinks to the
-    rights a button cannot serve), and the notice states each category's PURPOSE in plain
+  - **DELETING IT states #207's two halves** (root `AGENTS.md`): what goes at once, and the
+    rest erased "within 7 days" — the purge's upper bound, moved together with it.
+  - **NOT done, the user's call:** the notice states each category's PURPOSE in plain
     words without naming a legal basis under Art. 6 — the readable half of what Art. 13(1)(c)
     asks for, left that way deliberately rather than turned into boilerplate.
 

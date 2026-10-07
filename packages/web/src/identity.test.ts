@@ -470,6 +470,58 @@ describe('being signed out (#216)', () => {
     expect(second.accountId).not.toBe(first.accountId);
   });
 
+  it('a DELETED account is fenced: a sibling tab\'s late verdict about it is removed, never shown (#207)', async () => {
+    // This tab deleted the account and wiped the device; a sibling tab's private call then
+    // answered `unknown_device` and wrote a tombstone naming it onto the emptied key (it held
+    // no token to refuse the write). The verdict is the deletion's echo: this tab stays a
+    // fresh device, and takes the tombstone back out so the sibling follows it off its screen.
+    loadDeviceIdentity();
+    const deleted = await ensureDeviceIdentity();
+    startFreshDevice({ accountId: deleted.accountId, deviceId: deleted.deviceId });
+    expect(stored()).toBeNull();
+
+    storage.setItem(
+      'whippin-device',
+      JSON.stringify({ signedOut: true, accountId: deleted.accountId, deviceId: deleted.deviceId }),
+    );
+    otherTabWrote();
+    expect(useIdentityStore.getState().signedOut).toBe(false);
+    expect(deviceIdentity()).toBeNull();
+    expect(stored()).toBeNull();
+    // And the device may mint afresh: nothing fails the next deploy closed.
+    post.mockResolvedValue(answer('qqqqqqqqqqqqqqqq', 'rrrrrrrrrrrrrrrr'));
+    await expect(ensureDeviceIdentity()).resolves.toMatchObject({ accountId: 'qqqqqqqqqqqqqqqq' });
+  });
+
+  it('the deletion fence is no wider than the deleted account: another verdict still stands', async () => {
+    loadDeviceIdentity();
+    const deleted = await ensureDeviceIdentity();
+    startFreshDevice({ accountId: deleted.accountId, deviceId: deleted.deviceId });
+    storage.setItem(
+      'whippin-device',
+      JSON.stringify({ signedOut: true, accountId: 'qqqqqqqqqqqqqqqq', deviceId: deleted.deviceId }),
+    );
+    otherTabWrote();
+    expect(useIdentityStore.getState().signedOut).toBe(true);
+  });
+
+  it('the sibling that wrote the late verdict follows its removal back to emptiness', async () => {
+    // The other half of the convergence, from the sibling's side: its stale identity's call
+    // answers `unknown_device` after the deleting tab emptied the key, so its tombstone
+    // lands on an empty key; the deleting tab removes it, and this tab leaves SIGNED OUT
+    // for a plain, fresh device.
+    loadDeviceIdentity();
+    const identity = await ensureDeviceIdentity();
+    storage.removeItem('whippin-device'); // the deleting tab's wipe, its event not yet here
+    expect(markDeviceSignedOut(identityEpochOf(identity))).toBe(true);
+    expect(stored()).toMatchObject({ signedOut: true, accountId: identity.accountId });
+
+    storage.removeItem('whippin-device'); // the deleting tab took it back out
+    otherTabWrote();
+    expect(useIdentityStore.getState().signedOut).toBe(false);
+    expect(deviceIdentity()).toBeNull();
+  });
+
   it('does not resurrect a revoked token when conditional storage removal throws', async () => {
     const first = await ensureDeviceIdentity();
     storage.removeItem = vi.fn(() => {

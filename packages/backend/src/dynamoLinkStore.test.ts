@@ -12,6 +12,7 @@ import {
 import { LINK_CODE_MAX_ATTEMPTS } from '@whippin/shared';
 import { expectExpressionsValid, expectTransactItemValid } from './dynamoExpressionChecks';
 import { dynamoLinkStore } from './dynamoLinkStore';
+import { emailHash as emailHashOf } from './linkStore';
 
 // CONTRACT (#204), and it is the round store's contract restated for a second write path:
 // DynamoDB rejects an ExpressionAttributeNames/Values entry no expression references, and an
@@ -382,7 +383,7 @@ describe('dynamoLinkStore — the indivisible core', () => {
     );
   });
 
-  it('deletes the account row AND its profile row together when it is being erased', async () => {
+  it('deletes the account row AND its profile row together when it is being erased — and queues its PURGE', async () => {
     const { store, send } = makeStore(async () => ({}));
     await store.adopt({ ...PLAN, erase: true, departFrom: PLAN.from });
 
@@ -400,6 +401,21 @@ describe('dynamoLinkStore — the indivisible core', () => {
       (item) => item.Delete?.Key?.pk.S === `player#${PLAN.from}` && item.Delete.Key.sk.S === 'account',
     );
     expect(source!.Delete!.ConditionExpression).toContain('attribute_not_exists(#email)');
+    // #207: the erased account is a deleted account like any other — its other days' play,
+    // collections and device rows are owed by the purge, queued in the SAME transaction.
+    const purge = items.find((item) => item.Put?.Item?.pk.S === 'purge');
+    expect(purge!.Put!.Item).toEqual({
+      pk: { S: 'purge' },
+      sk: { S: `account#${PLAN.from}` },
+      enqueuedAt: { S: PLAN.now },
+    });
+  });
+
+  it('queues NO purge when the account being left SURVIVES', async () => {
+    const { store, send } = makeStore(async () => ({}));
+    await store.adopt({ ...PLAN, erase: false });
+    const items = (send.mock.calls[0][0] as TransactWriteItemsCommand).input.TransactItems!;
+    expect(items.some((item) => item.Put?.Item?.pk.S === 'purge')).toBe(false);
   });
 
   // CONTRACT: the active day's play moves INSIDE this transaction — the round exists under
@@ -429,6 +445,9 @@ describe('dynamoLinkStore — the indivisible core', () => {
     pk: { S: 'score#2026-08-26#fr#sentence' },
     sk: { S: publicId },
   });
+  // Where the moves start in an erasing adoption with a departure job: after the identity
+  // (device, target check, challenge, departure job, account, profile, purge job).
+  const M = 7;
   const transactions = (send: { mock: { calls: unknown[][] } }) =>
     send.mock.calls
       .map(([c]) => c)
@@ -460,20 +479,20 @@ describe('dynamoLinkStore — the indivisible core', () => {
     const all = transactions(send);
     expect(all).toHaveLength(1);
     const items = all[0].input.TransactItems!;
-    // Identity (device, target check, challenge, departure job, account, profile) + the round's
-    // Put/Delete + the score's Put/Delete — every one conditioned on what was READ.
-    expect(items).toHaveLength(10);
-    expect(items[6].Put).toMatchObject({
+    // Identity + the round's Put/Delete + the score's Put/Delete — every one conditioned on
+    // what was READ.
+    expect(items).toHaveLength(M + 4);
+    expect(items[M].Put).toMatchObject({
       Item: { pk: { S: `round#${PLAN.to}` }, version: { N: '1' } },
       ConditionExpression: 'attribute_not_exists(pk)',
     });
-    expect(items[7].Delete).toMatchObject({
+    expect(items[M + 1].Delete).toMatchObject({
       Key: roundKey(PLAN.from),
       ConditionExpression: '#v = :v',
       ExpressionAttributeValues: { ':v': { N: '4' } },
     });
-    expect(items[8].Put!.Item!.sk.S).toBe(PLAN.to);
-    expect(items[9].Delete).toMatchObject({
+    expect(items[M + 2].Put!.Item!.sk.S).toBe(PLAN.to);
+    expect(items[M + 3].Delete).toMatchObject({
       Key: scoreKey(PLAN.from),
       ExpressionAttributeValues: { ':stamp': { S: 's1' } },
     });
@@ -491,9 +510,9 @@ describe('dynamoLinkStore — the indivisible core', () => {
       store.adopt({ ...PLAN, erase: true, departFrom: PLAN.from, moves: [KEY] }),
     ).resolves.toEqual({ outcome: 'adopted', moved: [] });
     const items = transactions(send)[0].input.TransactItems!;
-    expect(items).toHaveLength(8);
-    expect(items[6].ConditionCheck!.Key).toEqual(roundKey(PLAN.from));
-    expect(items[7].ConditionCheck).toMatchObject({
+    expect(items).toHaveLength(M + 2);
+    expect(items[M].ConditionCheck!.Key).toEqual(roundKey(PLAN.from));
+    expect(items[M + 1].ConditionCheck).toMatchObject({
       Key: roundKey(PLAN.to),
       ExpressionAttributeValues: { ':v': { N: '9' } },
     });
@@ -517,7 +536,7 @@ describe('dynamoLinkStore — the indivisible core', () => {
         };
       }
       const all = transactions(send);
-      if (all.length === 1) throw refusing([7])(command as TransactWriteItemsCommand);
+      if (all.length === 1) throw refusing([M + 1])(command as TransactWriteItemsCommand);
       return {};
     });
     await expect(
@@ -525,12 +544,12 @@ describe('dynamoLinkStore — the indivisible core', () => {
     ).resolves.toEqual({ outcome: 'adopted', moved: [{ key: KEY, solved: true }] });
     const all = transactions(send);
     expect(all).toHaveLength(2);
-    expect(all[0].input.TransactItems![7].Delete!.ExpressionAttributeValues).toEqual({ ':v': { N: '3' } });
-    expect(all[1].input.TransactItems![6].Put!.Item).toMatchObject({
+    expect(all[0].input.TransactItems![M + 1].Delete!.ExpressionAttributeValues).toEqual({ ':v': { N: '3' } });
+    expect(all[1].input.TransactItems![M].Put!.Item).toMatchObject({
       solved: { BOOL: true },
       progress: { N: '100' },
     });
-    expect(all[1].input.TransactItems![7].Delete!.ExpressionAttributeValues).toEqual({ ':v': { N: '4' } });
+    expect(all[1].input.TransactItems![M + 1].Delete!.ExpressionAttributeValues).toEqual({ ':v': { N: '4' } });
     // A different plan is a different request: the idempotency token moved with it.
     expect(all[1].input.ClientRequestToken).not.toBe(all[0].input.ClientRequestToken);
   });
@@ -545,7 +564,7 @@ describe('dynamoLinkStore — the indivisible core', () => {
         return reads === 1 ? {} : { Item: round(PLAN.from, ['chat'], 1) };
       }
       const all = transactions(send);
-      if (all.length === 1) throw refusing([6])(command as TransactWriteItemsCommand);
+      if (all.length === 1) throw refusing([M])(command as TransactWriteItemsCommand);
       return {};
     });
     await expect(
@@ -553,17 +572,17 @@ describe('dynamoLinkStore — the indivisible core', () => {
     ).resolves.toEqual({ outcome: 'adopted', moved: [{ key: KEY, solved: false }] });
     const all = transactions(send);
     const first = all[0].input.TransactItems!;
-    expect(first).toHaveLength(8);
-    expect(first[6].ConditionCheck).toMatchObject({
+    expect(first).toHaveLength(M + 2);
+    expect(first[M].ConditionCheck).toMatchObject({
       Key: roundKey(PLAN.from),
       ConditionExpression: 'attribute_not_exists(pk)',
     });
     // The re-plan MOVES the round that appeared — and guards the score rows it read.
     const second = all[1].input.TransactItems!;
-    expect(second[6].Put!.Item!.pk.S).toBe(`round#${PLAN.to}`);
-    expect(second[7].Delete!.Key).toEqual(roundKey(PLAN.from));
-    expect(second[8].ConditionCheck!.ConditionExpression).toBe('attribute_not_exists(pk)');
-    expect(second[9].ConditionCheck!.ConditionExpression).toBe('attribute_not_exists(pk)');
+    expect(second[M].Put!.Item!.pk.S).toBe(`round#${PLAN.to}`);
+    expect(second[M + 1].Delete!.Key).toEqual(roundKey(PLAN.from));
+    expect(second[M + 2].ConditionCheck!.ConditionExpression).toBe('attribute_not_exists(pk)');
+    expect(second[M + 3].ConditionCheck!.ConditionExpression).toBe('attribute_not_exists(pk)');
   });
 
   it('two sources adopting ONE target at equal versions cannot overwrite each other\'s moved log', async () => {
@@ -645,7 +664,7 @@ describe('dynamoLinkStore — the indivisible core', () => {
           ? { Item: round(PLAN.from, ['chat'], 1) }
           : {};
       }
-      throw refusing([4, 7])(command as TransactWriteItemsCommand);
+      throw refusing([4, M + 1])(command as TransactWriteItemsCommand);
     });
     await expect(
       store.adopt({ ...PLAN, erase: true, departFrom: PLAN.from, moves: [KEY] }),
@@ -680,7 +699,7 @@ describe('dynamoLinkStore — the indivisible core', () => {
           : {};
       }
       // The source round's guard, every time: a guess lands between each plan and its commit.
-      throw refusing([7])(command as TransactWriteItemsCommand);
+      throw refusing([M + 1])(command as TransactWriteItemsCommand);
     });
     await expect(
       store.adopt({ ...PLAN, erase: true, departFrom: PLAN.from, moves: [KEY] }),
@@ -852,8 +871,9 @@ describe('dynamoLinkStore — transaction conflicts', () => {
     const all = send.mock.calls
       .map(([c]) => c)
       .filter((c): c is TransactWriteItemsCommand => c instanceof TransactWriteItemsCommand);
-    // The second plan conditions on what NOW stands, and is a different request.
-    expect(all[1].input.TransactItems![7].Delete!.ExpressionAttributeValues).toEqual({
+    // The second plan conditions on what NOW stands, and is a different request. (The
+    // source round's Delete follows the seven identity items and the destination's Put.)
+    expect(all[1].input.TransactItems![8].Delete!.ExpressionAttributeValues).toEqual({
       ':v': { N: '4' },
     });
     expect(all[1].input.ClientRequestToken).not.toBe(all[0].input.ClientRequestToken);
@@ -929,5 +949,179 @@ describe('dynamoLinkStore — the departure queue', () => {
       sk: { S: 'from#bbbbbbbbbbbbbbbb' },
     });
     expect(command.input.ConditionExpression).toBeUndefined();
+  });
+});
+
+// CONTRACT (#207): a player's own deletion is ONE transaction — the account row conditioned
+// on the exact address it was authenticated with, the profile row, the address's binding
+// (never one reaching somebody else) and the purge job, which names no address.
+describe('dynamoLinkStore — deleting an account', () => {
+  const ID = 'aaaaaaaaaaaaaaaa';
+  const EMAIL = 'zoe@example.com';
+  const DELETION = { accountId: ID, tokenHash: HASH, now: NOW.toISOString() };
+  const sent = (send: ReturnType<typeof makeStore>['send']) =>
+    send.mock.calls
+      .map(([c]) => c)
+      .filter((c): c is TransactWriteItemsCommand => c instanceof TransactWriteItemsCommand);
+
+  it('deletes an UNLINKED account: its row (still unlinked, the caller still on it), its profile, and queues the purge', async () => {
+    const { store, send } = makeStore(async () => ({}));
+    await expect(store.deleteAccount(DELETION)).resolves.toBe('deleted');
+    const [command] = sent(send);
+    expect(command.input.ClientRequestToken).toBeTruthy();
+    const items = command.input.TransactItems!;
+    expect(items).toHaveLength(4);
+    expect(items[0].Delete).toMatchObject({
+      Key: { pk: { S: `player#${ID}` }, sk: { S: 'account' } },
+      ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#email)',
+    });
+    // The CALLING device must still be on this account: a link that moved it meanwhile
+    // refuses the deletion of the account it left.
+    expect(items[1].ConditionCheck).toEqual({
+      TableName: 'scores',
+      Key: { pk: { S: `device#${HASH}` }, sk: { S: 'device' } },
+      ConditionExpression: '#accountId = :accountId',
+      ExpressionAttributeNames: { '#accountId': 'accountId' },
+      ExpressionAttributeValues: { ':accountId': { S: ID } },
+    });
+    expect(items[2].Delete).toEqual({
+      TableName: 'scores',
+      Key: { pk: { S: `player#${ID}` }, sk: { S: 'profile' } },
+    });
+    expect(items[3].Put).toEqual({
+      TableName: 'scores',
+      Item: { pk: { S: 'purge' }, sk: { S: `account#${ID}` }, enqueuedAt: { S: NOW.toISOString() } },
+    });
+  });
+
+  it('deletes a LINKED account only while it carries that address, and frees the binding — never another account\'s', async () => {
+    const { store, send } = makeStore(async () => ({}));
+    await store.deleteAccount({ ...DELETION, email: EMAIL });
+    const items = sent(send)[0].input.TransactItems!;
+    expect(items).toHaveLength(5);
+    expect(items[0].Delete).toMatchObject({
+      ConditionExpression: 'attribute_exists(pk) AND #email = :email',
+      ExpressionAttributeValues: { ':email': { S: EMAIL } },
+    });
+    expect(items[3].Delete).toMatchObject({
+      Key: { pk: { S: `email#${emailHashOf(EMAIL)}` }, sk: { S: 'email' } },
+      ConditionExpression: 'attribute_not_exists(pk) OR #accountId = :accountId',
+      ExpressionAttributeValues: { ':accountId': { S: ID } },
+    });
+    // The job carries the account and the instant, never the address.
+    expect(JSON.stringify(items[4])).not.toContain(EMAIL);
+  });
+
+  it('answers `account_changed` when the ACCOUNT row refused (a bind or another deletion won)', async () => {
+    const { store } = makeStore(async () => {
+      throw cancelling('ConditionalCheckFailed', 'None', 'None', 'None');
+    });
+    await expect(store.deleteAccount(DELETION)).resolves.toBe('account_changed');
+  });
+
+  it('answers `account_changed` when the CALLING DEVICE refused (a link moved it to another account)', async () => {
+    const { store } = makeStore(async () => {
+      throw cancelling('None', 'ConditionalCheckFailed', 'None', 'None');
+    });
+    await expect(store.deleteAccount(DELETION)).resolves.toBe('account_changed');
+  });
+
+  it('names the CALLING DEVICE in its idempotency token — two devices deleting at one instant are two requests', async () => {
+    const { store, send } = makeStore(async () => ({}));
+    await store.deleteAccount(DELETION);
+    await store.deleteAccount({ ...DELETION, tokenHash: 'b'.repeat(64) });
+    const [first, second] = sent(send);
+    expect(second.input.ClientRequestToken).not.toBe(first.input.ClientRequestToken);
+  });
+
+  it('THROWS when only the binding refused — an address reaching another account is not an answer', async () => {
+    const { store } = makeStore(async () => {
+      throw cancelling('None', 'None', 'None', 'ConditionalCheckFailed', 'None');
+    });
+    await expect(store.deleteAccount({ ...DELETION, email: EMAIL })).rejects.toThrow('cancelled');
+  });
+
+  it('retries a CONFLICT with the same items and token after a wait, then reads only a clean attempt', async () => {
+    let attempts = 0;
+    const { store, send, waits } = makeStore(async () => {
+      attempts += 1;
+      if (attempts === 1) throw cancelling('TransactionConflict', 'None', 'None', 'None');
+      return {};
+    });
+    await expect(store.deleteAccount(DELETION)).resolves.toBe('deleted');
+    const [first, second] = sent(send);
+    expect(second.input).toEqual(first.input);
+    expect(waits).toHaveLength(1);
+  });
+});
+
+describe('dynamoLinkStore — the purge queue', () => {
+  it('lists every job with ONE consistent, paged Query of the fixed partition — oldest first', async () => {
+    const pages = [
+      {
+        Items: [
+          { sk: { S: 'account#bbbbbbbbbbbbbbbb' }, enqueuedAt: { S: '2026-08-26T12:00:00.000Z' } },
+        ],
+        LastEvaluatedKey: { pk: { S: 'cursor' } },
+      },
+      {
+        Items: [
+          { sk: { S: 'account#cccccccccccccccc' }, enqueuedAt: { S: '2026-08-25T12:00:00.000Z' } },
+        ],
+      },
+    ];
+    const { store, send } = makeStore(async () => pages.shift()!);
+    await expect(store.pendingPurges()).resolves.toEqual([
+      { accountId: 'cccccccccccccccc', enqueuedAt: '2026-08-25T12:00:00.000Z' },
+      { accountId: 'bbbbbbbbbbbbbbbb', enqueuedAt: '2026-08-26T12:00:00.000Z' },
+    ]);
+    const first = (send.mock.calls[0][0] as QueryCommand).input;
+    expect(first).toMatchObject({
+      KeyConditionExpression: '#pk = :pk AND begins_with(#sk, :prefix)',
+      ExpressionAttributeValues: { ':pk': { S: 'purge' }, ':prefix': { S: 'account#' } },
+      ConsistentRead: true,
+    });
+    expect((send.mock.calls[1][0] as QueryCommand).input.ExclusiveStartKey).toEqual({
+      pk: { S: 'cursor' },
+    });
+  });
+
+  it('clears a finished job unconditionally, so finishing twice is a no-op', async () => {
+    const { store, send } = makeStore(async () => ({}));
+    await store.clearPurge('aaaaaaaaaaaaaaaa');
+    const command = send.mock.calls[0][0] as DeleteItemCommand;
+    expect(command.input.Key).toEqual({ pk: { S: 'purge' }, sk: { S: 'account#aaaaaaaaaaaaaaaa' } });
+    expect(command.input.ConditionExpression).toBeUndefined();
+  });
+
+  it('sweeps the WHOLE player partition, page by page, deleting every item it lists', async () => {
+    const pages = [
+      { Items: [{ sk: { S: 'history#fr' } }, { sk: { S: 'profile' } }], LastEvaluatedKey: { pk: { S: 'c' } } },
+      { Items: [{ sk: { S: 'group#gaaaaaaaaaaaaaaa' } }] },
+    ];
+    const { store, send } = makeStore(async (command) =>
+      command instanceof QueryCommand ? pages.shift()! : {},
+    );
+    await store.purgePlayer('aaaaaaaaaaaaaaaa');
+    const commands = send.mock.calls.map(([c]) => c);
+    const query = (commands[0] as QueryCommand).input;
+    expect(query).toMatchObject({
+      KeyConditionExpression: '#pk = :pk',
+      ExpressionAttributeValues: { ':pk': { S: 'player#aaaaaaaaaaaaaaaa' } },
+      ProjectionExpression: '#pk, #sk',
+      ConsistentRead: true,
+    });
+    const deletes = commands
+      .filter((c): c is DeleteItemCommand => c instanceof DeleteItemCommand)
+      .map((c) => {
+        expect(c.input.ConditionExpression).toBeUndefined();
+        return c.input.Key;
+      });
+    expect(deletes).toEqual(
+      ['history#fr', 'profile', 'group#gaaaaaaaaaaaaaaa'].map((sk) => ({
+        pk: { S: 'player#aaaaaaaaaaaaaaaa' },
+        sk: { S: sk },
+      })),
+    );
   });
 });

@@ -29,7 +29,7 @@ vi.mock('../identity', () => ({
 }));
 vi.mock('./signedOutVerdict', () => ({ adoptSignedOutVerdict: vi.fn() }));
 
-const { loadAccountSummary, resetAccountSummary, resumeDepartureDrain, useAccountStore } =
+const { loadAccountSummary, resetAccountSummary, resumeDepartureDrain, summaryKnown, useAccountStore } =
   await import('./account');
 
 const answered = (departurePending: boolean) => ({
@@ -175,5 +175,47 @@ describe('loadAccountSummary — the `{token}` read', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(useAccountStore.getState()).toEqual({ phase: 'ready', summary });
     expect(postLinkBody).toHaveBeenCalledTimes(2);
+  });
+});
+
+// CONTRACT (#211/#207): what the account IS is unknown until its summary lands, and `/account`
+// offers nothing that depends on it before then — SAVE, and DELETE ACCOUNT, whose
+// confirmation names the address erased and the other devices signed out only for a SAVED
+// account. A failed read with nothing in hand stays unknown (the page offers RETRY there).
+describe('summaryKnown — when /account may offer what depends on the summary', () => {
+  const summary = {
+    accountId: 'lfd5pqz5pa7zjm5u',
+    deviceId: 'd'.repeat(16),
+    email: 'a@b.c',
+    createdAt: '',
+    departurePending: false,
+  };
+
+  beforeEach(() => resetAccountSummary());
+
+  it('is unknown while the first read is out, and known once it lands', async () => {
+    let answer: (value: unknown) => void = () => {};
+    postLinkBody.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    loadAccountSummary(true);
+    expect(useAccountStore.getState().phase).toBe('loading');
+    expect(summaryKnown(useAccountStore.getState())).toBe(false);
+
+    answer({ ok: true, json: async () => summary });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(summaryKnown(useAccountStore.getState())).toBe(true);
+  });
+
+  it('a FAILED read with nothing in hand is not knowing', async () => {
+    postLinkBody.mockRejectedValue(new Error('offline'));
+    loadAccountSummary(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(useAccountStore.getState().phase).toBe('failed');
+    expect(summaryKnown(useAccountStore.getState())).toBe(false);
+  });
+
+  it('a summary in hand stays known while it is read again, or after that re-read fails', () => {
+    expect(summaryKnown({ phase: 'loading', summary })).toBe(true);
+    expect(summaryKnown({ phase: 'failed', summary })).toBe(true);
+    expect(summaryKnown({ phase: 'idle', summary: null })).toBe(false);
   });
 });

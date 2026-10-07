@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   BatchGetItemCommand,
   ConditionalCheckFailedException,
+  DeleteItemCommand,
   GetItemCommand,
   QueryCommand,
   UpdateItemCommand,
@@ -1001,6 +1002,49 @@ describe('planRoundMove (#204)', () => {
     expect(result.moved).toBe(true);
     expect(result.items[1].Delete).toMatchObject({
       ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#v)',
+    });
+  });
+});
+
+// CONTRACT (#207): the purge finds every round of a deleted account with ONE consistent,
+// paged Query of the player's own partition — keys only, the logs never leave the store —
+// read back through the formatters' inverse, and deletes each unconditionally.
+describe('dynamoRoundStore — the purge', () => {
+  it('lists every round key, dated and bonus, off a keys-only paged Query', async () => {
+    const pages = [
+      {
+        Items: [{ sk: { S: 'fr#sentence#2026-08-21' } }, { sk: { S: 'en#sentence#bonus/1234567' } }],
+        LastEvaluatedKey: { pk: { S: 'cursor' } },
+      },
+      { Items: [{ sk: { S: 'en#sentence#2026-08-22' } }] },
+    ];
+    const { store, send } = makeStore(async () => pages.shift()!);
+    await expect(store.listKeys(PUBLIC_ID)).resolves.toEqual([
+      { lang: 'fr', date: '2026-08-21' },
+      { lang: 'en', date: 'bonus/1234567' },
+      { lang: 'en', date: '2026-08-22' },
+    ]);
+    const first = (send.mock.calls[0][0] as QueryCommand).input;
+    expect(first).toMatchObject({
+      KeyConditionExpression: '#pk = :pk',
+      ExpressionAttributeNames: { '#pk': 'pk', '#sk': 'sk' },
+      ExpressionAttributeValues: { ':pk': { S: `round#${PUBLIC_ID}` } },
+      ProjectionExpression: '#sk',
+      ConsistentRead: true,
+    });
+    expect((send.mock.calls[1][0] as QueryCommand).input.ExclusiveStartKey).toEqual({
+      pk: { S: 'cursor' },
+    });
+  });
+
+  it('deletes one round unconditionally — a purge run twice deletes nothing twice', async () => {
+    const { store, send } = makeStore(async () => ({}));
+    await store.remove(KEY, PUBLIC_ID);
+    const command = send.mock.calls[0][0] as DeleteItemCommand;
+    expect(command).toBeInstanceOf(DeleteItemCommand);
+    expect(command.input).toEqual({
+      TableName: 'scores',
+      Key: { pk: { S: `round#${PUBLIC_ID}` }, sk: { S: 'fr#sentence#2026-08-21' } },
     });
   });
 });

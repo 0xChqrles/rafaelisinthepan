@@ -127,10 +127,23 @@ export function memoryDeviceStore(
       if (erase) {
         // The device ROWS are left where they are, exactly as production leaves them: a
         // device still naming a deleted account stops authenticating on the account-
-        // existence check above, and the housekeeping sweep (#207) collects the rows.
+        // existence check above, and the purge job the link store queues beside this
+        // deletion (#207) revokes them.
         accounts.delete(from);
       }
       return 'adopted';
+    },
+
+    // #207's deletion, the account-row half: the production Delete's condition (still
+    // standing, and carrying exactly the address the caller authenticated with) and its
+    // ConditionCheck on the calling device (still on this account) checked beside the maps
+    // they guard. The device rows stay, as in `adoptDevice` above.
+    deleteAccount({ accountId, tokenHash, email }) {
+      const account = accounts.get(accountId);
+      if (!account || account.email !== email) return false;
+      if (devices.get(tokenHash)?.accountId !== accountId) return false;
+      accounts.delete(accountId);
+      return true;
     },
   };
 }

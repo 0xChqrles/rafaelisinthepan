@@ -7903,6 +7903,7 @@ figure.l1-fig {
    as visible as the interest in it. */
 .account-foot {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   margin-top: 28px;
 }
@@ -9613,6 +9614,20 @@ figure.l1-fig {
   text-transform: uppercase;
   background: var(--fg);
   color: var(--bg);
+}
+/* THE ACCOUNT'S DELETION (#207): its three numbers under its face — the crossroads' quiet row,
+   a price — and, under the note, the failure's line HELD from the start (two lines of the
+   ERROR note's), so a failure landing moves nothing on the screen. */
+.confirm-screen .account-stats {
+  margin-bottom: 8px;
+}
+.confirm-failure {
+  margin: 0;
+  min-height: 40px;
+  line-height: 20px;
+}
+.confirm-failure .account-note {
+  line-height: 20px;
 }
 /* WHO TAKES IT OVER, under the question it answers: the members as the board's lines, radios,
    each RESTING in the slate corners of a thing to tap (the period switch's cells: bare names

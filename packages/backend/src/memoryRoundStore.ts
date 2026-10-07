@@ -3,6 +3,7 @@ import {
   roundMonthPrefix,
   roundPartition,
   roundSortKeyDate,
+  roundSortKeyParts,
   roundSortKey,
   type RoundAppendInput,
   type RoundBoardRow,
@@ -184,6 +185,19 @@ export function memoryRoundStore(): RoundStore & LinkRoundWrites {
       if (item.solved) return { outcome: 'round_solved' as const, state: stateOf(item) };
       item.gaveUp = true;
       return { outcome: 'given_up' as const, state: stateOf(item) };
+    },
+
+    // #207's purge: every round of the player's partition, read back out of the map key
+    // through the formatters' one inverse (`roundSortKeyParts`), like `listMonth` above.
+    async listKeys(publicId) {
+      const partition = `${roundPartition(publicId)}/`;
+      return [...rounds.keys()]
+        .filter((id) => id.startsWith(partition))
+        .map((id) => roundSortKeyParts(id.slice(partition.length)));
+    },
+
+    async remove(key, publicId) {
+      rounds.delete(itemKey(key, publicId));
     },
 
     // #204's active-day transfer, the process-local half of `dynamoLinkStore`'s one

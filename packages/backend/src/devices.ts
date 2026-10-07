@@ -10,6 +10,14 @@
 //   { token, revoke: "<deviceId>", revokeKey: "<opaque>" }
 //                                    — SIGN OUT one listed device by deleting its base item
 //                                      directly, then answer with the list as it now stands.
+//   { token, deleteAccount: "<accountId>" }
+//                                    — DELETE THE ACCOUNT (#207). The body NAMES the account
+//                                      the caller believes it deletes (the #204 `erase`
+//                                      confirmation's pattern): another account is 409
+//                                      `account_changed` and nothing goes. Answered
+//                                      `{deleted: true}` only once the deletion committed; a
+//                                      replay after a lost answer authenticates no more and is
+//                                      401 `unknown_device`, which the client reads as done.
 //
 // POST-only — the token is the auth and it travels in the BODY,
 // never a query string, so there is no way to ask about an account without proving you hold
@@ -28,6 +36,7 @@
 
 import {
   DEVICE_ID_PATTERN,
+  PUBLIC_ID_PATTERN,
   generateDeviceId,
   generatePublicId,
   isValidDeviceToken,
@@ -46,6 +55,9 @@ import {
   requireDeviceToken,
   requireTurnstile,
 } from './liveRoute';
+import type { GroupStore } from './groupStore';
+import type { LinkStore } from './linkStore';
+import { departGroups, revokeDevices } from './purge';
 import { errorResponse, json, type FnUrlEvent, type FnUrlResult } from './respond';
 import type { TurnstileVerifier } from './turnstile';
 import { parseUserAgent } from './userAgent';
@@ -60,6 +72,16 @@ export interface DeviceHandlerDeps {
   turnstile: TurnstileVerifier;
   // Only the direct local HTTP adapter may trust its socket peer (the /scores rule).
   allowSourceIp?: boolean;
+}
+
+// What DELETING an account (#207) acts on besides the device store: the link store owns the
+// one deletion transaction (it is the account-lifecycle writer that already deletes accounts
+// for #204), and the group store is how a deleted account leaves its groups at once. The
+// handler hands this route the link route's own instances, so a deletion and a link can
+// never act on two different stores.
+export interface AccountDeletionDeps {
+  links: LinkStore;
+  groups: GroupStore;
 }
 
 // What a device looks like to the screen that lists it. `current` is the one fact the
@@ -106,6 +128,7 @@ export async function handleDevices(
   deps: DeviceHandlerDeps,
   instant: Date,
   cors: Record<string, string>,
+  deletion?: AccountDeletionDeps,
 ): Promise<FnUrlResult> {
   const responseHeaders = { ...cors, ...LIVE_HEADERS };
   const method = event.requestContext?.http?.method ?? 'GET';
@@ -134,6 +157,14 @@ export async function handleDevices(
         responseHeaders,
       );
     }
+    if (body.deleteAccount !== undefined) {
+      return errorResponse(
+        400,
+        'bad_request',
+        'An account is either bootstrapped or deleted, never both in one call.',
+        responseHeaders,
+      );
+    }
     const token = requireDeviceToken(body, responseHeaders);
     if (!token.ok) return token.response;
     const challenge = await requireTurnstile(body, event, deps, responseHeaders, 'Device bootstrap');
@@ -154,6 +185,10 @@ export async function handleDevices(
   const auth = await requireDevice(body, responseHeaders, devices, instant);
   if (!auth.ok) return auth.response;
   const resolved = auth.value;
+
+  if (body.deleteAccount !== undefined) {
+    return deleteAccount(body, resolved, devices, deletion, instant, responseHeaders);
+  }
 
   if (body.revoke === undefined && body.revokeKey !== undefined) {
     return errorResponse(
@@ -196,4 +231,108 @@ export async function handleDevices(
   }
 
   return json(200, await listing(devices, resolved), responseHeaders);
+}
+
+// How many times a deletion is tried when its account's ADDRESS changes under it (a bind
+// landing between the read and the commit). One change is a race; three in one request is
+// churn nobody is typing.
+const DELETE_ATTEMPTS = 3;
+
+// THE DELETION (#207). The ONE transaction is `LinkStore.deleteAccount` (the account row
+// conditioned on the address this call authenticated with and on the calling device still
+// being on it, the profile row, the binding, the purge job); once it commits, the account is gone for every surface, and what follows
+// here only does NOW what the purge worker owes anyway — each step best-effort and LOGGED,
+// never failing the answer, because the player's request has already been carried out.
+async function deleteAccount(
+  body: Record<string, unknown>,
+  resolved: ResolvedDevice,
+  devices: DeviceStore,
+  deletion: AccountDeletionDeps | undefined,
+  instant: Date,
+  responseHeaders: Record<string, string>,
+): Promise<FnUrlResult> {
+  if (body.revoke !== undefined || body.revokeKey !== undefined) {
+    return errorResponse(
+      400,
+      'bad_request',
+      'An account is either deleted or one of its devices revoked, never both in one call.',
+      responseHeaders,
+    );
+  }
+  const named = body.deleteAccount;
+  if (typeof named !== 'string' || !PUBLIC_ID_PATTERN.test(named)) {
+    return errorResponse(
+      400,
+      'bad_request',
+      'Body field "deleteAccount" must name the account being deleted.',
+      responseHeaders,
+    );
+  }
+  if (!deletion) throw new Error('Account deletion is not configured.');
+  // Authenticated already, so this only re-reads the hash the store keys the device by.
+  const token = requireDeviceToken(body, responseHeaders);
+  if (!token.ok) return token.response;
+  const tokenHash = deviceTokenHash(token.value);
+
+  // The transaction is conditioned on the snapshot this request authenticated with (the
+  // account, its address, this device on it), so a REFUSAL says only that the snapshot no
+  // longer stands — not which of three things happened. The device is read AGAIN to tell
+  // them apart, because each needs a different answer: gone (another tab or device of the
+  // account deleted it first — 401 `unknown_device`, which the client reads as deleted); on
+  // ANOTHER account (a link moved it — 409 `account_changed`, the one thing that code means
+  // here); still on THIS one (its address changed under us — the player still asked to
+  // delete exactly this account, so try again over what stands now).
+  let current = resolved;
+  for (let attempt = 0; attempt < DELETE_ATTEMPTS; attempt += 1) {
+    const { accountId, email } = current.account;
+    // The confirmation names what it destroys: a device that changed accounts since the
+    // screen asked (a link on another tab) must not delete the one it holds now.
+    if (named !== accountId) {
+      return errorResponse(
+        409,
+        'account_changed',
+        'This device no longer holds the account it asked to delete.',
+        responseHeaders,
+      );
+    }
+    const outcome = await deletion.links.deleteAccount({
+      accountId,
+      tokenHash,
+      ...(email === undefined ? {} : { email }),
+      now: instant.toISOString(),
+    });
+    if (outcome === 'deleted') {
+      return afterDeletion(current, devices, deletion, responseHeaders);
+    }
+    const fresh = await devices.resolve(tokenHash);
+    if (!fresh) {
+      return errorResponse(401, 'unknown_device', 'This device is signed out.', responseHeaders);
+    }
+    current = fresh;
+  }
+  // An address that keeps changing inside one request is not a player linking it: fail
+  // loudly (a 500 the client treats as an unknown outcome and re-reads) rather than guess.
+  throw new Error('The account kept changing while it was being deleted.');
+}
+
+// What follows a committed deletion: only what the purge worker owes anyway, done NOW.
+async function afterDeletion(
+  resolved: ResolvedDevice,
+  devices: DeviceStore,
+  deletion: AccountDeletionDeps,
+  responseHeaders: Record<string, string>,
+): Promise<FnUrlResult> {
+  const { accountId } = resolved.account;
+  // a. Every device item, the calling one included (the index may not list it yet).
+  //    Authentication already fails for every token — the account row is gone — so this
+  //    only removes the items now rather than at the purge.
+  try {
+    await revokeDevices(devices, accountId, [resolved.device]);
+  } catch (error) {
+    console.warn(`[purge] device revocation of ${accountId} unfinished:`, error);
+  }
+  // b. The groups, NOW: other players see a member, so a deleted one may not wait for the
+  //    worker to leave. Logged inside on a failure; the purge job runs it again.
+  await departGroups(deletion.links, deletion.groups, accountId);
+  return json(200, { deleted: true }, responseHeaders);
 }

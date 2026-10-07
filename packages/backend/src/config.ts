@@ -57,6 +57,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   };
 }
 
+// The PURGE worker's configuration (#207, `purgeWorker.ts`): the table, and nothing else —
+// it reads no puzzle, verifies no challenge and hashes no address, so it is handed none of
+// the API's names and loads no secret.
+export function loadPurgeConfig(env: NodeJS.ProcessEnv = process.env): Pick<Config, 'scoreTable'> {
+  const scoreTable = env.SCORE_TABLE;
+  if (!scoreTable) {
+    throw new Error('SCORE_TABLE env var is required.');
+  }
+  return { scoreTable };
+}
+
 export async function loadScoreSecrets(
   client: SSMClient,
   config: Pick<Config, 'turnstileSecretParameter' | 'ipHmacSecretParameter'>,
