@@ -27,7 +27,7 @@ import type { Vocab } from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
 import type { RankEntry, RankMap } from '@whippin/shared';
 import type { HitState, RuntimeHole } from '../game/types';
-import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
+import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult, srHoleStretch } from '../i18n';
 import type { LangCode } from '../langs';
 import playerIdle from '../assets/player-idle.png';
 import LevelCard from './LevelCard';
@@ -679,6 +679,7 @@ export default function LessonBoard({
       startRank: puzzleHole.start_rank,
       secretWord: viewHoles[historyHole].secret.word,
       given: shownMeters?.[historyHole]?.given,
+      stretch: shownMeters?.[historyHole]?.stretch,
     });
   }, [historyHole, holes, puzzleHoles, viewHoles, ranks, tried, shownMeters]);
 
@@ -711,7 +712,13 @@ export default function LessonBoard({
     if (!shownMeters) return undefined;
     return shownMeters.map((c, i) => {
       const hint =
-        holes[i].rank === 0 ? '' : c.given.some((g) => !g.consumed) ? srHoleGiven(lang) : srHoleCharge(lang, c.charge);
+        holes[i].rank === 0
+          ? ''
+          : c.given.some((g) => !g.consumed)
+            ? srHoleGiven(lang)
+            : c.stretch
+              ? srHoleStretch(lang)
+              : srHoleCharge(lang, c.charge);
       return { value: c.charge, active: c.active, hint };
     });
   }, [shownMeters, holes, lang]);

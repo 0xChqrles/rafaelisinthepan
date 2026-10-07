@@ -55,12 +55,13 @@ export interface HistoryStop {
   // of the departure itself or of "you" (a hole's rank only ever improves from its
   // start_rank, so the current position cannot sit behind it).
   behind: boolean;
-  // NAMED by the post-mortem rather than reached: a group between the departure and the
-  // secret the player never typed, which SOLVING reveals (user-decided 2026-08-10). False
-  // for everything they actually played AND for the departure, which was handed to them —
-  // both are words they HELD, and the drawing keeps those at full strength while these
-  // recede. Never true while the hole is live: an unsolved line shows only where the
-  // player has been.
+  // NAMED rather than reached: a group between the departure and the secret the player
+  // never typed, which SOLVING reveals (user-decided 2026-08-10) — and so does a full meter
+  // at a best of 1 while the hole is live (the STRETCH, user-decided 2026-10-07,
+  // `game/charge.ts`). False for everything they actually played AND for the departure,
+  // which was handed to them — both are words they HELD, and the drawing keeps those at
+  // full strength while these recede. Otherwise never true while the hole is live: an
+  // unsolved line shows only where the player has been.
   revealed: boolean;
   // GIVEN by the meter (user-decided 2026-09-22, `game/charge.ts`): the hint a full meter
   // offers — one at a time, the word at half the hole's best. MASKED until the player takes
@@ -120,6 +121,7 @@ export function buildHistory({
   startRank,
   secretWord,
   given = [],
+  stretch = false,
   over = false,
 }: {
   rankMap: Record<string, RankEntry>;
@@ -132,6 +134,9 @@ export function buildHistory({
   // The ranks the meter has GIVEN (`replayCharge`'s `given`), each with whether the
   // player consumed it; none before the activation.
   given?: readonly GivenRank[];
+  // The meter has NAMED THE STRETCH (`replayCharge`'s `stretch`): full at a best of 1, it
+  // names what the solve would, the hole still live.
+  stretch?: boolean;
   // The ROUND is over with this hole unsolved (given up, or capped): its result page
   // already shows the answer, so the words grid hides nothing — no mask, and the headline names the secret.
   // Presentation only: the hole is still unsolved, and nothing it never reached is named.
@@ -233,8 +238,9 @@ export function buildHistory({
   // reached (user-decided 2026-08-10). Only that stretch: what lies BEHIND the departure
   // was never on the way, so nothing there is named that they did not type themselves.
   // The words are the group's canonical accented forms — nobody typed these, so there is
-  // no typed form to prefer, and this is the map naming its own field.
-  if (solved) {
+  // no typed form to prefer, and this is the map naming its own field. The meter's STRETCH
+  // names the same words on a live hole (user-decided 2026-10-07).
+  if (solved || stretch) {
     for (let rank = 1; rank <= startRank; rank += 1) {
       if (byRank.has(rank)) continue;
       const found = field.get(rank);

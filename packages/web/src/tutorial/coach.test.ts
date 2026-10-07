@@ -217,6 +217,7 @@ describe('activatedHole — a full meter offering a word it did not', () => {
     charge,
     active: charge >= 100,
     given: given.map(([rank, consumed]) => ({ rank, consumed })),
+    stretch: false,
   });
   it('the first fill and a refill after a hint taken activate; a moved offer and a refill with nothing to offer do not', () => {
     expect(activatedHole([meter(0), meter(90)], [meter(0), meter(100, [[5, false]])])).toBe(1);

@@ -43,7 +43,7 @@ import { MASK, buildHistory } from '../game/history';
 import { SCRAMBLE_MS, useScramble } from '../hooks/useScramble';
 import { FLOATING_HIT_INTRO_MS, GIVE_UP_HOLD_MS, KB_EXIT_FALLBACK_MS, REVEAL_HOLD_MS, STAGGER_MS } from '../game/timing';
 import type { HistoryStop } from '../game/history';
-import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult } from '../i18n';
+import { t, ariaHoleHistory, srHoleCharge, srHoleGiven, srHoleResult, srHoleStretch } from '../i18n';
 import { track } from '../analytics';
 import {
   fold,
@@ -845,14 +845,16 @@ function Round({
   const charges = useMemo(
     () =>
       shownCharge.map((c, i) => {
-        // A full meter with nothing left to offer (its best is the word just before the
-        // secret), like one a hint taken halved, is described as the meter it is.
+        // A full meter at the word just before the secret has named the stretch; one a
+        // hint taken halved is described as the meter it is.
         const hint =
           holes[i].rank === 0
             ? ''
             : c.given.some((g) => !g.consumed)
               ? srHoleGiven(lang)
-              : srHoleCharge(lang, c.charge);
+              : c.stretch
+                ? srHoleStretch(lang)
+                : srHoleCharge(lang, c.charge);
         return { value: c.charge, active: c.active, hint };
       }),
     [shownCharge, holes, lang],
@@ -898,6 +900,7 @@ function Round({
       // The given words as the BOARD shows them: they land with the release beat, like the
       // hole's own swap, so the wheel never names a word the sentence has not caught up to.
       given: shownCharge[historyHole]?.given,
+      stretch: shownCharge[historyHole]?.stretch,
       // A finished round (solved, given up or capped) shows its answer on the result page,
       // so the words modal masks nothing and names the secret, found or not.
       over: finished,
@@ -1078,11 +1081,12 @@ function Round({
       // The word this guess has a hole offer — on each fill of its meter (the first, or a
       // refill after a hint taken halved it), or a new one once a closer word typed on a
       // full meter moves the best — is said in the same breath: it is news. A hint taken
-      // offers nothing new: its meter is half.
+      // offers nothing new: its meter is half. The stretch named is news too.
       const offer = (c: HoleCharge) => c.given.find((g) => !g.consumed)?.rank;
       for (const { index } of impacted) {
         const next = offer(charged[index]);
         if (next !== undefined && next !== offer(chargeState[index])) parts.push(srHoleGiven(lang, index + 1));
+        if (charged[index].stretch && !chargeState[index].stretch) parts.push(srHoleStretch(lang, index + 1));
       }
       say(solvesAll ? [...parts, t(lang, 'srSolvedAll')].join(', ') : parts.join(', '));
 

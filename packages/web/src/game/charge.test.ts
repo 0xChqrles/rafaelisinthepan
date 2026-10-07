@@ -6,6 +6,8 @@
 // where the map holds nothing that near, never the secret (a best of 1 offers nothing);
 // the offered word guessed (typed or revealed) is a hint CONSUMED, stays given, is the new
 // best, pays no charge and HALVES the meter, so the next offer waits for a full meter;
+// a full meter at a best of 1 NAMES THE STRETCH instead (user-decided 2026-10-07): every
+// word from the start down, free, for good until the solve;
 // rank 0 is the solve and pays nothing; repeated occurrences of one secret share one meter
 // and one mask; charge is DERIVED from the play log, so a replay reconstructs it exactly.
 
@@ -106,8 +108,8 @@ describe('chargeForRank — a continuous function of the rank', () => {
 describe('replayCharge — the meter as the play log describes it', () => {
   it('starts empty, inactive, with nothing given', () => {
     expect(replayCharge(holes(), RANKS, [])).toEqual([
-      { charge: 0, active: false, given: [] },
-      { charge: 0, active: false, given: [] },
+      { charge: 0, active: false, given: [], stretch: false },
+      { charge: 0, active: false, given: [], stretch: false },
     ]);
   });
 
@@ -160,7 +162,7 @@ describe('replayCharge — the meter as the play log describes it', () => {
   });
 
   it('the exact hit is the solve: it pays nothing, and nothing after it touches the hole', () => {
-    expect(replayCharge(holes(), RANKS, ['honnete'])[0]).toEqual({ charge: 0, active: false, given: [] });
+    expect(replayCharge(holes(), RANKS, ['honnete'])[0]).toEqual({ charge: 0, active: false, given: [], stretch: false });
     const log = ['honnete3', 'honnete', 'honnete1', 'honnete1'];
     expectMeter(replayCharge(holes(), RANKS, log)[0], chargeForRank(3), false);
     // The other hole is untouched by that secret's solve and keeps charging.
@@ -215,14 +217,16 @@ describe('the offer — one masked word at half the best, paid with half the met
     expect(consumedOf(replayCharge(holes(), RANKS, [...log, 'honnete50'])[0])).toEqual([]);
   });
 
-  it('a best of 1 offers nothing: the secret is never given, and the full meter is not active', () => {
+  it('a best of 1 offers nothing — the secret is never given — and its full meter NAMES THE STRETCH', () => {
     // These reach rank 1 on the way to filling the meter.
     const meter = replayCharge(holes(), RANKS, ['honnete1', 'honnete5', 'honnete10', 'honnete11', FILLS])[0];
-    expectMeter(meter, CHARGE_TARGET, false);
+    expectMeter(meter, CHARGE_TARGET, true);
     expect(meter.given).toEqual([]);
-    // …and a meter filled again after the last hint, at 1, wears no activation either.
+    expect(meter.stretch).toBe(true);
+    // …and so does a meter filled again after the last hint, at 1.
     const refilled = replayCharge(holes(), RANKS, [...BASE, 'honnete2', ...REFILL, 'honnete1', 'honnete8', 'honnete10', 'honnete11'])[0];
-    expectMeter(refilled, CHARGE_TARGET, false);
+    expectMeter(refilled, CHARGE_TARGET, true);
+    expect(refilled.stretch).toBe(true);
     expect(refilled.given).toEqual([
       { rank: 1, consumed: true },
       { rank: 2, consumed: true },
@@ -249,6 +253,7 @@ describe('the offer — one masked word at half the best, paid with half the met
     // …down to the word just before the secret, and no further.
     const down = replayCharge(holes(), RANKS, [...BASE, 'honnete2', ...REFILL, 'honnete1'])[0];
     expectMeter(down, CHARGE_TARGET / 2, false);
+    expect(down.stretch).toBe(false);
     expect(down.given).toEqual([
       { rank: 1, consumed: true },
       { rank: 2, consumed: true },
@@ -322,6 +327,62 @@ describe('the offer — one masked word at half the best, paid with half the met
     expect(model.stops.filter((s) => s.masked).map((s) => s.rank)).toEqual([1]);
     expect(model.stops.find((s) => s.best)!.rank).toBe(2);
     expect(model.stops.find((s) => s.rank === 2)).toMatchObject({ given: true, taken: true, masked: false });
+  });
+});
+
+// 2026-10-07 (user-decided): "When you're at -1, and you have filled the word, you
+// automatically get all the previous words revealed, from -1 to the starting word."
+describe('the stretch — a full meter at a best of 1 names every word from the start down', () => {
+  // Rank 1 on the way, the meter just under full (28 + 21.8 + 19.2 + 18.8), then full.
+  const NEAR = ['honnete1', 'honnete5', 'honnete10', 'honnete11'];
+  // A meter full at a best of 4, offering 2.
+  const BASE_OFFER = [4, 6, 30, 31, 32, 33].map((r) => `honnete${r}`);
+
+  it('needs BOTH: a best of 1 short of full, or a full meter above 1, names nothing', () => {
+    const almost = replayCharge(holes(), RANKS, NEAR)[0];
+    expect(almost.charge).toBeLessThan(CHARGE_TARGET);
+    expect(almost.stretch).toBe(false);
+    expect(almost.active).toBe(false);
+    const above = replayCharge(holes(), RANKS, ['honnete2', ...FOUR.slice(1), FILLS])[0];
+    expect(above.charge).toBe(CHARGE_TARGET);
+    expect(above.stretch).toBe(false);
+    expect(above.given).toEqual([{ rank: 1, consumed: false }]);
+  });
+
+  it('is free: no try, no charge — the meter stays full', () => {
+    const named = replayCharge(holes(), RANKS, [...NEAR, FILLS])[0];
+    expectMeter(named, CHARGE_TARGET, true);
+    expect(named.stretch).toBe(true);
+  });
+
+  it('a closer word typed on a full meter, reaching 1, names it at once; the old offer is neither given nor taken', () => {
+    const jumped = replayCharge(holes(), RANKS, [...BASE_OFFER, 'honnete1'])[0];
+    expectMeter(jumped, CHARGE_TARGET, true);
+    expect(jumped.stretch).toBe(true);
+    expect(jumped.given).toEqual([]);
+  });
+
+  it('stays named whatever comes after it, until the solve', () => {
+    const named = replayCharge(holes(), RANKS, [...NEAR, FILLS])[0];
+    expect(replayCharge(holes(), RANKS, [...NEAR, FILLS, 'honnete70', 'honnete999'])[0]).toEqual(named);
+    expect(replayCharge(holes(), RANKS, [...NEAR, FILLS, 'honnete'])[0].stretch).toBe(false);
+  });
+
+  it('repeated occurrences share it, and replaying the log names the same words in the history', () => {
+    const twice: RuntimeHole[] = [
+      ...holes(),
+      { pos: 7, secret: 'honnete', word: 'honnete50', rank: 50, startRank: 50 },
+    ];
+    const log = [...NEAR, FILLS];
+    const meters = replayCharge(twice, RANKS, log);
+    expect(meters[2]).toEqual(meters[0]);
+    const model = buildHistory({
+      rankMap: RANKS.honnete, tried: log, hole: replayHoles(holes(), RANKS, log)[0],
+      startRank: 50, secretWord: 'honnête', given: meters[0].given, stretch: meters[0].stretch,
+    });
+    expect(model.secret).toBeNull();
+    expect(model.stops.map((s) => s.rank)).toEqual(Array.from({ length: 50 }, (_, i) => i + 1));
+    expect(model.stops.filter((s) => !s.revealed).map((s) => s.rank)).toEqual([1, 5, 10, 11, 14, 50]);
   });
 });
 
