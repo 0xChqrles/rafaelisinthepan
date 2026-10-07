@@ -165,13 +165,15 @@ def reading(
     return f"{lead}; other words a reader puts there: {alternatives}"
 
 
-def same_word(candidate: Token, other: str | None, neighbour_rank: Callable[[Token, str], int | None]) -> bool:
+def same_word(candidate: Token, other: str | None) -> bool:
     """Whether the word players would say instead IS this word in another form (« sauver »
-    for « sauva »): its lemma, a variant or a twin. Typing it finds the hole, since a
-    ranked group holds every form of a word — so the hidden word is said."""
+    for « sauva »): its spelling, its lemma or a variant. Typing it finds the hole, since a
+    ranked group holds every form of a word — so the hidden word is said. Never a near
+    neighbour (« faussaire » for « faux-monnayeur »): that is another word, in its own group."""
     if not other or " " in other.strip():
         return False
-    return slug(other) == slug(candidate.lemma or "") or is_twin(candidate, other, neighbour_rank)
+    s = slug(other)
+    return s in (candidate.slug, slug(candidate.lemma or "")) or is_variant(s, candidate.slug)
 
 
 def said(chance: float | None, instead: str | None, same: bool = False) -> str:

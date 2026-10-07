@@ -754,7 +754,7 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
                 says[t.slug] = llm.would_say(claude, tokens, occurrences[t.slug] - {t.i}, t.i, t.text.lower(),
                                              lang=lang)
         hard = {t.slug for t in trio if given[t.slug] < contextual_rank.GIVEAWAY_HARD}
-        same = {t.slug for t in trio if rules.same_word(t, says[t.slug][1], neighbour_rank)}
+        same = {t.slug for t in trio if rules.same_word(t, says[t.slug][1])}
         unsaid = rules.unsaid({t.text: None if t.slug in same else says[t.slug][0] for t in trio})
         context = {}
         for t in trio:

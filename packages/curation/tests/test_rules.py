@@ -16,6 +16,7 @@ from rules import (
     map_nearest_filler,
     reading,
     said,
+    same_word,
     unsaid,
 )
 
@@ -118,6 +119,13 @@ def test_a_refused_word_is_never_a_candidate_in_any_line():
     sent = [tok(0, "un", "DET", stop=True), tok(1, "faux-monnayeur", "NOUN"), tok(2, "dort", "VERB", lemma="dormir"),
             tok(3, "saint-bernard", "NOUN")]
     assert [t.text for t in initial_candidates(sent, lang="fr", in_vocab=lambda s: True)] == ["dort", "saint-bernard"]
+
+
+def test_the_same_word_is_its_lemma_or_a_variant_never_a_near_neighbour():
+    sauva = Token(i=0, text="sauva", lemma="sauver", pos="VERB", slug="sauva", stop=False)
+    assert same_word(sauva, "sauver") and same_word(sauva, "Sauva")
+    fm = Token(i=0, text="faux-monnayeur", lemma="faux-monnayeur", pos="NOUN", slug="faux-monnayeur", stop=False)
+    assert not same_word(fm, "faussaire") and not same_word(fm, None) and not same_word(fm, "faux monnayeur")
 
 
 def test_the_english_weak_verbs_are_the_french_list_translated():

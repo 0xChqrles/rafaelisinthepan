@@ -161,9 +161,9 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   straight on, an easy word being the start step's to tune (a farther start, never a duller
   word). Asked of every trio, the model swapped on 77% of played days, loved ones included,
   and picked the hard word no better than chance. A word players would say
-  instead that IS this word in another form (« sauver » for « sauva »: its lemma, a variant
-  or a twin, `rules.same_word`) finds the hole — every form is in its group — so that
-  word counts as said. With all the notes and each hole's band, `llm.pick_starts`
+  instead that IS this word in another form (« sauver » for « sauva »: its spelling, lemma
+  or a variant, `rules.same_word` — never a near neighbour like « faussaire », which is
+  another word in its own group) finds the hole, so that word counts as said. With all the notes and each hole's band, `llm.pick_starts`
   chooses the three starts by the taste — or names ONE hidden word no start can save and
   another word of the line to hide instead (`Replace`: the draft is erased, the day
   rebuilt). Both swaps share `REPLACE_ROUNDS` (2).
