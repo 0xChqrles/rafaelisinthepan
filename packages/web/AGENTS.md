@@ -3095,7 +3095,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     steps on the picker's 6px arms),
     dressed by `readGroup`, in whole rows — `round(down, 40vh, 44px)`, snapping; every row
     is a control, so none is thinned at rest: while more wait below its foot is the short
-    6px edge, on the last row's bare margin, the picked row's frame standing above it),
+    edge's last 4px, on the last row's bare margin under its resting corners, the picked
+    row's frame standing above it),
     LEAVE held back until one is picked, sent as `successor`; a stale list's 409
     `successor_required` is no failure: the confirmation stays up, its pick cleared, and
     the list is read again (the candidates dressed again when its members change).
@@ -4665,7 +4666,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
   deep), so a line scrolling up thins into the ground step by step before it reaches the
   controls, never sliced across its glyphs by a strip thinner than it. (The 6px `--edge-*`
   stays where lines rest WHOLE and their empty margins take it: the board's held head, your
-  held line and the successor pick's foot.) No border, no blur, no glass,
+  held line and, its last 4px, the successor pick's foot.) No border, no blur, no glass,
   no rounded float, no gradient: both layers are pseudo-elements of `.topbar` (the
   full-width fixed layer), shown in ONE step so nothing shifts or fades, and
   `.topbar-inner` keeps only its geometry. ModalHeader, which reuses the classes with no

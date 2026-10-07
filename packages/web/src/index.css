@@ -8799,13 +8799,14 @@ figure.l1-fig {
     var(--dz-6) 0 32px / 16px 16px repeat-x;
 }
 /* Every line of the pick IS a control (a radio), so its foot stops short of them: the short
-   6px edge, which at rest lies on the last line's bare margin under its mark and touches a
-   line only while one passes; the picked line's frame stands above it. */
+   edge's two densest cell rows, 4px — the bare margin under a line's resting corners (held
+   4px in from its edge) — so at rest it touches nothing and it thins a line only while one
+   passes; the picked line's frame stands above it. */
 .confirm-pick[data-more]::after {
-  height: 6px;
-  margin-top: -6px;
-  -webkit-mask: var(--edge-u) 0 0 / 16px 6px repeat-x;
-  mask: var(--edge-u) 0 0 / 16px 6px repeat-x;
+  height: 4px;
+  margin-top: -4px;
+  -webkit-mask: var(--edge-u) 0 -2px / 16px 6px repeat-x;
+  mask: var(--edge-u) 0 -2px / 16px 6px repeat-x;
 }
 .group-room > .board-list .board-remove,
 .confirm-pick > .board-row.picked {
