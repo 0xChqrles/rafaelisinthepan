@@ -835,11 +835,12 @@ export default function LessonBoard({
         {/* Once there is nothing left to type the prompt retires in place — still laid out, so
             the board does not move, but invisible and inert; the reveal has nothing to type
             yet either (the button below is the one action), nor has the meter stage before the
-            tap. Level 1 cleared, it leaves the flow (`.l1-cleared`): the room is the finale's
+            tap, nor a board whose word list was LOST (its note stands in the prompt's row).
+            Level 1 cleared, it leaves the flow (`.l1-cleared`): the room is the finale's
             card's. */}
         <div
-          className={`input-area${ending || revealed || waitingTap || cleared ? ' retired' : ''}`}
-          aria-hidden={ending || revealed || waitingTap || cleared || undefined}
+          className={`input-area${ending || revealed || waitingTap || cleared || listLost ? ' retired' : ''}`}
+          aria-hidden={ending || revealed || waitingTap || cleared || listLost || undefined}
         >
           <WordInput
             value={input}

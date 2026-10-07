@@ -4556,7 +4556,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
     (`components/KeyboardHold`, the game hold's unlit iron keys, breathing at once since it
     answers that tap), and the keys come in over it through the board's dither once the list
     lands while it goes out through the cells they take (`.from-hold`, `.kb-hold-out`). A
-    list LOST stands the hold still, `failedKeyboard` and RETRY in the prompt's row. The
+    list LOST stands the hold still and retires the prompt, `failedKeyboard` and RETRY in
+    the prompt's row. The
     list's pictures HOLD their stage the same way while the scenes chunk loads (`LevelArt`),
     the picture dissolving in over it.
   **A WHEEL ROW'S HIT AREA IS ITS WORD** (`.wheel-row` `width: fit-content`, user-reported
