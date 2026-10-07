@@ -420,9 +420,11 @@ The sentence, holes marked with the hidden word in brackets:
 
 Other words of the line that can be hidden: {", ".join(allowed)}
 
-Keep the three words unless one is dead or out of reach whatever its start: a word most
-readers would write themselves is dead; a word players don't say is out of reach, even
-as the punch. Then name ONE replacement from the other words of the line.
+Keep the punch hidden: when the word the line lands on is easy, a farther start makes the
+search, never a swap. Swap another word when it is dead or out of reach whatever its
+start: a word most readers would write themselves is dead, unless it is the punch; a word
+players don't say is out of reach, even as the punch. Then name ONE replacement from the
+other words of the line.
 
 Return {{"keep": true, "why": "<one line>"}},
 or {{"replace": {{"secret": "<hidden word>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")

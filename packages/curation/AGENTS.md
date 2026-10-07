@@ -155,7 +155,8 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   and, once the map is built, where the reader's nearest word
   lands in the hole's own map (`rules.map_nearest_filler`). BEFORE the ranking is paid
   for, `llm.keep_trio` reads the three words with the notes measured so far and keeps
-  them or names ONE to swap — a word most readers would write themselves is dead, a word
+  them or names ONE to swap — a word most readers would write themselves is dead unless it
+  is the punch (an easy punch stays hidden, a farther start makes the search), a word
   players don't say is out of reach, even as the punch — so a swap costs one question,
   never a second ranking. With all the notes and each hole's band, `llm.pick_starts`
   chooses the three starts by the taste — or names ONE hidden word no start can save and
