@@ -31,6 +31,12 @@ class Log(list):
         self.append(line)
 
 
+@pytest.fixture(autouse=True)
+def _trio_kept(monkeypatch):
+    """The check before the ranking keeps the trio unless a test says otherwise."""
+    monkeypatch.setattr(curate.llm, "keep_trio", lambda *_a, **_k: None)
+
+
 def _giveaways(monkeypatch, scores=None):
     """Every word a line can hide is judged before the choice (the floor); a word the
     test does not name gets a path (0.3)."""
@@ -424,6 +430,28 @@ def test_a_swapped_word_rebuilds_the_day_and_only_the_new_word_is_measured(monke
     assert asked == ["chat", "dort", "pierre", "froide"]
 
 
+def test_a_word_swapped_before_the_ranking_never_pays_for_the_old_trio(monkeypatch):
+    # The words are read with their notes before gen_phrase runs: a swap there costs one
+    # question, and the ranking is paid once, for the trio that is built.
+    calls, shown = [], []
+
+    def keep(_c, marked, holes, others, _chain, lang):
+        shown.append((marked, [h["secret"] for h in holes], others))
+        return {"secret": "pierre", "with": "froide", "why": "players don't say it"} if len(shown) == 1 else None
+
+    def generate(_c, _l, _sentence, words, *_a, replay, chain, **_k):
+        calls.append((words, replay, chain))
+        return "out/x_y_z.json"
+
+    monkeypatch.setattr(curate.llm, "keep_trio", keep)
+    path, asked = _build_day(monkeypatch, generate, Log(), says={"pierre": 0.1})
+    assert path == "out/x_y_z.json"
+    assert calls == [(["chat", "dort", "froide"], None, ["froide replaces pierre: players don't say it", "chat: le sujet"])]
+    assert shown[0][1] == ["chat", "dort", "pierre"] and shown[0][2] == ["froide"]
+    assert "[pierre]" in shown[0][0] and "[froide]" not in shown[0][0]
+    assert asked == ["chat", "dort", "pierre", "froide"]
+
+
 def test_a_day_is_given_up_after_replace_rounds_swaps(monkeypatch):
     calls = []
 
@@ -434,7 +462,7 @@ def test_a_day_is_given_up_after_replace_rounds_swaps(monkeypatch):
     log = Log()
     path, _asked = _build_day(monkeypatch, generate, log)
     assert curate.REPLACE_ROUNDS == 2
-    assert path is None and any("no start words could save this day" in line for line in log)
+    assert path is None and any("no trio of this line survived its swaps" in line for line in log)
     assert calls == [["chat", "dort", "pierre"], ["chat", "dort", "froide"], ["chat", "dort", "pierre"]]
 
 

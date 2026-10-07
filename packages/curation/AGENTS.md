@@ -152,10 +152,14 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   players, against 57 % with one and 71 % with none), so a trio holding two
   carries that fact on each of them (`rules.unsaid`) and the taste keeps at most one;
   and, once the map is built, where the reader's nearest word
-  lands in the hole's own map (`rules.map_nearest_filler`). With those notes and each
-  hole's band, `llm.pick_starts` chooses the three starts by the taste — or
-  names ONE hidden word no start can save and another word of the line to hide instead
-  (`Replace`: the draft is erased, the day rebuilt, `REPLACE_ROUNDS` 2).
+  lands in the hole's own map (`rules.map_nearest_filler`). BEFORE the ranking is paid
+  for, `llm.keep_trio` reads the three words with the notes measured so far and keeps
+  them or names ONE to swap — a word most readers would write themselves is dead, a word
+  players don't say is out of reach unless it is the punch — so a swap costs one question,
+  never a second ranking. With all the notes and each hole's band, `llm.pick_starts`
+  chooses the three starts by the taste — or names ONE hidden word no start can save and
+  another word of the line to hide instead (`Replace`: the draft is erased, the day
+  rebuilt). Both swaps share `REPLACE_ROUNDS` (2).
 - **Which words can be hidden (facts, `rules.initial_candidates`):** NOUN/VERB/ADJ/ADV and
   PROPN (the parser tags a lowercase brand or rare noun as a proper noun — « rolex »,
   « zigzag », secrets of a favourite day; a name nobody can reason toward is taste's

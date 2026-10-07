@@ -727,9 +727,10 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
     blank, how much the sentence hands it over (`line["given"]`, judged for every word
     that can be hidden), whether a player who has the meaning would say it — the page is
     cut (a book), and `generate` writes the puzzle, the start words chosen by the taste, a
-    hard hole's from nearer. A word the start step
-    swaps (Replace) is replaced by another word of the line that can be hidden,
-    REPLACE_ROUNDS times."""
+    hard hole's from nearer. Before the ranking is paid for, the model reads the three
+    words with those notes and may swap one (`llm.keep_trio`); the start step may too
+    (Replace). A swapped word is replaced by another word of the line that can be hidden,
+    REPLACE_ROUNDS times in all."""
     sentence, tokens, given = line["sentence"], line["tokens"], line["given"]
     known = llm.widely_known(claude, sentence, book.get("author", ""), book.get("title", ""), lang=lang)
     log("- known-line check (annotation): "
@@ -768,21 +769,32 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
                 note += (f"; under {contextual_rank.GIVEAWAY_HARD} a hole played hard on real play, so its start "
                          f"candidates come from nearer (ranks {lo}-{hi})")
             context[t.slug] = note
-        try:
-            return generate(claude, log, sentence, [t.text for t in trio], source, lang, context, frequency_rank,
-                            archive["pairs"], replay=replay, chain=chain,
-                            fillers={t.slug: readings[t.slug][0] for t in trio}, hard=hard)
-        except Replace as swap:
-            old = next((t for t in trio if t.slug == slug(swap.secret) or t.text == swap.secret), None)
-            new = next((t for t in line["allowed"] if t.slug == slug(swap.with_)), None)
-            if old is None or new is None or new.slug in {t.slug for t in trio}:
-                log(f"- the swap « {swap.secret} » → « {swap.with_} » is not a word of the line that can be hidden")
-                return None
-            trio = [new if t is old else t for t in trio]
-            chain = [f"{new.text} replaces {old.text}: {swap.why}", *chain]
-            replay = None  # another trio: the scores of the erased draft no longer apply
-            log(f"- trio now: {' · '.join(t.text for t in trio)}")
-    log("- no start words could save this day")
+        # The words are read with their notes BEFORE the ranking is paid for: a swap here
+        # costs one question, a swap at the start step a second ranking.
+        hidden = {i for t in trio for i in occurrences[t.slug]}
+        others = [t.text for t in line["allowed"] if t.slug not in {u.slug for u in trio}]
+        swap = llm.keep_trio(claude, llm.marked(tokens, hidden, lang=lang),
+                             [{"secret": t.text, "notes": context[t.slug]} for t in trio], others, chain, lang=lang)
+        if swap:
+            log(f"- before the ranking, « {swap['secret']} » is swapped for « {swap['with']} » — {swap['why']}")
+            swap = Replace(swap["secret"], swap["with"], swap["why"])
+        else:
+            try:
+                return generate(claude, log, sentence, [t.text for t in trio], source, lang, context, frequency_rank,
+                                archive["pairs"], replay=replay, chain=chain,
+                                fillers={t.slug: readings[t.slug][0] for t in trio}, hard=hard)
+            except Replace as raised:
+                swap = raised
+        old = next((t for t in trio if t.slug == slug(swap.secret) or t.text == swap.secret), None)
+        new = next((t for t in line["allowed"] if t.slug == slug(swap.with_)), None)
+        if old is None or new is None or new.slug in {t.slug for t in trio}:
+            log(f"- the swap « {swap.secret} » → « {swap.with_} » is not a word of the line that can be hidden")
+            return None
+        trio = [new if t is old else t for t in trio]
+        chain = [f"{new.text} replaces {old.text}: {swap.why}", *chain]
+        replay = None  # another trio: the scores of the erased draft no longer apply
+        log(f"- trio now: {' · '.join(t.text for t in trio)}")
+    log("- no trio of this line survived its swaps")
     return None
 
 

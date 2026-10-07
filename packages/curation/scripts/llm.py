@@ -233,6 +233,15 @@ def holed(tokens, blanks: set[int], mark: int | None = None, *, lang: str) -> st
             parts.append("____")
         else:
             parts.append(t.text)
+    return _joined(tokens, parts, lang)
+
+
+def marked(tokens, hidden: set[int], *, lang: str) -> str:
+    """The sentence with the hidden tokens in brackets (`[word]`), rendered as `holed`."""
+    return _joined(tokens, [f"[{t.text}]" if t.i in hidden else t.text for t in tokens], lang)
+
+
+def _joined(tokens, parts: list[str], lang: str) -> str:
     if lang == "fr":
         return re.sub(r"\s+([,.;:!?…»)])", r"\1", re.sub(r"([«(]|\w')\s+", r"\1", " ".join(parts)))
     return "".join(part + t.space for part, t in zip(parts, tokens)).strip()
@@ -390,6 +399,39 @@ def _chain_block(chain: list[str] | None) -> str:
     return f"\nHow the day was chosen to play — the order players should find the words in:\n{lines}\n"
 
 
+def keep_trio(claude: Claude, sentence_marked: str, holes: list[dict], allowed: list[str],
+              chain: list[str] | None = None, *, lang: str) -> dict | None:
+    """The three hidden words, read with code's notes BEFORE the day's ranking is paid for
+    (#308's judge costs per draft, and a swap at the start step pays it twice): keep them,
+    or name ONE to swap for another word of the line. `holes`: [{secret, notes}]. Returns
+    {"secret", "with", "why"} for a swap, None to keep."""
+    blocks = "\n".join(f"Hole « {h['secret']} »\n  measured: {h['notes']}" for h in holes)
+    answer = claude.json(f"""You check the three hidden words of a day for a daily {LANGUAGE[lang]} word game before it
+is built: each hole shows a start word in place of the hidden word; the player types
+guesses and reads, for every hole, how close each lands.
+
+What makes a day worth playing:
+{taste()}
+
+The sentence, holes marked with the hidden word in brackets:
+{sentence_marked}
+{_chain_block(chain)}
+{blocks}
+
+Other words of the line that can be hidden: {", ".join(allowed)}
+
+Keep the three words unless one is dead or out of reach whatever its start: a word most
+readers would write themselves is dead; a word players don't say is out of reach unless
+it is the line's punch. Then name ONE replacement from the other words of the line.
+
+Return {{"keep": true, "why": "<one line>"}},
+or {{"replace": {{"secret": "<hidden word>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")
+    replace = answer.get("replace")
+    if isinstance(replace, dict) and isinstance(replace.get("secret"), str) and isinstance(replace.get("with"), str):
+        return {"secret": replace["secret"].strip(), "with": replace["with"].strip(), "why": str(replace.get("why") or "")}
+    return None
+
+
 def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict],
                 chain: list[str] | None = None, *, lang: str) -> dict:
     """The three start words, chosen TOGETHER by the taste. `holes`: [{secret,
@@ -429,9 +471,7 @@ The sentence, holes marked with the hidden word in brackets:
 Choose the three starts together, by the taste's start words and its difficulty, so the
 day lands where the taste's aim says, difficulty tuned
 by the start, never by a duller word. If one hidden word is dead or out of reach whatever
-its start — a word most readers would write themselves is dead; a word players don't say
-is out of reach unless it is the line's punch — say so and name ONE replacement from the
-line instead of starts.
+its start, say so and name ONE replacement from the line instead of starts.
 
 Return {{"starts": {{"<hidden word>": "<chosen candidate, exactly>", ...}}, "why": "<one line per hole: what ties the start to the word>"}},
 or {{"replace": {{"secret": "<hidden word>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")
