@@ -7,7 +7,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { GROUPS_MAX, GROUP_MARKS_SHOWN, GROUP_MEMBERS_MAX, plusLabelSize } from '@whippin/shared';
-import { groupFrom, landingOf, sendJoin } from './GroupInvite';
+import { groupFrom, landingOf, seatFor, sendJoin } from './GroupInvite';
 import { moreTile, orbitPlacesFor } from '../components/GroupOrbit';
 
 const postGroupsBody = vi.hoisted(() => vi.fn());
@@ -130,6 +130,29 @@ describe('landingOf — what the landing offers', () => {
 
   it('lands on LIMIT when the reader is already in GROUPS_MAX groups', () => {
     expect(landingOf(group(3), summaries(GROUPS_MAX))).toBe('limit');
+  });
+});
+
+// The seat promises a mark only while one is on its way (#211's rule: no breath with no read
+// behind it): the reader's OWN face never stands in as the assigned stranger, so a read that
+// failed rests the seat still.
+describe('seatFor — the reader’s seat', () => {
+  const face = { publicId: 'lfd5pqz5pa7zjm5u', name: 'Rafa', avatar: null };
+
+  it('breathes while the JOIN is out, whatever the face', () => {
+    for (const own of [null, 'failed', 'gone', face] as const) expect(seatFor('busy', own)).toBe('filling');
+  });
+
+  it('once joined, breathes while the mark is read, takes it, rests still where its read failed', () => {
+    expect(seatFor('done', null)).toBe('filling');
+    expect(seatFor('done', face)).toBe('taken');
+    expect(seatFor('done', 'failed')).toBe('failed');
+    // A gone account has no mark coming.
+    expect(seatFor('done', 'gone')).toBe('empty');
+  });
+
+  it('draws nothing before the JOIN, or after a cap answered it', () => {
+    for (const phase of ['idle', 'full', 'limit', 'expired'] as const) expect(seatFor(phase, face)).toBe('empty');
   });
 });
 

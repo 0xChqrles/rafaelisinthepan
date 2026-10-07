@@ -9071,6 +9071,13 @@ figure.l1-fig {
     busy-wait 1ms step-end var(--hold-wait, 0ms) backwards,
     link-hold-breathe 640ms steps(1, end) var(--hold-wait, 0ms) infinite;
 }
+/* Joined, the reader's mark LOST on its way (its read failed): the seat rests at half its
+   cells, STILL — the house's failed read — until a read asked again breathes it once more. */
+.invite-free.still {
+  -webkit-mask-image: var(--dz-4);
+  mask-image: var(--dz-4);
+  animation: none;
+}
 .invite-own {
   position: absolute;
   inset: 0;

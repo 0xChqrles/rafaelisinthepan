@@ -59,8 +59,9 @@ export function orbitPlacesFor(members: readonly BoardPlayer[], seat: boolean): 
 }
 
 // The reader's seat: empty (nothing drawn: before the JOIN, or after a cap answered it),
-// filling (their JOIN is out, or their mark is not read yet), or taken by their mark.
-export type SeatState = 'empty' | 'filling' | 'taken';
+// filling (their JOIN is out, or their mark is not read yet), failed (joined, the mark's read
+// lost: the still stipple), or taken by their mark.
+export type SeatState = 'empty' | 'filling' | 'failed' | 'taken';
 
 // The scene's geometry off its box: a mark of ten cells, each a whole number of pixels (8px a
 // cell on a wide scene: 80; 6 on a phone: 60; 5 on the narrowest: 50), the orbit as wide as the
@@ -326,8 +327,9 @@ export default function GroupOrbit({
   );
 }
 
-// The reader's seat: nothing while it is empty, the floor's stipple breathing while it fills,
-// and their mark in it, dropping in when it was taken on this screen.
+// The reader's seat: nothing while it is empty, the floor's stipple breathing while it fills
+// and resting still where their mark's read was lost, and their mark in it, dropping in when it
+// was taken on this screen.
 function Seat({ state, own, mark, drop }: { state: SeatState; own: BoardPlayer | null; mark: number; drop: boolean }) {
   const markRef = useRef<HTMLSpanElement | null>(null);
   const falls = drop && state === 'taken' && own !== null && !prefersReducedMotion();
@@ -339,6 +341,7 @@ function Seat({ state, own, mark, drop }: { state: SeatState; own: BoardPlayer |
   }, [falls]);
 
   if (state === 'filling') return <span className="invite-free" />;
+  if (state === 'failed') return <span className="invite-free still" />;
   if (state !== 'taken' || own === null) return null;
   const burst = mark >= 80 ? ' x4' : mark < 60 ? ' x2' : '';
   return (

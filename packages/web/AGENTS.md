@@ -705,8 +705,8 @@ These are decided and verified against the code. Treat them as load-bearing.
   dress) and their tries muted; a FINISHED member wears the pixel check
   (`assets/icons/check.svg`) and their score in the solve cobalt; one whose round ended
   unsolved wears `∞`. MY entry is my mark (framed in the accent; while my face is read, the
-  header key's own hold in that frame, `FaceHold`, and the still stipple once that read has
-  failed) and my LIVE % —
+  header key's own hold in that frame, `FaceHold`, the still stipple once that read has
+  failed, and the key's ghost for an account gone) and my LIVE % —
   `computeProgress` over the board I SEE, so it moves when a hit lands — **the one place the
   play screen prints the player's own percentage.** The order is the boards' own (finished
   by fewest tries, then `orderPlaying`, my entry taken from the screen, never my server
@@ -1873,8 +1873,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     address); while it is out the box breathes on every surface, and it lands the face or
     rests again. A board line is not one of these surfaces: the result's own line, like
     every row of a list of players, is dressed with the assigned identity when its read
-    failed. A GONE own account draws its GHOST there (`.ghost-mark` with no ink: the slate
-    stipple alone) and hides the masthead's pencil.
+    failed. A GONE own account draws its GHOST on the own-face surfaces — the header key, the
+    masthead, the email flow's lead, the race line (`.ghost-mark` with no ink: the slate
+    stipple alone) — and hides the masthead's pencil.
   - **`GET /profile` HAS FOUR ANSWERS, AND `api.readProfile` IS WHERE THEY ARE TOLD APART**
     (PR-227 review, 2026-09-02): `shown` (200), `blank` (404 — LIVE, never customized, so the
     assigned identity IS this player's face), `gone` (410 `account_gone` — a DELETED account,
@@ -2767,8 +2768,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **JOINED** says no word on screen: the reader's own mark (`useOwnFace` — the seed's for a
   device the tap minted) DROPS into the seat with the podium's drop (`markAt`: whole cells
   under gravity), its whole-pixel shake and the strike sheet's BURST behind it in the accent,
-  and the call turns to the BOARD in place; a seat whose mark is not read yet keeps breathing
-  until it is. A screen reader hears it from the line's slot, a live region
+  and the call turns to the BOARD in place; a seat whose mark is being read keeps breathing
+  until it lands (`seatFor`, contract-tested). Where that read FAILED the seat rests on the
+  still stipple — never the assigned stranger, the own face's rule — and the landing asks it
+  again once as the join lands and then when the tab comes back (it wears no header, whose
+  key asks it everywhere else); an account gone leaves the seat empty. A screen reader hears
+  it from the line's slot, a live region
   (`inviteJoined`, sr-only). **THE CALL IS ONE BUTTON** (`BusyButton`, JOIN, the BOARD, PLAY
   alike), so a state change is a word change and the keyboard's focus stays on it. **A CAP THE LANDING ALREADY KNOWS IS NEVER OFFERED** (`landingOf`,
   contract-tested): a group whose public face holds `GROUP_MEMBERS_MAX` members, or a reader

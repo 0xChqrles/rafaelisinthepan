@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   GROUPS_MAX,
   GROUP_MEMBERS_MAX,
@@ -11,12 +11,13 @@ import Button from '../components/Button';
 import ErrorScreen from '../components/ErrorScreen';
 import ScreenFrame from '../components/ScreenFrame';
 import GroupOrbit, { orbitPlacesFor, type SeatState } from '../components/GroupOrbit';
-import { shownFace, useOwnFace } from '../components/AccountFace';
+import { shownFace, useOwnFace, type FaceState } from '../components/AccountFace';
 import { groupsUrl, parseGroups, postGroupsBody, readGroup, type GroupRead } from '../api';
 import { deviceIdentity, ensureRequestIdentity, identityEpoch, useDeviceIdentity } from '../identity';
 import { pathForBoard } from '../langs';
 import { adoptGroups, loadGroups, useGroups } from '../state/groups';
 import { useGameStore } from '../state/gameStore';
+import { retryOwnFace } from '../state/ownFace';
 import { adoptSignedOutVerdict } from '../state/signedOutVerdict';
 import { prefetchTurnstileTokens } from '../turnstile';
 import { t, tn } from '../i18n';
@@ -129,7 +130,19 @@ export function landingOf(group: PublicGroup, held: readonly GroupSummary[] | nu
 // back tap leaves the game instead of re-offering the invite.
 const continueToGame = () => navigate('/', { replace: true });
 
-type Phase = 'idle' | 'busy' | 'done' | 'full' | 'limit' | 'expired';
+export type Phase = 'idle' | 'busy' | 'done' | 'full' | 'limit' | 'expired';
+
+// THE READER'S SEAT off the landing's phase and their own face's read: it BREATHES while the
+// JOIN is out, and once it has landed while the mark is still being read; it takes the mark
+// once there is one; a read that FAILED rests it on the still stipple (no breath with no read
+// behind it — the landing asks again as the join lands, and when the tab comes back); an
+// account GONE has no mark coming, and the seat stays empty.
+export function seatFor(phase: Phase, ownState: FaceState): SeatState {
+  if (phase === 'busy') return 'filling';
+  if (phase !== 'done' || ownState === 'gone') return 'empty';
+  if (ownState === null) return 'filling';
+  return ownState === 'failed' ? 'failed' : 'taken';
+}
 
 // How long the face waits for the reader's own list once the group has landed.
 const LIST_WAIT_MS = 2_000;
@@ -146,6 +159,23 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
   const { phase: listPhase, groups } = useGroups();
   const setLastGroup = useGameStore((s) => s.setLastGroup);
   const ownState = useOwnFace();
+  // The reader's own face, LOST with the seat waiting for it: asked again ONCE as the join
+  // lands (the network has just answered), then when the tab comes back — this landing wears
+  // no header, whose key asks it again everywhere else.
+  const seatLost = phase === 'done' && ownState === 'failed';
+  const askedOnJoin = useRef(false);
+  useEffect(() => {
+    if (!seatLost) return undefined;
+    if (!askedOnJoin.current) {
+      askedOnJoin.current = true;
+      retryOwnFace();
+    }
+    const again = () => {
+      if (document.visibilityState === 'visible') retryOwnFace();
+    };
+    document.addEventListener('visibilitychange', again);
+    return () => document.removeEventListener('visibilitychange', again);
+  }, [seatLost]);
 
   // WHICH group — read before anything is joined, so the button is a decision about a
   // group rather than a mystery. Bounded: a read that stalls would strand the clicker on
@@ -234,8 +264,7 @@ export default function GroupInvite({ groupId, lang }: { groupId: string; lang: 
   // A cap the landing knew stands from the start; one the server answered replaces JOIN.
   const shown: Phase = phase === 'idle' && face !== null && face.landing !== 'open' ? face.landing : phase;
   const seated = face !== null && face.landing === 'open';
-  const seat: SeatState =
-    shown === 'busy' || (shown === 'done' && own === null) ? 'filling' : shown === 'done' ? 'taken' : 'empty';
+  const seat = seatFor(shown, ownState);
 
   // The calls stand in THREE fixed slots — a line, the call, the word under it — so the call
   // is in one place whatever the state, and nothing above it moves when the state changes.

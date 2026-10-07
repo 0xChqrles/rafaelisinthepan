@@ -80,14 +80,19 @@ export default function RaceLine({
             ) : (
               // The player's own face is still being read: its box, never a guessed mark — the
               // header key's own hold, inside the frame that says "you" — and once its read has
-              // failed, the box rests on the still stipple.
-              <span className={`race-mark-box${ownState === 'failed' ? ' failed' : ''}`}>
-                {ownState === 'failed' ? (
-                  <StatSlot phase="failed" />
-                ) : (
-                  <FaceHold state={ownState} className="race-face-hold" />
-                )}
-              </span>
+              // failed, the box rests on the still stipple; an account GONE is its ghost, the
+              // header key's own.
+              ownState === 'gone' ? (
+                <span className="race-mark-box ghost-mark" aria-hidden="true" />
+              ) : (
+                <span className={`race-mark-box${ownState === 'failed' ? ' failed' : ''}`}>
+                  {ownState === 'failed' ? (
+                    <StatSlot phase="failed" />
+                  ) : (
+                    <FaceHold state={ownState} className="race-face-hold" />
+                  )}
+                </span>
+              )
             )}
             {entry.kind === 'done' ? (
               <span className="race-done">

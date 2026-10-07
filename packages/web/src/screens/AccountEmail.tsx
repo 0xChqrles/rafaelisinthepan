@@ -155,12 +155,23 @@ const FACE_TRAVEL_STEPS = 4;
 // A face's box while its read is out: the slate checker the house waits in (the archive's
 // and the podium's ghosts), stippled through the Bayer tiles and breathing in whole steps —
 // never a grey rounded block. A settled face with nothing to draw (a DELETED account) keeps
-// the box and draws nothing in it; the player's OWN face whose read FAILED rests in it on
-// the still stipple (`failed`), never on the assigned stranger.
-function FaceHold({ size, waiting, failed = false }: { size: number; waiting: boolean; failed?: boolean }) {
+// the box and draws nothing in it — the player's OWN account gone draws its ghost there
+// (`gone`); the player's OWN face whose read FAILED rests in it on the still stipple
+// (`failed`), never on the assigned stranger.
+function FaceHold({
+  size,
+  waiting,
+  failed = false,
+  gone = false,
+}: {
+  size: number;
+  waiting: boolean;
+  failed?: boolean;
+  gone?: boolean;
+}) {
   return (
     <span
-      className={`link-hold${waiting ? ' waiting' : failed ? ' failed' : ''}`}
+      className={`link-hold${waiting ? ' waiting' : failed ? ' failed' : gone ? ' ghost-mark' : ''}`}
       style={{ width: size, height: size }}
       aria-hidden="true"
     />
@@ -1008,7 +1019,12 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
               // has no name coming, and a placeholder held for one would promise what is not
               // on its way.
               <>
-                <FaceHold size={LEAD_PX} waiting={savingPending} failed={savingFailed} />
+                <FaceHold
+                  size={LEAD_PX}
+                  waiting={savingPending}
+                  failed={savingFailed}
+                  gone={lead === null && ownState === 'gone'}
+                />
                 {(savingPending || savingFailed) && (
                   <span className={`link-name link-hold ${savingPending ? 'waiting' : 'failed'}`}>&nbsp;</span>
                 )}
