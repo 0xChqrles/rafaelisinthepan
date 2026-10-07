@@ -3952,9 +3952,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     dismissal lands 200ms later, past its exit fade, so the arming cannot catch that same
     gesture either) — and never under the dev `?streak=N` preview, which holds the result
     at frame zero behind a modal this round never sees. The boards' box is INERT until it
-    has LANDED (`.solved-boards.armed`, its rung-in played — `BOARDS_ARRIVE_MS`): before
-    that the skip-tap that lands where it sits, unseen or at the arrival's first
-    transparent frames, only skips; once it shows, a tap on it skips AND opens that board,
+    has LANDED (`.solved-boards.armed`, its first line dissolved in — `BOARDS_ARRIVE_MS`):
+    before that the skip-tap that lands where it sits, unseen or in the arrival's first
+    dissolving frames, only skips; once it shows, a tap on it skips AND opens that board,
     like any other target. The boards' box snaps to whatever
     is true right now: it holds its skeleton while a read is out and fills in place when
     one lands, so the skip never blocks on, or fakes, the network. Reduced motion is unchanged (already near-instant). **Skipping the SOLVING
@@ -4177,9 +4177,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     only on the ACTIVE day with an account (`racing`: never an archive day or a bonus), and
     draws `components/ResultBoards` between THE CARD and the PAGE. It lands a breath after
     SHARE (`boardsIn`, hung off `stageIn` like every beat, so the `?streak=N` hold and the
-    #179 skip both answer it): the shown tab's chip is drawn across, then the lines come in
-    one after another (`BOARDS_ARRIVE_MS`; reduced motion: no arrival at all); the page's
-    beat follows it.
+    #179 skip both answer it): the shown tab's chip is drawn across, then the lines dissolve in
+    one after another through the board's dither, as the board screen's do
+    (`BOARDS_ARRIVE_MS`; reduced motion: no arrival at all); the page's beat follows it.
   - **ONE FIXED BOX** (`.result-boards`, 354px): the tabs' 44px row, room for
     `RESULT_LINES_MAX` (6) 44px lines and two 20px rails (a gap's, and the `+N`'s) — whatever it holds, so a
     read landing or a swipe moves nothing. **While the first answers are out it HOLDS what is
