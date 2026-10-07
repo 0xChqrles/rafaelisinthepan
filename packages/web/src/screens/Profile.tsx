@@ -165,6 +165,9 @@ export function guardedSaveBody(
 // `account` and `error` are acts that did not land, on the error screen.
 type SaveRefusal = 'name_rejected' | 'avatar_rejected' | 'account' | 'error' | null;
 
+// A DRAWING EDIT answers a refused drawing alone: a refused name stands until the name is edited.
+const dropDrawingRefusal = (held: SaveRefusal): SaveRefusal => (held === 'avatar_rejected' ? null : held);
+
 // ---- THE STUDIO'S GEOMETRY (visual only: nothing here decides what is saved). The canvas's
 // cell is a WHOLE, ODD number of px — the grid's pitch (cell + its 1px line) even, so the
 // house's 2px dither lands on every cell's own edge (`editor/picture.ts`) — the largest the
@@ -609,7 +612,7 @@ export default function Profile() {
       // Every changed cell pops, and every inked one throws its sparks.
       if (stroke === 1) commitCells(next, changed);
       else commitCells(next, [], changed);
-      setRefused(null);
+      setRefused(dropDrawingRefusal);
     },
     [commitCells],
   );
@@ -658,7 +661,7 @@ export default function Profile() {
     const target = rollShape(from);
     if (prefersReducedMotion()) {
       commitCells(target);
-      setRefused(null);
+      setRefused(dropDrawingRefusal);
       return;
     }
     setTool('dice');
@@ -685,7 +688,7 @@ export default function Profile() {
           if (step === DICE_LAND_STEPS) {
             setTool(null);
             setRollFrom(null);
-            setRefused(null);
+            setRefused(dropDrawingRefusal);
           }
         }, DICE_CHURN_MS + step * DICE_LAND_STEP_MS),
       );
@@ -698,7 +701,7 @@ export default function Profile() {
     if (toolRef.current !== null) return;
     if (prefersReducedMotion()) {
       commitCells(new Array<number>(AVATAR_CELLS).fill(0));
-      setRefused(null);
+      setRefused(dropDrawingRefusal);
       return;
     }
     setTool('clear');
@@ -709,7 +712,7 @@ export default function Profile() {
           if (gone.length > 0) commitCells(next, [], gone);
           if (step === CLEAR_STEPS) {
             setTool(null);
-            setRefused(null);
+            setRefused(dropDrawingRefusal);
           }
         }, step * CLEAR_STEP_MS),
       );
@@ -730,7 +733,7 @@ export default function Profile() {
     wipeKey.current += 1;
     setWipe({ palette, cells: churn ?? cells, key: wipeKey.current });
     setPalette(index);
-    setRefused(null);
+    setRefused(dropDrawingRefusal);
     window.clearTimeout(lineTimer.current);
     if (prefersReducedMotion()) return;
     setLinePalette((held) => held ?? palette);
@@ -875,7 +878,7 @@ export default function Profile() {
 
   // A refused DRAWING stands until the drawing changes (a refused name, until it is edited).
   useEffect(() => {
-    setRefused((held) => (held === 'avatar_rejected' ? null : held));
+    setRefused(dropDrawingRefusal);
   }, [cells]);
 
   const onSave = useCallback(async () => {

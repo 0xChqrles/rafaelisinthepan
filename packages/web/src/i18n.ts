@@ -639,12 +639,12 @@ const STRINGS = {
   // deploy button.
   gateLearn: { en: 'LEARN', fr: 'APPRENDRE' },
   gatePlay: { en: 'PLAY', fr: 'JOUER' },
-  // ---- the profile editor (#188): name + 10×10 palette avatar + the key as backup.
+  // ---- the profile editor (#188): name + 10×10 two-colour avatar.
   // Show-don't-tell: terse labels, the surfaces demonstrate themselves.
   profileTitle: { en: 'PROFILE', fr: 'PROFIL' },
   profileNamePlaceholder: { en: 'NAME', fr: 'PSEUDO' },
-  // The button's ONE label: it never renames itself — saving is said by the dot-loader
-  // choreography, success by the button going quiet (disabled, LED off).
+  // The button's ONE label: it never renames itself — while the save is out it is busy
+  // (`BusyButton`), and a save that lands is stamped in foil on the canvas.
   profileSave: { en: 'SAVE', fr: 'ENREGISTRER' },
   profileSaveFailed: { en: 'PROFILE NOT SAVED', fr: 'PROFIL NON ENREGISTRÉ' },
   // Untranslated in every language (the user's call, 2026-08-19) — one word everywhere,
