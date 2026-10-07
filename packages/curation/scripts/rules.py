@@ -41,6 +41,13 @@ WEAK_VERBS = {
         "must", "need", "find", "have", "be", "do", "make", "go",
     }),
 }
+# Words never hidden, in any line — the user's hand-kept list (2026-10-07): no measured
+# score told « faux-monnayeur » (a rare stand-in for « faussaire ») from loved rare words
+# (« clodos », « saint-bernard »). By slug, per language; a word joins when a day shows it.
+REFUSED = {
+    "fr": frozenset({"faux-monnayeur", "faux-monnayeurs"}),
+    "en": frozenset(),
+}
 # The READER (the user's own method, 2026-09-10): blank one word, the rest of the line
 # intact and no start word, and ask what else could stand there — at most
 # CONTEXT_GUESSES words — and which ONE word most readers would write. A filler that is
@@ -90,8 +97,8 @@ def initial_candidates(
     past_secrets: frozenset[str] | set[str] = frozenset(),
     frequency_rank: Callable[[Token], int | None] = lambda t: None,
 ) -> list[Token]:
-    """The words that CAN be a secret: an allowed POS, not a stopword, a weak verb or one
-    of the commonest words, a slug the game admits and has not used (a hyphenated
+    """The words that CAN be a secret: an allowed POS, not a stopword, a weak verb, a
+    refused word or one of the commonest words, a slug the game admits and has not used (a hyphenated
     compound included — « post-it »), and no same-lemma twin under another slug visible
     in the sentence (a same-slug repeat is fine: one hole per occurrence).
     `frequency_rank` reads the word's place in the corpus (None = unknown, which is not a
@@ -105,6 +112,8 @@ def initial_candidates(
         if t.pos not in ALLOWED_POS or t.stop:
             continue
         if t.pos == "VERB" and t.lemma in WEAK_VERBS[lang]:
+            continue
+        if t.slug in REFUSED[lang]:
             continue
         if len(t.slug) < 2 or not in_vocab(t.slug):
             continue
@@ -179,6 +188,23 @@ def unsaid(chances: dict[str, float | None]) -> str | None:
     return (f"this trio hides {len(under)} words players don't say ({', '.join(under)}): on real play the "
             f"days with two or more were finished by a median 40% of the players (none reached 70%), against "
             f"57% with one and 71% with none")
+
+
+def plain_vs_map(rank_map: dict, plain: dict[str, int], n: int = 3) -> list[tuple[str, int | None, int]]:
+    """The reader's words nearest the secret on the PLAIN (embedding) ranking, at most `n`,
+    each as (word, its rank in the hole's own map or None past it, its plain rank): the
+    fact the start step reads when the paid ranking moved them (« voleur » 9 on the plain
+    ranking, 274 in the 10-05 map). Multi-word fillers are skipped."""
+    rows = []
+    for w, p in sorted(plain.items(), key=lambda kv: kv[1]):
+        s = slug(w)
+        if not s or " " in w.strip():
+            continue
+        entry = rank_map.get(s)
+        rows.append((w, entry["rank"] if entry else None, p))
+        if len(rows) == n:
+            break
+    return rows
 
 
 def map_nearest_filler(rank_map: dict, secret_slug: str, fillers: list[str]) -> tuple[str, int | None] | None:

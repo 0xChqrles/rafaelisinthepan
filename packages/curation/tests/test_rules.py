@@ -6,6 +6,7 @@ from rules import (
     MAX_COMMON_RANK,
     MAX_COMMON_RANK_ADV,
     PLAIN_WORD_RANK,
+    REFUSED,
     TWIN_RANK,
     WEAK_VERBS,
     WOULD_SAY_HARD,
@@ -13,6 +14,7 @@ from rules import (
     initial_candidates,
     is_twin,
     map_nearest_filler,
+    plain_vs_map,
     reading,
     said,
     unsaid,
@@ -108,6 +110,22 @@ def test_weak_verbs_are_never_candidates():
     sent = [tok(0, "je", "PRON", stop=True), tok(1, "crois", "VERB", lemma="croire"),
             tok(2, "chat", "NOUN"), tok(3, "dort", "VERB", lemma="dormir")]
     assert [t.text for t in initial_candidates(sent, lang="fr", in_vocab=lambda s: True)] == ["chat", "dort"]
+
+
+def test_a_refused_word_is_never_a_candidate_in_any_line():
+    # User-decided 2026-10-07: « faux-monnayeur » — no measured score told it from loved
+    # rare words, so the user keeps the list by hand.
+    assert "faux-monnayeur" in REFUSED["fr"]
+    sent = [tok(0, "un", "DET", stop=True), tok(1, "faux-monnayeur", "NOUN"), tok(2, "dort", "VERB", lemma="dormir"),
+            tok(3, "saint-bernard", "NOUN")]
+    assert [t.text for t in initial_candidates(sent, lang="fr", in_vocab=lambda s: True)] == ["dort", "saint-bernard"]
+
+
+def test_the_reader_s_words_are_shown_on_both_rankings_nearest_on_the_plain_one_first():
+    rank_map = {"voleur": {"rank": 274}, "escroc": {"rank": 40}}
+    plain = {"escroc": 30, "voleur": 9, "bandit": 120, "malfrat": 200, "deux mots": 1}
+    assert plain_vs_map(rank_map, plain) == [("voleur", 274, 9), ("escroc", 40, 30), ("bandit", None, 120)]
+    assert plain_vs_map(rank_map, {}) == []
 
 
 def test_the_english_weak_verbs_are_the_french_list_translated():

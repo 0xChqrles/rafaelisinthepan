@@ -271,19 +271,26 @@ they would use for it. A word they would never say for that meaning — the lear
 rare one beside a common word that means the same — keeps them circling its neighbours,
 and no start word changes that: on 2026-10-05, players reached « faussaire » and
 « contrefacteur », a third of them never got to « faux-monnayeur », and 30% of the
-players finished the day. ONE such word makes a hard day — even a loved one: the day
-that hid « mammifères » was finished by 55% of its players, Fabre's by 70%, under or at
-the aim. TWO in one trio made the worst days (2026-09-16, 09-22, 09-23, 10-05: a median
-40% of the players finished, against 57% with one and 71% with none; no such day reached
-70%). Hide none — not even as the punch: when the word the line lands on is one players
-don't say, hide other words of the line, or take another line.
+players finished the day. ONE such word makes a hard day, and a loved day may hide one —
+« moucheron », « mammifères », « stagnation », « cafard » are that word, and they are the
+punch, the image or the exact word. TWO in one trio made the worst days (2026-09-16,
+09-22, 09-23, 10-05: a median 40% of the players finished, against 57% with one and 71%
+with none; no such day reached 70%). Keep at most one, and only when it is worth the
+search.
+
+The NAME of the thing is not such a word, even when it is rare: « saint-bernard »,
+« post-it », « rolex » — there is no other word for it, so a player who reaches the thing
+types it. The RARE STAND-IN for the word everyone uses is: « faux-monnayeur » beside
+« faussaire » — players type « faussaire », and nothing leads them from it to a word they
+never use. Rarity is not the test (« saint-bernard » is rarer in speech than
+« faux-monnayeur »); the commoner word beside it is.
 
 Ask: when a player has the meaning, would they say this word — or the common one beside it?
 
 **Every day is somebody's first day.** A newcomer who solves their first day comes back
 more than twice as often (37% against 16%); two thirds failed theirs, and a third of
 those who never came back left within five guesses, before they understood the game.
-So every hidden word is one players say. A word the line hands
+So the two words beside the one players don't say are words they say. A word the line hands
 over only weakly is fine when players say it (Graeber, 2026-09-08: 81% finished). Easy
 is never handed over: the line leads, the player still searches (2026-09-21, median 5,
 was dead).
