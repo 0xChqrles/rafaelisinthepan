@@ -93,6 +93,23 @@ describe('web hosting stack (#21)', () => {
     }
   });
 
+  // The API's distribution sees only this one's edge servers for these paths, so THIS is
+  // where one viewer rendering card after card is stopped: a path handed to the API and
+  // left out of the limit is unauthenticated compute nobody bounds by address.
+  it('limits exactly the paths it hands to the API, by the viewer\'s own address', () => {
+    const acl = template.findResources('AWS::WAFv2::WebACL')[config.WebACLId['Fn::GetAtt'][0]];
+    expect(acl.Properties).toMatchObject({ Scope: 'CLOUDFRONT', DefaultAction: { Allow: {} } });
+    const rules = acl.Properties.Rules as Record<string, any>[];
+    expect(rules).toHaveLength(1);
+    const { RateBasedStatement } = rules[0].Statement;
+    expect(rules[0].Action).toEqual({ Block: { CustomResponse: { ResponseCode: 429 } } });
+    expect(RateBasedStatement).toMatchObject({ AggregateKeyType: 'IP', EvaluationWindowSec: 300 });
+    const limited = (RateBasedStatement.ScopeDownStatement.OrStatement.Statements as Record<string, any>[])
+      .map(({ ByteMatchStatement }) => `${ByteMatchStatement.SearchString}*`);
+    const behaviors = config.CacheBehaviors as { PathPattern: string }[];
+    expect(limited.sort()).toEqual(behaviors.map(({ PathPattern }) => PathPattern).sort());
+  });
+
   // The backend's preview and dead-link pages are a redirect stub that paints the app's
   // ground inline (backend `ogCard.ts`): a policy refusing either inline piece is a white
   // page before the redirect, or no redirect at all — seen on the real CDN alone.

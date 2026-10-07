@@ -12,6 +12,7 @@ import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import { NagSuppressions } from 'cdk-nag';
+import { RENDER_RATE_LIMIT, rateLimitedWebAcl } from './rate-limits';
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // packages/infra/lib
 // The built SPA lives here after `pnpm build`. BucketDeployment zips this directory at
@@ -236,9 +237,18 @@ export class WebStack extends Stack {
       ),
     });
 
+    // The paths handed to the API render on the Lambda for anyone, and this distribution is
+    // the one that sees the VIEWER's address for them (the API's sees only this one's edge
+    // servers), so this is where one address rendering card after card is stopped
+    // (lib/rate-limits.ts). The SPA's own files cost nothing to serve and are not limited.
+    const renderRateLimits = cardBehavior
+      ? rateLimitedWebAcl(this, 'RenderRateLimits', [RENDER_RATE_LIMIT])
+      : undefined;
+
     // ── CloudFront: CDN in front of the private bucket ────────────────────────
     const distribution = new cloudfront.Distribution(this, 'SiteCdn', {
       comment: 'Whippin web front',
+      webAclId: renderRateLimits?.attrArn,
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // NA + EU (en/fr audience)
       httpVersion: cloudfront.HttpVersion.HTTP2_AND_3, // QUIC: faster connection setup
       minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
@@ -383,11 +393,15 @@ export class WebStack extends Stack {
         id: 'AwsSolutions-CFR1',
         reason: 'SPA served globally on purpose — no geo restriction.',
       },
-      {
-        id: 'AwsSolutions-CFR2',
-        reason:
-          'No WAF: a static SPA on a private S3 origin via OAC, serving public read-only assets; WAF cost is unjustified for this surface.',
-      },
+      ...(renderRateLimits
+        ? []
+        : [
+            {
+              id: 'AwsSolutions-CFR2',
+              reason:
+                'No WAF without an API origin: the distribution is then a static SPA on a private S3 origin via OAC, serving public read-only assets.',
+            },
+          ]),
       {
         id: 'AwsSolutions-CFR3',
         reason: 'CloudFront access logging intentionally off (chosen observability tier).',

@@ -312,7 +312,6 @@ export class MailReceiving extends Construct {
       // topic rather than a queue, because a queue nobody reads is the silence again.
       onFailure: new destinations.SnsDestination(props.alerts.topic),
       logGroup,
-      tracing: lambda.Tracing.ACTIVE,
       environment: {
         MAIL_BUCKET: bucket.bucketName,
         MAIL_PREFIX: INBOUND_PREFIX,
@@ -445,7 +444,7 @@ export class MailReceiving extends Construct {
       {
         id: 'AwsSolutions-S1',
         reason:
-          'S3 server access logging intentionally off (the chosen observability tier is Lambda log retention + X-Ray + the alarms in this file). The bucket is private (BLOCK_ALL), TLS-enforced, and read by one function under one prefix.',
+          'S3 server access logging intentionally off (the chosen observability tier is Lambda log retention + the alarms in this file). The bucket is private (BLOCK_ALL), TLS-enforced, and read by one function under one prefix.',
       },
     ]);
     NagSuppressions.addResourceSuppressions(
@@ -454,7 +453,7 @@ export class MailReceiving extends Construct {
         {
           id: 'AwsSolutions-IAM4',
           reason:
-            'AWS-managed basic-execution + X-Ray-write policies — the standard least-broad managed policies for CloudWatch Logs and active tracing.',
+            'AWS-managed basic-execution policy — the standard least-broad managed policy for CloudWatch Logs.',
         },
         {
           id: 'AwsSolutions-IAM5',
