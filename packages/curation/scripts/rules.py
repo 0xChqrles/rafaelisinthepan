@@ -190,23 +190,6 @@ def unsaid(chances: dict[str, float | None]) -> str | None:
             f"57% with one and 71% with none")
 
 
-def plain_vs_map(rank_map: dict, plain: dict[str, int], n: int = 3) -> list[tuple[str, int | None, int]]:
-    """The reader's words nearest the secret on the PLAIN (embedding) ranking, at most `n`,
-    each as (word, its rank in the hole's own map or None past it, its plain rank): the
-    fact the start step reads when the paid ranking moved them (« voleur » 9 on the plain
-    ranking, 274 in the 10-05 map). Multi-word fillers are skipped."""
-    rows = []
-    for w, p in sorted(plain.items(), key=lambda kv: kv[1]):
-        s = slug(w)
-        if not s or " " in w.strip():
-            continue
-        entry = rank_map.get(s)
-        rows.append((w, entry["rank"] if entry else None, p))
-        if len(rows) == n:
-            break
-    return rows
-
-
 def map_nearest_filler(rank_map: dict, secret_slug: str, fillers: list[str]) -> tuple[str, int | None] | None:
     """The reader's filler nearest the secret in the hole's OWN map, as (word, rank); the
     rank is None for a word past the map (farther than every ranked group). None when the

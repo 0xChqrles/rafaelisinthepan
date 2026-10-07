@@ -154,10 +154,7 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   never the rare stand-in for the word everyone uses, while the NAME of a thing passes
   however rare (« saint-bernard »; user-decided 2026-10-07);
   and, once the map is built, where the reader's nearest word
-  lands in the hole's own map (`rules.map_nearest_filler`), beside where the PLAIN
-  (embedding) ranking puts the reader's nearest words (`rules.plain_vs_map`, free:
-  `neighbour_rank` in `build_day`) — the paid ranking pushed « voleur » from 9 to 274 on
-  « faux-monnayeur », and players typing it read cold feedback. BEFORE the ranking is paid
+  lands in the hole's own map (`rules.map_nearest_filler`). BEFORE the ranking is paid
   for, `llm.keep_trio` reads the three words with the notes measured so far and keeps
   them or names ONE to swap — a word most readers would write themselves is dead unless it
   is the punch (an easy punch stays hidden, a farther start makes the search), a trio keeps

@@ -198,7 +198,7 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
              context: dict[str, str] | None = None, frequency_rank=lambda t: None,
              pairs: dict[str, set[str]] | None = None, replay: str | None = None,
              chain: list[str] | None = None, fillers: dict[str, list[str]] | None = None,
-             hard: set[str] | frozenset[str] = frozenset(), plain: dict[str, dict[str, int]] | None = None):
+             hard: set[str] | frozenset[str] = frozenset()):
     """Returns the written puzzle path, or None with the reason logged. The forms are
     answered by the model as gen_phrase asks. The first successful run only supplies the
     rank maps: the START WORDS are then chosen by the model, the three together, playing
@@ -255,7 +255,7 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
                 chosen = True
                 try:
                     picked = choose_starts(claude, log, path, context or {}, forms, frequency_rank, pairs or {},
-                                           chain, fillers or {}, lang=lang, hard=hard, plain=plain)
+                                           chain, fillers or {}, lang=lang, hard=hard)
                 except Replace:
                     Path(path).unlink(missing_ok=True)
                     Path(_sidecar(path)).unlink(missing_ok=True)
@@ -356,16 +356,13 @@ def _word_rank(frequency_rank):
 def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, str],
                   forms: dict[str, str], frequency_rank, pairs: dict[str, set[str]] | None = None,
                   chain: list[str] | None = None, fillers: dict[str, list[str]] | None = None,
-                  *, lang: str, hard: set[str] | frozenset[str] = frozenset(),
-                  plain: dict[str, dict[str, int]] | None = None) -> dict[str, str] | None:
+                  *, lang: str, hard: set[str] | frozenset[str] = frozenset()) -> dict[str, str] | None:
     """The model picks the three start words together, by the taste, from each
     hole's band (clean by the language's letter rule, not too rare, never a start this
     secret was played with before — `pairs`, the archive's permanent blacklist — nearest
     first), reading the sentence, each slot's form, code's notes and the chain the day was
     chosen on. The
-    notes add where the reader's words land in the hole's own map, beside where the plain
-    (embedding) ranking puts them (`plain`): a word the paid ranking pushes far from where
-    the plain one has it leaves players who type it with cold feedback. Raises Replace when the
+    notes add where the reader's words land in the hole's own map. Raises Replace when the
     model names a hidden word no start can save. Returns None when the model gives no
     complete trio of valid starts; a random generator pick must not become the day."""
     pairs, fillers = pairs or {}, fillers or {}
@@ -383,10 +380,6 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
         land = ("" if nearest is None else
                 f"; the reader's nearest word « {nearest[0]} » sits at rank "
                 f"{nearest[1] if nearest[1] is not None else 'beyond the map (10000+)'} in this hole's map")
-        moved = rules.plain_vs_map(puzzle["ranks"][key], (plain or {}).get(key, {}))
-        if moved:
-            land += ("; the reader's words in this hole's map vs the plain ranking: "
-                     + ", ".join(f"« {w} » {r if r is not None else '10000+'} (plain {p})" for w, r, p in moved))
         notes = context.get(key, "nothing measured") + land
         log(f"- notes for « {h['secret']['word']} »: {notes}")
         info.append({"secret": h["secret"]["word"], "slug": key, "options": options, "notes": notes,
@@ -789,9 +782,7 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
             try:
                 return generate(claude, log, sentence, [t.text for t in trio], source, lang, context, frequency_rank,
                                 archive["pairs"], replay=replay, chain=chain,
-                                fillers={t.slug: readings[t.slug][0] for t in trio}, hard=hard,
-                                plain={t.slug: {g: r for g in readings[t.slug][0]
-                                                if (r := neighbour_rank(t, g)) is not None} for t in trio})
+                                fillers={t.slug: readings[t.slug][0] for t in trio}, hard=hard)
             except Replace as raised:
                 swap = raised
         old = next((t for t in trio if t.slug == slug(swap.secret) or t.text == swap.secret), None)
