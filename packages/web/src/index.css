@@ -5649,8 +5649,8 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
 }
 /* THE LESSON'S TRAY HELD while its chunk is out (`.tray-hold`, the chunk's hold): CONTINUE's
    slot, in through the dither once the skeleton's wait is over (a quick load never flashes
-   it), never the real call's `arrive`; at once, still, where the chunk was lost (`.still`). Its
-   word breathes while it is out and rests at half once lost. */
+   it); at once, still, where the chunk was lost (`.still`). Its word breathes while it is out
+   and rests at half once lost. */
 .tutorial .tray > .mix-btn.tray-hold {
   -webkit-mask-size: 16px 16px;
   mask-size: 16px 16px;

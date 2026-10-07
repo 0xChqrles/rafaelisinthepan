@@ -965,8 +965,13 @@ These are decided and verified against the code. Treat them as load-bearing.
     glyph pixel a whole square of the celebration's raster cells; the day's date set in the
     face) — and the ARCHIVE's day numbers (the 16px face's own digits, shared `DIGIT_MASKS`,
     painted on the month's raster a font pixel a cell). **Every monospace layout assumption therefore still holds** — MixWord's ch
-    reservations and CellDigits' grid sit on surfaces that stayed pixel. The coach text's inline `[[b:]]`/`[[w:]]` words are
-    pixel at 0.82em INSIDE modern copy — game words quoted in chrome.
+    reservations and CellDigits' grid sit on surfaces that stayed pixel. **A game word QUOTED
+    inside the mono's prose is the face's SECOND named exception to its whole sizes** (beside
+    the play sentence, prompt and keyboard's fluid size): the coach's line (`[[b:]]`, `[[w:]]`,
+    `[[m:]]`, `.rt-*`), an article's paragraphs and its figures' captions (`.ar-held`,
+    `.ar-word`, `.ar-solved`) set it at 0.82em of that prose, its exponent (`.ar-rank`) at
+    0.62em, so its em box sits on the prose's line and the coach's measured room holds — game
+    words quoted in chrome. Everything else in the face stays at 8, 16 or 24px.
   - **MONO (Azeret Mono variable 100-900, `--ui`)** is EVERYTHING else — body default,
     header (title/date), buttons, coach copy,
     the archive's chrome (its month row, weekday letters and note), streak, statuses, and every moment the retired serif
@@ -2971,7 +2976,7 @@ it to the local store — see `packages/backend/AGENTS.md`).
     through the BAYER DISSOLVE (`board-dissolve` over the root's `--dz-*` tiles), one after
     another, their numbers on the reels (`ReelNumber`) only where the board builds — put
     away once the last has stopped and shaken, so a list at rest prints bare numbers — a
-    playing member's % typed in as it lands, your brackets locking on. The FIRST board on
+    playing member's % typed in as it lands. The FIRST board on
     screen ARRIVES (`ARRIVE`: after the head's own beats — the chip wiped across, the
     brackets locking on — lines 55ms apart, reels 650ms) and its lines wait until the last
     landing's shake has played, so the impact owns its beat (all landed in about two
@@ -4373,8 +4378,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   meter charge (in the slate: cobalt means found), the step at hand under the white title
   chip, a word as the game shows one (the held chip, the found cobalt, a list as the words
   grid lists them), a ranking as the boards' lines, a step's words a note in a sentence — on
-  the bare ground, its picture on the house's 2px cells, the pixel face at 8 or 16px only; its
-  motion in hard steps, starting once it is on screen, a motion that repeats (the training
+  the bare ground, its picture on the house's 2px cells, the pixel face at 8 or 16px only (a
+  word its caption quotes is the quoted-word exception, 0.82em of the caption); its motion
+  in hard steps, starting once it is on screen, a motion that repeats (the training
   loop's chip) resting while nobody can see it (`rasterWatch`), and what a motion says also
   drawn still (the loop's return), so reduced motion loses nothing; the same information the
   article's figure gives. **They say how it works,
@@ -4464,13 +4470,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
     its 17th closest word, ski¹⁷." — user-decided 2026-09-16). The real keyboard
     and the real vocabulary from the first frame. **A LONE WORD IS NOT TAPPABLE** (same day):
     the wheel is the sentences' own. NO CAPITAL on a lone word (`Phrase`'s `capital={false}`: a word is not
-    a sentence), and the PROMPT sits just above the keyboard on the LEFT (`.tutorial--word
-    .input-area`, `margin-top: auto`), off the word — and at ONE X on every stage: its own
-    680px box centred in the column (`.tutorial .input-area`), where stretching it to a 680px
-    word column and a 1200px sentence column put it at two edges — and at ONE Y, parked on
-    the play area's bottom edge on every stage, the sentence's included (user-reported
-    2026-09-16). Finding it ends the stage wordless and
-    rolls into the sentence.
+    a sentence), and the PROMPT sits just above the keyboard on the column's LEFT edge
+    (`.tutorial .input-area`, stretched across the one column every stage shares), off the
+    word — at ONE X and ONE Y on every stage, the sentence's included, parked on the play
+    area's foot under the board, which takes the room between (`.l1-fig`, `flex: 1 1 0`).
+    Finding it ends the stage wordless and rolls into the sentence.
   - **THE SENTENCE** — two holes, start words in the game's own 50–150 band (en "a dog barks
     at the moon." from `coyote^63` / `star^69`; fr « un chien aboie à la lune. » from
     `loup^52` / `pénombre^63`), the try count printed behind it as the day does, CENTRED on
@@ -4587,9 +4591,8 @@ it to the local store — see `packages/backend/AGENTS.md`).
   **THE COACH IS THE PLAYER (user-decided 2026-09-16, "people would want to read it more if
   it's something telling it"):** the old lineup's PLAYER idle sheet (`player-idle.png`, 8
   frames of 22x31, restored from the benchmark display's removal — the error bot stood in
-  first, replaced the same day on the user's ask) at 2x stands on the coach box's top-left
-  edge (`.coach--bot` / `.coach-bot`, drawn ABOVE the box so the text budget stands; the box
-  and the board's `padding-top` drop by the sprite's 56px).
+  first, replaced the same day on the user's ask) at 2x (`.coach-bot`, 44×62) stands on the
+  byline's stippled floor, its feet on the rule, at the band's left end (THE ROOM).
   **THE REACTIVE COACH (`tutorial/coach.ts`, pure; `coach.test.ts` replays sequences):**
   the one line the board's state calls for — and when a beat has nothing new to say THE BOX
   KEEPS THE LAST LINE UP, it never disappears (user-decided 2026-09-16). **Every line
@@ -4614,11 +4617,11 @@ it to the local store — see `packages/backend/AGENTS.md`).
   7 essais !\nEssayons une phrase plus dure. » / "Found in 7 tries!\nLet’s try a harder
   sentence." — the score, said once, and the hook the METER stage hangs from, user-decided
   2026-09-16, cut 2026-09-30; a found single word still says nothing). The `{braces}` are filled from the board itself, so a line can never
-  name a word the map does not rank. THE COACH BOX IS THREE LINES, FIVE AT MOST (user-decided 2026-09-16, lifting the
-  exact-three rule of 2026-08-04: the box is fixed-positioned and moves nothing beneath, and
-  the bot's briefing on the last sentence runs to five at 320px — `.coach-text`
-  `max-height: 8.5em`, the board's `padding-top` grown to match); copy past five lines is a
-  copy bug.
+  name a word the map does not rank. THE VOICE'S ROOM IS RESERVED (`.l1-voice`,
+  `--voice-lines`): two lines, three on a tablet (≤820px), four on a phone (≤640px) — the
+  longest line's need at each, measured down to 320px in either language — so an absent line
+  never collapses it and nothing under it moves; copy past the room is clipped
+  (`overflow: hidden`), a copy bug made visible instead of a voice that grows.
   **The invitation SHOWS the game, then asks** (`tutorial/Invite.tsx`, no header keys;
   user-decided 2026-10-06): a first visit (no `onboarded`) lands on it. **It is laid out AS
   THE GAME SCREEN IT OPENS ONTO**, on the game's own zones (`.game`, `.play`, `.tray` with the

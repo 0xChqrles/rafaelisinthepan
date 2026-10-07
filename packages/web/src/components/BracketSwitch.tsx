@@ -4,7 +4,7 @@ import { travelFrames } from './travel';
 import { prefersReducedMotion } from '../hooks/useScramble';
 
 // A FEW STATES OF ONE THING, as EQUAL CELLS said with the corner BRACKETS (the house's
-// selection gesture: the device frame's, the card's, the player's own line's), never a box:
+// selection gesture: the device frame's, the card's), never a box:
 // every word stands in its own resting corners in the slate rail — the switch's affordance
 // (bare labels "float in the screen with no purpose, no affordance") — and the shown one under
 // the white FRAME, the state. The words are the chrome's voice (`--ui` bold tracked capitals),

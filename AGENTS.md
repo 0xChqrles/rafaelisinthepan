@@ -350,11 +350,8 @@ The live routes then share:
   (`gameStore.localSeed`, publicId-shaped); **the username is decided locally, then deployed**:
   on acquiring an account the client stores the placeholder name + mark as the profile, only
   into an account with NO stored row (`createOnly: true`; a lost race is 409 `profile_exists`,
-  settled). Profile SAVE is the one button that mutes that background write for its own
-  acquisition and writes the pair itself: into an account never customized (no row, or the
-  placeholder's own) it stores the fields the player was shown — the placeholder's where
-  untouched — and a SAVE that writes nothing hands the account back to the background
-  write, so no button swaps the face. Group invites are gated on neither side.
+  settled; the profile editor's SAVE writes that pair itself — web `AGENTS.md`).
+  Group invites are gated on neither side.
 - **NO TOKEN MEANS NO PRIVATE FETCH**: a tokenless device knows its server state is empty and
   publishes ready-and-empty round/history state without calling `/round` or `/history`.
 - **First bootstrap is ONE origin-wide critical section** (Web Lock over re-read → mint/persist
@@ -725,14 +722,7 @@ The live routes then share:
   (`shared/src/leaderboard.ts`): competition tie ranks, the plain top-50 cut, the ±2 own-row
   window, `standingIn`. Rows dressed with profiles (a missing or FAILED profile read dresses
   blank → assigned identity, the caller's own row included; a GONE account is dropped). The
-  web draws the player's OWN face apart from any row: the header's key, `/account`'s
-  masthead, the email flow (its lead, the crossroads' leaving side, its ending) and the race
-  line's own mark draw it from ONE shared read (`useOwnFace`), which never takes the assigned
-  identity for a failed read — it rests on the still stipple until read again (the
-  masthead's retry, the tab coming back). Every list of players — `/board`'s rows, the
-  solved screen's boards, a group's members, the player's own line included — and the
-  signed-out screen's face keep the assigned identity on a failed read (web `AGENTS.md`,
-  `AccountFace`).
+  player's OWN face drawn apart from any row is the web's (web `AGENTS.md`, `AccountFace`).
 - **THE PERIOD RULE (`rankPeriod`, ONE spelling for both ends and any later consumer):** each
   day of the range is ranked on its own and pays PODIUM POINTS 3 / 2 / 1 to the first three
   RANKS (a shared first pays both 3; the next rank is then third); then SOLVED DAYS (days with
@@ -755,8 +745,9 @@ The live routes then share:
   playing row never defeats the just-you ghost.
 - **THE SOLVED SCREEN'S BOARDS (user-decided 2026-10-02): how the player's day compares,
   UNDER SHARE, on the ACTIVE day only** (never an archive day or a bonus — the live read is
-  the active day's). Tabs, a row of names (a sideways swipe on the lines turns them too):
-  each of the player's groups — the group last opened (`gameStore.lastGroupId`) first, then
+  the active day's; the active day AS THE ROUND WAS OPENED: a round on screen keeps it past
+  the 22:00 flip, web `useOpenedAsActive`). Tabs, a row of names (a sideways swipe on the
+  lines turns them too): each of the player's groups — the group last opened (`gameStore.lastGroupId`) first, then
   the others; a group where nobody but the player has a row is skipped — then **GLOBAL**,
   the day's global board, under the board screen's own name for it (one name across the
   app). **A player none of whose groups holds anybody else** (no group, or only groups of
@@ -800,8 +791,9 @@ The live routes then share:
   `web/src/state/liveBoard.ts`: the play screen's RACE LINE and the solved screen's group
   boards — never a read of their own.** It is asked when the round's server state lands or
   changes (round start, each acknowledged append, the answer confirming a solve or a
-  give-up) and when the tab comes back, only on the ACTIVE day, with an account, for a player
-  in a group with somebody else — and **THROTTLED in that one module: at most ONE read per
+  give-up) and when the tab comes back, only on the ACTIVE day (as the round was opened, the
+  solved screen's boards' rule), with an account, for a player in a group with somebody
+  else — and **THROTTLED in that one module: at most ONE read per
   `LIVE_REFRESH_MS` (10 s), one flight at a time, a request inside the window served ONCE at
   its end (never dropped) — save ONE: the read asked by the answer that ENDS the round on
   screen (a solve or a give-up confirmed) goes at once (still behind a flight already out),
