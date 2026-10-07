@@ -727,9 +727,9 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
     blank, how much the sentence hands it over (`line["given"]`, judged for every word
     that can be hidden), whether a player who has the meaning would say it — the page is
     cut (a book), and `generate` writes the puzzle, the start words chosen by the taste, a
-    hard hole's from nearer. Before the ranking is paid for, the model reads the three
-    words with those notes and may swap one (`llm.keep_trio`); the start step may too
-    (Replace). A swapped word is replaced by another word of the line that can be hidden,
+    hard hole's from nearer. A trio hiding two or more words players don't say has one
+    swapped by the model before the ranking is paid for (`llm.drop_unsaid`); the start
+    step may swap a word no start can save (Replace). A swapped word is replaced by another word of the line that can be hidden,
     REPLACE_ROUNDS times in all."""
     sentence, tokens, given = line["sentence"], line["tokens"], line["given"]
     known = llm.widely_known(claude, sentence, book.get("author", ""), book.get("title", ""), lang=lang)
@@ -754,27 +754,34 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
                 says[t.slug] = llm.would_say(claude, tokens, occurrences[t.slug] - {t.i}, t.i, t.text.lower(),
                                              lang=lang)
         hard = {t.slug for t in trio if given[t.slug] < contextual_rank.GIVEAWAY_HARD}
-        unsaid = rules.unsaid({t.text: says[t.slug][0] for t in trio})
+        same = {t.slug for t in trio if rules.same_word(t, says[t.slug][1], neighbour_rank)}
+        unsaid = rules.unsaid({t.text: None if t.slug in same else says[t.slug][0] for t in trio})
         context = {}
         for t in trio:
             guesses, expected = readings[t.slug]
             note = rules.reading(t, guesses, expected, neighbour_rank=neighbour_rank, frequency_rank=frequency_rank)
             note += (f"; the sentence hands it over at {given[t.slug]:.2f} (on real play, "
                      f"{contextual_rank.GIVEAWAY_MAX} and above was typed within three guesses by a third of the players)")
-            note += "; " + rules.said(*says[t.slug])
-            if unsaid and says[t.slug][0] is not None and says[t.slug][0] < rules.WOULD_SAY_HARD:
+            note += "; " + rules.said(*says[t.slug], same=t.slug in same)
+            if unsaid and t.slug not in same and says[t.slug][0] is not None and says[t.slug][0] < rules.WOULD_SAY_HARD:
                 note += "; " + unsaid
             if t.slug in hard:
                 lo, hi = st.HARD_START_BAND
                 note += (f"; under {contextual_rank.GIVEAWAY_HARD} a hole played hard on real play, so its start "
                          f"candidates come from nearer (ranks {lo}-{hi})")
             context[t.slug] = note
-        # The words are read with their notes BEFORE the ranking is paid for: a swap here
-        # costs one question, a swap at the start step a second ranking.
-        hidden = {i for t in trio for i in occurrences[t.slug]}
-        others = [t.text for t in line["allowed"] if t.slug not in {u.slug for u in trio}]
-        swap = llm.keep_trio(claude, llm.marked(tokens, hidden, lang=lang),
-                             [{"secret": t.text, "notes": context[t.slug]} for t in trio], others, chain, lang=lang)
+        # Two or more words players don't say: the taste keeps at most one, and the model
+        # swaps one BEFORE the ranking is paid for (a swap at the start step pays it twice).
+        # Any other trio goes straight on: an easy word is the start step's to tune.
+        swap = None
+        if unsaid:
+            hidden = {i for t in trio for i in occurrences[t.slug]}
+            others = [t.text for t in line["allowed"] if t.slug not in {u.slug for u in trio}]
+            under = [t.text for t in trio if t.slug not in same and says[t.slug][0] is not None
+                     and says[t.slug][0] < rules.WOULD_SAY_HARD]
+            swap = llm.drop_unsaid(claude, llm.marked(tokens, hidden, lang=lang),
+                                   [{"secret": t.text, "notes": context[t.slug]} for t in trio], under, others,
+                                   chain, lang=lang)
         if swap:
             log(f"- before the ranking, « {swap['secret']} » is swapped for « {swap['with']} » — {swap['why']}")
             swap = Replace(swap["secret"], swap["with"], swap["why"])

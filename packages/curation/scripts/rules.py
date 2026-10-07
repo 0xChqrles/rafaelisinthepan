@@ -165,10 +165,22 @@ def reading(
     return f"{lead}; other words a reader puts there: {alternatives}"
 
 
-def said(chance: float | None, instead: str | None) -> str:
+def same_word(candidate: Token, other: str | None, neighbour_rank: Callable[[Token, str], int | None]) -> bool:
+    """Whether the word players would say instead IS this word in another form (« sauver »
+    for « sauva »): its lemma, a variant or a twin. Typing it finds the hole, since a
+    ranked group holds every form of a word — so the hidden word is said."""
+    if not other or " " in other.strip():
+        return False
+    return slug(other) == slug(candidate.lemma or "") or is_twin(candidate, other, neighbour_rank)
+
+
+def said(chance: float | None, instead: str | None, same: bool = False) -> str:
     """What the would-say test means for this hole, in one plain line for the model: the
     chance a player who has the meaning says this exact word, and the commoner word they
-    would keep saying."""
+    would keep saying — unless that word is this one in another form (`same_word`)."""
+    if same:
+        return (f"players would say « {instead} », this same word in another form: typing it "
+                f"finds the hole, so it is a word players say")
     if chance is None:
         return "whether players would say this word: not measured"
     note = f"a player who has the meaning says this exact word at {chance:.2f}"

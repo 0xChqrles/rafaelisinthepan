@@ -154,12 +154,16 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   never the rare stand-in for the word everyone uses, while the NAME of a thing passes
   however rare (« saint-bernard »; user-decided 2026-10-07);
   and, once the map is built, where the reader's nearest word
-  lands in the hole's own map (`rules.map_nearest_filler`). BEFORE the ranking is paid
-  for, `llm.keep_trio` reads the three words with the notes measured so far and keeps
-  them or names ONE to swap — a word most readers would write themselves is dead unless it
-  is the punch (an easy punch stays hidden, a farther start makes the search), a trio keeps
-  at most one word players don't say — so a swap costs one question,
-  never a second ranking. With all the notes and each hole's band, `llm.pick_starts`
+  lands in the hole's own map (`rules.map_nearest_filler`). A trio hiding TWO
+  or more words players don't say — the one fact that asks — has ONE of them swapped by the
+  model BEFORE the ranking is paid for (`llm.drop_unsaid`, which keeps the one worth the
+  search), so that swap costs one question, never a second ranking; any other trio goes
+  straight on, an easy word being the start step's to tune (a farther start, never a duller
+  word). Asked of every trio, the model swapped on 77% of played days, loved ones included,
+  and picked the hard word no better than chance. A word players would say
+  instead that IS this word in another form (« sauver » for « sauva »: its lemma, a variant
+  or a twin, `rules.same_word`) finds the hole — every form is in its group — so that
+  word counts as said. With all the notes and each hole's band, `llm.pick_starts`
   chooses the three starts by the taste — or names ONE hidden word no start can save and
   another word of the line to hide instead (`Replace`: the draft is erased, the day
   rebuilt). Both swaps share `REPLACE_ROUNDS` (2).

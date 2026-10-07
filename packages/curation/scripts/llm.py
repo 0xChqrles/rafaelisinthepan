@@ -399,12 +399,12 @@ def _chain_block(chain: list[str] | None) -> str:
     return f"\nHow the day was chosen to play — the order players should find the words in:\n{lines}\n"
 
 
-def keep_trio(claude: Claude, sentence_marked: str, holes: list[dict], allowed: list[str],
-              chain: list[str] | None = None, *, lang: str) -> dict | None:
-    """The three hidden words, read with code's notes BEFORE the day's ranking is paid for
-    (#308's judge costs per draft, and a swap at the start step pays it twice): keep them,
-    or name ONE to swap for another word of the line. `holes`: [{secret, notes}]. Returns
-    {"secret", "with", "why"} for a swap, None to keep."""
+def drop_unsaid(claude: Claude, sentence_marked: str, holes: list[dict], unsaid: list[str], allowed: list[str],
+                chain: list[str] | None = None, *, lang: str) -> dict | None:
+    """Asked only when the trio hides two or more words players don't say (`rules.unsaid`),
+    BEFORE the day's ranking is paid for: the taste keeps at most one, so the model names
+    ONE of `unsaid` to swap for another word of the line. `holes`: [{secret, notes}].
+    Returns {"secret", "with", "why"}, or None when the answer is unusable."""
     blocks = "\n".join(f"Hole « {h['secret']} »\n  measured: {h['notes']}" for h in holes)
     answer = claude.json(f"""You check the three hidden words of a day for a daily {LANGUAGE[lang]} word game before it
 is built: each hole shows a start word in place of the hidden word; the player types
@@ -418,18 +418,12 @@ The sentence, holes marked with the hidden word in brackets:
 {_chain_block(chain)}
 {blocks}
 
-Other words of the line that can be hidden: {", ".join(allowed)}
+This trio hides {len(unsaid)} words players don't say: {", ".join(f"« {w} »" for w in unsaid)}. The taste
+keeps at most one — the one worth the search. Name ONE of them to swap, and its
+replacement from the other words of the line that can be hidden: {", ".join(allowed)}.
 
-Keep the punch hidden: when the word the line lands on is easy, a farther start makes the
-search, never a swap. Swap another word when it is dead or out of reach whatever its
-start: a word most readers would write themselves is dead, unless it is the punch; a
-trio keeps at most ONE word players don't say (the taste's difficulty), and the rare
-stand-in for the word everyone uses is out of reach in any line. Then name ONE
-replacement from the other words of the line.
-
-Return {{"keep": true, "why": "<one line>"}},
-or {{"replace": {{"secret": "<hidden word>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")
-    replace = answer.get("replace")
+Return {{"replace": {{"secret": "<one of the words players don't say>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")
+    replace = answer.get("replace") if isinstance(answer, dict) else None
     if isinstance(replace, dict) and isinstance(replace.get("secret"), str) and isinstance(replace.get("with"), str):
         return {"secret": replace["secret"].strip(), "with": replace["with"].strip(), "why": str(replace.get("why") or "")}
     return None
