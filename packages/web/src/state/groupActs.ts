@@ -8,10 +8,12 @@
 // is read off the CODE, never the status alone (root AGENTS.md, the live routes): a 4xx that
 // names a code is a REFUSAL, the server's verdict; a 5xx, a transport failure or a body with
 // no code to read is a FAILURE — never a verdict, so its outcome is UNKNOWN (the write may
-// have landed) and the list is READ AGAIN before the failure is said: what the screen then
-// draws is what the server holds, and a create that did land is found there (`createGroup`)
-// rather than sent twice. A request whose identity moved under it (another tab's adopt) is
-// STALE: nothing is sent, or nothing it answered is published.
+// have landed) and the list is READ AGAIN, by a read sent after the write, before the failure
+// is said: what the screen then draws is what the server holds, and a create that did land is
+// found there (`createGroup`) rather than sent twice. When that read cannot be had either,
+// nothing is known: the write answers `unknown`, which claims nothing about the group. A
+// request whose identity moved under it (another tab's adopt) is STALE: nothing is sent, or
+// nothing it answered is published.
 
 import { groupsUrl, parseGroups, postGroupsBody, type GroupsBody } from '../api';
 import { ensureRequestIdentity, identityEpoch } from '../identity';
@@ -26,7 +28,11 @@ export type GroupWrite =
   | { kind: 'refused'; error: string }
   // The deploy before it failed: no account, nothing sent.
   | { kind: 'account' }
+  // The answer was lost, and the list read again after it holds what the server holds — the
+  // act's own reading (`createGroup`, `leaveGroup`, `removeMember`) says whether it landed.
   | { kind: 'failed' }
+  // The answer was lost, and so was the read again: it may have landed, or not.
+  | { kind: 'unknown' }
   | { kind: 'stale' };
 
 // The refusal's code, or null where the body names none.
@@ -69,8 +75,7 @@ export async function writeGroups(
   } catch {
     // (An unknown outcome, like the 5xx above: read below.)
   }
-  await loadGroups();
-  return { kind: 'failed' };
+  return (await loadGroups({ fresh: true })) ? { kind: 'failed' } : { kind: 'unknown' };
 }
 
 // THE CREATE, the one write that is not idempotent (each mints a new group): a failure whose
@@ -134,12 +139,14 @@ export function createVerdictOf(write: GroupWrite): CreateVerdict {
 // the screen answers the code itself (a stale succession: the leave asks again; a create's
 // own refusals: the naming screen answers at its line).
 export type GroupAct = 'create' | 'leave' | 'remove';
-export type GroupFailure = 'account' | 'share' | GroupAct;
+export type GroupFailure = 'account' | 'share' | 'unknown' | GroupAct;
 
 export function failureOf(act: GroupAct, write: GroupWrite): GroupFailure | null {
   switch (write.kind) {
     case 'account':
       return 'account';
+    case 'unknown':
+      return 'unknown';
     case 'failed':
       return act;
     case 'refused':
@@ -152,10 +159,12 @@ export function failureOf(act: GroupAct, write: GroupWrite): GroupFailure | null
 }
 
 // Each failure's title and note on the `ErrorScreen` (`share`: an invite neither the native
-// sheet nor the clipboard delivered).
+// sheet nor the clipboard delivered; `unknown`: a write nothing could be read about, whose
+// words claim nothing and invite no second try).
 const FAILURE_COPY: Record<GroupFailure, { title: UiKey; note: UiKey }> = {
   account: { title: 'failedAccount', note: 'failedAccountNote' },
   share: { title: 'failedShare', note: 'failedShareNote' },
+  unknown: { title: 'noAnswer', note: 'unknownGroupNote' },
   create: { title: 'failedCreate', note: 'failedGroupNote' },
   leave: { title: 'failedLeave', note: 'failedGroupNote' },
   remove: { title: 'failedRemove', note: 'failedGroupNote' },

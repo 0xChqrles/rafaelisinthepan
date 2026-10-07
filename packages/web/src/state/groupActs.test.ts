@@ -10,7 +10,8 @@
 //   - On a write whose outcome is unknown the client re-reads before writing again: a create
 //     that landed behind a lost answer is found in that read, never sent twice — and a leave
 //     or a remove that landed is found there too, so what the error surface says is what the
-//     list holds.
+//     list holds. That read is one SENT AFTER the write; when it fails too, the outcome stays
+//     unknown and the error surface claims nothing about the group.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GroupSummary } from '@whippin/shared';
@@ -68,7 +69,8 @@ beforeEach(() => {
   mocks.adopt.mockReset();
   mocks.ensure.mockReset();
   mocks.reload.mockReset();
-  mocks.reload.mockResolvedValue(undefined);
+  // The list read again lands (`loadGroups` answers whether its read published the list).
+  mocks.reload.mockResolvedValue(true);
   mocks.held = null;
   mocks.epoch = EPOCH;
   mocks.ensure.mockImplementation(async (expected: string | null) =>
@@ -137,8 +139,25 @@ describe('writeGroups', () => {
     mocks.post.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     expect(await writeGroups(EPOCH, create)).toEqual({ kind: 'failed' });
     expect(mocks.adopt).not.toHaveBeenCalled();
-    // Each unknown outcome read the list again before saying anything.
+    // Each unknown outcome read the list again before saying anything — a read SENT AFTER the
+    // write, never one already out, which may have left before it.
     expect(mocks.reload).toHaveBeenCalledTimes(4);
+    for (const call of mocks.reload.mock.calls) expect(call).toEqual([{ fresh: true }]);
+  });
+
+  it('claims nothing when the list read again after a lost answer fails too', async () => {
+    mocks.reload.mockResolvedValue(false);
+    mocks.post.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const lost = await writeGroups(EPOCH, create);
+    expect(lost).toEqual({ kind: 'unknown' });
+    expect(failureOf('create', lost)).toBe('unknown');
+    expect(failureOf('leave', lost)).toBe('unknown');
+    expect(createVerdictOf(lost)).toBe('other');
+    expect(groupFailureCopy('en', 'unknown')).toEqual({
+      title: 'NO ANSWER',
+      note: "Check your groups again once you're back online.",
+    });
+    expect(groupFailureCopy('fr', 'unknown').title).toBe('PAS DE RÉPONSE');
   });
 
   it('reads nothing again after an answer it can read', async () => {
@@ -184,10 +203,18 @@ describe('createGroup', () => {
     mocks.post.mockResolvedValueOnce(answer(502, '<html>bad gateway</html>'));
     mocks.reload.mockImplementationOnce(async () => {
       mocks.held = [other, created];
+      return true;
     });
     const write = await createGroup(EPOCH, 'CREW');
     expect(write).toEqual({ kind: 'done', created: GROUP });
     expect(failureOf('create', write)).toBeNull();
+  });
+
+  it('says nothing landed or not when the list could not be read again, whatever it held', async () => {
+    mocks.held = [other, created];
+    mocks.reload.mockResolvedValueOnce(false);
+    mocks.post.mockResolvedValueOnce(answer(502, '<html>bad gateway</html>'));
+    expect(await createGroup(EPOCH, 'CREW')).toEqual({ kind: 'unknown' });
   });
 
   it('still fails when the list read again holds no new group of that name', async () => {
@@ -215,6 +242,7 @@ describe('leaveGroup and removeMember', () => {
     mocks.post.mockResolvedValueOnce(answer(502, '<html>bad gateway</html>'));
     mocks.reload.mockImplementationOnce(async () => {
       mocks.held = [];
+      return true;
     });
     const write = await leaveGroup(EPOCH, GROUP, (token) => ({ token, leave: GROUP }));
     expect(write).toEqual({ kind: 'done' });
@@ -227,10 +255,17 @@ describe('leaveGroup and removeMember', () => {
     const write = await leaveGroup(EPOCH, GROUP, (token) => ({ token, leave: GROUP }));
     expect(write).toEqual({ kind: 'failed' });
     expect(failureOf('leave', write)).toBe('leave');
-    // A list nobody could read claims nothing landed.
+    // A list nobody holds claims nothing landed.
     mocks.held = null;
     mocks.post.mockResolvedValueOnce(answer(500, {}));
     expect(await leaveGroup(EPOCH, GROUP, (token) => ({ token, leave: GROUP }))).toEqual({ kind: 'failed' });
+    // A list read again that failed claims neither: the leave may have landed.
+    mocks.held = [crew];
+    mocks.reload.mockResolvedValueOnce(false);
+    mocks.post.mockResolvedValueOnce(answer(500, {}));
+    const unread = await leaveGroup(EPOCH, GROUP, (token) => ({ token, leave: GROUP }));
+    expect(unread).toEqual({ kind: 'unknown' });
+    expect(failureOf('leave', unread)).toBe('unknown');
   });
 
   it('find a remove that landed in the members read again, and send the member named', async () => {
@@ -238,6 +273,7 @@ describe('leaveGroup and removeMember', () => {
     mocks.post.mockResolvedValueOnce(answer(503, {}));
     mocks.reload.mockImplementationOnce(async () => {
       mocks.held = [{ ...crew, members: [A.accountId] }];
+      return true;
     });
     expect(await removeMember(EPOCH, GROUP, 'mmmmmmmmmmmmmmmm')).toEqual({ kind: 'done' });
     expect(mocks.post).toHaveBeenCalledWith('https://api.test/groups', {

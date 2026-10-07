@@ -254,7 +254,7 @@ export default function DeviceList({ lang }: { lang: string }) {
     setNotes((map) => withNote(map, id, null));
     const say = (note: Note) => {
       setNotes((map) => withNote(map, id, note));
-      setSpoken(`${deviceLabel(row, lang)}: ${t(lang, note === 'refused' ? 'deviceSignOutFailed' : 'deviceNoAnswer')}`);
+      setSpoken(`${deviceLabel(row, lang)}: ${t(lang, note === 'refused' ? 'deviceSignOutFailed' : 'noAnswer')}`);
       // The refusal's shake is the server's NO; an unanswered call refused nothing.
       if (note === 'refused') refuseShake(lines.current.get(id));
     };
@@ -360,7 +360,7 @@ export default function DeviceList({ lang }: { lang: string }) {
                   <span className="device-name">{deviceLabel(row, lang)}</span>
                   {notes.has(id) ? (
                     <span className="device-sub">
-                      {t(lang, notes.get(id) === 'refused' ? 'deviceSignOutFailed' : 'deviceNoAnswer')}
+                      {t(lang, notes.get(id) === 'refused' ? 'deviceSignOutFailed' : 'noAnswer')}
                     </span>
                   ) : row.current ? (
                     <span className="device-sub current">{t(lang, 'deviceCurrent')}</span>

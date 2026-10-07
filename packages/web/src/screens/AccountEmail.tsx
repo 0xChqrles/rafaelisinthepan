@@ -47,12 +47,14 @@
 // error bot is for an ACT that failed: a SEND (a 503 `mail_unavailable`, a dropped
 // connection: CODE NOT SENT), or a VERIFY whose answer was lost or cannot be read — read
 // again first (`recoverAmbiguous`), then CODE NOT CHECKED from the code step, STILL ON THIS
-// ACCOUNT from the crossroads. What the server says about what was typed stays where it was
-// typed: too many sends is the danger line under CONTINUE (or, from RESEND, the code step's
-// held line); a wrong code shakes the keys; a code that accepts nothing more — expired, or
-// its attempts spent — keeps the player ON THE CODE STEP, the keys gone dead in their own
-// material, the held line saying why and RESEND live. The crossroads has no keys, so a
-// verdict on the code pressed there steps back to them and answers there.
+// ACCOUNT from the crossroads (NO ANSWER there when the read again could not be had either:
+// the erase or the switch may have committed). What the server says about what was typed
+// stays where it was typed: too many sends is the danger line under CONTINUE (or, from
+// RESEND, the code step's held line); a wrong code shakes the keys; a code that accepts
+// nothing more — expired, or its attempts spent — keeps the player ON THE CODE STEP, the
+// keys gone dead in their own material, the held line saying why and RESEND live. The
+// crossroads has no keys, so a verdict on the code pressed there steps back to them and
+// answers there.
 
 import {
   Fragment,
@@ -311,12 +313,14 @@ export function readVerifyAnswer(status: number, body: unknown): VerifyAnswer {
   return { kind: 'unknown' };
 }
 
-// The flow's acts that did not land, each named by what was lost (the error surface's title).
-type Failure = 'send' | 'check' | 'switch';
+// The flow's acts that did not land, each named by what was lost (the error surface's title)
+// — or, where nothing could be read about it, by no claim at all (`unknown`).
+type Failure = 'send' | 'check' | 'switch' | 'unknown';
 const FAILURE_TITLE = {
   send: 'linkSendFailed',
   check: 'linkCheckFailed',
   switch: 'linkSwitchFailed',
+  unknown: 'noAnswer',
 } as const satisfies Record<Failure, UiKey>;
 
 // The address the code went to, as the line may WRAP it: a break offered before the '@' and
@@ -631,8 +635,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
     resumeDepartureDrain(result.departurePending);
   }, [advance]);
 
+  // What the read again answered: the outcome is SETTLED (the link landed, or the device is
+  // signed out, or the identity moved), the account was read and NOTHING LANDED, or it could
+  // not be read at all — and then nothing is known either way.
   const recoverAmbiguous = useCallback(
-    async (resolved: RequestIdentity, email: string): Promise<boolean> => {
+    async (resolved: RequestIdentity, email: string): Promise<'settled' | 'notLanded' | 'unread'> => {
       try {
         // A VERIFY can commit and then lose its response. Ask the token what account it NOW
         // acts as before offering a retry whose challenge may already be consumed.
@@ -641,11 +648,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         if (!response.ok) {
           if (isUnknownDeviceAnswer(response.status, body.error)) {
             markDeviceSignedOut(resolved.epoch);
-            return true;
+            return 'settled';
           }
-          return false;
+          return 'unread';
         }
-        if (currentRequestIdentity(resolved.epoch) === null) return true;
+        if (currentRequestIdentity(resolved.epoch) === null) return 'settled';
         const result = recoveredLinkResult({
           summary: parseAccountSummary(body),
           previousAccountId: resolved.identity.accountId,
@@ -654,11 +661,11 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
           requestedEmail: email,
           bindingAuthorized: !returning,
         });
-        if (!result) return false;
+        if (!result) return 'notLanded';
         finish(resolved, result);
-        return true;
+        return 'settled';
       } catch {
-        return false;
+        return 'unread';
       }
     },
     [finish, returning, summary],
@@ -680,10 +687,12 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
       // not land, on the error surface — never a line telling the player to type the code
       // again, which the same unreadable answer would only refuse again. From the code step
       // the code is cleared, so typing it checks it again; from the crossroads it is KEPT,
-      // so its button presses again.
-      const didNotLand = () => {
+      // so its button presses again — and where the read again could not be had either, the
+      // crossroads claims nothing about which account the device is on (`unknown`): pressed
+      // again, a verify that did land meets its spent code and reads again.
+      const didNotLand = (recovery: 'notLanded' | 'unread') => {
         if (crossroads) {
-          setFailed('switch');
+          setFailed(recovery === 'unread' ? 'unknown' : 'switch');
           return;
         }
         setCode('');
@@ -751,19 +760,21 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
             // A committed bind/adoption consumes the challenge. If that answer was lost and
             // the first reconciliation read also failed, the player's explicit retry lands
             // here; ask the unchanged token before calling the completed operation expired.
-            if (await recoverAmbiguous(resolved, email)) return;
+            if ((await recoverAmbiguous(resolved, email)) === 'settled') return;
             // The code accepts nothing more: the keys dead, the line saying why, RESEND live.
             toKeys();
             kill(answer.line);
             return;
-          case 'unknown':
-            if (await recoverAmbiguous(resolved, email)) return;
-            didNotLand();
+          case 'unknown': {
+            const recovery = await recoverAmbiguous(resolved, email);
+            if (recovery !== 'settled') didNotLand(recovery);
             return;
+          }
         }
       } catch {
-        if (request && (await recoverAmbiguous(request, email))) return;
-        didNotLand();
+        // (Nothing was sent without a request: nothing can have landed.)
+        const recovery = request ? await recoverAmbiguous(request, email) : 'notLanded';
+        if (recovery !== 'settled') didNotLand(recovery);
       } finally {
         setBusy(false);
       }

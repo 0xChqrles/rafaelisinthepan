@@ -66,6 +66,12 @@ const STRINGS = {
     en: 'Check your connection and try again.',
     fr: 'Vérifiez votre connexion et réessayez.',
   },
+  // ...and a group write whose answer was lost and whose list could not be read again either:
+  // it may have landed, so the note invites no second try — under the `noAnswer` title.
+  unknownGroupNote: {
+    en: "Check your groups again once you're back online.",
+    fr: 'Revoyez vos groupes une fois la connexion revenue.',
+  },
   // Neither the native sheet nor the clipboard could deliver (insecure context, denied
   // clipboard, a spent activation): the one share whose silence reads as a dead button.
   // On the error surface; the INVITE pressed again from the screen under it shares inside
@@ -165,8 +171,10 @@ const STRINGS = {
   // server refused it, or the list it answered still holds the line.
   deviceSignOutFailed: { en: 'NOT SIGNED OUT', fr: 'NON DÉCONNECTÉ' },
   // ...and while neither the SIGN OUT nor its second sending answered: nothing is known either
-  // way, so the line claims neither (re-inked, unshaken).
-  deviceNoAnswer: { en: 'NO ANSWER', fr: 'PAS DE RÉPONSE' },
+  // way, so the line claims neither (re-inked, unshaken). The same words title the error
+  // screen of an act whose outcome could not be read even once read again (a group write, the
+  // email flow's crossroads): it claims nothing about what the server holds.
+  noAnswer: { en: 'NO ANSWER', fr: 'PAS DE RÉPONSE' },
   // The UA parser leaves what it cannot read EMPTY rather than guessing, so the SCREEN names
   // an unlabelled device.
   deviceUnknown: { en: 'UNKNOWN DEVICE', fr: 'APPAREIL INCONNU' },
@@ -318,7 +326,8 @@ const STRINGS = {
   // The flow's ACTS that did not land, on the error screen — every VERDICT of the flow
   // answers in place. Each title names what was lost: the SEND (a 503 `mail_unavailable`, a
   // dropped connection), the VERIFY from the code step, the VERIFY from the crossroads (the
-  // device is still on the account it held). One note for the three.
+  // device is still on the account it held; `noAnswer` where that could not be read). One
+  // note for all of them.
   linkSendFailed: { en: 'CODE NOT SENT', fr: 'CODE NON ENVOYÉ' },
   linkCheckFailed: { en: 'CODE NOT CHECKED', fr: 'CODE NON VÉRIFIÉ' },
   linkSwitchFailed: { en: 'STILL ON THIS ACCOUNT', fr: 'TOUJOURS SUR CE COMPTE' },

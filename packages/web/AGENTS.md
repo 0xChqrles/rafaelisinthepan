@@ -95,7 +95,8 @@
       state/groupActs.ts      the group ACTS every surface shares: `writeGroups` (the deploy,
                               the signed POST, the answer read off its code, the list adopted;
                               an UNKNOWN outcome — a 5xx, a transport failure, no code — reads
-                              the list again before it says anything), `createGroup`,
+                              the list again, by a read sent after it, before it says anything;
+                              a list that cannot be read either is `unknown`), `createGroup`,
                               `leaveGroup`, `removeMember` (an act that did land is found in
                               that re-read — a create never sent twice, a leave or a remove
                               never said to have failed), `createVerdictOf` (what the naming
@@ -1388,7 +1389,10 @@ it to the local store — see `packages/backend/AGENTS.md`).
       code it does not know; `readVerifyAnswer`, contract-tested) — once the token's account
       has been read again and shows nothing landed (`recoverAmbiguous`): CODE NOT CHECKED from
       the code step (the code cleared, so typing it checks it again), STILL ON THIS ACCOUNT
-      from the crossroads (the code kept, so its button presses again). Never a line telling
+      from the crossroads (the code kept, so its button presses again) — and NO ANSWER from
+      the crossroads where the account could not be read again either, since the erase or the
+      switch may have committed (pressed again, a verify that did land meets its spent code
+      and reads again). Never a line telling
       the player to type the code again: an unreadable answer would only come back the same.
       A code that accepts nothing more — expired, `code_spent`, or the last wrong attempt once
       its shake has played — keeps the player ON THE CODE STEP: the keys go DEAD in their own
@@ -3051,9 +3055,12 @@ it to the local store — see `packages/backend/AGENTS.md`).
     group, hence an account. An act that did not land speaks on the `ErrorScreen`, named by
     what was lost — `failedAccount`, `failedShare`, `failedCreate`, `failedLeave`,
     `failedRemove` — read off the answer's code by `state/groupActs.ts`, the result's seat's
-    acts too; an unknown outcome reads the list again first, and a create, a leave or a
-    remove that did land behind a lost answer is found there and said to have landed, so
-    the screen behind the error shows what stands. A create's own refusals answer at the
+    acts too; an unknown outcome reads the list again first — a read SENT AFTER the write,
+    never one already out — and a create, a leave or a remove that did land behind a lost
+    answer is found there and said to have landed, so the screen behind the error shows what
+    stands; where that read fails too, nothing is known, and the error says NO ANSWER over a
+    note that claims nothing and invites no second try (`unknownGroupNote`). A create's own
+    refusals answer at the
     naming screen's line (below).
   - **THE GROUP'S OWN SCREEN (`GroupScreen`, user-decided 2026-09-14: "managing the group
     should have its own screen")** is a full-screen dialog in the selection's shell — the
