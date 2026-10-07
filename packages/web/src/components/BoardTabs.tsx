@@ -309,12 +309,14 @@ export default function BoardTabs({
   }, [names, restEnd]);
 
   // AT REST: the pinned name drawn in afresh, the covers against it, and a pinned chip
-  // re-seated (it stands on the pinned name).
+  // re-seated (it stands on the pinned name) — only once it STANDS there: a turn to the pinned
+  // name settles before its chip has travelled, and seating it then would land it in one frame.
   const settle = useCallback(() => {
     drawIn(0);
     cover();
-    if (shown === pin) seat(false);
-  }, [drawIn, cover, seat, shown, pin]);
+    if (shown === pin && chipOn.current === tabs[pin]?.key) seat(false);
+    // `keys` stands for `tabs`: the tabs' content, not the array a parent re-creates.
+  }, [drawIn, cover, seat, shown, pin, keys]);
   // The rest reads the row as it stands WHEN IT COMES, never as it stood when it was armed: a
   // tap's lift arms it before the tap's click turns the tab, and the settle of that earlier
   // render would seat the chip back on the tab turned from.
