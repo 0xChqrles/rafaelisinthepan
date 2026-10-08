@@ -31,6 +31,12 @@ class Log(list):
         self.append(line)
 
 
+@pytest.fixture(autouse=True)
+def _no_unsaid_swap(monkeypatch):
+    """The swap before the ranking answers nothing usable unless a test says otherwise."""
+    monkeypatch.setattr(curate.llm, "drop_unsaid", lambda *_a, **_k: None)
+
+
 def _giveaways(monkeypatch, scores=None):
     """Every word a line can hide is judged before the choice (the floor); a word the
     test does not name gets a path (0.3)."""
@@ -111,7 +117,8 @@ def _line_tokens(*_a):
     words = [("le", "DET", True), ("chat", "NOUN", False), ("dort", "VERB", False),
              ("sur", "ADP", True), ("la", "DET", True), ("pierre", "NOUN", False),
              ("froide", "ADJ", False)]
-    return [Token(i, w, w, pos, w, stop) for i, (w, pos, stop) in enumerate(words)]
+    lemmas = {"dort": "dormir"}
+    return [Token(i, w, lemmas.get(w, w), pos, w, stop) for i, (w, pos, stop) in enumerate(words)]
 
 
 def test_a_chosen_line_that_does_not_stand_alone_is_told_back_and_nothing_is_built(monkeypatch):
@@ -384,7 +391,7 @@ def test_start_words_are_re_picked_at_most_start_rounds_times(monkeypatch):
 
 # --- a word no start can save is swapped, REPLACE_ROUNDS times at most --------------------
 
-def _build_day(monkeypatch, generate, log, given=None, says=None):
+def _build_day(monkeypatch, generate, log, given=None, says=None, instead=None):
     """build_day on a song's line with chat · dort · pierre chosen and « froide » left to
     swap in, each word's giveaway judged before the choice (`given`, 0.3 by default) and
     the chance a player says it (`says`, 0.8 by default); returns (its result, the words
@@ -396,7 +403,8 @@ def _build_day(monkeypatch, generate, log, given=None, says=None):
     monkeypatch.setattr(curate.llm, "context_guesses",
                         lambda _c, toks, _blanks, mark, _n, lang: asked.append(toks[mark].text) or ([], None))
     monkeypatch.setattr(curate.llm, "would_say",
-                        lambda _c, _toks, _blanks, _mark, word, lang: ((says or {}).get(word, 0.8), None))
+                        lambda _c, _toks, _blanks, _mark, word, lang: ((says or {}).get(word, 0.8),
+                                                                       (instead or {}).get(word)))
     monkeypatch.setattr(curate, "generate", generate)
     line = {"sentence": "Le chat dort sur la pierre froide.", "tokens": tokens, "allowed": allowed,
             "given": given or {t.slug: 0.3 for t in allowed}}
@@ -424,6 +432,52 @@ def test_a_swapped_word_rebuilds_the_day_and_only_the_new_word_is_measured(monke
     assert asked == ["chat", "dort", "pierre", "froide"]
 
 
+def test_two_words_players_dont_say_get_one_swapped_before_the_ranking_is_paid(monkeypatch):
+    # The taste keeps at most one: the model names which one goes, before gen_phrase runs,
+    # so the ranking is paid once, for the trio that is built.
+    calls, shown = [], []
+
+    def drop(_c, marked, holes, unsaid, others, _chain, lang):
+        shown.append((marked, [h["secret"] for h in holes], unsaid, others))
+        return {"secret": "pierre", "with": "froide", "why": "the rare one"}
+
+    def generate(_c, _l, _sentence, words, *_a, replay, chain, **_k):
+        calls.append((words, replay, chain))
+        return "out/x_y_z.json"
+
+    monkeypatch.setattr(curate.llm, "drop_unsaid", drop)
+    path, asked = _build_day(monkeypatch, generate, Log(), says={"pierre": 0.1, "dort": 0.2})
+    assert path == "out/x_y_z.json"
+    assert calls == [(["chat", "dort", "froide"], None, ["froide replaces pierre: the rare one", "chat: le sujet"])]
+    assert shown[0][1:] == (["chat", "dort", "pierre"], ["dort", "pierre"], ["froide"])
+    assert "[pierre]" in shown[0][0] and "[froide]" not in shown[0][0]
+    assert len(shown) == 1          # the new trio holds one such word: nothing more is asked
+    assert asked == ["chat", "dort", "pierre", "froide"]
+
+
+def test_a_trio_with_at_most_one_word_players_dont_say_is_never_questioned(monkeypatch):
+    # An easy word is the start step's to tune (a farther start), never a swap: a loved day
+    # keeps its plain words around the punch.
+    monkeypatch.setattr(curate.llm, "drop_unsaid", lambda *_a, **_k: pytest.fail("no swap to ask for"))
+    path, _asked = _build_day(monkeypatch, lambda *_a, **_k: "out/x_y_z.json", Log(), says={"pierre": 0.1})
+    assert path == "out/x_y_z.json"
+
+
+def test_the_word_players_say_instead_in_another_form_is_this_word(monkeypatch):
+    # « sauva » scored 0.35 because readers would write « sauver »: the same word, which
+    # finds the hole (a ranked group holds every form) — it played easy.
+    monkeypatch.setattr(curate.llm, "drop_unsaid", lambda *_a, **_k: pytest.fail("one word players don't say"))
+    seen = {}
+
+    def generate(_c, _l, _sentence, _words, _source, _lang, context, *_a, **_k):
+        seen.update(context)
+        return "out/x_y_z.json"
+
+    _build_day(monkeypatch, generate, Log(), says={"dort": 0.3, "pierre": 0.1}, instead={"dort": "dormir"})
+    assert "this same word in another form" in seen["dort"] and "a word players don't say" not in seen["dort"]
+    assert "a word players don't say" in seen["pierre"] and "this trio hides" not in seen["pierre"]
+
+
 def test_a_day_is_given_up_after_replace_rounds_swaps(monkeypatch):
     calls = []
 
@@ -434,7 +488,7 @@ def test_a_day_is_given_up_after_replace_rounds_swaps(monkeypatch):
     log = Log()
     path, _asked = _build_day(monkeypatch, generate, log)
     assert curate.REPLACE_ROUNDS == 2
-    assert path is None and any("no start words could save this day" in line for line in log)
+    assert path is None and any("no trio of this line survived its swaps" in line for line in log)
     assert calls == [["chat", "dort", "pierre"], ["chat", "dort", "froide"], ["chat", "dort", "pierre"]]
 
 
@@ -487,7 +541,7 @@ def test_a_hard_hole_draws_its_start_from_nearer_and_the_model_is_told(monkeypat
 
 def test_two_words_players_dont_say_are_told_to_the_start_step_one_is_not(monkeypatch):
     # User-decided 2026-10-06: one such word is a hard day (a loved day may hide one); two
-    # made the worst days, and the model is told to keep at most one.
+    # made the worst days; the taste (not code) says how many to keep.
     seen = {}
 
     def generate(_c, _l, _sentence, _words, _source, _lang, context, *_a, **_k):

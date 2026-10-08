@@ -41,6 +41,13 @@ WEAK_VERBS = {
         "must", "need", "find", "have", "be", "do", "make", "go",
     }),
 }
+# Words never hidden, in any line — the user's hand-kept list (2026-10-07): no measured
+# score told « faux-monnayeur » (a rare stand-in for « faussaire ») from loved rare words
+# (« clodos », « saint-bernard »). By slug, per language; a word joins when a day shows it.
+REFUSED = {
+    "fr": frozenset({"faux-monnayeur", "faux-monnayeurs"}),
+    "en": frozenset(),
+}
 # The READER (the user's own method, 2026-09-10): blank one word, the rest of the line
 # intact and no start word, and ask what else could stand there — at most
 # CONTEXT_GUESSES words — and which ONE word most readers would write. A filler that is
@@ -90,8 +97,8 @@ def initial_candidates(
     past_secrets: frozenset[str] | set[str] = frozenset(),
     frequency_rank: Callable[[Token], int | None] = lambda t: None,
 ) -> list[Token]:
-    """The words that CAN be a secret: an allowed POS, not a stopword, a weak verb or one
-    of the commonest words, a slug the game admits and has not used (a hyphenated
+    """The words that CAN be a secret: an allowed POS, not a stopword, a weak verb, a
+    refused word or one of the commonest words, a slug the game admits and has not used (a hyphenated
     compound included — « post-it »), and no same-lemma twin under another slug visible
     in the sentence (a same-slug repeat is fine: one hole per occurrence).
     `frequency_rank` reads the word's place in the corpus (None = unknown, which is not a
@@ -105,6 +112,8 @@ def initial_candidates(
         if t.pos not in ALLOWED_POS or t.stop:
             continue
         if t.pos == "VERB" and t.lemma in WEAK_VERBS[lang]:
+            continue
+        if t.slug in REFUSED[lang]:
             continue
         if len(t.slug) < 2 or not in_vocab(t.slug):
             continue
@@ -156,10 +165,24 @@ def reading(
     return f"{lead}; other words a reader puts there: {alternatives}"
 
 
-def said(chance: float | None, instead: str | None) -> str:
+def same_word(candidate: Token, other: str | None) -> bool:
+    """Whether the word players would say instead IS this word in another form (« sauver »
+    for « sauva »): its spelling, its lemma or a variant. Typing it finds the hole, since a
+    ranked group holds every form of a word — so the hidden word is said. Never a near
+    neighbour (« faussaire » for « faux-monnayeur »): that is another word, in its own group."""
+    if not other or " " in other.strip():
+        return False
+    s = slug(other)
+    return s in (candidate.slug, slug(candidate.lemma or "")) or is_variant(s, candidate.slug)
+
+
+def said(chance: float | None, instead: str | None, same: bool = False) -> str:
     """What the would-say test means for this hole, in one plain line for the model: the
     chance a player who has the meaning says this exact word, and the commoner word they
-    would keep saying."""
+    would keep saying — unless that word is this one in another form (`same_word`)."""
+    if same:
+        return (f"players would say « {instead} », this same word in another form: typing it "
+                f"finds the hole, so it is a word players say")
     if chance is None:
         return "whether players would say this word: not measured"
     note = f"a player who has the meaning says this exact word at {chance:.2f}"
@@ -178,7 +201,7 @@ def unsaid(chances: dict[str, float | None]) -> str | None:
         return None
     return (f"this trio hides {len(under)} words players don't say ({', '.join(under)}): on real play the "
             f"days with two or more were finished by a median 40% of the players (none reached 70%), against "
-            f"57% with one and 71% with none — keep at most one, replace another by a word of the line")
+            f"57% with one and 71% with none")
 
 
 def map_nearest_filler(rank_map: dict, secret_slug: str, fillers: list[str]) -> tuple[str, int | None] | None:

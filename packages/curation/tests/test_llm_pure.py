@@ -114,6 +114,8 @@ QUESTIONS = {
     "choose_excerpt": lambda c, lang: llm.choose_excerpt(c, "The cat.", {"before": ["B."], "after": []}, lang=lang),
     "pick_start": lambda c, lang: llm.pick_start(c, "The [____].", "cat", _HOLE["options"], lang=lang),
     "would_say": lambda c, lang: llm.would_say(c, _TOKENS, set(), 1, "cat", lang=lang),
+    "drop_unsaid": lambda c, lang: llm.drop_unsaid(c, "The [cat].", [{"secret": "cat", "notes": "n"}], ["cat"],
+                                                   ["dog"], None, lang=lang),
 }
 
 

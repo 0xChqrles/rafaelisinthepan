@@ -273,11 +273,29 @@ and no start word changes that: on 2026-10-05, players reached « faussaire » a
 « contrefacteur », a third of them never got to « faux-monnayeur », and 30% of the
 players finished the day. ONE such word makes a hard day, and a loved day may hide one —
 « moucheron », « mammifères », « stagnation », « cafard » are that word, and they are the
-punch or the exact word. TWO in one trio made the worst days (2026-09-16, 09-22, 09-23,
-10-05: a median 40% of the players finished, against 57% with one and 71% with none; no
-such day reached 70%). Keep at most one, and only when it is worth the search.
+punch, the image or the exact word. TWO in one trio made the worst days (2026-09-16,
+09-22, 09-23, 10-05: a median 40% of the players finished, against 57% with one and 71%
+with none; no such day reached 70%). Keep at most one, and only when it is worth the
+search. When two are hidden, drop the DULL one and keep the one more fun to find:
+« clodos » over « stagnation » — the register a notch off lands with a grin, the abstract
+noun only completes the thought.
+
+The NAME of the thing is not such a word, even when it is rare: « saint-bernard »,
+« post-it », « rolex » — there is no other word for it, so a player who reaches the thing
+types it. The RARE STAND-IN for the word everyone uses is: « faux-monnayeur » beside
+« faussaire » — players type « faussaire », and nothing leads them from it to a word they
+never use. Rarity is not the test (« saint-bernard » is rarer in speech than
+« faux-monnayeur »); the commoner word beside it is.
 
 Ask: when a player has the meaning, would they say this word — or the common one beside it?
+
+**Every day is somebody's first day.** A newcomer who solves their first day comes back
+more than twice as often (37% against 16%); two thirds failed theirs, and a third of
+those who never came back left within five guesses, before they understood the game.
+So the two words beside the one players don't say are words they say. A word the line hands
+over only weakly is fine when players say it (Graeber, 2026-09-08: 81% finished). Easy
+is never handed over: the line leads, the player still searches (2026-09-21, median 5,
+was dead).
 
 ## How to judge
 

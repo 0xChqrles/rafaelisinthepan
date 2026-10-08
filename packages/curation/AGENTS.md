@@ -150,16 +150,29 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   word players don't say; ONE makes a hard day a loved day may hold (« moucheron »,
   « mammifères »), TWO or more made the worst days (finished by a median 40 % of the
   players, against 57 % with one and 71 % with none), so a trio holding two
-  carries that fact on each of them (`rules.unsaid`) and the taste keeps at most one;
+  carries that fact on each of them (`rules.unsaid`), and the taste keeps at most one —
+  never the rare stand-in for the word everyone uses, while the NAME of a thing passes
+  however rare (« saint-bernard »; user-decided 2026-10-07);
   and, once the map is built, where the reader's nearest word
-  lands in the hole's own map (`rules.map_nearest_filler`). With those notes and each
-  hole's band, `llm.pick_starts` chooses the three starts by the taste — or
-  names ONE hidden word no start can save and another word of the line to hide instead
-  (`Replace`: the draft is erased, the day rebuilt, `REPLACE_ROUNDS` 2).
+  lands in the hole's own map (`rules.map_nearest_filler`). A trio hiding TWO
+  or more words players don't say — the one fact that asks — has ONE of them swapped by the
+  model BEFORE the ranking is paid for (`llm.drop_unsaid`: the DULL one goes, the one more
+  fun to find stays — « clodos » over « stagnation », user-decided 2026-10-08), so that swap costs one question, never a second ranking; any other trio goes
+  straight on, an easy word being the start step's to tune (a farther start, never a duller
+  word). Asked of every trio, the model swapped on 77% of played days, loved ones included,
+  and picked the hard word no better than chance. A word players would say
+  instead that IS this word in another form (« sauver » for « sauva »: its spelling, lemma
+  or a variant, `rules.same_word` — never a near neighbour like « faussaire », which is
+  another word in its own group) finds the hole, so that word counts as said. With all the notes and each hole's band, `llm.pick_starts`
+  chooses the three starts by the taste — or names ONE hidden word no start can save and
+  another word of the line to hide instead (`Replace`: the draft is erased, the day
+  rebuilt). Both swaps share `REPLACE_ROUNDS` (2).
 - **Which words can be hidden (facts, `rules.initial_candidates`):** NOUN/VERB/ADJ/ADV and
   PROPN (the parser tags a lowercase brand or rare noun as a proper noun — « rolex »,
   « zigzag », secrets of a favourite day; a name nobody can reason toward is taste's
-  call), not stopwords, not among the commonest words (`MAX_COMMON_RANK` 20 /
+  call), not stopwords, not on the user's hand-kept `REFUSED` list (words never hidden in
+  any line — « faux-monnayeur »; no measured score separated it from loved rare words,
+  2026-10-07), not among the commonest words (`MAX_COMMON_RANK` 20 /
   `MAX_COMMON_RANK_ADV` 500, read off the reduced vectors' order), not a `WEAK_VERBS` verb
   (saying, thinking, modality — user-decided 2026-09-08; per language, the English list
   the French one translated word for word, #317), slug in the vocab — a

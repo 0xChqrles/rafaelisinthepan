@@ -233,6 +233,15 @@ def holed(tokens, blanks: set[int], mark: int | None = None, *, lang: str) -> st
             parts.append("____")
         else:
             parts.append(t.text)
+    return _joined(tokens, parts, lang)
+
+
+def marked(tokens, hidden: set[int], *, lang: str) -> str:
+    """The sentence with the hidden tokens in brackets (`[word]`), rendered as `holed`."""
+    return _joined(tokens, [f"[{t.text}]" if t.i in hidden else t.text for t in tokens], lang)
+
+
+def _joined(tokens, parts: list[str], lang: str) -> str:
     if lang == "fr":
         return re.sub(r"\s+([,.;:!?…»)])", r"\1", re.sub(r"([«(]|\w')\s+", r"\1", " ".join(parts)))
     return "".join(part + t.space for part, t in zip(parts, tokens)).strip()
@@ -388,6 +397,37 @@ def _chain_block(chain: list[str] | None) -> str:
         return ""
     lines = "\n".join(f"{i}. {step}" for i, step in enumerate(chain, 1))
     return f"\nHow the day was chosen to play — the order players should find the words in:\n{lines}\n"
+
+
+def drop_unsaid(claude: Claude, sentence_marked: str, holes: list[dict], unsaid: list[str], allowed: list[str],
+                chain: list[str] | None = None, *, lang: str) -> dict | None:
+    """Asked only when the trio hides two or more words players don't say (`rules.unsaid`),
+    BEFORE the day's ranking is paid for: the taste keeps at most one, so the model names
+    ONE of `unsaid` to swap for another word of the line. `holes`: [{secret, notes}].
+    Returns {"secret", "with", "why"}, or None when the answer is unusable."""
+    blocks = "\n".join(f"Hole « {h['secret']} »\n  measured: {h['notes']}" for h in holes)
+    answer = claude.json(f"""You check the three hidden words of a day for a daily {LANGUAGE[lang]} word game before it
+is built: each hole shows a start word in place of the hidden word; the player types
+guesses and reads, for every hole, how close each lands.
+
+What makes a day worth playing:
+{taste()}
+
+The sentence, holes marked with the hidden word in brackets:
+{sentence_marked}
+{_chain_block(chain)}
+{blocks}
+
+This trio hides {len(unsaid)} words players don't say: {", ".join(f"« {w} »" for w in unsaid)}. The taste
+keeps at most one: swap the DULL one and keep the one more fun to find. Name ONE of them
+to swap, and its replacement from the other words of the line that can be hidden:
+{", ".join(allowed)}.
+
+Return {{"replace": {{"secret": "<one of the words players don't say>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")
+    replace = answer.get("replace") if isinstance(answer, dict) else None
+    if isinstance(replace, dict) and isinstance(replace.get("secret"), str) and isinstance(replace.get("with"), str):
+        return {"secret": replace["secret"].strip(), "with": replace["with"].strip(), "why": str(replace.get("why") or "")}
+    return None
 
 
 def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict],
