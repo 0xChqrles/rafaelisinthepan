@@ -280,12 +280,10 @@ search. When two are hidden, drop the DULL one and keep the one more fun to find
 « clodos » over « stagnation » — the register a notch off lands with a grin, the abstract
 noun only completes the thought.
 
-The NAME of the thing is not such a word, even when it is rare: « saint-bernard »,
-« post-it », « rolex » — there is no other word for it, so a player who reaches the thing
-types it. The RARE STAND-IN for the word everyone uses is: « faux-monnayeur » beside
-« faussaire » — players type « faussaire », and nothing leads them from it to a word they
-never use. Rarity is not the test (« saint-bernard » is rarer in speech than
-« faux-monnayeur »); the commoner word beside it is.
+A rare NAME of the thing passes (« saint-bernard », « post-it »: there is no other word for
+it); a rare stand-in among commoner words meaning the same is BURIED, and code refuses it
+(« faux-monnayeur » beside « faussaire », « charnier » among « cimetière », « ossuaire »,
+« fosse »): players reach the idea, circle the commoner neighbours and stall.
 
 Ask: when a player has the meaning, would they say this word — or the common one beside it?
 

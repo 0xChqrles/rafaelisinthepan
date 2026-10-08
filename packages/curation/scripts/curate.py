@@ -145,7 +145,33 @@ def load_similarity(lang: str):
             return None
         return ranking(k).get(w)
 
-    return frequency_rank, neighbour_rank
+    import gen_phrase as gp  # the static walk only: no judge is called here (contextual=None)
+
+    cfg = gp.CONFIG[lang]
+    lemma_table = gp.load_lemma_table(lang)
+    forms_by_lemma = gp.invert_lemmas(lemma_table)
+    Vset = set(V)
+    first_index: dict[str, int] = {}
+    for i, w in enumerate(kv.index_to_key):
+        first_index.setdefault(slug(w), i)
+
+    @lru_cache(maxsize=256)
+    def crowd_of(word: str):
+        try:
+            _merged, rank_map, _groups = gp.walk_secret(word, word, cfg, kv, V, M, Vset, lemma_table, forms_by_lemma)
+        except Exception:  # a word the walk cannot settle alone (#133) is left unmeasured
+            return None
+        return rules.crowd_share(rank_map, first_index.get)
+
+    def crowd(t: rules.Token):
+        """The token's crowd of commoner near-words on the FREE static map
+        (`rules.crowd_share`); None when its vector or its walk is missing."""
+        for form in (t.text.lower(), t.lemma):
+            if form and form in Vset:
+                return crowd_of(form)
+        return None
+
+    return frequency_rank, neighbour_rank, crowd
 
 
 # ---------------------------------------------------------------------------
@@ -644,7 +670,7 @@ def shortlist(claude: llm.Claude, log: Log, sentences: list[str], lang: str) -> 
 
 def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: dict, text: str,
         in_vocab, frequency_rank, neighbour_rank, lang: str, replay: str | None = None,
-        tried: list[str] | None = None, *, judge):
+        tried: list[str] | None = None, *, judge, crowd=lambda t: None):
     """The day, chosen by COMPARISON (2026-09-24): the shortlist's lines COMPARE at a
     time; the model picks the line and its three words, in the order players will find
     them, from the words code allows — a word the line gives no path to (giveaway under
@@ -713,7 +739,8 @@ def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: d
                 refused.append(f"« {line['sentence']} » — {why}")
                 continue
             path = build_day(claude, log, line, trio, choice["path"], book, archive, text, source_base,
-                             frequency_rank, neighbour_rank, lang, replay if batch_start == 0 else None)
+                             frequency_rank, neighbour_rank, lang, replay if batch_start == 0 else None,
+                             crowd=crowd)
             if path:
                 return path
             refused.append(f"« {line['sentence']} » with « {' · '.join(choice['words'])} » — it could not be built")
@@ -722,12 +749,15 @@ def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: d
 
 
 def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[str], book: dict, archive: dict,
-              text: str, source_base: dict, frequency_rank, neighbour_rank, lang: str, replay: str | None):
+              text: str, source_base: dict, frequency_rank, neighbour_rank, lang: str, replay: str | None,
+              crowd=lambda t: None):
     """One chosen day, built: code measures each hidden word — what a reader puts in its
     blank, how much the sentence hands it over (`line["given"]`, judged for every word
     that can be hidden), whether a player who has the meaning would say it — the page is
     cut (a book), and `generate` writes the puzzle, the start words chosen by the taste, a
-    hard hole's from nearer. A trio hiding two or more words players don't say has one
+    hard hole's from nearer. A BURIED word (`rules.buried`: half-said, among commoner
+    near-words on the free map) is refused by code and replaced by the model's choice
+    (`llm.replace_word`) before the ranking is paid for. A trio hiding two or more words players don't say has one
     swapped by the model before the ranking is paid for (`llm.drop_unsaid`); the start
     step may swap a word no start can save (Replace). A swapped word is replaced by another word of the line that can be hidden,
     REPLACE_ROUNDS times in all."""
@@ -739,6 +769,7 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
     occurrences = _occurrences(line["allowed"])
     readings: dict[str, tuple[list[str], str | None]] = {}
     says: dict[str, tuple[float | None, str | None]] = {}
+    crowds: dict[str, float | None] = {}
     source = dict(source_base)
     if book["kind"] == "book":
         window = excerpt_around(text, sentence, EXCERPT_WINDOW, lang=lang)
@@ -750,9 +781,17 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
             if t.slug not in readings:
                 readings[t.slug] = llm.context_guesses(claude, tokens, occurrences[t.slug] - {t.i}, t.i,
                                                        rules.CONTEXT_GUESSES, lang=lang)
+            if t.slug not in crowds:
+                crowds[t.slug] = crowd(t)
             if t.slug not in says:
-                says[t.slug] = llm.would_say(claude, tokens, occurrences[t.slug] - {t.i}, t.i, t.text.lower(),
-                                             lang=lang)
+                ask = lambda: llm.would_say(claude, tokens, occurrences[t.slug] - {t.i}, t.i, t.text.lower(), lang=lang)
+                chance, instead = ask()
+                # In a crowd the verdict turns on would-say near its bar, where one answer
+                # wobbles: a second is asked and the two averaged.
+                if chance is not None and crowds[t.slug] is not None and crowds[t.slug] >= rules.BURIED_CROWD:
+                    again, _ = ask()
+                    chance = chance if again is None else round((chance + again) / 2, 3)
+                says[t.slug] = (chance, instead)
         hard = {t.slug for t in trio if given[t.slug] < contextual_rank.GIVEAWAY_HARD}
         same = {t.slug for t in trio if rules.same_word(t, says[t.slug][1])}
         unsaid = rules.unsaid({t.text: None if t.slug in same else says[t.slug][0] for t in trio})
@@ -763,6 +802,7 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
             note += (f"; the sentence hands it over at {given[t.slug]:.2f} (on real play, "
                      f"{contextual_rank.GIVEAWAY_MAX} and above was typed within three guesses by a third of the players)")
             note += "; " + rules.said(*says[t.slug], same=t.slug in same)
+            note += "; " + rules.crowd_note(crowds[t.slug])
             if unsaid and t.slug not in same and says[t.slug][0] is not None and says[t.slug][0] < rules.WOULD_SAY_HARD:
                 note += "; " + unsaid
             if t.slug in hard:
@@ -774,9 +814,21 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
         # swaps one BEFORE the ranking is paid for (a swap at the start step pays it twice).
         # Any other trio goes straight on: an easy word is the start step's to tune.
         swap = None
-        if unsaid:
-            hidden = {i for t in trio for i in occurrences[t.slug]}
-            others = [t.text for t in line["allowed"] if t.slug not in {u.slug for u in trio}]
+        hidden = {i for t in trio for i in occurrences[t.slug]}
+        others = [t.text for t in line["allowed"] if t.slug not in {u.slug for u in trio}]
+        sunk = next((t for t in trio if t.slug not in same and rules.buried(says[t.slug][0], crowds[t.slug])), None)
+        if sunk is not None:
+            log(f"- « {sunk.text} » is buried (would-say {says[sunk.slug][0]}, "
+                f"crowd {crowds[sunk.slug]}): refused")
+            pick = llm.replace_word(claude, llm.marked(tokens, hidden, lang=lang),
+                                    [{"secret": t.text, "notes": context[t.slug]} for t in trio], sunk.text,
+                                    others, chain, lang=lang)
+            if pick is None:
+                log(f"- no replacement named for « {sunk.text} »")
+                return None
+            swap = {"secret": sunk.text, "with": pick["with"],
+                    "why": f"buried among commoner near-words ({pick['why']})"}
+        elif unsaid:
             under = [t.text for t in trio if t.slug not in same and says[t.slug][0] is not None
                      and says[t.slug][0] < rules.WOULD_SAY_HARD]
             swap = llm.drop_unsaid(claude, llm.marked(tokens, hidden, lang=lang),
@@ -901,7 +953,7 @@ def main():
     book = choose_work(log, args, archive, index, today)
     path = _paths.shelf_dir(args.lang) / book["file"]
     text = epub_text(path) if book["kind"] == "book" else path.read_text(encoding="utf-8")
-    frequency_rank, neighbour_rank = load_similarity(args.lang)
+    frequency_rank, neighbour_rank, crowd = load_similarity(args.lang)
     # The work's quoted lines (the quotation test): fetched onto the shelf by
     # `pnpm shelf:quotes`, read here offline, and applied to every mined line before the
     # judge or the model reads it. A missing file skips the test, loudly.
@@ -948,7 +1000,7 @@ def main():
     tried: list[str] = []
     log.begin_attempt()
     result = day(claude, log, ranked, book, archive, text, vocab.__contains__, frequency_rank, neighbour_rank,
-                 args.lang, replay=getattr(args, "replay", None), tried=tried, judge=judge)
+                 args.lang, replay=getattr(args, "replay", None), tried=tried, judge=judge, crowd=crowd)
     log.end_attempt(bool(result), player_view(result, book) if result else ())
     shelf_mod.record(index, book["file"], tried, author=book.get("author", ""))
     shelf_mod.save_index(index, args.lang)
