@@ -2863,30 +2863,6 @@ textarea,
   }
 }
 
-/* Rejected word: the typed text stays in place but turns red and shakes. */
-.word-input.invalid {
-  color: var(--danger);
-  animation: input-shake 0.4s ease-in-out;
-}
-@keyframes input-shake {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  20% {
-    transform: translateX(-6px);
-  }
-  40% {
-    transform: translateX(6px);
-  }
-  60% {
-    transform: translateX(-4px);
-  }
-  80% {
-    transform: translateX(4px);
-  }
-}
-
 .hint {
   margin: 0;
   min-height: 24px;
@@ -6959,13 +6935,6 @@ figure.l1-fig {
   font-weight: 400;
   color: var(--accent);
   pointer-events: none;
-}
-/* An Enter on what cannot be an address: the guess prompt's own refusal. */
-.link-field.invalid {
-  animation: input-shake 0.4s ease-in-out;
-}
-.link-field.invalid .link-field-input {
-  color: var(--danger);
 }
 /* The address step's call: the app's ONE big action (`.mix-btn`, the 430px column), sat
    under the line it sends — the soft keyboard owns the bottom edge on this step. */
@@ -12077,9 +12046,6 @@ figure.l1-fig {
    name standing in the danger ink until it is edited. */
 .profile-name.refused {
   color: var(--danger);
-}
-.profile-name.invalid {
-  animation: input-shake 0.4s ease-in-out;
 }
 /* The refusal's ONE note (a name, or a drawing), under the name on the air the line keeps
    above SAVE — out of the flow, so the editor's measured column never moves. */

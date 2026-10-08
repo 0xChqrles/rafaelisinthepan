@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom';
 import { GROUP_NAME_MAX_LENGTH, GROUPS_MAX, sanitizeGroupName } from '@whippin/shared';
 import BusyButton from './BusyButton';
 import ModalHeader from './ModalHeader';
+import { promptShake } from './promptShake';
 // (For its side effect: the root's Bayer tiles the screen comes and goes through.)
 import './bayerTiles';
 import useModalDismiss from '../hooks/useModalDismiss';
@@ -72,10 +73,10 @@ export default function GroupCreate({
 }) {
   const { closing, beginClose, dialogProps } = useModalDismiss('board-dissolve-out');
   const [name, setName] = useState('');
-  const [shaking, setShaking] = useState(false);
   const [inked, setInked] = useState(false);
   const [refusal, setRefusal] = useState<CreateRefusal | null>(null);
   const field = useRef<HTMLInputElement>(null);
+  const line = useRef<HTMLDivElement>(null);
   const noteId = useId();
   const stage = useRef<HTMLDivElement>(null);
   // The stage's width, measured before the first paint and on every resize.
@@ -110,10 +111,7 @@ export default function GroupCreate({
     if (refusal === 'name' && !busy) field.current?.focus({ preventScroll: true });
   }, [refusal, busy]);
 
-  const shake = () => {
-    setShaking(false);
-    requestAnimationFrame(() => setShaking(true));
-  };
+  const shake = () => promptShake(line.current);
 
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -160,8 +158,8 @@ export default function GroupCreate({
             </span>
           ) : (
             <div
-              className={`word-input${shaking ? ' invalid' : ''}${refusal === 'name' ? ' refused' : ''}`}
-              onAnimationEnd={() => setShaking(false)}
+              ref={line}
+              className={`word-input${refusal === 'name' ? ' refused' : ''}`}
               // A tap anywhere on the drawn line puts the caret back in the field.
               onClick={() => field.current?.focus({ preventScroll: true })}
             >
