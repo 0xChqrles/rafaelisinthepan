@@ -2,8 +2,8 @@
 
 > Package-scoped guidance. The root `AGENTS.md` applies here too and holds the
 > contracts this server implements — the per-puzzle JSON schema it serves and the
-> day-addressed routing protocol (date rules, future-skew guard, 404 semantics, CDN
-> caching) — plus the testing policy and the issue/PR workflow. Read it first.
+> day-addressed routing protocol (date rules, future-skew guard and the preview code that
+> lifts it, 404 semantics, CDN caching) — plus the testing policy and the issue/PR workflow. Read it first.
 > The share routes (`/s/<token>`, `/og/<token>.png`) render tokens from the shared
 > `shareCard` codec; their product behavior is described in the solved-result bullet
 > of `packages/web/AGENTS.md`. A SIGNED share (`/s/<token>/<publicId>`, root `AGENTS.md`)
@@ -63,8 +63,11 @@
       liveRoute.ts            what the LIVE routes share: no-store headers, the JSON-body
                               reader + size cap, #216's device-token check and the
                               `unknown_device` resolution behind it, the (lang, date)
-                              + future-skew guard, the trusted viewer address and the
-                              Turnstile-token check the gated writes share
+                              + future-skew guard, `previewGrant` (the ONE reading of a
+                              preview code, for the puzzle and round routes), the trusted
+                              viewer address and the Turnstile-token check the gated writes share
+      previewCode.ts          a DAY PREVIEW code (root AGENTS.md): mint it and verify it,
+                              timing-safe, against the IP-HMAC secret
       devices.ts              POST /devices (#216): the Turnstile-gated idempotent bootstrap,
                               the sign-out screen's list, and revocation by device id + opaque key
       link.ts                 POST /link (#204): the read/drain, the Turnstile-gated + metered
@@ -159,9 +162,12 @@
                               (rebuild it from the bucket)
       inventory.ts            `pnpm puzzle:inventory` (#61): publish-buffer coverage, one
                               existence probe per (day, lang), local store or S3
+      preview.ts              `pnpm puzzle:preview`: print a future day's preview link per
+                              supported language (local secret, or SSM's with --s3)
       stack.ts                the deployed WhippinBackendStack's outputs (bucket + API
                               distribution) and its region, for publish, ledger and inventory
-      config.ts               env names + one decrypted SSM GetParameters read
+      config.ts               env names + one decrypted SSM GetParameters read, and the fixed
+                              `LOCAL_IP_HMAC_SECRET` local mode signs with
       index.ts                Lambda entrypoint (S3/Dynamo stores + async secret initialization)
     .local-store/<date>.<lang>.json          local puzzle store (gitignored) read by serve/fsStore
     .local-store/<date>.<lang>.slice.json.gz  its #203 derivation slice, written by publish
@@ -176,6 +182,7 @@
 pnpm puzzle:publish <puzzle.json> [--day YYYY-MM-DD] [--s3]  # default: local + active day; --s3 -> the deployed bucket (stack output). Sentence puzzles only: a file with no holes (e.g. a #154 single-word artifact) is refused.
 pnpm puzzle:publish <puzzle.json> --bonus [ID] [--s3]  # a BONUS puzzle (root AGENTS.md): mints a fresh seven-digit id (or republishes ID), prints its link; no ledger line
 pnpm puzzle:inventory [--s3] [--days N] [--langs en,fr] [--ci]  # publish-buffer coverage (#61); reports + exits 0 by default, --ci exits 1 on any (day,lang) gap for cron/CI
+pnpm puzzle:preview <YYYY-MM-DD> [--s3]  # print that day's preview link per supported language (root AGENTS.md "Day preview links"); --s3 signs with the deployed secret (SSM, the operator's credentials), default with the local one
 pnpm puzzle:ledger --s3     # rebuild packages/generation/published.jsonl (gitignored — the bucket is the truth) from every sentence puzzle in the bucket; an S3 publish appends to it itself; the curator refuses to run without it
 pnpm backend:dev                # local server (puzzles + /scores + /profile + /groups + /board + /round + /history + /devices + /link + /today) on :8787; FS puzzles, in-memory scores/profiles/groups/rounds/history/devices/links, local Turnstile accept-all, and #204's link codes PRINTED to this log
 pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server with a #190 board population + a seeded group (in-memory — re-run after a restart); --group also lands eight seeds (three of them mid-round) in YOUR group
@@ -214,13 +221,21 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   swallows a genuine cap — the guesses are stored and the answer is about the LOG, so a
   population that could not be written is a missing standing, never a refused append. Per
   the root contract, population reads deliberately retain an old-version row until that
-  player solves the correction. Local serve swaps in `memoryScoreStore`, a random
-  per-process HMAC key and
+  player solves the correction. Local serve swaps in `memoryScoreStore`, the fixed
+  `LOCAL_IP_HMAC_SECRET` (`config.ts`; fixed so `puzzle:preview` without `--s3` mints codes
+  the local server accepts) and
   `localTurnstileVerifier`; restart clears local scores. Production config requires
   `SCORE_TABLE`, `TURNSTILE_SECRET_PARAMETER`, and `IP_HMAC_SECRET_PARAMETER` in addition
   to the puzzle settings. On first use, `index.ts` resolves both SecureStrings with ONE
   decrypted SSM `GetParameters` call and retains only their values in memory; a failed read
-  is discarded so the next invocation retries. The HMAC key must contain 32+ bytes.
+  is discarded so the next invocation retries. The HMAC key must contain 32+ bytes. The same
+  `ipHmacSecret` also keys the DAY PREVIEW codes (`previewCode.ts`, message
+  `preview:<lang>:<date>`) and #204's link codes (`link-code:`); the prefixes keep the uses
+  apart. **Rotating `/whippin/ip-hmac-secret` voids every preview code already sent.** The
+  puzzle route reads it off `deps.rounds` — no round route, no preview anywhere.
+  `pnpm puzzle:preview --s3` reads the parameter itself with the operator's credentials in
+  `STACK_REGION` (a wrong-region read comes back empty) and needs a non-empty SecureString;
+  its name is spelled twice, the CLI's constant and infra's default.
 
 - **Player profile (#188):** the ONE handler also serves `GET /profile?id=<publicId>`
   (public row: `{ publicId, name, avatar }`; 400 malformed id, 404 never customized) and
@@ -361,7 +376,11 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   **The LIVE routes share their plumbing** (`liveRoute.ts`, extracted 2026-08-20 when
   `/board` became the FOURTH byte-identical copy): the `no-store` header, the body
   reader with its 4 KB cap, the `{token}` device resolution, and the `(lang, date)` guard
-  pair with the +1-day future skew. **`clientIp` and `requireTurnstile` (the whole gate) live here**,
+  pair with the +1-day future skew — which the ROUND route calls with `previewSecret`, so
+  a valid preview code lifts the skew and any code present that is not this (lang, date)'s
+  is a 404 `preview_refused` (`previewGrant`; the puzzle route asks the same function before
+  its own guard and before any store read). `/board` and `/scores` pass no secret and never
+  read the parameter. **`clientIp` and `requireTurnstile` (the whole gate) live here**,
   shared by the gated writes (round creation, the device bootstrap and the link code send): a route reaching into `scores.ts` for them would make that file a utility module
   for routes it knows nothing about. `hashClientIp` stays in `scores.ts`, beside the store
   contract that names the digest; `rounds.ts` (the score row's dedup) and `link.ts` (the
@@ -547,7 +566,10 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   ANSWER. **The write is the ROUND route's**: the append that CONFIRMS a solve credits the day
   when the round was played ON THE DAY — `onTime`, ONE predicate, checked once in
   `settleAppend` for BOTH rewards (before the scoring artifact is even loaded, so an
-  archive solve never parses a multi-MB puzzle for a row that will not be written). The confirming
+  archive solve never parses a multi-MB puzzle for a row that will not be written). A round
+  appended under a VALID preview code (`AppendedRound.preview`) is on time for any day after
+  the active one — an early solve on the operator's link; never a late one, and D+1 without a
+  code still is not. The confirming
   answer carries the verdict (`credited`), which is what the client's celebration rides.
   A late finish earns neither the streak credit nor the leaderboard row (see the root
   `AGENTS.md` on why the flip-edge tolerance had to go, and on what that narrowed for

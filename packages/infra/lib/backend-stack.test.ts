@@ -106,9 +106,9 @@ const LIVE_ROUTES = [
   {
     pattern: 'round*',
     policy: 'WhippinRoundOrigin',
-    queries: ['lang', 'date', 'bonus'],
+    queries: ['lang', 'date', 'bonus', 'preview'],
     post: true,
-    why: 'the day, or a bonus puzzle\'s id standing in for the date (#201)',
+    why: 'the day, a bonus id in its place, or a preview code (#201)',
   },
   {
     pattern: 'history*',
@@ -189,7 +189,7 @@ describe('score production boundary (#169)', () => {
     expect(
       cachePolicies[0].Properties.CachePolicyConfig.ParametersInCacheKeyAndForwardedToOrigin
         .QueryStringsConfig,
-    ).toEqual({ QueryStringBehavior: 'whitelist', QueryStrings: ['lang', 'date', 'bonus'] });
+    ).toEqual({ QueryStringBehavior: 'whitelist', QueryStrings: ['lang', 'date', 'bonus', 'preview'] });
   });
 
   it('gives each live route its own origin-request policy, and builds no other', () => {

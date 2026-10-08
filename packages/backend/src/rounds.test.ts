@@ -19,6 +19,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   dayNumber,
+  PREVIEW_REFUSED,
   ROUND_GUESS_CAP,
   ROUND_WRITE_MIN_MS,
   SUPPORTED_LANGS,
@@ -30,6 +31,7 @@ import { memoryHistoryStore } from './memoryHistoryStore';
 import { memoryDeviceStore } from './memoryDeviceStore';
 import { memoryRoundStore } from './memoryRoundStore';
 import { memoryScoreStore } from './memoryScoreStore';
+import { previewCode } from './previewCode';
 import { buildSlice } from './slice';
 import type { PlayerHistoryStore } from './historyStore';
 import type { ScoreStore } from './scoreStore';
@@ -135,8 +137,9 @@ function makeHandler(
   const scoreStore = options.scoreStore ?? memoryScoreStore(() => new Date(current));
   const historyStore = options.historyStore ?? memoryHistoryStore();
   const sentence = { current: options.sentence === undefined ? SENTENCE : options.sentence };
+  const store = puzzleStore(sentence, options.fullReadFails);
   const handler = createHandler({
-    store: puzzleStore(sentence, options.fullReadFails),
+    store,
     now: () => new Date(current),
     allowedOrigin: ORIGIN,
     deviceStore: devices,
@@ -150,6 +153,7 @@ function makeHandler(
     },
   });
   return Object.assign(handler, {
+    store,
     scoreStore,
     historyStore,
     devices,
@@ -1087,5 +1091,140 @@ describe('a bonus round (bonus puzzles)', () => {
     await handler(bonus(['zzz']));
     expect(parsed(await handler(bonus())).guesses).toEqual(['zzz']);
     expect((await handler(event())).statusCode).toBe(404);
+  });
+});
+
+// CONTRACT (day preview links, user-decided 2026-10-08): the operator plays a FUTURE day
+// early, on its REAL round, through a server-signed code. A valid code lifts the future guard
+// for its own (lang, date) on every round call, and the early solve is ON TIME — the score
+// row and the streak day wait for the day. Any other present code is the not-released 404;
+// a code never makes a LATE solve on time, and active +1 without one still earns nothing.
+describe('a day preview code', () => {
+  const SECRET = 'x'.repeat(64); // makeHandler's ipHmacSecret
+  const NEXT_DATE = '2026-08-22';
+  const code = (date: string, lang = 'fr') => previewCode(SECRET, lang, date);
+  const at = (date: string, preview: string | undefined, extra: Record<string, unknown> = {}) =>
+    event({
+      query: { lang: 'fr', date, ...(preview === undefined ? {} : { preview }) },
+      body: body(extra),
+    });
+
+  it('without a code, a day beyond the window is a 404 to a read and to an append', async () => {
+    const handler = makeHandler();
+    expect((await handler(at(FUTURE_DATE, undefined))).statusCode).toBe(404);
+    expect(parsed(await handler(at(FUTURE_DATE, undefined))).error).toBe('not_found');
+    expect((await handler(at(FUTURE_DATE, undefined, { guesses: ['mer'] }))).statusCode).toBe(404);
+  });
+
+  it('with its code, the early solve lands on the REAL round and earns the day', async () => {
+    const scoreStore = memoryScoreStore(() => START);
+    const submit = vi.spyOn(scoreStore, 'submit');
+    const handler = makeHandler({ scoreStore });
+    const solved = await handler(at(FUTURE_DATE, code(FUTURE_DATE), { guesses: ['phare', 'nuit'] }));
+    expect(solved.statusCode).toBe(200);
+    expect(parsed(solved).solved).toBe(true);
+    expect(parsed(solved).credited).toBe(true);
+    await expect(handler.historyStore.solvedDays(ME.accountId, 'fr')).resolves.toEqual([
+      dayNumber(FUTURE_DATE),
+    ]);
+    const rows = await scoreStore.list({ date: FUTURE_DATE, lang: 'fr' });
+    expect(rows).toEqual([expect.objectContaining({ publicId: ME.accountId, score: 2 })]);
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({ date: FUTURE_DATE, lang: 'fr', revision: PUZZLE }),
+    );
+    // The round IS the day's own: the code is an address check, never part of the key.
+    handler.advance(1);
+    expect(parsed(await handler(at(FUTURE_DATE, code(FUTURE_DATE)))).guesses).toEqual(['phare', 'nuit']);
+  });
+
+  it('active +1 with its code is on time; with a wrong code it is a 404', async () => {
+    const handler = makeHandler();
+    const solved = await handler(at(NEXT_DATE, code(NEXT_DATE), { guesses: ['phare', 'nuit'] }));
+    expect(parsed(solved).credited).toBe(true);
+    expect(await handler.scoreStore.list({ date: NEXT_DATE, lang: 'fr' })).toHaveLength(1);
+
+    const wrong = await makeHandler()(at(NEXT_DATE, '0123456789abcdef', { guesses: ['mer'] }));
+    expect(wrong.statusCode).toBe(404);
+  });
+
+  it('never makes a LATE solve on time: a past day with its own code earns nothing', async () => {
+    const handler = makeHandler();
+    const late = await handler(at(PAST_DATE, code(PAST_DATE), { guesses: ['phare', 'nuit'] }));
+    expect(late.statusCode).toBe(200);
+    expect(parsed(late).solved).toBe(true);
+    expect(parsed(late).credited).toBe(false);
+    expect(await handler.scoreStore.list({ date: PAST_DATE, lang: 'fr' })).toEqual([]);
+    await expect(handler.historyStore.solvedDays(ME.accountId, 'fr')).resolves.toEqual([]);
+  });
+
+  it.each([
+    ['the other language\'s code', FUTURE_DATE, code(FUTURE_DATE, 'en')],
+    ['another date\'s code', FUTURE_DATE, code(NEXT_DATE)],
+    // A present code must be THIS day's even where no code is needed.
+    ['a wrong code on the active day', ACTIVE_DATE, '0123456789abcdef'],
+    ['an empty code on the active day', ACTIVE_DATE, ''],
+  ])('%s -> 404 preview_refused, before any store read', async (_name, date, preview) => {
+    // Spied stores: the refusal is the query's alone — no round, no slice, no artifact read.
+    const roundStore = memoryRoundStore();
+    const roundReads = (Object.keys(roundStore) as (keyof RoundStore)[])
+      .filter((m) => typeof roundStore[m] === 'function')
+      .map((m) => vi.spyOn(roundStore, m));
+    const handler = makeHandler({ roundStore });
+    const getSlice = vi.spyOn(handler.store, 'getSlice');
+    const getPuzzle = vi.spyOn(handler.store, 'getPuzzle');
+    for (const extra of [{}, { guesses: ['mer'] }, { giveUp: true }]) {
+      const response = await handler(at(date, preview, extra));
+      expect(response.statusCode).toBe(404);
+      // Its own code: to `/round` a bare `not_found` is "no round recorded yet".
+      expect(parsed(response).error).toBe(PREVIEW_REFUSED);
+    }
+    expect(roundReads.length).toBeGreaterThan(0);
+    for (const spy of roundReads) expect(spy).not.toHaveBeenCalled();
+    expect(getSlice).not.toHaveBeenCalled();
+    expect(getPuzzle).not.toHaveBeenCalled();
+  });
+
+  it('the store spies would see a granted request (the refusal test is not vacuous)', async () => {
+    const roundStore = memoryRoundStore();
+    const get = vi.spyOn(roundStore, 'get');
+    const handler = makeHandler({ roundStore });
+    const getSlice = vi.spyOn(handler.store, 'getSlice');
+    await handler(at(FUTURE_DATE, code(FUTURE_DATE), { guesses: ['mer'] }));
+    await handler(at(FUTURE_DATE, code(FUTURE_DATE)));
+    expect(getSlice).toHaveBeenCalled();
+    expect(get).toHaveBeenCalled();
+  });
+
+  it('a bonus with any preview code -> 404 preview_refused', async () => {
+    const response = await makeHandler()(
+      event({
+        query: { lang: 'fr', bonus: '1234567', preview: code(FUTURE_DATE) },
+        body: body({ guesses: ['mer'] }),
+      }),
+    );
+    expect(response.statusCode).toBe(404);
+    expect(parsed(response).error).toBe(PREVIEW_REFUSED);
+  });
+
+  it('reads and gives up on the previewed day like any round', async () => {
+    const handler = makeHandler();
+    expect((await handler(at(FUTURE_DATE, code(FUTURE_DATE)))).statusCode).toBe(404); // none yet
+    expect((await handler(at(FUTURE_DATE, code(FUTURE_DATE), { guesses: ['mer'] }))).statusCode).toBe(200);
+    expect(parsed(await handler(at(FUTURE_DATE, code(FUTURE_DATE)))).guesses).toEqual(['mer']);
+    const gave = await handler(at(FUTURE_DATE, code(FUTURE_DATE), { giveUp: true }));
+    expect(gave.statusCode).toBe(200);
+    expect(parsed(gave).gaveUp).toBe(true);
+  });
+
+  it('a republish of the previewed day restarts its round', async () => {
+    const handler = makeHandler();
+    await handler(at(FUTURE_DATE, code(FUTURE_DATE), { guesses: ['mer'] }));
+    handler.republish(CORRECTED);
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+    const again = await handler(
+      at(FUTURE_DATE, code(FUTURE_DATE), { puzzle: CORRECTED_TAG, guesses: ['loin'] }),
+    );
+    expect(again.statusCode).toBe(200);
+    expect(parsed(again).guesses).toEqual(['loin']);
   });
 });

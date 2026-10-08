@@ -12,6 +12,7 @@ import {
   groupLandingPath,
   GROUP_ID_PATTERN,
   GROUP_SEGMENT,
+  PREVIEW_REFUSED,
   PUBLIC_ID_PATTERN,
   SHARE_SEGMENT,
   SHARE_TOKEN_SOURCE,
@@ -49,7 +50,7 @@ import type { GroupStore } from './groupStore';
 import { handleGroups, readGroupFace } from './groups';
 import { handleHistory } from './history';
 import { handleLink, type LinkHandlerDeps } from './link';
-import { DATE_SKEW_DAYS, LIVE_HEADERS } from './liveRoute';
+import { DATE_SKEW_DAYS, LIVE_HEADERS, previewGrant } from './liveRoute';
 import { handleProfile } from './profile';
 import { faceOf, type ProfileRecord, type ProfileStore } from './profileStore';
 import { handleRound, type RoundHandlerDeps } from './rounds';
@@ -470,6 +471,17 @@ export function createHandler(deps: HandlerDeps) {
       // a bonus is out the moment it is published, and only its link reaches it.
       const bonus = event.queryStringParameters?.bonus;
       let address: string;
+      // A refused preview code is a 404 with the short negative TTL, like a day not yet out
+      // (the web reads this route by status: NO PUZZLE), under its own code — the one
+      // `/round` answers too (shared `PREVIEW_REFUSED`).
+      const previewRefused = (asked: string): FnUrlResult =>
+        errorResponse(
+          404,
+          PREVIEW_REFUSED,
+          `No puzzle for ${asked} (${lang}) under this preview code.`,
+          { ...cors, 'Cache-Control': NOT_FOUND_CACHE_CONTROL },
+          { date, lang },
+        );
       if (bonus !== undefined) {
         if (!isBonusId(bonus)) {
           return errorResponse(
@@ -480,6 +492,10 @@ export function createHandler(deps: HandlerDeps) {
           );
         }
         address = bonusAddress(bonus);
+        // A day PREVIEW CODE names a day, never a bonus: any code here is refused (below).
+        if (previewGrant(event, lang, null, deps.rounds?.ipHmacSecret) === 'refused') {
+          return previewRefused(address);
+        }
       } else {
         const requestedDate = event.queryStringParameters?.date;
         if (!requestedDate || !isCalendarDate(requestedDate)) {
@@ -491,13 +507,21 @@ export function createHandler(deps: HandlerDeps) {
           );
         }
 
+        // A DAY PREVIEW CODE (user-decided 2026-10-08; liveRoute.ts `previewGrant`) is read
+        // BEFORE the future guard and the store: the code is part of this route's CACHE KEY,
+        // so a request carrying one must carry THIS (lang, date)'s — any other is refused
+        // here, or a random code would be a free uncached read of a multi-megabyte artifact.
+        // The secret is the round route's: no round route, no preview anywhere.
+        const grant = previewGrant(event, lang, requestedDate, deps.rounds?.ipHmacSecret);
+        if (grant === 'refused') return previewRefused(requestedDate);
+
         // Guard only the FUTURE: any PAST day is servable (the archive is date-addressed),
         // but a day more than DATE_SKEW_DAYS ahead of the server's active day is not — that
         // keeps clock-skew tolerance around the flip (+1 is served) while a pre-published
         // buffer day never leaks early. Out-of-window is a 404 like a missing puzzle (same
         // graceful front-end path), with the short negative TTL so a corrected clock recovers
-        // quickly.
-        if (dayNumber(requestedDate) - dayNumber(date) > DATE_SKEW_DAYS) {
+        // quickly. A valid preview code lifts it for its own day.
+        if (grant !== 'granted' && dayNumber(requestedDate) - dayNumber(date) > DATE_SKEW_DAYS) {
           return errorResponse(
             404,
             'not_found',

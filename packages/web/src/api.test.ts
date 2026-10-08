@@ -51,21 +51,37 @@ describe('backend routing URLs', () => {
   const base = 'https://api.example';
 
   it('puzzleUrl is date-addressed: it always carries the required game day', () => {
-    expect(puzzleUrl('fr', '2026-07-05', base)).toBe('https://api.example/?lang=fr&date=2026-07-05');
-    expect(puzzleUrl('en', '2026-07-06', base)).toBe('https://api.example/?lang=en&date=2026-07-06');
+    expect(puzzleUrl('fr', '2026-07-05', undefined, base)).toBe('https://api.example/?lang=fr&date=2026-07-05');
+    expect(puzzleUrl('en', '2026-07-06', undefined, base)).toBe('https://api.example/?lang=en&date=2026-07-06');
   });
 
   it('puzzleUrl names a BONUS puzzle by its id in the date\'s place', () => {
-    expect(puzzleUrl('fr', 'bonus/1234567', base)).toBe('https://api.example/?lang=fr&bonus=1234567');
-    expect(roundUrl('fr', 'bonus/1234567', base)).toBe('https://api.example/round?lang=fr&bonus=1234567');
+    expect(puzzleUrl('fr', 'bonus/1234567', undefined, base)).toBe('https://api.example/?lang=fr&bonus=1234567');
+    expect(roundUrl('fr', 'bonus/1234567', undefined, base)).toBe('https://api.example/round?lang=fr&bonus=1234567');
+  });
+
+  it('a PREVIEW CODE rides after the date, on the puzzle and the round route alike', () => {
+    const code = '0123456789abcdef';
+    expect(puzzleUrl('fr', '2026-10-12', code, base)).toBe(
+      'https://api.example/?lang=fr&date=2026-10-12&preview=0123456789abcdef',
+    );
+    expect(roundUrl('fr', '2026-10-12', code, base)).toBe(
+      'https://api.example/round?lang=fr&date=2026-10-12&preview=0123456789abcdef',
+    );
+  });
+
+  it('a bonus never carries a preview code', () => {
+    const code = '0123456789abcdef';
+    expect(puzzleUrl('fr', 'bonus/1234567', code, base)).toBe('https://api.example/?lang=fr&bonus=1234567');
+    expect(roundUrl('fr', 'bonus/1234567', code, base)).toBe('https://api.example/round?lang=fr&bonus=1234567');
   });
 
   it('puzzleUrl encodes the lang and date query values', () => {
-    expect(puzzleUrl('a b', 'x/y"', base)).toBe('https://api.example/?lang=a%20b&date=x%2Fy%22');
+    expect(puzzleUrl('a b', 'x/y"', undefined, base)).toBe('https://api.example/?lang=a%20b&date=x%2Fy%22');
   });
 
   it('fails loudly when the backend base is unset instead of using the web origin', () => {
-    expect(() => puzzleUrl('fr', '2026-07-05', '')).toThrow(/VITE_API_BASE_URL/);
+    expect(() => puzzleUrl('fr', '2026-07-05', undefined, '')).toThrow(/VITE_API_BASE_URL/);
   });
 });
 
@@ -818,7 +834,7 @@ describe('roundUrl + parseRound (#201/#203)', () => {
   const valid = () => ({ guesses: ['bois'], createdAt: '2026-08-21T09:00:00.000Z' });
 
   it('is the day-addressed round route', () => {
-    expect(roundUrl('fr', '2026-08-21', base)).toBe(
+    expect(roundUrl('fr', '2026-08-21', undefined, base)).toBe(
       'https://api.example/round?lang=fr&date=2026-08-21',
     );
   });

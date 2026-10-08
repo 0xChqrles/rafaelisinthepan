@@ -222,6 +222,23 @@ describe('useOpenedAsActive — a round keeps the day it was opened as', () => {
     expect(opened).toBe(true);
   });
 
+  it('a round opened AHEAD of its date (a preview link) becomes active when its day arrives', async () => {
+    // Opened on the 6th for the 7th: not today yet.
+    await render({ date: '2026-10-07' });
+    expect(opened).toBe(false);
+    // Still on screen past the flip: its day is the active one now — race and boards on.
+    flip();
+    await render({ date: '2026-10-07' });
+    expect(opened).toBe(true);
+  });
+
+  it('a round opened ahead and still ahead stays off; an archive day never turns on', async () => {
+    await render({ date: '2026-10-09' });
+    flip();
+    await render({ date: '2026-10-09' });
+    expect(opened).toBe(false);
+  });
+
   it('never makes a bonus the active day', async () => {
     await render({ bonus: 'bonus/1234567' });
     expect(opened).toBe(false);

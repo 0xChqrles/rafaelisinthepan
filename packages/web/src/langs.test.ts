@@ -20,6 +20,8 @@ import {
   pathForGroupInvite,
   langFromSearch,
   parseRoute,
+  previewCodeFor,
+  previewCodeFromSearch,
   resolveHomeLang,
   resolveUiLang,
   pathForLearn,
@@ -258,6 +260,34 @@ describe('langFromSearch', () => {
     expect(langFromSearch('?lang=de')).toBe(null);
     expect(langFromSearch('')).toBe(null);
     expect(langFromSearch('?other=fr')).toBe(null);
+  });
+});
+
+describe('previewCodeFromSearch / previewCodeFor (day preview links)', () => {
+  const code = '0123456789abcdef';
+  const today = '2026-10-08';
+
+  it('reads only a well-formed code', () => {
+    expect(previewCodeFromSearch(`?preview=${code}`)).toBe(code);
+    expect(previewCodeFromSearch(`?lang=en&preview=${code}`)).toBe(code);
+    expect(previewCodeFromSearch('?preview=0123456789ABCDEF')).toBeUndefined();
+    expect(previewCodeFromSearch('?preview=0123456789abcde')).toBeUndefined();
+    expect(previewCodeFromSearch('?preview=')).toBeUndefined();
+    expect(previewCodeFromSearch('')).toBeUndefined();
+  });
+
+  it('forwards the code of any dated day page, whatever the device clock says', () => {
+    // Tied to the page, never to `date > today`: a fast phone calling the day "today" a
+    // minute before the server flips must still send it, or the early solve is not on time.
+    expect(previewCodeFor(`?preview=${code}`, '2026-10-12')).toBe(code);
+    expect(previewCodeFor(`?lang=en&preview=${code}`, today)).toBe(code);
+    expect(previewCodeFor(`?preview=${code}`, '2026-10-01')).toBe(code);
+  });
+
+  it('never forwards on the undated route, nor a malformed or absent code', () => {
+    expect(previewCodeFor(`?preview=${code}`, undefined)).toBeUndefined();
+    expect(previewCodeFor('?preview=nope', '2026-10-12')).toBeUndefined();
+    expect(previewCodeFor('', '2026-10-12')).toBeUndefined();
   });
 });
 

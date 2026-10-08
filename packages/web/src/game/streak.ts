@@ -41,6 +41,8 @@ interface WeekView {
 
 // The current week (the Monday..Sunday that contains `activeDay`, #74) as 7 cells. Pure
 // over the day array, like the counters, so it stays correct under any future set union.
+// A day credited AHEAD of its date (a preview solve, shared preview.ts) is no link until it
+// arrives — the live streak (`currentStreak`) does not count it either.
 export function weekView(days: number[], activeDay: number): WeekView {
   const solvedSet = new Set(days);
   const monday = weekStart(activeDay); // this week's Monday
@@ -49,7 +51,7 @@ export function weekView(days: number[], activeDay: number): WeekView {
     const d = monday + i;
     cells.push({
       dayNumber: d,
-      solved: solvedSet.has(d),
+      solved: solvedSet.has(d) && d <= activeDay,
       isToday: d === activeDay,
       isFuture: d > activeDay,
     });

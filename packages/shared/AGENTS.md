@@ -31,6 +31,7 @@
                               MAX_SOLVED_DAYS + the bound both ends apply to a solved-day set,
                               and (since #204) currentStreak — the derivation BOTH ends make
     src/bonus.ts              BONUS puzzles (2026-09-24): the seven-digit id, the `bonus/<id>` ADDRESS, the page path, PuzzleRef
+    src/preview.ts            DAY PREVIEW links: PREVIEW_QUERY (web+backend+infra), the code's shape, previewPath
     src/avatar.ts             the #188 avatar: {bg, fg} palettes + the 14-byte 1-bit grid codec (web encodes/renders, backend validates)
     src/avatarOutline.ts      its DRAWING: the filled cells as one union-outline path (web SVG + the OG cards)
     src/assigned.ts           the identity a player who never customized one wears: anonName + defaultAvatar
@@ -95,6 +96,12 @@
   drift is a 500 on live round writes that no local run can reproduce; the reason it is a
   stamped header rather than CloudFront's own `CloudFront-Viewer-Address` is recorded in
   the root `AGENTS.md`.
+- `src/preview.ts` owns `PREVIEW_QUERY`, the query parameter a DAY PREVIEW code rides
+  (root `AGENTS.md`, *Day preview links*): the WEB sends it, the BACKEND reads it and INFRA
+  names it in both CloudFront lists, and a drift is a silently stripped code no local run can
+  show. Only the wire lives here — the name, the code's shape (`isPreviewCode`), the error
+  code a refused one answers (`PREVIEW_REFUSED`) and the page a link opens (`previewPath`);
+  the HMAC that signs a code stays in the backend.
 - `src/avatar.ts` is the ONE definition of the #188 avatar encoding (palette byte + 100
   cells × 1 bit — two colours only, user-decided 2026-08-19 — base64url, canonical
   decode) and of `AVATAR_PALETTES`, the `{bg, fg}` pairs extracted from the user's
@@ -167,7 +174,9 @@
   confirmation names the streak the account being deleted is about to lose, so the SERVER
   derives one too, and two spellings would put a different number on that dialog than the
   streak screen shows over the same days. `web/game/streak.ts` imports it and keeps
-  `streakTransition`/`weekView`, which are the SCREEN's own.
+  `streakTransition`/`weekView`, which are the SCREEN's own. `currentStreak` ignores a day
+  after the active day (a preview solve credited ahead of its date joins the streak when it
+  arrives); `bestStreak` counts every credited day.
 - **`src/vocab.generated.json` is the ONE file in this package nobody writes by hand
   (#200).** GENERATION emits it, in the same call that writes the existence set and from
   the same slugs, so what the backend enforces — the sentence score ceiling, and by the

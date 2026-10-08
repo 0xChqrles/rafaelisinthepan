@@ -11,6 +11,7 @@ import {
   isBonusAddress,
   isValidAvatar,
   isValidDeviceToken,
+  PREVIEW_QUERY,
   PUBLIC_ID_PATTERN,
 } from '@whippin/shared';
 import type {
@@ -55,14 +56,27 @@ function requireApiBase(base: string): string {
 //
 // `address` may also be a BONUS puzzle's (`bonus/<id>`, shared bonus.ts): it travels as
 // `bonus=<id>` in the date's place, on this route and the round route alike.
-export function puzzleUrl(lang: string, address: string, base: string = apiBase()): string {
-  return `${requireApiBase(base)}/?lang=${encodeURIComponent(lang)}&${addressQuery(address)}`;
+//
+// A date may travel with a PREVIEW CODE (shared preview.ts): the operator's link to a day
+// not yet out, which lifts the server's future window for that one (lang, date). The caller
+// passes the code its dated page's URL carries (`langs.ts` `previewCodeFor`); the parameter
+// is named in both CloudFront lists (the puzzle cache key, the round allowList).
+export function puzzleUrl(
+  lang: string,
+  address: string,
+  previewCode?: string,
+  base: string = apiBase(),
+): string {
+  return `${requireApiBase(base)}/?lang=${encodeURIComponent(lang)}&${addressQuery(address, previewCode)}`;
 }
 
-function addressQuery(address: string): string {
-  return isBonusAddress(address)
-    ? `bonus=${encodeURIComponent(address.slice(BONUS_ADDRESS_PREFIX.length))}`
-    : `date=${encodeURIComponent(address)}`;
+// A bonus never carries a code: it has no date to preview.
+function addressQuery(address: string, previewCode?: string): string {
+  if (isBonusAddress(address)) {
+    return `bonus=${encodeURIComponent(address.slice(BONUS_ADDRESS_PREFIX.length))}`;
+  }
+  const date = `date=${encodeURIComponent(address)}`;
+  return previewCode === undefined ? date : `${date}&${PREVIEW_QUERY}=${encodeURIComponent(previewCode)}`;
 }
 
 // Routing outcome of the backend puzzle fetch, by HTTP status:
@@ -364,10 +378,16 @@ export async function readDeviceStanding(token: string): Promise<DeviceStanding>
 // carrying a `turnstileToken` on the append that CREATES the round; `{token, puzzle,
 // giveUp: true}` ends it unsolved. EVERY answer, refusals included, carries the full state, so a write is also a reconciliation. `puzzle` is the
 // published revision naming WHICH puzzle the state belongs to, which is how a corrected
-// daily restarts instead of inheriting the retired one's log. The two query parameters are
-// in the round CloudFront behavior's allowList (the root AGENTS.md three-package contract).
-export function roundUrl(lang: string, address: string, base: string = apiBase()): string {
-  return `${requireApiBase(base)}/round?lang=${encodeURIComponent(lang)}&${addressQuery(address)}`;
+// daily restarts instead of inheriting the retired one's log. The query parameters — the
+// date with its optional preview code, or the bonus id — are in the round CloudFront
+// behavior's allowList (the root AGENTS.md three-package contract).
+export function roundUrl(
+  lang: string,
+  address: string,
+  previewCode?: string,
+  base: string = apiBase(),
+): string {
+  return `${requireApiBase(base)}/round?lang=${encodeURIComponent(lang)}&${addressQuery(address, previewCode)}`;
 }
 
 export async function postRoundBody(

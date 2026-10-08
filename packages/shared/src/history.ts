@@ -68,8 +68,12 @@ export function boundSolvedDays(days: readonly number[]): number[] {
 //
 // Order-independent and idempotent by construction — it normalizes its input — because the
 // collection is a SET that is merged, never a sequence.
+//
+// A day credited AHEAD of its date (a solve on the operator's preview link, `preview.ts`)
+// belongs to no streak until it arrives: it is dropped here, so it neither extends the run
+// nor stands as its last day.
 export function currentStreak(days: readonly number[], activeDay: number): number {
-  const sorted = sortedUnique(days);
+  const sorted = sortedUnique(days.filter((d) => d <= activeDay));
   if (sorted.length === 0) return 0;
   const last = sorted[sorted.length - 1];
   if (last < activeDay - 1) return 0; // chain broken — the last solve is older than yesterday

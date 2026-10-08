@@ -71,7 +71,9 @@
   (`serverTimingSamplingRate: 100`), the edge→origin timings a browser's network panel
   shows; the web distribution's card routes strip it (`removeHeaders`), so a year-cached share
   page never replays one fill's timings. Cache policy keys
-  on path + the `lang`, `date` and `bonus` query strings and honours the origin
+  on path + the `lang`, `date`, `bonus` and `preview` query strings (`preview` is shared
+  `PREVIEW_QUERY`: a code-bearing 200 must never sit under the code-less key, and the handler
+  refuses any code it cannot verify, so a random one cannot force uncached misses) and honours the origin
   `Cache-Control`. **Every query string the handler reads must be in that allowList:** with
   no origin request policy on the behavior, CloudFront forwards to the origin exactly the
   cache-key values, so an unlisted parameter never reaches the Lambda AND collapses two
@@ -100,7 +102,7 @@
   `x-amz-content-sha256` (mandatory for OAC to sign a Lambda-URL POST) and lets CloudFront
   set Host to the Function URL's own domain for that signature — no cookies, and a query
   allow-list naming EXACTLY what that route's handler reads: `/scores` and `/board`
-  `lang`/`date`/`id`, `/profile` and `/groups` `id`, `/round` `lang`/`date`/`bonus`,
+  `lang`/`date`/`id`, `/profile` and `/groups` `id`, `/round` `lang`/`date`/`bonus`/`preview`,
   `/history` `lang`/`month` (NOT `date`: a player's calendar is addressed by a MONTH, the
   sort-key prefix it is one Query over), `/devices` and `/link` none. An unlisted parameter
   never reaches the Lambda, so the day a handler reads a new one it is named there too (the

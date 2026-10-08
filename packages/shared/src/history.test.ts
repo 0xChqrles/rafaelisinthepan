@@ -52,6 +52,26 @@ describe('currentStreak over a UNION — the reason the collection is a set of d
   });
 });
 
+describe('currentStreak ignores a day credited ahead of its date (a preview solve)', () => {
+  const T = 20;
+
+  it('neither extends a run alive through yesterday nor stands as its last day', () => {
+    expect(currentStreak([17, 18, 19, T + 1], T)).toBe(3);
+  });
+
+  it('counts the run through today, not past it', () => {
+    expect(currentStreak([18, 19, T, T + 1], T)).toBe(3);
+  });
+
+  it('is 0 when the only credited day is still ahead', () => {
+    expect(currentStreak([T + 2], T)).toBe(0);
+  });
+
+  it('leaves bestStreak counting every credited day', () => {
+    expect(bestStreak([18, 19, T, T + 1])).toBe(4);
+  });
+});
+
 describe('bestStreak', () => {
   it('is the longest run the collection has ever held, alive or broken', () => {
     // The record survives the break that ended it: nothing about today can lower it.

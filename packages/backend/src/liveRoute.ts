@@ -13,6 +13,8 @@ import {
   isBonusId,
   isCalendarDate,
   isValidDeviceToken,
+  PREVIEW_QUERY,
+  PREVIEW_REFUSED,
   SUPPORTED_LANGS,
   VIEWER_IP_HEADER,
   VOCAB_BUILDS,
@@ -23,6 +25,7 @@ import {
   type DeviceStore,
   type ResolvedDevice,
 } from './deviceStore';
+import { previewCodeMatches } from './previewCode';
 import { errorResponse, type FnUrlEvent, type FnUrlResult } from './respond';
 import type { TurnstileVerifier } from './turnstile';
 
@@ -36,7 +39,8 @@ const LIVE_BODY_MAX_BYTES = 4_096;
 // still be served: +1 tolerates client clock skew around the 22:00 flip without exposing
 // a pre-published future puzzle beyond the adjacent day. The PAST is open (the archive is
 // date-addressed), so only the future is guarded. ONE window for the puzzle route
-// (handler.ts) and the day-addressed live reads below.
+// (handler.ts) and the day-addressed live reads below. A day PREVIEW CODE (`previewGrant`)
+// lifts it on the two routes that read one — the puzzle and the round — and nowhere else.
 export const DATE_SKEW_DAYS = 1;
 
 // What the 400 tells the caller, spelled from the record the check reads rather than
@@ -225,6 +229,30 @@ interface LangParams {
 
 interface DayParams extends LangParams {
   date: string;
+  // The request carried this (lang, date)'s valid preview code: the future guard was lifted,
+  // and an early solve on it is ON TIME (rounds.ts `onTime`).
+  preview: boolean;
+}
+
+export type PreviewGrant = 'absent' | 'granted' | 'refused';
+
+// ONE reading of a DAY PREVIEW CODE (user-decided 2026-10-08) for both routes that accept
+// one, the puzzle and the round. A code PRESENT — even empty — must be this (lang, date)'s;
+// `date` null (a bonus) or no secret configured refuses any code. A refused code is the
+// caller's 404 BEFORE any store read: on the CACHED puzzle route the code is part of the
+// cache key, and a code nobody verified would turn that key into a free, uncached miss on a
+// multi-megabyte artifact.
+export function previewGrant(
+  event: FnUrlEvent,
+  lang: string,
+  date: string | null,
+  secret: string | undefined,
+): PreviewGrant {
+  const code = event.queryStringParameters?.[PREVIEW_QUERY];
+  if (code === undefined) return 'absent';
+  return date !== null && secret !== undefined && previewCodeMatches(secret, lang, date, code)
+    ? 'granted'
+    : 'refused';
 }
 
 // WHICH DAILY a live route is being asked about: a supported language. A supported language
@@ -260,11 +288,14 @@ export function requireLangParams(
 // language, plus a real date no further than one day ahead of the server's own active day.
 // With `bonus` (the round route only), a BONUS puzzle's id stands in for the date and the
 // returned `date` is its ADDRESS (shared bonus.ts) — no day, so no future guard.
+// With `previewSecret` (the round route only — /board and /scores never read a code), the
+// request's preview code is read by `previewGrant`: a valid one lifts the future guard, any
+// other present one is a 404 `preview_refused` (shared `PREVIEW_REFUSED`), a bonus's included.
 export function requireDayParams(
   event: FnUrlEvent,
   serverDate: string,
   headers: Record<string, string>,
-  { bonus = false }: { bonus?: boolean } = {},
+  { bonus = false, previewSecret }: { bonus?: boolean; previewSecret?: string } = {},
 ): Guarded<DayParams> {
   const game = requireLangParams(event, headers);
   if (!game.ok) return game;
@@ -276,7 +307,12 @@ export function requireDayParams(
         errorResponse(400, 'bad_request', 'Query parameter "bonus" must be a bonus id (seven digits).', headers),
       );
     }
-    return { ok: true, value: { lang, date: bonusAddress(bonusId) } };
+    if (previewSecret !== undefined && previewGrant(event, lang, null, previewSecret) === 'refused') {
+      return refuse(
+        errorResponse(404, PREVIEW_REFUSED, 'A preview code names a day, never a bonus.', headers, { lang }),
+      );
+    }
+    return { ok: true, value: { lang, date: bonusAddress(bonusId), preview: false } };
   }
   const date = event.queryStringParameters?.date;
   if (!date || !isCalendarDate(date)) {
@@ -289,7 +325,22 @@ export function requireDayParams(
       ),
     );
   }
-  if (dayNumber(date) - dayNumber(serverDate) > DATE_SKEW_DAYS) {
+  const grant =
+    previewSecret === undefined ? 'absent' : previewGrant(event, lang, date, previewSecret);
+  // A refused code wears its OWN error code: to `/round` a bare 404 is "no round recorded
+  // yet", and a client reading this one as that would play a round the server never stores.
+  if (grant === 'refused') {
+    return refuse(
+      errorResponse(
+        404,
+        PREVIEW_REFUSED,
+        `No preview of "${date}" under this code.`,
+        headers,
+        { date, lang },
+      ),
+    );
+  }
+  if (grant !== 'granted' && dayNumber(date) - dayNumber(serverDate) > DATE_SKEW_DAYS) {
     return refuse(
       errorResponse(
         404,
@@ -300,5 +351,5 @@ export function requireDayParams(
       ),
     );
   }
-  return { ok: true, value: { lang, date } };
+  return { ok: true, value: { lang, date, preview: grant === 'granted' } };
 }

@@ -243,7 +243,8 @@ in `shared/src/types.ts`, pruned into `web/src/tutorial/scripts/<lang>.word.json
   The **client computes the active day itself**; normal play is ONE fetch:
   `GET <VITE_API_BASE_URL>/?lang=<lang>&date=<YYYY-MM-DD>`. Store key `<date>.<lang>.json`.
 - The server serves **any past day** (date-addressed archive, #53) and the **future only
-  within +1 day** of its own active day (clock-skew tolerance); beyond → 404. `date`
+  within +1 day** of its own active day (clock-skew tolerance), or any future day when the
+  request carries that (lang, date)'s valid preview code (*Day preview links*); beyond → 404. `date`
   missing/malformed → 400. Backend 404 → `noPuzzle` (NO PUZZLE TODAY); any other failure →
   `error`. `/today` is a diagnostic only (`no-store`); the client never reads it.
 - **Caching:** `max-age=300, s-maxage=31536000`; `pnpm puzzle:publish --s3` and the backend
@@ -262,10 +263,10 @@ packages agree on each list; `backend:dev` has no CDN and cannot show a drift.
 
 | Route | Forwarded query | Policy |
 | --- | --- | --- |
-| `/` (puzzle) | `lang`, `date`, `bonus` | **CACHE POLICY** allowList: the cache key, and — with no origin-request policy — exactly what reaches the Lambda |
+| `/` (puzzle) | `lang`, `date`, `bonus`, `preview` | **CACHE POLICY** allowList: the cache key, and — with no origin-request policy — exactly what reaches the Lambda |
 | `/scores` | `lang`, `date`, `id` | origin-request allowList, **caching DISABLED** |
 | `/board` | `lang`, `date`, `id` | same |
-| `/round` | `lang`, `date`, `bonus` | same |
+| `/round` | `lang`, `date`, `bonus`, `preview` | same |
 | `/history` | `lang`, `month` | same |
 | `/profile` | `id` | same |
 | `/groups` | `id` | same |
@@ -273,6 +274,8 @@ packages agree on each list; `backend:dev` has no CDN and cannot show a drift.
 
 - **The PUZZLE route is CACHED** (`max-age=300, s-maxage=31536000`): an unlisted parameter
   both collapses two responses onto one year-long edge entry and never reaches the origin.
+  A `preview` code the handler cannot verify is a 404 at the short TTL BEFORE any store
+  read, so a random value in the cache key can never force a stream of full-puzzle misses.
 - **The eight LIVE routes have caching disabled**, each with its own origin-request policy
   (its query allowList plus the Lambda-URL-safe `allExcept: Host` headers) and `no-store`
   answers; an unlisted parameter never reaches the origin. The day a handler reads a new
@@ -494,6 +497,41 @@ The live routes then share:
 - **The web**: its own round key (`b:<id>:<lang>`, kept by the outbox cap), never the
   active day, and no `solve`/`share` analytics (the share rate is a day's).
 
+### Day preview links (user-decided 2026-10-08)
+
+- **The operator plays a FUTURE day early, on its REAL round**: the guesses land on the
+  day's own round row (real date, same revision), and the early solve is ON TIME — when the
+  day arrives the result, the share, the streak day and the group-board row are already there.
+- **The code**: the first 16 lowercase hex of `HMAC-SHA256(ipHmacSecret, "preview:<lang>:<date>")`
+  (`backend/src/previewCode.ts`, compared in constant time). It grants exactly one
+  (lang, date). The secret is the IP-HMAC one (`/whippin/ip-hmac-secret`), kept apart by the
+  `preview:` prefix — **rotating it voids every code already sent.** `shared/src/preview.ts`
+  is the one spelling of the wire: `PREVIEW_QUERY` (`preview`), `isPreviewCode`
+  (`^[0-9a-f]{16}$`), `previewPath` (`/<lang>/<date>?preview=<code>`) — web, backend and
+  infra read the name.
+- **THE ONE RULE** (`liveRoute.ts` `previewGrant`): only `/` and `/round` read `preview`. A
+  request carrying it (present, even empty) must name THIS (lang, date)'s valid code — then
+  the future guard is lifted and the round is a preview; otherwise it is a 404 under its own
+  code, `preview_refused` (shared `PREVIEW_REFUSED` — to `/round` a bare 404 means "no round
+  yet", and the web reads a refused code as a failed load), BEFORE any store read, on today,
+  a past day and a bonus alike, and when no secret is configured. `/board` and `/scores` never read it and keep the +1-day guard.
+- **On time**: a solve whose landing append carries a valid code is on time for any day
+  AFTER the active one (D+1 included); a code never makes a past day on time (*Server-backed
+  player history*).
+- **The web forwards the code its DATED page's URL carries** (`langs.ts` `previewCodeFor`),
+  to the puzzle fetch and every `/round` call of that round — never the undated route or a
+  bonus, and never decided by the device clock (the server judges on time by its own).
+  `navigate` drops the code the moment the path changes, so it never rides onto another
+  day; a round opened ahead turns active when its day arrives on screen. The code
+  is part of the puzzle's cache key (unique per code). Umami never receives it
+  (`screenPayload` strips it). Nothing new is stored or shown: a previewed day looks like an
+  archive day.
+- **Minted only by `pnpm puzzle:preview <date> [--s3]`** (one link per supported language;
+  `--s3` reads the secret from SSM with the operator's credentials).
+- Rejected: an operator-account allowlist — the puzzle GET is anonymous and cached and
+  cannot authenticate anyone; one static secret for every day — a leak would open them all;
+  printing the links from `puzzle:publish` — minting is its own command.
+
 ### Server-backed player history (#211, decided 2026-08-23)
 
 - **`POST /history?lang=[&month=]` → `{ days, solvedDays }`** serves the archive
@@ -517,7 +555,10 @@ The live routes then share:
   earns the streak credit AND the leaderboard row only when the day played IS the day it was
   played on: ONE server predicate (`rounds.ts` `onTime`), judging a solve by the landing
   append's arrival. A round on the server's TOMORROW (a fast clock, inside the +1-day skew
-  window) is an ordinary round, and its solve is not on time either. The client makes no
+  window) is an ordinary round, and its solve is not on time either — unless the solving
+  append carries that (lang, date)'s valid preview code (*Day preview links*): an early
+  solve on the operator's preview link is on time; a code never makes a late solve on time,
+  and D+1 without one is still not. The client makes no
   comparison: the confirming answer carries the verdict (`credited`); a collection not yet
   arrived credits and celebrates nothing.
 - Unmetered private read; Turnstile does not fit a navigation read. Monitor, act on the
@@ -580,8 +621,9 @@ The live routes then share:
   `accountStakes`; `web/src/state/history.ts` `useAccountStats`), and they must agree:
   **`streak` = the MAXIMUM of the per-language live streaks · `best` = the MAXIMUM of the
   per-language best streaks · `days` = the SUM of the collections' sizes.** Never a sum of
-  streaks (a streak is a run of days in ONE language). `best` takes no active day: a record
-  is a fact about days already played.
+  streaks (a streak is a run of days in ONE language). `streak` counts no day after the
+  active day (a preview solve joins it when its day arrives); `best` and `days` count every
+  credited day. `best` takes no active day: a record is a fact about days already played.
 - **The account area's product rules** — two doors (`/account/email` SAVE, `/account/signin`
   RETURN) onto one engine where the declared intention shapes the JOURNEY and the server the
   DESTINATION; the crossroads confirmation; the five endings; one purpose per screen
@@ -932,7 +974,7 @@ pnpm typecheck   # tsc --noEmit
 ```
 
 Domain commands — wordlist/reduce/gen (generation), bench (benchmark), curate/shelf:lyrics (curation),
-publish/inventory/backend:dev (backend), dev/build (web), cdk synth/diff/deploy (infra),
+publish/inventory/ledger/preview/backend:dev (backend), dev/build (web), cdk synth/diff/deploy (infra),
 bot:start/pair/cli/groups (whatsapp-bot) — are documented in the owning package's `AGENTS.md`.
 
 ---

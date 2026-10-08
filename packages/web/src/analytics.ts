@@ -18,7 +18,7 @@
 // Plausible's behaviour: Back/Forward count, a same-site referrer is dropped, and a page
 // counts once per path.
 
-import { GROUP_LANDING_SEGMENT, GROUP_SEGMENT } from '@whippin/shared';
+import { GROUP_LANDING_SEGMENT, GROUP_SEGMENT, PREVIEW_QUERY } from '@whippin/shared';
 
 const WEBSITE_ID = import.meta.env.VITE_UMAMI_WEBSITE_ID;
 const SCRIPT_SRC = 'https://cloud.umami.is/script.js';
@@ -65,6 +65,9 @@ let lastPageviewPath: string | null = null;
 // - The group invite landing is sent as `/join/g`, on a pageview and an event alike: its
 //   path carries the group's id, and knowing the id is enough to JOIN the group. The
 //   once-per-path count still reads the real path.
+// - The operator's PREVIEW CODE (`?preview=`, shared preview.ts) never leaves the app, on a
+//   pageview and an event alike: it opens a day not yet out, and `navigate` keeps the query
+//   on every screen of that tab. The rest of the url stays as it came, absolute or not.
 export function screenPayload(
   payload: UmamiPayload,
   lastPath: string | null,
@@ -73,10 +76,20 @@ export function screenPayload(
   const sent = payload.referrer?.startsWith('/') ? { ...payload, referrer: undefined } : payload;
   if (sent.url === undefined) return { payload: sent, lastPath };
   const path = new URL(sent.url, href).pathname;
-  const scrubbed = path.startsWith(`${INVITE_LANDING}/`) ? { ...sent, url: INVITE_LANDING } : sent;
+  const unpreviewed = { ...sent, url: withoutPreview(sent.url, href) };
+  const scrubbed = path.startsWith(`${INVITE_LANDING}/`) ? { ...sent, url: INVITE_LANDING } : unpreviewed;
   if (sent.name !== undefined) return { payload: scrubbed, lastPath };
   if (path === lastPath) return { payload: null, lastPath };
   return { payload: scrubbed, lastPath: path };
+}
+
+// `url` without its preview code, in the form it came in: an absolute url stays absolute,
+// a path stays a path. Untouched when it carries none.
+function withoutPreview(url: string, href: string): string {
+  const parsed = new URL(url, href);
+  if (!parsed.searchParams.has(PREVIEW_QUERY)) return url;
+  parsed.searchParams.delete(PREVIEW_QUERY);
+  return /^[a-z][a-z\d+.-]*:/i.test(url) ? parsed.href : `${parsed.pathname}${parsed.search}${parsed.hash}`;
 }
 
 // A falsy answer drops the payload. The two rules Plausible applied on its own are

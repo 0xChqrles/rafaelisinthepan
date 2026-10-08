@@ -36,7 +36,7 @@
 // a ref would not survive a real unmount, and neither the queue nor the in-flight write may
 // be duplicated by a remount (archive round-trips, StrictMode).
 
-import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, roundEnded, type RankMap } from '@whippin/shared';
+import { PREVIEW_REFUSED, ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, roundEnded, type RankMap } from '@whippin/shared';
 import { parseRound, postRoundBody, roundUrl, type RoundState } from '../api';
 import { guessKey } from '../game/scoring';
 import { unacknowledged } from '../game/playLog';
@@ -56,6 +56,10 @@ export interface RoundSyncContext {
   // The puzzle's ADDRESS (shared bonus.ts): the game day, or a BONUS puzzle's `bonus/<id>`,
   // which the round URL sends as `bonus=<id>`.
   date: string;
+  // The operator's PREVIEW CODE for a day not yet out (shared preview.ts), sent on every
+  // `/round` call of this round. The key is always present on a registration (`undefined`
+  // when there is none), so re-registering a round without one clears a stale code.
+  previewCode?: string;
   // WHICH PUBLISHED VERSION of this daily is being played — the round's identity everywhere
   // (#203). The hole layout used to play that part and could not tell a corrected puzzle
   // from the one it replaced when the sentence was unchanged.
@@ -452,7 +456,7 @@ async function readRound(f: RoundFlight): Promise<void> {
   let response: Response;
   try {
     response = await postRoundBody(
-      roundUrl(f.lang, f.date),
+      roundUrl(f.lang, f.date, f.previewCode),
       requestBody(f, identity.token),
     );
   } catch {
@@ -493,6 +497,15 @@ async function readRound(f: RoundFlight): Promise<void> {
     // A give-up whose outcome was unknown did NOT land: the round stays open, and the
     // player is told so rather than having it sent again behind their back.
     if (f.giveUp?.sent) answerGiveUp(f, false);
+  } else if (response.status === 404 && (await isPreviewRefused(response))) {
+    // A REFUSED PREVIEW CODE (shared `PREVIEW_REFUSED`) is no empty round: the server will
+    // store nothing under it — a puzzle the edge still serves from a code since voided, say —
+    // so a board opened on it would take guesses that are never kept. A failed load, said on
+    // screen; this conversation has nothing left to ask.
+    if (superseded(f, puzzle, epoch)) return;
+    failLoad(f);
+    close(f);
+    return;
   } else if (response.status === 404) {
     // The server holds nothing for THIS puzzle: a fresh round, or a daily re-published
     // under the same key whose old record is retired. Nothing is acknowledged — the whole
@@ -519,6 +532,17 @@ async function readRound(f: RoundFlight): Promise<void> {
   f.failures = 0;
 }
 
+// Whether a 404 is a refused DAY PREVIEW code rather than "no round recorded" — the CODE
+// decides, never the status. An unreadable body is the plain 404 it always was.
+async function isPreviewRefused(response: Response): Promise<boolean> {
+  try {
+    const data = (await response.json()) as { error?: unknown };
+    return data.error === PREVIEW_REFUSED;
+  } catch {
+    return false;
+  }
+}
+
 // A read that reached no answer: retried behind the backoff, and a give-up waiting on it is
 // answered NOW — it did not land as far as anyone can tell, and the player must not sit on a
 // busy button through an outage. Should it have landed after all, the retried read adopts it
@@ -543,7 +567,7 @@ async function sendGiveUp(f: RoundFlight): Promise<void> {
   f.giveUp!.sent = true;
   let response: Response;
   try {
-    response = await postRoundBody(roundUrl(f.lang, f.date), {
+    response = await postRoundBody(roundUrl(f.lang, f.date, f.previewCode), {
       token: identity.token,
       puzzle,
       giveUp: true,
@@ -608,7 +632,7 @@ async function appendBatch(f: RoundFlight, batch: string[]): Promise<void> {
     // `retryRoundSync` cannot reopen a settled flight, and nothing else does.
     if (identityEpoch() !== epoch) return;
     response = await postRoundBody(
-      roundUrl(f.lang, f.date),
+      roundUrl(f.lang, f.date, f.previewCode),
       requestBody(f, identity.token, batch, challenge),
     );
   } catch {

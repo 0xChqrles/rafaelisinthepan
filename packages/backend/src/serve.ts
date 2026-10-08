@@ -6,8 +6,8 @@
 //
 // Run it with `pnpm backend:dev` (or `pnpm --filter @whippin/backend serve:local`)
 // and point the front at it via VITE_API_BASE_URL (e.g. http://localhost:8787).
-import { randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage } from 'node:http';
+import { LOCAL_IP_HMAC_SECRET } from './config';
 import { createHandler } from './handler';
 import { fsStore } from './fsStore';
 import { localStoreRoot } from './layout';
@@ -35,7 +35,6 @@ const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ?? '*';
 // reads as a VERDICT and never retries. From then on that day publishes nothing, on every
 // device, forever, with no message anywhere (user-reported 2026-08-20).
 const LOCAL_SUBMISSION_LIMIT = Number.POSITIVE_INFINITY;
-const LOCAL_IP_HMAC_SECRET = randomBytes(32).toString('hex');
 
 const localScoreStore = memoryScoreStore(() => new Date(), LOCAL_SUBMISSION_LIMIT);
 // The identity every authenticated route resolves its caller through (#216). In memory
