@@ -14,7 +14,7 @@ import ResultBoards, { type ResultBoardsData } from './ResultBoards';
 import SwapLabel from './SwapLabel';
 import { useDeviceIdentity } from '../identity';
 import { ariaHoleHistory, t } from '../i18n';
-import { capitalize, sentenceStarts } from '../game/sentenceCase';
+import { capitalize, capitals } from '../game/sentenceCase';
 
 // The sentence result — a STAGE: the score above, the player's boards under it, and the
 // sentence's page below (user-decided 2026-09-08, on #266's second review). It takes the whole
@@ -235,7 +235,7 @@ export default function SolvedScreen({
   // history line) and for the pop's span (they pop on one beat too).
   const holeByPos = useMemo(() => new Map(holes.map((h) => [h.pos, h])), [holes]);
   // The page reads in sentence case like the board did (`game/sentenceCase.ts`).
-  const starts = useMemo(() => sentenceStarts(words), [words]);
+  const caps = useMemo(() => capitals(words, lang), [words, lang]);
   const secretNumbers = useMemo(
     () => Array.from(new Set(holes.map((h) => h.number))).sort((a, b) => a - b),
     [holes],
@@ -485,16 +485,16 @@ export default function SolvedScreen({
                 return (
                   <Fragment key={i}>
                     {space}
-                    {starts[i] ? capitalize(w) : w}
+                    {caps[i] ? capitalize(w) : w}
                   </Fragment>
                 );
               }
-              const capitalWord = starts[i] && !hole.prefix;
+              const capitalWord = caps[i] && !hole.prefix;
               return (
                 <Fragment key={i}>
                   {space}
                   <span className="solved-line-group">
-                    {hole.prefix && starts[i] ? capitalize(hole.prefix) : hole.prefix}
+                    {hole.prefix && caps[i] ? capitalize(hole.prefix) : hole.prefix}
                     <button
                       type="button"
                       className={`solved-secret${hole.found ? '' : ' revealed'}${sentenceIn ? ' in' : ''}`}
