@@ -135,7 +135,10 @@ is applied only to the player's raw keystrokes.
 }
 ```
 
-- **`words[]` holds full display tokens, punctuation and apostrophes kept** (lowercased).
+- **`words[]` holds full display tokens, punctuation and apostrophes kept** (lowercased);
+  a long dash (« — », « – ») is a token of its own, never glued to a hole (it marks a
+  break, and is often printed unspaced: « administration—provided »), while a hyphen stays
+  inside its compound (`gen_phrase.display_tokens`).
   Generation locates each secret inside its token by slug on the token's word-cores and splits
   it into the pure `secret` word plus `prefix`/`suffix` — display-only affixes, omitted when
   empty, that never touch the secret or slug/fold.

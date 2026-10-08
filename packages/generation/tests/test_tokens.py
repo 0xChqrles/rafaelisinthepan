@@ -33,6 +33,14 @@ def test_display_token_keeps_accents_punctuation_apostrophe_only_lowercases():
     assert gen_phrase.display_token("T'ATTENDS") == "t'attends"
 
 
+def test_a_long_dash_is_its_own_token_a_hyphen_stays_in_its_compound():
+    # « administration—provided » (Parkinson, en 2026-10-09) glued the hole to « provided ».
+    assert gen_phrase.display_tokens("business administration—provided only") == [
+        "business", "administration", "—", "provided", "only"]
+    assert gen_phrase.display_tokens("Il dit – enfin – oui.") == ["il", "dit", "–", "enfin", "–", "oui."]
+    assert gen_phrase.display_tokens("Le post-it, arc-en-ciel") == ["le", "post-it,", "arc-en-ciel"]
+
+
 def test_elision_splits_clitic_into_prefix():
     # "t'attends": the clitic "t'" is display prefix, the secret is the pure "attends".
     assert core("t'attends", "attends") == ("attends", "t'", "")
