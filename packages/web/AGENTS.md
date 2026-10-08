@@ -184,6 +184,9 @@
                               the period switch's frame
       components/refuseShake.ts  the REFUSAL's stepped shake (2px held frames): the archive's
                               month chip past either end, a device line whose sign-out failed
+      components/promptShake.ts  the PROMPT's refusal: a typed line shakes in the danger ink, the
+                              ink part of the animation (the guess, the group name, the
+                              address, the profile name)
       components/raster.ts    a canvas raster's ABGR pixel (`abgr`, `hexToAbgr`, and `rgbToAbgr`
                               for `heat.ts`'s `rgb()` inks): the streak's orbit, the podium, the
                               archive's keys, the tutorial's art

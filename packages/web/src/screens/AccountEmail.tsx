@@ -454,7 +454,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
   const [note, setNote] = useState<string | null>(null);
   const [waitLeft, setWaitLeft] = useState(0);
   // The address line's invalid gesture, running.
-  const [shaking, setShaking] = useState(false);
+  const [shakes, setShakes] = useState(0);
   const shakeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Consumed once, so a later visit opens on the offer rather than on a confirmation of
@@ -590,7 +590,7 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
         }
         // A verdict on the ADDRESS: the line shakes, the note says why.
         if (error === 'bad_email') {
-          setShaking(true);
+          setShakes((n) => n + 1);
           setNote(t(lang, 'linkBadAddress'));
           return;
         }
@@ -1066,10 +1066,9 @@ export default function AccountEmail({ intent }: { intent: LinkIntent }) {
               // to a guess that is not a word: the line shakes, and nothing is sent.
               onEnter={() => {
                 if (isValidEmail(address)) void send({ handOff: true });
-                else setShaking(true);
+                else setShakes((n) => n + 1);
               }}
-              shake={shaking}
-              onShaken={() => setShaking(false)}
+              shakeSignal={shakes}
               placeholder={t(lang, 'linkAddressPlaceholder')}
               label={t(lang, 'linkAddressPlaceholder')}
               fieldRef={addressField}

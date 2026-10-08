@@ -21,7 +21,8 @@
 // zooms the page for a focused field under it). An address longer than the line scrolls
 // inside it while it is edited, and shows from its FIRST letter again the moment it is left.
 
-import { useState, type MutableRefObject } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
+import { promptShake } from './promptShake';
 
 export default function AddressField({
   value,
@@ -30,8 +31,7 @@ export default function AddressField({
   placeholder,
   label,
   fieldRef,
-  shake,
-  onShaken,
+  shakeSignal,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -39,23 +39,24 @@ export default function AddressField({
   placeholder: string;
   label: string;
   fieldRef?: MutableRefObject<HTMLInputElement | null>;
-  // The game's invalid gesture on the line (an Enter on an address that cannot be one).
-  shake?: boolean;
-  onShaken?: () => void;
+  // The game's invalid gesture on the line (an Enter on an address that cannot be one): each
+  // new value shakes it.
+  shakeSignal?: number;
 }) {
   const [focused, setFocused] = useState(false);
+  const line = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (shakeSignal) promptShake(line.current, input.current);
+  }, [shakeSignal]);
   return (
-    <div
-      className={`link-field${shake ? ' invalid' : ''}${focused ? ' focused' : ''}`}
-      onAnimationEnd={(event) => {
-        if (event.target === event.currentTarget) onShaken?.();
-      }}
-    >
+    <div ref={line} className={`link-field${focused ? ' focused' : ''}`}>
       <span className="link-field-prompt" aria-hidden="true">
         &gt;
       </span>
       <input
         ref={(node) => {
+          input.current = node;
           if (fieldRef) fieldRef.current = node;
         }}
         className="link-field-input"
