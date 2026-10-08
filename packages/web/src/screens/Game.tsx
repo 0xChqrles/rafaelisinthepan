@@ -622,8 +622,13 @@ function Round({
     // reports whether the day was genuinely new the same way `recordSolve` did — plus one
     // new refusal: a collection that never arrived cannot say what the previous streak was,
     // so it celebrates nothing rather than printing a guess.
+    //
+    // The server also credits a PREVIEW solve (a day not yet out, played on the operator's
+    // link), but before its day it is not today: the transient collection neither inserts
+    // nor celebrates it, and the next `/history` read brings it in. One solved past the flip
+    // is (`useOpenedAsActive` turns a round opened ahead on when its day arrives).
     const didAdvanceStreak =
-      !isBonusRef(puzzleRef) && noteSolvedDay(lang, puzzleRef.dayNumber, server.credited);
+      !isBonusRef(puzzleRef) && noteSolvedDay(lang, puzzleRef.dayNumber, server.credited && isActiveDay);
     setAnimateResults(true);
     setStreakAdvanced(didAdvanceStreak);
     if (didAdvanceStreak) preloadStreakDialog();

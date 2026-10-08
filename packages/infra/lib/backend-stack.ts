@@ -14,6 +14,7 @@ import {
   DEVICE_INDEX_NAME,
   DEVICE_INDEX_PARTITION_KEY,
   DEVICE_INDEX_SORT_KEY,
+  PREVIEW_QUERY,
   VIEWER_IP_HEADER,
   preflightHeaders,
 } from '@whippin/shared';
@@ -524,9 +525,18 @@ export class BackendStack extends Stack {
     const cachePolicy = new cloudfront.CachePolicy(this, 'PuzzleCachePolicy', {
       cachePolicyName: 'WhippinDailyPuzzle',
       comment:
-        'Daily puzzle: cache key = path + ?lang + ?date (or ?bonus); TTL from origin Cache-Control.',
+        'Daily puzzle: cache key = path + ?lang + ?date (or ?bonus) + ?preview; TTL from origin Cache-Control.',
       // `bonus` (2026-09-24): a BONUS puzzle is addressed by its id instead of a date.
-      queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList('lang', 'date', 'bonus'),
+      // `preview` (2026-10-08): the operator's code opening a day not yet out. It must be part
+      // of the KEY, so a code-bearing 200 never sits under the code-less key; and the handler
+      // refuses (404) any code it cannot verify, so a random code cannot make this an
+      // uncached miss.
+      queryStringBehavior: cloudfront.CacheQueryStringBehavior.allowList(
+        'lang',
+        'date',
+        'bonus',
+        PREVIEW_QUERY,
+      ),
       headerBehavior: cloudfront.CacheHeaderBehavior.none(),
       cookieBehavior: cloudfront.CacheCookieBehavior.none(),
       minTtl: Duration.seconds(0),
@@ -676,11 +686,12 @@ export class BackendStack extends Stack {
     // `/round` (#201) reads the same day-addressing pair as /scores, since the guess log is
     // one item per (date, lang, account) — plus `bonus`, a BONUS puzzle's id standing in for
     // the date (2026-09-24). The device token travels in the POST body, never in a query.
+    // `preview` (2026-10-08): the operator's code playing a day not yet out on its real round.
     const roundOriginRequestPolicy = liveOriginRequestPolicy(
       'RoundOriginRequestPolicy',
       'WhippinRoundOrigin',
       'Round guess log: forward the addressing queries and Lambda-URL-safe headers outside cache.',
-      ['lang', 'date', 'bonus'],
+      ['lang', 'date', 'bonus', PREVIEW_QUERY],
     );
 
     // `/devices` (#216) reads NO query at all — the device token is the auth and it travels

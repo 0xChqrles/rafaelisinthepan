@@ -80,14 +80,29 @@ export function useHoldHomeDay(hold: boolean): void {
 // in the render that moves the day, and a timer-driven reading (`useToday`, whose timer a
 // sleeping laptop or a page restored from the back/forward cache resumes late) can still say
 // the old day there — a round latched off it would stay an archive day for its whole life.
+//
+// ONE EXCEPTION, which only ever turns it ON: a round opened AHEAD of its date (a DAY PREVIEW
+// link, root AGENTS.md) becomes the active day when its day arrives while it is on screen —
+// re-read on each render until then — so the operator who solved it early and left the tab
+// open finds its race and boards on the day, and a preview solved just past the flip is
+// celebrated like the on-time solve the server credited. A round already active never loses it.
 export function useOpenedAsActive(round: string, day: string | null): boolean {
-  const [opened, setOpened] = useState(() => ({ round, active: activeNow(day) }));
+  const [opened, setOpened] = useState(() => openedAs(round, day));
   if (opened.round !== round) {
-    const active = activeNow(day);
-    setOpened({ round, active });
-    return active;
+    const next = openedAs(round, day);
+    setOpened(next);
+    return next.active;
+  }
+  if (opened.ahead && activeNow(day)) {
+    setOpened({ round, active: true, ahead: false });
+    return true;
   }
   return opened.active;
+}
+
+function openedAs(round: string, day: string | null) {
+  const today = activeDate(new Date());
+  return { round, active: day !== null && day === today, ahead: day !== null && day > today };
 }
 
 function activeNow(day: string | null): boolean {

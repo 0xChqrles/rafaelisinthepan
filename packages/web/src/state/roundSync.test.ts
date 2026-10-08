@@ -47,7 +47,8 @@ import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, roundEnded } from '@whippin/shared
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   postRoundBody: vi.fn(),
-  roundUrl: (lang: string, date: string) => `https://api.test/round?lang=${lang}&date=${date}`,
+  roundUrl: (lang: string, date: string, code?: string) =>
+    `https://api.test/round?lang=${lang}&date=${date}${code === undefined ? '' : `&preview=${code}`}`,
 }));
 
 // ROUND CREATION is Turnstile-gated (#203): the engine mints a challenge for the append
@@ -1074,6 +1075,73 @@ describe('publishing an UNCHANGED state writes nothing', () => {
     await settle(2 * ROUND_WRITE_MIN_MS);
     expect(load()).not.toBe(first);
     expect(server()?.guesses).toEqual(['bois', 'chemin']);
+  });
+});
+
+describe('a PREVIEW CODE (the operator\'s link to a day not yet out)', () => {
+  const CODE = '0123456789abcdef';
+
+  function urlOf(call: number): string {
+    return post.mock.calls[call][0] as string;
+  }
+
+  it('rides the read, every append and the give-up of its round', async () => {
+    post.mockResolvedValueOnce(status(404));
+    seedOutbox();
+    beginRoundSync({ ...ctx(), previewCode: CODE });
+    await settle();
+    expect(urlOf(0)).toContain(`&preview=${CODE}`);
+
+    seedOutbox(['bois']);
+    post.mockResolvedValueOnce(ok(['bois']));
+    notifyGuess(KEY);
+    await settle();
+    expect(bodyOf(1).guesses).toEqual(['bois']);
+    expect(urlOf(1)).toContain(`&preview=${CODE}`);
+
+    post.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ guesses: ['bois'], createdAt: '2026-08-21T09:00:00.000Z', gaveUp: true }),
+    } as unknown as Response);
+    const answer = giveUpRound(KEY);
+    await settle(ROUND_WRITE_MIN_MS);
+    await expect(answer).resolves.toBe(true);
+    expect((post.mock.calls[2][1] as { giveUp?: boolean }).giveUp).toBe(true);
+    expect(urlOf(2)).toContain(`&preview=${CODE}`);
+  });
+
+  // The CODE decides, never the status: to `/round` a bare 404 is "no round recorded yet",
+  // and reading a REFUSED code as that would open a board whose guesses are never stored.
+  it('a refused code (404 preview_refused) is a FAILED load, never an empty round', async () => {
+    post.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: async () => ({ error: 'preview_refused' }),
+    } as unknown as Response);
+    seedOutbox(['bois']);
+    beginRoundSync({ ...ctx(), previewCode: CODE });
+    await settle(ROUND_WRITE_MIN_MS);
+    expect(load()).toEqual({ status: 'failed', puzzle: REVISION });
+    // Closed: nothing is appended behind the refusal.
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-registering the round WITHOUT a code clears it', async () => {
+    post.mockResolvedValueOnce(ok(['bois']));
+    seedOutbox();
+    beginRoundSync({ ...ctx(), previewCode: CODE });
+    await settle();
+    expect(urlOf(0)).toContain(`&preview=${CODE}`);
+
+    // The hook always passes the key, `undefined` when the URL carries no code.
+    beginRoundSync({ ...ctx(), previewCode: undefined });
+    seedOutbox(['chemin']);
+    post.mockResolvedValueOnce(ok(['bois', 'chemin']));
+    notifyGuess(KEY);
+    await settle(ROUND_WRITE_MIN_MS);
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(urlOf(1)).not.toContain('preview');
   });
 });
 

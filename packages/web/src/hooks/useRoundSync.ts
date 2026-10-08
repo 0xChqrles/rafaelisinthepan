@@ -17,6 +17,7 @@ export default function useRoundSync(ctx: RoundSyncContext | null): RoundLoad | 
   const roundKey = ctx?.roundKey;
   const lang = ctx?.lang;
   const date = ctx?.date;
+  const previewCode = ctx?.previewCode;
   const revision = ctx?.revision;
   const ranks = ctx?.ranks;
   const ensureOutbox = useGameStore((s) => s.ensureOutbox);
@@ -31,8 +32,8 @@ export default function useRoundSync(ctx: RoundSyncContext | null): RoundLoad | 
     if (roundKey === undefined || lang === undefined || date === undefined || revision === undefined || !ranks) {
       return;
     }
-    beginRoundSync({ roundKey, lang, date, revision, ranks });
-  }, [roundKey, lang, date, revision, ranks]);
+    beginRoundSync({ roundKey, lang, date, previewCode, revision, ranks });
+  }, [roundKey, lang, date, previewCode, revision, ranks]);
   const load = useGameStore((s) => (roundKey === undefined ? undefined : s.roundLoads[roundKey]));
   return revision === undefined ? null : roundLoadFor(load, revision);
 }

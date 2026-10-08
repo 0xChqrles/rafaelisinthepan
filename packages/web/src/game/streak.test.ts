@@ -54,6 +54,12 @@ describe('weekView — the Monday-based weekly row (#74)', () => {
     expect(cells.find((c) => c.isToday)?.dayNumber).toBe(WED);
   });
 
+  it('a day credited AHEAD of its date (a preview solve) is future, not solved', () => {
+    const { cells } = weekView([MON, TUE, MON + 4], TUE);
+    expect(cells[4]).toMatchObject({ dayNumber: MON + 4, solved: false, isFuture: true });
+    expect(cells.map((c) => c.solved)).toEqual([true, true, false, false, false, false, false]);
+  });
+
   it('a full solved week is all solved, none future', () => {
     const days = [MON, TUE, WED, MON + 3, MON + 4, MON + 5, SUN];
     const { cells } = weekView(days, SUN);

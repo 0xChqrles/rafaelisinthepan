@@ -112,6 +112,28 @@ describe('history entries', () => {
   });
 });
 
+// CONTRACT (day preview links): a preview code belongs to the PAGE its link opened. The web
+// forwards whatever code the URL carries on a dated page, so a code that rode the query onto
+// another day would be sent for a day it does not name.
+describe('a day preview code', () => {
+  const code = '0123456789abcdef';
+
+  it('is dropped the moment the path changes, the rest of the query kept', () => {
+    const h = install(`/en/2026-10-12?tutorial=1&preview=${code}`);
+    navigate('/en/2026-10-01');
+    expect(h.url).toBe('/en/2026-10-01?tutorial=1');
+    const only = install(`/en/2026-10-12?preview=${code}`);
+    navigate('/en', { replace: true });
+    expect(only.url).toBe('/en');
+  });
+
+  it('stays on its own page', () => {
+    const h = install(`/en/2026-10-12?preview=${code}`);
+    navigate('/en/2026-10-12');
+    expect(h.url).toBe(`/en/2026-10-12?preview=${code}`);
+  });
+});
+
 describe('dropLangParam', () => {
   it('removes only `lang`, and leaves the entry as it found it', () => {
     const h = install('/privacy?lang=en&tutorial=1');

@@ -11,7 +11,8 @@
   web/                        React + Vite + TS front (pkg @whippin/web)
     src/
       hooks/useVocab.ts       fetch+cache the per-language existence Set (once per session)
-      hooks/usePuzzle.ts      fetch the puzzle a `PuzzleRef` names (a day, or a bonus) from the backend
+      hooks/usePuzzle.ts      fetch the puzzle a `PuzzleRef` names (a day, or a bonus) from the backend,
+                              with the day's preview code when the route forwards one
       hooks/useHomeDay.ts     the day across the 22:00 flip: the undated route plays the active
                               day as of the player's last ARRIVAL (a load, a navigation, the tab
                               coming back to no round in progress), and a round on screen keeps
@@ -2489,12 +2490,15 @@ it to the local store — see `packages/backend/AGENTS.md`).
   - **`noteSolvedDay` replaced the store's `recordSolve`**, and since the PR-218 review it
     reads the SERVER's own verdict rather than re-making the on-time comparison on the
     device clock: the solving append's answer carries `credited` (root `AGENTS.md`), and
-    `Game` passes it through on the play-solve transition. A day already held is still not
+    `Game` passes it through on the play-solve transition, ANDed with `isActiveDay`: the
+    server credits a DAY PREVIEW solve (root `AGENTS.md`), but before its day it is not
+    today, so the transient collection neither inserts nor celebrates it — the next `/history` read brings
+    it in. Never a device-clock comparison of its own: on the active day the verdict is the
+    server's alone. A day already held is still not
     counted twice, and a collection that has NOT ARRIVED credits nothing and celebrates
-    nothing. **`Game`'s own `isActiveDay` gate on the streak went with the old tolerance**
-    (it has NO such gate any more), along with the freshness re-check in the
-    word-animations effect: both existed to arbitrate a flip-edge that is now simply late,
-    and `streakAdvanced` — `noteSolvedDay`'s own answer — settles the celebration alone.
+    nothing. The freshness re-check in the word-animations effect is gone: it existed to
+    arbitrate a flip-edge that is now simply late, and `streakAdvanced` —
+    `noteSolvedDay`'s own answer — settles the celebration alone.
     **A landing answer MERGES into the collection rather than replacing it** (corrected on
     review): a read issued before the solving append can resolve after the credit, and
     replacing would take the day straight back out from under a mounted `StreakDialog`, which
@@ -3502,6 +3506,17 @@ it to the local store — see `packages/backend/AGENTS.md`).
   dropped), so the address bar, a reload and a copied link name what is on screen;
   contract-tested (`langs.test.ts`). `parseRoute` takes the range bounds as an
   injected arg (App passes the client `activeDate`) so parsing stays pure/testable.
+  **A DAY PREVIEW link** (root `AGENTS.md`) — `/<lang>/<date>?preview=<code>` — opens a
+  date beyond `activeDate` when the URL carries a well-formed code (`previewCodeFromSearch`;
+  App then passes no upper bound). The code is forwarded (`previewCodeFor`, the ONE forward
+  rule, contract-tested) whenever a DATED page's URL carries one — never the undated route
+  or a bonus, and never decided by the device clock, whose fast phone would call the day
+  "today" before the server flips and leave the early solve uncredited — to the puzzle fetch
+  and every `/round` call of that round (`RoundSyncContext.previewCode`). `navigate` drops
+  the code when the path changes (contract-tested, `routing.test.ts`), so it never rides
+  onto another day. A wrong code is the server's 404 (NO PUZZLE); on `/round` its code
+  `preview_refused` is a FAILED load, never the empty round a bare 404 is. Nothing new is shown: a previewed day looks
+  like an archive day, and `weekView` counts no solved day after the active one.
   A BONUS puzzle (root `AGENTS.md`, 2026-09-24) is `/<lang>/bonus/<id>` → the game with
   `bonusId`; `GameRoute` names the puzzle as a `PuzzleRef` — the bonus, the route's date, or
   the undated route's day (`useHomeDay`) — which `usePuzzle(lang, ref)` fetches and
@@ -5094,7 +5109,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
     afresh. It is read off the clock the undated route's day reads — the wall clock at that
     moment, never `useToday`'s timer, which can lag an arrival (a laptop waking, a page
     restored from the back/forward cache) — so the round an arrival opens on the new day is
-    the active day. **A tap on a kept race line or result board still opens the board, and
+    the active day. **One exception, which only turns it ON:** a round opened AHEAD of its
+    date (a DAY PREVIEW link) becomes the active day when its day arrives while it is on
+    screen. **A tap on a kept race line or result board still opens the board, and
     the board is always the ACTIVE day's** (`pathForBoard` names no day): past the flip it
     shows the new day, not the round's. The HEADER alone follows the live day (`isToday`,
     off `useToday`, which a back/forward-cache restore refreshes too): past the flip it
@@ -5336,7 +5353,9 @@ it to the local store — see `packages/backend/AGENTS.md`).
   the sharer's player id — counts a pageview once per real PATH (a replace or a
   query-only change is not a page), and sends the group invite landing
   `/join/g/<groupId>` as `/join/g` on every payload, pageview or event, because a group
-  id is enough to join the group. A bonus page keeps its id.
+  id is enough to join the group. A bonus page keeps its id. A DAY PREVIEW code is deleted
+  from the `url` of every payload (the `preview` parameter alone, the url kept in the form it
+  came in), because a code opens that day early.
   `track(event, props)` waits for that same script and calls `window.umami.track`, and
   is a **silent, never-throwing no-op** when unconfigured or blocked (a failed load stays
   failed for the page, never re-injected). **Env-gated:**

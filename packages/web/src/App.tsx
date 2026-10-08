@@ -42,7 +42,16 @@ import { PLAY_LEVEL } from './tutorial/levels';
 import { roundKeyFor, useGameStore, type RoundServer } from './state/gameStore';
 import { track } from './analytics';
 import { useLocation, navigate } from './routing';
-import { parseRoute, pathForGame, pathForLesson, pathForRoute, type LangCode, type Route } from './langs';
+import {
+  parseRoute,
+  pathForGame,
+  pathForLesson,
+  pathForRoute,
+  previewCodeFor,
+  previewCodeFromSearch,
+  type LangCode,
+  type Route,
+} from './langs';
 // Inline SVG (vite-plugin-svgr): the header's leaderboard entry, painting with
 // currentColor like every chrome icon; the button's aria-label names it.
 import { t } from './i18n';
@@ -79,7 +88,11 @@ export default function App() {
   // The client's active game day bounds the date deep-link range (a future date -> home),
   // so parsing gets it here (kept out of parseRoute so parsing stays pure/testable).
   const today = activeDate(new Date());
-  const route = parseRoute(pathname, { activeDate: today });
+  // A PREVIEW LINK (shared preview.ts) opens a day not yet out: its date is no future bound's
+  // to refuse — the server verifies the code, and a wrong one is NO PUZZLE.
+  const route = parseRoute(pathname, {
+    activeDate: previewCodeFromSearch(window.location.search) ? undefined : today,
+  });
   useEffect(() => {
     if (route.view !== 'lesson') setLessonReturn(undefined);
   }, [route.view]);
@@ -254,6 +267,7 @@ export default function App() {
             date={route.date}
             homeDay={homeDay}
             bonusId={route.bonusId}
+            previewCode={previewCodeFor(window.location.search, route.date)}
             surface={gameSurface}
             settleOnboarding={setOnboarded}
             startLesson={startOnboardingLesson}
@@ -316,6 +330,10 @@ function GameRoute({
   // A BONUS puzzle (shared bonus.ts), in place of a day: no date, never the active day —
   // played like an archive day, credited nothing.
   bonusId,
+  // The operator's PREVIEW CODE for a day not yet out (`langs.ts` `previewCodeFor`: the code
+  // the dated page's own URL carries): it travels with the puzzle fetch and every `/round`
+  // call of this round. Nothing on screen shows it.
+  previewCode,
   // WHICH surface is App's call, because the header is (see `headerPlace`); rendering it is
   // this route's, because the puzzle and the callbacks live here.
   surface,
@@ -327,6 +345,7 @@ function GameRoute({
   date?: string;
   homeDay: string;
   bonusId?: number;
+  previewCode?: string;
   surface: GameSurface;
   settleOnboarding: () => void;
   startLesson: (lang: LangCode) => void;
@@ -349,13 +368,13 @@ function GameRoute({
     () => (bonusId !== undefined ? { bonusId } : { dayNumber: dayNumberOf(day) }),
     [day, bonusId],
   );
-  const { puzzle, error, noPuzzle, retry } = usePuzzle(lang, ref);
+  const { puzzle, error, noPuzzle, retry } = usePuzzle(lang, ref, previewCode);
   const gameAhead = surface === 'game' && !noPuzzle;
   const { vocab, error: vocabError, retry: retryVocab } = useVocab(gameAhead ? lang : null);
   const roundKey = useMemo(() => roundKeyFor(ref, lang), [ref, lang]);
   const round = useRoundSync(
     puzzle
-      ? { roundKey, lang, date: puzzleAddress(ref), revision: puzzle.revision, ranks: puzzle.ranks }
+      ? { roundKey, lang, date: puzzleAddress(ref), previewCode, revision: puzzle.revision, ranks: puzzle.ranks }
       : null,
   );
   const setLastLang = useGameStore((s) => s.setLastLang);
@@ -368,7 +387,8 @@ function GameRoute({
   // ...and whether the ROUND is: the day it was opened as, for as long as it stays on screen
   // (`useOpenedAsActive`) — so the flip passing it takes nothing from under the player: its
   // race line, its result's boards, its race band. A new round reads it afresh, off the clock
-  // the undated route's day reads (never `today`'s timer, which can lag an arrival).
+  // the undated route's day reads (never `today`'s timer, which can lag an arrival). A round
+  // opened AHEAD of its date (a preview link) turns active when its day arrives on screen.
   const isActiveDay = useOpenedAsActive(`${lang}:${puzzleAddress(ref)}`, bonusId === undefined ? day : null);
 
   // Once the round is on screen it STAYS (`game/roundOnScreen.ts`): a read it already

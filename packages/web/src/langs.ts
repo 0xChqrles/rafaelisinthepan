@@ -7,9 +7,11 @@ import {
   groupLandingPath,
   isBonusId,
   isCalendarDate,
+  isPreviewCode,
   LEARN_SEGMENT,
   learnPath,
   lessonPath,
+  PREVIEW_QUERY,
 } from '@whippin/shared';
 import { FIRST_PUZZLE_DATE } from './config';
 import { isReady, levelOf } from './tutorial/levels';
@@ -280,6 +282,24 @@ export function pathForRoute(route: Route): string | null {
 export function langFromSearch(search: string): LangCode | null {
   const asked = new URLSearchParams(search).get('lang');
   return isLang(asked) ? asked : null;
+}
+
+// THE OPERATOR'S PREVIEW CODE (shared preview.ts, user-decided 2026-10-08): `?preview=` on
+// a day page opens a day not yet out, on its real round. Read only when well-formed — the
+// SERVER verifies it, and a wrong one is its NO PUZZLE.
+export function previewCodeFromSearch(search: string): string | undefined {
+  const code = new URLSearchParams(search).get(PREVIEW_QUERY);
+  return code !== null && isPreviewCode(code) ? code : undefined;
+}
+
+// The ONE forward rule: the code goes to the server whenever the URL of a DATED day page
+// carries one — never the undated route or a bonus. It is tied to the PAGE its link opened,
+// never to the device clock: the server judges on time by its own, and a code dropped because
+// a fast phone already called the day "today" would leave an early solve uncredited for good.
+// A code never rides onto another day's page (`routing.ts` `navigate` drops it when the path
+// changes); on its own day once that day is out, the server still grants it.
+export function previewCodeFor(search: string, date: string | undefined): string | undefined {
+  return date === undefined ? undefined : previewCodeFromSearch(search);
 }
 
 // THE CHROME LANGUAGE for a screen whose URL does not name one — the link's, else the

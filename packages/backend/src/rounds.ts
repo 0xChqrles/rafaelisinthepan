@@ -12,8 +12,9 @@
 // against stale local state, the server answers with truth, and the tab re-renders correct.
 // The route is POST-only — the device token is the auth (#216) and
 // it travels in the BODY, never in a query string, so there is no way to ask without proving
-// who you are. Its CloudFront behavior forwards exactly the two addressing queries (the
-// root AGENTS.md allowList contract); a production POST still needs
+// who you are. Its CloudFront behavior forwards exactly the addressing queries — the day
+// (or a bonus id) and a day preview code (the root AGENTS.md allowList contract); a
+// production POST still needs
 // `x-amz-content-sha256` over the exact body bytes (OAC).
 //
 // `puzzle` is the opaque tag naming WHICH puzzle the log belongs to (roundStore.ts): the
@@ -118,10 +119,15 @@ export async function handleRound(
   }
 
   // The shared (lang, date) guard pair + future guard (liveRoute.ts); a BONUS puzzle's id
-  // may stand in for the date, which is then the bonus's address (shared bonus.ts).
-  const params = requireDayParams(event, serverDate, responseHeaders, { bonus: true });
+  // may stand in for the date, which is then the bonus's address (shared bonus.ts). A day
+  // PREVIEW CODE, keyed by the same secret as the address hashes, lifts the future guard for
+  // its own (lang, date) — read, append and give-up alike — and any other code is a 404.
+  const params = requireDayParams(event, serverDate, responseHeaders, {
+    bonus: true,
+    previewSecret: deps.ipHmacSecret,
+  });
   if (!params.ok) return params.response;
-  const { lang, date } = params.value;
+  const { lang, date, preview } = params.value;
 
   const parsed = readJsonObject(event, 'Round', responseHeaders, BODY_MAX_BYTES);
   if (!parsed.ok) return parsed.response;
@@ -363,7 +369,7 @@ export async function handleRound(
   // it stored may already describe a log one batch out of date. Verify against the log the
   // append RETURNED before answering (roundStore.ts `RoundSettleInput` states the race).
   return await settleAppend(
-    { key, publicId, puzzle, slice, state },
+    { key, publicId, puzzle, slice, state, preview },
     puzzleStore,
     deps,
     event,
@@ -378,6 +384,8 @@ interface AppendedRound {
   puzzle: string;
   slice: PuzzleSlice;
   state: RoundState;
+  // The append carried this (lang, date)'s valid preview code (liveRoute.ts `previewGrant`).
+  preview: boolean;
 }
 
 // What an ACCEPTED append still owes, before it answers.
@@ -459,7 +467,7 @@ async function settleAppend(
     // records no row, so no board ranks it: the solved screen's boards draw the player's own
     // row unranked. It also
     // stops spending a #169 address allowance on a day nobody is competing in.
-    const earned = onTime(key.date, instant);
+    const earned = onTime(key.date, instant, round.preview);
     let credited = false;
     if (earned) {
       // The two rewards are INDEPENDENT — neither reads the other, and each swallows its
@@ -501,10 +509,17 @@ async function settleAppend(
 //
 // `activeDate(instant)` IS the `serverDate` the handler guards with — the same function on
 // the same instant — so this asks the day question rather than being told the answer.
-function onTime(date: string, instant: Date): boolean {
+//
+// **A valid PREVIEW CODE makes an EARLY solve on time** (user-decided 2026-10-08): the
+// operator plays a future day ahead of its date on its real round, and finds the result,
+// the streak day and the group row waiting when the day arrives. Only EARLY: a code never
+// makes a late solve on time, and the +1-day skew window without one is still not on time.
+function onTime(date: string, instant: Date, preview: boolean): boolean {
   // A BONUS puzzle (shared bonus.ts) is no day: never on time, so it earns no score row and
   // no streak credit — the one check both rewards pass through.
-  return !isBonusAddress(date) && date === activeDate(instant);
+  if (isBonusAddress(date)) return false;
+  const active = activeDate(instant);
+  return date === active || (preview && dayNumber(date) > dayNumber(active));
 }
 
 // THE STREAK's own fact (#211): this language's collection of solved game days, credited

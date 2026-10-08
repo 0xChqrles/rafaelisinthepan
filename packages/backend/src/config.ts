@@ -97,3 +97,9 @@ export async function loadScoreSecrets(
   }
   return { turnstileSecret, ipHmacSecret };
 }
+
+// The IP-HMAC secret of LOCAL mode, a fixed value rather than a random one per boot: the
+// same key also signs day preview codes (previewCode.ts), and `pnpm puzzle:preview` without
+// `--s3` has to mint links the running `backend:dev` accepts. Local-only, like the accept-all
+// Turnstile verifier — production never reads it (index.ts loads the secret from SSM).
+export const LOCAL_IP_HMAC_SECRET = 'whippin-local-ip-hmac-secret-not-for-production';

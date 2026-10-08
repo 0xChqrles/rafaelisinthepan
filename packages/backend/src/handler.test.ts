@@ -15,8 +15,13 @@ import {
   shareCardPath,
   sharePath,
   GROUP_SEGMENT,
+  PREVIEW_REFUSED,
 } from '@whippin/shared';
 import { createHandler, type HandlerDeps } from './handler';
+import { memoryHistoryStore } from './memoryHistoryStore';
+import { memoryRoundStore } from './memoryRoundStore';
+import { memoryScoreStore } from './memoryScoreStore';
+import { previewCode } from './previewCode';
 import { renderCardPng, renderGroupCardPng } from './ogCard';
 import { memoryGroupStore } from './memoryGroupStore';
 import type { ProfileRecord, ProfileStore } from './profileStore';
@@ -294,6 +299,97 @@ describe('puzzle endpoint — a bonus puzzle (GET /?lang=&bonus=)', () => {
       const res = await bonusHandler()(event({ query: { lang: 'fr', bonus } }));
       expect(res.statusCode).toBe(400);
     }
+  });
+});
+
+// CONTRACT (day preview links, user-decided 2026-10-08): a request carrying `?preview=`
+// must carry THIS (lang, date)'s valid code. A valid one lifts the future guard for its own
+// day; any other — on a future day, today, the archive or a bonus — is the not-released 404
+// with the short TTL, answered BEFORE the store is read: the code is part of this route's
+// CDN cache key, and a code nobody verified would be a free uncached multi-MB read.
+describe('puzzle endpoint — a day preview code (GET /?lang=&date=&preview=)', () => {
+  const SECRET = 'x'.repeat(64);
+  const code = (date: string, lang = 'fr') => previewCode(SECRET, lang, date);
+
+  // The secret is the ROUND route's (no round route, no preview); the store is a spy, so a
+  // refusal can be shown never to have read it.
+  function previewHandler(withRounds = true) {
+    const getPuzzle = vi.fn(fakeStore().getPuzzle);
+    const handler = makeHandler({
+      store: { ...fakeStore(), getPuzzle },
+      ...(withRounds
+        ? {
+            rounds: {
+              roundStore: memoryRoundStore(),
+              scoreStore: memoryScoreStore(() => FIXED_NOW),
+              ipHmacSecret: SECRET,
+              turnstile: { async verify() { return true; } },
+              history: memoryHistoryStore(),
+            },
+          }
+        : {}),
+    });
+    return Object.assign(handler, { getPuzzle });
+  }
+
+  it('active day +2 without a code is still a 404', async () => {
+    const res = await previewHandler()(event({ query: { lang: 'fr', date: DAY_AFTER_NEXT } }));
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.body).error).toBe('not_found');
+  });
+
+  it('active day +2 WITH its code is served, cached like any day', async () => {
+    const res = await previewHandler()(
+      event({ query: { lang: 'fr', date: DAY_AFTER_NEXT, preview: code(DAY_AFTER_NEXT) } }),
+    );
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual(PUZZLE);
+    expect(res.headers['Cache-Control']).toMatch(/s-maxage=\d{6,}/);
+  });
+
+  it.each([
+    ['a wrong code', DAY_AFTER_NEXT, '0123456789abcdef'],
+    ['the other language\'s code', DAY_AFTER_NEXT, previewCode(SECRET, 'en', DAY_AFTER_NEXT)],
+    ['another date\'s code', DAY_AFTER_NEXT, previewCode(SECRET, 'fr', NEXT_DAY)],
+    ['a malformed code', DAY_AFTER_NEXT, 'nope'],
+    ['an empty code', DAY_AFTER_NEXT, ''],
+    // A code PRESENT on a day anyone may read is refused too — otherwise it is exactly the
+    // random cache key this rule exists to close.
+    ['a wrong code on the active day', ACTIVE_DATE, '0123456789abcdef'],
+    ['a wrong code on a past day', PAST_30, '0123456789abcdef'],
+    ['a wrong code on active +1', NEXT_DAY, '0123456789abcdef'],
+  ])('%s -> 404 with the short TTL, the store never read', async (_name, date, preview) => {
+    const handler = previewHandler();
+    const res = await handler(event({ query: { lang: 'fr', date, preview } }));
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.body).error).toBe(PREVIEW_REFUSED);
+    expect(res.headers['Cache-Control']).toMatch(/max-age=60\b/);
+    expect(handler.getPuzzle).not.toHaveBeenCalled();
+  });
+
+  it('a bonus with any preview code -> 404, the store never read', async () => {
+    const handler = previewHandler();
+    const res = await handler(
+      event({ query: { lang: 'fr', bonus: '1234567', preview: code(DAY_AFTER_NEXT) } }),
+    );
+    expect(res.statusCode).toBe(404);
+    expect(JSON.parse(res.body).error).toBe(PREVIEW_REFUSED);
+    expect(handler.getPuzzle).not.toHaveBeenCalled();
+  });
+
+  it('with no round route there is no secret, so even a valid code is refused', async () => {
+    const handler = previewHandler(false);
+    const res = await handler(
+      event({ query: { lang: 'fr', date: DAY_AFTER_NEXT, preview: code(DAY_AFTER_NEXT) } }),
+    );
+    expect(res.statusCode).toBe(404);
+    expect(handler.getPuzzle).not.toHaveBeenCalled();
+  });
+
+  it('the active day without a code is unchanged', async () => {
+    const res = await previewHandler()(event({ query: PUZZLE_QUERY }));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toEqual(PUZZLE);
   });
 });
 

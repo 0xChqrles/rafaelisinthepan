@@ -10,6 +10,7 @@
     "puzzle:publish": "tsx src/publish.ts",
     "puzzle:inventory": "tsx src/inventory.ts",
     "puzzle:ledger": "tsx src/ledger.ts",
+    "puzzle:preview": "tsx src/preview.ts",
     "board:seed": "tsx src/seedBoard.ts"
   },
   "dependencies": {

@@ -11,9 +11,12 @@ import { puzzleUrl, puzzleOutcome, parsePuzzle } from '../api';
 // The last few PARSED artifacts, kept across mounts (`puzzleCache.ts` holds the two bounds
 // and the safety argument): going back and forth between today's result and an archive
 // day no longer decompresses and parses megabytes on every arrival.
+//
+// `previewCode` is the operator's code for a day not yet out (shared preview.ts): it rides
+// the fetch only. The cache stays keyed by the address — the code names no other puzzle.
 const sentenceCache = createPuzzleCache<Puzzle>();
 
-export default function usePuzzle(lang: string | null, ref: PuzzleRef) {
+export default function usePuzzle(lang: string | null, ref: PuzzleRef, previewCode?: string) {
   const [error, setError] = useState<unknown | null>(null);
   const [noPuzzle, setNoPuzzle] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
@@ -46,7 +49,7 @@ export default function usePuzzle(lang: string | null, ref: PuzzleRef) {
     (async () => {
       try {
         const answer = await sentenceCache.load(key, async () => {
-          const res = await fetch(puzzleUrl(lang, address));
+          const res = await fetch(puzzleUrl(lang, address, previewCode));
           const outcome = puzzleOutcome(res.status);
           if (outcome === 'missing') return null;
           if (outcome === 'error') throw new Error(`HTTP ${res.status}`);
@@ -63,7 +66,7 @@ export default function usePuzzle(lang: string | null, ref: PuzzleRef) {
     return () => {
       cancelled = true;
     };
-  }, [lang, key, address, reloadTick]);
+  }, [lang, key, address, previewCode, reloadTick]);
 
   const loading = lang != null && puzzle == null && error == null && !noPuzzle;
 

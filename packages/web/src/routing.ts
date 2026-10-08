@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { PREVIEW_QUERY } from '@whippin/shared';
 
 // Minimal client-side navigation for the static SPA (no router dependency, no backend
 // changes). pushState/replaceState do NOT emit `popstate`, so programmatic navigation
@@ -24,7 +25,12 @@ function writeEntry(url: string, replace: boolean): void {
 }
 
 // Navigate to `path`, preserving the current query string (so the dev harnesses
-// ?streak= / ?error= survive route changes). `replace` swaps the current history
+// ?streak= / ?error= survive route changes) — save a DAY PREVIEW code (shared preview.ts),
+// which belongs to the page its link opened and is dropped the moment the path changes: the
+// web forwards a code whenever the URL carries one (`langs.ts` `previewCodeFor`), so a code
+// riding the query onto another day would be sent for a day it does not name (the server's
+// 404). The same path keeps it, and back/forward returns to the entry that still holds it.
+// `replace` swaps the current history
 // entry instead of pushing — used for the `/` -> /<lang> redirect so `/` never sits in
 // history and back from the game exits rather than bouncing through the redirect.
 //
@@ -37,7 +43,16 @@ export function navigate(path: string, opts: { replace?: boolean } = {}): void {
   // `history.length` counts the whole tab's browsing, so it cannot tell a screen this app
   // pushed from one the player reached by pasting a URL, and going back from the latter
   // leaves the site.
-  writeEntry(path + window.location.search, opts.replace === true || path === window.location.pathname);
+  const samePath = path === window.location.pathname;
+  writeEntry(path + (samePath ? window.location.search : searchWithoutPreview()), opts.replace === true || samePath);
+}
+
+function searchWithoutPreview(): string {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has(PREVIEW_QUERY)) return window.location.search;
+  params.delete(PREVIEW_QUERY);
+  const rest = params.toString();
+  return rest === '' ? '' : `?${rest}`;
 }
 
 // LEAVE A SCREEN THE WAY IT WAS ENTERED. Most steps here return to ONE parent, so they

@@ -13,6 +13,7 @@ import { memoryGroupStore } from './memoryGroupStore';
 import { memoryHistoryStore } from './memoryHistoryStore';
 import { memoryProfileStore } from './memoryProfileStore';
 import { memoryRoundStore } from './memoryRoundStore';
+import { previewCode } from './previewCode';
 import type { FnUrlEvent } from './respond';
 import type { RoundStore } from './roundStore';
 import type { ScoreRow, ScoreStore } from './scoreStore';
@@ -139,6 +140,15 @@ describe('board route (#190)', () => {
     const { handler } = await makeHandler([]);
     const future = activeDate(new Date(NOW.getTime() + 3 * 24 * 3600 * 1000));
     expect((await handler(get({ ...QUERY, date: future }))).statusCode).toBe(404);
+  });
+
+  // A day preview code (2026-10-08) is read by the puzzle and round routes ONLY: the board
+  // keeps the plain +1 guard even when the round route's secret signed the code.
+  it('ignores a day preview code: a valid one still leaves the future locked', async () => {
+    const { handler } = await makeHandler([], { rounds: memoryRoundStore() });
+    const future = activeDate(new Date(NOW.getTime() + 3 * 24 * 3600 * 1000));
+    const preview = previewCode('secret', 'fr', future);
+    expect((await handler(get({ ...QUERY, date: future, preview }))).statusCode).toBe(404);
   });
 
   it('answers the global board with competition ranks and attached profiles', async () => {
