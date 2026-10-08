@@ -464,8 +464,8 @@ def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict],
                 chain: list[str] | None = None, *, lang: str) -> dict:
     """The three start words, chosen TOGETHER by the taste. `holes`: [{secret,
     slug, slot, notes, options: [{word, rank}]}] — `notes` is what code measured (what a
-    reader puts in the blank, how much the sentence hands the word over, where the reader's
-    words land in the hole's own map). The model may instead name ONE hidden word to
+    reader puts in the blank, how much the line gives of the word, where the reader's words
+    land in the hole's own map). The model may instead name ONE hidden word to
     REPLACE, when no start can save it. Returns {"starts": {slug: word}, "replace":
     {"secret": word, "with": word, "why": str} | None, "why": str}; starts only from the
     options."""
@@ -496,12 +496,13 @@ The sentence, holes marked with the hidden word in brackets:
 {_chain_block(chain)}
 {chr(10).join(blocks)}
 
-Choose the three starts together, by the taste's start words and its difficulty, so the
-day lands where the taste's aim says, difficulty tuned
-by the start, never by a duller word. If one hidden word is dead or out of reach whatever
-its start, say so and name ONE replacement from the line instead of starts.
+Choose the three starts together, by the taste's start words: for each hole, how much the
+line gives of the word (read in its notes and in the line) and how hard the other holes
+already are decide its start. If one hidden word is dead or out of reach whatever its
+start — or none of its candidates links to it in its everyday sense (only by spelling, or
+not at all) — say so and name ONE replacement from the line instead of starts.
 
-Return {{"starts": {{"<hidden word>": "<chosen candidate, exactly>", ...}}, "why": "<one line per hole: what ties the start to the word>"}},
+Return {{"starts": {{"<hidden word>": "<chosen candidate, exactly>", ...}}, "why": "<one line per hole: how much the line gives of the word, and what the start says of the word>"}},
 or {{"replace": {{"secret": "<hidden word>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")
     replace = answer.get("replace")
     if isinstance(replace, dict) and isinstance(replace.get("secret"), str) and isinstance(replace.get("with"), str):
@@ -549,8 +550,16 @@ Return {{"before": <how many B sentences to keep, 0..{len(before)}>, "after": <h
 
 def pick_start(claude: Claude, sentence_marked: str, secret: str, options: list[dict],
                refused: str = "", context: str = "unknown", chain: list[str] | None = None,
-               *, lang: str) -> str | None:
+               *, lang: str, others: list[dict] | None = None) -> str | None:
+    """One hole's start, chosen again after a refusal, reading the day as `pick_starts`
+    does: `context` is the hole's notes, `others` [{secret, start | None, notes}] the other
+    holes as the day stands. Returns a candidate, exactly, or None."""
     listing = ", ".join(f"{o['word']} ({o['rank']})" for o in options)
+    rest = ""
+    if others:
+        rest = "\nThe other holes, as the day stands:\n" + "\n".join(
+            f"Hole « {o['secret']} », " + (f"shown as « {o['start']} »" if o.get("start") else "no start yet")
+            + f"\n  measured: {o.get('notes') or 'nothing'}" for o in others) + "\n"
     answer = claude.json(f"""You curate a daily {LANGUAGE[lang]} word game: three words of a sentence are hidden and the
 player rediscovers each from embedding-neighbour feedback. One hole's START word (its
 first clue, shown in place of the hidden word « {secret} ») was refused: {refused or 'it did not belong in the sentence'}.
@@ -563,13 +572,15 @@ And this taste (the start words part above all):
 
 The start word replaces the hidden word: same part of speech, agreeing with its
 surroundings ({AGREEMENT[lang]}). Read the sentence with your choice in
-place before answering. Context check for this hole: {context}.
+place before answering.
 
 The sentence, the hole marked [____]:
 {sentence_marked}
 {_chain_block(chain)}
-Candidates (word (rank), closest first): {listing}
-
+Hole « {secret} »
+  measured: {context}
+  candidates (word (rank), closest first): {listing}
+{rest}
 Return {{"word": "<one candidate, exactly>"}} or {{"word": null}} if none leaves correct {LANGUAGE[lang]} that still means something.""")
     word = answer.get("word")
     return word if isinstance(word, str) and word in {o["word"] for o in options} else None

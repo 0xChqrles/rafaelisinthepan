@@ -142,8 +142,9 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   said to be expected); the judge's giveaway score (`curate.giveaway_scores`, judged for
   every word that can be hidden BEFORE the choice — the floor, below — with its real-play
   meaning: at `GIVEAWAY_MAX` 0.45 and above, a third of the players typed the hole within
-  three guesses; under `GIVEAWAY_HARD` 0.20 the hole plays hard and its start comes from
-  nearer, below); the WOULD-SAY test (user-decided 2026-10-06, on « faux-monnayeur »),
+  three guesses; under `GIVEAWAY_HARD` 0.20 the hole plays hard, noted as one the line
+  gives little of — the start step's note, never a nearer band, below; scores in the notes are cut to two places, never rounded
+  (`rules.two_places`): a score under a bar never prints at it); the WOULD-SAY test (user-decided 2026-10-06, on « faux-monnayeur »),
   one call per word (`llm.would_say`: the line with that word blanked AND the word named —
   would a player who has roughly the meaning ever say it, or keep to commoner words
   meaning nearly the same?) as a note (`rules.said`): under `WOULD_SAY_HARD` 0.4 it is a
@@ -167,14 +168,15 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   or more words players don't say — the one fact that asks — has ONE of them swapped by the
   model BEFORE the ranking is paid for (`llm.drop_unsaid`: the DULL one goes, the one more
   fun to find stays — « clodos » over « stagnation », user-decided 2026-10-08), so that swap costs one question, never a second ranking; any other trio goes
-  straight on, an easy word being the start step's to tune (a farther start, never a duller
-  word). Asked of every trio, the model swapped on 77% of played days, loved ones included,
+  straight on, an easy word being the start step's to tune (a medium start, by the taste, never a
+  duller word). Asked of every trio, the model swapped on 77% of played days, loved ones included,
   and picked the hard word no better than chance. A word players would say
   instead that IS this word in another form (« sauver » for « sauva »: its spelling, lemma
   or a variant, `rules.same_word` — never a near neighbour like « faussaire », which is
   another word in its own group) finds the hole, so that word counts as said. With all the notes and each hole's band, `llm.pick_starts`
-  chooses the three starts by the taste — or names ONE hidden word no start can save and
-  another word of the line to hide instead (`Replace`: the draft is erased, the day
+  chooses the three starts by the taste — or names ONE hidden word no start can save
+  (dead or out of reach whatever its start, or none of its candidates linking to it in its
+  everyday sense, user-decided 2026-10-08) and another word of the line to hide instead (`Replace`: the draft is erased, the day
   rebuilt). Both swaps share `REPLACE_ROUNDS` (2).
 - **Which words can be hidden (facts, `rules.initial_candidates`):** NOUN/VERB/ADJ/ADV and
   PROPN (the parser tags a lowercase brand or rare noun as a proper noun — « rolex »,
@@ -234,15 +236,18 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   (`curate.generate` parses the #133 error's analysis list; a word with NO analysis does
   not inflect and takes `cit`, no agreement — a fact, so no question). Nothing here publishes.
 - **The START WORDS are CHOSEN by the model, the three together, never at random**, by
-  the taste with code's notes (above), from the band 100–200 of every map — a HARD hole's
-  (giveaway under `GIVEAWAY_HARD` 0.20) from the nearer `HARD_START_BAND` 50–100, the usual
-  band when that one holds no clean word (user-decided 2026-10-02: the hard days a bit
-  easier, the easy days as they are) — (`starts.start_candidates`: shipped rank within the
-  band, no variant, letter-rule-clean, not
-  past `MAX_START_FREQ_RANK` = 40000 in the corpus order — « hétéroptère » is out). The
-  first successful gen_phrase run only supplies the rank maps; gen_phrase then reruns
+  the taste with code's notes (above), from the band 100–200 of every map, for EVERY hole
+  (user-decided 2026-10-08: how much the line gives — a hole under `GIVEAWAY_HARD` 0.20 is
+  noted as one the line gives little of — decides which KIND of start, the taste's call,
+  never a nearer band); the WHOLE band is shown, no cap
+  (`starts.start_candidates`: shipped rank within the
+  band, no variant, letter-rule-clean, its WORD not
+  past `MAX_START_FREQ_RANK` = 40000 in the corpus order — « hétéroptère » is out; the word
+  is the map group, judged on its commonest key as the crowd judges one
+  (`rules.group_commonness` over `load_similarity`'s one corpus index), so a common verb
+  shown inflected — « observaient » — stays). The first successful gen_phrase run only supplies the rank maps; gen_phrase then reruns
   with `--start MOT=DEPART` per hole (#260). A hole the answer leaves without a valid start
-  is asked again, alone, once (`llm.pick_start`); a hole with NO candidate is shown as such,
+  is asked again, alone, once (`llm.pick_start`, with every other hole's notes and start); a hole with NO candidate is shown as such,
   so the model names a replacement; still incomplete, the draft is refused and erased —
   never a random generator pick. **A secret/start PAIR is blacklisted for
   good** (user-decided 2026-09-08): `shelf.archive()['pairs']` holds every start each
@@ -266,7 +271,8 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   of thing its place needs (« le fitness se suicide » is French and means nothing; a
   grammar-only check passed it). A start may be odd or funny; only a wrong or
   meaningless one is refused. A refused start is re-picked (`llm.pick_start`, taste
-  included) and gen_phrase reruns; at most `START_ROUNDS` (3) rounds; what is still
+  included, reading the day as `pick_starts` does: the hole's notes with where the reader's
+  nearest word lands, and every other hole's notes and shown start) and gen_phrase reruns; at most `START_ROUNDS` (3) rounds; what is still
   doubtful is logged for the reviewer.
 - **Tests are dependency-free** (`uv run --no-project --with pytest`, like generation and
   benchmark): the rules take plain `Token`s and injected callables, so they run without

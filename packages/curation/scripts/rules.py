@@ -11,6 +11,7 @@ callables, so everything is testable without a parser, a model or a vector file.
 """
 
 from dataclasses import dataclass
+from decimal import ROUND_DOWN, Decimal
 from typing import Callable
 
 import _paths  # noqa: F401  (generation's scripts on sys.path)
@@ -167,6 +168,11 @@ def same_word(candidate: Token, other: str | None) -> bool:
     return s in (candidate.slug, slug(candidate.lemma or "")) or is_variant(s, candidate.slug)
 
 
+def two_places(x: float) -> str:
+    """A score to two places, cut: one under a two-place bar never prints at it."""
+    return str(Decimal(str(x)).quantize(Decimal("0.01"), rounding=ROUND_DOWN))
+
+
 def said(chance: float | None, instead: str | None, same: bool = False) -> str:
     """What the would-say test means for this hole, in one plain line for the model: the
     chance a player who has the meaning says this exact word, and the commoner word they
@@ -176,7 +182,7 @@ def said(chance: float | None, instead: str | None, same: bool = False) -> str:
                 f"finds the hole, so it is a word players say")
     if chance is None:
         return "whether players would say this word: not measured"
-    note = f"a player who has the meaning says this exact word at {chance:.2f}"
+    note = f"a player who has the meaning says this exact word at {two_places(chance)}"
     if instead:
         note += f" (they would keep saying « {instead} »)"
     if chance < WOULD_SAY_HARD:
@@ -197,20 +203,29 @@ BURIED_CROWD = 0.70
 CROWD_N = 30
 
 
-def crowd_share(rank_map: dict, index_of: Callable[[str], int | None]) -> float | None:
-    """The share of the secret's CROWD_N nearest groups in `rank_map` (a map's shape:
-    key -> {rank, ...}, rank 0 the secret) that are more common than the secret's own
-    group; a group's commonness is the corpus position of its commonest key
-    (`index_of(slug)`, lower = commoner). A group with no known key is left out of the
-    share. None when the secret's group or every neighbour is unknown."""
-    groups: dict[int, list[int]] = {}
+def group_commonness(rank_map: dict, index_of: Callable[[str], int | None]) -> dict[int, int | None]:
+    """Each group of `rank_map` (a map's shape: key -> {rank, ...}; a group is its rank,
+    every key one of its forms) by its commonness: the corpus position of its commonest
+    key (`index_of(slug)` on the key's slug before any `:pos`, lower = commoner). A verb
+    shown as « observaient » is as common as « observer ». None when no key is known."""
+    out: dict[int, int | None] = {}
     for key, entry in rank_map.items():
         i = index_of(key.split(":", 1)[0])
-        groups.setdefault(entry["rank"], []).extend([] if i is None else [i])
-    if not groups.get(0):
+        known = [x for x in (out.get(entry["rank"]), i) if x is not None]
+        out[entry["rank"]] = min(known) if known else None
+    return out
+
+
+def crowd_share(rank_map: dict, index_of: Callable[[str], int | None]) -> float | None:
+    """The share of the secret's CROWD_N nearest groups in `rank_map` (rank 0 the secret)
+    that are more common than the secret's own group (`group_commonness`). A group with
+    no known key is left out of the share. None when the secret's group or every
+    neighbour is unknown."""
+    groups = group_commonness(rank_map, index_of)
+    secret = groups.get(0)
+    if secret is None:
         return None
-    secret = min(groups[0])
-    near = [min(groups[r]) for r in sorted(r for r in groups if r >= 1)[:CROWD_N] if groups[r]]
+    near = [groups[r] for r in sorted(r for r in groups if r >= 1)[:CROWD_N] if groups[r] is not None]
     return round(sum(i < secret for i in near) / len(near), 3) if near else None
 
 
