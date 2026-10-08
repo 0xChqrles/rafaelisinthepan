@@ -203,6 +203,14 @@ def display_token(tok):
     return tok.lower()
 
 
+def display_tokens(sentence):
+    """The sentence's DISPLAY tokens (`words[]`): split on whitespace, and a long dash
+    (« — », « – ») is a token of its own. Such a dash marks a break, never a link, and is
+    often printed unspaced (« administration—provided »): left inside a token, it glued a
+    hole to the next word as its suffix. A hyphen (-) stays inside its compound."""
+    return [display_token(t) for t in re.sub(r"\s*([—–])\s*", r" \1 ", sentence).split()]
+
+
 def locate_core(token, target_slug, cfg):
     """Find the first matching word-core in one display token, or ``None``.
 
@@ -3518,7 +3526,7 @@ def main():
     # apostrophes KEPT (see display_token), so words[] reproduces the sentence. Each
     # secret is located INSIDE its token by slug (locate_core), so a blanked word keeps
     # its surrounding clitic/punctuation as the hole's prefix/suffix.
-    words = [display_token(t) for t in sentence.split()]
+    words = display_tokens(sentence)
 
     # Existence set for the front: the whole (slugged) reduced vocabulary V, named by the
     # reduced file it was loaded from so its metadata (#200) records that corpus build.
