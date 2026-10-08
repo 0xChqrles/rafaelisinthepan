@@ -36,6 +36,10 @@ export interface InboundMessage {
   fromMe: boolean;
   mentions: Mention[];
   quoted?: QuotedRef;
+  // A copy its sender passed on (`contextInfo.isForwarded`). WhatsApp does not say who first
+  // wrote it, so the words are not the sender's own — a forwarded line of the bot's read as
+  // a player saying it.
+  forwarded?: true;
   // Delivered in real time (Baileys `notify`) versus replayed from history / a resync.
   // Shares are ingested either way (idempotently); reactions and conversation only for live.
   live: boolean;

@@ -282,6 +282,7 @@ async function main(): Promise<void> {
           }
         : null,
       names,
+      message.forwarded === true,
     );
     if (!kept) return null;
     const at = message.timestamp * 1000;

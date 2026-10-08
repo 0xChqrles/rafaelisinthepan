@@ -81,14 +81,19 @@ export function sentIn(timezone: string, atMs: number): string {
 // in either as the name the group uses. Both texts arrive with their share block ALREADY
 // out (`withoutShares`, once — a second pass can strip what the first one's whitespace
 // collapse joined), and `author` is already "you" or a display name. Null when the message
-// leaves nothing to keep.
+// leaves nothing to keep. A FORWARDED body is marked as one: its words are somebody else's,
+// and WhatsApp does not say whose.
+export const FORWARDED_LEAD = '[forwarded — WhatsApp does not say who first wrote it] ';
+
 export function composeTurnText(
   body: string,
   quoted: { author: string; text: string; sent?: string } | null,
   names: ReadonlyMap<string, string>,
+  forwarded = false,
 ): string | null {
   const lead = quoted ? quoteLead(quoted.author, withMentionNames(quoted.text, names), quoted.sent) : '';
-  const kept = `${lead}${withMentionNames(body, names)}`.trim();
+  const said = withMentionNames(body, names);
+  const kept = `${lead}${forwarded && said.trim() !== '' ? FORWARDED_LEAD : ''}${said}`.trim();
   return kept === '' ? null : kept;
 }
 

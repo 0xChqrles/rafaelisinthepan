@@ -123,6 +123,14 @@ describe('Baileys stops at the inbound boundary (#236)', () => {
       resolve,
     );
     expect(overPhoto?.quoted?.text).toBe('regarde');
+    expect(overPhoto?.forwarded).toBeUndefined();
+    // A forwarded copy says it is one: its words are not the sender's.
+    const forwarded = await toInbound(
+      wa({ message: { extendedTextMessage: { text: 'Ma sœur a des béquilles.', contextInfo: { isForwarded: true, forwardingScore: 1 } } } }),
+      true,
+      resolve,
+    );
+    expect(forwarded?.forwarded).toBe(true);
     // No `…Alt` beside the LID (a history replay): the mapping still names the player.
     const replayed = await toInbound(
       wa({ key: { participant: '123456789012345@lid' }, message: { conversation: 'x' } }),

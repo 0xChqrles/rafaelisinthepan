@@ -16,6 +16,7 @@ import {
   dynamoDayLogStore,
   memoryDayLogStore,
   quoteLead,
+  FORWARDED_LEAD,
   sentIn,
   renderDay,
   type Turn,
@@ -193,5 +194,8 @@ describe('what a message becomes as a turn (#277)', () => {
     // Under a quote the turn still says what it answers — the bot's own line as "you".
     expect(composeTurnText(onlyShare, { author: 'you', text: 'Podium du jour' }, names)).toBe('[replying to you: "Podium du jour"]');
     expect(composeTurnText('oui', null, names)).toBe('oui');
+    // A forwarded body is marked as somebody else's words; an empty one stays nothing.
+    expect(composeTurnText('Ma sœur a des béquilles.', null, names, true)).toBe(`${FORWARDED_LEAD}Ma sœur a des béquilles.`);
+    expect(composeTurnText(onlyShare, null, names, true)).toBeNull();
   });
 });
