@@ -144,6 +144,7 @@ function Silhouette({ puzzle, holes, leaving }: { puzzle: Puzzle; holes: Runtime
         key={holes.map((h) => h.word).join(' ')}
         silhouette
         words={puzzle.words}
+        lang={puzzle.lang}
         holes={holes}
         puzzleHoles={puzzle.holes}
         hits={[]}

@@ -100,7 +100,7 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   words, the start words, difficulty). Code keeps only FACTS — which words can be hidden,
   the cooldowns, the famous line, valid grammar, the puzzle format — and turns everything
   it MEASURES into notes the model reads; nothing measured refuses a word but the giveaway
-  FLOOR (below). Why: replayed
+  FLOOR and the BURIED rule (below). Why: replayed
   on the 16 days the user loved, the code rules it replaces would have rejected three of
   the lines before any model saw them (`MIN_CANDIDATES`: JeanJass, NeS, Rounhaa) and five
   of the trios (the pair rules: « éleveur de [pigeons] », « le cafard de l'[homme] »),
@@ -150,9 +150,18 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   word players don't say; ONE makes a hard day a loved day may hold (« moucheron »,
   « mammifères »), TWO or more made the worst days (finished by a median 40 % of the
   players, against 57 % with one and 71 % with none), so a trio holding two
-  carries that fact on each of them (`rules.unsaid`), and the taste keeps at most one —
-  never the rare stand-in for the word everyone uses, while the NAME of a thing passes
-  however rare (« saint-bernard »; user-decided 2026-10-07);
+  carries that fact on each of them (`rules.unsaid`), and the taste keeps at most one;
+  the CROWD (`rules.crowd_share`, free: the word's own STATIC map, `gen_phrase.walk_secret`
+  with no judge, built in `load_similarity`): the share of its `CROWD_N` (30) nearest
+  groups more common in the corpus than it, as a note — and the BURIED rule, the second
+  code veto (user-decided 2026-10-08, after « charnier »): a word players only half-say
+  (would-say ≤ `BURIED_WOULD_SAY` 0.50, asked TWICE and averaged when the crowd is over
+  its bar) among commoner near-words (crowd ≥ `BURIED_CROWD` 0.70) is refused, and
+  `llm.replace_word` names the word of the line to hide instead, before the ranking is
+  paid for. Players reach the idea, circle the commoner neighbours and stall: on 126
+  played French holes such words stalled players about twice as often, rarity aside. A
+  rare NAME passes (« saint-bernard », said at 0.58), a rare stand-in does not
+  (« faux-monnayeur », « charnier »); English uses the French bars, unchecked on play;
   and, once the map is built, where the reader's nearest word
   lands in the hole's own map (`rules.map_nearest_filler`). A trio hiding TWO
   or more words players don't say — the one fact that asks — has ONE of them swapped by the
@@ -170,9 +179,7 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 - **Which words can be hidden (facts, `rules.initial_candidates`):** NOUN/VERB/ADJ/ADV and
   PROPN (the parser tags a lowercase brand or rare noun as a proper noun — « rolex »,
   « zigzag », secrets of a favourite day; a name nobody can reason toward is taste's
-  call), not stopwords, not on the user's hand-kept `REFUSED` list (words never hidden in
-  any line — « faux-monnayeur »; no measured score separated it from loved rare words,
-  2026-10-07), not among the commonest words (`MAX_COMMON_RANK` 20 /
+  call), not stopwords, not among the commonest words (`MAX_COMMON_RANK` 20 /
   `MAX_COMMON_RANK_ADV` 500, read off the reduced vectors' order), not a `WEAK_VERBS` verb
   (saying, thinking, modality — user-decided 2026-09-08; per language, the English list
   the French one translated word for word, #317), slug in the vocab — a
@@ -337,8 +344,10 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 
 - Don't publish, and don't write a puzzle by any path but `gen_phrase`.
 - Don't turn a measurement into a veto: code states facts, taste chooses. A new signal
-  goes to the model as a note, with its real-play meaning. The one veto is the giveaway
-  floor (`GIVEAWAY_MIN`, user-decided 2026-10-02).
+  goes to the model as a note, with its real-play meaning. The two vetoes are the giveaway
+  floor (`GIVEAWAY_MIN`, user-decided 2026-10-02) and the BURIED rule (`rules.buried`,
+  user-decided 2026-10-08). Don't keep a hand list of refused words: the buried rule
+  measures any word (the user: "the curator will be good in 30 years with this solution").
 - Don't write taste into code or a prompt copy; it lives in the `taste` skill.
 - Don't ask a model to PLAY the puzzle — to guess its way to a secret, count the tries or
   simulate a player (user-decided 2026-09-25): LLMs don't play like people (on real

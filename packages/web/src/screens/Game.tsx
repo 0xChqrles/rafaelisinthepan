@@ -53,7 +53,7 @@ import {
   type PuzzleRef,
 } from '@whippin/shared';
 import { prefersReducedMotion } from '../hooks/useScramble';
-import { sentenceStarts } from '../game/sentenceCase';
+import { capitals } from '../game/sentenceCase';
 import { prefetchTurnstileTokens } from '../turnstile';
 import { deviceIdentity, ensureDeviceIdentity, useDeviceIdentity } from '../identity';
 import ErrorScreen from '../components/ErrorScreen';
@@ -1236,6 +1236,7 @@ function Round({
               {resultUp ? (
                 <DissolvePhrase
                   words={words}
+                  lang={lang}
                   puzzleHoles={puzzleHoles}
                   revealedAt={revealedPositions}
                   onDone={finishDissolve}
@@ -1243,6 +1244,7 @@ function Round({
               ) : (
                 <Phrase
                   words={words}
+                  lang={lang}
                   holes={boardHoles}
                   puzzleHoles={puzzleHoles}
                   hits={hits}
@@ -1450,7 +1452,7 @@ function Round({
           lang={lang}
           // The slot row redraws the hole's word: it wears the sentence-case capital
           // exactly when the hole does (a sentence opener with no prefix to carry it).
-          capital={sentenceStarts(words)[puzzleHoles[historyHole].pos] && !puzzleHoles[historyHole].prefix}
+          capital={capitals(words, lang)[puzzleHoles[historyHole].pos] && !puzzleHoles[historyHole].prefix}
           onPick={exploreDisabled ? undefined : (stop) => pickWord(historyHole, stop)}
           onClose={closeHistory}
         />

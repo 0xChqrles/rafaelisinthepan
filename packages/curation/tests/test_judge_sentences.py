@@ -391,7 +391,7 @@ def test_start_words_are_re_picked_at_most_start_rounds_times(monkeypatch):
 
 # --- a word no start can save is swapped, REPLACE_ROUNDS times at most --------------------
 
-def _build_day(monkeypatch, generate, log, given=None, says=None, instead=None):
+def _build_day(monkeypatch, generate, log, given=None, says=None, instead=None, crowds=None, asked_say=None):
     """build_day on a song's line with chat · dort · pierre chosen and « froide » left to
     swap in, each word's giveaway judged before the choice (`given`, 0.3 by default) and
     the chance a player says it (`says`, 0.8 by default); returns (its result, the words
@@ -403,14 +403,14 @@ def _build_day(monkeypatch, generate, log, given=None, says=None, instead=None):
     monkeypatch.setattr(curate.llm, "context_guesses",
                         lambda _c, toks, _blanks, mark, _n, lang: asked.append(toks[mark].text) or ([], None))
     monkeypatch.setattr(curate.llm, "would_say",
-                        lambda _c, _toks, _blanks, _mark, word, lang: ((says or {}).get(word, 0.8),
-                                                                       (instead or {}).get(word)))
+                        lambda _c, _toks, _blanks, _mark, word, lang: (asked_say if asked_say is not None else []).append(word)
+                        or ((says or {}).get(word, 0.8), (instead or {}).get(word)))
     monkeypatch.setattr(curate, "generate", generate)
     line = {"sentence": "Le chat dort sur la pierre froide.", "tokens": tokens, "allowed": allowed,
             "given": given or {t.slug: 0.3 for t in allowed}}
     path = curate.build_day(object(), log, line, allowed[:3], ["chat: le sujet"], {"kind": "music"}, {"pairs": {}},
                             "", {"kind": "music"}, lambda t: None, lambda t, w: None, "fr",
-                            "old.contextual.json")
+                            "old.contextual.json", crowd=lambda t: (crowds or {}).get(t.text))
     return path, asked
 
 
@@ -476,6 +476,30 @@ def test_the_word_players_say_instead_in_another_form_is_this_word(monkeypatch):
     _build_day(monkeypatch, generate, Log(), says={"dort": 0.3, "pierre": 0.1}, instead={"dort": "dormir"})
     assert "this same word in another form" in seen["dort"] and "a word players don't say" not in seen["dort"]
     assert "a word players don't say" in seen["pierre"] and "this trio hides" not in seen["pierre"]
+
+
+def test_a_buried_word_is_refused_by_code_and_replaced_before_the_ranking(monkeypatch):
+    # « charnier »: half-said and among commoner near-words — players circle them and stall.
+    calls, said = [], []
+    monkeypatch.setattr(curate.llm, "replace_word",
+                        lambda _c, _m, _h, word, others, _chain, lang: {"with": "froide", "why": "said"})
+
+    def generate(_c, _l, _sentence, words, *_a, replay, chain, **_k):
+        calls.append((words, chain[0]))
+        return "out/x_y_z.json"
+
+    path, _asked = _build_day(monkeypatch, generate, Log(), says={"pierre": 0.45},
+                              crowds={"pierre": 0.8, "chat": 0.2}, asked_say=said)
+    assert path == "out/x_y_z.json"
+    assert calls == [(["chat", "dort", "froide"], "froide replaces pierre: buried among commoner near-words (said)")]
+    assert said.count("pierre") == 2 and said.count("chat") == 1   # asked twice only in a crowd
+
+
+def test_a_rare_name_players_say_in_a_crowd_is_not_buried(monkeypatch):
+    monkeypatch.setattr(curate.llm, "replace_word", lambda *_a, **_k: pytest.fail("not buried"))
+    path, _ = _build_day(monkeypatch, lambda *_a, **_k: "out/x_y_z.json", Log(), says={"pierre": 0.58},
+                         crowds={"pierre": 0.83})
+    assert path == "out/x_y_z.json"
 
 
 def test_a_day_is_given_up_after_replace_rounds_swaps(monkeypatch):

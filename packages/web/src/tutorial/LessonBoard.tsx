@@ -21,7 +21,7 @@ import { latestMaskedPick, selectWord, shownHolesFor, withoutMaskedPicks, type W
 import { MASK, buildHistory, type HistoryStop } from '../game/history';
 import { guessKey, replayHoles } from '../game/scoring';
 import { replayCharge, strikeFor } from '../game/charge';
-import { sentenceStarts } from '../game/sentenceCase';
+import { capitals } from '../game/sentenceCase';
 import { SCRAMBLE_MS, coarsePointer, prefersReducedMotion, useScramble } from '../hooks/useScramble';
 import type { Vocab } from '../hooks/useVocab';
 import { fold } from '@whippin/shared';
@@ -705,7 +705,7 @@ export default function LessonBoard({
   }, [coach, say]);
 
   const quiet = playing && historyHole === null && hits.length === 0;
-  const starts = sentenceStarts(puzzle.words);
+  const caps = capitals(puzzle.words, lang);
   // The meters as the sentence shows them (the meter stage only): the reading, whether the
   // hole is active, and the sr-only description in the meter's place (#301).
   const charges = useMemo(() => {
@@ -815,10 +815,11 @@ export default function LessonBoard({
             {leaving ? (
               // The found sentence's exit: its exact pixels, eroded letter by letter —
               // `viewHoles`, so a traded meter stage dissolves the word it actually shows.
-              <DissolvePhrase words={puzzle.words} puzzleHoles={viewHoles} brisk onDone={onLeft} />
+              <DissolvePhrase words={puzzle.words} lang={lang} puzzleHoles={viewHoles} brisk onDone={onLeft} />
             ) : (
               <Phrase
                 words={puzzle.words}
+                lang={lang}
                 holes={shownHoles}
                 puzzleHoles={puzzleHoles}
                 hits={hits}
@@ -947,7 +948,7 @@ export default function LessonBoard({
           hostIndex={historyHole}
           number={historyHole + 1}
           lang={lang}
-          capital={sentenceLike && starts[puzzleHoles[historyHole].pos] && !puzzleHoles[historyHole].prefix}
+          capital={sentenceLike && caps[puzzleHoles[historyHole].pos] && !puzzleHoles[historyHole].prefix}
           onPick={(stop) => pickWord(historyHole, stop)}
           onClose={closeHistory}
         />

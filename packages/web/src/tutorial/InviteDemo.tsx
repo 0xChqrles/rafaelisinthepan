@@ -185,6 +185,7 @@ export default function InviteDemo({ lang }: { lang: LangCode }) {
         {ready ? (
           <Phrase
             words={demo.words}
+            lang={lang}
             holes={[hole]}
             puzzleHoles={[demo.hole]}
             hits={miss ? [miss] : NO_HITS}
