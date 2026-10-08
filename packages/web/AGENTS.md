@@ -184,6 +184,9 @@
                               the period switch's frame
       components/refuseShake.ts  the REFUSAL's stepped shake (2px held frames): the archive's
                               month chip past either end, a device line whose sign-out failed
+      components/promptShake.ts  the PROMPT's refusal: a typed line shakes in the danger ink, the
+                              ink part of the animation (the guess, the group name, the
+                              address, the profile name)
       components/raster.ts    a canvas raster's ABGR pixel (`abgr`, `hexToAbgr`, and `rgbToAbgr`
                               for `heat.ts`'s `rgb()` inks): the streak's orbit, the podium, the
                               archive's keys, the tutorial's art
@@ -465,7 +468,9 @@ These are decided and verified against the code. Treat them as load-bearing.
   or bracket allowed) take a capital on their first LETTER, past an opening quote; a
   hole's PREFIX takes it when the hole has one (« T'attends »), else the hole's displayed
   word (`Hole`'s `capital`, on the letters path alone — never on the word the round
-  compares, never on a slug or a keystroke). Proper nouns stay as stored: only
+  compares, never on a slug or a keystroke). ENGLISH's pronoun I takes the same capital
+  wherever it stands (`i`, `i'm`; never in French, whose lone `i` is the letter), so each
+  renderer is handed the puzzle's `lang`. Proper nouns stay as stored: only
   generation keeping the source's case could restore them, a schema decision not made.
 - **Solved holes (`rank === 0`) are locked:** excluded from the loop and rendered
   solved (accented secret, no exponent).

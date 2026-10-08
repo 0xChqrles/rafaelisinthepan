@@ -41,13 +41,6 @@ WEAK_VERBS = {
         "must", "need", "find", "have", "be", "do", "make", "go",
     }),
 }
-# Words never hidden, in any line — the user's hand-kept list (2026-10-07): no measured
-# score told « faux-monnayeur » (a rare stand-in for « faussaire ») from loved rare words
-# (« clodos », « saint-bernard »). By slug, per language; a word joins when a day shows it.
-REFUSED = {
-    "fr": frozenset({"faux-monnayeur", "faux-monnayeurs"}),
-    "en": frozenset(),
-}
 # The READER (the user's own method, 2026-09-10): blank one word, the rest of the line
 # intact and no start word, and ask what else could stand there — at most
 # CONTEXT_GUESSES words — and which ONE word most readers would write. A filler that is
@@ -97,8 +90,8 @@ def initial_candidates(
     past_secrets: frozenset[str] | set[str] = frozenset(),
     frequency_rank: Callable[[Token], int | None] = lambda t: None,
 ) -> list[Token]:
-    """The words that CAN be a secret: an allowed POS, not a stopword, a weak verb, a
-    refused word or one of the commonest words, a slug the game admits and has not used (a hyphenated
+    """The words that CAN be a secret: an allowed POS, not a stopword, a weak verb or one
+    of the commonest words, a slug the game admits and has not used (a hyphenated
     compound included — « post-it »), and no same-lemma twin under another slug visible
     in the sentence (a same-slug repeat is fine: one hole per occurrence).
     `frequency_rank` reads the word's place in the corpus (None = unknown, which is not a
@@ -112,8 +105,6 @@ def initial_candidates(
         if t.pos not in ALLOWED_POS or t.stop:
             continue
         if t.pos == "VERB" and t.lemma in WEAK_VERBS[lang]:
-            continue
-        if t.slug in REFUSED[lang]:
             continue
         if len(t.slug) < 2 or not in_vocab(t.slug):
             continue
@@ -191,6 +182,48 @@ def said(chance: float | None, instead: str | None, same: bool = False) -> str:
     if chance < WOULD_SAY_HARD:
         note += f", under {WOULD_SAY_HARD}: a word players don't say"
     return note
+
+
+# A BURIED word (user-decided 2026-10-08, after « charnier »): players only half-say it
+# (would-say at most BURIED_WOULD_SAY) and it sits among commoner near-words (at least
+# BURIED_CROWD of its CROWD_N nearest groups on the plain, embedding-only map are more
+# common in the corpus). Players reach the idea, then circle the commoner neighbours and
+# stall: on 126 played French holes, half-said words in such a crowd stalled players about
+# twice as often (a run of 10 guesses with no new best: 33% against 18%), rarity aside.
+# A rare NAME passes (« saint-bernard », said at 0.58); a rare stand-in does not
+# (« faux-monnayeur », « charnier »). Code refuses it — the second veto after the giveaway floor.
+BURIED_WOULD_SAY = 0.50
+BURIED_CROWD = 0.70
+CROWD_N = 30
+
+
+def crowd_share(rank_map: dict, index_of: Callable[[str], int | None]) -> float | None:
+    """The share of the secret's CROWD_N nearest groups in `rank_map` (a map's shape:
+    key -> {rank, ...}, rank 0 the secret) that are more common than the secret's own
+    group; a group's commonness is the corpus position of its commonest key
+    (`index_of(slug)`, lower = commoner). A group with no known key is left out of the
+    share. None when the secret's group or every neighbour is unknown."""
+    groups: dict[int, list[int]] = {}
+    for key, entry in rank_map.items():
+        i = index_of(key.split(":", 1)[0])
+        groups.setdefault(entry["rank"], []).extend([] if i is None else [i])
+    if not groups.get(0):
+        return None
+    secret = min(groups[0])
+    near = [min(groups[r]) for r in sorted(r for r in groups if r >= 1)[:CROWD_N] if groups[r]]
+    return round(sum(i < secret for i in near) / len(near), 3) if near else None
+
+
+def buried(chance: float | None, crowd: float | None) -> bool:
+    """Whether a hidden word is BURIED: half-said and among commoner near-words."""
+    return chance is not None and crowd is not None and chance <= BURIED_WOULD_SAY and crowd >= BURIED_CROWD
+
+
+def crowd_note(crowd: float | None) -> str:
+    if crowd is None:
+        return "its crowd of commoner near-words: not measured"
+    n = round(crowd * CROWD_N)
+    return f"{n} of its {CROWD_N} nearest words on the plain map are more common than it"
 
 
 def unsaid(chances: dict[str, float | None]) -> str | None:

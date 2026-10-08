@@ -4,6 +4,7 @@ import { fold } from '@whippin/shared';
 import { t } from '../i18n';
 import { COARSE_POINTER, coarsePointer, prefersReducedMotion } from '../hooks/useScramble';
 import UnlockIcon from '../assets/icons/unlock.svg?react';
+import { promptShake } from './promptShake';
 
 // Map a physical key to the slug character(s) it contributes. The on-screen keyboard
 // only exposes [a-z] + dash, but a desktop user can press accented / uppercase keys;
@@ -141,7 +142,7 @@ export default function WordInput({
   fieldRef,
   active = true,
 }: WordInputProps) {
-  const [shaking, setShaking] = useState<boolean>(false);
+  const line = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement | null>(null);
   const touch = useSyncExternalStore(watchTouchScreen, coarsePointer, coarsePointer);
 
@@ -339,23 +340,12 @@ export default function WordInput({
   };
 
   // Rejected word: keep the text (so it can be corrected) and shake the prompt.
-  // Double-toggle through rAF to replay the animation even on consecutive rejects.
   useEffect(() => {
-    if (!invalidSignal) return undefined;
-    setShaking(false);
-    const id = requestAnimationFrame(() => setShaking(true));
-    return () => cancelAnimationFrame(id);
+    if (invalidSignal) promptShake(line.current);
   }, [invalidSignal]);
 
   return (
-    <div
-      className={`word-input${shaking ? ' invalid' : ''}`}
-      // Only the line's OWN shake ends it: a letter landing (`.wi-char`) ends its drop inside,
-      // and that end bubbles here too.
-      onAnimationEnd={(e) => {
-        if (e.target === e.currentTarget) setShaking(false);
-      }}
-    >
+    <div ref={line} className="word-input">
       <input
         ref={(node) => {
           field.current = node;

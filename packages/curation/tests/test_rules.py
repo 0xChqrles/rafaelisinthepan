@@ -6,11 +6,15 @@ from rules import (
     MAX_COMMON_RANK,
     MAX_COMMON_RANK_ADV,
     PLAIN_WORD_RANK,
-    REFUSED,
+    BURIED_CROWD,
+    BURIED_WOULD_SAY,
+    CROWD_N,
     TWIN_RANK,
     WEAK_VERBS,
     WOULD_SAY_HARD,
     Token,
+    buried,
+    crowd_share,
     initial_candidates,
     is_twin,
     map_nearest_filler,
@@ -112,20 +116,30 @@ def test_weak_verbs_are_never_candidates():
     assert [t.text for t in initial_candidates(sent, lang="fr", in_vocab=lambda s: True)] == ["chat", "dort"]
 
 
-def test_a_refused_word_is_never_a_candidate_in_any_line():
-    # User-decided 2026-10-07: « faux-monnayeur » — no measured score told it from loved
-    # rare words, so the user keeps the list by hand.
-    assert "faux-monnayeur" in REFUSED["fr"]
-    sent = [tok(0, "un", "DET", stop=True), tok(1, "faux-monnayeur", "NOUN"), tok(2, "dort", "VERB", lemma="dormir"),
-            tok(3, "saint-bernard", "NOUN")]
-    assert [t.text for t in initial_candidates(sent, lang="fr", in_vocab=lambda s: True)] == ["dort", "saint-bernard"]
-
-
 def test_the_same_word_is_its_lemma_or_a_variant_never_a_near_neighbour():
     sauva = Token(i=0, text="sauva", lemma="sauver", pos="VERB", slug="sauva", stop=False)
     assert same_word(sauva, "sauver") and same_word(sauva, "Sauva")
     fm = Token(i=0, text="faux-monnayeur", lemma="faux-monnayeur", pos="NOUN", slug="faux-monnayeur", stop=False)
     assert not same_word(fm, "faussaire") and not same_word(fm, None) and not same_word(fm, "faux monnayeur")
+
+
+def test_the_crowd_is_the_share_of_the_nearest_groups_commoner_than_the_secret():
+    index = {"charnier": 5000, "cimetiere": 900, "ossuaire": 9000, "fosse": 1200, "tombe": 800, "zzz": None}.get
+    rank_map = {"charnier": {"rank": 0}, "charniers": {"rank": 0}, "cimetiere": {"rank": 1}, "ossuaire": {"rank": 2},
+                "fosse": {"rank": 3}, "tombe:nc": {"rank": 4}, "zzz": {"rank": 5}}
+    assert crowd_share(rank_map, index) == 0.75          # 3 of the 4 known neighbours are commoner
+    assert crowd_share({"x": {"rank": 1}}, index) is None  # no secret group
+    far = {"charnier": {"rank": 0}, **{f"w{i}": {"rank": i} for i in range(1, CROWD_N + 10)}}
+    assert crowd_share(far, lambda s: 1 if s.startswith("w") and int(s[1:]) > CROWD_N else 9000 if s.startswith("w")
+                       else 5000) == 0.0             # only the CROWD_N nearest groups count
+
+
+def test_a_buried_word_is_half_said_and_in_a_crowd_a_rare_name_is_not():
+    # User-decided 2026-10-08: « charnier » (0.475, 22 of 30 commoner) is buried; « saint-bernard »
+    # (0.575, 25 of 30) is a rare name players say; « clodos » has no crowd big enough.
+    assert (BURIED_WOULD_SAY, BURIED_CROWD) == (0.50, 0.70)
+    assert buried(0.475, 22 / 30) and not buried(0.575, 25 / 30) and not buried(0.38, 0.5)
+    assert not buried(None, 0.9) and not buried(0.3, None)
 
 
 def test_the_english_weak_verbs_are_the_french_list_translated():

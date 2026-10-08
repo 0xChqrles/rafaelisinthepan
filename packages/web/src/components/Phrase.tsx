@@ -1,7 +1,7 @@
 import { Fragment, type CSSProperties } from 'react';
 import Hole, { type HoleChargeView } from './Hole';
 import { DecodeWord, introPlan, useIntroClock } from './PhraseIntro';
-import { capitalize, sentenceStarts } from '../game/sentenceCase';
+import { capitalize, capitals } from '../game/sentenceCase';
 import type { Hole as PuzzleHole } from '@whippin/shared';
 import type { HitState, RuntimeHole } from '../game/types';
 
@@ -11,6 +11,7 @@ import type { HitState, RuntimeHole } from '../game/types';
 // state), so they are always correct even for a round persisted before they existed.
 export default function Phrase({
   words,
+  lang,
   holes,
   puzzleHoles,
   hits,
@@ -30,6 +31,7 @@ export default function Phrase({
   silhouette = false,
 }: {
   words: string[];
+  lang: string; // English capitalizes its pronoun I (`game/sentenceCase.ts`)
   holes: RuntimeHole[];
   puzzleHoles: PuzzleHole[]; // static per-hole data (affixes), keyed by pos below
   hits: HitState[]; // one transient number per warm hole (multi-hit)
@@ -63,9 +65,9 @@ export default function Phrase({
 }) {
   const holeIndexByPos = new Map<number, number>(holes.map((h, i) => [h.pos, i]));
   // Sentence case is a DISPLAY rule (`game/sentenceCase.ts`): the first token and every
-  // token after a sentence-final mark open on a capital; a hole's prefix takes it when
-  // the hole has one, else the hole's own displayed word.
-  const starts = capital ? sentenceStarts(words) : words.map(() => false);
+  // token after a sentence-final mark open on a capital, as does English's pronoun I; a
+  // hole's prefix takes it when the hole has one, else the hole's own displayed word.
+  const caps = capital ? capitals(words, lang) : words.map(() => false);
   const puzzleHoleByPos = new Map<number, PuzzleHole>(puzzleHoles.map((h) => [h.pos, h]));
   const hintId = (holeIndex: number) => `hole-explore-${holeIndex}`;
   const chargeId = (holeIndex: number) => `hole-charge-${holeIndex}`;
@@ -77,7 +79,7 @@ export default function Phrase({
   // (or morphs in, with `morphFrom`: a lesson's next stage) and nothing else ever replays it; the dissolve's copy
   // of the sentence (`DissolvePhrase`) is a component of its own and never decodes.
   const key = words.join(' ');
-  const shownText = (w: string, i: number) => (starts[i] ? capitalize(w) : w);
+  const shownText = (w: string, i: number) => (caps[i] ? capitalize(w) : w);
   const tokenText = (w: string, i: number) => {
     const idx = holeIndexByPos.get(i);
     if (idx === undefined) return shownText(w, i);
@@ -125,11 +127,11 @@ export default function Phrase({
               {space}
               <span className="hole-group" style={beat(i)}>
                 {prefix ? (
-                  <span className="word">{starts[i] ? capitalize(prefix) : prefix}</span>
+                  <span className="word">{caps[i] ? capitalize(prefix) : prefix}</span>
                 ) : null}
                 <Hole
                   enter={morphFrom?.[idx]}
-                  capital={starts[i] && !prefix}
+                  capital={caps[i] && !prefix}
                   hole={rHole}
                   hit={activeHit}
                   holeIndex={idx}

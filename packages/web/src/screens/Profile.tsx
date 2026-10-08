@@ -46,6 +46,7 @@ import LangTitle from '../components/LangTitle';
 import { HeaderBack, HeaderLeft } from '../components/TopBar';
 import { useGameStore } from '../state/gameStore';
 import { prefersReducedMotion } from '../hooks/useScramble';
+import { promptShake } from '../components/promptShake';
 import DiceIcon from '../assets/icons/dice.svg?react';
 import ClearIcon from '../assets/icons/clear.svg?react';
 
@@ -328,9 +329,8 @@ export default function Profile() {
   // A save is out: SAVE is busy (`BusyButton`) and the editor is frozen (below).
   const [saving, setSaving] = useState(false);
   const [refused, setRefused] = useState<SaveRefusal>(null);
-  // A refused NAME shakes its field (AddressField's gesture), and the refusal's one note
-  // under the line is what the field and the canvas point at.
-  const [nameShake, setNameShake] = useState(false);
+  // A refused NAME shakes its field (AddressField's gesture, `promptShake`), and the refusal's
+  // one note under the line is what the field and the canvas point at.
   const refusalId = useId();
   // Where the canvas is told what an edit just changed: a changed cell POPS (`EditorCanvas`) —
   // and ONLY a changed one, so loading a stored drawing pops nothing.
@@ -1012,10 +1012,8 @@ export default function Profile() {
     // The landing, told where it belongs (visual only): a save that LANDED is stamped in foil
     // on the canvas; a refused NAME shakes the name; any other refusal shakes the card.
     if (written && outcome === null) setStamp((n) => n + 1);
-    else if (outcome === 'name_rejected') {
-      setNameShake(false);
-      requestAnimationFrame(() => setNameShake(true));
-    } else if (outcome !== null) setRefusedShake((n) => n + 1);
+    else if (outcome === 'name_rejected') promptShake(nameRef.current);
+    else if (outcome !== null) setRefusedShake((n) => n + 1);
     setSaving(false);
   }, [name, encoded, assignedFrom, baseline, loadedFor]);
 
@@ -1210,9 +1208,7 @@ export default function Profile() {
               <LineMark key={`hop${stamp}`} avatar={encodeAvatar(linePalette ?? palette, shownPreview)} stamp={stamp} />
               <input
                 ref={nameRef}
-                className={`profile-name${anon ? ' anon' : ''}${refused === 'name_rejected' ? ' refused' : ''}${
-                  nameShake ? ' invalid' : ''
-                }`}
+                className={`profile-name${anon ? ' anon' : ''}${refused === 'name_rejected' ? ' refused' : ''}`}
                 type="text"
                 value={name}
                 readOnly={saving}
@@ -1221,7 +1217,6 @@ export default function Profile() {
                 aria-label={t(lang, 'profileNamePlaceholder')}
                 aria-invalid={refused === 'name_rejected' || undefined}
                 aria-describedby={refusalNote !== null ? refusalId : undefined}
-                onAnimationEnd={() => setNameShake(false)}
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
