@@ -5176,13 +5176,14 @@ it to the local store — see `packages/backend/AGENTS.md`).
   draws its own press states, and its own focus outline, wants it on no surface at all, so
   `button` carries `transparent` once beside the global `text-shadow: none`; the hole, the
   solved word and the wheel row each held a private copy of the same line and are gone.
-  **AND ONLY PROSE IS SELECTABLE**: `body` is `user-select: none` with no iOS long-press
-  callout (`-webkit-touch-callout: none`), so a select-all or a long press never paints the
-  chrome or the game's data; what is READ takes both back — the sentence's page
-  (`.solved-text`, its CUT excepted: a control), the privacy notice, the articles' prose,
-  every link (LISTEN keeps the system's long press) — and so does every field (WebKit
-  extends an ancestor's `none` to a nested input, and an unselectable field takes no
-  typing). **The missing-puzzle screen
+  **AND TEXT IS SELECTABLE** (the sentence can be copied, mid-round included): only what is
+  TAPPED, DRAGGED or DRAWN opts out (`user-select: none`) — the on-screen keyboard, the drawn
+  prompt (its hidden `.wi-field` takes it back: WebKit extends an ancestor's `none` to a
+  nested input, and an unselectable field takes no typing), the hole wheel and the language
+  drums, the avatar editor, the page's CUT (a control inside the prose), the canvas stand-ins
+  (the score watermark, the calendar's day numbers), and a hole's RANK (the count, not the
+  sentence's text). The prompt never takes the focus back from a selection (`WordInput`
+  `keepFocus`); the next key typed is a stray key and brings it back. **The missing-puzzle screen
   (`NoPuzzle`) has THREE wordings, told apart by the ROUTE (#77, decided 2026-07-27)** —
   the backend's 404 is undifferentiated, and which route asked is the only signal needed: on
   the **undated** route (today) it owns that the state is **abnormal** (a publish that did
