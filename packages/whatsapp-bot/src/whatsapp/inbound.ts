@@ -119,6 +119,7 @@ export async function toInbound(
     fromMe: key.fromMe === true,
     mentions,
     ...(quoted ? { quoted } : {}),
+    ...(info?.isForwarded ? { forwarded: true as const } : {}),
     live,
   };
 }

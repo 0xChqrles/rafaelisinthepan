@@ -514,7 +514,14 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   `MESSAGE_TIME_TTL_SECONDS` (30 days) — and a quote found there reads
   `[replying to you, sent Thu, 3 Sept 2026, 14:00: "…"]` (the group's zone, `sentIn`), so
   "I never said that" answered with last week's line is seen as last week's. A quote older
-  than the window, or a failed read, goes undated.
+  than the window, or a failed read, goes undated. **A QUOTE OF THE BOT'S OWN LINE IS
+  VOUCHED FOR BY THE CODE** (`agent.ts` `OWN_QUOTE_NOTE`, 2026-10-08): the lead sits among
+  what the group SAID, which the model reads as claims, so a member quoting an older line of
+  the bot's ("ma sœur…") was told it had never said it — its diary held no sister. When the
+  answered message quotes the bot (`quotesBot`), the system prompt says the quote is
+  WhatsApp's, word for word what it said, and that it owns it. **A FORWARDED message is
+  marked** (`FORWARDED_LEAD`, off `contextInfo.isForwarded`): WhatsApp does not say who
+  first wrote it, and unmarked it read as the forwarder's own words.
   **In ORDER**: the player's turn is remembered BEFORE `ingest` runs (a spoken
   acknowledgement is composed inside it and remembered through the `spoken` hook, which
   fires once the queue accepted it and names the message it answers); `main.ts` files the

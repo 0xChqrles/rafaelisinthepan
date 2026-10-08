@@ -5,7 +5,7 @@ import { memoryDeclarationStore } from '../domain/declarations';
 import type { InboundMessage } from '../domain/message';
 import { createLog } from '../log';
 import { LlmUnavailable, type LlmProvider, type LlmRequest, type LlmResponse } from '../llm/types';
-import { ANSWERING, DEFAULT_REACTION, createAgent, fromOwner, plainReply, reactionIn } from './agent';
+import { ANSWERING, DEFAULT_REACTION, OWN_QUOTE_NOTE, createAgent, fromOwner, plainReply, reactionIn } from './agent';
 import { DayLog, memoryDayLogStore, type Turn } from './dayLog';
 import { memoryDiaryStore } from './diary';
 import { memoryLimitStore } from './limits';
@@ -248,6 +248,18 @@ describe('the conversation agent (#236, #277)', () => {
     await said(dayLog, '[replying to Gab: "Pourtant 17 > 14, non ?"] WhippinBot');
     expect(await answer(message('@33700000000', { quoted: own }), group, identity, TODAY, asked())).toEqual({ kind: 'reply', text: '14 bat 17, comme au golf.' });
     expect(contents(requests[0])).toEqual([`[14:00] Gab: [replying to Gab: "Pourtant 17 > 14, non ?"] WhippinBot  ${ANSWERING}`]);
+    // A quote of somebody else's line is theirs to own, not the bot's.
+    expect(requests[0].system).not.toContain(OWN_QUOTE_NOTE);
+  });
+
+  it("VOUCHES for a quote of the bot's own line: what it said, even when nothing it holds has it (2026-10-08)", async () => {
+    const { provider, requests } = scripted([() => ({ text: "Oui, je l'ai dit." })]);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, '[replying to you: "Ma sœur a des béquilles."] tu vois');
+    const answer = agentWith(provider, { dayLog });
+    const mine = { id: 'OLD', participant: bot, player: bot, text: 'Ma sœur a des béquilles.' };
+    await answer(message('tu vois', { mentions: [], quoted: mine }), group, identity, TODAY, asked('reply'));
+    expect(requests[0].system).toContain(OWN_QUOTE_NOTE);
   });
 
   it('NAMES the message it is answering, wherever the day has put it (PR-278 review)', async () => {
