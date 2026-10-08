@@ -56,6 +56,24 @@ function viewerIpFunctionId(): string {
   )!;
   return id;
 }
+// The stack's two backend functions, told apart by their construct ids: the API (`PuzzleFn`)
+// and #207's purge worker (`PurgeFn`).
+function lambdaFunction(t: Template, prefix: 'PuzzleFn' | 'PurgeFn') {
+  const found = Object.entries(t.findResources('AWS::Lambda::Function')).filter(([id]) =>
+    id.startsWith(prefix),
+  );
+  expect(found, prefix).toHaveLength(1);
+  const [logicalId, resource] = found[0];
+  return { logicalId, properties: resource.Properties as Record<string, any> };
+}
+// Every statement of the policies attached to a function's own role.
+function roleStatements(t: Template, prefix: 'PuzzleFn' | 'PurgeFn'): Record<string, unknown>[] {
+  const role = lambdaFunction(t, prefix).properties.Role['Fn::GetAtt'][0] as string;
+  return Object.values(t.findResources('AWS::IAM::Policy'))
+    .filter((policy) => JSON.stringify(policy.Properties.Roles).includes(`"${role}"`))
+    .flatMap((policy) => policy.Properties.PolicyDocument.Statement as Record<string, unknown>[]);
+}
+
 // Run an edge function's code on a viewer request of `method` (the CloudFront event's shape).
 function runEdgeFunction(code: string, method: string): unknown {
   const handler = new Function(`${code}\nreturn handler;`)() as (event: unknown) => unknown;
@@ -131,9 +149,10 @@ const LIVE_ROUTES = [
 
 describe('score production boundary (#169)', () => {
   it('passes only parameter names to Lambda and grants one exact GetParameters read', () => {
-    const functions = Object.values(template.findResources('AWS::Lambda::Function'));
-    expect(functions).toHaveLength(1);
-    const variables = functions[0].Properties.Environment.Variables as Record<string, unknown>;
+    // The API and the purge worker (#207), and no other function.
+    expect(Object.keys(template.findResources('AWS::Lambda::Function'))).toHaveLength(2);
+    const variables = lambdaFunction(template, 'PuzzleFn').properties.Environment
+      .Variables as Record<string, unknown>;
     expect(variables).toMatchObject({
       TURNSTILE_SECRET_PARAMETER: TURNSTILE_PARAMETER,
       IP_HMAC_SECRET_PARAMETER: IP_HMAC_PARAMETER,
@@ -222,8 +241,9 @@ describe('score production boundary (#169)', () => {
     // Every identity, not the domain alone: a verified RECIPIENT is an identity the send is
     // authorized against too (2026-09-12), and the sender bound above is the guard that matters.
     expect(JSON.stringify(send[0].Resource)).toContain(':identity/*');
-    const functions = Object.values(template.findResources('AWS::Lambda::Function'));
-    expect(functions[0].Properties.Environment.Variables).toMatchObject({ MAIL_FROM });
+    expect(lambdaFunction(template, 'PuzzleFn').properties.Environment.Variables).toMatchObject({
+      MAIL_FROM,
+    });
   });
 
   it('stamps the trusted viewer address onto EVERY route whose handler reads one', () => {
@@ -330,14 +350,23 @@ describe('per-player score storage (#187)', () => {
   });
 
   it('grants the handler exactly the row-store surface: Query, Get/BatchGet, conditional Put, Update, membership Delete, adoption ConditionCheck', () => {
-    const policies = Object.values(template.findResources('AWS::IAM::Policy'));
-    const statements = policies.flatMap(
-      (policy) => policy.Properties.PolicyDocument.Statement as { Action?: unknown }[],
-    );
-    const statement = statements.find(
+    const statement = roleStatements(template, 'PuzzleFn').find(
       ({ Action }) => Array.isArray(Action) && Action.includes('dynamodb:Query'),
     );
-    expect(statement?.Action).toEqual([
+    expect(statement?.Action).toEqual(ROW_STORE_SURFACE);
+  });
+
+  it('grants no function a Scan', () => {
+    const statements = Object.values(template.findResources('AWS::IAM::Policy')).flatMap(
+      (policy) => policy.Properties.PolicyDocument.Statement as { Action?: unknown }[],
+    );
+    expect(JSON.stringify(statements.map(({ Action }) => Action))).not.toContain('dynamodb:Scan');
+  });
+});
+
+// The handler's row-store surface, action by action — and, since #207, the purge worker's,
+// which runs the same stores.
+const ROW_STORE_SURFACE = [
       'dynamodb:Query',
       'dynamodb:GetItem',
       // #190's group board reads a KNOWN key set in batches, never a Scan.
@@ -351,9 +380,7 @@ describe('per-player score storage (#187)', () => {
       // by its OWN action — the Put/Update/Delete grants above do not cover it — so
       // without this the erasing link is an AccessDenied in production alone.
       'dynamodb:ConditionCheckItem',
-    ]);
-  });
-});
+];
 
 // ── Mail plumbing (#230) ─────────────────────────────────────────────────────
 // A SECOND template, because all of this hangs off the custom domain's hosted zone and the
@@ -552,7 +579,141 @@ describe('mail plumbing (#230)', () => {
     expect(Object.keys(bare.findResources('AWS::CloudWatch::Alarm'))).toHaveLength(0);
     expect(Object.keys(bare.findResources('AWS::SNS::Topic'))).toHaveLength(0);
     expect(Object.keys(bare.findResources('AWS::SES::ReceiptRuleSet'))).toHaveLength(0);
+    expect(Object.keys(bare.findResources('AWS::Budgets::Budget'))).toHaveLength(0);
     bare.resourcePropertiesCountIs('AWS::Route53::RecordSet', { Type: 'MX' }, 0);
+  });
+});
+
+// ── The account purge worker (#207) ──────────────────────────────────────────
+describe('account purge worker (#207)', () => {
+  it('is one sweeper at a time, given the table and nothing else', () => {
+    const { properties } = lambdaFunction(template, 'PurgeFn');
+    expect(properties).toMatchObject({
+      Handler: 'index.handler',
+      Runtime: 'nodejs22.x',
+      Architectures: ['arm64'],
+      MemorySize: 512,
+      Timeout: 300,
+      // Two runs over one job would race each other's conditional deletes.
+      ReservedConcurrentExecutions: 1,
+    });
+    // No secret, no origin, no sender: it verifies no challenge and sends nothing.
+    const [tableId] = Object.keys(template.findResources('AWS::DynamoDB::Table'));
+    expect(properties.Environment.Variables).toEqual({ SCORE_TABLE: { Ref: tableId } });
+    // Its logs expire like the API's, rather than accumulating forever.
+    const logGroup = properties.LoggingConfig.LogGroup.Ref as string;
+    expect(template.findResources('AWS::Logs::LogGroup')[logGroup].Properties.RetentionInDays).toBe(30);
+  });
+
+  it('runs every hour, and the hour is its only retry', () => {
+    const { logicalId } = lambdaFunction(template, 'PurgeFn');
+    const rules = Object.values(template.findResources('AWS::Events::Rule'));
+    expect(rules).toHaveLength(1);
+    expect(rules[0].Properties).toMatchObject({
+      ScheduleExpression: 'rate(1 hour)',
+      State: 'ENABLED',
+      Targets: [{ Arn: { 'Fn::GetAtt': [logicalId, 'Arn'] } }],
+    });
+    // EventBridge may invoke it…
+    template.hasResourceProperties('AWS::Lambda::Permission', {
+      Action: 'lambda:InvokeFunction',
+      FunctionName: { 'Fn::GetAtt': [logicalId, 'Arn'] },
+      Principal: 'events.amazonaws.com',
+    });
+    // …and Lambda does not re-run a failed sweep behind it: the next hour does.
+    template.hasResourceProperties('AWS::Lambda::EventInvokeConfig', {
+      FunctionName: { Ref: logicalId },
+      MaximumRetryAttempts: 0,
+    });
+  });
+
+  it('reaches the table through the API\'s own surface, the device index included', () => {
+    const statement = roleStatements(template, 'PurgeFn').find(
+      ({ Action }) => Array.isArray(Action) && Action.includes('dynamodb:Query'),
+    );
+    // A group leave's transaction asserts rows it does not write: without
+    // ConditionCheckItem a deleted owner's group never changes hands, in production alone.
+    expect(statement?.Action).toEqual(ROW_STORE_SURFACE);
+    // The deleted account's devices are listed off the DeviceByAccount GSI.
+    expect(JSON.stringify(statement?.Resource)).toContain('/index/*');
+  });
+
+  it('alarms onto the operator topic when a purge fails, and only with one', () => {
+    const { logicalId } = lambdaFunction(mail, 'PurgeFn');
+    const alarm = Object.values(mail.findResources('AWS::CloudWatch::Alarm'))
+      .map((resource) => resource.Properties as Record<string, unknown>)
+      .find(({ Dimensions }) => JSON.stringify(Dimensions ?? null).includes(`"${logicalId}"`));
+    const [topicId] = Object.keys(mail.findResources('AWS::SNS::Topic'));
+    expect(alarm).toMatchObject({
+      Namespace: 'AWS/Lambda',
+      MetricName: 'Errors',
+      Statistic: 'Sum',
+      Period: 86400,
+      Threshold: 1,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      // An idle hour failed nothing.
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [{ Ref: topicId }],
+    });
+    // The worker itself is built either way: a deleted account is purged whether or not
+    // anybody is told when it fails.
+    lambdaFunction(mailTemplate(undefined), 'PurgeFn');
+  });
+});
+
+// ── Capacity: the ceiling, the edge limits, and who hears when either is reached ──
+describe('launch capacity', () => {
+  it('limits every request by its address, and leaves the card renders to the web distribution', () => {
+    const config = distributions()[0].Properties.DistributionConfig;
+    const acl = template.findResources('AWS::WAFv2::WebACL')[config.WebACLId['Fn::GetAtt'][0]];
+    expect(acl.Properties).toMatchObject({ Scope: 'CLOUDFRONT', DefaultAction: { Allow: {} } });
+    const rules = (acl.Properties.Rules as Record<string, any>[]).map(({ Action, Statement }) => {
+      const { Limit, AggregateKeyType, ScopeDownStatement } = Statement.RateBasedStatement;
+      expect(Action).toEqual({ Block: { CustomResponse: { ResponseCode: 429 } } });
+      expect(AggregateKeyType).toBe('IP');
+      return { Limit, scoped: ScopeDownStatement !== undefined };
+    });
+    // The renders arrive from the web distribution's edge servers, many viewers to an
+    // address: a render limit here would block a whole region's share cards at once.
+    expect(rules).toEqual([{ Limit: 3000, scoped: false }]);
+    expect(lambdaFunction(template, 'PuzzleFn').properties.ReservedConcurrentExecutions).toBe(200);
+  });
+
+  it('mails the operator when the ceiling refuses a request, and when the bill passes the budget', () => {
+    const [topicId] = Object.keys(mail.findResources('AWS::SNS::Topic'));
+    const { logicalId } = lambdaFunction(mail, 'PuzzleFn');
+    const alarm = Object.values(mail.findResources('AWS::CloudWatch::Alarm'))
+      .map((resource) => resource.Properties as Record<string, unknown>)
+      .find(({ MetricName, Dimensions }) =>
+        MetricName === 'Throttles' && JSON.stringify(Dimensions).includes(`"${logicalId}"`));
+    expect(alarm).toMatchObject({
+      Namespace: 'AWS/Lambda',
+      Statistic: 'Sum',
+      Period: 300,
+      Threshold: 1,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [{ Ref: topicId }],
+      OKActions: [{ Ref: topicId }],
+    });
+
+    mail.hasResourceProperties('AWS::Budgets::Budget', {
+      Budget: { BudgetType: 'COST', TimeUnit: 'MONTHLY', BudgetLimit: { Amount: 100, Unit: 'USD' } },
+      NotificationsWithSubscribers: [
+        { Subscribers: [{ SubscriptionType: 'SNS', Address: { Ref: topicId } }] },
+      ],
+    });
+    // Budgets publishes as its own principal, and the explicit topic policy allows only
+    // whom it names: without this the budget mails nobody.
+    const [policy] = Object.values(mail.findResources('AWS::SNS::TopicPolicy'));
+    expect(policy.Properties.PolicyDocument.Statement).toContainEqual(
+      expect.objectContaining({
+        Effect: 'Allow',
+        Action: 'sns:Publish',
+        Principal: { Service: 'budgets.amazonaws.com' },
+        Condition: { StringEquals: { 'aws:SourceAccount': ACCOUNT } },
+      }),
+    );
   });
 });
 

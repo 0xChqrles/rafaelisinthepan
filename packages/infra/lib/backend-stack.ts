@@ -21,6 +21,10 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as eventsTargets from 'aws-cdk-lib/aws-events-targets';
 import { NodejsFunction, OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
@@ -28,9 +32,11 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as ses from 'aws-cdk-lib/aws-ses';
+import * as budgets from 'aws-cdk-lib/aws-budgets';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import { NagSuppressions } from 'cdk-nag';
 import { MailAlerts, MailReceiving } from './mail';
+import { ALL_RATE_LIMIT, rateLimitedWebAcl } from './rate-limits';
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // packages/infra/lib
 // The Lambda IS the backend package's existing entrypoint (createHandler over the S3 puzzle
@@ -42,6 +48,39 @@ const REPO_LOCKFILE = path.resolve(here, '..', '..', '..', 'pnpm-lock.yaml');
 // `./assets` at runtime. esbuild bundles resvg-wasm's JS but not these data files, so copy
 // them next to the bundled index.mjs so the same `./assets/*` paths resolve in the Lambda.
 const LAMBDA_ASSETS = path.resolve(here, '..', '..', 'backend', 'src', 'assets');
+// #207's sweeper: the physical purge of a deleted account, run on a schedule over the durable
+// queue the deletion enqueues. Its own entrypoint in the backend package (the same stores,
+// built from the same config), so nothing about the purge is written twice.
+const PURGE_ENTRY = path.resolve(here, '..', '..', 'backend', 'src', 'purgeWorker.ts');
+
+// The bundling every backend function shares: the backend is ESM ("type":"module") and uses
+// `import.meta`, so it stays ESM; the AWS SDK v3 ships in the Node runtime, so bundling it
+// would only bloat the artifact.
+const BACKEND_BUNDLING = {
+  format: OutputFormat.ESM,
+  target: 'node22',
+  minify: true,
+  sourceMap: true,
+  externalModules: ['@aws-sdk/*'],
+};
+
+// The table surface a backend function is granted — ONE list for the API and the purge
+// worker, because the worker runs the API's own stores (the group leave, the device revoke,
+// the departure drain) and a store method it reaches is one the API reaches. What each
+// action serves is written beside the API's grant below. No Scan, anywhere.
+const ROW_STORE_ACTIONS = [
+  'dynamodb:Query',
+  'dynamodb:GetItem',
+  'dynamodb:BatchGetItem',
+  'dynamodb:PutItem',
+  'dynamodb:UpdateItem',
+  'dynamodb:DeleteItem',
+  'dynamodb:ConditionCheckItem',
+] as const;
+
+// The month's bill (the whole account's, in USD) past which the operator is mailed. The
+// game at 1000 players a day is ~$35 with its WAF; the bot and the rest add ~$15.
+const MONTHLY_BUDGET_USD = 100;
 
 interface BackendStackProps extends StackProps {
   // The exact web origin permitted to read the API via CORS. Defaults to "*".
@@ -194,14 +233,15 @@ export class BackendStack extends Stack {
       // a month: the per-ms price grows with memory, the CPU-bound milliseconds shrink with it.
       memorySize: 1769,
       timeout: Duration.seconds(10),
-      // Cost/abuse ceiling: /og/<token>.png is unauthenticated compute and every distinct
-      // token misses the CDN, so cap the blast radius until the game warrants WAF rate
-      // limiting. 10 concurrent executions vastly exceeds legitimate load (requests are
-      // milliseconds and the CDN absorbs the repeats).
-      reservedConcurrentExecutions: 10,
+      // The CEILING on what the API can cost: the card renders are unauthenticated compute
+      // and every distinct token misses the CDN. One address is stopped long before it by
+      // the WAF rate limits (lib/rate-limits.ts); this bounds what many addresses at once can
+      // spend (~$17 an hour with every slot busy), and the throttle alarm below says when a
+      // crowd or an attack reaches it. It sits far above the load a launch brings — a page
+      // open fires several calls at once, and a cold start holds its slot ~0.6 s — and leaves
+      // the account (400 concurrent in us-east-1) the 100 unreserved it must keep.
+      reservedConcurrentExecutions: 200,
       logGroup,
-      // X-Ray active tracing for request-level latency/error visibility.
-      tracing: lambda.Tracing.ACTIVE,
       // Read by backend/src/config.ts at runtime.
       environment: {
         PUZZLE_BUCKET: bucket.bucketName,
@@ -221,13 +261,7 @@ export class BackendStack extends Stack {
       },
       depsLockFilePath: REPO_LOCKFILE,
       bundling: {
-        // The backend is ESM ("type":"module") and uses `import.meta` — keep it ESM.
-        format: OutputFormat.ESM,
-        target: 'node22',
-        minify: true,
-        sourceMap: true,
-        // The AWS SDK v3 ships in the Node runtime; bundling it only bloats the artifact.
-        externalModules: ['@aws-sdk/*'],
+        ...BACKEND_BUNDLING,
         // Copy the share-card assets (resvg .wasm + fonts) next to the bundle so ogCard.ts's
         // `./assets/*` fs reads resolve at runtime (esbuild bundles resvg-wasm's JS, not the
         // data files it loads). Cross-platform `cp -R`; the bundle dir is fresh each synth.
@@ -266,16 +300,7 @@ export class BackendStack extends Stack {
     // the sign-out list a Query and revocation a DeleteItem — and no explicit index ARN:
     // a Query against a secondary index is authorized on `<table>/index/*`, which `grant`
     // adds by itself once the table HAS an index (the GSI declared above is the one).
-    scoreTable.grant(
-      fn,
-      'dynamodb:Query',
-      'dynamodb:GetItem',
-      'dynamodb:BatchGetItem',
-      'dynamodb:PutItem',
-      'dynamodb:UpdateItem',
-      'dynamodb:DeleteItem',
-      'dynamodb:ConditionCheckItem',
-    );
+    scoreTable.grant(fn, ...ROW_STORE_ACTIONS);
     const parameterArn = (name: string) =>
       this.formatArn({
         service: 'ssm',
@@ -355,6 +380,129 @@ export class BackendStack extends Stack {
         forwardTo: props.operatorEmail,
         alerts: mailAlerts,
       });
+    }
+
+    // ── Lambda: the account purge worker (#207) ──────────────────────────────
+    // Deleting an account is ONE transaction on the API (the account row, its profile, its
+    // email binding, and a purge JOB in the fixed `purge` partition) — authentication fails
+    // for every one of its tokens from that commit on. What the account LEFT BEHIND (round
+    // logs, score rows, the solved-day collections, device items the GSI had not listed yet)
+    // is removed here, off the request path: every step is idempotent and the deletion itself
+    // is the progress, so a run cut off anywhere is simply the next run's work. The job
+    // partition is ONE Query, so this needs no Scan and no index of its own.
+    const purgeLogGroup = new logs.LogGroup(this, 'PurgeFnLogs', {
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+    const purgeFn = new NodejsFunction(this, 'PurgeFn', {
+      entry: PURGE_ENTRY,
+      handler: 'handler',
+      runtime: lambda.Runtime.NODEJS_22_X,
+      architecture: lambda.Architecture.ARM_64,
+      // Pages of small items and conditional deletes: I/O-bound, not the API's CPU-bound parse.
+      memorySize: 512,
+      // The worker stops taking new jobs ~30s before this (it reads the remaining time off its
+      // context) and leaves the rest for the next hour; a job interrupted mid-way is safe.
+      timeout: Duration.minutes(5),
+      // ONE sweeper at a time. Two runs over the same job would not corrupt anything (every
+      // step is idempotent), but they would race each other's conditional deletes into
+      // retries for no gain.
+      reservedConcurrentExecutions: 1,
+      // The hourly schedule IS the retry. Lambda's own async retries would re-run a failed
+      // sweep twice within minutes — the same queue, the same likely failure — and triple the
+      // `Errors` an hour's single failure counts.
+      retryAttempts: 0,
+      logGroup: purgeLogGroup,
+      // The table and nothing else: no secret (it verifies no challenge and hashes no
+      // address), no origin, no sender.
+      environment: { SCORE_TABLE: scoreTable.tableName },
+      depsLockFilePath: REPO_LOCKFILE,
+      bundling: BACKEND_BUNDLING,
+    });
+    // The API's own surface (ROW_STORE_ACTIONS): the worker reads and deletes through the
+    // API's stores, and a group leave's transaction asserts rows it does not write — a
+    // standalone ConditionCheck, authorized only by `dynamodb:ConditionCheckItem`. The
+    // device list is a Query on the GSI, which `grant` covers through `<table>/index/*`.
+    scoreTable.grant(purgeFn, ...ROW_STORE_ACTIONS);
+    new events.Rule(this, 'PurgeSchedule', {
+      description: 'Purge what deleted accounts left behind (#207).',
+      schedule: events.Schedule.rate(Duration.hours(1)),
+      targets: [new eventsTargets.LambdaFunction(purgeFn)],
+    });
+    // A purge that keeps FAILING is a deleted player's data that keeps existing, which is a
+    // promise broken, not a slow page — so it reaches the same human the mail alarms do. The
+    // worker throws only when a job failed with an error (never for a deadline cut-off), so
+    // one `Errors` is worth a look. A day's window, because the schedule is hourly and one
+    // transient failure the next hour cleared is the same queue doing its job: the alarm
+    // stays raised while any run of the day failed, and sends nothing on recovery, like the
+    // forwarder's. Missing data is not breaching: an idle hour failed nothing.
+    if (mailAlerts) {
+      const purgeErrors = new cloudwatch.Alarm(this, 'PurgeFnErrors', {
+        metric: purgeFn.metricErrors({ period: Duration.days(1), statistic: 'Sum' }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+        alarmDescription:
+          'The account purge worker failed a job. A deleted account\'s rows are still stored; the job stays queued and the next hourly run retries it. Read the PurgeFn logs.',
+      });
+      purgeErrors.addAlarmAction(new cwActions.SnsAction(mailAlerts.topic));
+    }
+
+    // ── Capacity and spend alerts ─────────────────────────────────────────────
+    // A THROTTLE is a player's request refused at the reserved-concurrency ceiling: a crowd
+    // the ceiling no longer fits, or many addresses spending it at once. Lambda answers it with
+    // a 429 carrying no CORS headers, which the browser hands the clients as a transport
+    // failure, an unknown outcome they read again; but the game reads as slow, so it wants a human within
+    // minutes, and the recovery is worth a mail too. Missing data is not breaching: Lambda
+    // publishes no Throttles while none happen. The BUDGET is the slow backstop for what no
+    // alarm counts — the account's whole bill, which Budgets refreshes a few times a day,
+    // passing an amount a month here never reaches.
+    if (mailAlerts) {
+      const throttles = new cloudwatch.Alarm(this, 'PuzzleFnThrottles', {
+        metric: fn.metricThrottles({ period: Duration.minutes(5), statistic: 'Sum' }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+        alarmDescription:
+          'The API Lambda refused requests at its reserved concurrency. Players are seeing failures. Look at the WAF and Lambda metrics: a crowd means raising the ceiling, an attack means blocking it.',
+      });
+      throttles.addAlarmAction(new cwActions.SnsAction(mailAlerts.topic));
+      throttles.addOkAction(new cwActions.SnsAction(mailAlerts.topic));
+
+      // Budgets publishes as its own service principal, which the topic policy must name, as
+      // it names CloudWatch (lib/mail.ts: `enforceSSL` replaced the default policy).
+      const budgetsMayPublish = mailAlerts.topic.addToResourcePolicy(
+        new iam.PolicyStatement({
+          sid: 'AllowBudgets',
+          effect: iam.Effect.ALLOW,
+          principals: [new iam.ServicePrincipal('budgets.amazonaws.com')],
+          actions: ['sns:Publish'],
+          resources: [mailAlerts.topic.topicArn],
+          conditions: { StringEquals: { 'aws:SourceAccount': this.account } },
+        }),
+      );
+      const budget = new budgets.CfnBudget(this, 'MonthlyBudget', {
+        budget: {
+          budgetType: 'COST',
+          timeUnit: 'MONTHLY',
+          budgetLimit: { amount: MONTHLY_BUDGET_USD, unit: 'USD' },
+        },
+        notificationsWithSubscribers: [
+          {
+            notification: {
+              notificationType: 'ACTUAL',
+              comparisonOperator: 'GREATER_THAN',
+              threshold: 100,
+              thresholdType: 'PERCENTAGE',
+            },
+            subscribers: [{ subscriptionType: 'SNS', address: mailAlerts.topic.topicArn }],
+          },
+        ],
+      });
+      // Budgets checks it may publish when the budget is created.
+      if (budgetsMayPublish.policyDependable) budget.node.addDependency(budgetsMayPublish.policyDependable);
     }
 
     // ── CloudFront: CDN in front of the Function URL ──────────────────────────
@@ -632,8 +780,17 @@ export class BackendStack extends Stack {
       ...overrides,
     });
 
+    // Every request that reaches the Lambda passes here, so this is where one address spending
+    // the API is stopped. The render limit is NOT repeated here: the web distribution's own
+    // fetches of the share pages, cards and invite previews arrive from a few of its edge
+    // servers, each carrying many viewers' misses, and only the web distribution sees whose
+    // they are (lib/rate-limits.ts). A direct caller of the render paths meets the limit on
+    // every request, and the reserved concurrency above.
+    const apiRateLimits = rateLimitedWebAcl(this, 'ApiRateLimits', [ALL_RATE_LIMIT]);
+
     const distribution = new cloudfront.Distribution(this, 'PuzzleCdn', {
       comment: 'Whippin daily-puzzle API',
+      webAclId: apiRateLimits.attrArn,
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // NA + EU (en/fr audience)
       httpVersion: cloudfront.HttpVersion.HTTP2_AND_3, // QUIC: faster connection setup
       minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
@@ -731,12 +888,33 @@ export class BackendStack extends Stack {
         {
           id: 'AwsSolutions-IAM4',
           reason:
-            'AWS-managed basic-execution + X-Ray-write policies — the standard least-broad managed policies for CloudWatch Logs and active tracing.',
+            'AWS-managed basic-execution policy — the standard least-broad managed policy for CloudWatch Logs.',
         },
         {
           id: 'AwsSolutions-IAM5',
           reason:
             'S3 read access is scoped to the puzzle bucket/object keys. DynamoDB is scoped to this table and its indexes — the grant\'s <table>/index/* resource covers exactly the one DeviceByAccount GSI (#216) — with only Query/GetItem/BatchGetItem/PutItem/UpdateItem/DeleteItem/ConditionCheckItem (BatchGetItem reads a group board\'s known key set; DeleteItem serves leaving a group, device revocation and #204\'s account erase; ConditionCheckItem serves the rows #204\'s adoption asserts without writing), and SSM GetParameters to the two exact secret-parameter ARNs; no parameter wildcard exists. ses:SendEmail is conditioned on the single ses:FromAddress it may send as, which is the bound that matters; the identity wildcard is required because SES also evaluates the statement against a RECIPIENT that is a verified identity of this account, and the configuration-set wildcard is required by SES on every SendEmail call and grants nothing on its own.',
+        },
+        {
+          id: 'AwsSolutions-L1',
+          reason:
+            'Runtime is pinned to NODEJS_22_X — the current maintained Node LTS on Lambda — for reproducible builds; we deliberately pin a specific LTS rather than a floating "latest". cdk-nag\'s bundled runtime list lags new LTS releases.',
+        },
+      ],
+      true, // also apply to the function's generated role/policy (children)
+    );
+    NagSuppressions.addResourceSuppressions(
+      purgeFn,
+      [
+        {
+          id: 'AwsSolutions-IAM4',
+          reason:
+            'AWS-managed basic-execution policy — the standard least-broad managed policy for CloudWatch Logs.',
+        },
+        {
+          id: 'AwsSolutions-IAM5',
+          reason:
+            'DynamoDB is scoped to this table and its indexes — the grant\'s <table>/index/* resource covers exactly the one DeviceByAccount GSI (#216), which lists a deleted account\'s devices — with the API function\'s own Query/GetItem/BatchGetItem/PutItem/UpdateItem/DeleteItem/ConditionCheckItem (no Scan): the worker runs the API\'s stores, whose group leave asserts rows it does not write.',
         },
         {
           id: 'AwsSolutions-L1',
@@ -759,14 +937,9 @@ export class BackendStack extends Stack {
         reason: 'Daily word game served globally on purpose — no geo restriction.',
       },
       {
-        id: 'AwsSolutions-CFR2',
-        reason:
-          'No WAF: the origin is IAM-only via OAC; the requests that create state (device bootstrap, round creation, the link-code send) require Turnstile, the score row a solved round records is capped per HMAC-IP atomically, and the Lambda\'s reserved concurrency bounds the compute. WAF cost is unjustified at this scale.',
-      },
-      {
         id: 'AwsSolutions-CFR3',
         reason:
-          'CloudFront access logging intentionally off (chosen observability tier: Lambda log retention + X-Ray).',
+          'CloudFront access logging intentionally off (chosen observability tier: Lambda log retention + CloudFront and WAF metrics).',
       },
     ]);
     NagSuppressions.addResourceSuppressions(bucket, [

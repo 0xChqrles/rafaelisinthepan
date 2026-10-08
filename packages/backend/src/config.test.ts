@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GetParametersCommand, type SSMClient } from '@aws-sdk/client-ssm';
-import { loadConfig, loadScoreSecrets } from './config';
+import { loadConfig, loadPurgeConfig, loadScoreSecrets } from './config';
 
 const ENV: NodeJS.ProcessEnv = {
   PUZZLE_BUCKET: 'puzzles',
@@ -98,5 +98,12 @@ describe('production score-secret configuration', () => {
     await expect(
       loadScoreSecrets({ send: plaintext } as unknown as SSMClient, loadConfig(ENV)),
     ).rejects.toThrow(/SecureString.*turnstile-secret/);
+  });
+});
+
+describe('purge worker configuration (#207)', () => {
+  it('needs the table and nothing else — no puzzle bucket, no secret, no sender', () => {
+    expect(loadPurgeConfig({ SCORE_TABLE: 'scores' })).toEqual({ scoreTable: 'scores' });
+    expect(() => loadPurgeConfig({})).toThrow(/SCORE_TABLE/);
   });
 });

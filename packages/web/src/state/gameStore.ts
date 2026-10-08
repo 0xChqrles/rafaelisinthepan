@@ -226,6 +226,16 @@ interface GameState extends PersistedState {
   // generating a local random value contacts no server and creates no account.
   ensureLocalSeed: () => string;
 
+  // FORGET EVERYTHING this device kept (#207): the account it played on was DELETED by its own
+  // player, and the device lands home as a brand-new visitor — the outbox, the owner, the
+  // preferences, the tutorial's progress and the placeholder SEED, which is drawn afresh so
+  // the next account is never wearing the deleted one's face (`localIdentityDeploy` stores the
+  // seed's pair as a new account's first profile). The identity itself is `identity.ts`'s
+  // (`startFreshDevice`), and the transient caches are `identityScope`'s; this is the
+  // persisted record's half. Through the same transaction as every write, so a sibling tab's
+  // cache follows it.
+  forgetAll: () => void;
+
   // Mark a tutorial level done (#269) — level 1, the only one with a done state: its run is
   // over (its card turned DONE, or PLAY pressed) or a real round holds a guess. Idempotent.
   markLessonDone: (level: number) => void;
@@ -377,6 +387,7 @@ export type GameMutation =
   | { type: 'setOnboarded' }
   | { type: 'markLessonDone'; level: number }
   | { type: 'ensureLocalSeed'; seed: string }
+  | { type: 'forgetAll'; seed: string }
   | ({ type: 'ensureOutbox'; key: string; puzzle: string } & OwnedGameMutation)
   | ({ type: 'appendOutbox'; key: string; puzzle: string; typed: string } & OwnedGameMutation)
   | ({
@@ -475,6 +486,11 @@ export function applyGameMutation(
       return state.localSeed !== null
         ? changed(state, state)
         : changed(state, { ...state, localSeed: mutation.seed });
+    case 'forgetAll':
+      // Unconditional and owner-blind: whatever any tab committed since, the device forgets
+      // it — the one write that may drop another owner's outbox, because the account that
+      // owned it no longer exists anywhere.
+      return changed(state, { ...initialPersistedState(), localSeed: mutation.seed });
     case 'ensureOutbox': {
       const kept = { ...state.outbox };
       const existing = kept[mutation.key];
@@ -597,6 +613,13 @@ export const useGameStore = create<GameState>((set, get) => {
       if (held !== null) return held;
       const seed = generatePublicId();
       return commit({ type: 'ensureLocalSeed', seed }).state.localSeed ?? seed;
+    },
+
+    forgetAll: () => {
+      commit({ type: 'forgetAll', seed: generatePublicId() });
+      // The rounds' transient states belonged to the account too (`identityScope` has already
+      // dropped them on the identity's change; this keeps the method whole on its own).
+      set({ roundLoads: {} });
     },
 
     ensureOutbox: (key, puzzle) => {

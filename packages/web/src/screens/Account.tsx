@@ -43,14 +43,15 @@
 // SAVE is live either way — its tap leads to the flow whose CONTINUE is the account-deploying
 // trigger.
 
-import { useCallback, useEffect, useRef, useSyncExternalStore, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import type { RecordSize } from '../components/record/scene';
 import { defaultAvatar } from '@whippin/shared';
 import { shownFace, useOwnFace } from '../components/AccountFace';
-import { StatSlot } from '../components/AccountStats';
+import AccountStats, { StatSlot } from '../components/AccountStats';
 import { SKELETON_WAIT_MS } from '../components/bayerTiles';
 import Avatar from '../components/Avatar';
 import AddressLine from '../components/AddressLine';
+import ConfirmScreen from '../components/ConfirmScreen';
 import DeviceList from '../components/DeviceList';
 import LangTitle from '../components/LangTitle';
 import QuietFailure from '../components/QuietFailure';
@@ -59,14 +60,15 @@ import { handOffMark } from '../components/markHandoff';
 import { HeaderLeft } from '../components/TopBar';
 import PencilIcon from '../assets/icons/pencil.svg?react';
 import { useDeviceIdentity } from '../identity';
-import { t } from '../i18n';
+import { t, type UiKey } from '../i18n';
 import {
   ACCOUNT_EMAIL_PATH,
   PRIVACY_PATH,
   PROFILE_PATH,
 } from '../langs';
 import { navigate } from '../routing';
-import { loadAccountSummary, useAccountSummary } from '../state/account';
+import { loadAccountSummary, summaryKnown, useAccountSummary } from '../state/account';
+import { deleteThisAccount, type DeletionOutcome } from '../state/accountDeletion';
 import { retryOwnFace } from '../state/ownFace';
 import { useAccountStats, useAccountWeek } from '../state/history';
 import useToday from '../hooks/useToday';
@@ -74,6 +76,15 @@ import useUiLang from '../hooks/useUiLang';
 
 // THE MASTHEAD'S MARK: 50px, five whole pixels a cell — never a size between two of them.
 const MARK_PX = 50;
+
+// What the delete confirmation says IN PLACE when the account is not gone (#207): each
+// outcome its own line, so a refusal never blames the connection and a lost answer never
+// claims that nothing was deleted.
+const DELETE_FAILURE_COPY: Record<Exclude<DeletionOutcome, 'deleted'>, UiKey> = {
+  changed: 'deleteAccountChanged',
+  failed: 'deleteAccountFailed',
+  unknown: 'deleteAccountUnknown',
+};
 
 // THE RECORD'S SIZE, off the screen's height: on a TALL phone the count one whole size up — the
 // free height spent on the subject rather than left as a band of nothing; a phone only, since a
@@ -134,7 +145,7 @@ export default function Account() {
   // The ACTION is unknown until the summary settles: offering SAVE while we do not yet know
   // whether it is already saved is the guessed-empty claim #211's rule forbids — it would
   // flash SAVE and swap it for the address on every visit of a linked player.
-  const known = identity === null || phase === 'ready' || summary !== null;
+  const known = identity === null || summaryKnown({ phase, summary });
   const accountUnknown = phase === 'failed' && summary === null;
   // A READ THAT FAILED IS SAID ONCE, in place: the record's in its flame's room, the summary's
   // in the call's own box — and both at once as one line there (one connection lost, one
@@ -159,6 +170,26 @@ export default function Account() {
     if (rect && rect.width > 0) handOffMark(rect, face);
     navigate(PROFILE_PATH);
   }, [face]);
+
+  // DELETING THE ACCOUNT (#207): the footnote's quiet control opens the full-screen
+  // confirmation (the group LEAVE's own surface, `ConfirmScreen`); its DELETE is the act
+  // (`state/accountDeletion.ts`). Gone, the device forgets everything and goes home from
+  // there — this screen is remounted under it by the identity's change. Not gone, the
+  // confirmation stays up and says so IN PLACE under its note: nothing was deleted, or — no
+  // answer even read again — nothing is known; either way DELETE may be pressed again — save
+  // a device found on ANOTHER account, whose confirmation names an account it no longer
+  // holds, so its act is held back and only CANCEL answers.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteFailure, setDeleteFailure] = useState<Exclude<DeletionOutcome, 'deleted'> | null>(null);
+  const confirmDelete = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteFailure(null);
+    const outcome = await deleteThisAccount();
+    setDeleting(false);
+    if (outcome !== 'deleted') setDeleteFailure(outcome);
+  };
 
   return (
     <>
@@ -312,8 +343,62 @@ export default function Account() {
           <button type="button" className="account-foot-link" onClick={() => navigate(PRIVACY_PATH)}>
             {t(lang, 'privacyTitle')}
           </button>
+          {/* DELETE ACCOUNT (#207), the notice's neighbour in the same quiet dress: a door
+              exactly as visible as the interest in it. Only with an account — a device that
+              holds none has nothing on the server to delete — and only once the summary is
+              KNOWN (SAVE's own wait): the confirmation names the email erased and the other
+              devices signed out only for a SAVED account, so opened before the summary it
+              would hide them from one. A failed read keeps it away too; RETRY is there. */}
+          {identity !== null && known && (
+            <button
+              type="button"
+              className="account-foot-link"
+              onClick={() => {
+                setDeleteFailure(null);
+                setConfirmingDelete(true);
+              }}
+            >
+              {t(lang, 'deleteAccount')}
+            </button>
+          )}
         </div>
       </div>
+
+      {/* WHAT GOES, over the act: the account's face, its three numbers once it has played a
+          day (the crossroads' quiet row — a price, nothing glows), the title, and one sentence
+          naming the rest. The failure's line is held under it from the start, so nothing
+          moves when it speaks. */}
+      {confirmingDelete && identity !== null && (
+        <ConfirmScreen
+          lang={lang}
+          title={t(lang, 'deleteAccountTitle')}
+          note={t(lang, saved !== null ? 'deleteAccountNoteSaved' : 'deleteAccountNote')}
+          action={t(lang, 'deleteAccountAction')}
+          busy={deleting}
+          disabled={deleteFailure === 'changed'}
+          onConfirm={() => void confirmDelete()}
+          onClose={() => setConfirmingDelete(false)}
+          choice={
+            <p className="confirm-failure" role="status">
+              {deleteFailure !== null && (
+                <span className="account-note danger">
+                  {t(lang, DELETE_FAILURE_COPY[deleteFailure])}
+                </span>
+              )}
+            </p>
+          }
+        >
+          {face !== null && (
+            <span className="confirm-face">
+              <Avatar avatar={face.avatar ?? defaultAvatar(face.publicId)} size={60} sharp />
+              <span className="confirm-name">{face.name}</span>
+            </span>
+          )}
+          {stats.phase === 'ready' && stats.days > 0 && (
+            <AccountStats lang={lang} stats={{ streak: stats.streak, best: stats.best, days: stats.days }} />
+          )}
+        </ConfirmScreen>
+      )}
     </>
   );
 }

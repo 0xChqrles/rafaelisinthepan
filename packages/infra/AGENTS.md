@@ -34,6 +34,7 @@
                               own included; no error responses), the route-page scan, the upload order (a fake
                               build), the CSP, cdk-nag
     lib/deploy-role-stack.test.ts  cdk-nag over the deploy role stack
+    lib/rate-limits.ts        the per-IP WAF rate rules each distribution wears (which paths, what limit)
     lib/mail.ts               MailAlerts (SNS + SES reputation alarms) + MailReceiving (MX, rule set, S3, forwarder) — #230
     lib/web-stack.ts          WebStack (#21): private S3 (SPA) + CloudFront(OAC) + ACM + Route53; apex; us-east-1
     lib/deploy-role-stack.ts  DeployRoleStack (#33): GitHub OIDC provider + the CI deploy role; human-deployed
@@ -60,8 +61,10 @@
   that bundles `backend/src/index.ts` with esbuild (ESM, `@aws-sdk/*` left external) and
   carries `PUZZLE_BUCKET`/`ALLOWED_ORIGIN`, and a **CloudFront** distribution in front of an
   **IAM-auth Function URL via OAC** (only CloudFront may invoke it). The Lambda gets
-  **read-only** S3 (`bucket.grantRead`), a **reserved concurrency of 10** (cost/abuse
-  ceiling for the unauthenticated `/og` render until WAF is warranted) and **1769 MB** — one
+  **read-only** S3 (`bucket.grantRead`), a **reserved concurrency of 200** (the cost
+  ceiling — the unauthenticated card renders miss the CDN per token; one address is stopped
+  long before it by the WAF limits below; the account's 400 keeps the 100 unreserved AWS
+  requires) and **1769 MB** — one
   full vCPU, since what is slow there is CPU (the cold start, the artifact's parse, the
   puzzle's brotli, the card render) and Node runs a request on one core. The API's response
   headers policy carries CloudFront's `Server-Timing` on every response
@@ -196,6 +199,27 @@
   `VITE_API_BASE_URL=https://api.<domain>` (the backend `ApiUrl`); the backend's CORS origin
   defaults to this site's `SiteUrl` (`https://<domain>`). Outputs: `SiteUrl`,
   `SiteBucketName`, `DistributionId`, `DistributionDomainName`.
+- **Edge rate limits (WAF, `lib/rate-limits.ts`):** each distribution wears its own
+  CLOUDFRONT web ACL of per-IP rate rules over five minutes, a blocked request answered 429
+  with no body and no CORS headers (a transport failure to the clients). The API's: every
+  request (3000). The web's: the render paths `/s/`, `/og/`, `/g/` alone (300) — it is the
+  one that sees the VIEWER's address for them; the API distribution sees only the web
+  distribution's edge servers, many viewers to an address, so a render limit there would
+  block a region's cards at once. `web-stack.test.ts` pins that the web ACL limits exactly
+  the paths handed to the API. With an operator address, `PuzzleFnThrottles`
+  (`Throttles` ≥ 1 over 5 min, alarm AND recovery, missing data not breaching) and an
+  account-wide monthly cost **budget** (`MONTHLY_BUDGET_USD`, actual > 100%) notify the
+  `MailAlerts` topic, whose policy names `budgets.amazonaws.com` beside CloudWatch. No
+  function traces to X-Ray.
+- **The account purge worker (#207):** a second backend `NodejsFunction`, `PurgeFn`
+  (`backend/src/purgeWorker.ts`, 512 MB, 5 min, reserved concurrency 1, `retryAttempts: 0` —
+  the next hourly run is the retry), env `SCORE_TABLE` only, its own one-month log group, an
+  EventBridge `rate(1 hour)` rule. It gets the API's exact DynamoDB action list
+  (`ROW_STORE_ACTIONS`, ConditionCheckItem included, the index ARN with it) — no Scan, no
+  BatchWriteItem, so a purge step that needs either has to widen the list and its test. With
+  an operator address, a `PurgeFnErrors` alarm (`Errors` ≥ 1 over a day, missing data not
+  breaching) notifies the `MailAlerts` topic. The privacy notice's "within 7 days" rests on
+  this schedule.
 - **Mail plumbing (#230):** `lib/mail.ts`, two constructs inside `BackendStack`, both gated on
   `-c operatorEmail=` (no default — a personal address in a public repo; CI passes the
   `OPERATOR_EMAIL` repository SECRET, masked in the public job log, and FAILS the backend

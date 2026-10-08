@@ -330,6 +330,8 @@ The live routes then share:
   base-table delete (no GSI lookup). Every answer carries `{accountId, deviceId, devices}`,
   never the token. Revoking the calling device is allowed. Surface:
   `web/components/DeviceList.tsx` on `/account`.
+  `{token, deleteAccount: <accountId>}` DELETES the account (#207, below) — the one shape
+  answered `{deleted: true}` instead.
 - **An arbitrary unknown token never creates an identity**: malformed → 400 `bad_request`;
   well-formed but unknown on a private call → 401 `unknown_device`.
 - **Signed out has two authoritative answers** — `unknown_device`, or a self-revocation whose
@@ -425,7 +427,7 @@ The live routes then share:
   every read first learns the current revision fresh — the append's own slice, or a fresh
   slice read on the boards — and reuses the parsed artifact only when it carries that
   revision, else reads it fresh and checks it names the same one. Why: the live ranking reads
-  the full artifact at guess cadence and the API runs on 10 concurrent Lambdas; a published
+  the full artifact at guess cadence on a bounded pool of Lambdas (reserved concurrency 200); a published
   version's content never changes, so an entry keyed by it never goes stale and a
   correction simply misses. The slice fetch runs concurrently with the round read. **A
   missing slice or a revision mismatch is the day-addressed 404** — no degraded mode.
@@ -557,7 +559,8 @@ The live routes then share:
   `account_gone` (distinct from 404 "never customized", which is dressed with the assigned
   identity); `/board` and the `/g/` preview DROP the row; a join by the deleted account is
   refused inside the store's own transaction. `web/src/api.ts` `readProfile` is the ONE place the four answers are told
-  apart. Anonymous aggregates (`/scores`) keep counting an orphan score until a sweeper exists.
+  apart. Anonymous aggregates (`/scores`) keep counting an orphan score until the #207 purge
+  erases it (an erasing link queues the same purge job a deletion does).
 - **Send**: Turnstile checked BEFORE the allowances; metered per ADDRESS
   (`LINK_SENDS_PER_ADDRESS` = 5) and per IP (`LINK_SENDS_PER_IP` = 20) per rolling hour, keyed
   by `SHA-256(normalized address)`. **A failed send is fail-closed and stays charged**: 503
@@ -591,6 +594,36 @@ The live routes then share:
   and the SPF + DMARC TXT records (zone mail policy). `pnpm backend:dev` PRINTS the code to
   its log (`consoleMailer`). `backend/src/mailer.ts` is ONE message shape and must not be
   widened.
+
+### Deleting an account (#207)
+
+- **A player deletes their own account from `/account`**: `POST /devices {token,
+  deleteAccount: <accountId>}`, the body NAMING the account (the #204 `erase` pattern). 200
+  `{deleted: true}` only once the boundary committed; 409 `account_changed` means ONLY "this
+  device is on another account now" (nothing deleted); a deletion that already happened —
+  a replay, another device first — is 401 `unknown_device`, which the client reads as done.
+  An address bound between the read and the commit is retried server-side.
+- **THE BOUNDARY is ONE transaction** (`LinkStore.deleteAccount`): delete the account row
+  (conditioned on the address authenticated with), check the CALLING device is still on it,
+  delete the profile row and the address BINDING (the address is then stored nowhere and
+  free), and put the PURGE JOB — `purge` / `account#<accountId>`, `enqueuedAt` only, never
+  the address; one fixed partition so the worker finds every job with one Query. From the
+  commit every token fails authentication and no surface dresses the account (#204's
+  deleted-account rules). Then, best-effort and logged: every device item revoked, and the
+  GROUP DEPARTURE run at once (the succession rule, nobody choosing) — other players see a
+  member, so it does not wait for the worker.
+- **THE PURGE** (`backend/src/purge.ts`, the `PurgeFn` Lambda, HOURLY): for each job at least
+  `PURGE_SETTLE_MS` (60 s, past the API Lambda's 10 s timeout) old — the group departure and
+  owed departure jobs again, the device items again, every round row and its score row
+  (score first), then whatever is left in `player#<id>`; every step idempotent, the job
+  cleared only by a purge that finished. An ERASING LINK (#204) queues the same job for the
+  account it deletes. The privacy notice states the physical erase as **within 7 days**
+  (an upper bound over the hourly run; move one, move the other). No backups of the table
+  exist (no PITR) — enabling them is a privacy-notice change.
+- **The device FORGETS EVERYTHING** on a deletion it asked for (`web/state/accountDeletion.ts`):
+  no tombstone, no signed-out screen — the identity, the persisted game state and the
+  `localSeed` go, and it lands home as a new visitor. An unknown outcome claims nothing and
+  re-reads; a later `unknown_device` naming the account it asked to delete is the deletion.
 
 ### Mail plumbing: bounces, complaints, an inbox (#230, decided 2026-09-03)
 
@@ -799,7 +832,7 @@ The live routes then share:
   screen (a solve or a give-up confirmed) goes at once (still behind a flight already out),
   so the result's group boards are built from a post-end answer without waiting out the
   window**. Why the throttle lives client-side and nowhere else: the read is at guess cadence
-  against 10 Lambdas. Nothing polls an idle player: the triggers above are the whole list.
+  against a bounded pool of Lambdas (reserved concurrency 200). Nothing polls an idle player: the triggers above are the whole list.
   The race line is an ORDER, never a rank (#206):
   finished members first (fewest tries), then the playing ones by `orderPlaying` with the
   player's own entry taken from the screen (their live % and tries), the ended-unsolved last;

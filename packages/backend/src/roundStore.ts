@@ -201,6 +201,16 @@ export interface RoundStore {
   // conditional write, so a give-up and a solve cannot both claim the round (solved wins).
   // It answers with the full stored state of the puzzle asked about, like every round answer.
   giveUp(input: RoundGiveUpInput): Promise<{ outcome: RoundGiveUpOutcome; state: RoundState }>;
+  // #207's PURGE of a deleted account: the key of EVERY round the player's partition holds
+  // — every language, dated days and bonus puzzles alike — off ONE paged Query of the
+  // player's own partition, keys only (the logs stay in the store). The purge reads it
+  // BEFORE deleting anything, so each score row is found through the round it was earned on
+  // while that round still stands.
+  listKeys(publicId: string): Promise<RoundKey[]>;
+  // Delete one round row, UNCONDITIONALLY: the account it belongs to is gone, so there is no
+  // state left to protect, and deleting an absent row is the no-op a purge run a second time
+  // has to be.
+  remove(key: RoundKey, publicId: string): Promise<void>;
 }
 
 // A round key is only (date, lang), so RE-PUBLISHING keeps the key while changing the
@@ -255,4 +265,20 @@ export function roundMonthPrefix(key: RoundMonthKey): string {
 // spelling beside the formatters is what keeps the three in step.
 export function roundSortKeyDate(sortKey: string, key: RoundMonthKey): string {
   return sortKey.slice(`${key.lang}#${SORT_KEY_DAILY}#`.length);
+}
+
+// The formatters' WHOLE inverse (#207): the (lang, date) a round sort key names, read off a
+// key the purge found by listing the partition, where no month is known to strip. The same
+// one-spelling rule as `roundSortKeyDate`: the segments are split HERE, beside the
+// formatter that joined them, never by offsets in a store. The date is everything after the
+// fixed `sentence` segment — a day's `YYYY-MM-DD` or a bonus's `bonus/<id>` (`bonus.ts`).
+// A key that is not a round sort key throws: the partition holds nothing else, so one is
+// corruption, and a purge that skipped it would leave a row it could never come back for.
+export function roundSortKeyParts(sortKey: string): RoundKey {
+  const [lang, daily, ...rest] = sortKey.split('#');
+  const date = rest.join('#');
+  if (!lang || daily !== SORT_KEY_DAILY || !date) {
+    throw new Error(`Not a round sort key: ${sortKey}`);
+  }
+  return { lang, date };
 }

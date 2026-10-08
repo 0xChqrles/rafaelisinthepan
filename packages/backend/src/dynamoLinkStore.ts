@@ -30,22 +30,28 @@ import {
   BINDING_SORT_KEY,
   CHALLENGE_SORT_KEY,
   DEPARTURE_SORT_PREFIX,
+  PURGE_SORT_PREFIX,
   SEND_SORT_KEY,
   bindingKey,
   challengeKey,
   departureKey,
   departureSortKey,
+  emailHash,
+  purgeKey,
+  purgeSortKey,
   recentSends,
   sendKey,
   sameDigest,
   type AccountAdoption,
   type EmailBinding,
   type LinkAdoptResult,
+  type LinkDeleteOutcome,
   type LinkMovedRound,
   type LinkStore,
   type LinkVerifyResult,
+  type PurgeJob,
 } from './linkStore';
-import { PROFILE_SORT_KEY, profileKey } from './profileStore';
+import { PROFILE_SORT_KEY, playerPartition, profileKey } from './profileStore';
 
 // Production link rows live in the score table beside everything else (#204).
 //
@@ -56,7 +62,9 @@ import { PROFILE_SORT_KEY, profileKey } from './profileStore';
 // an account nobody holds. Every key it writes comes from the OWNING module's own formatter
 // (`deviceKey`, `accountKey`, `profileKey`), never a literal, and the round and score
 // halves of the active-day transfer are PLANNED by their own stores (`planRoundMove`,
-// `planScoreMove`) — this file only commits the items they hand it.
+// `planScoreMove`) — this file only commits the items they hand it. #207's deletion is the
+// same kind of transaction over the same rows (the account and profile rows), plus the
+// address binding and the purge job.
 
 function requestToken(kind: string, ...parts: string[]): string {
   return createHash('sha256').update([kind, ...parts].join('\0')).digest('hex').slice(0, 36);
@@ -127,6 +135,20 @@ export function dynamoLinkStore(
         ':codeHash': { S: codeHash },
         ':now': { N: String(seconds) },
         ':max': { N: String(LINK_CODE_MAX_ATTEMPTS) },
+      },
+    },
+  });
+
+  // The PURGE job (#207): what promises the rest of a deleted account goes too. It names the
+  // account and the instant — never the address, which a deletion erases everywhere else.
+  // Queued by BOTH deletions: the player's own, and a link's erase.
+  const purgeJob = (accountId: string, now: string): TransactWriteItem => ({
+    Put: {
+      TableName: tableName,
+      Item: {
+        pk: { S: purgeKey() },
+        sk: { S: purgeSortKey(accountId) },
+        enqueuedAt: { S: now },
       },
     },
   });
@@ -440,10 +462,15 @@ export function dynamoLinkStore(
           },
         });
       }
+      // Where the condition on the account being LEFT sits, for reading a refusal below.
+      const sourceIndex = identity.length;
       if (input.erase) {
         // The account row AND the profile row. Identity-bearing reads resolve a face through
         // the profile row and check the account row beside it, so leaving either behind
-        // would keep exposing an account the player has left for good.
+        // would keep exposing an account the player has left for good. And the PURGE job
+        // (#207), exactly as the player's own deletion queues it: everything else the erased
+        // account left — its other days' rounds and scores, its solved-day collections, the
+        // device items still naming it — would otherwise stay in the table, owned by no one.
         identity.push(
           {
             Delete: {
@@ -461,6 +488,7 @@ export function dynamoLinkStore(
               Key: { pk: { S: profileKey(input.from) }, sk: { S: PROFILE_SORT_KEY } },
             },
           },
+          purgeJob(input.from, input.now),
         );
       } else {
         // A surviving source must still be live and linked. If another adoption deleted it
@@ -475,7 +503,6 @@ export function dynamoLinkStore(
           },
         });
       }
-      const sourceIndex = identity.length - (input.erase ? 2 : 1);
 
       // TWO reasons to try again, each bounded on its own and each meaning something
       // different. A REFUSAL on a move or a guard is the PLAY changing between the plan and
@@ -594,6 +621,184 @@ export function dynamoLinkStore(
           Key: { pk: { S: departureKey(accountId) }, sk: { S: departureSortKey(from) } },
         }),
       );
+    },
+
+    async deleteAccount(input): Promise<LinkDeleteOutcome> {
+      const items: TransactWriteItem[] = [
+        {
+          // The account row, conditioned on the state the caller AUTHENTICATED: still
+          // standing, and carrying exactly the address read then (or none). A bind landing
+          // in between gave the account an address the player never saw on this screen,
+          // and another deletion already did the job — either refuses the whole set.
+          Delete: {
+            TableName: tableName,
+            Key: { pk: { S: accountKey(input.accountId) }, sk: { S: ACCOUNT_SORT_KEY } },
+            ExpressionAttributeNames: { '#email': 'email' },
+            ...(input.email === undefined
+              ? { ConditionExpression: 'attribute_exists(pk) AND attribute_not_exists(#email)' }
+              : {
+                  ConditionExpression: 'attribute_exists(pk) AND #email = :email',
+                  ExpressionAttributeValues: { ':email': { S: input.email } },
+                }),
+          },
+        },
+        {
+          // The CALLING device, still on this account. A link on a sibling tab can move it
+          // onto another account between the authentication and here; deleting the account
+          // it LEFT would then answer `deleted` to a client that forgets a token which now
+          // holds somebody else's account — so that refuses the whole set too.
+          ConditionCheck: {
+            TableName: tableName,
+            Key: { pk: { S: deviceKey(input.tokenHash) }, sk: { S: DEVICE_SORT_KEY } },
+            ConditionExpression: '#accountId = :accountId',
+            ExpressionAttributeNames: { '#accountId': 'accountId' },
+            ExpressionAttributeValues: { ':accountId': { S: input.accountId } },
+          },
+        },
+        {
+          // The profile row, unconditional: no identity-bearing read may dress a deleted
+          // account, and an account that never customized has none to delete.
+          Delete: {
+            TableName: tableName,
+            Key: { pk: { S: profileKey(input.accountId) }, sk: { S: PROFILE_SORT_KEY } },
+          },
+        },
+      ];
+      if (input.email !== undefined) {
+        items.push({
+          // The BINDING, so the address is free and stored nowhere. Never one that reaches
+          // somebody else: the account row said this address was its own, and a binding
+          // naming another account is a table that contradicts itself — refused, and loud.
+          Delete: {
+            TableName: tableName,
+            Key: { pk: { S: bindingKey(emailHash(input.email)) }, sk: { S: BINDING_SORT_KEY } },
+            ConditionExpression: 'attribute_not_exists(pk) OR #accountId = :accountId',
+            ExpressionAttributeNames: { '#accountId': 'accountId' },
+            ExpressionAttributeValues: { ':accountId': { S: input.accountId } },
+          },
+        });
+      }
+      items.push(purgeJob(input.accountId, input.now));
+
+      // The bind's loop: nothing here is re-read, so a conflict re-sends the same items
+      // under the same token, and only a conflict-free attempt is read as a verdict.
+      let conflict: unknown;
+      for (let attempt = 0; attempt <= CONFLICT_RETRY_ATTEMPTS; attempt += 1) {
+        if (attempt > 0) await wait(conflictDelayMs(attempt - 1));
+        try {
+          await client.send(
+            new TransactWriteItemsCommand({
+              ClientRequestToken: requestToken(
+                'delete',
+                tableName,
+                input.accountId,
+                input.tokenHash,
+                input.email ?? '',
+                input.now,
+              ),
+              TransactItems: items,
+            }),
+          );
+          return 'deleted';
+        } catch (error) {
+          const verdict = classifyTransaction(error);
+          if (verdict.kind === 'conflict') {
+            conflict = error;
+            continue;
+          }
+          // The account row or the calling device: the state the caller confirmed no longer
+          // stands. A refusal on the binding ALONE is not an answer (above).
+          if (
+            verdict.kind === 'refused' &&
+            (refusedAt(verdict.reasons, 0) || refusedAt(verdict.reasons, 1))
+          ) {
+            return 'account_changed';
+          }
+          throw error;
+        }
+      }
+      throw conflict;
+    },
+
+    async pendingPurges(): Promise<PurgeJob[]> {
+      const jobs: PurgeJob[] = [];
+      let cursor: Record<string, AttributeValue> | undefined;
+      do {
+        const response = await client.send(
+          new QueryCommand({
+            TableName: tableName,
+            KeyConditionExpression: '#pk = :pk AND begins_with(#sk, :prefix)',
+            ExpressionAttributeNames: { '#pk': 'pk', '#sk': 'sk' },
+            ExpressionAttributeValues: {
+              ':pk': { S: purgeKey() },
+              ':prefix': { S: PURGE_SORT_PREFIX },
+            },
+            ConsistentRead: true,
+            ...(cursor ? { ExclusiveStartKey: cursor } : {}),
+          }),
+        );
+        for (const item of response.Items ?? []) {
+          const sk = item.sk?.S;
+          if (!sk?.startsWith(PURGE_SORT_PREFIX)) continue;
+          jobs.push({
+            accountId: sk.slice(PURGE_SORT_PREFIX.length),
+            enqueuedAt: item.enqueuedAt?.S ?? '',
+          });
+        }
+        cursor = response.LastEvaluatedKey;
+      } while (cursor);
+      // OLDEST FIRST: the key orders the jobs by account id, and the worker owes the
+      // longest-waiting deletion first when a run is cut off by its deadline.
+      return jobs.sort((a, b) =>
+        a.enqueuedAt === b.enqueuedAt
+          ? a.accountId < b.accountId
+            ? -1
+            : 1
+          : a.enqueuedAt < b.enqueuedAt
+            ? -1
+            : 1,
+      );
+    },
+
+    async clearPurge(accountId) {
+      // Unconditional, `clearDeparture`'s reason.
+      await client.send(
+        new DeleteItemCommand({
+          TableName: tableName,
+          Key: { pk: { S: purgeKey() }, sk: { S: purgeSortKey(accountId) } },
+        }),
+      );
+    },
+
+    async purgePlayer(accountId) {
+      // Read the partition's KEYS (one consistent, paged Query), then delete each item
+      // unconditionally. Every page is deleted before the next is read, so a run cut off
+      // halfway has simply less left for the next one.
+      let cursor: Record<string, AttributeValue> | undefined;
+      do {
+        const response = await client.send(
+          new QueryCommand({
+            TableName: tableName,
+            KeyConditionExpression: '#pk = :pk',
+            ExpressionAttributeNames: { '#pk': 'pk', '#sk': 'sk' },
+            ExpressionAttributeValues: { ':pk': { S: playerPartition(accountId) } },
+            ProjectionExpression: '#pk, #sk',
+            ConsistentRead: true,
+            ...(cursor ? { ExclusiveStartKey: cursor } : {}),
+          }),
+        );
+        for (const item of response.Items ?? []) {
+          const sk = item.sk?.S;
+          if (sk === undefined) continue;
+          await client.send(
+            new DeleteItemCommand({
+              TableName: tableName,
+              Key: { pk: { S: playerPartition(accountId) }, sk: { S: sk } },
+            }),
+          );
+        }
+        cursor = response.LastEvaluatedKey;
+      } while (cursor);
     },
   };
 }

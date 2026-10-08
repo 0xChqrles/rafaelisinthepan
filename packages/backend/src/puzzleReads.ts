@@ -7,7 +7,8 @@
 //
 // The FULL artifact (~0.8 MB gzipped, a 6.21 MB JSON parse) is what an exact try count
 // needs, and the live ranking reads it at guess cadence: every player in a group re-reads
-// the board after their own guesses land, against an API limited to 10 concurrent Lambdas.
+// the board after their own guesses land, against a bounded pool of Lambdas (reserved
+// concurrency 200).
 // Parsing it per read would spend those slots on the same megabytes over and over, so a
 // warm Lambda KEEPS the parsed artifact and reuses it — but only for the revision the
 // caller has just learned is current.

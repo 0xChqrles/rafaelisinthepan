@@ -212,7 +212,13 @@ const DEVICES_TIMEOUT_MS = 15_000;
 
 export async function postDevicesBody(
   url: string,
-  body: { token: string; turnstileToken?: string; revoke?: string; revokeKey?: string },
+  body: {
+    token: string;
+    turnstileToken?: string;
+    revoke?: string;
+    revokeKey?: string;
+    deleteAccount?: string;
+  },
 ): Promise<Response> {
   return postSignedJson(url, body, timeoutSignal(DEVICES_TIMEOUT_MS));
 }
@@ -283,6 +289,73 @@ export function parseDeviceIdentity(data: unknown): DeviceListing {
     }
   }
   return data as unknown as DeviceListing;
+}
+
+// THE ACCOUNT DELETED BY ITS OWN PLAYER (#207): `{token, deleteAccount: <accountId>}` on the
+// device route. The body NAMES the account the caller believes it deletes — the #204 `erase`
+// confirmation's pattern — so a device moved onto another account between the screen and the
+// tap (a link landing in a sibling tab) deletes nothing: the server answers 409
+// `account_changed` instead of erasing an account the player never saw on the confirmation.
+//
+// What each answer MEANS, read off the CODE, never the status alone (the live routes' rule):
+//   - `deleted`    200 `{deleted: true}` — the deletion committed;
+//   - `gone`       401 `unknown_device` — this token authenticates no more. A deletion whose
+//                  answer was LOST and is sent again lands here (the account row is gone, so
+//                  nothing authenticates), and the caller reads it as deleted;
+//   - `changed`    409 `account_changed` — the token's account is not the one named; nothing
+//                  was deleted;
+//   - `refused`    any other readable 4xx — a verdict, nothing deleted;
+//   - `unknown`    a 5xx, a dropped connection, a deadline, an unreadable body: the outcome of
+//                  a write is UNKNOWN, and the caller reads the device's standing before it
+//                  says anything (`readDeviceStanding`).
+export type DeleteAccountAnswer = 'deleted' | 'gone' | 'changed' | 'refused' | 'unknown';
+
+export async function deleteAccount(identity: {
+  token: string;
+  accountId: string;
+}): Promise<DeleteAccountAnswer> {
+  let response: Response;
+  try {
+    response = await postDevicesBody(devicesUrl(), {
+      token: identity.token,
+      deleteAccount: identity.accountId,
+    });
+  } catch {
+    return 'unknown';
+  }
+  if (response.status >= 500) return 'unknown';
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    return 'unknown';
+  }
+  if (response.ok) return isRecord(body) && body.deleted === true ? 'deleted' : 'unknown';
+  const error = isRecord(body) ? body.error : undefined;
+  if (isUnknownDeviceAnswer(response.status, error)) return 'gone';
+  if (response.status === 409 && error === 'account_changed') return 'changed';
+  return 'refused';
+}
+
+// WHERE THIS DEVICE STANDS, read with the plain `{token}` list: the one question a deletion
+// whose answer was lost needs answered. `gone` (401 `unknown_device`) — the token
+// authenticates no more, so the deletion landed; `standing` — a list came back, the account
+// is still there; `unknown` — no readable answer either, nothing is known.
+export type DeviceStanding = 'gone' | 'standing' | 'unknown';
+
+export async function readDeviceStanding(token: string): Promise<DeviceStanding> {
+  try {
+    const response = await postDevicesBody(devicesUrl(), { token });
+    if (response.ok) return 'standing';
+    if (response.status !== 401) return 'unknown';
+    const error = await response
+      .json()
+      .then((body) => (isRecord(body) ? body.error : undefined))
+      .catch(() => undefined);
+    return isUnknownDeviceAnswer(response.status, error) ? 'gone' : 'unknown';
+  } catch {
+    return 'unknown';
+  }
 }
 
 // The round route (#201/#203): the server-authoritative state of one player's play on one

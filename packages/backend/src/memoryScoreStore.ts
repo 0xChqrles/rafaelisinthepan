@@ -84,6 +84,10 @@ export function memoryScoreStore(
       return settle('recorded');
     },
 
+    async remove(key, publicId) {
+      days.get(dayKey(key))?.delete(publicId);
+    },
+
     // #204's active-day transfer, the score half (`planScoreMove`'s rules): the row moves
     // when the source has one and the destination has none.
     move(key, from, to) {

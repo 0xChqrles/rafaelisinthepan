@@ -1,7 +1,7 @@
 // Email account linking (#204): what the server stores between "send me a code" and
 // "this device is now that account".
 //
-// FOUR item shapes, all on the score table beside everything else:
+// FIVE item shapes, all on the score table beside everything else:
 //
 //   `link#<emailHash>` / `challenge`   — the pending 6-digit code (HASHED), its attempt
 //                                        count, and a TTL. One per address, replaced by a
@@ -19,6 +19,14 @@
 //                                        memberships drain behind it, idempotently and
 //                                        resumably — after the commit, when no new
 //                                        membership can land (a join asserts the account).
+//   `purge` / `account#<accountId>`    — the durable PURGE job (#207): an account its
+//                                        player DELETED (or a link ERASED), whose rounds,
+//                                        scores, device items and private rows the hourly
+//                                        worker (`purge.ts`) still has to erase. ONE
+//                                        fixed partition, so the worker finds
+//                                        every job with one Query and never a Scan. It
+//                                        names the account and when it was queued, NEVER
+//                                        the address the account carried.
 //
 // **The address is stored HASHED wherever it is a KEY** and in clear only on the account
 // row it belongs to. A key is a value anyone reading the table can enumerate; the account
@@ -159,6 +167,33 @@ export interface AccountAdoption {
   now: string;
 }
 
+// What a player's own deletion of their account (#207) is decided from: the account the
+// calling device authenticated as, and the address that account carried at that read —
+// the deletion is conditioned on that exact address, so a bind or another deletion landing
+// between the read and the commit refuses it rather than deleting an account in a state
+// nobody looked at.
+export interface AccountDeletion {
+  accountId: string;
+  // The CALLING device's token hash: the deletion also asserts that this device still
+  // belongs to `accountId`, so a device a link moved meanwhile never deletes the account it
+  // left — and never forgets a token that now holds another one.
+  tokenHash: string;
+  // The account row's own address (normalized when it was bound), or absent when the
+  // account carries none.
+  email?: string;
+  now: string;
+}
+
+// `account_changed`: the account row is gone, its address is no longer the one read, or the
+// calling device no longer belongs to it — nothing was deleted.
+export type LinkDeleteOutcome = 'deleted' | 'account_changed';
+
+// One queued purge: which deleted account still has rows to erase, and since when.
+export interface PurgeJob {
+  accountId: string;
+  enqueuedAt: string;
+}
+
 export interface LinkStore {
   // Spend ALL send allowances as one decision, each over a ROLLING window of
   // `windowSeconds`. Returns false when any scope is at its bound and writes NONE of them,
@@ -193,7 +228,8 @@ export interface LinkStore {
   }): Promise<LinkBindOutcome>;
   // The identity-bearing core, indivisible: consume the challenge, move the one device item,
   // delete the account being left (its account row AND its profile row, so no
-  // identity-bearing read can dress a deleted player), persist the departure job — and
+  // identity-bearing read can dress a deleted player), persist the departure job and, for
+  // that deleted account, the PURGE job (#207: the rest of what it left goes too) — and
   // carry the active day's play across (`moves`), each tuple conditioned on the exact rows
   // it was planned from, so a guess landing meanwhile refuses the commit and the plan is
   // made again over what now stands.
@@ -208,6 +244,25 @@ export interface LinkStore {
   pendingDepartures(accountId: string): Promise<string[]>;
   // The job is done. Idempotent — a job deleted twice is a job that finished twice.
   clearDeparture(accountId: string, from: string): Promise<void>;
+  // THE DELETION A PLAYER ASKS FOR (#207), indivisible: the ACCOUNT row (conditioned on
+  // still standing with exactly the address it was authenticated with, and on the calling
+  // device still belonging to it), its PROFILE row, the
+  // address's BINDING when it carried one (so the address is free and stored nowhere — never
+  // a binding that reaches somebody else), and the PURGE job, in ONE transaction. After it,
+  // every device token of the account fails authentication (the account-existence check),
+  // no identity-bearing read dresses it, and the job is what promises the rest goes too.
+  deleteAccount(input: AccountDeletion): Promise<LinkDeleteOutcome>;
+  // Every queued purge, OLDEST FIRST — one paged Query of the job partition.
+  pendingPurges(): Promise<PurgeJob[]>;
+  // The purge is done. Unconditional and idempotent, like `clearDeparture`.
+  clearPurge(accountId: string): Promise<void>;
+  // The purge's last sweep: delete EVERY item left in the deleted account's PLAYER
+  // partition (`player#<accountId>`) — the solved-day collections, a profile row a write
+  // that authenticated before the deletion put back, a player-side group row whose group is
+  // gone. Here and not on the owning stores because the partition is SHARED by four of
+  // them, and "whatever is left" is one question about the partition, not four about rows.
+  // Idempotent: an empty partition deletes nothing.
+  purgePlayer(accountId: string): Promise<void>;
 }
 
 // What `adopt` mutates OUTSIDE its own key space — the device item, the account row and the
@@ -232,12 +287,25 @@ export interface LinkDeviceWrites {
     erase: boolean;
     now: string;
   }): 'adopted' | 'account_changed' | 'device_changed';
+  // The process-local equivalent of the deletion's conditions (#207): delete the account
+  // only while it stands with exactly this address (or none, when `email` is absent) AND the
+  // calling device (`tokenHash`) still belongs to it. False means nothing changed. The device
+  // ROWS stay, exactly as production leaves them inside the transaction: they stop
+  // authenticating on the account check, and the route and the purge revoke them after.
+  deleteAccount(input: { accountId: string; tokenHash: string; email?: string }): boolean;
 }
 
 export interface LinkProfileWrites {
   // Delete the player's public row, so no identity-bearing read can dress a deleted
   // account (#204: "a missing profile must not fall back to a display identity").
   remove(publicId: string): void;
+}
+
+// The process-local half of the purge's partition sweep (#207): the solved-day collections
+// are the one kind of row the memory player partition holds outside the device and profile
+// maps. Production deletes them as items of the swept partition.
+export interface LinkHistoryWrites {
+  purge(publicId: string): void;
 }
 
 // The process-local halves of the active-day transfer, applied synchronously inside the
@@ -294,3 +362,13 @@ export function departureSortKey(from: string): string {
   return `from#${from}`;
 }
 export const DEPARTURE_SORT_PREFIX = 'from#';
+
+// The PURGE queue (#207): ONE fixed partition, so the hourly worker lists every job with a
+// single Query — no Scan, and no index — and the sort key names the deleted account.
+export function purgeKey(): string {
+  return 'purge';
+}
+export function purgeSortKey(accountId: string): string {
+  return `${PURGE_SORT_PREFIX}${accountId}`;
+}
+export const PURGE_SORT_PREFIX = 'account#';

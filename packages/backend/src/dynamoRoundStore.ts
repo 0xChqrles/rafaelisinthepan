@@ -1,4 +1,5 @@
 import {
+  DeleteItemCommand,
   GetItemCommand,
   QueryCommand,
   UpdateItemCommand,
@@ -14,6 +15,7 @@ import {
   roundMonthPrefix,
   roundPartition,
   roundSortKeyDate,
+  roundSortKeyParts,
   roundSortKey,
   type RoundBoardRow,
   type RoundDaySummary,
@@ -459,6 +461,43 @@ export function dynamoRoundStore(
       const stored = puzzleOf(item) === input.puzzle ? itemToState(item) : null;
       if (stored?.solved) return { outcome: 'round_solved', state: stored };
       return { outcome: 'not_found', state: empty() };
+    },
+
+    // #207's purge: ONE paged Query of the player's own partition, projected to the sort
+    // key alone — the logs never leave the store — and each key read back through the
+    // formatters' one inverse (`roundSortKeyParts`). Strongly consistent so a round the
+    // deleted account's last request wrote is not missed by the read that is about to
+    // delete everything.
+    async listKeys(publicId) {
+      const keys: RoundKey[] = [];
+      let cursor: Record<string, AttributeValue> | undefined;
+      do {
+        const response = await client.send(
+          new QueryCommand({
+            TableName: tableName,
+            KeyConditionExpression: '#pk = :pk',
+            ExpressionAttributeNames: { '#pk': 'pk', '#sk': 'sk' },
+            ExpressionAttributeValues: { ':pk': { S: roundPartition(publicId) } },
+            ProjectionExpression: '#sk',
+            ConsistentRead: true,
+            ...(cursor ? { ExclusiveStartKey: cursor } : {}),
+          }),
+        );
+        for (const item of response.Items ?? []) {
+          keys.push(roundSortKeyParts(item.sk?.S ?? ''));
+        }
+        cursor = response.LastEvaluatedKey;
+      } while (cursor);
+      return keys;
+    },
+
+    // Unconditional: the account is gone, and deleting an absent row is a no-op — which is
+    // what a purge run twice has to be. A DeleteItem, so it carries no version bump: there
+    // is no row left for an adoption to plan from.
+    async remove(key, publicId) {
+      await client.send(
+        new DeleteItemCommand({ TableName: tableName, Key: roundItemKey(key, publicId) }),
+      );
     },
   };
 }
