@@ -428,31 +428,6 @@ body:has(.app > .board-screen) {
   background: var(--accent);
   color: var(--fg);
 }
-/* ONLY PROSE IS SELECTABLE. The chrome and the game's data — the keys, the sentence, the
-   boards, the counts — are things to tap, and a select-all (or a long press, which iOS
-   answers with its callout) painted them cobalt as if they were text to copy. So nothing is
-   selectable and nothing calls out, on the body and everything portaled onto it; what is
-   READ takes both back: the sentence's page, the privacy notice, the tutorial's articles —
-   every link (LISTEN keeps the system's own long press on a link) — and every field, since
-   WebKit extends an ancestor's `none` to a nested text input, and an unselectable field is
-   one you cannot type into. */
-body {
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-}
-a,
-input,
-textarea,
-.solved-text,
-.privacy-screen,
-.article-head,
-.article-section,
-.article-source {
-  user-select: text;
-  -webkit-user-select: text;
-  -webkit-touch-callout: default;
-}
 
 .sr-only {
   position: absolute;
@@ -645,6 +620,8 @@ textarea,
   line-height: var(--key-h);
   text-align: center;
   color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
 }
 /* HOVER (a mouse): the corner brackets of a thing that can be tapped — four arms in the
    secondary ink, just outside the key, in one hard step; never on a day out of range, never at
@@ -1846,6 +1823,8 @@ textarea,
   overflow: hidden;
   touch-action: none;
   overscroll-behavior: contain;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .ps-track {
   will-change: translate;
@@ -1927,6 +1906,8 @@ textarea,
   inset: 0;
   z-index: -1;
   pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 /* The digit canvas: left/top/size are set by CellDigits (viewport-sized since
    2026-08-17); it paints in currentColor —
@@ -2410,6 +2391,9 @@ textarea,
   margin-left: 1px;
   color: var(--rank-color);
   vertical-align: super;
+  /* The game's count, not the sentence's text: a copied sentence reads `gecko`, never `gecko137`. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 /* THE GAME WORDS GLOW (user-decided 2026-08-17; it lived a moment on the exponents and
    moved here the same day — the words carry the aura, the numbers stay dry): a soft
@@ -2731,6 +2715,10 @@ textarea,
   font-family: var(--pixel-font);
   font-size: clamp(18px, 3.2vw, 30px); /* = .phrase */
   color: var(--fg);
+  /* The drawn prompt is not selectable — the real field under it (`.wi-field`) is what
+     holds the caret, and it is not on screen. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 /* THE PROMPT'S REAL FOCUS TARGET (#267): a field the player never sees, holding the guess
    and every keystroke that builds it. Hidden the `.sr-only` way — never `display: none` or
@@ -2752,6 +2740,11 @@ textarea,
   background: none;
   color: transparent;
   font-size: 16px;
+  /* The drawn prompt around it is `user-select: none`, and WebKit extends that to a nested
+     field — an unselectable text input is one you cannot type into. Said back explicitly on
+     the one element that has to be editable. */
+  user-select: text;
+  -webkit-user-select: text;
 }
 .wi-prompt {
   color: var(--accent);
@@ -4501,6 +4494,8 @@ textarea,
   touch-action: none;
   overscroll-behavior: contain;
   scrollbar-width: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .wheel-scroll::-webkit-scrollbar {
   display: none;
@@ -4934,6 +4929,9 @@ button.wheel-row:not(.wheel-row-slot):active .wheel-word {
   display: flex;
   flex-direction: column;
   gap: var(--kb-gap);
+  /* Keys are buttons, never text: tapping one fast selects nothing. */
+  user-select: none;
+  -webkit-user-select: none;
   touch-action: manipulation;
 }
 /* (The DEVICE PLATE under the keys — a hairline slab behind the desktop keyboard, 2026-08-18
@@ -11844,6 +11842,8 @@ figure.l1-fig {
   height: var(--pside);
   touch-action: none;
   cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .editor-picture,
 .editor-fx {

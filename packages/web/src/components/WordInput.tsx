@@ -326,12 +326,15 @@ export default function WordInput({
   // focused control, physical typing silently dead, and nothing on screen to click back
   // into. Focus that left for another CONTROL is the player navigating and is never taken
   // back. It runs a turn later, once the browser has settled focus where it was going —
-  // refocusing inside the blur itself only fights that same move.
+  // refocusing inside the blur itself only fights that same move. Nor is it taken back from
+  // TEXT THE PLAYER SELECTED (the sentence is there to be copied): focusing the field would
+  // wipe the selection, and the next key typed is a stray key that brings the prompt back.
   const keepFocus = (e: FocusEvent<HTMLInputElement>) => {
     if (e.relatedTarget !== null) return;
     const node = e.currentTarget;
     window.setTimeout(() => {
       if (!node.isConnected || node.disabled) return;
+      if (document.getSelection()?.isCollapsed === false) return;
       if (document.activeElement === document.body) node.focus({ preventScroll: true });
     }, 0);
   };
