@@ -52,11 +52,28 @@ const CUT_TRIM_SLACK = 8;
 // Bounded harder than a turn: it is orientation, not content, and the head of a long
 // message is enough to recognise it by. A quote with no words left (a photo, a share the
 // caller stripped) still names its author, which is most of what a reply to it means.
+// AND WHEN, when it is known (`messageTimes.ts`): a quote of last week's line is a different
+// reply from a quote of the last minute's, and the transcript holds only today.
 export const QUOTE_MAX_CHARS = 200;
 
-export function quoteLead(author: string, text: string): string {
+export function quoteLead(author: string, text: string, sent?: string): string {
   const said = text.length > QUOTE_MAX_CHARS ? `${text.slice(0, QUOTE_MAX_CHARS - 1).trimEnd()}…` : text;
-  return said === '' ? `[replying to a message from ${author}] ` : `[replying to ${author}: "${said}"] `;
+  const when = sent ? `, sent ${sent}` : '';
+  return said === '' ? `[replying to a message from ${author}${when}] ` : `[replying to ${author}${when}: "${said}"] `;
+}
+
+// A quoted message's date in the group's own zone, the weekday with it ("Sat, 3 Oct 2026, 21:14").
+export function sentIn(timezone: string, atMs: number): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: timezone,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(atMs));
 }
 
 // WHAT A MESSAGE BECOMES AS A TURN, for a live one (`main.ts`) and an exported one
@@ -67,10 +84,10 @@ export function quoteLead(author: string, text: string): string {
 // leaves nothing to keep.
 export function composeTurnText(
   body: string,
-  quoted: { author: string; text: string } | null,
+  quoted: { author: string; text: string; sent?: string } | null,
   names: ReadonlyMap<string, string>,
 ): string | null {
-  const lead = quoted ? quoteLead(quoted.author, withMentionNames(quoted.text, names)) : '';
+  const lead = quoted ? quoteLead(quoted.author, withMentionNames(quoted.text, names), quoted.sent) : '';
   const kept = `${lead}${withMentionNames(body, names)}`.trim();
   return kept === '' ? null : kept;
 }

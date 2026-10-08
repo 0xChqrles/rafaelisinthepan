@@ -16,6 +16,7 @@ import {
   dynamoDayLogStore,
   memoryDayLogStore,
   quoteLead,
+  sentIn,
   renderDay,
   type Turn,
 } from './dayLog';
@@ -133,6 +134,14 @@ describe('the day log (#277)', () => {
     const long = quoteLead('Zou', 'x'.repeat(QUOTE_MAX_CHARS + 50));
     expect(long.length).toBeLessThan(QUOTE_MAX_CHARS + 30);
     expect(long.endsWith('…"] ')).toBe(true);
+  });
+
+  it("dates a quote when its sending is known, in the group's own zone", () => {
+    const sent = sentIn('Europe/Paris', NOON);
+    expect(sent).toMatch(/^Thu,? 3 Sept? 2026,? 14:00$/);
+    expect(quoteLead('you', "j'ai jamais dit ça", sent)).toBe(`[replying to you, sent ${sent}: "j'ai jamais dit ça"] `);
+    expect(quoteLead('Zou', '', sent)).toBe(`[replying to a message from Zou, sent ${sent}] `);
+    expect(composeTurnText('si', { author: 'you', text: 'A', sent }, new Map())).toBe(`[replying to you, sent ${sent}: "A"] si`);
   });
 
   it("renders a day with the group's own clock, the bot by its name, and a reaction in its answer form", () => {

@@ -19,7 +19,8 @@ import { SSMClient } from '@aws-sdk/client-ssm';
 import { activeDate, dayNumber } from '@whippin/shared';
 import { createAgent } from './chat/agent';
 import { createDaySourceReader } from './puzzle/daySource';
-import { DayLog, composeTurnText, dayOfInstant, dynamoDayLogStore } from './chat/dayLog';
+import { DayLog, composeTurnText, dayOfInstant, dynamoDayLogStore, sentIn } from './chat/dayLog';
+import { dynamoMessageTimes } from './chat/messageTimes';
 import { dynamoDiaryStore } from './chat/diary';
 import { dynamoLimitStore, takeDailyCall } from './chat/limits';
 import { serialByKey } from './chat/serial';
@@ -152,6 +153,8 @@ async function main(): Promise<void> {
     }
   }
   const diary = dynamoDiaryStore(dynamo, env.table);
+  // When each message was sent, so a reply to an old one says how old (`messageTimes.ts`).
+  const messageTimes = dynamoMessageTimes(dynamo, env.table);
 
   let provider = null;
   try {
@@ -260,6 +263,12 @@ async function main(): Promise<void> {
     const quoted = message.quoted;
     const quotedText = quoted ? withoutShares(quoted.text, env.siteOrigin) : '';
     if (!text && !quoted) return null;
+    const quotedAt = quoted
+      ? await messageTimes.get(group.id, quoted.id).catch((error) => {
+          log.warn({ event: 'chat.quote_time_failed', group: tag(group.id), error: (error as Error).message }, 'the quote goes undated');
+          return null;
+        })
+      : null;
     const refs = quoted ? [...message.mentions, { jid: quoted.participant, player: quoted.player }] : message.mentions;
     // ONE map for the body and the quote, the bot in it under its name (`namesWithBot`).
     const names = namesWithBot(await mentionNames(group, refs), identity, message.mentions);
@@ -269,6 +278,7 @@ async function main(): Promise<void> {
         ? {
             author: quotesBot(message, identity) ? 'you' : (names.get(jidUser(quoted.participant)) ?? displayName(group, quoted.player, '')),
             text: quotedText,
+            ...(quotedAt !== null ? { sent: sentIn(group.timezone, quotedAt) } : {}),
           }
         : null,
       names,
@@ -295,6 +305,12 @@ async function main(): Promise<void> {
     }
     const at = message.timestamp * 1000;
     const chatting = group.chat.enabled && message.live;
+    // Noted for every message, the bot's own echoes included: any of them may be quoted later.
+    if (chatting) {
+      void messageTimes.put(group.id, message.id, at).catch((error) => {
+        log.warn({ event: 'chat.message_time_failed', group: tag(group.id), error: (error as Error).message }, 'the message goes undated');
+      });
+    }
     // THE BOT'S OWN LINES ENTER THE LOG AS WHATSAPP ECHOES THEM BACK (`fromMe`,
     // 2026-09-07): the podium and the reminder are sent from the queue and composed
     // nowhere near here, so a "merci" under the podium was a reply to a line the model
