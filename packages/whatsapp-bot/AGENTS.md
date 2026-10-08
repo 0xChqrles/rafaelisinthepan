@@ -508,6 +508,13 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   `quoteLead`: `[replying to you: "…"]` for the bot's own line, `[replying to Zou: "…"]`
   otherwise, the author named like a mention (the bot under its `chat.name` via
   `namesWithBot`), cut at `QUOTE_MAX_CHARS` (200). So "A replies to B" is in the log.
+  **AND DATED** (`chat/messageTimes.ts`): a reply carries no date and a WhatsApp id holds
+  none, so the task notes the instant of every live message of a chat-enabled group, its
+  own echoes included — `MSGAT#<group>` / `<message id>` → `at`, NO TEXT, TTL
+  `MESSAGE_TIME_TTL_SECONDS` (30 days) — and a quote found there reads
+  `[replying to you, sent Thu, 3 Sept 2026, 14:00: "…"]` (the group's zone, `sentIn`), so
+  "I never said that" answered with last week's line is seen as last week's. A quote older
+  than the window, or a failed read, goes undated.
   **In ORDER**: the player's turn is remembered BEFORE `ingest` runs (a spoken
   acknowledgement is composed inside it and remembered through the `spoken` hook, which
   fires once the queue accepted it and names the message it answers); `main.ts` files the
@@ -926,7 +933,8 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   REACHES THE PROVIDER ON EVERY MESSAGE.** Two decisions, recorded here because this bullet
   enumerates what is kept and what leaves: (1) the DAY LOG — every turn of a chat-enabled
   group as the window used to hold it (shares stripped, mentions named, bounded), one row
-  per turn with a 48-hour TTL — plus the DIARY, one bounded text per group the bot rewrites
+  per turn with a 48-hour TTL — plus each message's id and send instant (no text, 30
+  days, to date a quote) — plus the DIARY, one bounded text per group the bot rewrites
   nightly and that does not expire; the bot stored no message text at all before. (2) The
   day's turns and the diary are sent to the model provider on EVERY live message of such a
   group, addressed or not — not only when somebody speaks to the bot. Both were chosen for
