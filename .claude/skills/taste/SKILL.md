@@ -276,7 +276,9 @@ players finished the day. ONE such word makes a hard day, and a loved day may hi
 punch, the image or the exact word. TWO in one trio made the worst days (2026-09-16,
 09-22, 09-23, 10-05: a median 40% of the players finished, against 57% with one and 71%
 with none; no such day reached 70%). Keep at most one, and only when it is worth the
-search.
+search. When two are hidden, drop the DULL one and keep the one more fun to find:
+« clodos » over « stagnation » — the register a notch off lands with a grin, the abstract
+noun only completes the thought.
 
 The NAME of the thing is not such a word, even when it is rare: « saint-bernard »,
 « post-it », « rolex » — there is no other word for it, so a player who reaches the thing

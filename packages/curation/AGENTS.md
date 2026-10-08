@@ -156,8 +156,8 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   and, once the map is built, where the reader's nearest word
   lands in the hole's own map (`rules.map_nearest_filler`). A trio hiding TWO
   or more words players don't say — the one fact that asks — has ONE of them swapped by the
-  model BEFORE the ranking is paid for (`llm.drop_unsaid`, which keeps the one worth the
-  search), so that swap costs one question, never a second ranking; any other trio goes
+  model BEFORE the ranking is paid for (`llm.drop_unsaid`: the DULL one goes, the one more
+  fun to find stays — « clodos » over « stagnation », user-decided 2026-10-08), so that swap costs one question, never a second ranking; any other trio goes
   straight on, an easy word being the start step's to tune (a farther start, never a duller
   word). Asked of every trio, the model swapped on 77% of played days, loved ones included,
   and picked the hard word no better than chance. A word players would say

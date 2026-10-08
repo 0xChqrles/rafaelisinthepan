@@ -419,8 +419,9 @@ The sentence, holes marked with the hidden word in brackets:
 {blocks}
 
 This trio hides {len(unsaid)} words players don't say: {", ".join(f"« {w} »" for w in unsaid)}. The taste
-keeps at most one — the one worth the search. Name ONE of them to swap, and its
-replacement from the other words of the line that can be hidden: {", ".join(allowed)}.
+keeps at most one: swap the DULL one and keep the one more fun to find. Name ONE of them
+to swap, and its replacement from the other words of the line that can be hidden:
+{", ".join(allowed)}.
 
 Return {{"replace": {{"secret": "<one of the words players don't say>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")
     replace = answer.get("replace") if isinstance(answer, dict) else None
