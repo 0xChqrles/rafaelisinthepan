@@ -21,6 +21,7 @@ from rules import (
     reading,
     said,
     same_word,
+    two_places,
     unsaid,
 )
 
@@ -213,6 +214,17 @@ def test_the_said_note_gives_the_chance_and_the_word_kept_instead():
     assert "at 0.30" in note and "« faussaire »" in note and "a word players don't say" in note
     assert "don't say" not in said(WOULD_SAY_HARD, "x")  # the cut itself is said
     assert said(None, "x") == "whether players would say this word: not measured"
+
+
+def test_a_score_is_cut_to_two_places_never_rounded_up_to_a_bar():
+    # 0.1999… printed « 0.20 » under a bar of 0.20 (« divorce », 2026-10-10).
+    assert two_places(0.19999999999999998) == "0.19"
+    assert two_places(0.2) == "0.20"
+    assert two_places(0.45) == "0.45"
+    assert two_places(0.4499) == "0.44"
+    assert two_places(0.8) == "0.80"
+    note = said(0.395, None)
+    assert "at 0.39" in note and "under 0.4" in note
 
 
 def test_one_word_players_dont_say_is_a_hard_day_two_are_the_fact_to_act_on():

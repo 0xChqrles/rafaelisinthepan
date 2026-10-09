@@ -216,27 +216,39 @@ Ask: when this word is revealed, does the line mean more than it did?
 ## The start words
 
 The start word is where the play begins: the first clue, and the path of guesses it
-opens. Players think by ASSOCIATION: the world around a word makes a better clue than
-its definition. A start can come from the same family as the secret — what matters is
-how many real guesses lie between them once the line is read:
-- « éleveur » ← « fauconnier », « pigeons » ← « papillons »: other people who keep
-  animals, other creatures people collect — the search stays open, and the joke (all
-  that talent, for pigeons) stays hidden until the word lands.
-- « bière » ← « tisane »: a drink, the tame one — the wrong world, on purpose.
-- « rolex » ← « cartier », « post-it » ← « enveloppes »: another luxury brand, another
-  paper you leave words on — the family is wide, the pairing in the line does the rest.
-- « robot » ← « logiciel », « psychiatre » ← « ostéopathe », « cafard » ←
-  « mille-pattes »: a neighbour in a wide family, where many guesses fit.
-- « mammifères » ← « néandertaliens »: the species frame, sideways.
+opens. Players think by ASSOCIATION. How near the start stands depends on how much the
+line already gives of the word:
 
-A start gives the secret away when the line leaves only one or two guesses between
-them:
+- **The line leads to the word** — the context gives enough to guess it easily: a
+  MEDIUM start, a neighbour in a wide family, where many guesses fit and the line does
+  the narrowing.
+  - « éleveur » ← « fauconnier », « pigeons » ← « papillons »: other people who keep
+    animals, other creatures people collect — the search stays open.
+  - « bière » ← « tisane »: another drink, the tame one.
+  - « rolex » ← « cartier », « post-it » ← « enveloppes »: another luxury brand, another
+    paper you leave words on — the family is wide, the pairing in the line does the rest.
+  - « robot » ← « logiciel », « cafard » ← « mille-pattes »: a neighbour in a wide family.
+- **The line gives little of the word** — too hard to guess from the context: a start
+  tied to the word's DIRECT meaning; when the rest of the line is already hard (its
+  other holes too), the most direct of them. Next to the meaning, never another name for
+  it: « marriage » or « heartbreak » for « divorce », not « nazi » for « facho » nor
+  « blue » for « sky » — a synonym leaves the player nothing to find.
+  - « divorce » ← « heartbreak », in « the ones about [divorce] go right over their
+    heads »; « marriage » when the rest of the line is already hard. Not « litigation »
+    (2026-10-10), chosen to keep the punch hidden: a word about the procedure, not about
+    what a divorce is.
+
+A start is never TOO FAR from the word, even when the line makes it obvious: once the
+word is found, the player must never feel the start made no sense. The link is in the
+start's EVERYDAY sense — the one most players read first: « riffs » for « jokes » is
+comedy only to those who know the stand-up meaning, and most read music.
+
+In either case, a start gives the secret away when the line leaves only one or two
+guesses between them:
 - « frères » ← « neveux »: with the mother already in the line, family, then brothers —
   one or two tries.
 - « chambre » ← « tanière »: a word for a teenager's room.
 - « parfaitement » ← « admirablement »: a synonym in costume.
-
-It can fail the other way too: a clue with no path to the secret at all.
 
 ## Difficulty is part of taste
 
@@ -262,9 +274,10 @@ Fun dies at both ends, and real rounds show it:
 The aim: never frustrating for the slow players, never handed to the fast ones. At least
 70% of the players finish the day — below that, too many stop playing the game — and the
 fast ones still search: 09-21, finished by 69% with a median of 5 tries, was dead. A day
-is as hard as its hardest hole. Tune difficulty with the start word — nearer or farther, plainer or more
-oblique — never by trading a living word for a dead one: a great word that plays too
-hard needs a better start, not a duller word.
+is as hard as its hardest hole. Tune difficulty with the start word, as the start words
+say — medium where the line leads to the word, on its direct meaning where it gives
+little, never too far — and never by trading a living word for a dead one: a great word
+that plays too hard needs a better start, not a duller word.
 
 **The word players don't say.** Players find the meaning first, then type the words
 they would use for it. A word they would never say for that meaning — the learned or

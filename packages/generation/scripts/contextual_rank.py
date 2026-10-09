@@ -98,8 +98,8 @@ GIVEAWAY_MIN = 0.10         # the floor: under it the line gives no path to the 
                             # any; English « bloated » (0.07) and « rapacity » (0.06) beat a native
                             # speaker; the loved days' holes start at 0.127 (« mammifères »)
 GIVEAWAY_HARD = 0.20        # under it a hole plays hard: 7 of the 13 holes under it were found by fewer
-                            # than 60 % of their players, against 12 of the 71 above. The curator draws
-                            # its start from nearer (curation `starts.HARD_START_BAND`)
+                            # than 60 % of their players, against 12 of the 71 above. The curator notes
+                            # it to its start step (curation `AGENTS.md`), never a nearer band
 
 class ContextualError(Exception):
     """A judge that cannot answer: no key, a refused request, a replay without the

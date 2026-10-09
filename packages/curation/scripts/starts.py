@@ -9,7 +9,7 @@ sentence reads right — correct, and still meaning something — is the model's
 import _paths  # noqa: F401
 from slug import slug
 from start_word import START_BAND, is_variant
-from rules import PLAIN_WORD_RANK
+from rules import PLAIN_WORD_RANK, group_commonness
 
 # Words that elide before a vowel: « le effet » is never French.
 ELIDING = frozenset({"le", "la", "de", "ne", "que", "se", "ce", "je", "me", "te",
@@ -21,15 +21,11 @@ _MODEL_JUDGED = "hy"
 _PUNCT = "«»\"'‘’“”(),.;:!?…"
 # Re-pick rounds before the run gives the start up to the reviewer.
 START_ROUNDS = 3
-# Candidates shown to the model for one re-pick.
-START_OPTIONS = 40
-# A HARD hole — the line gives little of it (`contextual_rank.GIVEAWAY_HARD`) — draws its
-# start from nearer than the band of every map (user-decided 2026-10-02: the hard days a
-# bit easier, the easy days as they are); the usual band when this one has no clean word.
-HARD_START_BAND = (50, 100)
 # A start word past this place in the corpus frequency order is too rare to be a plain
 # word a player knows (« hétéroptère » is out, « bestiole » is in) — ONE boundary with the
-# obviousness filter's plain-word test (`rules.PLAIN_WORD_RANK`).
+# obviousness filter's plain-word test (`rules.PLAIN_WORD_RANK`). The WORD is judged, not
+# the form shown: its map group's commonest form (`rules.group_commonness`), so a common
+# verb shown inflected (« observaient ») stays.
 MAX_START_FREQ_RANK = PLAIN_WORD_RANK
 
 
@@ -102,30 +98,31 @@ def letter_problem(prev: str, word: str, lang: str) -> str | None:
 
 
 def start_candidates(rank_map: dict, secret_slug: str, prev: str, exclude=(),
-                     frequency_rank=lambda word: None, *, lang: str, hard: bool = False) -> list[dict]:
-    """The band's words for one hole (rank START_BAND, 100-200 on every map since
-    2026-09-24; HARD_START_BAND for a `hard` hole, the usual band when it holds none —
-    one per display word, no variant of the secret, not too rare) that pass the
-    language's letter rule (`letter_problem`), nearest first: [{word, rank}].
-    `frequency_rank(word)` reads the corpus order (None = unknown, kept)."""
+                     index_of=lambda slug: None, *, lang: str) -> list[dict]:
+    """EVERY word of the hole's band (START_BAND, 100-200 on every map and every hole,
+    user-decided 2026-10-08: how hard the line is decides which KIND of start, the taste's
+    call, never where to look — one per display word, no variant of the secret, not too
+    rare) that passes the language's letter rule (`letter_problem`), nearest first:
+    [{word, rank}]. No cap: the model reads the whole band.
+    `index_of(slug)` reads the corpus order; a word is too rare when its GROUP's commonest
+    form is past MAX_START_FREQ_RANK (`rules.group_commonness`; None = unknown, kept)."""
+    common = group_commonness(rank_map, index_of)
+    lo, hi = START_BAND
     out: list[dict] = []
-    for lo, hi in (HARD_START_BAND, START_BAND) if hard else (START_BAND,):
-        seen: set[str] = set()
-        for key, entry in rank_map.items():
-            rank = entry.get("rank", 0)
-            word = entry.get("word", key)
-            if not lo <= rank <= hi or word in seen:
-                continue
-            if is_variant(slug(word), secret_slug) or word in exclude:
-                continue
-            if letter_problem(prev, word, lang) is not None:
-                continue
-            freq = frequency_rank(word)
-            if freq is not None and freq > MAX_START_FREQ_RANK:
-                continue
-            seen.add(word)
-            out.append({"word": word, "rank": rank})
-        if out:
-            break
+    seen: set[str] = set()
+    for key, entry in rank_map.items():
+        rank = entry.get("rank", 0)
+        word = entry.get("word", key)
+        if not lo <= rank <= hi or word in seen:
+            continue
+        if is_variant(slug(word), secret_slug) or word in exclude:
+            continue
+        if letter_problem(prev, word, lang) is not None:
+            continue
+        freq = common[rank]
+        if freq is not None and freq > MAX_START_FREQ_RANK:
+            continue
+        seen.add(word)
+        out.append({"word": word, "rank": rank})
     out.sort(key=lambda e: e["rank"])
     return out

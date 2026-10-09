@@ -1,4 +1,4 @@
-from starts import (HARD_START_BAND, MAX_START_FREQ_RANK, article_problem, displayed, elision_problem,
+from starts import (MAX_START_FREQ_RANK, article_problem, displayed, elision_problem,
                     letter_problem, previous_token, start_candidates)
 
 WORDS = ["le", "savoir", "humain", "sera", "rayé", "des", "archives", "du", "monde", "d’un", "moucheron."]
@@ -47,30 +47,44 @@ def test_start_candidates_are_the_band_minus_variants_and_elision_failures():
     assert words == ["monde"]        # usage/esprit elide after « le », savoirs is a variant, proche/loin are off-band
     assert [e["word"] for e in start_candidates(ranks, "savoir", "du", lang="fr")] == ["effet", "esprit", "usage", "monde"]
     # a word too rare for a player is out; an unknown frequency is kept
-    rare = lambda w: {"esprit": 90000, "usage": 500}.get(w)  # noqa: E731
-    assert [e["word"] for e in start_candidates(ranks, "savoir", "du", frequency_rank=rare, lang="fr")] == ["effet", "usage", "monde"]
+    rare = lambda s: {"esprit": 90000, "usage": 500}.get(s)  # noqa: E731
+    assert [e["word"] for e in start_candidates(ranks, "savoir", "du", index_of=rare, lang="fr")] == ["effet", "usage", "monde"]
     # the boundary: not PAST the rank — a word at it stays, the next one is out
     assert MAX_START_FREQ_RANK == 40000
-    edge = lambda w: {"esprit": 40001, "usage": 40000}.get(w)  # noqa: E731
-    assert [e["word"] for e in start_candidates(ranks, "savoir", "du", frequency_rank=edge, lang="fr")] == ["effet", "usage", "monde"]
+    edge = lambda s: {"esprit": 40001, "usage": 40000}.get(s)  # noqa: E731
+    assert [e["word"] for e in start_candidates(ranks, "savoir", "du", index_of=edge, lang="fr")] == ["effet", "usage", "monde"]
 
 
-def test_a_hard_hole_draws_from_the_nearer_band_else_the_usual_one():
-    # A hole the line gives little of starts nearer (user-decided 2026-10-02).
-    assert HARD_START_BAND == (50, 100)
+def test_rarity_is_the_word_s_not_the_form_shown():
+    # A verb's group is shown inflected; « observaient » is far down the corpus, « observer »
+    # is not: the WORD is common, the start stays. A word whose every form is rare is out.
     ranks = {
-        "savoir": {"word": "savoir", "rank": 0},
-        "tout": {"word": "tout", "rank": 40},        # nearer than even the hard band
-        "voisin": {"word": "voisin", "rank": 95},
-        "proche": {"word": "proche", "rank": 60},
-        "monde": {"word": "monde", "rank": 120},
+        "contemplaient": {"word": "contemplaient", "rank": 0},
+        "observaient": {"word": "observaient", "rank": 103},
+        "observer": {"word": "observaient", "rank": 103},
+        "observe:v": {"word": "observaient", "rank": 103},
+        "heteroptere": {"word": "hétéroptère", "rank": 110},
+        "heteropteres": {"word": "hétéroptère", "rank": 110},
+        "guettaient": {"word": "guettaient", "rank": 134},   # no form known: kept
     }
-    words = lambda r, **k: [e["word"] for e in start_candidates(r, "savoir", "du", lang="fr", **k)]  # noqa: E731
-    assert words(ranks, hard=True) == ["proche", "voisin"]
-    assert words(ranks) == ["monde"]
-    # no clean word in the nearer band: the usual one, never no start at all
-    far = {k: v for k, v in ranks.items() if k not in ("proche", "voisin")}
-    assert words(far, hard=True) == ["monde"]
+    # only the `:pos` key is common: its slug is read before the suffix
+    corpus = {"observaient": 61000, "observer": 52000, "observe": 2500,
+              "heteroptere": 180000, "heteropteres": 210000}
+    words = [e["word"] for e in start_candidates(ranks, "contemplaient", "les", index_of=corpus.get, lang="fr")]
+    assert words == ["observaient", "guettaient"]
+
+
+def test_every_hole_shows_the_whole_100_200_band_uncapped():
+    # User-decided 2026-10-08: one band for every hole, hard or not — how much the line
+    # gives decides which KIND of start (the taste), never where to look; no cap, so the far
+    # end of a crowded band is never cut off.
+    ranks = {"savoir": {"word": "savoir", "rank": 0},
+             "proche": {"word": "proche", "rank": 60},          # nearer than the band
+             **{f"mot{i}": {"word": f"mot{i}", "rank": 100 + i} for i in range(101)},
+             "loin": {"word": "loin", "rank": 201}}               # past it
+    words = [e["word"] for e in start_candidates(ranks, "savoir", "du", lang="fr")]
+    assert len(words) == 101 and words[0] == "mot0" and words[-1] == "mot100"
+    assert "proche" not in words and "loin" not in words
 
 
 def test_y_initial_is_the_models_call_like_h():
