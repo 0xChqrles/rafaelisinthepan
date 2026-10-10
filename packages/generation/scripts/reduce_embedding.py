@@ -38,6 +38,14 @@ hors-dico can't cover, because their targets ARE valid dictionary entries: singl
 ("a".."z" ship in Hunspell/SCOWL) and stopwords. There is NO frequency exemption — the
 dictionary-or-allowlist check applies to every word.
 
+Third output: <input>_commonness.json, each KEPT word's place in COMMONNESS, on the
+reduced order's own scale: how many kept words come before the first source line where
+ANY casing of the word appears. A word with no earlier casing keeps its own index, so the
+table only ever moves a word up, never down. The kept
+words are lowercase, but a name is written capitalised (« Zeus » is line 21033, « zeus »
+258436), so the reduced order alone ranks every name as rare. The curator's start-word
+rarity filter reads this table (curation `AGENTS.md`).
+
 Format: if the source has a "<count> <dim>" header, the output has one too, recalculated
 to the number of surviving words. If the source has none (e.g. GloVe .txt), the output
 has none either.
@@ -48,7 +56,9 @@ Usage:
 """
 
 import argparse
+import bisect
 import gzip
+import json
 import os
 import re
 import shutil
@@ -146,6 +156,18 @@ def derive_path(inp):
     return root + "_reduced" + ext
 
 
+def commonness_path(out_path):
+    root, _ext = os.path.splitext(out_path)
+    return root + "_commonness.json"
+
+
+def commonness(kept_words, kept_lines, first_seen):
+    """Each kept word's place in commonness: the number of kept words whose own source
+    line comes before the first line of ANY casing of it. `kept_lines` are the kept words'
+    own lines (ascending, as streamed); a word with no earlier casing gets its own index."""
+    return {w: bisect.bisect_left(kept_lines, first_seen[w.lower()]) for w in kept_words}
+
+
 def dico_path(lang):
     """Default versioned wordlist for a language: wordlist/<lang>.txt.gz."""
     return os.path.join(WORDLIST_DIR, f"{lang}.txt.gz")
@@ -205,6 +227,8 @@ def main():
     scanned = 0      # SOURCE data lines read while filling the cap
     kept_count = 0   # words KEPT (passed the morphological rules AND, if a dico, are in it)
     kept_words = []  # the KEPT words themselves — the front's vocab is a function of these
+    first_seen = {}  # lowercased token -> first source line where any casing of it appears
+    kept_lines = []  # each kept word's own source line, ascending
     by_rule = {name: 0 for name in reasons}
     samples = {name: [] for name in reasons}
 
@@ -228,6 +252,7 @@ def main():
             if not word:
                 continue
             scanned += 1
+            first_seen.setdefault(word.lower(), scanned)
             rule = classify(word, rules)
             if rule is not None:
                 # Rejected by a morphological rule (single-letter / stopword): record + skip.
@@ -249,6 +274,7 @@ def main():
             out_tmp.write(line)
             kept_count += 1
             kept_words.append(word)
+            kept_lines.append(scanned)
             # Cap on KEPT words: once TOP_N have passed we stop reading (the source is
             # sorted, so we don't stream the remaining millions of lines).
             if kept_count >= TOP_N:
@@ -263,6 +289,9 @@ def main():
         with open(out_tmp.name, encoding="utf-8") as body_f:
             shutil.copyfileobj(body_f, out)
     os.remove(out_tmp.name)
+
+    with open(commonness_path(out_path), "w", encoding="utf-8") as cf:
+        json.dump(commonness(kept_words, kept_lines, first_seen), cf, ensure_ascii=False)
 
     # Vocab: the front's existence set is a pure function of the KEPT words, which we
     # already have in hand — write it in the SAME pass (no separate vector reload). It

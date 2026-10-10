@@ -243,9 +243,12 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   (`starts.start_candidates`: shipped rank within the
   band, no variant, letter-rule-clean, its WORD not
   past `MAX_START_FREQ_RANK` = 40000 in the corpus order — « hétéroptère » is out; the word
-  is the map group, judged on its commonest key as the crowd judges one
-  (`rules.group_commonness` over `load_similarity`'s one corpus index), so a common verb
-  shown inflected — « observaient » — stays). The first successful gen_phrase run only supplies the rank maps; gen_phrase then reruns
+  is the map group, judged on its commonest key (`rules.group_commonness`), so a common verb
+  shown inflected — « observaient » — stays; and each key reads reduce's COMMONNESS table
+  (`*_reduced_commonness.json`, missing = the run dies), which counts a word's
+  CAPITALISED spellings, so a name — « shiva », « zeus » for « Dieu » — is not ranked
+  rare; the table only ever moves a word up. The crowd keeps the lowercase reduced order
+  the buried rule was measured on). The first successful gen_phrase run only supplies the rank maps; gen_phrase then reruns
   with `--start MOT=DEPART` per hole (#260). A hole the answer leaves without a valid start
   is asked again, alone, once (`llm.pick_start`, with every other hole's notes and start); a hole with NO candidate is shown as such,
   so the model names a replacement; still incomplete, the draft is refused and erased —
