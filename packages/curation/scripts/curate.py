@@ -128,8 +128,10 @@ def load_similarity(lang: str):
         return None
 
     def frequency_rank(t: rules.Token):
-        k = key(t)
-        return None if k is None else int(kv.key_to_index[k])
+        """The WORD's place in the corpus order: the commoner of its form and its lemma, so
+        an inflected form of a common word (« boussoles ») is not read as rare."""
+        found = [int(kv.key_to_index[f]) for f in (t.text.lower(), t.lemma) if f and f in kv]
+        return min(found) if found else None
 
     @lru_cache(maxsize=64)
     def ranking(k: str) -> dict[str, int]:
