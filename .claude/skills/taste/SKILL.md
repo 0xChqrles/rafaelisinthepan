@@ -232,7 +232,10 @@ line already gives of the word:
   tied to the word's DIRECT meaning; when the rest of the line is already hard (its
   other holes too), the most direct of them. Next to the meaning, never another name for
   it: « marriage » or « heartbreak » for « divorce », not « nazi » for « facho » nor
-  « blue » for « sky » — a synonym leaves the player nothing to find.
+  « blue » for « sky » — a synonym leaves the player nothing to find. Another of the
+  same kind IS next to the meaning: another god for « Dieu » (« Shiva »), another
+  specialist for « psychiatre » (« urologue »), another class for « mammifères »
+  (« batraciens »).
   - « divorce » ← « heartbreak », in « the ones about [divorce] go right over their
     heads »; « marriage » when the rest of the line is already hard. Not « litigation »
     (2026-10-10), chosen to keep the punch hidden: a word about the procedure, not about

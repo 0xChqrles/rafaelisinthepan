@@ -171,9 +171,20 @@ def load_similarity(lang: str):
                 return crowd_of(form)
         return None
 
-    # `first_index.get` is ALSO the start band's reader of commonness (`starts.start_candidates`):
-    # one corpus order judges a crowd and a start word's group alike.
-    return frequency_rank, neighbour_rank, crowd, first_index.get
+    # The start band's reader of commonness (`starts.start_candidates`) counts a word's
+    # CAPITALISED spellings too — reduce's commonness table: a name is written capitalised,
+    # so the lowercase-only order above ranks « zeus » or « shiva » as rare. The crowd keeps
+    # that order, the one the buried rule was measured on.
+    table = os.path.splitext(neighbors.SPEC.vectors_path)[0] + "_commonness.json"
+    if not os.path.exists(table):
+        raise SystemExit(f"Missing {table}: run `pnpm reduce:{lang}` (it writes the commonness table).")
+    with open(table, encoding="utf-8") as f:
+        ranks = json.load(f)
+    common_index: dict[str, int] = {}
+    for w, r in ranks.items():
+        s = slug(w)
+        common_index[s] = min(r, common_index.get(s, r))
+    return frequency_rank, neighbour_rank, crowd, common_index.get
 
 
 # ---------------------------------------------------------------------------

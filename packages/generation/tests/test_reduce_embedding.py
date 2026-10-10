@@ -339,3 +339,14 @@ def test_the_committed_wordlist_is_token_shaped_sorted_and_unique(lang):
         words = [line.rstrip("\n") for line in f]
     assert [w for w in words if not token_re.match(w)] == []
     assert words == sorted(set(words))
+
+
+def test_commonness_counts_a_name_s_capitalised_spelling_and_never_moves_a_word_down():
+    # « zeus » is kept lowercase at line 30, but written « Zeus » at line 3: it moves up to
+    # the place of the kept words before line 3. A word with no earlier casing keeps its own
+    # index, so the table can only promote.
+    kept = ["chat", "bestiole", "zeus"]
+    lines = [1, 5, 30]
+    first_seen = {"chat": 1, "bestiole": 5, "zeus": 3}
+    assert red.commonness(kept, lines, first_seen) == {"chat": 0, "bestiole": 1, "zeus": 1}
+    assert red.commonness_path("x/cc.fr.300_reduced.vec") == "x/cc.fr.300_reduced_commonness.json"

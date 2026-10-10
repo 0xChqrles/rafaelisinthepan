@@ -14,7 +14,9 @@ relative to `packages/generation/` unless prefixed.
   generation/                Python generation (run via uv); puzzles -> output/, vocab -> web/public
     scripts/
       reduce_embedding.py     raw .vec/.txt -> *_reduced file (the ONLY filter+cap stage) + vocab
-                              (+ its shared/ metadata, #200)
+                              (+ its shared/ metadata, #200) + *_reduced_commonness.json (each
+                              kept word's place counting its capitalised spellings — the
+                              curator's start rarity; promote-only, gitignored)
       build_wordlist.py       offline builder: sources -> wordlist/<lang>.txt.gz (hors-dico ref, #38)
       build_forms.py          offline builder of each language's WORD-GROUP INVENTORY: Morphalou 3.1
                               -> wordlist/fr.forms.tsv.gz (#132/#146), AGID + VarCon + OANC ->

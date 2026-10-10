@@ -68,6 +68,7 @@ packages/generation/embedding/**/*.txt
 *.kv
 *.kv.vectors.npy
 *.npy
+packages/generation/embedding/**/*_commonness.json
 
 # ── Wordlist build cache (issue #38) ─────────────────────────
 # Raw source downloads for `pnpm wordlist:<lang>` (Lexique/SCOWL/Hunspell). Re-fetched
