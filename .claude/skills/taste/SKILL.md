@@ -234,10 +234,10 @@ line already gives of the word:
   tied to the word's DIRECT meaning; when the rest of the line is already hard (its
   other holes too), the most direct of them. Next to the meaning, never another name for
   it: « marriage » or « heartbreak » for « divorce », not « nazi » for « facho » nor
-  « blue » for « sky » — a synonym leaves the player nothing to find. Another of the
-  same kind IS next to the meaning: another god for « Dieu » (« Shiva »), another
-  specialist for « psychiatre » (« urologue »), another class for « mammifères »
-  (« batraciens »).
+  « blue » for « sky » — a synonym leaves the player nothing to find. Never a member of
+  the kind the word itself names: players name the kind, and that is the word
+  (« Shiva » for « Dieu »: they typed « dieu » at once; « parme » for « rose »: a search
+  says "a pink").
   - « divorce » ← « heartbreak », in « the ones about [divorce] go right over their
     heads »; « marriage » when the rest of the line is already hard. Not « litigation »
     (2026-10-10), chosen to keep the punch hidden: a word about the procedure, not about
@@ -254,6 +254,18 @@ guesses between them:
   one or two tries.
 - « chambre » ← « tanière »: a word for a teenager's room.
 - « parfaitement » ← « admirablement »: a synonym in costume.
+- « chaussettes » ← « baskets »: shoes, then socks — two automatic steps, no thought
+  (2026-10-11, testers: "absolutely no fun").
+- « bassine » ← « amphore », in « mis à tremper… dans une ___ de matière plastique »: the
+  line calls the word whatever the start; a hole like that needs the rest of the day to
+  carry the search.
+
+**When the line hands over most of the trio** (most readers write the word straight into
+its blank — the reader's note says so), the day plays easy: such days finished at a median
+73% of the players. A living line carries it (Machado, 2026-09-09, 89%; Brillat-Savarin,
+2026-09-12); a flat one dies (2026-09-21, median 5 tries; the socks-in-a-basin line,
+2026-10-11, three words in three guesses). Keep such a trio only when the line's turn is
+the fun; otherwise hide the words the line does not hand over.
 
 ## Difficulty is part of taste
 

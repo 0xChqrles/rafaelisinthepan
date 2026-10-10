@@ -252,6 +252,15 @@ def unsaid(chances: dict[str, float | None]) -> str | None:
             f"57% with one and 71% with none")
 
 
+def handed(n: int) -> str:
+    """The trio's fact when the line hands over n >= 2 of its words (the reader writes the
+    secret itself): on real play such days played easy — kept by the taste only when the
+    line's turn is the fun."""
+    return (f"the line hands over {n} of this trio's words (most readers write them straight in): on real "
+            f"play such days finished at a median 73% of the players — fine when the line's turn is the fun, "
+            f"dead when the line is flat (2026-09-21, median 5 tries)")
+
+
 def map_nearest_filler(rank_map: dict, secret_slug: str, fillers: list[str]) -> tuple[str, int | None] | None:
     """The reader's filler nearest the secret in the hole's OWN map, as (word, rank); the
     rank is None for a word past the map (farther than every ranked group). None when the

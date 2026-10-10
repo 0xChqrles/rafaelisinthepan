@@ -1056,3 +1056,20 @@ def test_a_run_that_is_not_blind_holds_nothing_back(tmp_path, monkeypatch, capsy
                     "- chosen: chat · dort\n## After\n")
     assert "- chosen: chat · dort" in capsys.readouterr().out
     assert not log.spoilers.exists()
+
+
+def test_a_trio_whose_line_hands_over_two_words_is_told_so(monkeypatch):
+    # 2026-10-11: socks in a basin — the line handed two words over; a fact for the taste,
+    # never a veto (loved days 09-09 and 09-12 handed two over too).
+    seen = {}
+
+    def generate(_c, _l, _sentence, _words, _source, _lang, context, *_a, **_k):
+        seen.update(context)
+        return "out/x_y_z.json"
+
+    monkeypatch.setattr(curate.rules, "reading", lambda t, *_a, **_k: (
+        "most readers would write the secret itself" if t.text in ("chat", "dort") else "readers would split"))
+    path, _ = _build_day(monkeypatch, generate, Log())
+    assert path == "out/x_y_z.json"
+    assert all("the line hands over 2 of this trio's words" in seen[w] for w in ("chat", "dort"))
+    assert "the line hands over" not in seen["pierre"]

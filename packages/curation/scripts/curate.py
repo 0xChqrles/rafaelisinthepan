@@ -827,6 +827,10 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
                 note += (f"; under {rules.two_places(contextual_rank.GIVEAWAY_HARD)} the line gives little of "
                          f"this word (such holes played hard on real play)")
             context[t.slug] = note
+        handed = [t for t in trio if "most readers would write the secret itself" in context[t.slug]]
+        if len(handed) >= 2:
+            for t in handed:
+                context[t.slug] += "; " + rules.handed(len(handed))
         # Two or more words players don't say: the taste keeps at most one, and the model
         # swaps one BEFORE the ranking is paid for (a swap at the start step pays it twice).
         # Any other trio goes straight on: an easy word is the start step's to tune.
