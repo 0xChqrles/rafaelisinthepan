@@ -221,7 +221,9 @@ line already gives of the word:
 
 - **The line leads to the word** — the context gives enough to guess it easily: a
   MEDIUM start, a neighbour in a wide family, where many guesses fit and the line does
-  the narrowing.
+  the narrowing — from the FAR half of the band (around 150–200), never its near edge:
+  there one obvious step finds the word the line already gave (« moufles » 106 for
+  « chaussettes », « piscine » 107 for « bassine »: three words in three guesses).
   - « éleveur » ← « fauconnier », « pigeons » ← « papillons »: other people who keep
     animals, other creatures people collect — the search stays open.
   - « bière » ← « tisane »: another drink, the tame one.
