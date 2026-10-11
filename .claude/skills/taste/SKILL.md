@@ -260,12 +260,12 @@ guesses between them:
   line calls the word whatever the start; a hole like that needs the rest of the day to
   carry the search.
 
-**When the line hands over most of the trio** (most readers write the word straight into
-its blank — the reader's note says so), the day plays easy: such days finished at a median
-73% of the players. A living line carries it (Machado, 2026-09-09, 89%; Brillat-Savarin,
-2026-09-12); a flat one dies (2026-09-21, median 5 tries; the socks-in-a-basin line,
-2026-10-11, three words in three guesses). Keep such a trio only when the line's turn is
-the fun; otherwise hide the words the line does not hand over.
+**When the line hands over two or more of the trio** (most readers write the word straight
+into its blank — the reader's note says so), the day is solved in a few guesses: a flat
+line dies (2026-09-21, median 5 tries; the socks-in-a-basin line, 2026-10-11, three words
+in three guesses), and a witty one too (Desproges, 2026-10-12, solved in ten seconds).
+Code asks for a swap: drop the DULL handed-over word, keep the punch, and hide a word the
+line does not hand over.
 
 ## Difficulty is part of taste
 

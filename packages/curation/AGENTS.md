@@ -167,8 +167,11 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   lands in the hole's own map (`rules.map_nearest_filler`). A trio hiding TWO
   or more words players don't say — the one fact that asks — has ONE of them swapped by the
   model BEFORE the ranking is paid for (`llm.drop_unsaid`: the DULL one goes, the one more
-  fun to find stays — « clodos » over « stagnation », user-decided 2026-10-08), so that swap costs one question, never a second ranking; any other trio goes
-  straight on, an easy word being the start step's to tune (a medium start, by the taste, never a
+  fun to find stays — « clodos » over « stagnation », user-decided 2026-10-08), so that swap costs one question, never a second ranking; so does a trio whose line
+  HANDS OVER two or more of its words (the reader writes the secret itself:
+  `llm.drop_handed` swaps the dull one, keeps the punch — user-decided 2026-10-12, after a
+  Desproges day solved in ten seconds); any other trio goes straight on, ONE easy word
+  being the start step's to tune (a medium start, by the taste, never a
   duller word). Asked of every trio, the model swapped on 77% of played days, loved ones included,
   and picked the hard word no better than chance. A word players would say
   instead that IS this word in another form (« sauver » for « sauva »: its spelling, lemma

@@ -830,12 +830,10 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
                          f"this word (such holes played hard on real play)")
             context[t.slug] = note
         handed = [t for t in trio if "most readers would write the secret itself" in context[t.slug]]
-        if len(handed) >= 2:
-            for t in handed:
-                context[t.slug] += "; " + rules.handed(len(handed))
-        # Two or more words players don't say: the taste keeps at most one, and the model
-        # swaps one BEFORE the ranking is paid for (a swap at the start step pays it twice).
-        # Any other trio goes straight on: an easy word is the start step's to tune.
+        # Two or more words players don't say, or two or more the line hands over (a day
+        # solved in a few guesses, 2026-10-12): the model swaps one BEFORE the ranking is
+        # paid for (a swap at the start step pays it twice). Any other trio goes straight
+        # on: one easy word is the start step's to tune.
         swap = None
         hidden = {i for t in trio for i in occurrences[t.slug]}
         others = [t.text for t in line["allowed"] if t.slug not in {u.slug for u in trio}]
@@ -857,6 +855,13 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
             swap = llm.drop_unsaid(claude, llm.marked(tokens, hidden, lang=lang),
                                    [{"secret": t.text, "notes": context[t.slug]} for t in trio], under, others,
                                    chain, lang=lang)
+        elif len(handed) >= 2:
+            swap = llm.drop_handed(claude, llm.marked(tokens, hidden, lang=lang),
+                                   [{"secret": t.text, "notes": context[t.slug]} for t in trio],
+                                   [t.text for t in handed], others, chain, lang=lang)
+            if swap is None:
+                log(f"- the line hands over {len(handed)} words and no swap was named")
+                return None
         if swap:
             log(f"- before the ranking, « {swap['secret']} » is swapped for « {swap['with']} » — {swap['why']}")
             swap = Replace(swap["secret"], swap["with"], swap["why"])

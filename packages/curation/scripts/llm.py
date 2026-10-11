@@ -430,6 +430,39 @@ Return {{"replace": {{"secret": "<one of the words players don't say>", "with": 
     return None
 
 
+def drop_handed(claude: Claude, sentence_marked: str, holes: list[dict], handed: list[str], allowed: list[str],
+                chain: list[str] | None = None, *, lang: str) -> dict | None:
+    """Asked when the line hands over two or more of the trio's words (most readers write
+    the secret itself), BEFORE the day's ranking is paid for: such a day is solved in a
+    few guesses, so the model names ONE of `handed` — the dull one, never the punch — to
+    swap for another word of the line. `holes`: [{secret, notes}]. Returns
+    {"secret", "with", "why"}, or None when the answer is unusable."""
+    blocks = "\n".join(f"Hole « {h['secret']} »\n  measured: {h['notes']}" for h in holes)
+    answer = claude.json(f"""You check the three hidden words of a day for a daily {LANGUAGE[lang]} word game before it
+is built: each hole shows a start word in place of the hidden word; the player types
+guesses and reads, for every hole, how close each lands.
+
+What makes a day worth playing:
+{taste()}
+
+The sentence, holes marked with the hidden word in brackets:
+{sentence_marked}
+{_chain_block(chain)}
+{blocks}
+
+The line hands over {len(handed)} of this trio's words: {", ".join(f"« {w} »" for w in handed)} — most readers
+write them straight in, and the day is solved in a few guesses. Swap the DULL one and
+keep the punch. Name ONE of them to swap, and its replacement: a word of the line that
+the line does NOT hand over, still fun to find, from the other words that can be hidden:
+{", ".join(allowed)}.
+
+Return {{"replace": {{"secret": "<one of the handed-over words>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")
+    replace = answer.get("replace") if isinstance(answer, dict) else None
+    if isinstance(replace, dict) and isinstance(replace.get("secret"), str) and isinstance(replace.get("with"), str):
+        return {"secret": replace["secret"].strip(), "with": replace["with"].strip(), "why": str(replace.get("why") or "")}
+    return None
+
+
 def replace_word(claude: Claude, sentence_marked: str, holes: list[dict], word: str, allowed: list[str],
                  chain: list[str] | None = None, *, lang: str) -> dict | None:
     """Code refused `word` (BURIED: half-said, among commoner near-words — `rules.buried`),

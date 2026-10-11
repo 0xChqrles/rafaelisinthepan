@@ -35,6 +35,7 @@ class Log(list):
 def _no_unsaid_swap(monkeypatch):
     """The swap before the ranking answers nothing usable unless a test says otherwise."""
     monkeypatch.setattr(curate.llm, "drop_unsaid", lambda *_a, **_k: None)
+    monkeypatch.setattr(curate.llm, "drop_handed", lambda *_a, **_k: None)
 
 
 def _giveaways(monkeypatch, scores=None):
@@ -1058,18 +1059,31 @@ def test_a_run_that_is_not_blind_holds_nothing_back(tmp_path, monkeypatch, capsy
     assert not log.spoilers.exists()
 
 
-def test_a_trio_whose_line_hands_over_two_words_is_told_so(monkeypatch):
-    # 2026-10-11: socks in a basin — the line handed two words over; a fact for the taste,
-    # never a veto (loved days 09-09 and 09-12 handed two over too).
-    seen = {}
+def test_a_trio_whose_line_hands_over_two_words_swaps_one_before_the_ranking(monkeypatch):
+    # 2026-10-12: a Desproges line solved in ten seconds — two words handed over, the third
+    # near; the model swaps one of the handed-over words before the ranking is paid for.
+    asked, built = {}, []
 
-    def generate(_c, _l, _sentence, _words, _source, _lang, context, *_a, **_k):
-        seen.update(context)
-        return "out/x_y_z.json"
+    def drop(_c, _marked, _holes, handed, allowed, *_a, **_k):
+        asked["handed"] = handed
+        return {"secret": "chat", "with": allowed[0], "why": "dull"}
 
+    def generate(_c, _l, _sentence, words, *_a, **_k):
+        built.append(words)
+        return "out/x.json"
+
+    monkeypatch.setattr(curate.llm, "drop_handed", drop)
     monkeypatch.setattr(curate.rules, "reading", lambda t, *_a, **_k: (
         "most readers would write the secret itself" if t.text in ("chat", "dort") else "readers would split"))
     path, _ = _build_day(monkeypatch, generate, Log())
-    assert path == "out/x_y_z.json"
-    assert all("the line hands over 2 of this trio's words" in seen[w] for w in ("chat", "dort"))
-    assert "the line hands over" not in seen["pierre"]
+    assert asked["handed"] == ["chat", "dort"]
+    assert built and "chat" not in built[0]
+
+
+def test_one_handed_over_word_goes_straight_on(monkeypatch):
+    monkeypatch.setattr(curate.llm, "drop_handed", lambda *_a, **_k: pytest.fail("one handed-over word"))
+    monkeypatch.setattr(curate.rules, "reading", lambda t, *_a, **_k: (
+        "most readers would write the secret itself" if t.text == "chat" else "readers would split"))
+    path, _ = _build_day(monkeypatch, lambda *_a, **_k: "out/x.json", Log())
+    assert path == "out/x.json"
+
