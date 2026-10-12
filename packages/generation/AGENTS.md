@@ -321,10 +321,17 @@ Consequences that are load-bearing:
   ranking says is closer), and **`dq` is quantized from the judge's similarities**. The
   static cosine picks the candidates and breaks exact ties — it is never blended in.
 - **The rubric is the cloze guard and the leak guard, in words** (`Language.
-  score_instructions`; its version `Language.rubric` rides in the sidecar — French 2,
-  English 1): sense only, grammar/agreement/substitutability excluded, a
-  candidate's presence in the sentence or its describing what the sentence does to the
-  secret counts for nothing. The rubric travels ONCE per request in the shared state
+  score_instructions` and `pair_instructions`, both passes alike; its version
+  `Language.rubric` rides in the sidecar — French 3, English 2): sense only,
+  grammar/agreement/substitutability excluded, a candidate's presence in the sentence or
+  its describing what the sentence does to the secret counts for nothing. **The sentence
+  (and its excerpt) only says WHICH dictionary sense** (user-decided 2026-10-13): it
+  picks between homonyms (« vol »: theft or flight) and a verb's uses (« traiter »), and a
+  word of one sense keeps it — what the sentence compares the word to, says of it or does
+  with it does not count (« les célibataires … sont les chats errants de la société »:
+  ranked as the image, « célibataire » sat at 66 in « chats »'s map and « chaton » at 101;
+  ranked as cats, 2435 and 25). A dictionary's figurative sense stays one (« partir » for
+  « mourir », « mon chat » said to a person). The rubric travels ONCE per request in the shared state
   (≈ half the tokens of one copy per question, same order measured); the level
   descriptions stay in each question (moving them too shifts the scale).
 - **A front label that is not a word of the puzzle's language is demoted by the JUDGE**
