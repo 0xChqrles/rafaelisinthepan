@@ -88,8 +88,10 @@ def last_proposed(index: dict, author: str) -> date | None:
 
 def sentence_key(sentence: str) -> str:
     """One spelling for the dedup sets: a puzzle stores its sentence as lowercased
-    whitespace tokens (`gen_phrase.display_token`), the miner keeps the source's case."""
-    return " ".join(sentence.split()).lower()
+    whitespace tokens (`gen_phrase.display_token`), the miner keeps the source's case. A
+    soft hyphen is typesetting (`epub.html_to_text` drops it): a draft written before
+    that still finds its line."""
+    return " ".join(sentence.replace("\xad", "").split()).lower()
 
 
 def ledger_lines(lang: str) -> list[dict]:

@@ -302,3 +302,8 @@ def test_forget_keeps_a_puzzle_that_was_published_and_its_scores(tmp_path, monke
     work = {"file": "hugo.epub", "author": "Victor Hugo", "title": "Les misérables"}
     assert shelf.forget({"books": {}}, work, "fr", shelf.published_drafts("fr")) == [str(other_start)]
     assert live.exists() and scores.exists()
+
+
+def test_a_draft_s_sentence_finds_its_unit_whatever_its_soft_hyphens():
+    # a 2026-10-13 draft kept « \xadimagine »; its retry must find the clean mined line
+    assert shelf.find_unit(["On imagine les hécatombes."], "on \xadimagine les hécatombes.") == "On imagine les hécatombes."
