@@ -58,7 +58,8 @@ pnpm curate [--lang fr|en] [--work <file on the shelf>] [--retry <shelf file | p
 #   file name; --work forces one; --retry <shelf file> erases a previous attempt on a
 #   work — its index
 #   entry and the candidate puzzle(s) it wrote under the generation output, their judge
-#   scores included — then runs on it), mines it, and — taste choosing, code stating
+#   scores included, but never a puzzle that was published (`shelf.published_drafts`, off
+#   every ledger line: a start-only correction replays its scores) — then runs on it), mines it, and — taste choosing, code stating
 #   facts — writes ONE candidate day under packages/generation/output/word/<lang>/... via
 #   gen_phrase, headless, the #133 form question answered by the model. Exit 0 = a
 #   candidate was written (publish it yourself), 2 = no line of the work made a day
@@ -100,7 +101,7 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   words, the start words, difficulty). Code keeps only FACTS — which words can be hidden,
   the cooldowns, the famous line, valid grammar, the puzzle format — and turns everything
   it MEASURES into notes the model reads; nothing measured refuses a word but the giveaway
-  FLOOR and the BURIED rule (below). Why: replayed
+  FLOOR, the BURIED rule and the UNMAPPED rule (below). Why: replayed
   on the 16 days the user loved, the code rules it replaces would have rejected three of
   the lines before any model saw them (`MIN_CANDIDATES`: JeanJass, NeS, Rounhaa) and five
   of the trios (the pair rules: « éleveur de [pigeons] », « le cafard de l'[homme] »),
@@ -162,15 +163,26 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   paid for. Players reach the idea, circle the commoner neighbours and stall: on 126
   played French holes such words stalled players about twice as often, rarity aside. A
   rare NAME passes (« saint-bernard », said at 0.58), a rare stand-in does not
-  (« faux-monnayeur », « charnier »); English uses the French bars, unchecked on play;
-  and, once the map is built, where the reader's nearest word
+  (« faux-monnayeur », « charnier »); English uses the French bars, unchecked on play —
+  and the UNMAPPED rule, the third code veto (user-decided 2026-10-12, after « laisse »,
+  whose vector is the verb's: its map held no « chaîne »): a word NONE of whose reader
+  words (single words the vectors know) is on its free static map (`rules.unmapped`; the
+  judge only reorders the walk's groups, so the free map answers before the ranking) is
+  refused the same way — every first guess lands past the map. On the 49 played French
+  days with a reader on file it catches « facho », « insecte », « réverbères », no loved
+  day; and, once the map is built, where the reader's nearest word
   lands in the hole's own map (`rules.map_nearest_filler`). A trio hiding TWO
   or more words players don't say — the one fact that asks — has ONE of them swapped by the
   model BEFORE the ranking is paid for (`llm.drop_unsaid`: the DULL one goes, the one more
   fun to find stays — « clodos » over « stagnation », user-decided 2026-10-08), so that swap costs one question, never a second ranking; so does a trio whose line
   HANDS OVER two or more of its words (the reader writes the secret itself:
   `llm.drop_handed` swaps the dull one, keeps the punch — user-decided 2026-10-12, after a
-  Desproges day solved in ten seconds); any other trio goes straight on, ONE easy word
+  Desproges day solved in ten seconds); and once the map is built, a reader's most-likely
+  word at or under `HANDED_RANK` (3) in the hole's own map hands that hole over too
+  (`rules.map_handed`: « pou » for « morpion », « mourir » for « partir », both found in
+  one or two guesses; no played day had one): two such holes and the start step raises
+  `Handed` before any question, the draft is erased and `llm.drop_handed` swaps one — that
+  swap pays a second ranking; any other trio goes straight on, ONE easy word
   being the start step's to tune (a medium start, by the taste, never a
   duller word). Asked of every trio, the model swapped on 77% of played days, loved ones included,
   and picked the hard word no better than chance. A word players would say
@@ -356,9 +368,10 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 
 - Don't publish, and don't write a puzzle by any path but `gen_phrase`.
 - Don't turn a measurement into a veto: code states facts, taste chooses. A new signal
-  goes to the model as a note, with its real-play meaning. The two vetoes are the giveaway
-  floor (`GIVEAWAY_MIN`, user-decided 2026-10-02) and the BURIED rule (`rules.buried`,
-  user-decided 2026-10-08). Don't keep a hand list of refused words: the buried rule
+  goes to the model as a note, with its real-play meaning. The three vetoes are the giveaway
+  floor (`GIVEAWAY_MIN`, user-decided 2026-10-02), the BURIED rule (`rules.buried`,
+  user-decided 2026-10-08) and the UNMAPPED rule (`rules.unmapped`, user-decided
+  2026-10-12). Don't keep a hand list of refused words: the buried rule
   measures any word (the user: "the curator will be good in 30 years with this solution").
 - Don't write taste into code or a prompt copy; it lives in the `taste` skill.
 - Don't ask a model to PLAY the puzzle — to guess its way to a secret, count the tries or

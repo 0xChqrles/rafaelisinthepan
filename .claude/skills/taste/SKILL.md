@@ -264,8 +264,9 @@ guesses between them:
 into its blank — the reader's note says so), the day is solved in a few guesses: a flat
 line dies (2026-09-21, median 5 tries; the socks-in-a-basin line, 2026-10-11, three words
 in three guesses), and a witty one too (Desproges, 2026-10-12, solved in ten seconds).
-Code asks for a swap: drop the DULL handed-over word, keep the punch, and hide a word the
-line does not hand over.
+A word the reader writes that sits at the very top of the hole's map hands it over just
+the same (« pou » for « morpion », « mourir » for « partir »). Code asks for a swap: drop
+the DULL handed-over word, keep the punch, and hide a word the line does not hand over.
 
 ## Difficulty is part of taste
 

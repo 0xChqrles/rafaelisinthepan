@@ -75,6 +75,11 @@ LANGUAGE_MIN = 0.2          # P(word of the language) below which a front label 
                             # loanwords a French map should not crown: all true English <= 0.16 and
                             # every French word >= 0.21 on the 2026-09-22 sample, «partial» 0.31,
                             # «affect» 0.38, «nervi» 0.25 kept; carried over to English, #317)
+NAMES_FRONT_MIN = 50         # this many front labels under LANGUAGE_MIN and the secret's own kind is
+                            # NAMES (a brand, a person): its kind-mates are what a player types, so
+                            # nothing is demoted. Ordinary secrets: at most 9 of 200 on the 141 holes
+                            # of 2026-10-12's sidecars; « Renault » ~90 (every other carmaker had
+                            # landed in the map's last 1%)
 NOUL_BATCH = 40             # yes/no questions per filter request
 START_FIT_MIN = 0.5         # a start shown in the sentence must read as French: the band
                             # loses ~20 % here (wrong number/category), 3/157 published picks
@@ -576,7 +581,8 @@ def rerank(context, candidates, judge, *, pairwise_top=PAIRWISE_TOP, seed=0):
     sidecar entry (scores, judged pairs, demotions, timings) this order derives from.
     Every candidate comes back; nothing is cut here (TOP_K is the walk's).
     The front is then asked the language's word question; a group whose label scores
-    under LANGUAGE_MIN is demoted."""
+    under LANGUAGE_MIN is demoted — unless NAMES_FRONT_MIN or more of the front do,
+    which says the secret is itself a name and its names stay where they rank."""
     verdict_key = context.language.verdict_key
     labels = [c.label for c in candidates]
     t0 = time.time()
@@ -609,9 +615,13 @@ def rerank(context, candidates, judge, *, pairwise_top=PAIRWISE_TOP, seed=0):
     demoted, verdicts = set(), {}
     if front:
         probs = judge.in_language([candidates[i] for i in front], context.lang)
+        under = []
         for i, p in zip(front, probs):
             verdicts[candidates[i].key] = p
             if p < LANGUAGE_MIN:
+                under.append(i)
+        if len(under) < NAMES_FRONT_MIN:
+            for i in under:
                 sim[i] = 0.0
                 demoted.add(i)
     # A flat pass-1 span collapses distinct win rates onto one similarity.

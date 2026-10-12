@@ -17,7 +17,10 @@ from rules import (
     crowd_share,
     initial_candidates,
     is_twin,
+    HANDED_RANK,
+    map_handed,
     map_nearest_filler,
+    unmapped,
     reading,
     said,
     same_word,
@@ -261,3 +264,25 @@ def test_a_word_past_the_map_has_no_rank_and_a_multiword_filler_is_no_filler():
 def test_the_secret_and_its_variants_are_not_their_own_filler_in_the_map():
     assert map_nearest_filler(MAP, "heros", ["héros", "héroïne", "type"]) == ("héroïne", 2)
     assert map_nearest_filler(MAP, "heros", ["héros"]) is None
+
+
+def test_the_reader_s_word_at_the_top_of_the_map_hands_the_hole_over():
+    # « pou » at 1 for « morpion », « mourir » at 1 for « partir » (2026-10-12)
+    assert HANDED_RANK == 3
+    assert map_handed(MAP, "heros", "héroïne") == 2
+    assert map_handed(MAP, "heros", "capitaine") is None          # past HANDED_RANK
+    assert map_handed(MAP, "heros", "gars") is None               # past the map
+    assert map_handed(MAP, "heros", "héros") is None              # the secret itself: the note's case
+    assert map_handed(MAP, "heros", None) is None and map_handed(MAP, "heros", "tout exprès") is None
+
+
+def test_a_hole_none_of_whose_reader_words_is_on_its_map_is_unmapped():
+    known = lambda s: s != "zzz"
+    # « laisse »: readers write « chaîne », and the map holds the verb's neighbours
+    assert unmapped(MAP, "heros", ["gars", "mec"], known) == ["gars", "mec"]
+    assert unmapped(MAP, "heros", ["gars", "type"], known) is None            # one is on the map
+    # a word the vectors don't know cannot be typed; the secret and a multi-word filler
+    # are no fillers
+    assert unmapped(MAP, "heros", ["zzz", "héros", "tout exprès"], known) is None
+    assert unmapped(MAP, "heros", ["gars", "gars"], known) == ["gars"]
+    assert unmapped(MAP, "heros", [], known) is None

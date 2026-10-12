@@ -116,7 +116,7 @@ QUESTIONS = {
                                                  others=[{"secret": "dog", "start": "wolf", "notes": "n"}]),
     "would_say": lambda c, lang: llm.would_say(c, _TOKENS, set(), 1, "cat", lang=lang),
     "replace_word": lambda c, lang: llm.replace_word(c, "The [cat].", [{"secret": "cat", "notes": "n"}], "cat",
-                                                     ["dog"], None, lang=lang),
+                                                     ["dog"], None, refused="r", lang=lang),
     "drop_unsaid": lambda c, lang: llm.drop_unsaid(c, "The [cat].", [{"secret": "cat", "notes": "n"}], ["cat"],
                                                    ["dog"], None, lang=lang),
     "drop_handed": lambda c, lang: llm.drop_handed(c, "The [cat].", [{"secret": "cat", "notes": "n"}], ["cat"],

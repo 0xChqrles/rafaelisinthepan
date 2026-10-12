@@ -252,10 +252,27 @@ def erase_puzzle(path: Path) -> None:
         parent = parent.parent
 
 
-def forget(index: dict, work: dict, lang: str) -> list[str]:
+def published_drafts(lang: str) -> set[tuple[str, frozenset]]:
+    """Every puzzle ever published in a language, as (sentence key, {(secret, start)}) —
+    off EVERY ledger line, a corrected day's earlier version included: what `forget`
+    must not erase."""
+    return {(sentence_key(entry.get("sentence") or ""),
+             frozenset((h["secret"], h.get("start")) for h in _holes(entry)))
+            for entry in ledger_lines(lang)}
+
+
+def _draft_key(puzzle: dict) -> tuple[str, frozenset]:
+    return (sentence_key(" ".join(puzzle.get("words") or ())),
+            frozenset((h["secret"]["slug"], h["start"]["word"]) for h in puzzle.get("holes") or ()
+                      if isinstance(h, dict) and "secret" in h and "start" in h))
+
+
+def forget(index: dict, work: dict, lang: str, published: set | frozenset = frozenset()) -> list[str]:
     """Erase an attempt: the work's index entry and every candidate puzzle written for it
     under the GENERATION OUTPUT (never the store — a published day is not an attempt),
     the title compared by `title_key` (a retry on one volume keeps another volume's drafts).
+    A puzzle that WAS published (`published_drafts`) stays, with its judge's scores: a
+    start-only correction replays them instead of paying the ranking again.
     Returns what was deleted."""
     index["books"].pop(work["file"], None)
     author, title = slug(work.get("author", "")), title_key(work.get("title", ""))
@@ -264,10 +281,13 @@ def forget(index: dict, work: dict, lang: str) -> list[str]:
     deleted = []
     for path in (_paths.GENERATION_OUTPUT_DIR / lang).rglob("*.json"):
         try:
-            src = json.loads(path.read_text(encoding="utf-8")).get("source") or {}
-        except (OSError, ValueError):
+            puzzle = json.loads(path.read_text(encoding="utf-8"))
+            src = puzzle.get("source") or {}
+        except (OSError, ValueError, AttributeError):
             continue
         if slug(src.get("author", "")) == author and title_key(src.get("work", "")) == title:
+            if _draft_key(puzzle) in published:
+                continue
             # A retried WORK starts over, so the judge's scores beside it go too (a
             # retried SENTENCE keeps them: `curate.retry_target` replays them).
             Path(sidecar_path(str(path))).unlink(missing_ok=True)

@@ -464,11 +464,12 @@ Return {{"replace": {{"secret": "<one of the handed-over words>", "with": "<anot
 
 
 def replace_word(claude: Claude, sentence_marked: str, holes: list[dict], word: str, allowed: list[str],
-                 chain: list[str] | None = None, *, lang: str) -> dict | None:
-    """Code refused `word` (BURIED: half-said, among commoner near-words — `rules.buried`),
-    BEFORE the day's ranking is paid for: the model names the word of the line to hide in
-    its place, by the taste. `holes`: [{secret, notes}]. Returns {"with", "why"}, or None
-    when the answer is unusable."""
+                 chain: list[str] | None = None, *, refused: str, lang: str) -> dict | None:
+    """Code refused `word` (BURIED: half-said, among commoner near-words — `rules.buried`;
+    or UNMAPPED: no word readers put there is on its map — `rules.unmapped`), BEFORE the
+    day's ranking is paid for; `refused` says why, in the player's terms. The model names
+    the word of the line to hide in its place, by the taste. `holes`: [{secret, notes}].
+    Returns {"with", "why"}, or None when the answer is unusable."""
     blocks = "\n".join(f"Hole « {h['secret']} »\n  measured: {h['notes']}" for h in holes)
     answer = claude.json(f"""You check the three hidden words of a day for a daily {LANGUAGE[lang]} word game before it
 is built: each hole shows a start word in place of the hidden word; the player types
@@ -482,8 +483,7 @@ The sentence, holes marked with the hidden word in brackets:
 {_chain_block(chain)}
 {blocks}
 
-« {word} » cannot be hidden: players only half-say it and it sits among commoner words
-meaning nearly the same, so they reach the idea, circle the commoner neighbours and stall.
+« {word} » cannot be hidden: {refused}
 Name the word of the line to hide in its place, from: {", ".join(allowed)}.
 
 Return {{"with": "<another word of the line>", "why": "<one line>"}}.""")

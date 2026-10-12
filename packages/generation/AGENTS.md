@@ -332,7 +332,11 @@ Consequences that are load-bearing:
   loanwords). Asked on its own the question does: «apparent» 0.88, «laid» 0.85,
   «suspect» 0.95 vs «retirement» 0.11, «feeling» 0.11, «desk» 0.16 (measured; «partial»
   0.31 and «affect» 0.38 are kept). A sidecar written before this has no verdicts and
-  cannot replay: regenerate.
+  cannot replay: regenerate. **Unless the secret is itself a name** (user-decided
+  2026-10-12): when `NAMES_FRONT_MIN` (50) or more front labels are refused, the secret's
+  own kind is names (a brand, a person) — what a player types for it — and nothing is
+  demoted (beside « Renault » every other carmaker had landed in the map's last 1%;
+  ordinary secrets have at most 9 of 200 refused).
 - **The judge is HOSTED — the one decided exception to offline generation** (quality
   over cost; ≈ 10 M input tokens ≈ $0.40 per puzzle at the published price, measured).
   Consequences: `JEV_API_KEY` from the environment (never a flag, never logged); a
