@@ -444,13 +444,13 @@ def test_start_words_are_re_picked_at_most_start_rounds_times(monkeypatch):
 # --- a word no start can save is swapped, REPLACE_ROUNDS times at most --------------------
 
 def _build_day(monkeypatch, generate, log, given=None, says=None, instead=None, crowds=None, asked_say=None,
-               unmapped=lambda t, fillers: None):
+               unmapped=lambda t, fillers: None, words=("chat", "dort", "pierre", "froide"), own=lambda t: None):
     """build_day on a song's line with chat · dort · pierre chosen and « froide » left to
     swap in, each word's giveaway judged before the choice (`given`, 0.3 by default) and
     the chance a player says it (`says`, 0.8 by default); returns (its result, the words
     the reader was asked)."""
     tokens = _line_tokens()
-    allowed = [t for t in tokens if t.text in ("chat", "dort", "pierre", "froide")]
+    allowed = [t for t in tokens if t.text in words]
     asked = []
     monkeypatch.setattr(curate.llm, "widely_known", lambda *_a, **_k: {"known": False, "why": ""})
     monkeypatch.setattr(curate.llm, "context_guesses",
@@ -463,7 +463,8 @@ def _build_day(monkeypatch, generate, log, given=None, says=None, instead=None, 
             "given": given or {t.slug: 0.3 for t in allowed}}
     path = curate.build_day(object(), log, line, allowed[:3], ["chat: le sujet"], {"kind": "music"}, {"pairs": {}},
                             "", {"kind": "music"}, lambda t: None, lambda t, w: None, "fr",
-                            "old.contextual.json", crowd=lambda t: (crowds or {}).get(t.text), unmapped=unmapped)
+                            "old.contextual.json", crowd=lambda t: (crowds or {}).get(t.text), unmapped=unmapped,
+                            own=own)
     return path, asked
 
 
@@ -557,16 +558,44 @@ def test_a_rare_name_players_say_in_a_crowd_is_not_buried(monkeypatch):
 
 def test_a_day_is_given_up_after_replace_rounds_swaps(monkeypatch):
     calls = []
+    swaps = iter([("sur", "pierre"), ("dort", "froide"), ("chat", "la")])   # a fresh word each time
 
     def generate(_c, _l, _sentence, words, *_a, **_k):
         calls.append(words)
-        raise curate.Replace(words[2], "froide" if words[2] == "pierre" else "pierre", "no start saves it")
+        raise curate.Replace(*next(swaps), "no start saves it")
 
     log = Log()
-    path, _asked = _build_day(monkeypatch, generate, log)
+    path, _asked = _build_day(monkeypatch, generate, log, words=("chat", "dort", "sur", "la", "pierre", "froide"))
     assert curate.REPLACE_ROUNDS == 2
     assert path is None and any("no trio of this line survived its swaps" in line for line in log)
-    assert calls == [["chat", "dort", "pierre"], ["chat", "dort", "froide"], ["chat", "dort", "pierre"]]
+    assert calls == [["chat", "dort", "sur"], ["chat", "dort", "pierre"], ["chat", "froide", "pierre"]]
+
+
+def test_a_word_swapped_out_never_comes_back(monkeypatch):
+    # « imprésario » refused as buried, swapped for « organisé », then brought back by the
+    # next swap and refused again: the line's swaps were spent undoing each other.
+    offered = []
+    monkeypatch.setattr(curate.llm, "replace_word",
+                        lambda _c, _m, _h, word, others, _chain, lang, refused:
+                        offered.append(list(others)) or {"with": "froide" if word == "pierre" else "pierre", "why": "w"})
+    log = Log()
+    path, _asked = _build_day(monkeypatch, lambda *_a, **_k: pytest.fail("no trio is built"), log,
+                              says={"pierre": 0.45, "froide": 0.45}, crowds={"pierre": 0.8, "froide": 0.8})
+    assert path is None
+    assert offered == [["froide"], []]          # once out, « pierre » is no longer offered
+    assert any("brings back a word already swapped out of this line" in line for line in log)
+
+
+@pytest.mark.parametrize("called, refused", [("pierreux", False), ("pierres", True)])
+def test_a_word_the_neighbours_call_for_is_the_hidden_word_only_in_its_group(monkeypatch, called, refused):
+    # « que devant une ___ de dix convives » calls for « table »: another word than
+    # « tablée » (another group on its map), though one spelling is the other plus letters.
+    asked = []
+    monkeypatch.setattr(curate.llm, "neighbours_complete", lambda _c, fragment, lang: called)
+    monkeypatch.setattr(curate.llm, "replace_word", lambda *_a, **_k: asked.append(1) or None)
+    path, _ = _build_day(monkeypatch, lambda *_a, **_k: "out/x_y_z.json", Log(),
+                         own=lambda t: frozenset({"pierre", "pierres"}) if t.text == "pierre" else None)
+    assert (path is None, bool(asked)) == (refused, refused)
 
 
 # --- the giveaway judge, read on real play: a floor, and a note for a hard hole -----------

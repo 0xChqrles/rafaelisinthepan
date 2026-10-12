@@ -183,6 +183,12 @@ def load_similarity(lang: str):
         rank_map = static_map(t)
         return None if rank_map is None else rules.crowd_share(rank_map, first_index.get)
 
+    def own(t: rules.Token):
+        """The keys of the token's own group on its free static map — what typing finds the
+        hole with (`rules.same_word`); None without a map."""
+        rank_map = static_map(t)
+        return None if rank_map is None else frozenset(k for k, v in rank_map.items() if v["rank"] == 0)
+
     def unmapped(t: rules.Token, fillers: list[str]):
         """The reader's words when none is on the token's free static map (`rules.unmapped`)."""
         rank_map = static_map(t)
@@ -201,7 +207,7 @@ def load_similarity(lang: str):
     for w, r in ranks.items():
         s = slug(w)
         common_index[s] = min(r, common_index.get(s, r))
-    return frequency_rank, neighbour_rank, crowd, unmapped, common_index.get
+    return frequency_rank, neighbour_rank, crowd, unmapped, own, common_index.get
 
 
 # ---------------------------------------------------------------------------
@@ -740,11 +746,14 @@ class Buffer(list):
 @dataclass
 class Measures:
     """What each word of one line was measured at, by slug — the reader, the would-say
-    test, the crowd, the neighbours — asked once, whatever trio the line ends with."""
+    test, the crowd, the neighbours — asked once, whatever trio the line ends with; and
+    the words swapped OUT of it, never offered again (a swap that brought one back
+    undid the one before and spent the line's swaps)."""
     readings: dict = field(default_factory=dict)    # slug -> (the reader's words, the one most write)
     says: dict = field(default_factory=dict)        # slug -> (would-say chance, the word said instead)
     crowds: dict = field(default_factory=dict)      # slug -> crowd share
     neighbours: dict = field(default_factory=dict)  # slug -> (the words around it, the first word written)
+    out: set = field(default_factory=set)           # slugs swapped out of the trio
 
 
 @dataclass
@@ -762,6 +771,7 @@ class Checked:
 def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: dict, text: str,
         in_vocab, frequency_rank, neighbour_rank, lang: str, replay: str | None = None,
         tried: list[str] | None = None, *, judge, crowd=lambda t: None, unmapped=lambda t, fillers: None,
+        own=lambda t: None,
         index_of=lambda s: None):
     """The day, chosen among FINISHED candidates (user-decided 2026-10-13): the
     shortlist's lines, CANDIDATES at a time, are each prepared on their own — the line
@@ -802,7 +812,7 @@ def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: d
         def prepare(line):
             buffer = Buffer()
             return buffer, candidate(claude, buffer, line, frequency_rank, neighbour_rank, lang,
-                                     crowd=crowd, unmapped=unmapped)
+                                     crowd=crowd, unmapped=unmapped, own=own)
 
         with llm.subscription_only(), ThreadPoolExecutor(WORKERS) as pool:
             prepared = list(pool.map(prepare, lines))
@@ -835,7 +845,7 @@ def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: d
             log(f"\n## Building « {line['sentence']} »")
             path = build_day(claude, log, line, checked.trio, checked.chain, book, archive, text, source_base,
                              frequency_rank, neighbour_rank, lang, replay if batch_start == 0 else None,
-                             crowd=crowd, unmapped=unmapped, index_of=index_of,
+                             crowd=crowd, unmapped=unmapped, own=own, index_of=index_of,
                              measures=checked.measures, swaps=checked.swaps)
             if path:
                 return path
@@ -845,7 +855,7 @@ def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: d
 
 
 def candidate(claude: llm.Claude, log, line: dict, frequency_rank, neighbour_rank, lang: str, *,
-              crowd=lambda t: None, unmapped=lambda t, fillers: None) -> Checked | None:
+              crowd=lambda t: None, unmapped=lambda t, fillers: None, own=lambda t: None) -> Checked | None:
     """One line made a candidate day: it must STAND ALONE (a refusal ends the line), the
     model picks its three words (a pick that is not three distinct words of the line that
     can be hidden is told back, DAY_ROUNDS times), and every check before the ranking
@@ -876,7 +886,7 @@ def candidate(claude: llm.Claude, log, line: dict, frequency_rank, neighbour_ran
             refused.append(f"« {' · '.join(choice['words'])} » — {why}")
             continue
         return check_trio(claude, log, line, trio, choice["path"], frequency_rank, neighbour_rank, lang,
-                          crowd=crowd, unmapped=unmapped, measures=Measures(), swaps=0)
+                          crowd=crowd, unmapped=unmapped, own=own, measures=Measures(), swaps=0)
     log("- no usable choice of words for this line")
     return None
 
@@ -888,6 +898,7 @@ def hideable(line: dict) -> list[str]:
 
 def check_trio(claude: llm.Claude, log, line: dict, trio: list, chain: list[str], frequency_rank,
                neighbour_rank, lang: str, *, crowd=lambda t: None, unmapped=lambda t, fillers: None,
+               own=lambda t: None,
                measures: Measures, swaps: int) -> Checked | None:
     """Every check a trio meets before the ranking is paid for. Code measures each hidden
     word — what a reader puts in its blank, how much the sentence hands it over
@@ -927,7 +938,7 @@ def check_trio(claude: llm.Claude, log, line: dict, trio: list, chain: list[str]
                 fragment = llm.holed(around, set(), t.i, lang=lang).replace("[____]", "___")
                 neighbours[t.slug] = (fragment, llm.neighbours_complete(claude, fragment, lang=lang))
         hard = {t.slug for t in trio if given[t.slug] < contextual_rank.GIVEAWAY_HARD}
-        same = {t.slug for t in trio if rules.same_word(t, says[t.slug][1])}
+        same = {t.slug for t in trio if rules.same_word(t, says[t.slug][1], own(t))}
         unsaid = rules.unsaid({t.text: None if t.slug in same else says[t.slug][0] for t in trio})
         rare = {t.slug for t in trio if t.slug not in same and says[t.slug][0] is not None
                 and says[t.slug][0] < rules.WOULD_SAY_HARD}
@@ -952,9 +963,9 @@ def check_trio(claude: llm.Claude, log, line: dict, trio: list, chain: list[str]
         # on: one easy word is the start step's to tune.
         swap = None
         hidden = {i for t in trio for i in occurrences[t.slug]}
-        others = [t.text for t in line["allowed"] if t.slug not in {u.slug for u in trio}]
+        others = _others(line, trio, measures)
         sunk = next((t for t in trio if t.slug not in same and rules.buried(says[t.slug][0], crowds[t.slug])), None)
-        given_away = next((t for t in trio if rules.same_word(t, neighbours[t.slug][1])), None)
+        given_away = next((t for t in trio if rules.same_word(t, neighbours[t.slug][1], own(t))), None)
         stranded = next(((t, off) for t in trio
                          for off in [unmapped(t, [*readings[t.slug][0], *filter(None, [readings[t.slug][1]])])]
                          if off), None)
@@ -1018,15 +1029,23 @@ def check_trio(claude: llm.Claude, log, line: dict, trio: list, chain: list[str]
                                else "medium") for t in trio}
             return Checked(trio, chain, swaps, context, levels, measures)
         log(f"- before the ranking, « {swap['secret']} » is swapped for « {swap['with']} » — {swap['why']}")
-        swapped = _swap(log, line, trio, chain, Replace(swap["secret"], swap["with"], swap["why"]), swaps)
+        swapped = _swap(log, line, trio, chain, Replace(swap["secret"], swap["with"], swap["why"]), swaps, measures.out)
         if swapped is None:
             return None
         trio, chain, swaps = swapped
 
 
-def _swap(log, line: dict, trio: list, chain: list[str], swap: "Replace", swaps: int):
-    """The trio with `swap` made: (trio, chain, swaps), or None — the swaps are spent
-    (REPLACE_ROUNDS), or the word named is not one the line can hide."""
+def _others(line: dict, trio: list, measures: Measures) -> list[str]:
+    """The words a swap may bring in: the line's hideable words, neither in the trio nor
+    swapped out of it before."""
+    taken = {t.slug for t in trio} | measures.out
+    return list(dict.fromkeys(t.text for t in line["allowed"] if t.slug not in taken))
+
+
+def _swap(log, line: dict, trio: list, chain: list[str], swap: "Replace", swaps: int, out: set):
+    """The trio with `swap` made: (trio, chain, swaps), the word swapped out added to
+    `out`; or None — the swaps are spent (REPLACE_ROUNDS), the word named is not one the
+    line can hide, or it was swapped out before."""
     if swaps >= REPLACE_ROUNDS:
         log("- no trio of this line survived its swaps")
         return None
@@ -1035,6 +1054,10 @@ def _swap(log, line: dict, trio: list, chain: list[str], swap: "Replace", swaps:
     if old is None or new is None or new.slug in {t.slug for t in trio}:
         log(f"- the swap « {swap.secret} » → « {swap.with_} » is not a word of the line that can be hidden")
         return None
+    if new.slug in out:
+        log(f"- the swap « {swap.secret} » → « {swap.with_} » brings back a word already swapped out of this line")
+        return None
+    out.add(old.slug)
     trio = [new if t is old else t for t in trio]
     log(f"- trio now: {' · '.join(t.text for t in trio)}")
     return trio, [f"{new.text} replaces {old.text}: {swap.why}", *chain], swaps + 1
@@ -1042,7 +1065,7 @@ def _swap(log, line: dict, trio: list, chain: list[str], swap: "Replace", swaps:
 
 def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[str], book: dict, archive: dict,
               text: str, source_base: dict, frequency_rank, neighbour_rank, lang: str, replay: str | None,
-              crowd=lambda t: None, unmapped=lambda t, fillers: None, index_of=lambda s: None,
+              crowd=lambda t: None, unmapped=lambda t, fillers: None, own=lambda t: None, index_of=lambda s: None,
               measures: Measures | None = None, swaps: int = 0):
     """The chosen day, built: the page is cut (a book), the trio passes its checks
     (`check_trio`; free when the comparison's `measures` come along), and `generate`
@@ -1065,7 +1088,7 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
             source["excerpt"] = excerpt
     while True:
         checked = check_trio(claude, log, line, trio, chain, frequency_rank, neighbour_rank, lang,
-                             crowd=crowd, unmapped=unmapped, measures=measures, swaps=swaps)
+                             crowd=crowd, unmapped=unmapped, own=own, measures=measures, swaps=swaps)
         if checked is None:
             return None
         if checked.swaps != swaps:
@@ -1081,7 +1104,7 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
             swap = raised
         except Handed as raised:
             hidden = {i for t in trio for i in occurrences[t.slug]}
-            others = [t.text for t in line["allowed"] if t.slug not in {u.slug for u in trio}]
+            others = _others(line, trio, measures)
             pick = llm.drop_handed(claude, llm.marked(tokens, hidden, lang=lang),
                                    [{"secret": t.text, "notes": context[t.slug]
                                      + (f"; on its map: {raised.facts[t.slug]}" if t.slug in raised.facts else "")}
@@ -1091,7 +1114,7 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
                 return None
             log(f"- after the ranking, « {pick['secret']} » is swapped for « {pick['with']} » — {pick['why']}")
             swap = Replace(pick["secret"], pick["with"], f"its map handed it over ({pick['why']})")
-        swapped = _swap(log, line, trio, chain, swap, swaps)
+        swapped = _swap(log, line, trio, chain, swap, swaps, measures.out)
         if swapped is None:
             return None
         trio, chain, swaps = swapped
@@ -1194,7 +1217,7 @@ def main():
     book = choose_work(log, args, archive, index, today)
     path = _paths.shelf_dir(args.lang) / book["file"]
     text = epub_text(path) if book["kind"] == "book" else path.read_text(encoding="utf-8")
-    frequency_rank, neighbour_rank, crowd, unmapped, index_of = load_similarity(args.lang)
+    frequency_rank, neighbour_rank, crowd, unmapped, own, index_of = load_similarity(args.lang)
     # The work's quoted lines (the quotation test): fetched onto the shelf by
     # `pnpm shelf:quotes`, read here offline, and applied to every mined line before the
     # judge or the model reads it. A missing file skips the test, loudly.
@@ -1242,7 +1265,7 @@ def main():
     log.begin_attempt()
     result = day(claude, log, ranked, book, archive, text, vocab.__contains__, frequency_rank, neighbour_rank,
                  args.lang, replay=getattr(args, "replay", None), tried=tried, judge=judge, crowd=crowd,
-                 unmapped=unmapped, index_of=index_of)
+                 unmapped=unmapped, own=own, index_of=index_of)
     log.end_attempt(bool(result), player_view(result, book) if result else ())
     shelf_mod.record(index, book["file"], tried, author=book.get("author", ""))
     shelf_mod.save_index(index, args.lang)

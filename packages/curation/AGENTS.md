@@ -208,13 +208,19 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   being the start step's to tune (a medium start, by the taste, never a
   duller word). Asked of every trio, the model swapped on 77% of played days, loved ones included,
   and picked the hard word no better than chance. A word players would say
-  instead that IS this word in another form (« sauver » for « sauva »: its spelling, lemma
-  or a variant, `rules.same_word` — never a near neighbour like « faussaire », which is
-  another word in its own group) finds the hole, so that word counts as said. With all the notes and each hole's band, `llm.pick_starts`
+  instead that IS this word in another form (« sauver » for « sauva »: its spelling, its
+  lemma, or a key of its own group on its free map — what typing it finds, `rules.same_word`,
+  `curate.load_similarity`'s `own`; « table » is not « tablée »; the coarse spelling test
+  `is_variant` only for a word with no map — never a near neighbour like « faussaire »,
+  which is another word in its own group) finds the hole, so that word counts as said; the
+  NEIGHBOURS rule reads the same test. With all the notes and each hole's band, `llm.pick_starts`
   chooses the three starts by the taste — or names ONE hidden word no start can save
   (dead or out of reach whatever its start, or none of its candidates linking to it in its
   everyday sense, user-decided 2026-10-08) and another word of the line to hide instead (`Replace`: the draft is erased, the day
-  rebuilt). Both swaps share `REPLACE_ROUNDS` (2).
+  rebuilt). Both swaps share `REPLACE_ROUNDS` (2). A word swapped OUT of a line is never
+  offered again for it (`Measures.out`; user-decided 2026-10-13: the model's next swap
+  brought a refused word back, « imprésario » → « organisé » → « imprésario », and spent
+  the line's swaps undoing each other — four of a run's ten lines died so).
 - **Which words can be hidden (facts, `rules.initial_candidates`):** NOUN/VERB/ADJ/ADV and
   PROPN (the parser tags a lowercase brand or rare noun as a proper noun — « rolex »,
   « zigzag », secrets of a favourite day; a name nobody can reason toward is taste's
