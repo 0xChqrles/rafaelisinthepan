@@ -352,6 +352,26 @@ Return {{"instead": "<the commoner word they would keep saying, or null when thi
     return chance, instead.strip() if isinstance(instead, str) and instead.strip() else None
 
 
+def neighbours_complete(claude: Claude, fragment: str, *, lang: str) -> str | None:
+    """The words right around a hole, the rest of the line hidden (`rules.neighbourhood`):
+    the word most speakers write in the blank first. When it is the hidden word, the
+    neighbours alone hand the hole over — « le droit de ___ » is « vote », « cinq semaines
+    de ___ payés » « congés » — and it is no search (user-decided 2026-10-13). The share
+    the model gives is not asked: told the word or not, it hedges (« vote » at 0.3,
+    « cardiaque » after « arrêt » at 0.3); its FIRST word is the measure. None when the
+    answer is unusable."""
+    answer = claude.json(f"""A fragment of a sentence in {LANGUAGE[lang]}, one word missing:
+
+« {fragment} »
+
+Which single word do most {LANGUAGE[lang]} speakers write in the blank first, without thinking — the word
+the words around it call for?
+
+Return {{"word": "<one word>"}}""")
+    word = answer.get("word") if isinstance(answer, dict) else None
+    return word.strip() if isinstance(word, str) and word.strip() else None
+
+
 def pick_form(claude: Claude, sentence: str, secret: str, choices: list[str], *, lang: str) -> int:
     listing = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(choices))
     answer = claude.json(f"""In the {LANGUAGE[lang]} sentence below, which analysis is the word « {secret} »? The analyses

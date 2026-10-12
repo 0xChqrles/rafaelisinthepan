@@ -252,6 +252,30 @@ def unsaid(chances: dict[str, float | None]) -> str | None:
             f"57% with one and 71% with none")
 
 
+# The words a player reads at a glance around a hole: up to NEIGHBOURS each side, never
+# across punctuation nor another hidden word (« le droit de ___ », « cinq semaines de ___
+# payés »). A hole these alone hand over is no search (user-decided 2026-10-13).
+NEIGHBOURS = 3
+
+
+def neighbourhood(tokens: list[Token], mark: int, hidden: set[int], n: int = NEIGHBOURS) -> list[Token]:
+    """The hole's token (`mark`, a token index) and the words right around it, in order."""
+    order = list(tokens)
+    k = next(j for j, t in enumerate(order) if t.i == mark)
+
+    def walk(step: int) -> list[Token]:
+        out, j = [], k + step
+        while 0 <= j < len(order) and len(out) < n:
+            t = order[j]
+            if t.pos == "PUNCT" or t.i in hidden:
+                break
+            out.append(t)
+            j += step
+        return out
+
+    return [*reversed(walk(-1)), order[k], *walk(1)]
+
+
 # The reader's most-likely word at or under this rank in the hole's own map hands the hole
 # over as surely as the secret itself (2026-10-12: « pou » and « mourir » sat at 1, both
 # holes found in one or two guesses). On the 49 played French days with a reader on file,

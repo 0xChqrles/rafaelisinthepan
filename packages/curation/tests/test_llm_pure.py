@@ -119,6 +119,7 @@ QUESTIONS = {
                                                      ["dog"], None, refused="r", lang=lang),
     "drop_unsaid": lambda c, lang: llm.drop_unsaid(c, "The [cat].", [{"secret": "cat", "notes": "n"}], ["cat"],
                                                    ["dog"], None, lang=lang),
+    "neighbours_complete": lambda c, lang: llm.neighbours_complete(c, "the ___ house", lang=lang),
     "drop_handed": lambda c, lang: llm.drop_handed(c, "The [cat].", [{"secret": "cat", "notes": "n"}], ["cat"],
                                                    ["dog"], None, lang=lang),
 }

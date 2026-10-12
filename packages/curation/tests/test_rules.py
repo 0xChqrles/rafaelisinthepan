@@ -19,6 +19,7 @@ from rules import (
     is_twin,
     HANDED_RANK,
     map_handed,
+    neighbourhood,
     map_nearest_filler,
     unmapped,
     reading,
@@ -286,3 +287,16 @@ def test_a_hole_none_of_whose_reader_words_is_on_its_map_is_unmapped():
     assert unmapped(MAP, "heros", ["zzz", "héros", "tout exprès"], known) is None
     assert unmapped(MAP, "heros", ["gars", "gars"], known) == ["gars"]
     assert unmapped(MAP, "heros", [], known) is None
+
+
+def test_the_neighbourhood_is_three_words_each_side_within_the_clause():
+    words = "s' il a fallu des morts pour obtenir le droit de vote , on imagine".split()
+    tokens = [tok(i, w, "PUNCT" if w == "," else "NOUN") for i, w in enumerate(words)]
+    vote = words.index("vote")
+    assert [t.text for t in neighbourhood(tokens, vote, set())] == ["le", "droit", "de", "vote"]
+    # « cinq semaines de ___ payés . »
+    words = "arracher cinq semaines de congés payés .".split()
+    tokens = [tok(i, w, "PUNCT" if w == "." else "NOUN") for i, w in enumerate(words)]
+    assert [t.text for t in neighbourhood(tokens, 4, set())] == ["cinq", "semaines", "de", "congés", "payés"]
+    # another hidden word stops it
+    assert [t.text for t in neighbourhood(tokens, 4, {2})] == ["de", "congés", "payés"]

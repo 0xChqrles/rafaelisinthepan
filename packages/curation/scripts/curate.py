@@ -813,7 +813,9 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
     that can be hidden), whether a player who has the meaning would say it — the page is
     cut (a book), and `generate` writes the puzzle, the start words chosen by the taste. A BURIED word (`rules.buried`: half-said, among commoner
     near-words on the free map) is refused by code and replaced by the model's choice
-    (`llm.replace_word`) before the ranking is paid for; so is an UNMAPPED word, none of the
+    (`llm.replace_word`) before the ranking is paid for; so is a word its NEIGHBOURS alone
+    hand over (`rules.neighbourhood`, `llm.neighbours_complete`: « le droit de ___ ») and
+    an UNMAPPED word, none of the
     words readers put in its blank on its free map (`rules.unmapped`). A trio hiding two or more words players don't say has one
     swapped by the model before the ranking is paid for (`llm.drop_unsaid`); the start
     step may swap a word no start can save (Replace). A swapped word is replaced by another word of the line that can be hidden,
@@ -825,6 +827,7 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
         + (f" — {known['why']}" if known["why"] else ""))
     occurrences = _occurrences(line["allowed"])
     readings: dict[str, tuple[list[str], str | None]] = {}
+    neighbours: dict[str, tuple[str, str | None]] = {}  # slug -> (the words around it, the first word written)
     says: dict[str, tuple[float | None, str | None]] = {}
     crowds: dict[str, float | None] = {}
     source = dict(source_base)
@@ -849,6 +852,11 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
                     again, _ = ask()
                     chance = chance if again is None else round((chance + again) / 2, 3)
                 says[t.slug] = (chance, instead)
+            if t.slug not in neighbours:
+                around = rules.neighbourhood(tokens, t.i, occurrences[t.slug] - {t.i}
+                                             | {i for u in trio if u.slug != t.slug for i in occurrences[u.slug]})
+                fragment = llm.holed(around, set(), t.i, lang=lang).replace("[____]", "___")
+                neighbours[t.slug] = (fragment, llm.neighbours_complete(claude, fragment, lang=lang))
         hard = {t.slug for t in trio if given[t.slug] < contextual_rank.GIVEAWAY_HARD}
         same = {t.slug for t in trio if rules.same_word(t, says[t.slug][1])}
         unsaid = rules.unsaid({t.text: None if t.slug in same else says[t.slug][0] for t in trio})
@@ -875,6 +883,7 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
         hidden = {i for t in trio for i in occurrences[t.slug]}
         others = [t.text for t in line["allowed"] if t.slug not in {u.slug for u in trio}]
         sunk = next((t for t in trio if t.slug not in same and rules.buried(says[t.slug][0], crowds[t.slug])), None)
+        given_away = next((t for t in trio if rules.same_word(t, neighbours[t.slug][1])), None)
         stranded = next(((t, off) for t in trio
                          for off in [unmapped(t, [*readings[t.slug][0], *filter(None, [readings[t.slug][1]])])]
                          if off), None)
@@ -892,6 +901,19 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
                 return None
             swap = {"secret": sunk.text, "with": pick["with"],
                     "why": f"buried among commoner near-words ({pick['why']})"}
+        elif given_away is not None:
+            fragment, first = neighbours[given_away.slug]
+            log(f"- « {given_away.text} »: its neighbours alone hand it over (« {fragment} » → « {first} »): refused")
+            pick = llm.replace_word(claude, llm.marked(tokens, hidden, lang=lang),
+                                    [{"secret": t.text, "notes": context[t.slug]} for t in trio], given_away.text,
+                                    others, chain, lang=lang,
+                                    refused=f"the words right around it hand it over — « {fragment} » is "
+                                            f"« {first} » for anyone — so it is no search.")
+            if pick is None:
+                log(f"- no replacement named for « {given_away.text} »")
+                return None
+            swap = {"secret": given_away.text, "with": pick["with"],
+                    "why": f"its neighbours hand it over ({pick['why']})"}
         elif stranded is not None:
             lost, off = stranded
             words = ", ".join(f"« {w} »" for w in off)

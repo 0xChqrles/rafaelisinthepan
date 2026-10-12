@@ -36,6 +36,7 @@ def _no_unsaid_swap(monkeypatch):
     """The swap before the ranking answers nothing usable unless a test says otherwise."""
     monkeypatch.setattr(curate.llm, "drop_unsaid", lambda *_a, **_k: None)
     monkeypatch.setattr(curate.llm, "drop_handed", lambda *_a, **_k: None)
+    monkeypatch.setattr(curate.llm, "neighbours_complete", lambda *_a, **_k: None)
 
 
 def _giveaways(monkeypatch, scores=None):
@@ -1157,3 +1158,29 @@ def test_one_hole_handed_over_on_the_map_goes_on_to_the_starts(tmp_path, monkeyp
     picked = curate.choose_starts(object(), Log(), str(path), {"chat": "most readers would write the secret itself"},
                                   {}, lambda _t: None, lang="fr", expected={"pierre": "brique"})
     assert picked == {"chat": "lapin", "chien": "loup", "pierre": "brique"}
+
+
+def test_a_word_its_neighbours_hand_over_is_replaced_before_the_ranking(monkeypatch):
+    # « le droit de ___ » is « vote » for anyone (2026-10-13): no search. The model sees the
+    # words around the hole only, and writes the hidden word first.
+    asked, fragments, calls = {}, [], []
+
+    def first(_c, fragment, lang):
+        fragments.append(fragment)
+        return "pierre" if "___ froide" in fragment else "autre"
+
+    def replace(_c, _m, _h, word, others, _chain, lang, refused):
+        asked.update(word=word, refused=refused)
+        return {"with": "froide", "why": "searched"}
+
+    def generate(_c, _l, _sentence, words, *_a, chain, **_k):
+        calls.append((words, chain[0]))
+        return "out/x.json"
+
+    monkeypatch.setattr(curate.llm, "neighbours_complete", first)
+    monkeypatch.setattr(curate.llm, "replace_word", replace)
+    path, _ = _build_day(monkeypatch, generate, Log())
+    assert path == "out/x.json"
+    assert "sur la ___ froide" in fragments          # the words around it, nothing else
+    assert asked["word"] == "pierre" and "« sur la ___ froide » is « pierre »" in asked["refused"]
+    assert calls == [(["chat", "dort", "froide"], "froide replaces pierre: its neighbours hand it over (searched)")]

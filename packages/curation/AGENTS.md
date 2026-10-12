@@ -101,7 +101,7 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   words, the start words, difficulty). Code keeps only FACTS — which words can be hidden,
   the cooldowns, the famous line, valid grammar, the puzzle format — and turns everything
   it MEASURES into notes the model reads; nothing measured refuses a word but the giveaway
-  FLOOR, the BURIED rule and the UNMAPPED rule (below). Why: replayed
+  FLOOR, the BURIED, NEIGHBOURS and UNMAPPED rules (below). Why: replayed
   on the 16 days the user loved, the code rules it replaces would have rejected three of
   the lines before any model saw them (`MIN_CANDIDATES`: JeanJass, NeS, Rounhaa) and five
   of the trios (the pair rules: « éleveur de [pigeons] », « le cafard de l'[homme] »),
@@ -164,7 +164,18 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   played French holes such words stalled players about twice as often, rarity aside. A
   rare NAME passes (« saint-bernard », said at 0.58), a rare stand-in does not
   (« faux-monnayeur », « charnier »); English uses the French bars, unchecked on play —
-  and the UNMAPPED rule, the third code veto (user-decided 2026-10-12, after « laisse »,
+  the NEIGHBOURS rule, the third code veto (user-decided 2026-10-13: "droit de ___ is no
+  fun when it's vote", « cinq semaines de ___ payés »): the words right around the hole —
+  up to `NEIGHBOURS` (3) each side, never across punctuation nor another hole
+  (`rules.neighbourhood`) — shown alone, the model writes the first word they call for
+  (`llm.neighbours_complete`); when that is the hidden word (`rules.same_word`) the
+  neighbours hand it over and it is refused the same way, before the ranking. Its first
+  word is the measure, never a share: told the word or not, the model hedges (« vote » 0.3,
+  « arrêt ___ » → « cardiaque » 0.3), and Jev's fixed-expression question scored
+  « vote » under « sacrifices », a hole players searched. On 174 played French holes it
+  refuses 16, among them « vote », « congés », « partir », « chaussettes », and of the
+  loved days' 48 « poche » (« dans sa ___ une montre ») and « humain » (« le savoir ___ »)
+  — and the UNMAPPED rule, the fourth code veto (user-decided 2026-10-12, after « laisse »,
   whose vector is the verb's: its map held no « chaîne »): a word NONE of whose reader
   words (single words the vectors know) is on its free static map (`rules.unmapped`; the
   judge only reorders the walk's groups, so the free map answers before the ranking) is
@@ -368,10 +379,11 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 
 - Don't publish, and don't write a puzzle by any path but `gen_phrase`.
 - Don't turn a measurement into a veto: code states facts, taste chooses. A new signal
-  goes to the model as a note, with its real-play meaning. The three vetoes are the giveaway
+  goes to the model as a note, with its real-play meaning. The four vetoes are the giveaway
   floor (`GIVEAWAY_MIN`, user-decided 2026-10-02), the BURIED rule (`rules.buried`,
-  user-decided 2026-10-08) and the UNMAPPED rule (`rules.unmapped`, user-decided
-  2026-10-12). Don't keep a hand list of refused words: the buried rule
+  user-decided 2026-10-08), the UNMAPPED rule (`rules.unmapped`, user-decided 2026-10-12)
+  and the NEIGHBOURS rule (`rules.neighbourhood` + `llm.neighbours_complete`,
+  user-decided 2026-10-13). Don't keep a hand list of refused words: the buried rule
   measures any word (the user: "the curator will be good in 30 years with this solution").
 - Don't write taste into code or a prompt copy; it lives in the `taste` skill.
 - Don't ask a model to PLAY the puzzle — to guess its way to a secret, count the tries or
