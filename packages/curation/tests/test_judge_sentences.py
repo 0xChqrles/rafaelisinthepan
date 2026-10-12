@@ -35,6 +35,8 @@ class Log(list):
 def _no_unsaid_swap(monkeypatch):
     """The swap before the ranking answers nothing usable unless a test says otherwise."""
     monkeypatch.setattr(curate.llm, "drop_unsaid", lambda *_a, **_k: None)
+    monkeypatch.setattr(curate.llm, "drop_handed", lambda *_a, **_k: None)
+    monkeypatch.setattr(curate.llm, "neighbours_complete", lambda *_a, **_k: None)
 
 
 def _giveaways(monkeypatch, scores=None):
@@ -440,7 +442,8 @@ def test_start_words_are_re_picked_at_most_start_rounds_times(monkeypatch):
 
 # --- a word no start can save is swapped, REPLACE_ROUNDS times at most --------------------
 
-def _build_day(monkeypatch, generate, log, given=None, says=None, instead=None, crowds=None, asked_say=None):
+def _build_day(monkeypatch, generate, log, given=None, says=None, instead=None, crowds=None, asked_say=None,
+               unmapped=lambda t, fillers: None):
     """build_day on a song's line with chat · dort · pierre chosen and « froide » left to
     swap in, each word's giveaway judged before the choice (`given`, 0.3 by default) and
     the chance a player says it (`says`, 0.8 by default); returns (its result, the words
@@ -459,7 +462,7 @@ def _build_day(monkeypatch, generate, log, given=None, says=None, instead=None, 
             "given": given or {t.slug: 0.3 for t in allowed}}
     path = curate.build_day(object(), log, line, allowed[:3], ["chat: le sujet"], {"kind": "music"}, {"pairs": {}},
                             "", {"kind": "music"}, lambda t: None, lambda t, w: None, "fr",
-                            "old.contextual.json", crowd=lambda t: (crowds or {}).get(t.text))
+                            "old.contextual.json", crowd=lambda t: (crowds or {}).get(t.text), unmapped=unmapped)
     return path, asked
 
 
@@ -531,7 +534,7 @@ def test_a_buried_word_is_refused_by_code_and_replaced_before_the_ranking(monkey
     # « charnier »: half-said and among commoner near-words — players circle them and stall.
     calls, said = [], []
     monkeypatch.setattr(curate.llm, "replace_word",
-                        lambda _c, _m, _h, word, others, _chain, lang: {"with": "froide", "why": "said"})
+                        lambda _c, _m, _h, word, others, _chain, lang, refused: {"with": "froide", "why": "said"})
 
     def generate(_c, _l, _sentence, words, *_a, replay, chain, **_k):
         calls.append((words, chain[0]))
@@ -1056,3 +1059,128 @@ def test_a_run_that_is_not_blind_holds_nothing_back(tmp_path, monkeypatch, capsy
                     "- chosen: chat · dort\n## After\n")
     assert "- chosen: chat · dort" in capsys.readouterr().out
     assert not log.spoilers.exists()
+
+
+def test_a_trio_whose_line_hands_over_two_words_swaps_one_before_the_ranking(monkeypatch):
+    # 2026-10-12: a Desproges line solved in ten seconds — two words handed over, the third
+    # near; the model swaps one of the handed-over words before the ranking is paid for.
+    asked, built = {}, []
+
+    def drop(_c, _marked, _holes, handed, allowed, *_a, **_k):
+        asked["handed"] = handed
+        return {"secret": "chat", "with": allowed[0], "why": "dull"}
+
+    def generate(_c, _l, _sentence, words, *_a, **_k):
+        built.append(words)
+        return "out/x.json"
+
+    monkeypatch.setattr(curate.llm, "drop_handed", drop)
+    monkeypatch.setattr(curate.rules, "reading", lambda t, *_a, **_k: (
+        "most readers would write the secret itself" if t.text in ("chat", "dort") else "readers would split"))
+    path, _ = _build_day(monkeypatch, generate, Log())
+    assert asked["handed"] == ["chat", "dort"]
+    assert built and "chat" not in built[0]
+
+
+def test_one_handed_over_word_goes_straight_on(monkeypatch):
+    monkeypatch.setattr(curate.llm, "drop_handed", lambda *_a, **_k: pytest.fail("one handed-over word"))
+    monkeypatch.setattr(curate.rules, "reading", lambda t, *_a, **_k: (
+        "most readers would write the secret itself" if t.text == "chat" else "readers would split"))
+    path, _ = _build_day(monkeypatch, lambda *_a, **_k: "out/x.json", Log())
+    assert path == "out/x.json"
+
+
+
+def test_a_word_none_of_whose_reader_words_is_on_its_map_is_replaced_before_the_ranking(monkeypatch):
+    # « laisse », 2026-10-12: its vector is the verb's, so its map never held « chaîne » —
+    # every first guess landed past it. Refused on the free map, before the ranking is paid.
+    asked, calls = {}, []
+
+    def replace(_c, _m, _h, word, others, _chain, lang, refused):
+        asked.update(word=word, refused=refused)
+        return {"with": "froide", "why": "on its map"}
+
+    def generate(_c, _l, _sentence, words, *_a, chain, **_k):
+        calls.append((words, chain[0]))
+        return "out/x.json"
+
+    monkeypatch.setattr(curate.llm, "replace_word", replace)
+    path, _ = _build_day(monkeypatch, generate, Log(),
+                         unmapped=lambda t, fillers: ["caillou"] if t.text == "pierre" else None)
+    assert path == "out/x.json"
+    assert asked["word"] == "pierre" and "« caillou »" in asked["refused"] and "is on its map" in asked["refused"]
+    assert calls == [(["chat", "dort", "froide"],
+                      "froide replaces pierre: no word readers put there is on its map (on its map)")]
+
+
+def test_a_map_that_hands_two_holes_over_swaps_one_after_the_ranking(monkeypatch):
+    # « pou » at rank 1 for « morpion »: the start step's map hands two holes over; the
+    # draft is erased (generate re-raises) and the model swaps one.
+    calls, asked = [], {}
+
+    def generate(_c, _l, _sentence, words, *_a, **_k):
+        calls.append(words)
+        if len(calls) == 1:
+            raise curate.Handed(["chat", "dort"], {"chat": "most readers write « minou », rank 1 in its map",
+                                                   "dort": "most readers write it straight in"})
+        return "out/x.json"
+
+    def drop(_c, _m, holes, handed, allowed, *_a, **_k):
+        asked.update(handed=handed, notes={h["secret"]: h["notes"] for h in holes})
+        return {"secret": "dort", "with": allowed[0], "why": "dull"}
+
+    monkeypatch.setattr(curate.llm, "drop_handed", drop)
+    path, _ = _build_day(monkeypatch, generate, Log())
+    assert path == "out/x.json"
+    assert asked["handed"] == ["chat", "dort"] and "rank 1 in its map" in asked["notes"]["chat"]
+    assert calls == [["chat", "dort", "pierre"], ["chat", "froide", "pierre"]]
+
+
+def test_the_start_step_raises_handed_when_its_map_hands_two_holes_over(tmp_path, monkeypatch):
+    path = _three_hole_draft(tmp_path)
+    puzzle = json.loads(path.read_text(encoding="utf-8"))
+    puzzle["ranks"]["chien"]["toutou"] = {"word": "toutou", "rank": 2}
+    path.write_text(json.dumps(puzzle), encoding="utf-8")
+    monkeypatch.setattr(curate.llm, "pick_starts", lambda *_a, **_k: pytest.fail("no start can make this day"))
+    with pytest.raises(curate.Handed) as raised:
+        curate.choose_starts(object(), Log(), str(path), {"chat": "most readers would write the secret itself"}, {},
+                             lambda _t: None, lang="fr", expected={"chien": "toutou", "pierre": "brique"})
+    assert raised.value.words == ["chat", "chien"]
+    assert raised.value.facts["chien"] == "most readers write « toutou », rank 2 in its map"
+
+
+def test_one_hole_handed_over_on_the_map_goes_on_to_the_starts(tmp_path, monkeypatch):
+    path = _three_hole_draft(tmp_path)
+    shown = []
+    monkeypatch.setattr(curate.llm, "pick_starts", _two_of_three(shown))
+    monkeypatch.setattr(curate.llm, "pick_start", lambda *_a, **_k: "brique")
+    # « brique » sits at 120: past HANDED_RANK, so only « chat » is handed over
+    picked = curate.choose_starts(object(), Log(), str(path), {"chat": "most readers would write the secret itself"},
+                                  {}, lambda _t: None, lang="fr", expected={"pierre": "brique"})
+    assert picked == {"chat": "lapin", "chien": "loup", "pierre": "brique"}
+
+
+def test_a_word_its_neighbours_hand_over_is_replaced_before_the_ranking(monkeypatch):
+    # « le droit de ___ » is « vote » for anyone (2026-10-13): no search. The model sees the
+    # words around the hole only, and writes the hidden word first.
+    asked, fragments, calls = {}, [], []
+
+    def first(_c, fragment, lang):
+        fragments.append(fragment)
+        return "pierre" if "___ froide" in fragment else "autre"
+
+    def replace(_c, _m, _h, word, others, _chain, lang, refused):
+        asked.update(word=word, refused=refused)
+        return {"with": "froide", "why": "searched"}
+
+    def generate(_c, _l, _sentence, words, *_a, chain, **_k):
+        calls.append((words, chain[0]))
+        return "out/x.json"
+
+    monkeypatch.setattr(curate.llm, "neighbours_complete", first)
+    monkeypatch.setattr(curate.llm, "replace_word", replace)
+    path, _ = _build_day(monkeypatch, generate, Log())
+    assert path == "out/x.json"
+    assert "sur la ___ froide" in fragments          # the words around it, nothing else
+    assert asked["word"] == "pierre" and "« sur la ___ froide » is « pierre »" in asked["refused"]
+    assert calls == [(["chat", "dort", "froide"], "froide replaces pierre: its neighbours hand it over (searched)")]

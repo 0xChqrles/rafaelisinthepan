@@ -153,6 +153,24 @@ def test_a_front_label_that_is_not_french_is_demoted_to_the_tail_and_recorded():
     assert not ranked[-1].demoted and "c:nc" not in rec["french"]
 
 
+def test_a_secret_whose_front_is_mostly_names_keeps_its_names():
+    # 2026-10-12, « Renault »: every other carmaker is a brand, so the word question
+    # refuses most of the front; demoting them sent the player's first guesses to the
+    # map's last 1%. Past NAMES_FRONT_MIN refusals nothing is demoted (the verdicts
+    # are still recorded, so a replay decides the same).
+    names = [f"marque{i}" for i in range(cr.NAMES_FRONT_MIN)]
+    scores = {"usine": 4.0, **{w: 3.0 for w in names}, "firme": 2.0}
+    judge = FakeJudge(scores, english=set(names))
+    ranked, rec = cr.rerank(CTX, _cands(list(scores)), judge, pairwise_top=len(scores))
+    assert not any(r.demoted for r in ranked) and rec["demoted"] == []
+    assert ranked[-1].label == "firme"
+    assert len([p for p in rec["french"].values() if p < cr.LANGUAGE_MIN]) == cr.NAMES_FRONT_MIN
+    # one fewer, and they are demoted as before
+    judge = FakeJudge(scores, english=set(names[1:]))
+    ranked, rec = cr.rerank(CTX, _cands(list(scores)), judge, pairwise_top=len(scores))
+    assert len(rec["demoted"]) == cr.NAMES_FRONT_MIN - 1 and ranked[-1].demoted
+
+
 def test_a_kept_group_sharing_its_lemma_string_with_a_demoted_one_is_not_demoted():
     # «gai» the adjective is refused as a word of the language, «gai» the noun is kept:
     # two GROUPS, one label. The flat front leaves the order to the pairwise verdict,

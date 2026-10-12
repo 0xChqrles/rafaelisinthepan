@@ -221,7 +221,9 @@ line already gives of the word:
 
 - **The line leads to the word** — the context gives enough to guess it easily: a
   MEDIUM start, a neighbour in a wide family, where many guesses fit and the line does
-  the narrowing.
+  the narrowing — from the FAR half of the band (around 150–200), never its near edge:
+  there one obvious step finds the word the line already gave (« moufles » 106 for
+  « chaussettes », « piscine » 107 for « bassine »: three words in three guesses).
   - « éleveur » ← « fauconnier », « pigeons » ← « papillons »: other people who keep
     animals, other creatures people collect — the search stays open.
   - « bière » ← « tisane »: another drink, the tame one.
@@ -232,10 +234,10 @@ line already gives of the word:
   tied to the word's DIRECT meaning; when the rest of the line is already hard (its
   other holes too), the most direct of them. Next to the meaning, never another name for
   it: « marriage » or « heartbreak » for « divorce », not « nazi » for « facho » nor
-  « blue » for « sky » — a synonym leaves the player nothing to find. Another of the
-  same kind IS next to the meaning: another god for « Dieu » (« Shiva »), another
-  specialist for « psychiatre » (« urologue »), another class for « mammifères »
-  (« batraciens »).
+  « blue » for « sky » — a synonym leaves the player nothing to find. Never a member of
+  the kind the word itself names: players name the kind, and that is the word
+  (« Shiva » for « Dieu »: they typed « dieu » at once; « parme » for « rose »: a search
+  says "a pink").
   - « divorce » ← « heartbreak », in « the ones about [divorce] go right over their
     heads »; « marriage » when the rest of the line is already hard. Not « litigation »
     (2026-10-10), chosen to keep the punch hidden: a word about the procedure, not about
@@ -252,6 +254,21 @@ guesses between them:
   one or two tries.
 - « chambre » ← « tanière »: a word for a teenager's room.
 - « parfaitement » ← « admirablement »: a synonym in costume.
+- « chaussettes » ← « baskets »: shoes, then socks — two automatic steps, no thought
+  (2026-10-11, testers: "absolutely no fun").
+- « bassine » ← « amphore », in « mis à tremper… dans une ___ de matière plastique »: the
+  line calls the word whatever the start; a hole like that needs the rest of the day to
+  carry the search.
+
+**When the line hands over two or more of the trio** (most readers write the word straight
+into its blank — the reader's note says so), the day is solved in a few guesses: a flat
+line dies (2026-09-21, median 5 tries; the socks-in-a-basin line, 2026-10-11, three words
+in three guesses), and a witty one too (Desproges, 2026-10-12, solved in ten seconds).
+A word the words right around it call for is no search either — « le droit de ___ » is
+« vote », « cinq semaines de ___ payés » is « congés » for anyone (2026-10-13, found in the
+first two guesses): code refuses it. A word the reader writes that sits at the very top of
+the hole's map hands it over just the same (« pou » for « morpion », « mourir » for « partir »). Code asks for a swap: drop
+the DULL handed-over word, keep the punch, and hide a word the line does not hand over.
 
 ## Difficulty is part of taste
 

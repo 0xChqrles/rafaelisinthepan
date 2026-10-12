@@ -281,3 +281,29 @@ def test_list_works_reads_one_language_s_shelf(tmp_path, monkeypatch):
         (_paths.shelf_dir(lang) / name).write_bytes(b"not a zip")
     assert [w["file"] for w in shelf.list_works(_paths.shelf_dir("en"))] == ["stranger.epub"]
     assert [w["file"] for w in shelf.list_works(_paths.shelf_dir("fr"))] == ["etranger.epub"]
+
+
+def test_forget_keeps_a_puzzle_that_was_published_and_its_scores(tmp_path, monkeypatch):
+    # 2026-10-12: a work retried while one of its days was live erased that day's judge
+    # scores, and its start-only correction paid the ranking again.
+    monkeypatch.setattr(_paths, "GENERATION_OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(_paths, "PUBLISHED_LEDGER", tmp_path / "published.jsonl")
+    src = {"kind": "book", "author": "Victor Hugo", "work": "Les Misérables"}
+    holes = [{"secret": {"word": "chat", "slug": "chat"}, "start": {"word": "lapin"}}]
+    live = _write(tmp_path, "fr/book/hugo/les-miserables/lapin.json",
+                  {"source": src, "words": ["Le", "chat"], "holes": holes})
+    scores = _write(tmp_path, "fr/book/hugo/les-miserables/lapin.contextual.json", {"holes": []})
+    other_start = _write(tmp_path, "fr/book/hugo/les-miserables/loup.json",
+                         {"source": src, "words": ["le", "chat"],
+                          "holes": [{**holes[0], "start": {"word": "loup"}}]})
+    (tmp_path / "published.jsonl").write_text(json.dumps(
+        {"day": "2026-10-12", "lang": "fr", "sentence": "le chat",
+         "holes": [{"secret": "chat", "word": "chat", "start": "lapin", "startRank": 120}]}) + "\n", encoding="utf-8")
+    work = {"file": "hugo.epub", "author": "Victor Hugo", "title": "Les misérables"}
+    assert shelf.forget({"books": {}}, work, "fr", shelf.published_drafts("fr")) == [str(other_start)]
+    assert live.exists() and scores.exists()
+
+
+def test_a_draft_s_sentence_finds_its_unit_whatever_its_soft_hyphens():
+    # a 2026-10-13 draft kept « \xadimagine »; its retry must find the clean mined line
+    assert shelf.find_unit(["On imagine les hécatombes."], "on \xadimagine les hécatombes.") == "On imagine les hécatombes."

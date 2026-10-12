@@ -46,7 +46,10 @@ def html_to_text(html: str) -> str:
     parser = _TextExtractor()
     parser.feed(html)
     text = "".join(parser.parts)
-    text = text.replace("\xa0", " ")
+    # A soft hyphen (U+00AD, « &shy; ») marks where a word MAY break: typesetting, never
+    # text. Left in, it glued to a word of a candidate line (« \xadimagine ») and can print
+    # a stray hyphen where a phone wraps the line.
+    text = text.replace("\xa0", " ").replace("\xad", "")
     text = re.sub(r"[ \t]+", " ", text)
     return re.sub(r"\n\s*\n+", "\n\n", text).strip()
 
