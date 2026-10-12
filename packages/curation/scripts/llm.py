@@ -9,6 +9,7 @@ import asyncio
 import json
 import re
 import tempfile
+import threading
 
 import _paths  # noqa: F401
 from llm_play import (
@@ -49,15 +50,25 @@ def validate() -> str:
     return validate_anthropic_subscription_auth()
 
 
+def subscription_only():
+    """The credentials that would take a call off the subscription, removed for a whole
+    block. Each call removes them for its own duration and restores them after; calls on
+    several threads at once would restore them under one another, so a block that runs
+    them in parallel removes them once, around all of them."""
+    return _temporary_environment_without(SUBSCRIPTION_CONFLICT_ENV)
+
+
 class Claude:
     def __init__(self, model: str = MODEL, effort: str = EFFORT):
         self.model = model
         self.effort = effort
         self._workspace = tempfile.TemporaryDirectory(prefix="whippin-curation-")
         self.calls = 0
+        self._counting = threading.Lock()  # lines are checked on several threads at once
 
     def text(self, prompt: str) -> str:
-        self.calls += 1
+        with self._counting:
+            self.calls += 1
         with _temporary_environment_without(SUBSCRIPTION_CONFLICT_ENV):
             reply, _session, _usage = asyncio.run(
                 _agent_sdk_turn(
@@ -247,20 +258,19 @@ def _joined(tokens, parts: list[str], lang: str) -> str:
     return "".join(part + t.space for part, t in zip(parts, tokens)).strip()
 
 
-def choose_day(claude: Claude, lines: list[dict], refused: list[str], *, lang: str) -> dict | None:
-    """The day, chosen by COMPARISON (2026-09-24): `lines` are shortlisted lines, each with
-    the words code allows as its secrets ({"sentence", "allowed"}); the model picks the one
-    that makes the best day and the three words to hide, in the order players will find
-    them. `refused` says what was already turned down and why. Returns {"line": index,
-    "words": [3], "path": [lines], "why": str}, or {"line": None, "why": str} when the
-    model declines (the reason is logged), or None when the answer is unusable."""
-    listing = "\n\n".join(f"{n}. « {line['sentence']} »\n   words that can be hidden: {', '.join(line['allowed'])}"
-                           for n, line in enumerate(lines, 1))
+def choose_words(claude: Claude, line: dict, refused: list[str], *, lang: str) -> dict | None:
+    """One shortlisted line ({"sentence", "allowed"}: the words code allows as its
+    secrets): the model chooses the three words to hide, in the order players will find
+    them, or declines the line. Every line of the batch gets this question on its own;
+    the day is chosen among the checked results (`choose_among`). `refused` says what was
+    already turned down and why. Returns {"words": [3], "path": [lines], "why": str},
+    or {"words": None, "why": str} when the model declines (the reason is logged), or
+    None when the answer is unusable."""
     again = ("\nAlready turned down — do not choose these again:\n"
              + "\n".join(f"- {r}" for r in refused) + "\n") if refused else ""
-    answer = claude.json(f"""You choose tomorrow's day for a daily {LANGUAGE[lang]} word game. One line, three words hidden;
-the player rebuilds each from how close every guess lands, starting from a START word
-chosen later. A word once found stays revealed and becomes context for the others.
+    answer = claude.json(f"""You prepare a candidate day for a daily {LANGUAGE[lang]} word game. One line, three words
+hidden; the player rebuilds each from how close every guess lands, starting from a START
+word chosen later. A word once found stays revealed and becomes context for the others.
 
 What makes a day worth playing:
 {taste()}
@@ -268,27 +278,67 @@ What makes a day worth playing:
 The game's laws and practical rules:
 {laws()}
 
-The candidate lines, from one work:
+The line, from one work:
 
-{listing}
+« {line['sentence']} »
+   words that can be hidden: {', '.join(line['allowed'])}
 {again}
-Compare them. For the best one, choose the three words to hide — the punch first among
-them — in the order players should find them: for each word, what in the line (and in
-the words found before it) leads toward it, and what it does when it lands. Decline only
-when no line here would make a day worth playing.
+Choose the three words to hide — the punch first among them — in the order players should
+find them: for each word, what in the line (and in the words found before it) leads toward
+it, and what it does when it lands. Other lines of the work get the same question, and the
+day is chosen among them afterwards. Decline only when this line cannot make a day worth
+playing.
 
-Return {{"line": <number>, "words": ["<first found>", "<second>", "<third>"], "path": ["<word>: <what leads toward it and what it does when it lands>", ...], "why": "<one line: what the player will feel>"}},
-or {{"line": null, "why": "<one line>"}} to decline.""")
-    n = answer.get("line")
+Return {{"words": ["<first found>", "<second>", "<third>"], "path": ["<word>: <what leads toward it and what it does when it lands>", ...], "why": "<one line: what the player will feel>"}},
+or {{"words": null, "why": "<one line>"}} to decline.""")
     words = answer.get("words")
-    if n is None:
-        return {"line": None, "why": str(answer.get("why") or "")}
-    if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= len(lines):
-        return None
+    if words is None and "words" in answer:
+        return {"words": None, "why": str(answer.get("why") or "")}
     if not isinstance(words, list) or len(words) != 3 or not all(isinstance(w, str) and w.strip() for w in words):
         return None
     path = [str(x) for x in answer.get("path") or [] if isinstance(x, str) and x.strip()]
-    return {"line": n - 1, "words": [w.strip() for w in words], "path": path, "why": str(answer.get("why") or "")}
+    return {"words": [w.strip() for w in words], "path": path, "why": str(answer.get("why") or "")}
+
+
+def choose_among(claude: Claude, days: list[dict], *, lang: str) -> dict | None:
+    """The day, chosen by COMPARISON among FINISHED candidates (user-decided 2026-10-13):
+    each `days` entry is a line whose three words were chosen and checked, swaps
+    included — {"marked": the line with its hidden words in brackets, "words": [{"word",
+    "level"}] in the order players find them, "path": [lines]}. The model orders them,
+    best day first, leaving out any that would not make a day worth playing. Returns
+    {"order": [indices], "why": str} (an empty order declines them all), or None when
+    the answer is unusable."""
+    listing = "\n\n".join(
+        f"{n}. « {d['marked']} »\n   hidden, in the order players find them: "
+        + "; ".join(f"{w['word']} ({w['level']})" for w in d["words"])
+        + "".join(f"\n   - {step}" for step in d["path"])
+        for n, d in enumerate(days, 1))
+    answer = claude.json(f"""You choose tomorrow's day for a daily {LANGUAGE[lang]} word game. One line, three words hidden;
+the player rebuilds each from how close every guess lands, starting from a START word
+chosen later. A word once found stays revealed and becomes context for the others.
+
+What makes a day worth playing:
+{taste()}
+
+Below are candidate days from one work. Each line's three hidden words (in [brackets]) were
+already chosen and checked on readers; beside each word, how it plays: easy (most readers
+write it straight in), medium, or hard (and why). Under each line, what leads to each word.
+
+{listing}
+
+Compare them as the player will get them, and order them, best day first. Leave out any
+that would not make a day worth playing.
+
+Return {{"order": [<number>, ...], "why": "<one line: what makes the first one the best day>"}}.""")
+    order = answer.get("order")
+    if not isinstance(order, list):
+        return None
+    picked: list[int] = []
+    for n in order:
+        if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= len(days) or n - 1 in picked:
+            return None
+        picked.append(n - 1)
+    return {"order": picked, "why": str(answer.get("why") or "")}
 
 
 def context_guesses(claude: Claude, tokens, blanks: set[int], mark: int, n: int,

@@ -123,19 +123,30 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   start words, and `--retry <puzzle.json>` keeps the erased draft's scores for the same
   trio — unless they no longer cover the map (the word tables changed since, #317): the
   replay's refusal drops them and the judge runs again, never losing the line.
-- **The model shortlists with taste, then CHOOSES THE DAY BY COMPARISON.** It reads every
-  kept line, `CHUNK` (150) at a time, picks at most `PICKS_PER_CHUNK` (6) by the taste
-  skill and ranks a `SHORTLIST` (20), even when fewer than 20 lines were picked (one line
-  needs no ordering; an empty or unreadable ranking keeps the reading order — the question
-  asks for an order, never a refusal). `curate.day` then shows it `COMPARE` (5) lines at a
-  time, each with the words code allows (`rules.initial_candidates`), and
-  `llm.choose_day` names the best line and its three words in the order players should
-  find them, each with what in the line leads toward it — or declines. Code checks the facts: three distinct words
-  of the line that can be hidden, and the line STANDS ALONE (below); a refusal is told
-  back and it chooses again, `DAY_ROUNDS` (3) times, then the next lines. Every line
-  compared goes to the index as tried.
+- **The model shortlists with taste, then CHOOSES THE DAY AMONG FINISHED LINES**
+  (user-decided 2026-10-13: a line chosen before its checks ran was hollowed out by its
+  swaps, and the rest of the shortlist was never looked at). It reads every kept line,
+  `CHUNK` (150) at a time, picks at most `PICKS_PER_CHUNK` (6) by the taste skill and
+  ranks a `SHORTLIST` (20), even when fewer than 20 lines were picked (one line needs no
+  ordering; an empty or unreadable ranking keeps the reading order — the question asks
+  for an order, never a refusal). `curate.day` then FINISHES the shortlist `CANDIDATES`
+  (10) lines at a time, `WORKERS` (5) in parallel (`curate.candidate`; the subscription's
+  conflicting credentials are removed once around the whole block, `llm.subscription_only`,
+  since each call's own removal would be restored under the others): the line must STAND
+  ALONE (below; a refusal ends the line), `llm.choose_words` names its three words in the
+  order players should find them, from the words code allows (`rules.initial_candidates`),
+  each with what in the line leads toward it — or declines the line; a pick that is not
+  three distinct words of the line that can be hidden is told back, `DAY_ROUNDS` (3)
+  times; then every check before the ranking runs, swaps included (`curate.check_trio`,
+  below). `llm.choose_among` then COMPARES the lines that survived, each as the player
+  will get it — the line with its words in brackets, how each plays (easy: most readers
+  write it straight in / medium / hard: the line gives little of it, or a word players
+  don't say) and what leads to each — and orders them, best day first, leaving out what
+  would make no day. The first is built (`curate.build_day`: page, ranking, start words);
+  when it cannot be, the next; then the next lines. Only the built line pays the
+  ranking. Every line prepared goes to the index as tried.
 - **Code MEASURES each chosen word and hands the notes to the start-word step**
-  (`curate.build_day`): the READER — the user's own method, one call per word
+  (`curate.check_trio`, each word measured once per line, `Measures`): the READER — the user's own method, one call per word
   (`llm.context_guesses`: the line with that word blanked, the rest intact, no start
   word; the words that could stand there and the one most readers would write) — becomes
   a plain note (`rules.reading`: whether most readers would write the secret itself,
