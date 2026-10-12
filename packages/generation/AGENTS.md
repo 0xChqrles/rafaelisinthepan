@@ -229,7 +229,12 @@ sha256, verified before reading), one responsibility each:
 - **VarCon 2020.12.07 (SCOWL rel tag) gives the American/British spellings** — both are
   one word (user-decided): each form's pure spelling variants join its cell, so «colour»
   and «color» become one group by #146's identical-form rule. A line restricted to a
-  SENSE (`check / cheque | bank`, `tire / tyre | wheel`, `| :1`, `(-)`) never joins; a POS
+  SENSE (`check / cheque | bank`, `tire / tyre | wheel`, `| :1`, `(-)`) never joins —
+  except the entries named one word whatever the sense, `VARCON_SENSE_JOINS` (user-decided
+  2026-10-13, after « whisky » typed for « whiskey » landed at rank 1: whisky/whiskey,
+  disc/disk, analog/analogue, blond/blonde, sheik/sheikh/shaykh, gram/gramme, …), every
+  line of the entry; the others stay apart because one spelling is another word too
+  (check, tire, story, draft, meter, curb, racket, mum, …); a POS
   tag or a note restricts nothing. Only A/B/Z spellings at level «», «.» or «v» count.
 - **OANC (ANC-all-count, second release) is POS-frequency evidence ONLY** — Lexique's
   twin: the `dom` column, and the tie-break of a cell's spelling order (the American
@@ -283,7 +288,7 @@ Consequences that are load-bearing:
   plurals, variant levels, the US/UK merge and its spelling order),
   `EXPECTED_INVENTORY_CELLS_EN` (a noun + verb group), `EXPECTED_SURFACE_LEXEMES_EN`
   (homographs; the cleanup's removed attachments; sense-restricted pairs kept apart) and
-  `EXPECTED_MERGE_STATS_EN` (every cleanup count, 84,182 groups, 245,654 rows); the build
+  `EXPECTED_MERGE_STATS_EN` (every cleanup count, 84,172 groups, 245,742 rows); the build
   fails when one moves, and the committed artifact is contract-tested against them.
 - **Licensing travels with the artifact**: the header names the three releases and
   digests; `en.forms.LICENSE` is AGID's «COPYRIGHT AND SOURCE» and VarCon's «Copyright»
@@ -681,9 +686,9 @@ output filename contains the three distinct secret slugs in sentence order.
   the cased source keeps only its lowercase tokens: «apple» no longer blends «Apple»).
   `web/public/vocab/{en,fr}.json` exist.
 - **en word-group inventory (#317):** `generation/wordlist/en.forms.tsv.gz` is committed —
-  245,654 rows, 84,182 playable groups, ~1.6 MB gzipped — beside `en.forms.LICENSE`. The
+  245,742 rows, 84,172 playable groups, ~1.6 MB gzipped — beside `en.forms.LICENSE`. The
   cleanup counts are
-  pinned in `EXPECTED_MERGE_STATS_EN`; 1,772 groups join more than one lemma spelling, all
+  pinned in `EXPECTED_MERGE_STATS_EN`; 1,781 groups join more than one lemma spelling, all
   US/UK variants (largest VarCon class 5). The per-language AGID lemma table
   (`en.lemmas.tsv.gz`, `build_lemmas.py`, `pnpm lemmas:en`) was REMOVED by #317.
 - **fr word-group inventory (#132/#146, Morphalou-sourced, superseding the Lefff
