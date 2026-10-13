@@ -249,7 +249,9 @@ in `shared/src/types.ts`, pruned into `web/src/tutorial/scripts/<lang>.word.json
   missing/malformed → 400. Backend 404 → `noPuzzle` (NO PUZZLE TODAY); any other failure →
   `error`. `/today` is a diagnostic only (`no-store`); the client never reads it.
 - **Caching:** `max-age=300, s-maxage=31536000`; `pnpm puzzle:publish --s3` and the backend
-  deploy both **invalidate `/*`** on the API distribution.
+  deploy both **invalidate `/*`** on the API distribution. The puzzle carries its `revision`
+  as its **ETag** (shared `sentenceVersion.ts`, exposed by CORS), so a page revalidates it and
+  the CDN answers 304 for an unchanged sentence (below, *A new sentence reloads the page*).
 - **No client-side puzzle override** (removed 2026-07-19): the front always loads the day's
   puzzle from the backend; to test a puzzle, publish it into the local store and point the
   front at `pnpm backend:dev`. `usePuzzle`'s `dayNumber` is always a real number.
@@ -437,7 +439,18 @@ The live routes then share:
   the full artifact at guess cadence on a bounded pool of Lambdas (reserved concurrency 200); a published
   version's content never changes, so an entry keyed by it never goes stale and a
   correction simply misses. The slice fetch runs concurrently with the round read. **A
-  missing slice or a revision mismatch is the day-addressed 404** — no degraded mode.
+  missing slice is the day-addressed 404** — no degraded mode; **a slice published for
+  ANOTHER revision is 409 `puzzle_changed`** (shared `PUZZLE_CHANGED`), on an append and on a
+  give-up alike: the sentence was republished, nothing is stored against the retired one.
+- **A NEW SENTENCE RELOADS THE PAGE (user-decided 2026-10-13: "they need to have an instant
+  reload when there's a new sentence").** A page showing a retired revision reloads onto the
+  new one (`web/state/sentenceWatch.ts`) the moment it learns of it: a `/round` write answered
+  `puzzle_changed` (a player guessing reloads within a guess), or its own revalidation of the
+  puzzle's URL reading another ETag — asked when the round comes on screen, every minute while
+  the page is seen, and on coming back into view. It reloads a page in play too (what is played
+  there is no longer kept — unlike a new BUILD, which never yanks a visible player); only on a
+  revision it has READ that differs from the one shown; at most once per 30s; the new sentence
+  fetched whole first, and the reloaded page's first fetch of it asks the CDN again.
 - **Authoritative SOLVED comes only from the server flag.** The board may complete locally
   while the solving append is in flight; the result, leaderboard, streak and `solve` event wait
   for confirmation. A solve confirmed by THIS device's batch is fresh (celebrated); one learned

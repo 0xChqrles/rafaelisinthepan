@@ -25,6 +25,7 @@ import {
   SUPPORTED_LANGS,
   VOCAB_BUILDS,
   type Puzzle,
+  PUZZLE_CHANGED,
 } from '@whippin/shared';
 import { createHandler } from './handler';
 import { memoryHistoryStore } from './memoryHistoryStore';
@@ -387,6 +388,49 @@ describe('a re-published daily restarts the log (#201)', () => {
     );
     expect(refused.statusCode).toBe(429);
     expect(parsed(refused).guesses).toEqual([]);
+  });
+});
+
+describe('a write naming a REPUBLISHED sentence (user-decided 2026-10-13)', () => {
+  // "They need to have an instant reload when there's a new sentence": a page still on the
+  // retired revision is told so, by its own code — never the 404 of a day with no puzzle —
+  // and nothing is stored against the sentence it shows.
+  it('answers an append PUZZLE_CHANGED and stores nothing', async () => {
+    const handler = makeHandler();
+    await handler(event({ body: body({ guesses: ['ancien'] }) }));
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+
+    handler.republish(CORRECTED);
+    const stale = await handler(event({ body: body({ guesses: ['mer'] }) }));
+    expect(stale.statusCode).toBe(409);
+    expect(JSON.parse(stale.body).error).toBe(PUZZLE_CHANGED);
+
+    // The retired log is untouched: the stale guess was never appended to it.
+    handler.republish(SENTENCE);
+    handler.advance(ROUND_WRITE_MIN_MS + 1);
+    const read = await handler(event({ body: { token: TOKEN, puzzle: PUZZLE } }));
+    expect(parsed(read).guesses).toEqual(['ancien']);
+  });
+
+  it('answers a give-up PUZZLE_CHANGED and gives nothing up', async () => {
+    const handler = makeHandler();
+    await handler(event({ body: body({ guesses: ['ancien'] }) }));
+    handler.republish(CORRECTED);
+    const stale = await handler(event({ body: { token: TOKEN, puzzle: PUZZLE, giveUp: true } }));
+    expect(stale.statusCode).toBe(409);
+    expect(JSON.parse(stale.body).error).toBe(PUZZLE_CHANGED);
+
+    handler.republish(SENTENCE);
+    const read = await handler(event({ body: { token: TOKEN, puzzle: PUZZLE } }));
+    expect(parsed(read).gaveUp).toBeFalsy();
+  });
+
+  it('keeps the 404 for a day with no puzzle at all', async () => {
+    const handler = makeHandler();
+    handler.republish(null);
+    const missing = await handler(event({ body: body({ guesses: ['mer'] }) }));
+    expect(missing.statusCode).toBe(404);
+    expect(JSON.parse(missing.body).error).toBe('not_found');
   });
 });
 

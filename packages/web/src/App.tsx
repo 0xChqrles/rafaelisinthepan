@@ -10,9 +10,11 @@ import {
 } from '@whippin/shared';
 import GameHold, { useHold, type HoldTray } from './components/GameHold';
 import usePuzzle from './hooks/usePuzzle';
+import { puzzleUrl } from './api';
 import useVocab, { type Vocab } from './hooks/useVocab';
 import useRoundSync from './hooks/useRoundSync';
 import { retryRoundSync } from './state/roundSync';
+import { useSentenceWatch } from './state/sentenceWatch';
 import { roundOnScreen, type RoundOnScreen } from './game/roundOnScreen';
 import { freshHolesFor, replayHoles } from './game/scoring';
 import { playLogFor } from './game/playLog';
@@ -376,6 +378,13 @@ function GameRoute({
     puzzle
       ? { roundKey, lang, date: puzzleAddress(ref), previewCode, revision: puzzle.revision, ranks: puzzle.ranks }
       : null,
+  );
+  // A NEW SENTENCE published for the puzzle on screen reloads the page onto it (user-decided
+  // 2026-10-13, `state/sentenceWatch.ts`): asked off the puzzle's own URL, so its
+  // revalidation is the cache entry it was loaded from.
+  useSentenceWatch(
+    puzzle && lang ? puzzleUrl(lang, puzzleAddress(ref), previewCode) : null,
+    puzzle?.revision ?? null,
   );
   const setLastLang = useGameStore((s) => s.setLastLang);
 

@@ -318,6 +318,10 @@
       components/Avatar.tsx   a stored avatar rendered as SVG (editor preview + #190 board rows);
                               the tracer + the assigned identity are @whippin/shared's since 2026-08-20
       versionCheck.ts         stale-tab reload: __BUILD_ID__ vs /version.json on visibility flips
+      state/sentenceWatch.ts  a NEW SENTENCE reloads the page (root AGENTS.md): the puzzle's URL
+                              revalidated against its ETag (on screen, every minute, on coming
+                              back), and `notePuzzleChanged`, which `roundSync` calls when a write
+                              is answered `puzzle_changed`
       linkPreviews.ts         what a shared link unfurls as: the home card, and the tutorial's list
                               and every ready level, each BUILT as a page of its own (vite.config.ts
                               `link-previews`), served under its route by infra's SPA fallback

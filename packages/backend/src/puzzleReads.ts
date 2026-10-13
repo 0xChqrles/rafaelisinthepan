@@ -48,16 +48,20 @@ function heldFor(store: PuzzleStore): Map<string, Puzzle> {
 // neither depends on the other, so the GET hides inside a round trip already being paid for.
 //
 // `revision` is the published VERSION the caller is playing. A stored slice describing
-// another one is not this caller's to derive against, and answers null — the day-addressed
-// 404 the route already has for a puzzle it cannot read.
+// another one is not this caller's to derive against: it answers RETIRED — the sentence was
+// republished, and the route says so (`PUZZLE_CHANGED`) so the page reloads onto the new one.
+// No slice at all is null, the day-addressed 404.
+export const RETIRED = 'retired';
+
 export async function loadSlice(
   store: PuzzleStore,
   date: string,
   lang: string,
   revision: string,
-): Promise<PuzzleSlice | null> {
+): Promise<PuzzleSlice | typeof RETIRED | null> {
   const slice = await store.getSlice(date, lang);
-  return slice && slice.revision === revision ? slice : null;
+  if (!slice) return null;
+  return slice.revision === revision ? slice : RETIRED;
 }
 
 // The FULL artifact of the published `revision` — what the SCORE needs, because it counts

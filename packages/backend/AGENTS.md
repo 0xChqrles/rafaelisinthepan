@@ -495,7 +495,9 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   depends on the other, so the slice fetch hides inside a round trip already being paid for —
   derives from *(stored log + batch)*, and hands the two values to `append`, which writes
   them in its own mutation and carries `attribute_not_exists(#solved)` (beside the give-up's
-  `attribute_not_exists(#gave)`) as a freeze clause of the condition it already sends. A missing slice is the day-addressed 404; the READ path
+  `attribute_not_exists(#gave)`) as a freeze clause of the condition it already sends. A missing slice is the day-addressed 404, and a
+  slice published for ANOTHER revision is 409 `puzzle_changed` (`loadSlice`'s `RETIRED`; the
+  give-up reads the slice for that one answer too); the READ path
   loads none, so a mount read stays as cheap as it was. After the append, `settleAppend`
   re-derives from the RETURNED log and, on a disagreement, calls `roundStore.settle` behind
   a small bounded RETRY (it is the last chance to record a solve). That write is MONOTONIC
