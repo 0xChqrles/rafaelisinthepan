@@ -13,13 +13,14 @@
 // sentence reloads a page in play too: what is being played there is no longer kept.
 //
 // It reloads only on a revision it has READ and that differs from the one on screen, so an
-// answer it cannot read (offline, a response with no ETag) never reloads anything; and the
-// new sentence is fetched whole first, into the HTTP cache the reloaded page reads (asked
-// fresh once more there, `takeFreshPuzzle`, should a browser not have kept it).
+// answer it cannot read (offline, a response with no ETag) never reloads anything — nor onto
+// the revision this tab just reloaded AWAY from, which an edge whose invalidation lags may
+// still serve for a moment. The new sentence is fetched whole first, into the HTTP cache the
+// reloaded page reads; a body that could not be read in time still reloads, and the reloaded
+// page's first fetch then asks the CDN again (`takeFreshPuzzle`).
 
 import { useEffect } from 'react';
 import { etagRevision } from '@whippin/shared';
-import { timeoutSignal } from '../timeout';
 
 export const CHECK_MS = 60_000;
 // After PUZZLE_CHANGED the store already holds the new sentence, and the CDN may still serve
@@ -27,22 +28,34 @@ export const CHECK_MS = 60_000;
 // many times, before falling back to the minute.
 export const RETRY_MS = 10_000;
 export const RETRIES = 6;
+// The answer's HEADERS must come within DEADLINE_MS; the new sentence's body (a few hundred
+// KB) gets BODY_DEADLINE_MS more, so a slow line still reloads rather than re-downloading it
+// on every check.
 const DEADLINE_MS = 10_000;
+const BODY_DEADLINE_MS = 60_000;
 // One reload per RELOAD_GAP_MS at most, so an edge still answering the retired sentence after
 // another has answered the new one cannot spin the page.
 export const RELOAD_GAP_MS = 30_000;
 const RELOADED_AT = 'whippin-sentence-reloaded';
 const FRESH_PUZZLE = 'whippin-sentence-fresh';
+// `<url> <revision>`: the sentence this tab last reloaded away from.
+const LEFT = 'whippin-sentence-left';
 
 export type SentenceAnswer = 'same' | 'changed' | 'unknown';
 
 // What one answer says of the sentence on screen. A 304 reaches `fetch` as the cached 200,
 // carrying the cached ETag; anything else — a failure, a day gone, no validator — says
-// nothing.
-export function readAnswer(status: number, etag: string | null, revision: string): SentenceAnswer {
+// nothing. `left` is the revision this tab reloaded away from: an edge still serving it is
+// behind, never a newer sentence.
+export function readAnswer(
+  status: number,
+  etag: string | null,
+  revision: string,
+  left: string | null = null,
+): SentenceAnswer {
   if (status !== 200) return 'unknown';
   const published = etagRevision(etag);
-  if (!published) return 'unknown';
+  if (!published || published === left) return 'unknown';
   return published === revision ? 'same' : 'changed';
 }
 
@@ -66,27 +79,64 @@ let retries = 0;
 let asking = false;
 let listening = false;
 
-async function ask(target: Watched): Promise<SentenceAnswer> {
+// The revision this tab last reloaded away from at `url`, if any.
+function leftRevision(url: string): string | null {
   try {
-    const response = await fetch(target.url, { cache: 'no-cache', signal: timeoutSignal(DEADLINE_MS) });
-    const answer = readAnswer(response.status, response.headers.get('ETag'), target.revision);
-    // The new sentence is read WHOLE, so the reload finds it in the cache; any other body is
-    // dropped unread.
-    if (answer === 'changed') await response.arrayBuffer();
-    else await response.body?.cancel();
-    return answer;
+    const left = sessionStore()?.getItem(LEFT) ?? '';
+    const space = left.lastIndexOf(' ');
+    return space > 0 && left.slice(0, space) === url ? left.slice(space + 1) : null;
   } catch {
-    return 'unknown';
+    return null;
   }
 }
 
-function reload(url: string): boolean {
+interface Asked {
+  answer: SentenceAnswer;
+  // Whether the new sentence's body is in the HTTP cache (read whole), on 'changed'.
+  stored: boolean;
+}
+
+async function ask(target: Watched): Promise<Asked> {
+  // A deadline of its own (never `AbortSignal.timeout()`, `timeout.ts`), re-armed for the body.
+  const controller = new AbortController();
+  let deadline = setTimeout(() => controller.abort(), DEADLINE_MS);
+  try {
+    const response = await fetch(target.url, { cache: 'no-cache', signal: controller.signal });
+    clearTimeout(deadline);
+    const answer = readAnswer(
+      response.status,
+      response.headers.get('ETag'),
+      target.revision,
+      leftRevision(target.url),
+    );
+    if (answer !== 'changed') {
+      await response.body?.cancel();
+      return { answer, stored: false };
+    }
+    // The new sentence is read WHOLE, so the reload finds it in the cache.
+    deadline = setTimeout(() => controller.abort(), BODY_DEADLINE_MS);
+    try {
+      await response.arrayBuffer();
+      return { answer, stored: true };
+    } catch {
+      return { answer, stored: false };
+    }
+  } catch {
+    return { answer: 'unknown', stored: false };
+  } finally {
+    clearTimeout(deadline);
+  }
+}
+
+function reload(target: Watched, stored: boolean): boolean {
   const store = sessionStore();
   try {
     const last = Number(store?.getItem(RELOADED_AT) ?? 0);
     if (Date.now() - last < RELOAD_GAP_MS) return false;
     store?.setItem(RELOADED_AT, String(Date.now()));
-    store?.setItem(FRESH_PUZZLE, url);
+    store?.setItem(LEFT, `${target.url} ${target.revision}`);
+    if (stored) store?.removeItem(FRESH_PUZZLE);
+    else store?.setItem(FRESH_PUZZLE, target.url);
   } catch {
     // Storage that cannot be written cannot bound the reloads; the one asked for still goes.
   }
@@ -106,14 +156,21 @@ function schedule(ms: number): void {
 
 async function tick(): Promise<void> {
   timer = null;
+  // The ask in flight schedules the next one when it lands.
+  if (asking) return;
   const target = watched;
   // A page out of view asks nothing; coming back into view asks at once.
-  if (!target || asking || document.visibilityState !== 'visible') return;
+  if (!target || document.visibilityState !== 'visible') return;
   asking = true;
-  const answer = await ask(target);
+  const { answer, stored } = await ask(target);
   asking = false;
-  if (watched !== target) return;
-  if (answer === 'changed' && reload(target.url)) return;
+  if (watched !== target) {
+    // Another sentence came on screen meanwhile (its own first ask bailed on this one):
+    // ask about it now.
+    if (watched) schedule(0);
+    return;
+  }
+  if (answer === 'changed' && reload(target, stored)) return;
   if (retries > 0) {
     retries -= 1;
     schedule(RETRY_MS);

@@ -149,9 +149,12 @@ function ok(guesses: string[], solved = false, credited?: boolean) {
 // carries an empty `createdAt`, which is what tells "refused an existing round" from
 // "refused before creating one".
 function refusal(status: number, guesses: string[], error?: string, solved = false, gaveUp = false) {
-  return {
+  const response = {
     ok: false,
     status,
+    // A real Response can be read once and CLONED: the engine peeks at a 409's code off a
+    // clone (`republished`) before the answer's own handling reads it.
+    clone: () => response,
     json: async () => ({
       error: error ?? (status === 409 ? 'round_full' : 'too_fast'),
       message: 'refused',
@@ -161,7 +164,8 @@ function refusal(status: number, guesses: string[], error?: string, solved = fal
       createdAt: guesses.length === 0 ? '' : '2026-08-21T09:00:00.000Z',
       now: '2026-08-21T09:30:00.000Z',
     }),
-  } as unknown as Response;
+  };
+  return response as unknown as Response;
 }
 
 function status(code: number) {

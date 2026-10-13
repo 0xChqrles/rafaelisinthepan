@@ -71,6 +71,8 @@ afterEach(() => {
 describe('what an answer says of the sentence on screen', () => {
   it('reads the revision off the ETag, and nothing off an answer it cannot read', () => {
     expect(readAnswer(200, `"${SHOWN}"`, SHOWN)).toBe('same');
+    // The revision this tab reloaded away from is a lagging edge, never a newer sentence.
+    expect(readAnswer(200, `"${SHOWN}"`, NEW, SHOWN)).toBe('unknown');
     expect(readAnswer(200, `W/"${NEW}"`, SHOWN)).toBe('changed');
     expect(readAnswer(200, null, SHOWN)).toBe('unknown');
     expect(readAnswer(404, `"${NEW}"`, SHOWN)).toBe('unknown');
@@ -79,7 +81,7 @@ describe('what an answer says of the sentence on screen', () => {
 });
 
 describe('the watch', () => {
-  it('reloads onto a new sentence, fetched whole first, and asks the CDN again after', async () => {
+  it('reloads onto a new sentence, fetched whole first into the cache the reload reads', async () => {
     const h = harness();
     const changed = answer(200, `"${NEW}"`);
     h.fetch.mockResolvedValueOnce(changed);
@@ -87,6 +89,18 @@ describe('the watch', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(h.fetch).toHaveBeenCalledWith(URL, expect.objectContaining({ cache: 'no-cache' }));
     expect(changed.arrayBuffer).toHaveBeenCalled();
+    expect(h.reload).toHaveBeenCalledTimes(1);
+    // Stored whole: the reloaded page reads it from the cache, no second ask.
+    expect(takeFreshPuzzle(URL)).toBe(false);
+  });
+
+  it('still reloads when the new sentence cannot be read in time, and the reload asks again', async () => {
+    const h = harness();
+    const changed = answer(200, `"${NEW}"`);
+    vi.mocked(changed.arrayBuffer).mockRejectedValueOnce(new Error('aborted'));
+    h.fetch.mockResolvedValueOnce(changed);
+    watchSentence(URL, SHOWN);
+    await vi.advanceTimersByTimeAsync(0);
     expect(h.reload).toHaveBeenCalledTimes(1);
     // The reloaded page's first fetch of that URL revalidates, once.
     expect(takeFreshPuzzle(URL)).toBe(true);
@@ -141,14 +155,55 @@ describe('the watch', () => {
     expect(h.reload).toHaveBeenCalledTimes(1);
   });
 
-  it('reloads at most once per gap, so an edge still on the old sentence cannot spin the page', async () => {
+  it('reloads at most once per gap, across the reload itself', async () => {
     const h = harness();
+    const OTHER = 'c3d4e5f607182930';
     h.fetch.mockResolvedValue(answer(200, `"${NEW}"`));
     watchSentence(URL, SHOWN);
     await vi.advanceTimersByTimeAsync(0);
     expect(h.reload).toHaveBeenCalledTimes(1);
-    // The reload did not take (the test's page stays): the next ask inside the gap holds.
-    await vi.advanceTimersByTimeAsync(RELOAD_GAP_MS - 1);
+
+    // The RELOADED page (module state gone, the tab's storage kept) still finds another
+    // revision — the edge moved on again: inside the gap it holds…
+    resetSentenceWatch();
+    h.fetch.mockResolvedValue(answer(200, `"${OTHER}"`));
+    watchSentence(URL, NEW);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.reload).toHaveBeenCalledTimes(1);
+    // …and past it, the next minute's ask reloads.
+    await vi.advanceTimersByTimeAsync(CHECK_MS);
+    expect(h.reload).toHaveBeenCalledTimes(2);
+  });
+
+  it('never reloads back onto the sentence it just left, which a lagging edge may still serve', async () => {
+    const h = harness();
+    h.fetch.mockResolvedValueOnce(answer(200, `"${NEW}"`));
+    watchSentence(URL, SHOWN);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.reload).toHaveBeenCalledTimes(1);
+
+    resetSentenceWatch();
+    h.fetch.mockResolvedValue(answer(200, `"${SHOWN}"`));
+    watchSentence(URL, NEW);
+    await vi.advanceTimersByTimeAsync(RELOAD_GAP_MS + CHECK_MS * 2);
+    expect(h.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks about the sentence now on screen when it changed during an ask', async () => {
+    const h = harness();
+    const B = 'https://api.test/?lang=fr&date=2026-10-12';
+    let land: (r: Response) => void = () => {};
+    h.fetch.mockImplementationOnce(() => new Promise<Response>((resolve) => (land = resolve)));
+    const stop = watchSentence(URL, SHOWN);
+    await vi.advanceTimersByTimeAsync(0);
+    // A's ask is in flight; the player moves to day B.
+    stop();
+    h.fetch.mockResolvedValue(answer(200, `"${NEW}"`));
+    watchSentence(B, SHOWN);
+    await vi.advanceTimersByTimeAsync(0);
+    land(answer(200, `"${SHOWN}"`));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.fetch).toHaveBeenLastCalledWith(B, expect.anything());
     expect(h.reload).toHaveBeenCalledTimes(1);
   });
 
