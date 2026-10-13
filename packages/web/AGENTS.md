@@ -321,7 +321,8 @@
       state/sentenceWatch.ts  a NEW SENTENCE reloads the page (root AGENTS.md): the puzzle's URL
                               revalidated against its ETag (on screen, every minute, on coming
                               back), and `notePuzzleChanged`, which `roundSync` calls when a write
-                              is answered `puzzle_changed`
+                              is answered `puzzle_changed`; a round already over (`noteRoundOver`)
+                              is reloaded only on the next hide or return
       linkPreviews.ts         what a shared link unfurls as: the home card, and the tutorial's list
                               and every ready level, each BUILT as a page of its own (vite.config.ts
                               `link-previews`), served under its route by infra's SPA fallback

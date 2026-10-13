@@ -7,6 +7,7 @@ import {
   CHECK_MS,
   RELOAD_GAP_MS,
   RETRY_MS,
+  noteRoundOver,
   notePuzzleChanged,
   readAnswer,
   resetSentenceWatch,
@@ -205,6 +206,53 @@ describe('the watch', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(h.fetch).toHaveBeenLastCalledWith(B, expect.anything());
     expect(h.reload).toHaveBeenCalledTimes(1);
+  });
+
+  // User-decided 2026-10-13: a round already over keeps its result on screen; the reload
+  // waits until the player looks away (or comes back).
+  it('holds the reload of a round already over until the tab is hidden', async () => {
+    const h = harness();
+    h.fetch.mockResolvedValue(answer(200, `"${NEW}"`));
+    watchSentence(URL, SHOWN);
+    noteRoundOver(true);
+    await vi.advanceTimersByTimeAsync(CHECK_MS * 3);
+    expect(h.reload).not.toHaveBeenCalled();
+    // Found once, then nothing more to ask.
+    expect(h.fetch).toHaveBeenCalledTimes(1);
+    h.flip('hidden');
+    expect(h.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('spends a held reload on the tab\'s return too', async () => {
+    const h = harness();
+    h.fetch.mockResolvedValue(answer(200, `"${NEW}"`));
+    watchSentence(URL, SHOWN);
+    noteRoundOver(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.reload).not.toHaveBeenCalled();
+    // A return without a hide first (a bfcache restore, a focus the page missed).
+    h.flip('visible');
+    expect(h.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads a round still being played at once', async () => {
+    const h = harness();
+    h.fetch.mockResolvedValue(answer(200, `"${NEW}"`));
+    watchSentence(URL, SHOWN);
+    noteRoundOver(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a held reload when the sentence leaves the screen', async () => {
+    const h = harness();
+    h.fetch.mockResolvedValue(answer(200, `"${NEW}"`));
+    const stop = watchSentence(URL, SHOWN);
+    noteRoundOver(true);
+    await vi.advanceTimersByTimeAsync(0);
+    stop();
+    h.flip('hidden');
+    expect(h.reload).not.toHaveBeenCalled();
   });
 
   it('stops when the sentence leaves the screen', async () => {

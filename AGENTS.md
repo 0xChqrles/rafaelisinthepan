@@ -448,8 +448,11 @@ The live routes then share:
   new one (`web/state/sentenceWatch.ts`) the moment it learns of it: a `/round` write answered
   `puzzle_changed` (a player guessing reloads within a guess), or its own revalidation of the
   puzzle's URL reading another ETag — asked when the round comes on screen, every minute while
-  the page is seen, and on coming back into view. It reloads a page in play too (what is played
-  there is no longer kept — unlike a new BUILD, which never yanks a visible player); only on a
+  the page is seen, and on coming back into view. It reloads a round still IN PLAY at once
+  (what is played there is no longer kept — unlike a new BUILD, which never yanks a visible
+  player); a round already OVER (solved, given up, capped — the round on screen, App's `over`)
+  keeps its result on screen and is reloaded the moment the tab is hidden, or on its return
+  (user-decided the same day: a share or a group being named is not taken away); only on a
   revision it has READ that differs from the one shown, never back onto the revision the tab
   just reloaded away from (an edge whose invalidation lags may still serve it); at most once
   per 30s; the new sentence fetched whole first into the cache the reload reads (a body that

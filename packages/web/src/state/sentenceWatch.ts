@@ -10,7 +10,11 @@
 //     (its revision, shared `sentenceVersion.ts`), which the CDN answers 304 for an unchanged
 //     sentence — a header, never the puzzle again.
 // Unlike a new BUILD (`versionCheck.ts`, which never yanks a visibly active player), a new
-// sentence reloads a page in play too: what is being played there is no longer kept.
+// sentence reloads a page IN PLAY at once: what is being played there is no longer kept. A
+// round already OVER (solved, given up, capped) loses nothing by waiting, and has a result on
+// screen — a share, a group being named — so its reload is HELD until the player looks away
+// or comes back (user-decided 2026-10-13): spent the moment the tab is hidden, or on its
+// return.
 //
 // It reloads only on a revision it has READ and that differs from the one on screen, so an
 // answer it cannot read (offline, a response with no ETag) never reloads anything — nor onto
@@ -74,6 +78,10 @@ interface Watched {
 }
 
 let watched: Watched | null = null;
+// Whether the round on screen is over (`useSentenceWatch`'s `over`).
+let over = false;
+// A reload found while the round was over, held for the next hide or return.
+let held: { target: Watched; stored: boolean } | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let retries = 0;
 let asking = false;
@@ -170,7 +178,14 @@ async function tick(): Promise<void> {
     if (watched) schedule(0);
     return;
   }
-  if (answer === 'changed' && reload(target, stored)) return;
+  if (answer === 'changed') {
+    if (over) {
+      // Nothing more to learn: the reload waits for the next hide or return.
+      held = { target, stored };
+      return;
+    }
+    if (reload(target, stored)) return;
+  }
   if (retries > 0) {
     retries -= 1;
     schedule(RETRY_MS);
@@ -179,9 +194,21 @@ async function tick(): Promise<void> {
   }
 }
 
+// The held reload, spent: a reload refused by the gap leaves the watch asking as before.
+function spendHeld(): void {
+  const owed = held;
+  held = null;
+  if (owed && watched === owed.target && !reload(owed.target, owed.stored)) schedule(CHECK_MS);
+}
+
 function onShown(event?: Event): void {
   // A pageshow counts only as a bfcache restore; the first load is the watch's own start.
   if (event && 'persisted' in event && !(event as PageTransitionEvent).persisted) return;
+  if (held) {
+    // Looking away, or coming back: either way nobody is reading the result any more.
+    spendHeld();
+    return;
+  }
   if (document.visibilityState === 'visible') {
     if (watched) schedule(0);
   } else {
@@ -214,12 +241,20 @@ export function watchSentence(url: string, revision: string): () => void {
   return () => {
     if (watched !== target) return;
     watched = null;
+    held = null;
     clear();
   };
 }
 
-export function useSentenceWatch(url: string | null, revision: string | null): void {
+// Whether the round on screen is OVER: a new sentence found then waits for the next hide or
+// return instead of reloading the result away.
+export function noteRoundOver(value: boolean): void {
+  over = value;
+}
+
+export function useSentenceWatch(url: string | null, revision: string | null, roundOver: boolean): void {
   useEffect(() => (url && revision ? watchSentence(url, revision) : undefined), [url, revision]);
+  useEffect(() => noteRoundOver(roundOver), [roundOver]);
 }
 
 // Whether the page was reloaded onto a new sentence at `url`: its first fetch of that URL
@@ -238,6 +273,8 @@ export function takeFreshPuzzle(url: string): boolean {
 // TEST-ONLY: forget everything between tests.
 export function resetSentenceWatch(): void {
   watched = null;
+  over = false;
+  held = null;
   clear();
   retries = 0;
   asking = false;

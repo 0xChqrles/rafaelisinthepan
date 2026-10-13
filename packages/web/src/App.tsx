@@ -379,13 +379,6 @@ function GameRoute({
       ? { roundKey, lang, date: puzzleAddress(ref), previewCode, revision: puzzle.revision, ranks: puzzle.ranks }
       : null,
   );
-  // A NEW SENTENCE published for the puzzle on screen reloads the page onto it (user-decided
-  // 2026-10-13, `state/sentenceWatch.ts`): asked off the puzzle's own URL, so its
-  // revalidation is the cache entry it was loaded from.
-  useSentenceWatch(
-    puzzle && lang ? puzzleUrl(lang, puzzleAddress(ref), previewCode) : null,
-    puzzle?.revision ?? null,
-  );
   const setLastLang = useGameStore((s) => s.setLastLang);
 
   // Whether the day on screen IS the active game day RIGHT NOW — the header's question (the
@@ -457,6 +450,15 @@ function GameRoute({
   // A day already over hands over to its RESULT on bare ground: the hold goes at once rather
   // than showing through the card as it comes in.
   const over = shown !== null && (shown.server.solved || roundEnded(shown.server));
+  // A NEW SENTENCE published for the puzzle on screen reloads the page onto it (user-decided
+  // 2026-10-13, `state/sentenceWatch.ts`): asked off the puzzle's own URL, so its
+  // revalidation is the cache entry it was loaded from; a round already OVER is reloaded only
+  // once the player looks away or back, never under the result they are reading.
+  useSentenceWatch(
+    puzzle && lang ? puzzleUrl(lang, puzzleAddress(ref), previewCode) : null,
+    puzzle?.revision ?? null,
+    over,
+  );
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
   useEffect(() => {
