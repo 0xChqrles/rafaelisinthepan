@@ -171,7 +171,8 @@ is applied only to the player's raw keystrokes.
   single-word artifact ranks by the static embedding; a SENTENCE puzzle (BY DEFAULT: French
   since 2026-09-20, English since #317, 2026-09-25 — each language asked in its own words;
   `--static` opts out) keeps the static walk as retrieval and ORDERS its `TOP_K` groups by
-  the sense the sentence gives the secret, judged by TypeSafe's hosted Jev model (one
+  the secret's dictionary sense the sentence uses — the sentence only picks WHICH sense
+  (user-decided 2026-10-13), never what it compares the word to — judged by TypeSafe's hosted Jev model (one
   Score per candidate, then a pairwise round-robin over the front; `dq` from the judge's
   geometry; no blend). Same groups, same keys rule, same schema — the web and the
   backend cannot tell a contextual map from a static one, and a puzzle carries no model

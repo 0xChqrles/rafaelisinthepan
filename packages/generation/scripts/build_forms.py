@@ -1150,6 +1150,16 @@ def complete_adjectives(lexemes):
 VARCON_CATEGORIES = frozenset("ABZ")
 VARCON_LEVELS = frozenset({"", ".", "v"})
 _VARCON_TAG = re.compile(r"^(?P<cat>[ABZCD_])(?P<level>[.vV\-x]?)$")
+# The sense-restricted VarCon entries whose spellings are ONE word whatever the sense
+# (user-decided 2026-10-13: « whisky » typed for « whiskey » must find the hole), named by
+# the entry's header word: every line of the entry joins. Every other sense-restricted
+# entry stays apart, one of its spellings being another word too (check/cheque,
+# tire/tyre, story/storey, draft/draught, meter/metre, curb/kerb, mom/mum, …).
+VARCON_SENSE_JOINS = frozenset({
+    "analog", "blond", "dialogue", "disk", "formulas", "grams", "hurrah", "lupine",
+    "naught", "program", "sheik", "teasel", "whiskey",
+})
+_VARCON_ENTRY = re.compile(r"^# (\S+) [<(]")
 
 
 def read_varcon(text, token_re):
@@ -1157,7 +1167,8 @@ def read_varcon(text, token_re):
 
     Only PURE spelling lines join spellings: a line whose annotation restricts it to a
     sense («check / cheque | bank», «prize / prise | otherwise», «| :1», «(-)») would
-    fuse two words, so it is skipped; a part-of-speech tag («practice / practise |
+    fuse two words, so it is skipped — unless its entry (the `# word` header above it)
+    is one of VARCON_SENSE_JOINS; a part-of-speech tag («practice / practise |
     <V>») or a note («-- pl») restricts nothing and is kept. Variant sets are closed
     transitively (one spelling in two lines is one word)."""
     parent = {}
@@ -1169,8 +1180,12 @@ def read_varcon(text, token_re):
             w = parent[w]
         return w
 
-    stats = {"lines": 0, "joined": 0, "sense": 0}
+    stats = {"lines": 0, "joined": 0, "sense": 0, "sense_joined": 0}
+    heading = None  # the entry the line belongs to: its `# word` header
     for raw in text.splitlines():
+        head = _VARCON_ENTRY.match(raw)
+        if head:
+            heading = head[1]
         line = raw.split(" #", 1)[0].rstrip()
         if not line or line.startswith("#"):
             continue
@@ -1180,8 +1195,10 @@ def read_varcon(text, token_re):
                    or all(t.startswith("<") and t.endswith(">") for t in part.split())
                    for part in notes.split(" | ")) if notes else True
         if not pure:
-            stats["sense"] += 1
-            continue
+            if heading not in VARCON_SENSE_JOINS:
+                stats["sense"] += 1
+                continue
+            stats["sense_joined"] += 1
         spellings = []
         for entry in body.split(" / "):
             tags, sep, word = entry.partition(": ")
@@ -1366,7 +1383,8 @@ EXPECTED_INVENTORY_CELLS_EN = (
 )
 # Homography stays derivable, and the cleanup's wrong attachments stay gone: «parsed»
 # is parse's, never a guessed «pars V?»'s; «lowest» is low's, never «lowe A?»'s; a
-# sense-restricted VarCon pair (cheque | bank, tyre | wheel) never joins the word.
+# sense-restricted VarCon pair (cheque | bank, tyre | wheel) never joins the word —
+# unless its entry is named one word (VARCON_SENSE_JOINS: whisky | drink).
 EXPECTED_SURFACE_LEXEMES_EN = (
     ("leaves", frozenset({"leaf:nc", "leave:nc"})),
     ("saw", frozenset({"saw:nc", "see:nc"})),
@@ -1376,6 +1394,7 @@ EXPECTED_SURFACE_LEXEMES_EN = (
     ("lowest", frozenset({"low:adj"})),
     ("cheque", frozenset({"cheque:nc"})),
     ("tyre", frozenset({"tyre:nc"})),
+    ("whisky", frozenset({"whiskey:nc"})),
     # «<» guesses are gone, and an agent noun AGID filed as a comparative («stone A:
     # stoner») no longer outranks the real word's guessed entry
     ("believes", frozenset({"believe:v"})),
@@ -1392,14 +1411,15 @@ EXPECTED_MERGE_STATS_EN = {
     "guessed_entries_dropped": 1_862,
     "guessed_rows_dropped": 1_966,
     "adj_incomplete": 5_032,
-    "varcon_joined": 12_988,
-    "varcon_sense": 589,
-    "variant_forms": 15_623,
-    "twin_groups": 1_870,
-    "twin_entries": 3_757,
+    "varcon_joined": 13_023,
+    "varcon_sense": 516,
+    "varcon_sense_joined": 73,
+    "variant_forms": 15_711,
+    "twin_groups": 1_881,
+    "twin_entries": 3_781,
     "contained_entries": 112,
-    "groups": 84_182,
-    "rows": 245_654,
+    "groups": 84_172,
+    "rows": 245_742,
 }
 
 
@@ -1697,7 +1717,8 @@ def report_english(stats, lic_path, out_path):
           f"retirées ; adjectifs sans leurs deux degrés : {stats['adj_incomplete']:,}",
           file=sys.stderr)
     print(f"VarCon : {stats['varcon_joined']:,} ligne(s) de graphies jointes, "
-          f"{stats['varcon_sense']:,} restreinte(s) à un sens écartée(s), plus grande "
+          f"{stats['varcon_sense']:,} restreinte(s) à un sens écartée(s) "
+          f"({stats['varcon_sense_joined']:,} jointe(s) : un seul mot, VARCON_SENSE_JOINS), plus grande "
           f"classe {stats['varcon_largest']} ; {stats['variant_forms']:,} forme(s) "
           f"ajoutée(s) aux cellules", file=sys.stderr)
     print(f"Fusion : {stats['twin_groups']:,} groupe(s) de formes identiques "

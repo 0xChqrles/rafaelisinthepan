@@ -1,13 +1,17 @@
 """Contextual reranking of a hole's static candidates with a hosted judge (#308).
 
 The static embedding retrieves a hole's TOP_K word groups (gen_phrase's walk); this
-module orders THEM by the sense the sentence gives the secret, with TypeSafe's Jev
-model as the judge, in two passes:
+module orders THEM by the secret's sense the sentence uses, with TypeSafe's Jev
+model as the judge, in two passes. The sentence only says WHICH dictionary sense
+(user-decided 2026-10-13): it picks between homonyms (« vol ») and a verb's uses
+(« traiter »), and a word of one sense keeps it — what the sentence compares the word
+to, says of it or does with it counts for nothing (« les chats errants de la
+société » are still cats: « célibataire » is no neighbour of « chats »).
 
   pass 1  one independent Score per candidate — the shared state carries the
           sentence, the secret, the excerpt around the line and the rubric; each
           question names one candidate lemma and rates its proximity of SENSE to
-          the secret AS USED in the sentence, on the rubric's levels (0..4). Grammar,
+          the secret in that sense, on the rubric's levels (0..4). Grammar,
           agreement and the ability to replace the secret in the sentence are
           explicitly excluded (the cloze guard), and so is a candidate's presence
           in the sentence (the leak guard). The result is a coarse global order.
@@ -147,39 +151,46 @@ class Language:
 FRENCH = Language(
     code="fr",
     name="français",
-    rubric=2,
+    rubric=3,
     keys={"sentence": "phrase", "secret": "secret", "lexeme": "lexeme_secret",
           "before": "avant", "after": "apres", "candidates": "candidats",
           "rubric": "consigne", "variants": "variantes", "words": "mots",
           "sentences": "phrases", "blanked": "phrase_a_trou", "word": "mot"},
     score_instructions=(
         "Dans la phrase `phrase`, le mot secret `secret` (lexème `lexeme_secret`) est employé "
-        "dans un sens précis. Juge la proximité de SENS entre le candidat indiqué et le mot "
-        "secret TEL QU'IL EST EMPLOYÉ dans la phrase. Ne tiens aucun compte de la grammaire : "
-        "genre, nombre, conjugaison, catégorie grammaticale, ou le fait que le candidat puisse "
-        "ou non remplacer le secret dans la phrase. Une ressemblance d'orthographe sans lien de "
-        "sens ne compte pas. Seul le sens compte. Le sens à retenir est celui, éventuellement "
-        "ironique ou paradoxal, que la phrase (et le contexte `avant` / `apres` s'il est donné) "
-        "donne au mot secret. Un candidat qui figure dans la phrase, ou qui décrit ce que la "
-        "phrase FAIT du mot secret (par exemple l'étouffer, le cacher, le perdre), n'est pas "
-        "plus proche pour autant : juge uniquement la parenté de sens entre les deux mots. "
-        "Un candidat qui n'est pas un mot français (anglais, italien, latin...) est au niveau "
-        "le plus bas."),
+        "dans l'un de ses sens. La phrase (et le contexte `avant` / `apres` s'il est donné) "
+        "sert UNIQUEMENT à dire lequel : si le mot a plusieurs sens (homonymes, verbe aux "
+        "emplois différents), retiens celui que la phrase emploie ; s'il n'en a qu'un, c'est "
+        "celui-là. Juge la proximité de SENS entre le "
+        "candidat indiqué et le mot secret dans ce sens, tel qu'un dictionnaire le définit. Ce "
+        "que la phrase dit du mot, ce à quoi elle le compare (une image, une métaphore, une "
+        "ironie) et ce qu'elle en fait ne comptent pas : un candidat qui désigne ce que "
+        "l'image représente, qui figure dans la phrase, ou qui décrit ce que la phrase fait du "
+        "mot (par exemple l'étouffer, le cacher, le perdre) n'est pas plus proche pour autant. "
+        "Ne tiens aucun compte de la grammaire : genre, nombre, conjugaison, catégorie "
+        "grammaticale, ou le fait que le candidat puisse ou non remplacer le secret dans la "
+        "phrase. Une ressemblance d'orthographe sans lien de sens ne compte pas. Un candidat "
+        "qui n'est pas un mot français (anglais, italien, latin...) est au niveau le plus bas."),
     score_levels=(
-        "Aucun rapport de sens avec le mot secret tel qu'employé dans la phrase",
+        "Aucun rapport de sens avec le mot secret dans ce sens",
         "Rapport lointain : même domaine très général, ou association vague",
         "Lié : même champ lexical, idée voisine, ou souvent associé au mot secret dans ce sens",
         "Très proche : quasi-synonyme, ou la même notion à une nuance près",
-        "Même sens : synonyme direct du mot secret dans ce contexte",
+        "Même sens : synonyme direct du mot secret dans ce sens",
     ),
     score_question="Applique `consigne` au candidat `candidats[{i}]` (« {w} »).",
     pair_instructions=(
         "Dans la phrase `phrase`, le mot secret `secret` (lexème `lexeme_secret`) est employé "
-        "dans un sens précis. Lequel des deux candidats est le plus proche par le SENS du mot "
-        "secret tel qu'il est employé dans la phrase ? Ne tiens aucun compte de la grammaire "
+        "dans l'un de ses sens. La phrase sert UNIQUEMENT à dire lequel : si le mot a "
+        "plusieurs sens, retiens celui que la phrase emploie ; s'il n'en a qu'un, c'est "
+        "celui-là. Lequel des deux candidats est le plus proche par le SENS du mot secret dans "
+        "ce sens, tel qu'un dictionnaire le définit ? Ce que la phrase dit du mot, ce à quoi "
+        "elle le compare (une image, une métaphore, une ironie) et ce qu'elle en fait ne "
+        "comptent pas : un candidat qui désigne ce que l'image représente, ou qui figure dans "
+        "la phrase, n'est pas plus proche pour autant. Ne tiens aucun compte de la grammaire "
         "(genre, nombre, conjugaison, catégorie) ni de la possibilité de remplacer le secret "
-        "dans la phrase ; une ressemblance d'orthographe sans lien de sens ne compte pas. "
-        "Seul le sens compte."),
+        "dans la phrase ; une ressemblance d'orthographe sans lien de sens ne compte pas. Seul "
+        "le sens compte."),
     pair_question="Applique `consigne` à cette paire.",
     quoted="« {} »",
     start_fit=(
@@ -234,40 +245,45 @@ FRENCH = Language(
 ENGLISH = Language(
     code="en",
     name="anglais",
-    rubric=1,
+    rubric=2,
     keys={"sentence": "sentence", "secret": "secret", "lexeme": "secret_lexeme",
           "before": "before", "after": "after", "candidates": "candidates",
           "rubric": "rubric", "variants": "variants", "words": "words",
           "sentences": "sentences", "blanked": "blanked_sentence", "word": "word"},
     score_instructions=(
-        "In the sentence `sentence`, the secret word `secret` (lexeme `secret_lexeme`) is "
-        "used in a precise sense. Judge how close in MEANING the given candidate is to the "
-        "secret word AS IT IS USED in the sentence. Take no account of grammar: number, "
-        "tense, verb form, part of speech, or whether the candidate could replace the "
-        "secret in the sentence. A resemblance in spelling with no link in meaning does not "
-        "count. Only meaning counts. The sense to keep is the one, possibly ironic or "
-        "paradoxical, that the sentence (and the context `before` / `after` when given) "
-        "gives the secret word. A candidate that appears in the sentence, or that describes "
-        "what the sentence DOES to the secret word (for example smothering it, hiding it, "
-        "losing it), is not closer for that: judge only the kinship of meaning between the "
-        "two words. A candidate that is not an English word (French, Italian, Latin...) is "
-        "at the lowest level."),
+        "In the sentence `sentence`, the secret word `secret` (lexeme `secret_lexeme`) is used "
+        "in one of its senses. The sentence (and the context `before` / `after` when given) "
+        "ONLY tells which one: if the word has several senses (homonyms, a verb with different "
+        "uses), keep the one the sentence uses; if it has only one, that is the one. Judge how "
+        "close in MEANING the given candidate is to "
+        "the secret word in that sense, as a dictionary defines it. What the sentence says "
+        "about the word, what it compares it to (an image, a metaphor, irony) and what it does "
+        "with it do not count: a candidate that names what the image stands for, that appears "
+        "in the sentence, or that describes what the sentence DOES to the secret word (for "
+        "example smothering it, hiding it, losing it) is not closer for that. Take no account "
+        "of grammar: number, tense, verb form, part of speech, or whether the candidate could "
+        "replace the secret in the sentence. A resemblance in spelling with no link in meaning "
+        "does not count. A candidate that is not an English word (French, Italian, Latin...) "
+        "is at the lowest level."),
     score_levels=(
-        "No link in meaning with the secret word as it is used in the sentence",
+        "No link in meaning with the secret word in that sense",
         "Distant link: the same very general domain, or a vague association",
-        "Related: the same lexical field, a neighbouring idea, or often associated with "
-        "the secret word in this sense",
+        "Related: the same lexical field, a neighbouring idea, or often associated with the secret word in that sense",
         "Very close: a near-synonym, or the same notion but for a nuance",
-        "Same meaning: a direct synonym of the secret word in this context",
+        "Same meaning: a direct synonym of the secret word in that sense",
     ),
     score_question="Apply `rubric` to the candidate `candidates[{i}]` (“{w}”).",
     pair_instructions=(
-        "In the sentence `sentence`, the secret word `secret` (lexeme `secret_lexeme`) is "
-        "used in a precise sense. Which of the two candidates is closer in MEANING to the "
-        "secret word as it is used in the sentence? Take no account of grammar (number, "
-        "tense, verb form, part of speech) or of whether either could replace the secret in "
-        "the sentence; a resemblance in spelling with no link in meaning does not count. "
-        "Only meaning counts."),
+        "In the sentence `sentence`, the secret word `secret` (lexeme `secret_lexeme`) is used "
+        "in one of its senses. The sentence ONLY tells which one: if the word has several "
+        "senses, keep the one the sentence uses; if it has only one, that is the one. Which of "
+        "the two candidates is closer in MEANING to the secret word in that sense, as a "
+        "dictionary defines it? What the sentence says about the word, what it compares it to "
+        "(an image, a metaphor, irony) and what it does with it do not count: a candidate that "
+        "names what the image stands for, or that appears in the sentence, is not closer for "
+        "that. Take no account of grammar (number, tense, verb form, part of speech) or of "
+        "whether either could replace the secret in the sentence; a resemblance in spelling "
+        "with no link in meaning does not count. Only meaning counts."),
     pair_question="Apply `rubric` to this pair.",
     quoted="“{}”",
     start_fit=(
