@@ -79,7 +79,9 @@
   cache-key values, so an unlisted parameter never reaches the Lambda AND collapses two
   distinct responses onto one year-long edge entry — which local `backend:dev`, having no
   CDN, cannot show. The puzzle endpoint **requires `date`** or `bonus` (400 otherwise) and is served
-  `max-age=300, s-maxage=31536000` (CDN holds it until `puzzle:publish --s3` invalidates);
+  `max-age=300, s-maxage=31536000` (CDN holds it until `puzzle:publish --s3` invalidates),
+  its ETag the puzzle's revision, which the CDN answers a page's revalidation with (a 304 off
+  the cached entry, the origin untouched);
   `/today` (diagnostic) is `no-store`; maxTtl = 365 days.
   **Score collection (#169; per-player rows #187)** lives in this SAME stack: one
   on-demand, AWS-managed-encrypted DynamoDB table (composite string `pk`/`sk`, `expiresAt`

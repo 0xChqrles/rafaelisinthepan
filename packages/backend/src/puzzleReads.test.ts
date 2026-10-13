@@ -13,7 +13,8 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import type { Puzzle } from '@whippin/shared';
-import { HELD_ARTIFACTS, loadCurrentPuzzle, loadPuzzle, loadSlice } from './puzzleReads';
+import { HELD_ARTIFACTS, loadCurrentPuzzle, loadPuzzle, loadSlice, RETIRED } from './puzzleReads';
+import type { PuzzleSlice } from './slice';
 import { buildSlice } from './slice';
 import type { PuzzleStore } from './store';
 
@@ -72,13 +73,15 @@ describe('the slice is read FRESH', () => {
   // sentence, and decisive for `solved`.
   it('sees a correction that moves a rank-0 ALIAS without touching a hole', async () => {
     const before = countingStore(true, 'phare', 0);
-    expect((await loadSlice(before.store, TODAY, 'fr', REV))?.holes.phare.ranks.phares).toBe(0);
+    const read = (await loadSlice(before.store, TODAY, 'fr', REV)) as PuzzleSlice;
+    expect(read.holes.phare.ranks.phares).toBe(0);
 
     // Same sentence, same holes — a NEW published version, so a caller on the old one is
     // refused rather than derived against the corrected maps.
     const after = countingStore(true, 'phare', 1, CORRECTED);
-    expect(await loadSlice(after.store, TODAY, 'fr', REV)).toBeNull();
-    expect((await loadSlice(after.store, TODAY, 'fr', CORRECTED))?.holes.phare.ranks.phares).toBe(1);
+    expect(await loadSlice(after.store, TODAY, 'fr', REV)).toBe(RETIRED);
+    const corrected = (await loadSlice(after.store, TODAY, 'fr', CORRECTED)) as PuzzleSlice;
+    expect(corrected.holes.phare.ranks.phares).toBe(1);
   });
 });
 
@@ -172,11 +175,12 @@ describe('the CURRENT artifact: the slice names the revision', () => {
 describe('the version — is this caller playing the puzzle the store holds?', () => {
   const OTHER = 'c3d4e5f607182930';
 
-  it('answers NULL for a caller on a version the store has replaced', async () => {
-    // The route turns this into the day-addressed 404, which is the honest answer for a
-    // puzzle that is gone.
+  it('answers RETIRED for a caller on a version the store has replaced', async () => {
+    // The route turns this into PUZZLE_CHANGED: the sentence was republished, and the page
+    // reloads onto the new one (user-decided 2026-10-13). The full artifact of a retired
+    // version is simply not this caller's.
     const { store } = countingStore(true, 'lampe', 0, OTHER);
-    expect(await loadSlice(store, TODAY, 'fr', REV)).toBeNull();
+    expect(await loadSlice(store, TODAY, 'fr', REV)).toBe(RETIRED);
     expect(await loadPuzzle(store, TODAY, 'fr', REV)).toBeNull();
     // …and serves the caller who IS on it.
     expect(await loadSlice(store, TODAY, 'fr', OTHER)).toBeTruthy();

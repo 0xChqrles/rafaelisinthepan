@@ -32,6 +32,9 @@
                               and (since #204) currentStreak — the derivation BOTH ends make
     src/bonus.ts              BONUS puzzles (2026-09-24): the seven-digit id, the `bonus/<id>` ADDRESS, the page path, PuzzleRef
     src/preview.ts            DAY PREVIEW links: PREVIEW_QUERY (web+backend+infra), the code's shape, previewPath
+    src/sentenceVersion.ts    a published sentence's VERSION on the wire: PUZZLE_CHANGED (a /round
+                              write naming a retired revision) and the puzzle's ETag (revisionEtag /
+                              etagRevision) — the backend writes both, the web reloads on them
     src/avatar.ts             the #188 avatar: {bg, fg} palettes + the 14-byte 1-bit grid codec (web encodes/renders, backend validates)
     src/avatarOutline.ts      its DRAWING: the filled cells as one union-outline path (web SVG + the OG cards)
     src/assigned.ts           the identity a player who never customized one wears: anonName + defaultAvatar

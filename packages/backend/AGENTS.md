@@ -466,7 +466,8 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   attribute_not_exists(#solved)`, `ReturnValues: ALL_NEW` — answered 200 with the state, and
   idempotent (no clause on `gaveUp` itself). A refusal is classified by one consistent read:
   a SOLVED record of this puzzle is 409 `round_solved` with its state (the solve wins);
-  anything else — no record, a retired puzzle's — is 404 `not_found`. No slice is read, no
+  anything else — no record — is 404 `not_found`. The slice is read only to answer a
+  RETIRED revision 409 `puzzle_changed` (the sentence was republished) before the write; no
   challenge is asked, and `lastWriteAt` is untouched (a give-up is not paced and does not
   pace the next write). `settleAppend` never runs, so it records no score row and credits no
   streak day. The #204 move copies the item whole, so `gaveUp` travels with it.
@@ -495,7 +496,9 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   depends on the other, so the slice fetch hides inside a round trip already being paid for —
   derives from *(stored log + batch)*, and hands the two values to `append`, which writes
   them in its own mutation and carries `attribute_not_exists(#solved)` (beside the give-up's
-  `attribute_not_exists(#gave)`) as a freeze clause of the condition it already sends. A missing slice is the day-addressed 404; the READ path
+  `attribute_not_exists(#gave)`) as a freeze clause of the condition it already sends. A missing slice is the day-addressed 404, and a
+  slice published for ANOTHER revision is 409 `puzzle_changed` (`loadSlice`'s `RETIRED`; the
+  give-up reads the slice for that one answer too); the READ path
   loads none, so a mount read stays as cheap as it was. After the append, `settleAppend`
   re-derives from the RETURNED log and, on a disagreement, calls `roundStore.settle` behind
   a small bounded RETRY (it is the last chance to record a solve). That write is MONOTONIC
@@ -516,7 +519,8 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   complete puzzle content, rank maps included, so an identical republish is a no-op — and
   `loadSlice`/`loadPuzzle` refuse anything that does not name the version the caller sent.
   Publish writes the slice FIRST; the shared revision makes the two-object window fail closed
-  as a 404 rather than mixing their contents. **A corrective write that does not land is not claimed** — `settle` REPORTS whether
+  rather than mixing their contents — a page still on the old revision is answered
+  `puzzle_changed` from the slice's write on, and reloads once the CDN serves the new puzzle. **A corrective write that does not land is not claimed** — `settle` REPORTS whether
   the state it asked for is now the stored one, so a declined condition (a concurrent
   republish) is a verdict rather than a success: the answer carries the state as stored, no
   score row is written, and the client keeps its conversation open. **A missing round is CONFIRMED consistently** before

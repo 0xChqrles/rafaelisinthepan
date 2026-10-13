@@ -241,8 +241,9 @@ async function main() {
     //
     // The window itself is closed by the VERSION both objects carry (#203): a caller names
     // one, and the route derives nothing unless the slice and the artifact both name the
-    // same. Between these two writes it is simply a day-addressed 404 — which the ordering
-    // then keeps as short as it can be.
+    // same. Between these two writes a page on the old revision is answered `puzzle_changed`
+    // and waits for the new puzzle before it reloads — which the ordering keeps as short as
+    // it can be.
     await client.send(
       new PutObjectCommand({
         Bucket: bucket,

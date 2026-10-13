@@ -34,6 +34,7 @@ import {
   dayNumber,
   fold,
   isBonusAddress,
+  PUZZLE_CHANGED,
   ROUND_GUESS_CAP,
   VOCAB_BUILDS,
   type Puzzle,
@@ -49,7 +50,7 @@ import {
 } from './liveRoute';
 import type { DeviceStore } from './deviceStore';
 import type { PlayerHistoryStore } from './historyStore';
-import { loadPuzzle, loadSlice } from './puzzleReads';
+import { loadPuzzle, loadSlice, RETIRED } from './puzzleReads';
 import { deriveRound, type PuzzleSlice } from './slice';
 import {
   PUZZLE_TAG_SHAPE,
@@ -180,9 +181,14 @@ export async function handleRound(
   const publicId = auth.value.account.accountId;
 
   if (giveUp === true) {
-    // ONE conditional write (roundStore.ts): no slice, no pacing, no challenge. A solve
-    // that landed first WINS, and the refusal carries it, so the client settles on the
-    // solved result; a round with no record of this puzzle has nothing to give up on.
+    // ONE conditional write (roundStore.ts): no pacing, no challenge. A solve that landed
+    // first WINS, and the refusal carries it, so the client settles on the solved result; a
+    // round with no record of this puzzle has nothing to give up on. A sentence since
+    // REPUBLISHED is no round to give up on either: the page is told, and reloads onto the
+    // new one (the append's answer, below).
+    if ((await loadSlice(puzzleStore, date, lang, puzzle)) === RETIRED) {
+      return puzzleChanged(date, lang, responseHeaders);
+    }
     const { outcome, state } = await rounds.giveUp({ date, lang, publicId, puzzle });
     if (outcome === 'round_solved') {
       return refusal(409, 'round_solved', 'This round is solved.', state, responseHeaders);
@@ -257,12 +263,18 @@ export async function handleRound(
   ]);
   if (!slice) {
     // A missing slice IS a missing puzzle — there is no degraded mode: either publishing
-    // failed, or the day was never published, or this caller is still on a revision the
-    // store has replaced. All three are the same day-addressed answer.
+    // failed, or the day was never published. Both are the same day-addressed answer.
     return errorResponse(404, 'not_found', `No puzzle for ${date} (${lang}).`, responseHeaders, {
       date,
       lang,
     });
+  }
+  if (slice === RETIRED) {
+    // This caller is still on a revision the store has REPLACED (user-decided 2026-10-13:
+    // "they need to have an instant reload when there's a new sentence"): nothing is stored
+    // against it, and the answer says why, so the page reloads onto the new sentence
+    // rather than taking guesses that are never kept.
+    return puzzleChanged(date, lang, responseHeaders);
   }
 
   // Turnstile gates ROUND CREATION (#203): the token moved off the retired score POST, and
@@ -660,4 +672,14 @@ function refusal(
   headers: Record<string, string>,
 ): FnUrlResult {
   return errorResponse(statusCode, error, message, headers, { ...state });
+}
+
+// A `/round` write naming a revision the store no longer publishes: the sentence was
+// republished. 409 with its own code (shared `sentenceVersion.ts`), never the 404 of a day
+// with no puzzle, so the page tells "reload onto the new sentence" from "nothing to play".
+function puzzleChanged(date: string, lang: string, headers: Record<string, string>) {
+  return errorResponse(409, PUZZLE_CHANGED, `The sentence for ${date} (${lang}) was republished.`, headers, {
+    date,
+    lang,
+  });
 }

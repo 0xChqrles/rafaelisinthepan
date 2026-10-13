@@ -21,8 +21,10 @@ export function corsHeaders(origin: string): Record<string, string> {
     // CORS hides EVERY response header from script outside its own safelist, and
     // `Retry-After` is not on it — the /round rate refusal's advertised interval is
     // otherwise a value only curl and `backend:dev` can read, silently null in the
-    // browser it exists for.
-    'Access-Control-Expose-Headers': 'Retry-After',
+    // browser it exists for. `ETag` likewise: it is the puzzle's revision, which the page
+    // reads to tell whether the sentence it shows is still the published one
+    // (`sentenceVersion.ts`).
+    'Access-Control-Expose-Headers': 'Retry-After, ETag',
     Vary: 'Origin',
   };
 }

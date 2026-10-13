@@ -26,6 +26,7 @@ export * from './assigned';
 export * from './invite';
 export * from './bonus';
 export * from './preview';
+export * from './sentenceVersion';
 export * from './groups';
 export * from './name';
 export * from './vocab';

@@ -36,7 +36,15 @@
 // a ref would not survive a real unmount, and neither the queue nor the in-flight write may
 // be duplicated by a remount (archive round-trips, StrictMode).
 
-import { PREVIEW_REFUSED, ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, roundEnded, type RankMap } from '@whippin/shared';
+import {
+  PREVIEW_REFUSED,
+  PUZZLE_CHANGED,
+  ROUND_GUESS_CAP,
+  ROUND_WRITE_MIN_MS,
+  roundEnded,
+  type RankMap,
+} from '@whippin/shared';
+import { notePuzzleChanged } from './sentenceWatch';
 import { parseRound, postRoundBody, roundUrl, type RoundState } from '../api';
 import { guessKey } from '../game/scoring';
 import { unacknowledged } from '../game/playLog';
@@ -532,6 +540,28 @@ async function readRound(f: RoundFlight): Promise<void> {
   f.failures = 0;
 }
 
+// Whether a write was refused because the sentence was REPUBLISHED (shared `PUZZLE_CHANGED`,
+// a 409 — the CODE decides, never the status: the cap and the freezes are 409s too). Read off
+// a clone, so the answer's own handling still has its body.
+async function republished(response: Response): Promise<boolean> {
+  if (response.status !== 409) return false;
+  try {
+    const data = (await response.clone().json()) as { error?: unknown };
+    return data.error === PUZZLE_CHANGED;
+  } catch {
+    return false;
+  }
+}
+
+// The sentence this round is about was REPUBLISHED (user-decided 2026-10-13): nothing more is
+// stored against it, so the conversation stops — what the outbox holds answers a retired
+// question, and the reloaded page drops it — and the page reloads onto the new sentence
+// (`sentenceWatch.ts`).
+function sentenceRetired(f: RoundFlight): void {
+  close(f);
+  notePuzzleChanged();
+}
+
 // Whether a 404 is a refused DAY PREVIEW code rather than "no round recorded" — the CODE
 // decides, never the status. An unreadable body is the plain 404 it always was.
 async function isPreviewRefused(response: Response): Promise<boolean> {
@@ -577,6 +607,11 @@ async function sendGiveUp(f: RoundFlight): Promise<void> {
     return;
   }
   if (superseded(f, puzzle, epoch)) return;
+  if (await republished(response)) {
+    answerGiveUp(f, false);
+    sentenceRetired(f);
+    return;
+  }
   if (response.ok || response.status === 409) {
     let state: RoundState;
     try {
@@ -648,6 +683,12 @@ async function appendBatch(f: RoundFlight, batch: string[]): Promise<void> {
   // when the answer is superseded, because the write still LANDED on the same stored
   // item, so the server's next accepted write is an interval past this one either way.
   f.lastWriteSettledAt = Date.now();
+
+  if (await republished(response)) {
+    if (superseded(f, puzzle, epoch)) return;
+    sentenceRetired(f);
+    return;
+  }
 
   if (response.ok || response.status === 409 || response.status === 429) {
     // All three carry the full stored state (the route's own contract), so all three

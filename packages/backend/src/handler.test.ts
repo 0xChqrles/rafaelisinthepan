@@ -5,6 +5,7 @@
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
+  etagRevision,
   type Puzzle,
   anonName,
   blankAvatar,
@@ -171,6 +172,16 @@ describe('puzzle endpoint — date-addressed (GET /?lang=&date=)', () => {
     // revalidate after minutes so a corrected puzzle shows on a normal reload.
     expect(res.headers['Cache-Control']).toMatch(/s-maxage=\d{6,}/);
     expect(res.headers['Cache-Control']).toMatch(/max-age=300/);
+  });
+
+  // A page asks whether the sentence it shows is still the published one by revalidating
+  // against this validator (user-decided 2026-10-13: a new sentence reloads the page). The
+  // CDN answers 304 off it for an unchanged sentence, so the check never re-downloads it.
+  it('names the puzzle\'s revision as its ETag, readable by the page', async () => {
+    const res = await makeHandler()(event({ query: { lang: 'fr', date: ACTIVE_DATE } }));
+    expect(res.headers.ETag).toBe(`"${PUZZLE.revision}"`);
+    expect(etagRevision(res.headers.ETag)).toBe(PUZZLE.revision);
+    expect(res.headers['Access-Control-Expose-Headers']).toMatch(/\bETag\b/);
   });
 
   it('requires `date` — missing or malformed is a 400 protocol violation', async () => {

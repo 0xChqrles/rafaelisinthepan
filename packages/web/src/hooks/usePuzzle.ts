@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPuzzleCache } from './puzzleCache';
 import { puzzleAddress, type Puzzle, type PuzzleRef } from '@whippin/shared';
 import { puzzleUrl, puzzleOutcome, parsePuzzle } from '../api';
+import { takeFreshPuzzle } from '../state/sentenceWatch';
 
 // Loads the puzzle `ref` names for the selected language: a game day (the caller decides
 // which — the undated route's is `useHomeDay`'s, the active 22:00-ET day as of the player's
@@ -49,7 +50,10 @@ export default function usePuzzle(lang: string | null, ref: PuzzleRef, previewCo
     (async () => {
       try {
         const answer = await sentenceCache.load(key, async () => {
-          const res = await fetch(puzzleUrl(lang, address, previewCode));
+          // A page reloaded onto a NEW sentence (`state/sentenceWatch.ts`) asks the CDN
+          // once more rather than trust a cache that may still hold the retired one.
+          const url = puzzleUrl(lang, address, previewCode);
+          const res = await fetch(url, takeFreshPuzzle(url) ? { cache: 'no-cache' } : undefined);
           const outcome = puzzleOutcome(res.status);
           if (outcome === 'missing') return null;
           if (outcome === 'error') throw new Error(`HTTP ${res.status}`);

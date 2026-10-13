@@ -249,7 +249,9 @@ in `shared/src/types.ts`, pruned into `web/src/tutorial/scripts/<lang>.word.json
   missing/malformed → 400. Backend 404 → `noPuzzle` (NO PUZZLE TODAY); any other failure →
   `error`. `/today` is a diagnostic only (`no-store`); the client never reads it.
 - **Caching:** `max-age=300, s-maxage=31536000`; `pnpm puzzle:publish --s3` and the backend
-  deploy both **invalidate `/*`** on the API distribution.
+  deploy both **invalidate `/*`** on the API distribution. The puzzle carries its `revision`
+  as its **ETag** (shared `sentenceVersion.ts`, exposed by CORS), so a page revalidates it and
+  the CDN answers 304 for an unchanged sentence (below, *A new sentence reloads the page*).
 - **No client-side puzzle override** (removed 2026-07-19): the front always loads the day's
   puzzle from the backend; to test a puzzle, publish it into the local store and point the
   front at `pnpm backend:dev`. `usePuzzle`'s `dayNumber` is always a real number.
@@ -382,7 +384,8 @@ The live routes then share:
   `{token, puzzle, giveUp: true}` GIVES UP (below; 400 beside `guesses` or a
   `turnstileToken`). Every answer — refusals included — carries the full stored state of the
   PUZZLE ASKED ABOUT (`{guesses, createdAt, progress, solved, gaveUp, …}`), never a different
-  revision's log. Archive
+  revision's log — save 409 `puzzle_changed` (a write naming a retired revision, below), which
+  carries none: there is no round of that sentence left to report. Archive
   days sync exactly like today's. The record NAMES its `puzzle` revision; an append carrying a
   different one REPLACES the log (a republish restarts the round; a solved-day credit already
   earned is kept).
@@ -394,8 +397,8 @@ The live routes then share:
   conditions have no arithmetic); **`ROUND_WRITE_MIN_MS` = 1000 ms** between writes per player
   **per round**, one spelling for the server's condition and the web's pacing, which paces
   from the previous ANSWER, not the send. Refusals: 429 `too_fast` (+`Retry-After: 1`, exposed
-  by CORS), 409 `round_full`, 409 `round_solved`, 409 `round_given_up`. Nothing is partially
-  appended.
+  by CORS), 409 `round_full`, 409 `round_solved`, 409 `round_given_up`, 409 `puzzle_changed`.
+  Nothing is partially appended.
 - **Local storage is an OUTBOX (#214).** Three values kept apart: **SERVER STATE** (raw log +
   `solved` + `gaveUp`, in memory only), **OUTBOX** (unacknowledged folded guesses, revision-qualified —
   the ONLY persisted sentence state), **PLAY LOG** (pure first-occurrence projection of server
@@ -437,7 +440,24 @@ The live routes then share:
   the full artifact at guess cadence on a bounded pool of Lambdas (reserved concurrency 200); a published
   version's content never changes, so an entry keyed by it never goes stale and a
   correction simply misses. The slice fetch runs concurrently with the round read. **A
-  missing slice or a revision mismatch is the day-addressed 404** — no degraded mode.
+  missing slice is the day-addressed 404** — no degraded mode; **a slice published for
+  ANOTHER revision is 409 `puzzle_changed`** (shared `PUZZLE_CHANGED`), on an append and on a
+  give-up alike: the sentence was republished, nothing is stored against the retired one.
+- **A NEW SENTENCE RELOADS THE PAGE (user-decided 2026-10-13: "they need to have an instant
+  reload when there's a new sentence").** A page showing a retired revision reloads onto the
+  new one (`web/state/sentenceWatch.ts`) the moment it learns of it: a `/round` write answered
+  `puzzle_changed` (a player guessing reloads within a guess), or its own revalidation of the
+  puzzle's URL reading another ETag — asked when the round comes on screen, every minute while
+  the page is seen, and on coming back into view. It reloads a round still IN PLAY at once
+  (what is played there is no longer kept — unlike a new BUILD, which never yanks a visible
+  player); a round already OVER (solved, given up, capped — the round on screen, App's `over`)
+  keeps its result on screen and is reloaded the moment the tab is hidden, or on its return
+  (user-decided the same day: a share or a group being named is not taken away); only on a
+  revision it has READ that differs from the one shown, never back onto the revision the tab
+  just reloaded away from (an edge whose invalidation lags may still serve it); at most once
+  per 30s; the new sentence fetched whole first into the cache the reload reads (a body that
+  cannot be read in time still reloads, and the reloaded page's first fetch asks the CDN
+  again).
 - **Authoritative SOLVED comes only from the server flag.** The board may complete locally
   while the solving append is in flight; the result, leaderboard, streak and `solve` event wait
   for confirmation. A solve confirmed by THIS device's batch is fresh (celebrated); one learned
@@ -455,9 +475,10 @@ The live routes then share:
     spends no request.
   - **THE GIVE-UP** (user-decided 2026-10-02: "a way to give up and reveal the sentence"):
     STORED, `gaveUp` on the round row, write-only-true, set by ONE conditional UpdateItem
-    (`#p = :puzzle AND attribute_not_exists(#solved)`, version bump; no slice, no Turnstile,
-    no pacing) — 200 with the state, idempotent; 409 `round_solved` when a solve won; 404
-    with no record of this puzzle. Only a republish's restart removes it. Offered only once
+    (`#p = :puzzle AND attribute_not_exists(#solved)`, version bump; no Turnstile, no pacing;
+    the slice is read only to answer a retired revision) — 200 with the state, idempotent;
+    409 `round_solved` when a solve won; 409 `puzzle_changed` when the sentence was
+    republished; 404 with no record of this puzzle. Only a republish's restart removes it. Offered only once
     the round holds a guess (the record exists).
   - The `∞` glyph is pixel-art SVG path data in `shared/glyphs.ts` (Press Start 2P has none;
     the OG card loads no system fonts), used by `cardSvg.ts` and the web.
