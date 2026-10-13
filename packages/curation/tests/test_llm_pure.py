@@ -81,6 +81,39 @@ import llm
 from rules import Token
 
 
+class _Answer:
+    def __init__(self, answer):
+        self.answer = answer
+
+    def json(self, _prompt):
+        return self.answer
+
+
+_DAY = {"marked": "The [cat].", "words": [{"word": "cat", "level": "medium"}], "path": []}
+
+
+@pytest.mark.parametrize("answer, expected", [
+    ({"order": [2, 1], "why": "w"}, {"order": [1, 0], "why": "w"}),
+    ({"order": [], "why": "none"}, {"order": [], "why": "none"}),      # every line declined
+    ({"order": [1, 1]}, None),                                         # a line twice
+    ({"order": [3]}, None),                                            # no such line
+    ({"order": [True]}, None),
+    ({"why": "w"}, None),
+])
+def test_choose_among_takes_an_order_of_the_lines_shown_and_nothing_else(answer, expected):
+    assert llm.choose_among(_Answer(answer), [_DAY, _DAY], lang="fr") == expected
+
+
+@pytest.mark.parametrize("answer, expected", [
+    ({"words": ["a", "b", "c"], "path": ["a: x", 3], "why": "w"}, {"words": ["a", "b", "c"], "path": ["a: x"], "why": "w"}),
+    ({"words": None, "why": "flat"}, {"words": None, "why": "flat"}),  # the line declined
+    ({"words": ["a", "b"]}, None),
+    ({"why": "w"}, None),
+])
+def test_choose_words_takes_three_words_or_a_decline(answer, expected):
+    assert llm.choose_words(_Answer(answer), {"sentence": "The cat.", "allowed": ["cat"]}, [], lang="fr") == expected
+
+
 class _Capture:
     """A fake Claude that keeps every prompt it is asked."""
 
@@ -106,7 +139,10 @@ QUESTIONS = {
                                                              {"sentence": "B.", "why": "v"}], 20, lang=lang),
     "stands_alone": lambda c, lang: llm.stands_alone(c, "The cat.", lang=lang),
     "widely_known": lambda c, lang: llm.widely_known(c, "The cat.", "Author", "Work", lang=lang),
-    "choose_day": lambda c, lang: llm.choose_day(c, [{"sentence": "The cat.", "allowed": ["cat"]}], [], lang=lang),
+    "choose_words": lambda c, lang: llm.choose_words(c, {"sentence": "The cat.", "allowed": ["cat"]}, [], lang=lang),
+    "choose_among": lambda c, lang: llm.choose_among(c, [{"marked": "The [cat].", "words": [{"word": "cat",
+                                                                                          "level": "medium"}],
+                                                          "path": ["cat: the subject"]}], lang=lang),
     "context_guesses": lambda c, lang: llm.context_guesses(c, _TOKENS, set(), 1, 6, lang=lang),
     "pick_form": lambda c, lang: llm.pick_form(c, "The cat.", "cat", ["n:s — nom, singulier"], lang=lang),
     "sentence_check": lambda c, lang: llm.sentence_check(c, "The dog.", ["dog"], lang=lang),

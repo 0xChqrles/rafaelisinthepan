@@ -9,16 +9,19 @@ edition), the archive and the vectors; the two languages share nothing (#317).
 TASTE CHOOSES, CODE STATES FACTS (2026-09-24). A work is picked off the shelf by rule; its
 sentences are mined, the quoted ones and what the judge finds unreadable removed; the
 model reads every one that is left with the `taste` skill and shortlists the best; then
-it COMPARES the best lines and chooses the day — the line and its three words, in the
-order players will find them. Code measures what a reader puts in each blank, how much
-the sentence hands a word over and where the reader's words land in the hole's map, and
-hands those notes to the model, which chooses the start words by the taste (or
-swaps a word no start can save). `gen_phrase` writes the puzzle headless. The run's log
+each of the best lines is FINISHED — the model picks its three words, in the order
+players will find them, and code measures what a reader puts in each blank, how much the
+sentence hands a word over, what its neighbours call for, swapping a word that fails —
+and the model COMPARES the finished lines and chooses the day. Code hands its notes and
+where the reader's words land in each hole's map to the model, which chooses the start
+words by the taste (or swaps a word no start can save). `gen_phrase` writes the puzzle headless. The run's log
 — every choice and its reason — goes to `runs/<stamp>.md`, the puzzle to generation's
 output directory.
 """
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from functools import lru_cache
 import json
@@ -47,8 +50,10 @@ from sentences import EXCERPT_SENTENCES, EXCERPT_WINDOW, candidate_sentences, cu
 CHUNK = 150
 PICKS_PER_CHUNK = 6
 SHORTLIST = 20
-# Lines compared at once when the day is chosen, and choices per batch before the next.
-COMPARE = 5
+# Lines FINISHED — words chosen, checked, swapped — before the day is chosen among them
+# (user-decided 2026-10-13), checked WORKERS at a time; word choices per line.
+CANDIDATES = 10
+WORKERS = 5
 DAY_ROUNDS = 3
 # Hidden words the start-word step may swap before the line is given up.
 REPLACE_ROUNDS = 2
@@ -178,6 +183,12 @@ def load_similarity(lang: str):
         rank_map = static_map(t)
         return None if rank_map is None else rules.crowd_share(rank_map, first_index.get)
 
+    def own(t: rules.Token):
+        """The keys of the token's own group on its free static map — what typing finds the
+        hole with (`rules.same_word`); None without a map."""
+        rank_map = static_map(t)
+        return None if rank_map is None else frozenset(k for k, v in rank_map.items() if v["rank"] == 0)
+
     def unmapped(t: rules.Token, fillers: list[str]):
         """The reader's words when none is on the token's free static map (`rules.unmapped`)."""
         rank_map = static_map(t)
@@ -196,7 +207,7 @@ def load_similarity(lang: str):
     for w, r in ranks.items():
         s = slug(w)
         common_index[s] = min(r, common_index.get(s, r))
-    return frequency_rank, neighbour_rank, crowd, unmapped, common_index.get
+    return frequency_rank, neighbour_rank, crowd, unmapped, own, common_index.get
 
 
 # ---------------------------------------------------------------------------
@@ -724,23 +735,58 @@ def shortlist(claude: llm.Claude, log: Log, sentences: list[str], lang: str) -> 
     return ranked
 
 
+class Buffer(list):
+    """A line's log while it is checked on its own thread; written to the run's log, in
+    the batch's order, once every line is done."""
+
+    def __call__(self, line: str = "") -> None:
+        self.append(line)
+
+
+@dataclass
+class Measures:
+    """What each word of one line was measured at, by slug — the reader, the would-say
+    test, the crowd, the neighbours — asked once, whatever trio the line ends with; and
+    the words swapped OUT of it, never offered again (a swap that brought one back
+    undid the one before and spent the line's swaps)."""
+    readings: dict = field(default_factory=dict)    # slug -> (the reader's words, the one most write)
+    says: dict = field(default_factory=dict)        # slug -> (would-say chance, the word said instead)
+    crowds: dict = field(default_factory=dict)      # slug -> crowd share
+    neighbours: dict = field(default_factory=dict)  # slug -> (the words around it, the first word written)
+    out: set = field(default_factory=set)           # slugs swapped out of the trio
+
+
+@dataclass
+class Checked:
+    """A line's trio once every check before the ranking passed: its notes for the start
+    step, how each word plays (the comparison's), the swaps it took."""
+    trio: list
+    chain: list[str]
+    swaps: int
+    context: dict[str, str]
+    levels: dict[str, str]
+    measures: Measures
+
+
 def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: dict, text: str,
         in_vocab, frequency_rank, neighbour_rank, lang: str, replay: str | None = None,
         tried: list[str] | None = None, *, judge, crowd=lambda t: None, unmapped=lambda t, fillers: None,
+        own=lambda t: None,
         index_of=lambda s: None):
-    """The day, chosen by COMPARISON (2026-09-24): the shortlist's lines COMPARE at a
-    time; the model picks the line and its three words, in the order players will find
-    them, from the words code allows — a word the line gives no path to (giveaway under
-    `GIVEAWAY_MIN`) is never offered; code checks the facts (three distinct words of the
-    line that can be hidden; the line stands alone), measures each word and hands the
-    notes to the start-word step, which may swap a word no start can save. A refusal is
-    told back and the model chooses again, DAY_ROUNDS times, then the next lines. Every
-    line compared goes into `tried`. Returns the written puzzle path, or None."""
+    """The day, chosen among FINISHED candidates (user-decided 2026-10-13): the
+    shortlist's lines, CANDIDATES at a time, are each prepared on their own — the line
+    must stand alone, the model picks its three words from the words code allows (a word
+    the line gives no path to, giveaway under `GIVEAWAY_MIN`, is never offered), and every
+    check before the ranking runs with its swaps (`check_trio`). The model then compares
+    the lines that survived, each as the player will get it — its words and how each
+    plays — and orders them; the first is built (`build_day`: page, ranking, start
+    words), and when it cannot be, the next. Then the next lines. Every line prepared goes
+    into `tried`. Returns the written puzzle path, or None."""
     tried = tried if tried is not None else []
     source_base = {"kind": book["kind"], "author": book.get("author", ""), "work": book.get("title", "")}
-    for batch_start in range(0, len(ranked), COMPARE):
+    for batch_start in range(0, len(ranked), CANDIDATES):
         lines = []
-        for pick in ranked[batch_start:batch_start + COMPARE]:
+        for pick in ranked[batch_start:batch_start + CANDIDATES]:
             tokens = parse(pick["sentence"], lang)
             allowed = rules.initial_candidates(tokens, lang=lang, in_vocab=in_vocab,
                                                past_secrets=archive["secrets"], frequency_rank=frequency_rank)
@@ -761,82 +807,116 @@ def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: d
         if not lines:
             continue
         tried.extend(x["sentence"] for x in lines)
-        log(f"\n## Comparing {len(lines)} line(s)")
-        for n, line in enumerate(lines, 1):
-            log(f"{n}. « {line['sentence']} »"
-                + (f" — no path to {', '.join(line['pathless'])}" if line["pathless"] else ""))
-        refused: list[str] = []
-        alone: dict[str, dict] = {}
-        for _ in range(DAY_ROUNDS):
-            choice = llm.choose_day(claude, [{"sentence": x["sentence"],
-                                              "allowed": list(dict.fromkeys(t.text for t in x["allowed"]))}
-                                             for x in lines], refused, lang=lang)
-            if choice is None or choice["line"] is None:
-                log("- the model declines these lines" + (f" — {choice['why']}" if choice and choice["why"] else ""))
-                break
-            line = lines[choice["line"]]
-            log(f"\n## « {line['sentence']} »")
-            log(f"- chosen: {' · '.join(choice['words'])} — {choice['why']}")
-            for step in choice["path"]:
-                log(f"  - {step}")
-            first_of: dict[str, rules.Token] = {}
-            for t in line["allowed"]:
-                first_of.setdefault(t.slug, t)
-            trio = [first_of.get(slug(w)) for w in choice["words"]]
-            if any(t is None for t in trio) or len({t.slug for t in trio}) < rules.TRIO:
-                why = "the three words must be distinct words of the line that can be hidden"
-                log(f"- refused: {why}")
-                refused.append(f"« {' · '.join(choice['words'])} » — {why}")
-                continue
-            if line["sentence"] not in alone:
-                alone[line["sentence"]] = llm.stands_alone(claude, line["sentence"], lang=lang)
-            if not alone[line["sentence"]]["ok"]:
-                why = f"does not stand alone — {alone[line['sentence']]['why'] or 'it leans on its page'}"
-                log(f"- refused: {why}")
-                refused.append(f"« {line['sentence']} » — {why}")
-                continue
-            path = build_day(claude, log, line, trio, choice["path"], book, archive, text, source_base,
+        log(f"\n## Preparing {len(lines)} line(s): words chosen and checked on each")
+
+        def prepare(line):
+            buffer = Buffer()
+            return buffer, candidate(claude, buffer, line, frequency_rank, neighbour_rank, lang,
+                                     crowd=crowd, unmapped=unmapped, own=own)
+
+        with llm.subscription_only(), ThreadPoolExecutor(WORKERS) as pool:
+            prepared = list(pool.map(prepare, lines))
+        days: list[tuple[dict, Checked]] = []
+        for line, (buffer, checked) in zip(lines, prepared):
+            for entry in buffer:
+                log(entry)
+            if checked is not None:
+                days.append((line, checked))
+        if not days:
+            log("\n- no line of these survived its checks")
+            continue
+        shown = []
+        for line, c in days:
+            occurrences = _occurrences(line["allowed"])
+            shown.append({"marked": llm.marked(line["tokens"], {i for t in c.trio for i in occurrences[t.slug]},
+                                               lang=lang),
+                          "words": [{"word": t.text, "level": c.levels[t.slug]} for t in c.trio],
+                          "path": c.chain})
+        log(f"\n## Comparing {len(days)} finished line(s)")
+        for n, d in enumerate(shown, 1):
+            log(f"{n}. « {d['marked']} » — " + "; ".join(f"{w['word']} ({w['level']})" for w in d["words"]))
+        choice = llm.choose_among(claude, shown, lang=lang)
+        if not choice or not choice["order"]:
+            log("- the model declines these lines" + (f" — {choice['why']}" if choice and choice["why"] else ""))
+            continue
+        log(f"- order: {', '.join(str(n + 1) for n in choice['order'])} — {choice['why']}")
+        for n in choice["order"]:
+            line, checked = days[n]
+            log(f"\n## Building « {line['sentence']} »")
+            path = build_day(claude, log, line, checked.trio, checked.chain, book, archive, text, source_base,
                              frequency_rank, neighbour_rank, lang, replay if batch_start == 0 else None,
-                             crowd=crowd, unmapped=unmapped, index_of=index_of)
+                             crowd=crowd, unmapped=unmapped, own=own, index_of=index_of,
+                             measures=checked.measures, swaps=checked.swaps)
             if path:
                 return path
-            refused.append(f"« {line['sentence']} » with « {' · '.join(choice['words'])} » — it could not be built")
+            log("- it could not be built: the next line in the order")
     log("- no day: every line was declined or refused")
     return None
 
 
-def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[str], book: dict, archive: dict,
-              text: str, source_base: dict, frequency_rank, neighbour_rank, lang: str, replay: str | None,
-              crowd=lambda t: None, unmapped=lambda t, fillers: None, index_of=lambda s: None):
-    """One chosen day, built: code measures each hidden word — what a reader puts in its
-    blank, how much the sentence hands it over (`line["given"]`, judged for every word
-    that can be hidden), whether a player who has the meaning would say it — the page is
-    cut (a book), and `generate` writes the puzzle, the start words chosen by the taste. A BURIED word (`rules.buried`: half-said, among commoner
-    near-words on the free map) is refused by code and replaced by the model's choice
-    (`llm.replace_word`) before the ranking is paid for; so is a word its NEIGHBOURS alone
-    hand over (`rules.neighbourhood`, `llm.neighbours_complete`: « le droit de ___ ») and
-    an UNMAPPED word, none of the
-    words readers put in its blank on its free map (`rules.unmapped`). A trio hiding two or more words players don't say has one
-    swapped by the model before the ranking is paid for (`llm.drop_unsaid`); the start
-    step may swap a word no start can save (Replace). A swapped word is replaced by another word of the line that can be hidden,
-    REPLACE_ROUNDS times in all."""
-    sentence, tokens, given = line["sentence"], line["tokens"], line["given"]
-    known = llm.widely_known(claude, sentence, book.get("author", ""), book.get("title", ""), lang=lang)
-    log("- known-line check (annotation): "
-        + ("the model thinks a reader would know it" if known["known"] else "not known off the page")
-        + (f" — {known['why']}" if known["why"] else ""))
+def candidate(claude: llm.Claude, log, line: dict, frequency_rank, neighbour_rank, lang: str, *,
+              crowd=lambda t: None, unmapped=lambda t, fillers: None, own=lambda t: None) -> Checked | None:
+    """One line made a candidate day: it must STAND ALONE (a refusal ends the line), the
+    model picks its three words (a pick that is not three distinct words of the line that
+    can be hidden is told back, DAY_ROUNDS times), and every check before the ranking
+    runs (`check_trio`). Returns the checked trio, or None with the reason logged."""
+    log(f"\n## « {line['sentence']} »"
+        + (f"\n- no path to {', '.join(line['pathless'])}" if line["pathless"] else ""))
+    alone = llm.stands_alone(claude, line["sentence"], lang=lang)
+    if not alone["ok"]:
+        log(f"- refused: does not stand alone — {alone['why'] or 'it leans on its page'}")
+        return None
+    first_of: dict[str, rules.Token] = {}
+    for t in line["allowed"]:
+        first_of.setdefault(t.slug, t)
+    refused: list[str] = []
+    for _ in range(DAY_ROUNDS):
+        choice = llm.choose_words(claude, {"sentence": line["sentence"], "allowed": hideable(line)},
+                                  refused, lang=lang)
+        if choice is None or choice["words"] is None:
+            log("- the model declines this line" + (f" — {choice['why']}" if choice and choice["why"] else ""))
+            return None
+        log(f"- chosen: {' · '.join(choice['words'])} — {choice['why']}")
+        for step in choice["path"]:
+            log(f"  - {step}")
+        trio = [first_of.get(slug(w)) for w in choice["words"]]
+        if any(t is None for t in trio) or len({t.slug for t in trio}) < rules.TRIO:
+            why = "the three words must be distinct words of the line that can be hidden"
+            log(f"- refused: {why}")
+            refused.append(f"« {' · '.join(choice['words'])} » — {why}")
+            continue
+        return check_trio(claude, log, line, trio, choice["path"], frequency_rank, neighbour_rank, lang,
+                          crowd=crowd, unmapped=unmapped, own=own, measures=Measures(), swaps=0)
+    log("- no usable choice of words for this line")
+    return None
+
+
+def hideable(line: dict) -> list[str]:
+    """The words a line can hide, as the model is shown them: each once, in line order."""
+    return list(dict.fromkeys(t.text for t in line["allowed"]))
+
+
+def check_trio(claude: llm.Claude, log, line: dict, trio: list, chain: list[str], frequency_rank,
+               neighbour_rank, lang: str, *, crowd=lambda t: None, unmapped=lambda t, fillers: None,
+               own=lambda t: None,
+               measures: Measures, swaps: int) -> Checked | None:
+    """Every check a trio meets before the ranking is paid for. Code measures each hidden
+    word — what a reader puts in its blank, how much the sentence hands it over
+    (`line["given"]`, judged for every word that can be hidden), whether a player who has
+    the meaning would say it, its crowd, what its neighbours alone call for. A BURIED word
+    (`rules.buried`: half-said, among commoner near-words on the free map) is refused by
+    code and replaced by the model's choice (`llm.replace_word`); so is a word its
+    NEIGHBOURS alone hand over (`rules.neighbourhood`, `llm.neighbours_complete`: « le
+    droit de ___ ») and an UNMAPPED word, none of the words readers put in its blank on
+    its free map (`rules.unmapped`). A trio hiding two or more words players don't say has
+    one swapped by the model (`llm.drop_unsaid`); one whose line hands over two or more,
+    one swapped too (`llm.drop_handed`). A swapped word is replaced by another word of the
+    line that can be hidden, REPLACE_ROUNDS times in all, the start step's swaps
+    (`build_day`) included. A word is measured once (`measures`)."""
+    tokens, given = line["tokens"], line["given"]
     occurrences = _occurrences(line["allowed"])
-    readings: dict[str, tuple[list[str], str | None]] = {}
-    neighbours: dict[str, tuple[str, str | None]] = {}  # slug -> (the words around it, the first word written)
-    says: dict[str, tuple[float | None, str | None]] = {}
-    crowds: dict[str, float | None] = {}
-    source = dict(source_base)
-    if book["kind"] == "book":
-        window = excerpt_around(text, sentence, EXCERPT_WINDOW, lang=lang)
-        excerpt = choose_page(claude, log, sentence, window, lang) if window else None
-        if excerpt:
-            source["excerpt"] = excerpt
-    for _ in range(REPLACE_ROUNDS + 1):
+    readings, says, crowds, neighbours = measures.readings, measures.says, measures.crowds, measures.neighbours
+    while True:
         for t in trio:
             if t.slug not in readings:
                 readings[t.slug] = llm.context_guesses(claude, tokens, occurrences[t.slug] - {t.i}, t.i,
@@ -858,8 +938,10 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
                 fragment = llm.holed(around, set(), t.i, lang=lang).replace("[____]", "___")
                 neighbours[t.slug] = (fragment, llm.neighbours_complete(claude, fragment, lang=lang))
         hard = {t.slug for t in trio if given[t.slug] < contextual_rank.GIVEAWAY_HARD}
-        same = {t.slug for t in trio if rules.same_word(t, says[t.slug][1])}
+        same = {t.slug for t in trio if rules.same_word(t, says[t.slug][1], own(t))}
         unsaid = rules.unsaid({t.text: None if t.slug in same else says[t.slug][0] for t in trio})
+        rare = {t.slug for t in trio if t.slug not in same and says[t.slug][0] is not None
+                and says[t.slug][0] < rules.WOULD_SAY_HARD}
         context = {}
         for t in trio:
             guesses, expected = readings[t.slug]
@@ -868,7 +950,7 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
                      f"{contextual_rank.GIVEAWAY_MAX} and above was typed within three guesses by a third of the players)")
             note += "; " + rules.said(*says[t.slug], same=t.slug in same)
             note += "; " + rules.crowd_note(crowds[t.slug])
-            if unsaid and t.slug not in same and says[t.slug][0] is not None and says[t.slug][0] < rules.WOULD_SAY_HARD:
+            if unsaid and t.slug in rare:
                 note += "; " + unsaid
             if t.slug in hard:
                 note += (f"; under {rules.two_places(contextual_rank.GIVEAWAY_HARD)} the line gives little of "
@@ -881,9 +963,9 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
         # on: one easy word is the start step's to tune.
         swap = None
         hidden = {i for t in trio for i in occurrences[t.slug]}
-        others = [t.text for t in line["allowed"] if t.slug not in {u.slug for u in trio}]
+        others = _others(line, trio, measures)
         sunk = next((t for t in trio if t.slug not in same and rules.buried(says[t.slug][0], crowds[t.slug])), None)
-        given_away = next((t for t in trio if rules.same_word(t, neighbours[t.slug][1])), None)
+        given_away = next((t for t in trio if rules.same_word(t, neighbours[t.slug][1], own(t))), None)
         stranded = next(((t, off) for t in trio
                          for off in [unmapped(t, [*readings[t.slug][0], *filter(None, [readings[t.slug][1]])])]
                          if off), None)
@@ -930,11 +1012,9 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
             swap = {"secret": lost.text, "with": pick["with"],
                     "why": f"no word readers put there is on its map ({pick['why']})"}
         elif unsaid:
-            under = [t.text for t in trio if t.slug not in same and says[t.slug][0] is not None
-                     and says[t.slug][0] < rules.WOULD_SAY_HARD]
             swap = llm.drop_unsaid(claude, llm.marked(tokens, hidden, lang=lang),
-                                   [{"secret": t.text, "notes": context[t.slug]} for t in trio], under, others,
-                                   chain, lang=lang)
+                                   [{"secret": t.text, "notes": context[t.slug]} for t in trio],
+                                   [t.text for t in trio if t.slug in rare], others, chain, lang=lang)
         elif len(handed) >= 2:
             swap = llm.drop_handed(claude, llm.marked(tokens, hidden, lang=lang),
                                    [{"secret": t.text, "notes": context[t.slug]} for t in trio],
@@ -942,38 +1022,103 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
             if swap is None:
                 log(f"- the line hands over {len(handed)} words and no swap was named")
                 return None
-        if swap:
-            log(f"- before the ranking, « {swap['secret']} » is swapped for « {swap['with']} » — {swap['why']}")
-            swap = Replace(swap["secret"], swap["with"], swap["why"])
-        else:
-            try:
-                return generate(claude, log, sentence, [t.text for t in trio], source, lang, context, index_of,
-                                archive["pairs"], replay=replay, chain=chain,
-                                fillers={t.slug: readings[t.slug][0] for t in trio},
-                                expected={t.slug: readings[t.slug][1] for t in trio})
-            except Replace as raised:
-                swap = raised
-            except Handed as raised:
-                pick = llm.drop_handed(claude, llm.marked(tokens, hidden, lang=lang),
-                                       [{"secret": t.text, "notes": context[t.slug]
-                                         + (f"; on its map: {raised.facts[t.slug]}" if t.slug in raised.facts else "")}
-                                        for t in trio], raised.words, others, chain, lang=lang)
-                if pick is None:
-                    log(f"- the map hands over {len(raised.words)} words and no swap was named")
-                    return None
-                log(f"- after the ranking, « {pick['secret']} » is swapped for « {pick['with']} » — {pick['why']}")
-                swap = Replace(pick["secret"], pick["with"], f"its map handed it over ({pick['why']})")
-        old = next((t for t in trio if t.slug == slug(swap.secret) or t.text == swap.secret), None)
-        new = next((t for t in line["allowed"] if t.slug == slug(swap.with_)), None)
-        if old is None or new is None or new.slug in {t.slug for t in trio}:
-            log(f"- the swap « {swap.secret} » → « {swap.with_} » is not a word of the line that can be hidden")
+        if not swap:
+            levels = {t.slug: ("easy: most readers write it straight in" if t in handed
+                               else "hard: the line gives little of it" if t.slug in hard
+                               else "hard: a word players don't say" if t.slug in rare
+                               else "medium") for t in trio}
+            return Checked(trio, chain, swaps, context, levels, measures)
+        log(f"- before the ranking, « {swap['secret']} » is swapped for « {swap['with']} » — {swap['why']}")
+        swapped = _swap(log, line, trio, chain, Replace(swap["secret"], swap["with"], swap["why"]), swaps, measures.out)
+        if swapped is None:
             return None
-        trio = [new if t is old else t for t in trio]
-        chain = [f"{new.text} replaces {old.text}: {swap.why}", *chain]
+        trio, chain, swaps = swapped
+
+
+def _others(line: dict, trio: list, measures: Measures) -> list[str]:
+    """The words a swap may bring in: the line's hideable words, neither in the trio nor
+    swapped out of it before."""
+    taken = {t.slug for t in trio} | measures.out
+    return list(dict.fromkeys(t.text for t in line["allowed"] if t.slug not in taken))
+
+
+def _swap(log, line: dict, trio: list, chain: list[str], swap: "Replace", swaps: int, out: set):
+    """The trio with `swap` made: (trio, chain, swaps), the word swapped out added to
+    `out`; or None — the swaps are spent (REPLACE_ROUNDS), the word named is not one the
+    line can hide, or it was swapped out before."""
+    if swaps >= REPLACE_ROUNDS:
+        log("- no trio of this line survived its swaps")
+        return None
+    old = next((t for t in trio if t.slug == slug(swap.secret) or t.text == swap.secret), None)
+    new = next((t for t in line["allowed"] if t.slug == slug(swap.with_)), None)
+    if old is None or new is None or new.slug in {t.slug for t in trio}:
+        log(f"- the swap « {swap.secret} » → « {swap.with_} » is not a word of the line that can be hidden")
+        return None
+    if new.slug in out:
+        log(f"- the swap « {swap.secret} » → « {swap.with_} » brings back a word already swapped out of this line")
+        return None
+    out.add(old.slug)
+    trio = [new if t is old else t for t in trio]
+    log(f"- trio now: {' · '.join(t.text for t in trio)}")
+    return trio, [f"{new.text} replaces {old.text}: {swap.why}", *chain], swaps + 1
+
+
+def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[str], book: dict, archive: dict,
+              text: str, source_base: dict, frequency_rank, neighbour_rank, lang: str, replay: str | None,
+              crowd=lambda t: None, unmapped=lambda t, fillers: None, own=lambda t: None, index_of=lambda s: None,
+              measures: Measures | None = None, swaps: int = 0):
+    """The chosen day, built: the page is cut (a book), the trio passes its checks
+    (`check_trio`; free when the comparison's `measures` come along), and `generate`
+    writes the puzzle, the start words chosen by the taste. The start step may swap a
+    word no start can save (Replace) or find two holes handed over on the map (Handed,
+    `llm.drop_handed`); the trio is then checked again and rebuilt, REPLACE_ROUNDS swaps
+    in all."""
+    sentence, tokens = line["sentence"], line["tokens"]
+    known = llm.widely_known(claude, sentence, book.get("author", ""), book.get("title", ""), lang=lang)
+    log("- known-line check (annotation): "
+        + ("the model thinks a reader would know it" if known["known"] else "not known off the page")
+        + (f" — {known['why']}" if known["why"] else ""))
+    measures = measures or Measures()
+    occurrences = _occurrences(line["allowed"])
+    source = dict(source_base)
+    if book["kind"] == "book":
+        window = excerpt_around(text, sentence, EXCERPT_WINDOW, lang=lang)
+        excerpt = choose_page(claude, log, sentence, window, lang) if window else None
+        if excerpt:
+            source["excerpt"] = excerpt
+    while True:
+        checked = check_trio(claude, log, line, trio, chain, frequency_rank, neighbour_rank, lang,
+                             crowd=crowd, unmapped=unmapped, own=own, measures=measures, swaps=swaps)
+        if checked is None:
+            return None
+        if checked.swaps != swaps:
+            replay = None  # another trio: the scores of the erased draft no longer apply
+        trio, chain, swaps, context = checked.trio, checked.chain, checked.swaps, checked.context
+        readings = measures.readings
+        try:
+            return generate(claude, log, sentence, [t.text for t in trio], source, lang, context, index_of,
+                            archive["pairs"], replay=replay, chain=chain,
+                            fillers={t.slug: readings[t.slug][0] for t in trio},
+                            expected={t.slug: readings[t.slug][1] for t in trio})
+        except Replace as raised:
+            swap = raised
+        except Handed as raised:
+            hidden = {i for t in trio for i in occurrences[t.slug]}
+            others = _others(line, trio, measures)
+            pick = llm.drop_handed(claude, llm.marked(tokens, hidden, lang=lang),
+                                   [{"secret": t.text, "notes": context[t.slug]
+                                     + (f"; on its map: {raised.facts[t.slug]}" if t.slug in raised.facts else "")}
+                                    for t in trio], raised.words, others, chain, lang=lang)
+            if pick is None:
+                log(f"- the map hands over {len(raised.words)} words and no swap was named")
+                return None
+            log(f"- after the ranking, « {pick['secret']} » is swapped for « {pick['with']} » — {pick['why']}")
+            swap = Replace(pick["secret"], pick["with"], f"its map handed it over ({pick['why']})")
+        swapped = _swap(log, line, trio, chain, swap, swaps, measures.out)
+        if swapped is None:
+            return None
+        trio, chain, swaps = swapped
         replay = None  # another trio: the scores of the erased draft no longer apply
-        log(f"- trio now: {' · '.join(t.text for t in trio)}")
-    log("- no trio of this line survived its swaps")
-    return None
 
 
 def choose_page(claude: llm.Claude, log: Log, sentence: str, window: dict, lang: str) -> dict | None:
@@ -1072,7 +1217,7 @@ def main():
     book = choose_work(log, args, archive, index, today)
     path = _paths.shelf_dir(args.lang) / book["file"]
     text = epub_text(path) if book["kind"] == "book" else path.read_text(encoding="utf-8")
-    frequency_rank, neighbour_rank, crowd, unmapped, index_of = load_similarity(args.lang)
+    frequency_rank, neighbour_rank, crowd, unmapped, own, index_of = load_similarity(args.lang)
     # The work's quoted lines (the quotation test): fetched onto the shelf by
     # `pnpm shelf:quotes`, read here offline, and applied to every mined line before the
     # judge or the model reads it. A missing file skips the test, loudly.
@@ -1120,7 +1265,7 @@ def main():
     log.begin_attempt()
     result = day(claude, log, ranked, book, archive, text, vocab.__contains__, frequency_rank, neighbour_rank,
                  args.lang, replay=getattr(args, "replay", None), tried=tried, judge=judge, crowd=crowd,
-                 unmapped=unmapped, index_of=index_of)
+                 unmapped=unmapped, own=own, index_of=index_of)
     log.end_attempt(bool(result), player_view(result, book) if result else ())
     shelf_mod.record(index, book["file"], tried, author=book.get("author", ""))
     shelf_mod.save_index(index, args.lang)

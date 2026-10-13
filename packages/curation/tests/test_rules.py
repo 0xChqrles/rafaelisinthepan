@@ -128,6 +128,13 @@ def test_the_same_word_is_its_lemma_or_a_variant_never_a_near_neighbour():
     assert not same_word(fm, "faussaire") and not same_word(fm, None) and not same_word(fm, "faux monnayeur")
 
 
+def test_with_its_map_the_same_word_is_what_typing_finds():
+    tablee = Token(i=0, text="tablée", lemma="tablée", pos="NOUN", slug="tablee", stop=False)
+    own = frozenset({"tablee", "tablees"})
+    assert not same_word(tablee, "table", own) and same_word(tablee, "tablées", own)
+    assert same_word(tablee, "table")           # without its map, the spelling is all there is
+
+
 def test_the_crowd_is_the_share_of_the_nearest_groups_commoner_than_the_secret():
     index = {"charnier": 5000, "cimetiere": 900, "ossuaire": 9000, "fosse": 1200, "tombe": 800, "zzz": None}.get
     rank_map = {"charnier": {"rank": 0}, "charniers": {"rank": 0}, "cimetiere": {"rank": 1}, "ossuaire": {"rank": 2},

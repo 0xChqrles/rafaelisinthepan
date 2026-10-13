@@ -123,19 +123,30 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   start words, and `--retry <puzzle.json>` keeps the erased draft's scores for the same
   trio — unless they no longer cover the map (the word tables changed since, #317): the
   replay's refusal drops them and the judge runs again, never losing the line.
-- **The model shortlists with taste, then CHOOSES THE DAY BY COMPARISON.** It reads every
-  kept line, `CHUNK` (150) at a time, picks at most `PICKS_PER_CHUNK` (6) by the taste
-  skill and ranks a `SHORTLIST` (20), even when fewer than 20 lines were picked (one line
-  needs no ordering; an empty or unreadable ranking keeps the reading order — the question
-  asks for an order, never a refusal). `curate.day` then shows it `COMPARE` (5) lines at a
-  time, each with the words code allows (`rules.initial_candidates`), and
-  `llm.choose_day` names the best line and its three words in the order players should
-  find them, each with what in the line leads toward it — or declines. Code checks the facts: three distinct words
-  of the line that can be hidden, and the line STANDS ALONE (below); a refusal is told
-  back and it chooses again, `DAY_ROUNDS` (3) times, then the next lines. Every line
-  compared goes to the index as tried.
+- **The model shortlists with taste, then CHOOSES THE DAY AMONG FINISHED LINES**
+  (user-decided 2026-10-13: a line chosen before its checks ran was hollowed out by its
+  swaps, and the rest of the shortlist was never looked at). It reads every kept line,
+  `CHUNK` (150) at a time, picks at most `PICKS_PER_CHUNK` (6) by the taste skill and
+  ranks a `SHORTLIST` (20), even when fewer than 20 lines were picked (one line needs no
+  ordering; an empty or unreadable ranking keeps the reading order — the question asks
+  for an order, never a refusal). `curate.day` then FINISHES the shortlist `CANDIDATES`
+  (10) lines at a time, `WORKERS` (5) in parallel (`curate.candidate`; the subscription's
+  conflicting credentials are removed once around the whole block, `llm.subscription_only`,
+  since each call's own removal would be restored under the others): the line must STAND
+  ALONE (below; a refusal ends the line), `llm.choose_words` names its three words in the
+  order players should find them, from the words code allows (`rules.initial_candidates`),
+  each with what in the line leads toward it — or declines the line; a pick that is not
+  three distinct words of the line that can be hidden is told back, `DAY_ROUNDS` (3)
+  times; then every check before the ranking runs, swaps included (`curate.check_trio`,
+  below). `llm.choose_among` then COMPARES the lines that survived, each as the player
+  will get it — the line with its words in brackets, how each plays (easy: most readers
+  write it straight in / medium / hard: the line gives little of it, or a word players
+  don't say) and what leads to each — and orders them, best day first, leaving out what
+  would make no day. The first is built (`curate.build_day`: page, ranking, start words);
+  when it cannot be, the next; then the next lines. Only the built line pays the
+  ranking. Every line prepared goes to the index as tried.
 - **Code MEASURES each chosen word and hands the notes to the start-word step**
-  (`curate.build_day`): the READER — the user's own method, one call per word
+  (`curate.check_trio`, each word measured once per line, `Measures`): the READER — the user's own method, one call per word
   (`llm.context_guesses`: the line with that word blanked, the rest intact, no start
   word; the words that could stand there and the one most readers would write) — becomes
   a plain note (`rules.reading`: whether most readers would write the secret itself,
@@ -197,13 +208,19 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   being the start step's to tune (a medium start, by the taste, never a
   duller word). Asked of every trio, the model swapped on 77% of played days, loved ones included,
   and picked the hard word no better than chance. A word players would say
-  instead that IS this word in another form (« sauver » for « sauva »: its spelling, lemma
-  or a variant, `rules.same_word` — never a near neighbour like « faussaire », which is
-  another word in its own group) finds the hole, so that word counts as said. With all the notes and each hole's band, `llm.pick_starts`
+  instead that IS this word in another form (« sauver » for « sauva »: its spelling, its
+  lemma, or a key of its own group on its free map — what typing it finds, `rules.same_word`,
+  `curate.load_similarity`'s `own`; « table » is not « tablée »; the coarse spelling test
+  `is_variant` only for a word with no map — never a near neighbour like « faussaire »,
+  which is another word in its own group) finds the hole, so that word counts as said; the
+  NEIGHBOURS rule reads the same test. With all the notes and each hole's band, `llm.pick_starts`
   chooses the three starts by the taste — or names ONE hidden word no start can save
   (dead or out of reach whatever its start, or none of its candidates linking to it in its
   everyday sense, user-decided 2026-10-08) and another word of the line to hide instead (`Replace`: the draft is erased, the day
-  rebuilt). Both swaps share `REPLACE_ROUNDS` (2).
+  rebuilt). Both swaps share `REPLACE_ROUNDS` (2). A word swapped OUT of a line is never
+  offered again for it (`Measures.out`; user-decided 2026-10-13: the model's next swap
+  brought a refused word back, « imprésario » → « organisé » → « imprésario », and spent
+  the line's swaps undoing each other — four of a run's ten lines died so).
 - **Which words can be hidden (facts, `rules.initial_candidates`):** NOUN/VERB/ADJ/ADV and
   PROPN (the parser tags a lowercase brand or rare noun as a proper noun — « rolex »,
   « zigzag », secrets of a favourite day; a name nobody can reason toward is taste's

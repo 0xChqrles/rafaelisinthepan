@@ -157,15 +157,19 @@ def reading(
     return f"{lead}; other words a reader puts there: {alternatives}"
 
 
-def same_word(candidate: Token, other: str | None) -> bool:
-    """Whether the word players would say instead IS this word in another form (« sauver »
-    for « sauva »): its spelling, its lemma or a variant. Typing it finds the hole, since a
-    ranked group holds every form of a word — so the hidden word is said. Never a near
-    neighbour (« faussaire » for « faux-monnayeur »): that is another word, in its own group."""
+def same_word(candidate: Token, other: str | None, own: frozenset[str] | None = None) -> bool:
+    """Whether a word players would write IS this word in another form (« sauver » for
+    « sauva »): its spelling, its lemma, or — what typing it finds — a key of the word's
+    own group on its free map (`own`, the rank-0 keys; « table » is not « tablée »). Only
+    without a map, a variant by spelling (`is_variant`, coarse: it takes « table » for
+    « tablée »). Never a near neighbour (« faussaire » for « faux-monnayeur »): that is
+    another word, in its own group."""
     if not other or " " in other.strip():
         return False
     s = slug(other)
-    return s in (candidate.slug, slug(candidate.lemma or "")) or is_variant(s, candidate.slug)
+    if s in (candidate.slug, slug(candidate.lemma or "")):
+        return True
+    return s in own if own is not None else is_variant(s, candidate.slug)
 
 
 def two_places(x: float) -> str:
