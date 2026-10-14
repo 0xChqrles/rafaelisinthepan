@@ -151,6 +151,11 @@ A Cv: practice / AV B C: practise | <V>
 # gray (level 35)
 A Cv: gray / AV B C: grey
 
+# whiskey <verified> (level 20)
+A Cv: whiskeys / Av B C: whiskies | drink
+A Cv: whiskey / Av B C: whisky | drink
+A B: whiskey | (-) code word
+
 # rare (level 70)
 A: tsar / A- B-: czar
 _: fuehrer / _v: f\xfchrer
@@ -169,6 +174,15 @@ def test_varcon_joins_pure_spelling_lines_and_never_a_sense_restricted_one():
     # a «possible» variant (A- B-) is no spelling of the word; «_» is no variety
     assert "czar" not in variants and "fuehrer" not in variants
     assert stats["sense"] == 2
+
+
+def test_a_sense_restricted_entry_named_one_word_joins_every_line():
+    # User-decided 2026-10-13: « whisky » typed for « whiskey » must find the hole.
+    assert "whiskey" in build_forms.VARCON_SENSE_JOINS and "check" not in build_forms.VARCON_SENSE_JOINS
+    variants, stats = read_varcon(VARCON, TOKEN)
+    assert variants["whisky"] == frozenset({"whiskey", "whisky"})
+    assert variants["whiskies"] == frozenset({"whiskeys", "whiskies"})
+    assert stats["sense_joined"] == 3 and stats["sense"] == 2
 
 
 def test_british_and_american_filings_become_one_group():

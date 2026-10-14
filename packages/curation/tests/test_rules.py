@@ -17,7 +17,13 @@ from rules import (
     crowd_share,
     initial_candidates,
     is_twin,
+    HANDED_RANK,
+    READER_FAR_RANK,
+    far_note,
+    map_handed,
+    neighbourhood,
     map_nearest_filler,
+    unmapped,
     reading,
     said,
     same_word,
@@ -122,6 +128,13 @@ def test_the_same_word_is_its_lemma_or_a_variant_never_a_near_neighbour():
     assert same_word(sauva, "sauver") and same_word(sauva, "Sauva")
     fm = Token(i=0, text="faux-monnayeur", lemma="faux-monnayeur", pos="NOUN", slug="faux-monnayeur", stop=False)
     assert not same_word(fm, "faussaire") and not same_word(fm, None) and not same_word(fm, "faux monnayeur")
+
+
+def test_with_its_map_the_same_word_is_what_typing_finds():
+    tablee = Token(i=0, text="tablée", lemma="tablée", pos="NOUN", slug="tablee", stop=False)
+    own = frozenset({"tablee", "tablees"})
+    assert not same_word(tablee, "table", own) and same_word(tablee, "tablées", own)
+    assert same_word(tablee, "table")           # without its map, the spelling is all there is
 
 
 def test_the_crowd_is_the_share_of_the_nearest_groups_commoner_than_the_secret():
@@ -261,3 +274,50 @@ def test_a_word_past_the_map_has_no_rank_and_a_multiword_filler_is_no_filler():
 def test_the_secret_and_its_variants_are_not_their_own_filler_in_the_map():
     assert map_nearest_filler(MAP, "heros", ["héros", "héroïne", "type"]) == ("héroïne", 2)
     assert map_nearest_filler(MAP, "heros", ["héros"]) is None
+
+
+def test_a_reader_word_far_on_the_map_notes_a_line_that_gives_little():
+    # « tutoyer » (« commander » at 759) and « cercueil » (« parquet » at 1010): the user's
+    # rounds made no progress (2026-10-14). The note sends the start to the direct meaning.
+    assert READER_FAR_RANK == 500
+    note = far_note(map_nearest_filler(MAP, "heros", ["type"]))           # 900
+    assert note and f"past rank {READER_FAR_RANK}" in note and "direct meaning" in note
+    assert far_note(map_nearest_filler(MAP, "heros", ["gars"])) == note   # past the map
+    assert far_note(map_nearest_filler(MAP, "heros", ["garçon", "type"])) is None   # 404
+    assert far_note(("mot", READER_FAR_RANK)) is None
+    assert far_note(None) is None                                          # no word to type
+
+
+def test_the_reader_s_word_at_the_top_of_the_map_hands_the_hole_over():
+    # « pou » at 1 for « morpion », « mourir » at 1 for « partir » (2026-10-12)
+    assert HANDED_RANK == 3
+    assert map_handed(MAP, "heros", "héroïne") == 2
+    assert map_handed(MAP, "heros", "capitaine") is None          # past HANDED_RANK
+    assert map_handed(MAP, "heros", "gars") is None               # past the map
+    assert map_handed(MAP, "heros", "héros") is None              # the secret itself: the note's case
+    assert map_handed(MAP, "heros", None) is None and map_handed(MAP, "heros", "tout exprès") is None
+
+
+def test_a_hole_none_of_whose_reader_words_is_on_its_map_is_unmapped():
+    known = lambda s: s != "zzz"
+    # « laisse »: readers write « chaîne », and the map holds the verb's neighbours
+    assert unmapped(MAP, "heros", ["gars", "mec"], known) == ["gars", "mec"]
+    assert unmapped(MAP, "heros", ["gars", "type"], known) is None            # one is on the map
+    # a word the vectors don't know cannot be typed; the secret and a multi-word filler
+    # are no fillers
+    assert unmapped(MAP, "heros", ["zzz", "héros", "tout exprès"], known) is None
+    assert unmapped(MAP, "heros", ["gars", "gars"], known) == ["gars"]
+    assert unmapped(MAP, "heros", [], known) is None
+
+
+def test_the_neighbourhood_is_three_words_each_side_within_the_clause():
+    words = "s' il a fallu des morts pour obtenir le droit de vote , on imagine".split()
+    tokens = [tok(i, w, "PUNCT" if w == "," else "NOUN") for i, w in enumerate(words)]
+    vote = words.index("vote")
+    assert [t.text for t in neighbourhood(tokens, vote, set())] == ["le", "droit", "de", "vote"]
+    # « cinq semaines de ___ payés . »
+    words = "arracher cinq semaines de congés payés .".split()
+    tokens = [tok(i, w, "PUNCT" if w == "." else "NOUN") for i, w in enumerate(words)]
+    assert [t.text for t in neighbourhood(tokens, 4, set())] == ["cinq", "semaines", "de", "congés", "payés"]
+    # another hidden word stops it
+    assert [t.text for t in neighbourhood(tokens, 4, {2})] == ["de", "congés", "payés"]

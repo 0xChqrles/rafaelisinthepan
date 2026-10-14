@@ -58,7 +58,8 @@ pnpm curate [--lang fr|en] [--work <file on the shelf>] [--retry <shelf file | p
 #   file name; --work forces one; --retry <shelf file> erases a previous attempt on a
 #   work — its index
 #   entry and the candidate puzzle(s) it wrote under the generation output, their judge
-#   scores included — then runs on it), mines it, and — taste choosing, code stating
+#   scores included, but never a puzzle that was published (`shelf.published_drafts`, off
+#   every ledger line: a start-only correction replays its scores) — then runs on it), mines it, and — taste choosing, code stating
 #   facts — writes ONE candidate day under packages/generation/output/word/<lang>/... via
 #   gen_phrase, headless, the #133 form question answered by the model. Exit 0 = a
 #   candidate was written (publish it yourself), 2 = no line of the work made a day
@@ -100,7 +101,7 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   words, the start words, difficulty). Code keeps only FACTS — which words can be hidden,
   the cooldowns, the famous line, valid grammar, the puzzle format — and turns everything
   it MEASURES into notes the model reads; nothing measured refuses a word but the giveaway
-  FLOOR and the BURIED rule (below). Why: replayed
+  FLOOR, the BURIED, NEIGHBOURS and UNMAPPED rules (below). Why: replayed
   on the 16 days the user loved, the code rules it replaces would have rejected three of
   the lines before any model saw them (`MIN_CANDIDATES`: JeanJass, NeS, Rounhaa) and five
   of the trios (the pair rules: « éleveur de [pigeons] », « le cafard de l'[homme] »),
@@ -122,19 +123,30 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   start words, and `--retry <puzzle.json>` keeps the erased draft's scores for the same
   trio — unless they no longer cover the map (the word tables changed since, #317): the
   replay's refusal drops them and the judge runs again, never losing the line.
-- **The model shortlists with taste, then CHOOSES THE DAY BY COMPARISON.** It reads every
-  kept line, `CHUNK` (150) at a time, picks at most `PICKS_PER_CHUNK` (6) by the taste
-  skill and ranks a `SHORTLIST` (20), even when fewer than 20 lines were picked (one line
-  needs no ordering; an empty or unreadable ranking keeps the reading order — the question
-  asks for an order, never a refusal). `curate.day` then shows it `COMPARE` (5) lines at a
-  time, each with the words code allows (`rules.initial_candidates`), and
-  `llm.choose_day` names the best line and its three words in the order players should
-  find them, each with what in the line leads toward it — or declines. Code checks the facts: three distinct words
-  of the line that can be hidden, and the line STANDS ALONE (below); a refusal is told
-  back and it chooses again, `DAY_ROUNDS` (3) times, then the next lines. Every line
-  compared goes to the index as tried.
+- **The model shortlists with taste, then CHOOSES THE DAY AMONG FINISHED LINES**
+  (user-decided 2026-10-13: a line chosen before its checks ran was hollowed out by its
+  swaps, and the rest of the shortlist was never looked at). It reads every kept line,
+  `CHUNK` (150) at a time, picks at most `PICKS_PER_CHUNK` (6) by the taste skill and
+  ranks a `SHORTLIST` (20), even when fewer than 20 lines were picked (one line needs no
+  ordering; an empty or unreadable ranking keeps the reading order — the question asks
+  for an order, never a refusal). `curate.day` then FINISHES the shortlist `CANDIDATES`
+  (10) lines at a time, `WORKERS` (5) in parallel (`curate.candidate`; the subscription's
+  conflicting credentials are removed once around the whole block, `llm.subscription_only`,
+  since each call's own removal would be restored under the others): the line must STAND
+  ALONE (below; a refusal ends the line), `llm.choose_words` names its three words in the
+  order players should find them, from the words code allows (`rules.initial_candidates`),
+  each with what in the line leads toward it — or declines the line; a pick that is not
+  three distinct words of the line that can be hidden is told back, `DAY_ROUNDS` (3)
+  times; then every check before the ranking runs, swaps included (`curate.check_trio`,
+  below). `llm.choose_among` then COMPARES the lines that survived, each as the player
+  will get it — the line with its words in brackets, how each plays (easy: most readers
+  write it straight in / medium / hard: the line gives little of it, or a word players
+  don't say) and what leads to each — and orders them, best day first, leaving out what
+  would make no day. The first is built (`curate.build_day`: page, ranking, start words);
+  when it cannot be, the next; then the next lines. Only the built line pays the
+  ranking. Every line prepared goes to the index as tried.
 - **Code MEASURES each chosen word and hands the notes to the start-word step**
-  (`curate.build_day`): the READER — the user's own method, one call per word
+  (`curate.check_trio`, each word measured once per line, `Measures`): the READER — the user's own method, one call per word
   (`llm.context_guesses`: the line with that word blanked, the rest intact, no start
   word; the words that could stand there and the one most readers would write) — becomes
   a plain note (`rules.reading`: whether most readers would write the secret itself,
@@ -147,7 +159,10 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   (`rules.two_places`): a score under a bar never prints at it); the WOULD-SAY test (user-decided 2026-10-06, on « faux-monnayeur »),
   one call per word (`llm.would_say`: the line with that word blanked AND the word named —
   would a player who has roughly the meaning ever say it, or keep to commoner words
-  meaning nearly the same?) as a note (`rules.said`): under `WOULD_SAY_HARD` 0.4 it is a
+  meaning nearly the same?) as a note (`rules.said`) — in English the question adds that
+  the players come from every English-speaking country, so a word or a sense only a small
+  part of English speakers use counts as unsaid (`llm.AUDIENCE`, user-decided 2026-10-14,
+  after « knickers »; the French question stays worded as calibrated): under `WOULD_SAY_HARD` 0.4 it is a
   word players don't say; ONE makes a hard day a loved day may hold (« moucheron »,
   « mammifères »), TWO or more made the worst days (finished by a median 40 % of the
   players, against 57 % with one and 71 % with none), so a trio holding two
@@ -162,22 +177,59 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   paid for. Players reach the idea, circle the commoner neighbours and stall: on 126
   played French holes such words stalled players about twice as often, rarity aside. A
   rare NAME passes (« saint-bernard », said at 0.58), a rare stand-in does not
-  (« faux-monnayeur », « charnier »); English uses the French bars, unchecked on play;
-  and, once the map is built, where the reader's nearest word
-  lands in the hole's own map (`rules.map_nearest_filler`). A trio hiding TWO
+  (« faux-monnayeur », « charnier »); English uses the French bars, unchecked on play —
+  the NEIGHBOURS rule, the third code veto (user-decided 2026-10-13: "droit de ___ is no
+  fun when it's vote", « cinq semaines de ___ payés »): the words right around the hole —
+  up to `NEIGHBOURS` (3) each side, never across punctuation nor another hole
+  (`rules.neighbourhood`) — shown alone, the model writes the first word they call for
+  (`llm.neighbours_complete`); when that is the hidden word (`rules.same_word`) the
+  neighbours hand it over and it is refused the same way, before the ranking. Its first
+  word is the measure, never a share: told the word or not, the model hedges (« vote » 0.3,
+  « arrêt ___ » → « cardiaque » 0.3), and Jev's fixed-expression question scored
+  « vote » under « sacrifices », a hole players searched. On 174 played French holes it
+  refuses 16, among them « vote », « congés », « partir », « chaussettes », and of the
+  loved days' 48 « poche » (« dans sa ___ une montre ») and « humain » (« le savoir ___ »)
+  — and the UNMAPPED rule, the fourth code veto (user-decided 2026-10-12, after « laisse »,
+  whose vector is the verb's: its map held no « chaîne »): a word NONE of whose reader
+  words (single words the vectors know) is on its free static map (`rules.unmapped`; the
+  judge only reorders the walk's groups, so the free map answers before the ranking) is
+  refused the same way — every first guess lands past the map. On the 49 played French
+  days with a reader on file it catches « facho », « insecte », « réverbères », no loved
+  day; and, once the map is built, where the reader's nearest word
+  lands in the hole's own map (`rules.map_nearest_filler`) — past `READER_FAR_RANK` (500),
+  or past the map, the note adds that the line gives little of the word and its start
+  comes from its direct meaning (`rules.far_note`, `curate._notes`; user-decided
+  2026-10-14, after « tutoyer » at 759 and « cercueil » at 1010: nothing a player types
+  first tells them they are getting closer); never when the readers write the word itself,
+  and never a veto (the user kept « cercueil », with « cadavre », its direct meaning, for
+  its start). A trio hiding TWO
   or more words players don't say — the one fact that asks — has ONE of them swapped by the
   model BEFORE the ranking is paid for (`llm.drop_unsaid`: the DULL one goes, the one more
-  fun to find stays — « clodos » over « stagnation », user-decided 2026-10-08), so that swap costs one question, never a second ranking; any other trio goes
-  straight on, an easy word being the start step's to tune (a medium start, by the taste, never a
+  fun to find stays — « clodos » over « stagnation », user-decided 2026-10-08), so that swap costs one question, never a second ranking; so does a trio whose line
+  HANDS OVER two or more of its words (the reader writes the secret itself:
+  `llm.drop_handed` swaps the dull one, keeps the punch — user-decided 2026-10-12, after a
+  Desproges day solved in ten seconds); and once the map is built, a reader's most-likely
+  word at or under `HANDED_RANK` (3) in the hole's own map hands that hole over too
+  (`rules.map_handed`: « pou » for « morpion », « mourir » for « partir », both found in
+  one or two guesses; no played day had one): two such holes and the start step raises
+  `Handed` before any question, the draft is erased and `llm.drop_handed` swaps one — that
+  swap pays a second ranking; any other trio goes straight on, ONE easy word
+  being the start step's to tune (a medium start, by the taste, never a
   duller word). Asked of every trio, the model swapped on 77% of played days, loved ones included,
   and picked the hard word no better than chance. A word players would say
-  instead that IS this word in another form (« sauver » for « sauva »: its spelling, lemma
-  or a variant, `rules.same_word` — never a near neighbour like « faussaire », which is
-  another word in its own group) finds the hole, so that word counts as said. With all the notes and each hole's band, `llm.pick_starts`
+  instead that IS this word in another form (« sauver » for « sauva »: its spelling, its
+  lemma, or a key of its own group on its free map — what typing it finds, `rules.same_word`,
+  `curate.load_similarity`'s `own`; « table » is not « tablée »; the coarse spelling test
+  `is_variant` only for a word with no map — never a near neighbour like « faussaire »,
+  which is another word in its own group) finds the hole, so that word counts as said; the
+  NEIGHBOURS rule reads the same test. With all the notes and each hole's band, `llm.pick_starts`
   chooses the three starts by the taste — or names ONE hidden word no start can save
   (dead or out of reach whatever its start, or none of its candidates linking to it in its
   everyday sense, user-decided 2026-10-08) and another word of the line to hide instead (`Replace`: the draft is erased, the day
-  rebuilt). Both swaps share `REPLACE_ROUNDS` (2).
+  rebuilt). Both swaps share `REPLACE_ROUNDS` (2). A word swapped OUT of a line is never
+  offered again for it (`Measures.out`; user-decided 2026-10-13: the model's next swap
+  brought a refused word back, « imprésario » → « organisé » → « imprésario », and spent
+  the line's swaps undoing each other — four of a run's ten lines died so).
 - **Which words can be hidden (facts, `rules.initial_candidates`):** NOUN/VERB/ADJ/ADV and
   PROPN (the parser tags a lowercase brand or rare noun as a proper noun — « rolex »,
   « zigzag », secrets of a favourite day; a name nobody can reason toward is taste's
@@ -225,7 +277,8 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 - **Taste has ONE home, the `taste` skill, read WHOLE by every prompt that chooses** (the
   shortlist, the day, the starts); the `find-sentences` skill keeps the practical laws
   the prompts quote (`## The quotation rule`, `## Stands alone`, `## The start word`,
-  `## The page`). Edit the skills, never a prompt copy.
+  `## The page`); a check that judges ONE rule of the taste quotes that section of it
+  (`llm.taste_section`: the start-idea check). Edit the skills, never a prompt copy.
 - **The transport is the benchmark's** (`llm_play._agent_sdk_turn`, the paid-Claude.ai
   guard, the conflict-env scrub): one fresh conversation per question, model
   `claude-opus-5-5`, adaptive thinking, effort `high` (set explicitly: Opus 5.5 defaults to
@@ -273,7 +326,20 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   article, each start's construction — AND still meaning something, each start the kind
   of thing its place needs (« le fitness se suicide » is French and means nothing; a
   grammar-only check passed it). A start may be odd or funny; only a wrong or
-  meaningless one is refused. A refused start is re-picked (`llm.pick_start`, taste
+  meaningless one is refused. Once the sentence reads right, `llm.start_ideas` asks, for
+  each start on a hole the line gives little of (its notes say so, `rules.GIVES_LITTLE`:
+  the reader's words land far, or the giveaway is under `GIVEAWAY_HARD`), the FIRST idea
+  it brings where it stands and whether its hidden word shares it — the taste's
+  `### One idea, the start's first one`, quoted (user-decided 2026-10-14, the user's own
+  reading: « fracas » carries noise like « rugissements »; « berceau » for « cercueil »
+  shared only a vague side meaning, its stronger ideas led away, and the user's round
+  made no progress at all); a RIDDLE start is refused the same way. Only there: asked of
+  every hole of the user's loved days, the check called 17 of their 57 starts riddles;
+  on the holes the line gives little of, 2 — where the line leads, the player gets there
+  whatever the start's link, and the picks still read the rule in the taste. A start the check passed is never asked again (`cleared`, kept across rounds); a
+  start the answer gives no verdict for refuses nothing and is logged as left to the
+  reviewer, never as a pass; and on the last round (`START_ROUNDS`) a riddle is logged for
+  the reviewer instead of traded for a start no check would read. A refused start is re-picked (`llm.pick_start`, taste
   included, reading the day as `pick_starts` does: the hole's notes with where the reader's
   nearest word lands, and every other hole's notes and shown start) and gen_phrase reruns; at most `START_ROUNDS` (3) rounds; what is still
   doubtful is logged for the reviewer.
@@ -353,9 +419,11 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 
 - Don't publish, and don't write a puzzle by any path but `gen_phrase`.
 - Don't turn a measurement into a veto: code states facts, taste chooses. A new signal
-  goes to the model as a note, with its real-play meaning. The two vetoes are the giveaway
-  floor (`GIVEAWAY_MIN`, user-decided 2026-10-02) and the BURIED rule (`rules.buried`,
-  user-decided 2026-10-08). Don't keep a hand list of refused words: the buried rule
+  goes to the model as a note, with its real-play meaning. The four vetoes are the giveaway
+  floor (`GIVEAWAY_MIN`, user-decided 2026-10-02), the BURIED rule (`rules.buried`,
+  user-decided 2026-10-08), the UNMAPPED rule (`rules.unmapped`, user-decided 2026-10-12)
+  and the NEIGHBOURS rule (`rules.neighbourhood` + `llm.neighbours_complete`,
+  user-decided 2026-10-13). Don't keep a hand list of refused words: the buried rule
   measures any word (the user: "the curator will be good in 30 years with this solution").
 - Don't write taste into code or a prompt copy; it lives in the `taste` skill.
 - Don't ask a model to PLAY the puzzle — to guess its way to a secret, count the tries or

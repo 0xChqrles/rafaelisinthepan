@@ -157,15 +157,19 @@ def reading(
     return f"{lead}; other words a reader puts there: {alternatives}"
 
 
-def same_word(candidate: Token, other: str | None) -> bool:
-    """Whether the word players would say instead IS this word in another form (« sauver »
-    for « sauva »): its spelling, its lemma or a variant. Typing it finds the hole, since a
-    ranked group holds every form of a word — so the hidden word is said. Never a near
-    neighbour (« faussaire » for « faux-monnayeur »): that is another word, in its own group."""
+def same_word(candidate: Token, other: str | None, own: frozenset[str] | None = None) -> bool:
+    """Whether a word players would write IS this word in another form (« sauver » for
+    « sauva »): its spelling, its lemma, or — what typing it finds — a key of the word's
+    own group on its free map (`own`, the rank-0 keys; « table » is not « tablée »). Only
+    without a map, a variant by spelling (`is_variant`, coarse: it takes « table » for
+    « tablée »). Never a near neighbour (« faussaire » for « faux-monnayeur »): that is
+    another word, in its own group."""
     if not other or " " in other.strip():
         return False
     s = slug(other)
-    return s in (candidate.slug, slug(candidate.lemma or "")) or is_variant(s, candidate.slug)
+    if s in (candidate.slug, slug(candidate.lemma or "")):
+        return True
+    return s in own if own is not None else is_variant(s, candidate.slug)
 
 
 def two_places(x: float) -> str:
@@ -252,6 +256,68 @@ def unsaid(chances: dict[str, float | None]) -> str | None:
             f"57% with one and 71% with none")
 
 
+# The words a player reads at a glance around a hole: up to NEIGHBOURS each side, never
+# across punctuation nor another hidden word (« le droit de ___ », « cinq semaines de ___
+# payés »). A hole these alone hand over is no search (user-decided 2026-10-13).
+NEIGHBOURS = 3
+
+
+def neighbourhood(tokens: list[Token], mark: int, hidden: set[int], n: int = NEIGHBOURS) -> list[Token]:
+    """The hole's token (`mark`, a token index) and the words right around it, in order."""
+    order = list(tokens)
+    k = next(j for j, t in enumerate(order) if t.i == mark)
+
+    def walk(step: int) -> list[Token]:
+        out, j = [], k + step
+        while 0 <= j < len(order) and len(out) < n:
+            t = order[j]
+            if t.pos == "PUNCT" or t.i in hidden:
+                break
+            out.append(t)
+            j += step
+        return out
+
+    return [*reversed(walk(-1)), order[k], *walk(1)]
+
+
+# The reader's most-likely word at or under this rank in the hole's own map hands the hole
+# over as surely as the secret itself (2026-10-12: « pou » and « mourir » sat at 1, both
+# holes found in one or two guesses). On the 49 played French days with a reader on file,
+# no reader word sat there.
+HANDED_RANK = 3
+
+
+def map_handed(rank_map: dict, secret_slug: str, expected: str | None) -> int | None:
+    """The rank of the reader's most-likely word (`expected`) in the hole's own map when it
+    is at or under HANDED_RANK — the player types it first and the hole is found — else
+    None. The secret itself or a variant of it is the reader note's case, not this one."""
+    s = slug(expected or "")
+    if not s or " " in (expected or "").strip() or s == secret_slug or is_variant(s, secret_slug):
+        return None
+    entry = rank_map.get(s)
+    return entry["rank"] if entry and 1 <= entry["rank"] <= HANDED_RANK else None
+
+
+def unmapped(rank_map: dict, secret_slug: str, fillers: list[str], known: Callable[[str], bool]) -> list[str] | None:
+    """The reader's words (single words the vectors know, not the secret or a variant)
+    when NONE is on the hole's map: whatever the player types first lands past the map,
+    which holds another sense of the word (« laisse »: the verb's neighbours, no
+    « chaîne », 2026-10-12). Off the map are every group the walk keeps (`TOP_K`), so the
+    free static walk answers before the ranking (the judge only reorders the same groups).
+    On the 49 played French days with a reader on file: « facho » (2026-09-16, 4% of the
+    players within 30 tries), « insecte », « réverbères »; no loved day. None when one is on
+    the map or the reader named no such word."""
+    words = []
+    for w in fillers:
+        s = slug(w)
+        if not s or " " in w.strip() or s == secret_slug or is_variant(s, secret_slug) or not known(s):
+            continue
+        if s in rank_map:
+            return None
+        words.append(w)
+    return list(dict.fromkeys(words)) or None
+
+
 def map_nearest_filler(rank_map: dict, secret_slug: str, fillers: list[str]) -> tuple[str, int | None] | None:
     """The reader's filler nearest the secret in the hole's OWN map, as (word, rank); the
     rank is None for a word past the map (farther than every ranked group). None when the
@@ -267,3 +333,26 @@ def map_nearest_filler(rank_map: dict, secret_slug: str, fillers: list[str]) -> 
         if best is None or (rank is not None and (best[1] is None or rank < best[1])):
             best = (w, rank)
     return best
+
+
+# Past this rank in the hole's own map, the words a reader puts in the blank tell the player
+# nothing (user-decided 2026-10-14): on « tutoyer » (« commander » at 759) and « cercueil »
+# (« parquet » at 1010, played from « berceau ») the user's own rounds made no progress at
+# all. The line then gives little of the word whatever its giveaway score, and the start comes
+# from the word's direct meaning. A note, never a veto: the user kept « cercueil », with
+# « cadavre » for its start.
+READER_FAR_RANK = 500
+# What a hole's notes say when the line gives little of its word — a giveaway under
+# GIVEAWAY_HARD, or the reader's words landing far (`far_note`). The start-idea check reads it.
+GIVES_LITTLE = "the line gives little of this word"
+
+
+def far_note(nearest: tuple[str, int | None] | None) -> str | None:
+    """The start step's note when the reader's nearest word (`map_nearest_filler`) lands
+    past READER_FAR_RANK in the hole's own map, or past the map; None when it is nearer or
+    the reader named no word to type."""
+    if nearest is None or (nearest[1] is not None and nearest[1] <= READER_FAR_RANK):
+        return None
+    return (f"every word a reader puts in this blank lands past rank {READER_FAR_RANK} in this hole's map, so "
+            f"nothing a player types first tells them they are getting closer: {GIVES_LITTLE}, and its start "
+            f"comes from the word's direct meaning")

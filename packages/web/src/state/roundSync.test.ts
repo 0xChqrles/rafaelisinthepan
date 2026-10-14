@@ -36,7 +36,12 @@ import {
   retryRoundSync,
   writeDelayMs,
 } from './roundSync';
-import { ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, roundEnded } from '@whippin/shared';
+import { PUZZLE_CHANGED, ROUND_GUESS_CAP, ROUND_WRITE_MIN_MS, roundEnded } from '@whippin/shared';
+import { notePuzzleChanged } from './sentenceWatch';
+
+// The page's reload onto a REPUBLISHED sentence is `sentenceWatch`'s (its own suite); here,
+// only that a PUZZLE_CHANGED answer asks for it.
+vi.mock('./sentenceWatch', () => ({ notePuzzleChanged: vi.fn() }));
 
 // `roundUrl` is mocked with the rest (the house pattern — see useScoreHistogram.test.ts's
 // `scoresUrl`, FriendInvite.test.ts's `friendsUrl`): the real builder throws without
@@ -144,9 +149,12 @@ function ok(guesses: string[], solved = false, credited?: boolean) {
 // carries an empty `createdAt`, which is what tells "refused an existing round" from
 // "refused before creating one".
 function refusal(status: number, guesses: string[], error?: string, solved = false, gaveUp = false) {
-  return {
+  const response = {
     ok: false,
     status,
+    // A real Response can be read once and CLONED: the engine peeks at a 409's code off a
+    // clone (`republished`) before the answer's own handling reads it.
+    clone: () => response,
     json: async () => ({
       error: error ?? (status === 409 ? 'round_full' : 'too_fast'),
       message: 'refused',
@@ -156,7 +164,8 @@ function refusal(status: number, guesses: string[], error?: string, solved = fal
       createdAt: guesses.length === 0 ? '' : '2026-08-21T09:00:00.000Z',
       now: '2026-08-21T09:30:00.000Z',
     }),
-  } as unknown as Response;
+  };
+  return response as unknown as Response;
 }
 
 function status(code: number) {
@@ -1222,5 +1231,47 @@ describe('no token, no private fetch (#216)', () => {
     beginRoundSync(ctx());
     await settle();
     expect(identity.signedOut).not.toHaveBeenCalled();
+  });
+});
+
+// CONTRACT (user-decided 2026-10-13): a write naming a REPUBLISHED sentence is refused with
+// its own code; the conversation stops there (nothing more is stored against that sentence)
+// and the page is asked to reload onto the new one.
+describe('a write answered PUZZLE_CHANGED', () => {
+  async function ready() {
+    post.mockResolvedValueOnce(status(404));
+    seedOutbox();
+    beginRoundSync(ctx());
+    await settle();
+    post.mockReset();
+    vi.mocked(notePuzzleChanged).mockClear();
+  }
+
+  function changed() {
+    const response = {
+      ok: false,
+      status: 409,
+      json: async () => ({ error: PUZZLE_CHANGED, message: 'republished' }),
+    };
+    return { ...response, clone: () => response } as unknown as Response;
+  }
+
+  it('stops the conversation and asks for the new sentence', async () => {
+    await ready();
+    seedOutbox(['phare']);
+    post.mockResolvedValueOnce(changed());
+    notifyGuess(KEY);
+    await settle(60_000);
+    expect(notePuzzleChanged).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers a give-up FALSE and asks for the new sentence', async () => {
+    await ready();
+    post.mockResolvedValueOnce(changed());
+    const answer = giveUpRound(KEY);
+    await settle();
+    await expect(answer).resolves.toBe(false);
+    expect(notePuzzleChanged).toHaveBeenCalledTimes(1);
   });
 });

@@ -10,9 +10,11 @@ import {
 } from '@whippin/shared';
 import GameHold, { useHold, type HoldTray } from './components/GameHold';
 import usePuzzle from './hooks/usePuzzle';
+import { puzzleUrl } from './api';
 import useVocab, { type Vocab } from './hooks/useVocab';
 import useRoundSync from './hooks/useRoundSync';
 import { retryRoundSync } from './state/roundSync';
+import { useSentenceWatch } from './state/sentenceWatch';
 import { roundOnScreen, type RoundOnScreen } from './game/roundOnScreen';
 import { freshHolesFor, replayHoles } from './game/scoring';
 import { playLogFor } from './game/playLog';
@@ -448,6 +450,15 @@ function GameRoute({
   // A day already over hands over to its RESULT on bare ground: the hold goes at once rather
   // than showing through the card as it comes in.
   const over = shown !== null && (shown.server.solved || roundEnded(shown.server));
+  // A NEW SENTENCE published for the puzzle on screen reloads the page onto it (user-decided
+  // 2026-10-13, `state/sentenceWatch.ts`): asked off the puzzle's own URL, so its
+  // revalidation is the cache entry it was loaded from; a round already OVER is reloaded only
+  // once the player looks away or back, never under the result they are reading.
+  useSentenceWatch(
+    puzzle && lang ? puzzleUrl(lang, puzzleAddress(ref), previewCode) : null,
+    puzzle?.revision ?? null,
+    over,
+  );
 
   // Visiting a puzzle route makes this the last-played language (seeds the `/` redirect).
   useEffect(() => {

@@ -43,3 +43,8 @@ def test_a_document_the_archive_cannot_produce_is_skipped(tmp_path):
     path.write_bytes(raw)
     assert epub_metadata(path) == {"title": "Mes amis", "author": "Emmanuel Bove"}
     assert epub_text(path) == "Premier chapitre.\n\nDeux."
+
+
+def test_html_to_text_drops_soft_hyphens():
+    # a typesetting hint, never text: « on \xadimagine » was a word of a 2026-10-13 draft
+    assert html_to_text("<p>on &shy;imagine les hé\xadcatombes</p>") == "on imagine les hécatombes"

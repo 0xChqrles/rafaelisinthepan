@@ -14,6 +14,7 @@ import {
   GROUP_SEGMENT,
   PREVIEW_REFUSED,
   PUBLIC_ID_PATTERN,
+  revisionEtag,
   SHARE_SEGMENT,
   SHARE_TOKEN_SOURCE,
   RESET_HOUR,
@@ -552,9 +553,14 @@ export function createHandler(deps: HandlerDeps) {
       //
       // Compressed when the client accepts it: a puzzle's rank maps run to several MB, and
       // the runtime's envelope cap is what a plain body hits first (see respond.ts).
+      //
+      // Its ETag is its revision (shared `sentenceVersion.ts`): a page asking whether the
+      // sentence it shows is still the published one revalidates against it, and the CDN
+      // answers 304 for an unchanged sentence — the check costs a header, not the puzzle.
       const response = jsonCompressed(200, puzzle, event.headers?.['accept-encoding'], {
         ...cors,
         'Cache-Control': `public, max-age=${PUZZLE_BROWSER_MAX_AGE}, s-maxage=${PUZZLE_CDN_MAX_AGE}`,
+        ETag: revisionEtag(puzzle.revision),
       });
       // A payload the runtime would refuse is answered here instead. Left to the runtime it
       // becomes a 413 the caller reads as a bare 502, with nothing in this handler's logs —

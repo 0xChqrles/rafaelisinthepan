@@ -230,14 +230,15 @@ line already gives of the word:
   - « rolex » ← « cartier », « post-it » ← « enveloppes »: another luxury brand, another
     paper you leave words on — the family is wide, the pairing in the line does the rest.
   - « robot » ← « logiciel », « cafard » ← « mille-pattes »: a neighbour in a wide family.
-- **The line gives little of the word** — too hard to guess from the context: a start
+- **The line gives little of the word** — too hard to guess from the context, as the notes
+  say when the words a reader puts in the blank all land far on the hole's map: a start
   tied to the word's DIRECT meaning; when the rest of the line is already hard (its
   other holes too), the most direct of them. Next to the meaning, never another name for
   it: « marriage » or « heartbreak » for « divorce », not « nazi » for « facho » nor
-  « blue » for « sky » — a synonym leaves the player nothing to find. Another of the
-  same kind IS next to the meaning: another god for « Dieu » (« Shiva »), another
-  specialist for « psychiatre » (« urologue »), another class for « mammifères »
-  (« batraciens »).
+  « blue » for « sky » — a synonym leaves the player nothing to find. Never a member of
+  the kind the word itself names: players name the kind, and that is the word
+  (« Shiva » for « Dieu »: they typed « dieu » at once; « parme » for « rose »: a search
+  says "a pink").
   - « divorce » ← « heartbreak », in « the ones about [divorce] go right over their
     heads »; « marriage » when the rest of the line is already hard. Not « litigation »
     (2026-10-10), chosen to keep the punch hidden: a word about the procedure, not about
@@ -254,6 +255,38 @@ guesses between them:
   one or two tries.
 - « chambre » ← « tanière »: a word for a teenager's room.
 - « parfaitement » ← « admirablement »: a synonym in costume.
+- « chaussettes » ← « baskets »: shoes, then socks — two automatic steps, no thought
+  (2026-10-11, testers: "absolutely no fun").
+- « bassine » ← « amphore », in « mis à tremper… dans une ___ de matière plastique »: the
+  line calls the word whatever the start; a hole like that needs the rest of the day to
+  carry the search.
+
+**When the line hands over two or more of the trio** (most readers write the word straight
+into its blank — the reader's note says so), the day is solved in a few guesses: a flat
+line dies (2026-09-21, median 5 tries; the socks-in-a-basin line, 2026-10-11, three words
+in three guesses), and a witty one too (Desproges, 2026-10-12, solved in ten seconds).
+A word the words right around it call for is no search either — « le droit de ___ » is
+« vote », « cinq semaines de ___ payés » is « congés » for anyone (2026-10-13, found in the
+first two guesses): code refuses it. A word the reader writes that sits at the very top of
+the hole's map hands it over just the same (« pou » for « morpion », « mourir » for « partir »). Code asks for a swap: drop
+the DULL handed-over word, keep the punch, and hide a word the line does not hand over.
+
+### One idea, the start's first one
+
+A start carries ONE idea its hidden word shares, and that idea is the FIRST one the start
+brings where it stands — the user's own reading (2026-10-14): « fracas » carries the idea
+of noise, and « rugissements » is noise: good. « poids » carries a physical measure, and
+« place » is one: good. « berceau » for « cercueil » carries a body in something, which is
+very vague, and it carries far stronger ideas — a baby, a birth, rocking — that lead
+nowhere near the word: the user's round made no progress at all. « cadavre » would have
+been the start: the dead body the coffin holds, its first idea.
+
+The shared idea may be a whole family, as wide as noise: the good starts above share theirs —
+« tisane » for « bière » a drink, « papillons » for « pigeons » creatures people collect,
+« cartier » for « rolex » a luxury brand. Wide is not vague: the start's first idea IS the
+family. A start whose shared idea is not its first one is a RIDDLE: it makes sense only
+once the word is found (« berceau » reads as « cercueil » only through « du berceau au
+cercueil »).
 
 ## Difficulty is part of taste
 
@@ -302,6 +335,12 @@ A rare NAME of the thing passes (« saint-bernard », « post-it »: there is no
 it); a rare stand-in among commoner words meaning the same is BURIED, and code refuses it
 (« faux-monnayeur » beside « faussaire », « charnier » among « cimetière », « ossuaire »,
 « fosse »): players reach the idea, circle the commoner neighbours and stall.
+
+In English, the players come from every English-speaking country: a word, or a sense of a
+word, that only a small part of English speakers use is a word most of them don't say,
+however natural it is where it is used; a word most of them say is not. « knickers » in
+« pull down your ___ » (2026-10-14) was too British: it works for only a small part of
+English speakers.
 
 Ask: when a player has the meaning, would they say this word — or the common one beside it?
 
