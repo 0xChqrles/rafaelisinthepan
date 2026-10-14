@@ -159,7 +159,10 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   (`rules.two_places`): a score under a bar never prints at it); the WOULD-SAY test (user-decided 2026-10-06, on « faux-monnayeur »),
   one call per word (`llm.would_say`: the line with that word blanked AND the word named —
   would a player who has roughly the meaning ever say it, or keep to commoner words
-  meaning nearly the same?) as a note (`rules.said`): under `WOULD_SAY_HARD` 0.4 it is a
+  meaning nearly the same?) as a note (`rules.said`) — in English the question adds that
+  the players come from every English-speaking country, so a word or a sense only a small
+  part of English speakers use counts as unsaid (`llm.AUDIENCE`, user-decided 2026-10-14,
+  after « knickers »; the French question stays worded as calibrated): under `WOULD_SAY_HARD` 0.4 it is a
   word players don't say; ONE makes a hard day a loved day may hold (« moucheron »,
   « mammifères »), TWO or more made the worst days (finished by a median 40 % of the
   players, against 57 % with one and 71 % with none), so a trio holding two
@@ -193,7 +196,13 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   refused the same way — every first guess lands past the map. On the 49 played French
   days with a reader on file it catches « facho », « insecte », « réverbères », no loved
   day; and, once the map is built, where the reader's nearest word
-  lands in the hole's own map (`rules.map_nearest_filler`). A trio hiding TWO
+  lands in the hole's own map (`rules.map_nearest_filler`) — past `READER_FAR_RANK` (500),
+  or past the map, the note adds that the line gives little of the word and its start
+  comes from its direct meaning (`rules.far_note`, `curate._notes`; user-decided
+  2026-10-14, after « tutoyer » at 759 and « cercueil » at 1010: nothing a player types
+  first tells them they are getting closer); never when the readers write the word itself,
+  and never a veto (the user kept « cercueil », with « cadavre », its direct meaning, for
+  its start). A trio hiding TWO
   or more words players don't say — the one fact that asks — has ONE of them swapped by the
   model BEFORE the ranking is paid for (`llm.drop_unsaid`: the DULL one goes, the one more
   fun to find stays — « clodos » over « stagnation », user-decided 2026-10-08), so that swap costs one question, never a second ranking; so does a trio whose line
@@ -268,7 +277,8 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 - **Taste has ONE home, the `taste` skill, read WHOLE by every prompt that chooses** (the
   shortlist, the day, the starts); the `find-sentences` skill keeps the practical laws
   the prompts quote (`## The quotation rule`, `## Stands alone`, `## The start word`,
-  `## The page`). Edit the skills, never a prompt copy.
+  `## The page`); a check that judges ONE rule of the taste quotes that section of it
+  (`llm.taste_section`: the start-idea check). Edit the skills, never a prompt copy.
 - **The transport is the benchmark's** (`llm_play._agent_sdk_turn`, the paid-Claude.ai
   guard, the conflict-env scrub): one fresh conversation per question, model
   `claude-opus-5-5`, adaptive thinking, effort `high` (set explicitly: Opus 5.5 defaults to
@@ -316,7 +326,20 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   article, each start's construction — AND still meaning something, each start the kind
   of thing its place needs (« le fitness se suicide » is French and means nothing; a
   grammar-only check passed it). A start may be odd or funny; only a wrong or
-  meaningless one is refused. A refused start is re-picked (`llm.pick_start`, taste
+  meaningless one is refused. Once the sentence reads right, `llm.start_ideas` asks, for
+  each start on a hole the line gives little of (its notes say so, `rules.GIVES_LITTLE`:
+  the reader's words land far, or the giveaway is under `GIVEAWAY_HARD`), the FIRST idea
+  it brings where it stands and whether its hidden word shares it — the taste's
+  `### One idea, the start's first one`, quoted (user-decided 2026-10-14, the user's own
+  reading: « fracas » carries noise like « rugissements »; « berceau » for « cercueil »
+  shared only a vague side meaning, its stronger ideas led away, and the user's round
+  made no progress at all); a RIDDLE start is refused the same way. Only there: asked of
+  every hole of the user's loved days, the check called 17 of their 57 starts riddles;
+  on the holes the line gives little of, 2 — where the line leads, the player gets there
+  whatever the start's link, and the picks still read the rule in the taste. A start the check passed is never asked again (`cleared`, kept across rounds); a
+  start the answer gives no verdict for refuses nothing and is logged as left to the
+  reviewer, never as a pass; and on the last round (`START_ROUNDS`) a riddle is logged for
+  the reviewer instead of traded for a start no check would read. A refused start is re-picked (`llm.pick_start`, taste
   included, reading the day as `pick_starts` does: the hole's notes with where the reader's
   nearest word lands, and every other hole's notes and shown start) and gen_phrase reruns; at most `START_ROUNDS` (3) rounds; what is still
   doubtful is logged for the reviewer.
