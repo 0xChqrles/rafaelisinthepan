@@ -724,7 +724,7 @@ The live routes then share:
 - Moderation best-effort on write: banned-strings name filter (`name_rejected`), exhaustive
   swastika template match (`avatar_rejected`). Symbolic; the group is the containment. A
   GROUP NAME takes the same filter and the same charset (`shared/src/name.ts`) at its own
-  cap of 20 (`GROUP_NAME_MAX_LENGTH`, user-decided 2026-09-14), never empty.
+  cap of 24 (`GROUP_NAME_MAX_LENGTH`, user-decided 2026-10-14), never empty.
 - The copyable-key backup UI was removed (2026-08-19); #204's email link is the backup.
 - **A RESULT SHARE WEARS ITS PLAYER'S FACE, AND CARRIES NO INVITE (decided 2026-09-05;
   made unconditional and invite-free 2026-09-10).** The result screen signs every share
@@ -755,8 +755,8 @@ The live routes then share:
   what the preview renders. Caps in `shared/src/scores.ts`: **`GROUPS_MAX` = 10** per player
   (409 `group_limit`), **`GROUP_MEMBERS_MAX` = 50** per group (409 `group_full`), COUNTED off
   rows (a bound, not an invariant). Name = the player name's charset (`shared/src/name.ts`,
-  ONE pipeline) at the GROUP's cap — **`GROUP_NAME_MAX_LENGTH` = 20** (user-decided
-  2026-09-14; `sanitizeGroupName` / `isValidGroupName`, the web sanitizing what is typed,
+  ONE pipeline) at the GROUP's cap — **`GROUP_NAME_MAX_LENGTH` = 24** (user-decided
+  2026-10-14; `sanitizeGroupName` / `isValidGroupName`, the web sanitizing what is typed,
   the backend refusing what is not already sanitized) + the banned-strings filter, never
   empty. Ids are `GROUP_ID_PATTERN` (the public id's shape).
 - **Invite** `<site>/g/<groupId>` — a SERVER-rendered preview (name + member marks + app
