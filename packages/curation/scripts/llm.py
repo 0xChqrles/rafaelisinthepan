@@ -32,6 +32,14 @@ A_LANGUAGE = {"fr": "a French", "en": "an English"}
 AGREEMENT = {"fr": "gender, number, verb form, elision", "en": "number, verb form, the article a/an"}
 # What a forms-table analysis is made of (the #133 question).
 ANALYSIS = {"fr": "part of speech, gender, number, tense", "en": "part of speech, number, tense, degree"}
+# Who the would-say question's players are. English is spoken in many countries, and a word
+# (or a sense) only a small part of its speakers use is one most players never say
+# (user-decided 2026-10-14, after « knickers » in « pull down your ___ »: "it works for only a
+# small part of english speakers"). The French question stays worded exactly as it was
+# calibrated on real play.
+AUDIENCE = {"fr": "", "en": "\nThe players come from every English-speaking country: a word, or a sense of a word, that only\n"
+                            "a small part of English speakers use is one most of them never say, however natural it is\n"
+                            "where it is used. A word most English speakers say is not one of them."}
 
 
 def _capital(text: str) -> str:
@@ -112,7 +120,8 @@ def parse_json(reply: str):
 # ---------------------------------------------------------------------------
 # TASTE has ONE home, the `taste` skill, read WHOLE by every prompt that chooses a line,
 # a trio or a start word. The `find-sentences` skill keeps the practical laws (the famous
-# line, standing alone, the start word, the page); the prompts quote them.
+# line, standing alone, the start word, the page); the prompts quote them. A check that
+# judges ONE rule of the taste quotes that section of it (`taste_section`), never a copy.
 
 def skill_section(heading: str) -> str:
     text = _paths.SKILL_FILE.read_text(encoding="utf-8")
@@ -125,6 +134,21 @@ def skill_section(heading: str) -> str:
 def taste() -> str:
     text = _paths.TASTE_FILE.read_text(encoding="utf-8")
     return re.sub(r"\A---\n.*?\n---\n", "", text, flags=re.S).strip()
+
+
+def taste_section(heading: str) -> str:
+    """One section of the `taste` skill, from its heading to the next heading of the same
+    level or above — for a check that judges one rule, never chooses."""
+    text = _paths.TASTE_FILE.read_text(encoding="utf-8")
+    start = text.index(heading)
+    level = len(heading) - len(heading.lstrip("#"))
+    nxt = re.search(rf"^#{{1,{level}}} ", text[start + len(heading):], re.M)
+    end = start + len(heading) + nxt.start() if nxt else len(text)
+    return text[start:end].strip()
+
+
+def start_idea_rule() -> str:
+    return taste_section("### One idea, the start's first one")
 
 
 def laws() -> str:
@@ -379,7 +403,8 @@ def would_say(claude: Claude, tokens, blanks: set[int], mark: int, word: str,
     THIS one, or keep to commoner words meaning nearly the same? The chance they come up
     with it (None when the answer is unusable) and the word they would keep saying
     instead; a note for the model (`rules.said`), never a verdict. Worded exactly as it
-    was calibrated on real play (`rules.WOULD_SAY_HARD`)."""
+    was calibrated on real play (`rules.WOULD_SAY_HARD`); English adds who its players
+    are (`AUDIENCE`)."""
     shown = holed(tokens, blanks, mark, lang=lang)
     answer = claude.json(f"""You judge one hidden word of a daily {LANGUAGE[lang]} word game. The player sees this line with the
 word hidden and rebuilds it by guessing: each guess tells them how close it is in meaning.
@@ -392,7 +417,7 @@ The hidden word is « {word} ».
 
 A player who has understood roughly what goes there and is typing words around its meaning:
 would they ever say THIS word? Or would they keep saying commoner words that mean nearly
-the same, and never think of this one?
+the same, and never think of this one?{AUDIENCE[lang]}
 
 Return {{"instead": "<the commoner word they would keep saying, or null when this is the word they'd say>", "would_say": <the chance, 0 to 1, that such a player comes up with this exact word>}}""")
     chance = answer.get("would_say") if isinstance(answer, dict) else None
@@ -460,6 +485,55 @@ Return {{"valid": true/false, "faulty": [{{"word": "<inserted word that does not
         elif isinstance(item, str):
             faulty[item] = "does not belong"
     return {"valid": bool(answer.get("valid")) and not faulty, "faulty": faulty}
+
+
+def start_ideas(claude: Claude, sentence: str, starts: list[dict], *,
+                lang: str) -> tuple[dict[str, str], set[str]]:
+    """Each start's FIRST idea, read where it stands in the displayed sentence, and whether
+    its hidden word shares it — the taste's one-idea rule (user-decided 2026-10-14, after
+    « berceau » for « cercueil »). `starts`: [{start, secret}]. Returns (riddles, judged):
+    {start word: why} for every RIDDLE, a start its hidden word shares only a side meaning
+    with; and the starts the answer gave a real verdict for. A start missing from `judged`
+    was not judged: an unusable answer refuses nothing, and is never read as a pass."""
+    blocks = "\n".join(f"- « {s['start']} » stands where the hidden word « {s['secret']} » is" for s in starts)
+    answer = claude.json(f"""You check the START words of a daily {LANGUAGE[lang]} word game. Each start word stands in the
+sentence in place of a hidden word: it is the player's first clue, and the player's guesses
+set off from it toward the hidden word.
+
+The sentence as the player first sees it:
+« {sentence} »
+
+{blocks}
+
+The rule:
+{start_idea_rule()}
+
+For each start word, read it where it stands, as {A_LANGUAGE[lang]} reader would, and name the FIRST
+idea it brings there. Does its hidden word share that idea? A start the hidden word shares
+only a side meaning with — while the start's stronger ideas lead elsewhere — is a riddle.
+
+Return {{"starts": [{{"start": "<start word>", "idea": "<its first idea there>", "shared": true/false, "why": "<one line>"}}, ...]}}.""")
+    items = answer.get("starts") if isinstance(answer, dict) else None
+    # The start as the answer echoes it, matched whatever its case or quotes.
+    known = {s["start"].strip().lower(): s["start"] for s in starts}
+    riddles: dict[str, str] = {}
+    judged: set[str] = set()
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict) or not isinstance(item.get("start"), str):
+            continue
+        start = known.get(item["start"].strip().strip("«»").strip().lower())
+        shared = item.get("shared")
+        if start is None or not isinstance(shared, bool):
+            continue
+        judged.add(start)
+        if shared:
+            continue
+        idea = str(item.get("idea") or "").strip()
+        why = str(item.get("why") or "").strip()
+        riddles[start] = ((f"a riddle: its first idea there, {idea}, is not one its hidden word shares"
+                           if idea else "a riddle: its first idea there is not one its hidden word shares")
+                          + (f" ({why})" if why else ""))
+    return riddles, judged
 
 
 def _chain_block(chain: list[str] | None) -> str:

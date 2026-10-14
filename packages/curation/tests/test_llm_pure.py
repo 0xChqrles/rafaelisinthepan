@@ -146,6 +146,7 @@ QUESTIONS = {
     "context_guesses": lambda c, lang: llm.context_guesses(c, _TOKENS, set(), 1, 6, lang=lang),
     "pick_form": lambda c, lang: llm.pick_form(c, "The cat.", "cat", ["n:s — nom, singulier"], lang=lang),
     "sentence_check": lambda c, lang: llm.sentence_check(c, "The dog.", ["dog"], lang=lang),
+    "start_ideas": lambda c, lang: llm.start_ideas(c, "The dog.", [{"start": "dog", "secret": "cat"}], lang=lang),
     "pick_starts": lambda c, lang: llm.pick_starts(c, "The [cat].", [_HOLE], None, lang=lang),
     "choose_excerpt": lambda c, lang: llm.choose_excerpt(c, "The cat.", {"before": ["B."], "after": []}, lang=lang),
     "pick_start": lambda c, lang: llm.pick_start(c, "The [____].", "cat", _HOLE["options"], lang=lang,
@@ -172,7 +173,7 @@ def test_every_question_takes_the_language():
 @pytest.mark.parametrize("name", list(QUESTIONS))
 def test_every_question_is_asked_in_the_day_s_language(monkeypatch, name):
     # The skills are the same for both languages; the TEMPLATE is what must follow the day.
-    for f in ("taste", "laws", "start_rules", "page_rules"):
+    for f in ("taste", "laws", "start_rules", "page_rules", "start_idea_rule"):
         monkeypatch.setattr(llm, f, lambda: "")
     monkeypatch.setattr(llm, "skill_section", lambda heading: "")
     en, fr = _Capture(), _Capture()
@@ -186,6 +187,60 @@ def test_every_question_is_asked_in_the_day_s_language(monkeypatch, name):
     for p in en.prompts:
         assert "elision" not in p and "gender" not in p and "affubl" not in p and "prénom" not in p
         assert "a English" not in p and "A English" not in p
+
+
+_STARTS = [{"start": "berceau", "secret": "cercueil"}, {"start": "fracas", "secret": "rugissements"}]
+
+
+_RIDDLE = "a riddle: its first idea there is not one its hidden word shares"
+
+
+@pytest.mark.parametrize("answer, riddles, judged", [
+    ({"starts": [{"start": "berceau", "idea": "a baby", "shared": False, "why": "a side meaning"},
+                 {"start": "fracas", "idea": "noise", "shared": True}]},
+     {"berceau": "a riddle: its first idea there, a baby, is not one its hidden word shares (a side meaning)"},
+     {"berceau", "fracas"}),
+    ({"starts": [{"start": "berceau", "shared": False}]}, {"berceau": _RIDDLE}, {"berceau"}),
+    ({"starts": [{"start": "« Berceau »", "shared": False}]}, {"berceau": _RIDDLE}, {"berceau"}),   # echoed
+    ({"starts": [{"start": "berceau", "shared": "false"}]}, {}, set()),    # only a real verdict counts
+    ({"starts": [{"start": "lit", "shared": False}]}, {}, set()),          # not a start shown
+    ({"starts": [{"start": "berceau"}]}, {}, set()),                       # no verdict: not judged
+    ({"starts": [{"start": ["berceau"], "shared": False}]}, {}, set()),    # unreadable, never a crash
+    ({"starts": [{"start": {"word": "berceau"}, "shared": False}]}, {}, set()),
+    ({"starts": "berceau"}, {}, set()),
+    ([], {}, set()),
+])
+def test_start_ideas_refuses_only_a_start_named_as_unshared(monkeypatch, answer, riddles, judged):
+    monkeypatch.setattr(llm, "start_idea_rule", lambda: "")
+    assert llm.start_ideas(_Answer(answer), "s", _STARTS, lang="fr") == (riddles, judged)
+
+
+def test_the_start_idea_check_quotes_the_taste_rule(monkeypatch):
+    monkeypatch.setattr(llm, "start_idea_rule", lambda: "RULE")
+    claude = _Capture()
+    llm.start_ideas(claude, "le tsar frappait le berceau", _STARTS, lang="fr")
+    assert "RULE" in claude.prompts[0]
+    assert "« berceau » stands where the hidden word « cercueil » is" in claude.prompts[0]
+
+
+def test_the_taste_holds_the_one_idea_rule_the_check_quotes():
+    rule = llm.start_idea_rule()
+    assert rule.startswith("### One idea, the start's first one")
+    assert "berceau" in rule and "## " not in rule.split("\n", 1)[1]   # its section alone
+    # the user's own criterion, and no blanket ban they never made (« marriage » for
+    # « divorce », the other end of a union, is a start they approved)
+    assert "first one" in rule and "never the other end" not in rule
+
+
+def test_would_say_names_every_english_speaking_country_and_leaves_the_french_question_as_calibrated():
+    en, fr = _Capture(), _Capture()
+    llm.would_say(en, _TOKENS, set(), 1, "cat", lang="en")
+    llm.would_say(fr, _TOKENS, set(), 1, "cat", lang="fr")
+    assert "every English-speaking country" in en.prompts[0]
+    # the user's own words (« knickers »): a word only a small part of English speakers use
+    assert "a small part of English speakers" in en.prompts[0] and "one country" not in en.prompts[0]
+    assert "country" not in fr.prompts[0]
+    assert "and never think of this one?\n\nReturn" in fr.prompts[0]
 
 
 def test_holed_rebuilds_english_with_its_own_spacing_and_french_as_calibrated():

@@ -396,14 +396,155 @@ def test_a_second_re_pick_sees_the_first_one_in_place(tmp_path, monkeypatch):
     assert {"secret": "chat", "start": "souris", "notes": "nothing measured"} in others
 
 
+# Every hole's notes say the line gives little of its word: the idea check asks them all.
+_LITTLE = {k: f"readers would split; {curate.rules.GIVES_LITTLE}" for k in ("chat", "chien", "pierre")}
+
+
 def test_start_words_the_sentence_check_passes_are_kept(tmp_path, monkeypatch):
     path = _generated_draft(tmp_path, ["lapin", "souris"], starts=["lapin", "loup", "brique"])
-    checked = []
+    checked, ideas = [], []
     monkeypatch.setattr(curate.llm, "sentence_check",
                         lambda _c, shown, starts, lang: checked.append((shown, starts)) or {"valid": True, "faulty": {}})
+    monkeypatch.setattr(curate.llm, "start_ideas", lambda _c, shown, starts, lang: ideas.append((shown, starts))
+                        or ({}, {"lapin", "loup", "brique"}))
     monkeypatch.setattr(curate.llm, "pick_start", lambda *_a, **_k: pytest.fail("nothing to re-pick"))
-    assert curate.check_starts(object(), Log(), str(path), {}, {}, lambda _t: None, lang="fr") == {}
+    log = Log()
+    assert curate.check_starts(object(), log, str(path), {}, _LITTLE, lambda _t: None, lang="fr") == {}
     assert checked == [("un lapin un loup une brique", ["lapin", "loup", "brique"])]
+    # each start's first idea is asked beside the hidden word it stands for
+    assert ideas == [("un lapin un loup une brique", [{"start": "lapin", "secret": "chat"},
+                                                      {"start": "loup", "secret": "chien"},
+                                                      {"start": "brique", "secret": "pierre"}])]
+    assert "- start ideas check: each start asked shares its first idea with its hidden word" in log
+
+
+_ALL_JUDGED = {"lapin", "loup", "brique"}
+
+
+def test_a_riddle_start_is_re_picked_with_its_reason(tmp_path, monkeypatch):
+    # The user's reading (2026-10-14): a start carries ONE idea its hidden word shares, its
+    # first one — « berceau » for « cercueil » shared only a side meaning.
+    path = _generated_draft(tmp_path, ["lapin", "souris", "mulot"], starts=["lapin", "loup", "brique"])
+    asked = []
+    monkeypatch.setattr(curate.llm, "sentence_check", lambda *_a, **_k: {"valid": True, "faulty": {}})
+    monkeypatch.setattr(curate.llm, "start_ideas",
+                        lambda *_a, **_k: ({"lapin": "a riddle: a side meaning"}, _ALL_JUDGED))
+    monkeypatch.setattr(curate.llm, "pick_start", _pick_one(asked, "souris"))
+    log = Log()
+    assert curate.check_starts(object(), log, str(path), {}, _LITTLE, lambda _t: None, lang="fr") == {"chat": "souris"}
+    assert asked == [("un [____] un loup une brique", "chat", ["souris", "mulot"], "a riddle: a side meaning")]
+    assert any("start « lapin » for « chat » refused: a riddle" in line for line in log)
+
+
+def test_a_start_the_idea_check_could_not_judge_is_left_to_the_reviewer_never_passed(tmp_path, monkeypatch):
+    path = _generated_draft(tmp_path, ["lapin", "souris"], starts=["lapin", "loup", "brique"])
+    monkeypatch.setattr(curate.llm, "sentence_check", lambda *_a, **_k: {"valid": True, "faulty": {}})
+    monkeypatch.setattr(curate.llm, "start_ideas", lambda *_a, **_k: ({}, {"loup"}))   # two unjudged
+    monkeypatch.setattr(curate.llm, "pick_start", lambda *_a, **_k: pytest.fail("a doubt refuses nothing"))
+    log = Log()
+    assert curate.check_starts(object(), log, str(path), {}, _LITTLE, lambda _t: None, lang="fr") == {}
+    assert "- start ideas check: no usable verdict for « lapin », « brique » — left to the reviewer" in log
+    assert not any("each start asked" in line for line in log)
+
+
+def test_a_start_the_idea_check_passed_is_never_asked_again(tmp_path, monkeypatch):
+    # Asked again, a start it passed could fall to the answer's noise and spend a round.
+    path = _generated_draft(tmp_path, ["lapin", "souris"], starts=["lapin", "loup", "brique"])
+    asked = []
+    monkeypatch.setattr(curate.llm, "sentence_check", lambda *_a, **_k: {"valid": True, "faulty": {}})
+    monkeypatch.setattr(curate.llm, "start_ideas",
+                        lambda _c, _s, starts, lang: asked.append([s["start"] for s in starts]) or ({}, _ALL_JUDGED))
+    cleared = {"chien": {"loup"}}
+    assert curate.check_starts(object(), Log(), str(path), {}, _LITTLE, lambda _t: None, lang="fr", cleared=cleared) == {}
+    assert asked == [["lapin", "brique"]]
+    assert cleared == {"chat": {"lapin"}, "chien": {"loup"}, "pierre": {"brique"}}
+    asked.clear()
+    assert curate.check_starts(object(), Log(), str(path), {}, _LITTLE, lambda _t: None, lang="fr", cleared=cleared) == {}
+    assert asked == []                                   # every start cleared: no question at all
+
+
+def test_a_start_with_no_verdict_is_asked_again_never_cleared(tmp_path, monkeypatch):
+    # An unjudged start is not a pass: the next round asks it again.
+    path = _generated_draft(tmp_path, ["lapin", "souris"], starts=["lapin", "loup", "brique"])
+    asked = []
+    answers = iter([({}, {"loup"}), ({}, _ALL_JUDGED)])
+    monkeypatch.setattr(curate.llm, "sentence_check", lambda *_a, **_k: {"valid": True, "faulty": {}})
+    monkeypatch.setattr(curate.llm, "start_ideas",
+                        lambda _c, _s, starts, lang: asked.append([s["start"] for s in starts]) or next(answers))
+    cleared = {}
+    assert curate.check_starts(object(), Log(), str(path), {}, _LITTLE, lambda _t: None, lang="fr", cleared=cleared) == {}
+    assert cleared == {"chien": {"loup"}}
+    log = Log()
+    assert curate.check_starts(object(), log, str(path), {}, _LITTLE, lambda _t: None, lang="fr", cleared=cleared) == {}
+    assert asked == [["lapin", "loup", "brique"], ["lapin", "brique"]]
+    assert "- start ideas check: each start asked shares its first idea with its hidden word" in log
+
+
+def test_on_the_last_round_a_start_the_sentence_check_faults_is_still_re_picked(tmp_path, monkeypatch):
+    # Only a riddle waits for the reviewer on the last round; a wrong or meaningless start never ships.
+    path = _generated_draft(tmp_path, ["lapin", "souris"], starts=["lapin", "loup", "brique"])
+    monkeypatch.setattr(curate.llm, "sentence_check",
+                        lambda *_a, **_k: {"valid": False, "faulty": {"lapin": "un accord faux"}})
+    monkeypatch.setattr(curate.llm, "start_ideas", lambda *_a, **_k: pytest.fail("a faulty sentence comes first"))
+    monkeypatch.setattr(curate.llm, "pick_start", lambda *_a, **_k: "souris")
+    log = Log()
+    assert curate.check_starts(object(), log, str(path), {}, {}, lambda _t: None, lang="fr",
+                               last=True) == {"chat": "souris"}
+    assert "- start « lapin » for « chat » refused: un accord faux" in log
+
+
+def test_on_the_last_round_a_riddle_is_left_to_the_reviewer_not_traded_for_an_unread_start(tmp_path, monkeypatch):
+    path = _generated_draft(tmp_path, ["lapin", "souris"], starts=["lapin", "loup", "brique"])
+    monkeypatch.setattr(curate.llm, "sentence_check", lambda *_a, **_k: {"valid": True, "faulty": {}})
+    monkeypatch.setattr(curate.llm, "start_ideas",
+                        lambda *_a, **_k: ({"lapin": "a riddle: a side meaning"}, _ALL_JUDGED))
+    monkeypatch.setattr(curate.llm, "pick_start", lambda *_a, **_k: pytest.fail("a re-pick now would ship unread"))
+    log = Log()
+    assert curate.check_starts(object(), log, str(path), {}, _LITTLE, lambda _t: None, lang="fr", last=True) == {}
+    assert ("- start « lapin » for « chat »: a riddle: a side meaning — the last round, left to the reviewer"
+            in log)
+
+
+def test_the_idea_check_asks_only_where_the_line_gives_little(tmp_path, monkeypatch):
+    # Asked of every hole of the user's loved days, the check called 17 of 57 starts riddles;
+    # on the holes the line gives little of, 2 — and « berceau » for « cercueil ».
+    path = _generated_draft(tmp_path, ["lapin", "souris"], starts=["lapin", "loup", "brique"])
+    asked = []
+    monkeypatch.setattr(curate.llm, "sentence_check", lambda *_a, **_k: {"valid": True, "faulty": {}})
+    monkeypatch.setattr(curate.llm, "start_ideas",
+                        lambda _c, _s, starts, lang: asked.append([s["start"] for s in starts]) or ({}, _ALL_JUDGED))
+    context = {"chien": f"readers would split; {curate.rules.GIVES_LITTLE} (such holes played hard on real play)"}
+    assert curate.check_starts(object(), Log(), str(path), {}, context, lambda _t: None, lang="fr") == {}
+    assert asked == [["loup"]]
+    asked.clear()
+    log = Log()
+    assert curate.check_starts(object(), log, str(path), {}, {}, lambda _t: None, lang="fr") == {}
+    assert asked == [] and not any("start ideas check" in line for line in log)
+
+
+def test_the_idea_check_waits_for_a_sentence_that_reads_right(tmp_path, monkeypatch):
+    path = _generated_draft(tmp_path, ["lapin", "souris"], starts=["lapin", "loup", "brique"])
+    monkeypatch.setattr(curate.llm, "sentence_check",
+                        lambda *_a, **_k: {"valid": False, "faulty": {"lapin": "un accord faux"}})
+    monkeypatch.setattr(curate.llm, "start_ideas", lambda *_a, **_k: pytest.fail("a faulty sentence comes first"))
+    monkeypatch.setattr(curate.llm, "pick_start", lambda *_a, **_k: "souris")
+    assert curate.check_starts(object(), Log(), str(path), {}, {}, lambda _t: None, lang="fr") == {"chat": "souris"}
+
+
+def test_a_hole_whose_readers_land_far_is_noted_as_one_the_line_gives_little_of():
+    # « cercueil »: readers write « sol », « parquet » (1010) — the start step must hear that
+    # the line gives little, and pick from the word's direct meaning (« cadavre »).
+    ranks = {"cercueil": {"word": "cercueil", "rank": 0}, "tombe": {"word": "tombe", "rank": 6},
+             "parquet": {"word": "parquet", "rank": 1010}}
+    far = "the line gives little of this word, and its start comes from the word's direct meaning"
+    notes = curate._notes(ranks, "cercueil", {"cercueil": "readers would split"}, {"cercueil": ["sol", "parquet"]})
+    assert notes.startswith("readers would split; the reader's nearest word « parquet » sits at rank 1010")
+    assert notes.endswith(far)
+    assert far not in curate._notes(ranks, "cercueil", {}, {"cercueil": ["tombe", "parquet"]})
+    # a word the readers write themselves is handed over, never one the line gives little of
+    handed = {"cercueil": "most readers would write the secret itself"}
+    assert far not in curate._notes(ranks, "cercueil", handed, {"cercueil": ["parquet"]})
+    assert curate._notes(ranks, "cercueil", {}, {}) == "nothing measured"
 
 
 def test_a_start_the_sentence_check_faults_is_re_picked_from_the_rest_of_the_band(tmp_path, monkeypatch):
@@ -434,11 +575,22 @@ def test_start_words_are_re_picked_at_most_start_rounds_times(monkeypatch):
     monkeypatch.setattr(curate, "run_gen_phrase", lambda *_a, **_k: (
         runs.append(1), (SimpleNamespace(returncode=0, stderr="", stdout="écrite dans out/x_y_z.json :"), []))[1])
     monkeypatch.setattr(curate, "choose_starts", lambda *_a, **_k: {"chat": "lapin"})
-    monkeypatch.setattr(curate, "check_starts", lambda *_a, **_k: checks.append(1) or {"chat": f"start{len(checks)}"})
+    seen = []
+
+    def check(*_a, **k):
+        seen.append(k["cleared"])
+        k["cleared"].setdefault("chien", set()).add(f"r{len(seen)}")
+        checks.append(k["last"])
+        return {"chat": f"start{len(checks)}"}
+
+    monkeypatch.setattr(curate, "check_starts", check)
     assert curate.st.START_ROUNDS == 3
     # every check faults the start: three re-picks, then the draft is left to the reviewer
     assert curate.generate(object(), Log(), "s", ["chat", "chien", "ours"], {}, "fr") == "out/x_y_z.json"
     assert len(checks) == 3 and len(runs) == 5     # the first run, the chosen starts, three re-picks
+    assert checks == [False, False, True]          # the last check knows no check reads its re-pick
+    # one record of the starts the idea check passed, kept across the rounds: never asked again
+    assert all(c is seen[0] for c in seen) and seen[0]["chien"] == {"r1", "r2", "r3"}
 
 
 # --- a word no start can save is swapped, REPLACE_ROUNDS times at most --------------------

@@ -283,6 +283,7 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
     forms: dict[str, str] = {}
     starts: dict[str, str] = {}
     tried: dict[str, set[str]] = {}  # every start a hole has shown, secret slug -> words
+    cleared: dict[str, set[str]] = {}  # the starts the idea check passed, secret slug -> words
     if replay:  # an erased draft's scores require the same trio AND context
         try:
             recorded = json.loads(Path(replay).read_text(encoding="utf-8"))
@@ -344,7 +345,8 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
                     continue
             if rounds < st.START_ROUNDS:
                 repick = check_starts(claude, log, path, tried, context or {}, index_of, pairs or {}, chain,
-                                      lang=lang, fillers=fillers or {})
+                                      lang=lang, fillers=fillers or {}, cleared=cleared,
+                                      last=rounds == st.START_ROUNDS - 1)
                 if repick:
                     _adopt(starts, tried, repick)
                     rounds += 1
@@ -419,13 +421,19 @@ def _load(path: str) -> tuple[dict, dict[str, dict]]:
 
 
 def _notes(ranks: dict, key: str, context: dict[str, str], fillers: dict[str, list[str]]) -> str:
-    """Code's notes for one hole as the start step reads them: what was measured, and where the
-    reader's nearest word lands in the hole's own map."""
+    """Code's notes for one hole as the start step reads them: what was measured, where the
+    reader's nearest word lands in the hole's own map, and — when every reader's word lands
+    far (`rules.far_note`) and the readers do not write the word itself — that the line
+    gives little of it."""
     nearest = rules.map_nearest_filler(ranks, key, fillers.get(key, []))
     land = ("" if nearest is None else
             f"; the reader's nearest word « {nearest[0]} » sits at rank "
             f"{nearest[1] if nearest[1] is not None else 'beyond the map (10000+)'} in this hole's map")
-    return context.get(key, "nothing measured") + land
+    notes = context.get(key, "nothing measured") + land
+    far = rules.far_note(nearest)
+    if far and "most readers would write the secret itself" not in notes:
+        notes += "; " + far
+    return notes
 
 
 def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, str],
@@ -506,15 +514,22 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
 def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[str]],
                  context: dict[str, str], index_of, pairs: dict[str, set[str]] | None = None,
                  chain: list[str] | None = None, *, lang: str,
-                 fillers: dict[str, list[str]] | None = None) -> dict[str, str]:
+                 fillers: dict[str, list[str]] | None = None,
+                 cleared: dict[str, set[str]] | None = None, last: bool = False) -> dict[str, str]:
     """The displayed sentence with its start words: a start this secret was already
     played with (`pairs`), then the model reading the sentence (`llm.sentence_check`:
-    correct, and still meaning something). Returns
+    correct, and still meaning something), then — once it reads right — the FIRST idea in the
+    sentence of each start whose line gives little of its word (`rules.GIVES_LITTLE` in its
+    notes; `llm.start_ideas`: one its hidden word shares, or a riddle). Returns
     {secret slug: new start} for every faulty hole (empty = all good, or nothing better
     to offer). `tried` holds every start a hole has shown so far; none is offered again.
+    `cleared` (secret slug -> starts, kept across rounds) holds the starts the idea check
+    passed, never asked again; on the `last` round a riddle is logged for the reviewer
+    rather than traded for a start no check would read.
     The re-pick reads the day as `pick_starts` does: the hole's notes with where the
     reader's nearest word (`fillers`) lands, and every other hole's notes and shown start."""
     pairs = pairs or {}
+    cleared = cleared if cleared is not None else {}
     puzzle, by_secret = _load(path)
     words, holes = puzzle["words"], puzzle["holes"]
     shown = st.displayed(words, holes)
@@ -527,14 +542,46 @@ def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[s
         verdict = llm.sentence_check(claude, shown, [h["start"]["word"] for h in by_secret.values()], lang=lang)
         if verdict["valid"]:
             log(f"- start words check: « {shown} » → valid")
-            return {}
-        for key, h in by_secret.items():
-            if h["start"]["word"] in verdict["faulty"]:
-                faulty[key] = verdict["faulty"][h["start"]["word"]]
-        if not faulty:
-            log(f"- start words check: the model doubts « {shown} » but names no start word — "
-                "left to the reviewer")
-            return {}
+            # A start shares ONE idea with its hidden word, and it is the first idea the start
+            # brings in the sentence (user-decided 2026-10-14): « berceau » for « cercueil »
+            # shared only a side meaning, and the user's round made no progress at all. Asked
+            # only where the line gives little of the word: there a riddle start leaves the
+            # player nothing to go on. Asked of every hole of the user's loved days, the check
+            # called 17 of their 57 starts riddles; on the holes the line gives little of, 2.
+            asked = {key: h for key, h in by_secret.items()
+                     if rules.GIVES_LITTLE in notes[key] and h["start"]["word"] not in cleared.get(key, ())}
+            riddles, judged = (llm.start_ideas(claude, shown, [{"start": h["start"]["word"], "secret": h["secret"]["word"]}
+                                                               for h in asked.values()], lang=lang)
+                               if asked else ({}, set()))
+            for key, h in asked.items():
+                word = h["start"]["word"]
+                if word in riddles:
+                    faulty[key] = riddles[word]
+                elif word in judged:
+                    cleared.setdefault(key, set()).add(word)
+            unjudged = [h["start"]["word"] for h in asked.values() if h["start"]["word"] not in judged]
+            if unjudged:
+                log("- start ideas check: no usable verdict for " + ", ".join(f"« {w} »" for w in unjudged)
+                    + " — left to the reviewer")
+            if not faulty:
+                if asked and not unjudged:
+                    log("- start ideas check: each start asked shares its first idea with its hidden word")
+                return {}
+            if last:
+                # A re-pick now would ship unread: the start the sentence check passed stays.
+                for key, problem in faulty.items():
+                    h = by_secret[key]
+                    log(f"- start « {h['start']['word']} » for « {h['secret']['word']} »: {problem} — "
+                        "the last round, left to the reviewer")
+                return {}
+        else:
+            for key, h in by_secret.items():
+                if h["start"]["word"] in verdict["faulty"]:
+                    faulty[key] = verdict["faulty"][h["start"]["word"]]
+            if not faulty:
+                log(f"- start words check: the model doubts « {shown} » but names no start word — "
+                    "left to the reviewer")
+                return {}
     repick: dict[str, str] = {}
     for key, problem in faulty.items():
         h = by_secret[key]
@@ -953,8 +1000,8 @@ def check_trio(claude: llm.Claude, log, line: dict, trio: list, chain: list[str]
             if unsaid and t.slug in rare:
                 note += "; " + unsaid
             if t.slug in hard:
-                note += (f"; under {rules.two_places(contextual_rank.GIVEAWAY_HARD)} the line gives little of "
-                         f"this word (such holes played hard on real play)")
+                note += (f"; under {rules.two_places(contextual_rank.GIVEAWAY_HARD)} {rules.GIVES_LITTLE} "
+                         f"(such holes played hard on real play)")
             context[t.slug] = note
         handed = [t for t in trio if "most readers would write the secret itself" in context[t.slug]]
         # Two or more words players don't say, or two or more the line hands over (a day
