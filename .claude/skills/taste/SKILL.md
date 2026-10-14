@@ -327,7 +327,10 @@ players finished the day. ONE such word makes a hard day, and a loved day may hi
 punch, the image or the exact word. TWO in one trio made the worst days (2026-09-16,
 09-22, 09-23, 10-05: a median 40% of the players finished, against 57% with one and 71%
 with none; no such day reached 70%). Keep at most one, and only when it is worth the
-search. When two are hidden, drop the DULL one and keep the one more fun to find:
+search — and only where the line leads to it: in a line that gives little of it, players
+reach its nearest words and never type it, and code refuses it (« properly », 2026-10-14:
+the operator typed « correctly », its nearest word, then « rightly », « perfectly »,
+« well », and never « properly »). When two are hidden, drop the DULL one and keep the one more fun to find:
 « clodos » over « stagnation » — the register a notch off lands with a grin, the abstract
 noun only completes the thought.
 

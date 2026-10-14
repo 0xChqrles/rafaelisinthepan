@@ -101,7 +101,7 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   words, the start words, difficulty). Code keeps only FACTS — which words can be hidden,
   the cooldowns, the famous line, valid grammar, the puzzle format — and turns everything
   it MEASURES into notes the model reads; nothing measured refuses a word but the giveaway
-  FLOOR, the BURIED, NEIGHBOURS and UNMAPPED rules (below). Why: replayed
+  FLOOR, the BURIED, NEIGHBOURS, UNMAPPED and UNREACHED rules (below). Why: replayed
   on the 16 days the user loved, the code rules it replaces would have rejected three of
   the lines before any model saw them (`MIN_CANDIDATES`: JeanJass, NeS, Rounhaa) and five
   of the trios (the pair rules: « éleveur de [pigeons] », « le cafard de l'[homme] »),
@@ -195,7 +195,13 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   judge only reorders the walk's groups, so the free map answers before the ranking) is
   refused the same way — every first guess lands past the map. On the 49 played French
   days with a reader on file it catches « facho », « insecte », « réverbères », no loved
-  day; and, once the map is built, where the reader's nearest word
+  day — and the UNREACHED rule, the fifth (user-decided 2026-10-14, after « properly »: the
+  operator typed its nearest word, « correctly », then « rightly », « perfectly », « well »,
+  and never the word): a word players don't say (under `WOULD_SAY_HARD`) in a line that
+  gives little of it (giveaway under `GIVEAWAY_HARD`) is refused the same way, before the
+  ranking. Each alone stays a note (« presentation », said at 0.35 where the line gives it
+  at 0.36, was found); of the 116 holes built since the would-say test, 6 were both, and 2
+  of the 56 published; and, once the map is built, where the reader's nearest word
   lands in the hole's own map (`rules.map_nearest_filler`) — past `READER_FAR_RANK` (500),
   or past the map, the note adds that the line gives little of the word and its start
   comes from its direct meaning (`rules.far_note`, `curate._notes`; user-decided
@@ -419,11 +425,12 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 
 - Don't publish, and don't write a puzzle by any path but `gen_phrase`.
 - Don't turn a measurement into a veto: code states facts, taste chooses. A new signal
-  goes to the model as a note, with its real-play meaning. The four vetoes are the giveaway
+  goes to the model as a note, with its real-play meaning. The five vetoes are the giveaway
   floor (`GIVEAWAY_MIN`, user-decided 2026-10-02), the BURIED rule (`rules.buried`,
-  user-decided 2026-10-08), the UNMAPPED rule (`rules.unmapped`, user-decided 2026-10-12)
-  and the NEIGHBOURS rule (`rules.neighbourhood` + `llm.neighbours_complete`,
-  user-decided 2026-10-13). Don't keep a hand list of refused words: the buried rule
+  user-decided 2026-10-08), the UNMAPPED rule (`rules.unmapped`, user-decided 2026-10-12),
+  the NEIGHBOURS rule (`rules.neighbourhood` + `llm.neighbours_complete`,
+  user-decided 2026-10-13) and the UNREACHED rule (`curate.check_trio`: a word players
+  don't say in a line that gives little of it, user-decided 2026-10-14). Don't keep a hand list of refused words: the buried rule
   measures any word (the user: "the curator will be good in 30 years with this solution").
 - Don't write taste into code or a prompt copy; it lives in the `taste` skill.
 - Don't ask a model to PLAY the puzzle — to guess its way to a secret, count the tries or

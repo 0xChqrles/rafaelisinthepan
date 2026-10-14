@@ -701,6 +701,38 @@ def test_a_buried_word_is_refused_by_code_and_replaced_before_the_ranking(monkey
     assert said.count("pierre") == 2 and said.count("chat") == 1   # asked twice only in a crowd
 
 
+def test_a_word_players_dont_say_in_a_line_that_gives_little_of_it_is_refused_before_the_ranking(monkeypatch):
+    # « properly »: said at 0.35, handed over at 0.19 — the player reached « correctly »
+    # at rank 1 and never typed it.
+    calls, refusals = [], []
+    monkeypatch.setattr(curate.llm, "replace_word",
+                        lambda _c, _m, _h, word, others, _chain, lang, refused:
+                        refusals.append(word) or {"with": "froide", "why": "said"})
+
+    def generate(_c, _l, _sentence, words, *_a, replay, chain, **_k):
+        calls.append((words, chain[0]))
+        return "out/x_y_z.json"
+
+    log = Log()
+    path, _asked = _build_day(monkeypatch, generate, log, says={"pierre": 0.35},
+                              given={"chat": 0.3, "dort": 0.3, "pierre": 0.19, "froide": 0.3})
+    assert path == "out/x_y_z.json" and refusals == ["pierre"]
+    assert calls == [(["chat", "dort", "froide"],
+                      "froide replaces pierre: a word players don't say, in a line that gives little of it (said)")]
+    assert any("« pierre » is a word players don't say (would-say 0.35) in a line that gives little of it "
+               "(giveaway 0.19): refused" in line for line in log)
+
+
+@pytest.mark.parametrize("say, given", [(0.35, 0.36), (0.45, 0.19), (0.4, 0.19), (0.35, 0.2)])
+def test_a_word_players_dont_say_or_a_line_that_gives_little_alone_is_kept(monkeypatch, say, given):
+    # « presentation » (said 0.35, handed over 0.36) was found; a word players say in a line
+    # that gives little plays hard on its start. Each bar is strict: at it, the word passes.
+    monkeypatch.setattr(curate.llm, "replace_word", lambda *_a, **_k: pytest.fail("one of the two alone"))
+    path, _ = _build_day(monkeypatch, lambda *_a, **_k: "out/x_y_z.json", Log(), says={"pierre": say},
+                         given={"chat": 0.3, "dort": 0.3, "pierre": given, "froide": 0.3})
+    assert path == "out/x_y_z.json"
+
+
 def test_a_rare_name_players_say_in_a_crowd_is_not_buried(monkeypatch):
     monkeypatch.setattr(curate.llm, "replace_word", lambda *_a, **_k: pytest.fail("not buried"))
     path, _ = _build_day(monkeypatch, lambda *_a, **_k: "out/x_y_z.json", Log(), says={"pierre": 0.58},
@@ -854,13 +886,15 @@ def test_a_comparison_that_declines_every_line_builds_nothing(monkeypatch):
 
 
 def test_a_swap_before_the_comparison_is_counted_when_the_day_is_built(monkeypatch):
-    # The swaps before the ranking and the start step's share REPLACE_ROUNDS.
+    # The swaps before the ranking and the start step's share REPLACE_ROUNDS. The two words
+    # players don't say are on holes the line gives (« pierre », given little, would be
+    # refused by code before any swap is asked).
     monkeypatch.setattr(curate.llm, "drop_unsaid",
-                        lambda *_a, **_k: {"secret": "pierre", "with": "froide", "why": "the rare one"})
+                        lambda *_a, **_k: {"secret": "dort", "with": "froide", "why": "the rare one"})
     _path, _measured, compared, built = _finished_lines(monkeypatch, [0, 1], lambda s: "out/x_y_z.json",
-                                                        says={"pierre": 0.1, "dort": 0.2})
-    assert [w["word"] for w in compared[0][0]["words"]] == ["chat", "dort", "froide"]
-    assert compared[0][0]["path"][0] == "froide replaces pierre: the rare one"
+                                                        says={"chat": 0.1, "dort": 0.2})
+    assert [w["word"] for w in compared[0][0]["words"]] == ["chat", "froide", "pierre"]
+    assert compared[0][0]["path"][0] == "froide replaces dort: the rare one"
     assert built == [(_LINES[0]["sentence"], 1)]
 
 

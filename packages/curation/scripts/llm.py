@@ -610,7 +610,9 @@ Return {{"replace": {{"secret": "<one of the handed-over words>", "with": "<anot
 def replace_word(claude: Claude, sentence_marked: str, holes: list[dict], word: str, allowed: list[str],
                  chain: list[str] | None = None, *, refused: str, lang: str) -> dict | None:
     """Code refused `word` (BURIED: half-said, among commoner near-words — `rules.buried`;
-    or UNMAPPED: no word readers put there is on its map — `rules.unmapped`), BEFORE the
+    UNMAPPED: no word readers put there is on its map — `rules.unmapped`; NEIGHBOURS: the
+    words around it hand it over; or a word players don't say in a line that gives little
+    of it), BEFORE the
     day's ranking is paid for; `refused` says why, in the player's terms. The model names
     the word of the line to hide in its place, by the taste. `holes`: [{secret, notes}].
     Returns {"with", "why"}, or None when the answer is unusable."""

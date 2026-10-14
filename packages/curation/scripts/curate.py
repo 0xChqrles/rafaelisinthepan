@@ -955,7 +955,9 @@ def check_trio(claude: llm.Claude, log, line: dict, trio: list, chain: list[str]
     code and replaced by the model's choice (`llm.replace_word`); so is a word its
     NEIGHBOURS alone hand over (`rules.neighbourhood`, `llm.neighbours_complete`: « le
     droit de ___ ») and an UNMAPPED word, none of the words readers put in its blank on
-    its free map (`rules.unmapped`). A trio hiding two or more words players don't say has
+    its free map (`rules.unmapped`), and a word players don't say in a line that gives
+    little of it (under `rules.WOULD_SAY_HARD` and under `GIVEAWAY_HARD`: players reach its
+    nearest neighbours and never type it). A trio hiding two or more words players don't say has
     one swapped by the model (`llm.drop_unsaid`); one whose line hands over two or more,
     one swapped too (`llm.drop_handed`). A swapped word is replaced by another word of the
     line that can be hidden, REPLACE_ROUNDS times in all, the start step's swaps
@@ -1016,6 +1018,7 @@ def check_trio(claude: llm.Claude, log, line: dict, trio: list, chain: list[str]
         stranded = next(((t, off) for t in trio
                          for off in [unmapped(t, [*readings[t.slug][0], *filter(None, [readings[t.slug][1]])])]
                          if off), None)
+        unreached = next((t for t in trio if t.slug in rare and t.slug in hard), None)
         if sunk is not None:
             log(f"- « {sunk.text} » is buried (would-say {says[sunk.slug][0]}, "
                 f"crowd {crowds[sunk.slug]}): refused")
@@ -1058,6 +1061,20 @@ def check_trio(claude: llm.Claude, log, line: dict, trio: list, chain: list[str]
                 return None
             swap = {"secret": lost.text, "with": pick["with"],
                     "why": f"no word readers put there is on its map ({pick['why']})"}
+        elif unreached is not None:
+            log(f"- « {unreached.text} » is a word players don't say (would-say {says[unreached.slug][0]}) "
+                f"in a line that gives little of it (giveaway {rules.two_places(given[unreached.slug])}): refused")
+            pick = llm.replace_word(claude, llm.marked(tokens, hidden, lang=lang),
+                                    [{"secret": t.text, "notes": context[t.slug]} for t in trio], unreached.text,
+                                    others, chain, lang=lang,
+                                    refused="players don't say it, and the line gives little of it: they reach "
+                                            "the meaning, type every commoner word for it, the nearest ones "
+                                            "included, and never this one.")
+            if pick is None:
+                log(f"- no replacement named for « {unreached.text} »")
+                return None
+            swap = {"secret": unreached.text, "with": pick["with"],
+                    "why": f"a word players don't say, in a line that gives little of it ({pick['why']})"}
         elif unsaid:
             swap = llm.drop_unsaid(claude, llm.marked(tokens, hidden, lang=lang),
                                    [{"secret": t.text, "notes": context[t.slug]} for t in trio],
