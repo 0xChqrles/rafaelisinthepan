@@ -121,17 +121,17 @@ describe('isValidName', () => {
 });
 
 describe('sanitizeGroupName (#271)', () => {
-  it('is the player name pipeline at the group cap of 20', () => {
-    expect(GROUP_NAME_MAX_LENGTH).toBe(20);
-    expect(sanitizeGroupName('Les copains du lundi!')).toBe('Les_copains_du_lundi');
-    expect(sanitizeGroupName('a'.repeat(25))).toHaveLength(20);
+  it('is the player name pipeline at the group cap of 24', () => {
+    expect(GROUP_NAME_MAX_LENGTH).toBe(24);
+    expect(sanitizeGroupName('Les copains du lundi soir!')).toBe('Les_copains_du_lundi_soi');
+    expect(sanitizeGroupName('a'.repeat(30))).toHaveLength(24);
     expect(sanitizeGroupName('Zoé & Léo')).toBe('Zoe___Leo');
   });
   it('accepts what the player rule would cut at 16', () => {
-    const name = 'Les_copains_du_lundi';
+    const name = 'Les_copains_du_lundi_soi';
     expect(isValidGroupName(name)).toBe(true);
     expect(isValidName(name)).toBe(false);
-    expect(isValidGroupName('a'.repeat(21))).toBe(false);
+    expect(isValidGroupName('a'.repeat(25))).toBe(false);
     expect(isValidGroupName('nope!')).toBe(false);
   });
 });

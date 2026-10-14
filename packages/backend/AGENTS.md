@@ -287,7 +287,7 @@ pnpm board:seed [--group <groupId|/g/link>]  # fill the RUNNING local server wit
   now stands through `listGroups` (the caller's memberships off their own partition, each
   with its member ids — one consistent Query per group, GROUPS_MAX at most), `create` adding
   the minted id as `created`. The NAME is validated against the shared `isValidGroupName`
-  (the player name's charset at `GROUP_NAME_MAX_LENGTH` = 20; never empty) and moderated by `nameFilter.ts` (400 `name_rejected`). The stores: `create` is ONE
+  (the player name's charset at `GROUP_NAME_MAX_LENGTH` = 24; never empty) and moderated by `nameFilter.ts` (400 `name_rejected`). The stores: `create` is ONE
   create-only transaction of the group row + the creator's membership pair asserting the
   creator's account; `join` reads the group row, the caller's own membership row (an
   `already` writes nothing — the pair is one transaction, so there is no half to repair),

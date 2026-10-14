@@ -182,7 +182,7 @@ describe('groups route (#271) — create, join, leave, remove', () => {
     expect((await handler(post({ token: me.token, join: 'NOPE' }))).statusCode).toBe(400);
     expect((await handler(post({ token: me.token, create: true, name: '' }))).statusCode).toBe(400);
     expect((await handler(post({ token: me.token, create: true, name: 'Zoé' }))).statusCode).toBe(400);
-    expect((await handler(post({ token: me.token, create: true, name: 'W'.repeat(21) }))).statusCode).toBe(400);
+    expect((await handler(post({ token: me.token, create: true, name: 'W'.repeat(25) }))).statusCode).toBe(400);
     expect((await handler(post({ token: me.token, create: 'yes', name: 'Ok' }))).statusCode).toBe(400);
     const gone = await handler(post({ token: me.token, join: 'abcdefghij234567' }));
     expect(gone.statusCode).toBe(404);
@@ -194,10 +194,10 @@ describe('groups route (#271) — create, join, leave, remove', () => {
     expect(JSON.parse(stranger.body).error).toBe('unknown_device');
   });
 
-  it('takes a 20-character name and refuses a 21st', async () => {
+  it('takes a 24-character name and refuses a 25th', async () => {
     const { handler, me } = await makeHandler();
-    await create(handler, me, 'Les_copains_du_lundi');
-    expect((await handler(post({ token: me.token, create: true, name: 'a'.repeat(21) }))).statusCode).toBe(400);
+    await create(handler, me, 'Les_copains_du_lundi_soi');
+    expect((await handler(post({ token: me.token, create: true, name: 'a'.repeat(25) }))).statusCode).toBe(400);
   });
 
   it('moderates the name like a player name', async () => {
