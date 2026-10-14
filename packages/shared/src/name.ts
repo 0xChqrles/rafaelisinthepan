@@ -28,9 +28,9 @@
 
 export const NAME_MAX_LENGTH = 16;
 // A GROUP's name (#271) wears the same charset at a longer cap (user-decided
-// 2026-09-14: "the group max length should be 20, not 16") — a group is named for
-// several people, and "Les_copains_du_lundi" is a group where it is not a handle.
-export const GROUP_NAME_MAX_LENGTH = 20;
+// 2026-10-14) — a group is named for several people, and "Les_copains_du_lundi_soir"
+// is a group where it is not a handle.
+export const GROUP_NAME_MAX_LENGTH = 24;
 
 // The ligatures NFKD does not decompose, expanded by hand (slug.ts's LIGATURES, with
 // the capitals a display form can carry).

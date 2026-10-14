@@ -158,7 +158,7 @@ export async function handleGroups(
       return errorResponse(400, 'bad_request', 'Body field "create" must be true.', responseHeaders);
     }
     // The NAME wears the player name's own charset (#188's shared rule: alphanumerics and
-    // underscores) at the group's cap, 20 (`isValidGroupName`) — and unlike
+    // underscores) at the group's cap, 24 (`isValidGroupName`) — and unlike
     // a player it cannot be empty: a tab with nothing on it is not a group.
     const name = body.name;
     if (typeof name !== 'string' || name.length === 0 || !isValidGroupName(name)) {
