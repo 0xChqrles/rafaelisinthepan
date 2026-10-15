@@ -78,7 +78,8 @@ pnpm curate [--lang fr|en] [--work <file on the shelf>] [--retry <shelf file | p
 pnpm shelf:lyrics [--lang fr] [--artists shelf/<lang>/artists.txt] [--max-songs N]
 #   The music source (#262): for each artist of the user's hand-written list, the songs
 #   from Genius most viewed first, minus the top FAMOUS_SHARE (the singles), minus what
-#   is on the shelf; one .txt per song with a header. Needs GENIUS_ACCESS_TOKEN (a free
+#   is on the shelf; one .txt per song with a header, `<artist>__<title>__<genius id>.txt`
+#   (`lyrics.song_filename`: readable, one file per song). Needs GENIUS_ACCESS_TOKEN (a free
 #   client token, genius.com/api-clients; never a file in the repo). The only step that
 #   touches the network; the curator never does.
 pnpm shelf:quotes [--lang fr] [--work <file>] [--force]
@@ -351,8 +352,10 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 
 - **The artist list is the whole gate**: `shelf/<lang>/artists.txt`, the user's, by hand, one
   name per line, gitignored. The fetch reads it and nothing else; the model proposes no
-  artist for the fetch. There is NO exclusion list: dropping a name and deleting the
-  artist's files is the whole removal.
+  artist for the fetch. A line names the Genius artist whose name has its slug (« Jean
+  Jass » is JeanJass); a line naming none is skipped with the search's first name, never
+  replaced by it (`shelf_lyrics.find_artist`). There is NO exclusion list: dropping a
+  name and deleting the artist's files is the whole removal.
 - **The famous single is cut by pageviews**: `FAMOUS_SHARE` (0.25) of each artist's songs,
   most viewed first, is dropped before any lyric is read (`lyrics.famous_cut`). Features
   are skipped (the line belongs to someone else's song).

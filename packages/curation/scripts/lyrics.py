@@ -2,8 +2,9 @@
 curator mines, the famous-single cut and the artist cooldown. Stdlib only; the fetch
 that talks to Genius is `shelf_lyrics.py`.
 
-A song file is `<artist-slug>__<title-slug>.txt`: a header of `key: value` lines, a
-`---` line, then the lyrics as Genius serves them (section headers already removed).
+A song file is `<artist>__<title>__<genius id>.txt` (readable names, the id keeping two
+songs of one title apart): a header of `key: value` lines, a `---` line, then the lyrics
+as Genius serves them (section headers already removed).
 """
 
 from datetime import date, timedelta
@@ -130,5 +131,7 @@ def within_cooldown(last_used: date | None, today: date) -> bool:
     return last_used is not None and today - last_used < timedelta(days=ARTIST_COOLDOWN_DAYS)
 
 
-def song_filename(artist: str, title: str, slug) -> str:
-    return f"{slug(artist) or 'artist'}__{slug(title) or 'title'}.txt"
+def song_filename(artist: str, title: str, song_id: int, path_slug) -> str:
+    """Readable (`path_slug`: digits kept, words apart) and one per Genius song: an artist
+    has an « Intro » on every record, and « Slow Mix 07/02/18 » is not « … 06/08/17 »."""
+    return f"{path_slug(artist) or 'artist'}__{path_slug(title) or 'title'}__{song_id}.txt"

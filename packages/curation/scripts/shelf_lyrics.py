@@ -16,7 +16,7 @@ from pathlib import Path
 import sys
 
 import _paths
-from slug import slug
+from slug import path_slug, slug
 
 import lyrics as lyr
 from shelf import LANGS
@@ -35,14 +35,16 @@ def read_artists(path) -> list[str]:
     return [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")]
 
 
-def find_artist(genius, name: str) -> dict | None:
+def find_artist(genius, name: str) -> tuple[dict | None, str]:
+    """(the Genius artist the list names, the search's first name). The artist is a hit
+    whose name has the list name's slug (« Jean Jass » is JeanJass, « Nepal » is Népal),
+    never the nearest other hit: that would fetch an artist the list does not name. The
+    first name comes back so a misspelt line can be fixed."""
     hits = genius.search_artists(name).get("sections", [{}])[0].get("hits", [])
+    results = [hit.get("result", {}) for hit in hits]
     wanted = slug(name)
-    for hit in hits:
-        result = hit.get("result", {})
-        if slug(result.get("name", "")) == wanted:
-            return result
-    return hits[0]["result"] if hits else None
+    match = next((r for r in results if slug(r.get("name", "")) == wanted), None)
+    return match, (results[0].get("name", "") if results else "")
 
 
 def artist_songs(genius, artist_id: int, max_songs: int) -> list[dict]:
@@ -55,6 +57,7 @@ def artist_songs(genius, artist_id: int, max_songs: int) -> list[dict]:
                 continue  # a feature: the line belongs to someone else's song
             songs.append({
                 "id": song["id"],
+                "url": song.get("url", ""),
                 "title": song.get("title", ""),
                 "pageviews": (song.get("stats") or {}).get("pageviews") or 0,
             })
@@ -83,18 +86,21 @@ def main():
     shelf.mkdir(parents=True, exist_ok=True)
     written = 0
     for name in artists:
-        artist = find_artist(genius, name)
+        artist, nearest = find_artist(genius, name)
         if artist is None:
-            print(f"- {name}: not found on Genius", flush=True)
+            print(f"- {name}: no Genius artist by this name"
+                  + (f" (the search's first: {nearest})" if nearest else "") + ", skipped", flush=True)
             continue
         songs = artist_songs(genius, artist["id"], args.max_songs)
         kept = lyr.famous_cut(songs)
         print(f"- {artist['name']}: {len(songs)} songs, {len(songs) - len(kept)} most viewed dropped", flush=True)
         for song in kept:
-            path = shelf / lyr.song_filename(artist["name"], song["title"], slug)
+            path = shelf / lyr.song_filename(artist["name"], song["title"], song["id"], path_slug)
             if path.exists():
                 continue
-            text = genius.lyrics(song_id=song["id"], remove_section_headers=True)
+            # By its page when the listing gave it: by id alone, the library looks the song
+            # up once more to find the page.
+            text = genius.lyrics(song_id=song["id"], song_url=song["url"], remove_section_headers=True)
             if not text or not text.strip():
                 continue
             detail = genius.song(song["id"]).get("song", {})
