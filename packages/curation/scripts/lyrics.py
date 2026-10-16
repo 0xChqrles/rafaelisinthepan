@@ -31,10 +31,12 @@ _GENIUS_TAG = re.compile(r"\s*\([^()]*\)$")
 # off by a comma at a line's start or end (« Yeah, la tête… », « …s'en charge, eh ») goes
 # with its comma. Any other parenthesis is the song's text — half a hook, a second voice,
 # « on attise (le fuego) » — and stays. Only set off: « elle m'a dit ouais » keeps its
-# word, and « Oh la la » its « Oh ».
+# word, and « Oh la la » its « Oh ». A word of fillers joined by hyphens is fillers too
+# (« (Uh-huh) », « (oh-woah) »).
 FILLERS = ("yeah", "yeh", "yah", "ouais", "ok", "okay", "hey", "han", "hun", "hein", "wow",
            "ouh", "wouh", "woh", "oh", "ah", "ay", "eh", "wah", "yo", "uh", "huh", "hum", "hmm",
-           "hmmm", "mmh", "haha", "aïe", "wesh", "fuck", "gang", "bang", "brr", "brrr", "skrrt")
+           "hmmm", "mmh", "haha", "aïe", "wesh", "fuck", "gang", "bang", "brr", "brrr", "skrrt",
+           "woo", "woah", "whoa", "ooh", "ohh", "hahaha", "skrt")
 # A repeat marker, « (x2) », is no word of the song either (and its digit would refuse
 # every unit around it); « se (lève x11) » is sung text, so only the marker goes.
 _REPEAT = re.compile(r"\s*(?<!\w)[x×]\d+(?!\w)\s*")
@@ -43,11 +45,11 @@ _REPEAT = re.compile(r"\s*(?<!\w)[x×]\d+(?!\w)\s*")
 # no line to play (the page shows it as Genius does).
 _GAP = re.compile(r"\([^()\w]*\)|\[[^\[\]]*\]")
 _FILLER = "(?:" + "|".join(FILLERS) + ")"
-_WORD = re.compile(r"[\w'’-]+")
+_WORD = re.compile(r"[\w'’]+")
 _ADLIB = re.compile(r"\s*\([^()]*\)")
-_LEAD = re.compile(rf"^(?:{_FILLER}[\s,!…]+)*{_FILLER}\s*[,!…]+\s*", re.I)
-_TAIL = re.compile(rf"\s*,\s*(?:{_FILLER}[\s,!…]+)*{_FILLER}(?=\s*[!?.…]*\s*$)", re.I)
-_ONLY_FILLERS = re.compile(rf"^(?:{_FILLER}[\s,!?.…]*)+$", re.I)
+_LEAD = re.compile(rf"^(?:{_FILLER}[\s,!…-]+)*{_FILLER}\s*[,!…]+\s*", re.I)
+_TAIL = re.compile(rf"\s*,\s*(?:{_FILLER}[\s,!…-]+)*{_FILLER}(?=\s*[!?.…]*\s*$)", re.I)
+_ONLY_FILLERS = re.compile(rf"^(?:{_FILLER}[\s,!?.…-]*)+$", re.I)
 _SECTION = re.compile(r"^\s*\[.*?\]\s*$")
 _NOISE = re.compile(r"^\s*(\d+\s+Contributors?|You might also like|.*Embed|Translations?|.*Lyrics)\s*$", re.I)
 
@@ -124,13 +126,14 @@ def clean_lines(lyrics: str) -> list[str]:
 
 
 # A line that opens on a NAME keeps its capital: two capitalised words (« Jack City »,
-# « Keanu Reeves », « Nino B. ») or a word in capitals (« EHPAD »).
-_NAME_START = re.compile(r"^(?:[A-ZÀ-Ý][\w'’.-]*\s+[A-ZÀ-Ý]|[A-ZÀ-Ý]{2,}\b)")
+# « Keanu Reeves », « Nino B. »; the pronoun I is no second one: « Weight I'm… ») or a word
+# in capitals (« EHPAD »). So does one opening on the English pronoun (« I could… »).
+_NAME_START = re.compile(r"^(?:[A-ZÀ-Ý][\w'’.-]*\s+(?!I\b)[A-ZÀ-Ý]|[A-ZÀ-Ý]{2,}\b|I\b)")
 
 
 def _bridge(lines: list[str]) -> list[str]:
     """Lines read as one run: Genius capitalises every line, so only the first keeps it
-    (a line opening on a name keeps it too), and a comma bridges a line with no
+    (a line opening on a name or on the pronoun I keeps it too), and a comma bridges a line with no
     punctuation into the next."""
     out = []
     for i, line in enumerate(lines):

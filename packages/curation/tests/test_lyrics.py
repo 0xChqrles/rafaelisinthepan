@@ -196,6 +196,17 @@ def test_a_parenthesis_that_is_the_song_s_text_stays():
         assert strip_adlibs(line) == line
 
 
+def test_english_fillers_and_fillers_joined_by_hyphens_are_ad_libs():
+    # off the real en shelf (Mac Miller)
+    assert strip_adlibs("Now I keep some dead faces in my pocket (Uh-huh)") == "Now I keep some dead faces in my pocket"
+    assert strip_adlibs("We made it (oh-woah, woo)") == "We made it"
+    assert strip_adlibs("Uh-huh, I been stoned all week") == "I been stoned all week"
+    assert strip_adlibs("Oh-oh-oh-ohh") == ""
+    # an answer word is never a filler, a hyphenated word of the song's stays
+    assert strip_adlibs("Nah, I'm fine (yep)") == "Nah, I'm fine (yep)"
+    assert strip_adlibs("Grand-mère est là (grand-mère)") == "Grand-mère est là"
+
+
 def test_a_line_of_ad_libs_alone_is_no_line_and_no_stanza_break():
     assert clean_lines("Première ligne\n(Yeah, yeah)\nDeuxième ligne") == ["Première ligne", "Deuxième ligne"]
 
@@ -219,5 +230,12 @@ def test_a_song_s_page_is_its_whole_stanza():
               "Faut qu'on s'lance dans l'immobilier, faut qu'on multiplie nos billes"]
     assert stanza_excerpt(stanza, stanza[3])["before"] == [
         "On a appris notre biz comme Nino B.", "Jack City,", "EHPAD et compagnie, la vie passe à toute allure."]
+    # the English pronoun keeps its capital, and is no second word of a name (Mac Miller)
+    stanza = ["These flows kilos, I could sell snow to a ski slope", "I could sell evil to the Devil, nonbelievers to a temple",
+              "And I may be a little arrogant, I'm aware of it", "Weight I'm carryin', gotta let it go",
+              "I went pro, made profit, now I keep some dead faces in my pocket"]
+    assert stanza_excerpt(stanza, stanza[4])["before"] == [
+        "These flows kilos, I could sell snow to a ski slope,", "I could sell evil to the Devil, nonbelievers to a temple,",
+        "and I may be a little arrogant, I'm aware of it,", "weight I'm carryin', gotta let it go."]
     assert stanza_excerpt(["Une seule ligne de dix mots pour faire toute la strophe"],
                           "Une seule ligne de dix mots pour faire toute la strophe") is None
