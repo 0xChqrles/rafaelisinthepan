@@ -377,7 +377,10 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 - **Artist cooldown, not "never twice"**: the same artist at most once every
   `ARTIST_COOLDOWN_DAYS` (30) on the calendar, never the same song. Judged on the
   ledger's game day (`shelf.archive()['last_used']`) and on the run index
-  (`shelf.last_proposed`). Books keep "never the same book twice".
+  (`shelf.last_proposed`). The same song is the same artist AND the same `title_key`
+  (`shelf.in_archive`), none of the book's looser matches: every record has an « Intro »,
+  and Rounhaa's « H » is inside his « LOVE DEATH ROBOTS ». Books keep "never the same
+  book twice".
 - Music is a minority stream (one or two days a week): `curate.pick_work` picks a song
   when the archive shows no music day within `MUSIC_EVERY_DAYS` (4), or when no eligible
   book is left on the shelf; otherwise a book.

@@ -202,10 +202,16 @@ def in_archive(book: dict, works: list[dict]) -> bool:
     two ways (`Fyodor Dostoevsky` / `Fédor Dostoïevski`). One key CONTAINED in the other
     (an edition pads its title: `Le postier V2`, `… (French Edition)`), never splitting a
     number, is the same book only by the same author — « Les Années douces » is not
-    Ernaux's « Les années », and « D. » is inside any title with a d."""
+    Ernaux's « Les années », and « D. » is inside any title with a d. A SONG is the same
+    song only by its artist and its title, nothing looser (#262): every record has an
+    « Intro », and Rounhaa's « H » is inside his « LOVE DEATH ROBOTS »."""
     title = title_key(book.get("title", ""))
     if not title:
         return False
+    if book.get("kind") == "music":
+        artist = slug(book.get("author", ""))
+        return any(title_key(w.get("work", "")) == title and slug(w.get("author", "")) == artist
+                   for w in works)
     for w in works:
         archived = title_key(w.get("work", ""))
         if not archived:
