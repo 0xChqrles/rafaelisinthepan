@@ -40,6 +40,14 @@ leans on it is a riddle with no answer. Reject a sentence when, read alone:
   opening quotation, a « cependant » or a « donc » that continues an argument, a colon
   that completes one (« “Il sait qu'il meurt” est une pensée profonde ; je crois
   cependant que la mienne est plus profonde » is wit about Pascal, not a line).
+- it is LINES OF VERSE joined that do not say one thing together (user rule 2026-10-16:
+  the game is played on context, so the context must make sense, not be a run of
+  unrelated lines that are each coherent): « La tête de mon frère dans ses pâtes bolo,
+  j'ai pas compris tout d'suite que mes grands-parents étaient alcoolos » (JeanJass) —
+  the brother in his pasta has nothing to do with the grandparents; the line that
+  follows does, and makes the line: « J'ai pas compris tout d'suite que mes
+  grands-parents étaient alcoolos, c'est pour ça qu'ils étaient en EHPAD, ils étaient
+  pas si vieux ».
 A sentence passes when a reader can say in one line what it is about, from the sentence
 alone. The automated curator asks the model exactly that and strikes on a refusal.
 
