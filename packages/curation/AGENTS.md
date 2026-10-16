@@ -352,10 +352,13 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 
 - **The artist list is the whole gate**: `shelf/<lang>/artists.txt`, the user's, by hand, one
   name per line, gitignored. The fetch reads it and nothing else; the model proposes no
-  artist for the fetch. A line names the Genius artist whose name has its slug (« Jean
-  Jass » is JeanJass); a line naming none is skipped with the search's first name, never
-  replaced by it (`shelf_lyrics.find_artist`). There is NO exclusion list: dropping a
-  name and deleting the artist's files is the whole removal.
+  artist for the fetch. A line is the artist's Genius name, case and spacing aside
+  (« miki (FRA) »: folded to letters, « miki » was the German rapper M.I.K.I.); a line
+  naming none is skipped with the search's first names, never replaced by them
+  (`shelf_lyrics.find_artist`). A day credits the name without Genius's namesake tag
+  (`lyrics.artist_name`: « miki (FRA) » is miki, as the archive and the cooldown know
+  it). There is NO exclusion list: dropping a name and deleting the artist's files is
+  the whole removal.
 - **The famous single is cut by pageviews**: `FAMOUS_SHARE` (0.25) of each artist's songs,
   most viewed first, is dropped before any lyric is read (`lyrics.famous_cut`). Features
   are skipped (the line belongs to someone else's song).

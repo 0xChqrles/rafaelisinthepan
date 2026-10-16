@@ -23,6 +23,8 @@ MAX_LINES_PER_UNIT = 4
 # The same artist at most once a month on the calendar (user-decided 2026-09-06).
 ARTIST_COOLDOWN_DAYS = 30
 
+# The tag Genius gives namesakes: « miki (FRA) », the M.I.K.I. there being a German rapper.
+_GENIUS_TAG = re.compile(r"\s*\([^()]*\)$")
 _SECTION = re.compile(r"^\s*\[.*?\]\s*$")
 _NOISE = re.compile(r"^\s*(\d+\s+Contributors?|You might also like|.*Embed|Translations?|.*Lyrics)\s*$", re.I)
 
@@ -129,6 +131,12 @@ def famous_cut(songs: list[dict], share: float = FAMOUS_SHARE) -> list[dict]:
 
 def within_cooldown(last_used: date | None, today: date) -> bool:
     return last_used is not None and today - last_used < timedelta(days=ARTIST_COOLDOWN_DAYS)
+
+
+def artist_name(genius_name: str) -> str:
+    """The artist as a day credits them, and as the cooldown and the archive know them:
+    the Genius name without its namesake tag (« miki (FRA) » is miki)."""
+    return _GENIUS_TAG.sub("", genius_name) or genius_name
 
 
 def song_filename(artist: str, title: str, song_id: int, path_slug) -> str:

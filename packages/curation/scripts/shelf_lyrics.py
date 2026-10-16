@@ -16,7 +16,7 @@ from pathlib import Path
 import sys
 
 import _paths
-from slug import path_slug, slug
+from slug import path_slug
 
 import lyrics as lyr
 from shelf import LANGS
@@ -35,16 +35,19 @@ def read_artists(path) -> list[str]:
     return [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")]
 
 
-def find_artist(genius, name: str) -> tuple[dict | None, str]:
-    """(the Genius artist the list names, the search's first name). The artist is a hit
-    whose name has the list name's slug (« Jean Jass » is JeanJass, « Nepal » is Népal),
-    never the nearest other hit: that would fetch an artist the list does not name. The
-    first name comes back so a misspelt line can be fixed."""
+def _name_key(name: str) -> str:
+    return " ".join(name.split()).casefold()
+
+
+def find_artist(genius, name: str) -> tuple[dict | None, list[str]]:
+    """(the Genius artist the list names, the search's first names). A line is the artist's
+    Genius name, case and spacing aside (« Népal », « miki (FRA) »), never a looser match:
+    folded to letters, « miki » was the German rapper M.I.K.I. When no hit has the name,
+    the search's first names come back so the line can be fixed."""
     hits = genius.search_artists(name).get("sections", [{}])[0].get("hits", [])
     results = [hit.get("result", {}) for hit in hits]
-    wanted = slug(name)
-    match = next((r for r in results if slug(r.get("name", "")) == wanted), None)
-    return match, (results[0].get("name", "") if results else "")
+    match = next((r for r in results if _name_key(r.get("name", "")) == _name_key(name)), None)
+    return match, [r.get("name", "") for r in results[:5]]
 
 
 def artist_songs(genius, artist_id: int, max_songs: int) -> list[dict]:
@@ -89,13 +92,14 @@ def main():
         artist, nearest = find_artist(genius, name)
         if artist is None:
             print(f"- {name}: no Genius artist by this name"
-                  + (f" (the search's first: {nearest})" if nearest else "") + ", skipped", flush=True)
+                  + (f" (the search: {', '.join(nearest)})" if nearest else "") + ", skipped", flush=True)
             continue
+        credited = lyr.artist_name(artist["name"])
         songs = artist_songs(genius, artist["id"], args.max_songs)
         kept = lyr.famous_cut(songs)
         print(f"- {artist['name']}: {len(songs)} songs, {len(songs) - len(kept)} most viewed dropped", flush=True)
         for song in kept:
-            path = shelf / lyr.song_filename(artist["name"], song["title"], song["id"], path_slug)
+            path = shelf / lyr.song_filename(credited, song["title"], song["id"], path_slug)
             if path.exists():
                 continue
             # By its page when the listing gave it: by id alone, the library looks the song
@@ -105,7 +109,7 @@ def main():
                 continue
             detail = genius.song(song["id"]).get("song", {})
             header = {
-                "artist": artist["name"],
+                "artist": credited,
                 "title": song["title"],
                 "album": (detail.get("album") or {}).get("name", "") or "",
                 # `release_date` (YYYY-MM-DD) is the official API's; it has no date components.

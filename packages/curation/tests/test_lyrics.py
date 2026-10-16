@@ -4,6 +4,7 @@ from lyrics import (
     ARTIST_COOLDOWN_DAYS,
     FAMOUS_SHARE,
     MAX_LINES_PER_UNIT,
+    artist_name,
     candidate_units,
     clean_lines,
     famous_cut,
@@ -121,12 +122,20 @@ class _Search:
 
 
 def test_the_fetch_takes_only_the_artist_the_list_names():
-    # The list is the whole whitelist: a hit counts under the list name's slug only.
-    assert find_artist(_Search("Nepal Death", "Népal"), "Nepal") == ({"id": 1, "name": "Népal"}, "Nepal Death")
-    assert find_artist(_Search("JeanJass"), "Jean Jass")[0]["name"] == "JeanJass"
-    # Never the search's nearest other artist: it comes back by name, to fix the line.
-    assert find_artist(_Search("Lomepal"), "Lomepall") == (None, "Lomepal")
-    assert find_artist(_Search(), "Personne") == (None, "")
+    # The list is the whole whitelist: a line is the artist's Genius name, case and spacing aside.
+    search = _Search("Mikill Pane", "M.I.K.I.", "miki (FRA)")
+    assert find_artist(search, "miki (fra)")[0] == {"id": 2, "name": "miki (FRA)"}
+    assert find_artist(_Search("Népal"), "népal")[0]["name"] == "Népal"
+    # Never a looser match: « miki » is not the German rapper M.I.K.I. The search's names come
+    # back, to fix the line.
+    assert find_artist(search, "miki") == (None, ["Mikill Pane", "M.I.K.I.", "miki (FRA)"])
+    assert find_artist(_Search("JeanJass"), "Jean Jass")[0] is None
+    assert find_artist(_Search(), "Personne") == (None, [])
+
+
+def test_a_day_credits_the_artist_without_the_genius_namesake_tag():
+    assert artist_name("miki (FRA)") == "miki"
+    assert artist_name("Népal") == "Népal" and artist_name("Feu! Chatterton") == "Feu! Chatterton"
 
 
 def test_every_genius_song_gets_its_own_readable_file():
