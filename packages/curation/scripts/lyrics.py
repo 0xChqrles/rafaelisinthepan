@@ -2,8 +2,9 @@
 curator mines, the famous-single cut and the artist cooldown. Stdlib only; the fetch
 that talks to Genius is `shelf_lyrics.py`.
 
-A song file is `<artist-slug>__<title-slug>.txt`: a header of `key: value` lines, a
-`---` line, then the lyrics as Genius serves them (section headers already removed).
+A song file is `<artist>__<title>__<genius id>.txt` (readable names, the id keeping two
+songs of one title apart): a header of `key: value` lines, a `---` line, then the lyrics
+as Genius serves them (section headers already removed).
 """
 
 from datetime import date, timedelta
@@ -22,6 +23,8 @@ MAX_LINES_PER_UNIT = 4
 # The same artist at most once a month on the calendar (user-decided 2026-09-06).
 ARTIST_COOLDOWN_DAYS = 30
 
+# The tag Genius gives namesakes: « miki (FRA) », the M.I.K.I. there being a German rapper.
+_GENIUS_TAG = re.compile(r"\s*\([^()]*\)$")
 _SECTION = re.compile(r"^\s*\[.*?\]\s*$")
 _NOISE = re.compile(r"^\s*(\d+\s+Contributors?|You might also like|.*Embed|Translations?|.*Lyrics)\s*$", re.I)
 
@@ -130,5 +133,13 @@ def within_cooldown(last_used: date | None, today: date) -> bool:
     return last_used is not None and today - last_used < timedelta(days=ARTIST_COOLDOWN_DAYS)
 
 
-def song_filename(artist: str, title: str, slug) -> str:
-    return f"{slug(artist) or 'artist'}__{slug(title) or 'title'}.txt"
+def artist_name(genius_name: str) -> str:
+    """The artist as a day credits them, and as the cooldown and the archive know them:
+    the Genius name without its namesake tag (« miki (FRA) » is miki)."""
+    return _GENIUS_TAG.sub("", genius_name) or genius_name
+
+
+def song_filename(artist: str, title: str, song_id: int, path_slug) -> str:
+    """Readable (`path_slug`: digits kept, words apart) and one per Genius song: an artist
+    has an « Intro » on every record, and « Slow Mix 07/02/18 » is not « … 06/08/17 »."""
+    return f"{path_slug(artist) or 'artist'}__{path_slug(title) or 'title'}__{song_id}.txt"

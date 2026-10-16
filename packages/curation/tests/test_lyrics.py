@@ -4,14 +4,18 @@ from lyrics import (
     ARTIST_COOLDOWN_DAYS,
     FAMOUS_SHARE,
     MAX_LINES_PER_UNIT,
+    artist_name,
     candidate_units,
     clean_lines,
     famous_cut,
     format_song,
     is_unit_candidate,
     parse_song,
+    song_filename,
     within_cooldown,
 )
+from shelf_lyrics import find_artist
+from slug import path_slug
 
 RAW = """3 Contributors
 [Couplet 1]
@@ -105,3 +109,38 @@ def test_within_cooldown():
     assert not within_cooldown(today.replace(month=8, day=6), today)
     assert not within_cooldown(None, today)
     assert ARTIST_COOLDOWN_DAYS == 30
+
+
+class _Search:
+    """Genius's artist search, answering the same hits whatever is asked."""
+
+    def __init__(self, *names):
+        self.names = names
+
+    def search_artists(self, _name):
+        return {"sections": [{"hits": [{"result": {"id": i, "name": n}} for i, n in enumerate(self.names)]}]}
+
+
+def test_the_fetch_takes_only_the_artist_the_list_names():
+    # The list is the whole whitelist: a line is the artist's Genius name, case and spacing aside.
+    search = _Search("Mikill Pane", "M.I.K.I.", "miki (FRA)")
+    assert find_artist(search, "miki (fra)")[0] == {"id": 2, "name": "miki (FRA)"}
+    assert find_artist(_Search("Népal"), "népal")[0]["name"] == "Népal"
+    # Never a looser match: « miki » is not the German rapper M.I.K.I. The search's names come
+    # back, to fix the line.
+    assert find_artist(search, "miki") == (None, ["Mikill Pane", "M.I.K.I.", "miki (FRA)"])
+    assert find_artist(_Search("JeanJass"), "Jean Jass")[0] is None
+    assert find_artist(_Search(), "Personne") == (None, [])
+
+
+def test_a_day_credits_the_artist_without_the_genius_namesake_tag():
+    assert artist_name("miki (FRA)") == "miki"
+    assert artist_name("Népal") == "Népal" and artist_name("Feu! Chatterton") == "Feu! Chatterton"
+
+
+def test_every_genius_song_gets_its_own_readable_file():
+    assert song_filename("Népal", "0 à 100", 7, path_slug) == "nepal__0-a-100__7.txt"
+    # A file on the shelf is a song already fetched: two songs must never share one.
+    assert song_filename("Népal", "Slow Mix 07/02/18", 1, path_slug) != \
+        song_filename("Népal", "Slow Mix 06/08/17", 2, path_slug)
+    assert song_filename("Népal", "Intro", 1, path_slug) != song_filename("Népal", "Intro", 2, path_slug)

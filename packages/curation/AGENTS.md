@@ -78,7 +78,8 @@ pnpm curate [--lang fr|en] [--work <file on the shelf>] [--retry <shelf file | p
 pnpm shelf:lyrics [--lang fr] [--artists shelf/<lang>/artists.txt] [--max-songs N]
 #   The music source (#262): for each artist of the user's hand-written list, the songs
 #   from Genius most viewed first, minus the top FAMOUS_SHARE (the singles), minus what
-#   is on the shelf; one .txt per song with a header. Needs GENIUS_ACCESS_TOKEN (a free
+#   is on the shelf; one .txt per song with a header, `<artist>__<title>__<genius id>.txt`
+#   (`lyrics.song_filename`: readable, one file per song). Needs GENIUS_ACCESS_TOKEN (a free
 #   client token, genius.com/api-clients; never a file in the repo). The only step that
 #   touches the network; the curator never does.
 pnpm shelf:quotes [--lang fr] [--work <file>] [--force]
@@ -351,8 +352,13 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 
 - **The artist list is the whole gate**: `shelf/<lang>/artists.txt`, the user's, by hand, one
   name per line, gitignored. The fetch reads it and nothing else; the model proposes no
-  artist for the fetch. There is NO exclusion list: dropping a name and deleting the
-  artist's files is the whole removal.
+  artist for the fetch. A line is the artist's Genius name, case and spacing aside
+  (« miki (FRA) »: folded to letters, « miki » was the German rapper M.I.K.I.); a line
+  naming none is skipped with the search's first names, never replaced by them
+  (`shelf_lyrics.find_artist`). A day credits the name without Genius's namesake tag
+  (`lyrics.artist_name`: « miki (FRA) » is miki, as the archive and the cooldown know
+  it). There is NO exclusion list: dropping a name and deleting the artist's files is
+  the whole removal.
 - **The famous single is cut by pageviews**: `FAMOUS_SHARE` (0.25) of each artist's songs,
   most viewed first, is dropped before any lyric is read (`lyrics.famous_cut`). Features
   are skipped (the line belongs to someone else's song).
@@ -371,7 +377,10 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 - **Artist cooldown, not "never twice"**: the same artist at most once every
   `ARTIST_COOLDOWN_DAYS` (30) on the calendar, never the same song. Judged on the
   ledger's game day (`shelf.archive()['last_used']`) and on the run index
-  (`shelf.last_proposed`). Books keep "never the same book twice".
+  (`shelf.last_proposed`). The same song is the same artist AND the same `title_key`
+  (`shelf.in_archive`), none of the book's looser matches: every record has an « Intro »,
+  and Rounhaa's « H » is inside his « LOVE DEATH ROBOTS ». Books keep "never the same
+  book twice".
 - Music is a minority stream (one or two days a week): `curate.pick_work` picks a song
   when the archive shows no music day within `MUSIC_EVERY_DAYS` (4), or when no eligible
   book is left on the shelf; otherwise a book.

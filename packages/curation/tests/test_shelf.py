@@ -170,6 +170,19 @@ def test_a_different_book_whose_title_holds_a_published_title_is_not_in_the_arch
     assert not shelf.in_archive({"title": "Journal d'un curé de campagne", "author": "Georges Bernanos"}, works)
 
 
+def test_a_song_is_the_same_song_only_by_its_artist_and_its_title():
+    # pairs off the real fr shelf and ledger (#262): every record has an « Intro », and a
+    # short title is inside the artist's other one
+    works = [{"author": "Josman", "work": "Intro"}, {"author": "Rounhaa", "work": "LOVE DEATH ROBOTS"}]
+
+    def song(author, title):
+        return {"kind": "music", "author": author, "title": title}
+    assert shelf.in_archive(song("Josman", "Intro"), works)
+    assert not shelf.in_archive(song("Népal", "Intro"), works)
+    assert not shelf.in_archive(song("Josman", "Doigt d’honneur (Intro)"), works)
+    assert not shelf.in_archive(song("Rounhaa", "H"), works)
+
+
 def test_another_volume_of_a_published_work_is_not_in_the_archive():
     # a title's digits are part of it: « Souvenirs entomologiques 9 » is not « … Livre X »
     works = [{"author": "Jean-Henri Fabre", "work": "Souvenirs entomologiques - Livre X"},
