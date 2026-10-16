@@ -151,12 +151,12 @@ is applied only to the player's raw keystrokes.
   forms; `kind` is an open union. Consumed by the solved screen.
 - **`source.excerpt` is the RAW text around the sentence (#270, user-decided 2026-09-07;
   it reverses the earlier "no `context` field" rule):** `{before: string[], after:
-  string[]}`, at most `EXCERPT_WINDOW` (8, `curation/sentences.py`) sentences each side —
-  the curator's model choosing where the page starts and ends (decided 2026-09-08) —
-  display forms, never generated prose, never the sentence itself (that is `words[]`); both
-  arrays present whenever the key is. The curator emits it for a BOOK; a song carries NONE
-  (lyrics are a licensed product; reaffirmed 2026-09-08); a hand-authored puzzle may carry
-  none. Hashed into `revision` like any content; the derivation slice and the share card
+  string[]}`, display forms, never generated prose, never the sentence itself (that is
+  `words[]`); both arrays present whenever the key is. A BOOK's is at most
+  `EXCERPT_WINDOW` (8, `curation/sentences.py`) sentences each side, the curator's model
+  choosing where the page starts and ends (decided 2026-09-08); a SONG's is its whole
+  stanza, verse or chorus, one element per line, never cut (user-decided 2026-10-16,
+  reversing "a song carries none"); a hand-authored puzzle may carry none. Hashed into `revision` like any content; the derivation slice and the share card
   carry no excerpt. **`source.url`** is a music day's track page, display-only (an ordinary
   link on the solved page, never an embed). Written only by `gen_phrase`
   (`--before`/`--after`/`--url`); the web refuses a malformed excerpt or a non-web url.
