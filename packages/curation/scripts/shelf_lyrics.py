@@ -108,7 +108,8 @@ def main():
                 "artist": artist["name"],
                 "title": song["title"],
                 "album": (detail.get("album") or {}).get("name", "") or "",
-                "year": (detail.get("release_date_components") or {}).get("year", "") or "",
+                # `release_date` (YYYY-MM-DD) is the official API's; it has no date components.
+                "year": (detail.get("release_date") or "")[:4],
                 "pageviews": song["pageviews"],
             }
             path.write_text(lyr.format_song(header, text), encoding="utf-8")
