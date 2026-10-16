@@ -214,5 +214,10 @@ def test_a_song_s_page_is_its_whole_stanza():
     assert stanza_excerpt(lines, unit) == {"before": ["Il pleuvait sur la ville."],
                                            "after": ["Au fond c'était pas si drôle,", "on riait quand même."]}
     assert stanza_excerpt(lines, "une ligne qui n'y est pas") is None
+    # a line opening on a name keeps its capital (off the real shelf: « Nino B., Jack City »)
+    stanza = ["On a appris notre biz comme Nino B.", "Jack City", "EHPAD et compagnie, la vie passe à toute allure",
+              "Faut qu'on s'lance dans l'immobilier, faut qu'on multiplie nos billes"]
+    assert stanza_excerpt(stanza, stanza[3])["before"] == [
+        "On a appris notre biz comme Nino B.", "Jack City,", "EHPAD et compagnie, la vie passe à toute allure."]
     assert stanza_excerpt(["Une seule ligne de dix mots pour faire toute la strophe"],
                           "Une seule ligne de dix mots pour faire toute la strophe") is None

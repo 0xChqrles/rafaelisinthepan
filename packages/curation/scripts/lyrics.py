@@ -123,12 +123,18 @@ def clean_lines(lyrics: str) -> list[str]:
     return out
 
 
+# A line that opens on a NAME keeps its capital: two capitalised words (« Jack City »,
+# « Keanu Reeves », « Nino B. ») or a word in capitals (« EHPAD »).
+_NAME_START = re.compile(r"^(?:[A-ZÀ-Ý][\w'’.-]*\s+[A-ZÀ-Ý]|[A-ZÀ-Ý]{2,}\b)")
+
+
 def _bridge(lines: list[str]) -> list[str]:
-    """Lines read as one run: Genius capitalises every line, so only the first keeps it,
-    and a comma bridges a line with no punctuation into the next."""
+    """Lines read as one run: Genius capitalises every line, so only the first keeps it
+    (a line opening on a name keeps it too), and a comma bridges a line with no
+    punctuation into the next."""
     out = []
     for i, line in enumerate(lines):
-        if i:
+        if i and not _NAME_START.match(line):
             line = line[0].lower() + line[1:]
         if i < len(lines) - 1 and line[-1] not in ".,;:!?…":
             line += ","
