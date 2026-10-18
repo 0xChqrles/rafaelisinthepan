@@ -79,12 +79,16 @@ pnpm curate [--lang fr|en] [--work <file on the shelf>] [--retry <shelf file | p
 #   ledger holds is refused.
 pnpm curate [--lang fr|en] --bank N [--work <file>] [--blind]
 #   BANKS N works instead of making a day: each mined, quote-tested, through the judge's
-#   sentence filter and shortlisted as a run does, then EVERY shortlisted line finished up to
-#   the ranking (`curate.prepare`: words chosen, giveaways, every check and swap) and
-#   appended to bank/<lang>.jsonl with what it was measured at. No line is compared and no
-#   ranking is paid. The works keep the calendar's mix (one song per MUSIC_EVERY_DAYS works,
-#   `curate.bank_pick`), spread over authors, with no artist cooldown (the pull applies it);
-#   a banked work is never mined again, by a bank or a run. Exit 2 when nothing was banked.
+#   sentence filter and shortlisted as a run does, then its first BANK_LINES (10, a run's
+#   first batch: a work gives at most one day) finished up to the ranking (`curate.prepare`:
+#   words chosen, giveaways, every check and swap) and appended to bank/<lang>.jsonl with
+#   what it was measured at. No line is compared and no ranking is paid. The works keep the
+#   calendar's shape (`curate.bank_pick`: one song per MUSIC_EVERY_DAYS works, an artist's
+#   next song once ARTIST_COOLDOWN_DAYS more works are banked, authors spread), with no
+#   artist cooldown (the pull applies it); a banked work is never mined again, by a bank or
+#   a run. Processes may run side by side: each CLAIMS its work under the bank's lock
+#   (bank/<lang>.claims), logs to its own runs/<stamp>-bank-<pid>.md, and releases a work
+#   whose banking failed (two failures in a row stop it). Exit 2 when nothing was banked.
 pnpm curate [--lang fr|en] --pull [--work <file>] [--blind]
 #   The day FROM THE BANK: the work picked by the run's rule (`pick_work`) among the banked
 #   works the archive still allows (not published, outside the artist cooldown); its lines
