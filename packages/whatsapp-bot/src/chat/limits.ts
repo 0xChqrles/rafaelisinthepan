@@ -31,6 +31,7 @@ export const limitKeys = {
     key: `DAY#${utcDay(now)}#GROUP`,
   }),
   calls: (now: Date) => ({ scope: 'LIMIT#ALL', key: `DAY#${utcDay(now)}#CALLS` }),
+  web: (now: Date) => ({ scope: 'LIMIT#ALL', key: `DAY#${utcDay(now)}#WEB` }),
 };
 
 // Two days: long enough to outlive the UTC day it counts, short enough to vanish on its own.
@@ -43,6 +44,14 @@ export function limitExpiry(now: Date): number {
 // each bounding half the spend.
 export function takeDailyCall(limits: LimitStore, ceiling: number, at: Date): Promise<boolean> {
   const { scope, key } = limitKeys.calls(at);
+  return limits.take(scope, key, ceiling, limitExpiry(at));
+}
+
+// One unit of the daily WEB ceiling (v22): a search or a page read, across every group. Its
+// own counter, so a day whose web is spent still ANSWERS — the tools say so, and the model
+// answers with what it knows — where a spent call ceiling silences the bot.
+export function takeDailyWeb(limits: LimitStore, ceiling: number, at: Date): Promise<boolean> {
+  const { scope, key } = limitKeys.web(at);
   return limits.take(scope, key, ceiling, limitExpiry(at));
 }
 

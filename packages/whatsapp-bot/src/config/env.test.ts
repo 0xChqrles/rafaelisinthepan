@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_DAILY_CALL_CEILING, DEFAULT_REGION, botRegion, loadEnv } from './env';
+import { DEFAULT_DAILY_CALL_CEILING, DEFAULT_REGION, DEFAULT_WEB_DAILY_CEILING, botRegion, loadEnv } from './env';
 
 const base = { BOT_TABLE: 'bot' };
 
@@ -17,6 +17,13 @@ describe('runtime env (#236)', () => {
     );
     // Zero on purpose is still zero.
     expect(loadEnv({ ...base, BOT_LLM_DAILY_CALL_CEILING: '0' }).llm.dailyCallCeiling).toBe(0);
+  });
+
+  it('reads the daily web ceiling the same way (v22)', () => {
+    expect(loadEnv(base).llm.webDailyCeiling).toBe(DEFAULT_WEB_DAILY_CEILING);
+    expect(loadEnv({ ...base, BOT_WEB_DAILY_CEILING: '12' }).llm.webDailyCeiling).toBe(12);
+    expect(loadEnv({ ...base, BOT_WEB_DAILY_CEILING: ' ' }).llm.webDailyCeiling).toBe(DEFAULT_WEB_DAILY_CEILING);
+    expect(() => loadEnv({ ...base, BOT_WEB_DAILY_CEILING: 'lots' })).toThrow(/BOT_WEB_DAILY_CEILING must be a non-negative/);
   });
 
   it('refuses a ceiling that is not a non-negative number', () => {

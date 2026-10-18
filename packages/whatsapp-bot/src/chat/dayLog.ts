@@ -22,6 +22,7 @@
 import { QueryCommand, PutItemCommand, type AttributeValue, type DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { activeDate, dayNumber } from '@whippin/shared';
 import { dayPrefix } from '../domain/dynamoDeclarationStore';
+import { REPLY_MAX_CHARS } from './format';
 import { withMentionNames } from './trigger';
 
 export type TurnKind = 'said' | 'bot' | 'reacted';
@@ -40,8 +41,15 @@ export const TURN_MAX_CHARS = 500;
 export const DAY_MAX_CHARS = 40_000;
 export const DAY_LOG_TTL_SECONDS = 48 * 60 * 60;
 
-export function boundTurnText(text: string): string {
-  return text.length > TURN_MAX_CHARS ? `${text.slice(0, TURN_MAX_CHARS - 1).trimEnd()}…` : text;
+// THE BOT'S OWN LINES ARE KEPT WHOLE (v22): a reply is now up to `REPLY_MAX_CHARS`, links
+// and all, and "et le lien ?" or "tu disais quoi pour le 3e ?" is asked about what it
+// actually said. What a member types stays bounded at `TURN_MAX_CHARS`.
+export function turnCap(kind: TurnKind): number {
+  return kind === 'said' ? TURN_MAX_CHARS : REPLY_MAX_CHARS;
+}
+
+export function boundTurnText(text: string, max = TURN_MAX_CHARS): string {
+  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
 }
 
 // How far under the cap a cut line can stand: the run of whitespace `boundTurnText` trimmed.
@@ -129,7 +137,7 @@ export class DayLog {
   }
 
   async append(turn: Turn): Promise<void> {
-    const bounded = { ...turn, text: boundTurnText(turn.text) };
+    const bounded = { ...turn, text: boundTurnText(turn.text, turnCap(turn.kind)) };
     const list = this.turns.get(turn.group) ?? [];
     if (list.some((t) => t.id === bounded.id)) return;
     list.push(bounded);
@@ -160,10 +168,10 @@ export class DayLog {
   // look like a duplicate, and today's log lost its reminder.
   async appendUnlessSaid(turn: Turn): Promise<void> {
     const echo = collapse(turn.text);
-    const text = collapse(boundTurnText(turn.text));
+    const text = collapse(boundTurnText(turn.text, turnCap('bot')));
     const said = (this.turns.get(turn.group) ?? []).some((t) => {
       if (t.day !== turn.day || t.kind !== 'bot') return false;
-      const cut = t.text.endsWith('…') && t.text.length > TURN_MAX_CHARS - CUT_TRIM_SLACK;
+      const cut = t.text.endsWith('…') && t.text.length > turnCap('bot') - CUT_TRIM_SLACK;
       return cut ? echo.startsWith(collapse(t.text.slice(0, -1))) : collapse(t.text) === text;
     });
     if (!said) await this.append(turn);

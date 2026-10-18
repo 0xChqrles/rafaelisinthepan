@@ -16,6 +16,7 @@
 
 import { fold, type Source } from '@whippin/shared';
 import type { Log } from '../log';
+import { secretsOf, type DaySecrets } from './spoilers';
 
 // The shape the puzzle carries (#5), less what only the solved page reads. EVERY field is
 // independently optional, so partial metadata is valid and a puzzle may carry no `source`
@@ -30,18 +31,30 @@ const FETCH_TIMEOUT_MS = 15_000;
 // for the bot to answer "salut". The read is not abandoned when this passes; it goes on and
 // fills the cache, so what a slow one costs is that ONE message not knowing the source.
 const WAIT_BUDGET_MS = 1_500;
-// A FAILURE IS REMEMBERED BRIEFLY, an ANSWER for the process's life. A 404 is an answer —
-// that day was never published — and a source does not change while a day is live, so
-// re-reading it would be several megabytes per conversation. A network failure is not an
-// answer, and retrying it on the very next message would hammer the API at the rate the
-// group talks; it is held for this long instead.
+// A FAILURE IS REMEMBERED BRIEFLY: a network failure is not an answer, and retrying it on
+// the very next message would hammer the API at the rate the group talks; it is held for
+// this long instead.
 const FAILURE_TTL_MS = 5 * 60_000;
+// AN ANSWER IS RE-ASKED EVERY FEW MINUTES, NOT HELD FOR THE PROCESS'S LIFE (v22). The web's
+// spoiler guard reads the day's SENTENCE through this cache (`chat/web.ts`), and a day can
+// change under it: read before it was published (a 404), it is published later; read once,
+// it is republished with a corrected line or a moved hole. Held for good, either left the
+// guard checking nothing, or checking the retired sentence, for the rest of the day. The
+// re-ask is cheap: a 404 has no body, and a published day is re-asked by its ETag (the
+// puzzle's revision), which the CDN answers 304 while the sentence is unchanged — the 4-6 MB
+// read happens again only when there is something new to read.
+const RECHECK_MS = 5 * 60_000;
 
 interface Entry {
   source: DaySource | null;
+  // The sentence as the spoiler guard reads it (`spoilers.ts`): held here, never in a prompt.
+  secrets: DaySecrets | null;
   published: boolean; // false = the day-addressed 404, and for a failed read
-  // Absent = settled for good. Set = a failure that may be retried after this instant.
+  // Set = a FAILURE, retried after this instant. Absent = an answer.
   retryAfter?: number;
+  // An answer is re-asked after this instant (`RECHECK_MS`), by its ETag when it has one.
+  recheckAfter?: number;
+  etag?: string;
 }
 
 // What a day IS, for a caller that has to know whether there is a puzzle at all (the
@@ -50,6 +63,8 @@ interface Entry {
 export interface DayRead {
   published: boolean;
   source: DaySource | null;
+  // Today's sentence for the web's spoiler guard (`chat/web.ts`) — code only, never a prompt.
+  secrets: DaySecrets | null;
 }
 
 export interface DaySourceReader {
@@ -83,61 +98,73 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
   const doFetch = deps.fetchImpl ?? fetch;
   const cache = new Map<string, Entry>();
 
-  async function load(lang: string, date: string): Promise<Entry> {
+  // `held` is the answer being re-asked, if any: asked by its ETag, a 304 keeps it.
+  async function load(lang: string, date: string, held?: Entry): Promise<Entry> {
     const url = `${deps.apiBaseUrl}/?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(date)}`;
     let response: Response;
     try {
-      response = await doFetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+      response = await doFetch(url, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        ...(held?.etag ? { headers: { 'if-none-match': held.etag } } : {}),
+      });
     } catch (error) {
       deps.log.warn(
         { event: 'source.unreachable', lang, date, error: (error as Error).message },
         'could not read the day; the bot simply will not know where the sentence is from',
       );
-      return { source: null, published: false, retryAfter: now() + FAILURE_TTL_MS };
+      return { source: null, secrets: null, published: false, retryAfter: now() + FAILURE_TTL_MS };
     }
-    // 404 is the day-addressed answer for a day that was never published — settled, not a
-    // failure, so it is not retried every five minutes for the rest of the day.
+    if (response.status === 304 && held) return { ...held, recheckAfter: now() + RECHECK_MS };
+    // 404 is the day-addressed answer for a day that is not published — an answer, not a
+    // failure, and re-asked like any answer: the day may be published within the hour.
     if (response.status === 404) {
       deps.log.info({ event: 'source.none', lang, date }, 'no puzzle published for this day');
-      return { source: null, published: false };
+      return { source: null, secrets: null, published: false, recheckAfter: now() + RECHECK_MS };
     }
     if (!response.ok) {
       deps.log.warn({ event: 'source.failed', lang, date, status: response.status }, 'the day did not load');
-      return { source: null, published: false, retryAfter: now() + FAILURE_TTL_MS };
+      return { source: null, secrets: null, published: false, retryAfter: now() + FAILURE_TTL_MS };
     }
     let source: DaySource | null;
+    let secrets: DaySecrets | null;
     try {
       // A valid JSON body need not be an OBJECT — `null` and `[]` both parse, and reading
       // `.source` off the first throws. Inside the try so that lands on the same warning
       // and the same five-minute backoff as a body that did not parse at all, rather than
       // escaping to the caller and being retried at the rate the group talks.
-      const puzzle = (await response.json()) as { source?: DaySource } | null;
+      const puzzle = (await response.json()) as { source?: DaySource; words?: unknown; holes?: unknown } | null;
       source = puzzle?.source ?? null;
+      // THE SENTENCE TOO, since it is in hand (v22): the web can find the day's line, and the
+      // guard that keeps it out of the bot's reach needs to know it. Kept in this process,
+      // never logged, never put in a prompt.
+      secrets = secretsOf(puzzle);
     } catch (error) {
       deps.log.warn(
         { event: 'source.unparseable', lang, date, error: (error as Error).message },
         'the day did not parse',
       );
-      return { source: null, published: false, retryAfter: now() + FAILURE_TTL_MS };
+      return { source: null, secrets: null, published: false, retryAfter: now() + FAILURE_TTL_MS };
     }
     // Never the author or the work: this is a log, and a log of what today's answer is
     // from would spoil the day for whoever reads it.
     deps.log.info({ event: 'source.loaded', lang, date, kind: source?.kind ?? null }, 'day source loaded');
-    return { source, published: true };
+    return { source, secrets, published: true, recheckAfter: now() + RECHECK_MS, etag: response.headers.get('etag') ?? undefined };
   }
 
   // One flight per (language, day), shared: a lively group can address the bot several
   // times inside one 4-6 MB read, and each of those must not start its own.
   const flights = new Map<string, Promise<Entry>>();
 
-  // The cached entry when it is still good, else ONE flight for it (shared).
-  function entryFor(lang: string, date: string): { held: Entry } | { flight: Promise<Entry> } {
+  // The cached entry when it is still good, else ONE flight for it (shared) — with the
+  // answer it is re-asking, which the prompt's `get` may still use while it flies.
+  function entryFor(lang: string, date: string): { held: Entry } | { flight: Promise<Entry>; stale?: Entry } {
     const key = `${lang}#${date}`;
     const held = cache.get(key);
-    if (held && (held.retryAfter === undefined || held.retryAfter > now())) return { held };
+    const answer = held && held.retryAfter === undefined ? held : undefined;
+    if (held && (held.retryAfter !== undefined ? held.retryAfter > now() : (held.recheckAfter ?? Infinity) > now())) return { held };
     const flight =
       flights.get(key) ??
-      load(lang, date)
+      load(lang, date, answer)
         // `load` answers rather than throwing, so this is the belt-and-braces path. It
         // matters because a caller may STOP WAITING (`get`) and leave nobody to catch: a
         // rejected flight left in the map would poison that day for the process.
@@ -146,15 +173,19 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
             { event: 'source.failed', lang, date, error: (error as Error).message },
             'the day did not load',
           );
-          return { source: null, published: false, retryAfter: now() + FAILURE_TTL_MS } satisfies Entry;
+          return { source: null, secrets: null, published: false, retryAfter: now() + FAILURE_TTL_MS } satisfies Entry;
         })
-        .then((entry) => {
+        // A RE-ASK THAT FAILS keeps the SOURCE it held: the entry is a failure, so `read`
+        // answers null and the web stays closed, but the prompt's rule against naming the
+        // author and the reply's backstop keep what they were checking against.
+        .then((loaded) => {
+          const entry = loaded.retryAfter !== undefined && held?.source ? { ...loaded, source: held.source } : loaded;
           cache.set(key, entry);
           flights.delete(key);
           return entry;
         });
     flights.set(key, flight);
-    return { flight };
+    return { flight, stale: held };
   }
 
   return {
@@ -163,10 +194,11 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
       if ('held' in found) return found.held.source;
       // The reply does not wait on this past its budget. The flight is NOT cancelled — it
       // finishes into the cache — so a cold first message answers without the source and
-      // every message after it has it.
+      // every message after it has it. A re-ask that is slow answers with what was held.
       let timer: ReturnType<typeof setTimeout> | undefined;
-      const gaveUp = new Promise<null>((resolve) => {
-        timer = setTimeout(() => resolve(null), WAIT_BUDGET_MS);
+      const fallback = found.stale?.source ?? null;
+      const gaveUp = new Promise<DaySource | null>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), WAIT_BUDGET_MS);
       });
       try {
         return await Promise.race([found.flight.then((entry) => entry.source), gaveUp]);
@@ -177,7 +209,7 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
     async read(lang, date) {
       const found = entryFor(lang, date);
       const entry = 'held' in found ? found.held : await found.flight;
-      return entry.retryAfter === undefined ? { published: entry.published, source: entry.source } : null;
+      return entry.retryAfter === undefined ? { published: entry.published, source: entry.source, secrets: entry.secrets } : null;
     },
   };
 }

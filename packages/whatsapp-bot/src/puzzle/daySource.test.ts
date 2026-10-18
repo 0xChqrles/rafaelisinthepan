@@ -89,11 +89,15 @@ describe("the day's source is ambient context, not a tool (#236)", () => {
     });
   });
 
-  it('an unpublished day is an ANSWER and is never re-read; a failure is retried later', async () => {
-    const missing = reader([() => new Response('', { status: 404 })]);
+  it('an unpublished day is an ANSWER, re-asked every few minutes; a failure is retried later', async () => {
+    let at = 1_000;
+    const missing = reader([() => new Response('', { status: 404 }), () => ok({ source: { kind: 'book' } })], () => at);
     expect(await missing.reader.get('fr', '2026-09-03')).toBeNull();
     await missing.reader.get('fr', '2026-09-03');
-    expect(missing.fetchImpl).toHaveBeenCalledTimes(1); // settled: no puzzle that day
+    expect(missing.fetchImpl).toHaveBeenCalledTimes(1); // an answer: not re-read at the rate the group talks
+    // …but not for the process's life (v22): the day published late is read once it is.
+    at += 6 * 60_000;
+    expect(await missing.reader.read('fr', '2026-09-03')).toMatchObject({ published: true, source: { kind: 'book' } });
 
     let clock = 1_000;
     const down = reader(
@@ -256,15 +260,57 @@ describe('a reply never waits on decoration (PR-247 review)', () => {
 describe('the whole answer, waited for (the reminder)', () => {
   it('says whether the day is published, and null for a read that failed', async () => {
     const published = reader([() => ok({ lang: 'fr', source: { kind: 'music' } })]);
-    expect(await published.reader.read('fr', '2026-09-04')).toEqual({ published: true, source: { kind: 'music' } });
+    expect(await published.reader.read('fr', '2026-09-04')).toEqual({ published: true, source: { kind: 'music' }, secrets: null });
     const bare = reader([() => ok({ lang: 'fr' })]);
-    expect(await bare.reader.read('fr', '2026-09-04')).toEqual({ published: true, source: null });
+    expect(await bare.reader.read('fr', '2026-09-04')).toEqual({ published: true, source: null, secrets: null });
     const missing = reader([() => new Response('', { status: 404 })]);
-    expect(await missing.reader.read('fr', '2026-09-04')).toEqual({ published: false, source: null });
+    expect(await missing.reader.read('fr', '2026-09-04')).toEqual({ published: false, source: null, secrets: null });
     const down = reader([() => new Response('', { status: 503 })]);
     expect(await down.reader.read('fr', '2026-09-04')).toBeNull();
     // And it shares the cache with `get`: one read serves both.
     expect(await published.reader.get('fr', '2026-09-04')).toEqual({ kind: 'music' });
     expect(published.fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the sentence, held for the web's spoiler guard and never for a prompt (v22)", () => {
+  it('reads the words and the hidden ones out of the same parse', async () => {
+    const puzzle = {
+      lang: 'fr',
+      words: ['tu', "t'attends", 'à', 'rien,'],
+      holes: [{ pos: 1, secret: { word: 'attends', slug: 'attends' }, prefix: "t'" }],
+      source: { kind: 'music' },
+    };
+    const { reader: r } = reader([() => ok(puzzle)]);
+    const read = await r.read('fr', '2026-09-04');
+    expect(read?.secrets).toEqual({ words: ['tu', 't', 'attends', 'a', 'rien'], hidden: [false, false, true, false, false] });
+    // The prompt's half is unchanged: the source alone.
+    expect(await r.get('fr', '2026-09-04')).toEqual({ kind: 'music' });
+  });
+});
+
+describe('a published day is re-asked by its ETag (v22)', () => {
+  it('keeps the source through a re-ask that fails, and closes the web meanwhile', async () => {
+    let at = 1_000;
+    const { reader: r } = reader([() => ok({ source: { kind: 'music', author: 'Bertrand Belin' } }), () => new Response('', { status: 503 })], () => at);
+    expect(await r.get('fr', '2026-09-04')).toEqual({ kind: 'music', author: 'Bertrand Belin' });
+    at += 6 * 60_000;
+    expect(await r.read('fr', '2026-09-04')).toBeNull(); // the guard cannot be trusted: the web closes
+    expect(await r.get('fr', '2026-09-04')).toEqual({ kind: 'music', author: 'Bertrand Belin' }); // the rule still holds
+  });
+
+  it('keeps what it holds on a 304, and takes a corrected sentence on a 200', async () => {
+    let at = 1_000;
+    const v1 = { words: ['je', 'marche', 'seul', 'dans'], holes: [{ pos: 2, secret: { word: 'seul' } }] };
+    const v2 = { words: ['tu', 'cours', 'vite', 'ici'], holes: [{ pos: 1, secret: { word: 'cours' } }] };
+    const tagged = (body: unknown, etag: string) => new Response(JSON.stringify(body), { status: 200, headers: { etag } });
+    const { reader: r, fetchImpl } = reader([() => tagged(v1, '"r1"'), () => new Response(null, { status: 304 }), () => tagged(v2, '"r2"')], () => at);
+    expect((await r.read('fr', '2026-09-04'))?.secrets?.words).toEqual(['je', 'marche', 'seul', 'dans']);
+    at += 6 * 60_000;
+    expect((await r.read('fr', '2026-09-04'))?.secrets?.words).toEqual(['je', 'marche', 'seul', 'dans']);
+    const asked = (fetchImpl.mock.calls[1] as unknown as [string, RequestInit])[1];
+    expect((asked.headers as Record<string, string>)['if-none-match']).toBe('"r1"');
+    at += 6 * 60_000;
+    expect((await r.read('fr', '2026-09-04'))?.secrets?.words).toEqual(['tu', 'cours', 'vite', 'ici']);
   });
 });

@@ -15,6 +15,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 interface WireMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | null;
+  reasoning_content?: string;
   tool_call_id?: string;
   tool_calls?: { id: string; type: 'function'; function: { name: string; arguments: string } }[];
 }
@@ -29,6 +30,13 @@ function toWire(message: LlmMessage): WireMessage {
       return {
         role: 'assistant',
         content: message.content,
+        // HANDED BACK WITH ITS TOOL CALLS (measured 2026-10-18). In thinking mode with tools,
+        // DeepSeek refuses a round whose earlier tool call it cannot match to its reasoning —
+        // 400 "The `reasoning_content` in the thinking mode must be passed back to the API".
+        // It usually restores the reasoning itself, which is why the 400 was sporadic in
+        // production; sent back, the round never depends on that. A remembered line of the
+        // day carries none and needs none (measured: a plain assistant turn with tools is 200).
+        ...(message.reasoning !== undefined ? { reasoning_content: message.reasoning } : {}),
         ...(message.toolCalls && message.toolCalls.length > 0
           ? {
               tool_calls: message.toolCalls.map((c) => ({
@@ -46,6 +54,7 @@ interface WireResponse {
   choices?: {
     message?: {
       content?: string | null;
+      reasoning_content?: string | null;
       tool_calls?: { id?: string; function?: { name?: string; arguments?: string } }[];
     };
     finish_reason?: string;
@@ -103,7 +112,9 @@ export function deepSeekProvider(options: DeepSeekOptions): LlmProvider {
         const cause = error as Error;
         throw new LlmUnavailable(`deepseek: ${cause.name}: ${cause.message}`);
       }
-      if (response.status === 429 || response.status >= 500) {
+      // 402 is the prepaid balance run dry (2026-09-14): weather for every caller — the
+      // podium without comments, the share with its emoji — never a crashed handler.
+      if (response.status === 402 || response.status === 429 || response.status >= 500) {
         throw new LlmUnavailable(`deepseek: HTTP ${response.status}`);
       }
       if (!response.ok) {
@@ -125,6 +136,7 @@ export function deepSeekProvider(options: DeepSeekOptions): LlmProvider {
       const reason = choice?.finish_reason;
       return {
         text: choice?.message?.content ?? null,
+        reasoning: choice?.message?.reasoning_content ?? null,
         toolCalls,
         finish:
           reason === 'stop' || reason === 'length' || reason === 'tool_calls' ? reason : 'other',
