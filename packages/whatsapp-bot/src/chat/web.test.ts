@@ -59,19 +59,45 @@ describe('the web, as the conversation\'s tools (v22)', () => {
     const lyrics = result('https://paroles.ex/belin', 'Je marche seul dans la nuit, refrain…');
     const { web } = client([lyrics, result('https://ex.com/a')], { 'https://ex.com/a': { title: 'A', content: 'et je marche seul dans la rue', truncated: false } });
     const t = tools(web);
-    const found = (await t.run('web_search', { query: 'paroles marche dans la nuit' })) as { results: WebResult[]; withheld?: string };
-    expect(found.results.map((r) => r.url)).toEqual(['https://ex.com/a']);
-    expect(found.withheld).toMatch(/1 result held back/);
+    // NEVER SAYING WHY: a withheld result is simply not there, a withheld page reads like an
+    // empty one — a guard that named the day would confirm a member's guess.
+    expect(await t.run('web_search', { query: 'paroles marche dans la nuit' })).toEqual({ results: [result('https://ex.com/a')] });
     expect(t.saw(lyrics.url)).toBe(false);
-    expect(await t.run('read_page', { url: 'https://ex.com/a' })).toEqual({ error: "held back: that page holds today's Whippin sentence" });
+    expect(await t.run('read_page', { url: 'https://ex.com/a' })).toEqual({ error: 'that page has nothing readable' });
   });
 
   it("refuses a search naming today's author or work, in any language's puzzle", async () => {
     const { web, calls } = client();
     const t = tools(web);
-    expect(await t.run('web_search', { query: 'bertrand BELIN paroles' })).toEqual({ error: "refused: that search is about today's Whippin sentence" });
-    expect(await t.run('web_search', { query: 'le grand oiseau chanson' })).toMatchObject({ error: expect.stringMatching(/refused/) });
+    // Refused like a search that found nothing.
+    expect(await t.run('web_search', { query: 'bertrand BELIN paroles' })).toEqual({ results: [] });
+    expect(await t.run('web_search', { query: 'le grand oiseau chanson' })).toEqual({ results: [] });
     expect(calls.search).toEqual([]);
+  });
+
+  it('checks the link a result is shown with, decoded: a lyrics site spells the line in its path', async () => {
+    const slug = result('https://quotes.ex/je-marche-seul-dans-la-nuit', 'Citation célèbre');
+    const encoded = result('https://quotes.ex/je%20marche%20seul%20dans', 'Citation');
+    const t = tools(client([slug, encoded]).web);
+    expect(await t.run('web_search', { query: 'citation nuit' })).toEqual({ results: [] });
+    expect(t.saw(slug.url)).toBe(false);
+  });
+
+  it('sends the link AS IT WAS SHOWN, never the model\'s spelling of it', async () => {
+    const { web, calls } = client([result('https://x.example/a')], { 'https://x.example/a': { title: 'A', content: 'ok', truncated: false } });
+    const t = tools(web);
+    await t.run('web_search', { query: 'q' });
+    await t.run('read_page', { url: 'https://u:p@X.example/a#frag' });
+    expect(calls.read).toEqual(['https://x.example/a']);
+  });
+
+  it('never reads the game through a trailing-dot host, a redirect or a shortener', async () => {
+    const artifact = { title: '', content: '{"lang":"fr","words":["tu"],"holes":[{"pos":0,"secret":{"word":"tu"}}]}', truncated: false };
+    const { web } = client([], { 'https://sho.rt/x': artifact });
+    const t = tools(web, { seen: ['https://sho.rt/x', 'https://api.whippin.ai./?lang=fr'] });
+    expect(await t.run('read_page', { url: 'https://api.whippin.ai./?lang=fr' })).toEqual({ error: "refused: that is the game's own site" });
+    // Any day's puzzle, whatever served it, reads like a page with nothing on it.
+    expect(await t.run('read_page', { url: 'https://sho.rt/x' })).toEqual({ error: 'that page has nothing readable' });
   });
 
   it('is CLOSED, not open without its guard, when a day cannot be read', async () => {

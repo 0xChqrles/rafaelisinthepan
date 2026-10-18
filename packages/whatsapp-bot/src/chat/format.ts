@@ -10,16 +10,23 @@
 // most" (`personality.ts` `conversationSection`), and this is where the code holds it.
 export const REPLY_MAX_CHARS = 3000;
 
-const URL_PATTERN = /https?:\/\/[^\s<>"'`]+/g;
-const TRAILING = /[.,;:!?'"»”’]+$/;
+// NUL never ends a link here: it delimits the links `replyText` has lifted out.
+const URL_PATTERN = /https?:\/\/[^\s<>"'`\u0000]+/g;
+// What closes a sentence or a mark around a link, never the link's own: a full stop, a quote,
+// an ellipsis, a *bold* or ~strike~ closing. A closing _italic_ only when one opened before
+// the link: `wiki/Le_Petit_Prince` ends on a letter, and an underscore can end a real path.
+const TRAILING = /[.,;:!?'"»”’…*~]+$/;
+const TRAILING_IN_ITALICS = /[.,;:!?'"»”’…*~_]+$/;
 
 // A URL as it ends in running text: a full stop or a closing bracket after it is the
-// sentence's, unless the link opened that bracket itself (`…/Paris_(France)`).
-function trimUrl(raw: string): string {
-  let url = raw.replace(TRAILING, '');
+// sentence's, unless the link opened that bracket itself (`…/Paris_(France)`). `before` is
+// the character the link follows.
+function trimUrl(raw: string, before = ''): string {
+  const trailing = before === '_' ? TRAILING_IN_ITALICS : TRAILING;
+  let url = raw.replace(trailing, '');
   for (const [open, close] of [['(', ')'], ['[', ']']] as const) {
     while (url.endsWith(close) && url.split(close).length > url.split(open).length) {
-      url = url.slice(0, -1).replace(TRAILING, '');
+      url = url.slice(0, -1).replace(trailing, '');
     }
   }
   return url;
@@ -27,7 +34,9 @@ function trimUrl(raw: string): string {
 
 // The links a text holds, as they would be clicked.
 export function urlsIn(text: string): string[] {
-  return [...text.matchAll(URL_PATTERN)].map((m) => trimUrl(m[0])).filter((u) => u.length > 'https://'.length);
+  return [...text.matchAll(URL_PATTERN)]
+    .map((m) => trimUrl(m[0], text[m.index - 1]))
+    .filter((u) => u.length > 'https://'.length);
 }
 
 // One page, however it was spelled: scheme and host case, a default port, a fragment and a
@@ -87,8 +96,8 @@ export function replyText(raw: string | null): string | null {
       const name = label.trim();
       return !name || urlsIn(name).length > 0 || name === url ? hold(url) : `${name} ${hold(url)}`;
     })
-    .replace(URL_PATTERN, (raw) => {
-      const url = trimUrl(raw);
+    .replace(URL_PATTERN, (raw: string, at: number, whole: string) => {
+      const url = trimUrl(raw, whole[at - 1]);
       return hold(url) + raw.slice(url.length);
     });
   text = whatsappMarks(text)
@@ -111,8 +120,8 @@ export function withoutUnseenLinks(text: string, allowed: (url: string) => boole
   let changed = false;
   const lines = text.split('\n').flatMap((line) => {
     let lost = false;
-    let left = line.replace(URL_PATTERN, (raw) => {
-      const url = trimUrl(raw);
+    let left = line.replace(URL_PATTERN, (raw: string, at: number) => {
+      const url = trimUrl(raw, line[at - 1]);
       if (allowed(url)) return raw;
       lost = true;
       return raw.slice(url.length); // what followed the link (a full stop) stays

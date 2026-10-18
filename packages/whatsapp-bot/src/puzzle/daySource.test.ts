@@ -89,11 +89,15 @@ describe("the day's source is ambient context, not a tool (#236)", () => {
     });
   });
 
-  it('an unpublished day is an ANSWER and is never re-read; a failure is retried later', async () => {
-    const missing = reader([() => new Response('', { status: 404 })]);
+  it('an unpublished day is an ANSWER, re-asked every few minutes; a failure is retried later', async () => {
+    let at = 1_000;
+    const missing = reader([() => new Response('', { status: 404 }), () => ok({ source: { kind: 'book' } })], () => at);
     expect(await missing.reader.get('fr', '2026-09-03')).toBeNull();
     await missing.reader.get('fr', '2026-09-03');
-    expect(missing.fetchImpl).toHaveBeenCalledTimes(1); // settled: no puzzle that day
+    expect(missing.fetchImpl).toHaveBeenCalledTimes(1); // an answer: not re-read at the rate the group talks
+    // …but not for the process's life (v22): the day published late is read once it is.
+    at += 6 * 60_000;
+    expect(await missing.reader.read('fr', '2026-09-03')).toMatchObject({ published: true, source: { kind: 'book' } });
 
     let clock = 1_000;
     const down = reader(
@@ -282,5 +286,22 @@ describe("the sentence, held for the web's spoiler guard and never for a prompt 
     expect(read?.secrets).toEqual({ words: ['tu', 't', 'attends', 'a', 'rien'], hidden: [false, false, true, false, false] });
     // The prompt's half is unchanged: the source alone.
     expect(await r.get('fr', '2026-09-04')).toEqual({ kind: 'music' });
+  });
+});
+
+describe('a published day is re-asked by its ETag (v22)', () => {
+  it('keeps what it holds on a 304, and takes a corrected sentence on a 200', async () => {
+    let at = 1_000;
+    const v1 = { words: ['je', 'marche', 'seul', 'dans'], holes: [{ pos: 2, secret: { word: 'seul' } }] };
+    const v2 = { words: ['tu', 'cours', 'vite', 'ici'], holes: [{ pos: 1, secret: { word: 'cours' } }] };
+    const tagged = (body: unknown, etag: string) => new Response(JSON.stringify(body), { status: 200, headers: { etag } });
+    const { reader: r, fetchImpl } = reader([() => tagged(v1, '"r1"'), () => new Response(null, { status: 304 }), () => tagged(v2, '"r2"')], () => at);
+    expect((await r.read('fr', '2026-09-04'))?.secrets?.words).toEqual(['je', 'marche', 'seul', 'dans']);
+    at += 6 * 60_000;
+    expect((await r.read('fr', '2026-09-04'))?.secrets?.words).toEqual(['je', 'marche', 'seul', 'dans']);
+    const asked = (fetchImpl.mock.calls[1] as unknown as [string, RequestInit])[1];
+    expect((asked.headers as Record<string, string>)['if-none-match']).toBe('"r1"');
+    at += 6 * 60_000;
+    expect((await r.read('fr', '2026-09-04'))?.secrets?.words).toEqual(['tu', 'cours', 'vite', 'ici']);
   });
 });

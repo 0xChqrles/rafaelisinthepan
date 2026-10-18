@@ -48,7 +48,8 @@ When somebody asks how the game works — a rule, the score, the hints, why a wo
 // the scheme or `www.`, a trailing slash or not. Never a longer path.
 function tutorialLink(siteOrigin: string): RegExp {
   const host = siteOrigin.replace(/^https?:\/\//, '');
-  return new RegExp(`(?:https?:\\/\\/)?(?:www\\.)?${escapeRegExp(host)}\\/([a-z]{2})\\/learn(?:\\/(\\d+))?\\/?(?![\\w/-])`, 'gi');
+  // Never a longer path — but a closing _italic_ or *bold* mark is the sentence's (v22).
+  return new RegExp(`(?:https?:\\/\\/)?(?:www\\.)?${escapeRegExp(host)}\\/([a-z]{2})\\/learn(?:\\/(\\d+))?\\/?(?![A-Za-z0-9/-]|_\\w)`, 'gi');
 }
 
 // The canonical URL of a page the shared table says exists, else null.

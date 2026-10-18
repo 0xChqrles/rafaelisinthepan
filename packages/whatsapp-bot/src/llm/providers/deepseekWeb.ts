@@ -23,6 +23,9 @@ export const SEARCH_COUNT = 6;
 // answer — so each is cut here.
 export const SUMMARY_MAX_CHARS = 900;
 export const PAGE_MAX_CHARS = 12_000;
+// What is CLEANED at most: the escapes roughly double a page, so twice the kept length still
+// fills it — and nothing past it is run through a regex in the task's one process.
+const RAW_MAX_CHARS = 2 * PAGE_MAX_CHARS;
 const SEARCH_TIMEOUT_MS = 12_000; // measured 0.6s
 const FETCH_TIMEOUT_MS = 30_000; // measured 16s for one news article
 
@@ -54,9 +57,11 @@ export function resultDate(value: unknown): string | null {
 // which doubles what the model reads for nothing; images are nothing it can read.
 export function cleanPage(markdown: string): string {
   return markdown
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/!\[[^\]\n]{0,300}\]\([^)\s]{0,2000}\)/g, '')
     .replace(/\\([\\`*_{}[\]()#+\-.!|~<>,/:;=?&%$@"'])/g, '$1')
-    .replace(/[ \t]+\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -118,12 +123,13 @@ export function deepSeekWeb(options: DeepSeekWebOptions): WebClient {
     },
     async read(url) {
       const wire = (await post(FETCH_ENDPOINT, { url }, FETCH_TIMEOUT_MS)) as { title?: unknown; content?: unknown } | null;
-      const content = cleanPage(text(wire?.content));
+      const raw = text(wire?.content);
+      const content = cleanPage(raw.slice(0, RAW_MAX_CHARS));
       if (content === '') throw new WebUnavailable('not_found');
       const page: WebPage = {
         title: text(wire?.title),
         content: cut(content, PAGE_MAX_CHARS),
-        truncated: content.length > PAGE_MAX_CHARS,
+        truncated: raw.length > RAW_MAX_CHARS || content.length > PAGE_MAX_CHARS,
       };
       return page;
     },

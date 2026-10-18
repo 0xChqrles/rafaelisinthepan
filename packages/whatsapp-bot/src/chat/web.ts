@@ -6,15 +6,21 @@
 //
 // - TODAY'S SENTENCE NEVER REACHES IT (`puzzle/spoilers.ts`). A search result or a page that
 //   holds the day's line across a hidden word is WITHHELD before the model reads it, in every
-//   language the game publishes; a query that names a day's author or work is refused. The
-//   guard is today's puzzles, read in full and held in code (`daySource.read`): when it cannot
-//   be read, the web is CLOSED for that answer rather than open without it.
+//   language the game publishes; a query that names a day's author or work, or quotes a
+//   sentence, finds nothing. The guard is today's puzzles, read in full and held in code
+//   (`daySource.read`): when it cannot be read, the web is CLOSED for that answer rather
+//   than open without it. AND THE MODEL IS NEVER TOLD WHY: a refused query answers like a
+//   search that found nothing, a withheld result is simply not there, a withheld page reads
+//   like one with nothing on it — a guard that said "that is today's sentence" would be a
+//   yes-or-no answer to a member's guess, the quiet leak the source rule forbids.
 // - A PAGE IS ONE THE BOT HAS SEEN A LINK TO: in the conversation, or in a result or a page
-//   of this same answer — never a URL the model composed. A fetched page that says "now read
-//   https://…/?q=<what the group said>" cannot make the reader carry the group's words
-//   anywhere: that link appears nowhere it was shown.
+//   of this same answer — never a URL the model composed, and what is sent to the reader is
+//   the link AS IT WAS SHOWN, never the model's spelling of it (a fragment, a `user@` added).
+//   A fetched page that says "now read https://…/?q=<what the group said>" cannot make the
+//   reader carry the group's words anywhere: that link appears nowhere it was shown.
 // - THE GAME'S OWN HOSTS ARE NEVER READ: the backend serves any day's puzzle, secrets
-//   included, to anybody who asks.
+//   included, to anybody who asks. A host check cannot see a redirect or a shortener, so a
+//   page shaped like a puzzle artifact is withheld whatever served it (`isPuzzle`).
 // - BOUNDED: `MAX_SEARCHES` and `MAX_READS` per answer, and the daily web ceiling across
 //   every group (`limits.ts` `takeDailyWeb`). A spent budget is told to the model, which
 //   answers without the web — never silence.
@@ -98,14 +104,34 @@ const NAMES = new Set(DEFINITIONS.map((d) => d.name));
 
 const CLOSED = { error: 'the web is unavailable right now: answer without it' };
 const SPENT = { error: "today's web budget is spent: answer without it" };
+const NOTHING_READABLE = { error: 'that page has nothing readable' };
+
+// A Whippin puzzle artifact as a page — any day's, a bonus's — reached through a redirect, a
+// shortener or a CDN name the host check cannot see.
+export function isPuzzle(content: string): boolean {
+  return /"holes"\s*:/.test(content) && /"secret"\s*:/.test(content);
+}
+
+// A host as it compares: no case, no `www.`, no trailing dot (`api.whippin.ai.` is the same host).
+export function hostKey(host: string): string {
+  return host.toLowerCase().replace(/\.+$/, '').replace(/^www\./, '');
+}
+
+const decoded = (url: string) => {
+  try {
+    return decodeURIComponent(url);
+  } catch {
+    return url;
+  }
+};
 
 export function createWebTools(deps: WebToolDeps): WebTools {
-  const pages = new Set<string>(); // full keys: what read_page takes
+  const pages = new Map<string, string>(); // full key → the link as it was shown: what read_page takes
   const shown = new Set<string>(); // query-free keys: what a reply may give
   const note = (url: string) => {
     const full = linkKey(url);
     const bare = linkKey(url, false);
-    if (full) pages.add(full);
+    if (full && !pages.has(full)) pages.set(full, url);
     if (bare) shown.add(bare);
   };
   for (const url of deps.seen) note(url);
@@ -121,8 +147,11 @@ export function createWebTools(deps: WebToolDeps): WebTools {
 
   const blocked = (url: string) => {
     try {
-      const host = new URL(url).hostname.toLowerCase();
-      return deps.blockedHosts.some((h) => host === h || host.endsWith(`.${h}`));
+      const host = hostKey(new URL(url).hostname);
+      return deps.blockedHosts.some((raw) => {
+        const h = hostKey(raw);
+        return host === h || host.endsWith(`.${h}`);
+      });
     } catch {
       return true;
     }
@@ -144,7 +173,7 @@ export function createWebTools(deps: WebToolDeps): WebTools {
     }
     if (givesAway(query, days)) {
       log('web.refused', { tool: 'web_search', why: 'today' });
-      return { error: "refused: that search is about today's Whippin sentence" };
+      return { results: [] };
     }
     if (!(await deps.takeWeb())) return SPENT;
     const started = Date.now();
@@ -157,25 +186,24 @@ export function createWebTools(deps: WebToolDeps): WebTools {
       return { error: reason === 'refused' ? 'the search engine refused that query: rephrase it' : 'the search failed: try once more or answer without it' };
     }
     const open = found.filter((r) => !blocked(r.url));
-    const kept = open.filter((r) => !givesAway(`${r.title}\n${r.summary}`, days, false));
-    const withheld = open.length - kept.length;
+    // Every field the model is shown, the link decoded: a quotes or lyrics site spells the
+    // line in its path (`/je-marche-seul-dans-la-nuit`).
+    const kept = open.filter((r) => !givesAway(`${r.title}\n${decoded(r.url)}\n${r.site ?? ''}\n${r.summary}`, days, false));
     for (const r of kept) note(r.url);
-    log('web.search', { results: kept.length, withheld, latencyMs: Date.now() - started });
-    return {
-      results: kept,
-      ...(withheld > 0 ? { withheld: `${withheld} result${withheld === 1 ? '' : 's'} held back: about today's Whippin sentence` } : {}),
-    };
+    log('web.search', { results: kept.length, withheld: open.length - kept.length, latencyMs: Date.now() - started });
+    return { results: kept };
   }
 
   async function read(args: Record<string, unknown>): Promise<unknown> {
-    const url = typeof args.url === 'string' ? urlsIn(args.url.trim())[0] ?? '' : '';
-    const key = url ? linkKey(url) : null;
+    const asked = typeof args.url === 'string' ? urlsIn(args.url.trim())[0] ?? '' : '';
+    const key = asked ? linkKey(asked) : null;
     if (!key) return { error: 'that is not a web link' };
-    if (blocked(url)) {
+    if (blocked(asked)) {
       log('web.refused', { tool: 'read_page', why: 'game' });
       return { error: "refused: that is the game's own site" };
     }
-    if (!pages.has(key)) {
+    const url = pages.get(key);
+    if (url === undefined) {
       log('web.refused', { tool: 'read_page', why: 'unseen' });
       return { error: 'only a link from the conversation, your search results or a page you read can be read: search for it first' };
     }
@@ -197,15 +225,15 @@ export function createWebTools(deps: WebToolDeps): WebTools {
       return {
         error:
           reason === 'not_found'
-            ? 'that page has nothing readable'
+            ? NOTHING_READABLE.error
             : reason === 'refused'
               ? 'that site does not let itself be read'
               : 'the page did not load: try once more or answer without it',
       };
     }
-    if (givesAway(`${page.title}\n${page.content}`, days, false)) {
+    if (isPuzzle(page.content) || givesAway(`${page.title}\n${page.content}`, days, false)) {
       log('web.withheld', { tool: 'read_page', latencyMs: Date.now() - started });
-      return { error: "held back: that page holds today's Whippin sentence" };
+      return NOTHING_READABLE;
     }
     for (const link of urlsIn(page.content)) note(link);
     log('web.read', { chars: page.content.length, truncated: page.truncated, latencyMs: Date.now() - started });

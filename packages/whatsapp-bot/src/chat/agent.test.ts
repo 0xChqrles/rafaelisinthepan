@@ -161,6 +161,8 @@ describe('the conversation agent (#236, #277)', () => {
     expect(reactionIn('React with a 🔥')).toBe(DEFAULT_REACTION);
     // …and two plain words after it make a sentence: English opens one with the verb.
     expect(reactionIn('React faster next time, Gab.')).toBeNull();
+    // A real answer about React, with an emoji further down (v22's answers are long).
+    expect(reactionIn('React 19 ajoute les Server Actions, et les hooks restent.\n\nBref, fonce 🚀')).toBeNull();
     expect(reactionIn('react red heart')).toBeNull();
     expect(reactionIn('_React_ faster next time')).toBeNull();
     const { provider } = scripted([() => ({ text: 'React faster next time, Gab.' })]);
@@ -513,7 +515,28 @@ describe('the web, on an answer the bot was asked for (v22)', () => {
     // The lyrics never reached the model.
     const tool = requests[1].messages.at(-1) as { content: string };
     expect(tool.content).not.toContain(lyrics);
-    expect(tool.content).toContain('held back');
+    expect(tool.content).not.toMatch(/held back|Whippin/);
+  });
+
+  it("puts a long message's links back in full beside it: the log keeps 500 characters", async () => {
+    const link = 'https://news.ex/un/article/tres/long';
+    const long = `${'blabla '.repeat(90)}${link}`;
+    const { provider, requests } = scripted([() => ({ text: 'Lu.' })]);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, long);
+    await withWeb(provider, dayLog)(message(long), group, identity, TODAY, asked());
+    expect(contents(requests[0]).at(-1)).toContain(`[links in this message: ${link}]`);
+  });
+
+  it('keeps a link it was shown, in bold or italics, and its tutorial card', async () => {
+    const { provider } = scripted([() => ({ text: `C'est là : *${article}* et _https://whippin.ai/fr/learn/2_` })]);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, `et ça ? ${article}`);
+    expect(await withWeb(provider, dayLog)(message(`et ça ? ${article}`), group, identity, TODAY, asked())).toEqual({
+      kind: 'reply',
+      text: `C'est là : *${article}* et _https://whippin.ai/fr/learn/2_`,
+      preview: 'https://whippin.ai/fr/learn/2',
+    });
   });
 
   it("drops a reply that quotes today's sentence once the web was used", async () => {

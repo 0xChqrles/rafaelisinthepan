@@ -43,7 +43,7 @@ import { diaryTurn, type DiaryStore } from './diary';
 import { linkKey, replyText, urlsIn, withoutUnseenLinks } from './format';
 import { limitExpiry, limitKeys, takeDailyCall, takeDailyWeb, type LimitStore } from './limits';
 import { createToolRunner } from './tools';
-import { createWebTools, givesAway, type DayGuard } from './web';
+import { createWebTools, givesAway, hostKey, type DayGuard } from './web';
 import { currentExchange, nothingToAnswer, quotesBot, type Approach, type BotIdentity, type Exchange } from './trigger';
 
 // ROOM FOR A SEARCH, A READ AND ANOTHER SEARCH (v22): a question about the world is a
@@ -151,7 +151,9 @@ export function reactionIn(raw: string | null): string | null {
   if (!match) return null;
   const [, keyword, rest] = match;
   const tokens = rest.replace(/[*_~`]/g, ' ').split(/\s+/).filter((t) => t !== '');
-  if (keyword !== REACT_PREFIX && tokens.length > 1 && !/\p{Extended_Pictographic}/u.test(rest)) return null;
+  // The emoji is looked for right after the keyword, never anywhere in the answer: a real
+  // answer about React can hold an emoji three paragraphs down (v22's answers are long).
+  if (keyword !== REACT_PREFIX && tokens.length > 1 && !/\p{Extended_Pictographic}/u.test(tokens.slice(0, 3).join(' '))) return null;
   const asked = (tokens[0] ?? '').replace(/[^\p{Extended_Pictographic}\p{Emoji_Component}‍]/gu, '');
   return (REACTIONS as readonly string[]).includes(asked) ? asked : DEFAULT_REACTION;
 }
@@ -237,7 +239,7 @@ function nowIn(timezone: string, at: Date): string {
 
 function hostOf(url: string | undefined): string | null {
   try {
-    return url ? new URL(url).hostname.toLowerCase().replace(/^www\./, '') : null;
+    return url ? hostKey(new URL(url).hostname) : null;
   } catch {
     return null;
   }
@@ -301,11 +303,8 @@ export function createAgent(deps: AgentDeps) {
     // unasked, not more (the exchange budget's reason).
     // The links the conversation holds, uncut: the day log keeps 500 characters of a turn, and
     // the link a member just posted may sit past them.
-    const conversationLinks = [
-      ...urlsIn(message.text),
-      ...(message.quoted ? urlsIn(message.quoted.text) : []),
-      ...turns.flatMap((t) => urlsIn(t.text)),
-    ];
+    const messageLinks = [...new Set([...urlsIn(message.text), ...(message.quoted ? urlsIn(message.quoted.text) : [])])];
+    const conversationLinks = [...messageLinks, ...turns.flatMap((t) => urlsIn(t.text))];
     const blockedHosts = [hostOf(deps.siteOrigin), hostOf(deps.apiBaseUrl)].filter((h): h is string => h !== null);
     const web =
       deps.web && (!ambient || owner)
@@ -360,21 +359,20 @@ export function createAgent(deps: AgentDeps) {
     }));
     if (diary) messages.push({ role: 'user', content: diary });
     let named = false;
+    // The message's links IN FULL beside the turn being answered: the log keeps 500
+    // characters of a turn and 200 of a quote, and a link past the cut is one the model is
+    // allowed to read (`conversationLinks`) and would never see.
+    const linksOf = (turn: Turn) => messageLinks.filter((u) => !turn.text.includes(u));
     for (const turn of turns) {
       const answering = turn.kind === 'said' && turn.id === options.said.id;
       named ||= answering;
-      messages.push(turnMessage(turn, group.timezone, answering));
+      messages.push(turnMessage(turn, group.timezone, answering, answering ? linksOf(turn) : []));
     }
     // The day log never took it (a store that refused, logged where it happened): the
     // question is put back at the end rather than left out of the prompt altogether.
     if (!named && options.said.text !== '') {
-      messages.push(
-        turnMessage(
-          { group: group.id, day: today, at: message.timestamp * 1000, id: options.said.id, kind: 'said', name: options.said.name, text: options.said.text },
-          group.timezone,
-          true,
-        ),
-      );
+      const turn: Turn = { group: group.id, day: today, at: message.timestamp * 1000, id: options.said.id, kind: 'said', name: options.said.name, text: options.said.text };
+      messages.push(turnMessage(turn, group.timezone, true, linksOf(turn)));
     }
 
     let text: string | null = null;
@@ -479,22 +477,23 @@ export function createAgent(deps: AgentDeps) {
     if (emoji) return { kind: 'react', emoji };
     const formatted = replyText(text);
     if (!formatted) return { kind: 'silent', reason: 'empty' };
-    // THE SPOILER BACKSTOP: the prompt says the author and the work may not be named, and
-    // this is what happens when the model names them anyway. Silence, and a log line that
-    // names neither — the log is read by people who have not played yet either. Once the
-    // web was used, every language's puzzle of the day is held (`web.ts`), and the reply is
-    // checked against each one's SENTENCE and source too: whatever got past the withheld
-    // results does not get past this.
-    const held = web?.loaded();
-    if (revealsSource(formatted, source) || (held && givesAway(formatted, held))) {
-      deps.log.warn({ event: 'chat.spoiler', group: tag(group.id), sender: tag(message.sender) }, 'the answer gave the day away; dropped');
-      return { kind: 'silent', reason: 'spoiler' };
-    }
     // A LINK THE BOT GIVES IS ONE IT WAS SHOWN (v22): from a result, a page or the
     // conversation, or the game's own site; a made-up one is taken out.
     const linked = withTutorialLink(formatted, deps.siteOrigin);
     const reply = withoutUnseenLinks(linked.text, mayLink);
     if (reply === '') return { kind: 'silent', reason: 'empty' };
+    // THE SPOILER BACKSTOP: the prompt says the author and the work may not be named, and
+    // this is what happens when the model names them anyway. Silence, and a log line that
+    // names neither — the log is read by people who have not played yet either. Once the
+    // web was used, every language's puzzle of the day is held (`web.ts`), and the reply is
+    // checked against each one's SENTENCE and source too: whatever got past the withheld
+    // results does not get past this. Checked on what would be POSTED (a link taken out can
+    // join the words around it) and on the answer as written.
+    const held = web?.loaded();
+    if ([formatted, reply].some((t) => revealsSource(t, source) || (held && givesAway(t, held)))) {
+      deps.log.warn({ event: 'chat.spoiler', group: tag(group.id), sender: tag(message.sender) }, 'the answer gave the day away; dropped');
+      return { kind: 'silent', reason: 'spoiler' };
+    }
     if (ambient) {
       const refused = await charge();
       if (refused) return refused;
@@ -511,9 +510,10 @@ export const ANSWERING = '← the message you are answering';
 // clock, the bot's lines as its own, and a reaction of the bot's in the very form it
 // answers one — the transcript shows what was already closed and teaches the form. Only a
 // person's turn can be the one being answered; the bot never answers itself.
-function turnMessage(turn: Turn, timezone: string, answering = false): LlmMessage {
+function turnMessage(turn: Turn, timezone: string, answering = false, links: readonly string[] = []): LlmMessage {
   if (turn.kind === 'said') {
-    return { role: 'user', content: `[${clockIn(timezone, turn.at)}] ${turn.name}: ${turn.text}${answering ? `  ${ANSWERING}` : ''}` };
+    const full = links.length > 0 ? ` [links in this message: ${links.join(' ')}]` : '';
+    return { role: 'user', content: `[${clockIn(timezone, turn.at)}] ${turn.name}: ${turn.text}${full}${answering ? `  ${ANSWERING}` : ''}` };
   }
   if (turn.kind === 'reacted') return { role: 'assistant', content: `${REACT_PREFIX} ${turn.text}` };
   return { role: 'assistant', content: turn.text };
