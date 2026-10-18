@@ -175,13 +175,17 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
           );
           return { source: null, secrets: null, published: false, retryAfter: now() + FAILURE_TTL_MS } satisfies Entry;
         })
-        .then((entry) => {
+        // A RE-ASK THAT FAILS keeps the SOURCE it held: the entry is a failure, so `read`
+        // answers null and the web stays closed, but the prompt's rule against naming the
+        // author and the reply's backstop keep what they were checking against.
+        .then((loaded) => {
+          const entry = loaded.retryAfter !== undefined && held?.source ? { ...loaded, source: held.source } : loaded;
           cache.set(key, entry);
           flights.delete(key);
           return entry;
         });
     flights.set(key, flight);
-    return { flight, stale: answer };
+    return { flight, stale: held };
   }
 
   return {

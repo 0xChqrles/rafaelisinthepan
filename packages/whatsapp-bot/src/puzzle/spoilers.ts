@@ -63,14 +63,17 @@ export function secretsOf(puzzle: PuzzleLike | null): DaySecrets | null {
 
 // Whether `text` quotes the sentence across a hole: some RUN consecutive words of it, one of
 // them hidden, appear in the text in order and back to back. A sentence shorter than RUN is
-// matched whole.
+// matched whole. The text is read twice — as written, and with invisible format characters
+// (a soft hyphen, a zero-width space) taken out: one inside a word splits it, one between words joins them
+// once removed, and either reading quoting the sentence is enough.
 export function revealsSentence(text: string, secrets: DaySecrets | null): boolean {
   if (!secrets) return false;
-  const said = ` ${letterRuns(text).join(' ')} `;
+  const readings = [text, text.replace(/\p{Cf}/gu, '')].map((t) => ` ${letterRuns(t).join(' ')} `);
   const size = Math.min(RUN, secrets.words.length);
   for (let start = 0; start + size <= secrets.words.length; start += 1) {
     if (!secrets.hidden.slice(start, start + size).some(Boolean)) continue;
-    if (said.includes(` ${secrets.words.slice(start, start + size).join(' ')} `)) return true;
+    const run = ` ${secrets.words.slice(start, start + size).join(' ')} `;
+    if (readings.some((said) => said.includes(run))) return true;
   }
   return false;
 }

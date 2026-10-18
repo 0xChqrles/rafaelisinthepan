@@ -41,6 +41,8 @@ describe('a reply as WhatsApp shows it (v22)', () => {
   it('reads a closing *bold*, ~strike~ or _italic_ mark as the sentence\'s, never the link\'s', () => {
     expect(urlsIn('lis *https://ex.com/a* et _https://ex.com/b_ et ~https://ex.com/c~')).toEqual(['https://ex.com/a', 'https://ex.com/b', 'https://ex.com/c']);
     expect(urlsIn('https://ex.com/a_b_ (pas en italique)')).toEqual(['https://ex.com/a_b_']);
+    expect(urlsIn('_voir https://fr.wikipedia.org/wiki/Le_Petit_Prince_')).toEqual(['https://fr.wikipedia.org/wiki/Le_Petit_Prince']);
+    expect(urlsIn('Lis _Le Petit Prince_ : https://ex.com/a_')).toEqual(['https://ex.com/a_']);
     expect(replyText('**https://ex.com/a_b** et https://ex.com/c…')).toBe('*https://ex.com/a_b* et https://ex.com/c…');
     expect(replyText('https://ex.com/a[https://ex.com/b](https://ex.com/b)')).not.toMatch(/\u0000/);
   });

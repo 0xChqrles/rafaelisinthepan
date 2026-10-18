@@ -30,6 +30,12 @@ describe("today's sentence, as the guard reads it (v22)", () => {
     expect(revealsSentence('{"words":["je","marche","seul","dans"]}', secrets)).toBe(true);
   });
 
+  it('reads through invisible format characters, inside a word or between words', () => {
+    expect(revealsSentence('je marche se\u00adul dans la nuit', secrets)).toBe(true);
+    expect(revealsSentence('je marche s\u200beul dans', secrets)).toBe(true);
+    expect(revealsSentence('je marche seul dans', secrets)).toBe(true);
+  });
+
   it('lets through a hidden word alone, and the visible words alone', () => {
     expect(revealsSentence('Je suis seul ce soir, tu attends qui ?', secrets)).toBe(false);
     expect(revealsSentence('je marche ... dans la nuit', secrets)).toBe(false);

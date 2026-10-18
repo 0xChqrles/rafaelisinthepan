@@ -290,6 +290,15 @@ describe("the sentence, held for the web's spoiler guard and never for a prompt 
 });
 
 describe('a published day is re-asked by its ETag (v22)', () => {
+  it('keeps the source through a re-ask that fails, and closes the web meanwhile', async () => {
+    let at = 1_000;
+    const { reader: r } = reader([() => ok({ source: { kind: 'music', author: 'Bertrand Belin' } }), () => new Response('', { status: 503 })], () => at);
+    expect(await r.get('fr', '2026-09-04')).toEqual({ kind: 'music', author: 'Bertrand Belin' });
+    at += 6 * 60_000;
+    expect(await r.read('fr', '2026-09-04')).toBeNull(); // the guard cannot be trusted: the web closes
+    expect(await r.get('fr', '2026-09-04')).toEqual({ kind: 'music', author: 'Bertrand Belin' }); // the rule still holds
+  });
+
   it('keeps what it holds on a 304, and takes a corrected sentence on a 200', async () => {
     let at = 1_000;
     const v1 = { words: ['je', 'marche', 'seul', 'dans'], holes: [{ pos: 2, secret: { word: 'seul' } }] };

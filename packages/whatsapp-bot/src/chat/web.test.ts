@@ -78,7 +78,9 @@ describe('the web, as the conversation\'s tools (v22)', () => {
   it('checks the link a result is shown with, decoded: a lyrics site spells the line in its path', async () => {
     const slug = result('https://quotes.ex/je-marche-seul-dans-la-nuit', 'Citation célèbre');
     const encoded = result('https://quotes.ex/je%20marche%20seul%20dans', 'Citation');
-    const t = tools(client([slug, encoded]).web);
+    const stray = result('https://quotes.ex/je-marche-seul-dans?remise=100%', 'Citation');
+    const latin1 = result('https://quotes.ex/je%20marche%20seul%20dans%20la%20nuit?x=%E9', 'Citation');
+    const t = tools(client([slug, encoded, stray, latin1]).web);
     expect(await t.run('web_search', { query: 'citation nuit' })).toEqual({ results: [] });
     expect(t.saw(slug.url)).toBe(false);
   });

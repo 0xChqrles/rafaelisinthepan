@@ -918,7 +918,9 @@ something) and its own nightly DIARY of the group as notes, never as rules. It l
     republished with a corrected line, would otherwise be guarded as unpublished or against
     the retired sentence all day. The re-ask is cheap — a 404 has no body, and a published
     day is asked by its ETag (the revision), which the CDN answers 304 while it is
-    unchanged — and the prompt's `get` keeps what it held while a slow re-ask flies. **A missing source is never an error**: an unpublished day, a puzzle
+    unchanged — and the prompt's `get` keeps what it held while a slow re-ask flies. A
+    re-ask that FAILS closes the web (`read` answers null) and keeps the source it held, so
+    the prompt's rule and the reply's backstop never lose what they check against. **A missing source is never an error**: an unpublished day, a puzzle
     with no metadata and a failed read are one outcome, and the prompt simply says nothing.
   - **`BOT_API_BASE_URL` is a NEW and separate knob** (`https://api.whippin.ai`): the
     backend is a different host from `BOT_SITE_ORIGIN`, which is only ever a pattern for

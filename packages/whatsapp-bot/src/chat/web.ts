@@ -117,13 +117,17 @@ export function hostKey(host: string): string {
   return host.toLowerCase().replace(/\.+$/, '').replace(/^www\./, '');
 }
 
-const decoded = (url: string) => {
-  try {
-    return decodeURIComponent(url);
-  } catch {
-    return url;
-  }
-};
+// Percent-escapes decoded run by run — one stray `%` or a Latin-1 escape (`fen%EAtre`) must
+// not leave the rest of the link undecoded — as UTF-8 where they are, else as Latin-1.
+export function decoded(text: string): string {
+  return text.replace(/(?:%[0-9a-f]{2})+/gi, (run) => {
+    try {
+      return decodeURIComponent(run);
+    } catch {
+      return run.replace(/%([0-9a-f]{2})/gi, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)));
+    }
+  });
+}
 
 export function createWebTools(deps: WebToolDeps): WebTools {
   const pages = new Map<string, string>(); // full key → the link as it was shown: what read_page takes
@@ -231,7 +235,7 @@ export function createWebTools(deps: WebToolDeps): WebTools {
               : 'the page did not load: try once more or answer without it',
       };
     }
-    if (isPuzzle(page.content) || givesAway(`${page.title}\n${page.content}`, days, false)) {
+    if (isPuzzle(page.content) || givesAway(`${page.title}\n${decoded(page.content)}`, days, false)) {
       log('web.withheld', { tool: 'read_page', latencyMs: Date.now() - started });
       return NOTHING_READABLE;
     }

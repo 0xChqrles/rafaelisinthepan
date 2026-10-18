@@ -18,11 +18,19 @@ const URL_PATTERN = /https?:\/\/[^\s<>"'`\u0000]+/g;
 const TRAILING = /[.,;:!?'"»”’…*~]+$/;
 const TRAILING_IN_ITALICS = /[.,;:!?'"»”’…*~_]+$/;
 
+// Whether an _italic_ is open where a link starts: on its line, outside the links before it,
+// an underscore that opens (at the line's start, after a space or an opening mark) and is
+// not closed again before the link.
+function inItalics(text: string, at: number): boolean {
+  const before = text.slice(text.lastIndexOf('\n', at - 1) + 1, at).replace(URL_PATTERN, ' ');
+  return /(?:^|[\s(\[«"'“‘*~])_(?=\S|$)[^_]*$/.test(before);
+}
+
 // A URL as it ends in running text: a full stop or a closing bracket after it is the
-// sentence's, unless the link opened that bracket itself (`…/Paris_(France)`). `before` is
-// the character the link follows.
-function trimUrl(raw: string, before = ''): string {
-  const trailing = before === '_' ? TRAILING_IN_ITALICS : TRAILING;
+// sentence's, unless the link opened that bracket itself (`…/Paris_(France)`). `text` and
+// `at` are where the link sits, for the italics it may close.
+function trimUrl(raw: string, text = '', at = 0): string {
+  const trailing = inItalics(text, at) ? TRAILING_IN_ITALICS : TRAILING;
   let url = raw.replace(trailing, '');
   for (const [open, close] of [['(', ')'], ['[', ']']] as const) {
     while (url.endsWith(close) && url.split(close).length > url.split(open).length) {
@@ -35,7 +43,7 @@ function trimUrl(raw: string, before = ''): string {
 // The links a text holds, as they would be clicked.
 export function urlsIn(text: string): string[] {
   return [...text.matchAll(URL_PATTERN)]
-    .map((m) => trimUrl(m[0], text[m.index - 1]))
+    .map((m) => trimUrl(m[0], text, m.index))
     .filter((u) => u.length > 'https://'.length);
 }
 
@@ -97,7 +105,7 @@ export function replyText(raw: string | null): string | null {
       return !name || urlsIn(name).length > 0 || name === url ? hold(url) : `${name} ${hold(url)}`;
     })
     .replace(URL_PATTERN, (raw: string, at: number, whole: string) => {
-      const url = trimUrl(raw, whole[at - 1]);
+      const url = trimUrl(raw, whole, at);
       return hold(url) + raw.slice(url.length);
     });
   text = whatsappMarks(text)
@@ -121,7 +129,7 @@ export function withoutUnseenLinks(text: string, allowed: (url: string) => boole
   const lines = text.split('\n').flatMap((line) => {
     let lost = false;
     let left = line.replace(URL_PATTERN, (raw: string, at: number) => {
-      const url = trimUrl(raw, line[at - 1]);
+      const url = trimUrl(raw, line, at);
       if (allowed(url)) return raw;
       lost = true;
       return raw.slice(url.length); // what followed the link (a full stop) stays
