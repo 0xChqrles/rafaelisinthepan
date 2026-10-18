@@ -213,7 +213,7 @@ def load_similarity(lang: str):
     for w, r in ranks.items():
         s = slug(w)
         common_index[s] = min(r, common_index.get(s, r))
-    return frequency_rank, neighbour_rank, crowd, unmapped, own, common_index.get
+    return frequency_rank, neighbour_rank, crowd, unmapped, own, common_index.get, static_map
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +277,7 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
              context: dict[str, str] | None = None, index_of=lambda s: None,
              pairs: dict[str, set[str]] | None = None, replay: str | None = None,
              chain: list[str] | None = None, fillers: dict[str, list[str]] | None = None,
-             expected: dict[str, str | None] | None = None):
+             expected: dict[str, str | None] | None = None, prior: dict[str, str] | None = None):
     """Returns the written puzzle path, or None with the reason logged. The forms are
     answered by the model as gen_phrase asks. The first successful run only supplies the
     rank maps: the START WORDS are then chosen by the model, the three together, playing
@@ -335,7 +335,7 @@ def generate(claude: llm.Claude, log: Log, sentence: str, words: list[str], sour
                 chosen = True
                 try:
                     picked = choose_starts(claude, log, path, context or {}, forms, index_of, pairs or {},
-                                           chain, fillers or {}, lang=lang, expected=expected or {})
+                                           chain, fillers or {}, lang=lang, expected=expected or {}, prior=prior)
                 except (Replace, Handed):
                     Path(path).unlink(missing_ok=True)
                     Path(_sidecar(path)).unlink(missing_ok=True)
@@ -416,10 +416,11 @@ def _adopt(starts: dict[str, str], tried: dict[str, set[str]], picked: dict[str,
         tried.setdefault(key, set()).add(word)
 
 
-def _load(path: str) -> tuple[dict, dict[str, dict]]:
-    """A written puzzle, and the first hole of each secret by its slug (a repeated secret
-    is one hole per occurrence, sharing one start)."""
-    puzzle = json.loads(Path(path).read_text(encoding="utf-8"))
+def _load(path) -> tuple[dict, dict[str, dict]]:
+    """A written puzzle (its path, or an in-memory draft: `static_draft`), and the first
+    hole of each secret by its slug (a repeated secret is one hole per occurrence, sharing
+    one start)."""
+    puzzle = path if isinstance(path, dict) else json.loads(Path(path).read_text(encoding="utf-8"))
     by_secret: dict[str, dict] = {}
     for h in puzzle["holes"]:
         by_secret.setdefault(h["secret"]["slug"], h)
@@ -442,10 +443,11 @@ def _notes(ranks: dict, key: str, context: dict[str, str], fillers: dict[str, li
     return notes
 
 
-def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, str],
+def choose_starts(claude: llm.Claude, log: Log, path, context: dict[str, str],
                   forms: dict[str, str], index_of, pairs: dict[str, set[str]] | None = None,
                   chain: list[str] | None = None, fillers: dict[str, list[str]] | None = None,
-                  *, lang: str, expected: dict[str, str | None] | None = None) -> dict[str, str] | None:
+                  *, lang: str, expected: dict[str, str | None] | None = None,
+                  prior: dict[str, str] | None = None) -> dict[str, str] | None:
     """The model picks the three start words together, by the taste, from each
     hole's band (clean by the language's letter rule, its word not too rare by the corpus
     order `index_of`, never a start this secret was played with before — `pairs`, the
@@ -456,8 +458,11 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
     the reader writes the secret itself, or its most-likely word — `expected` — sits at or
     under `rules.HANDED_RANK`). Raises Replace when the model names a hidden word no start
     can save. Returns None when the model gives no
-    complete trio of valid starts; a random generator pick must not become the day."""
-    pairs, fillers, expected = pairs or {}, fillers or {}, expected or {}
+    complete trio of valid starts; a random generator pick must not become the day.
+    `prior` (secret slug -> word): the starts a banked line was given on the free static
+    map, shown to the model with where each now stands — kept while still a candidate,
+    unless the ranked map offers a better one."""
+    pairs, fillers, expected, prior = pairs or {}, fillers or {}, expected or {}, prior or {}
     puzzle, by_secret = _load(path)
     words, holes = puzzle["words"], puzzle["holes"]
     handed: dict[str, str] = {}
@@ -482,6 +487,10 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
         log(f"- notes for « {h['secret']['word']} »: {notes}")
         info.append({"secret": h["secret"]["word"], "slug": key, "options": options, "notes": notes,
                      "slot": f"form {forms.get(h['secret']['word'], '?')}, after « {st.previous_token(words, h) or '—'} »"})
+        if prior.get(key):
+            word = prior[key]
+            info[-1]["prior"] = {"word": word, "rank": _rank_of(puzzle["ranks"][key], word),
+                                 "candidate": word in {o["word"] for o in options}}
     answer = llm.pick_starts(claude, marked, info, chain, lang=lang)
     if answer["replace"]:
         swap = answer["replace"]
@@ -517,7 +526,12 @@ def choose_starts(claude: llm.Claude, log: Log, path: str, context: dict[str, st
     return picked
 
 
-def check_starts(claude: llm.Claude, log: Log, path: str, tried: dict[str, set[str]],
+def _rank_of(rank_map: dict, word: str) -> int | None:
+    """Where a display word stands on a hole's map, None when it is not on it."""
+    return next((e["rank"] for e in rank_map.values() if e.get("word") == word), None)
+
+
+def check_starts(claude: llm.Claude, log: Log, path, tried: dict[str, set[str]],
                  context: dict[str, str], index_of, pairs: dict[str, set[str]] | None = None,
                  chain: list[str] | None = None, *, lang: str,
                  fillers: dict[str, list[str]] | None = None,
@@ -649,7 +663,7 @@ def choose_work(log: Log, args, archive: dict, index: dict, today: date,
                 banked: set[str] = frozenset()) -> dict | None:
     """The work of a run (by rule, or `--work`). Never one the bank holds lines of
     (`banked`): a work is mined once. Banking (`--bank`) keeps no artist cooldown — the
-    day comes later, and `--pull` applies it — and returns None once the shelf is spent."""
+    day comes later, chosen by the user — and returns None once the shelf is spent."""
     banking = bool(getattr(args, "bank", None))
     works = shelf_mod.list_works(_paths.shelf_dir(args.lang))
     if not works:
@@ -1181,20 +1195,19 @@ def _swap(log, line: dict, trio: list, chain: list[str], swap: "Replace", swaps:
 def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[str], book: dict, archive: dict,
               text: str, source_base: dict, frequency_rank, neighbour_rank, lang: str, replay: str | None,
               crowd=lambda t: None, unmapped=lambda t, fillers: None, own=lambda t: None, index_of=lambda s: None,
-              measures: Measures | None = None, swaps: int = 0):
+              measures: Measures | None = None, swaps: int = 0, prior: dict[str, str] | None = None):
     """The chosen day, built: the page is cut (a book), the trio passes its checks
     (`check_trio`; free when the comparison's `measures` come along), and `generate`
     writes the puzzle, the start words chosen by the taste. The start step may swap a
     word no start can save (Replace) or find two holes handed over on the map (Handed,
     `llm.drop_handed`); the trio is then checked again and rebuilt, REPLACE_ROUNDS swaps
     in all."""
-    sentence, tokens = line["sentence"], line["tokens"]
+    sentence = line["sentence"]
     known = llm.widely_known(claude, sentence, book.get("author", ""), book.get("title", ""), lang=lang)
     log("- known-line check (annotation): "
         + ("the model thinks a reader would know it" if known["known"] else "not known off the page")
         + (f" — {known['why']}" if known["why"] else ""))
     measures = measures or Measures()
-    occurrences = _occurrences(line["allowed"])
     source = dict(source_base)
     if book["kind"] == "book":
         window = excerpt_around(text, sentence, EXCERPT_WINDOW, lang=lang)
@@ -1221,26 +1234,36 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
             return generate(claude, log, sentence, [t.text for t in trio], source, lang, context, index_of,
                             archive["pairs"], replay=replay, chain=chain,
                             fillers={t.slug: readings[t.slug][0] for t in trio},
-                            expected={t.slug: readings[t.slug][1] for t in trio})
-        except Replace as raised:
-            swap = raised
-        except Handed as raised:
-            hidden = {i for t in trio for i in occurrences[t.slug]}
-            others = _others(line, trio, measures)
-            pick = llm.drop_handed(claude, llm.marked(tokens, hidden, lang=lang),
-                                   [{"secret": t.text, "notes": context[t.slug]
-                                     + (f"; on its map: {raised.facts[t.slug]}" if t.slug in raised.facts else "")}
-                                    for t in trio], raised.words, others, chain, lang=lang)
-            if pick is None:
-                log(f"- the map hands over {len(raised.words)} words and no swap was named")
+                            expected={t.slug: readings[t.slug][1] for t in trio}, prior=prior)
+        except (Replace, Handed) as raised:
+            swap = _start_swap(claude, log, raised, line, trio, chain, context, measures, lang)
+            if swap is None:
                 return None
-            log(f"- after the ranking, « {pick['secret']} » is swapped for « {pick['with']} » — {pick['why']}")
-            swap = Replace(pick["secret"], pick["with"], f"its map handed it over ({pick['why']})")
         swapped = _swap(log, line, trio, chain, swap, swaps, measures.out)
         if swapped is None:
             return None
         trio, chain, swaps = swapped
         replay = None  # another trio: the scores of the erased draft no longer apply
+
+
+def _start_swap(claude: llm.Claude, log, raised: Exception, line: dict, trio: list, chain: list[str],
+                context: dict[str, str], measures: Measures, lang: str) -> Replace | None:
+    """The swap the start step asked for: a word no start can save (Replace, as named), or
+    a map handing two or more holes over (Handed: the model names which goes,
+    `llm.drop_handed`). None when no swap was named."""
+    if isinstance(raised, Replace):
+        return raised
+    occurrences = _occurrences(line["allowed"])
+    hidden = {i for t in trio for i in occurrences[t.slug]}
+    pick = llm.drop_handed(claude, llm.marked(line["tokens"], hidden, lang=lang),
+                           [{"secret": t.text, "notes": context[t.slug]
+                             + (f"; on its map: {raised.facts[t.slug]}" if t.slug in raised.facts else "")}
+                            for t in trio], raised.words, _others(line, trio, measures), chain, lang=lang)
+    if pick is None:
+        log(f"- the map hands over {len(raised.words)} words and no swap was named")
+        return None
+    log(f"- on the map, « {pick['secret']} » is swapped for « {pick['with']} » — {pick['why']}")
+    return Replace(pick["secret"], pick["with"], f"its map handed it over ({pick['why']})")
 
 
 def choose_page(claude: llm.Claude, log: Log, sentence: str, window: dict, lang: str) -> dict | None:
@@ -1335,17 +1358,17 @@ def judged_lines(log: Log, book: dict, text: str, archive: dict, index: dict, la
     return judge_sentences(log, mined, lang, judge)
 
 
-def bank_works(claude: llm.Claude, log: Log, args, archive: dict, index: dict, today: date, judge,
-               in_vocab, sims) -> int:
-    """`--bank N`: N works, each mined and shortlisted as a run does, the first BANK_LINES
-    lines of its shortlist finished up to the ranking (`prepare`) and kept in the bank — no
-    line compared, no ranking paid. A work gives at most one day, so a work's first batch
-    is what a run would compare. A work is banked once: it is chosen and claimed under the
-    bank's lock, against the index as it stands then (a run may have recorded a work since
-    this process started), and kept in the bank even when no line survived (a marker). A
-    work whose banking fails is released (`bank.unclaim`), its log kept with the spoilers;
-    two failures in a row end the process."""
-    frequency_rank, neighbour_rank, crowd, unmapped, own, _ = sims
+def bank_works(claude: llm.Claude, log: Log, args, archive: dict, today: date, judge, in_vocab,
+               sims) -> int:
+    """`--bank N`: N works (all of the shelf, as many as asked), each mined and shortlisted
+    as a run does; EVERY line of its shortlist finished as a day but for the ranking —
+    its three words chosen and checked (`prepare`), then its start words chosen on the
+    free static maps with the start step's own checks (`start_lines`) — and kept in the
+    bank with what it was measured at; nothing is ranked, compared or written as a puzzle.
+    A work is banked once: chosen and claimed under the bank's lock, against the index as
+    it stands then, and kept even when no line survived (a marker). A work whose banking
+    fails is released (`bank.unclaim`), its detail kept with the spoilers; two failures in
+    a row end the process."""
     total, failures = 0, 0
     for _ in range(args.bank):
         with bank.locked(args.lang):
@@ -1360,15 +1383,16 @@ def bank_works(claude: llm.Claude, log: Log, args, archive: dict, index: dict, t
         try:
             text = read_work(book, args.lang)
             judged = judged_lines(log, book, text, archive, index, args.lang, judge)
+            # a work with no line left banks nothing and stays banked: there is nothing to retry
             ranked = shortlist(claude, log, judged, args.lang) if judged else []
-            days = prepare(claude, log, ranked[:BANK_LINES], archive, in_vocab, frequency_rank, neighbour_rank,
-                           args.lang, [], judge=judge, crowd=crowd, unmapped=unmapped, own=own)
+            days = prepare(claude, log, ranked, archive, in_vocab, sims[0], sims[1], args.lang, [], judge=judge,
+                           crowd=sims[2], unmapped=sims[3], own=sims[4])
+            started = start_lines(claude, log, days, archive, args.lang, sims)
         except Exception as exc:  # a failed call (a usage limit, the judge): the work is released
             bank.unclaim(args.lang, book["file"])
-            failed = f"- banking {book['file']} failed, released: {type(exc).__name__}: {exc}"
-            log.end_attempt(False, [failed], hide_failure=True)
-            if not log.blind:
-                log(failed)
+            log(f"- failed: {type(exc).__name__}: {exc}")  # held with the spoilers in a blind run
+            log.end_attempt(False, [f"- banking {book['file']} failed, released ({type(exc).__name__})"],
+                            hide_failure=True)
             failures += 1
             if failures >= 2:
                 log("- two works failed in a row: stopping")
@@ -1378,9 +1402,10 @@ def bank_works(claude: llm.Claude, log: Log, args, archive: dict, index: dict, t
             bank.unclaim(args.lang, book["file"])
             raise
         failures = 0
-        entries = [bank.entry(book, line, checked) for line, checked in days]
+        entries = [bank.entry(book, line, checked, starts, args.lang) for line, checked, starts in started]
         bank.append(args.lang, entries or [bank.empty(book)])
         bank.unclaim(args.lang, book["file"])
+        bank.render(args.lang)
         total += len(entries)
         log.end_attempt(bool(entries), [f"- banked: {len(entries)} line(s) of {book.get('author', '')} — "
                                         f"{book.get('title', '')}"])
@@ -1388,69 +1413,150 @@ def bank_works(claude: llm.Claude, log: Log, args, archive: dict, index: dict, t
             break
     held = bank.lines(args.lang)
     log(f"\n## Bank\n\n- banked this run: {total} line(s)\n- the bank holds {len(held)} line(s) of "
-        f"{len({e['work'] for e in held})} work(s): `{bank.bank_file(args.lang)}`")
+        f"{len({e['work'] for e in held})} work(s): `{bank.bank_file(args.lang)}`, to read in "
+        f"`{bank.view_file(args.lang)}`")
     return 0 if total else 2
 
 
-def pull_pool(by_work: dict[str, list[dict]], shelf: dict[str, dict], archive: dict, index: dict, today: date,
-              work: str | None = None) -> list[dict]:
-    """The banked works a pull may use: on the shelf and readable, not published, outside
-    the artist cooldown, and never tried by a run or an earlier pull (`index`)."""
-    return [shelf[f] for f in by_work
-            if f in shelf and not shelf[f].get("error") and (not work or f == work)
-            and f not in index["books"]
-            and not shelf_mod.in_archive(shelf[f], archive["works"])
-            and not in_cooldown(shelf[f], archive, index, today)]
+def static_draft(line: dict, trio: list, static_map, lang: str) -> dict | None:
+    """The day as the start step reads it, before any ranking: the line's display tokens,
+    one hole per occurrence of each hidden word (located as `gen_phrase` locates them), and
+    each word's FREE static map in place of its ranked one (the judge only reorders the
+    map's groups). None when a word has no static map or cannot be located."""
+    import gen_phrase as gp  # generation/scripts: the display tokens and the hole shape
+
+    cfg = gp.CONFIG[lang]
+    words = gp.display_tokens(line["sentence"])
+    holes, ranks = [], {}
+    for t in trio:
+        rank_map = static_map(t)
+        if rank_map is None:
+            return None
+        ranks[t.slug] = rank_map
+        found = [(pos, gp.locate_core(token, t.slug, cfg)) for pos, token in enumerate(words)]
+        found = [(pos, at) for pos, at in found if at]
+        if not found:
+            return None
+        for pos, (core, prefix, suffix) in found:
+            holes.append(gp._make_hole(core, prefix, suffix, pos, core, 0))
+    holes.sort(key=lambda h: h["pos"])
+    return {"words": words, "holes": holes, "ranks": ranks}
 
 
-def pull_day(claude: llm.Claude, log: Log, args, archive: dict, index: dict, today: date, in_vocab,
-             sims) -> str | None:
-    """`--pull`: the day made from the bank. The work is picked by the run's own rule
-    (`pick_work`: the music cadence, the author left longest) among the banked works the
-    archive still allows; its banked lines are read against today's archive
-    (`bank.restore`), compared and built as a run's finished lines are
-    (`compare_and_build`: page, ranking, start words). Returns the written puzzle path."""
-    frequency_rank, neighbour_rank, crowd, unmapped, own, index_of = sims
-    entries = bank.lines(args.lang)
-    by_work: dict[str, list[dict]] = {}
-    for e in entries:
-        by_work.setdefault(e["work"], []).append(e)
-    shelf = {w["file"]: w for w in shelf_mod.list_works(_paths.shelf_dir(args.lang))}
-    pool = pull_pool(by_work, shelf, archive, index, today, args.work)
-    log(f"- bank: {len(entries)} line(s) of {len(by_work)} work(s); {len(pool)} work(s) still usable")
-    if not pool:
-        die("no banked work is left that the archive allows — bank more (`--bank N`)")
+def _set_starts(draft: dict, starts: dict[str, str]) -> None:
+    """Each hole shows its secret's start (by slug), with the start's rank on its map."""
+    for h in draft["holes"]:
+        word = starts.get(h["secret"]["slug"])
+        if word:
+            h["start"] = {"word": word, "slug": slug(word)}
+            h["start_rank"] = _rank_of(draft["ranks"][h["secret"]["slug"]], word)
+
+
+def bank_line(claude: llm.Claude, log, line: dict, checked: "Checked", archive: dict, lang: str,
+              sims) -> tuple["Checked", dict, dict] | None:
+    """One finished line given its start words before any ranking: the run's start step
+    (`choose_starts`, then `check_starts`' rounds: the sentence read with its starts, the
+    one-idea check) on the line's free static maps (`static_draft`). A start step that
+    swaps a word (Replace, Handed) has the trio checked again, REPLACE_ROUNDS swaps in all,
+    as `build_day` does. Returns (the checked trio, its starts {slug: word}, the draft as
+    the player first sees it), or None."""
+    frequency_rank, neighbour_rank, crowd, unmapped, own, index_of, static_map = sims
+    measures, trio, chain, swaps = checked.measures, checked.trio, checked.chain, checked.swaps
+    while True:
+        checked = check_trio(claude, log, line, trio, chain, frequency_rank, neighbour_rank, lang, crowd=crowd,
+                             unmapped=unmapped, own=own, measures=measures, swaps=swaps)
+        if checked is None:
+            return None
+        trio, chain, swaps, context = checked.trio, checked.chain, checked.swaps, checked.context
+        draft = static_draft(line, trio, static_map, lang)
+        if draft is None:
+            log("- a hidden word has no free static map: no start words before the ranking")
+            return None
+        fillers = {t.slug: measures.readings[t.slug][0] for t in trio}
+        expected = {t.slug: measures.readings[t.slug][1] for t in trio}
+        try:
+            picked = choose_starts(claude, log, draft, context, {}, index_of, archive["pairs"], chain, fillers,
+                                   lang=lang, expected=expected)
+        except (Replace, Handed) as raised:
+            swap = _start_swap(claude, log, raised, line, trio, chain, context, measures, lang)
+            if swap is None:
+                return None
+        else:
+            if picked is None:
+                return None
+            _set_starts(draft, picked)
+            tried = {k: {w} for k, w in picked.items()}
+            cleared: dict[str, set[str]] = {}
+            for rounds in range(st.START_ROUNDS):
+                repick = check_starts(claude, log, draft, tried, context, index_of, archive["pairs"], chain,
+                                      lang=lang, fillers=fillers, cleared=cleared,
+                                      last=rounds == st.START_ROUNDS - 1)
+                if not repick:
+                    break
+                _adopt(picked, tried, repick)
+                _set_starts(draft, picked)
+            return checked, picked, draft
+        swapped = _swap(log, line, trio, chain, swap, swaps, measures.out)
+        if swapped is None:
+            return None
+        trio, chain, swaps = swapped
+
+
+def start_lines(claude: llm.Claude, log: Log, days: list[tuple[dict, "Checked"]], archive: dict, lang: str,
+                sims) -> list[tuple[dict, "Checked", dict]]:
+    """`bank_line` on every finished line, WORKERS at a time, each line's log written in
+    order once all are done. Returns (line, checked, {"starts", "draft"}) for every line
+    that got its starts."""
+    def one(item):
+        line, checked = item
+        buffer = Buffer()
+        buffer(f"\n## Start words, before the ranking: « {line['sentence']} »")
+        return buffer, bank_line(claude, buffer, line, checked, archive, lang, sims)
+
+    with llm.subscription_only(), ThreadPoolExecutor(WORKERS) as pool:
+        done = list(pool.map(one, days))
+    out = []
+    for (line, _), (buffer, result) in zip(days, done):
+        for entry in buffer:
+            log(entry)
+        if result is not None:
+            checked, picked, draft = result
+            out.append((line, checked, {"starts": picked, "draft": draft}))
+    return out
+
+
+def finish_line(claude: llm.Claude, log: Log, args, archive: dict, today: date, index: dict, in_vocab,
+                sims) -> str | None:
+    """`--finish ID`: one banked line, chosen by the user, made a candidate day — read
+    against today's archive (`bank.restore`), then built as a run builds its chosen line
+    (`build_day`: page, the ranking, start words, their checks), the starts it was banked
+    with offered first (`choose_starts`' prior: kept while still a candidate on the ranked
+    map, unless it offers a better one). Writes the candidate puzzle; never publishes."""
+    frequency_rank, neighbour_rank, crowd, unmapped, own, index_of, _ = sims
+    entry = next((e for e in bank.lines(args.lang) if e["id"] == args.finish), None)
+    if entry is None:
+        die(f"no banked {args.lang} line has the id {args.finish} (see {bank.view_file(args.lang)})")
+    book = {w["file"]: w for w in shelf_mod.list_works(_paths.shelf_dir(args.lang))}.get(entry["work"])
+    if book is None or book.get("error"):
+        die(f"{entry['work']} is no longer readable on the {args.lang} shelf")
+    if shelf_mod.in_archive(book, archive["works"]):
+        die(f"{book.get('author')} — {book.get('title')} is already published: never the same work twice")
+    if in_cooldown(book, archive, index, today):
+        log(f"- note: {book.get('author')} is inside the artist cooldown ({lyr.ARTIST_COOLDOWN_DAYS} days)")
+    restored, why = bank.restore(entry, archive, args.lang, in_vocab, frequency_rank, Measures, Checked)
+    if restored is None:
+        die(f"this line can no longer be used: {why}")
+    line, checked = restored
+    source_base = {"kind": book["kind"], "author": book.get("author", ""), "work": book.get("title", "")}
     log.begin_attempt()
-    result, book = None, None
-    while pool and not result:
-        book, why = pick_work(pool, archive, index, today)
-        pool.remove(book)
-        log(f"\n## Work: {book.get('author')} — {book.get('title')} ({book['kind']}, {book['file']}): {why}")
-        days = []
-        for e in by_work[book["file"]]:
-            restored, out = bank.restore(e, archive, args.lang, in_vocab, frequency_rank, Measures, Checked)
-            if restored:
-                days.append(restored)
-            else:
-                log(f"- banked « {e['sentence']} » out: {out}")
-        if not days:
-            continue  # every line ruled out for now (a secret cooling): nothing tried, nothing recorded
-        text = read_work(book, args.lang)
-        for batch_start in range(0, len(days), CANDIDATES):
-            result = compare_and_build(claude, log, days[batch_start:batch_start + CANDIDATES], book, archive,
-                                       text, frequency_rank, neighbour_rank, args.lang, crowd=crowd,
-                                       unmapped=unmapped, own=own, index_of=index_of)
-            if result:
-                break
-        # Recorded as a run records its work: a later pull (or run) moves on to another, and
-        # a song's artist enters the cooldown as proposed.
-        fresh = shelf_mod.load_index(args.lang)
-        shelf_mod.record(fresh, book["file"], [line["sentence"] for line, _ in days], author=book.get("author", ""))
-        shelf_mod.save_index(fresh, args.lang)
-        index["books"] = fresh["books"]
-    log.end_attempt(bool(result), player_view(result, book) if result else
-                    ["- no banked line made a day"], hide_failure=True)
-    return result
+    log(f"\n## Finishing « {line['sentence']} » — {book.get('author')}, {book.get('title')}")
+    path = build_day(claude, log, line, checked.trio, checked.chain, book, archive, read_work(book, args.lang),
+                     source_base, frequency_rank, neighbour_rank, args.lang, None, crowd=crowd,
+                     unmapped=unmapped, own=own, index_of=index_of, measures=checked.measures, swaps=checked.swaps,
+                     prior=entry["starts"])
+    log.end_attempt(bool(path), player_view(path, book) if path else ["- the line could not be built"],
+                    hide_failure=True)
+    return path
 
 
 def main():
@@ -1469,13 +1575,17 @@ def main():
                            "candidate puzzle file: erase it and rerun its sentence (the work read off "
                            "the puzzle's source), skipping the mining, shortlist and ranking")
     mode.add_argument("--bank", type=int, metavar="WORKS",
-                      help="bank WORKS works: every shortlisted line finished up to the ranking and kept "
-                           "in bank/<lang>.jsonl for a later --pull; no day is written, no ranking paid")
-    mode.add_argument("--pull", action="store_true",
-                      help="make the day from the bank: compare a banked work's lines, rank and build the best")
+                      help="bank WORKS works off the shelf: every shortlisted line finished as a day but for "
+                           "the ranking (words, checks, start words on the free map) and kept in "
+                           "bank/<lang>.jsonl, read in bank/<lang>.md; nothing is ranked or written as a puzzle")
+    mode.add_argument("--finish", metavar="ID",
+                      help="make a banked line (its id in bank/<lang>.md) a candidate day: the ranking, the "
+                           "page, the start words checked on the ranked map; never publishes")
     args = p.parse_args()
     if args.bank is not None and args.bank < 1:
         p.error("--bank takes a number of works, 1 or more")
+    if args.finish and args.work:
+        p.error("--finish names its line: the work is the line's")
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
     if args.bank:  # banking processes run side by side: one log each
@@ -1510,21 +1620,20 @@ def main():
     claude = llm.Claude()
 
     if args.bank:
-        sims = load_similarity(args.lang)
-        code = bank_works(claude, log, args, archive, index, today, judge, vocab.__contains__, sims)
+        code = bank_works(claude, log, args, archive, today, judge, vocab.__contains__, load_similarity(args.lang))
         log(f"- model calls: {claude.calls}\n- log: `{log.path}`")
         sys.exit(code)
 
-    if args.pull:
-        result = pull_day(claude, log, args, archive, index, today, vocab.__contains__,
-                          load_similarity(args.lang))
+    if args.finish:
+        result = finish_line(claude, log, args, archive, today, index, vocab.__contains__,
+                             load_similarity(args.lang))
     else:
         with bank.locked(args.lang):  # a --bank process running beside never takes this work
             book = choose_work(log, args, archive, index, today,
                                banked=bank.works(args.lang) | bank.claimed(args.lang))
             bank.claim(args.lang, book["file"])
         text = read_work(book, args.lang)
-        frequency_rank, neighbour_rank, crowd, unmapped, own, index_of = load_similarity(args.lang)
+        frequency_rank, neighbour_rank, crowd, unmapped, own, index_of, _ = load_similarity(args.lang)
         if sentence is not None:
             # One sentence, by hand: found again among the work's mined units so it keeps the
             # source's casing; never a published one (the archive is the one record).
@@ -1546,14 +1655,16 @@ def main():
                      neighbour_rank, args.lang, replay=getattr(args, "replay", None), tried=tried, judge=judge,
                      crowd=crowd, unmapped=unmapped, own=own, index_of=index_of)
         log.end_attempt(bool(result), player_view(result, book) if result else ())
-        shelf_mod.record(index, book["file"], tried, author=book.get("author", ""))
-        shelf_mod.save_index(index, args.lang)
-        bank.unclaim(args.lang, book["file"])  # recorded: the index keeps it from now on
+        with bank.locked(args.lang):  # read again: another run may have recorded its work since
+            fresh = shelf_mod.load_index(args.lang)
+            shelf_mod.record(fresh, book["file"], tried, author=book.get("author", ""))
+            shelf_mod.save_index(fresh, args.lang)
+            bank.unclaim(args.lang, book["file"])  # recorded: the index keeps it from now on
     log("")
     if result:
         log(f"## Candidate puzzle\n\n- written: `{result}`\n- publish when approved: `pnpm puzzle:publish {result}`")
     else:
-        log("## No puzzle\n\n" + ("No banked line made a day; bank more works." if args.pull else
+        log("## No puzzle\n\n" + ("The banked line could not be built." if args.finish else
                                   "No line of this work made a day worth playing; run again on another work."))
     log(f"- model calls: {claude.calls}\n- log: `{log.path}`")
     sys.exit(0 if result else 2)

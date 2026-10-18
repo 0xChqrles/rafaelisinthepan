@@ -1,15 +1,17 @@
-"""The BANK: finished lines kept for a later day (`pnpm curate --bank`, `--pull`).
+"""The BANK: lines finished ahead, for the user to pick and finish (`pnpm curate --bank`, `--finish`).
 
-A banked line is one the curator finished up to the ranking — mined, through the quotation
-test and the judge's sentence filter, shortlisted, its three words chosen and every check
-before the ranking passed (`curate.check_trio`) — with what it was measured at, so a pull
-compares, ranks and gives start words without asking any of it again. The ranking (the
-expensive judge) and everything after it run only for the day pulled.
+A banked line is one the curator finished as a day but for the ranking — mined, through
+the quotation test and the judge's sentence filter, shortlisted, its three words chosen and
+every check before the ranking passed (`curate.check_trio`), its start words chosen on the
+free static maps with the start step's own checks — with what it was measured at, so
+finishing it asks none of that again. The ranking (the expensive judge) runs only for a
+line the user finishes, its start words then checked on the ranked map.
 
 One JSON line per banked line, `bank/<lang>.jsonl` (gitignored: the lines are the
-work's text, and the trio spoils the day). The ledger stays the one record of what was
-published: a pull re-reads the archive and skips what it rules out since the line was
-banked (the work or the sentence published, a word back in its cooldown).
+work's text, and the trio spoils the day), read in `bank/<lang>.md` (`render`), where the
+user picks the lines to finish (`curate --finish <id>`). The ledger stays the one record of what was
+published: finishing a line re-reads the archive and refuses what it rules out since the
+line was banked (the work or the sentence published, a word back in its cooldown).
 
 Several `--bank` processes, and a normal run, may run at once: a work is CLAIMED
 (`bank/<lang>.claims`, one `<shelf file>\t<pid>` per line) under the language's lock before
@@ -21,6 +23,7 @@ line is kept as a marker entry (`{"work", "empty": true}`), so it is never mined
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -30,11 +33,16 @@ import _paths
 import contextual_rank  # generation/scripts: the giveaway floor
 import rules
 import shelf as shelf_mod
+import starts as st
 from parse import parse
 
 
 def bank_file(lang: str) -> Path:
     return _paths.BANK_DIR / f"{lang}.jsonl"
+
+
+def view_file(lang: str) -> Path:
+    return _paths.BANK_DIR / f"{lang}.md"
 
 
 def claims_file(lang: str) -> Path:
@@ -141,15 +149,32 @@ def unclaim(lang: str, file: str) -> None:
         claims_file(lang).write_text("".join(c + "\n" for c in left), encoding="utf-8")
 
 
-def entry(book: dict, line: dict, checked) -> dict:
-    """A finished line as the bank keeps it: its source, the judge's giveaway for every
-    word it can hide, and the checked trio with every measure taken on the line."""
+def line_id(work: str, sentence: str) -> str:
+    """A banked line's id, the one `--finish` takes: stable for (work, sentence)."""
+    return hashlib.sha1(f"{work}\n{sentence}".encode("utf-8")).hexdigest()[:8]
+
+
+def entry(book: dict, line: dict, checked, started: dict, lang: str) -> dict:
+    """A banked line as the bank keeps it: its source, the judge's giveaway for every word
+    it can hide, the checked trio with every measure taken on the line, and its start words
+    with where each stands on its free map — and the line as the player would first see
+    it."""
     m = checked.measures
+    draft, starts = started["draft"], started["starts"]
+    first = {}
+    for h in draft["holes"]:
+        first.setdefault(h["secret"]["slug"], h)
     return {
+        "id": line_id(book["file"], line["sentence"]),
         "bankedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "work": book["file"], "kind": book["kind"],
+        "lang": lang, "work": book["file"], "kind": book["kind"],
         "author": book.get("author", ""), "title": book.get("title", ""),
         "sentence": line["sentence"],
+        "marked": st.displayed(draft["words"], draft["holes"], {k: f"[{h['secret']['word']}]" for k, h in first.items()}),
+        "shown": st.displayed(draft["words"], draft["holes"]),
+        "holes": [{"secret": first[t.slug]["secret"]["word"], "slug": t.slug, "level": checked.levels.get(t.slug, ""),
+                   "start": starts[t.slug], "startRank": first[t.slug].get("start_rank")} for t in checked.trio],
+        "starts": dict(starts),
         "given": line["given"],
         "trio": [t.slug for t in checked.trio],
         "chain": checked.chain, "swaps": checked.swaps,
@@ -188,3 +213,27 @@ def restore(e: dict, archive: dict, lang: str, in_vocab, frequency_rank, measure
                           e["levels"], measures)
     return (line, checked), None
 
+
+
+def render(lang: str) -> None:
+    """`bank/<lang>.md`, the bank to read: every banked line by work, in the model's order,
+    with its hidden words, how each plays and the start words it would open with — the
+    page the user picks lines from. SPOILERS: every word of every line."""
+    with locked(lang):
+        held = lines(lang)
+        by_work: dict[str, list[dict]] = {}
+        for e in held:
+            by_work.setdefault(e["work"], []).append(e)
+        out = [f"# The {lang} bank — SPOILERS", "",
+               f"{len(held)} line(s) from {len(by_work)} work(s). Finish one into a candidate day: "
+               f"`pnpm curate --lang {lang} --finish <id>` (the ranking runs then).", ""]
+        for work, entries in by_work.items():
+            e0 = entries[0]
+            out += [f"## {e0['author']} — {e0['title']} ({e0['kind']})", ""]
+            for e in entries:
+                out.append(f"- `{e['id']}` « {e['marked']} »")
+                out.append(f"  - opens as: « {e['shown']} »")
+                out.append("  - " + "; ".join(f"{h['secret']} ← {h['start']} (free-map rank {h['startRank']}): "
+                                              f"{h['level']}" for h in e["holes"]))
+            out.append("")
+        view_file(lang).write_text("\n".join(out), encoding="utf-8")

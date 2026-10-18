@@ -1449,3 +1449,39 @@ def test_a_word_its_neighbours_hand_over_is_replaced_before_the_ranking(monkeypa
     assert "sur la ___ froide" in fragments          # the words around it, nothing else
     assert asked["word"] == "pierre" and "« sur la ___ froide » is « pierre »" in asked["refused"]
     assert calls == [(["chat", "dort", "froide"], "froide replaces pierre: its neighbours hand it over (searched)")]
+
+
+def test_the_start_step_reads_an_in_memory_draft_and_shows_banked_starts(tmp_path, monkeypatch):
+    # A banked line is given its starts on a draft held in memory (no puzzle written), and
+    # finishing it shows each banked start with where it now stands on the ranked map.
+    draft = json.loads(_three_hole_draft(tmp_path).read_text(encoding="utf-8"))
+    draft["ranks"]["chien"]["renard"] = {"word": "renard", "rank": 40}
+    shown = []
+    monkeypatch.setattr(curate.llm, "pick_starts", _two_of_three(shown))
+    monkeypatch.setattr(curate.llm, "pick_start", lambda *_a, **_k: "brique")
+    picked = curate.choose_starts(object(), Log(), draft, {}, {}, lambda _t: None, lang="fr",
+                                  prior={"chat": "lapin", "chien": "renard", "pierre": "galet"})
+    assert picked == {"chat": "lapin", "chien": "loup", "pierre": "brique"}
+    prior = {h["slug"]: h["prior"] for h in shown}
+    assert prior == {"chat": {"word": "lapin", "rank": 120, "candidate": True},
+                     "chien": {"word": "renard", "rank": 40, "candidate": False},
+                     "pierre": {"word": "galet", "rank": None, "candidate": False}}
+
+
+def test_a_banked_start_is_shown_to_the_start_step_with_the_rule_to_keep_it():
+    class Claude:
+        prompt = ""
+
+        def json(self, prompt):
+            self.prompt = prompt
+            return {"starts": {"pierre": "brique"}, "why": ""}
+
+    plain = Claude()
+    hole = {"secret": "pierre", "slug": "pierre", "options": [{"word": "brique", "rank": 120}], "notes": ""}
+    curate.llm.pick_starts(plain, "une [pierre]", [hole], None, lang="fr")
+    assert "chosen before this map was ranked" not in plain.prompt and curate.llm.PRIOR_RULE not in plain.prompt
+    banked = Claude()
+    curate.llm.pick_starts(banked, "une [pierre]",
+                           [{**hole, "prior": {"word": "galet", "rank": 260, "candidate": False}}], None, lang="fr")
+    assert "chosen before this map was ranked: « galet » (rank 260 on this map, no longer a candidate" in banked.prompt
+    assert curate.llm.PRIOR_RULE in banked.prompt

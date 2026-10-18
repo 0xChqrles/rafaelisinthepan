@@ -637,6 +637,15 @@ Return {{"with": "<another word of the line>", "why": "<one line>"}}.""")
     return None
 
 
+# A banked line's starts were chosen on the free map, before the ranking (`curate --bank`):
+# finishing it shows each to the start step, kept unless the ranked map moved it out or
+# offers better (user-decided 2026-10-18).
+PRIOR_RULE = """
+A hole may show the start chosen for it before this map was ranked. Keep it when it is
+still a candidate, unless another candidate here is clearly the better start by the
+taste; when it is no longer a candidate, choose another."""
+
+
 def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict],
                 chain: list[str] | None = None, *, lang: str) -> dict:
     """The three start words, chosen TOGETHER by the taste. `holes`: [{secret,
@@ -652,9 +661,15 @@ def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict],
         # replacement instead of leaving the hole out.
         opts = (", ".join(f"{o['word']} ({o['rank']})" for o in h["options"])
                 or "NONE — no start fits this slot; name a replacement for this word")
-        blocks.append(f"Hole « {h['secret']} » (slot: {h.get('slot', 'as the hidden word')})\n"
-                      f"  measured: {h.get('notes', 'nothing')}\n"
-                      f"  start candidates (word (rank), closest first): {opts}")
+        block = (f"Hole « {h['secret']} » (slot: {h.get('slot', 'as the hidden word')})\n"
+                 f"  measured: {h.get('notes', 'nothing')}\n"
+                 f"  start candidates (word (rank), closest first): {opts}")
+        if h.get("prior"):
+            p = h["prior"]
+            where = ("not on this map" if p["rank"] is None else f"rank {p['rank']} on this map") + (
+                ", still a candidate" if p["candidate"] else ", no longer a candidate: choose another")
+            block += f"\n  chosen before this map was ranked: « {p['word']} » ({where})"
+        blocks.append(block)
     answer = claude.json(f"""You choose the START words of a day for a daily {LANGUAGE[lang]} word game: each hole shows a
 start word in place of the hidden word, the first clue; the player then types guesses and
 reads, for every hole, how close each lands.
@@ -675,7 +690,7 @@ The sentence, holes marked with the hidden word in brackets:
 
 Choose the three starts together, by the taste's start words: for each hole, how much the
 line gives of the word (read in its notes and in the line) and how hard the other holes
-already are decide its start. If one hidden word is dead or out of reach whatever its
+already are decide its start.{PRIOR_RULE if any(h.get("prior") for h in holes) else ""} If one hidden word is dead or out of reach whatever its
 start — or none of its candidates links to it in its everyday sense (only by spelling, or
 not at all) — say so and name ONE replacement from the line instead of starts.
 
