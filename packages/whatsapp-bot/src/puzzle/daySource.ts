@@ -16,6 +16,7 @@
 
 import { fold, type Source } from '@whippin/shared';
 import type { Log } from '../log';
+import { secretsOf, type DaySecrets } from './spoilers';
 
 // The shape the puzzle carries (#5), less what only the solved page reads. EVERY field is
 // independently optional, so partial metadata is valid and a puzzle may carry no `source`
@@ -39,6 +40,8 @@ const FAILURE_TTL_MS = 5 * 60_000;
 
 interface Entry {
   source: DaySource | null;
+  // The sentence as the spoiler guard reads it (`spoilers.ts`): held here, never in a prompt.
+  secrets: DaySecrets | null;
   published: boolean; // false = the day-addressed 404, and for a failed read
   // Absent = settled for good. Set = a failure that may be retried after this instant.
   retryAfter?: number;
@@ -50,6 +53,8 @@ interface Entry {
 export interface DayRead {
   published: boolean;
   source: DaySource | null;
+  // Today's sentence for the web's spoiler guard (`chat/web.ts`) — code only, never a prompt.
+  secrets: DaySecrets | null;
 }
 
 export interface DaySourceReader {
@@ -93,37 +98,42 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
         { event: 'source.unreachable', lang, date, error: (error as Error).message },
         'could not read the day; the bot simply will not know where the sentence is from',
       );
-      return { source: null, published: false, retryAfter: now() + FAILURE_TTL_MS };
+      return { source: null, secrets: null, published: false, retryAfter: now() + FAILURE_TTL_MS };
     }
     // 404 is the day-addressed answer for a day that was never published — settled, not a
     // failure, so it is not retried every five minutes for the rest of the day.
     if (response.status === 404) {
       deps.log.info({ event: 'source.none', lang, date }, 'no puzzle published for this day');
-      return { source: null, published: false };
+      return { source: null, secrets: null, published: false };
     }
     if (!response.ok) {
       deps.log.warn({ event: 'source.failed', lang, date, status: response.status }, 'the day did not load');
-      return { source: null, published: false, retryAfter: now() + FAILURE_TTL_MS };
+      return { source: null, secrets: null, published: false, retryAfter: now() + FAILURE_TTL_MS };
     }
     let source: DaySource | null;
+    let secrets: DaySecrets | null;
     try {
       // A valid JSON body need not be an OBJECT — `null` and `[]` both parse, and reading
       // `.source` off the first throws. Inside the try so that lands on the same warning
       // and the same five-minute backoff as a body that did not parse at all, rather than
       // escaping to the caller and being retried at the rate the group talks.
-      const puzzle = (await response.json()) as { source?: DaySource } | null;
+      const puzzle = (await response.json()) as { source?: DaySource; words?: unknown; holes?: unknown } | null;
       source = puzzle?.source ?? null;
+      // THE SENTENCE TOO, since it is in hand (v22): the web can find the day's line, and the
+      // guard that keeps it out of the bot's reach needs to know it. Kept in this process,
+      // never logged, never put in a prompt.
+      secrets = secretsOf(puzzle);
     } catch (error) {
       deps.log.warn(
         { event: 'source.unparseable', lang, date, error: (error as Error).message },
         'the day did not parse',
       );
-      return { source: null, published: false, retryAfter: now() + FAILURE_TTL_MS };
+      return { source: null, secrets: null, published: false, retryAfter: now() + FAILURE_TTL_MS };
     }
     // Never the author or the work: this is a log, and a log of what today's answer is
     // from would spoil the day for whoever reads it.
     deps.log.info({ event: 'source.loaded', lang, date, kind: source?.kind ?? null }, 'day source loaded');
-    return { source, published: true };
+    return { source, secrets, published: true };
   }
 
   // One flight per (language, day), shared: a lively group can address the bot several
@@ -146,7 +156,7 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
             { event: 'source.failed', lang, date, error: (error as Error).message },
             'the day did not load',
           );
-          return { source: null, published: false, retryAfter: now() + FAILURE_TTL_MS } satisfies Entry;
+          return { source: null, secrets: null, published: false, retryAfter: now() + FAILURE_TTL_MS } satisfies Entry;
         })
         .then((entry) => {
           cache.set(key, entry);
@@ -177,7 +187,7 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
     async read(lang, date) {
       const found = entryFor(lang, date);
       const entry = 'held' in found ? found.held : await found.flight;
-      return entry.retryAfter === undefined ? { published: entry.published, source: entry.source } : null;
+      return entry.retryAfter === undefined ? { published: entry.published, source: entry.source, secrets: entry.secrets } : null;
     },
   };
 }

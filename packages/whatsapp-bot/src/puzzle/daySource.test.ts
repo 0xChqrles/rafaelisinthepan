@@ -256,15 +256,31 @@ describe('a reply never waits on decoration (PR-247 review)', () => {
 describe('the whole answer, waited for (the reminder)', () => {
   it('says whether the day is published, and null for a read that failed', async () => {
     const published = reader([() => ok({ lang: 'fr', source: { kind: 'music' } })]);
-    expect(await published.reader.read('fr', '2026-09-04')).toEqual({ published: true, source: { kind: 'music' } });
+    expect(await published.reader.read('fr', '2026-09-04')).toEqual({ published: true, source: { kind: 'music' }, secrets: null });
     const bare = reader([() => ok({ lang: 'fr' })]);
-    expect(await bare.reader.read('fr', '2026-09-04')).toEqual({ published: true, source: null });
+    expect(await bare.reader.read('fr', '2026-09-04')).toEqual({ published: true, source: null, secrets: null });
     const missing = reader([() => new Response('', { status: 404 })]);
-    expect(await missing.reader.read('fr', '2026-09-04')).toEqual({ published: false, source: null });
+    expect(await missing.reader.read('fr', '2026-09-04')).toEqual({ published: false, source: null, secrets: null });
     const down = reader([() => new Response('', { status: 503 })]);
     expect(await down.reader.read('fr', '2026-09-04')).toBeNull();
     // And it shares the cache with `get`: one read serves both.
     expect(await published.reader.get('fr', '2026-09-04')).toEqual({ kind: 'music' });
     expect(published.fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the sentence, held for the web's spoiler guard and never for a prompt (v22)", () => {
+  it('reads the words and the hidden ones out of the same parse', async () => {
+    const puzzle = {
+      lang: 'fr',
+      words: ['tu', "t'attends", 'à', 'rien,'],
+      holes: [{ pos: 1, secret: { word: 'attends', slug: 'attends' }, prefix: "t'" }],
+      source: { kind: 'music' },
+    };
+    const { reader: r } = reader([() => ok(puzzle)]);
+    const read = await r.read('fr', '2026-09-04');
+    expect(read?.secrets).toEqual({ words: ['tu', 't', 'attends', 'a', 'rien'], hidden: [false, false, true, false, false] });
+    // The prompt's half is unchanged: the source alone.
+    expect(await r.get('fr', '2026-09-04')).toEqual({ kind: 'music' });
   });
 });

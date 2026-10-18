@@ -102,3 +102,35 @@ describe('DeepSeek provider boundary (#236)', () => {
     expect((unread as Error).message).toBe('deepseek: unparseable body');
   });
 });
+
+describe('the reasoning goes back with its tool calls (v22)', () => {
+  it('reads the reasoning, and hands it back on the assistant turn that carries the calls', async () => {
+    const doFetch = fetchReturning(200, {
+      choices: [{ message: { content: '', reasoning_content: 'Il faut chercher.', tool_calls: [{ id: 'c1', function: { name: 'web_search', arguments: '{}' } }] }, finish_reason: 'tool_calls' }],
+    });
+    const provider = deepSeekProvider({ apiKey: 'k', model: 'm', fetch: doFetch });
+    const first = await provider.generate({ system: '', messages: [], maxTokens: 1 });
+    expect(first.reasoning).toBe('Il faut chercher.');
+    await provider.generate({
+      system: '',
+      messages: [
+        { role: 'assistant', content: 'plain remembered line' },
+        { role: 'assistant', content: '', toolCalls: first.toolCalls, reasoning: first.reasoning ?? undefined },
+        { role: 'assistant', content: '', toolCalls: first.toolCalls, reasoning: '' },
+      ],
+      maxTokens: 1,
+    });
+    const sent = JSON.parse(((doFetch as unknown as ReturnType<typeof vi.fn>).mock.calls[1] as [string, RequestInit])[1].body as string);
+    // A remembered line carries none (measured: none is needed); a tool turn carries its own, even empty.
+    expect(sent.messages[1]).not.toHaveProperty('reasoning_content');
+    expect(sent.messages[2].reasoning_content).toBe('Il faut chercher.');
+    expect(sent.messages[3].reasoning_content).toBe('');
+  });
+
+  it('reads an empty balance as an outage, so every caller degrades instead of crashing', async () => {
+    const broke = deepSeekProvider({ apiKey: 'k', model: 'm', fetch: fetchReturning(402, {}) });
+    const failure = await broke.generate({ system: '', messages: [], maxTokens: 1 }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(LlmUnavailable);
+    expect((failure as Error).message).toBe('deepseek: HTTP 402');
+  });
+});

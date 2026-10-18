@@ -48,6 +48,9 @@ export interface WhatsAppClient {
   // The bot's own JIDs (phone-number and LID forms) once connected.
   selfJids(): string[];
   send(command: OutboundCommand): Promise<string>;
+  // "… is typing" in a chat until the returned stop is called (v22): an answer that searches
+  // the web takes tens of seconds, and a silent bot reads as one that did not hear.
+  typing(jid: string): () => void;
   groups(): Promise<{ id: string; subject: string; size: number }[]>;
   close(): Promise<void>;
 }
@@ -59,6 +62,10 @@ const SENT_CACHE = 200;
 const RECONNECT_BASE_MS = 2_000;
 const RECONNECT_MAX_MS = 60_000;
 const GROUP_CACHE_MS = 5 * 60_000;
+// WhatsApp drops a typing state it has not heard about again within ~25s; it is sent anew
+// every few seconds, and never for longer than an answer can take.
+const TYPING_PULSE_MS = 8_000;
+const TYPING_MAX_MS = 180_000;
 
 export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<WhatsAppClient> {
   const { auth, log } = options;
@@ -291,6 +298,24 @@ export async function connectWhatsApp(options: WhatsAppClientOptions): Promise<W
         }
       }
       return id;
+    },
+    typing(jid) {
+      const socket = sock;
+      if (!socket || !open) return () => {};
+      // A presence that does not land costs the dots, never the answer.
+      const tell = (state: 'composing' | 'paused') => void socket.sendPresenceUpdate(state, jid).catch(() => {});
+      tell('composing');
+      const pulse = setInterval(() => tell('composing'), TYPING_PULSE_MS);
+      const cap = setTimeout(stop, TYPING_MAX_MS);
+      let done = false;
+      function stop() {
+        if (done) return;
+        done = true;
+        clearInterval(pulse);
+        clearTimeout(cap);
+        tell('paused');
+      }
+      return stop;
     },
     async groups() {
       if (!sock) return [];

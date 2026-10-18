@@ -46,7 +46,7 @@ import { displayName } from './domain/names';
 import { withoutShares } from './domain/share';
 import { dynamoLeaderStore } from './domain/leader';
 import type { InboundMessage, Mention } from './domain/message';
-import { createLlmProvider } from './llm';
+import { createLlmProvider, createWebClient, type WebClient } from './llm';
 import { generateShareComment } from './llm/shareComment';
 import { createLog, tag } from './log';
 import { commandIds, type OutboundQueue } from './outbound/commands';
@@ -162,6 +162,16 @@ async function main(): Promise<void> {
   } catch (error) {
     log.error({ event: 'llm.unconfigured', error: (error as Error).message }, 'no LLM provider; chat disabled');
   }
+  // The conversation's web (v22), on the provider's own key. Without it the bot simply
+  // answers with what it knows.
+  let web: WebClient | null = null;
+  if (provider) {
+    try {
+      web = await createWebClient(env.llm, ssm);
+    } catch (error) {
+      log.error({ event: 'web.unconfigured', error: (error as Error).message }, 'no web for the conversation');
+    }
+  }
   const limits = dynamoLimitStore(dynamo, env.table);
 
   // The spoken acknowledgement (`acknowledge: "say"`), and it SPENDS THE SAME DAILY CALL
@@ -212,6 +222,8 @@ async function main(): Promise<void> {
         dayLog,
         dailyCallCeiling: env.llm.dailyCallCeiling,
         siteOrigin: env.siteOrigin,
+        apiBaseUrl: env.apiBaseUrl,
+        ...(web ? { web, webDailyCeiling: env.llm.webDailyCeiling } : {}),
         // Read once per (language, day) and held for the process's life: the task is
         // long-lived, so the group pays one 4-6 MB read a day and not one per question.
         daySource: createDaySourceReader({ apiBaseUrl: env.apiBaseUrl, log }),
@@ -369,14 +381,22 @@ async function main(): Promise<void> {
         text: withoutShares(message.text, env.siteOrigin),
         ...(message.quoted ? { quoted: { ...message.quoted, text: withoutShares(message.quoted.text, env.siteOrigin) } } : {}),
       };
-      const outcome = await ask(asked, group, bot, today, {
-        approach,
-        exchange,
-        // What was filed for this message, so the prompt can point at it wherever the day
-        // has put it (`AnswerOptions.said`): queued behind another answer, it is not the
-        // last turn of the day by the time it is answered.
-        said: { id: message.id, name: displayName(group, message.sender, message.senderName), text: kept ?? '' },
-      });
+      // "… is typing" while an ADDRESSED message is answered (v22): a search takes tens of
+      // seconds. Never for ambient talk, which is left alone far more often than answered.
+      const stopTyping = address && client ? client.typing(group.id) : () => {};
+      let outcome;
+      try {
+        outcome = await ask(asked, group, bot, today, {
+          approach,
+          exchange,
+          // What was filed for this message, so the prompt can point at it wherever the day
+          // has put it (`AnswerOptions.said`): queued behind another answer, it is not the
+          // last turn of the day by the time it is answered.
+          said: { id: message.id, name: displayName(group, message.sender, message.senderName), text: kept ?? '' },
+        });
+      } finally {
+        stopTyping();
+      }
       if (outcome.kind === 'silent') {
         log.info({ event: 'chat.silent', reason: outcome.reason, how: approach, group: tag(group.id) }, 'no reply');
         return;
