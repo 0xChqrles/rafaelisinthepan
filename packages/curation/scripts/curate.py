@@ -58,6 +58,9 @@ WORKERS = 5
 DAY_ROUNDS = 3
 # Hidden words the start-word step may swap before the line is given up.
 REPLACE_ROUNDS = 2
+# Lines of a work's shortlist banked by `--bank` (a work gives at most one day: its first
+# batch is what a run compares).
+BANK_LINES = CANDIDATES
 # The music stream: a song is picked when the archive shows no music day within this
 # many days (one or two a week; user-decided 2026-09-20, a rule in code, no model call).
 MUSIC_EVERY_DAYS = 4
@@ -1320,48 +1323,65 @@ def quote_filter(log: Log, book: dict, lang: str):
     return unquoted
 
 
-def ranked_lines(claude: llm.Claude, log: Log, book: dict, text: str, archive: dict, index: dict, lang: str,
-                 judge) -> list[dict]:
-    """The work's best lines: mined, minus what a run proposed or the ledger holds, minus
-    the quoted ones, through the judge's sentence filter, shortlisted by the model."""
+def judged_lines(log: Log, book: dict, text: str, archive: dict, index: dict, lang: str, judge) -> list[str]:
+    """The work's lines the model reads: mined, minus what a run proposed or the ledger
+    holds, minus the quoted ones, through the judge's sentence filter."""
     unquoted = quote_filter(log, book, lang)
     proposed = {shelf_mod.sentence_key(s) for s in index["books"].get(book["file"], {}).get("sentences", ())}
     proposed |= archive["sentences"]
     mined = unquoted([s for s in mine(book, text, log, lang) if shelf_mod.sentence_key(s) not in proposed])
-    mined = judge_sentences(log, mined, lang, judge)
-    return shortlist(claude, log, mined, lang)
+    return judge_sentences(log, mined, lang, judge)
 
 
 def bank_works(claude: llm.Claude, log: Log, args, archive: dict, index: dict, today: date, judge,
                in_vocab, sims) -> int:
-    """`--bank N`: N works, each mined and shortlisted as a run does, EVERY line of its
-    shortlist finished up to the ranking (`prepare`) and kept in the bank — no line
-    compared, no ranking paid. A work is banked once; a run never mines it again."""
+    """`--bank N`: N works, each mined and shortlisted as a run does, the first BANK_LINES
+    lines of its shortlist finished up to the ranking (`prepare`) and kept in the bank — no
+    line compared, no ranking paid. A work gives at most one day, so a work's first batch
+    is what a run would compare. A work is banked once (claimed under the bank's lock, so
+    processes running at once never share one); a run never mines it again. A work whose
+    banking fails is released (`bank.unclaim`); two failures in a row end the process."""
     frequency_rank, neighbour_rank, crowd, unmapped, own, _ = sims
-    banked = bank.works(args.lang)
-    total = 0
+    total, failures = 0, 0
     for _ in range(args.bank):
-        book = choose_work(log, args, archive, index, today, banked=banked)
+        with bank.locked(args.lang):
+            book = choose_work(log, args, archive, index, today,
+                               banked=bank.works(args.lang) | bank.claimed(args.lang))
+            if book is not None:
+                bank.claim(args.lang, book["file"])
         if book is None:
             break
-        text = read_work(book, args.lang)
-        ranked = ranked_lines(claude, log, book, text, archive, index, args.lang, judge)
         log.begin_attempt()
-        days: list[tuple[dict, Checked]] = []
-        for batch_start in range(0, len(ranked), CANDIDATES):
-            days += prepare(claude, log, ranked[batch_start:batch_start + CANDIDATES], archive, in_vocab,
-                            frequency_rank, neighbour_rank, args.lang, [], judge=judge, crowd=crowd,
-                            unmapped=unmapped, own=own)
+        try:
+            text = read_work(book, args.lang)
+            judged = judged_lines(log, book, text, archive, index, args.lang, judge)
+            # a work with no line left banks nothing and stays claimed: there is nothing to retry
+            ranked = shortlist(claude, log, judged, args.lang) if judged else []
+            days = prepare(claude, log, ranked[:BANK_LINES], archive, in_vocab, frequency_rank, neighbour_rank,
+                           args.lang, [], judge=judge, crowd=crowd, unmapped=unmapped, own=own)
+        except Exception as exc:  # a failed call (a usage limit, the judge): the work is released
+            bank.unclaim(args.lang, book["file"])
+            log.end_attempt(False)
+            log(f"- banking {book['file']} failed, released: {type(exc).__name__}: {exc}")
+            failures += 1
+            if failures >= 2:
+                log("- two works failed in a row: stopping")
+                break
+            continue
+        except BaseException:  # the judge refused (die), or the process is stopped
+            bank.unclaim(args.lang, book["file"])
+            raise
+        failures = 0
         entries = [bank.entry(book, line, checked) for line, checked in days]
         bank.append(args.lang, entries)
-        banked.add(book["file"])
         total += len(entries)
         log.end_attempt(bool(entries), [f"- banked: {len(entries)} line(s) of {book.get('author', '')} — "
                                         f"{book.get('title', '')}"])
         if args.work:
             break
-    log(f"\n## Bank\n\n- banked this run: {total} line(s)\n- the bank holds {len(bank.load(args.lang))} "
-        f"line(s) of {len(banked)} work(s): `{bank.bank_file(args.lang)}`")
+    held = bank.load(args.lang)
+    log(f"\n## Bank\n\n- banked this run: {total} line(s)\n- the bank holds {len(held)} line(s) of "
+        f"{len({e['work'] for e in held})} work(s): `{bank.bank_file(args.lang)}`")
     return 0 if total else 2
 
 
@@ -1436,6 +1456,8 @@ def main():
         p.error("--bank takes a number of works, 1 or more")
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
+    if args.bank:  # banking processes run side by side: one log each
+        stamp += f"-bank-{os.getpid()}"
     log = Log(stamp, blind=args.blind)
     try:
         plan = llm.validate()
@@ -1475,7 +1497,8 @@ def main():
         result = pull_day(claude, log, args, archive, index, today, vocab.__contains__,
                           load_similarity(args.lang))
     else:
-        book = choose_work(log, args, archive, index, today, banked=bank.works(args.lang))
+        book = choose_work(log, args, archive, index, today,
+                           banked=bank.works(args.lang) | bank.claimed(args.lang))
         text = read_work(book, args.lang)
         frequency_rank, neighbour_rank, crowd, unmapped, own, index_of = load_similarity(args.lang)
         if sentence is not None:
@@ -1490,7 +1513,8 @@ def main():
                 die("that sentence is already published (it is in the ledger)")
             ranked = [{"sentence": line, "why": "retried by hand"} for line in unquoted([unit])]
         else:
-            ranked = ranked_lines(claude, log, book, text, archive, index, args.lang, judge)
+            ranked = shortlist(claude, log, judged_lines(log, book, text, archive, index, args.lang, judge),
+                               args.lang)
 
         tried: list[str] = []
         log.begin_attempt()

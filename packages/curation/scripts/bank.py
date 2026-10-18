@@ -10,11 +10,18 @@ One JSON line per banked line, `bank/<lang>.jsonl` (gitignored: the lines are th
 work's text, and the trio spoils the day). The ledger stays the one record of what was
 published: a pull re-reads the archive and skips what it rules out since the line was
 banked (the work or the sentence published, a word back in its cooldown).
+
+Several `--bank` processes may run at once: a work is CLAIMED (`bank/<lang>.claims`, one
+shelf file per line) under the language's lock before it is mined, so no two processes
+bank the same work, and every read and write of the bank takes the same lock.
 """
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
+import fcntl
 import json
 from pathlib import Path
+import threading
 
 import _paths
 import contextual_rank  # generation/scripts: the giveaway floor
@@ -27,26 +34,76 @@ def bank_file(lang: str) -> Path:
     return _paths.BANK_DIR / f"{lang}.jsonl"
 
 
+def claims_file(lang: str) -> Path:
+    return _paths.BANK_DIR / f"{lang}.claims"
+
+
+_held = threading.local()
+
+
+@contextmanager
+def locked(lang: str):
+    """The language's bank lock, across processes (`flock`); re-entrant within a thread."""
+    depth = getattr(_held, "depth", 0)
+    if depth:
+        _held.depth = depth + 1
+        try:
+            yield
+        finally:
+            _held.depth -= 1
+        return
+    _paths.BANK_DIR.mkdir(parents=True, exist_ok=True)
+    with open(_paths.BANK_DIR / f"{lang}.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        _held.depth = 1
+        try:
+            yield
+        finally:
+            _held.depth = 0
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
 def load(lang: str) -> list[dict]:
-    path = bank_file(lang)
-    if not path.exists():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    with locked(lang):
+        path = bank_file(lang)
+        if not path.exists():
+            return []
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def append(lang: str, entries: list[dict]) -> None:
     if not entries:
         return
-    path = bank_file(lang)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        for entry in entries:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    with locked(lang):
+        path = bank_file(lang)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries))
 
 
 def works(lang: str) -> set[str]:
     """The shelf files the bank holds lines of: a work is mined once, banked or run."""
     return {entry["work"] for entry in load(lang)}
+
+
+def claimed(lang: str) -> set[str]:
+    """The works a `--bank` process has taken: being banked now, or banked."""
+    with locked(lang):
+        path = claims_file(lang)
+        return set(path.read_text(encoding="utf-8").split("\n")) - {""} if path.exists() else set()
+
+
+def claim(lang: str, file: str) -> None:
+    with locked(lang):
+        with open(claims_file(lang), "a", encoding="utf-8") as f:
+            f.write(file + "\n")
+
+
+def unclaim(lang: str, file: str) -> None:
+    """A work whose banking failed: free for a later `--bank`."""
+    with locked(lang):
+        left = sorted(claimed(lang) - {file})
+        claims_file(lang).write_text("".join(f + "\n" for f in left), encoding="utf-8")
 
 
 def entry(book: dict, line: dict, checked) -> dict:

@@ -99,3 +99,20 @@ def test_an_artist_s_next_song_waits_for_a_month_of_banked_works():
     assert pick(few)["kind"] == "book"
     month = [song("s0")] + [book(f"b{i}") for i in range(curate.lyr.ARTIST_COOLDOWN_DAYS)]
     assert pick(month)["kind"] == "music"
+
+
+def test_a_claimed_work_is_taken_until_released(fake_parse):
+    assert bank.claimed("en") == set()
+    bank.claim("en", "a.epub")
+    bank.claim("en", "b.epub")
+    assert bank.claimed("en") == {"a.epub", "b.epub"}
+    bank.unclaim("en", "a.epub")
+    assert bank.claimed("en") == {"b.epub"}
+
+
+def test_the_lock_is_re_entrant_within_a_process(fake_parse):
+    line, checked = _finished()
+    with bank.locked("en"):
+        bank.claim("en", "a.epub")  # takes the lock again: must not wait on itself
+        bank.append("en", [bank.entry({"file": "a.epub", "kind": "book"}, line, checked)])
+        assert bank.works("en") == {"a.epub"}
