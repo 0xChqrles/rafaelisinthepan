@@ -668,7 +668,9 @@ def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict],
             p = h["prior"]
             where = ("not on this map" if p["rank"] is None else f"rank {p['rank']} on this map") + (
                 ", still a candidate" if p["candidate"] else ", no longer a candidate: choose another")
-            block += f"\n  chosen before this map was ranked: « {p['word']} » ({where})"
+            named = (f"« {p['word']} »" if p.get("banked", p["word"]) == p["word"]
+                     else f"« {p['banked']} », shown here as « {p['word']} »")
+            block += f"\n  chosen before this map was ranked: {named} ({where})"
         blocks.append(block)
     answer = claude.json(f"""You choose the START words of a day for a daily {LANGUAGE[lang]} word game: each hole shows a
 start word in place of the hidden word, the first clue; the player then types guesses and

@@ -1456,16 +1456,18 @@ def test_the_start_step_reads_an_in_memory_draft_and_shows_banked_starts(tmp_pat
     # finishing it shows each banked start with where it now stands on the ranked map.
     draft = json.loads(_three_hole_draft(tmp_path).read_text(encoding="utf-8"))
     draft["ranks"]["chien"]["renard"] = {"word": "renard", "rank": 40}
+    # « lapins » was banked; the ranked map shows its group, still in the band, as « lapin »
+    draft["ranks"]["chat"]["lapins"] = {"word": "lapin", "rank": 120}
     shown = []
     monkeypatch.setattr(curate.llm, "pick_starts", _two_of_three(shown))
     monkeypatch.setattr(curate.llm, "pick_start", lambda *_a, **_k: "brique")
     picked = curate.choose_starts(object(), Log(), draft, {}, {}, lambda _t: None, lang="fr",
-                                  prior={"chat": "lapin", "chien": "renard", "pierre": "galet"})
+                                  prior={"chat": "lapins", "chien": "renard", "pierre": "galet"})
     assert picked == {"chat": "lapin", "chien": "loup", "pierre": "brique"}
     prior = {h["slug"]: h["prior"] for h in shown}
-    assert prior == {"chat": {"word": "lapin", "rank": 120, "candidate": True},
-                     "chien": {"word": "renard", "rank": 40, "candidate": False},
-                     "pierre": {"word": "galet", "rank": None, "candidate": False}}
+    assert prior == {"chat": {"banked": "lapins", "word": "lapin", "rank": 120, "candidate": True},
+                     "chien": {"banked": "renard", "word": "renard", "rank": 40, "candidate": False},
+                     "pierre": {"banked": "galet", "word": "galet", "rank": None, "candidate": False}}
 
 
 def test_a_banked_start_is_shown_to_the_start_step_with_the_rule_to_keep_it():
@@ -1482,6 +1484,12 @@ def test_a_banked_start_is_shown_to_the_start_step_with_the_rule_to_keep_it():
     assert "chosen before this map was ranked" not in plain.prompt and curate.llm.PRIOR_RULE not in plain.prompt
     banked = Claude()
     curate.llm.pick_starts(banked, "une [pierre]",
-                           [{**hole, "prior": {"word": "galet", "rank": 260, "candidate": False}}], None, lang="fr")
+                           [{**hole, "prior": {"banked": "galet", "word": "galet", "rank": 260, "candidate": False}}],
+                           None, lang="fr")
     assert "chosen before this map was ranked: « galet » (rank 260 on this map, no longer a candidate" in banked.prompt
+    agreed = Claude()
+    curate.llm.pick_starts(agreed, "des [pierres]",
+                           [{**hole, "prior": {"banked": "brique", "word": "briques", "rank": 120, "candidate": True}}],
+                           None, lang="fr")
+    assert "« brique », shown here as « briques » (rank 120 on this map, still a candidate)" in agreed.prompt
     assert curate.llm.PRIOR_RULE in banked.prompt

@@ -488,9 +488,13 @@ def choose_starts(claude: llm.Claude, log: Log, path, context: dict[str, str],
         info.append({"secret": h["secret"]["word"], "slug": key, "options": options, "notes": notes,
                      "slot": f"form {forms.get(h['secret']['word'], '?')}, after « {st.previous_token(words, h) or '—'} »"})
         if prior.get(key):
-            word = prior[key]
-            info[-1]["prior"] = {"word": word, "rank": _rank_of(puzzle["ranks"][key], word),
-                                 "candidate": word in {o["word"] for o in options}}
+            # Found by its GROUP (its slug is one of the group's keys): the ranked map may show
+            # the group under another form (« run » banked, « ran » agreed with the sentence).
+            group = puzzle["ranks"][key].get(slug(prior[key]))
+            shown = group["word"] if group and group.get("rank") else None
+            info[-1]["prior"] = {"banked": prior[key], "word": shown or prior[key],
+                                 "rank": group["rank"] if shown else None,
+                                 "candidate": shown in {o["word"] for o in options}}
     answer = llm.pick_starts(claude, marked, info, chain, lang=lang)
     if answer["replace"]:
         swap = answer["replace"]
@@ -1590,6 +1594,8 @@ def main():
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
     if args.bank:  # banking processes run side by side: one log each
         stamp += f"-bank-{os.getpid()}"
+    elif args.finish:  # so may the lines the user finishes
+        stamp += f"-finish-{args.finish}"
     log = Log(stamp, blind=args.blind)
     try:
         plan = llm.validate()
