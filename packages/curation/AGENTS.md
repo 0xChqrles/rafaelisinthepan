@@ -36,6 +36,8 @@
                              index.json (state), quotes/<file>.txt (each book's quoted lines, per
                              shelf_quotes)
     runs/                    GITIGNORED: one markdown log per run (every rejection names its rule)
+    bank/<lang>.jsonl        GITIGNORED: finished lines kept for a later day (`--bank`, read by `--pull`;
+                             scripts/bank.py)
     tests/                   pytest, dependency-free (rules, sentences, epub, lyrics); the LLM never runs
     pyproject.toml, uv.lock  claude-agent-sdk, spacy + fr_core_news_md + en_core_web_md (URL wheels),
                              gensim/numpy, lyricsgenius
@@ -75,6 +77,21 @@ pnpm curate [--lang fr|en] [--work <file on the shelf>] [--retry <shelf file | p
 #   the sentence is found again among the work's mined units for its casing; the mining,
 #   judge and shortlist are skipped, the day is chosen on that one line. A sentence the
 #   ledger holds is refused.
+pnpm curate [--lang fr|en] --bank N [--work <file>] [--blind]
+#   BANKS N works instead of making a day: each mined, quote-tested, through the judge's
+#   sentence filter and shortlisted as a run does, then EVERY shortlisted line finished up to
+#   the ranking (`curate.prepare`: words chosen, giveaways, every check and swap) and
+#   appended to bank/<lang>.jsonl with what it was measured at. No line is compared and no
+#   ranking is paid. The works keep the calendar's mix (one song per MUSIC_EVERY_DAYS works,
+#   `curate.bank_pick`), spread over authors, with no artist cooldown (the pull applies it);
+#   a banked work is never mined again, by a bank or a run. Exit 2 when nothing was banked.
+pnpm curate [--lang fr|en] --pull [--work <file>] [--blind]
+#   The day FROM THE BANK: the work picked by the run's rule (`pick_work`) among the banked
+#   works the archive still allows (not published, outside the artist cooldown); its lines
+#   read against today's archive (`bank.restore`: a published sentence, or a word back in its
+#   secret cooldown, is skipped) and compared and built as a run's finished lines are
+#   (`curate.compare_and_build`: page, ranking, start words). Writes ONE candidate day like
+#   a run; the ledger stays the one record (a published work's other lines die with it).
 pnpm shelf:lyrics [--lang fr] [--artists shelf/<lang>/artists.txt] [--max-songs N]
 #   The music source (#262): for each artist of the user's hand-written list, the songs
 #   from Genius most viewed first, minus the top FAMOUS_SHARE (the singles), minus what

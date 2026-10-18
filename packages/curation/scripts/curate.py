@@ -41,6 +41,7 @@ import quotes as qt
 import lyrics as lyr
 import rules
 import shelf as shelf_mod
+import bank
 import starts as st
 from epub import epub_text
 from parse import parse
@@ -639,7 +640,12 @@ def in_cooldown(work: dict, archive: dict, index: dict, today: date) -> bool:
         lyr.within_cooldown(shelf_mod.last_proposed(index, work.get("author", "")), today)
 
 
-def choose_work(log: Log, args, archive: dict, index: dict, today: date) -> dict:
+def choose_work(log: Log, args, archive: dict, index: dict, today: date,
+                banked: set[str] = frozenset()) -> dict | None:
+    """The work of a run (by rule, or `--work`). Never one the bank holds lines of
+    (`banked`): a work is mined once. Banking (`--bank`) keeps no artist cooldown — the
+    day comes later, and `--pull` applies it — and returns None once the shelf is spent."""
+    banking = bool(getattr(args, "bank", None))
     works = shelf_mod.list_works(_paths.shelf_dir(args.lang))
     if not works:
         die(f"nothing on the shelf ({_paths.shelf_dir(args.lang)})")
@@ -656,27 +662,57 @@ def choose_work(log: Log, args, archive: dict, index: dict, today: date) -> dict
         if work.get("error"):
             die(f"{args.work} cannot be read: {work['error']}")
         return work
-    # Eligible: readable, not in the archive and not mined by an earlier run (never the
-    # same work twice — `--retry` erases an attempt), not inside the artist cooldown.
+    # Eligible: readable, not in the archive and not mined by an earlier run or banked
+    # (never the same work twice — `--retry` erases an attempt), not inside the artist
+    # cooldown.
     fresh = []
     cooled = set()
     for w in works:
         if w.get("error"):
             continue
-        if shelf_mod.in_archive(w, archive["works"]) or w["file"] in index["books"]:
+        if shelf_mod.in_archive(w, archive["works"]) or w["file"] in index["books"] or w["file"] in banked:
             continue
-        if in_cooldown(w, archive, index, today):
+        if not banking and in_cooldown(w, archive, index, today):
             cooled.add(w.get("author", ""))
             continue
         fresh.append(w)
     if cooled:
         log(f"- artist cooldown ({lyr.ARTIST_COOLDOWN_DAYS} days) skips: {', '.join(sorted(cooled))}")
     if not fresh:
+        if banking:
+            log("- the shelf is spent: every work was mined, banked or is in the archive")
+            return None
         die("every work on the shelf was mined, is in the archive, or is inside the artist cooldown "
             "(--retry <file> erases an attempt)")
-    work, why = pick_work(fresh, archive, index, today)
+    if banking:
+        work, why = bank_pick(fresh, [w for w in works if w["file"] in banked], archive, index, today)
+    else:
+        work, why = pick_work(fresh, archive, index, today)
     log(f"- work: {work.get('author')} — {work.get('title')} ({work['kind']}, {work['file']}): {why}")
     return work
+
+
+def bank_pick(fresh: list[dict], banked: list[dict], archive: dict, index: dict,
+              today: date) -> tuple[dict, str]:
+    """The next work to bank. A work gives at most one day, so the bank keeps the
+    calendar's shape: one song for every MUSIC_EVERY_DAYS works, an artist's next song only
+    once the bank holds ARTIST_COOLDOWN_DAYS more works (the calendar plays an artist once
+    in that many days), and the authors spread (the fewest banked works first); within
+    that, `pick_work`'s order."""
+    count: dict[str, int] = {}
+    for w in banked:
+        count[slug(w.get("author", ""))] = count.get(slug(w.get("author", "")), 0) + 1
+    of = lambda w: count.get(slug(w.get("author", "")), 0)
+    songs_each = len(banked) // lyr.ARTIST_COOLDOWN_DAYS + 1
+    music = [w for w in fresh if w["kind"] == "music" and of(w) < songs_each]
+    books = [w for w in fresh if w["kind"] != "music"]
+    songs = sum(1 for w in banked if w["kind"] == "music")
+    want_music = bool(music) and (not books or songs * MUSIC_EVERY_DAYS < len(banked) + 1)
+    pool = music if want_music else (books or [w for w in fresh if w["kind"] == "music"])
+    least = min(of(w) for w in pool)
+    pool = [w for w in pool if of(w) == least]
+    work, why = pick_work(pool, {**archive, "last_music": None if want_music else today}, index, today)
+    return work, f"banking ({'a song' if want_music else 'a book'}, the bank's mix); {why.split('; ')[-1]}"
 
 
 def pick_work(fresh: list[dict], archive: dict, index: dict, today: date) -> tuple[dict, str]:
@@ -821,83 +857,110 @@ def day(claude: llm.Claude, log: Log, ranked: list[dict], book: dict, archive: d
         own=lambda t: None,
         index_of=lambda s: None):
     """The day, chosen among FINISHED candidates (user-decided 2026-10-13): the
-    shortlist's lines, CANDIDATES at a time, are each prepared on their own — the line
-    must stand alone, the model picks its three words from the words code allows (a word
-    the line gives no path to, giveaway under `GIVEAWAY_MIN`, is never offered), and every
-    check before the ranking runs with its swaps (`check_trio`). The model then compares
-    the lines that survived, each as the player will get it — its words and how each
-    plays — and orders them; the first is built (`build_day`: page, ranking, start
-    words), and when it cannot be, the next. Then the next lines. Every line prepared goes
-    into `tried`. Returns the written puzzle path, or None."""
+    shortlist's lines, CANDIDATES at a time, are each prepared on their own (`prepare`),
+    the model compares the lines that survived and the first is built, and when it
+    cannot be, the next (`compare_and_build`). Then the next lines. Every line prepared
+    goes into `tried`. Returns the written puzzle path, or None."""
     tried = tried if tried is not None else []
-    source_base = {"kind": book["kind"], "author": book.get("author", ""), "work": book.get("title", "")}
     for batch_start in range(0, len(ranked), CANDIDATES):
-        lines = []
-        for pick in ranked[batch_start:batch_start + CANDIDATES]:
-            tokens = parse(pick["sentence"], lang)
-            allowed = rules.initial_candidates(tokens, lang=lang, in_vocab=in_vocab,
-                                               past_secrets=archive["secrets"], frequency_rank=frequency_rank)
-            given: dict[str, float] = {}
-            pathless: list[str] = []
-            if len({t.slug for t in allowed}) >= rules.TRIO:
-                # The floor: a word the line gives no path to is never hidden.
-                given = giveaway_scores(tokens, allowed, _occurrences(allowed), lang, judge)
-                pathless = list(dict.fromkeys(f"{t.text} ({rules.two_places(given[t.slug])})" for t in allowed
-                                              if given[t.slug] < contextual_rank.GIVEAWAY_MIN))
-                allowed = [t for t in allowed if given[t.slug] >= contextual_rank.GIVEAWAY_MIN]
-            if len({t.slug for t in allowed}) < rules.TRIO:
-                log(f"\n## « {pick['sentence']} »\n- skipped: fewer than {rules.TRIO} words can be hidden"
-                    + (f" (no path to {', '.join(pathless)})" if pathless else ""))
-                continue
-            lines.append({"sentence": pick["sentence"], "tokens": tokens, "allowed": allowed, "given": given,
-                          "pathless": pathless})
-        if not lines:
-            continue
-        tried.extend(x["sentence"] for x in lines)
-        log(f"\n## Preparing {len(lines)} line(s): words chosen and checked on each")
-
-        def prepare(line):
-            buffer = Buffer()
-            return buffer, candidate(claude, buffer, line, frequency_rank, neighbour_rank, lang,
-                                     crowd=crowd, unmapped=unmapped, own=own)
-
-        with llm.subscription_only(), ThreadPoolExecutor(WORKERS) as pool:
-            prepared = list(pool.map(prepare, lines))
-        days: list[tuple[dict, Checked]] = []
-        for line, (buffer, checked) in zip(lines, prepared):
-            for entry in buffer:
-                log(entry)
-            if checked is not None:
-                days.append((line, checked))
+        days = prepare(claude, log, ranked[batch_start:batch_start + CANDIDATES], archive, in_vocab,
+                       frequency_rank, neighbour_rank, lang, tried, judge=judge, crowd=crowd,
+                       unmapped=unmapped, own=own)
         if not days:
-            log("\n- no line of these survived its checks")
             continue
-        shown = []
-        for line, c in days:
-            occurrences = _occurrences(line["allowed"])
-            shown.append({"marked": llm.marked(line["tokens"], {i for t in c.trio for i in occurrences[t.slug]},
-                                               lang=lang),
-                          "words": [{"word": t.text, "level": c.levels[t.slug]} for t in c.trio],
-                          "path": c.chain})
-        log(f"\n## Comparing {len(days)} finished line(s)")
-        for n, d in enumerate(shown, 1):
-            log(f"{n}. « {d['marked']} » — " + "; ".join(f"{w['word']} ({w['level']})" for w in d["words"]))
-        choice = llm.choose_among(claude, shown, lang=lang)
-        if not choice or not choice["order"]:
-            log("- the model declines these lines" + (f" — {choice['why']}" if choice and choice["why"] else ""))
-            continue
-        log(f"- order: {', '.join(str(n + 1) for n in choice['order'])} — {choice['why']}")
-        for n in choice["order"]:
-            line, checked = days[n]
-            log(f"\n## Building « {line['sentence']} »")
-            path = build_day(claude, log, line, checked.trio, checked.chain, book, archive, text, source_base,
-                             frequency_rank, neighbour_rank, lang, replay if batch_start == 0 else None,
-                             crowd=crowd, unmapped=unmapped, own=own, index_of=index_of,
-                             measures=checked.measures, swaps=checked.swaps)
-            if path:
-                return path
-            log("- it could not be built: the next line in the order")
+        path = compare_and_build(claude, log, days, book, archive, text, frequency_rank, neighbour_rank, lang,
+                                 replay if batch_start == 0 else None, crowd=crowd, unmapped=unmapped, own=own,
+                                 index_of=index_of)
+        if path:
+            return path
     log("- no day: every line was declined or refused")
+    return None
+
+
+def prepare(claude: llm.Claude, log, picks: list[dict], archive: dict, in_vocab, frequency_rank,
+            neighbour_rank, lang: str, tried: list[str], *, judge, crowd=lambda t: None,
+            unmapped=lambda t, fillers: None, own=lambda t: None) -> list[tuple[dict, "Checked"]]:
+    """Each line FINISHED on its own, up to the ranking: the line must stand alone, the
+    model picks its three words from the words code allows (a word the line gives no path
+    to, giveaway under `GIVEAWAY_MIN`, is never offered), and every check before the
+    ranking runs with its swaps (`check_trio`). Returns the lines that survived, each
+    with its checked trio; every line prepared goes into `tried`."""
+    lines = []
+    for pick in picks:
+        tokens = parse(pick["sentence"], lang)
+        allowed = rules.initial_candidates(tokens, lang=lang, in_vocab=in_vocab,
+                                           past_secrets=archive["secrets"], frequency_rank=frequency_rank)
+        given: dict[str, float] = {}
+        pathless: list[str] = []
+        if len({t.slug for t in allowed}) >= rules.TRIO:
+            # The floor: a word the line gives no path to is never hidden.
+            given = giveaway_scores(tokens, allowed, _occurrences(allowed), lang, judge)
+            pathless = list(dict.fromkeys(f"{t.text} ({rules.two_places(given[t.slug])})" for t in allowed
+                                          if given[t.slug] < contextual_rank.GIVEAWAY_MIN))
+            allowed = [t for t in allowed if given[t.slug] >= contextual_rank.GIVEAWAY_MIN]
+        if len({t.slug for t in allowed}) < rules.TRIO:
+            log(f"\n## « {pick['sentence']} »\n- skipped: fewer than {rules.TRIO} words can be hidden"
+                + (f" (no path to {', '.join(pathless)})" if pathless else ""))
+            continue
+        lines.append({"sentence": pick["sentence"], "tokens": tokens, "allowed": allowed, "given": given,
+                      "pathless": pathless})
+    if not lines:
+        return []
+    tried.extend(x["sentence"] for x in lines)
+    log(f"\n## Preparing {len(lines)} line(s): words chosen and checked on each")
+
+    def one(line):
+        buffer = Buffer()
+        return buffer, candidate(claude, buffer, line, frequency_rank, neighbour_rank, lang,
+                                 crowd=crowd, unmapped=unmapped, own=own)
+
+    with llm.subscription_only(), ThreadPoolExecutor(WORKERS) as pool:
+        prepared = list(pool.map(one, lines))
+    days: list[tuple[dict, Checked]] = []
+    for line, (buffer, checked) in zip(lines, prepared):
+        for entry in buffer:
+            log(entry)
+        if checked is not None:
+            days.append((line, checked))
+    if not days:
+        log("\n- no line of these survived its checks")
+    return days
+
+
+def compare_and_build(claude: llm.Claude, log: Log, days: list[tuple[dict, "Checked"]], book: dict,
+                      archive: dict, text: str, frequency_rank, neighbour_rank, lang: str,
+                      replay: str | None = None, *, crowd=lambda t: None, unmapped=lambda t, fillers: None,
+                      own=lambda t: None, index_of=lambda s: None) -> str | None:
+    """The model compares finished lines, each as the player will get it — its words and
+    how each plays — and orders them; the first is built (`build_day`: page, ranking,
+    start words), and when it cannot be, the next. Returns the written puzzle path, or
+    None."""
+    source_base = {"kind": book["kind"], "author": book.get("author", ""), "work": book.get("title", "")}
+    shown = []
+    for line, c in days:
+        occurrences = _occurrences(line["allowed"])
+        shown.append({"marked": llm.marked(line["tokens"], {i for t in c.trio for i in occurrences[t.slug]},
+                                           lang=lang),
+                      "words": [{"word": t.text, "level": c.levels[t.slug]} for t in c.trio],
+                      "path": c.chain})
+    log(f"\n## Comparing {len(days)} finished line(s)")
+    for n, d in enumerate(shown, 1):
+        log(f"{n}. « {d['marked']} » — " + "; ".join(f"{w['word']} ({w['level']})" for w in d["words"]))
+    choice = llm.choose_among(claude, shown, lang=lang)
+    if not choice or not choice["order"]:
+        log("- the model declines these lines" + (f" — {choice['why']}" if choice and choice["why"] else ""))
+        return None
+    log(f"- order: {', '.join(str(n + 1) for n in choice['order'])} — {choice['why']}")
+    for n in choice["order"]:
+        line, checked = days[n]
+        log(f"\n## Building « {line['sentence']} »")
+        path = build_day(claude, log, line, checked.trio, checked.chain, book, archive, text, source_base,
+                         frequency_rank, neighbour_rank, lang, replay,
+                         crowd=crowd, unmapped=unmapped, own=own, index_of=index_of,
+                         measures=checked.measures, swaps=checked.swaps)
+        if path:
+            return path
+        log("- it could not be built: the next line in the order")
     return None
 
 
@@ -1222,6 +1285,132 @@ def retry_target(args, log: Log, index: dict) -> str | None:
     return None
 
 
+def read_work(book: dict, lang: str) -> str:
+    path = _paths.shelf_dir(lang) / book["file"]
+    return epub_text(path) if book["kind"] == "book" else path.read_text(encoding="utf-8")
+
+
+def quote_filter(log: Log, book: dict, lang: str):
+    """The work's quoted lines (the quotation test): fetched onto the shelf by
+    `pnpm shelf:quotes`, read here offline, and applied to every mined line before the
+    judge or the model reads it. A missing file skips the test, loudly. Returns the filter:
+    the lines given, minus the quoted ones."""
+    quotes: list[str] = []
+    if book["kind"] == "book":
+        on_file = qt.load_quotes(book["file"], qt.quotes_dir(lang))
+        if on_file is None:
+            log(f"- quotes: NO FILE for this work — run `pnpm shelf:quotes --lang {lang}`; "
+                "the quotation test is skipped")
+        elif not qt.quote_sources(book["file"], qt.quotes_dir(lang)):
+            log("- quotes: the fetch found NO WIKIQUOTE OR WIKIPEDIA PAGE for this work — the quotation "
+                "test has nothing to check")
+        else:
+            quotes = on_file
+            log(f"- quotes: {len(quotes)} quoted line(s) on file")
+
+    def unquoted(lines: list[str]) -> list[str]:
+        kept = []
+        for line in lines:
+            hit = qt.quoted(line, quotes, lang=lang) if quotes else None
+            if hit:
+                log(f"- a quoted line, out: « {line} » — « {hit} »")
+            else:
+                kept.append(line)
+        return kept
+    return unquoted
+
+
+def ranked_lines(claude: llm.Claude, log: Log, book: dict, text: str, archive: dict, index: dict, lang: str,
+                 judge) -> list[dict]:
+    """The work's best lines: mined, minus what a run proposed or the ledger holds, minus
+    the quoted ones, through the judge's sentence filter, shortlisted by the model."""
+    unquoted = quote_filter(log, book, lang)
+    proposed = {shelf_mod.sentence_key(s) for s in index["books"].get(book["file"], {}).get("sentences", ())}
+    proposed |= archive["sentences"]
+    mined = unquoted([s for s in mine(book, text, log, lang) if shelf_mod.sentence_key(s) not in proposed])
+    mined = judge_sentences(log, mined, lang, judge)
+    return shortlist(claude, log, mined, lang)
+
+
+def bank_works(claude: llm.Claude, log: Log, args, archive: dict, index: dict, today: date, judge,
+               in_vocab, sims) -> int:
+    """`--bank N`: N works, each mined and shortlisted as a run does, EVERY line of its
+    shortlist finished up to the ranking (`prepare`) and kept in the bank — no line
+    compared, no ranking paid. A work is banked once; a run never mines it again."""
+    frequency_rank, neighbour_rank, crowd, unmapped, own, _ = sims
+    banked = bank.works(args.lang)
+    total = 0
+    for _ in range(args.bank):
+        book = choose_work(log, args, archive, index, today, banked=banked)
+        if book is None:
+            break
+        text = read_work(book, args.lang)
+        ranked = ranked_lines(claude, log, book, text, archive, index, args.lang, judge)
+        log.begin_attempt()
+        days: list[tuple[dict, Checked]] = []
+        for batch_start in range(0, len(ranked), CANDIDATES):
+            days += prepare(claude, log, ranked[batch_start:batch_start + CANDIDATES], archive, in_vocab,
+                            frequency_rank, neighbour_rank, args.lang, [], judge=judge, crowd=crowd,
+                            unmapped=unmapped, own=own)
+        entries = [bank.entry(book, line, checked) for line, checked in days]
+        bank.append(args.lang, entries)
+        banked.add(book["file"])
+        total += len(entries)
+        log.end_attempt(bool(entries), [f"- banked: {len(entries)} line(s) of {book.get('author', '')} — "
+                                        f"{book.get('title', '')}"])
+        if args.work:
+            break
+    log(f"\n## Bank\n\n- banked this run: {total} line(s)\n- the bank holds {len(bank.load(args.lang))} "
+        f"line(s) of {len(banked)} work(s): `{bank.bank_file(args.lang)}`")
+    return 0 if total else 2
+
+
+def pull_day(claude: llm.Claude, log: Log, args, archive: dict, index: dict, today: date, in_vocab,
+             sims) -> str | None:
+    """`--pull`: the day made from the bank. The work is picked by the run's own rule
+    (`pick_work`: the music cadence, the author left longest) among the banked works the
+    archive still allows; its banked lines are read against today's archive
+    (`bank.restore`), compared and built as a run's finished lines are
+    (`compare_and_build`: page, ranking, start words). Returns the written puzzle path."""
+    frequency_rank, neighbour_rank, crowd, unmapped, own, index_of = sims
+    entries = bank.load(args.lang)
+    by_work: dict[str, list[dict]] = {}
+    for e in entries:
+        by_work.setdefault(e["work"], []).append(e)
+    shelf = {w["file"]: w for w in shelf_mod.list_works(_paths.shelf_dir(args.lang))}
+    pool = [shelf[f] for f in by_work
+            if f in shelf and not shelf[f].get("error") and (not args.work or f == args.work)
+            and not shelf_mod.in_archive(shelf[f], archive["works"])
+            and not in_cooldown(shelf[f], archive, index, today)]
+    log(f"- bank: {len(entries)} line(s) of {len(by_work)} work(s); {len(pool)} work(s) the archive still allows")
+    if not pool:
+        die("no banked work is left that the archive allows — bank more (`--bank N`)")
+    log.begin_attempt()
+    result, book = None, None
+    while pool and not result:
+        book, why = pick_work(pool, archive, index, today)
+        pool.remove(book)
+        log(f"\n## Work: {book.get('author')} — {book.get('title')} ({book['kind']}, {book['file']}): {why}")
+        days = []
+        for e in by_work[book["file"]]:
+            restored, out = bank.restore(e, archive, args.lang, in_vocab, frequency_rank, Measures, Checked)
+            if restored:
+                days.append(restored)
+            else:
+                log(f"- banked « {e['sentence']} » out: {out}")
+        if not days:
+            continue
+        text = read_work(book, args.lang)
+        for batch_start in range(0, len(days), CANDIDATES):
+            result = compare_and_build(claude, log, days[batch_start:batch_start + CANDIDATES], book, archive,
+                                       text, frequency_rank, neighbour_rank, args.lang, crowd=crowd,
+                                       unmapped=unmapped, own=own, index_of=index_of)
+            if result:
+                break
+    log.end_attempt(bool(result), player_view(result, book) if result else ())
+    return result
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--lang", choices=shelf_mod.LANGS, default="fr",
@@ -1231,12 +1420,20 @@ def main():
                    help="withhold the winning sentence, its secrets and their handling from the "
                         "log and stdout (they go to runs/<stamp>.spoilers.md), so the run can be "
                         "read and the puzzle played before being spoiled")
-    p.add_argument("--retry", metavar="FILE",
-                   help="retry a WORK — a file on the shelf, epub or song: erase its attempt (index "
-                        "entry and candidate puzzles) and run on it again — or ONE SENTENCE — a "
-                        "candidate puzzle file: erase it and rerun its sentence (the work read off "
-                        "the puzzle's source), skipping the mining, shortlist and ranking")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--retry", metavar="FILE",
+                      help="retry a WORK — a file on the shelf, epub or song: erase its attempt (index "
+                           "entry and candidate puzzles) and run on it again — or ONE SENTENCE — a "
+                           "candidate puzzle file: erase it and rerun its sentence (the work read off "
+                           "the puzzle's source), skipping the mining, shortlist and ranking")
+    mode.add_argument("--bank", type=int, metavar="WORKS",
+                      help="bank WORKS works: every shortlisted line finished up to the ranking and kept "
+                           "in bank/<lang>.jsonl for a later --pull; no day is written, no ranking paid")
+    mode.add_argument("--pull", action="store_true",
+                      help="make the day from the bank: compare a banked work's lines, rank and build the best")
     args = p.parse_args()
+    if args.bank is not None and args.bank < 1:
+        p.error("--bank takes a number of works, 1 or more")
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M")
     log = Log(stamp, blind=args.blind)
@@ -1268,66 +1465,47 @@ def main():
         f"cooldown, {sum(len(v) for v in archive['pairs'].values())} secret/start pair(s) blacklisted")
     claude = llm.Claude()
 
-    book = choose_work(log, args, archive, index, today)
-    path = _paths.shelf_dir(args.lang) / book["file"]
-    text = epub_text(path) if book["kind"] == "book" else path.read_text(encoding="utf-8")
-    frequency_rank, neighbour_rank, crowd, unmapped, own, index_of = load_similarity(args.lang)
-    # The work's quoted lines (the quotation test): fetched onto the shelf by
-    # `pnpm shelf:quotes`, read here offline, and applied to every mined line before the
-    # judge or the model reads it. A missing file skips the test, loudly.
-    quotes: list[str] = []
-    if book["kind"] == "book":
-        on_file = qt.load_quotes(book["file"], qt.quotes_dir(args.lang))
-        if on_file is None:
-            log(f"- quotes: NO FILE for this work — run `pnpm shelf:quotes --lang {args.lang}`; "
-                "the quotation test is skipped")
-        elif not qt.quote_sources(book["file"], qt.quotes_dir(args.lang)):
-            log("- quotes: the fetch found NO WIKIQUOTE OR WIKIPEDIA PAGE for this work — the quotation "
-                "test has nothing to check")
-        else:
-            quotes = on_file
-            log(f"- quotes: {len(quotes)} quoted line(s) on file")
+    if args.bank:
+        sims = load_similarity(args.lang)
+        code = bank_works(claude, log, args, archive, index, today, judge, vocab.__contains__, sims)
+        log(f"- model calls: {claude.calls}\n- log: `{log.path}`")
+        sys.exit(code)
 
-    def unquoted(lines: list[str]) -> list[str]:
-        kept = []
-        for line in lines:
-            hit = qt.quoted(line, quotes, lang=args.lang) if quotes else None
-            if hit:
-                log(f"- a quoted line, out: « {line} » — « {hit} »")
-            else:
-                kept.append(line)
-        return kept
-
-    if sentence is not None:
-        # One sentence, by hand: found again among the work's mined units so it keeps the
-        # source's casing; never a published one (the archive is the one record).
-        unit = shelf_mod.find_unit(mine(book, text, log, args.lang), sentence)
-        if unit is None:
-            log("- the sentence is not one of the work's mined units — taken as typed")
-            unit = sentence
-        if shelf_mod.sentence_key(unit) in archive["sentences"]:
-            die("that sentence is already published (it is in the ledger)")
-        ranked = [{"sentence": line, "why": "retried by hand"} for line in unquoted([unit])]
+    if args.pull:
+        result = pull_day(claude, log, args, archive, index, today, vocab.__contains__,
+                          load_similarity(args.lang))
     else:
-        proposed = {shelf_mod.sentence_key(s) for s in index["books"].get(book["file"], {}).get("sentences", ())}
-        proposed |= archive["sentences"]
-        mined = unquoted([s for s in mine(book, text, log, args.lang) if shelf_mod.sentence_key(s) not in proposed])
-        mined = judge_sentences(log, mined, args.lang, judge)
-        ranked = shortlist(claude, log, mined, args.lang)
+        book = choose_work(log, args, archive, index, today, banked=bank.works(args.lang))
+        text = read_work(book, args.lang)
+        frequency_rank, neighbour_rank, crowd, unmapped, own, index_of = load_similarity(args.lang)
+        if sentence is not None:
+            # One sentence, by hand: found again among the work's mined units so it keeps the
+            # source's casing; never a published one (the archive is the one record).
+            unquoted = quote_filter(log, book, args.lang)
+            unit = shelf_mod.find_unit(mine(book, text, log, args.lang), sentence)
+            if unit is None:
+                log("- the sentence is not one of the work's mined units — taken as typed")
+                unit = sentence
+            if shelf_mod.sentence_key(unit) in archive["sentences"]:
+                die("that sentence is already published (it is in the ledger)")
+            ranked = [{"sentence": line, "why": "retried by hand"} for line in unquoted([unit])]
+        else:
+            ranked = ranked_lines(claude, log, book, text, archive, index, args.lang, judge)
 
-    tried: list[str] = []
-    log.begin_attempt()
-    result = day(claude, log, ranked, book, archive, text, vocab.__contains__, frequency_rank, neighbour_rank,
-                 args.lang, replay=getattr(args, "replay", None), tried=tried, judge=judge, crowd=crowd,
-                 unmapped=unmapped, own=own, index_of=index_of)
-    log.end_attempt(bool(result), player_view(result, book) if result else ())
-    shelf_mod.record(index, book["file"], tried, author=book.get("author", ""))
-    shelf_mod.save_index(index, args.lang)
+        tried: list[str] = []
+        log.begin_attempt()
+        result = day(claude, log, ranked, book, archive, text, vocab.__contains__, frequency_rank,
+                     neighbour_rank, args.lang, replay=getattr(args, "replay", None), tried=tried, judge=judge,
+                     crowd=crowd, unmapped=unmapped, own=own, index_of=index_of)
+        log.end_attempt(bool(result), player_view(result, book) if result else ())
+        shelf_mod.record(index, book["file"], tried, author=book.get("author", ""))
+        shelf_mod.save_index(index, args.lang)
     log("")
     if result:
         log(f"## Candidate puzzle\n\n- written: `{result}`\n- publish when approved: `pnpm puzzle:publish {result}`")
     else:
-        log("## No puzzle\n\nNo line of this work made a day worth playing; run again on another work.")
+        log("## No puzzle\n\n" + ("No banked line made a day; bank more works." if args.pull else
+                                  "No line of this work made a day worth playing; run again on another work."))
     log(f"- model calls: {claude.calls}\n- log: `{log.path}`")
     sys.exit(0 if result else 2)
 
