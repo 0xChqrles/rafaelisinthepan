@@ -116,3 +116,31 @@ def test_the_lock_is_re_entrant_within_a_process(fake_parse):
         bank.claim("en", "a.epub")  # takes the lock again: must not wait on itself
         bank.append("en", [bank.entry({"file": "a.epub", "kind": "book"}, line, checked)])
         assert bank.works("en") == {"a.epub"}
+
+
+def test_a_claim_dies_with_its_process(fake_parse):
+    import subprocess, sys
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait()
+    bank.claims_file("en").write_text(f"dead.epub\t{gone.pid}\nlegacy.epub\n", encoding="utf-8")
+    bank.claim("en", "mine.epub")
+    assert bank.claimed("en") == {"legacy.epub", "mine.epub"}
+    bank.unclaim("en", "mine.epub")
+    assert bank.claimed("en") == {"legacy.epub"}
+
+
+def test_a_work_that_banked_nothing_stays_mined_but_holds_no_line(fake_parse):
+    line, checked = _finished()
+    bank.append("en", [bank.empty({"file": "dry.epub", "kind": "book"}),
+                       bank.entry({"file": "a.epub", "kind": "book"}, line, checked)])
+    assert bank.works("en") == {"dry.epub", "a.epub"}
+    assert [e["work"] for e in bank.lines("en")] == ["a.epub"]
+
+
+def test_a_pull_never_takes_a_work_a_run_or_a_pull_already_tried():
+    today = date(2026, 10, 18)
+    shelf = {f: {"file": f, "kind": "book", "author": f, "title": f} for f in ("a", "b", "c")}
+    by_work = {"a": [{}], "b": [{}], "c": [{}], "gone": [{}]}
+    index = {"books": {"b": {"read": "2026-10-18", "sentences": []}}}
+    archive = _archive(works=[{"author": "c", "work": "c"}])
+    assert [w["file"] for w in curate.pull_pool(by_work, shelf, archive, index, today)] == ["a"]

@@ -99,11 +99,13 @@ class Log:
             self._held = []
             self._emit("\n## Attempt 1 (details withheld)")
 
-    def end_attempt(self, success: bool, summary: list[str] = ()) -> None:
+    def end_attempt(self, success: bool, summary: list[str] = (), hide_failure: bool = False) -> None:
+        """`hide_failure`: a failed attempt whose lines may still become a day (a work whose
+        banking failed is banked again later) goes to the spoilers file too."""
         held, self._held = self._held, None
         if held is None:
             return
-        if not success:
+        if not success and not hide_failure:
             for line in held:
                 self._emit(line)
             return
@@ -1338,13 +1340,16 @@ def bank_works(claude: llm.Claude, log: Log, args, archive: dict, index: dict, t
     """`--bank N`: N works, each mined and shortlisted as a run does, the first BANK_LINES
     lines of its shortlist finished up to the ranking (`prepare`) and kept in the bank — no
     line compared, no ranking paid. A work gives at most one day, so a work's first batch
-    is what a run would compare. A work is banked once (claimed under the bank's lock, so
-    processes running at once never share one); a run never mines it again. A work whose
-    banking fails is released (`bank.unclaim`); two failures in a row end the process."""
+    is what a run would compare. A work is banked once: it is chosen and claimed under the
+    bank's lock, against the index as it stands then (a run may have recorded a work since
+    this process started), and kept in the bank even when no line survived (a marker). A
+    work whose banking fails is released (`bank.unclaim`), its log kept with the spoilers;
+    two failures in a row end the process."""
     frequency_rank, neighbour_rank, crowd, unmapped, own, _ = sims
     total, failures = 0, 0
     for _ in range(args.bank):
         with bank.locked(args.lang):
+            index = shelf_mod.load_index(args.lang)
             book = choose_work(log, args, archive, index, today,
                                banked=bank.works(args.lang) | bank.claimed(args.lang))
             if book is not None:
@@ -1355,14 +1360,15 @@ def bank_works(claude: llm.Claude, log: Log, args, archive: dict, index: dict, t
         try:
             text = read_work(book, args.lang)
             judged = judged_lines(log, book, text, archive, index, args.lang, judge)
-            # a work with no line left banks nothing and stays claimed: there is nothing to retry
             ranked = shortlist(claude, log, judged, args.lang) if judged else []
             days = prepare(claude, log, ranked[:BANK_LINES], archive, in_vocab, frequency_rank, neighbour_rank,
                            args.lang, [], judge=judge, crowd=crowd, unmapped=unmapped, own=own)
         except Exception as exc:  # a failed call (a usage limit, the judge): the work is released
             bank.unclaim(args.lang, book["file"])
-            log.end_attempt(False)
-            log(f"- banking {book['file']} failed, released: {type(exc).__name__}: {exc}")
+            failed = f"- banking {book['file']} failed, released: {type(exc).__name__}: {exc}"
+            log.end_attempt(False, [failed], hide_failure=True)
+            if not log.blind:
+                log(failed)
             failures += 1
             if failures >= 2:
                 log("- two works failed in a row: stopping")
@@ -1373,16 +1379,28 @@ def bank_works(claude: llm.Claude, log: Log, args, archive: dict, index: dict, t
             raise
         failures = 0
         entries = [bank.entry(book, line, checked) for line, checked in days]
-        bank.append(args.lang, entries)
+        bank.append(args.lang, entries or [bank.empty(book)])
+        bank.unclaim(args.lang, book["file"])
         total += len(entries)
         log.end_attempt(bool(entries), [f"- banked: {len(entries)} line(s) of {book.get('author', '')} — "
                                         f"{book.get('title', '')}"])
         if args.work:
             break
-    held = bank.load(args.lang)
+    held = bank.lines(args.lang)
     log(f"\n## Bank\n\n- banked this run: {total} line(s)\n- the bank holds {len(held)} line(s) of "
         f"{len({e['work'] for e in held})} work(s): `{bank.bank_file(args.lang)}`")
     return 0 if total else 2
+
+
+def pull_pool(by_work: dict[str, list[dict]], shelf: dict[str, dict], archive: dict, index: dict, today: date,
+              work: str | None = None) -> list[dict]:
+    """The banked works a pull may use: on the shelf and readable, not published, outside
+    the artist cooldown, and never tried by a run or an earlier pull (`index`)."""
+    return [shelf[f] for f in by_work
+            if f in shelf and not shelf[f].get("error") and (not work or f == work)
+            and f not in index["books"]
+            and not shelf_mod.in_archive(shelf[f], archive["works"])
+            and not in_cooldown(shelf[f], archive, index, today)]
 
 
 def pull_day(claude: llm.Claude, log: Log, args, archive: dict, index: dict, today: date, in_vocab,
@@ -1393,16 +1411,13 @@ def pull_day(claude: llm.Claude, log: Log, args, archive: dict, index: dict, tod
     (`bank.restore`), compared and built as a run's finished lines are
     (`compare_and_build`: page, ranking, start words). Returns the written puzzle path."""
     frequency_rank, neighbour_rank, crowd, unmapped, own, index_of = sims
-    entries = bank.load(args.lang)
+    entries = bank.lines(args.lang)
     by_work: dict[str, list[dict]] = {}
     for e in entries:
         by_work.setdefault(e["work"], []).append(e)
     shelf = {w["file"]: w for w in shelf_mod.list_works(_paths.shelf_dir(args.lang))}
-    pool = [shelf[f] for f in by_work
-            if f in shelf and not shelf[f].get("error") and (not args.work or f == args.work)
-            and not shelf_mod.in_archive(shelf[f], archive["works"])
-            and not in_cooldown(shelf[f], archive, index, today)]
-    log(f"- bank: {len(entries)} line(s) of {len(by_work)} work(s); {len(pool)} work(s) the archive still allows")
+    pool = pull_pool(by_work, shelf, archive, index, today, args.work)
+    log(f"- bank: {len(entries)} line(s) of {len(by_work)} work(s); {len(pool)} work(s) still usable")
     if not pool:
         die("no banked work is left that the archive allows — bank more (`--bank N`)")
     log.begin_attempt()
@@ -1419,7 +1434,7 @@ def pull_day(claude: llm.Claude, log: Log, args, archive: dict, index: dict, tod
             else:
                 log(f"- banked « {e['sentence']} » out: {out}")
         if not days:
-            continue
+            continue  # every line ruled out for now (a secret cooling): nothing tried, nothing recorded
         text = read_work(book, args.lang)
         for batch_start in range(0, len(days), CANDIDATES):
             result = compare_and_build(claude, log, days[batch_start:batch_start + CANDIDATES], book, archive,
@@ -1427,7 +1442,14 @@ def pull_day(claude: llm.Claude, log: Log, args, archive: dict, index: dict, tod
                                        unmapped=unmapped, own=own, index_of=index_of)
             if result:
                 break
-    log.end_attempt(bool(result), player_view(result, book) if result else ())
+        # Recorded as a run records its work: a later pull (or run) moves on to another, and
+        # a song's artist enters the cooldown as proposed.
+        fresh = shelf_mod.load_index(args.lang)
+        shelf_mod.record(fresh, book["file"], [line["sentence"] for line, _ in days], author=book.get("author", ""))
+        shelf_mod.save_index(fresh, args.lang)
+        index["books"] = fresh["books"]
+    log.end_attempt(bool(result), player_view(result, book) if result else
+                    ["- no banked line made a day"], hide_failure=True)
     return result
 
 
@@ -1497,8 +1519,10 @@ def main():
         result = pull_day(claude, log, args, archive, index, today, vocab.__contains__,
                           load_similarity(args.lang))
     else:
-        book = choose_work(log, args, archive, index, today,
-                           banked=bank.works(args.lang) | bank.claimed(args.lang))
+        with bank.locked(args.lang):  # a --bank process running beside never takes this work
+            book = choose_work(log, args, archive, index, today,
+                               banked=bank.works(args.lang) | bank.claimed(args.lang))
+            bank.claim(args.lang, book["file"])
         text = read_work(book, args.lang)
         frequency_rank, neighbour_rank, crowd, unmapped, own, index_of = load_similarity(args.lang)
         if sentence is not None:
@@ -1524,6 +1548,7 @@ def main():
         log.end_attempt(bool(result), player_view(result, book) if result else ())
         shelf_mod.record(index, book["file"], tried, author=book.get("author", ""))
         shelf_mod.save_index(index, args.lang)
+        bank.unclaim(args.lang, book["file"])  # recorded: the index keeps it from now on
     log("")
     if result:
         log(f"## Candidate puzzle\n\n- written: `{result}`\n- publish when approved: `pnpm puzzle:publish {result}`")
