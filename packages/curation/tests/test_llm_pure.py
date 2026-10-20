@@ -160,7 +160,10 @@ class _Answer:
         return self.answer
 
 
-_DAY = {"marked": "The [cat].", "words": [{"word": "cat", "level": "medium"}], "path": []}
+_DAY = {"marked": "The [cat] [sat] on the [mat].", "kind": 2,
+        "words": [{"word": "mat", "path": "where a cat sits", "path_words": ["cat"], "tags": ["one of a wide kind"]},
+                  {"word": "cat", "path": "a pet", "path_words": ["mat"], "tags": []},
+                  {"word": "sat", "path": "what it did", "path_words": ["mat"], "tags": ["readers write it in"]}]}
 
 
 @pytest.mark.parametrize("answer, expected", [
@@ -175,14 +178,104 @@ def test_choose_among_takes_an_order_of_the_lines_shown_and_nothing_else(answer,
     assert llm.choose_among(_Answer(answer), [_DAY, _DAY], lang="fr") == expected
 
 
+def test_the_comparison_lists_each_line_s_kind_main_word_paths_and_facts(monkeypatch):
+    monkeypatch.setattr(llm, "taste", lambda: "TASTE")
+    claude = _Capture()
+    llm.choose_among(claude, [_DAY, {**_DAY, "kind": None}], lang="en")
+    prompt = claude.prompts[0]
+    assert "1. « The [cat] [sat] on the [mat]. »\n   kind 2, The build-up and the drop" in prompt
+    assert "   - main word « mat »: where a cat sits (through « cat »); one of a wide kind" in prompt
+    assert "   - « sat »: what it did (through « mat »); readers write it in" in prompt
+    assert "2. « The [cat] [sat] on the [mat]. »\n   no kind" in prompt
+    assert "A line with no kind\ngoes first only when, read aloud, it beats the built ones" in prompt
+    assert "easy" not in prompt and "medium" not in prompt
+
+
+# The two words chosen against the main word: two of the words offered, each with its path and
+# the model's verdicts, or a decline; code checks the rest (`curate.choose_others`).
+_WORD = {"word": " eleveur ", "path": " a trade ", "path_words": [" pratique ", ""], "mirror": False, "wide": False,
+         "ladder": {"slot": "x", "family": None, "first": None}, "lands": " the breeder "}
+_WIDE = {"word": "naturelles", "path": "gifts", "path_words": ["capacités"], "mirror": True, "wide": True,
+         "ladder": {"slot": "gifts", "family": " the body's ", "first": None}}
+
+
 @pytest.mark.parametrize("answer, expected", [
-    ({"words": ["a", "b", "c"], "path": ["a: x", 3], "why": "w"}, {"words": ["a", "b", "c"], "path": ["a: x"], "why": "w"}),
-    ({"words": None, "why": "flat"}, {"words": None, "why": "flat"}),  # the line declined
-    ({"words": ["a", "b"]}, None),
+    ({"words": [_WORD, _WIDE], "why": "w"},
+     {"words": [{"word": "eleveur", "path": "a trade", "path_words": ["pratique"], "mirror": False, "wide": False,
+                 "ladder": None, "lands": "the breeder"},
+                {"word": "naturelles", "path": "gifts", "path_words": ["capacités"], "mirror": True, "wide": True,
+                 "ladder": {"slot": "gifts", "family": "the body's", "first": None}, "lands": ""}],
+      "why": "w"}),
+    ({"words": None, "why": "flat"}, {"words": None, "why": "flat"}),        # the line declined
+    ({"words": [_WORD]}, None),                                               # one word
+    ({"words": [_WORD, _WORD, _WORD]}, None),                                 # three
+    ({"words": ["eleveur", "naturelles"]}, None),                             # no path, no verdicts
+    ({"words": [_WORD, {**_WIDE, "mirror": "true"}]}, None),
+    ({"words": [_WORD, {k: v for k, v in _WIDE.items() if k != "ladder"}]}, None),   # wide with no ladder answered
+    ({"words": [_WORD, {**_WIDE, "path_words": "capacités"}]}, None),
     ({"why": "w"}, None),
+    ([], None),
 ])
-def test_choose_words_takes_three_words_or_a_decline(answer, expected):
-    assert llm.choose_words(_Answer(answer), {"sentence": "The cat.", "allowed": ["cat"]}, [], lang="fr") == expected
+def test_choose_companions_takes_two_words_with_their_paths_or_a_decline(answer, expected):
+    assert llm.choose_companions(_Answer(answer), "s", _A_READ, "notes", _POOL, [], lang="fr") == expected
+
+
+_A_READ = {"kind": 2, "anchor": "pigeons", "path": "bred animals, made petty", "path_words": ["éleveur", "pratique"],
+           "wide": True, "ladder": {"slot": "bred animals", "family": "creatures people keep", "first": "the ranks"}}
+_POOL = [{"word": "éleveur", "options": [{"word": "fauconnier", "rank": 140}]},
+         {"word": "naturelles", "options": [{"word": "culturelles", "rank": 150}, {"word": "innées", "rank": 170}]}]
+
+
+@pytest.mark.parametrize("answer, expected", [
+    ({"starts": {"cat": "dog"}, "why": "w"}, {"starts": {"cat": "dog"}, "unsaveable": None, "why": "w"}),
+    ({"starts": {"cat": "wolf"}}, {"starts": {}, "unsaveable": None, "why": ""}),        # not a candidate
+    ({"unsaveable": "cat", "why": "no path"}, {"starts": {}, "unsaveable": "cat", "why": "no path"}),
+    ({"unsaveable": "lion", "why": "?"}, {"starts": {}, "unsaveable": None, "why": "?"}),   # no such hole
+    ([], {"starts": {}, "unsaveable": None, "why": ""}),
+])
+def test_pick_starts_takes_listed_candidates_or_names_a_word_no_start_saves(answer, expected):
+    assert llm.pick_starts(_Answer(answer), "The [cat].", [_HOLE], 2, lang="en") == expected
+
+
+def test_the_start_step_reads_each_hole_s_role_path_and_ladder_and_its_kind_s_rule(monkeypatch):
+    monkeypatch.setattr(llm, "taste", lambda: "TASTE")
+    monkeypatch.setattr(llm, "start_rules", lambda: "RULES")
+    other = {**_HOLE, "secret": "mat", "slug": "mat", "role": "other", "path": {"line": "where it sits",
+                                                                                "words": ["sat"]},
+             "ladder": {"slot": "a surface", "family": "floor coverings", "first": None}}
+    claude = _Capture()
+    llm.pick_starts(claude, "The [cat] on the [mat].", [_HOLE, other], 2, lang="en")
+    prompt = claude.prompts[0]
+    assert "Hole « cat », the MAIN word (slot: s)\n  its path: a pet (through « the »)\n  measured: n" in prompt
+    assert "Hole « mat », one of the two others" in prompt
+    assert "one of a wide kind: a surface › floor coverings › —" in prompt
+    assert "The main word's start comes first, by the *Start words* of its kind, kind 2, *The build-up and the drop*" \
+        in prompt
+    assert "a start whose FIRST idea names its ladder's smaller family, never the whole kind" in prompt
+    none = _Capture()
+    llm.pick_starts(none, "The [cat].", [_HOLE], None, lang="en")
+    assert "by the taste's *The start words* (the line has no kind)" in none.prompts[0]
+
+
+def test_the_companion_question_shows_the_main_word_its_kind_the_bands_and_what_was_refused(monkeypatch):
+    monkeypatch.setattr(llm, "taste", lambda: "TASTE")
+    monkeypatch.setattr(llm, "laws", lambda: "LAWS")
+    claude = _Capture()
+    llm.choose_companions(claude, "un bon éleveur de [pigeons]", _A_READ, "most readers would split",
+                          _POOL, ["« vie »: the words right around it write it in"], lang="fr")
+    prompt = claude.prompts[0]
+    assert "TASTE" in prompt and "LAWS" in prompt and "« un bon éleveur de [pigeons] »" in prompt
+    assert "Its kind: 2. The build-up and the drop." in prompt
+    assert "Its MAIN word « pigeons »: bred animals, made petty (through « éleveur », « pratique »)" in prompt
+    assert "one of a wide kind: bred animals › creatures people keep › the ranks" in prompt
+    assert "measured: most readers would split" in prompt
+    assert "- « naturelles »: culturelles (150), innées (170)" in prompt
+    assert "- « vie »: the words right around it write it in" in prompt
+    assert "*The three words*" in prompt and "*Holes and punch* of kind 2" in prompt
+    none = _Capture()
+    llm.choose_companions(none, "s", {**_A_READ, "kind": None, "wide": False}, "n", _POOL, [], lang="fr")
+    assert "Its kind: none of the seven." in none.prompts[0] and "*Lines that fit no kind*" in none.prompts[0]
+    assert "Refused so far" not in none.prompts[0] and "one of a wide kind:" not in none.prompts[0]
 
 
 class _Capture:
@@ -204,33 +297,28 @@ def _tok(i, text, space=" "):
 
 
 _TOKENS = [_tok(0, "the"), _tok(1, "cat", ""), _tok(2, ".")]
-_HOLE = {"secret": "cat", "slug": "cat", "slot": "s", "notes": "n", "options": [{"word": "dog", "rank": 120}]}
+_HOLE = {"secret": "cat", "slug": "cat", "role": "main", "path": {"line": "a pet", "words": ["the"]},
+         "ladder": None, "slot": "s", "notes": "n", "options": [{"word": "dog", "rank": 120}]}
 QUESTIONS = {
     "pick_from_chunk": lambda c, lang: llm.pick_from_chunk(c, ["A line."], 6, lang=lang),
     "rank_sentences": lambda c, lang: llm.rank_sentences(c, [{"sentence": "A.", "why": "w"},
                                                              {"sentence": "B.", "why": "v"}], 20, lang=lang),
     "read_line": lambda c, lang: llm.read_line(c, "The cat.", ["cat"], ["told"], lang=lang),
     "widely_known": lambda c, lang: llm.widely_known(c, "The cat.", "Author", "Work", lang=lang),
-    "choose_words": lambda c, lang: llm.choose_words(c, {"sentence": "The cat.", "allowed": ["cat"]}, [], lang=lang),
-    "choose_among": lambda c, lang: llm.choose_among(c, [{"marked": "The [cat].", "words": [{"word": "cat",
-                                                                                          "level": "medium"}],
-                                                          "path": ["cat: the subject"]}], lang=lang),
+    "choose_companions": lambda c, lang: llm.choose_companions(c, "The [cat].", _A_READ, "n", _POOL, ["told"],
+                                                               lang=lang),
+    "choose_among": lambda c, lang: llm.choose_among(c, [_DAY], lang=lang),
     "context_guesses": lambda c, lang: llm.context_guesses(c, _TOKENS, set(), 1, 6, lang=lang),
     "pick_form": lambda c, lang: llm.pick_form(c, "The cat.", "cat", ["n:s — nom, singulier"], lang=lang),
     "sentence_check": lambda c, lang: llm.sentence_check(c, "The dog.", ["dog"], lang=lang),
     "start_ideas": lambda c, lang: llm.start_ideas(c, "The dog.", [{"start": "dog", "secret": "cat"}], lang=lang),
-    "pick_starts": lambda c, lang: llm.pick_starts(c, "The [cat].", [_HOLE], None, lang=lang),
+    "pick_starts": lambda c, lang: llm.pick_starts(c, "The [cat].", [_HOLE], 2, lang=lang),
     "choose_excerpt": lambda c, lang: llm.choose_excerpt(c, "The cat.", {"before": ["B."], "after": []}, lang=lang),
-    "pick_start": lambda c, lang: llm.pick_start(c, "The [____].", "cat", _HOLE["options"], lang=lang,
-                                                 others=[{"secret": "dog", "start": "wolf", "notes": "n"}]),
+    "pick_start": lambda c, lang: llm.pick_start(c, "The [____].", _HOLE, _HOLE["options"], kind=None, lang=lang,
+                                                 others=[{"secret": "dog", "role": "other", "start": "wolf",
+                                                          "notes": "n"}]),
     "would_say": lambda c, lang: llm.would_say(c, _TOKENS, set(), 1, "cat", lang=lang),
-    "replace_word": lambda c, lang: llm.replace_word(c, "The [cat].", [{"secret": "cat", "notes": "n"}], "cat",
-                                                     ["dog"], None, refused="r", lang=lang),
-    "drop_unsaid": lambda c, lang: llm.drop_unsaid(c, "The [cat].", [{"secret": "cat", "notes": "n"}], ["cat"],
-                                                   ["dog"], None, lang=lang),
     "neighbours_complete": lambda c, lang: llm.neighbours_complete(c, "the ___ house", lang=lang),
-    "drop_handed": lambda c, lang: llm.drop_handed(c, "The [cat].", [{"secret": "cat", "notes": "n"}], ["cat"],
-                                                   ["dog"], None, lang=lang),
 }
 
 

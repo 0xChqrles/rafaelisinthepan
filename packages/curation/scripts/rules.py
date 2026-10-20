@@ -3,11 +3,12 @@
 TASTE CHOOSES, CODE STATES FACTS (2026-09-24): which line, which three words and which
 start words make a day is the model's call, read off the `taste` skill. Code only says
 which words CAN be a secret (`initial_candidates`: a content word the game admits, not
-in its cooldown) and turns what it measures into plain notes the model reads — what a
+in its cooldown), turns what it measures into plain notes the model reads — what a
 reader would put in a blank (`reading`), whether a player who has the meaning would say
 the word (`said`), where the reader's words land in the hole's own map
-(`map_nearest_filler`). Nothing here refuses a trio. The judgements are injected as
-callables, so everything is testable without a parser, a model or a vector file.
+(`map_nearest_filler`) — and names the facts that hold against a trio, its main word
+first (`trio_faults`). The judgements are injected as callables, so everything is
+testable without a parser, a model or a vector file.
 """
 
 from dataclasses import dataclass
@@ -131,6 +132,22 @@ def is_twin(candidate: Token, word: str, neighbour_rank: Callable[[Token, str], 
     return rank is not None and rank <= TWIN_RANK
 
 
+def reader_writes(
+    candidate: Token,
+    expected: str | None,
+    *,
+    neighbour_rank: Callable[[Token, str], int | None] = lambda t, w: None,
+    frequency_rank: Callable[[Token], int | None] = lambda t: None,
+) -> bool:
+    """Whether most readers would write the secret itself in its blank (`expected`, twins
+    folded): the line hands the word over. Only for a word players know (`frequency_rank`
+    at or under PLAIN_WORD_RANK): an idiom the model completes with a rare word is not one
+    every player knows."""
+    rank = frequency_rank(candidate)
+    known = rank is None or rank <= PLAIN_WORD_RANK
+    return bool(expected) and known and is_twin(candidate, expected, neighbour_rank)
+
+
 def reading(
     candidate: Token,
     guesses: list[str],
@@ -141,13 +158,10 @@ def reading(
 ) -> str:
     """What the reader's answer means for this hole, in one plain line for the model: the
     other words a reader could put there (twins folded into the secret), and whether
-    most readers would write the secret itself — a word the context hands over — which
-    only counts for a word players know (`frequency_rank` at or under PLAIN_WORD_RANK)."""
+    most readers would write the secret itself (`reader_writes`)."""
     others = list(dict.fromkeys(g for g in [*guesses, *([expected] if expected else [])]
                                 if slug(g) and not is_twin(candidate, g, neighbour_rank)))
-    rank = frequency_rank(candidate)
-    known = rank is None or rank <= PLAIN_WORD_RANK
-    if expected and is_twin(candidate, expected, neighbour_rank) and known:
+    if reader_writes(candidate, expected, neighbour_rank=neighbour_rank, frequency_rank=frequency_rank):
         lead = "most readers would write the secret itself"
     elif expected:
         lead = f"most readers would write « {expected} »"
@@ -245,17 +259,6 @@ def crowd_note(crowd: float | None) -> str:
     return f"{n} of its {CROWD_N} nearest words on the plain map are more common than it"
 
 
-def unsaid(chances: dict[str, float | None]) -> str | None:
-    """The trio's fact when it hides two or more words players don't say (under
-    WOULD_SAY_HARD), keyed by the hidden word; None when it hides one or none."""
-    under = [w for w, c in chances.items() if c is not None and c < WOULD_SAY_HARD]
-    if len(under) < 2:
-        return None
-    return (f"this trio hides {len(under)} words players don't say ({', '.join(under)}): on real play the "
-            f"days with two or more were finished by a median 40% of the players (none reached 70%), against "
-            f"57% with one and 71% with none")
-
-
 # The words a player reads at a glance around a hole: up to NEIGHBOURS each side, never
 # across punctuation nor another hidden word (« le droit de ___ », « cinq semaines de ___
 # payés »). A hole these alone hand over is no search (user-decided 2026-10-13).
@@ -342,7 +345,7 @@ def map_nearest_filler(rank_map: dict, secret_slug: str, fillers: list[str]) -> 
 # start step, never a veto (the user kept « cercueil », with « cadavre » for its start).
 READER_FAR_RANK = 500
 # What a hole's notes say when the line gives little of its word — a giveaway under
-# GIVEAWAY_HARD, or the reader's words landing far (`far_note`). The start-idea check reads it.
+# GIVEAWAY_HARD, or the reader's words landing far (`far_note`): one spelling for both notes.
 GIVES_LITTLE = "the line gives little of this word"
 
 
@@ -354,3 +357,97 @@ def far_note(nearest: tuple[str, int | None] | None) -> str | None:
         return None
     return (f"every word a reader puts in this blank lands past rank {READER_FAR_RANK} in this hole's map, so "
             f"nothing a player types first tells them they are getting closer: {GIVES_LITTLE}")
+
+
+def adjacent(tokens: list[Token], hidden: set[int]) -> set[frozenset[str]]:
+    """The pairs of hidden words side by side, nothing between them (« [folk] [dancing] »:
+    one idea split over two holes), by slug. A word, a sign or a stop word between two holes
+    parts them (« [éleveur] de [pigeons] », a trade and its object), and a word repeated is
+    no pair."""
+    order = list(tokens)
+    return {frozenset({a.slug, b.slug}) for a, b in zip(order, order[1:])
+            if a.i in hidden and b.i in hidden and a.slug != b.slug}
+
+
+@dataclass(frozen=True)
+class HoleFacts:
+    """What code knows of one hidden word, measured with the trio hidden around it, on the
+    map at hand: whether most readers write it in (`reader_writes`); the fragment its
+    neighbours write it in from, when they do (`neighbours`); the rank of the reader's word
+    on its map when at or under HANDED_RANK (`map_handed`); whether players don't say it
+    (`unsaid`) or it is BURIED; the reader's words when none is on its map (`unmapped`);
+    whether its band holds no start (`band_empty`); the slugs of the words its path runs
+    through (`path_words`); and the model's verdicts on a word chosen against the main
+    word — the partner of a visible word (`mirror`), the step its ladder misses (`lottery`)."""
+    word: str
+    slug: str
+    path_words: frozenset[str] = frozenset()
+    reader_writes: bool = False
+    neighbours: str | None = None
+    map_handed: int | None = None
+    unsaid: bool = False
+    buried: bool = False
+    unmapped: tuple[str, ...] | None = None
+    band_empty: bool = False
+    mirror: bool = False
+    lottery: str | None = None
+
+
+def _refused(h: HoleFacts) -> str | None:
+    """What refuses a hidden word wherever it stands, in the player's terms; None when nothing does."""
+    if h.buried:
+        return ("buried: players only half-say it, among commoner words meaning nearly the same — they reach "
+                "the idea, circle the commoner neighbours and stall")
+    if h.unmapped:
+        return (f"none of the words readers put in its blank ({', '.join(f'« {w} »' for w in h.unmapped)}) is "
+                "on its map: every first guess lands past it")
+    if h.neighbours:
+        return f"the words right around it write it in (« {h.neighbours} »): no search"
+    if h.mirror:
+        return "a mirror: the partner of a visible word, the first word players would type"
+    if h.lottery:
+        return f"a lottery: one of a wide kind, and {h.lottery}"
+    if h.band_empty:
+        return "no start word in its band"
+    return None
+
+
+def trio_faults(holes: list[HoleFacts], adjacent: set[frozenset[str]] = frozenset()) -> dict:
+    """The facts against a trio, its MAIN word first (`holes[0]`; alone, for the gate). The
+    main word is refused by any fact that refuses a word, and by being handed — most readers
+    write it in, or the reader's word sits at or under HANDED_RANK on its map — never by
+    being one players don't say. Each of the two others is refused by any fact that refuses
+    a word, or by sitting right beside the main word (`adjacent`, pairs of slugs side by
+    side). What holds against the three together refuses none of them: two or more words
+    players don't say, two or more the line hands over (readers, or the map), a word every
+    word of whose path is hidden (a locked pair, or a hidden path), two others side by side.
+    Returns {"main": why | None, "others": {slug: why}, "trio": [why, ...]}."""
+    main, others = holes[0], holes[1:]
+    why = _refused(main)
+    if why is None and main.reader_writes:
+        why = "most readers write it straight in: the main word is never handed"
+    if why is None and main.map_handed is not None:
+        why = f"the word most readers write sits at rank {main.map_handed} on its map: found in a guess or two"
+    faults: dict = {"main": why, "others": {}, "trio": []}
+    for h in others:
+        why = _refused(h)
+        if why is None and frozenset({h.slug, main.slug}) in adjacent:
+            why = f"it sits right beside the main word « {main.word} »: one idea per hole"
+        if why:
+            faults["others"][h.slug] = why
+    unsaid = [h.word for h in holes if h.unsaid]
+    if len(unsaid) >= 2:
+        faults["trio"].append(f"it hides {len(unsaid)} words players don't say ({', '.join(unsaid)}): at most one — "
+                              "days with two were finished by a median 40% of the players")
+    handed = [h.word for h in holes if h.reader_writes or h.map_handed is not None]
+    if len(handed) >= 2:
+        faults["trio"].append(f"the line hands over {len(handed)} of its words ({', '.join(handed)}): at most one")
+    hidden = {h.slug for h in holes}
+    for h in holes:
+        if h.path_words and h.path_words <= hidden:
+            faults["trio"].append(f"every word the path to « {h.word} » runs through is hidden: a locked pair, "
+                                  "or a path hidden")
+    for a, b in ((a, b) for n, a in enumerate(others) for b in others[n + 1:]):
+        if frozenset({a.slug, b.slug}) in adjacent:
+            faults["trio"].append(f"« {a.word} » and « {b.word} » sit side by side: one idea per hole")
+    return faults
