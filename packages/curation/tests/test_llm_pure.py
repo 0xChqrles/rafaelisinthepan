@@ -2,7 +2,7 @@
 
 import pytest
 
-from llm import LLMError, parse_json, stands_alone
+from llm import KINDS, LLMError, parse_json, read_line
 from rules import Token
 
 
@@ -22,12 +22,39 @@ class _Canned:
         return self.answer
 
 
-@pytest.mark.parametrize("ok", [True, False])
-def test_stands_alone_preserves_the_boolean_verdict(ok):
-    answer = {"stands_alone": ok, "about": " Une promenade. ",
-              "why": "" if ok else " Le lieu dépend de la page précédente. "}
-    result = stands_alone(_Canned(answer), "Il marche dans ce lieu.", lang="fr")
-    assert result == {"ok": ok, "about": answer["about"].strip(), "why": answer["why"].strip()}
+# The read (`read_line`): the model's verdicts, each kept as answered; code applies them.
+_READ = {"about": " A breeder's years for pigeons. ", "stands_alone": True, "why": "",
+         "needs_book": [" Horiki ", ""], "kind": 2, "anchor": " pigeons ", "path": " bred animals, made petty ",
+         "path_words": ["éleveur", " pratique "], "wide": True,
+         "ladder": {"slot": "bred animals", "family": " creatures people keep ", "first": ""},
+         "mirror": False, "joke_hidden": True, "sibling": " poules "}
+
+
+def test_read_line_keeps_each_verdict_as_answered():
+    assert read_line(_Canned(_READ), "Peu de personnes.", ["pigeons"], [], lang="fr") == {
+        "about": "A breeder's years for pigeons.", "stands_alone": True, "why": "", "needs_book": ["Horiki"],
+        "kind": 2, "anchor": "pigeons", "path": "bred animals, made petty", "path_words": ["éleveur", "pratique"],
+        "wide": True, "ladder": {"slot": "bred animals", "family": "creatures people keep", "first": None},
+        "mirror": False, "joke_hidden": True, "sibling": "poules"}
+    flipped = read_line(_Canned({**_READ, "kind": None, "wide": False, "ladder": None, "mirror": True,
+                                 "joke_hidden": False, "sibling": None}), "s", ["pigeons"], [], lang="fr")
+    assert (flipped["kind"], flipped["wide"], flipped["ladder"], flipped["mirror"], flipped["joke_hidden"],
+            flipped["sibling"]) == (None, False, None, True, False, None)
+
+
+def test_a_line_that_does_not_stand_alone_or_names_no_main_word_leaves_the_rest_unanswered():
+    alone = read_line(_Canned({"about": "", "stands_alone": False, "why": " Le lieu dépend de la page. "}),
+                      "Il marche dans ce lieu.", [], [], lang="fr")
+    assert (alone["stands_alone"], alone["why"], alone["anchor"], alone["mirror"]) == \
+        (False, "Le lieu dépend de la page.", None, None)
+    none = read_line(_Canned({"about": "x", "stands_alone": True, "why": "", "kind": None, "anchor": None}),
+                     "s", [], [], lang="fr")
+    assert (none["anchor"], none["kind"], none["needs_book"], none["joke_hidden"]) == (None, None, [], None)
+
+
+@pytest.mark.parametrize("kind", [0, 8, -1])
+def test_a_kind_outside_the_seven_is_an_unusable_reading(kind):
+    assert read_line(_Canned({**_READ, "kind": kind}), "s", ["pigeons"], [], lang="fr") is None
 
 
 @pytest.mark.parametrize("answer", [
@@ -38,10 +65,53 @@ def test_stands_alone_preserves_the_boolean_verdict(ok):
     {"stands_alone": False, "about": "", "why": " "},
     {"stands_alone": True, "about": ["Une promenade."], "why": ""},
     {"stands_alone": False, "about": "", "why": None},
+    {**{k: v for k, v in _READ.items() if k != "kind"}},          # the kind not answered
+    {**{k: v for k, v in _READ.items() if k != "anchor"}},        # nor the main word
+    {**_READ, "kind": True},
+    {**_READ, "kind": "2"},
+    {**_READ, "anchor": ["pigeons"]},
+    {**_READ, "needs_book": "Horiki"},
+    {**_READ, "path_words": [1]},
+    {**_READ, "mirror": "false"},
+    {**{k: v for k, v in _READ.items() if k != "joke_hidden"}},
+    {**{k: v for k, v in _READ.items() if k != "ladder"}},        # a wide word with no ladder answered
+    {**_READ, "ladder": {"slot": 1, "family": None, "first": None}},
+    {**_READ, "sibling": ["poules"]},
 ])
-def test_stands_alone_refuses_malformed_verdicts(answer):
-    with pytest.raises(LLMError, match="standalone check"):
-        stands_alone(_Canned(answer), "Il marche dans ce lieu.", lang="fr")
+def test_a_malformed_reading_raises(answer):
+    with pytest.raises(LLMError, match="reading"):
+        read_line(_Canned(answer), "Il marche dans ce lieu.", ["pigeons"], [], lang="fr")
+
+
+def test_the_read_quotes_the_rules_and_tells_back_what_code_refused(monkeypatch):
+    monkeypatch.setattr(llm, "taste", lambda: "TASTE")
+    monkeypatch.setattr(llm, "skill_section", lambda heading: f"SECTION {heading}")
+    claude = _Capture()
+    read_line(claude, "le chat dort", ["chat", "dort"], ["« lune » is not one of the words that can be hidden"],
+              lang="fr")
+    prompt = claude.prompts[0]
+    assert "TASTE" in prompt and "SECTION ## Stands alone" in prompt
+    assert "words that can be hidden: chat, dort" in prompt
+    assert "Told back of your earlier reading" in prompt and "« lune » is not one" in prompt
+    assert all(f"{n} {name}" in prompt for n, name in KINDS.items())
+
+
+def test_the_seven_kinds_are_the_taste_s_with_their_holes_and_their_starts():
+    taste = llm.taste()
+    headings = [line for line in taste.splitlines() if re.match(r"### \d\. ", line)]
+    assert [h.split(". ", 1)[1].split(":")[0] for h in headings] == list(KINDS.values())
+    for n, name in KINDS.items():
+        section = llm.taste_section(f"### {n}. {name}")
+        assert "**Holes and punch.**" in section and "**Start words.**" in section
+        assert f"### {n + 1}. " not in section          # its section alone
+
+
+def test_the_taste_holds_the_ladder_and_refuses_a_lottery_on_every_hole():
+    ladder = llm.taste_section("### The narrowing ladder")
+    assert "smaller family" in ladder and "refused, as the main word and as" in ladder
+    assert "### " not in ladder.split("\n", 1)[1]
+    # the user's rule: the words right around a hole writing it in refuse it, on every hole
+    assert "refused on every hole" in llm.taste_section("### Per trio")
 
 
 def test_choose_excerpt_takes_two_integers_and_nothing_else():
@@ -76,6 +146,7 @@ def test_would_say_keeps_a_chance_in_range_and_nothing_else(answer, expected):
 
 # --- #317: every question speaks the day's language ----------------------------------
 import inspect
+import re
 
 import llm
 from rules import Token
@@ -123,6 +194,7 @@ class _Capture:
     def json(self, prompt):
         self.prompts.append(prompt)
         return {"picks": [], "ranked": [1, 0], "about": "x", "stands_alone": True, "why": "", "known": False,
+                "kind": None, "anchor": None,
                 "line": None, "guesses": [], "expected": None, "choice": 1, "valid": True, "faulty": [],
                 "starts": {}, "before": 0, "after": 0, "word": None}
 
@@ -137,7 +209,7 @@ QUESTIONS = {
     "pick_from_chunk": lambda c, lang: llm.pick_from_chunk(c, ["A line."], 6, lang=lang),
     "rank_sentences": lambda c, lang: llm.rank_sentences(c, [{"sentence": "A.", "why": "w"},
                                                              {"sentence": "B.", "why": "v"}], 20, lang=lang),
-    "stands_alone": lambda c, lang: llm.stands_alone(c, "The cat.", lang=lang),
+    "read_line": lambda c, lang: llm.read_line(c, "The cat.", ["cat"], ["told"], lang=lang),
     "widely_known": lambda c, lang: llm.widely_known(c, "The cat.", "Author", "Work", lang=lang),
     "choose_words": lambda c, lang: llm.choose_words(c, {"sentence": "The cat.", "allowed": ["cat"]}, [], lang=lang),
     "choose_among": lambda c, lang: llm.choose_among(c, [{"marked": "The [cat].", "words": [{"word": "cat",

@@ -123,24 +123,129 @@ def _line_tokens(*_a):
     return [Token(i, w, lemmas.get(w, w), pos, w, stop) for i, (w, pos, stop) in enumerate(words)]
 
 
-def _alone(monkeypatch, ok=True):
-    monkeypatch.setattr(curate.llm, "stands_alone",
-                        lambda _c, s, lang: {"ok": ok, "about": "", "why": "" if ok else "leans on its page"})
+def _a_read(anchor="pierre", path_words=("froide",), **over):
+    """A reading as `llm.read_line` returns it: the line stands alone, kind 5, its main word
+    `anchor` reached through `path_words`; `over` changes any verdict."""
+    return {"about": "a cat on a cold stone", "stands_alone": True, "why": "", "needs_book": [], "kind": 5,
+            "anchor": anchor, "path": "what the cat sleeps on", "path_words": list(path_words), "wide": False,
+            "ladder": None, "mirror": False, "joke_hidden": True, "sibling": None, **over}
 
 
-def test_a_line_that_does_not_stand_alone_is_refused_before_its_words_are_chosen(monkeypatch):
+def _read(monkeypatch, answer=None, asked=None):
+    """The read answers `answer` (a reading, or a function of the sentence giving one)."""
+    answer = answer or _a_read()
+    monkeypatch.setattr(curate.llm, "read_line",
+                        lambda _c, sentence, hideable, refused, lang: (asked if asked is not None else []).append(
+                            (list(hideable), list(refused))) or (answer(sentence) if callable(answer) else answer))
+
+
+def test_a_line_that_does_not_stand_alone_is_set_aside_before_its_giveaway_or_words(monkeypatch):
     monkeypatch.setattr(curate, "parse", _line_tokens)
     monkeypatch.setattr(curate.llm, "choose_words", lambda *_a, **_k: pytest.fail("no words for a refused line"))
     monkeypatch.setattr(curate.llm, "choose_among", lambda *_a, **_k: pytest.fail("nothing to compare"))
-    _giveaways(monkeypatch)
-    _alone(monkeypatch, ok=False)
+    monkeypatch.setattr(contextual_rank, "giveaway", lambda *_a, **_k: pytest.fail("a line set aside pays nothing"))
+    _read(monkeypatch, _a_read(stands_alone=False, why="leans on its page"))
     monkeypatch.setattr(curate, "build_day", lambda *a, **k: pytest.fail("a refused line is never built"))
     log = Log()
     path = curate.day(object(), log, [{"sentence": "Le chat dort sur la pierre froide."}], {"kind": "book"},
                       {"secrets": set(), "pairs": {}}, "", lambda w: True, lambda t: None, lambda t, w: None, "fr", judge=object())
     assert path is None
-    assert any("does not stand alone — leans on its page" in line for line in log)
+    assert any("set aside: does not stand alone: leans on its page" in line for line in log)
 
+
+
+# --- the line READ before anything is paid for: the model's verdicts, applied by code -----
+
+def _the_line():
+    tokens = _line_tokens()
+    return {"sentence": "Le chat dort sur la pierre froide.", "tokens": tokens,
+            "allowed": [t for t in tokens if t.text in ("chat", "dort", "pierre", "froide")]}
+
+
+@pytest.mark.parametrize("over, why", [
+    ({}, None),
+    ({"kind": None}, None),                                          # a line with no kind is kept
+    ({"sibling": "brique"}, None),                                   # a sibling only warns
+    ({"wide": True, "ladder": {"slot": "a surface", "family": "stones", "first": "the first one named"}}, None),
+    ({"stands_alone": False, "why": "whose cat?"}, "does not stand alone: whose cat?"),
+    ({"anchor": None}, "no word the line is about has a path"),
+    ({"needs_book": ["Pierre"]}, "its main word « pierre » needs the work to mean anything"),
+    ({"wide": True, "ladder": None}, "a lottery: « pierre » is one of a wide kind, and the slot shapes no kind"),
+    ({"wide": True, "ladder": {"slot": "a surface", "family": None, "first": "x"}},
+     "a lottery: « pierre » is one of a wide kind, and no smaller family a start can name"),
+    ({"wide": True, "ladder": {"slot": "a surface", "family": "stones", "first": None}},
+     "a lottery: « pierre » is one of a wide kind, and it is neither the first member players name nor one the "
+     "ranks climb to"),
+    ({"mirror": True}, "a mirror: « pierre » is the partner of a visible word, the first word players would type"),
+    ({"joke_hidden": False}, "the joke reads with the main word hidden"),
+    ({"needs_book": ["pierre"], "mirror": True}, "its main word « pierre » needs the work to mean anything"),
+])
+def test_the_read_sets_a_line_aside_on_each_verdict_in_order(monkeypatch, over, why):
+    _read(monkeypatch, _a_read(**over))
+    log = Log()
+    read, refused = curate.read(object(), log, _the_line(), "fr")
+    assert refused == why and read["anchor"] == _a_read(**over)["anchor"]
+
+
+@pytest.mark.parametrize("over, told", [
+    ({"anchor": "lune"}, "« lune » is not one of the words that can be hidden"),
+    ({"path_words": ["sur"]}, "« sur » is not one"),                 # a stop word
+    ({"path_words": ["pierre"]}, "« pierre » is not one"),           # the main word itself
+    ({"path_words": ["la pierre"]}, "« la pierre » is not one"),     # not one word of the line
+    ({"path_words": []}, "its path must run through 1 to 3 words of the line left in sight"),
+])
+def test_a_main_word_the_line_cannot_hide_or_a_path_out_of_sight_is_told_back(monkeypatch, over, told):
+    answers = iter([_a_read(**over), _a_read()])
+    asked = []
+    monkeypatch.setattr(curate.llm, "read_line",
+                        lambda _c, _s, hideable, refused, lang: asked.append((hideable, list(refused))) or next(answers))
+    read, why = curate.read(object(), Log(), _the_line(), "fr")
+    assert why is None and read["anchor"] == "pierre"
+    assert asked[0] == (["chat", "dort", "pierre", "froide"], [])
+    assert len(asked) == 2 and told in asked[1][1][0]
+
+
+def test_a_reading_told_back_read_rounds_times_sets_the_line_aside(monkeypatch):
+    asked = []
+    monkeypatch.setattr(curate.llm, "read_line",
+                        lambda _c, _s, _h, refused, lang: asked.append(list(refused)) or None)   # a kind of 9
+    read, why = curate.read(object(), Log(), _the_line(), "fr")
+    assert curate.READ_ROUNDS == 3 and len(asked) == 3
+    assert read is None and why.startswith("no usable reading in 3 asks (its kind must be a number from 1 to 7")
+    assert len(asked[2]) == 2
+
+
+def test_the_giveaway_is_paid_after_the_read_and_never_for_a_word_that_needs_the_work(monkeypatch):
+    judged = []
+    monkeypatch.setattr(contextual_rank, "giveaway", lambda _j, _shown, word, lang: judged.append(word) or 0.3)
+    _read(monkeypatch, _a_read(needs_book=["chat"]))
+    offered, _log = [], Log()
+    monkeypatch.setattr(curate, "parse", _line_tokens)
+    monkeypatch.setattr(curate.llm, "choose_words", lambda _c, line, _r, lang: offered.append(line["allowed"]) or None)
+    curate.day(object(), _log, [{"sentence": "Le chat dort sur la pierre froide."}], {"kind": "book"},
+               {"secrets": set(), "pairs": {}}, "", lambda w: True, lambda t: None, lambda t, w: None, "fr",
+               judge=object())
+    assert judged == ["dort", "pierre", "froide"] and offered == [["dort", "pierre", "froide"]]
+
+
+def test_a_main_word_under_the_floor_sets_the_line_aside_with_no_clue(monkeypatch):
+    offered, log = _day_on_the_line(monkeypatch, {"pierre": 0.07})
+    assert offered == []
+    assert any("set aside: no clue: the line gives no path to its main word « pierre » (0.07, under 0.1)" in line
+               for line in log)
+
+
+def test_a_bank_keeps_the_lines_set_aside_with_their_read_and_giveaways(monkeypatch):
+    monkeypatch.setattr(curate, "parse", _line_tokens)
+    _giveaways(monkeypatch, {"pierre": 0.07})
+    _read(monkeypatch, lambda s: _a_read() if s.startswith("Le") else _a_read(stands_alone=False, why="whose cat?"))
+    days, aside = curate.prepare(object(), Log(), _LINES, {"secrets": set()}, lambda w: True, lambda t: None,
+                                 lambda t, w: None, "fr", [], judge=object())
+    assert days == []
+    assert [(line["sentence"], line["dropped"], bool(line["given"])) for line in aside] == [
+        (_LINES[0]["sentence"], "no clue: the line gives no path to its main word « pierre » (0.07, under 0.1)", True),
+        (_LINES[1]["sentence"], "does not stand alone: whose cat?", False)]
+    assert aside[0]["read"]["anchor"] == "pierre" and aside[1]["read"]["stands_alone"] is False
 
 def test_words_off_the_line_are_told_back(monkeypatch):
     monkeypatch.setattr(curate, "parse", _line_tokens)
@@ -152,7 +257,7 @@ def test_words_off_the_line_are_told_back(monkeypatch):
 
     monkeypatch.setattr(curate.llm, "choose_words", choose)
     _giveaways(monkeypatch)
-    _alone(monkeypatch)
+    _read(monkeypatch)
     curate.day(object(), Log(), [{"sentence": "Le chat dort sur la pierre froide."}], {"kind": "book"},
                {"secrets": set(), "pairs": {}}, "", lambda w: True, lambda t: None, lambda t, w: None, "fr", judge=object())
     assert "distinct words of the line" in asked[1][0]
@@ -757,7 +862,7 @@ def _day_on_the_line(monkeypatch, scores):
     returns (the words offered to the model, the log)."""
     monkeypatch.setattr(curate, "parse", _line_tokens)
     _giveaways(monkeypatch, scores)
-    _alone(monkeypatch)
+    _read(monkeypatch)
     offered = []
     monkeypatch.setattr(curate.llm, "choose_words",
                         lambda _c, line, _refused, lang: offered.append(line["allowed"]) or None)
@@ -777,10 +882,11 @@ def test_a_word_the_line_gives_no_path_to_is_never_offered(monkeypatch):
     assert any("no path to dort (0.09)" in line for line in log)
 
 
-def test_a_line_the_floor_leaves_short_of_three_words_is_skipped(monkeypatch):
+def test_a_line_the_floor_leaves_short_of_three_words_is_set_aside(monkeypatch):
     offered, log = _day_on_the_line(monkeypatch, {"chat": 0.05, "dort": 0.09})
     assert offered == []
-    assert any("fewer than 3 words can be hidden (no path to chat (0.05), dort (0.09))" in line for line in log)
+    assert any("set aside: fewer than 3 words can be hidden (no path to chat (0.05), dort (0.09))" in line
+               for line in log)
 
 
 # --- the day is chosen among FINISHED lines (user-decided 2026-10-13) ---------------------
@@ -794,8 +900,7 @@ def _finished_lines(monkeypatch, order, build, alone=lambda s: True, says=None):
     (the words the reader was asked, the days compared, the lines built and their swaps)."""
     monkeypatch.setattr(curate, "parse", _line_tokens)
     _giveaways(monkeypatch, {"pierre": 0.15})
-    monkeypatch.setattr(curate.llm, "stands_alone",
-                        lambda _c, s, lang: {"ok": alone(s), "about": "", "why": "" if alone(s) else "leans"})
+    _read(monkeypatch, lambda s: _a_read(stands_alone=alone(s), why="" if alone(s) else "leans"))
     monkeypatch.setattr(curate.llm, "choose_words",
                         lambda _c, line, _r, lang: {"words": ["chat", "dort", "pierre"], "path": ["chat: le sujet"],
                                                     "why": "w"})
@@ -1146,7 +1251,7 @@ def test_an_english_day_is_chosen_in_english_from_english_facts(monkeypatch):
 
     monkeypatch.setattr(curate.llm, "choose_words", choose)
     _giveaways(monkeypatch)
-    _alone(monkeypatch)
+    _read(monkeypatch, _a_read("stone", ["cold"]))
     curate.day(object(), Log(), [{"sentence": "I think the old cat sleeps on cold stone."}], {"kind": "book"},
                {"secrets": set(), "pairs": {}}, "", lambda w: True, lambda t: None, lambda t, w: None, "en", judge=object())
     assert seen == [("en", ["old", "cat", "sleeps", "cold", "stone"])]   # « think » is an English weak verb

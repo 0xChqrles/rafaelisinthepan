@@ -213,29 +213,115 @@ Return {{"ranked": [<index>, ...]}}, best first, at most {limit} entries.""")
     return ranked or picks[:limit]
 
 
-def stands_alone(claude: Claude, sentence: str, *, lang: str) -> dict:
-    """Does the sentence make complete sense on its own, SOLVED, without its page? The
-    user's rule of 2026-09-18 (the Svevo day: « c'étaient donc des nerfs parfaits »
-    meant nothing even solved). A STRIKE, applied by code on the model's verdict; the
-    rule is read from the skill file."""
-    answer = claude.json(f"""{_capital(A_LANGUAGE[lang])} word game shows ONE sentence from a book or song, alone. The surrounding
-page is available only after solving. Judge the complete sentence below with no context at all.
+# The seven kinds of line the taste names, by number (its `### <n>. <name>` headings; a test
+# ties the two): the read says which one a line is, or none.
+KINDS = {1: "Pairs and molds", 2: "The build-up and the drop", 3: "The small fact that proves a big thing",
+         4: "The reasoning pushed to its end", 5: "The riddle", 6: "The cold exact word", 7: "The bent phrase"}
+# The narrowing ladder of a word taken from a wide kind, in order: the kind the slot shapes,
+# the smaller family a start can name, and the word as that family's first member (or the
+# ranks climbing to it). A missing step makes the word a lottery.
+LADDER = ("slot", "family", "first")
 
+
+def read_line(claude: Claude, sentence: str, hideable: list[str], refused: list[str], *, lang: str) -> dict | None:
+    """The line READ as its curator reads it, before any word is chosen or any judge paid:
+    whether it stands alone, SOLVED, without its page (the find-sentences skill's `## Stands
+    alone`, read whole), which of its words need the work to mean anything, its kind (`KINDS`,
+    or none), its MAIN word — the word the line is about, one of `hideable` — with the visible
+    words its path runs through, the main word's narrowing ladder when it is one of a wide
+    kind, whether it is the partner of a visible word, whether hiding it hides the joke, and
+    one sibling making the same joke. `refused` is what code told back of an earlier reading.
+    The verdicts are the model's; code applies them (`curate.read`). Returns {about,
+    stands_alone, why, needs_book, kind, anchor, path, path_words, wide, ladder: {slot,
+    family, first} | None, mirror, joke_hidden, sibling} (a line that does not stand alone, or
+    names no main word, leaves the rest unanswered); None when its kind is none of `KINDS`;
+    raises LLMError when the answer is malformed."""
+    again = ("\nTold back of your earlier reading — read the line again:\n"
+             + "\n".join(f"- {r}" for r in refused) + "\n") if refused else ""
+    kinds = "; ".join(f"{n} {name}" for n, name in KINDS.items())
+    answer = claude.json(f"""You read one line for a daily {LANGUAGE[lang]} word game, as its curator does, before any word
+is chosen. One line, three words hidden; the player rebuilds each from how close every guess
+lands, starting from a START word chosen later. A word once found stays revealed and becomes
+context for the others. The page around the line is shown only once the day is solved.
+
+What makes a day worth playing:
+{taste()}
+
+The line must stand alone:
 {skill_section("## Stands alone")}
 
-« {sentence} »
+The line, from one work:
 
-Return {{"about": "<one line: what the sentence says, from the sentence alone>",
-"stands_alone": true/false, "why": "<one line: what leans on the page, or empty>"}}.""")
+« {sentence} »
+   words that can be hidden: {', '.join(hideable)}
+{again}
+Read it in this order:
+1. Does it stand alone once solved? Which of the words that can be hidden need the work to
+   mean anything?
+2. Its kind, by each kind's *Spot it* ({kinds}), or none.
+3. Its MAIN word: the word the line is about — the punch its kind names or, with no kind, the
+   word the line lands on — one of the words that can be hidden; null when that word cannot be
+   hidden or the line gives it no path. Name the 1 to 3 words of the line, left in sight, that
+   its path runs through (single words of the line, never the main word itself), and give the
+   path in one line.
+4. By *The narrowing ladder*: is the main word one member of a wide kind? If so, its ladder:
+   the kind the slot shapes; the smaller family a start can name; and whether the word is the
+   first member players name in that family, or the ranks climb to it. Null for any step that
+   is missing.
+5. By *No mirror*: is it the partner of a visible word — its opposite, its synonym, its
+   textbook complement, the other half of a set phrase or a compound?
+6. By *The blank read*: with only the main word hidden, is the joke hidden too?
+7. One sibling that makes the same joke, if any (a warning only).
+
+Return {{"about": "<one line: what the line says, from the line alone>", "stands_alone": true/false,
+"why": "<one line: what leans on the page, or empty>", "needs_book": ["<a word that needs the work>", ...],
+"kind": <1 to 7, or null>, "anchor": "<the main word>" or null, "path": "<one line: how the line leads to it>",
+"path_words": ["<a word of the line>", ...], "wide": true/false,
+"ladder": {{"slot": "<the kind the slot shapes>" or null, "family": "<the smaller family a start can name>" or null, "first": "<the first member players name there, or how the ranks climb to it>" or null}} or null,
+"mirror": true/false, "joke_hidden": true/false, "sibling": "<another word making the same joke>" or null}}.""")
     if (not isinstance(answer, dict) or type(answer.get("stands_alone")) is not bool
-            or not isinstance(answer.get("about"), str)
-            or not isinstance(answer.get("why"), str)):
-        raise LLMError("standalone check requires a boolean verdict and string about/why fields")
-    ok = answer["stands_alone"]
-    about, why = answer["about"].strip(), answer["why"].strip()
-    if not (about if ok else why):
-        raise LLMError("standalone check requires a summary when accepted or a reason when rejected")
-    return {"ok": ok, "why": why, "about": about}
+            or not isinstance(answer.get("about"), str) or not isinstance(answer.get("why"), str)):
+        raise LLMError("the reading requires a boolean stands_alone and string about/why fields")
+    read = {"about": answer["about"].strip(), "stands_alone": answer["stands_alone"], "why": answer["why"].strip(),
+            "needs_book": [], "kind": None, "anchor": None, "path": "", "path_words": [], "wide": None,
+            "ladder": None, "mirror": None, "joke_hidden": None, "sibling": None}
+    if not (read["about"] if read["stands_alone"] else read["why"]):
+        raise LLMError("the reading requires a summary when the line stands alone or a reason when it does not")
+    if not read["stands_alone"]:
+        return read
+    kind, anchor = answer.get("kind"), answer.get("anchor")
+    if ("kind" not in answer or "anchor" not in answer or isinstance(kind, bool)
+            or not (kind is None or isinstance(kind, int)) or not (anchor is None or isinstance(anchor, str))):
+        raise LLMError("the reading requires a kind (a number or null) and a main word (a word or null)")
+    if kind is not None and kind not in KINDS:
+        return None
+    read.update(needs_book=_words(answer.get("needs_book"), "needs_book"), kind=kind,
+                anchor=(anchor or "").strip() or None)
+    if read["anchor"] is None:
+        return read
+    ladder, sibling = answer.get("ladder"), answer.get("sibling")
+    if (not isinstance(answer.get("path"), str)
+            or any(type(answer.get(k)) is not bool for k in ("wide", "mirror", "joke_hidden"))
+            or answer["wide"] and "ladder" not in answer
+            or not (ladder is None or isinstance(ladder, dict)
+                    and all(ladder.get(k) is None or isinstance(ladder.get(k), str) for k in LADDER))
+            or not (sibling is None or isinstance(sibling, str))):
+        raise LLMError("the reading of a main word requires a path, the wide/mirror/joke_hidden verdicts, "
+                       "and a ladder when the word is one of a wide kind")
+    read.update(path=answer["path"].strip(), path_words=_words(answer.get("path_words"), "path_words"),
+                wide=answer["wide"], mirror=answer["mirror"], joke_hidden=answer["joke_hidden"],
+                ladder=None if ladder is None else {k: (ladder.get(k) or "").strip() or None for k in LADDER},
+                sibling=(sibling or "").strip() or None)
+    return read
+
+
+def _words(value, field: str) -> list[str]:
+    """A list of words in an answer (missing = none), stripped, the empty ones dropped."""
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(isinstance(w, str) for w in value):
+        raise LLMError(f"the reading's {field} must be a list of words")
+    return [w.strip() for w in value if w.strip()]
 
 
 def widely_known(claude: Claude, sentence: str, author: str, work: str, *, lang: str) -> dict:

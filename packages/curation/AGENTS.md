@@ -27,7 +27,8 @@
                              elision / the English article, band candidates (stdlib, tested)
       parse.py               spaCy adapter (fr_core_news_md, en_core_web_md) -> rules.Token
       llm.py                 the questions asked of Claude + JSON parsing; TASTE is read whole from
-                             the `taste` skill, the practical laws from `find-sentences`, at run time
+                             the `taste` skill, the practical laws from `find-sentences`, at run time;
+                             the taste's seven kinds by number (`KINDS`)
       shelf.py               LANGS, the shelves, their index, and what a language's archive already
                              holds (read off the PUBLISH LEDGER, packages/generation/published.jsonl)
       _paths.py              path wiring (generation + benchmark scripts on sys.path), shelf_dir(lang)
@@ -36,8 +37,9 @@
                              index.json (state), quotes/<file>.txt (each book's quoted lines, per
                              shelf_quotes)
     runs/                    GITIGNORED: one markdown log per run (every rejection names its rule)
-    bank/<lang>.jsonl        GITIGNORED: banked lines, finished but for the ranking (`--bank`; scripts/bank.py),
-    bank/<lang>.md           read here (SPOILERS); `--finish <id>` makes one a candidate day
+    bank/<lang>.jsonl        GITIGNORED: banked lines, read and finished but for the ranking, and the lines
+                             set aside with why (`--bank`, `--rebank`; scripts/bank.py),
+    bank/<lang>.md           read here by kind (SPOILERS); `--finish <id>` makes one a candidate day
     tests/                   pytest, dependency-free (rules, sentences, epub, lyrics); the LLM never runs
     pyproject.toml, uv.lock  claude-agent-sdk, spacy + fr_core_news_md + en_core_web_md (URL wheels),
                              gensim/numpy, lyricsgenius
@@ -81,29 +83,54 @@ pnpm curate [--lang fr|en] --bank N [--work <file>] [--blind]
 #   BANKS N works (the whole shelf, as many as asked) instead of making a day (user-decided
 #   2026-10-18: lines curated ahead, the user picks the ones to finish). Each work is mined,
 #   quote-tested, through the judge's sentence filter and shortlisted as a run does; EVERY
-#   line of its shortlist (SHORTLIST, 20) is finished as a day but for the ranking: its
-#   three words chosen and checked (`curate.prepare`), then its START WORDS chosen on the
-#   words' FREE static maps by the run's own start step and checks (`curate.bank_line` on an
-#   in-memory draft, `static_draft`) — and appended to bank/<lang>.jsonl with what it was
-#   measured at. Nothing is ranked, compared or written as a puzzle. bank/<lang>.md
-#   (`bank.render`, SPOILERS) lists every banked line by work with its id, its hidden words
-#   and its starts. The works keep the calendar's shape (`curate.bank_pick`: one song per
-#   MUSIC_EVERY_DAYS works, an artist's next song once ARTIST_COOLDOWN_DAYS more works are
-#   banked, authors spread; songs held back only until the books run out), with no artist
-#   cooldown; a banked work is never mined again, by a bank or a run (a work that banked no
-#   line stays as a marker entry). Processes may run side by side, a normal run included:
-#   each CLAIMS its work under the bank's lock (bank/<lang>.claims, `<file>\t<pid>`; a claim
-#   whose process is gone no longer counts), re-reading the index before each pick; a
-#   banking process logs to its own runs/<stamp>-bank-<pid>.md and releases a work whose
-#   banking failed (its detail kept with the spoilers; two failures in a row stop it).
-#   Exit 2 when nothing was banked.
+#   line of its shortlist (SHORTLIST, 20) is READ (below) and finished as a day but for the
+#   ranking: its three words chosen and checked (`curate.prepare`), then its START WORDS
+#   chosen on the words' FREE static maps by the run's own start step and checks
+#   (`curate.bank_line` on an in-memory draft, `static_draft`) — and appended to
+#   bank/<lang>.jsonl with its read, the taste it was read under (`bank.taste_stamp`: the
+#   taste and find-sentences skills, hashed) and what it was measured at. A line SET ASIDE
+#   before its words were chosen (by its read, or its giveaway) is appended too, with why
+#   (`dropped`), its read and the giveaways paid (`bank.aside`): it counts as mined and is
+#   never finished. Nothing is ranked, compared or written as a puzzle. bank/<lang>.md
+#   (`bank.render`, SPOILERS) lists the lines kept BY KIND — the taste's seven in order, then
+#   No kind — each with its id, its source, its main word and the visible words its path
+#   runs through (FLAGGED when the trio it was banked with does not hide it), the sibling
+#   warning, its hidden words (the main word in bold) and its starts; then the lines set
+#   aside, each with why; then the lines not read yet. The works keep the calendar's shape
+#   (`curate.bank_pick`: one song per MUSIC_EVERY_DAYS works, an artist's next song once
+#   ARTIST_COOLDOWN_DAYS more works are banked, authors spread; songs held back only until
+#   the books run out), with no artist cooldown; a banked work is never mined again, by a
+#   bank or a run (a work that banked no line stays as a marker entry). Processes may run
+#   side by side, a normal run included: each CLAIMS its work under the bank's lock
+#   (bank/<lang>.claims, `<file>\t<pid>`; a claim whose process is gone no longer counts),
+#   re-reading the index before each pick; a banking process logs to its own
+#   runs/<stamp>-bank-<pid>.md and releases a work whose banking failed (its detail kept
+#   with the spoilers; two failures in a row stop it). Exit 2 when nothing was banked.
 pnpm curate [--lang fr|en] --finish <id> [--blind]
 #   A banked line the user chose, made ONE candidate day: read against today's archive
-#   (`bank.restore`: a published work or sentence, or a word back in its secret cooldown,
-#   is refused), then built as a run builds its chosen line (`curate.build_day`: page, the
-#   ranking, start words and their checks). The start step is shown each banked start with
-#   where it now stands on the ranked map (`llm.PRIOR_RULE`): kept while still a candidate
-#   of the band, unless the ranked map offers a better one. Never publishes.
+#   (`bank.restore`: a line set aside, a published work or sentence, or a word back in its
+#   secret cooldown, is refused), then built as a run builds its chosen line
+#   (`curate.build_day`: page, the ranking, start words and their checks). The start step is
+#   shown each banked start with where it now stands on the ranked map (`llm.PRIOR_RULE`):
+#   kept while still a candidate of the band, unless the ranked map offers a better one.
+#   Never publishes.
+pnpm curate [--lang fr|en] --rebank [--work <file>] [--blind]
+#   READS the bank's lines again under today's taste, in place (`curate.rebank_works`): every
+#   banked line (its words chosen) never read, or read under another taste stamp
+#   (`bank.stale`). Never reads the shelf, never asks the judge (no JEV_API_KEY needed: the
+#   giveaways are the ones stored at banking), never ranks, never runs gen_phrase. Each line
+#   is parsed again and its words taken against today's archive (`bank.pool`: a word back in
+#   its cooldown leaves, a word never judged is never offered; a sentence published since,
+#   or fewer than TRIO words left, sets it aside with no call), then READ (`curate.read`, one
+#   call): it gains its read and the stamp, or is set aside with why — its words, starts,
+#   giveaways and measures kept either way, so a later rebank reads it again with no judge,
+#   and a line the read keeps is finished with the words it was banked with. A line set
+#   aside before its words were chosen is not read again: the rebank chooses no words. Works
+#   are claimed as `--bank` claims them (processes side by side), each work's entries
+#   rewritten in place under the lock (`bank.replace_work`: a temporary file renamed over the
+#   bank, every other work untouched and in order), the page rendered after each. A work
+#   whose reading fails is released; two failures in a row stop the process. Resumable and
+#   idempotent: exit 2 when nothing was left to read. Copy bank/<lang>.jsonl first (gitignored).
 pnpm shelf:lyrics [--lang fr] [--artists shelf/<lang>/artists.txt] [--max-songs N]
 #   The music source (#262): for each artist of the user's hand-written list, the songs
 #   from Genius most viewed first, minus the top FAMOUS_SHARE (the singles), minus what
@@ -162,10 +189,12 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   for an order, never a refusal). `curate.day` then FINISHES the shortlist `CANDIDATES`
   (10) lines at a time, `WORKERS` (5) in parallel (`curate.candidate`; the subscription's
   conflicting credentials are removed once around the whole block, `llm.subscription_only`,
-  since each call's own removal would be restored under the others): the line must STAND
-  ALONE (below; a refusal ends the line), `llm.choose_words` names its three words in the
-  order players should find them, from the words code allows (`rules.initial_candidates`),
-  each with what in the line leads toward it — or declines the line; a pick that is not
+  since each call's own removal would be restored under the others): the line is READ
+  (below; a line the read sets aside goes no further and pays no judge), the judge's
+  giveaway is paid for the words it can hide (the floor, below), then `llm.choose_words`
+  names its three words in the order players should find them, from the words code allows
+  (`rules.initial_candidates`, the floor and the read applied), each with what in the line
+  leads toward it — or declines the line; a pick that is not
   three distinct words of the line that can be hidden is told back, `DAY_ROUNDS` (3)
   times; then every check before the ranking runs, swaps included (`curate.check_trio`,
   below). `llm.choose_among` then COMPARES the lines that survived, each as the player
@@ -181,8 +210,9 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   word; the words that could stand there and the one most readers would write) — becomes
   a plain note (`rules.reading`: whether most readers would write the secret itself,
   twins folded — `is_twin`, `TWIN_RANK` 3 — a rare word past `PLAIN_WORD_RANK` never
-  said to be expected); the judge's giveaway score (`curate.giveaway_scores`, judged for
-  every word that can be hidden BEFORE the choice — the floor, below — with its real-play
+  said to be expected); the judge's giveaway score (`curate.giveaway_scores`, judged once
+  the line is read, BEFORE the choice, for every word that can be hidden but those the read
+  says need the work — the floor, below — with its real-play
   meaning: at `GIVEAWAY_MAX` 0.45 and above, a third of the players typed the hole within
   three guesses; under `GIVEAWAY_HARD` 0.20 the hole plays hard, noted as one the line
   gives little of — the start step's note, never a nearer band, below; scores in the notes are cut to two places, never rounded
@@ -277,13 +307,28 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   `contextual_rank.py`). Why: under it players never reason their way to the word — English
   « bloated » and « rapacity » beat a native speaker — and no loved day's hole sits under
   it. The words under it are logged and never shown to the model. A line with fewer than
-  `TRIO` such words is skipped.
-- **The sentence must STAND ALONE, solved (user-decided 2026-09-18, on the Svevo day:
-  « c'étaient donc des nerfs parfaits » meant nothing even solved — the page is shown
-  after the solve, never during play).** One call per CHOSEN line (`llm.stands_alone`, the
-  rule read from the find-sentences skill's `## Stands alone` section, the REPLY
-  included): the model says in one line what the sentence is about from the sentence
-  alone and whether it stands; code refuses on a refusal and the choice is told back.
+  `TRIO` such words is set aside, and so is one whose MAIN word (the read's, below) sits
+  under it: no clue (`curate.floor`).
+- **Every shortlisted line is READ before anything is paid for (user-decided 2026-10-20:
+  the seven kinds of line, the main word first).** One call per line (`llm.read_line`, the
+  taste and the find-sentences skill's `## Stands alone` read whole, the words code allows
+  shown): whether the line stands alone, SOLVED, without its page (the Svevo day:
+  « c'étaient donc des nerfs parfaits » meant nothing even solved), which of its words need
+  the work to mean anything (they leave the pool, never judged), its KIND (`llm.KINDS`, the
+  taste's `### <n>. <name>` headings) or none, its MAIN word — the word the line is about —
+  with the 1 to 3 visible words its path runs through, the main word's narrowing ladder
+  when it is one of a wide kind (the slot's kind, a smaller family a start can name, the
+  first member or the ranks climbing to it), whether it is the partner of a visible word,
+  whether hiding it hides the joke, one sibling making the same joke. The verdicts are the
+  model's; code applies them in order (`curate.strike`) and SETS THE LINE ASIDE: it does not
+  stand alone; it names no main word; its main word needs the work; the main word is one of
+  a wide kind with a ladder step missing (a lottery); it is a mirror; the joke reads with it
+  hidden. Code TELLS BACK (`curate.told_back`) a kind none of the seven, a main word the
+  line cannot hide, a path not through 1 to 3 of the line's words left in sight (no stop
+  word, never the main word), `READ_ROUNDS` (3) asks in all; a malformed answer raises. A
+  line with NO KIND is kept. The sibling is a warning only. Only then is the giveaway paid
+  (the floor, above); then `llm.choose_words` picks the three words, which the main word
+  does not bind: the bank flags a trio that does not hide it.
 - **The FAMOUS LINE is a QUOTATION test, never a memory test (user-decided 2026-09-08,
   replacing the two-probe MEMORIZATION test — author + completion from the first half).**
   The model has memorised every line of a canonical book, so what it remembers says
@@ -305,10 +350,13 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   opinion — would a reader who has not read the book know this line — is logged as an
   ANNOTATION (`llm.widely_known`), never a strike.
 - **Taste has ONE home, the `taste` skill, read WHOLE by every prompt that chooses** (the
-  shortlist, the day, the starts); the `find-sentences` skill keeps the practical laws
-  the prompts quote (`## The quotation rule`, `## Stands alone`, `## The start word`,
-  `## The page`); a check that judges ONE rule of the taste quotes that section of it
-  (`llm.taste_section`: the start-idea check). Edit the skills, never a prompt copy.
+  shortlist, the read, the day, the starts); the `find-sentences` skill keeps the practical
+  laws the prompts quote (`## The quotation rule`, `## Stands alone`, `## The trio rules`,
+  `## The start word`, `## The page`); a check that judges ONE rule of the taste quotes that
+  section of it (`llm.taste_section`: the start-idea check), so the taste's headings are
+  unique. Its seven kinds are named once in code, by number (`llm.KINDS`; a test ties them
+  to the headings). Edit the skills, never a prompt copy: an edit changes the taste stamp,
+  and `--rebank` reads every banked line again.
 - **The transport is the benchmark's** (`llm_play._agent_sdk_turn`, the paid-Claude.ai
   guard, the conflict-env scrub): one fresh conversation per question, model
   `claude-opus-5-5`, adaptive thinking, effort `high` (set explicitly: Opus 5.5 defaults to
