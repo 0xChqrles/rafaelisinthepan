@@ -278,8 +278,8 @@ Read it in this order:
    the kind the slot shapes; the smaller family a start can name; and whether the word is the
    first member players name in that family, or the ranks climb to it. Null for any step that
    is missing.
-5. By *No mirror*, its exception included: is it the first word players would type as the
-   partner of a visible word?
+5. Does *No mirror* refuse the main word? Its exception applied: a word that lands a second
+   meaning is not refused.
 6. By *The blank read*: with only the main word hidden, is the joke hidden too?
 7. One sibling that makes the same joke, if any (a warning only).
 
@@ -429,8 +429,8 @@ The words that can be hidden with it, each with the start words its band offers 
 Choose TWO of these words AGAINST the main word, by the taste's *The three words* — not too
 close, not too easy, not too hard, a good start word in its band, balancing the line, fun to
 find — and by {rule}. For each: its path in one line, and the 1 to 3 words of the line it runs
-through (single words of the line, never the word itself); by *No mirror*, whether it is the
-first word players would type as the partner of a visible word; by *The narrowing ladder*,
+through (single words of the line, never the word itself); whether *No mirror* refuses it,
+its exception applied; by *The narrowing ladder*,
 whether it is one member of a wide kind and, if so, its ladder (null for a missing step); and
 what it does when it lands. Decline when no two of these words go with this main word.
 
