@@ -249,12 +249,13 @@ def test_the_start_step_reads_each_hole_s_role_path_and_ladder_and_its_kind_s_ru
     assert "Hole « cat », the MAIN word (slot: s)\n  its path: a pet (through « the »)\n  measured: n" in prompt
     assert "Hole « mat », one of the two others" in prompt
     assert "one of a wide kind: a surface › floor coverings › —" in prompt
-    assert "The main word's start comes first, by the *Start words* of its kind, kind 2, *The build-up and the drop*" \
-        in prompt
-    assert "a start whose FIRST idea names its ladder's smaller family, never the whole kind" in prompt
+    # the taste, read whole, holds the rule: the prompt points at it and copies none of it
+    assert ("Choose by the taste's *The start words*, the main word's start by the *Start words* of kind 2, "
+            "*The build-up and the drop*.") in prompt
+    assert "smaller family" not in prompt and "neither handed over" not in prompt
     none = _Capture()
     llm.pick_starts(none, "The [cat].", [_HOLE], None, lang="en")
-    assert "by the taste's *The start words* (the line has no kind)" in none.prompts[0]
+    assert "the main word's start by *Lines that fit no kind*." in none.prompts[0]
 
 
 def test_the_companion_question_shows_the_main_word_its_kind_the_bands_and_what_was_refused(monkeypatch):

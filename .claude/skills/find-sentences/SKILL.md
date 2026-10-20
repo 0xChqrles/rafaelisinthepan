@@ -66,8 +66,10 @@ The practical rules:
 - Exactly three distinct words: the MAIN word, the one the line is about, chosen first;
   then two words chosen against it (the `taste` skill's *The three words*).
 - A word repeated in the sentence makes one hole per occurrence sharing one rank map: a
-  feature (the Marx *vermine* day), not a bug — unless one of its frames alone gives it
-  away, and then it counts as handed.
+  feature (the Marx *vermine* day), not a bug. Each frame is read on its own: when the few
+  words right around one of its holes write it in, the word is refused (the `taste`
+  skill's *Per trio*); when the rest of the line gives it away from one frame, it counts as
+  handed.
 - The start words must leave the displayed sentence valid in its language (below).
 
 ## The start word

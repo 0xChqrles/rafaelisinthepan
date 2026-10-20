@@ -372,13 +372,14 @@ def adjacent(tokens: list[Token], hidden: set[int]) -> set[frozenset[str]]:
 @dataclass(frozen=True)
 class HoleFacts:
     """What code knows of one hidden word, measured with the trio hidden around it, on the
-    map at hand: whether most readers write it in (`reader_writes`); the fragment its
-    neighbours write it in from, when they do (`neighbours`); the rank of the reader's word
-    on its map when at or under HANDED_RANK (`map_handed`); whether players don't say it
-    (`unsaid`) or it is BURIED; the reader's words when none is on its map (`unmapped`);
-    whether its band holds no start (`band_empty`); the slugs of the words its path runs
-    through (`path_words`); and the model's verdicts on a word chosen against the main
-    word — the partner of a visible word (`mirror`), the step its ladder misses (`lottery`)."""
+    map at hand: whether most readers write it in (`reader_writes`); the fragment around one
+    of its holes whose words write it in, when one does (`neighbours`); the rank of the
+    reader's word on its map when at or under HANDED_RANK (`map_handed`); whether players
+    don't say it (`unsaid`) or it is BURIED; the reader's words when none is on its map
+    (`unmapped`); whether its band holds no start (`band_empty`); the slugs of the words its
+    path runs through (`path_words`); and the model's verdicts on a word chosen against the
+    main word — the partner of a visible word (`mirror`), the step its ladder misses
+    (`lottery`)."""
     word: str
     slug: str
     path_words: frozenset[str] = frozenset()

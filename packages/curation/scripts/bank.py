@@ -231,17 +231,18 @@ def read_of(r: dict) -> dict:
 
 
 def _measures(m) -> dict:
-    return {"readings": m.readings, "says": m.says, "crowds": m.crowds, "neighbours": m.neighbours}
+    return {"readings": m.readings, "says": m.says, "crowds": m.crowds, "frames": m.frames}
 
 
 def measures_of(e: dict, measures_cls):
     """What a banked line's words were measured at, as the curator holds it (`curate.Measures`):
-    a measure is never asked twice, and a neighbours answer keeps the fragment it was asked on."""
+    a measure is never asked twice, and each hole's neighbours answer keeps the fragment it
+    was asked on."""
     m = e.get("measures") or {}
     return measures_cls(readings={k: tuple(v) for k, v in m.get("readings", {}).items()},
                         says={k: tuple(v) for k, v in m.get("says", {}).items()},
                         crowds=dict(m.get("crowds", {})),
-                        neighbours={k: tuple(v) for k, v in m.get("neighbours", {}).items()})
+                        frames={k: [tuple(f) for f in v] for k, v in m.get("frames", {}).items()})
 
 
 def book_of(e: dict) -> dict:

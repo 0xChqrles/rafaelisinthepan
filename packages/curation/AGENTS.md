@@ -129,22 +129,25 @@ pnpm curate [--lang fr|en] --rebank [--work <file>] [--blind]
 #   under this one and kept with words not chosen the main word first (`bank.stale`). Never
 #   reads the shelf, never asks the judge (no JEV_API_KEY needed: the giveaways and the
 #   measures are the ones stored at banking), never ranks, never runs gen_phrase. Each line is
-#   parsed again, a sentence published since, or fewer than TRIO words to hide among those
-#   judged at banking, set aside with no call; else READ (`curate.read`, one call) unless its
-#   read is today's, shown every word judged at banking at or above the floor (`bank.pool`),
-#   those in their cooldown INCLUDED: the read is a lasting verdict on the line, the cooldown
-#   a fact of the day. Then its words are CHOSEN again, the main word first, as a run chooses
-#   them (`curate.choose_trio`), from the words its read leaves and out of their cooldown, and
+#   parsed again, its sentence or its work published since (`--finish` refuses either), or
+#   fewer than TRIO words to hide among those judged at banking, set aside with no call; else
+#   READ (`curate.read`, one call) unless its read is today's, shown every word judged at
+#   banking at or above the floor (`bank.pool`), those in their cooldown INCLUDED: the read
+#   is a lasting verdict on the line, the cooldown a fact of the day. Then its words are
+#   CHOSEN again, the main word first, as a run chooses them (`curate.anchor_gate`,
+#   `curate.choose_others`), from the words its read leaves and out of their cooldown, and
 #   its start words on the free static maps (`curate.bank_line`): no measure stored is asked
-#   again, a neighbours answer only when its fragment changed. The line gains its read, the
-#   stamp (taken before the reads: a taste edited meanwhile takes them again) and its new
-#   words, or is set aside with why — its read, giveaways and measures kept either way, so a
-#   later rebank takes it again with no judge; it keeps when it was banked. A line with no
-#   usable reading (`READ_ROUNDS` told back), or whose main word (or enough of its words to
-#   leave it short) is in its cooldown, is left as it was, for a later rebank. A line set
-#   aside before its giveaway was paid is never taken again: nothing it could hide was
-#   judged. Works are claimed as `--bank` claims them (processes side by side), each work's
-#   entries rewritten in place under the lock (`bank.replace_work`: a temporary file renamed
+#   again, a hole's neighbours answer only when its fragment changed. The line gains its
+#   read, the stamp (taken before the reads: a taste edited meanwhile takes them again) and
+#   its new words, or is set aside with why — its read, giveaways and measures kept either
+#   way, so a later rebank takes it again with no judge; it keeps when it was banked. A line
+#   with no usable reading (`READ_ROUNDS` told back), or whose main word (or enough of its
+#   words to leave it short) is in its cooldown, or set aside after its main word passed
+#   while a word in its cooldown was left out (the words against it were chosen without
+#   it), is left as it was, for a later rebank. A line set aside before its giveaway was paid
+#   is never taken again: nothing it could hide was judged. Works are claimed as `--bank`
+#   claims them (processes side by side), each work's entries rewritten in place under the
+#   lock (`bank.replace_work`: a temporary file renamed
 #   over the bank, every other work untouched and in order), the page rendered after each,
 #   under the lock. A work whose rebanking fails is released; two failures in a row stop the
 #   process. Resumable and idempotent: exit 2 when nothing was left to take. Copy
@@ -172,14 +175,14 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
 
 - **TASTE CHOOSES, CODE STATES FACTS (user-decided 2026-09-24).** Which line, which three
   words and which start words make a day is the MODEL's call, read off the `taste` skill
-  (the one home of taste: the voice, the line, what is built for the game, the hidden
-  words, the start words, difficulty). Code keeps only FACTS — which words can be hidden,
-  the cooldowns, the famous line, valid grammar, the puzzle format — and turns everything
-  it MEASURES into notes the model reads; nothing measured refuses a word but the facts
-  `rules.trio_faults` names, by role (below): the giveaway FLOOR, the BURIED, NEIGHBOURS and
-  UNMAPPED rules and an empty start band on every hole, the main word handed, a word right
-  beside the main word — and the model's own verdicts on a word it chose (a mirror, a
-  lottery). Why: replayed
+  (the one home of taste: the voice, the line, the seven kinds and the rules for every
+  kind, the three words, the start words, difficulty). Code keeps only FACTS — which words
+  can be hidden, the cooldowns, the famous line, valid grammar, the puzzle format — and
+  turns everything it MEASURES into notes the model reads; nothing measured refuses a word
+  but the giveaway FLOOR (`curate.floor`) and the facts `rules.trio_faults` names, by role
+  (below): the BURIED, NEIGHBOURS and UNMAPPED rules and an empty start band on every hole,
+  the main word handed, a word right beside the main word — and the model's own verdicts on
+  a word it chose (a mirror, a lottery). Why: replayed
   on the 16 days the user loved, the code rules it replaces would have rejected three of
   the lines before any model saw them (`MIN_CANDIDATES`: JeanJass, NeS, Rounhaa) and five
   of the trios (the pair rules: « éleveur de [pigeons] », « le cafard de l'[homme] »),
@@ -240,17 +243,19 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   visible word, whether it is one of a wide kind and its ladder, what it does when it lands;
   or it declines (the line is set aside). An answer that is not two distinct words offered,
   each with such a path (`curate.path_off`), is told back. Each word is then measured with
-  the three hidden (`curate.measure`) and the facts read (`rules.trio_faults`, by role): a
-  fact against the main word sets the line aside; a fact against one of the two others —
-  buried, unmapped, its neighbours writing it in (a VETO on every hole, never the day's one
-  handed word: user-decided 2026-10-13 and 2026-10-20), a mirror, a lottery (a wide word
-  whose ladder misses a step, on every hole: user-decided 2026-10-20), no start in its band,
-  right beside the main word with nothing between (`rules.adjacent`: « [folk] [dancing] »;
-  « [éleveur] de [pigeons] » passes) — refuses it: it leaves the words to choose from and the
-  next ask is told why (`curate.refuse`); what holds against the three together — two or
-  more words players don't say, two or more the line hands over (readers, or the map), a
-  word every word of whose path is hidden (a locked pair, or the main word's path hidden by
-  a word chosen against it), two others side by side — is told back, refusing none.
+  the three hidden (`curate.measure`) and the facts read (`rules.trio_faults`, by role). The
+  main word passed alone: all that can now hold against it is its neighbours, cut by a word
+  hidden among them, writing it in — that word is refused, never the main word nor the line.
+  A fact against one of the two others — buried, unmapped, its neighbours writing it in (a
+  VETO on every hole, never the day's one handed word: user-decided 2026-10-13 and
+  2026-10-20), a mirror, a lottery (a wide word whose ladder misses a step, on every hole:
+  user-decided 2026-10-20), no start in its band, right beside the main word with nothing
+  between (`rules.adjacent`: « [folk] [dancing] »; « [éleveur] de [pigeons] » passes) —
+  refuses it: it leaves the words to choose from and the next ask is told why
+  (`curate.refuse`); what holds against the three together — two or more words players
+  don't say, two or more the line hands over (readers, or the map), a word every word of
+  whose path is hidden (a locked pair, or the main word's path hidden by a word chosen
+  against it), two others side by side — is told back, refusing none.
   `COMPANION_ASKS` (3) asks per line in all, format answers and the bank's start step
   included; spent, the line is set aside. There is no review of a finished trio: asked of
   every trio, the model swapped on 77% of played days, loved ones included, and picked the
@@ -299,8 +304,9 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   payés »): the words right around the hole — up to `NEIGHBOURS` (3) each side, never
   across punctuation nor another hole (`rules.neighbourhood`; the other hidden words cut the
   fragment, and a fragment that changes is asked again) — shown alone, the model writes the
-  first word they call for (`llm.neighbours_complete`); when that is the hidden word
-  (`rules.same_word`) the neighbours hand it over and it is refused the same way, on every
+  first word they call for (`llm.neighbours_complete`), around EACH hole of a repeated word
+  (`Measures.frames`, one frame per occurrence); when that is the hidden word around any of
+  them (`rules.same_word`) the neighbours hand it over and it is refused the same way, on every
   hole, never counted as the day's one handed word. Its first word is the measure, never a
   share: told the word or not, the model hedges (« vote » 0.3, « arrêt ___ » → « cardiaque »
   0.3), and Jev's fixed-expression question scored « vote » under « sacrifices », a hole

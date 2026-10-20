@@ -347,8 +347,8 @@ nouns does not.
 - **2026-08-17 fr, Alpha Wann (liked; the user's favourite):** « une michetonneuse, un mec
   [fauché], ça va pas ensemble, top model et clic-clac, les [rolex], les flik flak, l'alcool
   dans l'sang et les routes en [zigzag] »
-- **2026-08-11 fr, NeS (liked; « signes » would be refused now, *The narrowing
-  ladder*):** « j'aime tes "je t'aime" sur les [post-it], tes vrais et tes faux [cils], les
+- **2026-08-11 fr, NeS (liked; « signes » is a lottery, *The narrowing ladder*):**
+  « j'aime tes "je t'aime" sur les [post-it], tes vrais et tes faux [cils], les
   mauvais et les bons [signes] »
 - **2026-10-09 fr, Laferrière (liked):** « la plupart des [écrivains] n'aiment pas [lire],
   comme la plupart des [marins] ne savent pas nager. »
@@ -422,8 +422,8 @@ these cues only find candidates. The last-noun question is what picks one.
 - **2026-08-05 fr, Darwin (liked):** « peu de personnes s’imaginent combien il faut de
   capacités [naturelles], combien il faut d’années de pratique pour faire un bon [éleveur]
   de [pigeons] »
-- **2026-09-07 fr, Fabre (liked; « humain » would be refused now: « le savoir ___ » writes
-  it in, *Per trio*):** « le savoir [humain] sera rayé des [archives] du monde avant que
+- **2026-09-07 fr, Fabre (liked; « humain » is written in by « le savoir ___ », *Per
+  trio*):** « le savoir [humain] sera rayé des [archives] du monde avant que
   nous ayons le dernier mot d’un [moucheron]. »
 - **2026-10-09 en, Parkinson (liked):** « heaven forbid that [students] should cease to
   read books on the science of public or business [administration] — provided only that
@@ -721,10 +721,10 @@ Such a line can still make a good day, but rarely. Three of the 20 liked days fi
   tries). It was loved for the line read whole.
 
 They worked because the line was very strong, and nothing in them is a recipe: the rules
-above would refuse some of their words now (« bureau » and « retourne » are lotteries;
-« poche » is written in by « dans sa ___ une montre »). Take a line with no
-kind only when, read aloud, it beats the built candidates side by side. Expect such a day
-to be easy, or to rest on its start words.
+above refuse some of their words (« bureau » and « retourne » are lotteries; « poche » is
+written in by « dans sa ___ une montre »). Take a line with no kind only when, read aloud,
+it beats the built candidates side by side. Expect such a day to be easy, or to rest on its
+start words.
 
 ## The three words: the main word, then two against it
 

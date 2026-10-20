@@ -690,13 +690,10 @@ taste; when it is no longer a candidate, choose another."""
 
 
 def _start_rule(kind: int | None) -> str:
-    """Where each hole's start comes from, by its role and the line's kind (the taste's *The
-    start words*)."""
-    main = (f"the *Start words* of its kind, kind {kind}, *{KINDS[kind]}*" if kind
-            else "the taste's *The start words* (the line has no kind)")
-    return (f"The main word's start comes first, by {main}. Then the two others' starts, so the day is "
-            "neither handed over nor out of reach. For a word of a wide kind, main or not, a start whose FIRST "
-            "idea names its ladder's smaller family, never the whole kind.")
+    """Which part of the taste the starts are chosen by — the taste is in the prompt, whole,
+    and this adds nothing to it: its *The start words*, the main word's by the line's kind."""
+    rule = f"the *Start words* of kind {kind}, *{KINDS[kind]}*" if kind else "*Lines that fit no kind*"
+    return f"Choose by the taste's *The start words*, the main word's start by {rule}."
 
 
 def _hole_block(h: dict) -> str:

@@ -249,7 +249,7 @@ def _day_of(words=("chat", "chien", "pierre"), *, sentence="un chat un chien une
     m = line["measures"]
     for w in words:
         m.readings[w] = ((guesses or {}).get(w, []), (expected or {}).get(w))
-        m.says[w], m.crowds[w], m.neighbours[w] = (0.8, None), None, ("un ___", "autre")
+        m.says[w], m.crowds[w], m.frames[w] = (0.8, None), None, [("un ___", "autre")]
     checked = curate.Checked(trio, {w: {"line": f"to {w}", "words": ["un"]} for w in words}, ladders or {},
                              {w: f"n-{w}" for w in words}, {w: [] for w in words})
     return line, checked
@@ -907,6 +907,37 @@ def test_a_fact_against_another_word_refuses_it_and_the_same_main_word_is_asked_
     assert offered[1]["refused"][0].startswith("« chat »: ") and why in offered[1]["refused"][0]
     assert "chat" not in offered[1]["pool"]                     # it left the words to choose from
     assert any(entry.startswith("- « chat » refused: ") for entry in log)
+
+
+def test_the_neighbours_of_each_hole_of_a_repeated_word_are_asked(monkeypatch):
+    # a repeated word is one hole per occurrence: the words right around ANY of them writing
+    # it in refuse it (« droit de ___ is no fun when it's vote », user-decided 2026-10-13)
+    words = [("le", "DET", True), ("vote", "NOUN", False), ("des", "ADP", True), ("jeunes", "NOUN", False),
+             ("comme", "ADP", True), ("le", "DET", True), ("droit", "NOUN", False), ("de", "ADP", True),
+             ("vote", "NOUN", False), (".", "PUNCT", False)]
+    tokens = [Token(i, w, w, pos, "" if pos == "PUNCT" else w, stop) for i, (w, pos, stop) in enumerate(words)]
+    allowed = [t for t in tokens if t.slug in ("vote", "jeunes", "droit")]
+    line = curate.new_line("Le vote des jeunes comme le droit de vote.", tokens, allowed,
+                           {t.slug: 0.3 for t in allowed})
+    line["read"] = _a_read("vote", ("jeunes",))
+    asked = _measured(monkeypatch, first=lambda f: "vote" if f == "le droit de ___" else "autre")
+    monkeypatch.setattr(curate.llm, "choose_companions", lambda *_a, **_k: pytest.fail("the main word is never swapped"))
+    checked, line, _log = _choose(line)
+    assert asked["neighbours"] == ["le ___ des jeunes comme", "le droit de ___"]
+    assert checked is None and line["dropped"] == ("the main word « vote »: the words right around it write it in "
+                                                   "(« le droit de ___ »): no search")
+
+
+def test_a_word_that_cuts_the_main_word_s_neighbours_into_writing_it_is_refused_not_the_line(monkeypatch):
+    # alone, « dort sur la ___ froide du jardin » writes nothing; « jardin » hidden too, « dort
+    # sur la ___ froide du » writes « pierre »: the fault is « jardin »'s, the main word stays
+    _measured(monkeypatch, first=lambda f: "pierre" if f == "dort sur la ___ froide du" else "autre")
+    offered = _against(monkeypatch, _two(), {"words": None, "why": "nothing else"})
+    checked, line, _log = _choose()
+    assert offered[1]["refused"] == ["« jardin »: hidden too, it leaves the words right around the main word "
+                                     "« pierre » writing it in (« dort sur la ___ froide du »)"]
+    assert offered[1]["pool"] == ["chat", "dort", "froide"]          # « chat », out of its reach, stays
+    assert checked is None and line["dropped"] == "no two words go with the main word: nothing else"
 
 
 def test_a_word_right_beside_the_main_word_is_refused_and_two_others_side_by_side_are_told(monkeypatch):

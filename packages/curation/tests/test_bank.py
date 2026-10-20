@@ -45,7 +45,7 @@ def _finished():
     allowed = [t for t in tokens if t.slug in _GIVEN]
     line = {**curate.new_line(SENTENCE, tokens, allowed, dict(_GIVEN)), "read": _READ}
     line["measures"] = curate.Measures(readings={"old": (["young", "tired"], "young")}, says={"old": (0.8, None)},
-                                       crowds={"old": 0.1}, neighbours={"old": ("the ___", "man")})
+                                       crowds={"old": 0.1}, frames={"old": [("the ___", "man")]})
     of = {t.slug: t for t in allowed}
     checked = curate.Checked([of["stove"], of["old"], of["sleeps"]],
                              {"stove": {"line": "where a dog sleeps warm", "words": ["dog"]},
@@ -184,7 +184,7 @@ def test_a_banked_line_keeps_each_word_s_role_path_facts_and_start(fake_parse):
         ("old", "other", "a dog's age", ["dog"], None, [], "young", 120),
         ("sleeps", "other", "what it does", ["dog"], _LADDER, ["one of a wide kind"], "naps", 150)]
     assert e["measures"] == {"readings": {"old": (["young", "tired"], "young")}, "says": {"old": (0.8, None)},
-                             "crowds": {"old": 0.1}, "neighbours": {"old": ("the ___", "man")}}
+                             "crowds": {"old": 0.1}, "frames": {"old": [("the ___", "man")]}}
     assert not {"chain", "swaps", "levels"} & set(e)
 
 
@@ -392,6 +392,38 @@ def test_a_line_with_no_usable_reading_or_its_main_word_cooling_is_left_for_the_
     [after] = curate.reread_work(object(), lambda *_: None, [older], _archive(secrets={"stove"}), "en",
                                  lambda s: True, curate.Vectors())
     assert after is older
+
+
+def test_a_rebank_sets_aside_a_line_of_a_published_work_with_no_call(fake_parse, monkeypatch):
+    # `--finish` refuses a work already published (never the same work twice): nothing is paid
+    monkeypatch.setattr(curate, "parse", _tokens)
+    monkeypatch.setattr(curate.llm, "read_line", lambda *_a, **_k: pytest.fail("a published work is never read"))
+    [after] = curate.reread_work(object(), lambda *_: None, [_old()], _archive(works=[{"author": "A", "work": "T"}]),
+                                 "en", lambda s: True, curate.Vectors())
+    assert after["dropped"] == "the work was published: never the same work twice"
+    assert after["bankedAt"] == "2026-10-18T10:00:00+00:00" and not bank.is_stale(after, STAMP)
+
+
+def test_a_line_set_aside_with_a_word_in_its_cooldown_left_out_waits_for_a_later_rebank(fake_parse, monkeypatch):
+    # « dog » in its cooldown today: the words against « stove » are chosen without it, so the
+    # line set aside then is left as it was; with nothing cooling, it is kept set aside
+    monkeypatch.setattr(curate, "parse", _tokens)
+    _free_maps(monkeypatch)
+    monkeypatch.setattr(curate.llm, "read_line", lambda *_a, **_k: _READ)
+    monkeypatch.setattr(curate.llm, "neighbours_complete", lambda *_a, **_k: "man")
+    monkeypatch.setattr(curate.llm, "context_guesses", lambda *_a, **_k: ([], None))
+    monkeypatch.setattr(curate.llm, "would_say", lambda *_a, **_k: (0.8, None))
+    offered = []
+    monkeypatch.setattr(curate.llm, "choose_companions", lambda _c, _m, _r, _n, pool, _t, lang: (
+        offered.append([p["word"] for p in pool]), {"words": None, "why": "nothing goes"})[1])
+    older, log = _old(), []
+    [after] = curate.reread_work(object(), log.append, [older], _archive(secrets={"dog"}), "en", lambda s: True,
+                                 curate.Vectors())
+    assert offered == [["old", "sleeps", "warm"]]
+    assert after is older and "- chosen without « dog », in their cooldown: left for a later rebank" in log
+    [after] = curate.reread_work(object(), lambda *_: None, [older], _archive(), "en", lambda s: True,
+                                 curate.Vectors())
+    assert after["dropped"] == "no two words go with the main word: nothing goes" and after["taste"] == STAMP
 
 
 def test_a_rebank_sets_aside_a_line_left_short_by_the_words_that_need_the_work(fake_parse, monkeypatch):

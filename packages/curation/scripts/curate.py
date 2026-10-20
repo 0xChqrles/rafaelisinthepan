@@ -875,13 +875,14 @@ class Buffer(list):
 @dataclass
 class Measures:
     """What each word of one line was measured at, by slug — the reader, the would-say
-    test, the crowd — asked once, whatever trio the line ends with; and the first word its
-    neighbours call for, with the fragment it was asked on: the other hidden words cut the
+    test, the crowd — asked once, whatever trio the line ends with; and, around each of its
+    holes (a repeated word is one hole per occurrence), the first word the words right
+    around it call for, with the fragment it was asked on: the other hidden words cut a
     fragment, and a fragment that changes is asked again."""
-    readings: dict = field(default_factory=dict)    # slug -> (the reader's words, the one most write)
-    says: dict = field(default_factory=dict)        # slug -> (would-say chance, the word said instead)
-    crowds: dict = field(default_factory=dict)      # slug -> crowd share
-    neighbours: dict = field(default_factory=dict)  # slug -> (the words around it, the first word written)
+    readings: dict = field(default_factory=dict)  # slug -> (the reader's words, the one most write)
+    says: dict = field(default_factory=dict)      # slug -> (would-say chance, the word said instead)
+    crowds: dict = field(default_factory=dict)    # slug -> crowd share
+    frames: dict = field(default_factory=dict)    # slug -> [(the words around one hole, the first word written)]
 
 
 @dataclass
@@ -1147,11 +1148,12 @@ def measure(claude: llm.Claude, line: dict, t, hidden: set[int], sims: Vectors, 
     """One hidden word measured, each measure asked once for the line (`line["measures"]`):
     what a reader puts in its blank and whether a player who has the meaning would say it —
     its other occurrences hidden, the rest of the line intact — and its crowd of commoner
-    near-words; and the first word the words right around it call for, the other hidden
-    words (`hidden`, token indices) cutting that fragment: asked again only when they change
-    it."""
+    near-words; and, around EACH of its holes, the first word the words right around it call
+    for, the other hidden words (`hidden`, token indices) cutting that fragment: asked again
+    only when they change it."""
     m, tokens = line["measures"], line["tokens"]
-    own = _occurrences(line["allowed"])[t.slug] - {t.i}
+    occurrences = _occurrences(line["allowed"])[t.slug]
+    own = occurrences - {t.i}
     if t.slug not in m.readings:
         m.readings[t.slug] = llm.context_guesses(claude, tokens, own, t.i, rules.CONTEXT_GUESSES, lang=lang)
     if t.slug not in m.crowds:
@@ -1165,10 +1167,14 @@ def measure(claude: llm.Claude, line: dict, t, hidden: set[int], sims: Vectors, 
             again, _ = ask()
             chance = chance if again is None else round((chance + again) / 2, 3)
         m.says[t.slug] = (chance, instead)
-    around = rules.neighbourhood(tokens, t.i, own | hidden)
-    fragment = llm.holed(around, set(), t.i, lang=lang).replace("[____]", "___")
-    if m.neighbours.get(t.slug, (None, None))[0] != fragment:
-        m.neighbours[t.slug] = (fragment, llm.neighbours_complete(claude, fragment, lang=lang))
+    asked, frames = dict(m.frames.get(t.slug, ())), []
+    for i in sorted(occurrences):
+        around = rules.neighbourhood(tokens, i, occurrences | hidden)
+        fragment = llm.holed(around, set(), i, lang=lang).replace("[____]", "___")
+        if fragment not in asked:
+            asked[fragment] = llm.neighbours_complete(claude, fragment, lang=lang)
+        frames.append((fragment, asked[fragment]))
+    m.frames[t.slug] = frames
 
 
 def band_of(line: dict, t, sims: Vectors, pairs: dict[str, set[str]], lang: str) -> list[dict]:
@@ -1212,7 +1218,6 @@ def hole_facts(line: dict, t, path_words: list[str], sims: Vectors, rank_map: di
     m = line["measures"]
     guesses, expected = m.readings[t.slug]
     chance, instead = m.says[t.slug]
-    fragment, first = m.neighbours[t.slug]
     own = sims.own(t)
     same = rules.same_word(t, instead, own)
     lottery = None
@@ -1222,7 +1227,7 @@ def hole_facts(line: dict, t, path_words: list[str], sims: Vectors, rank_map: di
         word=t.text, slug=t.slug, path_words=frozenset(slug(w) for w in path_words),
         reader_writes=rules.reader_writes(t, expected, neighbour_rank=sims.neighbour_rank,
                                           frequency_rank=sims.frequency_rank),
-        neighbours=fragment if rules.same_word(t, first, own) else None,
+        neighbours=next((fragment for fragment, first in m.frames[t.slug] if rules.same_word(t, first, own)), None),
         map_handed=None if rank_map is None else rules.map_handed(rank_map, t.slug, expected),
         unsaid=not same and chance is not None and chance < rules.WOULD_SAY_HARD,
         buried=not same and rules.buried(chance, m.crowds[t.slug]),
@@ -1285,14 +1290,19 @@ def choose_others(claude: llm.Claude, log, line: dict, anchor, sims: Vectors, pa
     offers on its free static map (a word with none is not offered), the main word's path,
     ladder and notes, and what was told back. Code checks the answer — two distinct words of
     those offered, each with a path through 1 to 3 of the line's words, else told back — then
-    measures each word with the three hidden and reads their facts (`rules.trio_faults`): a
-    fact against the main word sets the line aside; one against another word refuses it
-    (`refuse`: it leaves the words to choose from); one against the three together is told
-    back, nothing refused. COMPANION_ASKS asks for the line in all (`line["asks"]`, the bank's
-    start step included); a decline, or the asks spent, sets it aside. Returns the checked
-    trio, the main word first, or None."""
+    measures each word with the three hidden and reads their facts (`rules.trio_faults`): one
+    against another word refuses it (`refuse`: it leaves the words to choose from); one
+    against the three together is told back, nothing refused. The main word passed ALONE
+    (`anchor_gate`): all that can now hold against it is its neighbours, cut by a word hidden
+    among them, writing it in — that word is refused, never the main word. COMPANION_ASKS
+    asks for the line in all (`line["asks"]`, the bank's start step included); a decline, or
+    the asks spent, sets it aside. Returns the checked trio, the main word first, or None."""
     read = line["read"]
     occurrences = _occurrences(line["allowed"])
+    # The words right around the main word's holes, measured alone: a word hidden among them
+    # cuts its fragment.
+    near = {u.i for i in occurrences[anchor.slug]
+            for u in rules.neighbourhood(line["tokens"], i, occurrences[anchor.slug])}
     while line["asks"] < COMPANION_ASKS:
         firsts: dict = {}
         for t in line["allowed"]:
@@ -1339,17 +1349,19 @@ def choose_others(claude: llm.Claude, log, line: dict, anchor, sims: Vectors, pa
         paths = {anchor.slug: {"line": read["path"], "words": read["path_words"]},
                  **{s: {"line": w["path"], "words": w["path_words"]} for s, w in verdicts.items()}}
         holes, faults = facts_of(line, trio, paths, sims, {t.slug: sims.static_map(t) for t in trio}, bands, verdicts)
+        refused = dict(faults["others"])
         if faults["main"]:
-            set_aside(log, line, f"the main word « {anchor.text} »: {faults['main']}")
-            return None
+            refused.update({t.slug: f"hidden too, it leaves the words right around the main word « {anchor.text} » "
+                                    f"writing it in (« {holes[0].neighbours} »)"
+                            for t in others if t.slug not in refused and occurrences[t.slug] & near})
         for t in others:
-            if t.slug in faults["others"]:
-                refuse(log, line, t.text, faults["others"][t.slug])
+            if t.slug in refused:
+                refuse(log, line, t.text, refused[t.slug])
         if faults["trio"]:
             told = f"« {' · '.join(t.text for t in others)} » against « {anchor.text} »: " + "; ".join(faults["trio"])
             log(f"- told back: {told}")
             line["told"].append(told)
-        if faults["others"] or faults["trio"]:
+        if faults["main"] or refused or faults["trio"]:
             continue
         ladders = {anchor.slug: read["ladder"]} if read["wide"] else {}
         ladders.update({s: w["ladder"] for s, w in verdicts.items() if w["wide"]})
@@ -1620,8 +1632,8 @@ def reread_work(claude: llm.Claude, log, entries: list[dict], archive: dict, lan
     """One work's banked entries as the bank now keeps them, in order: each one `--rebank`
     takes (`bank.is_stale`) taken again (`rebank_line`), WORKERS at a time, and the rest as
     they were; an entry taken again keeps when it was banked. Only a lasting fact sets a line
-    aside with no call: its sentence published, or fewer than TRIO words to hide among those
-    judged at banking."""
+    aside with no call: its sentence or its work published (`--finish` refuses either), or
+    fewer than TRIO words to hide among those judged at banking."""
     stamp = bank.taste_stamp()
     out = list(entries)
     todo = []
@@ -1631,6 +1643,8 @@ def reread_work(claude: llm.Claude, log, entries: list[dict], archive: dict, lan
         line = {"sentence": e["sentence"], "read": None, "given": e["given"], "measures": bank.measures_of(e, Measures)}
         if shelf_mod.sentence_key(e["sentence"]) in archive["sentences"]:
             line["dropped"] = "the sentence was published"
+        elif shelf_mod.in_archive(bank.book_of(e), archive["works"]):
+            line["dropped"] = "the work was published: never the same work twice"
         else:
             tokens = parse(e["sentence"], lang)
             judged = bank.pool(tokens, e["given"], lang, in_vocab)
@@ -1663,12 +1677,14 @@ def rebank_line(claude: llm.Claude, log, line: dict, e: dict, archive: dict, lan
     """One banked line taken again (`--rebank`). READ under today's taste (`read`), unless its
     read is today's: the read is a lasting verdict on the line, so it is shown every word
     judged at banking, those in their cooldown included. Then its words chosen again, the
-    main word first (`choose_trio`), from those its read leaves and out of their cooldown
-    (`--finish` refuses a word in it), and its start words on the free static maps
-    (`bank_line`). Returns the entry as the bank now keeps it — kept with its words, or set
-    aside with why, its read, giveaways and measures kept either way — or None when it is
-    left as it was, for a later rebank: no usable reading, or its main word, or words enough
-    to leave it short, in their cooldown."""
+    main word first (`anchor_gate`, `choose_others`), from those its read leaves and out of
+    their cooldown (`--finish` refuses a word in it), and its start words on the free static
+    maps (`bank_line`). Returns the entry as the bank now keeps it — kept with its words, or
+    set aside with why, its read, giveaways and measures kept either way — or None when it is
+    left as it was, for a later rebank: no usable reading; its main word, or words enough to
+    leave it short, in their cooldown; or, a word in its cooldown left out, set aside once its
+    main word passed — the words against it were chosen without that word, a fact of the
+    day, never a lasting verdict."""
     book = bank.book_of(e)
     if e.get("taste") == stamp and e.get("read") and not e.get("dropped"):
         line["read"] = bank.read_of(e["read"])
@@ -1687,6 +1703,7 @@ def rebank_line(claude: llm.Claude, log, line: dict, e: dict, archive: dict, lan
         set_aside(log, line, f"fewer than {rules.TRIO} words can be hidden once those that need the work leave")
         return bank.aside(book, line, lang, stamp)
     cooling = archive["secrets"]
+    cooled = {t.slug: t.text for t in line["allowed"] if t.slug in cooling}
     line["allowed"] = [t for t in line["allowed"] if t.slug not in cooling]
     if slug(line["read"]["anchor"]) in cooling:
         log(f"- its main word « {line['read']['anchor']} » is in its cooldown: left for a later rebank")
@@ -1694,12 +1711,20 @@ def rebank_line(claude: llm.Claude, log, line: dict, e: dict, archive: dict, lan
     if len({t.slug for t in line["allowed"]}) < rules.TRIO:
         log("- words in their cooldown leave it short: left for a later rebank")
         return None
-    checked = choose_trio(claude, log, line, sims, archive["pairs"], lang)
-    started = bank_line(claude, log, line, checked, archive, lang, sims) if checked else None
-    if started is None:
+    anchor, why = anchor_gate(claude, log, line, sims, archive["pairs"], lang)
+    if why:
+        set_aside(log, line, why)
         return bank.aside(book, line, lang, stamp)
-    checked, picked, draft = started
-    return bank.entry(book, line, checked, {"starts": picked, "draft": draft}, lang, stamp)
+    checked = choose_others(claude, log, line, anchor, sims, archive["pairs"], lang)
+    started = bank_line(claude, log, line, checked, archive, lang, sims) if checked else None
+    if started is not None:
+        checked, picked, draft = started
+        return bank.entry(book, line, checked, {"starts": picked, "draft": draft}, lang, stamp)
+    if cooled:
+        log(f"- chosen without {', '.join(f'« {w} »' for w in cooled.values())}, in their cooldown: "
+            "left for a later rebank")
+        return None
+    return bank.aside(book, line, lang, stamp)
 
 
 def static_draft(line: dict, trio: list, static_map, lang: str) -> dict | None:
