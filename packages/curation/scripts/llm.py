@@ -268,8 +268,8 @@ Read it in this order:
    the kind the slot shapes; the smaller family a start can name; and whether the word is the
    first member players name in that family, or the ranks climb to it. Null for any step that
    is missing.
-5. By *No mirror*: is it the partner of a visible word — its opposite, its synonym, its
-   textbook complement, the other half of a set phrase or a compound?
+5. By *No mirror*, its exception included: is it the first word players would type as the
+   partner of a visible word?
 6. By *The blank read*: with only the main word hidden, is the joke hidden too?
 7. One sibling that makes the same joke, if any (a warning only).
 
@@ -776,13 +776,11 @@ The sentence, holes marked with the hidden word in brackets:
 {_chain_block(chain)}
 {chr(10).join(blocks)}
 
-Choose the three starts together, by the taste's start words: for each hole, how much the
-line gives of the word (read in its notes and in the line) and how hard the other holes
-already are decide its start.{PRIOR_RULE if any(h.get("prior") for h in holes) else ""} If one hidden word is dead or out of reach whatever its
+Choose the three starts together, by the taste's *The start words*.{PRIOR_RULE if any(h.get("prior") for h in holes) else ""} If one hidden word is dead or out of reach whatever its
 start — or none of its candidates links to it in its everyday sense (only by spelling, or
 not at all) — say so and name ONE replacement from the line instead of starts.
 
-Return {{"starts": {{"<hidden word>": "<chosen candidate, exactly>", ...}}, "why": "<one line per hole: how much the line gives of the word, and what the start says of the word>"}},
+Return {{"starts": {{"<hidden word>": "<chosen candidate, exactly>", ...}}, "why": "<one line per hole: what the start says of the word>"}},
 or {{"replace": {{"secret": "<hidden word>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")
     replace = answer.get("replace")
     if isinstance(replace, dict) and isinstance(replace.get("secret"), str) and isinstance(replace.get("with"), str):

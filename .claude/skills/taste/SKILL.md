@@ -482,10 +482,10 @@ right next door to the answer.
 **Examples.**
 - **2026-10-14 fr, Tocqueville (liked, "perfect"):** « j’ai vu de fougueux [ennemis] de la
   [démocratie] qui se faisaient tutoyer par leurs [enfants]. »
-- **2026-08-01 fr, Dazai (liked for « démon »; « lueur » is handed, and « bière » is a
-  lottery saved by its start « tisane »):** « à la [lueur] rouge, vacillante, d'une réclame
-  au néon pour une marque de [bière], le visage de horiki me semblait avoir pris la majesté
-  d'un [démon] policier »
+- **2026-08-01 fr, Dazai (liked for « démon »; « lueur » is handed, and « bière » is one of
+  a wide kind whose start « tisane » names a smaller family, *The narrowing ladder*):**
+  « à la [lueur] rouge, vacillante, d'une réclame au néon pour une marque de [bière], le
+  visage de horiki me semblait avoir pris la majesté d'un [démon] policier »
 
 **Broken.**
 - **A cliché step, with the joke readable blank:** « il prenait tant de [cocaïne] qu'il
@@ -528,10 +528,10 @@ finishes the logic for the player: « overdosed » at 104 for « died », « mes
 for « dieu ».
 
 **Examples.**
-- **2026-09-08 fr, Graeber (liked; « gâteau » is a lottery saved by its start
-  « cookie »):** « il s’appliquait à éviter tout recours aux [verbes]. sa prose était
-  tellement nulle que j’avais décidé de m’offrir un petit [gâteau] si je tombais sur un seul
-  paragraphe [cohérent]. »
+- **2026-09-08 fr, Graeber (liked; « gâteau » is one of a wide kind whose start « cookie »
+  names a smaller family, *The narrowing ladder*):** « il s’appliquait à éviter tout recours
+  aux [verbes]. sa prose était tellement nulle que j’avais décidé de m’offrir un petit
+  [gâteau] si je tombais sur un seul paragraphe [cohérent]. »
 - **2026-09-30 fr (not judged; « sauva » is handed):** « la statue du [saint-bernard] qui
   [sauva] quarante et une personnes et fut [tué] par la quarante-deuxième se dresse à
   l’entrée. »
@@ -769,7 +769,7 @@ near edge.
 **The main word's start comes first, by its kind**, as each kind's *Start words* says. For
 a word of a wide kind, its FIRST idea names the ladder's smaller family, never the whole
 kind: « papillons » for « pigeons », « cookie » for « gâteau », never « paintball » for
-« judo ». In a line with no kind, the start is tied to what the word means in the line.
+« judo ».
 
 **Then each of the two others' starts, so the day is neither handed over nor out of
 reach**: the main word's start in view, the harder the rest of the day, the more a start

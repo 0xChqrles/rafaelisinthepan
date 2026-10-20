@@ -193,6 +193,7 @@ def test_the_read_sets_a_line_aside_on_each_verdict_in_order(monkeypatch, over, 
     ({"path_words": ["pierre"]}, "« pierre » is not one"),           # the main word itself
     ({"path_words": ["la pierre"]}, "« la pierre » is not one"),     # not one word of the line
     ({"path_words": []}, "its path must run through 1 to 3 words of the line left in sight"),
+    ({"path_words": ["chat", "dort", "froide", "chat"]}, "its path must run through 1 to 3 words"),   # four
 ])
 def test_a_main_word_the_line_cannot_hide_or_a_path_out_of_sight_is_told_back(monkeypatch, over, told):
     answers = iter([_a_read(**over), _a_read()])
@@ -638,10 +639,10 @@ def test_the_idea_check_waits_for_a_sentence_that_reads_right(tmp_path, monkeypa
 
 def test_a_hole_whose_readers_land_far_is_noted_as_one_the_line_gives_little_of():
     # « cercueil »: readers write « sol », « parquet » (1010) — the start step must hear that
-    # the line gives little, and pick from the word's direct meaning (« cadavre »).
+    # the line gives little.
     ranks = {"cercueil": {"word": "cercueil", "rank": 0}, "tombe": {"word": "tombe", "rank": 6},
              "parquet": {"word": "parquet", "rank": 1010}}
-    far = "the line gives little of this word, and its start comes from the word's direct meaning"
+    far = "getting closer: the line gives little of this word"
     notes = curate._notes(ranks, "cercueil", {"cercueil": "readers would split"}, {"cercueil": ["sol", "parquet"]})
     assert notes.startswith("readers would split; the reader's nearest word « parquet » sits at rank 1010")
     assert notes.endswith(far)
@@ -970,8 +971,8 @@ def test_a_swap_before_the_comparison_is_counted_when_the_day_is_built(monkeypat
 
 
 def test_a_hard_hole_is_told_the_line_gives_little_and_looks_in_the_same_band(monkeypatch):
-    # User-decided 2026-10-08: how much the line gives decides which KIND of start (the
-    # taste: the word's direct meaning), never a nearer band.
+    # User-decided 2026-10-08: a hole the line gives little of is told so, never sent to a
+    # nearer band.
     assert contextual_rank.GIVEAWAY_HARD == 0.20
     seen = {}
 

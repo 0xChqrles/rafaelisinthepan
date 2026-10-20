@@ -809,7 +809,7 @@ def giveaway_scores(tokens, words, occurrences, lang: str, judge) -> dict[str, f
     """How much the sentence hands each word over, by the judge's measure
     (`contextual_rank.giveaway`), read on real play (84 holes): under `GIVEAWAY_MIN` the
     line gives no path to the word and it is never hidden; under `GIVEAWAY_HARD` the hole
-    plays hard (a note the start step reads: its start is tied to the word's direct meaning); at or above `GIVEAWAY_MAX` a third of the players
+    plays hard (a note the start step reads); at or above `GIVEAWAY_MAX` a third of the players
     typed it within three guesses. Each distinct word judged once, every occurrence
     blanked, the rest of the sentence intact and no start word — the reader's own view."""
     scores: dict[str, float] = {}
@@ -1019,7 +1019,7 @@ def told_back(read: dict, line: dict) -> str | None:
         return f"« {read['anchor']} » is not one of the words that can be hidden"
     sight = {t.slug for t in line["tokens"] if not t.stop and t.pos != "PUNCT" and t.slug != anchor}
     off = [w for w in read["path_words"] if slug(w) not in sight]
-    if not read["path_words"] or off:
+    if not 1 <= len(read["path_words"]) <= 3 or off:
         return ("its path must run through 1 to 3 words of the line left in sight, never a stop word nor the main "
                 "word" + (f": {', '.join(f'« {w} »' for w in off)} is not one" if off else ""))
     return None
@@ -1488,6 +1488,7 @@ def bank_works(claude: llm.Claude, log: Log, args, archive: dict, today: date, j
         if book is None:
             break
         log.begin_attempt()
+        stamp = bank.taste_stamp()  # before the reads: a taste edited meanwhile reads them again
         try:
             text = read_work(book, args.lang)
             judged = judged_lines(log, book, text, archive, index, args.lang, judge)
@@ -1510,8 +1511,8 @@ def bank_works(claude: llm.Claude, log: Log, args, archive: dict, today: date, j
             bank.unclaim(args.lang, book["file"])
             raise
         failures = 0
-        entries = [bank.entry(book, line, checked, starts, args.lang) for line, checked, starts in started]
-        dropped = [bank.aside(book, line, args.lang) for line in aside]
+        entries = [bank.entry(book, line, checked, starts, args.lang, stamp) for line, checked, starts in started]
+        dropped = [bank.aside(book, line, args.lang, stamp) for line in aside]
         bank.append(args.lang, entries + dropped or [bank.empty(book)])
         bank.unclaim(args.lang, book["file"])
         bank.render(args.lang)
@@ -1532,10 +1533,12 @@ def rebank_works(claude: llm.Claude, log: Log, args, archive: dict, in_vocab) ->
     the shelf never read, the judge never asked (each line's giveaways were stored when it was
     banked), nothing ranked. A line is read again when it was never read or was read under
     another taste (`bank.stale`); its words and start words stay as banked, so a line the
-    reading keeps is finished as before (`--finish`). Works are claimed as `--bank` claims
-    them, so processes run side by side, and each work's entries are rewritten in place
+    reading keeps is finished as before (`--finish`), unless its trio hides a word the read
+    says needs the work (`bank.restore`). Works are claimed as `--bank` claims them, so
+    processes run side by side, and each work's entries are rewritten in place
     (`bank.replace_work`). A work whose reading fails is released; two failures in a row end
-    the process. Resumable: a line read under today's taste is never read again."""
+    the process. Resumable: a line read under today's taste is never read again, and one with
+    no usable reading is left to read."""
     total, failures, seen = 0, 0, set()
     while True:
         with bank.locked(args.lang):
@@ -1579,9 +1582,13 @@ def rebank_works(claude: llm.Claude, log: Log, args, archive: dict, in_vocab) ->
 
 def reread_work(claude: llm.Claude, log, entries: list[dict], archive: dict, lang: str, in_vocab) -> list[dict]:
     """One work's banked entries as the bank now keeps them, in order: each one `--rebank`
-    takes (`bank.is_stale`) READ again, WORKERS at a time, against today's archive — a
-    sentence published since is set aside, a word back in its cooldown leaves the words the
-    reading is shown (`bank.pool`) — and the rest as they were."""
+    takes (`bank.is_stale`) READ again, WORKERS at a time, and the rest as they were. The
+    read is a lasting verdict on the line, so it is shown every word judged at banking
+    (`bank.pool`), those in their cooldown included (`--finish` judges the cooldown on its
+    day), and only a lasting fact sets a line aside with no call: its sentence published, or
+    fewer than TRIO words to hide. A line the read keeps whose words that need the work leave
+    it fewer than TRIO is set aside too, as at banking (`floor`). A line with no usable
+    reading is left as it was, for the next rebank."""
     stamp = bank.taste_stamp()
     out = list(entries)
     todo = []
@@ -1593,21 +1600,27 @@ def reread_work(claude: llm.Claude, log, entries: list[dict], archive: dict, lan
             why = "the sentence was published"
         else:
             tokens = parse(e["sentence"], lang)
-            hideable = bank.pool(tokens, e["given"], archive, lang, in_vocab)
+            hideable = bank.pool(tokens, e["given"], lang, in_vocab)
             if len({t.slug for t in hideable}) < rules.TRIO:
-                why = f"fewer than {rules.TRIO} words can be hidden today"
+                why = f"fewer than {rules.TRIO} words can be hidden"
             else:
                 todo.append((n, {"sentence": e["sentence"], "tokens": tokens, "allowed": hideable}))
         if why:
             log(f"\n## « {e['sentence']} »\n- set aside: {why}")
-            out[n] = bank.reread(e, None, why)
+            out[n] = bank.reread(e, None, why, stamp)
 
     def one(item):
         _, line = item
         buffer = Buffer()
         buffer(f"\n## « {line['sentence']} »")
         r, why = read(claude, buffer, line, lang)
-        if why:
+        if why is None:
+            book = {slug(w) for w in r["needs_book"]}
+            if len({t.slug for t in line["allowed"]} - book) < rules.TRIO:
+                why = f"fewer than {rules.TRIO} words can be hidden once those that need the work leave"
+        if r is None:
+            buffer(f"- not read: {why}; left for the next rebank")
+        elif why:
             buffer(f"- set aside: {why}")
         return buffer, r, why
 
@@ -1616,7 +1629,8 @@ def reread_work(claude: llm.Claude, log, entries: list[dict], archive: dict, lan
     for (n, _), (buffer, r, why) in zip(todo, done):
         for row in buffer:
             log(row)
-        out[n] = bank.reread(entries[n], r, why)
+        if r is not None:
+            out[n] = bank.reread(entries[n], r, why, stamp)
     return out
 
 

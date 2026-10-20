@@ -338,9 +338,8 @@ def map_nearest_filler(rank_map: dict, secret_slug: str, fillers: list[str]) -> 
 # Past this rank in the hole's own map, the words a reader puts in the blank tell the player
 # nothing (user-decided 2026-10-14): on « tutoyer » (« commander » at 759) and « cercueil »
 # (« parquet » at 1010, played from « berceau ») the user's own rounds made no progress at
-# all. The line then gives little of the word whatever its giveaway score, and the start comes
-# from the word's direct meaning. A note, never a veto: the user kept « cercueil », with
-# « cadavre » for its start.
+# all. The line then gives little of the word whatever its giveaway score: a note for the
+# start step, never a veto (the user kept « cercueil », with « cadavre » for its start).
 READER_FAR_RANK = 500
 # What a hole's notes say when the line gives little of its word — a giveaway under
 # GIVEAWAY_HARD, or the reader's words landing far (`far_note`). The start-idea check reads it.
@@ -354,5 +353,4 @@ def far_note(nearest: tuple[str, int | None] | None) -> str | None:
     if nearest is None or (nearest[1] is not None and nearest[1] <= READER_FAR_RANK):
         return None
     return (f"every word a reader puts in this blank lands past rank {READER_FAR_RANK} in this hole's map, so "
-            f"nothing a player types first tells them they are getting closer: {GIVES_LITTLE}, and its start "
-            f"comes from the word's direct meaning")
+            f"nothing a player types first tells them they are getting closer: {GIVES_LITTLE}")

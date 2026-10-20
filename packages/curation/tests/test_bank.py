@@ -14,6 +14,7 @@ import curate
 from rules import Token
 
 SENTENCE = "The old dog sleeps under the warm stove"
+STAMP = bank.taste_stamp()   # the taste the lines here were read under
 
 
 def _tokens(sentence, lang):
@@ -65,10 +66,10 @@ def _archive(**over):
 def test_a_banked_line_comes_back_as_the_run_held_it(fake_parse):
     line, checked = _finished()
     book = {"file": "a.epub", "kind": "book", "author": "A", "title": "T"}
-    bank.append("en", [bank.entry(book, line, checked, _started(), "en")])
+    bank.append("en", [bank.entry(book, line, checked, _started(), "en", STAMP)])
     [stored] = bank.load("en")
     assert json.loads(json.dumps(stored)) == stored
-    assert stored["taste"] == bank.taste_stamp() and len(stored["taste"]) == 8
+    assert stored["taste"] == STAMP and len(STAMP) == 8
     assert stored["read"] == {"kind": 3, "anchor": "stove", "about": "a dog asleep by the stove",
                               "path": "where a dog sleeps warm", "pathWords": ["dog"], "wide": False, "ladder": None,
                               "sibling": "oven", "needsBook": []}
@@ -86,7 +87,7 @@ def test_a_banked_line_comes_back_as_the_run_held_it(fake_parse):
 
 def test_finishing_refuses_a_published_sentence_and_a_word_back_in_its_cooldown(fake_parse):
     line, checked = _finished()
-    e = json.loads(json.dumps(bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en")))
+    e = json.loads(json.dumps(bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en", STAMP)))
     args = ("en", lambda s: True, lambda t: None, curate.Measures, curate.Checked)
     published = _archive(sentences={bank.shelf_mod.sentence_key(SENTENCE)})
     assert bank.restore(e, published, *args)[0] is None
@@ -98,8 +99,15 @@ def test_finishing_refuses_a_published_sentence_and_a_word_back_in_its_cooldown(
     e["given"]["warm"] = 0.0
     restored, _ = bank.restore(e, _archive(), *args)
     assert "warm" not in {t.slug for t in restored[0]["allowed"]}
+    # a word the read says needs the work is never hidden, nor offered to a swap
+    e["read"]["needsBook"] = ["Old"]
+    restored, _ = bank.restore(e, _archive(), *args)
+    assert "old" not in {t.slug for t in restored[0]["allowed"]}
+    e["read"]["needsBook"] = ["Dog"]
+    restored, why = bank.restore(e, _archive(), *args)
+    assert restored is None and why == "« dog » needs the work to mean anything"
     # a line the read set aside is never finished
-    restored, why = bank.restore(bank.reread(e, _READ, "a mirror: « stove »"), _archive(), *args)
+    restored, why = bank.restore(bank.reread(e, _READ, "a mirror: « stove »", STAMP), _archive(), *args)
     assert restored is None and why == "it was set aside: a mirror: « stove »"
 
 
@@ -140,7 +148,7 @@ def test_the_lock_is_re_entrant_within_a_process(fake_parse):
     line, checked = _finished()
     with bank.locked("en"):
         bank.claim("en", "a.epub")  # takes the lock again: must not wait on itself
-        bank.append("en", [bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en")])
+        bank.append("en", [bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en", STAMP)])
         assert bank.works("en") == {"a.epub"}
 
 
@@ -158,7 +166,7 @@ def test_a_claim_dies_with_its_process(fake_parse):
 def test_a_work_that_banked_nothing_stays_mined_but_holds_no_line(fake_parse):
     line, checked = _finished()
     bank.append("en", [bank.empty({"file": "dry.epub", "kind": "book"}),
-                       bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en")])
+                       bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en", STAMP)])
     assert bank.works("en") == {"dry.epub", "a.epub"}
     assert [e["work"] for e in bank.lines("en")] == ["a.epub"]
 
@@ -166,7 +174,7 @@ def test_a_work_that_banked_nothing_stays_mined_but_holds_no_line(fake_parse):
 def test_a_banked_line_keeps_its_starts_and_reads_as_the_player_sees_it(fake_parse):
     line, checked = _finished()
     book = {"file": "a.epub", "kind": "book", "author": "A", "title": "T"}
-    e = bank.entry(book, line, checked, _started(), "en")
+    e = bank.entry(book, line, checked, _started(), "en", STAMP)
     assert e["id"] == bank.line_id("a.epub", SENTENCE) and len(e["id"]) == 8
     assert e["starts"] == {"dog": "cat", "sleeps": "naps", "stove": "oven"}
     assert e["marked"] == "the old [dog] [sleeps] under the warm [stove]"
@@ -183,24 +191,24 @@ def test_a_banked_line_keeps_its_starts_and_reads_as_the_player_sees_it(fake_par
 def _aside(sentence="A cat. It sleeps.", why="does not stand alone: which cat?"):
     return bank.aside({"file": "b.epub", "kind": "book", "author": "B", "title": "U"},
                       {"sentence": sentence, "read": {**_READ, "stands_alone": False, "why": "which cat?",
-                                                      "anchor": None}, "dropped": why, "given": {}}, "en")
+                                                      "anchor": None}, "dropped": why, "given": {}}, "en", STAMP)
 
 
 def test_a_line_set_aside_counts_as_mined_but_is_no_line_and_keeps_its_inputs(fake_parse):
     line, checked = _finished()
-    kept = bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en")
-    struck = bank.reread(kept, {**_READ, "mirror": True}, "a mirror: « stove »")
+    kept = bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en", STAMP)
+    struck = bank.reread(kept, {**_READ, "mirror": True}, "a mirror: « stove »", STAMP)
     bank.append("en", [_aside(), struck])
     assert bank.works("en") == {"a.epub", "b.epub"} and bank.lines("en") == []
     assert struck["dropped"] == "a mirror: « stove »" and struck["read"]["anchor"] == "stove"
     assert (struck["given"], struck["measures"], struck["trio"]) == (kept["given"], kept["measures"], kept["trio"])
     # read again and kept: no longer set aside
-    assert "dropped" not in bank.reread(struck, _READ, None)
+    assert "dropped" not in bank.reread(struck, _READ, None, STAMP)
 
 
 def test_a_work_s_entries_are_replaced_in_place_and_nothing_else_moves(fake_parse):
     line, checked = _finished()
-    one = bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en")
+    one = bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en", STAMP)
     two = {**one, "id": "two"}
     bank.append("en", [one, two, bank.empty({"file": "dry.epub", "kind": "book"}), _aside()])
     new = {**one, "id": "new"}
@@ -212,7 +220,7 @@ def test_a_work_s_entries_are_replaced_in_place_and_nothing_else_moves(fake_pars
 
 def test_stale_lines_are_those_never_read_or_read_under_another_taste(fake_parse):
     line, checked = _finished()
-    current = bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en")
+    current = bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en", STAMP)
     older = {**current, "id": "older", "taste": "00000000"}
     unread = {k: v for k, v in current.items() if k not in ("taste", "read")} | {"id": "unread"}
     bank.append("en", [current, older, unread, _aside()])   # a line set aside before its words: no rebank
@@ -221,25 +229,29 @@ def test_stale_lines_are_those_never_read_or_read_under_another_taste(fake_parse
 
 def test_the_page_lists_the_lines_by_kind_then_no_kind_then_set_aside_then_unread(fake_parse):
     line, checked = _finished()
-    base = bank.entry({"file": "a.epub", "kind": "book", "author": "A", "title": "T"}, line, checked, _started(), "en")
+    base = bank.entry({"file": "a.epub", "kind": "book", "author": "A", "title": "T"}, line, checked, _started(), "en", STAMP)
     pairs = {**base, "id": "pairs1", "read": {**base["read"], "kind": 1, "anchor": "warm"}}
     fact = {**base, "id": "fact3"}
     loose = {**base, "id": "nokind", "read": {**base["read"], "kind": None}}
+    bookish = {**base, "id": "bookish", "read": {**base["read"], "kind": 6, "needsBook": ["Sleeps"]}}
     unread = {k: v for k, v in base.items() if k not in ("taste", "read")} | {"id": "unread"}
-    bank.append("en", [loose, fact, unread, _aside(), pairs])
+    bank.append("en", [loose, fact, unread, _aside(), bookish, pairs])
     bank.render("en")
     page = bank.view_file("en").read_text(encoding="utf-8")
     order = [page.index(h) for h in ("## 1. Pairs and molds", "`pairs1`", "## 3. The small fact that proves a big thing",
-                                     "`fact3`", "## No kind", "`nokind`", "## Set aside", "## Not read yet", "`unread`")]
+                                     "`fact3`", "## 6. The cold exact word", "`bookish`", "## No kind", "`nokind`",
+                                     "## Set aside", "## Not read yet", "`unread`")]
     assert order == sorted(order)
-    assert "3 line(s) kept, 1 set aside, 1 not read yet, from 2 work(s)" in page
+    assert "4 line(s) kept, 1 set aside, 1 not read yet, from 2 work(s)" in page
     assert "## 2." not in page                                          # an empty kind is not listed
-    fact_rows = page[page.index("`fact3`"):page.index("## No kind")]
+    fact_rows = page[page.index("`fact3`"):page.index("## 6.")]
     assert "main word « stove »: where a dog sleeps warm (through « dog »)" in fact_rows
     assert "**stove** ← oven" in fact_rows and "FLAG" not in fact_rows
     assert "sibling: « oven » makes the same joke (a warning)" in fact_rows
     pairs_rows = page[page.index("`pairs1`"):page.index("## 3.")]
     assert "FLAG: the trio it was banked with does not hide its main word" in pairs_rows
+    assert "FLAG: the trio hides « sleeps », which the read says needs the work: `--finish` refuses it" in \
+        page[page.index("`bookish`"):page.index("## No kind")]
     assert "does not stand alone: which cat?" in page[page.index("## Set aside"):]
     assert "1 line(s) were never read, or were read under another taste" in page
 
@@ -254,17 +266,19 @@ def test_a_rebank_reads_the_stored_giveaways_and_never_asks_the_judge(fake_parse
     monkeypatch.setattr(curate.llm, "read_line", lambda _c, sentence, hideable, refused, lang:
                         shown.append(hideable) or verdicts[sentence])
     line, checked = _finished()
-    kept = {k: v for k, v in bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en").items()
+    kept = {k: v for k, v in bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en", STAMP).items()
             if k not in ("taste", "read")}
     kept["given"] = {"old": 0.3, "dog": 0.5, "warm": 0.35, "stove": 0.2}   # « sleeps » never judged: never offered
     mirror = {**kept, "id": "m", "sentence": "The cold dog sleeps under the warm stove"}
     published = {**kept, "id": "p", "sentence": "The young dog sleeps under the warm stove"}
-    done = {**bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en"), "id": "d"}
+    done = {**bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en", STAMP), "id": "d"}
     bank.append("en", [kept, mirror, published, done, _aside()])
     args = SimpleNamespace(lang="en", work=None)
     archive = _archive(secrets={"old"}, sentences={bank.shelf_mod.sentence_key(published["sentence"])})
     assert curate.rebank_works(object(), curate.Log("rebank"), args, archive, lambda s: True) == 0
-    assert shown == [["dog", "warm", "stove"]] * 2                   # « old » cooling, « sleeps » unjudged
+    # « old », cooling today, is shown: the read is a lasting verdict, the cooldown is
+    # judged at --finish; « sleeps », never judged, is not (« cold » was never judged either)
+    assert shown == [["old", "dog", "warm", "stove"], ["dog", "warm", "stove"]]
     after = {e.get("id"): e for e in bank.load("en")}
     assert [e.get("id") for e in bank.load("en")] == [kept["id"], "m", "p", "d", _aside()["id"]]
     assert after[kept["id"]]["read"]["anchor"] == "stove" and "dropped" not in after[kept["id"]]
@@ -276,3 +290,38 @@ def test_a_rebank_reads_the_stored_giveaways_and_never_asks_the_judge(fake_parse
     # resumable: nothing left to read
     assert curate.rebank_works(object(), curate.Log("rebank2"), args, archive, lambda s: True) == 2
     assert len(shown) == 2
+
+
+def _older():
+    line, checked = _finished()
+    return {**bank.entry({"file": "a.epub", "kind": "book"}, line, checked, _started(), "en", STAMP), "taste": "00000000"}
+
+
+def test_a_rebank_stamps_the_taste_taken_before_the_reads(fake_parse, monkeypatch):
+    # the taste edited while the line is read: it keeps the stamp it was read under, and
+    # the next rebank reads it again
+    monkeypatch.setattr(curate, "parse", _tokens)
+
+    def read_line(*_a, **_k):
+        monkeypatch.setattr(bank, "taste_stamp", lambda: "edited0")
+        return _READ
+
+    monkeypatch.setattr(curate.llm, "read_line", read_line)
+    [after] = curate.reread_work(object(), lambda *_: None, [_older()], _archive(), "en", lambda s: True)
+    assert after["taste"] == STAMP and bank.is_stale(after, bank.taste_stamp())
+
+
+def test_a_line_with_no_usable_reading_is_left_for_the_next_rebank(fake_parse, monkeypatch):
+    monkeypatch.setattr(curate, "parse", _tokens)
+    monkeypatch.setattr(curate.llm, "read_line", lambda *_a, **_k: None)   # a kind none of the seven, each time
+    older = {**_older(), "dropped": "a mirror: « stove »"}
+    [after] = curate.reread_work(object(), lambda *_: None, [older], _archive(), "en", lambda s: True)
+    assert after is older and bank.is_stale(after, STAMP)
+
+
+def test_a_rebank_sets_aside_a_line_left_short_by_the_words_that_need_the_work(fake_parse, monkeypatch):
+    monkeypatch.setattr(curate, "parse", _tokens)
+    monkeypatch.setattr(curate.llm, "read_line", lambda *_a, **_k: {**_READ, "needs_book": ["old", "dog", "warm"]})
+    [after] = curate.reread_work(object(), lambda *_: None, [_older()], _archive(), "en", lambda s: True)
+    assert after["dropped"] == "fewer than 3 words can be hidden once those that need the work leave"
+    assert after["read"]["needsBook"] == ["old", "dog", "warm"] and after["taste"] == STAMP

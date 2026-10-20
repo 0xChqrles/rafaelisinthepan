@@ -278,10 +278,11 @@ def test_the_secret_and_its_variants_are_not_their_own_filler_in_the_map():
 
 def test_a_reader_word_far_on_the_map_notes_a_line_that_gives_little():
     # « tutoyer » (« commander » at 759) and « cercueil » (« parquet » at 1010): the user's
-    # rounds made no progress (2026-10-14). The note sends the start to the direct meaning.
+    # rounds made no progress (2026-10-14). The note states the fact; which start the hole
+    # takes is the taste's call, never the note's.
     assert READER_FAR_RANK == 500
     note = far_note(map_nearest_filler(MAP, "heros", ["type"]))           # 900
-    assert note and f"past rank {READER_FAR_RANK}" in note and "direct meaning" in note
+    assert note and f"past rank {READER_FAR_RANK}" in note and "direct meaning" not in note
     assert far_note(map_nearest_filler(MAP, "heros", ["gars"])) == note   # past the map
     assert far_note(map_nearest_filler(MAP, "heros", ["garçon", "type"])) is None   # 404
     assert far_note(("mot", READER_FAR_RANK)) is None

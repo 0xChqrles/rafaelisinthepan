@@ -88,13 +88,14 @@ pnpm curate [--lang fr|en] --bank N [--work <file>] [--blind]
 #   chosen on the words' FREE static maps by the run's own start step and checks
 #   (`curate.bank_line` on an in-memory draft, `static_draft`) — and appended to
 #   bank/<lang>.jsonl with its read, the taste it was read under (`bank.taste_stamp`: the
-#   taste and find-sentences skills, hashed) and what it was measured at. A line SET ASIDE
-#   before its words were chosen (by its read, or its giveaway) is appended too, with why
-#   (`dropped`), its read and the giveaways paid (`bank.aside`): it counts as mined and is
-#   never finished. Nothing is ranked, compared or written as a puzzle. bank/<lang>.md
-#   (`bank.render`, SPOILERS) lists the lines kept BY KIND — the taste's seven in order, then
-#   No kind — each with its id, its source, its main word and the visible words its path
-#   runs through (FLAGGED when the trio it was banked with does not hide it), the sibling
+#   taste and find-sentences skills, hashed before the work's lines are read) and what it
+#   was measured at. A line SET ASIDE before its words were chosen (by its read, or its
+#   giveaway) is appended too, with why (`dropped`), its read and the giveaways paid
+#   (`bank.aside`): it counts as mined and is never finished. Nothing is ranked, compared or
+#   written as a puzzle. bank/<lang>.md (`bank.render`, SPOILERS) lists the lines kept BY
+#   KIND — the taste's seven in order, then No kind — each with its id, its source, its main
+#   word and the visible words its path runs through (FLAGGED when the trio it was banked
+#   with does not hide it, or hides a word the read says needs the work), the sibling
 #   warning, its hidden words (the main word in bold) and its starts; then the lines set
 #   aside, each with why; then the lines not read yet. The works keep the calendar's shape
 #   (`curate.bank_pick`: one song per MUSIC_EVERY_DAYS works, an artist's next song once
@@ -108,29 +109,33 @@ pnpm curate [--lang fr|en] --bank N [--work <file>] [--blind]
 #   with the spoilers; two failures in a row stop it). Exit 2 when nothing was banked.
 pnpm curate [--lang fr|en] --finish <id> [--blind]
 #   A banked line the user chose, made ONE candidate day: read against today's archive
-#   (`bank.restore`: a line set aside, a published work or sentence, or a word back in its
-#   secret cooldown, is refused), then built as a run builds its chosen line
-#   (`curate.build_day`: page, the ranking, start words and their checks). The start step is
-#   shown each banked start with where it now stands on the ranked map (`llm.PRIOR_RULE`):
-#   kept while still a candidate of the band, unless the ranked map offers a better one.
-#   Never publishes.
+#   (`bank.restore`: a line set aside, a trio hiding a word its read says needs the work, a
+#   published work or sentence, or a word back in its secret cooldown, is refused), then
+#   built as a run builds its chosen line (`curate.build_day`: page, the ranking, start
+#   words and their checks). The start step is shown each banked start with where it now
+#   stands on the ranked map (`llm.PRIOR_RULE`): kept while still a candidate of the band,
+#   unless the ranked map offers a better one. Never publishes.
 pnpm curate [--lang fr|en] --rebank [--work <file>] [--blind]
-#   READS the bank's lines again under today's taste, in place (`curate.rebank_works`): every
-#   banked line (its words chosen) never read, or read under another taste stamp
+#   READS the bank's lines again under today's taste, in place (`curate.rebank_works`):
+#   every banked line (its words chosen) never read, or read under another taste stamp
 #   (`bank.stale`). Never reads the shelf, never asks the judge (no JEV_API_KEY needed: the
 #   giveaways are the ones stored at banking), never ranks, never runs gen_phrase. Each line
-#   is parsed again and its words taken against today's archive (`bank.pool`: a word back in
-#   its cooldown leaves, a word never judged is never offered; a sentence published since,
-#   or fewer than TRIO words left, sets it aside with no call), then READ (`curate.read`, one
-#   call): it gains its read and the stamp, or is set aside with why — its words, starts,
-#   giveaways and measures kept either way, so a later rebank reads it again with no judge,
-#   and a line the read keeps is finished with the words it was banked with. A line set
-#   aside before its words were chosen is not read again: the rebank chooses no words. Works
-#   are claimed as `--bank` claims them (processes side by side), each work's entries
-#   rewritten in place under the lock (`bank.replace_work`: a temporary file renamed over the
-#   bank, every other work untouched and in order), the page rendered after each. A work
-#   whose reading fails is released; two failures in a row stop the process. Resumable and
-#   idempotent: exit 2 when nothing was left to read. Copy bank/<lang>.jsonl first (gitignored).
+#   is parsed again, a sentence published since, or fewer than TRIO words to hide, set aside
+#   with no call; else READ (`curate.read`, one call), shown every word judged at banking at
+#   or above the floor (`bank.pool`), those in their cooldown INCLUDED: the read is a
+#   lasting verdict on the line, the cooldown a fact of the day `--finish` judges. It gains
+#   its read and the stamp (taken before the reads: a taste edited meanwhile reads them
+#   again), or is set aside with why — fewer than TRIO words once those that need the work
+#   leave included — its words, starts, giveaways and measures kept either way, so a later
+#   rebank reads it again with no judge, and a line the read keeps is finished with the
+#   words it was banked with. A line with no usable reading (`READ_ROUNDS` told back) is
+#   left as it was, for the next rebank. A line set aside before its words were chosen is
+#   not read again: the rebank chooses no words. Works are claimed as `--bank` claims them
+#   (processes side by side), each work's entries rewritten in place under the lock
+#   (`bank.replace_work`: a temporary file renamed over the bank, every other work untouched
+#   and in order), the page rendered after each, under the lock. A work whose reading fails
+#   is released; two failures in a row stop the process. Resumable and idempotent: exit 2
+#   when nothing was left to read. Copy bank/<lang>.jsonl first (gitignored).
 pnpm shelf:lyrics [--lang fr] [--artists shelf/<lang>/artists.txt] [--max-songs N]
 #   The music source (#262): for each artist of the user's hand-written list, the songs
 #   from Genius most viewed first, minus the top FAMOUS_SHARE (the singles), minus what
@@ -257,12 +262,11 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   days with a reader on file it catches « facho », « insecte », « réverbères », no loved
   day; and, once the map is built, where the reader's nearest word
   lands in the hole's own map (`rules.map_nearest_filler`) — past `READER_FAR_RANK` (500),
-  or past the map, the note adds that the line gives little of the word and its start
-  comes from its direct meaning (`rules.far_note`, `curate._notes`; user-decided
-  2026-10-14, after « tutoyer » at 759 and « cercueil » at 1010: nothing a player types
-  first tells them they are getting closer); never when the readers write the word itself,
-  and never a veto (the user kept « cercueil », with « cadavre », its direct meaning, for
-  its start). A trio hiding TWO
+  or past the map, the note adds that the line gives little of the word
+  (`rules.far_note`, `curate._notes`; user-decided 2026-10-14, after « tutoyer » at 759
+  and « cercueil » at 1010: nothing a player types first tells them they are getting
+  closer); a fact for the start step, never which start to take (the taste's call), never
+  when the readers write the word itself, and never a veto (the user kept « cercueil »). A trio hiding TWO
   or more words players don't say — the one fact that asks — has ONE of them swapped by the
   model BEFORE the ranking is paid for (`llm.drop_unsaid`: the DULL one goes, the one more
   fun to find stays — « clodos » over « stagnation », user-decided 2026-10-08), so that swap costs one question, never a second ranking; so does a trio whose line
@@ -314,7 +318,8 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   taste and the find-sentences skill's `## Stands alone` read whole, the words code allows
   shown): whether the line stands alone, SOLVED, without its page (the Svevo day:
   « c'étaient donc des nerfs parfaits » meant nothing even solved), which of its words need
-  the work to mean anything (they leave the pool, never judged), its KIND (`llm.KINDS`, the
+  the work to mean anything (they leave the pool, never judged; a banked trio holding one
+  is flagged and never finished, `bank.restore`), its KIND (`llm.KINDS`, the
   taste's `### <n>. <name>` headings) or none, its MAIN word — the word the line is about —
   with the 1 to 3 visible words its path runs through, the main word's narrowing ladder
   when it is one of a wide kind (the slot's kind, a smaller family a start can name, the
@@ -368,9 +373,9 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   not inflect and takes `cit`, no agreement — a fact, so no question). Nothing here publishes.
 - **The START WORDS are CHOSEN by the model, the three together, never at random**, by
   the taste with code's notes (above), from the band 100–200 of every map, for EVERY hole
-  (user-decided 2026-10-08: how much the line gives — a hole under `GIVEAWAY_HARD` 0.20 is
-  noted as one the line gives little of — decides which KIND of start, the taste's call,
-  never a nearer band); the WHOLE band is shown, no cap
+  (user-decided 2026-10-08: a hole under `GIVEAWAY_HARD` 0.20 is noted as one the line
+  gives little of, a fact, never a nearer band; which start each hole takes is the taste's
+  `## The start words`, the main word's first, by its kind); the WHOLE band is shown, no cap
   (`starts.start_candidates`: shipped rank within the
   band, no variant, letter-rule-clean, its WORD not
   past `MAX_START_FREQ_RANK` = 40000 in the corpus order — « hétéroptère » is out; the word

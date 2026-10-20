@@ -216,11 +216,11 @@ def line_id(work: str, sentence: str) -> str:
     return hashlib.sha1(f"{work}\n{sentence}".encode("utf-8")).hexdigest()[:8]
 
 
-def entry(book: dict, line: dict, checked, started: dict, lang: str) -> dict:
+def entry(book: dict, line: dict, checked, started: dict, lang: str, stamp: str) -> dict:
     """A banked line as the bank keeps it: its source, its read and the taste it was read
-    under, the judge's giveaway for every word it can hide, the checked trio with every
-    measure taken on the line, and its start words with where each stands on its free map —
-    and the line as the player would first see it."""
+    under (`stamp`, taken before the read), the judge's giveaway for every word it can hide,
+    the checked trio with every measure taken on the line, and its start words with where
+    each stands on its free map — and the line as the player would first see it."""
     m = checked.measures
     draft, starts = started["draft"], started["starts"]
     first = {}
@@ -232,7 +232,7 @@ def entry(book: dict, line: dict, checked, started: dict, lang: str) -> dict:
         "lang": lang, "work": book["file"], "kind": book["kind"],
         "author": book.get("author", ""), "title": book.get("title", ""),
         "sentence": line["sentence"],
-        "taste": taste_stamp(), "read": stored(line["read"]),
+        "taste": stamp, "read": stored(line["read"]),
         "marked": st.displayed(draft["words"], draft["holes"], {k: f"[{h['secret']['word']}]" for k, h in first.items()}),
         "shown": st.displayed(draft["words"], draft["holes"]),
         "holes": [{"secret": first[t.slug]["secret"]["word"], "slug": t.slug, "level": checked.levels.get(t.slug, ""),
@@ -247,50 +247,61 @@ def entry(book: dict, line: dict, checked, started: dict, lang: str) -> dict:
     }
 
 
-def aside(book: dict, line: dict, lang: str) -> dict:
+def aside(book: dict, line: dict, lang: str, stamp: str) -> dict:
     """A line SET ASIDE before its words were chosen (`curate.candidate`: at its read, or its
-    giveaway), kept with why, its read and the giveaways paid: listed with its reason, never
-    finished."""
+    giveaway), kept with why, its read, the taste it was read under and the giveaways paid:
+    listed with its reason, never finished."""
     return {"id": line_id(book["file"], line["sentence"]),
             "bankedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "lang": lang, "work": book["file"], "kind": book["kind"],
             "author": book.get("author", ""), "title": book.get("title", ""),
-            "sentence": line["sentence"], "taste": taste_stamp(), "read": stored(line.get("read")),
+            "sentence": line["sentence"], "taste": stamp, "read": stored(line.get("read")),
             "dropped": line["dropped"], "given": line.get("given") or {}}
 
 
-def reread(e: dict, read: dict | None, why: str | None) -> dict:
-    """A banked line read again (`curate --rebank`) under today's taste: kept, or set aside
-    with why — its words, start words and measures untouched either way, so a later rebank
-    reads it again with no judge."""
+def reread(e: dict, read: dict | None, why: str | None, stamp: str) -> dict:
+    """A banked line read again (`curate --rebank`) under the taste `stamp` names: kept, or
+    set aside with why — its words, start words and measures untouched either way, so a
+    later rebank reads it again with no judge."""
     out = {k: v for k, v in e.items() if k != "dropped"}
-    out.update(taste=taste_stamp(), read=stored(read))
+    out.update(taste=stamp, read=stored(read))
     if why:
         out["dropped"] = why
     return out
 
 
-def pool(tokens, given: dict, archive: dict, lang: str, in_vocab, frequency_rank=lambda t: None) -> list:
-    """The words a banked line can hide TODAY: those code allows against today's archive (a
-    word back in its cooldown leaves) whose giveaway, judged at banking, is at or above the
-    floor — a word unjudged then (it was cooling) is never offered. Every word judged had
-    passed the commonest-word floor, so `frequency_rank` may be left out."""
+def pool(tokens, given: dict, lang: str, in_vocab, cooling=frozenset(), frequency_rank=lambda t: None) -> list:
+    """The words a banked line can hide: those code allows, but the secrets `cooling` (the
+    archive's cooldown, a fact of the day: `restore` leaves them out, the rebank's read is
+    shown them), whose giveaway, judged at banking, is at or above the floor — a word
+    unjudged then (it was cooling) is never offered. Every word judged had passed the
+    commonest-word floor, so `frequency_rank` may be left out."""
     allowed = rules.initial_candidates(tokens, lang=lang, in_vocab=in_vocab,
-                                       past_secrets=archive["secrets"], frequency_rank=frequency_rank)
+                                       past_secrets=cooling, frequency_rank=frequency_rank)
     return [t for t in allowed if t.slug in given and given[t.slug] >= contextual_rank.GIVEAWAY_MIN]
+
+
+def needs_book(e: dict) -> set[str]:
+    """The slugs of the words a banked line's read says need the work to mean anything."""
+    return {slug(w) for w in (e.get("read") or {}).get("needsBook", [])}
 
 
 def restore(e: dict, archive: dict, lang: str, in_vocab, frequency_rank, measures_cls, checked_cls):
     """A banked line as the curator's `day` holds a finished one — (line, checked) — read
-    against TODAY's archive; or (None, why) when the line was set aside or the archive now
-    rules it out."""
+    against TODAY's archive; or (None, why) when the line was set aside, its trio hides a
+    word its read says needs the work (such a word is never hidden, nor offered to a swap),
+    or the archive now rules it out."""
     if e.get("dropped"):
         return None, f"it was set aside: {e['dropped']}"
+    book = needs_book(e)
+    if book & set(e["trio"]):
+        return None, f"« {', '.join(s for s in e['trio'] if s in book)} » needs the work to mean anything"
     if shelf_mod.sentence_key(e["sentence"]) in archive["sentences"]:
         return None, "the sentence was published"
     tokens = parse(e["sentence"], lang)
     given = e["given"]
-    allowed = pool(tokens, given, archive, lang, in_vocab, frequency_rank)
+    allowed = [t for t in pool(tokens, given, lang, in_vocab, archive["secrets"], frequency_rank)
+               if t.slug not in book]
     first_of: dict = {}
     for t in allowed:
         first_of.setdefault(t.slug, t)
@@ -310,46 +321,47 @@ def restore(e: dict, archive: dict, lang: str, in_vocab, frequency_rank, measure
     return (line, checked), None
 
 
-
 def render(lang: str) -> None:
     """`bank/<lang>.md`, the bank to read — SPOILERS: every word of every line. The lines kept,
     by kind (`llm.KINDS`, 1 to 7), then those with no kind, each with its main word marked and
-    the path to it (flagged when the trio it was banked with does not hide it), the sibling
-    warning, its hidden words, how each plays and the start words it would open with; then
-    the lines set aside, each with why; then the lines not read yet (`curate --rebank`)."""
+    the path to it (flagged when the trio it was banked with does not hide it, or hides a word
+    that needs the work), the sibling warning, its hidden words, how each plays and the start
+    words it would open with; then the lines set aside, each with why; then the lines not
+    read yet (`curate --rebank`). Written under the bank's lock: two processes never write
+    the page over each other."""
     with locked(lang):
         held = [e for e in load(lang) if not e.get("empty")]
         older = len(stale(lang))
-    kept = [e for e in held if e.get("read") and not e.get("dropped")]
-    dropped = [e for e in held if e.get("dropped")]
-    unread = [e for e in held if not e.get("read") and not e.get("dropped")]
-    out = [f"# The {lang} bank — SPOILERS", "",
-           f"{len(kept)} line(s) kept, {len(dropped)} set aside, {len(unread)} not read yet, from "
-           f"{len({e['work'] for e in held})} work(s). Finish one into a candidate day: "
-           f"`pnpm curate --lang {lang} --finish <id>` (the ranking runs then).", ""]
-    if older:
-        out += [f"{older} line(s) were never read, or were read under another taste: "
-                f"`pnpm curate --lang {lang} --rebank` reads them again.", ""]
-    for kind in [*llm.KINDS, None]:
-        group = [e for e in kept if e["read"]["kind"] == kind]
-        if group:
-            out += [f"## {kind}. {llm.KINDS[kind]}" if kind else "## No kind", ""]
-            for e in group:
-                out += _kept(e)
+        kept = [e for e in held if e.get("read") and not e.get("dropped")]
+        dropped = [e for e in held if e.get("dropped")]
+        unread = [e for e in held if not e.get("read") and not e.get("dropped")]
+        out = [f"# The {lang} bank — SPOILERS", "",
+               f"{len(kept)} line(s) kept, {len(dropped)} set aside, {len(unread)} not read yet, from "
+               f"{len({e['work'] for e in held})} work(s). Finish one into a candidate day: "
+               f"`pnpm curate --lang {lang} --finish <id>` (the ranking runs then).", ""]
+        if older:
+            out += [f"{older} line(s) were never read, or were read under another taste: "
+                    f"`pnpm curate --lang {lang} --rebank` reads them again.", ""]
+        for kind in [*llm.KINDS, None]:
+            group = [e for e in kept if e["read"]["kind"] == kind]
+            if group:
+                out += [f"## {kind}. {llm.KINDS[kind]}" if kind else "## No kind", ""]
+                for e in group:
+                    out += _kept(e)
+                out.append("")
+        if dropped:
+            out += ["## Set aside", ""]
+            for e in dropped:
+                anchor = (e.get("read") or {}).get("anchor")
+                out.append(f"- `{e['id']}` « {e.get('marked') or e['sentence']} » — {_source(e)}: {e['dropped']}"
+                           + (f" (main word « {anchor} »)" if anchor else ""))
             out.append("")
-    if dropped:
-        out += ["## Set aside", ""]
-        for e in dropped:
-            anchor = (e.get("read") or {}).get("anchor")
-            out.append(f"- `{e['id']}` « {e.get('marked') or e['sentence']} » — {_source(e)}: {e['dropped']}"
-                       + (f" (main word « {anchor} »)" if anchor else ""))
-        out.append("")
-    if unread:
-        out += ["## Not read yet", ""]
-        for e in unread:
-            out += [f"- `{e['id']}` « {e['marked']} » — {_source(e)}", *_holes(e, None)]
-        out.append("")
-    view_file(lang).write_text("\n".join(out), encoding="utf-8")
+        if unread:
+            out += ["## Not read yet", ""]
+            for e in unread:
+                out += [f"- `{e['id']}` « {e['marked']} » — {_source(e)}", *_holes(e, None)]
+            out.append("")
+        view_file(lang).write_text("\n".join(out), encoding="utf-8")
 
 
 def _source(e: dict) -> str:
@@ -374,6 +386,10 @@ def _kept(e: dict) -> list[str]:
             + (f" (through {', '.join(f'« {w} »' for w in r['pathWords'])})" if r["pathWords"] else "")]
     if anchor not in e["trio"]:
         rows.append("  - FLAG: the trio it was banked with does not hide its main word")
+    book = [s for s in e["trio"] if s in needs_book(e)]
+    if book:
+        rows.append(f"  - FLAG: the trio hides {', '.join(f'« {s} »' for s in book)}, which the read says needs "
+                    f"the work: `--finish` refuses it")
     if r["wide"]:
         rows.append("  - one of a wide kind: " + " › ".join((r["ladder"] or {}).get(step) or "—"
                                                              for step in llm.LADDER))

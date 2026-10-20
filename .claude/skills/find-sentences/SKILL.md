@@ -91,7 +91,7 @@ The practical rules:
 - A start that breaks the grammar or the sense is replaced by another band word, never
   kept.
 
-## The page (recorded 2026-09-08)
+## The page
 
 A book day shows the sentence on its PAGE: the raw sentences around it, muted, the
 puzzle's line in the ink. The curator offers up to eight sentences each side and the
@@ -136,19 +136,19 @@ one author are fine when each earns its place and they are not redundant (a seco
 Houellebecq for a different decade and mood, yes; three Bove novels in one month, no).
 Vary eras, countries and registers over the run.
 
-**Music (decided 2026-09-06).** A song has forty lines built for rhyme, so per-artist
-yield is low and the writers are few: the rule for artists is a COOLDOWN, not "never
-twice" — the same artist at most once a month, never the same song. The famous single
-is out, and for the shelf that rule is mechanical: Genius pageviews, the top quarter of
-an artist's songs dropped before reading (`pnpm shelf:lyrics`, #262). The artist list is
-the user's, by hand, and the fetch never asks the model for names; when the user asks
-for artist IDEAS, the lane is wider than rap — writers in rap beyond the current names
-(Lucio Bukowski, Sameer Ahmad, Swift Guad, Anton Serra, Fuzati, Rocé, Casey, Georgio,
-Dinos, Ichon, Prince Waly, Zamdane, Luv Resval, Lala &ce) and the prose-like lane outside
-it (Odezenne, Mendelson, Diabologum, Programme, Arm, Dominique A, Bashung, Miossec,
-Brigitte Fontaine, Daniel Darc, Flavien Berger, Bonnie Banane, Feu! Chatterton). A lyric
-candidate is one to four adjacent lines of one stanza read as one sentence. Music is a
-minority stream, one or two days a week. Movies are out of scope.
+**Music.** A song has forty lines built for rhyme, so per-artist yield is low and the
+writers are few: the rule for artists is a COOLDOWN, not "never twice" — the same artist
+at most once a month, never the same song. The famous single is out, and for the shelf
+that rule is mechanical: Genius pageviews, the top quarter of an artist's songs dropped
+before reading (`pnpm shelf:lyrics`, #262). The artist list is the user's, by hand, and
+the fetch never asks the model for names; when the user asks for artist IDEAS, the lane
+is wider than rap — writers in rap beyond the current names (Lucio Bukowski, Sameer
+Ahmad, Swift Guad, Anton Serra, Fuzati, Rocé, Casey, Georgio, Dinos, Ichon, Prince Waly,
+Zamdane, Luv Resval, Lala &ce) and the prose-like lane outside it (Odezenne, Mendelson,
+Diabologum, Programme, Arm, Dominique A, Bashung, Miossec, Brigitte Fontaine, Daniel
+Darc, Flavien Berger, Bonnie Banane, Feu! Chatterton). A lyric candidate is one to four
+adjacent lines of one stanza read as one sentence. Music is a minority stream, one or two
+days a week. Movies are out of scope.
 
 ## Request 1 — pick books for the shelf
 
