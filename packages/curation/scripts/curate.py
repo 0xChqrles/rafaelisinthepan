@@ -1020,6 +1020,8 @@ def read(claude: llm.Claude, log, line: dict, lang: str) -> tuple[dict | None, s
         problem = ("its kind must be a number from 1 to 7, or null" if r is None
                    else None if not r["stands_alone"] or r["anchor"] is None else told_back(r, line))
         if problem is None:
+            if r["anchor"] is not None:
+                r["path_words"] = content_path(r["path_words"], line)
             _log_read(log, r)
             return r, strike(r)
         log(f"- told back: {problem}")
@@ -1039,14 +1041,23 @@ def told_back(read: dict, line: dict) -> str | None:
 
 def path_off(words: list[str], line: dict, own: str, name: str) -> str | None:
     """What code tells back of a path said to run through `words`: not 1 to 3 of the line's
-    own words — never a stop word, a sign, nor the hidden word itself (`own`, its slug;
-    `name`, how the question calls it). None when it holds."""
+    own words — never a sign, nor the hidden word itself (`own`, its slug; `name`, how the
+    question calls it) — its stop words passed over (`content_path`). None when it holds."""
     sight = {t.slug for t in line["tokens"] if not t.stop and t.pos != "PUNCT" and t.slug != own}
+    words = content_path(words, line)
     off = [w for w in words if slug(w) not in sight]
     if not 1 <= len(words) <= 3 or off:
-        return (f"its path must run through 1 to 3 words of the line left in sight, never a stop word nor {name}"
+        return (f"its path must run through 1 to 3 words of the line left in sight, never {name}"
                 + (f": {', '.join(f'« {w} »' for w in off)} is not one" if off else ""))
     return None
+
+
+def content_path(words: list[str], line: dict) -> list[str]:
+    """A path's words but the line's stop words (« up », « part », « certain »: the parser's
+    list, which the model cannot know) — always in sight, a stop word never locks a pair
+    (`rules.trio_faults`), so the path is checked and kept without it."""
+    stops = {t.slug for t in line["tokens"] if t.stop} - {t.slug for t in line["tokens"] if not t.stop}
+    return [w for w in words if slug(w) not in stops]
 
 
 def strike(read: dict) -> str | None:
@@ -1340,7 +1351,7 @@ def choose_others(claude: llm.Claude, log, line: dict, anchor, sims: Vectors, pa
             log(f"- told back: {problem}")
             line["told"].append(problem)
             continue
-        verdicts = {slug(w["word"]): w for w in answer["words"]}
+        verdicts = {slug(w["word"]): {**w, "path_words": content_path(w["path_words"], line)} for w in answer["words"]}
         others = [pool[s] for s in verdicts]
         trio = [anchor, *others]
         hidden = {i for t in trio for i in occurrences[t.slug]}

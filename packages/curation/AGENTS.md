@@ -372,8 +372,10 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   stand alone; it names no main word; its main word needs the work; the main word is one of
   a wide kind with a ladder step missing (a lottery); it is a mirror; the joke reads with it
   hidden. Code TELLS BACK (`curate.told_back`) a kind none of the seven, a main word the
-  line cannot hide, a path not through 1 to 3 of the line's words left in sight (no stop
-  word, never the main word), `READ_ROUNDS` (3) asks in all; a malformed answer raises. A
+  line cannot hide, a path not through 1 to 3 of the line's words left in sight (never the
+  main word; its stop words passed over and left out of the path, `curate.content_path`:
+  the parser's list, which the model cannot know, and a word always in sight never locks a
+  pair), `READ_ROUNDS` (3) asks in all; a malformed answer raises. A
   line with NO KIND is kept. The sibling is a warning only. Only then is the giveaway paid
   (the floor, below); then its words are chosen, its main word first (above).
 - **The FAMOUS LINE is a QUOTATION test, never a memory test (user-decided 2026-09-08,

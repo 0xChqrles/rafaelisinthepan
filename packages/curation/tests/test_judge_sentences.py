@@ -174,7 +174,7 @@ def test_the_read_sets_a_line_aside_on_each_verdict_in_order(monkeypatch, over, 
 
 @pytest.mark.parametrize("over, told", [
     ({"anchor": "lune"}, "« lune » is not one of the words that can be hidden"),
-    ({"path_words": ["sur"]}, "« sur » is not one"),                 # a stop word
+    ({"path_words": ["sur"]}, "its path must run through 1 to 3 words of the line left in sight"),   # stop words only
     ({"path_words": ["pierre"]}, "« pierre » is not one"),           # the main word itself
     ({"path_words": ["la pierre"]}, "« la pierre » is not one"),     # not one word of the line
     ({"path_words": []}, "its path must run through 1 to 3 words of the line left in sight"),
@@ -189,6 +189,15 @@ def test_a_main_word_the_line_cannot_hide_or_a_path_out_of_sight_is_told_back(mo
     assert why is None and read["anchor"] == "pierre"
     assert asked[0] == (["chat", "dort", "pierre", "froide"], [])
     assert len(asked) == 2 and told in asked[1][1][0]
+
+
+def test_a_stop_word_on_the_main_word_s_path_is_passed_over_never_told_back(monkeypatch):
+    # « sur » is on the parser's stop list, which the model cannot know: always in sight, it is
+    # dropped from the path, never a reason to ask again
+    asked = []
+    _read(monkeypatch, _a_read(path_words=("sur", "froide")), asked)
+    read, why = curate.read(object(), Log(), _the_line(), "fr")
+    assert why is None and read["path_words"] == ["froide"] and len(asked) == 1
 
 
 def test_a_reading_told_back_read_rounds_times_sets_the_line_aside(monkeypatch):
@@ -832,6 +841,14 @@ def test_two_words_are_chosen_against_the_main_word_and_kept_with_their_paths(mo
     assert line["asks"] == 1 and "dropped" not in line
 
 
+def test_a_stop_word_on_a_word_s_path_is_passed_over_and_left_out_of_its_path(monkeypatch):
+    _measured(monkeypatch)
+    offered = _against(monkeypatch, _two(chat={"path_words": ["sur", "dort"]}))
+    checked, line, _log = _choose()
+    assert checked.paths["chat"] == {"line": "to chat", "words": ["dort"]}
+    assert len(offered) == 1 and line["asks"] == 1
+
+
 @pytest.mark.parametrize("facts, why", [
     ({"expected": {"pierre": "pierre"}}, "most readers write it straight in"),
     ({"first": lambda f: "pierre" if "la ___ froide" in f else "autre"}, "the words right around it write it in"),
@@ -870,7 +887,7 @@ def test_a_main_word_players_don_t_say_passes_and_a_reader_s_word_at_rank_four_h
     ({**_two(), "words": [_two()["words"][0], {**_two()["words"][1], "word": "pierre"}]}, "never the main word"),
     ({**_two(), "words": [_two()["words"][0]] * 2}, "two distinct words"),
     (_two(jardin={"path_words": ["sur"]}), "« jardin »: its path must run through 1 to 3 words of the line"),
-    (_two(jardin={"path_words": ["jardin"]}), "never a stop word nor the word itself: « jardin » is not one"),
+    (_two(jardin={"path_words": ["jardin"]}), "never the word itself: « jardin » is not one"),
 ])
 def test_an_answer_that_is_not_two_words_offered_each_with_its_path_is_told_back(monkeypatch, answer, told):
     _measured(monkeypatch)
