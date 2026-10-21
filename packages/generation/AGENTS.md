@@ -303,8 +303,10 @@ Consequences that are load-bearing:
   secret's own group (rank 0), is IGNORED and reported. The groups reached are dropped
   from `rank_lexemes`' list and the map is assembled AGAIN by `build_merged_rank_map`:
   they claim no key and consume no rank (`TOP_K` counts kept groups, filter-then-cap),
-  a surface they held attaches to the next group that claims it, and `dq` is quantized
-  over the KEPT groups' static similarities (the same formula). A word off the map
+  a surface they held attaches to the next group that claims it — unless that group is
+  then SHOWN as an off word (the same word under another lexeme, which only opens once
+  the first is gone), which is taken off in turn, assembly after assembly — and `dq` is
+  quantized over the KEPT groups' static similarities (the same formula). A word off the map
   reads as far to the player, the same as one pushed to the bottom. No off words = the
   static map, unchanged.
 - **`--other-sense FICHIER`** (requires `--words`): a JSON object `{"<secret slug>":

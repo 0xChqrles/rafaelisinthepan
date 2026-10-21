@@ -8,7 +8,9 @@ TAKING OFF the groups a player reaches through another sense of it:
     the group it reaches is taken off and the map assembled again without it;
   - a removed group claims no key and consumes no rank: the groups after it move up,
     and TOP_K still counts kept groups (filter-then-cap);
-  - a surface a removed group held attaches to the next group that claims it;
+  - a surface a removed group held attaches to the next group that claims it, unless
+    that group is then SHOWN as an off word — the same word under another lexeme, taken
+    off in turn;
   - dq is quantized over the KEPT groups' similarities: rank 1 = 255, last = 0;
   - the secret's own group is never removed, and a word that reaches no group is
     ignored — both reported, neither touching the map;
@@ -91,6 +93,26 @@ def test_a_surface_the_removed_group_held_goes_to_the_next_group_claiming_it():
     assert rmap["vers"] == {"word": "ver", "rank": 2, "dq": rmap["ver"]["dq"]}
     assert rmap["ver"]["rank"] == 2
     assert report["removed"] == ["vers"]
+
+
+def test_a_group_that_comes_back_shown_as_an_off_word_is_taken_off_too():
+    # «rime» is the poetry noun and a form of the verb «rimer», both ranked by the same
+    # vector: the noun keys it first and the verb, keyless, never opens. Taking the noun
+    # off opens the verb SHOWN as «rime» — the same word back near its rank, typing warm —
+    # so it is taken off in turn; a surface that only aliases another word stays (above).
+    table = {**TABLE, "rime": ("rime:nc", "rimer:v")}
+    ranking = [*RANKING, ("rime", 6, 0.50)]
+    def build(off=(), report=None):
+        return gen_phrase.build_puzzle_rank_map("asticot", ranking, table, gen_phrase.invert_lemmas(table),
+                                                set(table), off=off, off_report=report)
+    static = build()[1]
+    assert static["rime"]["rank"] == 6
+    report = {}
+    merged, rmap, _groups = build(off=["rime"], report=report)
+
+    assert _ranked(merged) == ["vers", "larve", "ver", "lombric", "strophe"]
+    assert "rime" not in rmap
+    assert report == {"removed": ["rime", "rime"], "ignored": []}
 
 
 def test_dq_is_quantized_over_the_kept_groups():

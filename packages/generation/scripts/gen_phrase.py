@@ -518,8 +518,9 @@ def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
     curator names them, curation AGENTS.md). Each is read the way a player reaches it,
     by its slug on a first assembly; the groups so reached are TAKEN OFF and the map is
     assembled again without them: they claim no key and consume no rank (TOP_K still
-    counts kept groups), a surface they held attaches to the next group claiming it,
-    and dq is quantized over the kept groups. A word off the map reads as far to the
+    counts kept groups), a surface they held attaches to the next group claiming it —
+    unless that group is then SHOWN as an off word (the same word under another lexeme,
+    taken off in turn) — and dq is quantized over the kept groups. A word off the map reads as far to the
     player, like one pushed to the bottom, and the kept groups keep the static order —
     right for a one-meaning word («poison»: poisonous 1st, toxic 5th, toxin 6th), so a
     sense is chosen by subtraction, never by reordering. A word with no key, or keying
@@ -530,21 +531,25 @@ def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
     merged, rmap, groups = build_merged_rank_map(
         secret_display, ranking, lemma_table, forms_by_lemma, Vset, TOP_K,
         secret_lemmas, entities=entities)
-    taken, ignored = {}, []
-    for word in off:
-        entry = rmap.get(slug(word))
-        if entry is None or entry["rank"] == 0:
-            ignored.append(word)
-        else:  # groups[rank] is that group; a neighbour claims exactly its own lexeme
-            taken[entry["rank"]] = groups[entry["rank"]][2][0]
-    if off_report is not None:
-        off_report["removed"] = [groups[rank][0] for rank in sorted(taken)]
-        off_report["ignored"] = ignored
-    if taken:
-        off_lexemes = set(taken.values())
+    ignored = [w for w in off if rmap.get(slug(w)) is None or rmap[slug(w)]["rank"] == 0]
+    wanted = {slug(w) for w in off} - {slug(w) for w in ignored}
+    off_lexemes, removed = set(), []
+    # First the groups the off words reach; then, assembly after assembly, any group that
+    # comes back SHOWN as one of them: the same word under another lexeme opens once the
+    # first is gone (« idées », « variantes » came back near their old rank, typing warm).
+    # A surface that only aliases another word's group stays («vers» goes to the worm).
+    hits = {rmap[s]["rank"] for s in wanted}
+    while hits:
+        for rank in sorted(hits):  # groups[rank] is that group; it claims exactly its own lexeme
+            off_lexemes.add(groups[rank][2][0])
+            removed.append(groups[rank][0])
         merged, rmap, groups = build_merged_rank_map(
             secret_display, ranking, lemma_table, forms_by_lemma, Vset, TOP_K,
             secret_lemmas, entities=[e for e in entities if e[0] not in off_lexemes])
+        hits = {rank for display, rank, *_ in groups[1:] if slug(display) in wanted}
+    if off_report is not None:
+        off_report["removed"] = removed
+        off_report["ignored"] = ignored
     annotate_rank_map(rmap, merged, secret=secret_display)
     return merged, rmap, groups
 
