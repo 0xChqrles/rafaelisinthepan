@@ -9,8 +9,8 @@ TAKING OFF the groups a player reaches through another sense of it:
   - a removed group claims no key and consumes no rank: the groups after it move up,
     and TOP_K still counts kept groups (filter-then-cap);
   - a surface a removed group held attaches to the next group that claims it, unless
-    that group is then SHOWN as an off word — the same word under another lexeme, taken
-    off in turn;
+    that group had no key before and is then SHOWN as an off word — the same word under
+    another lexeme, taken off in turn; a group already on the map that gains it stays;
   - dq is quantized over the KEPT groups' similarities: rank 1 = 255, last = 0;
   - the secret's own group is never removed, and a word that reaches no group is
     ignored — both reported, neither touching the map;
@@ -113,6 +113,26 @@ def test_a_group_that_comes_back_shown_as_an_off_word_is_taken_off_too():
     assert _ranked(merged) == ["vers", "larve", "ver", "lombric", "strophe"]
     assert "rime" not in rmap
     assert report == {"removed": ["rime", "rime"], "ignored": []}
+
+
+def test_a_group_already_on_the_map_that_gains_an_off_word_s_surface_stays():
+    # «rime» keys the poetry noun; the verb «rimer», ranked by that same homograph (it has
+    # no clean form), is already on the map under «rimait». Taking the noun off hands the
+    # verb the surface and its display: it stays, at its own rank — only a group that had no
+    # key before is taken off for coming back as an off word.
+    table = {**TABLE, "rime": ("rime:nc", "rimer:v"), "rimait": ("rimer:v", "rimait:x")}
+    ranking = [*RANKING, ("rime", 6, 0.50), ("rimait", 7, 0.45)]
+    def build(off=(), report=None):
+        return gen_phrase.build_puzzle_rank_map("asticot", ranking, table, gen_phrase.invert_lemmas(table),
+                                                set(table), off=off, off_report=report)
+    _m, static, groups = build()
+    verb = next(r for _d, r, claims, *_ in groups if claims == ("rimer:v",))
+    assert static["rime"]["rank"] == 6 and static["rimait"]["rank"] == verb
+    report = {}
+    merged, rmap, groups = build(off=["rime"], report=report)
+
+    assert report["removed"] == ["rime"]
+    assert rmap["rime"]["rank"] == rmap["rimait"]["rank"]  # the verb, at its own rank, keeps both
 
 
 def test_dq_is_quantized_over_the_kept_groups():

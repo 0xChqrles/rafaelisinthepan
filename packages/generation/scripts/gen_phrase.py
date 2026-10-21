@@ -519,8 +519,8 @@ def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
     by its slug on a first assembly; the groups so reached are TAKEN OFF and the map is
     assembled again without them: they claim no key and consume no rank (TOP_K still
     counts kept groups), a surface they held attaches to the next group claiming it —
-    unless that group is then SHOWN as an off word (the same word under another lexeme,
-    taken off in turn) — and dq is quantized over the kept groups. A word off the map reads as far to the
+    unless that group had no key before and is then SHOWN as an off word (the same word
+    under another lexeme, taken off in turn) — and dq is quantized over the kept groups. A word off the map reads as far to the
     player, like one pushed to the bottom, and the kept groups keep the static order —
     right for a one-meaning word («poison»: poisonous 1st, toxic 5th, toxin 6th), so a
     sense is chosen by subtraction, never by reordering. A word with no key, or keying
@@ -535,9 +535,12 @@ def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
     wanted = {slug(w) for w in off} - {slug(w) for w in ignored}
     off_lexemes, removed = set(), []
     # First the groups the off words reach; then, assembly after assembly, any group that
-    # comes back SHOWN as one of them: the same word under another lexeme opens once the
-    # first is gone (« idées », « variantes » came back near their old rank, typing warm).
-    # A surface that only aliases another word's group stays («vers» goes to the worm).
+    # comes back SHOWN as one of them and had no key before: the same word under another
+    # lexeme, which only opens once the first is gone (« idées », « variantes » came back near
+    # their old rank, typing warm). A group already on the map that only gains the surface
+    # stays, at its own rank (« arracher » gaining « arraché »), and so does a surface that
+    # only aliases another word's group («vers» goes to the worm).
+    opened = {claims[0] for _d, rank, claims, *_ in groups if rank}
     hits = {rmap[s]["rank"] for s in wanted}
     while hits:
         for rank in sorted(hits):  # groups[rank] is that group; it claims exactly its own lexeme
@@ -546,7 +549,8 @@ def build_puzzle_rank_map(secret_display, ranking, lemma_table, forms_by_lemma, 
         merged, rmap, groups = build_merged_rank_map(
             secret_display, ranking, lemma_table, forms_by_lemma, Vset, TOP_K,
             secret_lemmas, entities=[e for e in entities if e[0] not in off_lexemes])
-        hits = {rank for display, rank, *_ in groups[1:] if slug(display) in wanted}
+        hits = {rank for display, rank, claims, *_ in groups[1:]
+                if claims[0] not in opened and slug(display) in wanted}
     if off_report is not None:
         off_report["removed"] = removed
         off_report["ignored"] = ignored
