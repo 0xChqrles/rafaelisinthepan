@@ -1,7 +1,7 @@
 """The bank: a finished line kept as JSON comes back as the run held it, the main word first,
-and finishing it reads it against today's archive; a line set aside is kept with why and
-its inputs; the page lists the lines by kind; `--rebank` reads them again and chooses their
-words again, the main word first, with no judge."""
+each word with its other-sense check, and finishing it reads it against today's archive; a
+line set aside is kept with why and its inputs; the page lists the lines by kind; `--rebank`
+reads them again and chooses their words again, the main word first, with no judge."""
 
 from datetime import date
 import json
@@ -36,6 +36,10 @@ _READ = {"about": "a dog asleep by the stove", "stands_alone": True, "why": "", 
          "mirror": False, "joke_hidden": True, "sibling": "oven"}
 _GIVEN = {"old": 0.3, "dog": 0.5, "sleeps": 0.4, "stove": 0.2, "warm": 0.35}
 _LADDER = {"slot": "a state", "family": "rest", "first": "the first named"}
+# Each word's other-sense check (`curate.sense`): « old » loses two words of its other sense.
+_SENSES = {"stove": {"used": "a cooker", "carried": True, "why": "cookers stand near", "off": []},
+           "old": {"used": "aged", "carried": True, "why": "", "off": ["former", "erstwhile"]},
+           "sleeps": {"used": "rests", "carried": True, "why": "", "off": []}}
 
 
 def _finished():
@@ -43,7 +47,7 @@ def _finished():
     chosen against it, « sleeps » one of a wide kind."""
     tokens = _tokens(SENTENCE, "en")
     allowed = [t for t in tokens if t.slug in _GIVEN]
-    line = {**curate.new_line(SENTENCE, tokens, allowed, dict(_GIVEN)), "read": _READ}
+    line = {**curate.new_line(SENTENCE, tokens, allowed, dict(_GIVEN)), "read": _READ, "senses": dict(_SENSES)}
     line["measures"] = curate.Measures(readings={"old": (["young", "tired"], "young")}, says={"old": (0.8, None)},
                                        crowds={"old": 0.1}, frames={"old": [("the ___", "man")]})
     of = {t.slug: t for t in allowed}
@@ -97,6 +101,7 @@ def test_a_banked_line_comes_back_as_the_run_held_it_the_main_word_first(fake_pa
     assert (checked2.paths, checked2.ladders, checked2.context, checked2.tags) == \
         (checked.paths, checked.ladders, checked.context, checked.tags)
     assert line2["measures"] == line["measures"] and line2["given"] == line["given"]
+    assert stored["senses"] == _SENSES and line2["senses"] == _SENSES
     assert line2["read"] == _READ
     assert bank.works("en") == {"a.epub"}
 
@@ -113,6 +118,12 @@ def test_finishing_refuses_a_line_set_aside_unchosen_published_or_with_a_word_ba
     old = {**e, "holes": [{k: v for k, v in h.items() if k != "role"} for h in e["holes"]]}
     restored, why = bank.restore(old, _archive(), *_RESTORE)
     assert restored is None and "--rebank" in why and not bank.chosen(old)
+    # a line whose words were chosen before their other sense was asked: its starts were chosen on
+    # another map than the one its puzzle would have
+    unsensed = {k: v for k, v in e.items() if k != "senses"}
+    assert bank.restore(unsensed, _archive(), *_RESTORE) == \
+        (None, "its words have no other-sense check: `--rebank` takes it")
+    assert bank.restore({**e, "senses": {"stove": _SENSES["stove"]}}, _archive(), *_RESTORE)[0] is None
 
 
 def test_the_bank_keeps_the_calendar_s_mix_and_spreads_over_authors():
@@ -203,6 +214,7 @@ def test_a_line_set_aside_counts_as_mined_but_is_no_line_and_keeps_its_inputs(fa
     [_, stored] = bank.load("en")
     assert stored["dropped"].startswith("no two words") and stored["read"]["anchor"] == "stove"
     assert stored["given"] == _GIVEN and stored["measures"]["says"] == {"old": [0.8, None]}
+    assert stored["senses"] == _SENSES                     # asked once: a rebank asks none of them again
     assert not bank.chosen(stored) and "holes" not in stored
 
 
@@ -228,11 +240,12 @@ def test_stale_lines_are_those_unread_read_under_another_taste_or_waiting_for_th
     older = _entry(id="older", taste="00000000")
     unread = {k: v for k, v in _unchosen(id="unread").items() if k not in ("taste", "read")}
     waiting = _unchosen(id="waiting")
+    unsensed = {k: v for k, v in _entry(id="unsensed").items() if k != "senses"}
     struck = _aside(sentence="x", given=dict(_GIVEN))
     struck_older = {**_aside(sentence="y", given=dict(_GIVEN)), "id": "struckolder", "taste": "00000000"}
-    bank.append("en", [current, older, unread, waiting, _aside(), struck, struck_older])
+    bank.append("en", [current, older, unread, waiting, unsensed, _aside(), struck, struck_older])
     # a line set aside before its giveaway was paid can be taken again by nothing: no word was judged
-    assert [e["id"] for e in bank.stale("en")] == ["older", "unread", "waiting", "struckolder"]
+    assert [e["id"] for e in bank.stale("en")] == ["older", "unread", "waiting", "unsensed", "struckolder"]
 
 
 def test_the_page_lists_the_lines_by_kind_then_no_kind_then_set_aside_then_waiting(fake_parse):
@@ -241,24 +254,28 @@ def test_the_page_lists_the_lines_by_kind_then_no_kind_then_set_aside_then_waiti
     fact = {**base, "id": "fact3"}
     loose = {**base, "id": "nokind", "read": {**base["read"], "kind": None}}
     waiting = _unchosen(id="waiting")
-    bank.append("en", [loose, fact, waiting, _aside(), pairs])
+    unsensed = {**{k: v for k, v in base.items() if k != "senses"}, "id": "unsensed"}
+    bank.append("en", [loose, fact, waiting, _aside(), pairs, unsensed])
     bank.render("en")
     page = bank.view_file("en").read_text(encoding="utf-8")
     order = [page.index(h) for h in ("## 1. Pairs and molds", "`pairs1`", "## 3. The small fact that proves a big thing",
                                      "`fact3`", "## No kind", "`nokind`", "## Set aside",
-                                     "## Waiting for their words", "`waiting`")]
+                                     "## Waiting for a rebank", "`waiting`", "`unsensed`")]
     assert order == sorted(order)
-    assert "3 line(s) kept, 1 set aside, 1 waiting for their words, from 2 work(s)" in page
+    assert "3 line(s) kept, 1 set aside, 2 waiting for a rebank, from 2 work(s)" in page
     assert "## 2." not in page                                          # an empty kind is not listed
     rows = page[page.index("`fact3`"):page.index("## No kind")]
     assert "  - main word « stove »: where a dog sleeps warm (through « dog »)" in rows
     assert "  - sibling: « oven » makes the same joke (a warning)" in rows
     assert "  - « old »: a dog's age (through « dog »)" in rows
     assert "  - « sleeps »: what it does (through « dog ») — one of a wide kind: a state › rest › the first named" in rows
-    assert "**stove** ← oven (free-map rank 101): the line gives little of it" in rows
-    assert "FLAG" not in page
+    assert "**stove** ← oven (rank 101): the line gives little of it" in rows
+    assert "old ← young (rank 120): other sense set aside: 2 words" in rows
+    assert rows.rstrip().endswith("sleeps ← naps (rank 150): one of a wide kind")   # nothing set aside, nothing said
+    assert "FLAG" not in page and "free-map" not in page
     assert "does not stand alone: which cat?" in page[page.index("## Set aside"):]
-    assert "1 line(s) were never read, were read under another taste, or wait for their words" in page
+    assert ("2 line(s) were never read, were read under another taste, or wait for their words or their "
+            "other-sense check") in page
 
 
 # --- `--rebank`: the bank taken again, with no judge -----------------------------------------
@@ -281,12 +298,20 @@ def _old(sentence=SENTENCE, **over):
             "levels": {"dog": "medium"}, "measures": m, **over}
 
 
-def _free_maps(monkeypatch):
-    """The free static maps, faked: every word's band offers « <word>-start » at 150, and the
-    draft the start step reads is the line with its holes."""
-    monkeypatch.setattr(curate, "band_of", lambda line, t, sims, pairs, lang: [{"word": f"{t.slug}-start", "rank": 150}])
+# Every word's plain map: the word, and one neighbour.
+_SIMS = curate.Vectors(static_map=lambda t, off=frozenset(): {t.slug: {"word": t.text, "rank": 0},
+                                                               "near": {"word": "near", "rank": 1}})
 
-    def draft(line, trio, static_map, lang):
+
+def _free_maps(monkeypatch):
+    """The maps, faked: every word's band offers « <word>-start » at 150, and the draft the
+    start step reads is the line with its holes; each word's other sense is asked, and its map
+    carries the line's sense with nothing set aside."""
+    monkeypatch.setattr(curate, "band_of", lambda line, t, sims, pairs, lang: [{"word": f"{t.slug}-start", "rank": 150}])
+    monkeypatch.setattr(curate.llm, "other_sense", lambda _c, _s, word, _words, lang, off=(): {
+        "used": f"{word}, plainly", "other": False, "words": [], "carried": True, "why": ""})
+
+    def draft(line, trio, sims, lang):
         holes = [{"pos": t.i, "secret": {"word": t.text, "slug": t.slug}, "start": {"word": t.text, "slug": t.slug},
                   "start_rank": 0} for t in trio]
         return {"words": [t.text.lower() for t in line["tokens"]], "holes": sorted(holes, key=lambda h: h["pos"]),
@@ -311,8 +336,8 @@ def _against_stove(monkeypatch):
 
 def test_a_rebank_reads_and_chooses_again_from_what_was_stored_and_never_asks_the_judge(fake_parse, monkeypatch,
                                                                                          tmp_path):
-    import contextual_rank
-    monkeypatch.setattr(contextual_rank, "giveaway", lambda *_a, **_k: pytest.fail("the rebank never asks the judge"))
+    import jev
+    monkeypatch.setattr(jev, "giveaway", lambda *_a, **_k: pytest.fail("the rebank never asks the judge"))
     monkeypatch.setattr(curate, "parse", _tokens)
     monkeypatch.setattr(_paths, "RUNS_DIR", tmp_path / "runs")
     _free_maps(monkeypatch)
@@ -334,7 +359,7 @@ def test_a_rebank_reads_and_chooses_again_from_what_was_stored_and_never_asks_th
     bank.append("en", [unread, waiting, mirror, published, done, _aside()])
     args = SimpleNamespace(lang="en", work=None)
     archive = _archive(secrets={"warm"}, sentences={bank.shelf_mod.sentence_key(published["sentence"])})
-    assert curate.rebank_works(object(), curate.Log("rebank"), args, archive, lambda s: True, curate.Vectors()) == 0
+    assert curate.rebank_works(object(), curate.Log("rebank"), args, archive, lambda s: True, _SIMS) == 0
     # the read is shown every word judged at banking, « warm » cooling today included (« cold »
     # never was); a line read under today's taste is not read again
     assert read == [["old", "dog", "sleeps", "warm", "stove"], ["dog", "sleeps", "warm", "stove"]]
@@ -349,6 +374,8 @@ def test_a_rebank_reads_and_chooses_again_from_what_was_stored_and_never_asks_th
         e = after[key]
         assert e["trio"] == ["stove", "old", "sleeps"] and [h["role"] for h in e["holes"]] == ["main", "other", "other"]
         assert e["starts"] == {"stove": "stove-start", "old": "old-start", "sleeps": "sleeps-start"}
+        assert e["senses"]["old"] == {"used": "old, plainly", "carried": True, "why": "", "off": []}
+        assert bank.finishable(e)
         assert e["bankedAt"] == "2026-10-18T10:00:00+00:00" and e["taste"] == STAMP
         assert not {"chain", "swaps", "levels", "dropped"} & set(e) and "out" not in e["measures"]
     assert after[mirror["id"]]["dropped"].startswith("a mirror") and after[mirror["id"]]["given"] == _GIVEN
@@ -357,7 +384,7 @@ def test_a_rebank_reads_and_chooses_again_from_what_was_stored_and_never_asks_th
     assert after[done["id"]] == json.loads(json.dumps(done))                      # taken under today's taste
     assert bank.stale("en") == [] and bank.claimed("en") == set()
     # resumable: nothing left to take
-    assert curate.rebank_works(object(), curate.Log("rebank2"), args, archive, lambda s: True, curate.Vectors()) == 2
+    assert curate.rebank_works(object(), curate.Log("rebank2"), args, archive, lambda s: True, _SIMS) == 2
     assert len(read) == 2
 
 
@@ -376,8 +403,7 @@ def test_a_rebank_stamps_the_taste_taken_before_the_reads(fake_parse, monkeypatc
         return _READ
 
     monkeypatch.setattr(curate.llm, "read_line", read_line)
-    [after] = curate.reread_work(object(), lambda *_: None, [_old()], _archive(), "en", lambda s: True,
-                                 curate.Vectors())
+    [after] = curate.reread_work(object(), lambda *_: None, [_old()], _archive(), "en", lambda s: True, _SIMS)
     assert after["taste"] == STAMP and bank.is_stale(after, bank.taste_stamp())
 
 
@@ -433,3 +459,19 @@ def test_a_rebank_sets_aside_a_line_left_short_by_the_words_that_need_the_work(f
                                  curate.Vectors())
     assert after["dropped"] == "fewer than 3 words can be hidden once those that need the work leave"
     assert after["read"]["needsBook"] == ["old", "dog", "warm"] and after["taste"] == STAMP
+
+
+def test_a_rebank_never_asks_a_word_s_other_sense_twice(fake_parse, monkeypatch):
+    # read under another taste, the line is read and its words chosen again: the other-sense
+    # checks it carries are its words' own, and kept
+    monkeypatch.setattr(curate, "parse", _tokens)
+    _free_maps(monkeypatch)
+    _against_stove(monkeypatch)
+    monkeypatch.setattr(curate.llm, "other_sense", lambda *_a, **_k: pytest.fail("asked at banking already"))
+    monkeypatch.setattr(curate.llm, "read_line", lambda *_a, **_k: _READ)
+    monkeypatch.setattr(curate.llm, "neighbours_complete", lambda *_a, **_k: "man")
+    monkeypatch.setattr(curate.llm, "context_guesses", lambda *_a, **_k: ([], None))
+    monkeypatch.setattr(curate.llm, "would_say", lambda *_a, **_k: (0.8, None))
+    older = json.loads(json.dumps(_entry(taste="00000000")))
+    [after] = curate.reread_work(object(), lambda *_: None, [older], _archive(), "en", lambda s: True, _SIMS)
+    assert after["taste"] == STAMP and after["senses"] == _SENSES and bank.finishable(after)

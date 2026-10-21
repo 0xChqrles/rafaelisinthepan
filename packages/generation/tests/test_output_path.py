@@ -153,7 +153,6 @@ def _run_main(monkeypatch, tmp_path, extra_argv):
             "Le chat, poursuit le chat dans le jardin.",
             "--lang",
             "fr",
-            "--static",  # the static reference: these tests assert its behaviours
             "--words",
             "jardin",
             "chat",

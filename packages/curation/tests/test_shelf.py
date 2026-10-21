@@ -30,14 +30,23 @@ def test_forget_deletes_the_work_s_puzzles_only(tmp_path, monkeypatch):
     assert other.exists() and sourceless.exists() and kind_only.exists()
 
 
-def test_forget_deletes_the_judge_scores_beside_a_work_s_puzzle(tmp_path, monkeypatch):
+def test_forget_deletes_the_sidecar_beside_a_work_s_puzzle(tmp_path, monkeypatch):
     monkeypatch.setattr(_paths, "GENERATION_OUTPUT_DIR", tmp_path)
     mine = _write(tmp_path, "fr/book/hugo/les-miserables/a_b_c.json",
                   {"source": {"kind": "book", "author": "Victor Hugo", "work": "Les Misérables"}})
-    scores = _write(tmp_path, "fr/book/hugo/les-miserables/a_b_c.contextual.json", {"holes": []})
+    sidecar = _write(tmp_path, "fr/book/hugo/les-miserables/a_b_c.other-sense.json", {"chat": []})
     work = {"file": "hugo.epub", "author": "Victor Hugo", "title": "Les misérables"}
     assert shelf.forget({"books": {}}, work, "fr") == [str(mine)]
-    assert not scores.exists() and not mine.parent.exists()
+    assert not sidecar.exists() and not mine.parent.exists()
+
+
+def test_an_erased_puzzle_takes_its_sidecar_with_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(_paths, "GENERATION_OUTPUT_DIR", tmp_path)
+    puzzle = _write(tmp_path, "fr/book/a/b/lapin.json", {"words": []})
+    assert shelf.sidecar_path(str(puzzle)) == str(tmp_path / "fr/book/a/b/lapin.other-sense.json")
+    sidecar = _write(tmp_path, "fr/book/a/b/lapin.other-sense.json", {"chat": ["matou"]})
+    shelf.erase_puzzle(puzzle)
+    assert not puzzle.exists() and not sidecar.exists() and not (tmp_path / "fr").exists()
 
 
 def test_forget_of_one_numbered_volume_keeps_the_other_volume_s_puzzles(tmp_path, monkeypatch):
@@ -296,16 +305,15 @@ def test_list_works_reads_one_language_s_shelf(tmp_path, monkeypatch):
     assert [w["file"] for w in shelf.list_works(_paths.shelf_dir("fr"))] == ["etranger.epub"]
 
 
-def test_forget_keeps_a_puzzle_that_was_published_and_its_scores(tmp_path, monkeypatch):
-    # 2026-10-12: a work retried while one of its days was live erased that day's judge
-    # scores, and its start-only correction paid the ranking again.
+def test_forget_keeps_a_puzzle_that_was_published_and_its_sidecar(tmp_path, monkeypatch):
+    # a work retried while one of its days is live keeps that day, and what rebuilds its maps
     monkeypatch.setattr(_paths, "GENERATION_OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(_paths, "PUBLISHED_LEDGER", tmp_path / "published.jsonl")
     src = {"kind": "book", "author": "Victor Hugo", "work": "Les Misérables"}
     holes = [{"secret": {"word": "chat", "slug": "chat"}, "start": {"word": "lapin"}}]
     live = _write(tmp_path, "fr/book/hugo/les-miserables/lapin.json",
                   {"source": src, "words": ["Le", "chat"], "holes": holes})
-    scores = _write(tmp_path, "fr/book/hugo/les-miserables/lapin.contextual.json", {"holes": []})
+    sidecar = _write(tmp_path, "fr/book/hugo/les-miserables/lapin.other-sense.json", {"chat": []})
     other_start = _write(tmp_path, "fr/book/hugo/les-miserables/loup.json",
                          {"source": src, "words": ["le", "chat"],
                           "holes": [{**holes[0], "start": {"word": "loup"}}]})
@@ -314,7 +322,7 @@ def test_forget_keeps_a_puzzle_that_was_published_and_its_scores(tmp_path, monke
          "holes": [{"secret": "chat", "word": "chat", "start": "lapin", "startRank": 120}]}) + "\n", encoding="utf-8")
     work = {"file": "hugo.epub", "author": "Victor Hugo", "title": "Les misérables"}
     assert shelf.forget({"books": {}}, work, "fr", shelf.published_drafts("fr")) == [str(other_start)]
-    assert live.exists() and scores.exists()
+    assert live.exists() and sidecar.exists()
 
 
 def test_a_draft_s_sentence_finds_its_unit_whatever_its_soft_hyphens():

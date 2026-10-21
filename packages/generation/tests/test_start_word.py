@@ -1,14 +1,14 @@
 """CONTRACT: the start (hint) word of a hole — `start_word.py`, the ONE band rule.
 
-Asserted against AGENTS.md ("ONE start band on every map, START_BAND = 100–200"), not
-the implementation:
+Asserted against AGENTS.md ("ONE start band, START_BAND = 100–200 in SHIPPED ranks"),
+not the implementation:
 
   - the band is read on the rank the puzzle SHIPS: 100 and 200 are offered, 99 and
     201 are not, and each candidate carries its shipped rank;
   - a morphological variant of the secret is never offered as its start;
   - a map too small to reach the band falls back to every non-variant word;
-  - off a TTY the default start is drawn from the band — from what a filter left of
-    it when there is one (#308) — and is the secret itself when nothing qualifies.
+  - off a TTY the default start is drawn from the band, and is the secret itself
+    when nothing qualifies.
 """
 
 import random
@@ -68,7 +68,7 @@ def test_a_map_too_small_for_the_band_falls_back_to_every_non_variant_word(monke
     assert gen_phrase.choose_start("chat", small[:1], {}, {}) == "chat"
 
 
-def test_the_off_tty_default_is_drawn_from_the_band_and_from_what_a_filter_left(monkeypatch):
+def test_the_off_tty_default_is_drawn_from_the_band(monkeypatch):
     monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False, raising=False)
     pools = []
 
@@ -79,8 +79,3 @@ def test_the_off_tty_default_is_drawn_from_the_band_and_from_what_a_filter_left(
 
     assert gen_phrase.choose_start("chat", RANKING, {}, {}) == "tigre"
     assert pools == [[("chien", INSIDE + 2), ("tigre", INSIDE + 4)]]
-    # a filter (#308's judge) only removes: the draw is over what remains
-    picked = gen_phrase.choose_start(
-        "chat", RANKING, {}, {},
-        band_filter=lambda band: [b for b in band if b[0] != "tigre"])
-    assert picked == "chien" and pools[1] == [("chien", INSIDE + 2)]

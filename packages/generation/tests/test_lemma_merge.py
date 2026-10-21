@@ -446,7 +446,8 @@ def test_same_group_selected_secrets_rejected(monkeypatch, capsys):
             lemma_table=TABLE, forms_by_lemma=FORMS,
         )
     assert "sont des formes du même mot" in capsys.readouterr().err
-    # refused with the questions, before any walk (#308: a walk is minutes and money)
+    # refused with the questions, before any walk: off a TTY a same-word pair dies
+    # before the first ranking, so a batch caller never re-walks holes already ranked
     assert walked == []
     # sanity: three genuinely distinct groups DO build.
     holes, ranks = gen_phrase.holes_from_words(

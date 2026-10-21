@@ -1,17 +1,19 @@
 """The BANK: lines finished ahead, for the user to pick and finish (`pnpm curate --bank`, `--finish`).
 
-A banked line is one the curator finished as a day but for the ranking — mined, through
-the quotation test and the judge's sentence filter, shortlisted, READ (`curate.read`: its
-kind, its main word and the path to it), its main word measured alone and two words chosen
-against it with every check before the ranking passed (`curate.choose_trio`), its start
-words chosen on the free static maps with the start step's own checks — with what it was
-read and measured at, so finishing it asks none of that again. The ranking (the expensive
-judge) runs only for a line the user finishes, its start words then checked on the ranked
-map, nothing swapped. A line SET ASIDE is kept too, with why (`dropped`) and what it was
-read, judged and measured at, never finished; each entry carries the taste it was read
-under (`taste_stamp`), and `curate --rebank` takes again every line read under another, or
-whose words were not chosen the main word first (`stale`), rewriting its work's entries in
-place (`replace_work`).
+A banked line is one the curator finished as a day but for its puzzle — mined, through
+the quotation test and Jev's sentence filter, shortlisted, READ (`curate.read`: its kind,
+its main word and the path to it), its main word measured alone and two words chosen
+against it with every check passed (`curate.choose_trio`), each of the three with the words
+of another sense than the line's set aside (`curate.sense`), its start words chosen on its
+LINE maps (each word's plain map minus that other sense: the maps its puzzle will have)
+with the start step's own checks — with what it was read and measured at, so finishing it
+asks none of that again: `--finish` writes the puzzle on the same maps with the same starts
+(read again on the written map, which a word with two dictionary entries can move:
+`curate.banked_fault`), then checks them, nothing paid and nothing swapped. A line SET ASIDE is kept too, with why
+(`dropped`) and what it was read, judged and measured at, never finished; each entry
+carries the taste it was read under (`taste_stamp`), and `curate --rebank` takes again
+every line read under another, or whose words were not chosen the main word first or carry
+no other-sense check (`stale`), rewriting its work's entries in place (`replace_work`).
 
 One JSON line per banked line, `bank/<lang>.jsonl` (gitignored: the lines are the
 work's text, and the trio spoils the day), read in `bank/<lang>.md` (`render`), where the
@@ -36,7 +38,7 @@ from pathlib import Path
 import threading
 
 import _paths
-import contextual_rank  # generation/scripts: the giveaway floor
+import jev  # the giveaway floor
 import llm
 import rules
 import shelf as shelf_mod
@@ -147,16 +149,29 @@ def chosen(e: dict) -> bool:
     return bool(e.get("holes")) and all("role" in h for h in e["holes"])
 
 
+def sensed(e: dict) -> bool:
+    """Whether each of a banked line's three words carries its other-sense check
+    (`curate.sense`: the words its map loses), the check its starts were chosen after."""
+    return bool(e.get("trio")) and all(s in (e.get("senses") or {}) for s in e["trio"])
+
+
+def finishable(e: dict) -> bool:
+    """Whether `--finish` can take a kept line: its words chosen the main word first, each
+    with its other-sense check."""
+    return chosen(e) and sensed(e)
+
+
 def is_stale(e: dict, stamp: str) -> bool:
     """Whether `curate --rebank` takes the entry: a line it can take with no judge (its
     giveaways stored at banking) that was never read or was read under another taste; or
-    read under this one and kept, its words not chosen the main word first. A line set aside
-    before its giveaway was paid is not: nothing it could hide was judged."""
+    read under this one and kept, but not finishable — its words not chosen the main word
+    first, or without their other-sense check. A line set aside before its giveaway was paid
+    is not: nothing it could hide was judged."""
     if not e.get("given"):
         return False
     if e.get("taste") != stamp:
         return True
-    return bool(e.get("read")) and not e.get("dropped") and not chosen(e)
+    return bool(e.get("read")) and not e.get("dropped") and not finishable(e)
 
 
 def stale(lang: str) -> list[dict]:
@@ -260,8 +275,11 @@ def entry(book: dict, line: dict, checked, started: dict, lang: str, stamp: str)
     under (`stamp`, taken before the read), the judge's giveaway for every word it can hide,
     its three words — the MAIN word first, then the two chosen against it, each with its role,
     its path and the words it runs through, its ladder when it is one of a wide kind, its
-    facts, and its start word with where it stands on its free map — code's notes, every
-    measure taken on the line, and the line as the player would first see it."""
+    facts, and its start word with where it stands on its map — each word's other-sense check
+    (`senses`: the sense the line uses, whether its map carries it, why, and the words set
+    aside — what the map loses, so `--finish` writes the map the starts were chosen on),
+    code's notes, every measure taken on the line, and the line as the player would first
+    see it."""
     draft, starts = started["draft"], started["starts"]
     first = {}
     for h in draft["holes"]:
@@ -284,6 +302,7 @@ def entry(book: dict, line: dict, checked, started: dict, lang: str, stamp: str)
         "given": line["given"],
         "trio": [t.slug for t in checked.trio],
         "context": checked.context,
+        "senses": {t.slug: line["senses"][t.slug] for t in checked.trio},
         "measures": _measures(line["measures"]),
     }
 
@@ -291,15 +310,17 @@ def entry(book: dict, line: dict, checked, started: dict, lang: str, stamp: str)
 def aside(book: dict, line: dict, lang: str, stamp: str) -> dict:
     """A line SET ASIDE (`curate`: at its read, its giveaway, its main word, the two words
     against it or its start words), kept with why, its read, the taste it was read under, the
-    giveaways paid and what was measured — so a later `--rebank` takes it again with no
-    judge: listed with its reason, never finished."""
+    giveaways paid, what was measured and the other-sense checks asked — so a later
+    `--rebank` takes it again with no judge, asking none of them twice: listed with its
+    reason, never finished."""
     return {"id": line_id(book["file"], line["sentence"]),
             "bankedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "lang": lang, "work": book["file"], "kind": book["kind"],
             "author": book.get("author", ""), "title": book.get("title", ""),
             "sentence": line["sentence"], "taste": stamp, "read": stored(line.get("read")),
             "dropped": line["dropped"], "given": line.get("given") or {},
-            "measures": _measures(line["measures"]) if line.get("measures") else {}}
+            "measures": _measures(line["measures"]) if line.get("measures") else {},
+            "senses": line.get("senses") or {}}
 
 
 def pool(tokens, given: dict, lang: str, in_vocab, cooling=frozenset(), frequency_rank=lambda t: None) -> list:
@@ -310,18 +331,21 @@ def pool(tokens, given: dict, lang: str, in_vocab, cooling=frozenset(), frequenc
     judged had passed the commonest-word floor, so `frequency_rank` may be left out."""
     allowed = rules.initial_candidates(tokens, lang=lang, in_vocab=in_vocab,
                                        past_secrets=cooling, frequency_rank=frequency_rank)
-    return [t for t in allowed if t.slug in given and given[t.slug] >= contextual_rank.GIVEAWAY_MIN]
+    return [t for t in allowed if t.slug in given and given[t.slug] >= jev.GIVEAWAY_MIN]
 
 
 def restore(e: dict, archive: dict, lang: str, in_vocab, frequency_rank, measures_cls, checked_cls):
     """A banked line as the curator's `day` holds a finished one — (line, checked), the main
-    word first — read against TODAY's archive; or (None, why) when the line was set aside,
-    its words were not chosen the main word first (`curate --rebank` chooses them), or the
-    archive now rules it out (the sentence published, a word back in its cooldown)."""
+    word first, each word's other-sense check on the line — read against TODAY's archive; or
+    (None, why) when the line was set aside, its words were not chosen the main word first or
+    carry no other-sense check (`curate --rebank` takes it), or the archive now rules it out
+    (the sentence published, a word back in its cooldown)."""
     if e.get("dropped"):
         return None, f"it was set aside: {e['dropped']}"
     if not chosen(e):
         return None, "its words were not chosen the main word first: `--rebank` chooses them"
+    if not sensed(e):
+        return None, "its words have no other-sense check: `--rebank` takes it"
     if shelf_mod.sentence_key(e["sentence"]) in archive["sentences"]:
         return None, "the sentence was published"
     tokens = parse(e["sentence"], lang)
@@ -334,7 +358,8 @@ def restore(e: dict, archive: dict, lang: str, in_vocab, frequency_rank, measure
         return None, f"« {', '.join(missing)} » can no longer be hidden (a secret in its cooldown)"
     holes = {h["slug"]: h for h in e["holes"]}
     line = {"sentence": e["sentence"], "tokens": tokens, "allowed": allowed, "given": e["given"], "pathless": [],
-            "read": read_of(e["read"]), "measures": measures_of(e, measures_cls)}
+            "read": read_of(e["read"]), "measures": measures_of(e, measures_cls),
+            "senses": {s: e["senses"][s] for s in e["trio"]}}
     checked = checked_cls([first_of[s] for s in e["trio"]],
                           {s: {"line": holes[s]["path"], "words": holes[s]["pathWords"]} for s in e["trio"]},
                           {s: holes[s]["ladder"] for s in e["trio"] if holes[s]["ladder"]},
@@ -346,23 +371,24 @@ def render(lang: str) -> None:
     """`bank/<lang>.md`, the bank to read — SPOILERS: every word of every line. The lines kept,
     by kind (`llm.KINDS`, 1 to 7), then those with no kind, each with its main word and the
     path to it, its ladder when it is one of a wide kind, the sibling warning, each of the two
-    words chosen against it with its path, and the line as it opens with each word's start
-    and facts (the main word in bold); then the lines set aside, each with why; then the lines
-    waiting for `curate --rebank` to choose their words. Written under the bank's lock: two
-    processes never write the page over each other."""
+    words chosen against it with its path, and the line as it opens with each word's start,
+    its rank, its facts and how many words of another sense its map lost (the main word in
+    bold); then the lines set aside, each with why; then the lines waiting for `curate
+    --rebank` (their words to choose, or their other-sense check). Written under the bank's
+    lock: two processes never write the page over each other."""
     with locked(lang):
         held = [e for e in load(lang) if not e.get("empty")]
         older = len(stale(lang))
-        kept = [e for e in held if not e.get("dropped") and chosen(e)]
+        kept = [e for e in held if not e.get("dropped") and finishable(e)]
         dropped = [e for e in held if e.get("dropped")]
-        waiting = [e for e in held if not e.get("dropped") and not chosen(e)]
+        waiting = [e for e in held if not e.get("dropped") and not finishable(e)]
         out = [f"# The {lang} bank — SPOILERS", "",
-               f"{len(kept)} line(s) kept, {len(dropped)} set aside, {len(waiting)} waiting for their words, from "
+               f"{len(kept)} line(s) kept, {len(dropped)} set aside, {len(waiting)} waiting for a rebank, from "
                f"{len({e['work'] for e in held})} work(s). Finish one into a candidate day: "
-               f"`pnpm curate --lang {lang} --finish <id>` (the ranking runs then).", ""]
+               f"`pnpm curate --lang {lang} --finish <id>`.", ""]
         if older:
-            out += [f"{older} line(s) were never read, were read under another taste, or wait for their words: "
-                    f"`pnpm curate --lang {lang} --rebank` takes them again.", ""]
+            out += [f"{older} line(s) were never read, were read under another taste, or wait for their words or "
+                    f"their other-sense check: `pnpm curate --lang {lang} --rebank` takes them again.", ""]
         for kind in [*llm.KINDS, None]:
             group = [e for e in kept if e["read"]["kind"] == kind]
             if group:
@@ -378,7 +404,7 @@ def render(lang: str) -> None:
                            + (f" (main word « {anchor} »)" if anchor else ""))
             out.append("")
         if waiting:
-            out += ["## Waiting for their words", ""]
+            out += ["## Waiting for a rebank", ""]
             for e in waiting:
                 out += [f"- `{e['id']}` « {e['marked']} » — {_source(e)}", *_holes(e, None)]
             out.append("")
@@ -391,12 +417,16 @@ def _source(e: dict) -> str:
 
 def _holes(e: dict, anchor: str | None) -> list[str]:
     """A banked line as the player first sees it, then its hidden words (the main word in
-    bold), each with its start and its facts."""
+    bold), each with its start and its rank, its facts, and how many words of another sense
+    its map lost."""
     words = []
     for h in e["holes"]:
         secret = f"**{h['secret']}**" if h["slug"] == anchor else h["secret"]
-        tags = h.get("tags")
-        words.append(f"{secret} ← {h['start']} (free-map rank {h['startRank']})" + (f": {', '.join(tags)}" if tags else ""))
+        notes = list(h.get("tags") or ())
+        off = ((e.get("senses") or {}).get(h["slug"]) or {}).get("off")
+        if off:
+            notes.append(f"other sense set aside: {len(off)} word{'s' if len(off) > 1 else ''}")
+        words.append(f"{secret} ← {h['start']} (rank {h['startRank']})" + (f": {', '.join(notes)}" if notes else ""))
     return [f"  - opens as: « {e['shown']} »", "  - " + "; ".join(words)]
 
 

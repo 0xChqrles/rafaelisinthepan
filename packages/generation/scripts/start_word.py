@@ -6,12 +6,10 @@ to be a foothold, far enough that it is not the answer, and never a trivial
 morphological variant of the secret.
 """
 
-# SHIPPED-rank band for the START word, on EVERY map, static or contextual. Too low =
-# the player has almost already won; too high = they start too far away. One band
-# because players' guesses land as close on a contextual map as on a static one, so a
-# rank means the same distance on either; it tops out at the judge's pairwise-ordered
-# front (contextual_rank.PAIRWISE_TOP), past which its order is loosest. The curation
-# package reads the same constant on the ranks a puzzle ships.
+# SHIPPED-rank band for the START word: the rank the puzzle ships (a sentence map with
+# its other-sense groups already taken off, so the band is read on what the player
+# plays). Too low = the player has almost already won; too high = they start too far
+# away. The curation package reads the same constant on the ranks a puzzle ships.
 START_BAND = (100, 200)
 
 

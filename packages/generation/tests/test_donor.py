@@ -456,7 +456,7 @@ def test_main_writes_the_puzzle_and_names_the_substitution(monkeypatch, tmp_path
     monkeypatch.setattr(gen_phrase, "load_lemma_table", lambda _lang, disabled=False: TABLE)
     monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False, raising=False)
     monkeypatch.setattr(gen_phrase.sys, "argv", [
-        "gen_phrase.py", SENTENCE, "--lang", "fr", "--static",
+        "gen_phrase.py", SENTENCE, "--lang", "fr",
         "--words", "accoutumes", "doucement", "jardin",
         "--donor", "accoutumes=accoutume",
         # #133 makes a fr batch run without --form a hard error; this test is about
@@ -620,3 +620,28 @@ def test_selector_ships_the_geometry_on_every_hole_it_commits(monkeypatch, selec
         # dq has no opt-out: every ranked group carries it, the secret none.
         assert all("dq" in e for e in rmap.values() if e["rank"] != 0)
         assert "dq" not in rmap[hole["secret"]["slug"]]
+
+
+# --- every question before any walk ---------------------------------------------
+# A batch caller answers one question per run: a missing --form on the SECOND secret
+# must die before the first secret is walked, or every rerun re-walks it.
+
+def test_a_question_that_dies_on_the_second_secret_precedes_the_first_walk(monkeypatch):
+    walked, asked = [], []
+    monkeypatch.setattr(FR["module"], "closest",
+                        lambda w, *_a, **_k: walked.append(w) or [], raising=False)
+    monkeypatch.setattr(gen_phrase.sys.stdin, "isatty", lambda: False, raising=False)
+
+    def claim(secret, *_a, **_k):  # the #133 question: the second secret has no answer
+        asked.append(secret)
+        if len(asked) == 2:
+            gen_phrase.die("la forme de « x » doit être explicite hors mode interactif")
+        return ()
+    monkeypatch.setattr(gen_phrase, "secret_claim", claim)
+    with pytest.raises(SystemExit):
+        gen_phrase.holes_from_words(
+            ["doucement", "jardin", "amuse"], _words(START_SENTENCE), FR, "fr",
+            kv=KV, V=VOCAB, M=object(), Vset=VSET, lemma_table=TABLE,
+            forms_by_lemma=FORMS, donors=_resolver(interactive=False))
+    assert asked == ["doucement", "jardin"]
+    assert walked == []  # no ranking was computed

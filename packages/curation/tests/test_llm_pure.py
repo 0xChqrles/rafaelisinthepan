@@ -200,6 +200,51 @@ _WIDE = {"word": "naturelles", "path": "gifts", "path_words": ["capacités"], "m
 
 
 @pytest.mark.parametrize("answer, expected", [
+    ({"senses": ["a theft", "a flight"], "used": " a theft ", "other": True, "words": ["avion", "« Ciel »", "argent",
+                                                                                      "avion", "pilote"],
+      "carried": True, "why": " w "},
+     {"used": "a theft", "other": True, "words": ["avion", "ciel"], "carried": True, "why": "w"}),   # as listed, once
+    ({"used": "flight", "other": False, "carried": False, "why": "theft only"},                     # no words: none
+     {"used": "flight", "other": False, "words": [], "carried": False, "why": "theft only"}),
+    ({"used": "a theft", "other": "true", "words": [], "carried": True}, None),
+    ({"used": "a theft", "other": True, "words": [], "carried": None}, None),
+    ({"used": " ", "other": True, "words": [], "carried": True}, None),
+    ({"used": "a theft", "other": True, "words": "avion", "carried": True}, None),
+    ({"used": "a theft", "other": True, "words": [["avion"]], "carried": True}, None),
+    ([], None),
+])
+def test_other_sense_keeps_the_verdicts_and_only_words_of_the_list_shown(answer, expected):
+    assert llm.other_sense(_Answer(answer), "Le vol de la nuit.", "vol", ["avion", "ciel", "voleur"], lang="fr") \
+        == expected
+
+
+@pytest.mark.parametrize("answer, expected", [
+    ({"words": ["Pilote", "avion", "ciel"], "carried": True, "why": "w"},   # « avion » set aside already, « ciel » not shown
+     {"words": ["pilote"], "carried": True, "why": "w"}),
+    ({"words": [], "carried": False}, {"words": [], "carried": False, "why": ""}),
+    ({"carried": True}, {"words": [], "carried": True, "why": ""}),
+    ({"words": ["pilote"]}, None),                                          # every round says whether the map carries it
+    ({"words": "pilote", "carried": True}, None),
+])
+def test_a_later_other_sense_round_takes_only_new_words_of_its_list(answer, expected):
+    assert llm.other_sense(_Answer(answer), "Le vol.", "vol", ["pilote", "avion"], lang="fr", off=("avion",)) \
+        == expected
+
+
+def test_the_first_other_sense_round_asks_the_verdicts_and_a_later_one_shows_what_was_set_aside():
+    first, later = _Capture(), _Capture()
+    llm.other_sense(first, "Le vol de la nuit.", "vol", ["avion", "ciel"], lang="fr")
+    llm.other_sense(later, "Le vol de la nuit.", "vol", ["pilote"], lang="fr", off=("avion", "ciel"))
+    assert "The line: « Le vol de la nuit. »\nThe hidden word: « vol »" in first.prompts[0]
+    assert "Nearest words: avion, ciel\n" in first.prompts[0] and '"carried": true/false' in first.prompts[0]
+    assert "Already set aside" not in first.prompts[0]
+    assert "Already set aside as another sense: avion, ciel\n\nNearest words left: pilote\n" in later.prompts[0]
+    assert '"carried": true/false' in later.prompts[0] and '"used"' not in later.prompts[0]
+    for prompt in (first.prompts[0], later.prompts[0]):   # a figurative sense needs its own words
+        assert "the words of the literal sense it comes from do not count" in prompt
+
+
+@pytest.mark.parametrize("answer, expected", [
     ({"words": [_WORD, _WIDE], "why": "w"},
      {"words": [{"word": "eleveur", "path": "a trade", "path_words": ["pratique"], "mirror": False, "wide": False,
                  "ladder": None, "lands": "the breeder"},
@@ -320,6 +365,7 @@ QUESTIONS = {
                                                           "notes": "n"}]),
     "would_say": lambda c, lang: llm.would_say(c, _TOKENS, set(), 1, "cat", lang=lang),
     "neighbours_complete": lambda c, lang: llm.neighbours_complete(c, "the ___ house", lang=lang),
+    "other_sense": lambda c, lang: llm.other_sense(c, "The cat.", "cat", ["dog", "jazz"], lang=lang),
 }
 
 

@@ -174,7 +174,7 @@ def reading(
 def same_word(candidate: Token, other: str | None, own: frozenset[str] | None = None) -> bool:
     """Whether a word players would write IS this word in another form (« sauver » for
     « sauva »): its spelling, its lemma, or — what typing it finds — a key of the word's
-    own group on its free map (`own`, the rank-0 keys; « table » is not « tablée »). Only
+    own group on its plain map (`own`, the rank-0 keys; « table » is not « tablée »). Only
     without a map, a variant by spelling (`is_variant`, coarse: it takes « table » for
     « tablée »). Never a near neighbour (« faussaire » for « faux-monnayeur »): that is
     another word, in its own group."""
@@ -305,8 +305,8 @@ def unmapped(rank_map: dict, secret_slug: str, fillers: list[str], known: Callab
     """The reader's words (single words the vectors know, not the secret or a variant)
     when NONE is on the hole's map: whatever the player types first lands past the map,
     which holds another sense of the word (« laisse »: the verb's neighbours, no
-    « chaîne », 2026-10-12). Off the map are every group the walk keeps (`TOP_K`), so the
-    free static walk answers before the ranking (the judge only reorders the same groups).
+    « chaîne », 2026-10-12). Read on the map at hand: every group the walk keeps (`TOP_K`),
+    the groups of another sense taken off.
     On the 49 played French days with a reader on file: « facho » (2026-09-16, 4% of the
     players within 30 tries), « insecte », « réverbères »; no loved day. None when one is on
     the map or the reader named no such word."""

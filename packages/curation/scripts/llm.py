@@ -591,6 +591,86 @@ Return {{"word": "<one word>"}}""")
     return word.strip() if isinstance(word, str) and word.strip() else None
 
 
+def other_sense(claude: Claude, sentence: str, word: str, words: list[str], *, lang: str,
+                off: list[str] | tuple = ()) -> dict | None:
+    """Which of a hidden word's nearest words are near it ONLY through ANOTHER dictionary
+    sense than the one the line uses (user-decided 2026-10-21: "the main goal is actually to
+    eliminate irrelevant meanings of a word"): « vol » theft vs flight, « faire » in « faire
+    partie »; a word of the line's sense, even loosely, stays, and vector noise is left alone.
+    `words`: the words of its plain map shown this round, closest first; `off`: the words
+    earlier rounds set aside — none on the FIRST round, which also asks which sense the line
+    uses and whether the word has another one players could mistake for it (`other`). Every
+    round asks whether the map CARRIES the line's sense once the words named are set aside:
+    false when the line uses a sense the map barely holds (« bank » for a riverbank on a map
+    of finance), and for a figurative or euphemistic sense the words of THAT sense must be
+    there, not those of the literal sense it comes from (« s'éteindre » for dying needs
+    mourir). Returns {"used", "other", "words", "carried", "why"} for the first round,
+    {"words", "carried", "why"} for a later one — `words` only words of `words` not already in
+    `off`, as listed; None when the answer is unusable."""
+    first = not off
+    prompt = f"""A daily {LANGUAGE[lang]} word game hides a word in a line. Players guess words; each guess is ranked by
+how close its MEANING is to the hidden word, in the dictionary sense the line uses.
+
+The line: « {sentence} »
+The hidden word: « {word} »
+
+Below are the words nearest to it on a word-vector map, closest first. The map mixes every
+sense of the word. A word of the line's sense — synonyms, the same family, the same category,
+things often found with it in that sense, even loosely — stays. A word near the hidden word
+ONLY through ANOTHER dictionary sense of it (a homonym, or a clearly different use or
+construction of the same word: « vol » theft vs flight, « bank » money vs river, « faire » in
+« faire partie ») would send a player toward the wrong meaning: name those, and only those. A
+word related to no sense at all (vector noise) is not your concern: leave it.
+"""
+    if not first:
+        prompt += f"\nAlready set aside as another sense: {', '.join(off)}\n"
+    prompt += f"\nNearest words{'' if first else ' left'}: {', '.join(words)}\n"
+    carried = """
+Then say whether this map CARRIES the line's sense: once the words you name now and those
+already set aside are gone, do words OF THAT VERY SENSE stand among the nearest that stay, so a
+player who has the right meaning in mind finds warm words? When the line uses a figurative or
+euphemistic dictionary sense (« s'éteindre » for dying), the words of that sense (mourir,
+décéder) must be there: the words of the literal sense it comes from do not count. false when
+the line uses a sense the map barely holds (« bank » for a riverbank on a map of finance only;
+« voler » for stealing on a map of flight only)."""
+    if first:
+        prompt += """
+First decide whether the hidden word, AS USED IN THIS LINE, has another dictionary sense that
+players could mistake for it. If it has none, name no words.
+""" + carried + """
+
+Return {"senses": ["<each dictionary sense, a few words>"], "used": "<the sense the line uses>",
+"other": true/false, "words": ["<a word of the list near it only through another sense>", ...],
+"carried": true/false, "why": "<one short sentence on carried>"}."""
+    else:
+        prompt += """
+Name the words of this list near the hidden word only through another sense, as before.
+""" + carried + """
+
+Return {"words": [...], "carried": true/false, "why": "<one short sentence on carried>"}."""
+    answer = claude.json(prompt)
+    named = answer.get("words", []) if isinstance(answer, dict) else None
+    if not isinstance(named, list) or not all(isinstance(w, str) for w in named):
+        return None
+    # A word as the answer echoes it, matched whatever its case or quotes, kept as listed.
+    shown = {w.strip().lower(): w for w in words}
+    taken = {w.strip().lower() for w in off}
+    picked: list[str] = []
+    for w in named:
+        key = w.strip().strip("«»").strip().lower()
+        if key in shown and key not in taken and shown[key] not in picked:
+            picked.append(shown[key])
+    if type(answer.get("carried")) is not bool:
+        return None
+    why = str(answer.get("why") or "").strip()
+    if not first:
+        return {"words": picked, "carried": answer["carried"], "why": why}
+    used = answer.get("used")
+    if type(answer.get("other")) is not bool or not isinstance(used, str) or not used.strip():
+        return None
+    return {"used": used.strip(), "other": answer["other"], "words": picked, "carried": answer["carried"], "why": why}
+
+
 def pick_form(claude: Claude, sentence: str, secret: str, choices: list[str], *, lang: str) -> int:
     listing = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(choices))
     answer = claude.json(f"""In the {LANGUAGE[lang]} sentence below, which analysis is the word « {secret} »? The analyses
@@ -680,15 +760,6 @@ Return {{"starts": [{{"start": "<start word>", "idea": "<its first idea there>",
     return riddles, judged
 
 
-# A banked line's starts were chosen on the free map, before the ranking (`curate --bank`):
-# finishing it shows each to the start step, kept unless the ranked map moved it out or
-# offers better (user-decided 2026-10-18).
-PRIOR_RULE = """
-A hole may show the start chosen for it before this map was ranked. Keep it when it is
-still a candidate, unless another candidate here is clearly the better start by the
-taste; when it is no longer a candidate, choose another."""
-
-
 def _start_rule(kind: int | None) -> str:
     """Which part of the taste the starts are chosen by — the taste is in the prompt, whole,
     and this adds nothing to it: its *The start words*, the main word's by the line's kind."""
@@ -711,23 +782,13 @@ def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict], kind: i
     """The three start words, chosen by the taste, the main word's first by the line's kind
     (`kind`, `KINDS`, or None), then the two others' so the day is neither handed over nor out
     of reach. `holes`: [{secret, slug, role ("main" or "other"), path: {line, words}, ladder,
-    slot, notes, options: [{word, rank}], prior}], the main word first — `notes` is what code
+    slot, notes, options: [{word, rank}]}], the main word first — `notes` is what code
     measured (what a reader puts in the blank, how much the line gives of the word, where the
     reader's words land in the hole's own map). The model may instead name ONE hidden word no
     candidate gives a path to (`unsaveable`, its slug). Returns {"starts": {slug: word},
     "unsaveable": slug | None, "why": str}; starts only from the options."""
-    blocks = []
-    for h in holes:
-        block = (_hole_block(h) + "\n  start candidates (word (rank), closest first): "
-                 + ", ".join(f"{o['word']} ({o['rank']})" for o in h["options"]))
-        if h.get("prior"):
-            p = h["prior"]
-            where = ("not on this map" if p["rank"] is None else f"rank {p['rank']} on this map") + (
-                ", still a candidate" if p["candidate"] else ", no longer a candidate: choose another")
-            named = (f"« {p['word']} »" if p.get("banked", p["word"]) == p["word"]
-                     else f"« {p['banked']} », shown here as « {p['word']} »")
-            block += f"\n  chosen before this map was ranked: {named} ({where})"
-        blocks.append(block)
+    blocks = [_hole_block(h) + "\n  start candidates (word (rank), closest first): "
+              + ", ".join(f"{o['word']} ({o['rank']})" for o in h["options"]) for h in holes]
     answer = claude.json(f"""You choose the START words of a day for a daily {LANGUAGE[lang]} word game: each hole shows a
 start word in place of the hidden word, the first clue; the player then types guesses and
 reads, for every hole, how close each lands.
@@ -746,7 +807,7 @@ The sentence, holes marked with the hidden word in brackets:
 
 {chr(10).join(blocks)}
 
-{_start_rule(kind)}{PRIOR_RULE if any(h.get("prior") for h in holes) else ""} If no candidate gives a hidden word a path
+{_start_rule(kind)} If no candidate gives a hidden word a path
 — none links to it in its everyday sense (only by spelling, or not at all), or the word is dead or
 out of reach whatever its start — name that word instead of starts.
 
