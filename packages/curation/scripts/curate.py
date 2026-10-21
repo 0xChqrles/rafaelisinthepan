@@ -1219,7 +1219,9 @@ def sense(claude: llm.Claude, log, line: dict, t, sims: Vectors, lang: str) -> d
     closest first, each group once (`llm.other_sense`), and names those; while a round names
     SENSE_DIG or more and fewer than SENSE_ROUNDS were asked, the next round shows the first
     SENSE_TOP words of the plain map still there once every word named so far is taken off —
-    a round naming n words brings n new words into view, not a whole new window. The first
+    a round naming n words brings n new words into view, and the near words kept are shown
+    again, so the second look catches what the first missed (shown only new words, the
+    first round's misses stayed on top: « creator » for God, god 12th → 37th). The first
     round also says which sense the line uses, and EVERY round whether the map CARRIES it: false
     when the line uses a sense its map barely holds (« partir » for dying on a map of leaving),
     so no start leads a player there. The first round that says so ends the asking and the

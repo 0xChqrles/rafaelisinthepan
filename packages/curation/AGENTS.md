@@ -297,7 +297,10 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   `SENSE_DIG` (30) or more and fewer than `SENSE_ROUNDS` (4) were asked, the next round shows
   the first 300 words of the plain map still there once every word named so far is taken
   off — a round naming n words brings n new words into view, not a whole new window (the
-  near words left are shown again); code keeps only words of the list shown. The
+  near words left are shown again: the second look catches what the first missed; rejected:
+  showing a later round only words never shown — on played holes the first round's misses
+  then stayed on top, « creator » for God: god 12th → 37th behind originator and guru);
+  code keeps only words of the list shown. The
   first round also says which sense the line uses, and EVERY round whether the map CARRIES
   it once the words named are gone — for a figurative or euphemistic sense, the words of
   that sense, not of the literal one it comes from. The first round that says no ends the
