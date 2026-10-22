@@ -5,10 +5,9 @@ import { secretsOf } from '../puzzle/spoilers';
 import { MAX_SEARCHES, createWebTools, type DayGuard, type WebToolDeps } from './web';
 
 const fr: DayGuard = {
-  source: { kind: 'music', author: 'Bertrand Belin', work: 'Le Grand Oiseau' },
   secrets: secretsOf({ words: ['je', 'marche', 'seul', 'dans', 'la', 'nuit'], holes: [{ pos: 2, secret: { word: 'seul' } }] }),
 };
-const en: DayGuard = { source: null, secrets: null }; // unpublished
+const en: DayGuard = { secrets: null }; // unpublished
 
 const result = (url: string, summary = 'rien à voir'): WebResult => ({ title: 't', url, site: null, date: null, summary });
 
@@ -66,13 +65,12 @@ describe('the web, as the conversation\'s tools (v22)', () => {
     expect(await t.run('read_page', { url: 'https://ex.com/a' })).toEqual({ error: 'that page has nothing readable' });
   });
 
-  it("refuses a search naming today's author or work, in any language's puzzle", async () => {
+  it("searches today's author or work like any name (v23); a query quoting the line finds nothing", async () => {
     const { web, calls } = client();
     const t = tools(web);
-    // Refused like a search that found nothing.
-    expect(await t.run('web_search', { query: 'bertrand BELIN paroles' })).toEqual({ results: [] });
-    expect(await t.run('web_search', { query: 'le grand oiseau chanson' })).toEqual({ results: [] });
-    expect(calls.search).toEqual([]);
+    await t.run('web_search', { query: 'bertrand belin concert' });
+    expect(await t.run('web_search', { query: 'paroles marche seul dans la' })).toEqual({ results: [] });
+    expect(calls.search).toEqual(['bertrand belin concert']);
   });
 
   it('checks the link a result is shown with, decoded: a lyrics site spells the line in its path', async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createLog, type Log } from '../log';
-import { createDaySourceReader, revealsSource, sourceContext } from './daySource';
+import { createDaySourceReader, sourceContext } from './daySource';
 
 const log = createLog('silent');
 
@@ -154,19 +154,14 @@ describe("the day's source is ambient context, not a tool (#236)", () => {
   });
 });
 
-describe('the KIND may be said; the author and the work may not', () => {
-  it('carries the whole source, and the rule that only the kind is sayable', () => {
+describe('the source is his to talk about; the sentence is not (v23)', () => {
+  it('carries the whole source, and holds back only the sentence', () => {
     const text = sourceContext({ kind: 'music', author: 'Bertrand Belin', work: 'Oiseau' });
-    // The model KNOWS all of it — it has to, to know what it is holding back, and to say
-    // so after the day is over.
     expect(text).toContain('kind: music');
     expect(text).toContain('author: Bertrand Belin');
     expect(text).toContain('work: Oiseau');
-    // The kind is colour and narrows nothing; the title is one search from the sentence.
-    expect(text).toContain('say the KIND freely');
-    expect(text).toMatch(/NOT name the author or the work/);
-    // The sneaky leak is agreeing with somebody else's guess, so it is named.
-    expect(text).toMatch(/confirm or deny/);
+    expect(text).toMatch(/the author and the work included/);
+    expect(text).toMatch(/never recite the sentence itself or its hidden words/);
   });
 
   it('says nothing at all when there is nothing to say', () => {
@@ -175,30 +170,11 @@ describe('the KIND may be said; the author and the work may not', () => {
   });
 
   it('states only the fields the day actually carries — every one is optional (#5)', () => {
-    // The FACTS are what varies; the rule below them always names the author and the work,
-    // because it forbids them whether or not this day has any.
     const facts = (s: Parameters<typeof sourceContext>[0]) =>
       /\(([^)]*)\)/.exec(sourceContext(s))?.[1] ?? '';
     expect(facts({ kind: 'quote' })).toBe('kind: quote');
     expect(facts({ author: 'Victor Hugo' })).toBe('author: Victor Hugo');
     expect(facts({ kind: 'book', work: 'Les Misérables' })).toBe('kind: book, work: Les Misérables');
-  });
-});
-
-describe('a reply that spells the source is caught (PR-247 review)', () => {
-  it('matches the author whole and a multi-word title, through case, accents and spacing', () => {
-    const belin = { kind: 'music', author: 'Bertrand Belin', work: 'Oiseau' };
-    expect(revealsSource("c'est du Bertrand Belin", belin)).toBe(true);
-    expect(revealsSource('BERTRAND-BELIN', belin)).toBe(true);
-    expect(revealsSource("c'est du Belin", belin)).toBe(false); // a fragment is the prompt's job
-    expect(revealsSource('un oiseau sur la branche', belin)).toBe(false); // one-word title: a common noun
-    const hugo = { kind: 'book', author: 'Victor Hugo', work: 'Les Misérables' };
-    expect(revealsSource('ça sent les miserables', hugo)).toBe(true);
-    expect(revealsSource('Les Misérables, non ?', hugo)).toBe(true);
-    expect(revealsSource('victorhugo', hugo)).toBe(true);
-    expect(revealsSource('hugo', hugo)).toBe(false);
-    expect(revealsSource('rien à voir', null)).toBe(false);
-    expect(revealsSource('rien à voir', { kind: 'music' })).toBe(false);
   });
 });
 

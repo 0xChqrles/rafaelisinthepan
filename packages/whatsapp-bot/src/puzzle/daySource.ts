@@ -7,14 +7,13 @@
 // the fact is one small object that does not change all day. So it is loaded like the day
 // number beside it: known before the question is read.
 //
-// WHAT MAY BE SAID IS NOT WHAT IS KNOWN. The bot holds the whole object and may name only
-// the KIND — "c'est une chanson" is flavour, where the author and the work are the answer
-// itself (knowing today's line is "Oiseau" by Bertrand Belin means looking up the lyrics).
-// The rule travels with the fact, in `sourceContext` below, because this is the only prompt
-// that carries it: the share line and the podium comments are told nothing about the source
-// and so have nothing to leak.
+// IT IS HIS TO SAY (v23, user-decided 2026-10-22: "let him even say the author name").
+// The author and the work may be named; what stays held back is the SENTENCE itself, by the
+// prompt here and by the code once the web is open (`puzzle/spoilers.ts`). Only the
+// conversation carries the source: the share line and the podium comments are told nothing
+// about it.
 
-import { fold, type Source } from '@whippin/shared';
+import { type Source } from '@whippin/shared';
 import type { Log } from '../log';
 import { secretsOf, type DaySecrets } from './spoilers';
 
@@ -214,37 +213,8 @@ export function createDaySourceReader(deps: DaySourceDeps): DaySourceReader {
   };
 }
 
-// THE BACKSTOP BEHIND THE PROMPT RULE (PR-247 review). The rule held 13 of 13 adversarial
-// asks against the live model, and a leak in a group chat is still irreversible, so a reply
-// is CHECKED before it is posted: one that spells the author or the work is dropped. Both
-// sides are `fold`ed — case, accents and spacing gone — so "bertrand belin", "Bertrand
-// BELIN" and "BertrandBelin" all trip it. What it deliberately does NOT catch: a one-word
-// title, which is a common noun more often than not ("Oiseau", "Nana") and would silence
-// every ordinary sentence using the word; a part of a name ("belin"); and a confirmation
-// of somebody else's guess. Those stay the prompt's job. Short authors are gated by the
-// whole folded name and never by a fragment, so "hugo" trips only as the full "hugo".
-const REVEAL_MIN_CHARS = 4;
-
-export function revealsSource(text: string, source: DaySource | null): boolean {
-  if (!source) return false;
-  // `fold` keeps a dash (it is a slug character); here a dash is spacing, so it goes too.
-  const flat = (value: string) => fold(value).replace(/-/g, '');
-  const said = flat(text);
-  const spelled = (value: string | undefined, minWords: number) => {
-    if (!value || value.trim().split(/\s+/).length < minWords) return false;
-    const key = flat(value);
-    return key.length >= REVEAL_MIN_CHARS && said.includes(key);
-  };
-  return spelled(source.author, 1) || spelled(source.work, 2);
-}
-
-// THE FACT AND THE RULE TOGETHER, because the rule is only true where the fact is. Nothing
-// says "you know today's source" to a prompt that was not given one: the share line and the
-// podium comments carry neither, so there is nothing there to hold back.
-//
-// The KIND is the half that may be said. It is a genuine piece of colour a group enjoys
-// ("c'est une chanson aujourd'hui") and it narrows nothing — where the author and the work
-// ARE the sentence, one search away.
+// The source as the conversation's prompt carries it (nothing when there is none). The
+// share line and the podium comments are given none.
 export function sourceContext(source: DaySource | null): string {
   if (!source) return '';
   const known: string[] = [];
@@ -254,9 +224,7 @@ export function sourceContext(source: DaySource | null): string {
   if (known.length === 0) return '';
   return (
     `Where today's sentence comes from (${known.join(', ')}). ` +
-    `You may say the KIND freely — that it is a song, a book, a poem — it is colour and it gives nothing away. ` +
-    `You may NOT name the author or the work, hint at either, or confirm or deny somebody else's guess at them, ` +
-    `not even when asked directly and not even to one person: anybody who has not played yet is reading, ` +
-    `and the title is one search away from the whole sentence. Say you know and are not telling.`
+    `You may talk about it, the author and the work included, when you feel like it. ` +
+    `Just never recite the sentence itself or its hidden words: most of the group is still playing.`
   );
 }
