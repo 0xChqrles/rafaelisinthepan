@@ -120,6 +120,11 @@ describe('the day log (#277)', () => {
     expect(turn.text).toHaveLength(TURN_MAX_CHARS);
     expect(turn.text.endsWith('…')).toBe(true);
     expect(boundTurnText('court')).toBe('court');
+    // The bot's own lines are kept whole, up to a reply's length (v22): "et le lien ?" is
+    // asked about what it actually said.
+    const answer = `${'mot '.repeat(300)}https://ex.com/a_b`;
+    await log.append({ ...said('B', answer), kind: 'bot', name: '' });
+    expect(log.today(GROUP, DAY).find((t) => t.id === 'B')?.text).toBe(answer);
     // A hundred near-maximal turns overshoot the day's budget; the morning falls off.
     const long = new DayLog(memoryDayLogStore());
     for (let i = 0; i < 100; i += 1) await long.append(said(`T${String(i).padStart(3, '0')}`, `${i}:${'x'.repeat(TURN_MAX_CHARS - 4)}`, NOON + i));

@@ -11,6 +11,8 @@ describe('conversational ceilings (#236)', () => {
     const now = new Date('2026-09-03T23:30:00Z');
     expect(limitKeys.group('g@g.us', now)).toEqual({ scope: 'LIMIT#g@g.us', key: 'DAY#2026-09-03#GROUP' });
     expect(limitKeys.calls(now)).toEqual({ scope: 'LIMIT#ALL', key: 'DAY#2026-09-03#CALLS' });
+    // The web's own counter (v22): a spent web budget never spends the conversation's.
+    expect(limitKeys.web(now)).toEqual({ scope: 'LIMIT#ALL', key: 'DAY#2026-09-03#WEB' });
     // Reached, a per-person ceiling silenced somebody for the rest of the day with nothing
     // saying why; what bounds one person now is the exchange budget (trigger.ts).
     expect(limitKeys).not.toHaveProperty('user');

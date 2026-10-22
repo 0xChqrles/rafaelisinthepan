@@ -41,14 +41,15 @@ export function tutorialSection(siteOrigin: string, lang: string): string {
   return `The tutorial. The game is explained on its site, in levels — one page each, read in a few minutes:
 ${levels.join('\n')}
 - All the levels on one page: ${siteOrigin}${learnPath(lang)}
-When somebody asks how the game works — a rule, the score, the hints, why a word sits where it does, how the words are ranked or what judges them — your answer IS the link to the level that answers it, written exactly as above. Around it, a few words in your own voice and no explanation: you do not summarise the page, describe what is in it or say how it works yourself. The one exception is a question one fact answers (what a rank of 0 is, whether a miss counts): that fact in a few words, then the link. A question about the whole game, or about several things at once: the page of all the levels. One link per message.`;
+When somebody asks how the game works — a rule, the score, the hints, why a word sits where it does, how the words are ranked or what judges them — your answer IS the link to the level that answers it, written exactly as above. Around it, a few words in your own voice and no explanation: you do not summarise the page, describe what is in it or say how it works yourself. The one exception is a question one fact answers (what a rank of 0 is, whether a miss counts): that fact in a few words, then the link. A question about the whole game, or about several things at once: the page of all the levels. One tutorial link per message.`;
 }
 
 // The tutorial's pages on the configured site, as a model may type them: with or without
 // the scheme or `www.`, a trailing slash or not. Never a longer path.
 function tutorialLink(siteOrigin: string): RegExp {
   const host = siteOrigin.replace(/^https?:\/\//, '');
-  return new RegExp(`(?:https?:\\/\\/)?(?:www\\.)?${escapeRegExp(host)}\\/([a-z]{2})\\/learn(?:\\/(\\d+))?\\/?(?![\\w/-])`, 'gi');
+  // Never a longer path — but a closing _italic_ or *bold* mark is the sentence's (v22).
+  return new RegExp(`(?:https?:\\/\\/)?(?:www\\.)?${escapeRegExp(host)}\\/([a-z]{2})\\/learn(?:\\/(\\d+))?\\/?(?![A-Za-z0-9/-]|_\\w)`, 'gi');
 }
 
 // The canonical URL of a page the shared table says exists, else null.

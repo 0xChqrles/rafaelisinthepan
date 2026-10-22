@@ -5,7 +5,7 @@ import { memoryDeclarationStore } from '../domain/declarations';
 import type { InboundMessage } from '../domain/message';
 import { createLog } from '../log';
 import { LlmUnavailable, type LlmProvider, type LlmRequest, type LlmResponse } from '../llm/types';
-import { ANSWERING, DEFAULT_REACTION, OWN_QUOTE_NOTE, createAgent, fromOwner, plainReply, reactionIn } from './agent';
+import { ANSWERING, DEFAULT_REACTION, OWN_QUOTE_NOTE, WEB_RULES, createAgent, fromOwner, reactionIn } from './agent';
 import { DayLog, memoryDayLogStore, type Turn } from './dayLog';
 import { memoryDiaryStore } from './diary';
 import { memoryLimitStore } from './limits';
@@ -95,7 +95,8 @@ describe('the conversation agent (#236, #277)', () => {
     await said(dayLog, 'WhippinBot qui mène ?');
     const answer = agentWith(provider, { dayLog });
     const out = await answer(message('@33700000000 qui mène ?'), group, identity, TODAY, asked());
-    expect(out).toEqual({ kind: 'reply', text: 'Personne n’a encore joué, Gab.' });
+    // WhatsApp draws its own *bold* (v22): kept, where v21 stripped every mark.
+    expect(out).toEqual({ kind: 'reply', text: '*Personne* n’a encore joué, Gab.' });
     // The day, in order, as user turns with the time; the question is the last of them.
     expect(contents(requests[0])).toEqual(['[13:00] Gab: je pense au nombre 67', `[14:00] Gab: WhippinBot qui mène ?  ${ANSWERING}`]);
     expect(requests[0].tools?.map((t) => t.name)).toContain('get_head_to_head');
@@ -160,6 +161,8 @@ describe('the conversation agent (#236, #277)', () => {
     expect(reactionIn('React with a 🔥')).toBe(DEFAULT_REACTION);
     // …and two plain words after it make a sentence: English opens one with the verb.
     expect(reactionIn('React faster next time, Gab.')).toBeNull();
+    // A real answer about React, with an emoji further down (v22's answers are long).
+    expect(reactionIn('React 19 ajoute les Server Actions, et les hooks restent.\n\nBref, fonce 🚀')).toBeNull();
     expect(reactionIn('react red heart')).toBeNull();
     expect(reactionIn('_React_ faster next time')).toBeNull();
     const { provider } = scripted([() => ({ text: 'React faster next time, Gab.' })]);
@@ -376,8 +379,8 @@ describe('the conversation agent (#236, #277)', () => {
     expect(await agentWith(down.provider, { dayLog })(message('x'), group, identity, TODAY, asked())).toEqual({ kind: 'silent', reason: 'unavailable' });
     const loop = scripted(Array.from({ length: 10 }, () => () => ({ toolCalls: [{ id: 'c', name: 'get_today_podium', arguments: '{}' }], finish: 'tool_calls' as const })));
     expect(await agentWith(loop.provider, { dayLog })(message('x'), group, identity, TODAY, asked())).toEqual({ kind: 'silent', reason: 'empty' });
-    expect(loop.requests).toHaveLength(5);
-    expect(loop.requests[4].tools).toBeUndefined();
+    expect(loop.requests).toHaveLength(9);
+    expect(loop.requests[8].tools).toBeUndefined();
     const ceiling = scripted([() => ({ text: 'hi' })]);
     expect(await agentWith(ceiling.provider, { dayLog, dailyCallCeiling: 0 })(message('x'), group, identity, TODAY, asked())).toEqual({ kind: 'silent', reason: 'call_ceiling' });
   });
@@ -393,13 +396,6 @@ describe('the conversation agent (#236, #277)', () => {
     expect(once.requests[0].maxTokens).toBeGreaterThanOrEqual(2000);
   });
 
-  it('bounds a reply to plain text of a sane length', () => {
-    expect(plainReply('**Gros** _titre_\n\n\nligne')).toBe('Gros titre\nligne');
-    const long = plainReply(`${'Phrase courte. '.repeat(80)}`)!;
-    expect(long.length).toBeLessThanOrEqual(700);
-    expect(long.endsWith('.')).toBe(true);
-    expect(plainReply('   ')).toBeNull();
-  });
 });
 
 describe('the bot knows its own schedule in this group (user-decided 2026-09-05)', () => {
@@ -438,7 +434,7 @@ describe("the tutorial's levels ride in the conversation's prompt (2026-10-02)",
 
 describe("the day's source rides in the system prompt, never as a tool (#236)", () => {
   const source = { kind: 'music', author: 'Bertrand Belin', work: 'Oiseau' };
-  const reader = { get: async () => source, read: async () => ({ published: true, source }) };
+  const reader = { get: async () => source, read: async () => ({ published: true, source, secrets: null }) };
 
   it('is ambient: it is there before the question is read, and costs no tool round', async () => {
     const { provider, requests } = scripted([() => ({ text: "Ça vient d'une chanson." })]);
@@ -472,5 +468,113 @@ describe("the day's source rides in the system prompt, never as a tool (#236)", 
     const bare = scripted([() => ({ text: 'Salut.' })]);
     expect(await agentWith(bare.provider, { dayLog })(message('@33700000000 salut'), group, identity, TODAY, asked())).toEqual({ kind: 'reply', text: 'Salut.' });
     expect(bare.requests[0].system).not.toContain("Where today's sentence comes from");
+  });
+});
+
+describe('the web, on an answer the bot was asked for (v22)', () => {
+  const secrets = { words: ['je', 'marche', 'seul', 'dans', 'la', 'nuit'], hidden: [false, false, true, false, false, false] };
+  const daySource = { get: async () => null, read: async () => ({ published: true, source: null, secrets }) };
+  const lyrics = 'https://paroles.ex/chanson';
+  const article = 'https://news.ex/greve_sncf';
+  function web() {
+    const searched: string[] = [];
+    return {
+      searched,
+      client: {
+        async search(query: string) {
+          searched.push(query);
+          return [
+            { title: 'Grève', url: article, site: 'News', date: '2026-09-02', summary: 'Grève mardi.' },
+            { title: 'Paroles', url: lyrics, site: null, date: null, summary: 'Je marche seul dans la nuit…' },
+          ];
+        },
+        async read() {
+          return { title: 'x', content: 'x', truncated: false };
+        },
+      },
+    };
+  }
+  const withWeb = (provider: LlmProvider, dayLog: DayLog, client = web().client) =>
+    agentWith(provider, { dayLog, daySource, web: client, webDailyCeiling: 10, apiBaseUrl: 'https://api.whippin.ai' });
+
+  it('searches when addressed, hands the reasoning back, gives the link it found and takes out one it made up', async () => {
+    const { provider, requests } = scripted([
+      () => ({ reasoning: 'Il faut chercher.', toolCalls: [{ id: 'w1', name: 'web_search', arguments: '{"query":"grève SNCF mardi"}' }], finish: 'tool_calls' }),
+      () => ({ text: `Oui, grève mardi : ${article}\nPlus de détails : https://invente.ex/rien` }),
+    ]);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'WhippinBot y a grève mardi ?');
+    const w = web();
+    const out = await withWeb(provider, dayLog, w.client)(message('WhippinBot y a grève mardi ?', { mentions: [] }), group, identity, TODAY, asked('name'));
+    expect(out).toEqual({ kind: 'reply', text: `Oui, grève mardi : ${article}\nPlus de détails` });
+    expect(w.searched).toEqual(['grève SNCF mardi']);
+    expect(requests[0].tools?.map((t) => t.name)).toEqual(expect.arrayContaining(['web_search', 'read_page', 'get_today_podium']));
+    expect(requests[0].system).toContain(WEB_RULES);
+    expect(requests[0].system).toMatch(/It is Thursday, 3 September 2026 at 14:00 in the group's time zone/);
+    expect(requests[1].messages.at(-2)).toMatchObject({ role: 'assistant', reasoning: 'Il faut chercher.' });
+    // The lyrics never reached the model.
+    const tool = requests[1].messages.at(-1) as { content: string };
+    expect(tool.content).not.toContain(lyrics);
+    expect(tool.content).not.toMatch(/held back|Whippin/);
+  });
+
+  it("puts a long message's links back in full beside it: the log keeps 500 characters", async () => {
+    const link = 'https://news.ex/un/article/tres/long';
+    const long = `${'blabla '.repeat(90)}${link}`;
+    const { provider, requests } = scripted([() => ({ text: 'Lu.' })]);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, long);
+    await withWeb(provider, dayLog)(message(long), group, identity, TODAY, asked());
+    expect(contents(requests[0]).at(-1)).toContain(`[links in this message: ${link}]`);
+  });
+
+  it('keeps a link it was shown, in bold or italics, and its tutorial card', async () => {
+    const { provider } = scripted([() => ({ text: `C'est là : *${article}* et _https://whippin.ai/fr/learn/2_` })]);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, `et ça ? ${article}`);
+    expect(await withWeb(provider, dayLog)(message(`et ça ? ${article}`), group, identity, TODAY, asked())).toEqual({
+      kind: 'reply',
+      text: `C'est là : *${article}* et _https://whippin.ai/fr/learn/2_`,
+      preview: 'https://whippin.ai/fr/learn/2',
+    });
+  });
+
+  it("drops a reply that quotes today's sentence once the web was used", async () => {
+    const { provider } = scripted([
+      () => ({ toolCalls: [{ id: 'w1', name: 'web_search', arguments: '{"query":"marche dans la nuit"}' }], finish: 'tool_calls' }),
+      () => ({ text: 'C’est « je marche seul dans la nuit ».' }),
+    ]);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'cherche la phrase');
+    expect(await withWeb(provider, dayLog)(message('cherche la phrase'), group, identity, TODAY, asked())).toEqual({ kind: 'silent', reason: 'spoiler' });
+  });
+
+  it('offers no web to ambient talk, and says nothing of it there — save to the owner', async () => {
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'il pleut demain ?');
+    const ambient = scripted([() => ({ text: 'NO_REPLY' })]);
+    await withWeb(ambient.provider, dayLog)(message('il pleut demain ?', { mentions: [] }), group, identity, TODAY, asked('ambient'));
+    expect(ambient.requests[0].tools?.map((t) => t.name)).not.toContain('web_search');
+    expect(ambient.requests[0].system).not.toContain(WEB_RULES);
+    expect(ambient.requests[0].system).not.toMatch(/search the web/);
+    const owned = parseGroupConfig('g.json', {
+      id: GROUP, name: 'g', language: 'fr', enabled: true, timezone: 'Europe/Paris', podium: { enabled: true, time: '22:00' },
+      owner: '33612345678@s.whatsapp.net', chat: { enabled: true, prePrompt: '', perGroupPerDay: 10 },
+    });
+    const boss = scripted([() => ({ text: 'NO_REPLY' })]);
+    await withWeb(boss.provider, dayLog)(message('il pleut demain ?', { mentions: [] }), owned, identity, TODAY, asked('ambient'));
+    expect(boss.requests[0].tools?.map((t) => t.name)).toContain('web_search');
+  });
+
+  it('answers a tool that throws as a failed tool, and the answer goes on', async () => {
+    const broken = { search: async () => { throw new Error('boom: grève SNCF'); }, read: async () => { throw new Error('boom'); } };
+    const { provider, requests } = scripted([
+      () => ({ toolCalls: [{ id: 'w1', name: 'web_search', arguments: '{"query":"q"}' }], finish: 'tool_calls' }),
+      () => ({ text: 'Pas trouvé.' }),
+    ]);
+    const dayLog = new DayLog(memoryDayLogStore());
+    await said(dayLog, 'x');
+    expect(await withWeb(provider, dayLog, broken)(message('x'), group, identity, TODAY, asked())).toEqual({ kind: 'reply', text: 'Pas trouvé.' });
+    expect((requests[1].messages.at(-1) as { content: string }).content).toMatch(/error/);
   });
 });

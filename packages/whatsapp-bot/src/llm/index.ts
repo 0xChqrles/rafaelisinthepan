@@ -4,7 +4,8 @@
 import { GetParameterCommand, type SSMClient } from '@aws-sdk/client-ssm';
 import type { LlmEnv } from '../config/env';
 import { deepSeekProvider } from './providers/deepseek';
-import type { LlmProvider } from './types';
+import { deepSeekWeb } from './providers/deepseekWeb';
+import type { LlmProvider, WebClient } from './types';
 
 async function resolveLlmApiKey(env: LlmEnv, ssm: () => SSMClient): Promise<string | null> {
   if (env.apiKey) return env.apiKey;
@@ -29,6 +30,15 @@ export async function createLlmProvider(
     default:
       throw new Error(`Unknown BOT_LLM_PROVIDER "${env.provider}".`);
   }
+}
+
+// The conversation's web (v22): the same provider's search and page reader, on the same key.
+// Null with no key, and for a provider that has none — the conversation then simply has no
+// web tools.
+export async function createWebClient(env: LlmEnv, ssm: () => SSMClient): Promise<WebClient | null> {
+  if (env.provider !== 'deepseek') return null;
+  const apiKey = await resolveLlmApiKey(env, ssm);
+  return apiKey ? deepSeekWeb({ apiKey }) : null;
 }
 
 export * from './types';

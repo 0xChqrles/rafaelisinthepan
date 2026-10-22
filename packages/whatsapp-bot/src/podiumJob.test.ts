@@ -257,7 +257,7 @@ describe('the morning reminder (user-decided 2026-09-05)', () => {
   ]);
   const day = (source: { kind?: string } | null, published = true) => ({
     get: async () => source,
-    read: async () => (published ? { published, source } : { published: false, source: null }),
+    read: async () => (published ? { published, source, secrets: null } : { published: false, source: null, secrets: null }),
   });
   function deps(over: Partial<Parameters<typeof runReminderJob>[1]> = {}) {
     const sent: OutboundCommand[] = [];

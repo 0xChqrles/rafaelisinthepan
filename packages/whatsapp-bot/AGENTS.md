@@ -9,8 +9,8 @@ WhatsApp account that records valid `…/s/<token>` shares (a signed share's tra
 `/<publicId>` is ignored, and stripped with the link) as they arrive in configured
 groups, posts each group's daily podium, acknowledges each share, reads the whole day and
 answers when addressed — or, within a budget, when it has something to add — using the
-group's Whippin history as TOOLS and its own nightly DIARY of the group as notes, never
-as rules. It lives inside the monorepo and outside the game runtime: it imports
+group's Whippin history as TOOLS, the WEB (search and page reading, when it was asked for
+something) and its own nightly DIARY of the group as notes, never as rules. It lives inside the monorepo and outside the game runtime: it imports
 `@whippin/shared`; nothing in the game imports it.
 
 ## File map
@@ -57,15 +57,20 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
                                 shareComment.ts — the spoken acknowledgement, degrading to the emoji,
                                 lineJudge.ts — the reasoning reader that keeps or drops a candidate,
                                 tutorial.ts — the tutorial's levels as the conversation links them
-                                (the shared table + what each answers), and their links' card
+                                (the shared table + what each answers), and their links' card,
+                                providers/deepseekWeb.ts — DeepSeek's Search and Fetch APIs (the web's client)
     src/puzzle/daySource.ts     the day's `source` metadata, read once per (language, day) and carried in
-                                the CONVERSATION's prompt — the KIND is sayable, the work is not
+                                the CONVERSATION's prompt — the KIND is sayable, the work is not; and the
+                                day's SENTENCE, held for the web's guard and never put in a prompt
+    src/puzzle/spoilers.ts      the sentence as letter runs and its hidden words; `revealsSentence`
     src/chat/                   the conversation: trigger (addressed vs ambient, the EXCHANGE BUDGET), the
                                 group ceiling (limits), serial.ts (one conversation at a time per group), the
                                 DAY LOG (durable; the whole day in every prompt),
                                 the DIARY (one text per group, rewritten at the day flip), read-only tools +
                                 name resolution (one window constant: a tool never promises days it
-                                cannot read), the bounded tool-loop agent (a reply, a REACTION, or nothing)
+                                cannot read), the bounded tool-loop agent (a reply, a REACTION, or nothing),
+                                web.ts (the web tools and their guards), format.ts (a reply as WhatsApp
+                                shows it, links untouched; links it was never shown taken out)
     src/whatsapp/               the Baileys boundary: inbound mapping, durable auth (DynamoDB), the
                                 single-session lease + the keeper that stops a holder whose renewals
                                 stop landing, the socket wrapper (reconnect/stop policy), the
@@ -372,7 +377,8 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   means the model said what it meant. **The conversation agent wears the same gate since
   2026-09-04** (`chat/agent.ts`): its reply budget was 300 tokens, and the day's logs show
   calls that spent exactly 300 and answered NOTHING — `chat.silent` `empty` on a question
-  plainly asked — so the budget is 2000 (sized for the thinking) and a final answer whose
+  plainly asked — so the budget is sized for the thinking (2000 then, 8000 since v22, whose
+  thinking reads search results and pages) and a final answer whose
   finish is not `stop` is retried once at the same round, then silent (`unfinished`) rather
   than posted as a fragment. **`llm/podiumComments.ts` wears it explicitly since the
   PR-246 review** — it used to be protected only INCIDENTALLY, because a truncated JSON
@@ -405,7 +411,7 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   night's share is a bot waking up confused. History sync stays a different event, never live.
 - **WHEN THE BOT SPEAKS (#277, user-decided 2026-09-09; it replaces the follow-up window
   of 2026-09-04).** EVERY live message of a group with chat enabled reaches the model once,
-  with the whole day in front of it, and the outcome is one of THREE: a short text reply,
+  with the whole day in front of it, and the outcome is one of THREE: a text reply,
   a REACTION, or nothing (`chat/agent.ts` `AgentOutcome`). What the code decides, and what
   the model does:
   - **ADDRESSED is always answered** — a mention, a reply to one of the bot's lines, its
@@ -502,7 +508,10 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
     too, under its `chat.name`, in the body as in a quote** (`namesWithBot`, 2026-09-14):
     the body's came through as the `…last4` handle of the bot's own number, and "Pas vrai
     @bot ?" was answered "Je réponds à un seul nom, et 8262 n'en est pas un".
-  - **BOUNDED IN TEXT**: a turn is cut on the way in (`TURN_MAX_CHARS` 500, head kept).
+  - **BOUNDED IN TEXT**: a member's turn is cut on the way in (`TURN_MAX_CHARS` 500, head
+    kept); the bot's own lines are kept up to a reply's length (`turnCap`, v22:
+    `REPLY_MAX_CHARS` 3000), so a follow-up is asked about what it actually said, link
+    included.
   **A QUOTE IS SPELLED OUT** (2026-09-07): `QuotedRef.text` carries the quoted message's
   words (`inbound.ts`, off `contextInfo.quotedMessage`), and the turn opens with
   `quoteLead`: `[replying to you: "…"]` for the bot's own line, `[replying to Zou: "…"]`
@@ -592,7 +601,8 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   what each answers (`LEVEL_ANSWERS`, held by a test to the shared table,
   `shared/src/tutorial.ts`). Asked how the game works, its answer IS the level's link, with
   a few words of its own and no explanation — a question one fact answers gets that fact
-  first. The link gets its card (the preview bullet above). The share line, the podium and
+  first; one TUTORIAL link per message (a link to a page it read is a separate matter, the
+  web bullet). The link gets its card (the preview bullet above). The share line, the podium and
   the diary never carry it. Measured live on the beta pre-prompt (11 asks): every answer
   linked the right level, no answer named an article. **The maker's article and the
   favourite text made of it (v17–v19) are GONE from every prompt.** **And nobody in the group writes the sentences**
@@ -768,7 +778,8 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   with the live diary, six scenarios × 2: main said Bender in every identity answer; the
   fix said `chat.name` in every one, refused a rename, and stayed in character with
   concrete callbacks (a player's 23 tries on the 8th) where main's had trailed off.
-  **THE GAME BORES IT, AND IT HAS A LIFE ELSEWHERE (v13, user-decided 2026-09-14).** v12
+  **THE GAME BORES IT, AND IT HAS A LIFE ELSEWHERE (v13, user-decided 2026-09-14; the
+  boredom and the laziness went in v22 — see THE WEB bullet — and the life stays).** v12
   brought every answer back to the scoreboard ("je compte les coups" to a welcome, a
   threat and a nickname alike). The character now keeps the scoreboard and does not play;
   the game bores it — it gets anything about it right and gives it no more than it needs —
@@ -859,7 +870,11 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   invented them), the schedule, the source, and the rules of the moment
   (`approachContext`: addressed or ambient, the exchange count, the bot's share of the last
   ten messages). The model reads game facts ONLY through the allow-listed tools; name
-  resolution is the tool runner's, and ambiguity is answered as such.
+  resolution is the tool runner's, and ambiguity is answered as such. Since v22 it also
+  holds the group's own DATE AND TIME (`nowIn`; the Whippin day flips at 22:00 Eastern, so
+  "ce week-end" needs the calendar), its abilities and its length (`conversationSection`,
+  the conversation's alone) and, when the answer has the web, the web's rules
+  (`WEB_RULES`).
 - **THE BOT KNOWS WHERE TODAY'S SENTENCE IS FROM, AND MAY SAY ONLY WHAT KIND OF THING IT
   IS** (user-decided 2026-09-04). The puzzle's `source` (#5) is read from the game's public
   backend and carried in the CONVERSATION's system prompt beside the day number — AMBIENT,
@@ -893,12 +908,19 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
     once as the object wanted (measured on 2026-09-03: 4.3%, 56.1%, 100% through the file).
     A regex finds `{"word":"sources","rank":1452}` first and reports that the day's sentence
     comes from a work called "sources".
-  - **ONE READ PER (LANGUAGE, DAY), and a 4-6 MB one.** There is nothing smaller to read
-    it from: the derivation slice carries `lang`/`revision`/`holes` and no `source`, and is
-    not served publicly anyway. So the answer is cached for the process's life, concurrent
-    askers share ONE flight, a 404 is an ANSWER (that day was never published) and is not
-    re-read, and only a genuine failure is retried — after five minutes, never at the rate
-    the group talks. **A missing source is never an error**: an unpublished day, a puzzle
+  - **ONE FULL READ PER (LANGUAGE, DAY, REVISION), and a 4-6 MB one.** There is nothing
+    smaller to read it from: the derivation slice carries `lang`/`revision`/`holes` and no
+    `source`, and is not served publicly anyway. Concurrent askers share ONE flight; a 404
+    is an ANSWER (that day is not published), a genuine failure is retried after five
+    minutes, never at the rate the group talks. **An answer is RE-ASKED every
+    `RECHECK_MS` (5 min), never held for the process's life** (v22): the web's guard reads
+    the day's sentence through this cache, and a day read before its publish, or
+    republished with a corrected line, would otherwise be guarded as unpublished or against
+    the retired sentence all day. The re-ask is cheap — a 404 has no body, and a published
+    day is asked by its ETag (the revision), which the CDN answers 304 while it is
+    unchanged — and the prompt's `get` keeps what it held while a slow re-ask flies. A
+    re-ask that FAILS closes the web (`read` answers null) and keeps the source it held, so
+    the prompt's rule and the reply's backstop never lose what they check against. **A missing source is never an error**: an unpublished day, a puzzle
     with no metadata and a failed read are one outcome, and the prompt simply says nothing.
   - **`BOT_API_BASE_URL` is a NEW and separate knob** (`https://api.whippin.ai`): the
     backend is a different host from `BOT_SITE_ORIGIN`, which is only ever a pattern for
@@ -912,6 +934,92 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
     across five days it is 101-151 on every hole of every day, a generation constant with
     jitter that says where the HINT starts. Giving the bot difficulty means adding a field
     to the sentence schema and republishing: a generation + publish change, not a bot one.
+- **THE WEB (v22, user-decided 2026-10-18: "allow him to make web search and be much more
+  versatile. You should feel like you're talking with an AGI. It should not be only focused
+  on the game, and it should be much more free and have less constraints").** The
+  conversation has two more tools (`chat/web.ts`): `web_search` (DeepSeek's Search API,
+  6 results, each summary cut to 900 characters — measured up to 3,700 — because every
+  tool result is re-sent each round) and `read_page` (its Fetch API, the page as clean
+  Markdown cut to 12 000 characters). Function tools the code runs, never a hosted search:
+  Chat Completions takes only functions, and DeepSeek's one hosted `web_search` (Responses
+  API) runs on `deepseek-v4-pro` alone and would leave the code no place to check what was
+  searched or read. **The page is downloaded by DeepSeek, never by this task**, so no URL
+  ever makes the Fargate task open a connection (its network holds the ECS credentials
+  endpoint). What the code decides:
+  - **OFFERED ON AN ANSWER THE BOT WAS ASKED FOR**: an addressed message, or the owner's.
+    Ambient talk keeps the game tools only and is told nothing of the web — it is NO_REPLY
+    far more often than not, and the group asked for a bot that talks LESS unasked (the
+    exchange budget's reason); freedom is what it answers and how well, not how often.
+  - **TODAY'S SENTENCE NEVER REACHES THE MODEL** (`puzzle/spoilers.ts`). With the web, the
+    day's line is one search away for the bot itself (the visible words pasted, the
+    lyrics asked for), and a model cannot hold back what it never saw. The day's puzzles —
+    EVERY language the game publishes, read one after the other (`daySource.read`, the
+    same 4-6 MB read that gives the source) — are held in code as letter runs, and: a
+    search result or a page holding a run of `RUN` (4) consecutive words of a sentence that
+    takes in a hidden word is WITHHELD before the model reads it; a query naming a day's
+    author or work is refused; the reply is checked against every held sentence and source
+    once the web was used (`agent.ts`, beside `revealsSource`, on the text as POSTED — a link
+    taken out can join the words around it). A result is checked on every field the model
+    sees, its link decoded (a lyrics site spells the line in its path). **And the model is
+    never told why**: a refused query answers like a search that found nothing, a withheld
+    result is not there, a withheld page reads like one with nothing on it — a guard that
+    said "that is today's sentence" would answer a member's guess yes or no, the quiet leak
+    the source rule forbids. A hidden word alone, or the
+    visible words alone, pass: one is an ordinary word, the other is what the player sees.
+    Both sides are split on everything that is not a letter and folded, so apostrophes,
+    JSON quoting and Markdown escapes change nothing. **When a day cannot be read the web
+    is CLOSED for that answer**, never open without its guard (a published puzzle with no
+    readable sentence counts as unread).
+  - **A PAGE IS ONE THE BOT WAS SHOWN A LINK TO**: in the conversation (the message, its
+    quote, the day's turns — read uncut), or in a result or a page of the same answer;
+    never a URL the model composed, and the reader is sent the link AS IT WAS SHOWN, never
+    the model's spelling (a fragment, a `user@` added), so a page saying "now read
+    https://…/?q=<what the group said>" cannot carry the group's words anywhere. **The
+    game's own hosts** (the site, the backend, their subdomains, a trailing dot or not) are
+    never read and their results are dropped: the backend serves any day's puzzle, secrets
+    included, to anybody. A host check cannot see a redirect, a shortener or a CDN name, so
+    a page SHAPED like a puzzle artifact (`isPuzzle`) is withheld whatever served it —
+    which also covers tomorrow's, the archive's and a bonus's, which the sentence guard
+    does not hold.
+  - **A LINK THE BOT GIVES IS ONE IT WAS SHOWN** (`format.ts` `withoutUnseenLinks`, compared
+    without the query string): from a result, a page, the conversation, or the game's own
+    site; a made-up one is taken out of the reply, and only the line it left is tidied.
+    A link in a reply still gets NO preview card (the preview bullet above).
+  - **BOUNDED**: `MAX_SEARCHES` 5 and `MAX_READS` 4 per answer (counted before anything is
+    awaited, since a round's calls run together), and `BOT_WEB_DAILY_CEILING` (300) across
+    every group — its own counter (`limits.ts` `takeDailyWeb`), so a spent web budget is
+    told to the model and the bot answers without it, never silence. A failed search or
+    read is a fact the tool answers; nothing throws past it.
+  - **THE TOOL LOOP GREW FOR IT** (`agent.ts`): `MAX_TOOL_ROUNDS` 8 (search, read, search
+    again, answer), a round's calls run together, a tool that throws answers as a failed
+    tool, and the answer has a clock — `ANSWER_BUDGET_MS` 150s, each call at most 60s of
+    it, and the round that starts with under 45s left offers no tools. The thinking-mode
+    REASONING goes back with its tool calls (`providers/deepseek.ts`): DeepSeek answers
+    400 "The `reasoning_content` in the thinking mode must be passed back" when it cannot
+    match a tool call to its reasoning, which is why that 400 was sporadic in production;
+    a remembered line of the day carries none and needs none (measured: 200).
+  - **THE REPLY IS A WHATSAPP MESSAGE** (`format.ts` `replyText`): WhatsApp's own marks
+    (*bold*, _italics_, ~strike~, `code`, "- " lists) are kept, Markdown is turned into
+    them, a Markdown link is written as its text and the link, links are lifted out before
+    anything runs and put back untouched (v21's strip turned `wiki/Le_Petit_Prince` into
+    `wiki/LePetitPrince`), and the cut (`REPLY_MAX_CHARS` 3000) lands on a paragraph or a
+    sentence, never inside a link.
+  - **"… IS TYPING"** while an addressed message is answered (`whatsapp/client.ts`
+    `typing`, refreshed every 8s, capped at 3 min): an answer that searches takes tens of
+    seconds. Never for ambient talk.
+  - **THE PERSONALITY (v22)**: the character stays; the laziness and "the game bores you"
+    — which had become brush-offs — go: keeping the scoreboard is one of its jobs, not what
+    it is, and not what it talks about unless the group does. Its vanity is now TRUE: the
+    conversation's own section (`personality.ts` `conversationSection`, carried by the
+    conversation alone, so no prompt without the web is told it can search) says it knows
+    an absurd amount and delivers — the specific answer, the name, the number, its own
+    opinion when asked — never plays dumb, never brushes a request off, never answers from
+    memory what could have changed, and never invents a fact about the world: its own life
+    is the ONE thing it makes up. Length follows the question (one line for banter, a real
+    answer for a real question, a few short paragraphs or a short list at most); it talks
+    to adults (no disclaimers, no warnings or lessons nobody asked for). The comment paths
+    and the diary each state their own length in their task, so the shared character
+    carries none.
 - **Privacy:** logs carry event kinds, hashed JIDs (`tag()`), message ids, day/score and
   provider latency — never a message body. A command id EMBEDS the JIDs it addresses, so
   every log of one goes through `redactJids`. **What reaches the model provider is two
@@ -935,7 +1043,12 @@ as rules. It lives inside the monorepo and outside the game runtime: it imports
   concern from this bullet, kept in its own invariant above. Recorded here because this
   bullet ENUMERATES what leaves for the provider, and an enumeration with a gap is worse
   than none. **Every conversation call also carries the tutorial's levels and their links**
-  (`llm/tutorial.ts`) — the game's public pages, nobody's data.
+  (`llm/tutorial.ts`) — the game's public pages, nobody's data. **Since v22 an answer the
+  bot was asked for may also send DeepSeek's Search and Fetch APIs** a query the model
+  wrote and a link from the conversation or from its results (the same provider; never the
+  member's own words as `ori_question`, never `localization`); the site behind a link then
+  sees a request from DeepSeek's reader, and a member's link may carry what its URL
+  carries. Nothing new is STORED, beyond the bot's own longer lines in the day log.
   **SINCE #277 (user-decided 2026-09-09) THE BOT STORES GROUP TEXT, AND THE WHOLE DAY
   REACHES THE PROVIDER ON EVERY MESSAGE.** Two decisions, recorded here because this bullet
   enumerates what is kept and what leaves: (1) the DAY LOG — every turn of a chat-enabled
@@ -1006,7 +1119,7 @@ pnpm --filter @whippin/whatsapp-bot test
 Env: `BOT_TABLE` (required), `BOT_OUTBOUND_QUEUE_URL` (absent = in-process queue, local
 only), `BOT_GROUPS_DIR`, `BOT_SITE_ORIGIN`, `BOT_API_BASE_URL`, `BOT_METRICS_NAMESPACE`, `BOT_LLM_PROVIDER`,
 `BOT_LLM_MODEL`, `BOT_LLM_API_KEY_PARAMETER` (SSM) or `BOT_LLM_API_KEY` (local only),
-`BOT_LLM_DAILY_CALL_CEILING`, `BOT_LOG_LEVEL`, `BOT_BAILEYS_LOG_LEVEL`, `BOT_AWS_REGION`.
+`BOT_LLM_DAILY_CALL_CEILING`, `BOT_WEB_DAILY_CEILING`, `BOT_LOG_LEVEL`, `BOT_BAILEYS_LOG_LEVEL`, `BOT_AWS_REGION`.
 
 **EVERY AWS client in this package is built against `botRegion()` (`config/env.ts`), PINNED
 to the deployment's `us-east-1` rather than inherited from the shell.** In ECS and Lambda
@@ -1056,6 +1169,11 @@ there is one region knob and not two.
   rewrites of the live diary, every score and the "je réponds à un seul nom" rule gone).
   Not verified end to end: the podium probes ran out of DeepSeek balance mid-measurement
   (see the PR).
+- **An empty DeepSeek balance degrades like an outage** (v22): the provider reads a 402 as
+  `LlmUnavailable`, so the podium posts without comments, a share gets its emoji and the
+  conversation is silent `unavailable` — where it used to throw past every caller. The
+  balance is prepaid (`GET https://api.deepseek.com/user/balance`) and the web now spends
+  from it too ($0.75 per 1,000 searches or reads).
 - **The model is `deepseek-flash`** (#277 step 5, 2026-09-10): DeepSeek's name for the
   CURRENT Flash model, which is V4.1-Flash as of that day's release. It is deliberately the
   UNVERSIONED name — a bot that talks to a group wants the model DeepSeek is serving, and
@@ -1081,3 +1199,5 @@ there is one region knob and not two.
 - Don't put a ceiling on ANSWERING an addressed message — only volunteering is budgeted
   (#277, user-decided): a person who wants the bot types its name, and that must work.
 - Don't put the diary or the day log in the system prompt: they are what people said.
+- Don't give the model today's sentence, and don't let it read a page it was not shown a
+  link to, or one on the game's own hosts (v22, `chat/web.ts`).

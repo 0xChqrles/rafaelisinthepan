@@ -17,6 +17,9 @@ export interface LlmEnv {
   // Daily ceiling on model CALLS across every group — the last line against one bored
   // participant turning the group into an API loop, after the per-user and per-group ones.
   dailyCallCeiling: number;
+  // BOT_WEB_DAILY_CEILING — searches and page reads per UTC day across every group (v22).
+  // Spent, the web tools say so and the bot answers without them.
+  webDailyCeiling: number;
 }
 
 export interface BotEnv {
@@ -67,17 +70,22 @@ export function botRegion(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 export const DEFAULT_DAILY_CALL_CEILING = 500;
+export const DEFAULT_WEB_DAILY_CEILING = 300;
+
+// An EMPTY value is unset, as it is for every other knob here — `Number('')` is 0, which
+// passes the check below and silences every model reply while the per-group quotas keep
+// being spent, and an empty variable is the easiest thing to leave behind in a task
+// definition.
+function ceilingFrom(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const raw = env[name]?.trim();
+  const ceiling = raw ? Number(raw) : fallback;
+  if (!Number.isFinite(ceiling) || ceiling < 0) throw new Error(`${name} must be a non-negative number.`);
+  return ceiling;
+}
 
 export function loadEnv(env: NodeJS.ProcessEnv = process.env): BotEnv {
-  // An EMPTY value is unset, as it is for every other knob here — `Number('')` is 0, which
-  // passes the check below and silences every model reply while the per-user and
-  // per-group quotas keep being spent, and an empty variable is the easiest thing to
-  // leave behind in a task definition.
-  const rawCeiling = env.BOT_LLM_DAILY_CALL_CEILING?.trim();
-  const ceiling = rawCeiling ? Number(rawCeiling) : DEFAULT_DAILY_CALL_CEILING;
-  if (!Number.isFinite(ceiling) || ceiling < 0) {
-    throw new Error('BOT_LLM_DAILY_CALL_CEILING must be a non-negative number.');
-  }
+  const ceiling = ceilingFrom(env, 'BOT_LLM_DAILY_CALL_CEILING', DEFAULT_DAILY_CALL_CEILING);
+  const webCeiling = ceilingFrom(env, 'BOT_WEB_DAILY_CEILING', DEFAULT_WEB_DAILY_CEILING);
   return {
     table: required(env, 'BOT_TABLE'),
     outboundQueueUrl: env.BOT_OUTBOUND_QUEUE_URL || undefined,
@@ -91,6 +99,7 @@ export function loadEnv(env: NodeJS.ProcessEnv = process.env): BotEnv {
       apiKeyParameter: env.BOT_LLM_API_KEY_PARAMETER || undefined,
       apiKey: env.BOT_LLM_API_KEY || undefined,
       dailyCallCeiling: ceiling,
+      webDailyCeiling: webCeiling,
     },
   };
 }
