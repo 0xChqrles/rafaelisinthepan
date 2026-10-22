@@ -213,29 +213,125 @@ Return {{"ranked": [<index>, ...]}}, best first, at most {limit} entries.""")
     return ranked or picks[:limit]
 
 
-def stands_alone(claude: Claude, sentence: str, *, lang: str) -> dict:
-    """Does the sentence make complete sense on its own, SOLVED, without its page? The
-    user's rule of 2026-09-18 (the Svevo day: « c'étaient donc des nerfs parfaits »
-    meant nothing even solved). A STRIKE, applied by code on the model's verdict; the
-    rule is read from the skill file."""
-    answer = claude.json(f"""{_capital(A_LANGUAGE[lang])} word game shows ONE sentence from a book or song, alone. The surrounding
-page is available only after solving. Judge the complete sentence below with no context at all.
+# The seven kinds of line the taste names, by number (its `### <n>. <name>` headings; a test
+# ties the two): the read says which one a line is, or none.
+KINDS = {1: "Pairs and molds", 2: "The build-up and the drop", 3: "The small fact that proves a big thing",
+         4: "The reasoning pushed to its end", 5: "The riddle", 6: "The cold exact word", 7: "The bent phrase"}
+# The narrowing ladder of a word taken from a wide kind, in order: the kind the slot shapes,
+# the smaller family a start can name, and the word as that family's first member (or the
+# ranks climbing to it). A missing step makes the word a lottery.
+LADDER = ("slot", "family", "first")
 
+
+def ladder_text(ladder: dict | None) -> str:
+    """A ladder in one line, its steps in order, a missing one as a dash."""
+    return " › ".join((ladder or {}).get(step) or "—" for step in LADDER)
+
+
+def kind_text(kind: int | None) -> str:
+    """A line's kind as the taste names it, or none."""
+    return f"kind {kind}, {KINDS[kind]}" if kind else "no kind"
+
+
+def read_line(claude: Claude, sentence: str, hideable: list[str], refused: list[str], *, lang: str) -> dict | None:
+    """The line READ as its curator reads it, before any word is chosen or any judge paid:
+    whether it stands alone, SOLVED, without its page (the find-sentences skill's `## Stands
+    alone`, read whole), which of its words need the work to mean anything, its kind (`KINDS`,
+    or none), its MAIN word — the word the line is about, one of `hideable` — with the visible
+    words its path runs through, the main word's narrowing ladder when it is one of a wide
+    kind, whether it is the partner of a visible word, whether hiding it hides the joke, and
+    one sibling making the same joke. `refused` is what code told back of an earlier reading.
+    The verdicts are the model's; code applies them (`curate.read`). Returns {about,
+    stands_alone, why, needs_book, kind, anchor, path, path_words, wide, ladder: {slot,
+    family, first} | None, mirror, joke_hidden, sibling} (a line that does not stand alone, or
+    names no main word, leaves the rest unanswered); None when its kind is none of `KINDS`;
+    raises LLMError when the answer is malformed."""
+    again = ("\nTold back of your earlier reading — read the line again:\n"
+             + "\n".join(f"- {r}" for r in refused) + "\n") if refused else ""
+    kinds = "; ".join(f"{n} {name}" for n, name in KINDS.items())
+    answer = claude.json(f"""You read one line for a daily {LANGUAGE[lang]} word game, as its curator does, before any word
+is chosen. One line, three words hidden; the player rebuilds each from how close every guess
+lands, starting from a START word chosen later. A word once found stays revealed and becomes
+context for the others. The page around the line is shown only once the day is solved.
+
+What makes a day worth playing:
+{taste()}
+
+The line must stand alone:
 {skill_section("## Stands alone")}
 
-« {sentence} »
+The line, from one work:
 
-Return {{"about": "<one line: what the sentence says, from the sentence alone>",
-"stands_alone": true/false, "why": "<one line: what leans on the page, or empty>"}}.""")
+« {sentence} »
+   words that can be hidden: {', '.join(hideable)}
+{again}
+Read it in this order:
+1. Does it stand alone once solved? Which of the words that can be hidden need the work to
+   mean anything?
+2. Its kind, by each kind's *Spot it* ({kinds}), or none.
+3. Its MAIN word: the word the line is about — the punch its kind names or, with no kind, the
+   word the line lands on — one of the words that can be hidden; null when that word cannot be
+   hidden or the line gives it no path. Name the 1 to 3 words of the line, left in sight, that
+   its path runs through (single words of the line, never the main word itself), and give the
+   path in one line.
+4. By *The narrowing ladder*: is the main word one member of a wide kind? If so, its ladder:
+   the kind the slot shapes; the smaller family a start can name; and whether the word is the
+   first member players name in that family, or the ranks climb to it. Null for any step that
+   is missing.
+5. Does *No mirror* refuse the main word? Its exception applied: a word that lands a second
+   meaning is not refused.
+6. By *The blank read*: with only the main word hidden, is the joke hidden too?
+7. One sibling that makes the same joke, if any (a warning only).
+
+Return {{"about": "<one line: what the line says, from the line alone>", "stands_alone": true/false,
+"why": "<one line: what leans on the page, or empty>", "needs_book": ["<a word that needs the work>", ...],
+"kind": <1 to 7, or null>, "anchor": "<the main word>" or null, "path": "<one line: how the line leads to it>",
+"path_words": ["<a word of the line>", ...], "wide": true/false,
+"ladder": {{"slot": "<the kind the slot shapes>" or null, "family": "<the smaller family a start can name>" or null, "first": "<the first member players name there, or how the ranks climb to it>" or null}} or null,
+"mirror": true/false, "joke_hidden": true/false, "sibling": "<another word making the same joke>" or null}}.""")
     if (not isinstance(answer, dict) or type(answer.get("stands_alone")) is not bool
-            or not isinstance(answer.get("about"), str)
-            or not isinstance(answer.get("why"), str)):
-        raise LLMError("standalone check requires a boolean verdict and string about/why fields")
-    ok = answer["stands_alone"]
-    about, why = answer["about"].strip(), answer["why"].strip()
-    if not (about if ok else why):
-        raise LLMError("standalone check requires a summary when accepted or a reason when rejected")
-    return {"ok": ok, "why": why, "about": about}
+            or not isinstance(answer.get("about"), str) or not isinstance(answer.get("why"), str)):
+        raise LLMError("the reading requires a boolean stands_alone and string about/why fields")
+    read = {"about": answer["about"].strip(), "stands_alone": answer["stands_alone"], "why": answer["why"].strip(),
+            "needs_book": [], "kind": None, "anchor": None, "path": "", "path_words": [], "wide": None,
+            "ladder": None, "mirror": None, "joke_hidden": None, "sibling": None}
+    if not (read["about"] if read["stands_alone"] else read["why"]):
+        raise LLMError("the reading requires a summary when the line stands alone or a reason when it does not")
+    if not read["stands_alone"]:
+        return read
+    kind, anchor = answer.get("kind"), answer.get("anchor")
+    if ("kind" not in answer or "anchor" not in answer or isinstance(kind, bool)
+            or not (kind is None or isinstance(kind, int)) or not (anchor is None or isinstance(anchor, str))):
+        raise LLMError("the reading requires a kind (a number or null) and a main word (a word or null)")
+    if kind is not None and kind not in KINDS:
+        return None
+    read.update(needs_book=_words(answer.get("needs_book"), "needs_book"), kind=kind,
+                anchor=(anchor or "").strip() or None)
+    if read["anchor"] is None:
+        return read
+    ladder, sibling = answer.get("ladder"), answer.get("sibling")
+    if (not isinstance(answer.get("path"), str)
+            or any(type(answer.get(k)) is not bool for k in ("wide", "mirror", "joke_hidden"))
+            or answer["wide"] and "ladder" not in answer
+            or not (ladder is None or isinstance(ladder, dict)
+                    and all(ladder.get(k) is None or isinstance(ladder.get(k), str) for k in LADDER))
+            or not (sibling is None or isinstance(sibling, str))):
+        raise LLMError("the reading of a main word requires a path, the wide/mirror/joke_hidden verdicts, "
+                       "and a ladder when the word is one of a wide kind")
+    read.update(path=answer["path"].strip(), path_words=_words(answer.get("path_words"), "path_words"),
+                wide=answer["wide"], mirror=answer["mirror"], joke_hidden=answer["joke_hidden"],
+                ladder=None if ladder is None else {k: (ladder.get(k) or "").strip() or None for k in LADDER},
+                sibling=(sibling or "").strip() or None)
+    return read
+
+
+def _words(value, field: str) -> list[str]:
+    """A list of words in an answer (missing = none), stripped, the empty ones dropped."""
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(isinstance(w, str) for w in value):
+        raise LLMError(f"the reading's {field} must be a list of words")
+    return [w.strip() for w in value if w.strip()]
 
 
 def widely_known(claude: Claude, sentence: str, author: str, work: str, *, lang: str) -> dict:
@@ -282,19 +378,36 @@ def _joined(tokens, parts: list[str], lang: str) -> str:
     return "".join(part + t.space for part, t in zip(parts, tokens)).strip()
 
 
-def choose_words(claude: Claude, line: dict, refused: list[str], *, lang: str) -> dict | None:
-    """One shortlisted line ({"sentence", "allowed"}: the words code allows as its
-    secrets): the model chooses the three words to hide, in the order players will find
-    them, or declines the line. Every line of the batch gets this question on its own;
-    the day is chosen among the checked results (`choose_among`). `refused` says what was
-    already turned down and why. Returns {"words": [3], "path": [lines], "why": str},
-    or {"words": None, "why": str} when the model declines (the reason is logged), or
-    None when the answer is unusable."""
-    again = ("\nAlready turned down — do not choose these again:\n"
+def _through(words: list[str]) -> str:
+    return ", ".join(f"« {w} »" for w in words)
+
+
+def choose_companions(claude: Claude, marked_line: str, read: dict, notes: str, pool: list[dict],
+                      refused: list[str], *, lang: str) -> dict | None:
+    """The two words chosen AGAINST a line's MAIN word — the user's own method: the word he
+    is sure of first, then two that work with it (the taste's *The three words*) — by its
+    kind's *Holes and punch*. `marked_line`: the line, its main word in brackets; `read`: the
+    line's read (its kind, the main word's path and ladder); `notes`: what code measured of
+    the main word; `pool`: [{word, options: [{word, rank}]}], each word that can be hidden
+    with it and the start words of its band; `refused`: what code told back of earlier
+    choices. The verdicts are the model's; code checks them (`curate.choose_others`).
+    Returns {"words": [{word, path, path_words, mirror, wide, ladder, lands}, two], "why"}
+    (a ladder only for a word of a wide kind), or {"words": None, "why"} when the model
+    declines; None when the answer is unusable."""
+    again = ("\nRefused so far — never choose a refused word again, and mind what held against the three:\n"
              + "\n".join(f"- {r}" for r in refused) + "\n") if refused else ""
-    answer = claude.json(f"""You prepare a candidate day for a daily {LANGUAGE[lang]} word game. One line, three words
-hidden; the player rebuilds each from how close every guess lands, starting from a START
-word chosen later. A word once found stays revealed and becomes context for the others.
+    kind = read["kind"]
+    built = f"Its kind: {kind}. {KINDS[kind]}." if kind else "Its kind: none of the seven."
+    main = f"Its MAIN word « {read['anchor']} »: {read['path']} (through {_through(read['path_words'])})"
+    if read["wide"]:
+        main += f"\n  one of a wide kind: {ladder_text(read['ladder'])}"
+    rule = f"the *Holes and punch* of kind {kind}, *{KINDS[kind]}*" if kind else "*Lines that fit no kind*"
+    listing = "\n".join(f"- « {p['word']} »: " + ", ".join(f"{o['word']} ({o['rank']})" for o in p["options"])
+                        for p in pool)
+    answer = claude.json(f"""You choose the hidden words of a day for a daily {LANGUAGE[lang]} word game, its main word
+already chosen. One line, three words hidden; the player rebuilds each from how close every guess
+lands, starting from a START word chosen later. A word once found stays revealed and becomes
+context for the others.
 
 What makes a day worth playing:
 {taste()}
@@ -302,40 +415,69 @@ What makes a day worth playing:
 The game's laws and practical rules:
 {laws()}
 
-The line, from one work:
+The line, from one work, its main word in brackets:
 
-« {line['sentence']} »
-   words that can be hidden: {', '.join(line['allowed'])}
+« {marked_line} »
+
+{built}
+{main}
+  measured: {notes}
+
+The words that can be hidden with it, each with the start words its band offers (word (rank), closest first):
+{listing}
 {again}
-Choose the three words to hide — the punch first among them — in the order players should
-find them: for each word, what in the line (and in the words found before it) leads toward
-it, and what it does when it lands. Other lines of the work get the same question, and the
-day is chosen among them afterwards. Decline only when this line cannot make a day worth
-playing.
+Choose TWO of these words AGAINST the main word, by the taste's *The three words* — not too
+close, not too easy, not too hard, a good start word in its band, balancing the line, fun to
+find — and by {rule}. For each: its path in one line, and the 1 to 3 words of the line it runs
+through (single words of the line, never the word itself); whether *No mirror* refuses it,
+its exception applied; by *The narrowing ladder*,
+whether it is one member of a wide kind and, if so, its ladder (null for a missing step); and
+what it does when it lands. Decline when no two of these words go with this main word.
 
-Return {{"words": ["<first found>", "<second>", "<third>"], "path": ["<word>: <what leads toward it and what it does when it lands>", ...], "why": "<one line: what the player will feel>"}},
+Return {{"words": [{{"word": "<a word offered>", "path": "<one line: how the line leads to it>", "path_words": ["<a word of the line>", ...], "mirror": true/false, "wide": true/false, "ladder": {{"slot": "<the kind the slot shapes>" or null, "family": "<the smaller family a start can name>" or null, "first": "<the first member players name there, or how the ranks climb to it>" or null}} or null, "lands": "<one line: what it does when it lands>"}}, <the second, the same>], "why": "<one line: the day as the player will get it>"}},
 or {{"words": null, "why": "<one line>"}} to decline.""")
+    if not isinstance(answer, dict):
+        return None
     words = answer.get("words")
     if words is None and "words" in answer:
         return {"words": None, "why": str(answer.get("why") or "")}
-    if not isinstance(words, list) or len(words) != 3 or not all(isinstance(w, str) and w.strip() for w in words):
+    if not isinstance(words, list) or len(words) != 2:
         return None
-    path = [str(x) for x in answer.get("path") or [] if isinstance(x, str) and x.strip()]
-    return {"words": [w.strip() for w in words], "path": path, "why": str(answer.get("why") or "")}
+    out = []
+    for w in words:
+        if not isinstance(w, dict):
+            return None
+        ladder, path_words = w.get("ladder"), w.get("path_words")
+        if (not isinstance(w.get("word"), str) or not w["word"].strip() or not isinstance(w.get("path"), str)
+                or not isinstance(path_words, list) or not all(isinstance(x, str) for x in path_words)
+                or type(w.get("mirror")) is not bool or type(w.get("wide")) is not bool
+                or w["wide"] and "ladder" not in w
+                or not (ladder is None or isinstance(ladder, dict)
+                        and all(ladder.get(k) is None or isinstance(ladder.get(k), str) for k in LADDER))):
+            return None
+        out.append({"word": w["word"].strip(), "path": w["path"].strip(),
+                    "path_words": [x.strip() for x in path_words if x.strip()], "mirror": w["mirror"],
+                    "wide": w["wide"],
+                    "ladder": ({k: (ladder.get(k) or "").strip() or None for k in LADDER}
+                               if w["wide"] and ladder is not None else None),
+                    "lands": str(w.get("lands") or "").strip()})
+    return {"words": out, "why": str(answer.get("why") or "")}
 
 
 def choose_among(claude: Claude, days: list[dict], *, lang: str) -> dict | None:
     """The day, chosen by COMPARISON among FINISHED candidates (user-decided 2026-10-13):
-    each `days` entry is a line whose three words were chosen and checked, swaps
-    included — {"marked": the line with its hidden words in brackets, "words": [{"word",
-    "level"}] in the order players find them, "path": [lines]}. The model orders them,
-    best day first, leaving out any that would not make a day worth playing. Returns
-    {"order": [indices], "why": str} (an empty order declines them all), or None when
-    the answer is unusable."""
+    each `days` entry is a line whose three words were chosen and checked — {"marked": the
+    line with its hidden words in brackets, "kind": its kind (`KINDS`) or None, "words":
+    [{"word", "path", "path_words", "tags"}], the main word first, then the two chosen
+    against it, each with what leads to it and code's facts about it}. The model orders
+    them, best day first, leaving out any that would not make a day worth playing. Returns
+    {"order": [indices], "why": str} (an empty order declines them all), or None when the
+    answer is unusable."""
     listing = "\n\n".join(
-        f"{n}. « {d['marked']} »\n   hidden, in the order players find them: "
-        + "; ".join(f"{w['word']} ({w['level']})" for w in d["words"])
-        + "".join(f"\n   - {step}" for step in d["path"])
+        f"{n}. « {d['marked']} »\n   {kind_text(d['kind'])}"
+        + "".join(f"\n   - {'main word ' if i == 0 else ''}« {w['word']} »: {w['path']} (through "
+                  f"{_through(w['path_words'])})" + (f"; {', '.join(w['tags'])}" if w["tags"] else "")
+                  for i, w in enumerate(d["words"]))
         for n, d in enumerate(days, 1))
     answer = claude.json(f"""You choose tomorrow's day for a daily {LANGUAGE[lang]} word game. One line, three words hidden;
 the player rebuilds each from how close every guess lands, starting from a START word
@@ -345,13 +487,15 @@ What makes a day worth playing:
 {taste()}
 
 Below are candidate days from one work. Each line's three hidden words (in [brackets]) were
-already chosen and checked on readers; beside each word, how it plays: easy (most readers
-write it straight in), medium, or hard (and why). Under each line, what leads to each word.
+already chosen and checked on readers: under the line, its kind, then its main word and the two
+words chosen against it, each with what leads to it, the words of the line its path runs
+through, and what code measured of it.
 
 {listing}
 
-Compare them as the player will get them, and order them, best day first. Leave out any
-that would not make a day worth playing.
+Compare them as the player will get them, and order them, best day first. A line with no kind
+goes first only when, read aloud, it beats the built ones. Leave out any that would not make a
+day worth playing.
 
 Return {{"order": [<number>, ...], "why": "<one line: what makes the first one the best day>"}}.""")
     order = answer.get("order")
@@ -536,107 +680,6 @@ Return {{"starts": [{{"start": "<start word>", "idea": "<its first idea there>",
     return riddles, judged
 
 
-def _chain_block(chain: list[str] | None) -> str:
-    if not chain:
-        return ""
-    lines = "\n".join(f"{i}. {step}" for i, step in enumerate(chain, 1))
-    return f"\nHow the day was chosen to play — the order players should find the words in:\n{lines}\n"
-
-
-def drop_unsaid(claude: Claude, sentence_marked: str, holes: list[dict], unsaid: list[str], allowed: list[str],
-                chain: list[str] | None = None, *, lang: str) -> dict | None:
-    """Asked only when the trio hides two or more words players don't say (`rules.unsaid`),
-    BEFORE the day's ranking is paid for: the taste keeps at most one, so the model names
-    ONE of `unsaid` to swap for another word of the line. `holes`: [{secret, notes}].
-    Returns {"secret", "with", "why"}, or None when the answer is unusable."""
-    blocks = "\n".join(f"Hole « {h['secret']} »\n  measured: {h['notes']}" for h in holes)
-    answer = claude.json(f"""You check the three hidden words of a day for a daily {LANGUAGE[lang]} word game before it
-is built: each hole shows a start word in place of the hidden word; the player types
-guesses and reads, for every hole, how close each lands.
-
-What makes a day worth playing:
-{taste()}
-
-The sentence, holes marked with the hidden word in brackets:
-{sentence_marked}
-{_chain_block(chain)}
-{blocks}
-
-This trio hides {len(unsaid)} words players don't say: {", ".join(f"« {w} »" for w in unsaid)}. The taste
-keeps at most one: swap the DULL one and keep the one more fun to find. Name ONE of them
-to swap, and its replacement from the other words of the line that can be hidden:
-{", ".join(allowed)}.
-
-Return {{"replace": {{"secret": "<one of the words players don't say>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")
-    replace = answer.get("replace") if isinstance(answer, dict) else None
-    if isinstance(replace, dict) and isinstance(replace.get("secret"), str) and isinstance(replace.get("with"), str):
-        return {"secret": replace["secret"].strip(), "with": replace["with"].strip(), "why": str(replace.get("why") or "")}
-    return None
-
-
-def drop_handed(claude: Claude, sentence_marked: str, holes: list[dict], handed: list[str], allowed: list[str],
-                chain: list[str] | None = None, *, lang: str) -> dict | None:
-    """Asked when the line hands over two or more of the trio's words (most readers write
-    the secret itself), BEFORE the day's ranking is paid for: such a day is solved in a
-    few guesses, so the model names ONE of `handed` — the dull one, never the punch — to
-    swap for another word of the line. `holes`: [{secret, notes}]. Returns
-    {"secret", "with", "why"}, or None when the answer is unusable."""
-    blocks = "\n".join(f"Hole « {h['secret']} »\n  measured: {h['notes']}" for h in holes)
-    answer = claude.json(f"""You check the three hidden words of a day for a daily {LANGUAGE[lang]} word game before it
-is built: each hole shows a start word in place of the hidden word; the player types
-guesses and reads, for every hole, how close each lands.
-
-What makes a day worth playing:
-{taste()}
-
-The sentence, holes marked with the hidden word in brackets:
-{sentence_marked}
-{_chain_block(chain)}
-{blocks}
-
-The line hands over {len(handed)} of this trio's words: {", ".join(f"« {w} »" for w in handed)} — most readers
-write them straight in, and the day is solved in a few guesses. Swap the DULL one and
-keep the punch. Name ONE of them to swap, and its replacement: a word of the line that
-the line does NOT hand over, still fun to find, from the other words that can be hidden:
-{", ".join(allowed)}.
-
-Return {{"replace": {{"secret": "<one of the handed-over words>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")
-    replace = answer.get("replace") if isinstance(answer, dict) else None
-    if isinstance(replace, dict) and isinstance(replace.get("secret"), str) and isinstance(replace.get("with"), str):
-        return {"secret": replace["secret"].strip(), "with": replace["with"].strip(), "why": str(replace.get("why") or "")}
-    return None
-
-
-def replace_word(claude: Claude, sentence_marked: str, holes: list[dict], word: str, allowed: list[str],
-                 chain: list[str] | None = None, *, refused: str, lang: str) -> dict | None:
-    """Code refused `word` (BURIED: half-said, among commoner near-words — `rules.buried`;
-    or UNMAPPED: no word readers put there is on its map — `rules.unmapped`), BEFORE the
-    day's ranking is paid for; `refused` says why, in the player's terms. The model names
-    the word of the line to hide in its place, by the taste. `holes`: [{secret, notes}].
-    Returns {"with", "why"}, or None when the answer is unusable."""
-    blocks = "\n".join(f"Hole « {h['secret']} »\n  measured: {h['notes']}" for h in holes)
-    answer = claude.json(f"""You check the three hidden words of a day for a daily {LANGUAGE[lang]} word game before it
-is built: each hole shows a start word in place of the hidden word; the player types
-guesses and reads, for every hole, how close each lands.
-
-What makes a day worth playing:
-{taste()}
-
-The sentence, holes marked with the hidden word in brackets:
-{sentence_marked}
-{_chain_block(chain)}
-{blocks}
-
-« {word} » cannot be hidden: {refused}
-Name the word of the line to hide in its place, from: {", ".join(allowed)}.
-
-Return {{"with": "<another word of the line>", "why": "<one line>"}}.""")
-    pick = answer.get("with") if isinstance(answer, dict) else None
-    if isinstance(pick, str) and pick.strip():
-        return {"with": pick.strip(), "why": str(answer.get("why") or "")}
-    return None
-
-
 # A banked line's starts were chosen on the free map, before the ranking (`curate --bank`):
 # finishing it shows each to the start step, kept unless the ranked map moved it out or
 # offers better (user-decided 2026-10-18).
@@ -646,24 +689,37 @@ still a candidate, unless another candidate here is clearly the better start by 
 taste; when it is no longer a candidate, choose another."""
 
 
-def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict],
-                chain: list[str] | None = None, *, lang: str) -> dict:
-    """The three start words, chosen TOGETHER by the taste. `holes`: [{secret,
-    slug, slot, notes, options: [{word, rank}]}] — `notes` is what code measured (what a
-    reader puts in the blank, how much the line gives of the word, where the reader's words
-    land in the hole's own map). The model may instead name ONE hidden word to
-    REPLACE, when no start can save it. Returns {"starts": {slug: word}, "replace":
-    {"secret": word, "with": word, "why": str} | None, "why": str}; starts only from the
-    options."""
+def _start_rule(kind: int | None) -> str:
+    """Which part of the taste the starts are chosen by — the taste is in the prompt, whole,
+    and this adds nothing to it: its *The start words*, the main word's by the line's kind."""
+    rule = f"the *Start words* of kind {kind}, *{KINDS[kind]}*" if kind else "*Lines that fit no kind*"
+    return f"Choose by the taste's *The start words*, the main word's start by {rule}."
+
+
+def _hole_block(h: dict) -> str:
+    """One hole as the start step reads it: the hidden word and its role, its path, its ladder
+    when it is one of a wide kind, and what code measured."""
+    role = "the MAIN word" if h["role"] == "main" else "one of the two others"
+    block = (f"Hole « {h['secret']} », {role} (slot: {h.get('slot', 'as the hidden word')})\n"
+             f"  its path: {h['path']['line']} (through {_through(h['path']['words'])})")
+    if h.get("ladder"):
+        block += f"\n  one of a wide kind: {ladder_text(h['ladder'])}"
+    return block + f"\n  measured: {h.get('notes', 'nothing')}"
+
+
+def pick_starts(claude: Claude, sentence_marked: str, holes: list[dict], kind: int | None, *, lang: str) -> dict:
+    """The three start words, chosen by the taste, the main word's first by the line's kind
+    (`kind`, `KINDS`, or None), then the two others' so the day is neither handed over nor out
+    of reach. `holes`: [{secret, slug, role ("main" or "other"), path: {line, words}, ladder,
+    slot, notes, options: [{word, rank}], prior}], the main word first — `notes` is what code
+    measured (what a reader puts in the blank, how much the line gives of the word, where the
+    reader's words land in the hole's own map). The model may instead name ONE hidden word no
+    candidate gives a path to (`unsaveable`, its slug). Returns {"starts": {slug: word},
+    "unsaveable": slug | None, "why": str}; starts only from the options."""
     blocks = []
     for h in holes:
-        # A hole with no candidate cannot get a start: say so, so the model names a
-        # replacement instead of leaving the hole out.
-        opts = (", ".join(f"{o['word']} ({o['rank']})" for o in h["options"])
-                or "NONE — no start fits this slot; name a replacement for this word")
-        block = (f"Hole « {h['secret']} » (slot: {h.get('slot', 'as the hidden word')})\n"
-                 f"  measured: {h.get('notes', 'nothing')}\n"
-                 f"  start candidates (word (rank), closest first): {opts}")
+        block = (_hole_block(h) + "\n  start candidates (word (rank), closest first): "
+                 + ", ".join(f"{o['word']} ({o['rank']})" for o in h["options"]))
         if h.get("prior"):
             p = h["prior"]
             where = ("not on this map" if p["rank"] is None else f"rank {p['rank']} on this map") + (
@@ -687,28 +743,29 @@ its surroundings ({AGREEMENT[lang]}), taking the SAME CONSTRUCTION.
 
 The sentence, holes marked with the hidden word in brackets:
 {sentence_marked}
-{_chain_block(chain)}
+
 {chr(10).join(blocks)}
 
-Choose the three starts together, by the taste's start words: for each hole, how much the
-line gives of the word (read in its notes and in the line) and how hard the other holes
-already are decide its start.{PRIOR_RULE if any(h.get("prior") for h in holes) else ""} If one hidden word is dead or out of reach whatever its
-start — or none of its candidates links to it in its everyday sense (only by spelling, or
-not at all) — say so and name ONE replacement from the line instead of starts.
+{_start_rule(kind)}{PRIOR_RULE if any(h.get("prior") for h in holes) else ""} If no candidate gives a hidden word a path
+— none links to it in its everyday sense (only by spelling, or not at all), or the word is dead or
+out of reach whatever its start — name that word instead of starts.
 
-Return {{"starts": {{"<hidden word>": "<chosen candidate, exactly>", ...}}, "why": "<one line per hole: how much the line gives of the word, and what the start says of the word>"}},
-or {{"replace": {{"secret": "<hidden word>", "with": "<another word of the line>", "why": "<one line>"}}}}.""")
-    replace = answer.get("replace")
-    if isinstance(replace, dict) and isinstance(replace.get("secret"), str) and isinstance(replace.get("with"), str):
-        return {"starts": {}, "replace": {"secret": replace["secret"].strip(), "with": replace["with"].strip(),
-                                          "why": str(replace.get("why") or "")}, "why": ""}
+Return {{"starts": {{"<hidden word>": "<chosen candidate, exactly>", ...}}, "why": "<one line per hole: what the start says of the word>"}},
+or {{"unsaveable": "<hidden word>", "why": "<one line>"}}.""")
+    if not isinstance(answer, dict):
+        answer = {}
+    named = answer.get("unsaveable")
+    unsaveable = next((h["slug"] for h in holes if isinstance(named, str) and named.strip() in (h["secret"], h["slug"])),
+                      None)
+    if unsaveable:
+        return {"starts": {}, "unsaveable": unsaveable, "why": str(answer.get("why") or "")}
     chosen = answer.get("starts", {}) if isinstance(answer.get("starts"), dict) else {}
     out: dict[str, str] = {}
     for h in holes:
         word = chosen.get(h["secret"]) or chosen.get(h["slug"])
         if isinstance(word, str) and word in {o["word"] for o in h["options"]}:
             out[h["slug"]] = word
-    return {"starts": out, "replace": None, "why": str(answer.get("why") or "")}
+    return {"starts": out, "unsaveable": None, "why": str(answer.get("why") or "")}
 
 
 def choose_excerpt(claude: Claude, unit: str, window: dict, *, lang: str) -> dict | None:
@@ -742,21 +799,24 @@ Return {{"before": <how many B sentences to keep, 0..{len(before)}>, "after": <h
     return {"before": b, "after": a}
 
 
-def pick_start(claude: Claude, sentence_marked: str, secret: str, options: list[dict],
-               refused: str = "", context: str = "unknown", chain: list[str] | None = None,
-               *, lang: str, others: list[dict] | None = None) -> str | None:
-    """One hole's start, chosen again after a refusal, reading the day as `pick_starts`
-    does: `context` is the hole's notes, `others` [{secret, start | None, notes}] the other
-    holes as the day stands. Returns a candidate, exactly, or None."""
+
+
+def pick_start(claude: Claude, sentence_marked: str, hole: dict, options: list[dict], refused: str = "",
+               *, kind: int | None, lang: str, others: list[dict] | None = None) -> str | None:
+    """One hole's start, chosen again after a refusal, reading the day as `pick_starts` does:
+    `hole` is its block ({secret, role, path, ladder, notes}), `kind` the line's, `others`
+    [{secret, role, start | None, notes}] the other holes as the day stands. Returns a
+    candidate, exactly, or None."""
     listing = ", ".join(f"{o['word']} ({o['rank']})" for o in options)
     rest = ""
     if others:
         rest = "\nThe other holes, as the day stands:\n" + "\n".join(
-            f"Hole « {o['secret']} », " + (f"shown as « {o['start']} »" if o.get("start") else "no start yet")
+            f"Hole « {o['secret']} », " + ("the MAIN word" if o["role"] == "main" else "one of the two others")
+            + ", " + (f"shown as « {o['start']} »" if o.get("start") else "no start yet")
             + f"\n  measured: {o.get('notes') or 'nothing'}" for o in others) + "\n"
     answer = claude.json(f"""You curate a daily {LANGUAGE[lang]} word game: three words of a sentence are hidden and the
 player rediscovers each from embedding-neighbour feedback. One hole's START word (its
-first clue, shown in place of the hidden word « {secret} ») was refused: {refused or 'it did not belong in the sentence'}.
+first clue, shown in place of the hidden word « {hole['secret']} ») was refused: {refused or 'it did not belong in the sentence'}.
 Choose another, following these rules:
 
 {start_rules()}
@@ -770,11 +830,12 @@ place before answering.
 
 The sentence, the hole marked [____]:
 {sentence_marked}
-{_chain_block(chain)}
-Hole « {secret} »
-  measured: {context}
+
+{_hole_block(hole)}
   candidates (word (rank), closest first): {listing}
 {rest}
+{_start_rule(kind)}
+
 Return {{"word": "<one candidate, exactly>"}} or {{"word": null}} if none leaves correct {LANGUAGE[lang]} that still means something.""")
     word = answer.get("word")
     return word if isinstance(word, str) and word in {o["word"] for o in options} else None

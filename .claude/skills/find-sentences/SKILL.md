@@ -23,7 +23,7 @@ mid-list novel. Always source from the primary text (epub, .srt, lyrics page) an
 verify there: quote sites carry misattributions (a Babelio "Perec" line did not exist
 in the book), so they serve as discovery leads only.
 
-## Stands alone (user rule 2026-09-18)
+## Stands alone
 
 **The sentence must make complete sense on its own, SOLVED, to a reader who has only
 the sentence.** The page is shown after the solve, never during play, so a line that
@@ -40,30 +40,43 @@ leans on it is a riddle with no answer. Reject a sentence when, read alone:
   opening quotation, a « cependant » or a « donc » that continues an argument, a colon
   that completes one (« “Il sait qu'il meurt” est une pensée profonde ; je crois
   cependant que la mienne est plus profonde » is wit about Pascal, not a line).
-- it is LINES OF VERSE joined that do not say one thing together (user rule 2026-10-16:
-  the game is played on context, so the context must make sense, not be a run of
-  unrelated lines that are each coherent): « La tête de mon frère dans ses pâtes bolo,
+- it is LINES OF VERSE joined that do not say one thing together (the game is played on
+  context, so the context must make sense, not be a run of unrelated lines that are each
+  coherent): « La tête de mon frère dans ses pâtes bolo,
   j'ai pas compris tout d'suite que mes grands-parents étaient alcoolos » (JeanJass) —
   the brother in his pasta has nothing to do with the grandparents; the line that
   follows does, and makes the line: « J'ai pas compris tout d'suite que mes
   grands-parents étaient alcoolos, c'est pour ça qu'ils étaient en EHPAD, ils étaient
   pas si vieux ».
 A sentence passes when a reader can say in one line what it is about, from the sentence
-alone. The automated curator asks the model exactly that and strikes on a refusal.
+alone.
+
+**Every hidden noun must mean something inside the line.** A word that needs the work's
+plot can only be guessed, never reasoned toward (« alcoolique », « facho », « dressmaker »,
+« envelopper », « héros », « masse »): such a word is never hidden, and a line whose main
+word needs the work has no day in it. The automated curator asks the model both when it
+reads the line: a line that does not stand alone is struck, and a word that needs the work
+leaves the words it can hide.
 
 ## The trio rules
 
 Which words are worth hiding is TASTE, and taste lives in the `taste` skill: read it.
 The practical rules:
 
-- Exactly three distinct words. A word repeated in the sentence makes one hole per
-  occurrence sharing one rank map: a feature (the Marx *vermine* day), not a bug.
+- Exactly three distinct words: the MAIN word, the one the line is about, chosen first;
+  then two words chosen against it (the `taste` skill's *The three words*).
+- A word repeated in the sentence makes one hole per occurrence sharing one rank map: a
+  feature (the Marx *vermine* day), not a bug. Each frame is read on its own: when the few
+  words right around one of its holes write it in, the word is refused (the `taste`
+  skill's *Per trio*); when the rest of the line gives it away from one frame, it counts as
+  handed.
 - The start words must leave the displayed sentence valid in its language (below).
 
 ## The start word
 
 Each hole shows a START word, ranked 100–200 from the secret (every hole; lower rank =
-closer = easier), and the three are chosen TOGETHER — the craft is in the `taste` skill.
+closer = easier), and the three are chosen TOGETHER, the main word's first — the craft is
+in the `taste` skill.
 The practical rules:
 
 - First strike every candidate that does not fit the slot; choose only among what is
@@ -75,11 +88,12 @@ The practical rules:
   place needs — someone where the sentence has someone act. « le fitness se suicide »
   is French and means nothing; « le cyclotouriste se suicide » is a clue. Odd or funny
   is fine; meaningless is not.
-- A plain word a player knows, never an obscure term or a proper noun.
+- A plain word a player knows, never an obscure term; a name only when the hidden word is
+  a name or a brand (« cartier » for « rolex »).
 - A start that breaks the grammar or the sense is replaced by another band word, never
   kept.
 
-## The page (recorded 2026-09-08)
+## The page
 
 A book day shows the sentence on its PAGE: the raw sentences around it, muted, the
 puzzle's line in the ink. The curator offers up to eight sentences each side and the
@@ -100,8 +114,9 @@ verbatim.
 
 ## Taste
 
-What makes a day worth playing — the voice, the line, the hidden words, the start words,
-difficulty — lives in the `taste` skill, its one home. Read it before choosing anything.
+What makes a day worth playing — the voice, the line and its kind, the three words, the
+start words, difficulty — lives in the `taste` skill, its one home. Read it before choosing
+anything.
 
 ## Sources
 
@@ -123,19 +138,19 @@ one author are fine when each earns its place and they are not redundant (a seco
 Houellebecq for a different decade and mood, yes; three Bove novels in one month, no).
 Vary eras, countries and registers over the run.
 
-**Music (decided 2026-09-06).** A song has forty lines built for rhyme, so per-artist
-yield is low and the writers are few: the rule for artists is a COOLDOWN, not "never
-twice" — the same artist at most once a month, never the same song. The famous single
-is out, and for the shelf that rule is mechanical: Genius pageviews, the top quarter of
-an artist's songs dropped before reading (`pnpm shelf:lyrics`, #262). The artist list is
-the user's, by hand, and the fetch never asks the model for names; when the user asks
-for artist IDEAS, the lane is wider than rap — writers in rap beyond the current names
-(Lucio Bukowski, Sameer Ahmad, Swift Guad, Anton Serra, Fuzati, Rocé, Casey, Georgio,
-Dinos, Ichon, Prince Waly, Zamdane, Luv Resval, Lala &ce) and the prose-like lane outside
-it (Odezenne, Mendelson, Diabologum, Programme, Arm, Dominique A, Bashung, Miossec,
-Brigitte Fontaine, Daniel Darc, Flavien Berger, Bonnie Banane, Feu! Chatterton). A lyric
-candidate is one to four adjacent lines of one stanza read as one sentence. Music is a
-minority stream, one or two days a week. Movies are out of scope.
+**Music.** A song has forty lines built for rhyme, so per-artist yield is low and the
+writers are few: the rule for artists is a COOLDOWN, not "never twice" — the same artist
+at most once a month, never the same song. The famous single is out, and for the shelf
+that rule is mechanical: Genius pageviews, the top quarter of an artist's songs dropped
+before reading (`pnpm shelf:lyrics`, #262). The artist list is the user's, by hand, and
+the fetch never asks the model for names; when the user asks for artist IDEAS, the lane
+is wider than rap — writers in rap beyond the current names (Lucio Bukowski, Sameer
+Ahmad, Swift Guad, Anton Serra, Fuzati, Rocé, Casey, Georgio, Dinos, Ichon, Prince Waly,
+Zamdane, Luv Resval, Lala &ce) and the prose-like lane outside it (Odezenne, Mendelson,
+Diabologum, Programme, Arm, Dominique A, Bashung, Miossec, Brigitte Fontaine, Daniel
+Darc, Flavien Berger, Bonnie Banane, Feu! Chatterton). A lyric candidate is one to four
+adjacent lines of one stanza read as one sentence. Music is a minority stream, one or two
+days a week. Movies are out of scope.
 
 ## Request 1 — pick books for the shelf
 
@@ -173,13 +188,20 @@ text's, translations included). Deliver a list the user can act on:
    - Rap lyrics: `curl` paroles.net/genius raw HTML and extract around keywords —
      WebFetch's sub-model refuses lyrics; quote only 1–2 line excerpts and verify the
      lines are actually ADJACENT in the song.
-2. **Mine in TWO passes.** (a) keyword pass: split sentences (90–230 chars), filter by
-   imagery/disillusion lexicon; (b) READING pass: dump ALL substantial sentences and
-   read them — the sentence-splitter butchers monologues, and multi-sentence
-   micro-stories (2–4 short sentences, ≤ ~30 words total) are often the best
-   candidates. Grepping alone missed every winner at least once.
-3. **Select candidates**: right length, self-contained, felt; then pick a secret trio
-   with the `taste` skill and the playable facts in the trio rules above.
+2. **Mine in TWO passes.** (a) cue pass: split sentences (90–230 chars) and filter by
+   the cues each kind's *Spot it* names in the `taste` skill (a stated rule or a pair,
+   a high register then a turn word before a short last clause, « c'est pour ça que »,
+   « tellement… que », a definition shape, learned nouns on a warm subject, a known
+   phrase bent) — the cues only find candidates, each kind's question picks one;
+   (b) READING pass: dump ALL substantial sentences and read them — the
+   sentence-splitter butchers monologues, and multi-sentence micro-stories (2–4 short
+   sentences, ≤ ~30 words total) are often the best candidates. Grepping alone missed
+   every winner at least once.
+3. **Select candidates**: right length, self-contained, felt; then read each by the
+   `taste` skill's order of checks — its kind (or none, and only when it beats the built
+   ones read aloud), its MAIN word and the visible words its path runs through — and
+   choose two words against the main word with the playable facts in the trio rules
+   above.
 4. **Screen the LINE for quotation** (WebSearch, exact quoted phrase):
    - zero hits, or hits only on full-text scans → clean;
    - hits on quote pages, essays, bac/anthology PDFs, song samples → REJECT the line
@@ -194,22 +216,9 @@ text's, translations included). Deliver a list the user can act on:
      90 days before today, days after today included (`shelf.SECRET_COOLDOWN_DAYS`;
      `shelf.archive(<lang>)["secrets"]` holds that set, a corrected day by its last line).
 6. **Deliver 3–5 candidates**, each with: the exact sentence (accents/punctuation
-   kept), recommended trio + alternates, source metadata (`kind` book/music/poem/movie
-   + author + work), quotation-risk flag, and a ready command:
+   kept), its kind (or no kind), the main word with its path, the two other words with
+   what each adds when it lands, alternates, source metadata (`kind`
+   book/music/poem/movie + author + work), quotation-risk flag, and a ready command:
    `pnpm gen:phrase "<sentence>" --lang <lang> --words a b c --kind K --author "A" --work "W"`
    (no `--` separator; exactly 3 distinct words). For .srt sources suggest an ear-check
    against the scene.
-
-## Reference wins (calibration)
-
-- Pessoa: "Nettement, comme si elle signifiait quelque chose, la boîte d'allumettes
-  vide résonne sur la chaussée qui s'annonce ainsi déserte." (allumettes · résonne ·
-  déserte)
-- Perec (epub-mined, zero hits): "Des suites de rues se coupant à angle droit, des
-  rideaux de fer, des palissades, un monde de fausses places, de fausses rues,
-  d'avenues fantômes." (rideaux · palissades · fantômes)
-- Eustache: "Tu crois que tu te relèves, alors que tu t'accoutumes tout doucement à la
-  médiocrité." (relèves · accoutumes · médiocrité)
-- Mathieu: "Il existait comme ça toute sorte de ruses pour surmonter le désert, cette
-  étendue uniforme de temps qui vous attendait au saut du lit, et pour de bon, jusqu'à
-  la retraite." (ruses · désert · retraite)

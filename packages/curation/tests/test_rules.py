@@ -2,6 +2,8 @@
 which words CAN be hidden, what counts as the secret again, the reader's note, and where
 the reader's words land in a hole's map. Nothing here chooses — taste does."""
 
+import pytest
+
 from rules import (
     MAX_COMMON_RANK,
     MAX_COMMON_RANK_ADV,
@@ -28,7 +30,10 @@ from rules import (
     said,
     same_word,
     two_places,
-    unsaid,
+    HoleFacts,
+    adjacent,
+    reader_writes,
+    trio_faults,
 )
 
 
@@ -240,16 +245,6 @@ def test_a_score_is_cut_to_two_places_never_rounded_up_to_a_bar():
     assert "at 0.39" in note and "under 0.4" in note
 
 
-def test_one_word_players_dont_say_is_a_hard_day_two_are_the_fact_to_act_on():
-    # « moucheron », « mammifères », « stagnation »: a loved day hides one
-    assert unsaid({"moucheron": 0.38, "humain": 0.9, "archives": 0.57}) is None
-    assert unsaid({"a": 0.9, "b": 0.8, "c": None}) is None
-    note = unsaid({"faux-monnayeur": 0.3, "autre": 0.2, "plain": 0.9})
-    assert note is not None and "2 words" in note and "faux-monnayeur, autre" in note and "plain" not in note
-    assert unsaid({"a": WOULD_SAY_HARD, "b": 0.1, "c": 0.9}) is None  # the cut itself is said
-    assert unsaid({"a": None, "b": 0.1, "c": 0.2}) is not None  # an unmeasured word counts for nothing
-
-
 # --- where the reader's words land in the hole's own map -----------------------------
 
 MAP = {  # a built rank map: slug -> entry (the secret « héros » is rank 0)
@@ -278,10 +273,11 @@ def test_the_secret_and_its_variants_are_not_their_own_filler_in_the_map():
 
 def test_a_reader_word_far_on_the_map_notes_a_line_that_gives_little():
     # « tutoyer » (« commander » at 759) and « cercueil » (« parquet » at 1010): the user's
-    # rounds made no progress (2026-10-14). The note sends the start to the direct meaning.
+    # rounds made no progress (2026-10-14). The note states the fact; which start the hole
+    # takes is the taste's call, never the note's.
     assert READER_FAR_RANK == 500
     note = far_note(map_nearest_filler(MAP, "heros", ["type"]))           # 900
-    assert note and f"past rank {READER_FAR_RANK}" in note and "direct meaning" in note
+    assert note and f"past rank {READER_FAR_RANK}" in note and "direct meaning" not in note
     assert far_note(map_nearest_filler(MAP, "heros", ["gars"])) == note   # past the map
     assert far_note(map_nearest_filler(MAP, "heros", ["garçon", "type"])) is None   # 404
     assert far_note(("mot", READER_FAR_RANK)) is None
@@ -321,3 +317,113 @@ def test_the_neighbourhood_is_three_words_each_side_within_the_clause():
     assert [t.text for t in neighbourhood(tokens, 4, set())] == ["cinq", "semaines", "de", "congés", "payés"]
     # another hidden word stops it
     assert [t.text for t in neighbourhood(tokens, 4, {2})] == ["de", "congés", "payés"]
+
+
+# --- the reader writes the word in: one reading, for the note and the facts ----------------
+
+def test_most_readers_writing_the_secret_or_a_twin_is_the_line_handing_it_over():
+    assert reader_writes(CHAT, "chat") and reader_writes(CHAT, "Chats")
+    assert reader_writes(CHAT, "chien", neighbour_rank=lambda t, w: TWIN_RANK)       # a twin in the ranking
+    assert not reader_writes(CHAT, "chien") and not reader_writes(CHAT, None)
+    # a rare word is never one every player knows, whatever the model completes
+    assert not reader_writes(CHAT, "chat", frequency_rank=lambda t: PLAIN_WORD_RANK + 1)
+    assert reading(CHAT, [], "chat").startswith("most readers would write the secret itself")
+
+
+# --- holes side by side: one idea split over two holes --------------------------------
+
+def test_two_holes_with_nothing_between_them_sit_side_by_side():
+    # « except possibly [folk] [dancing] »
+    words = [tok(0, "except", "ADP", stop=True), tok(1, "possibly", "ADV"), tok(2, "folk", "NOUN"),
+             tok(3, "dancing", "NOUN"), tok(4, ".", "PUNCT")]
+    assert adjacent(words, {2, 3}) == {frozenset({"folk", "dancing"})}
+    assert adjacent(words, {1, 3}) == set()
+
+
+def test_a_word_or_a_sign_between_two_holes_parts_them_and_a_repeat_is_no_pair():
+    # « un bon [éleveur] de [pigeons] »: a trade and its object, two ideas
+    words = [tok(0, "un", "DET", stop=True), tok(1, "bon", "ADJ"), tok(2, "éleveur", "NOUN"),
+             tok(3, "de", "ADP", stop=True), tok(4, "pigeons", "NOUN")]
+    assert adjacent(words, {2, 4}) == set()
+    # « [jungle], [serpent] »: a comma parts them
+    words = [tok(0, "jungle", "NOUN"), tok(1, ",", "PUNCT"), tok(2, "serpent", "NOUN")]
+    assert adjacent(words, {0, 2}) == set()
+    # « très très »: one word repeated is one hole, not a pair
+    words = [tok(0, "loin", "ADV"), tok(1, "loin", "ADV")]
+    assert adjacent(words, {0, 1}) == set()
+
+
+# --- the facts against a trio, its main word first (the user's method, 2026-10-20) ----------
+
+def hole(word, **facts):
+    return HoleFacts(word=word, slug=word, **facts)
+
+
+MAIN, A, B = hole("pigeons", path_words=frozenset({"pratique"})), hole("eleveur"), hole("naturelles")
+
+
+@pytest.mark.parametrize("main, refused", [
+    (hole("pigeons", reader_writes=True), "most readers write it straight in"),
+    (hole("pigeons", neighbours="le droit de ___"), "the words right around it write it in (« le droit de ___ »)"),
+    (hole("pigeons", map_handed=3), "sits at rank 3 on its map"),
+    (hole("pigeons", unmapped=("chaîne",)), "« chaîne »"),
+    (hole("pigeons", buried=True), "buried"),
+    (hole("pigeons", band_empty=True), "no start word in its band"),
+])
+def test_a_fact_against_the_main_word_refuses_it(main, refused):
+    faults = trio_faults([main])
+    assert refused in faults["main"] and faults["others"] == {} and faults["trio"] == []
+
+
+@pytest.mark.parametrize("main", [
+    hole("pigeons"),
+    hole("pigeons", map_handed=None),            # the reader's word at rank 4: map_handed leaves it None
+    hole("pigeons", unsaid=True),                # the trio's one unsaid word belongs to the main word
+])
+def test_a_main_word_with_nothing_against_it_passes(main):
+    assert trio_faults([main]) == {"main": None, "others": {}, "trio": []}
+
+
+@pytest.mark.parametrize("other, refused", [
+    (hole("eleveur", buried=True), "buried"),
+    (hole("eleveur", unmapped=("x",)), "is on its map"),
+    (hole("eleveur", mirror=True), "a mirror"),
+    (hole("eleveur", lottery="no smaller family a start can name"),
+     "a lottery: one of a wide kind, and no smaller family a start can name"),
+    (hole("eleveur", neighbours="le savoir ___"), "write it in"),        # a veto on every hole, never one handed
+    (hole("eleveur", band_empty=True), "no start word in its band"),
+])
+def test_a_fact_against_another_word_refuses_it_alone(other, refused):
+    faults = trio_faults([MAIN, other, B])
+    assert faults["main"] is None and list(faults["others"]) == ["eleveur"] and refused in faults["others"]["eleveur"]
+    assert faults["trio"] == []
+
+
+def test_another_word_right_beside_the_main_word_is_refused_and_a_word_between_them_parts_them():
+    faults = trio_faults([MAIN, A, B], {frozenset({"pigeons", "eleveur"})})
+    assert "right beside the main word « pigeons »" in faults["others"]["eleveur"]
+    assert trio_faults([MAIN, A, B], set()) == {"main": None, "others": {}, "trio": []}   # « [éleveur] de [pigeons] »
+
+
+def test_a_reader_writing_another_word_in_is_no_fault_alone():
+    assert trio_faults([MAIN, hole("eleveur", reader_writes=True), B])["others"] == {}
+
+
+@pytest.mark.parametrize("holes, told", [
+    ([MAIN, hole("eleveur", unsaid=True), hole("naturelles", unsaid=True)], "2 words players don't say"),
+    ([hole("pigeons", unsaid=True), hole("eleveur", unsaid=True), B], "2 words players don't say"),
+    ([MAIN, hole("eleveur", reader_writes=True), hole("naturelles", map_handed=2)], "hands over 2 of its words"),
+    ([hole("pigeons", path_words=frozenset({"eleveur"})), A, B], "every word the path to « pigeons » runs through"),
+    ([MAIN, hole("eleveur", path_words=frozenset({"pigeons", "naturelles"})), B], "the path to « eleveur »"),
+])
+def test_what_holds_against_the_three_together_refuses_none_of_them(holes, told):
+    faults = trio_faults(holes)
+    assert faults["main"] is None and faults["others"] == {} and any(told in why for why in faults["trio"])
+
+
+def test_a_path_with_one_word_still_in_sight_passes_and_two_others_side_by_side_are_told():
+    passes = [hole("pigeons", path_words=frozenset({"eleveur", "pratique"})), A, B]
+    assert trio_faults(passes)["trio"] == []
+    faults = trio_faults([MAIN, A, B], {frozenset({"eleveur", "naturelles"})})
+    assert faults["others"] == {} and faults["trio"] == ["« eleveur » and « naturelles » sit side by side: one idea "
+                                                         "per hole"]
