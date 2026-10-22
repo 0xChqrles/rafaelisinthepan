@@ -12,6 +12,8 @@ from lyrics import (
     is_unit_candidate,
     parse_song,
     song_filename,
+    stanza_excerpt,
+    strip_adlibs,
     within_cooldown,
 )
 from shelf_lyrics import find_artist
@@ -144,3 +146,96 @@ def test_every_genius_song_gets_its_own_readable_file():
     assert song_filename("Népal", "Slow Mix 07/02/18", 1, path_slug) != \
         song_filename("Népal", "Slow Mix 06/08/17", 2, path_slug)
     assert song_filename("Népal", "Intro", 1, path_slug) != song_filename("Népal", "Intro", 2, path_slug)
+
+
+def test_ad_libs_are_not_the_line():
+    # Genius's parentheses are the backing voice; a filler set off by a comma at either end
+    # goes with its comma, and the line keeps its capital.
+    assert strip_adlibs("Yeah, la tête de mon frère dans ses pâtes bolo") == "La tête de mon frère dans ses pâtes bolo"
+    assert strip_adlibs("Yeah yeah, j'suis là") == "J'suis là"
+    assert strip_adlibs("J'me creuse la tête avant qu'une balle ne s'en charge, eh") == \
+        "J'me creuse la tête avant qu'une balle ne s'en charge"
+    assert strip_adlibs("Tu vois, hein ?") == "Tu vois ?"
+    assert strip_adlibs("J'suis dans l'game (dans l'game) depuis longtemps (yeah)") == "J'suis dans l'game depuis longtemps"
+    assert strip_adlibs("Ouais, ouais (han)") == ""
+    assert strip_adlibs("(J'suis là)", nearby="J'suis là, toujours là") == ""   # an echo of the line before
+    assert strip_adlibs("On tourne en rond (fuck) depuis des années (x2)") == "On tourne en rond depuis des années"
+    # « Nan » can be the answer: never a filler.
+    assert strip_adlibs("Nan, j'reste ici") == "Nan, j'reste ici"
+
+
+def test_the_ad_lib_rule_on_the_shelf_s_hard_cases():
+    # off the real fr shelf (#262 review, round 2)
+    assert strip_adlibs("Là où le Soleil se (lève x11)", nearby="Là où le Soleil se lève") == "Là où le Soleil se lève"
+    assert strip_adlibs("(Pauvre garçon), con", nearby="D'laquelle t'es amoureux, pauvre garçon") == "con"
+    # a call-and-response is the song's text, even when the next line brackets it too
+    line = "Chaque phase (ça fait switch), chaque line (ça fait switch)"
+    assert strip_adlibs(line, nearby="Chaque track, chaque live, chaque bail (ça fait switch)") == line
+    # a word nobody made out stays a gap, and no unit is cut across it
+    assert strip_adlibs("Jamais mon (..) dans la (..)") == "Jamais mon (..) dans la (..)"
+    assert not is_unit_candidate("(?), c'est la mort que je smoke tous les soirs dans ma tête")
+    # Genius's bracketed guess at a word: kept as Genius shows it, never played
+    line = "J'rappais Rue du Retrait avec [Lars, Medlar et le A ?], quand j'y r'pense en vrai tout a démarré d'là"
+    assert clean_lines("[Couplet 1 : Jungle Jack]\n" + line) == [line]
+    assert not is_unit_candidate(line)
+    # a shout repeated is still a shout
+    assert strip_adlibs("Envoie la teille de sky (aïe x12)") == "Envoie la teille de sky"
+
+
+def test_a_parenthesis_that_is_the_song_s_text_stays():
+    # cases off the real fr shelf (#262 review): a word that finishes the line, half a hook
+    assert strip_adlibs("Pas les derniers d'la liste, avec NeS, on attise (le fuego)") == \
+        "Pas les derniers d'la liste, avec NeS, on attise (le fuego)"
+    assert strip_adlibs("(Dans la chambre avec le chanvre sans beaucoup d'dents mais beaucoup de gens)",
+                        nearby="Chill zen avec mes G'ser on fume on hiberne") == \
+        "Dans la chambre avec le chanvre sans beaucoup d'dents mais beaucoup de gens"
+    assert strip_adlibs("(Ah, on sait quand ça commence mais jamais quand ça termine)") == \
+        "On sait quand ça commence mais jamais quand ça termine"
+    # Never a word the line says: not set off by a comma, or not a filler.
+    for line in ("Elle m'a dit ouais", "Oh la la, la vie", "Ahmed, viens", "Eh bien, voilà"):
+        assert strip_adlibs(line) == line
+
+
+def test_english_fillers_and_fillers_joined_by_hyphens_are_ad_libs():
+    # off the real en shelf (Mac Miller)
+    assert strip_adlibs("Now I keep some dead faces in my pocket (Uh-huh)") == "Now I keep some dead faces in my pocket"
+    assert strip_adlibs("We made it (oh-woah, woo)") == "We made it"
+    assert strip_adlibs("Uh-huh, I been stoned all week") == "I been stoned all week"
+    assert strip_adlibs("Oh-oh-oh-ohh") == ""
+    # an answer word is never a filler, a hyphenated word of the song's stays
+    assert strip_adlibs("Nah, I'm fine (yep)") == "Nah, I'm fine (yep)"
+    assert strip_adlibs("Grand-mère est là (grand-mère)") == "Grand-mère est là"
+
+
+def test_a_line_of_ad_libs_alone_is_no_line_and_no_stanza_break():
+    assert clean_lines("Première ligne\n(Yeah, yeah)\nDeuxième ligne") == ["Première ligne", "Deuxième ligne"]
+
+
+STANZA = ["Il pleuvait sur la ville", "Yeah, la tête de mon frère dans ses pâtes bolo",
+          "J'ai pas compris tout d'suite que mes grands-parents étaient alcoolos",
+          "Au fond c'était pas si drôle", "On riait quand même"]
+
+
+def test_a_song_s_page_is_its_whole_stanza():
+    lines = clean_lines("Autre strophe, autre chose\n\n" + "\n".join(STANZA) + "\n\nRefrain d'après")
+    unit = ("La tête de mon frère dans ses pâtes bolo, "
+            "j'ai pas compris tout d'suite que mes grands-parents étaient alcoolos")
+    assert unit in candidate_units(lines)
+    # Each side reads as the unit does and ends on a full stop; never another stanza.
+    assert stanza_excerpt(lines, unit) == {"before": ["Il pleuvait sur la ville."],
+                                           "after": ["Au fond c'était pas si drôle,", "on riait quand même."]}
+    assert stanza_excerpt(lines, "une ligne qui n'y est pas") is None
+    # a line opening on a name keeps its capital (off the real shelf: « Nino B., Jack City »)
+    stanza = ["On a appris notre biz comme Nino B.", "Jack City", "EHPAD et compagnie, la vie passe à toute allure",
+              "Faut qu'on s'lance dans l'immobilier, faut qu'on multiplie nos billes"]
+    assert stanza_excerpt(stanza, stanza[3])["before"] == [
+        "On a appris notre biz comme Nino B.", "Jack City,", "EHPAD et compagnie, la vie passe à toute allure."]
+    # the English pronoun keeps its capital, and is no second word of a name (Mac Miller)
+    stanza = ["These flows kilos, I could sell snow to a ski slope", "I could sell evil to the Devil, nonbelievers to a temple",
+              "And I may be a little arrogant, I'm aware of it", "Weight I'm carryin', gotta let it go",
+              "I went pro, made profit, now I keep some dead faces in my pocket"]
+    assert stanza_excerpt(stanza, stanza[4])["before"] == [
+        "These flows kilos, I could sell snow to a ski slope,", "I could sell evil to the Devil, nonbelievers to a temple,",
+        "and I may be a little arrogant, I'm aware of it,", "weight I'm carryin', gotta let it go."]
+    assert stanza_excerpt(["Une seule ligne de dix mots pour faire toute la strophe"],
+                          "Une seule ligne de dix mots pour faire toute la strophe") is None

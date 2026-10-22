@@ -81,7 +81,10 @@ def main():
         die("GENIUS_ACCESS_TOKEN is not set (a client access token from genius.com/api-clients)")
     from lyricsgenius import Genius
 
-    genius = Genius(token, remove_section_headers=True, skip_non_songs=True, retries=2, timeout=15)
+    # Section headers are dropped by `lyrics.clean_lines`, never here: the library's removal
+    # deletes EVERY bracket, Genius's inline guesses at a word included (« [Poto ?] »),
+    # and leaves a hole in the line.
+    genius = Genius(token, remove_section_headers=False, skip_non_songs=True, retries=2, timeout=15)
     genius.verbose = False
 
     path = Path(args.artists) if args.artists else shelf / "artists.txt"
@@ -104,7 +107,7 @@ def main():
                 continue
             # By its page when the listing gave it: by id alone, the library looks the song
             # up once more to find the page.
-            text = genius.lyrics(song_id=song["id"], song_url=song["url"], remove_section_headers=True)
+            text = genius.lyrics(song_id=song["id"], song_url=song["url"])
             if not text or not text.strip():
                 continue
             detail = genius.song(song["id"]).get("song", {})

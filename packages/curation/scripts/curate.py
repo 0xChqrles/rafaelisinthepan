@@ -1133,6 +1133,13 @@ def build_day(claude: llm.Claude, log: Log, line: dict, trio: list, chain: list[
         excerpt = choose_page(claude, log, sentence, window, lang) if window else None
         if excerpt:
             source["excerpt"] = excerpt
+    elif book["kind"] == "music":
+        # A song's page is its whole stanza, verse or chorus: no cut, no model call.
+        excerpt = lyr.stanza_excerpt(lyr.clean_lines(lyr.parse_song(text)[1]), sentence)
+        if excerpt:
+            source["excerpt"] = excerpt
+            log(f"- page: the line's stanza, {len(excerpt['before'])} line(s) before, "
+                f"{len(excerpt['after'])} after")
     while True:
         checked = check_trio(claude, log, line, trio, chain, frequency_rank, neighbour_rank, lang,
                              crowd=crowd, unmapped=unmapped, own=own, measures=measures, swaps=swaps)

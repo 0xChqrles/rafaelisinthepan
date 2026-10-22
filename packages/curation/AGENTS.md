@@ -368,6 +368,18 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   micro-story the archive already holds (the Hagakure day is two sentences) — and, since
   2026-09-24, the sentence ALONE when it has at least `MIN_LINE_WORDS` (10): a short
   punchline is often the best line of all (JeanJass, 16 words), and the model judges it.
+- **Ad-libs are not the line** (user-decided 2026-10-16, after a day opening on
+  « Yeah, »): `lyrics.strip_adlibs` drops a parenthesis whose words are all `FILLERS` or
+  all said in the line or the lines next to it (the backing voice's echo; a repeat marker
+  « (x2) » too), and a `FILLERS` word set off by a comma at a line's start or end, with
+  its comma; a line of ad-libs alone is no line. Any other parenthesis is the song's text
+  and stays, unbracketed when it is the whole line: Genius brackets half a hook, a second
+  voice, « on attise (le fuego) ». Only set off: « elle m'a dit ouais » keeps its word;
+  an answer word (« nan », « oui ») is never a filler. A GAP — Genius's « (?) » for a
+  word nobody made out, or its bracketed guess « avec [Lars, Medlar et le A ?] » — stays
+  as Genius shows it, and no unit is cut across it (`lyrics.is_unit_candidate`): the
+  fetch keeps inline brackets (`remove_section_headers=False`; `clean_lines` drops the
+  header lines), since the library's removal deletes every bracket and leaves a hole.
 - **A song is mined the same way, over lines** (`lyrics.candidate_units`): per starting
   line, the runs of consecutive lines within a stanza (never across a blank line, at most
   `MAX_LINES_PER_UNIT` = 4) from the first reaching `MIN_LINE_WORDS` to the first reaching
@@ -398,8 +410,11 @@ vectors (`pnpm reduce:fr` / `pnpm reduce:en` done once), and works on its shelf.
   nothing on either side is no page. The counts are logged (`page:`). The curator hands
   the cut to gen_phrase as `--before`/`--after` — the source's own text, never a summary
   (a curator-written line that gets a fact wrong on a literary screen is worse than
-  nothing). **A song gets NO excerpt** (reaffirmed 2026-09-08: a verse or chorus is still
-  reproduced lyrics); its track page is gen_phrase's `--url`, by hand.
+  nothing). **A song day's page is its WHOLE STANZA, verse or chorus** (user-decided
+  2026-10-16: "full verse or chorus"; it reverses "a song gets no excerpt"):
+  `lyrics.stanza_excerpt`, the stanza's lines before the unit and after it, never cut and
+  no model call, each side bridged as the unit is and ended on a full stop (the solved
+  page opens the line on a capital). Its track page is gen_phrase's `--url`, by hand.
 - **The archive the curator reads is the PUBLISH LEDGER** (`packages/generation/
   published.jsonl`, gitignored, appended by `pnpm puzzle:publish --s3` and by nothing
   else, rebuilt from the bucket by `pnpm puzzle:ledger --s3` — the curator DIES without
